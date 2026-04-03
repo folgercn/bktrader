@@ -932,16 +932,17 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 	trades := pairReplayTrades(ledger, normalizeBacktestSymbol(symbol), parseOptionalRFC3339(from), parseOptionalRFC3339(to))
 	if len(trades) == 0 {
 		return map[string]any{
-			"replayLedgerTrades":         0,
-			"replayLedgerCompleted":      0,
-			"replayLedgerSkipped":        0,
-			"replayLedgerSkippedInvalid": 0,
-			"replayLedgerSkippedEntry":   0,
-			"replayLedgerSkippedExit":    0,
-			"replayLedgerSkippedError":   0,
-			"replayLedgerPnL":            0,
-			"replayLedgerStopHits":       0,
-			"replayLedgerTakeProfitHits": 0,
+			"replayLedgerTrades":           0,
+			"replayLedgerCompleted":        0,
+			"replayLedgerCompletedSamples": []map[string]any{},
+			"replayLedgerSkipped":          0,
+			"replayLedgerSkippedInvalid":   0,
+			"replayLedgerSkippedEntry":     0,
+			"replayLedgerSkippedExit":      0,
+			"replayLedgerSkippedError":     0,
+			"replayLedgerPnL":              0,
+			"replayLedgerStopHits":         0,
+			"replayLedgerTakeProfitHits":   0,
 		}, nil
 	}
 
@@ -954,6 +955,7 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 	skippedEntryNotHit := 0
 	skippedExitNotHit := 0
 	skippedErrors := 0
+	completedSamples := make([]map[string]any, 0, 3)
 	skippedSamples := make([]map[string]any, 0, 3)
 	byReason := map[string]map[string]int{}
 
@@ -1017,21 +1019,23 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 			tpHits++
 			byReason[reasonKey]["takeProfitHits"]++
 		}
+		completedSamples = appendReplayCompletedSample(completedSamples, trade, result)
 	}
 
 	return map[string]any{
-		"replayLedgerTrades":         len(trades),
-		"replayLedgerCompleted":      completed,
-		"replayLedgerSkipped":        skipped,
-		"replayLedgerSkippedInvalid": skippedInvalid,
-		"replayLedgerSkippedEntry":   skippedEntryNotHit,
-		"replayLedgerSkippedExit":    skippedExitNotHit,
-		"replayLedgerSkippedError":   skippedErrors,
-		"replayLedgerSkippedSamples": skippedSamples,
-		"replayLedgerByReason":       byReason,
-		"replayLedgerPnL":            totalPnL,
-		"replayLedgerStopHits":       stopHits,
-		"replayLedgerTakeProfitHits": tpHits,
+		"replayLedgerTrades":           len(trades),
+		"replayLedgerCompleted":        completed,
+		"replayLedgerCompletedSamples": completedSamples,
+		"replayLedgerSkipped":          skipped,
+		"replayLedgerSkippedInvalid":   skippedInvalid,
+		"replayLedgerSkippedEntry":     skippedEntryNotHit,
+		"replayLedgerSkippedExit":      skippedExitNotHit,
+		"replayLedgerSkippedError":     skippedErrors,
+		"replayLedgerSkippedSamples":   skippedSamples,
+		"replayLedgerByReason":         byReason,
+		"replayLedgerPnL":              totalPnL,
+		"replayLedgerStopHits":         stopHits,
+		"replayLedgerTakeProfitHits":   tpHits,
 	}, nil
 }
 
@@ -1050,6 +1054,29 @@ func ensureReplayReasonBucket(byReason map[string]map[string]int, reason string)
 		"stopHits":       0,
 		"takeProfitHits": 0,
 	}
+}
+
+func appendReplayCompletedSample(samples []map[string]any, trade replayTrade, result map[string]any) []map[string]any {
+	if len(samples) >= 3 {
+		return samples
+	}
+	item := map[string]any{
+		"entryTime":          trade.Entry.Time.UTC().Format(time.RFC3339),
+		"entryType":          trade.Entry.Type,
+		"entryPrice":         trade.Entry.Price,
+		"entryCause":         trade.Entry.Reason,
+		"exitTime":           trade.Exit.Time.UTC().Format(time.RFC3339),
+		"exitPrice":          trade.Exit.Price,
+		"exitCause":          trade.Exit.Reason,
+		"notional":           trade.Entry.Notional,
+		"bracketEntryFill":   result["bracketEntryFill"],
+		"bracketEntryTime":   result["bracketEntryTime"],
+		"bracketExitType":    result["bracketExitType"],
+		"bracketExitPrice":   result["bracketExitPrice"],
+		"bracketExitTime":    result["bracketExitTime"],
+		"bracketRealizedPnL": result["bracketRealizedPnL"],
+	}
+	return append(samples, item)
 }
 
 func normalizeReplayReason(reason string) string {
