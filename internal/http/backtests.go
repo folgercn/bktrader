@@ -8,6 +8,14 @@ import (
 
 // registerBacktestRoutes 注册回测管理相关路由。
 func registerBacktestRoutes(mux *http.ServeMux, platform *service.Platform) {
+	mux.HandleFunc("/api/v1/backtests/options", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, platform.BacktestOptions())
+	})
+
 	// GET|POST /api/v1/backtests — 回测记录列表/创建回测
 	mux.HandleFunc("/api/v1/backtests", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

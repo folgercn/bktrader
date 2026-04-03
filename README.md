@@ -67,6 +67,7 @@ go run ./cmd/platform-api
 - `GET /api/v1/fills` — 成交记录
 - `GET /api/v1/positions` — 持仓查询
 - `GET|POST /api/v1/backtests` — 回测管理
+- `GET /api/v1/backtests/options` — 回测配置选项（信号周期、执行数据源）
 - `GET|POST /api/v1/paper/sessions` — 模拟交易会话
 - `POST /api/v1/paper/sessions/{id}/start` — 启动模拟会话
 - `POST /api/v1/paper/sessions/{id}/stop` — 停止模拟会话
@@ -138,6 +139,11 @@ PAPER_TICK_INTERVAL=15
 > 当前 `cd.yml` 默认推送镜像到 `ghcr.io/<owner>/bktrader:latest`，并在 `main` 分支 push 后触发部署。
 
 ## 备注
+
+- 回测配置已区分“信号周期”和“执行数据源”两个维度。
+- 当前平台标准支持的信号周期为 `4h / 1d`。
+- 当前平台标准支持的执行数据源为 `tick / 1min`。
+- `1min` 在这套策略里主要用于近似 tick 级执行，不应被误解为策略主交易周期。
 
 - 现有的研究文件已整理至 `research/` 目录，避免干扰策略研究工作。
 - 平台脚手架采用模块化设计，初期以可部署的单体架构启动，便于快速迭代，后续可按需拆分。

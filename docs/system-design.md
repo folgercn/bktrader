@@ -139,6 +139,14 @@ Responsibilities:
 - keep result snapshots reproducible
 - store metrics and trade-level outputs
 - expose chart annotations for order entry / exit markers
+- separate signal timeframe from execution data source
+- support execution-layer replay from either `tick` or `1min`
+
+Backtest configuration rules:
+
+- signal timeframe should reflect strategy decision bars, currently `4h` or `1d`
+- execution data source should reflect fill simulation granularity, currently `tick` or `1min`
+- `1min` is an execution proxy, not the strategy timeframe itself
 
 ### 4.7 Paper Trading
 

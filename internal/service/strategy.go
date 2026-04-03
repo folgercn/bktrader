@@ -135,7 +135,25 @@ func (p *Platform) ListBacktests() ([]domain.BacktestRun, error) {
 
 // CreateBacktest 创建新的回测运行记录。
 func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error) {
-	return p.store.CreateBacktest(strategyVersionID, parameters)
+	normalized, err := NormalizeBacktestParameters(parameters)
+	if err != nil {
+		return domain.BacktestRun{}, err
+	}
+	return p.store.CreateBacktest(strategyVersionID, normalized)
+}
+
+func (p *Platform) BacktestOptions() map[string]any {
+	return map[string]any{
+		"signalTimeframes":           []string{"4h", "1d"},
+		"executionDataSources":       []string{"tick", "1min"},
+		"defaultSignalTimeframe":     "1d",
+		"defaultExecutionDataSource": "1min",
+		"notes": []string{
+			"4h 和 1d 用于策略信号周期。",
+			"tick 与 1min 用于执行层回测数据源。",
+			"1min 可以作为 tick 的近似替代，但不应和信号周期混淆。",
+		},
+	}
 }
 
 // --- 信号源服务方法 ---
@@ -172,4 +190,51 @@ func ValidateRequired(values map[string]string, fields ...string) error {
 		}
 	}
 	return nil
+}
+
+func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, error) {
+	normalized := cloneMetadata(parameters)
+	if normalized == nil {
+		normalized = map[string]any{}
+	}
+
+	signalTimeframe := strings.ToLower(strings.TrimSpace(stringValue(normalized["signalTimeframe"])))
+	if signalTimeframe == "" {
+		signalTimeframe = "1d"
+	}
+	if signalTimeframe != "4h" && signalTimeframe != "1d" {
+		return nil, fmt.Errorf("unsupported signalTimeframe: %s", signalTimeframe)
+	}
+
+	executionDataSource := strings.ToLower(strings.TrimSpace(stringValue(normalized["executionDataSource"])))
+	if executionDataSource == "" {
+		executionDataSource = "1min"
+	}
+	if executionDataSource != "tick" && executionDataSource != "1min" {
+		return nil, fmt.Errorf("unsupported executionDataSource: %s", executionDataSource)
+	}
+
+	symbol := strings.ToUpper(strings.TrimSpace(stringValue(normalized["symbol"])))
+	if symbol == "" {
+		symbol = "BTCUSDT"
+	}
+
+	normalized["signalTimeframe"] = signalTimeframe
+	normalized["executionDataSource"] = executionDataSource
+	normalized["symbol"] = symbol
+	normalized["executionTimeframe"] = executionDataSource
+	normalized["backtestMode"] = fmt.Sprintf("%s->%s", signalTimeframe, executionDataSource)
+	return normalized, nil
+}
+
+func stringValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return v
+	default:
+		return fmt.Sprint(v)
+	}
 }
