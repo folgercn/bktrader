@@ -104,6 +104,7 @@ type MarkerLegendItem = {
 
 type SourceFilter = "all" | "paper" | "backtest";
 type EventFilter = "all" | "initial" | "reentry" | "pt" | "sl";
+type TimeWindow = "6h" | "12h" | "1d" | "3d";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
@@ -121,6 +122,7 @@ function App() {
   const [sessionAction, setSessionAction] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
+  const [timeWindow, setTimeWindow] = useState<TimeWindow>("12h");
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
@@ -135,8 +137,9 @@ function App() {
     ]);
 
     const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
-    const from = Math.floor(anchorDate.getTime() / 1000) - 60 * 720;
-    const to = Math.floor(anchorDate.getTime() / 1000) + 60 * 120;
+    const range = buildTimeRange(anchorDate, timeWindow);
+    const from = range.from;
+    const to = range.to;
 
     const [snapshotData, candleData, annotationData] = await Promise.all([
       summaryData[0]?.accountId
@@ -190,7 +193,7 @@ function App() {
       active = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [timeWindow]);
 
   const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
@@ -346,6 +349,7 @@ function App() {
             <div className="range-box">
               <span>{candles.length} bars</span>
               <span>{chartAnnotations.length} markers</span>
+              <span>{timeWindow}</span>
               <span>{candleRange.label}</span>
             </div>
           </div>
@@ -357,6 +361,17 @@ function App() {
             )}
           </div>
           <div className="filter-row">
+            <FilterGroup
+              label="Window"
+              value={timeWindow}
+              options={[
+                { value: "6h", label: "6h" },
+                { value: "12h", label: "12h" },
+                { value: "1d", label: "1d" },
+                { value: "3d", label: "3d" },
+              ]}
+              onChange={(value) => setTimeWindow(value as TimeWindow)}
+            />
             <FilterGroup
               label="Source"
               value={sourceFilter}
@@ -793,6 +808,26 @@ function resolveChartAnchor(session?: PaperSession, orders: Order[] = []) {
   }
 
   return new Date();
+}
+
+function buildTimeRange(anchorDate: Date, window: TimeWindow) {
+  const anchor = Math.floor(anchorDate.getTime() / 1000);
+  const beforeByWindow: Record<TimeWindow, number> = {
+    "6h": 6 * 60 * 60,
+    "12h": 12 * 60 * 60,
+    "1d": 24 * 60 * 60,
+    "3d": 3 * 24 * 60 * 60,
+  };
+  const afterByWindow: Record<TimeWindow, number> = {
+    "6h": 60 * 60,
+    "12h": 2 * 60 * 60,
+    "1d": 4 * 60 * 60,
+    "3d": 8 * 60 * 60,
+  };
+  return {
+    from: anchor - beforeByWindow[window],
+    to: anchor + afterByWindow[window],
+  };
 }
 
 function markerShape(type: string) {
