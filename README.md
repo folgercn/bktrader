@@ -129,6 +129,20 @@ TICK_DATA_DIR=./dataset/archive
 
 当前 `tick` runner 已接入按时间窗口挑选月分片和流式预览，不会默认把整个 archive 全量扫完。
 
+如果在回测参数里额外传入这些字段：
+
+- `side`
+- `entryPrice`
+- `stopLossPrice`
+- `takeProfitPrice`
+- `quantity`
+
+平台会在 `tick` 窗口上执行一个最小 `bracket` 撮合模拟，并返回：
+
+- `bracketEntryTime / bracketEntryFill`
+- `bracketExitType / bracketExitTime / bracketExitPrice`
+- `bracketRealizedPnL`
+
 推荐做法：
 
 1. 把真实逐笔数据清洗成统一 CSV。

@@ -66,6 +66,14 @@ type tickEvent struct {
 	Raw      []string
 }
 
+type bracketPlan struct {
+	Side            string
+	EntryPrice      float64
+	StopLossPrice   float64
+	TakeProfitPrice float64
+	Quantity        float64
+}
+
 func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.BacktestRun {
 	executionSource := stringValue(backtest.Parameters["executionDataSource"])
 	signalTimeframe := stringValue(backtest.Parameters["signalTimeframe"])
@@ -126,6 +134,16 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 		}
 		for key, value := range preview {
 			resultSummary[key] = value
+		}
+		if plan, ok := parseBracketPlan(backtest.Parameters); ok {
+			sim, err := p.simulateTickBracket(symbol, from, to, plan)
+			if err != nil {
+				resultSummary["bracketError"] = err.Error()
+			} else {
+				for key, value := range sim {
+					resultSummary[key] = value
+				}
+			}
 		}
 	}
 	backtest.Status = "COMPLETED"
@@ -778,6 +796,151 @@ func parseTradeArchiveEvent(symbol string, row []string) (tickEvent, error) {
 	}, nil
 }
 
+func parseBracketPlan(parameters map[string]any) (bracketPlan, bool) {
+	side := strings.ToUpper(strings.TrimSpace(stringValue(parameters["side"])))
+	entryPrice := parseFloatValue(parameters["entryPrice"])
+	stopLossPrice := parseFloatValue(parameters["stopLossPrice"])
+	takeProfitPrice := parseFloatValue(parameters["takeProfitPrice"])
+	quantity := parseFloatValue(parameters["quantity"])
+	if quantity <= 0 {
+		quantity = 1
+	}
+	if (side != "BUY" && side != "SELL" && side != "LONG" && side != "SHORT") || entryPrice <= 0 {
+		return bracketPlan{}, false
+	}
+	return bracketPlan{
+		Side:            normalizeBracketSide(side),
+		EntryPrice:      entryPrice,
+		StopLossPrice:   stopLossPrice,
+		TakeProfitPrice: takeProfitPrice,
+		Quantity:        quantity,
+	}, true
+}
+
+func simulateBracketEvent(event tickEvent, plan bracketPlan, state string) (nextState string, payload map[string]any, done bool) {
+	switch state {
+	case "waiting_entry":
+		if bracketEntryTriggered(event.Price, plan) {
+			return "entered", map[string]any{
+				"bracketEntryHit":      true,
+				"bracketEntryTime":     event.Time.UTC().Format(time.RFC3339),
+				"bracketEntryFill":     event.Price,
+				"bracketEntryQuantity": plan.Quantity,
+			}, false
+		}
+	case "entered":
+		if bracketStopTriggered(event.Price, plan) {
+			return "stopped", map[string]any{
+				"bracketExitType":     "stop_loss",
+				"bracketExitTime":     event.Time.UTC().Format(time.RFC3339),
+				"bracketExitPrice":    event.Price,
+				"bracketRealizedPnL":  bracketPnL(plan, event.Price),
+				"bracketQuantity":     plan.Quantity,
+				"bracketSimulationOk": true,
+			}, true
+		}
+		if bracketTakeProfitTriggered(event.Price, plan) {
+			return "took_profit", map[string]any{
+				"bracketExitType":     "take_profit",
+				"bracketExitTime":     event.Time.UTC().Format(time.RFC3339),
+				"bracketExitPrice":    event.Price,
+				"bracketRealizedPnL":  bracketPnL(plan, event.Price),
+				"bracketQuantity":     plan.Quantity,
+				"bracketSimulationOk": true,
+			}, true
+		}
+	}
+	return state, nil, false
+}
+
+func (p *Platform) simulateTickBracket(symbol, from, to string, plan bracketPlan) (map[string]any, error) {
+	iterator, err := p.newTickArchiveIteratorForRange(symbol, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer iterator.Close()
+
+	result := map[string]any{
+		"bracketSide":            plan.Side,
+		"bracketEntryPrice":      plan.EntryPrice,
+		"bracketStopLossPrice":   plan.StopLossPrice,
+		"bracketTakeProfitPrice": plan.TakeProfitPrice,
+		"bracketQuantity":        plan.Quantity,
+		"bracketSimulationOk":    false,
+	}
+
+	state := "waiting_entry"
+	processed := 0
+	for {
+		event, err := iterator.Next()
+		if err == io.EOF {
+			result["bracketProcessedTicks"] = processed
+			result["bracketFinalState"] = state
+			return result, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		processed++
+		nextState, payload, done := simulateBracketEvent(event, plan, state)
+		state = nextState
+		if payload != nil {
+			for key, value := range payload {
+				result[key] = value
+			}
+		}
+		if done {
+			result["bracketProcessedTicks"] = processed
+			result["bracketFinalState"] = state
+			return result, nil
+		}
+	}
+}
+
+func normalizeBracketSide(side string) string {
+	if side == "LONG" {
+		return "BUY"
+	}
+	if side == "SHORT" {
+		return "SELL"
+	}
+	return side
+}
+
+func bracketEntryTriggered(price float64, plan bracketPlan) bool {
+	if plan.Side == "BUY" {
+		return price <= plan.EntryPrice
+	}
+	return price >= plan.EntryPrice
+}
+
+func bracketStopTriggered(price float64, plan bracketPlan) bool {
+	if plan.StopLossPrice <= 0 {
+		return false
+	}
+	if plan.Side == "BUY" {
+		return price <= plan.StopLossPrice
+	}
+	return price >= plan.StopLossPrice
+}
+
+func bracketTakeProfitTriggered(price float64, plan bracketPlan) bool {
+	if plan.TakeProfitPrice <= 0 {
+		return false
+	}
+	if plan.Side == "BUY" {
+		return price >= plan.TakeProfitPrice
+	}
+	return price <= plan.TakeProfitPrice
+}
+
+func bracketPnL(plan bracketPlan, exitPrice float64) float64 {
+	if plan.Side == "BUY" {
+		return (exitPrice - plan.EntryPrice) * plan.Quantity
+	}
+	return (plan.EntryPrice - exitPrice) * plan.Quantity
+}
+
 func (p *Platform) previewTickArchiveRange(symbol, from, to string, limit int) (map[string]any, error) {
 	iterator, err := p.newTickArchiveIteratorForRange(symbol, from, to)
 	if err != nil {
@@ -850,4 +1013,22 @@ func parseOptionalRFC3339(value string) time.Time {
 		return time.Time{}
 	}
 	return parsed.UTC()
+}
+
+func parseFloatValue(value any) float64 {
+	switch v := value.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case string:
+		parsed, _ := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		return parsed
+	default:
+		return 0
+	}
 }
