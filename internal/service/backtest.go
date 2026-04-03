@@ -21,6 +21,11 @@ type executionDatasetSummary struct {
 	EndTime    string
 }
 
+type executionDatasetDescriptor struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
 func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.BacktestRun {
 	executionSource := stringValue(backtest.Parameters["executionDataSource"])
 	signalTimeframe := stringValue(backtest.Parameters["signalTimeframe"])
@@ -75,6 +80,25 @@ func (p *Platform) loadExecutionDatasetSummary(executionSource, symbol string) (
 	default:
 		return executionDatasetSummary{}, fmt.Errorf("unsupported execution data source: %s", executionSource)
 	}
+}
+
+func (p *Platform) discoverExecutionDatasets(executionSource string) []executionDatasetDescriptor {
+	var candidates []string
+	switch strings.ToLower(strings.TrimSpace(executionSource)) {
+	case "1min":
+		candidates = []string{"*_1min_Clean.csv", "*_1min.csv"}
+	case "tick":
+		candidates = []string{"*_tick_Clean.csv", "*_tick.csv"}
+	default:
+		return nil
+	}
+
+	baseDir := p.minuteDataDir
+	if strings.EqualFold(strings.TrimSpace(executionSource), "tick") {
+		baseDir = p.tickDataDir
+	}
+
+	return discoverMatchingDatasets(baseDir, candidates)
 }
 
 func summarizeCSVExecutionData(baseDir string, candidates []string, timeColumn string) (executionDatasetSummary, error) {
@@ -179,6 +203,68 @@ func resolveExistingDataset(baseDir string, candidates []string) (string, error)
 		}
 	}
 	return "", fmt.Errorf("execution dataset not found in %q, tried: %s", baseDir, strings.Join(uniqueCandidates, ", "))
+}
+
+func discoverMatchingDatasets(baseDir string, patterns []string) []executionDatasetDescriptor {
+	searchRoots := resolveSearchRoots(baseDir)
+	seen := map[string]struct{}{}
+	items := make([]executionDatasetDescriptor, 0)
+
+	for _, searchRoot := range searchRoots {
+		for _, pattern := range patterns {
+			matches, err := filepath.Glob(filepath.Join(searchRoot, pattern))
+			if err != nil {
+				continue
+			}
+			for _, match := range matches {
+				absPath, err := filepath.Abs(match)
+				if err != nil {
+					continue
+				}
+				if _, ok := seen[absPath]; ok {
+					continue
+				}
+				info, err := os.Stat(absPath)
+				if err != nil || info.IsDir() {
+					continue
+				}
+				seen[absPath] = struct{}{}
+				items = append(items, executionDatasetDescriptor{
+					Name: filepath.Base(absPath),
+					Path: absPath,
+				})
+			}
+		}
+	}
+
+	return items
+}
+
+func resolveSearchRoots(baseDir string) []string {
+	_, currentFile, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(currentFile), "..", "..")
+	searchRoots := make([]string, 0, 2)
+
+	if strings.TrimSpace(baseDir) != "" {
+		if filepath.IsAbs(baseDir) {
+			searchRoots = append(searchRoots, filepath.Clean(baseDir))
+		} else {
+			searchRoots = append(searchRoots, filepath.Join(root, baseDir))
+		}
+	}
+
+	searchRoots = append(searchRoots, root)
+	seen := map[string]struct{}{}
+	unique := make([]string, 0, len(searchRoots))
+	for _, path := range searchRoots {
+		cleaned := filepath.Clean(path)
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		unique = append(unique, cleaned)
+	}
+	return unique
 }
 
 func normalizeSymbolForDataset(symbol string) string {

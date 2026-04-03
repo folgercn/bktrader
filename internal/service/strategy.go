@@ -148,13 +148,16 @@ func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[strin
 }
 
 func (p *Platform) BacktestOptions() map[string]any {
+	tickDatasets := p.discoverExecutionDatasets("tick")
+	minuteDatasets := p.discoverExecutionDatasets("1min")
+
 	tickAvailability := "missing"
-	if _, err := p.loadExecutionDatasetSummary("tick", "BTCUSDT"); err == nil {
+	if len(tickDatasets) > 0 {
 		tickAvailability = "available"
 	}
 
 	minuteAvailability := "missing"
-	if _, err := p.loadExecutionDatasetSummary("1min", "BTCUSDT"); err == nil {
+	if len(minuteDatasets) > 0 {
 		minuteAvailability = "available"
 	}
 
@@ -170,6 +173,10 @@ func (p *Platform) BacktestOptions() map[string]any {
 		"availability": map[string]any{
 			"tick": tickAvailability,
 			"1min": minuteAvailability,
+		},
+		"datasets": map[string]any{
+			"tick": tickDatasets,
+			"1min": minuteDatasets,
 		},
 		"notes": []string{
 			"4h 和 1d 用于策略信号周期。",

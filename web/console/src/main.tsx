@@ -137,6 +137,7 @@ type BacktestOptions = {
   defaultExecutionDataSource: string;
   dataDirectories?: Record<string, string>;
   availability?: Record<string, string>;
+  datasets?: Record<string, Array<{ name: string; path: string }>>;
   notes: string[];
 };
 
@@ -186,6 +187,8 @@ function App() {
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
+  const selectedExecutionAvailability = backtestOptions?.availability?.[backtestForm.executionDataSource] ?? "unknown";
+  const selectedExecutionDatasets = backtestOptions?.datasets?.[backtestForm.executionDataSource] ?? [];
 
   async function loadDashboard() {
     const [summaryData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData] = await Promise.all([
@@ -452,7 +455,8 @@ function App() {
                   disabled={
                     backtestAction ||
                     backtestForm.strategyVersionId.trim() === "" ||
-                    backtestForm.symbol.trim() === ""
+                    backtestForm.symbol.trim() === "" ||
+                    selectedExecutionAvailability === "missing"
                   }
                   onClick={createBacktestRun}
                 />
@@ -465,6 +469,14 @@ function App() {
                   <div className="note-item">
                     1min: {String(backtestOptions.availability?.["1min"] ?? "unknown")} · dir: {String(backtestOptions.dataDirectories?.["1min"] ?? "--")}
                   </div>
+                  <div className="note-item">
+                    selected source: {backtestForm.executionDataSource} · {selectedExecutionDatasets.length} dataset file(s)
+                  </div>
+                  {selectedExecutionDatasets.slice(0, 3).map((dataset) => (
+                    <div key={dataset.path} className="note-item">
+                      {dataset.name}
+                    </div>
+                  ))}
                   {backtestOptions.notes.map((note) => (
                     <div key={note} className="note-item">
                       {note}
