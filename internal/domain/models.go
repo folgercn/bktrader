@@ -51,8 +51,8 @@ type PaperSession struct {
 	AccountID   string         `json:"accountId"`
 	StrategyID  string         `json:"strategyId"`
 	Status      string         `json:"status"`      // CREATED / RUNNING / STOPPED
-	StartEquity float64        `json:"startEquity"`  // 初始权益
-	State       map[string]any `json:"state"`        // 运行时状态（ledgerIndex 等）
+	StartEquity float64        `json:"startEquity"` // 初始权益
+	State       map[string]any `json:"state"`       // 运行时状态（ledgerIndex 等）
 	CreatedAt   time.Time      `json:"createdAt"`
 }
 
@@ -93,9 +93,9 @@ type Order struct {
 	AccountID         string         `json:"accountId"`
 	StrategyVersionID string         `json:"strategyVersionId"`
 	Symbol            string         `json:"symbol"`
-	Side              string         `json:"side"`     // BUY / SELL
-	Type              string         `json:"type"`     // MARKET / LIMIT
-	Status            string         `json:"status"`   // NEW / FILLED / CANCELLED
+	Side              string         `json:"side"`   // BUY / SELL
+	Type              string         `json:"type"`   // MARKET / LIMIT
+	Status            string         `json:"status"` // NEW / FILLED / CANCELLED
 	Quantity          float64        `json:"quantity"`
 	Price             float64        `json:"price"`
 	Metadata          map[string]any `json:"metadata"` // 扩展信息（执行模式、来源等）
@@ -118,7 +118,7 @@ type Position struct {
 	AccountID         string    `json:"accountId"`
 	StrategyVersionID string    `json:"strategyVersionId"`
 	Symbol            string    `json:"symbol"`
-	Side              string    `json:"side"`       // LONG / SHORT
+	Side              string    `json:"side"` // LONG / SHORT
 	Quantity          float64   `json:"quantity"`
 	EntryPrice        float64   `json:"entryPrice"` // 加权平均入场价
 	MarkPrice         float64   `json:"markPrice"`  // 最新标记价格
