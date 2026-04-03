@@ -175,7 +175,7 @@ func NewStore() *Store {
 		ID:          "paper-session-main",
 		AccountID:   paper.ID,
 		StrategyID:  strategy.ID,
-		Status:      "RUNNING",
+		Status:      "READY",
 		StartEquity: 100000.0,
 		CreatedAt:   now,
 	}
@@ -451,6 +451,16 @@ func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 	return items, nil
 }
 
+func (s *Store) GetPaperSession(sessionID string) (domain.PaperSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.paperSessions[sessionID]
+	if !ok {
+		return domain.PaperSession{}, fmt.Errorf("paper session not found: %s", sessionID)
+	}
+	return item, nil
+}
+
 func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -459,11 +469,23 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		ID:          id,
 		AccountID:   accountID,
 		StrategyID:  strategyID,
-		Status:      "RUNNING",
+		Status:      "READY",
 		StartEquity: startEquity,
 		CreatedAt:   time.Now().UTC(),
 	}
 	s.paperSessions[id] = item
+	return item, nil
+}
+
+func (s *Store) UpdatePaperSessionStatus(sessionID, status string) (domain.PaperSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.paperSessions[sessionID]
+	if !ok {
+		return domain.PaperSession{}, fmt.Errorf("paper session not found: %s", sessionID)
+	}
+	item.Status = status
+	s.paperSessions[sessionID] = item
 	return item, nil
 }
 

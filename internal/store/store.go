@@ -26,7 +26,9 @@ type Repository interface {
 	CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error)
 
 	ListPaperSessions() ([]domain.PaperSession, error)
+	GetPaperSession(sessionID string) (domain.PaperSession, error)
 	CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error)
+	UpdatePaperSessionStatus(sessionID, status string) (domain.PaperSession, error)
 
 	ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error)
 	CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error)

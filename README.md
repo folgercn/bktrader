@@ -67,6 +67,9 @@ Available MVP endpoints:
 - `GET /api/v1/positions`
 - `GET|POST /api/v1/backtests`
 - `GET|POST /api/v1/paper/sessions`
+- `POST /api/v1/paper/sessions/{id}/start`
+- `POST /api/v1/paper/sessions/{id}/stop`
+- `POST /api/v1/paper/sessions/{id}/tick`
 - `GET /api/v1/signal-sources`
 - `GET /api/v1/chart/annotations`
 - `GET /api/v1/chart/candles`
@@ -90,3 +93,4 @@ npm run dev
 - Orders submitted to `PAPER` accounts are filled immediately, create `fills`, and update net `positions`.
 - `GET /api/v1/account-summaries` returns paper-account equity, fees, realized/unrealized PnL, and exposure snapshots.
 - Equity snapshots are appended when a paper session is created and when a paper order is filled.
+- Paper sessions can now be started, stopped, or manually ticked; active sessions place synthetic BTCUSDT paper orders on a timer.

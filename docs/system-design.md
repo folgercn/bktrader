@@ -218,6 +218,7 @@ Current implementation status:
 - paper account orders are executed immediately into `fills` and net `positions`
 - account summary snapshots expose start equity, fees, realized/unrealized PnL, and exposure
 - account equity snapshots provide a time series for paper account net-equity charts
+- paper sessions support background runners that periodically generate synthetic paper orders
 - chart annotation endpoint
 - candle feed endpoint suitable for TradingView integration scaffolding
 - PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions

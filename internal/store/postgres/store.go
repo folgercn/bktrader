@@ -463,12 +463,28 @@ func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 	return items, rows.Err()
 }
 
+func (s *Store) GetPaperSession(sessionID string) (domain.PaperSession, error) {
+	var item domain.PaperSession
+	err := s.db.QueryRow(`
+		select id, account_id, strategy_id, status, start_equity, created_at
+		from paper_sessions
+		where id = $1
+	`, sessionID).Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &item.StartEquity, &item.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.PaperSession{}, fmt.Errorf("paper session not found: %s", sessionID)
+		}
+		return domain.PaperSession{}, err
+	}
+	return item, nil
+}
+
 func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error) {
 	item := domain.PaperSession{
 		ID:          fmt.Sprintf("paper-session-%d", time.Now().UTC().UnixNano()),
 		AccountID:   accountID,
 		StrategyID:  strategyID,
-		Status:      "RUNNING",
+		Status:      "READY",
 		StartEquity: startEquity,
 		CreatedAt:   time.Now().UTC(),
 	}
@@ -478,6 +494,14 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		values ($1, $2, $3, $4, $5, $6)
 	`, item.ID, item.AccountID, item.StrategyID, item.Status, item.StartEquity, item.CreatedAt)
 	return item, err
+}
+
+func (s *Store) UpdatePaperSessionStatus(sessionID, status string) (domain.PaperSession, error) {
+	_, err := s.db.Exec(`update paper_sessions set status = $2 where id = $1`, sessionID, status)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	return s.GetPaperSession(sessionID)
 }
 
 func (s *Store) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {

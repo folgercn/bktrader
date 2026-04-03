@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -13,6 +15,8 @@ import (
 
 type Platform struct {
 	store store.Repository
+	mu    sync.Mutex
+	run   map[string]context.CancelFunc
 }
 
 type pnlState struct {
@@ -22,7 +26,10 @@ type pnlState struct {
 }
 
 func NewPlatform(store store.Repository) *Platform {
-	return &Platform{store: store}
+	return &Platform{
+		store: store,
+		run:   make(map[string]context.CancelFunc),
+	}
 }
 
 func (p *Platform) SignalSources() []map[string]any {
@@ -191,6 +198,61 @@ func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity 
 		return domain.PaperSession{}, err
 	}
 	return session, nil
+}
+
+func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, error) {
+	session, err := p.store.GetPaperSession(sessionID)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+
+	p.mu.Lock()
+	if _, exists := p.run[sessionID]; exists {
+		p.mu.Unlock()
+		return p.store.UpdatePaperSessionStatus(sessionID, "RUNNING")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.run[sessionID] = cancel
+	p.mu.Unlock()
+
+	session, err = p.store.UpdatePaperSessionStatus(sessionID, "RUNNING")
+	if err != nil {
+		p.mu.Lock()
+		delete(p.run, sessionID)
+		p.mu.Unlock()
+		cancel()
+		return domain.PaperSession{}, err
+	}
+
+	go p.runPaperSessionLoop(ctx, session)
+	return session, nil
+}
+
+func (p *Platform) StopPaperSession(sessionID string) (domain.PaperSession, error) {
+	session, err := p.store.UpdatePaperSessionStatus(sessionID, "STOPPED")
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+
+	p.mu.Lock()
+	cancel, exists := p.run[sessionID]
+	if exists {
+		delete(p.run, sessionID)
+	}
+	p.mu.Unlock()
+
+	if exists {
+		cancel()
+	}
+	return session, nil
+}
+
+func (p *Platform) TickPaperSession(sessionID string) (domain.Order, error) {
+	session, err := p.store.GetPaperSession(sessionID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	return p.placePaperSessionOrder(session)
 }
 
 func (p *Platform) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
@@ -585,4 +647,89 @@ func buildAccountSummary(
 		OpenPositionCount: openCount,
 		UpdatedAt:         time.Now().UTC(),
 	}
+}
+
+func (p *Platform) runPaperSessionLoop(ctx context.Context, session domain.PaperSession) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	defer p.removeRunner(session.ID)
+
+	_, _ = p.placePaperSessionOrder(session)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return
+			}
+			current, err := p.store.GetPaperSession(session.ID)
+			if err != nil || current.Status != "RUNNING" {
+				return
+			}
+			_, _ = p.placePaperSessionOrder(current)
+		}
+	}
+}
+
+func (p *Platform) placePaperSessionOrder(session domain.PaperSession) (domain.Order, error) {
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	side := "BUY"
+	qty := 0.01
+	price := syntheticPaperPrice()
+	for _, position := range positions {
+		if position.AccountID != session.AccountID || position.Symbol != "BTCUSDT" {
+			continue
+		}
+		price = syntheticPaperPriceFromMark(position.MarkPrice)
+		if position.Side == "LONG" && position.Quantity >= 0.03 {
+			side = "SELL"
+			qty = 0.01
+		} else if position.Side == "LONG" {
+			side = "BUY"
+			qty = 0.005
+		} else if position.Side == "SHORT" && position.Quantity >= 0.02 {
+			side = "BUY"
+			qty = 0.01
+		}
+		break
+	}
+
+	return p.CreateOrder(domain.Order{
+		AccountID: session.AccountID,
+		Symbol:    "BTCUSDT",
+		Side:      side,
+		Type:      "MARKET",
+		Quantity:  qty,
+		Metadata: map[string]any{
+			"markPrice":    price,
+			"source":       "paper-session-runner",
+			"paperSession": session.ID,
+			"strategyId":   session.StrategyID,
+		},
+	})
+}
+
+func (p *Platform) removeRunner(sessionID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.run, sessionID)
+}
+
+func syntheticPaperPrice() float64 {
+	now := time.Now().UTC()
+	return 69000 + float64(now.Minute()*11) + float64(now.Second())*3.5
+}
+
+func syntheticPaperPriceFromMark(mark float64) float64 {
+	if mark <= 0 {
+		return syntheticPaperPrice()
+	}
+	step := float64((time.Now().UTC().Second()%7)-3) * 18
+	return round2(mark + step)
 }
