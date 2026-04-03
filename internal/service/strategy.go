@@ -177,9 +177,9 @@ func (p *Platform) BacktestOptions() map[string]any {
 		},
 		"schema": map[string]any{
 			"tick": map[string]any{
-				"requiredColumns":  []string{"timestamp", "price"},
-				"optionalColumns":  []string{"quantity", "side"},
-				"filenameExamples": []string{"BTC_tick_Clean.csv", "ETH_tick.csv"},
+				"requiredColumns":  []string{"id", "price", "qty", "quoteQty", "time", "isBuyerMaker", "isBestMatch"},
+				"optionalColumns":  []string{"timestamp", "quantity", "side"},
+				"filenameExamples": []string{"BTC_tick_Clean.csv", "ETH_tick.csv", "BTCUSDT-trades-2020-01/BTCUSDT-trades-2020-01.csv"},
 			},
 			"1min": map[string]any{
 				"requiredColumns":  []string{"timestamp", "open", "high", "low", "close"},

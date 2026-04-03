@@ -107,7 +107,7 @@ npm run dev
 
 ```env
 MINUTE_DATA_DIR=.
-TICK_DATA_DIR=./data/tick
+TICK_DATA_DIR=./dataset/archive
 ```
 
 仓库内已经预留了标准 tick 目录和模板文件：
@@ -129,6 +129,21 @@ TICK_DATA_DIR=./data/tick
 3. 放到 `data/tick/`。
 4. 设置 `TICK_DATA_DIR=./data/tick`。
 5. 打开回测面板确认 `tick` 状态从 `missing` 变成 `available`。
+
+你当前仓库里的真实逐笔数据已经位于：
+
+- [dataset/archive](/Users/wuyaocheng/Downloads/bkTrader/dataset/archive)
+
+平台现在同时支持两种 tick 组织方式：
+
+- 扁平清洗文件：`BTC_tick_Clean.csv`
+- Binance 月度 archive：`BTCUSDT-trades-2020-01/BTCUSDT-trades-2020-01.csv`
+
+对于 `dataset/archive` 这类大体量逐笔数据，平台当前设计是：
+
+- 先扫描目录生成轻量 manifest
+- 回测时按月文件顺序流式读取
+- 不把跨年的 tick 数据整段并入内存
 
 ## CI/CD
 

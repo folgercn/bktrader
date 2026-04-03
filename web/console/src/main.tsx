@@ -137,7 +137,7 @@ type BacktestOptions = {
   defaultExecutionDataSource: string;
   dataDirectories?: Record<string, string>;
   availability?: Record<string, string>;
-  datasets?: Record<string, Array<{ name: string; path: string }>>;
+  datasets?: Record<string, Array<{ name: string; path: string; symbol?: string; format?: string; fileCount?: number; timeColumn?: string }>>;
   supportedSymbols?: Record<string, string[]>;
   schema?: Record<string, { requiredColumns?: string[]; optionalColumns?: string[]; filenameExamples?: string[] }>;
   notes: string[];
@@ -496,6 +496,8 @@ function App() {
                   {selectedExecutionDatasets.slice(0, 3).map((dataset) => (
                     <div key={dataset.path} className="note-item">
                       {dataset.name} · {dataset.symbol}
+                      {dataset.format ? ` · ${dataset.format}` : ""}
+                      {dataset.fileCount ? ` · files ${dataset.fileCount}` : ""}
                     </div>
                   ))}
                   {backtestOptions.notes.map((note) => (

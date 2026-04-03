@@ -21,15 +21,17 @@ type Platform struct {
 	store         store.Repository              // 存储层接口（内存 / PostgreSQL）
 	mu            sync.Mutex                    // 保护 run map 的并发访问
 	run           map[string]context.CancelFunc // 运行中的 paper session -> cancel 函数
-	once          sync.Once                     // 确保 CSV ledger 只加载一次
-	ledger        []strategyReplayEvent         // 缓存的策略回放账本
-	ledgerErr     error                         // 加载账本时的错误
+	manifestMu    sync.Mutex
+	once          sync.Once             // 确保 CSV ledger 只加载一次
+	ledger        []strategyReplayEvent // 缓存的策略回放账本
+	ledgerErr     error                 // 加载账本时的错误
 	candleOnce    sync.Once
 	candles       []candleBar
 	candleErr     error
 	tickInterval  int // 模拟盘 Ticker 间隔（秒）
 	minuteDataDir string
 	tickDataDir   string
+	tickManifest  []tradeArchiveManifestEntry
 }
 
 // NewPlatform 创建并初始化平台服务实例。
@@ -43,4 +45,7 @@ func NewPlatform(store store.Repository) *Platform {
 func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {
 	p.minuteDataDir = minuteDataDir
 	p.tickDataDir = tickDataDir
+	p.manifestMu.Lock()
+	p.tickManifest = nil
+	p.manifestMu.Unlock()
 }
