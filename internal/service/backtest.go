@@ -955,12 +955,19 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 	skippedExitNotHit := 0
 	skippedErrors := 0
 	skippedSamples := make([]map[string]any, 0, 3)
+	byReason := map[string]map[string]int{}
 
 	for _, trade := range trades {
+		reasonKey := normalizeReplayReason(trade.Entry.Reason)
+		ensureReplayReasonBucket(byReason, reasonKey)
+		byReason[reasonKey]["trades"]++
+
 		plan, ok := bracketPlanFromReplayTrade(trade)
 		if !ok {
 			skipped++
 			skippedInvalid++
+			byReason[reasonKey]["skipped"]++
+			byReason[reasonKey]["skippedInvalid"]++
 			skippedSamples = appendReplaySkipSample(skippedSamples, trade, "invalid_trade_shape", nil)
 			continue
 		}
@@ -973,6 +980,8 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 		if err != nil {
 			skipped++
 			skippedErrors++
+			byReason[reasonKey]["skipped"]++
+			byReason[reasonKey]["skippedError"]++
 			skippedSamples = appendReplaySkipSample(skippedSamples, trade, "simulation_error", map[string]any{
 				"error": err.Error(),
 			})
@@ -980,26 +989,33 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 		}
 		if ok, _ := result["bracketSimulationOk"].(bool); !ok {
 			skipped++
+			byReason[reasonKey]["skipped"]++
 			switch stringValue(result["bracketFinalState"]) {
 			case "waiting_entry":
 				skippedEntryNotHit++
+				byReason[reasonKey]["skippedEntry"]++
 				skippedSamples = appendReplaySkipSample(skippedSamples, trade, "entry_not_hit", result)
 			case "entered":
 				skippedExitNotHit++
+				byReason[reasonKey]["skippedExit"]++
 				skippedSamples = appendReplaySkipSample(skippedSamples, trade, "exit_not_hit", result)
 			default:
 				skippedErrors++
+				byReason[reasonKey]["skippedError"]++
 				skippedSamples = appendReplaySkipSample(skippedSamples, trade, "simulation_error", result)
 			}
 			continue
 		}
 		completed++
+		byReason[reasonKey]["completed"]++
 		totalPnL += parseFloatValue(result["bracketRealizedPnL"])
 		switch stringValue(result["bracketExitType"]) {
 		case "stop_loss":
 			stopHits++
+			byReason[reasonKey]["stopHits"]++
 		case "take_profit":
 			tpHits++
+			byReason[reasonKey]["takeProfitHits"]++
 		}
 	}
 
@@ -1012,10 +1028,36 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 		"replayLedgerSkippedExit":    skippedExitNotHit,
 		"replayLedgerSkippedError":   skippedErrors,
 		"replayLedgerSkippedSamples": skippedSamples,
+		"replayLedgerByReason":       byReason,
 		"replayLedgerPnL":            totalPnL,
 		"replayLedgerStopHits":       stopHits,
 		"replayLedgerTakeProfitHits": tpHits,
 	}, nil
+}
+
+func ensureReplayReasonBucket(byReason map[string]map[string]int, reason string) {
+	if _, ok := byReason[reason]; ok {
+		return
+	}
+	byReason[reason] = map[string]int{
+		"trades":         0,
+		"completed":      0,
+		"skipped":        0,
+		"skippedInvalid": 0,
+		"skippedEntry":   0,
+		"skippedExit":    0,
+		"skippedError":   0,
+		"stopHits":       0,
+		"takeProfitHits": 0,
+	}
+}
+
+func normalizeReplayReason(reason string) string {
+	trimmed := strings.TrimSpace(reason)
+	if trimmed == "" {
+		return "UNKNOWN"
+	}
+	return trimmed
 }
 
 func appendReplaySkipSample(samples []map[string]any, trade replayTrade, reason string, extra map[string]any) []map[string]any {
