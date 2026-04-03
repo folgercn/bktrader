@@ -107,14 +107,28 @@ npm run dev
 
 ```env
 MINUTE_DATA_DIR=.
-TICK_DATA_DIR=.
+TICK_DATA_DIR=./data/tick
 ```
+
+仓库内已经预留了标准 tick 目录和模板文件：
+
+- [data/tick/.gitkeep](/Users/wuyaocheng/Downloads/bkTrader/data/tick/.gitkeep)
+- [data/tick/BTC_tick.sample.template](/Users/wuyaocheng/Downloads/bkTrader/data/tick/BTC_tick.sample.template)
+- [docs/tick-data-spec.md](/Users/wuyaocheng/Downloads/bkTrader/docs/tick-data-spec.md)
 
 前端回测面板和 `GET /api/v1/backtests/options` 会同时展示：
 
 - 当前目录下实际发现的数据文件
 - 每种执行数据源支持的标的列表
 - 缺失数据源时的可用性状态
+
+推荐做法：
+
+1. 把真实逐笔数据清洗成统一 CSV。
+2. 按 `BTC_tick_Clean.csv` 这类格式命名。
+3. 放到 `data/tick/`。
+4. 设置 `TICK_DATA_DIR=./data/tick`。
+5. 打开回测面板确认 `tick` 状态从 `missing` 变成 `available`。
 
 ## CI/CD
 
