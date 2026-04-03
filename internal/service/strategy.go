@@ -139,6 +139,11 @@ func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[strin
 	if err != nil {
 		return domain.BacktestRun{}, err
 	}
+	executionSource := stringValue(normalized["executionDataSource"])
+	symbol := stringValue(normalized["symbol"])
+	if !p.hasExecutionDataset(executionSource, symbol) {
+		return domain.BacktestRun{}, fmt.Errorf("no %s dataset found for symbol %s", executionSource, symbol)
+	}
 	backtest, err := p.store.CreateBacktest(strategyVersionID, normalized)
 	if err != nil {
 		return domain.BacktestRun{}, err
@@ -166,6 +171,22 @@ func (p *Platform) BacktestOptions() map[string]any {
 		"executionDataSources":       []string{"tick", "1min"},
 		"defaultSignalTimeframe":     "1d",
 		"defaultExecutionDataSource": "1min",
+		"supportedSymbols": map[string]any{
+			"tick": extractDatasetSymbols(tickDatasets),
+			"1min": extractDatasetSymbols(minuteDatasets),
+		},
+		"schema": map[string]any{
+			"tick": map[string]any{
+				"requiredColumns":  []string{"timestamp", "price"},
+				"optionalColumns":  []string{"quantity", "side"},
+				"filenameExamples": []string{"BTC_tick_Clean.csv", "ETH_tick.csv"},
+			},
+			"1min": map[string]any{
+				"requiredColumns":  []string{"timestamp", "open", "high", "low", "close"},
+				"optionalColumns":  []string{"volume"},
+				"filenameExamples": []string{"BTC_1min_Clean.csv", "ETH_1min.csv"},
+			},
+		},
 		"dataDirectories": map[string]any{
 			"tick": p.tickDataDir,
 			"1min": p.minuteDataDir,
@@ -244,7 +265,7 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 		return nil, fmt.Errorf("unsupported executionDataSource: %s", executionDataSource)
 	}
 
-	symbol := strings.ToUpper(strings.TrimSpace(stringValue(normalized["symbol"])))
+	symbol := normalizeBacktestSymbol(stringValue(normalized["symbol"]))
 	if symbol == "" {
 		symbol = "BTCUSDT"
 	}
@@ -255,6 +276,22 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["executionTimeframe"] = executionDataSource
 	normalized["backtestMode"] = fmt.Sprintf("%s->%s", signalTimeframe, executionDataSource)
 	return normalized, nil
+}
+
+func extractDatasetSymbols(datasets []executionDatasetDescriptor) []string {
+	seen := map[string]struct{}{}
+	symbols := make([]string, 0, len(datasets))
+	for _, dataset := range datasets {
+		if dataset.Symbol == "" {
+			continue
+		}
+		if _, ok := seen[dataset.Symbol]; ok {
+			continue
+		}
+		seen[dataset.Symbol] = struct{}{}
+		symbols = append(symbols, dataset.Symbol)
+	}
+	return symbols
 }
 
 func stringValue(value any) string {

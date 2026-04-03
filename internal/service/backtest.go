@@ -22,8 +22,9 @@ type executionDatasetSummary struct {
 }
 
 type executionDatasetDescriptor struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Symbol string `json:"symbol"`
 }
 
 func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.BacktestRun {
@@ -80,6 +81,17 @@ func (p *Platform) loadExecutionDatasetSummary(executionSource, symbol string) (
 	default:
 		return executionDatasetSummary{}, fmt.Errorf("unsupported execution data source: %s", executionSource)
 	}
+}
+
+func (p *Platform) hasExecutionDataset(executionSource, symbol string) bool {
+	datasets := p.discoverExecutionDatasets(executionSource)
+	normalizedSymbol := normalizeBacktestSymbol(symbol)
+	for _, dataset := range datasets {
+		if dataset.Symbol == normalizedSymbol {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Platform) discoverExecutionDatasets(executionSource string) []executionDatasetDescriptor {
@@ -230,8 +242,9 @@ func discoverMatchingDatasets(baseDir string, patterns []string) []executionData
 				}
 				seen[absPath] = struct{}{}
 				items = append(items, executionDatasetDescriptor{
-					Name: filepath.Base(absPath),
-					Path: absPath,
+					Name:   filepath.Base(absPath),
+					Path:   absPath,
+					Symbol: extractDatasetSymbol(filepath.Base(absPath)),
 				})
 			}
 		}
@@ -268,11 +281,24 @@ func resolveSearchRoots(baseDir string) []string {
 }
 
 func normalizeSymbolForDataset(symbol string) string {
-	normalized := strings.ToUpper(strings.TrimSpace(symbol))
+	normalized := normalizeBacktestSymbol(symbol)
 	if strings.HasSuffix(normalized, "USDT") {
-		normalized = strings.TrimSuffix(normalized, "USDT")
+		return strings.TrimSuffix(normalized, "USDT")
 	}
 	return normalized
+}
+
+func normalizeBacktestSymbol(symbol string) string {
+	return strings.ToUpper(strings.TrimSpace(symbol))
+}
+
+func extractDatasetSymbol(filename string) string {
+	base := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	parts := strings.Split(base, "_")
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.ToUpper(strings.TrimSpace(parts[0])) + "USDT"
 }
 
 func parseBacktestPercent(value any) float64 {

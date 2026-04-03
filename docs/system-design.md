@@ -148,6 +148,7 @@ Backtest configuration rules:
 - execution data source should reflect fill simulation granularity, currently `tick` or `1min`
 - `1min` is an execution proxy, not the strategy timeframe itself
 - if `tick` data is unavailable, the backtest runner should fail loudly with a dataset error instead of silently falling back
+- backtest options should expose discovered dataset files, supported symbols, and CSV schema so the UI can stop invalid runs before submission
 
 ### 4.7 Paper Trading
 

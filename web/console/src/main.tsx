@@ -138,6 +138,8 @@ type BacktestOptions = {
   dataDirectories?: Record<string, string>;
   availability?: Record<string, string>;
   datasets?: Record<string, Array<{ name: string; path: string }>>;
+  supportedSymbols?: Record<string, string[]>;
+  schema?: Record<string, { requiredColumns?: string[]; optionalColumns?: string[]; filenameExamples?: string[] }>;
   notes: string[];
 };
 
@@ -189,6 +191,10 @@ function App() {
   const primarySession = paperSessions[0] ?? null;
   const selectedExecutionAvailability = backtestOptions?.availability?.[backtestForm.executionDataSource] ?? "unknown";
   const selectedExecutionDatasets = backtestOptions?.datasets?.[backtestForm.executionDataSource] ?? [];
+  const selectedExecutionSymbols = backtestOptions?.supportedSymbols?.[backtestForm.executionDataSource] ?? [];
+  const selectedExecutionSchema = backtestOptions?.schema?.[backtestForm.executionDataSource];
+  const selectedSymbolAvailable =
+    selectedExecutionSymbols.length === 0 || selectedExecutionSymbols.includes(backtestForm.symbol.trim().toUpperCase());
 
   async function loadDashboard() {
     const [summaryData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData] = await Promise.all([
@@ -456,7 +462,8 @@ function App() {
                     backtestAction ||
                     backtestForm.strategyVersionId.trim() === "" ||
                     backtestForm.symbol.trim() === "" ||
-                    selectedExecutionAvailability === "missing"
+                    selectedExecutionAvailability === "missing" ||
+                    !selectedSymbolAvailable
                   }
                   onClick={createBacktestRun}
                 />
@@ -472,9 +479,23 @@ function App() {
                   <div className="note-item">
                     selected source: {backtestForm.executionDataSource} · {selectedExecutionDatasets.length} dataset file(s)
                   </div>
+                  <div className="note-item">
+                    symbols: {selectedExecutionSymbols.length > 0 ? selectedExecutionSymbols.join(", ") : "--"}
+                  </div>
+                  <div className="note-item">
+                    required columns: {selectedExecutionSchema?.requiredColumns?.join(", ") ?? "--"}
+                  </div>
+                  <div className="note-item">
+                    file examples: {selectedExecutionSchema?.filenameExamples?.join(", ") ?? "--"}
+                  </div>
+                  {!selectedSymbolAvailable ? (
+                    <div className="note-item">
+                      symbol {backtestForm.symbol.trim().toUpperCase()} is not available for {backtestForm.executionDataSource}
+                    </div>
+                  ) : null}
                   {selectedExecutionDatasets.slice(0, 3).map((dataset) => (
                     <div key={dataset.path} className="note-item">
-                      {dataset.name}
+                      {dataset.name} · {dataset.symbol}
                     </div>
                   ))}
                   {backtestOptions.notes.map((note) => (

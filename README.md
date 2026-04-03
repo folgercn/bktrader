@@ -67,7 +67,7 @@ go run ./cmd/platform-api
 - `GET /api/v1/fills` — 成交记录
 - `GET /api/v1/positions` — 持仓查询
 - `GET|POST /api/v1/backtests` — 回测管理
-- `GET /api/v1/backtests/options` — 回测配置选项（信号周期、执行数据源）
+- `GET /api/v1/backtests/options` — 回测配置选项（信号周期、执行数据源、可发现数据文件、支持标的、CSV 字段规范）
 - `GET|POST /api/v1/paper/sessions` — 模拟交易会话
 - `POST /api/v1/paper/sessions/{id}/start` — 启动模拟会话
 - `POST /api/v1/paper/sessions/{id}/stop` — 停止模拟会话
@@ -84,6 +84,37 @@ npm install
 export VITE_API_BASE=http://127.0.0.1:8080
 npm run dev
 ```
+
+## 回测执行数据源
+
+平台将策略信号周期与执行层数据源分开管理：
+
+- 信号周期：`4h`、`1d`
+- 执行数据源：`tick`、`1min`
+
+当前执行层 CSV 约定如下：
+
+- `tick`
+  - 文件名示例：`BTC_tick_Clean.csv`、`ETH_tick.csv`
+  - 必需列：`timestamp`、`price`
+  - 可选列：`quantity`、`side`
+- `1min`
+  - 文件名示例：`BTC_1min_Clean.csv`、`ETH_1min.csv`
+  - 必需列：`timestamp`、`open`、`high`、`low`、`close`
+  - 可选列：`volume`
+
+默认目录可通过环境变量配置：
+
+```env
+MINUTE_DATA_DIR=.
+TICK_DATA_DIR=.
+```
+
+前端回测面板和 `GET /api/v1/backtests/options` 会同时展示：
+
+- 当前目录下实际发现的数据文件
+- 每种执行数据源支持的标的列表
+- 缺失数据源时的可用性状态
 
 ## CI/CD
 
