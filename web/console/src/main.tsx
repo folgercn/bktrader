@@ -63,6 +63,15 @@ type Position = {
   updatedAt: string;
 };
 
+type PaperSession = {
+  id: string;
+  accountId: string;
+  strategyId: string;
+  status: string;
+  startEquity: number;
+  createdAt: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -73,6 +82,8 @@ function App() {
   const [fills, setFills] = useState<Fill[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [snapshots, setSnapshots] = useState<AccountEquitySnapshot[]>([]);
+  const [paperSessions, setPaperSessions] = useState<PaperSession[]>([]);
+  const [sessionAction, setSessionAction] = useState<string | null>(null);
 
   const primaryAccount = summaries[0] ?? null;
 
@@ -81,11 +92,12 @@ function App() {
 
     async function load() {
       try {
-        const summaryData = await fetchJSON<AccountSummary[]>("/api/v1/account-summaries");
-        const [ordersData, fillsData, positionsData] = await Promise.all([
+        const [summaryData, ordersData, fillsData, positionsData, paperSessionData] = await Promise.all([
+          fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
           fetchJSON<Order[]>("/api/v1/orders"),
           fetchJSON<Fill[]>("/api/v1/fills"),
           fetchJSON<Position[]>("/api/v1/positions"),
+          fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
         ]);
 
         let snapshotData: AccountEquitySnapshot[] = [];
@@ -103,6 +115,7 @@ function App() {
         setFills(fillsData);
         setPositions(positionsData);
         setSnapshots(snapshotData);
+        setPaperSessions(paperSessionData);
         setError(null);
       } catch (err) {
         if (!active) {
@@ -126,6 +139,41 @@ function App() {
 
   const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
+  const primarySession = paperSessions[0] ?? null;
+
+  async function runSessionAction(sessionId: string, action: "start" | "stop" | "tick") {
+    try {
+      setSessionAction(`${sessionId}:${action}`);
+      setError(null);
+      await fetchJSON(`/api/v1/paper/sessions/${sessionId}/${action}`, { method: "POST" });
+
+      const [summaryData, orderData, fillData, positionData, sessionData] = await Promise.all([
+        fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
+        fetchJSON<Order[]>("/api/v1/orders"),
+        fetchJSON<Fill[]>("/api/v1/fills"),
+        fetchJSON<Position[]>("/api/v1/positions"),
+        fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
+      ]);
+
+      let snapshotData: AccountEquitySnapshot[] = [];
+      if (summaryData[0]?.accountId) {
+        snapshotData = await fetchJSON<AccountEquitySnapshot[]>(
+          `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(summaryData[0].accountId)}`
+        );
+      }
+
+      setSummaries(summaryData);
+      setOrders(orderData);
+      setFills(fillData);
+      setPositions(positionData);
+      setPaperSessions(sessionData);
+      setSnapshots(snapshotData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to execute paper session action");
+    } finally {
+      setSessionAction(null);
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -172,6 +220,62 @@ function App() {
           <MetricCard label="Fees" value={formatMoney(primaryAccount?.fees)} />
           <MetricCard label="Exposure" value={formatMoney(primaryAccount?.exposureNotional)} />
           <MetricCard label="Open Positions" value={String(primaryAccount?.openPositionCount ?? 0)} />
+        </section>
+
+        <section id="paper" className="panel panel-session">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Paper Session</p>
+              <h3>模拟盘运行控制</h3>
+            </div>
+            {primarySession ? (
+              <div className={`session-badge session-${primarySession.status.toLowerCase()}`}>
+                {primarySession.status}
+              </div>
+            ) : null}
+          </div>
+          {primarySession ? (
+            <div className="session-layout">
+              <div className="session-meta">
+                <div className="session-stat">
+                  <span>Session ID</span>
+                  <strong>{shrink(primarySession.id)}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Strategy</span>
+                  <strong>{shrink(primarySession.strategyId)}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Started Equity</span>
+                  <strong>{formatMoney(primarySession.startEquity)}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Created</span>
+                  <strong>{formatTime(primarySession.createdAt)}</strong>
+                </div>
+              </div>
+              <div className="session-actions">
+                <ActionButton
+                  label="Start"
+                  disabled={sessionAction !== null || primarySession.status === "RUNNING"}
+                  onClick={() => runSessionAction(primarySession.id, "start")}
+                />
+                <ActionButton
+                  label="Tick"
+                  disabled={sessionAction !== null}
+                  onClick={() => runSessionAction(primarySession.id, "tick")}
+                />
+                <ActionButton
+                  label="Stop"
+                  variant="ghost"
+                  disabled={sessionAction !== null || primarySession.status === "STOPPED"}
+                  onClick={() => runSessionAction(primarySession.id, "stop")}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">No paper session yet</div>
+          )}
         </section>
 
         <section id="equity" className="panel panel-chart">
@@ -289,6 +393,24 @@ function App() {
   );
 }
 
+function ActionButton(props: {
+  label: string;
+  disabled?: boolean;
+  variant?: "ghost";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`action-button ${props.variant === "ghost" ? "action-button-ghost" : ""}`}
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
+      {props.label}
+    </button>
+  );
+}
+
 function MetricCard(props: { label: string; value: string; tone?: "accent" }) {
   return (
     <article className={`metric-card ${props.tone === "accent" ? "metric-card-accent" : ""}`}>
@@ -327,8 +449,8 @@ function SimpleTable(props: { columns: string[]; rows: string[][]; emptyMessage:
   );
 }
 
-async function fetchJSON<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, init);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} for ${path}`);
   }
