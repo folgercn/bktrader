@@ -215,6 +215,7 @@ Current implementation status:
 
 - pluggable repository layer with `memory` and `postgres` backends
 - HTTP CRUD-style endpoints for strategies, accounts, orders, backtests, and paper sessions
+- paper account orders are executed immediately into `fills` and net `positions`
 - chart annotation endpoint
 - candle feed endpoint suitable for TradingView integration scaffolding
 - PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions

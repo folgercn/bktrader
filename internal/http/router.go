@@ -36,7 +36,7 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 				"backtests",
 				"chart-feed",
 			},
-			"notes": "Phase 1 MVP API with in-memory repositories, CRUD-style endpoints, and TradingView-friendly chart feed scaffolding.",
+			"notes": "Phase 1 MVP API with pluggable storage, paper execution flow, CRUD-style endpoints, and TradingView-friendly chart feed scaffolding.",
 		})
 	})
 

@@ -61,4 +61,17 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
+
+	mux.HandleFunc("/api/v1/fills", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		items, err := platform.ListFills()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
 }

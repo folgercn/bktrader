@@ -16,6 +16,7 @@ type Store struct {
 	strategyVersion map[string]domain.StrategyVersion
 	accounts        map[string]domain.Account
 	orders          map[string]domain.Order
+	fills           map[string]domain.Fill
 	positions       map[string]domain.Position
 	backtests       map[string]domain.BacktestRun
 	paperSessions   map[string]map[string]any
@@ -32,6 +33,7 @@ func NewStore() *Store {
 		strategyVersion: make(map[string]domain.StrategyVersion),
 		accounts:        make(map[string]domain.Account),
 		orders:          make(map[string]domain.Order),
+		fills:           make(map[string]domain.Fill),
 		positions:       make(map[string]domain.Position),
 		backtests:       make(map[string]domain.BacktestRun),
 		paperSessions:   make(map[string]map[string]any),
@@ -128,6 +130,16 @@ func NewStore() *Store {
 		CreatedAt: now,
 	}
 	store.orders[order.ID] = order
+
+	fill := domain.Fill{
+		ID:        "sample-fill-1",
+		OrderID:   order.ID,
+		Price:     68000.0,
+		Quantity:  0.01,
+		Fee:       0.68,
+		CreatedAt: now,
+	}
+	store.fills[fill.ID] = fill
 
 	position := domain.Position{
 		ID:                "position-paper-btcusdt",
@@ -274,6 +286,17 @@ func (s *Store) CreateAccount(name, mode, exchange string) (domain.Account, erro
 	return account, nil
 }
 
+func (s *Store) GetAccount(accountID string) (domain.Account, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	account, ok := s.accounts[accountID]
+	if !ok {
+		return domain.Account{}, fmt.Errorf("account not found: %s", accountID)
+	}
+	return account, nil
+}
+
 func (s *Store) ListOrders() ([]domain.Order, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -298,6 +321,38 @@ func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
 	return order, nil
 }
 
+func (s *Store) UpdateOrder(order domain.Order) (domain.Order, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.orders[order.ID]
+	if !ok {
+		return domain.Order{}, fmt.Errorf("order not found: %s", order.ID)
+	}
+	order.CreatedAt = existing.CreatedAt
+	s.orders[order.ID] = order
+	return order, nil
+}
+
+func (s *Store) ListFills() ([]domain.Fill, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.Fill, 0, len(s.fills))
+	for _, item := range s.fills {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fill.ID = s.nextID("fill")
+	fill.CreatedAt = time.Now().UTC()
+	s.fills[fill.ID] = fill
+	return fill, nil
+}
+
 func (s *Store) ListPositions() ([]domain.Position, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -307,6 +362,35 @@ func (s *Store) ListPositions() ([]domain.Position, error) {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.Before(items[j].UpdatedAt) })
 	return items, nil
+}
+
+func (s *Store) FindPosition(accountID, symbol string) (domain.Position, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range s.positions {
+		if item.AccountID == accountID && item.Symbol == symbol {
+			return item, true, nil
+		}
+	}
+	return domain.Position{}, false, nil
+}
+
+func (s *Store) SavePosition(position domain.Position) (domain.Position, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if position.ID == "" {
+		position.ID = s.nextID("position")
+	}
+	position.UpdatedAt = time.Now().UTC()
+	s.positions[position.ID] = position
+	return position, nil
+}
+
+func (s *Store) DeletePosition(positionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.positions, positionID)
+	return nil
 }
 
 func (s *Store) ListBacktests() ([]domain.BacktestRun, error) {

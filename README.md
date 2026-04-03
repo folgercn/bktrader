@@ -61,6 +61,7 @@ Available MVP endpoints:
 - `GET|POST /api/v1/strategies`
 - `GET|POST /api/v1/accounts`
 - `GET|POST /api/v1/orders`
+- `GET /api/v1/fills`
 - `GET /api/v1/positions`
 - `GET|POST /api/v1/backtests`
 - `GET|POST /api/v1/paper/sessions`
@@ -83,3 +84,4 @@ npm run dev
 - Phase 1 supports both in-memory and PostgreSQL repository backends selected with `STORE_BACKEND`.
 - PostgreSQL persistence currently covers strategies, accounts, orders, positions, backtest runs, and paper sessions.
 - `cmd/db-migrate` applies embedded SQL migrations and records them in `schema_migrations`.
+- Orders submitted to `PAPER` accounts are filled immediately, create `fills`, and update net `positions`.

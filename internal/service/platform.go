@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -55,11 +56,49 @@ func (p *Platform) ListOrders() ([]domain.Order, error) {
 }
 
 func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
-	return p.store.CreateOrder(order)
+	account, err := p.store.GetAccount(order.AccountID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	createdOrder, err := p.store.CreateOrder(order)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	if account.Mode != "PAPER" {
+		return createdOrder, nil
+	}
+
+	executionPrice := p.resolveExecutionPrice(createdOrder)
+	fill := domain.Fill{
+		OrderID:  createdOrder.ID,
+		Price:    executionPrice,
+		Quantity: createdOrder.Quantity,
+		Fee:      executionPrice * createdOrder.Quantity * 0.001,
+	}
+	if _, err := p.store.CreateFill(fill); err != nil {
+		return domain.Order{}, err
+	}
+
+	if err := p.applyPaperFill(account, createdOrder, executionPrice); err != nil {
+		return domain.Order{}, err
+	}
+
+	createdOrder.Status = "FILLED"
+	createdOrder.Price = executionPrice
+	createdOrder.Metadata = cloneMetadata(createdOrder.Metadata)
+	createdOrder.Metadata["executionMode"] = "paper"
+	createdOrder.Metadata["fillPolicy"] = "immediate"
+	return p.store.UpdateOrder(createdOrder)
 }
 
 func (p *Platform) ListPositions() ([]domain.Position, error) {
 	return p.store.ListPositions()
+}
+
+func (p *Platform) ListFills() ([]domain.Fill, error) {
+	return p.store.ListFills()
 }
 
 func (p *Platform) ListBacktests() ([]domain.BacktestRun, error) {
@@ -213,4 +252,122 @@ func ValidateRequired(values map[string]string, fields ...string) error {
 		}
 	}
 	return nil
+}
+
+func (p *Platform) resolveExecutionPrice(order domain.Order) float64 {
+	if order.Price > 0 {
+		return order.Price
+	}
+	if order.Metadata != nil {
+		for _, key := range []string{"markPrice", "lastPrice", "closePrice"} {
+			if value, ok := order.Metadata[key]; ok {
+				if price, ok := toFloat64(value); ok && price > 0 {
+					return price
+				}
+			}
+		}
+	}
+	switch order.Symbol {
+	case "ETHUSDT":
+		return 3450
+	default:
+		return 68000
+	}
+}
+
+func (p *Platform) applyPaperFill(account domain.Account, order domain.Order, executionPrice float64) error {
+	position, exists, err := p.store.FindPosition(account.ID, order.Symbol)
+	if err != nil {
+		return err
+	}
+
+	orderSide := strings.ToUpper(strings.TrimSpace(order.Side))
+	targetSide := "LONG"
+	if orderSide == "SELL" {
+		targetSide = "SHORT"
+	}
+
+	if !exists {
+		_, err := p.store.SavePosition(domain.Position{
+			AccountID:         account.ID,
+			StrategyVersionID: order.StrategyVersionID,
+			Symbol:            order.Symbol,
+			Side:              targetSide,
+			Quantity:          order.Quantity,
+			EntryPrice:        executionPrice,
+			MarkPrice:         executionPrice,
+		})
+		return err
+	}
+
+	if position.Side == targetSide {
+		totalQty := position.Quantity + order.Quantity
+		position.EntryPrice = ((position.EntryPrice * position.Quantity) + (executionPrice * order.Quantity)) / totalQty
+		position.Quantity = totalQty
+		position.MarkPrice = executionPrice
+		position.StrategyVersionID = firstNonEmpty(order.StrategyVersionID, position.StrategyVersionID)
+		_, err := p.store.SavePosition(position)
+		return err
+	}
+
+	if order.Quantity < position.Quantity {
+		position.Quantity = position.Quantity - order.Quantity
+		position.MarkPrice = executionPrice
+		_, err := p.store.SavePosition(position)
+		return err
+	}
+
+	if order.Quantity == position.Quantity {
+		return p.store.DeletePosition(position.ID)
+	}
+
+	remaining := order.Quantity - position.Quantity
+	position.Side = targetSide
+	position.Quantity = remaining
+	position.EntryPrice = executionPrice
+	position.MarkPrice = executionPrice
+	position.StrategyVersionID = firstNonEmpty(order.StrategyVersionID, position.StrategyVersionID)
+	_, err = p.store.SavePosition(position)
+	return err
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func cloneMetadata(metadata map[string]any) map[string]any {
+	if metadata == nil {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		out[key] = value
+	}
+	return out
+}
+
+func toFloat64(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(v, 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }

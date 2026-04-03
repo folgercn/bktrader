@@ -194,6 +194,22 @@ func (s *Store) CreateAccount(name, mode, exchange string) (domain.Account, erro
 	return item, err
 }
 
+func (s *Store) GetAccount(accountID string) (domain.Account, error) {
+	var item domain.Account
+	err := s.db.QueryRow(`
+		select id, name, mode, exchange, status, created_at
+		from accounts
+		where id = $1
+	`, accountID).Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &item.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.Account{}, fmt.Errorf("account not found: %s", accountID)
+		}
+		return domain.Account{}, err
+	}
+	return item, nil
+}
+
 func (s *Store) ListOrders() ([]domain.Order, error) {
 	rows, err := s.db.Query(`
 		select id, account_id, strategy_version_id, symbol, side, type, status, quantity, price, metadata, created_at
@@ -207,12 +223,14 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 	items := []domain.Order{}
 	for rows.Next() {
 		var (
-			item        domain.Order
-			metadataRaw []byte
+			item              domain.Order
+			strategyVersionID sql.NullString
+			metadataRaw       []byte
 		)
-		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyVersionID, &item.Symbol, &item.Side, &item.Type, &item.Status, &item.Quantity, &item.Price, &metadataRaw, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Type, &item.Status, &item.Quantity, &item.Price, &metadataRaw, &item.CreatedAt); err != nil {
 			return nil, err
 		}
+		item.StrategyVersionID = strategyVersionID.String
 		item.Metadata = map[string]any{}
 		if len(metadataRaw) > 0 {
 			_ = json.Unmarshal(metadataRaw, &item.Metadata)
@@ -238,6 +256,59 @@ func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
 	return order, err
 }
 
+func (s *Store) UpdateOrder(order domain.Order) (domain.Order, error) {
+	if order.Metadata == nil {
+		order.Metadata = map[string]any{}
+	}
+	raw, _ := json.Marshal(order.Metadata)
+	_, err := s.db.Exec(`
+		update orders
+		set account_id = $2,
+			strategy_version_id = $3,
+			symbol = $4,
+			side = $5,
+			type = $6,
+			status = $7,
+			quantity = $8,
+			price = $9,
+			metadata = $10
+		where id = $1
+	`, order.ID, order.AccountID, nullIfEmpty(order.StrategyVersionID), order.Symbol, order.Side, order.Type, order.Status, order.Quantity, order.Price, raw)
+	return order, err
+}
+
+func (s *Store) ListFills() ([]domain.Fill, error) {
+	rows, err := s.db.Query(`
+		select id, order_id, price, quantity, fee, created_at
+		from fills order by created_at asc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.Fill{}
+	for rows.Next() {
+		var item domain.Fill
+		if err := rows.Scan(&item.ID, &item.OrderID, &item.Price, &item.Quantity, &item.Fee, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
+	fill.ID = fmt.Sprintf("fill-%d", time.Now().UTC().UnixNano())
+	fill.CreatedAt = time.Now().UTC()
+
+	_, err := s.db.Exec(`
+		insert into fills (id, order_id, price, quantity, fee, created_at)
+		values ($1, $2, $3, $4, $5, $6)
+	`, fill.ID, fill.OrderID, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+	return fill, err
+}
+
 func (s *Store) ListPositions() ([]domain.Position, error) {
 	rows, err := s.db.Query(`
 		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
@@ -250,13 +321,69 @@ func (s *Store) ListPositions() ([]domain.Position, error) {
 
 	items := []domain.Position{}
 	for rows.Next() {
-		var item domain.Position
-		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyVersionID, &item.Symbol, &item.Side, &item.Quantity, &item.EntryPrice, &item.MarkPrice, &item.UpdatedAt); err != nil {
+		var (
+			item              domain.Position
+			strategyVersionID sql.NullString
+		)
+		if err := rows.Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Quantity, &item.EntryPrice, &item.MarkPrice, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
+		item.StrategyVersionID = strategyVersionID.String
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) FindPosition(accountID, symbol string) (domain.Position, bool, error) {
+	var item domain.Position
+	var strategyVersionID sql.NullString
+	err := s.db.QueryRow(`
+		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
+		from positions
+		where account_id = $1 and symbol = $2
+		order by updated_at desc
+		limit 1
+	`, accountID, symbol).Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Quantity, &item.EntryPrice, &item.MarkPrice, &item.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.Position{}, false, nil
+		}
+		return domain.Position{}, false, err
+	}
+	item.StrategyVersionID = strategyVersionID.String
+	return item, true, nil
+}
+
+func (s *Store) SavePosition(position domain.Position) (domain.Position, error) {
+	now := time.Now().UTC()
+	position.UpdatedAt = now
+	if position.ID == "" {
+		position.ID = fmt.Sprintf("position-%d", now.UnixNano())
+		_, err := s.db.Exec(`
+			insert into positions (id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, position.ID, position.AccountID, nullIfEmpty(position.StrategyVersionID), position.Symbol, position.Side, position.Quantity, position.EntryPrice, position.MarkPrice, position.UpdatedAt)
+		return position, err
+	}
+
+	_, err := s.db.Exec(`
+		update positions
+		set account_id = $2,
+			strategy_version_id = $3,
+			symbol = $4,
+			side = $5,
+			quantity = $6,
+			entry_price = $7,
+			mark_price = $8,
+			updated_at = $9
+		where id = $1
+	`, position.ID, position.AccountID, nullIfEmpty(position.StrategyVersionID), position.Symbol, position.Side, position.Quantity, position.EntryPrice, position.MarkPrice, position.UpdatedAt)
+	return position, err
+}
+
+func (s *Store) DeletePosition(positionID string) error {
+	_, err := s.db.Exec(`delete from positions where id = $1`, positionID)
+	return err
 }
 
 func (s *Store) ListBacktests() ([]domain.BacktestRun, error) {
