@@ -143,6 +143,9 @@ type BacktestOptions = {
   notes: string[];
 };
 
+type ReplayReasonStats = Record<string, Record<string, number>>;
+type ReplaySample = Record<string, unknown>;
+
 type SourceFilter = "all" | "paper" | "backtest";
 type EventFilter = "all" | "initial" | "reentry" | "pt" | "sl";
 type TimeWindow = "6h" | "12h" | "1d" | "3d";
@@ -197,6 +200,15 @@ function App() {
   const selectedExecutionSchema = backtestOptions?.schema?.[backtestForm.executionDataSource];
   const selectedSymbolAvailable =
     selectedExecutionSymbols.length === 0 || selectedExecutionSymbols.includes(backtestForm.symbol.trim().toUpperCase());
+  const latestBacktest = backtests.length > 0 ? backtests[backtests.length - 1] : null;
+  const latestBacktestSummary = (latestBacktest?.resultSummary ?? {}) as Record<string, unknown>;
+  const latestReplayByReason = (latestBacktestSummary.replayLedgerByReason ?? {}) as ReplayReasonStats;
+  const latestReplaySkippedSamples = Array.isArray(latestBacktestSummary.replayLedgerSkippedSamples)
+    ? (latestBacktestSummary.replayLedgerSkippedSamples as ReplaySample[])
+    : [];
+  const latestReplayCompletedSamples = Array.isArray(latestBacktestSummary.replayLedgerCompletedSamples)
+    ? (latestBacktestSummary.replayLedgerCompletedSamples as ReplaySample[])
+    : [];
 
   async function loadDashboard() {
     const [summaryData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData] = await Promise.all([
@@ -545,6 +557,93 @@ function App() {
                   ])}
                 emptyMessage="No backtests yet"
               />
+              <div className="backtest-detail-card">
+                <div className="panel-header">
+                  <div>
+                    <p className="panel-kicker">Latest Run</p>
+                    <h3>最近一次回测详情</h3>
+                  </div>
+                  <div className="range-box">
+                    <span>{latestBacktest?.status ?? "NO RUN"}</span>
+                    <span>{String(latestBacktest?.parameters?.backtestMode ?? "--")}</span>
+                  </div>
+                </div>
+                {latestBacktest ? (
+                  <>
+                    <div className="detail-grid">
+                      <div className="detail-item">
+                        <span>Matched Files</span>
+                        <strong>{String(latestBacktestSummary.matchedArchiveFiles ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Preview Ticks</span>
+                        <strong>{String(latestBacktestSummary.streamPreviewTicks ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Replay Trades</span>
+                        <strong>{String(latestBacktestSummary.replayLedgerTrades ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Replay Completed</span>
+                        <strong>{String(latestBacktestSummary.replayLedgerCompleted ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Replay Skipped</span>
+                        <strong>{String(latestBacktestSummary.replayLedgerSkipped ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Replay PnL</span>
+                        <strong>{formatSigned(getNumber(latestBacktestSummary.replayLedgerPnL))}</strong>
+                      </div>
+                    </div>
+
+                    <div className="backtest-breakdown">
+                      <h4>By Reason</h4>
+                      {Object.keys(latestReplayByReason).length > 0 ? (
+                        <SimpleTable
+                          columns={["Reason", "Trades", "Completed", "Skipped", "Entry", "Exit"]}
+                          rows={Object.entries(latestReplayByReason).map(([reason, stats]) => [
+                            reason,
+                            String(stats.trades ?? 0),
+                            String(stats.completed ?? 0),
+                            String(stats.skipped ?? 0),
+                            String(stats.skippedEntry ?? 0),
+                            String(stats.skippedExit ?? 0),
+                          ])}
+                          emptyMessage="No grouped replay stats"
+                        />
+                      ) : (
+                        <div className="empty-state empty-state-compact">No replay grouping data</div>
+                      )}
+                    </div>
+
+                    <div className="backtest-samples-grid">
+                      <div className="backtest-sample-panel">
+                        <h4>Completed Samples</h4>
+                        {latestReplayCompletedSamples.length > 0 ? (
+                          latestReplayCompletedSamples.map((sample, index) => (
+                            <SampleCard key={`completed-${index}`} sample={sample} />
+                          ))
+                        ) : (
+                          <div className="empty-state empty-state-compact">No completed samples</div>
+                        )}
+                      </div>
+                      <div className="backtest-sample-panel">
+                        <h4>Skipped Samples</h4>
+                        {latestReplaySkippedSamples.length > 0 ? (
+                          latestReplaySkippedSamples.map((sample, index) => (
+                            <SampleCard key={`skipped-${index}`} sample={sample} />
+                          ))
+                        ) : (
+                          <div className="empty-state empty-state-compact">No skipped samples</div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="empty-state empty-state-compact">No backtest detail yet</div>
+                )}
+              </div>
             </div>
           </div>
         </section>
@@ -1052,6 +1151,28 @@ function SimpleTable(props: { columns: string[]; rows: string[][]; emptyMessage:
   );
 }
 
+function SampleCard(props: { sample: ReplaySample }) {
+  const sample = props.sample;
+  return (
+    <div className="sample-card">
+      <div className="sample-title">{String(sample.reason ?? sample.entryCause ?? "sample")}</div>
+      <div className="sample-line">
+        entry: {String(sample.entryTime ?? "--")} · {formatMaybeNumber(sample.entryPrice)}
+      </div>
+      <div className="sample-line">
+        exit: {String(sample.exitTime ?? "--")} · {formatMaybeNumber(sample.exitPrice)}
+      </div>
+      <div className="sample-line">
+        fill: {formatMaybeNumber(sample.bracketEntryFill)} → {formatMaybeNumber(sample.bracketExitPrice)}
+      </div>
+      <div className="sample-line">
+        cause: {String(sample.entryCause ?? "--")} / {String(sample.exitCause ?? sample.bracketExitType ?? "--")}
+      </div>
+      <div className="sample-line">pnl: {formatMaybeNumber(sample.bracketRealizedPnL)}</div>
+    </div>
+  );
+}
+
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, init);
   if (!response.ok) {
@@ -1330,6 +1451,14 @@ function formatNumber(value?: number, digits = 2) {
     return "--";
   }
   return value.toFixed(digits);
+}
+
+function formatMaybeNumber(value: unknown) {
+  const number = getNumber(value);
+  if (number == null) {
+    return "--";
+  }
+  return number.toFixed(2);
 }
 
 function formatTime(value: string) {
