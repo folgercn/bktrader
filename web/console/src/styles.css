@@ -403,6 +403,54 @@ a {
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.72);
 }
 
+.filter-row {
+  margin-top: 14px;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.filter-group {
+  display: grid;
+  gap: 8px;
+}
+
+.filter-label {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.filter-chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+  transition: 140ms ease;
+}
+
+.filter-chip:hover {
+  color: var(--ink);
+  border-color: rgba(14, 109, 96, 0.28);
+}
+
+.filter-chip-active {
+  color: var(--accent);
+  border-color: rgba(14, 109, 96, 0.35);
+  background: var(--accent-soft);
+}
+
 .equity-chart {
   width: 100%;
   height: 240px;

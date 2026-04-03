@@ -102,6 +102,9 @@ type MarkerLegendItem = {
   color: string;
 };
 
+type SourceFilter = "all" | "paper" | "backtest";
+type EventFilter = "all" | "initial" | "reentry" | "pt" | "sl";
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -116,6 +119,8 @@ function App() {
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
@@ -191,8 +196,8 @@ function App() {
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
   const candleRange = useMemo(() => summarizeTimeRange(candles.map((item) => item.time)), [candles]);
   const chartAnnotations = useMemo(
-    () => filterChartAnnotations(annotations, candles, primarySession?.id),
-    [annotations, candles, primarySession?.id]
+    () => filterChartAnnotations(annotations, candles, primarySession?.id, sourceFilter, eventFilter),
+    [annotations, candles, primarySession?.id, sourceFilter, eventFilter]
   );
   const markerLegend = useMemo<MarkerLegendItem[]>(
     () => [
@@ -350,6 +355,30 @@ function App() {
             ) : (
               <div className="empty-state">No market candles yet</div>
             )}
+          </div>
+          <div className="filter-row">
+            <FilterGroup
+              label="Source"
+              value={sourceFilter}
+              options={[
+                { value: "all", label: "All" },
+                { value: "paper", label: "Paper" },
+                { value: "backtest", label: "Backtest" },
+              ]}
+              onChange={(value) => setSourceFilter(value as SourceFilter)}
+            />
+            <FilterGroup
+              label="Event"
+              value={eventFilter}
+              options={[
+                { value: "all", label: "All" },
+                { value: "initial", label: "Initial" },
+                { value: "reentry", label: "Reentry" },
+                { value: "pt", label: "PT" },
+                { value: "sl", label: "SL" },
+              ]}
+              onChange={(value) => setEventFilter(value as EventFilter)}
+            />
           </div>
           <div className="marker-legend">
             {markerLegend.map((item) => (
@@ -586,6 +615,31 @@ function ActionButton(props: {
   );
 }
 
+function FilterGroup(props: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="filter-group">
+      <span className="filter-label">{props.label}</span>
+      <div className="filter-chip-row">
+        {props.options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={`filter-chip ${props.value === option.value ? "filter-chip-active" : ""}`}
+            onClick={() => props.onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MetricCard(props: { label: string; value: string; tone?: "accent" }) {
   return (
     <article className={`metric-card ${props.tone === "accent" ? "metric-card-accent" : ""}`}>
@@ -675,7 +729,13 @@ function summarizeTimeRange(values: string[]) {
   };
 }
 
-function filterChartAnnotations(items: ChartAnnotation[], candles: ChartCandle[], sessionID?: string) {
+function filterChartAnnotations(
+  items: ChartAnnotation[],
+  candles: ChartCandle[],
+  sessionID?: string,
+  sourceFilter: SourceFilter = "all",
+  eventFilter: EventFilter = "all"
+) {
   if (candles.length === 0) {
     return [];
   }
@@ -687,11 +747,35 @@ function filterChartAnnotations(items: ChartAnnotation[], candles: ChartCandle[]
     if (Number.isNaN(ts) || ts < start || ts > end) {
       return false;
     }
-    if (item.source === "paper") {
-      return item.metadata?.paperSession === sessionID;
+    if (sourceFilter !== "all" && item.source !== sourceFilter) {
+      return false;
     }
-    return item.source === "backtest";
+    if (item.source === "paper" && item.metadata?.paperSession !== sessionID) {
+      return false;
+    }
+    if (item.source !== "paper" && item.source !== "backtest" && sourceFilter !== "all") {
+      return false;
+    }
+    if (eventFilter === "all") {
+      return item.source === "paper" || item.source === "backtest";
+    }
+    return matchesEventFilter(item, eventFilter);
   });
+}
+
+function matchesEventFilter(item: ChartAnnotation, filter: EventFilter) {
+  switch (filter) {
+    case "initial":
+      return item.type.includes("initial");
+    case "reentry":
+      return item.type.includes("reentry");
+    case "pt":
+      return item.type.includes("pt");
+    case "sl":
+      return item.type.includes("sl");
+    default:
+      return true;
+  }
 }
 
 function resolveChartAnchor(session?: PaperSession, orders: Order[] = []) {
