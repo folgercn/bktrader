@@ -954,12 +954,14 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 	skippedEntryNotHit := 0
 	skippedExitNotHit := 0
 	skippedErrors := 0
+	skippedSamples := make([]map[string]any, 0, 3)
 
 	for _, trade := range trades {
 		plan, ok := bracketPlanFromReplayTrade(trade)
 		if !ok {
 			skipped++
 			skippedInvalid++
+			skippedSamples = appendReplaySkipSample(skippedSamples, trade, "invalid_trade_shape", nil)
 			continue
 		}
 		result, err := p.simulateTickBracket(
@@ -971,6 +973,9 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 		if err != nil {
 			skipped++
 			skippedErrors++
+			skippedSamples = appendReplaySkipSample(skippedSamples, trade, "simulation_error", map[string]any{
+				"error": err.Error(),
+			})
 			continue
 		}
 		if ok, _ := result["bracketSimulationOk"].(bool); !ok {
@@ -978,10 +983,13 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 			switch stringValue(result["bracketFinalState"]) {
 			case "waiting_entry":
 				skippedEntryNotHit++
+				skippedSamples = appendReplaySkipSample(skippedSamples, trade, "entry_not_hit", result)
 			case "entered":
 				skippedExitNotHit++
+				skippedSamples = appendReplaySkipSample(skippedSamples, trade, "exit_not_hit", result)
 			default:
 				skippedErrors++
+				skippedSamples = appendReplaySkipSample(skippedSamples, trade, "simulation_error", result)
 			}
 			continue
 		}
@@ -1003,10 +1011,32 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 		"replayLedgerSkippedEntry":   skippedEntryNotHit,
 		"replayLedgerSkippedExit":    skippedExitNotHit,
 		"replayLedgerSkippedError":   skippedErrors,
+		"replayLedgerSkippedSamples": skippedSamples,
 		"replayLedgerPnL":            totalPnL,
 		"replayLedgerStopHits":       stopHits,
 		"replayLedgerTakeProfitHits": tpHits,
 	}, nil
+}
+
+func appendReplaySkipSample(samples []map[string]any, trade replayTrade, reason string, extra map[string]any) []map[string]any {
+	if len(samples) >= 3 {
+		return samples
+	}
+	item := map[string]any{
+		"reason":     reason,
+		"entryTime":  trade.Entry.Time.UTC().Format(time.RFC3339),
+		"entryType":  trade.Entry.Type,
+		"entryPrice": trade.Entry.Price,
+		"entryCause": trade.Entry.Reason,
+		"exitTime":   trade.Exit.Time.UTC().Format(time.RFC3339),
+		"exitPrice":  trade.Exit.Price,
+		"exitCause":  trade.Exit.Reason,
+		"notional":   trade.Entry.Notional,
+	}
+	for key, value := range extra {
+		item[key] = value
+	}
+	return append(samples, item)
 }
 
 func pairReplayTrades(events []strategyReplayEvent, symbol string, from, to time.Time) []replayTrade {
