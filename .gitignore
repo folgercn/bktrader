@@ -17,3 +17,5 @@ dataset/
 btc_perp_1m_dataset/
 .idea/
 .vscode/*.code-workspace
+/platform-api
+/db-migrate

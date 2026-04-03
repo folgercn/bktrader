@@ -98,11 +98,22 @@ npm run dev
 
 在仓库 `Settings -> Secrets and variables -> Actions` 中添加：
 
-- `DEPLOY_HOST`：部署目标主机地址
-- `DEPLOY_USER`：部署用户
-- `DEPLOY_PATH`：部署目录，例如 `/opt/bktrader`
+- `DEPLOY_HOST`：部署目标主机地址（Macmini 可填局域网 IP、Tailscale 地址或可直连域名）
+- `DEPLOY_USER`：部署用户，例如 `fujun`
+- `DEPLOY_PATH`：部署目录，例如 `/Users/fujun/services/bktrader`
 - `DEPLOY_SSH_KEY`：用于 SSH 部署的私钥
-- `APP_ENV_FILE`：部署机上的环境文件路径，例如 `/opt/bktrader/.env`
+- `APP_ENV_FILE`：部署机上的环境文件路径，例如 `/Users/fujun/services/bktrader/.env`
+
+### Macmini 部署建议
+
+如果目标部署机就是 Macmini，本仓库推荐这样设置：
+
+- `DEPLOY_HOST=<Macmini 可被 GitHub Actions 访问到的地址>`
+- `DEPLOY_USER=fujun`
+- `DEPLOY_PATH=/Users/fujun/services/bktrader`
+- `APP_ENV_FILE=/Users/fujun/services/bktrader/.env`
+
+> 注意：如果 GitHub Actions 需要连回你家里的 Macmini，Macmini 必须能被公网、FRP、Tailscale Funnel/Serve 或其他稳定入口访问；仅本地局域网 IP 无法被 GitHub 云端 runner 直接访问。
 
 ### 推荐的部署机准备
 

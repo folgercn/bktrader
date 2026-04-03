@@ -102,4 +102,4 @@ jobs:
           test -n "$DEPLOY_USER"
           test -n "$DEPLOY_PATH"
           ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            "export DEPLOY_PATH='$DEPLOY_PATH' IMAGE_REPO='$IMAGE_REPO' IMAGE_TAG='$IMAGE_TAG' APP_ENV_FILE='$APP_ENV_FILE' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN'; bash '$DEPLOY_PATH/scripts/deploy.sh'"
+            "export DEPLOY_PATH='$DEPLOY_PATH' IMAGE_REPO='$IMAGE_REPO' IMAGE_TAG='$IMAGE_TAG' APP_ENV_FILE='$APP_ENV_FILE' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN'; chmod +x '$DEPLOY_PATH/scripts/deploy.sh'; bash '$DEPLOY_PATH/scripts/deploy.sh'"
