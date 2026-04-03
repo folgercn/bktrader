@@ -74,6 +74,11 @@ type bracketPlan struct {
 	Quantity        float64
 }
 
+type replayTrade struct {
+	Entry strategyReplayEvent
+	Exit  strategyReplayEvent
+}
+
 func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.BacktestRun {
 	executionSource := stringValue(backtest.Parameters["executionDataSource"])
 	signalTimeframe := stringValue(backtest.Parameters["signalTimeframe"])
@@ -141,6 +146,16 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 				resultSummary["bracketError"] = err.Error()
 			} else {
 				for key, value := range sim {
+					resultSummary[key] = value
+				}
+			}
+		}
+		if shouldReplayLedger(backtest.Parameters) {
+			replaySummary, err := p.simulateReplayLedgerOnTick(symbol, from, to)
+			if err != nil {
+				resultSummary["replayLedgerError"] = err.Error()
+			} else {
+				for key, value := range replaySummary {
 					resultSummary[key] = value
 				}
 			}
@@ -895,6 +910,144 @@ func (p *Platform) simulateTickBracket(symbol, from, to string, plan bracketPlan
 			return result, nil
 		}
 	}
+}
+
+func shouldReplayLedger(parameters map[string]any) bool {
+	value := parameters["replayLedger"]
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
+}
+
+func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[string]any, error) {
+	ledger, err := p.loadReplayLedger()
+	if err != nil {
+		return nil, err
+	}
+	trades := pairReplayTrades(ledger, normalizeBacktestSymbol(symbol), parseOptionalRFC3339(from), parseOptionalRFC3339(to))
+	if len(trades) == 0 {
+		return map[string]any{
+			"replayLedgerTrades":         0,
+			"replayLedgerCompleted":      0,
+			"replayLedgerSkipped":        0,
+			"replayLedgerPnL":            0,
+			"replayLedgerStopHits":       0,
+			"replayLedgerTakeProfitHits": 0,
+		}, nil
+	}
+
+	totalPnL := 0.0
+	completed := 0
+	skipped := 0
+	stopHits := 0
+	tpHits := 0
+
+	for _, trade := range trades {
+		plan, ok := bracketPlanFromReplayTrade(trade)
+		if !ok {
+			skipped++
+			continue
+		}
+		result, err := p.simulateTickBracket(
+			symbol,
+			trade.Entry.Time.UTC().Format(time.RFC3339),
+			trade.Exit.Time.UTC().Format(time.RFC3339),
+			plan,
+		)
+		if err != nil {
+			skipped++
+			continue
+		}
+		if ok, _ := result["bracketSimulationOk"].(bool); !ok {
+			skipped++
+			continue
+		}
+		completed++
+		totalPnL += parseFloatValue(result["bracketRealizedPnL"])
+		switch stringValue(result["bracketExitType"]) {
+		case "stop_loss":
+			stopHits++
+		case "take_profit":
+			tpHits++
+		}
+	}
+
+	return map[string]any{
+		"replayLedgerTrades":         len(trades),
+		"replayLedgerCompleted":      completed,
+		"replayLedgerSkipped":        skipped,
+		"replayLedgerPnL":            totalPnL,
+		"replayLedgerStopHits":       stopHits,
+		"replayLedgerTakeProfitHits": tpHits,
+	}, nil
+}
+
+func pairReplayTrades(events []strategyReplayEvent, symbol string, from, to time.Time) []replayTrade {
+	_ = symbol
+	trades := make([]replayTrade, 0)
+	var current *strategyReplayEvent
+	for _, event := range events {
+		if event.Notional <= 0 {
+			continue
+		}
+		switch strings.ToUpper(strings.TrimSpace(event.Type)) {
+		case "BUY", "SHORT":
+			entry := event
+			current = &entry
+		case "EXIT":
+			if current == nil {
+				continue
+			}
+			trade := replayTrade{
+				Entry: *current,
+				Exit:  event,
+			}
+			if replayTradeInRange(trade, from, to) {
+				trades = append(trades, trade)
+			}
+			current = nil
+		}
+	}
+	return trades
+}
+
+func replayTradeInRange(trade replayTrade, from, to time.Time) bool {
+	if !from.IsZero() && trade.Exit.Time.Before(from) {
+		return false
+	}
+	if !to.IsZero() && trade.Entry.Time.After(to) {
+		return false
+	}
+	return true
+}
+
+func bracketPlanFromReplayTrade(trade replayTrade) (bracketPlan, bool) {
+	entryType := strings.ToUpper(strings.TrimSpace(trade.Entry.Type))
+	exitReason := strings.ToUpper(strings.TrimSpace(trade.Exit.Reason))
+	if entryType != "BUY" && entryType != "SHORT" {
+		return bracketPlan{}, false
+	}
+	if trade.Entry.Price <= 0 || trade.Exit.Price <= 0 || trade.Entry.Notional <= 0 {
+		return bracketPlan{}, false
+	}
+
+	quantity := trade.Entry.Notional / trade.Entry.Price
+	plan := bracketPlan{
+		Side:       normalizeBracketSide(entryType),
+		EntryPrice: trade.Entry.Price,
+		Quantity:   quantity,
+	}
+	if exitReason == "SL" {
+		plan.StopLossPrice = trade.Exit.Price
+	} else {
+		plan.TakeProfitPrice = trade.Exit.Price
+	}
+	return plan, true
 }
 
 func normalizeBracketSide(side string) string {

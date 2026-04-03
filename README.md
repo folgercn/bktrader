@@ -143,6 +143,19 @@ TICK_DATA_DIR=./dataset/archive
 - `bracketExitType / bracketExitTime / bracketExitPrice`
 - `bracketRealizedPnL`
 
+如果在回测参数里传入 `replayLedger=true`，平台还会：
+
+- 读取 [FINAL_1D_LEDGER_BEST_SL.csv](/Users/wuyaocheng/Downloads/bkTrader/FINAL_1D_LEDGER_BEST_SL.csv)
+- 将账本里的 entry/exit 事件配对成交易
+- 在对应时间窗口内用 `tick` 执行层做逐笔回放摘要
+
+当前返回的摘要字段包括：
+
+- `replayLedgerTrades`
+- `replayLedgerCompleted`
+- `replayLedgerSkipped`
+- `replayLedgerPnL`
+
 推荐做法：
 
 1. 把真实逐笔数据清洗成统一 CSV。
