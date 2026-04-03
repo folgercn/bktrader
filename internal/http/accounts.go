@@ -58,6 +58,24 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, items)
 	})
 
+	mux.HandleFunc("/api/v1/account-equity-snapshots", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		accountID := r.URL.Query().Get("accountId")
+		if accountID == "" {
+			writeError(w, http.StatusBadRequest, "accountId is required")
+			return
+		}
+		items, err := platform.ListAccountEquitySnapshots(accountID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
 	mux.HandleFunc("/api/v1/positions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

@@ -20,6 +20,7 @@ type Store struct {
 	positions       map[string]domain.Position
 	backtests       map[string]domain.BacktestRun
 	paperSessions   map[string]domain.PaperSession
+	equitySnapshots map[string][]domain.AccountEquitySnapshot
 	signalSources   []map[string]any
 	annotations     []domain.ChartAnnotation
 
@@ -37,6 +38,7 @@ func NewStore() *Store {
 		positions:       make(map[string]domain.Position),
 		backtests:       make(map[string]domain.BacktestRun),
 		paperSessions:   make(map[string]domain.PaperSession),
+		equitySnapshots: make(map[string][]domain.AccountEquitySnapshot),
 		signalSources: []map[string]any{
 			{
 				"id":          "signal-source-bk-1d",
@@ -176,6 +178,20 @@ func NewStore() *Store {
 		Status:      "RUNNING",
 		StartEquity: 100000.0,
 		CreatedAt:   now,
+	}
+	store.equitySnapshots[paper.ID] = []domain.AccountEquitySnapshot{
+		{
+			ID:                "equity-snapshot-main",
+			AccountID:         paper.ID,
+			StartEquity:       100000.0,
+			RealizedPnL:       0,
+			UnrealizedPnL:     4.2,
+			Fees:              0.68,
+			NetEquity:         100003.52,
+			ExposureNotional:  684.2,
+			OpenPositionCount: 1,
+			CreatedAt:         now,
+		},
 	}
 
 	return store
@@ -449,6 +465,23 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 	}
 	s.paperSessions[id] = item
 	return item, nil
+}
+
+func (s *Store) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := append([]domain.AccountEquitySnapshot(nil), s.equitySnapshots[accountID]...)
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *Store) CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot.ID = s.nextID("equity-snapshot")
+	snapshot.CreatedAt = time.Now().UTC()
+	s.equitySnapshots[snapshot.AccountID] = append(s.equitySnapshots[snapshot.AccountID], snapshot)
+	return snapshot, nil
 }
 
 func (s *Store) ListAnnotations(symbol string) []domain.ChartAnnotation {

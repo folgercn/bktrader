@@ -64,6 +64,19 @@ type AccountSummary struct {
 	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
+type AccountEquitySnapshot struct {
+	ID                string    `json:"id"`
+	AccountID         string    `json:"accountId"`
+	StartEquity       float64   `json:"startEquity"`
+	RealizedPnL       float64   `json:"realizedPnl"`
+	UnrealizedPnL     float64   `json:"unrealizedPnl"`
+	Fees              float64   `json:"fees"`
+	NetEquity         float64   `json:"netEquity"`
+	ExposureNotional  float64   `json:"exposureNotional"`
+	OpenPositionCount int       `json:"openPositionCount"`
+	CreatedAt         time.Time `json:"createdAt"`
+}
+
 type Order struct {
 	ID                string         `json:"id"`
 	AccountID         string         `json:"accountId"`

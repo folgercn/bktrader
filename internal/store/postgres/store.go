@@ -480,6 +480,40 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 	return item, err
 }
 
+func (s *Store) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
+	rows, err := s.db.Query(`
+		select id, account_id, start_equity, realized_pnl, unrealized_pnl, fees, net_equity, exposure_notional, open_position_count, created_at
+		from account_equity_snapshots
+		where account_id = $1
+		order by created_at asc
+	`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.AccountEquitySnapshot{}
+	for rows.Next() {
+		var item domain.AccountEquitySnapshot
+		if err := rows.Scan(&item.ID, &item.AccountID, &item.StartEquity, &item.RealizedPnL, &item.UnrealizedPnL, &item.Fees, &item.NetEquity, &item.ExposureNotional, &item.OpenPositionCount, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error) {
+	snapshot.ID = fmt.Sprintf("equity-snapshot-%d", time.Now().UTC().UnixNano())
+	snapshot.CreatedAt = time.Now().UTC()
+	_, err := s.db.Exec(`
+		insert into account_equity_snapshots (
+			id, account_id, start_equity, realized_pnl, unrealized_pnl, fees, net_equity, exposure_notional, open_position_count, created_at
+		) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, snapshot.ID, snapshot.AccountID, snapshot.StartEquity, snapshot.RealizedPnL, snapshot.UnrealizedPnL, snapshot.Fees, snapshot.NetEquity, snapshot.ExposureNotional, snapshot.OpenPositionCount, snapshot.CreatedAt)
+	return snapshot, err
+}
+
 func nullIfEmpty(v string) any {
 	if v == "" {
 		return nil

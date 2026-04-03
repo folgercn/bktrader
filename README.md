@@ -61,6 +61,7 @@ Available MVP endpoints:
 - `GET|POST /api/v1/strategies`
 - `GET|POST /api/v1/accounts`
 - `GET /api/v1/account-summaries`
+- `GET /api/v1/account-equity-snapshots?accountId=...`
 - `GET|POST /api/v1/orders`
 - `GET /api/v1/fills`
 - `GET /api/v1/positions`
@@ -87,3 +88,4 @@ npm run dev
 - `cmd/db-migrate` applies embedded SQL migrations and records them in `schema_migrations`.
 - Orders submitted to `PAPER` accounts are filled immediately, create `fills`, and update net `positions`.
 - `GET /api/v1/account-summaries` returns paper-account equity, fees, realized/unrealized PnL, and exposure snapshots.
+- Equity snapshots are appended when a paper session is created and when a paper order is filled.

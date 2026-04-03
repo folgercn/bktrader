@@ -104,52 +104,7 @@ func (p *Platform) ListAccountSummaries() ([]domain.AccountSummary, error) {
 
 	summaries := make([]domain.AccountSummary, 0, len(accounts))
 	for _, account := range accounts {
-		startEquity := startEquityByAccount[account.ID]
-		if startEquity <= 0 && account.Mode == "PAPER" {
-			startEquity = 100000
-		}
-
-		realized := 0.0
-		for key, state := range states {
-			if strings.HasPrefix(key, account.ID+"|") {
-				realized += state.realizedPnL
-			}
-		}
-
-		unrealized := 0.0
-		exposure := 0.0
-		openCount := 0
-		for _, position := range positions {
-			if position.AccountID != account.ID {
-				continue
-			}
-			openCount++
-			exposure += absFloat(position.Quantity * position.MarkPrice)
-			switch strings.ToUpper(position.Side) {
-			case "LONG":
-				unrealized += (position.MarkPrice - position.EntryPrice) * position.Quantity
-			case "SHORT":
-				unrealized += (position.EntryPrice - position.MarkPrice) * position.Quantity
-			}
-		}
-
-		fees := feesByAccount[account.ID]
-		netEquity := startEquity + realized + unrealized - fees
-		summaries = append(summaries, domain.AccountSummary{
-			AccountID:         account.ID,
-			AccountName:       account.Name,
-			Mode:              account.Mode,
-			Exchange:          account.Exchange,
-			Status:            account.Status,
-			StartEquity:       round2(startEquity),
-			RealizedPnL:       round2(realized),
-			UnrealizedPnL:     round2(unrealized),
-			Fees:              round2(fees),
-			NetEquity:         round2(netEquity),
-			ExposureNotional:  round2(exposure),
-			OpenPositionCount: openCount,
-			UpdatedAt:         time.Now().UTC(),
-		})
+		summaries = append(summaries, buildAccountSummary(account, positions, startEquityByAccount, states, feesByAccount))
 	}
 	return summaries, nil
 }
@@ -197,7 +152,14 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 	createdOrder.Metadata = cloneMetadata(createdOrder.Metadata)
 	createdOrder.Metadata["executionMode"] = "paper"
 	createdOrder.Metadata["fillPolicy"] = "immediate"
-	return p.store.UpdateOrder(createdOrder)
+	updatedOrder, err := p.store.UpdateOrder(createdOrder)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if err := p.captureAccountSnapshot(account.ID); err != nil {
+		return domain.Order{}, err
+	}
+	return updatedOrder, nil
 }
 
 func (p *Platform) ListPositions() ([]domain.Position, error) {
@@ -221,7 +183,18 @@ func (p *Platform) ListPaperSessions() ([]domain.PaperSession, error) {
 }
 
 func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error) {
-	return p.store.CreatePaperSession(accountID, strategyID, startEquity)
+	session, err := p.store.CreatePaperSession(accountID, strategyID, startEquity)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	if err := p.captureAccountSnapshot(accountID); err != nil {
+		return domain.PaperSession{}, err
+	}
+	return session, nil
+}
+
+func (p *Platform) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
+	return p.store.ListAccountEquitySnapshots(accountID)
 }
 
 func (p *Platform) ListAnnotations(symbol string) []domain.ChartAnnotation {
@@ -533,4 +506,83 @@ func absFloat(v float64) float64 {
 		return -v
 	}
 	return v
+}
+
+func (p *Platform) captureAccountSnapshot(accountID string) error {
+	summaries, err := p.ListAccountSummaries()
+	if err != nil {
+		return err
+	}
+	for _, summary := range summaries {
+		if summary.AccountID != accountID {
+			continue
+		}
+		_, err := p.store.CreateAccountEquitySnapshot(domain.AccountEquitySnapshot{
+			AccountID:         summary.AccountID,
+			StartEquity:       summary.StartEquity,
+			RealizedPnL:       summary.RealizedPnL,
+			UnrealizedPnL:     summary.UnrealizedPnL,
+			Fees:              summary.Fees,
+			NetEquity:         summary.NetEquity,
+			ExposureNotional:  summary.ExposureNotional,
+			OpenPositionCount: summary.OpenPositionCount,
+		})
+		return err
+	}
+	return nil
+}
+
+func buildAccountSummary(
+	account domain.Account,
+	positions []domain.Position,
+	startEquityByAccount map[string]float64,
+	states map[string]*pnlState,
+	feesByAccount map[string]float64,
+) domain.AccountSummary {
+	startEquity := startEquityByAccount[account.ID]
+	if startEquity <= 0 && account.Mode == "PAPER" {
+		startEquity = 100000
+	}
+
+	realized := 0.0
+	for key, state := range states {
+		if strings.HasPrefix(key, account.ID+"|") {
+			realized += state.realizedPnL
+		}
+	}
+
+	unrealized := 0.0
+	exposure := 0.0
+	openCount := 0
+	for _, position := range positions {
+		if position.AccountID != account.ID {
+			continue
+		}
+		openCount++
+		exposure += absFloat(position.Quantity * position.MarkPrice)
+		switch strings.ToUpper(position.Side) {
+		case "LONG":
+			unrealized += (position.MarkPrice - position.EntryPrice) * position.Quantity
+		case "SHORT":
+			unrealized += (position.EntryPrice - position.MarkPrice) * position.Quantity
+		}
+	}
+
+	fees := feesByAccount[account.ID]
+	netEquity := startEquity + realized + unrealized - fees
+	return domain.AccountSummary{
+		AccountID:         account.ID,
+		AccountName:       account.Name,
+		Mode:              account.Mode,
+		Exchange:          account.Exchange,
+		Status:            account.Status,
+		StartEquity:       round2(startEquity),
+		RealizedPnL:       round2(realized),
+		UnrealizedPnL:     round2(unrealized),
+		Fees:              round2(fees),
+		NetEquity:         round2(netEquity),
+		ExposureNotional:  round2(exposure),
+		OpenPositionCount: openCount,
+		UpdatedAt:         time.Now().UTC(),
+	}
 }
