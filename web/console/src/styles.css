@@ -248,6 +248,10 @@ a {
   padding-bottom: 18px;
 }
 
+.panel-backtests {
+  padding-bottom: 18px;
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -328,6 +332,66 @@ a {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.backtest-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.05fr);
+  gap: 18px;
+}
+
+.backtest-form,
+.backtest-list {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 16px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.form-field {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.form-field span {
+  color: var(--muted);
+}
+
+.form-field input,
+.form-field select {
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  font: inherit;
+}
+
+.backtest-actions {
+  margin-top: 14px;
+}
+
+.backtest-notes {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.note-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(217, 238, 232, 0.55);
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .action-button {
@@ -597,6 +661,10 @@ tbody tr:last-child td {
   .content-grid {
     grid-template-columns: 1fr;
   }
+
+  .backtest-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 920px) {
@@ -625,6 +693,10 @@ tbody tr:last-child td {
 
   .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }
 

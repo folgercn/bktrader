@@ -19,6 +19,25 @@ type AccountSummary = {
   updatedAt: string;
 };
 
+type StrategyVersion = {
+  id: string;
+  strategyId: string;
+  version: string;
+  signalTimeframe: string;
+  executionTimeframe: string;
+  parameters?: Record<string, unknown>;
+  createdAt: string;
+};
+
+type StrategyRecord = {
+  id: string;
+  name: string;
+  status: string;
+  description: string;
+  createdAt: string;
+  currentVersion?: StrategyVersion;
+};
+
 type AccountEquitySnapshot = {
   id: string;
   accountId: string;
@@ -102,6 +121,23 @@ type MarkerLegendItem = {
   color: string;
 };
 
+type BacktestRun = {
+  id: string;
+  strategyVersionId: string;
+  status: string;
+  parameters?: Record<string, unknown>;
+  resultSummary?: Record<string, unknown>;
+  createdAt: string;
+};
+
+type BacktestOptions = {
+  signalTimeframes: string[];
+  executionDataSources: string[];
+  defaultSignalTimeframe: string;
+  defaultExecutionDataSource: string;
+  notes: string[];
+};
+
 type SourceFilter = "all" | "paper" | "backtest";
 type EventFilter = "all" | "initial" | "reentry" | "pt" | "sl";
 type TimeWindow = "6h" | "12h" | "1d" | "3d";
@@ -126,26 +162,39 @@ function App() {
   const [fills, setFills] = useState<Fill[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [snapshots, setSnapshots] = useState<AccountEquitySnapshot[]>([]);
+  const [strategies, setStrategies] = useState<StrategyRecord[]>([]);
+  const [backtests, setBacktests] = useState<BacktestRun[]>([]);
+  const [backtestOptions, setBacktestOptions] = useState<BacktestOptions | null>(null);
   const [paperSessions, setPaperSessions] = useState<PaperSession[]>([]);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
+  const [backtestAction, setBacktestAction] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [timeWindow, setTimeWindow] = useState<TimeWindow>("12h");
   const [focusNonce, setFocusNonce] = useState(0);
   const [hoveredMarker, setHoveredMarker] = useState<MarkerDetail | null>(null);
+  const [backtestForm, setBacktestForm] = useState({
+    strategyVersionId: "",
+    signalTimeframe: "1d",
+    executionDataSource: "1min",
+    symbol: "BTCUSDT",
+  });
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
 
   async function loadDashboard() {
-    const [summaryData, ordersData, fillsData, positionsData, paperSessionData] = await Promise.all([
+    const [summaryData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<Order[]>("/api/v1/orders"),
       fetchJSON<Fill[]>("/api/v1/fills"),
       fetchJSON<Position[]>("/api/v1/positions"),
       fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
+      fetchJSON<StrategyRecord[]>("/api/v1/strategies"),
+      fetchJSON<BacktestRun[]>("/api/v1/backtests"),
+      fetchJSON<BacktestOptions>("/api/v1/backtests/options"),
     ]);
 
     const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
@@ -172,9 +221,18 @@ function App() {
     setFills(fillsData);
     setPositions(positionsData);
     setSnapshots(snapshotData);
+    setStrategies(strategyData);
+    setBacktests(backtestData);
+    setBacktestOptions(backtestOptionsData);
     setPaperSessions(paperSessionData);
     setCandles(candleData.candles ?? []);
     setAnnotations(annotationData);
+    setBacktestForm((current) => ({
+      strategyVersionId: current.strategyVersionId || strategyData[0]?.currentVersion?.id || "",
+      signalTimeframe: current.signalTimeframe || backtestOptionsData.defaultSignalTimeframe,
+      executionDataSource: current.executionDataSource || backtestOptionsData.defaultExecutionDataSource,
+      symbol: current.symbol || "BTCUSDT",
+    }));
   }
 
   useEffect(() => {
@@ -250,6 +308,30 @@ function App() {
     }
   }
 
+  async function createBacktestRun() {
+    try {
+      setBacktestAction(true);
+      setError(null);
+      await fetchJSON<BacktestRun>("/api/v1/backtests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategyVersionId: backtestForm.strategyVersionId,
+          parameters: {
+            signalTimeframe: backtestForm.signalTimeframe,
+            executionDataSource: backtestForm.executionDataSource,
+            symbol: backtestForm.symbol,
+          },
+        }),
+      });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create backtest");
+    } finally {
+      setBacktestAction(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -260,6 +342,7 @@ function App() {
         <nav>
           <a href="#overview">Overview</a>
           <a href="#paper">Paper</a>
+          <a href="#backtests">Backtests</a>
           <a href="#market">Market</a>
           <a href="#equity">Equity</a>
           <a href="#positions">Positions</a>
@@ -297,6 +380,110 @@ function App() {
           <MetricCard label="Fees" value={formatMoney(primaryAccount?.fees)} />
           <MetricCard label="Exposure" value={formatMoney(primaryAccount?.exposureNotional)} />
           <MetricCard label="Open Positions" value={String(primaryAccount?.openPositionCount ?? 0)} />
+        </section>
+
+        <section id="backtests" className="panel panel-backtests">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Backtests</p>
+              <h3>回测配置与运行记录</h3>
+            </div>
+            <div className="range-box">
+              <span>{backtests.length} runs</span>
+              <span>{strategies.length} strategies</span>
+            </div>
+          </div>
+          <div className="backtest-layout">
+            <div className="backtest-form">
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Strategy Version</span>
+                  <select
+                    value={backtestForm.strategyVersionId}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, strategyVersionId: event.target.value }))}
+                  >
+                    {strategies.map((strategy) => (
+                      <option key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
+                        {strategy.name} · {strategy.currentVersion?.version ?? "no-version"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Signal Timeframe</span>
+                  <select
+                    value={backtestForm.signalTimeframe}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
+                  >
+                    {(backtestOptions?.signalTimeframes ?? ["4h", "1d"]).map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Execution Source</span>
+                  <select
+                    value={backtestForm.executionDataSource}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, executionDataSource: event.target.value }))}
+                  >
+                    {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Symbol</span>
+                  <input
+                    value={backtestForm.symbol}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                    placeholder="BTCUSDT"
+                  />
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton
+                  label={backtestAction ? "Submitting..." : "Create Backtest"}
+                  disabled={
+                    backtestAction ||
+                    backtestForm.strategyVersionId.trim() === "" ||
+                    backtestForm.symbol.trim() === ""
+                  }
+                  onClick={createBacktestRun}
+                />
+              </div>
+              {backtestOptions ? (
+                <div className="backtest-notes">
+                  {backtestOptions.notes.map((note) => (
+                    <div key={note} className="note-item">
+                      {note}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div className="backtest-list">
+              <SimpleTable
+                columns={["Time", "Mode", "Symbol", "Status", "Return", "DD"]}
+                rows={backtests
+                  .slice()
+                  .reverse()
+                  .slice(0, 8)
+                  .map((item) => [
+                    formatTime(item.createdAt),
+                    String(item.parameters?.backtestMode ?? "--"),
+                    String(item.parameters?.symbol ?? "--"),
+                    item.status,
+                    formatPercent(item.resultSummary?.return),
+                    formatPercent(item.resultSummary?.maxDrawdown),
+                  ])}
+                emptyMessage="No backtests yet"
+              />
+            </div>
+          </div>
         </section>
 
         <section id="paper" className="panel panel-session">
@@ -1065,6 +1252,14 @@ function formatSigned(value?: number) {
   }
   const prefix = value > 0 ? "+" : "";
   return `${prefix}${formatMoney(value)}`;
+}
+
+function formatPercent(value?: unknown) {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) {
+    return "--";
+  }
+  return `${number >= 0 ? "+" : ""}${(number * 100).toFixed(2)}%`;
 }
 
 function formatNumber(value?: number, digits = 2) {
