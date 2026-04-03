@@ -218,13 +218,20 @@ Current implementation status:
 - paper account orders are executed immediately into `fills` and net `positions`
 - account summary snapshots expose start equity, fees, realized/unrealized PnL, and exposure
 - account equity snapshots provide a time series for paper account net-equity charts
-- paper sessions support background runners that periodically generate synthetic paper orders
+- paper sessions support background runners that replay the current strategy ledger and persist replay progress in session state
 - chart annotation endpoint
 - candle feed endpoint suitable for TradingView integration scaffolding
 - PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions
 - backend selection controlled by `STORE_BACKEND`
 - embedded SQL migrations with `cmd/db-migrate`
 - optional local auto-migration controlled by `AUTO_MIGRATE`
+
+Current paper runner details:
+
+- replay source: `FINAL_1D_LEDGER_BEST_SL.csv`
+- replay symbol: `BTCUSDT`
+- session state stores `ledgerIndex`, last replay event metadata, and completion marker
+- `notional=0` ledger rows are skipped so zero-initial bootstrap events do not create fake paper orders
 
 ### Phase 2: Live Trading
 

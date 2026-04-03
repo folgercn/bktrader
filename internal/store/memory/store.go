@@ -177,7 +177,11 @@ func NewStore() *Store {
 		StrategyID:  strategy.ID,
 		Status:      "READY",
 		StartEquity: 100000.0,
-		CreatedAt:   now,
+		State: map[string]any{
+			"runner":      "strategy-replay",
+			"ledgerIndex": 0,
+		},
+		CreatedAt: now,
 	}
 	store.equitySnapshots[paper.ID] = []domain.AccountEquitySnapshot{
 		{
@@ -471,7 +475,11 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		StrategyID:  strategyID,
 		Status:      "READY",
 		StartEquity: startEquity,
-		CreatedAt:   time.Now().UTC(),
+		State: map[string]any{
+			"runner":      "strategy-replay",
+			"ledgerIndex": 0,
+		},
+		CreatedAt: time.Now().UTC(),
 	}
 	s.paperSessions[id] = item
 	return item, nil
@@ -485,6 +493,18 @@ func (s *Store) UpdatePaperSessionStatus(sessionID, status string) (domain.Paper
 		return domain.PaperSession{}, fmt.Errorf("paper session not found: %s", sessionID)
 	}
 	item.Status = status
+	s.paperSessions[sessionID] = item
+	return item, nil
+}
+
+func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) (domain.PaperSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.paperSessions[sessionID]
+	if !ok {
+		return domain.PaperSession{}, fmt.Errorf("paper session not found: %s", sessionID)
+	}
+	item.State = state
 	s.paperSessions[sessionID] = item
 	return item, nil
 }

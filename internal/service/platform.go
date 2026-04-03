@@ -2,8 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,15 +20,27 @@ import (
 )
 
 type Platform struct {
-	store store.Repository
-	mu    sync.Mutex
-	run   map[string]context.CancelFunc
+	store     store.Repository
+	mu        sync.Mutex
+	run       map[string]context.CancelFunc
+	once      sync.Once
+	ledger    []strategyReplayEvent
+	ledgerErr error
 }
 
 type pnlState struct {
 	netQty      float64
 	avgPrice    float64
 	realizedPnL float64
+}
+
+type strategyReplayEvent struct {
+	Time     time.Time
+	Type     string
+	Price    float64
+	Reason   string
+	Notional float64
+	Balance  float64
 }
 
 func NewPlatform(store store.Repository) *Platform {
@@ -674,45 +692,59 @@ func (p *Platform) runPaperSessionLoop(ctx context.Context, session domain.Paper
 }
 
 func (p *Platform) placePaperSessionOrder(session domain.PaperSession) (domain.Order, error) {
+	ledger, err := p.loadReplayLedger()
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	state := cloneMetadata(session.State)
+	index := 0
+	if value, ok := toFloat64(state["ledgerIndex"]); ok && value >= 0 {
+		index = int(value)
+	}
+
 	positions, err := p.store.ListPositions()
 	if err != nil {
 		return domain.Order{}, err
 	}
 
-	side := "BUY"
-	qty := 0.01
-	price := syntheticPaperPrice()
-	for _, position := range positions {
-		if position.AccountID != session.AccountID || position.Symbol != "BTCUSDT" {
+	for index < len(ledger) {
+		event := ledger[index]
+		index++
+		state["runner"] = "strategy-replay"
+		state["ledgerIndex"] = index
+		state["lastLedgerTime"] = event.Time.Format(time.RFC3339)
+		state["lastLedgerType"] = event.Type
+		state["lastLedgerReason"] = event.Reason
+
+		updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
+		if err != nil {
+			return domain.Order{}, err
+		}
+		session = updatedSession
+
+		order, ok, err := p.translateReplayEvent(session, positions, event)
+		if err != nil {
+			return domain.Order{}, err
+		}
+		if !ok {
 			continue
 		}
-		price = syntheticPaperPriceFromMark(position.MarkPrice)
-		if position.Side == "LONG" && position.Quantity >= 0.03 {
-			side = "SELL"
-			qty = 0.01
-		} else if position.Side == "LONG" {
-			side = "BUY"
-			qty = 0.005
-		} else if position.Side == "SHORT" && position.Quantity >= 0.02 {
-			side = "BUY"
-			qty = 0.01
+
+		created, err := p.CreateOrder(order)
+		if err != nil {
+			return domain.Order{}, err
 		}
-		break
+		return created, nil
 	}
 
-	return p.CreateOrder(domain.Order{
-		AccountID: session.AccountID,
-		Symbol:    "BTCUSDT",
-		Side:      side,
-		Type:      "MARKET",
-		Quantity:  qty,
-		Metadata: map[string]any{
-			"markPrice":    price,
-			"source":       "paper-session-runner",
-			"paperSession": session.ID,
-			"strategyId":   session.StrategyID,
-		},
-	})
+	state["runner"] = "strategy-replay"
+	state["completedAt"] = time.Now().UTC().Format(time.RFC3339)
+	if _, err := p.store.UpdatePaperSessionState(session.ID, state); err != nil {
+		return domain.Order{}, err
+	}
+	_, _ = p.store.UpdatePaperSessionStatus(session.ID, "STOPPED")
+	return domain.Order{}, fmt.Errorf("paper session %s reached end of replay ledger", session.ID)
 }
 
 func (p *Platform) removeRunner(sessionID string) {
@@ -721,15 +753,181 @@ func (p *Platform) removeRunner(sessionID string) {
 	delete(p.run, sessionID)
 }
 
-func syntheticPaperPrice() float64 {
-	now := time.Now().UTC()
-	return 69000 + float64(now.Minute()*11) + float64(now.Second())*3.5
+func (p *Platform) loadReplayLedger() ([]strategyReplayEvent, error) {
+	p.once.Do(func() {
+		p.ledger, p.ledgerErr = readStrategyReplayLedger("FINAL_1D_LEDGER_BEST_SL.csv")
+	})
+	return p.ledger, p.ledgerErr
 }
 
-func syntheticPaperPriceFromMark(mark float64) float64 {
-	if mark <= 0 {
-		return syntheticPaperPrice()
+func readStrategyReplayLedger(path string) ([]strategyReplayEvent, error) {
+	resolved := path
+	if !filepath.IsAbs(path) {
+		_, currentFile, _, _ := runtime.Caller(0)
+		resolved = filepath.Join(filepath.Dir(currentFile), "..", "..", path)
 	}
-	step := float64((time.Now().UTC().Second()%7)-3) * 18
-	return round2(mark + step)
+
+	file, err := os.Open(filepath.Clean(resolved))
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) <= 1 {
+		return nil, fmt.Errorf("strategy replay ledger is empty: %s", resolved)
+	}
+
+	events := make([]strategyReplayEvent, 0, len(rows)-1)
+	for _, row := range rows[1:] {
+		if len(row) < 6 {
+			continue
+		}
+		eventTime, err := time.Parse("2006-01-02 15:04:05Z07:00", row[0])
+		if err != nil {
+			return nil, fmt.Errorf("parse replay time %q: %w", row[0], err)
+		}
+		price, err := strconv.ParseFloat(row[1+1], 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse replay price %q: %w", row[2], err)
+		}
+		notional, err := strconv.ParseFloat(row[4], 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse replay notional %q: %w", row[4], err)
+		}
+		balance, err := strconv.ParseFloat(row[5], 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse replay balance %q: %w", row[5], err)
+		}
+		events = append(events, strategyReplayEvent{
+			Time:     eventTime,
+			Type:     strings.ToUpper(strings.TrimSpace(row[1])),
+			Price:    price,
+			Reason:   strings.TrimSpace(row[3]),
+			Notional: notional,
+			Balance:  balance,
+		})
+	}
+
+	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
+	return events, nil
+}
+
+func (p *Platform) translateReplayEvent(session domain.PaperSession, positions []domain.Position, event strategyReplayEvent) (domain.Order, bool, error) {
+	symbol := "BTCUSDT"
+	position, hasPosition := findAccountPosition(positions, session.AccountID, symbol)
+	strategyVersionID, _ := p.resolveStrategyVersionID(session.StrategyID)
+
+	switch event.Type {
+	case "BUY":
+		if event.Notional <= 0 || event.Price <= 0 {
+			return domain.Order{}, false, nil
+		}
+		return domain.Order{
+			AccountID:         session.AccountID,
+			StrategyVersionID: strategyVersionID,
+			Symbol:            symbol,
+			Side:              "BUY",
+			Type:              "MARKET",
+			Quantity:          roundQuantity(event.Notional / event.Price),
+			Price:             event.Price,
+			Metadata: map[string]any{
+				"markPrice":    event.Price,
+				"source":       "paper-session-replay",
+				"paperSession": session.ID,
+				"strategyId":   session.StrategyID,
+				"eventTime":    event.Time.Format(time.RFC3339),
+				"reason":       event.Reason,
+				"balance":      event.Balance,
+				"notional":     event.Notional,
+			},
+		}, true, nil
+	case "SHORT":
+		if event.Notional <= 0 || event.Price <= 0 {
+			return domain.Order{}, false, nil
+		}
+		return domain.Order{
+			AccountID:         session.AccountID,
+			StrategyVersionID: strategyVersionID,
+			Symbol:            symbol,
+			Side:              "SELL",
+			Type:              "MARKET",
+			Quantity:          roundQuantity(event.Notional / event.Price),
+			Price:             event.Price,
+			Metadata: map[string]any{
+				"markPrice":    event.Price,
+				"source":       "paper-session-replay",
+				"paperSession": session.ID,
+				"strategyId":   session.StrategyID,
+				"eventTime":    event.Time.Format(time.RFC3339),
+				"reason":       event.Reason,
+				"balance":      event.Balance,
+				"notional":     event.Notional,
+			},
+		}, true, nil
+	case "EXIT":
+		if !hasPosition || position.Quantity <= 0 {
+			return domain.Order{}, false, nil
+		}
+		side := "SELL"
+		if strings.EqualFold(position.Side, "SHORT") {
+			side = "BUY"
+		}
+		return domain.Order{
+			AccountID:         session.AccountID,
+			StrategyVersionID: firstNonEmpty(strategyVersionID, position.StrategyVersionID),
+			Symbol:            symbol,
+			Side:              side,
+			Type:              "MARKET",
+			Quantity:          roundQuantity(position.Quantity),
+			Price:             event.Price,
+			Metadata: map[string]any{
+				"markPrice":    event.Price,
+				"source":       "paper-session-replay",
+				"paperSession": session.ID,
+				"strategyId":   session.StrategyID,
+				"eventTime":    event.Time.Format(time.RFC3339),
+				"reason":       event.Reason,
+				"balance":      event.Balance,
+				"notional":     event.Notional,
+			},
+		}, true, nil
+	default:
+		return domain.Order{}, false, nil
+	}
+}
+
+func (p *Platform) resolveStrategyVersionID(strategyID string) (string, error) {
+	strategies, err := p.store.ListStrategies()
+	if err != nil {
+		return "", err
+	}
+	for _, strategy := range strategies {
+		id, _ := strategy["id"].(string)
+		if id != strategyID {
+			continue
+		}
+		currentVersion, ok := strategy["currentVersion"].(domain.StrategyVersion)
+		if ok {
+			return currentVersion.ID, nil
+		}
+	}
+	return "", nil
+}
+
+func findAccountPosition(positions []domain.Position, accountID, symbol string) (domain.Position, bool) {
+	for _, position := range positions {
+		if position.AccountID == accountID && position.Symbol == symbol {
+			return position, true
+		}
+	}
+	return domain.Position{}, false
+}
+
+func roundQuantity(quantity float64) float64 {
+	return math.Round(quantity*1_000_000) / 1_000_000
 }

@@ -444,7 +444,7 @@ func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]a
 
 func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 	rows, err := s.db.Query(`
-		select id, account_id, strategy_id, status, start_equity, created_at
+		select id, account_id, strategy_id, status, start_equity, state, created_at
 		from paper_sessions order by created_at asc
 	`)
 	if err != nil {
@@ -455,8 +455,13 @@ func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 	items := []domain.PaperSession{}
 	for rows.Next() {
 		var item domain.PaperSession
-		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &item.StartEquity, &item.CreatedAt); err != nil {
+		var stateRaw []byte
+		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &item.StartEquity, &stateRaw, &item.CreatedAt); err != nil {
 			return nil, err
+		}
+		item.State = map[string]any{}
+		if len(stateRaw) > 0 {
+			_ = json.Unmarshal(stateRaw, &item.State)
 		}
 		items = append(items, item)
 	}
@@ -465,16 +470,21 @@ func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 
 func (s *Store) GetPaperSession(sessionID string) (domain.PaperSession, error) {
 	var item domain.PaperSession
+	var stateRaw []byte
 	err := s.db.QueryRow(`
-		select id, account_id, strategy_id, status, start_equity, created_at
+		select id, account_id, strategy_id, status, start_equity, state, created_at
 		from paper_sessions
 		where id = $1
-	`, sessionID).Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &item.StartEquity, &item.CreatedAt)
+	`, sessionID).Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &item.StartEquity, &stateRaw, &item.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return domain.PaperSession{}, fmt.Errorf("paper session not found: %s", sessionID)
 		}
 		return domain.PaperSession{}, err
+	}
+	item.State = map[string]any{}
+	if len(stateRaw) > 0 {
+		_ = json.Unmarshal(stateRaw, &item.State)
 	}
 	return item, nil
 }
@@ -486,18 +496,32 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		StrategyID:  strategyID,
 		Status:      "READY",
 		StartEquity: startEquity,
-		CreatedAt:   time.Now().UTC(),
+		State: map[string]any{
+			"runner":      "strategy-replay",
+			"ledgerIndex": 0,
+		},
+		CreatedAt: time.Now().UTC(),
 	}
+	stateRaw, _ := json.Marshal(item.State)
 
 	_, err := s.db.Exec(`
-		insert into paper_sessions (id, account_id, strategy_id, status, start_equity, created_at)
-		values ($1, $2, $3, $4, $5, $6)
-	`, item.ID, item.AccountID, item.StrategyID, item.Status, item.StartEquity, item.CreatedAt)
+		insert into paper_sessions (id, account_id, strategy_id, status, start_equity, state, created_at)
+		values ($1, $2, $3, $4, $5, $6, $7)
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, item.StartEquity, stateRaw, item.CreatedAt)
 	return item, err
 }
 
 func (s *Store) UpdatePaperSessionStatus(sessionID, status string) (domain.PaperSession, error) {
 	_, err := s.db.Exec(`update paper_sessions set status = $2 where id = $1`, sessionID, status)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	return s.GetPaperSession(sessionID)
+}
+
+func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) (domain.PaperSession, error) {
+	stateRaw, _ := json.Marshal(state)
+	_, err := s.db.Exec(`update paper_sessions set state = $2 where id = $1`, sessionID, stateRaw)
 	if err != nil {
 		return domain.PaperSession{}, err
 	}

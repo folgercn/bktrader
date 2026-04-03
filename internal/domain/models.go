@@ -40,12 +40,13 @@ type Account struct {
 }
 
 type PaperSession struct {
-	ID          string    `json:"id"`
-	AccountID   string    `json:"accountId"`
-	StrategyID  string    `json:"strategyId"`
-	Status      string    `json:"status"`
-	StartEquity float64   `json:"startEquity"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID          string         `json:"id"`
+	AccountID   string         `json:"accountId"`
+	StrategyID  string         `json:"strategyId"`
+	Status      string         `json:"status"`
+	StartEquity float64        `json:"startEquity"`
+	State       map[string]any `json:"state"`
+	CreatedAt   time.Time      `json:"createdAt"`
 }
 
 type AccountSummary struct {

@@ -29,6 +29,7 @@ type Repository interface {
 	GetPaperSession(sessionID string) (domain.PaperSession, error)
 	CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error)
 	UpdatePaperSessionStatus(sessionID, status string) (domain.PaperSession, error)
+	UpdatePaperSessionState(sessionID string, state map[string]any) (domain.PaperSession, error)
 
 	ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error)
 	CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error)
