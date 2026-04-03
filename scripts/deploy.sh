@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+
 DEPLOY_PATH=${DEPLOY_PATH:-/opt/bktrader}
 COMPOSE_FILE="$DEPLOY_PATH/deployments/docker-compose.prod.yml"
 APP_ENV_FILE=${APP_ENV_FILE:-$DEPLOY_PATH/.env}
 IMAGE_REPO=${IMAGE_REPO:-ghcr.io/wuyaocheng/bktrader}
 IMAGE_TAG=${IMAGE_TAG:-latest}
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker command not found; install Docker Desktop or another Docker runtime on this Mac." >&2
+  exit 127
+fi
 
 mkdir -p "$DEPLOY_PATH/deployments" "$DEPLOY_PATH/scripts"
 
