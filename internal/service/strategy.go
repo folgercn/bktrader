@@ -148,11 +148,29 @@ func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[strin
 }
 
 func (p *Platform) BacktestOptions() map[string]any {
+	tickAvailability := "missing"
+	if _, err := p.loadExecutionDatasetSummary("tick", "BTCUSDT"); err == nil {
+		tickAvailability = "available"
+	}
+
+	minuteAvailability := "missing"
+	if _, err := p.loadExecutionDatasetSummary("1min", "BTCUSDT"); err == nil {
+		minuteAvailability = "available"
+	}
+
 	return map[string]any{
 		"signalTimeframes":           []string{"4h", "1d"},
 		"executionDataSources":       []string{"tick", "1min"},
 		"defaultSignalTimeframe":     "1d",
 		"defaultExecutionDataSource": "1min",
+		"dataDirectories": map[string]any{
+			"tick": p.tickDataDir,
+			"1min": p.minuteDataDir,
+		},
+		"availability": map[string]any{
+			"tick": tickAvailability,
+			"1min": minuteAvailability,
+		},
 		"notes": []string{
 			"4h 和 1d 用于策略信号周期。",
 			"tick 与 1min 用于执行层回测数据源。",

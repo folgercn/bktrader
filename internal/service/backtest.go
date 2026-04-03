@@ -26,7 +26,7 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 	signalTimeframe := stringValue(backtest.Parameters["signalTimeframe"])
 	symbol := stringValue(backtest.Parameters["symbol"])
 
-	summary, err := loadExecutionDatasetSummary(executionSource, symbol)
+	summary, err := p.loadExecutionDatasetSummary(executionSource, symbol)
 	if err != nil {
 		backtest.Status = "FAILED"
 		backtest.ResultSummary = map[string]any{
@@ -58,15 +58,15 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 	return backtest
 }
 
-func loadExecutionDatasetSummary(executionSource, symbol string) (executionDatasetSummary, error) {
+func (p *Platform) loadExecutionDatasetSummary(executionSource, symbol string) (executionDatasetSummary, error) {
 	switch strings.ToLower(strings.TrimSpace(executionSource)) {
 	case "1min":
-		return summarizeCSVExecutionData([]string{
+		return summarizeCSVExecutionData(p.minuteDataDir, []string{
 			fmt.Sprintf("%s_1min_Clean.csv", normalizeSymbolForDataset(symbol)),
 			"BTC_1min_Clean.csv",
 		}, "timestamp")
 	case "tick":
-		return summarizeCSVExecutionData([]string{
+		return summarizeCSVExecutionData(p.tickDataDir, []string{
 			fmt.Sprintf("%s_tick_Clean.csv", normalizeSymbolForDataset(symbol)),
 			fmt.Sprintf("%s_tick.csv", normalizeSymbolForDataset(symbol)),
 			"BTC_tick_Clean.csv",
@@ -77,8 +77,8 @@ func loadExecutionDatasetSummary(executionSource, symbol string) (executionDatas
 	}
 }
 
-func summarizeCSVExecutionData(candidates []string, timeColumn string) (executionDatasetSummary, error) {
-	resolved, err := resolveExistingDataset(candidates)
+func summarizeCSVExecutionData(baseDir string, candidates []string, timeColumn string) (executionDatasetSummary, error) {
+	resolved, err := resolveExistingDataset(baseDir, candidates)
 	if err != nil {
 		return executionDatasetSummary{}, err
 	}
@@ -143,7 +143,7 @@ func summarizeCSVExecutionData(candidates []string, timeColumn string) (executio
 	}, nil
 }
 
-func resolveExistingDataset(candidates []string) (string, error) {
+func resolveExistingDataset(baseDir string, candidates []string) (string, error) {
 	_, currentFile, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(currentFile), "..", "..")
 	seen := map[string]struct{}{}
@@ -158,15 +158,27 @@ func resolveExistingDataset(candidates []string) (string, error) {
 	}
 
 	for _, candidate := range uniqueCandidates {
-		path := candidate
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(root, candidate)
+		searchRoots := []string{}
+		if strings.TrimSpace(baseDir) != "" {
+			searchRoots = append(searchRoots, baseDir)
 		}
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
+		searchRoots = append(searchRoots, root)
+
+		for _, searchRoot := range searchRoots {
+			path := candidate
+			if !filepath.IsAbs(path) {
+				if filepath.IsAbs(searchRoot) {
+					path = filepath.Join(searchRoot, candidate)
+				} else {
+					path = filepath.Join(root, searchRoot, candidate)
+				}
+			}
+			if _, err := os.Stat(path); err == nil {
+				return path, nil
+			}
 		}
 	}
-	return "", fmt.Errorf("execution dataset not found, tried: %s", strings.Join(uniqueCandidates, ", "))
+	return "", fmt.Errorf("execution dataset not found in %q, tried: %s", baseDir, strings.Join(uniqueCandidates, ", "))
 }
 
 func normalizeSymbolForDataset(symbol string) string {

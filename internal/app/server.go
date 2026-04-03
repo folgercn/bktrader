@@ -22,6 +22,7 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	platform := service.NewPlatform(repository)
 	// 设置模拟盘 Ticker 间隔（来自配置）
 	platform.SetTickInterval(cfg.PaperTickInterval)
+	platform.SetBacktestDataDirs(cfg.MinuteDataDir, cfg.TickDataDir)
 
 	return &http.Server{
 		Addr:    cfg.HTTPAddr,

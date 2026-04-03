@@ -135,6 +135,8 @@ type BacktestOptions = {
   executionDataSources: string[];
   defaultSignalTimeframe: string;
   defaultExecutionDataSource: string;
+  dataDirectories?: Record<string, string>;
+  availability?: Record<string, string>;
   notes: string[];
 };
 
@@ -457,6 +459,12 @@ function App() {
               </div>
               {backtestOptions ? (
                 <div className="backtest-notes">
+                  <div className="note-item">
+                    tick: {String(backtestOptions.availability?.tick ?? "unknown")} · dir: {String(backtestOptions.dataDirectories?.tick ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    1min: {String(backtestOptions.availability?.["1min"] ?? "unknown")} · dir: {String(backtestOptions.dataDirectories?.["1min"] ?? "--")}
+                  </div>
                   {backtestOptions.notes.map((note) => (
                     <div key={note} className="note-item">
                       {note}

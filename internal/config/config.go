@@ -17,6 +17,8 @@ type Config struct {
 	RedisAddr         string // Redis 地址
 	NATSURL           string // NATS 消息队列地址
 	PaperTickInterval int    // 模拟盘 Ticker 间隔（秒），默认 15
+	MinuteDataDir     string // 1min 数据目录
+	TickDataDir       string // tick 数据目录
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -38,6 +40,8 @@ func Load() Config {
 		RedisAddr:         getenv("REDIS_ADDR", "localhost:6379"),
 		NATSURL:           getenv("NATS_URL", "nats://localhost:4222"),
 		PaperTickInterval: tickInterval,
+		MinuteDataDir:     getenv("MINUTE_DATA_DIR", "."),
+		TickDataDir:       getenv("TICK_DATA_DIR", "."),
 	}
 }
 
