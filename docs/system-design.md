@@ -149,6 +149,7 @@ Backtest configuration rules:
 - `1min` is an execution proxy, not the strategy timeframe itself
 - if `tick` data is unavailable, the backtest runner should fail loudly with a dataset error instead of silently falling back
 - backtest options should expose discovered dataset files, supported symbols, and CSV schema so the UI can stop invalid runs before submission
+- backtest runs should accept optional `from/to` windows so large tick archives can be replayed in bounded time slices
 
 ### 4.7 Paper Trading
 

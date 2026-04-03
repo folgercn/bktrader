@@ -185,6 +185,8 @@ function App() {
     signalTimeframe: "1d",
     executionDataSource: "1min",
     symbol: "BTCUSDT",
+    from: "",
+    to: "",
   });
 
   const primaryAccount = summaries[0] ?? null;
@@ -332,6 +334,8 @@ function App() {
             signalTimeframe: backtestForm.signalTimeframe,
             executionDataSource: backtestForm.executionDataSource,
             symbol: backtestForm.symbol,
+            from: backtestForm.from || undefined,
+            to: backtestForm.to || undefined,
           },
         }),
       });
@@ -452,6 +456,22 @@ function App() {
                     value={backtestForm.symbol}
                     onChange={(event) => setBacktestForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
                     placeholder="BTCUSDT"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>From (RFC3339)</span>
+                  <input
+                    value={backtestForm.from}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, from: event.target.value }))}
+                    placeholder="2020-01-01T00:00:00Z"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>To (RFC3339)</span>
+                  <input
+                    value={backtestForm.to}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, to: event.target.value }))}
+                    placeholder="2020-01-31T23:59:59Z"
                   />
                 </label>
               </div>

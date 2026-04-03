@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
@@ -270,9 +271,36 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 		symbol = "BTCUSDT"
 	}
 
+	from := strings.TrimSpace(stringValue(normalized["from"]))
+	if from != "" {
+		if _, err := time.Parse(time.RFC3339, from); err != nil {
+			return nil, fmt.Errorf("invalid from: must be RFC3339")
+		}
+	}
+
+	to := strings.TrimSpace(stringValue(normalized["to"]))
+	if to != "" {
+		if _, err := time.Parse(time.RFC3339, to); err != nil {
+			return nil, fmt.Errorf("invalid to: must be RFC3339")
+		}
+	}
+	if from != "" && to != "" {
+		fromTime, _ := time.Parse(time.RFC3339, from)
+		toTime, _ := time.Parse(time.RFC3339, to)
+		if toTime.Before(fromTime) {
+			return nil, fmt.Errorf("invalid range: to must be greater than or equal to from")
+		}
+	}
+
 	normalized["signalTimeframe"] = signalTimeframe
 	normalized["executionDataSource"] = executionDataSource
 	normalized["symbol"] = symbol
+	if from != "" {
+		normalized["from"] = from
+	}
+	if to != "" {
+		normalized["to"] = to
+	}
 	normalized["executionTimeframe"] = executionDataSource
 	normalized["backtestMode"] = fmt.Sprintf("%s->%s", signalTimeframe, executionDataSource)
 	return normalized, nil

@@ -49,6 +49,8 @@ type tickArchiveIterator struct {
 	reader   *csv.Reader
 	index    int
 	currentF tradeArchiveManifestEntry
+	from     time.Time
+	to       time.Time
 }
 
 type tickEvent struct {
@@ -68,6 +70,8 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 	executionSource := stringValue(backtest.Parameters["executionDataSource"])
 	signalTimeframe := stringValue(backtest.Parameters["signalTimeframe"])
 	symbol := stringValue(backtest.Parameters["symbol"])
+	from := stringValue(backtest.Parameters["from"])
+	to := stringValue(backtest.Parameters["to"])
 
 	summary, err := p.loadExecutionDatasetSummary(executionSource, symbol)
 	if err != nil {
@@ -84,8 +88,7 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 		return backtest
 	}
 
-	backtest.Status = "COMPLETED"
-	backtest.ResultSummary = map[string]any{
+	resultSummary := map[string]any{
 		"return":                0,
 		"maxDrawdown":           0,
 		"tradePairs":            0,
@@ -98,6 +101,35 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 		"executionDatasetEnd":   summary.EndTime,
 		"runnerMode":            "skeleton",
 	}
+	if from != "" {
+		resultSummary["rangeFrom"] = from
+	}
+	if to != "" {
+		resultSummary["rangeTo"] = to
+	}
+	if strings.EqualFold(executionSource, "tick") {
+		preview, err := p.previewTickArchiveRange(symbol, from, to, 5000)
+		if err != nil {
+			backtest.Status = "FAILED"
+			backtest.ResultSummary = map[string]any{
+				"return":              0,
+				"maxDrawdown":         0,
+				"tradePairs":          0,
+				"signalTimeframe":     signalTimeframe,
+				"executionDataSource": executionSource,
+				"symbol":              symbol,
+				"rangeFrom":           from,
+				"rangeTo":             to,
+				"error":               err.Error(),
+			}
+			return backtest
+		}
+		for key, value := range preview {
+			resultSummary[key] = value
+		}
+	}
+	backtest.Status = "COMPLETED"
+	backtest.ResultSummary = resultSummary
 	return backtest
 }
 
@@ -446,6 +478,35 @@ func (p *Platform) collectTradeArchiveFiles(symbol string) ([]tradeArchiveManife
 	return out, nil
 }
 
+func (p *Platform) collectTradeArchiveFilesInRange(symbol string, from, to time.Time) ([]tradeArchiveManifestEntry, error) {
+	files, err := p.collectTradeArchiveFiles(symbol)
+	if err != nil {
+		return nil, err
+	}
+	if from.IsZero() && to.IsZero() {
+		return files, nil
+	}
+	filtered := make([]tradeArchiveManifestEntry, 0, len(files))
+	for _, entry := range files {
+		entryStart, err := time.Parse(time.RFC3339, entry.StartTime)
+		if err != nil {
+			return nil, err
+		}
+		entryEnd, err := time.Parse(time.RFC3339, entry.EndTime)
+		if err != nil {
+			return nil, err
+		}
+		if !from.IsZero() && entryEnd.Before(from) {
+			continue
+		}
+		if !to.IsZero() && entryStart.After(to) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered, nil
+}
+
 func firstTradeArchiveTimestamp(path string) (string, error) {
 	file, err := os.Open(filepath.Clean(path))
 	if err != nil {
@@ -612,6 +673,23 @@ func (p *Platform) newTickArchiveIterator(symbol string) (*tickArchiveIterator, 
 	return &tickArchiveIterator{files: files}, nil
 }
 
+func (p *Platform) newTickArchiveIteratorForRange(symbol, from, to string) (*tickArchiveIterator, error) {
+	fromTime := parseOptionalRFC3339(from)
+	toTime := parseOptionalRFC3339(to)
+	files, err := p.collectTradeArchiveFilesInRange(normalizeBacktestSymbol(symbol), fromTime, toTime)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no tick archive files found for %s in range", normalizeBacktestSymbol(symbol))
+	}
+	return &tickArchiveIterator{
+		files: files,
+		from:  fromTime,
+		to:    toTime,
+	}, nil
+}
+
 func (it *tickArchiveIterator) Next() (tickEvent, error) {
 	for {
 		if it.reader == nil {
@@ -639,7 +717,21 @@ func (it *tickArchiveIterator) Next() (tickEvent, error) {
 		if err != nil {
 			return tickEvent{}, err
 		}
-		return parseTradeArchiveEvent(it.currentF.Symbol, row)
+		event, err := parseTradeArchiveEvent(it.currentF.Symbol, row)
+		if err != nil {
+			return tickEvent{}, err
+		}
+		if !it.from.IsZero() && event.Time.Before(it.from) {
+			continue
+		}
+		if !it.to.IsZero() && event.Time.After(it.to) {
+			_ = it.current.Close()
+			it.current = nil
+			it.reader = nil
+			it.index++
+			continue
+		}
+		return event, nil
 	}
 }
 
@@ -686,6 +778,51 @@ func parseTradeArchiveEvent(symbol string, row []string) (tickEvent, error) {
 	}, nil
 }
 
+func (p *Platform) previewTickArchiveRange(symbol, from, to string, limit int) (map[string]any, error) {
+	iterator, err := p.newTickArchiveIteratorForRange(symbol, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer iterator.Close()
+
+	firstTime := ""
+	lastTime := ""
+	lastPrice := 0.0
+	count := 0
+
+	for count < limit {
+		event, err := iterator.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if count == 0 {
+			firstTime = event.Time.UTC().Format(time.RFC3339)
+		}
+		lastTime = event.Time.UTC().Format(time.RFC3339)
+		lastPrice = event.Price
+		count++
+	}
+
+	files, err := p.collectTradeArchiveFilesInRange(normalizeBacktestSymbol(symbol), parseOptionalRFC3339(from), parseOptionalRFC3339(to))
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"streamMode":             "tick_archive_preview",
+		"streamPreviewTicks":     count,
+		"streamPreviewLimit":     limit,
+		"streamPreviewTruncated": count == limit,
+		"streamPreviewStart":     firstTime,
+		"streamPreviewEnd":       lastTime,
+		"streamPreviewLastPrice": lastPrice,
+		"matchedArchiveFiles":    len(files),
+	}, nil
+}
+
 func parseBacktestPercent(value any) float64 {
 	switch v := value.(type) {
 	case float64:
@@ -701,4 +838,16 @@ func parseBacktestPercent(value any) float64 {
 func parseBacktestTime(value string) time.Time {
 	parsed, _ := time.Parse(time.RFC3339, value)
 	return parsed
+}
+
+func parseOptionalRFC3339(value string) time.Time {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
 }
