@@ -935,6 +935,10 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 			"replayLedgerTrades":         0,
 			"replayLedgerCompleted":      0,
 			"replayLedgerSkipped":        0,
+			"replayLedgerSkippedInvalid": 0,
+			"replayLedgerSkippedEntry":   0,
+			"replayLedgerSkippedExit":    0,
+			"replayLedgerSkippedError":   0,
 			"replayLedgerPnL":            0,
 			"replayLedgerStopHits":       0,
 			"replayLedgerTakeProfitHits": 0,
@@ -946,11 +950,16 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 	skipped := 0
 	stopHits := 0
 	tpHits := 0
+	skippedInvalid := 0
+	skippedEntryNotHit := 0
+	skippedExitNotHit := 0
+	skippedErrors := 0
 
 	for _, trade := range trades {
 		plan, ok := bracketPlanFromReplayTrade(trade)
 		if !ok {
 			skipped++
+			skippedInvalid++
 			continue
 		}
 		result, err := p.simulateTickBracket(
@@ -961,10 +970,19 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 		)
 		if err != nil {
 			skipped++
+			skippedErrors++
 			continue
 		}
 		if ok, _ := result["bracketSimulationOk"].(bool); !ok {
 			skipped++
+			switch stringValue(result["bracketFinalState"]) {
+			case "waiting_entry":
+				skippedEntryNotHit++
+			case "entered":
+				skippedExitNotHit++
+			default:
+				skippedErrors++
+			}
 			continue
 		}
 		completed++
@@ -981,6 +999,10 @@ func (p *Platform) simulateReplayLedgerOnTick(symbol, from, to string) (map[stri
 		"replayLedgerTrades":         len(trades),
 		"replayLedgerCompleted":      completed,
 		"replayLedgerSkipped":        skipped,
+		"replayLedgerSkippedInvalid": skippedInvalid,
+		"replayLedgerSkippedEntry":   skippedEntryNotHit,
+		"replayLedgerSkippedExit":    skippedExitNotHit,
+		"replayLedgerSkippedError":   skippedErrors,
 		"replayLedgerPnL":            totalPnL,
 		"replayLedgerStopHits":       stopHits,
 		"replayLedgerTakeProfitHits": tpHits,
