@@ -12,9 +12,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image: ${{ steps.meta.outputs.tags }}
-      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,56 +47,29 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy:
-    name: Deploy to server
+    name: Deploy on Macmini runner
     needs: docker
-    runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, macOS, MacminiM2]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Write SSH key
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Prepare deployment directory
         run: |
-          test -n "$DEPLOY_SSH_KEY"
-          mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          mkdir -p /Users/fujun/services/bktrader/deployments
+          mkdir -p /Users/fujun/services/bktrader/scripts
+          cp deployments/docker-compose.prod.yml /Users/fujun/services/bktrader/deployments/docker-compose.prod.yml
+          cp scripts/deploy.sh /Users/fujun/services/bktrader/scripts/deploy.sh
+          chmod +x /Users/fujun/services/bktrader/scripts/deploy.sh
 
-      - name: Trust deploy host
+      - name: Deploy via docker compose
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        run: |
-          test -n "$DEPLOY_HOST"
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-
-      - name: Upload deployment files
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-        run: |
-          test -n "$DEPLOY_HOST"
-          test -n "$DEPLOY_USER"
-          test -n "$DEPLOY_PATH"
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/deployments' '$DEPLOY_PATH/scripts'"
-          scp deployments/docker-compose.prod.yml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/deployments/docker-compose.prod.yml"
-          scp scripts/deploy.sh "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/scripts/deploy.sh"
-
-      - name: Run remote deploy
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PATH: /Users/fujun/services/bktrader
           IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/bktrader
           IMAGE_TAG: latest
-          APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
+          APP_ENV_FILE: /Users/fujun/services/bktrader/.env
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          test -n "$DEPLOY_HOST"
-          test -n "$DEPLOY_USER"
-          test -n "$DEPLOY_PATH"
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            "export DEPLOY_PATH='$DEPLOY_PATH' IMAGE_REPO='$IMAGE_REPO' IMAGE_TAG='$IMAGE_TAG' APP_ENV_FILE='$APP_ENV_FILE' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN'; chmod +x '$DEPLOY_PATH/scripts/deploy.sh'; bash '$DEPLOY_PATH/scripts/deploy.sh'"
+          bash /Users/fujun/services/bktrader/scripts/deploy.sh
