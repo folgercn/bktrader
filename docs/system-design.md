@@ -213,11 +213,12 @@ No order placement is performed from the chart.
 
 Current implementation status:
 
-- in-memory repositories for core entities
+- pluggable repository layer with `memory` and `postgres` backends
 - HTTP CRUD-style endpoints for strategies, accounts, orders, backtests, and paper sessions
 - chart annotation endpoint
 - candle feed endpoint suitable for TradingView integration scaffolding
-- migration files prepared for PostgreSQL persistence
+- PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions
+- backend selection controlled by `STORE_BACKEND`
 
 ### Phase 2: Live Trading
 

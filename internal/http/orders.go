@@ -11,7 +11,12 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/orders", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			writeJSON(w, http.StatusOK, platform.ListOrders())
+			items, err := platform.ListOrders()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
 			var payload struct {
 				AccountID         string         `json:"accountId"`
@@ -46,7 +51,12 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				Price:             payload.Price,
 				Metadata:          payload.Metadata,
 			}
-			writeJSON(w, http.StatusCreated, platform.CreateOrder(order))
+			item, err := platform.CreateOrder(order)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusCreated, item)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}

@@ -10,7 +10,12 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/accounts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			writeJSON(w, http.StatusOK, platform.ListAccounts())
+			items, err := platform.ListAccounts()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
 			var payload struct {
 				Name     string `json:"name"`
@@ -29,7 +34,12 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusCreated, platform.CreateAccount(payload.Name, payload.Mode, payload.Exchange))
+			item, err := platform.CreateAccount(payload.Name, payload.Mode, payload.Exchange)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusCreated, item)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -40,6 +50,11 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, http.StatusOK, platform.ListPositions())
+		items, err := platform.ListPositions()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
 	})
 }

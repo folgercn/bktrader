@@ -10,7 +10,12 @@ func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/strategies", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			writeJSON(w, http.StatusOK, platform.ListStrategies())
+			items, err := platform.ListStrategies()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
 			var payload struct {
 				Name        string         `json:"name"`
@@ -25,7 +30,12 @@ func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusCreated, platform.CreateStrategy(payload.Name, payload.Description, payload.Parameters))
+			item, err := platform.CreateStrategy(payload.Name, payload.Description, payload.Parameters)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusCreated, item)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}

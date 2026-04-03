@@ -7,70 +7,108 @@ import (
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
-	"github.com/wuyaocheng/bktrader/internal/store/memory"
+	"github.com/wuyaocheng/bktrader/internal/store"
 )
 
 type Platform struct {
-	store *memory.Store
+	store store.Repository
 }
 
-func NewPlatform(store *memory.Store) *Platform {
+func NewPlatform(store store.Repository) *Platform {
 	return &Platform{store: store}
 }
 
 func (p *Platform) SignalSources() []map[string]any {
-	return p.store.SignalSources()
+	return []map[string]any{
+		{
+			"id":          "signal-source-bk-1d",
+			"name":        "BK 1D ATR Reentry",
+			"type":        "internal-strategy",
+			"status":      "ACTIVE",
+			"dedupeKey":   "symbol+strategyVersion+reason+bar",
+			"description": "1D signal / 1m execution strategy feed.",
+		},
+	}
 }
 
-func (p *Platform) ListStrategies() []map[string]any {
+func (p *Platform) ListStrategies() ([]map[string]any, error) {
 	return p.store.ListStrategies()
 }
 
-func (p *Platform) CreateStrategy(name, description string, parameters map[string]any) map[string]any {
+func (p *Platform) CreateStrategy(name, description string, parameters map[string]any) (map[string]any, error) {
 	if parameters == nil {
 		parameters = map[string]any{}
 	}
 	return p.store.CreateStrategy(name, description, parameters)
 }
 
-func (p *Platform) ListAccounts() []domain.Account {
+func (p *Platform) ListAccounts() ([]domain.Account, error) {
 	return p.store.ListAccounts()
 }
 
-func (p *Platform) CreateAccount(name, mode, exchange string) domain.Account {
+func (p *Platform) CreateAccount(name, mode, exchange string) (domain.Account, error) {
 	return p.store.CreateAccount(name, strings.ToUpper(mode), exchange)
 }
 
-func (p *Platform) ListOrders() []domain.Order {
+func (p *Platform) ListOrders() ([]domain.Order, error) {
 	return p.store.ListOrders()
 }
 
-func (p *Platform) CreateOrder(order domain.Order) domain.Order {
+func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 	return p.store.CreateOrder(order)
 }
 
-func (p *Platform) ListPositions() []domain.Position {
+func (p *Platform) ListPositions() ([]domain.Position, error) {
 	return p.store.ListPositions()
 }
 
-func (p *Platform) ListBacktests() []domain.BacktestRun {
+func (p *Platform) ListBacktests() ([]domain.BacktestRun, error) {
 	return p.store.ListBacktests()
 }
 
-func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[string]any) domain.BacktestRun {
+func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error) {
 	return p.store.CreateBacktest(strategyVersionID, parameters)
 }
 
-func (p *Platform) ListPaperSessions() []map[string]any {
+func (p *Platform) ListPaperSessions() ([]map[string]any, error) {
 	return p.store.ListPaperSessions()
 }
 
-func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64) map[string]any {
+func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64) (map[string]any, error) {
 	return p.store.CreatePaperSession(accountID, strategyID, startEquity)
 }
 
 func (p *Platform) ListAnnotations(symbol string) []domain.ChartAnnotation {
-	return p.store.ListAnnotations(symbol)
+	items := []domain.ChartAnnotation{
+		{
+			ID:     "anno-1",
+			Source: "backtest",
+			Type:   "entry_long",
+			Symbol: "BTCUSDT",
+			Time:   time.Date(2024, 2, 5, 14, 21, 0, 0, time.UTC),
+			Price:  43125.0,
+			Label:  "SL-Reentry",
+		},
+		{
+			ID:     "anno-2",
+			Source: "backtest",
+			Type:   "exit_tp",
+			Symbol: "BTCUSDT",
+			Time:   time.Date(2024, 2, 17, 10, 12, 0, 0, time.UTC),
+			Price:  52520.0,
+			Label:  "PT",
+		},
+	}
+	if symbol == "" {
+		return items
+	}
+	filtered := make([]domain.ChartAnnotation, 0, len(items))
+	for _, item := range items {
+		if item.Symbol == symbol {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func (p *Platform) CandleSeries(symbol string, resolution string, from int64, to int64, limit int) []map[string]any {

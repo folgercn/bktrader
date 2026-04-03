@@ -30,6 +30,17 @@ The platform is being designed around the current preferred strategy profile:
 ### Backend
 
 ```bash
+cp configs/app.example.env .env
+go run ./cmd/platform-api
+```
+
+By default the API starts with `STORE_BACKEND=memory`.
+
+To run with PostgreSQL persistence:
+
+```bash
+export STORE_BACKEND=postgres
+export POSTGRES_DSN=postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable
 go run ./cmd/platform-api
 ```
 
@@ -59,4 +70,5 @@ npm run dev
 
 - Existing research files were kept in place to avoid disrupting strategy work.
 - The platform scaffold is intentionally modular but starts as a deployable monolith so it can move fast early and split later.
-- Phase 1 currently uses in-memory repositories; PostgreSQL migrations are included and repository replacement is the next step.
+- Phase 1 supports both in-memory and PostgreSQL repository backends selected with `STORE_BACKEND`.
+- PostgreSQL persistence currently covers strategies, accounts, orders, positions, backtest runs, and paper sessions.

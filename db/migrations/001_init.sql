@@ -79,3 +79,11 @@ create table if not exists backtest_runs (
     created_at timestamptz not null default now()
 );
 
+create table if not exists paper_sessions (
+    id text primary key,
+    account_id text not null references accounts(id),
+    strategy_id text not null references strategies(id),
+    status text not null,
+    start_equity numeric(24, 8) not null,
+    created_at timestamptz not null default now()
+);

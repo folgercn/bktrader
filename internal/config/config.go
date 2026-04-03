@@ -3,22 +3,24 @@ package config
 import "os"
 
 type Config struct {
-	AppName     string
-	Environment string
-	HTTPAddr    string
-	PostgresDSN string
-	RedisAddr   string
-	NATSURL     string
+	AppName      string
+	Environment  string
+	HTTPAddr     string
+	StoreBackend string
+	PostgresDSN  string
+	RedisAddr    string
+	NATSURL      string
 }
 
 func Load() Config {
 	return Config{
-		AppName:     getenv("APP_NAME", "bkTrader-platform"),
-		Environment: getenv("APP_ENV", "development"),
-		HTTPAddr:    getenv("HTTP_ADDR", ":8080"),
-		PostgresDSN: getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
-		RedisAddr:   getenv("REDIS_ADDR", "localhost:6379"),
-		NATSURL:     getenv("NATS_URL", "nats://localhost:4222"),
+		AppName:      getenv("APP_NAME", "bkTrader-platform"),
+		Environment:  getenv("APP_ENV", "development"),
+		HTTPAddr:     getenv("HTTP_ADDR", ":8080"),
+		StoreBackend: getenv("STORE_BACKEND", "memory"),
+		PostgresDSN:  getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
+		RedisAddr:    getenv("REDIS_ADDR", "localhost:6379"),
+		NATSURL:      getenv("NATS_URL", "nats://localhost:4222"),
 	}
 }
 

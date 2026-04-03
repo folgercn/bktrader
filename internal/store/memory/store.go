@@ -183,7 +183,7 @@ func (s *Store) SignalSources() []map[string]any {
 	return out
 }
 
-func (s *Store) ListStrategies() []map[string]any {
+func (s *Store) ListStrategies() ([]map[string]any, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -209,10 +209,10 @@ func (s *Store) ListStrategies() []map[string]any {
 		}
 		result = append(result, item)
 	}
-	return result
+	return result, nil
 }
 
-func (s *Store) CreateStrategy(name, description string, parameters map[string]any) map[string]any {
+func (s *Store) CreateStrategy(name, description string, parameters map[string]any) (map[string]any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -245,10 +245,10 @@ func (s *Store) CreateStrategy(name, description string, parameters map[string]a
 		"description":    strategy.Description,
 		"createdAt":      strategy.CreatedAt,
 		"currentVersion": version,
-	}
+	}, nil
 }
 
-func (s *Store) ListAccounts() []domain.Account {
+func (s *Store) ListAccounts() ([]domain.Account, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.Account, 0, len(s.accounts))
@@ -256,10 +256,10 @@ func (s *Store) ListAccounts() []domain.Account {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
-	return items
+	return items, nil
 }
 
-func (s *Store) CreateAccount(name, mode, exchange string) domain.Account {
+func (s *Store) CreateAccount(name, mode, exchange string) (domain.Account, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	account := domain.Account{
@@ -271,10 +271,10 @@ func (s *Store) CreateAccount(name, mode, exchange string) domain.Account {
 		CreatedAt: time.Now().UTC(),
 	}
 	s.accounts[account.ID] = account
-	return account
+	return account, nil
 }
 
-func (s *Store) ListOrders() []domain.Order {
+func (s *Store) ListOrders() ([]domain.Order, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.Order, 0, len(s.orders))
@@ -282,10 +282,10 @@ func (s *Store) ListOrders() []domain.Order {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
-	return items
+	return items, nil
 }
 
-func (s *Store) CreateOrder(order domain.Order) domain.Order {
+func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	order.ID = s.nextID("order")
@@ -295,10 +295,10 @@ func (s *Store) CreateOrder(order domain.Order) domain.Order {
 		order.Metadata = map[string]any{}
 	}
 	s.orders[order.ID] = order
-	return order
+	return order, nil
 }
 
-func (s *Store) ListPositions() []domain.Position {
+func (s *Store) ListPositions() ([]domain.Position, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.Position, 0, len(s.positions))
@@ -306,10 +306,10 @@ func (s *Store) ListPositions() []domain.Position {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.Before(items[j].UpdatedAt) })
-	return items
+	return items, nil
 }
 
-func (s *Store) ListBacktests() []domain.BacktestRun {
+func (s *Store) ListBacktests() ([]domain.BacktestRun, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.BacktestRun, 0, len(s.backtests))
@@ -317,10 +317,10 @@ func (s *Store) ListBacktests() []domain.BacktestRun {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
-	return items
+	return items, nil
 }
 
-func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]any) domain.BacktestRun {
+func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	backtest := domain.BacktestRun{
@@ -336,20 +336,20 @@ func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]a
 		CreatedAt: time.Now().UTC(),
 	}
 	s.backtests[backtest.ID] = backtest
-	return backtest
+	return backtest, nil
 }
 
-func (s *Store) ListPaperSessions() []map[string]any {
+func (s *Store) ListPaperSessions() ([]map[string]any, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]map[string]any, 0, len(s.paperSessions))
 	for _, item := range s.paperSessions {
 		items = append(items, item)
 	}
-	return items
+	return items, nil
 }
 
-func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity float64) map[string]any {
+func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity float64) (map[string]any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := s.nextID("paper-session")
@@ -361,7 +361,7 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		"startEquity": startEquity,
 	}
 	s.paperSessions[id] = item
-	return item
+	return item, nil
 }
 
 func (s *Store) ListAnnotations(symbol string) []domain.ChartAnnotation {

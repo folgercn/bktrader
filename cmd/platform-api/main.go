@@ -9,7 +9,10 @@ import (
 
 func main() {
 	cfg := config.Load()
-	server := app.NewServer(cfg)
+	server, err := app.NewServer(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	log.Printf("platform-api listening on %s", cfg.HTTPAddr)
 	if err := server.ListenAndServe(); err != nil {
