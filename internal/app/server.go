@@ -12,12 +12,16 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/store/postgres"
 )
 
+// NewServer 根据配置创建 HTTP 服务实例，初始化存储层和平台服务。
 func NewServer(cfg config.Config) (*http.Server, error) {
 	repository, err := buildRepository(cfg)
 	if err != nil {
 		return nil, err
 	}
+
 	platform := service.NewPlatform(repository)
+	// 设置模拟盘 Ticker 间隔（来自配置）
+	platform.SetTickInterval(cfg.PaperTickInterval)
 
 	return &http.Server{
 		Addr:    cfg.HTTPAddr,
@@ -25,6 +29,7 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	}, nil
 }
 
+// buildRepository 根据配置选择并初始化存储后端。
 func buildRepository(cfg config.Config) (store.Repository, error) {
 	switch cfg.StoreBackend {
 	case "postgres":
@@ -37,6 +42,6 @@ func buildRepository(cfg config.Config) (store.Repository, error) {
 	case "memory", "":
 		return memory.NewStore(), nil
 	default:
-		return nil, fmt.Errorf("unsupported store backend: %s", cfg.StoreBackend)
+		return nil, fmt.Errorf("不支持的存储后端: %s", cfg.StoreBackend)
 	}
 }

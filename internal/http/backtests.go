@@ -6,7 +6,9 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
+// registerBacktestRoutes 注册回测管理相关路由。
 func registerBacktestRoutes(mux *http.ServeMux, platform *service.Platform) {
+	// GET|POST /api/v1/backtests — 回测记录列表/创建回测
 	mux.HandleFunc("/api/v1/backtests", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

@@ -7,7 +7,9 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
+// registerChartRoutes 注册 TradingView 图表相关路由（标注数据和 K 线数据）。
 func registerChartRoutes(mux *http.ServeMux, platform *service.Platform) {
+	// GET /api/v1/chart/annotations — 图表标注数据
 	mux.HandleFunc("/api/v1/chart/annotations", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -17,6 +19,7 @@ func registerChartRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, platform.ListAnnotations(symbol))
 	})
 
+	// GET /api/v1/chart/candles — K 线数据（支持 symbol/resolution/from/to/limit 参数）
 	mux.HandleFunc("/api/v1/chart/candles", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

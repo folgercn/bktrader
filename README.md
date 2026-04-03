@@ -1,42 +1,43 @@
-# bkTrader Platform
+# bkTrader 交易平台
 
-This repository now contains two parts:
+本仓库包含两部分内容：
 
-- legacy strategy research and backtesting assets for BTCUSDT
-- a new live trading platform scaffold in Go for signal-driven execution, monitoring, paper trading, and backtesting
+- 历史策略研究与回测资产（BTCUSDT）
+- 全新的 Go 实盘交易平台脚手架，支持信号驱动执行、监控、模拟盘交易和回测
 
-## New platform layout
+## 新平台目录结构
 
-- `cmd/platform-api`: Go API entrypoint
-- `internal`: platform application code
-- `web/console`: frontend console scaffold
-- `docs`: architecture and system design
-- `configs`: example config files
-- `deployments`: local infra bootstrap
-- `db/migrations`: initial database schema
+- `cmd/platform-api`：Go API 入口
+- `internal`：平台应用代码
+- `web/console`：前端控制台脚手架
+- `docs`：架构和系统设计文档
+- `configs`：示例配置文件
+- `deployments`：本地基础设施引导配置
+- `db/migrations`：数据库迁移脚本
+- `research`：历史策略研究和数据处理脚本
 
-## Current strategy defaults
+## 当前策略默认参数
 
-The platform is being designed around the current preferred strategy profile:
+平台围绕当前首选策略配置进行设计：
 
-- timeframe: `1D` signal, `1m` execution
-- zero initial position
-- `max_trades_per_bar=3`
-- reentry risk sizing: `10%` then `20%`
-- stop mode: `atr`
+- 信号时间框架：`1D` 信号，`1m` 执行
+- 初始仓位为零
+- `max_trades_per_bar=3`（每根 K 线最大交易次数）
+- 再入场风险仓位管理：首次 `10%`，后续 `20%`
+- 止损模式：`atr`
 
-## Quick start
+## 快速开始
 
-### Backend
+### 后端
 
 ```bash
 cp configs/app.example.env .env
 go run ./cmd/platform-api
 ```
 
-By default the API starts with `STORE_BACKEND=memory`.
+默认使用 `STORE_BACKEND=memory`（内存存储）启动 API。
 
-To run with PostgreSQL persistence:
+如需使用 PostgreSQL 持久化存储：
 
 ```bash
 docker compose -f deployments/docker-compose.dev.yml up -d
@@ -46,7 +47,7 @@ export POSTGRES_DSN=postgres://postgres:postgres@localhost:5432/bktrader?sslmode
 go run ./cmd/platform-api
 ```
 
-To let the API apply migrations automatically in local development:
+在本地开发中启用自动数据库迁移：
 
 ```bash
 export STORE_BACKEND=postgres
@@ -54,27 +55,27 @@ export AUTO_MIGRATE=true
 go run ./cmd/platform-api
 ```
 
-Available MVP endpoints:
+当前 MVP 可用接口：
 
-- `GET /healthz`
-- `GET /api/v1/overview`
-- `GET|POST /api/v1/strategies`
-- `GET|POST /api/v1/accounts`
-- `GET /api/v1/account-summaries`
-- `GET /api/v1/account-equity-snapshots?accountId=...`
-- `GET|POST /api/v1/orders`
-- `GET /api/v1/fills`
-- `GET /api/v1/positions`
-- `GET|POST /api/v1/backtests`
-- `GET|POST /api/v1/paper/sessions`
-- `POST /api/v1/paper/sessions/{id}/start`
-- `POST /api/v1/paper/sessions/{id}/stop`
-- `POST /api/v1/paper/sessions/{id}/tick`
-- `GET /api/v1/signal-sources`
-- `GET /api/v1/chart/annotations`
-- `GET /api/v1/chart/candles`
+- `GET /healthz` — 健康检查
+- `GET /api/v1/overview` — 系统概览
+- `GET|POST /api/v1/strategies` — 策略管理
+- `GET|POST /api/v1/accounts` — 账户管理
+- `GET /api/v1/account-summaries` — 账户汇总（权益、PnL、费用）
+- `GET /api/v1/account-equity-snapshots?accountId=...` — 账户净值快照
+- `GET|POST /api/v1/orders` — 订单管理
+- `GET /api/v1/fills` — 成交记录
+- `GET /api/v1/positions` — 持仓查询
+- `GET|POST /api/v1/backtests` — 回测管理
+- `GET|POST /api/v1/paper/sessions` — 模拟交易会话
+- `POST /api/v1/paper/sessions/{id}/start` — 启动模拟会话
+- `POST /api/v1/paper/sessions/{id}/stop` — 停止模拟会话
+- `POST /api/v1/paper/sessions/{id}/tick` — 手动推进模拟会话
+- `GET /api/v1/signal-sources` — 信号源列表
+- `GET /api/v1/chart/annotations` — 图表标注数据
+- `GET /api/v1/chart/candles` — K 线数据
 
-### Frontend scaffold
+### 前端控制台
 
 ```bash
 cd web/console
@@ -83,15 +84,15 @@ export VITE_API_BASE=http://127.0.0.1:8080
 npm run dev
 ```
 
-## Notes
+## 备注
 
-- Existing research files were kept in place to avoid disrupting strategy work.
-- The platform scaffold is intentionally modular but starts as a deployable monolith so it can move fast early and split later.
-- Phase 1 supports both in-memory and PostgreSQL repository backends selected with `STORE_BACKEND`.
-- PostgreSQL persistence currently covers strategies, accounts, orders, positions, backtest runs, and paper sessions.
-- `cmd/db-migrate` applies embedded SQL migrations and records them in `schema_migrations`.
-- Orders submitted to `PAPER` accounts are filled immediately, create `fills`, and update net `positions`.
-- `GET /api/v1/account-summaries` returns paper-account equity, fees, realized/unrealized PnL, and exposure snapshots.
-- Equity snapshots are appended when a paper session is created and when a paper order is filled.
-- Paper sessions can now be started, stopped, or manually ticked; active sessions replay the project trade ledger from `FINAL_1D_LEDGER_BEST_SL.csv`.
-- Paper session state persists replay progress in `paper_sessions.state`, so `ledgerIndex` survives restarts.
+- 现有的研究文件已整理至 `research/` 目录，避免干扰策略研究工作。
+- 平台脚手架采用模块化设计，初期以可部署的单体架构启动，便于快速迭代，后续可按需拆分。
+- Phase 1 支持内存存储和 PostgreSQL 两种存储后端，通过 `STORE_BACKEND` 环境变量切换。
+- PostgreSQL 持久化目前覆盖策略、账户、订单、持仓、回测记录和模拟交易会话。
+- `cmd/db-migrate` 执行嵌入式 SQL 迁移，并在 `schema_migrations` 表中记录迁移历史。
+- 提交到 `PAPER` 模式账户的订单会立即成交，生成 `fills` 记录并更新净 `positions`。
+- `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
+- 净值快照在创建模拟会话时和模拟订单成交时自动追加。
+- 模拟交易会话支持启动、停止和手动推进；活跃会话从 `FINAL_1D_LEDGER_BEST_SL.csv` 回放策略交易账本。
+- 模拟会话状态在 `paper_sessions.state` 中持久化回放进度,`ledgerIndex` 可跨重启保持。

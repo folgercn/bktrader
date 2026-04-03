@@ -6,7 +6,9 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
+// registerAccountRoutes 注册账户管理、账户汇总、净值快照和持仓相关路由。
 func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
+	// GET|POST /api/v1/accounts — 账户列表/创建
 	mux.HandleFunc("/api/v1/accounts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -45,6 +47,7 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 	})
 
+	// GET /api/v1/account-summaries — 账户汇总（权益、PnL、费用、敞口）
 	mux.HandleFunc("/api/v1/account-summaries", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -58,6 +61,7 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, items)
 	})
 
+	// GET /api/v1/account-equity-snapshots — 账户净值快照时间序列
 	mux.HandleFunc("/api/v1/account-equity-snapshots", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -76,6 +80,7 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, items)
 	})
 
+	// GET /api/v1/positions — 当前持仓列表
 	mux.HandleFunc("/api/v1/positions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

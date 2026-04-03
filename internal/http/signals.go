@@ -6,7 +6,9 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
+// registerSignalRoutes 注册信号源相关路由。
 func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
+	// GET /api/v1/signal-sources — 获取信号源列表
 	mux.HandleFunc("/api/v1/signal-sources", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, platform.SignalSources())
 	})

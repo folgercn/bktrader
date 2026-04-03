@@ -7,7 +7,9 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
+// registerOrderRoutes 注册订单和成交记录相关路由。
 func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
+	// GET|POST /api/v1/orders — 订单列表/下单
 	mux.HandleFunc("/api/v1/orders", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -62,6 +64,7 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 	})
 
+	// GET /api/v1/fills — 成交流水列表
 	mux.HandleFunc("/api/v1/fills", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
