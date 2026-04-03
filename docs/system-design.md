@@ -140,12 +140,12 @@ Responsibilities:
 - store metrics and trade-level outputs
 - expose chart annotations for order entry / exit markers
 - separate signal timeframe from execution data source
-- support execution-layer replay from either `tick` or `1min`
+- support execution-layer replay with `tick` as the primary backtest path
 
 Backtest configuration rules:
 
 - signal timeframe should reflect strategy decision bars, currently `4h` or `1d`
-- execution data source should reflect fill simulation granularity, currently `tick` or `1min`
+- execution data source should reflect fill simulation granularity, with `tick` as the default and primary backtest source
 - `1min` is an execution proxy, not the strategy timeframe itself
 - if `tick` data is unavailable, the backtest runner should fail loudly with a dataset error instead of silently falling back
 - backtest options should expose discovered dataset files, supported symbols, and CSV schema so the UI can stop invalid runs before submission

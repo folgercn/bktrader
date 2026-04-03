@@ -87,22 +87,17 @@ npm run dev
 
 ## 回测执行数据源
 
-平台将策略信号周期与执行层数据源分开管理：
+平台将策略信号周期与执行层数据源分开管理，但当前回测模块默认聚焦 `tick` 执行回放：
 
 - 信号周期：`4h`、`1d`
-- 执行数据源：`tick`、`1min`
+- 执行数据源：`tick`
 
-当前执行层 CSV 约定如下：
+当前回测模块主要使用的执行层 CSV / archive 约定如下：
 
 - `tick`
   - 文件名示例：`BTC_tick_Clean.csv`、`ETH_tick.csv`
   - 必需列：`timestamp`、`price`
   - 可选列：`quantity`、`side`
-- `1min`
-  - 文件名示例：`BTC_1min_Clean.csv`、`ETH_1min.csv`
-  - 必需列：`timestamp`、`open`、`high`、`low`、`close`
-  - 可选列：`volume`
-
 默认目录可通过环境变量配置：
 
 ```env
@@ -116,7 +111,7 @@ TICK_DATA_DIR=./dataset/archive
 - [data/tick/BTC_tick.sample.template](/Users/wuyaocheng/Downloads/bkTrader/data/tick/BTC_tick.sample.template)
 - [docs/tick-data-spec.md](/Users/wuyaocheng/Downloads/bkTrader/docs/tick-data-spec.md)
 
-前端回测面板和 `GET /api/v1/backtests/options` 会同时展示：
+前端回测面板和 `GET /api/v1/backtests/options` 会展示：
 
 - 当前目录下实际发现的数据文件
 - 每种执行数据源支持的标的列表
@@ -129,7 +124,7 @@ TICK_DATA_DIR=./dataset/archive
 
 当前 `tick` runner 已接入按时间窗口挑选月分片和流式预览，不会默认把整个 archive 全量扫完。
 
-如果在回测参数里额外传入这些字段：
+如果在 tick 回测参数里额外传入这些字段：
 
 - `side`
 - `entryPrice`

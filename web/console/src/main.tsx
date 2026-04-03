@@ -443,7 +443,7 @@ function App() {
                     value={backtestForm.executionDataSource}
                     onChange={(event) => setBacktestForm((current) => ({ ...current, executionDataSource: event.target.value }))}
                   >
-                    {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
+                    {(backtestOptions?.executionDataSources ?? ["tick"]).map((item) => (
                       <option key={item} value={item}>
                         {item}
                       </option>
