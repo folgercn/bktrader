@@ -97,6 +97,11 @@ type ChartAnnotation = {
   metadata?: Record<string, unknown>;
 };
 
+type MarkerLegendItem = {
+  label: string;
+  color: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -188,6 +193,17 @@ function App() {
   const chartAnnotations = useMemo(
     () => filterChartAnnotations(annotations, candles, primarySession?.id),
     [annotations, candles, primarySession?.id]
+  );
+  const markerLegend = useMemo<MarkerLegendItem[]>(
+    () => [
+      { label: "Initial", color: "#7a8791" },
+      { label: "PT-Reentry", color: "#0e6d60" },
+      { label: "SL-Reentry", color: "#1f8f7d" },
+      { label: "PT Exit", color: "#c58b2d" },
+      { label: "SL Exit", color: "#b04a37" },
+      { label: "Paper Fill", color: "#284d86" },
+    ],
+    []
   );
 
   async function runSessionAction(sessionId: string, action: "start" | "stop" | "tick") {
@@ -335,9 +351,17 @@ function App() {
               <div className="empty-state">No market candles yet</div>
             )}
           </div>
+          <div className="marker-legend">
+            {markerLegend.map((item) => (
+              <div key={item.label} className="legend-item">
+                <span className="legend-dot" style={{ backgroundColor: item.color }} />
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
           <div className="snapshot-strip">
             {chartAnnotations.slice(-4).map((item) => (
-              <div key={item.id} className="snapshot-item">
+              <div key={item.id} className={`snapshot-item snapshot-item-${annotationTone(item)}`}>
                 <strong>{item.label}</strong>
                 <span>
                   {item.source.toUpperCase()} · {formatMoney(item.price)} · {formatTime(item.time)}
@@ -688,17 +712,29 @@ function resolveChartAnchor(session?: PaperSession, orders: Order[] = []) {
 }
 
 function markerShape(type: string) {
-  if (type.includes("buy") || type.includes("entry_long")) {
+  if (type.includes("initial")) {
+    return "square";
+  }
+  if (type.includes("pt-reentry") || type.includes("sl-reentry") || type.includes("entry-long")) {
     return "arrowUp";
   }
-  if (type.includes("sell") || type.includes("entry_short")) {
+  if (type.includes("entry-short")) {
+    return "arrowDown";
+  }
+  if (type.includes("exit")) {
+    return "circle";
+  }
+  if (type.includes("buy")) {
+    return "arrowUp";
+  }
+  if (type.includes("sell")) {
     return "arrowDown";
   }
   return "circle";
 }
 
 function markerPosition(type: string) {
-  if (type.includes("buy") || type.includes("entry_long")) {
+  if (type.includes("entry") || type.includes("buy")) {
     return "belowBar";
   }
   return "aboveBar";
@@ -706,9 +742,52 @@ function markerPosition(type: string) {
 
 function markerColor(item: ChartAnnotation) {
   if (item.source === "paper") {
-    return item.type.includes("buy") ? "#0e6d60" : "#b04a37";
+    if (item.type.includes("exit-sl")) {
+      return "#7d5877";
+    }
+    if (item.type.includes("exit-pt")) {
+      return "#284d86";
+    }
+    return "#284d86";
   }
-  return "#c58b2d";
+  if (item.type.includes("initial")) {
+    return "#7a8791";
+  }
+  if (item.type.includes("pt-reentry")) {
+    return "#0e6d60";
+  }
+  if (item.type.includes("sl-reentry")) {
+    return "#1f8f7d";
+  }
+  if (item.type.includes("exit-pt")) {
+    return "#c58b2d";
+  }
+  if (item.type.includes("exit-sl")) {
+    return "#b04a37";
+  }
+  return "#5d6971";
+}
+
+function annotationTone(item: ChartAnnotation) {
+  if (item.source === "paper") {
+    return "paper";
+  }
+  if (item.type.includes("initial")) {
+    return "initial";
+  }
+  if (item.type.includes("pt-reentry")) {
+    return "pt";
+  }
+  if (item.type.includes("sl-reentry")) {
+    return "sl";
+  }
+  if (item.type.includes("exit-pt")) {
+    return "pt";
+  }
+  if (item.type.includes("exit-sl")) {
+    return "sl";
+  }
+  return "neutral";
 }
 
 function formatMoney(value?: number) {

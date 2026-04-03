@@ -269,15 +269,7 @@ func replayEventAnnotation(symbol string, index int, event strategyReplayEvent) 
 		return domain.ChartAnnotation{}, false
 	}
 
-	annotationType := "event"
-	switch event.Type {
-	case "BUY":
-		annotationType = "entry_long"
-	case "SHORT":
-		annotationType = "entry_short"
-	case "EXIT":
-		annotationType = "exit"
-	}
+	annotationType := classifyAnnotationType(event.Type, event.Reason)
 
 	return domain.ChartAnnotation{
 		ID:     fmt.Sprintf("backtest-%d", index),
@@ -288,9 +280,11 @@ func replayEventAnnotation(symbol string, index int, event strategyReplayEvent) 
 		Price:  event.Price,
 		Label:  event.Reason,
 		Metadata: map[string]any{
-			"notional":  event.Notional,
-			"balance":   event.Balance,
-			"eventType": event.Type,
+			"notional":       event.Notional,
+			"balance":        event.Balance,
+			"eventType":      event.Type,
+			"reason":         event.Reason,
+			"annotationType": annotationType,
 		},
 	}, true
 }
@@ -313,13 +307,13 @@ func orderAnnotation(symbol string, order domain.Order) (domain.ChartAnnotation,
 	if reason, ok := order.Metadata["reason"].(string); ok && reason != "" {
 		label = reason
 	}
-	annotationType := "order"
-	switch strings.ToUpper(strings.TrimSpace(order.Side)) {
-	case "BUY":
-		annotationType = "buy"
-	case "SELL":
-		annotationType = "sell"
+	reason := ""
+	if order.Metadata != nil {
+		if raw, ok := order.Metadata["reason"].(string); ok {
+			reason = raw
+		}
 	}
+	annotationType := classifyAnnotationType(order.Side, reason)
 
 	source := "live"
 	if order.Metadata != nil {
@@ -337,14 +331,63 @@ func orderAnnotation(symbol string, order domain.Order) (domain.ChartAnnotation,
 		Price:  order.Price,
 		Label:  label,
 		Metadata: map[string]any{
-			"accountId":     order.AccountID,
-			"paperSession":  order.Metadata["paperSession"],
-			"strategyId":    order.Metadata["strategyId"],
-			"orderStatus":   order.Status,
-			"orderSide":     order.Side,
-			"executionMode": order.Metadata["executionMode"],
+			"accountId":      order.AccountID,
+			"paperSession":   order.Metadata["paperSession"],
+			"strategyId":     order.Metadata["strategyId"],
+			"orderStatus":    order.Status,
+			"orderSide":      order.Side,
+			"executionMode":  order.Metadata["executionMode"],
+			"reason":         reason,
+			"annotationType": annotationType,
 		},
 	}, true
+}
+
+func classifyAnnotationType(eventType, reason string) string {
+	normalizedEventType := strings.ToUpper(strings.TrimSpace(eventType))
+	normalizedReason := strings.ToUpper(strings.TrimSpace(reason))
+
+	switch normalizedEventType {
+	case "BUY":
+		switch normalizedReason {
+		case "INITIAL":
+			return "entry-initial-long"
+		case "PT-REENTRY":
+			return "entry-pt-reentry-long"
+		case "SL-REENTRY":
+			return "entry-sl-reentry-long"
+		default:
+			return "entry-long"
+		}
+	case "SHORT", "SELL":
+		if normalizedReason == "PT" || normalizedReason == "SL" {
+			if normalizedReason == "PT" {
+				return "exit-pt"
+			}
+			return "exit-sl"
+		}
+		switch normalizedReason {
+		case "INITIAL":
+			return "entry-initial-short"
+		case "PT-REENTRY":
+			return "entry-pt-reentry-short"
+		case "SL-REENTRY":
+			return "entry-sl-reentry-short"
+		default:
+			return "entry-short"
+		}
+	case "EXIT":
+		switch normalizedReason {
+		case "PT":
+			return "exit-pt"
+		case "SL":
+			return "exit-sl"
+		default:
+			return "exit"
+		}
+	default:
+		return "event"
+	}
 }
 
 func resolutionToDuration(resolution string) time.Duration {
