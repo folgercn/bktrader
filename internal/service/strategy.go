@@ -169,7 +169,7 @@ func (p *Platform) BacktestOptions() map[string]any {
 
 	return map[string]any{
 		"signalTimeframes":           []string{"4h", "1d"},
-		"executionDataSources":       []string{"tick"},
+		"executionDataSources":       []string{"tick", "1min"},
 		"defaultSignalTimeframe":     "1d",
 		"defaultExecutionDataSource": "tick",
 		"supportedSymbols": map[string]any{
@@ -202,8 +202,8 @@ func (p *Platform) BacktestOptions() map[string]any {
 		},
 		"notes": []string{
 			"4h 和 1d 用于策略信号周期。",
-			"回测模块默认只做 tick 执行层回放测试。",
-			"1min 数据仍可作为兼容数据源保留在底层，但不作为回测结果对比目标。",
+			"执行层测试可选 tick 或 1min。",
+			"回测模块聚焦单一执行源回放，不做 tick 与 1min 的结果对比分析。",
 		},
 	}
 }
