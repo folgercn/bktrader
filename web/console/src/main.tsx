@@ -123,6 +123,7 @@ function App() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [timeWindow, setTimeWindow] = useState<TimeWindow>("12h");
+  const [focusNonce, setFocusNonce] = useState(0);
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
@@ -201,6 +202,10 @@ function App() {
   const chartAnnotations = useMemo(
     () => filterChartAnnotations(annotations, candles, primarySession?.id, sourceFilter, eventFilter),
     [annotations, candles, primarySession?.id, sourceFilter, eventFilter]
+  );
+  const latestVisibleAnnotationTime = useMemo(
+    () => (chartAnnotations.length > 0 ? chartAnnotations[chartAnnotations.length - 1].time : undefined),
+    [chartAnnotations]
   );
   const markerLegend = useMemo<MarkerLegendItem[]>(
     () => [
@@ -355,12 +360,30 @@ function App() {
           </div>
           <div className="chart-shell chart-shell-market">
             {candles.length > 0 ? (
-              <TradingChart candles={candles} annotations={chartAnnotations} />
+              <TradingChart
+                candles={candles}
+                annotations={chartAnnotations}
+                focusTime={latestVisibleAnnotationTime}
+                focusNonce={focusNonce}
+              />
             ) : (
               <div className="empty-state">No market candles yet</div>
             )}
           </div>
           <div className="filter-row">
+            <div className="filter-group filter-group-actions">
+              <span className="filter-label">Focus</span>
+              <div className="filter-chip-row">
+                <button
+                  type="button"
+                  className="filter-chip"
+                  disabled={!latestVisibleAnnotationTime}
+                  onClick={() => setFocusNonce((value) => value + 1)}
+                >
+                  Latest Trade
+                </button>
+              </div>
+            </div>
             <FilterGroup
               label="Window"
               value={timeWindow}
@@ -532,7 +555,12 @@ function App() {
   );
 }
 
-function TradingChart(props: { candles: ChartCandle[]; annotations: ChartAnnotation[] }) {
+function TradingChart(props: {
+  candles: ChartCandle[];
+  annotations: ChartAnnotation[];
+  focusTime?: string;
+  focusNonce: number;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -603,11 +631,23 @@ function TradingChart(props: { candles: ChartCandle[]; annotations: ChartAnnotat
       }))
     );
 
-    chart.timeScale().fitContent();
+    if (props.focusTime && props.focusNonce > 0) {
+      const focusSeconds = Math.floor(new Date(props.focusTime).getTime() / 1000);
+      const firstSeconds = Math.floor(new Date(props.candles[0].time).getTime() / 1000);
+      const lastSeconds = Math.floor(new Date(props.candles[props.candles.length - 1].time).getTime() / 1000);
+      const span = Math.max(lastSeconds - firstSeconds, 60 * 60);
+      const padding = Math.max(Math.floor(span / 6), 30 * 60);
+      chart.timeScale().setVisibleRange({
+        from: focusSeconds - padding,
+        to: focusSeconds + padding,
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
     return () => {
       chart.remove();
     };
-  }, [props.annotations, props.candles]);
+  }, [props.annotations, props.candles, props.focusNonce, props.focusTime]);
 
   return <div ref={containerRef} className="tv-chart" />;
 }
