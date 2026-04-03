@@ -105,6 +105,16 @@ type MarkerLegendItem = {
 type SourceFilter = "all" | "paper" | "backtest";
 type EventFilter = "all" | "initial" | "reentry" | "pt" | "sl";
 type TimeWindow = "6h" | "12h" | "1d" | "3d";
+type MarkerDetail = {
+  id: string;
+  source: string;
+  type: string;
+  label: string;
+  time: string;
+  price: number;
+  reason?: string;
+  paperSession?: string;
+};
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
@@ -124,6 +134,7 @@ function App() {
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [timeWindow, setTimeWindow] = useState<TimeWindow>("12h");
   const [focusNonce, setFocusNonce] = useState(0);
+  const [hoveredMarker, setHoveredMarker] = useState<MarkerDetail | null>(null);
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
@@ -207,6 +218,13 @@ function App() {
     () => (chartAnnotations.length > 0 ? chartAnnotations[chartAnnotations.length - 1].time : undefined),
     [chartAnnotations]
   );
+  const markerDetail = useMemo<MarkerDetail | null>(() => {
+    if (hoveredMarker) {
+      return hoveredMarker;
+    }
+    const latest = chartAnnotations[chartAnnotations.length - 1];
+    return latest ? toMarkerDetail(latest) : null;
+  }, [chartAnnotations, hoveredMarker]);
   const markerLegend = useMemo<MarkerLegendItem[]>(
     () => [
       { label: "Initial", color: "#7a8791" },
@@ -365,6 +383,7 @@ function App() {
                 annotations={chartAnnotations}
                 focusTime={latestVisibleAnnotationTime}
                 focusNonce={focusNonce}
+                onHoverMarker={setHoveredMarker}
               />
             ) : (
               <div className="empty-state">No market candles yet</div>
@@ -425,6 +444,39 @@ function App() {
                 <span>{item.label}</span>
               </div>
             ))}
+          </div>
+          <div className="detail-card">
+            <p className="panel-kicker">Marker Detail</p>
+            {markerDetail ? (
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <span>Label</span>
+                  <strong>{markerDetail.label}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Source</span>
+                  <strong>{markerDetail.source.toUpperCase()}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Type</span>
+                  <strong>{markerDetail.type}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Price</span>
+                  <strong>{formatMoney(markerDetail.price)}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Time</span>
+                  <strong>{formatTime(markerDetail.time)}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Paper Session</span>
+                  <strong>{markerDetail.paperSession ? shrink(markerDetail.paperSession) : "--"}</strong>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state empty-state-compact">Move over the chart to inspect a trade marker</div>
+            )}
           </div>
           <div className="snapshot-strip">
             {chartAnnotations.slice(-4).map((item) => (
@@ -560,6 +612,7 @@ function TradingChart(props: {
   annotations: ChartAnnotation[];
   focusTime?: string;
   focusNonce: number;
+  onHoverMarker: (detail: MarkerDetail | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -631,6 +684,21 @@ function TradingChart(props: {
       }))
     );
 
+    chart.subscribeCrosshairMove((param) => {
+      if (param.time == null) {
+        props.onHoverMarker(null);
+        return;
+      }
+      const hoveredTime = Number(param.time);
+      if (!Number.isFinite(hoveredTime)) {
+        props.onHoverMarker(null);
+        return;
+      }
+
+      const nearest = findNearestAnnotation(props.annotations, hoveredTime);
+      props.onHoverMarker(nearest ? toMarkerDetail(nearest) : null);
+    });
+
     if (props.focusTime && props.focusNonce > 0) {
       const focusSeconds = Math.floor(new Date(props.focusTime).getTime() / 1000);
       const firstSeconds = Math.floor(new Date(props.candles[0].time).getTime() / 1000);
@@ -645,9 +713,10 @@ function TradingChart(props: {
       chart.timeScale().fitContent();
     }
     return () => {
+      props.onHoverMarker(null);
       chart.remove();
     };
-  }, [props.annotations, props.candles, props.focusNonce, props.focusTime]);
+  }, [props.annotations, props.candles, props.focusNonce, props.focusTime, props.onHoverMarker]);
 
   return <div ref={containerRef} className="tv-chart" />;
 }
@@ -867,6 +936,36 @@ function buildTimeRange(anchorDate: Date, window: TimeWindow) {
   return {
     from: anchor - beforeByWindow[window],
     to: anchor + afterByWindow[window],
+  };
+}
+
+function findNearestAnnotation(items: ChartAnnotation[], hoveredSeconds: number) {
+  let nearest: ChartAnnotation | null = null;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (const item of items) {
+    const itemSeconds = Math.floor(new Date(item.time).getTime() / 1000);
+    const delta = Math.abs(itemSeconds - hoveredSeconds);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      nearest = item;
+    }
+  }
+  if (bestDelta > 45 * 60) {
+    return null;
+  }
+  return nearest;
+}
+
+function toMarkerDetail(item: ChartAnnotation): MarkerDetail {
+  return {
+    id: item.id,
+    source: item.source,
+    type: item.type,
+    label: item.label,
+    time: item.time,
+    price: item.price,
+    reason: typeof item.metadata?.reason === "string" ? item.metadata.reason : undefined,
+    paperSession: typeof item.metadata?.paperSession === "string" ? item.metadata.paperSession : undefined,
   };
 }
 
