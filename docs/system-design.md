@@ -211,6 +211,14 @@ No order placement is performed from the chart.
 - TradingView datafeed endpoints
 - chart annotation endpoints
 
+Current implementation status:
+
+- in-memory repositories for core entities
+- HTTP CRUD-style endpoints for strategies, accounts, orders, backtests, and paper sessions
+- chart annotation endpoint
+- candle feed endpoint suitable for TradingView integration scaffolding
+- migration files prepared for PostgreSQL persistence
+
 ### Phase 2: Live Trading
 
 - exchange adapter
@@ -262,4 +270,3 @@ web/console
 4. add TradingView-compatible candle datafeed endpoints
 5. add authentication and user model
 6. connect frontend console to platform API
-

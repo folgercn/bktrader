@@ -1,24 +1,33 @@
 package http
 
-import "net/http"
+import (
+	"net/http"
 
-func registerStrategyRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/v1/strategies", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, []map[string]any{
-			{
-				"id":     "strategy-bk-1d",
-				"name":   "BK 1D Zero Initial",
-				"status": "ACTIVE",
-				"currentVersion": map[string]any{
-					"version":            "v0.1.0",
-					"signalTimeframe":    "1D",
-					"executionTimeframe": "1m",
-					"maxTradesPerBar":    3,
-					"reentrySizes":       []float64{0.10, 0.20},
-					"stopMode":           "atr",
-					"profitProtectATR":   1.0,
-				},
-			},
-		})
+	"github.com/wuyaocheng/bktrader/internal/service"
+)
+
+func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
+	mux.HandleFunc("/api/v1/strategies", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, platform.ListStrategies())
+		case http.MethodPost:
+			var payload struct {
+				Name        string         `json:"name"`
+				Description string         `json:"description"`
+				Parameters  map[string]any `json:"parameters"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if err := service.ValidateRequired(map[string]string{"name": payload.Name}, "name"); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusCreated, platform.CreateStrategy(payload.Name, payload.Description, payload.Parameters))
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	})
 }

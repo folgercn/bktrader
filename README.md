@@ -33,6 +33,20 @@ The platform is being designed around the current preferred strategy profile:
 go run ./cmd/platform-api
 ```
 
+Available MVP endpoints:
+
+- `GET /healthz`
+- `GET /api/v1/overview`
+- `GET|POST /api/v1/strategies`
+- `GET|POST /api/v1/accounts`
+- `GET|POST /api/v1/orders`
+- `GET /api/v1/positions`
+- `GET|POST /api/v1/backtests`
+- `GET|POST /api/v1/paper/sessions`
+- `GET /api/v1/signal-sources`
+- `GET /api/v1/chart/annotations`
+- `GET /api/v1/chart/candles`
+
 ### Frontend scaffold
 
 ```bash
@@ -45,4 +59,4 @@ npm run dev
 
 - Existing research files were kept in place to avoid disrupting strategy work.
 - The platform scaffold is intentionally modular but starts as a deployable monolith so it can move fast early and split later.
-
+- Phase 1 currently uses in-memory repositories; PostgreSQL migrations are included and repository replacement is the next step.

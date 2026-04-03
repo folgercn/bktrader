@@ -1,28 +1,38 @@
 package http
 
-import "net/http"
+import (
+	"net/http"
+	"strconv"
 
-func registerChartRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/v1/chart/annotations", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, []map[string]any{
-			{
-				"id":     "anno-1",
-				"source": "backtest",
-				"type":   "entry_long",
-				"symbol": "BTCUSDT",
-				"time":   "2024-02-05T14:21:00Z",
-				"price":  43125.0,
-				"label":  "SL-Reentry",
-			},
-			{
-				"id":     "anno-2",
-				"source": "backtest",
-				"type":   "exit_tp",
-				"symbol": "BTCUSDT",
-				"time":   "2024-02-17T10:12:00Z",
-				"price":  52520.0,
-				"label":  "PT",
-			},
+	"github.com/wuyaocheng/bktrader/internal/service"
+)
+
+func registerChartRoutes(mux *http.ServeMux, platform *service.Platform) {
+	mux.HandleFunc("/api/v1/chart/annotations", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		symbol := service.NormalizeSymbol(r.URL.Query().Get("symbol"))
+		writeJSON(w, http.StatusOK, platform.ListAnnotations(symbol))
+	})
+
+	mux.HandleFunc("/api/v1/chart/candles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		query := r.URL.Query()
+		symbol := service.NormalizeSymbol(query.Get("symbol"))
+		resolution := query.Get("resolution")
+		from, _ := strconv.ParseInt(query.Get("from"), 10, 64)
+		to, _ := strconv.ParseInt(query.Get("to"), 10, 64)
+		limit, _ := strconv.Atoi(query.Get("limit"))
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"symbol":     symbol,
+			"resolution": resolution,
+			"candles":    platform.CandleSeries(symbol, resolution, from, to, limit),
 		})
 	})
 }
