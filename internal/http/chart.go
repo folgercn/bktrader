@@ -16,7 +16,10 @@ func registerChartRoutes(mux *http.ServeMux, platform *service.Platform) {
 			return
 		}
 		symbol := service.NormalizeSymbol(r.URL.Query().Get("symbol"))
-		writeJSON(w, http.StatusOK, platform.ListAnnotations(symbol))
+		from, _ := strconv.ParseInt(r.URL.Query().Get("from"), 10, 64)
+		to, _ := strconv.ParseInt(r.URL.Query().Get("to"), 10, 64)
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		writeJSON(w, http.StatusOK, platform.ListAnnotations(symbol, from, to, limit))
 	})
 
 	// GET /api/v1/chart/candles — K 线数据（支持 symbol/resolution/from/to/limit 参数）

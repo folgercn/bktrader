@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { CandlestickSeries, ColorType, CrosshairMode, LineStyle, createChart, createSeriesMarkers } from "lightweight-charts";
 import "./styles.css";
 
 type AccountSummary = {
@@ -40,6 +41,7 @@ type Order = {
   status: string;
   quantity: number;
   price: number;
+  metadata?: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -69,7 +71,30 @@ type PaperSession = {
   strategyId: string;
   status: string;
   startEquity: number;
+  state?: Record<string, unknown>;
   createdAt: string;
+};
+
+type ChartCandle = {
+  symbol: string;
+  resolution: string;
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+type ChartAnnotation = {
+  id: string;
+  source: string;
+  type: string;
+  symbol: string;
+  time: string;
+  price: number;
+  label: string;
+  metadata?: Record<string, unknown>;
 };
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
@@ -83,39 +108,59 @@ function App() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [snapshots, setSnapshots] = useState<AccountEquitySnapshot[]>([]);
   const [paperSessions, setPaperSessions] = useState<PaperSession[]>([]);
+  const [candles, setCandles] = useState<ChartCandle[]>([]);
+  const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
 
   const primaryAccount = summaries[0] ?? null;
+  const primarySession = paperSessions[0] ?? null;
+
+  async function loadDashboard() {
+    const [summaryData, ordersData, fillsData, positionsData, paperSessionData] = await Promise.all([
+      fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
+      fetchJSON<Order[]>("/api/v1/orders"),
+      fetchJSON<Fill[]>("/api/v1/fills"),
+      fetchJSON<Position[]>("/api/v1/positions"),
+      fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
+    ]);
+
+    const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
+    const from = Math.floor(anchorDate.getTime() / 1000) - 60 * 720;
+    const to = Math.floor(anchorDate.getTime() / 1000) + 60 * 120;
+
+    const [snapshotData, candleData, annotationData] = await Promise.all([
+      summaryData[0]?.accountId
+        ? fetchJSON<AccountEquitySnapshot[]>(
+            `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(summaryData[0].accountId)}`
+          )
+        : Promise.resolve([]),
+      fetchJSON<{ candles: ChartCandle[] }>(
+        `/api/v1/chart/candles?symbol=BTCUSDT&resolution=1&from=${from}&to=${to}&limit=840`
+      ),
+      fetchJSON<ChartAnnotation[]>(
+        `/api/v1/chart/annotations?symbol=BTCUSDT&from=${from}&to=${to}&limit=300`
+      ),
+    ]);
+
+    setSummaries(summaryData);
+    setOrders(ordersData);
+    setFills(fillsData);
+    setPositions(positionsData);
+    setSnapshots(snapshotData);
+    setPaperSessions(paperSessionData);
+    setCandles(candleData.candles ?? []);
+    setAnnotations(annotationData);
+  }
 
   useEffect(() => {
     let active = true;
 
     async function load() {
       try {
-        const [summaryData, ordersData, fillsData, positionsData, paperSessionData] = await Promise.all([
-          fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
-          fetchJSON<Order[]>("/api/v1/orders"),
-          fetchJSON<Fill[]>("/api/v1/fills"),
-          fetchJSON<Position[]>("/api/v1/positions"),
-          fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
-        ]);
-
-        let snapshotData: AccountEquitySnapshot[] = [];
-        if (summaryData[0]?.accountId) {
-          snapshotData = await fetchJSON<AccountEquitySnapshot[]>(
-            `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(summaryData[0].accountId)}`
-          );
-        }
-
+        await loadDashboard();
         if (!active) {
           return;
         }
-        setSummaries(summaryData);
-        setOrders(ordersData);
-        setFills(fillsData);
-        setPositions(positionsData);
-        setSnapshots(snapshotData);
-        setPaperSessions(paperSessionData);
         setError(null);
       } catch (err) {
         if (!active) {
@@ -139,35 +184,18 @@ function App() {
 
   const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
-  const primarySession = paperSessions[0] ?? null;
+  const candleRange = useMemo(() => summarizeTimeRange(candles.map((item) => item.time)), [candles]);
+  const chartAnnotations = useMemo(
+    () => filterChartAnnotations(annotations, candles, primarySession?.id),
+    [annotations, candles, primarySession?.id]
+  );
 
   async function runSessionAction(sessionId: string, action: "start" | "stop" | "tick") {
     try {
       setSessionAction(`${sessionId}:${action}`);
       setError(null);
       await fetchJSON(`/api/v1/paper/sessions/${sessionId}/${action}`, { method: "POST" });
-
-      const [summaryData, orderData, fillData, positionData, sessionData] = await Promise.all([
-        fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
-        fetchJSON<Order[]>("/api/v1/orders"),
-        fetchJSON<Fill[]>("/api/v1/fills"),
-        fetchJSON<Position[]>("/api/v1/positions"),
-        fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
-      ]);
-
-      let snapshotData: AccountEquitySnapshot[] = [];
-      if (summaryData[0]?.accountId) {
-        snapshotData = await fetchJSON<AccountEquitySnapshot[]>(
-          `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(summaryData[0].accountId)}`
-        );
-      }
-
-      setSummaries(summaryData);
-      setOrders(orderData);
-      setFills(fillData);
-      setPositions(positionData);
-      setPaperSessions(sessionData);
-      setSnapshots(snapshotData);
+      await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to execute paper session action");
     } finally {
@@ -184,6 +212,8 @@ function App() {
         </div>
         <nav>
           <a href="#overview">Overview</a>
+          <a href="#paper">Paper</a>
+          <a href="#market">Market</a>
           <a href="#equity">Equity</a>
           <a href="#positions">Positions</a>
           <a href="#orders">Orders</a>
@@ -202,9 +232,9 @@ function App() {
         <section id="overview" className="hero">
           <div>
             <p className="eyebrow">Paper Trading Operations</p>
-            <h2>账户监控、净值曲线与执行流水</h2>
+            <h2>账户监控、K 线回放与执行流水</h2>
             <p className="hero-copy">
-              当前页面直接消费平台 API，展示 paper 账户的权益、成交、持仓和净值时间序列，作为实盘监控页的第一版骨架。
+              当前页面直接消费平台 API，展示 paper 账户的权益、成交、持仓，以及基于项目策略账本回放的 BTCUSDT 真实 1 分钟 K 线与开平仓标记。
             </p>
           </div>
           <div className="hero-side">
@@ -250,6 +280,14 @@ function App() {
                   <strong>{formatMoney(primarySession.startEquity)}</strong>
                 </div>
                 <div className="session-stat">
+                  <span>Ledger Index</span>
+                  <strong>{String(Math.trunc(getNumber(primarySession.state?.ledgerIndex) ?? 0))}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Last Replay Event</span>
+                  <strong>{String(primarySession.state?.lastLedgerReason ?? "--")}</strong>
+                </div>
+                <div className="session-stat">
                   <span>Created</span>
                   <strong>{formatTime(primarySession.createdAt)}</strong>
                 </div>
@@ -276,6 +314,37 @@ function App() {
           ) : (
             <div className="empty-state">No paper session yet</div>
           )}
+        </section>
+
+        <section id="market" className="panel panel-market">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Market Replay</p>
+              <h3>BTCUSDT 1 分钟 K 线与开平仓标记</h3>
+            </div>
+            <div className="range-box">
+              <span>{candles.length} bars</span>
+              <span>{chartAnnotations.length} markers</span>
+              <span>{candleRange.label}</span>
+            </div>
+          </div>
+          <div className="chart-shell chart-shell-market">
+            {candles.length > 0 ? (
+              <TradingChart candles={candles} annotations={chartAnnotations} />
+            ) : (
+              <div className="empty-state">No market candles yet</div>
+            )}
+          </div>
+          <div className="snapshot-strip">
+            {chartAnnotations.slice(-4).map((item) => (
+              <div key={item.id} className="snapshot-item">
+                <strong>{item.label}</strong>
+                <span>
+                  {item.source.toUpperCase()} · {formatMoney(item.price)} · {formatTime(item.time)}
+                </span>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section id="equity" className="panel panel-chart">
@@ -331,9 +400,11 @@ function App() {
                 formatNumber(position.quantity, 4),
                 formatMoney(position.entryPrice),
                 formatMoney(position.markPrice),
-                formatSigned(position.side === "LONG"
-                  ? (position.markPrice - position.entryPrice) * position.quantity
-                  : (position.entryPrice - position.markPrice) * position.quantity),
+                formatSigned(
+                  position.side === "LONG"
+                    ? (position.markPrice - position.entryPrice) * position.quantity
+                    : (position.entryPrice - position.markPrice) * position.quantity
+                ),
               ])}
               emptyMessage="No open positions"
             />
@@ -353,7 +424,7 @@ function App() {
                 .reverse()
                 .slice(0, 8)
                 .map((order) => [
-                  formatTime(order.createdAt),
+                  formatTime(String(order.metadata?.eventTime ?? order.createdAt)),
                   order.symbol,
                   order.side,
                   formatNumber(order.quantity, 4),
@@ -391,6 +462,86 @@ function App() {
       </main>
     </div>
   );
+}
+
+function TradingChart(props: { candles: ChartCandle[]; annotations: ChartAnnotation[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || props.candles.length === 0) {
+      return;
+    }
+
+    const chart = createChart(containerRef.current, {
+      autoSize: true,
+      height: 360,
+      layout: {
+        background: { type: ColorType.Solid, color: "rgba(255, 251, 242, 0.24)" },
+        textColor: "#4f585d",
+      },
+      grid: {
+        vertLines: { color: "rgba(216, 207, 186, 0.35)", style: LineStyle.Dotted },
+        horzLines: { color: "rgba(216, 207, 186, 0.35)", style: LineStyle.Dotted },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+      },
+      rightPriceScale: {
+        borderColor: "rgba(216, 207, 186, 0.9)",
+      },
+      timeScale: {
+        borderColor: "rgba(216, 207, 186, 0.9)",
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor: "#0e6d60",
+      downColor: "#b04a37",
+      wickUpColor: "#0e6d60",
+      wickDownColor: "#b04a37",
+      borderVisible: false,
+      priceLineVisible: true,
+    });
+
+    series.setData(
+      props.candles.map((item) => ({
+        time: Math.floor(new Date(item.time).getTime() / 1000),
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+      }))
+    );
+
+    const markers = createSeriesMarkers(
+      series,
+      props.annotations.map((item) => ({
+        time: Math.floor(new Date(item.time).getTime() / 1000),
+        position: markerPosition(item.type),
+        color: markerColor(item),
+        shape: markerShape(item.type),
+        text: item.label,
+      }))
+    );
+    markers.setMarkers(
+      props.annotations.map((item) => ({
+        time: Math.floor(new Date(item.time).getTime() / 1000),
+        position: markerPosition(item.type),
+        color: markerColor(item),
+        shape: markerShape(item.type),
+        text: item.label,
+      }))
+    );
+
+    chart.timeScale().fitContent();
+    return () => {
+      chart.remove();
+    };
+  }, [props.annotations, props.candles]);
+
+  return <div ref={containerRef} className="tv-chart" />;
 }
 
 function ActionButton(props: {
@@ -489,6 +640,77 @@ function summarizeRange(values: number[]) {
   };
 }
 
+function summarizeTimeRange(values: string[]) {
+  if (values.length === 0) {
+    return { label: "No data" };
+  }
+  const start = new Date(values[0]);
+  const end = new Date(values[values.length - 1]);
+  return {
+    label: `${formatShortTime(start)} - ${formatShortTime(end)}`,
+  };
+}
+
+function filterChartAnnotations(items: ChartAnnotation[], candles: ChartCandle[], sessionID?: string) {
+  if (candles.length === 0) {
+    return [];
+  }
+  const start = new Date(candles[0].time).getTime();
+  const end = new Date(candles[candles.length - 1].time).getTime();
+
+  return items.filter((item) => {
+    const ts = new Date(item.time).getTime();
+    if (Number.isNaN(ts) || ts < start || ts > end) {
+      return false;
+    }
+    if (item.source === "paper") {
+      return item.metadata?.paperSession === sessionID;
+    }
+    return item.source === "backtest";
+  });
+}
+
+function resolveChartAnchor(session?: PaperSession, orders: Order[] = []) {
+  const sessionEventTime = typeof session?.state?.lastLedgerTime === "string" ? session.state.lastLedgerTime : undefined;
+  if (sessionEventTime) {
+    return new Date(sessionEventTime);
+  }
+
+  const latestReplayOrder = orders
+    .slice()
+    .reverse()
+    .find((item) => typeof item.metadata?.eventTime === "string");
+  if (latestReplayOrder && typeof latestReplayOrder.metadata?.eventTime === "string") {
+    return new Date(latestReplayOrder.metadata.eventTime);
+  }
+
+  return new Date();
+}
+
+function markerShape(type: string) {
+  if (type.includes("buy") || type.includes("entry_long")) {
+    return "arrowUp";
+  }
+  if (type.includes("sell") || type.includes("entry_short")) {
+    return "arrowDown";
+  }
+  return "circle";
+}
+
+function markerPosition(type: string) {
+  if (type.includes("buy") || type.includes("entry_long")) {
+    return "belowBar";
+  }
+  return "aboveBar";
+}
+
+function markerColor(item: ChartAnnotation) {
+  if (item.source === "paper") {
+    return item.type.includes("buy") ? "#0e6d60" : "#b04a37";
+  }
+  return "#c58b2d";
+}
+
 function formatMoney(value?: number) {
   if (value == null) {
     return "--";
@@ -524,8 +746,28 @@ function formatTime(value: string) {
   });
 }
 
+function formatShortTime(value: Date) {
+  return value.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function shrink(value: string) {
   return value.length > 16 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+}
+
+function getNumber(value: unknown) {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

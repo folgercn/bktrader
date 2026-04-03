@@ -24,7 +24,10 @@ type Platform struct {
 	once         sync.Once                     // 确保 CSV ledger 只加载一次
 	ledger       []strategyReplayEvent         // 缓存的策略回放账本
 	ledgerErr    error                         // 加载账本时的错误
-	tickInterval int                           // 模拟盘 Ticker 间隔（秒）
+	candleOnce   sync.Once
+	candles      []candleBar
+	candleErr    error
+	tickInterval int // 模拟盘 Ticker 间隔（秒）
 }
 
 // NewPlatform 创建并初始化平台服务实例。

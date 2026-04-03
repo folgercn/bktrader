@@ -1,65 +1,99 @@
 package service
 
 import (
+	"encoding/csv"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
-// --- K 线数据和图表标注服务方法 ---
-
-// ListAnnotations 返回图表标注数据。
-// 当前为硬编码示例数据（TODO: 从回测/订单数据动态生成）。
-func (p *Platform) ListAnnotations(symbol string) []domain.ChartAnnotation {
-	items := []domain.ChartAnnotation{
-		{
-			ID:     "anno-1",
-			Source: "backtest",
-			Type:   "entry_long",
-			Symbol: "BTCUSDT",
-			Time:   time.Date(2024, 2, 5, 14, 21, 0, 0, time.UTC),
-			Price:  43125.0,
-			Label:  "SL-Reentry",
-		},
-		{
-			ID:     "anno-2",
-			Source: "backtest",
-			Type:   "exit_tp",
-			Symbol: "BTCUSDT",
-			Time:   time.Date(2024, 2, 17, 10, 12, 0, 0, time.UTC),
-			Price:  52520.0,
-			Label:  "PT",
-		},
-	}
-	if symbol == "" {
-		return items
-	}
-	filtered := make([]domain.ChartAnnotation, 0, len(items))
-	for _, item := range items {
-		if item.Symbol == symbol {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
+type candleBar struct {
+	Time   time.Time
+	Open   float64
+	High   float64
+	Low    float64
+	Close  float64
+	Volume float64
 }
 
-// CandleSeries 生成 K 线数据序列，用于 TradingView 图表展示。
-// 当前为模拟数据（TODO: 对接真实行情数据源，如 Binance API）。
+func (p *Platform) ListAnnotations(symbol string, from, to int64, limit int) []domain.ChartAnnotation {
+	items := make([]domain.ChartAnnotation, 0, 256)
+
+	if ledger, err := p.loadReplayLedger(); err == nil {
+		for index, event := range ledger {
+			annotation, ok := replayEventAnnotation(symbol, index, event)
+			if ok {
+				items = append(items, annotation)
+			}
+		}
+	}
+
+	orders, err := p.store.ListOrders()
+	if err == nil {
+		for _, order := range orders {
+			annotation, ok := orderAnnotation(symbol, order)
+			if ok {
+				items = append(items, annotation)
+			}
+		}
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Time.Before(items[j].Time)
+	})
+	start := time.Time{}
+	end := time.Time{}
+	if from > 0 {
+		start = time.Unix(from, 0).UTC()
+	}
+	if to > 0 {
+		end = time.Unix(to, 0).UTC()
+	}
+	if !start.IsZero() || !end.IsZero() {
+		filtered := make([]domain.ChartAnnotation, 0, len(items))
+		for _, item := range items {
+			if !start.IsZero() && item.Time.Before(start) {
+				continue
+			}
+			if !end.IsZero() && item.Time.After(end) {
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		items = filtered
+	}
+	if limit > 0 && len(items) > limit {
+		items = items[len(items)-limit:]
+	}
+	return items
+}
+
 func (p *Platform) CandleSeries(symbol string, resolution string, from int64, to int64, limit int) []map[string]any {
 	if limit <= 0 {
-		limit = 200
+		limit = 400
 	}
 	if resolution == "" {
 		resolution = "1"
 	}
+
+	bars, err := p.loadCandleBars()
+	if err != nil || len(bars) == 0 {
+		return []map[string]any{}
+	}
+
 	step := resolutionToDuration(resolution)
-	if step == 0 {
+	if step <= 0 {
 		step = time.Minute
 	}
 
-	// 计算时间范围
-	end := time.Now().UTC()
+	end := bars[len(bars)-1].Time
 	if to > 0 {
 		end = time.Unix(to, 0).UTC()
 	}
@@ -71,34 +105,248 @@ func (p *Platform) CandleSeries(symbol string, resolution string, from int64, to
 		start = end.Add(-time.Duration(limit-1) * step)
 	}
 
-	// 生成伪造 K 线数据（基于公式的确定性波动）
-	candles := make([]map[string]any, 0, limit)
-	base := 68000.0
-	index := 0
-	for current := start; !current.After(end) && len(candles) < limit; current = current.Add(step) {
-		wave := float64((index%17)-8) * 18
-		drift := float64(index) * 2.5
-		open := base + drift + wave
-		close := open + float64((index%5)-2)*12
-		high := maxFloat(open, close) + 22
-		low := minFloat(open, close) - 20
-		candles = append(candles, map[string]any{
+	filtered := filterCandleBars(bars, start, end)
+	if step > time.Minute {
+		filtered = aggregateCandleBars(filtered, resolution, step)
+	}
+	if len(filtered) > limit {
+		filtered = filtered[len(filtered)-limit:]
+	}
+
+	series := make([]map[string]any, 0, len(filtered))
+	for _, bar := range filtered {
+		series = append(series, map[string]any{
 			"symbol":     symbol,
 			"resolution": resolution,
-			"time":       current,
-			"open":       round2(open),
-			"high":       round2(high),
-			"low":        round2(low),
-			"close":      round2(close),
-			"volume":     100 + (index % 19 * 7),
+			"time":       bar.Time,
+			"open":       round2(bar.Open),
+			"high":       round2(bar.High),
+			"low":        round2(bar.Low),
+			"close":      round2(bar.Close),
+			"volume":     round2(bar.Volume),
 		})
-		index++
 	}
-	return candles
+	return series
 }
 
-// resolutionToDuration 将 K 线分辨率字符串转换为 time.Duration。
-// 支持: "1"(1分钟), "5", "15", "60", "240", "1D"/"D"(日线)。
+func (p *Platform) loadCandleBars() ([]candleBar, error) {
+	p.candleOnce.Do(func() {
+		p.candles, p.candleErr = readOneMinuteCandles("BTC_1min_Clean.csv")
+	})
+	return p.candles, p.candleErr
+}
+
+func readOneMinuteCandles(path string) ([]candleBar, error) {
+	resolved := path
+	if !filepath.IsAbs(path) {
+		_, currentFile, _, _ := runtime.Caller(0)
+		resolved = filepath.Join(filepath.Dir(currentFile), "..", "..", path)
+	}
+
+	file, err := os.Open(filepath.Clean(resolved))
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) <= 1 {
+		return nil, fmt.Errorf("candle csv is empty: %s", resolved)
+	}
+
+	bars := make([]candleBar, 0, len(rows)-1)
+	for _, row := range rows[1:] {
+		if len(row) < 6 {
+			continue
+		}
+		ts, err := time.Parse("2006-01-02 15:04:05Z07:00", row[0])
+		if err != nil {
+			return nil, fmt.Errorf("parse candle time %q: %w", row[0], err)
+		}
+		open, err := strconv.ParseFloat(row[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		high, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			return nil, err
+		}
+		low, err := strconv.ParseFloat(row[3], 64)
+		if err != nil {
+			return nil, err
+		}
+		closeValue, err := strconv.ParseFloat(row[4], 64)
+		if err != nil {
+			return nil, err
+		}
+		volume, err := strconv.ParseFloat(row[5], 64)
+		if err != nil {
+			return nil, err
+		}
+		bars = append(bars, candleBar{
+			Time:   ts.UTC(),
+			Open:   open,
+			High:   high,
+			Low:    low,
+			Close:  closeValue,
+			Volume: volume,
+		})
+	}
+
+	return bars, nil
+}
+
+func filterCandleBars(bars []candleBar, start, end time.Time) []candleBar {
+	filtered := make([]candleBar, 0, len(bars))
+	for _, bar := range bars {
+		if bar.Time.Before(start) || bar.Time.After(end) {
+			continue
+		}
+		filtered = append(filtered, bar)
+	}
+	return filtered
+}
+
+func aggregateCandleBars(bars []candleBar, resolution string, step time.Duration) []candleBar {
+	if len(bars) == 0 {
+		return bars
+	}
+
+	aggregated := make([]candleBar, 0, len(bars))
+	var current candleBar
+	var bucketStart time.Time
+	initialized := false
+
+	for _, bar := range bars {
+		nextBucket := candleBucketStart(bar.Time, resolution, step)
+		if !initialized || !nextBucket.Equal(bucketStart) {
+			if initialized {
+				aggregated = append(aggregated, current)
+			}
+			current = candleBar{
+				Time:   nextBucket,
+				Open:   bar.Open,
+				High:   bar.High,
+				Low:    bar.Low,
+				Close:  bar.Close,
+				Volume: bar.Volume,
+			}
+			bucketStart = nextBucket
+			initialized = true
+			continue
+		}
+		current.High = maxFloat(current.High, bar.High)
+		current.Low = minFloat(current.Low, bar.Low)
+		current.Close = bar.Close
+		current.Volume += bar.Volume
+	}
+
+	if initialized {
+		aggregated = append(aggregated, current)
+	}
+	return aggregated
+}
+
+func candleBucketStart(ts time.Time, resolution string, step time.Duration) time.Time {
+	if strings.EqualFold(resolution, "D") || strings.EqualFold(resolution, "1D") {
+		year, month, day := ts.UTC().Date()
+		return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	}
+	unix := ts.UTC().Unix()
+	seconds := int64(step / time.Second)
+	if seconds <= 0 {
+		return ts.UTC().Truncate(time.Minute)
+	}
+	return time.Unix(unix-(unix%seconds), 0).UTC()
+}
+
+func replayEventAnnotation(symbol string, index int, event strategyReplayEvent) (domain.ChartAnnotation, bool) {
+	if NormalizeSymbol(symbol) != "BTCUSDT" {
+		return domain.ChartAnnotation{}, false
+	}
+
+	annotationType := "event"
+	switch event.Type {
+	case "BUY":
+		annotationType = "entry_long"
+	case "SHORT":
+		annotationType = "entry_short"
+	case "EXIT":
+		annotationType = "exit"
+	}
+
+	return domain.ChartAnnotation{
+		ID:     fmt.Sprintf("backtest-%d", index),
+		Source: "backtest",
+		Type:   annotationType,
+		Symbol: "BTCUSDT",
+		Time:   event.Time,
+		Price:  event.Price,
+		Label:  event.Reason,
+		Metadata: map[string]any{
+			"notional":  event.Notional,
+			"balance":   event.Balance,
+			"eventType": event.Type,
+		},
+	}, true
+}
+
+func orderAnnotation(symbol string, order domain.Order) (domain.ChartAnnotation, bool) {
+	if NormalizeSymbol(symbol) != NormalizeSymbol(order.Symbol) {
+		return domain.ChartAnnotation{}, false
+	}
+
+	eventTime := order.CreatedAt
+	if order.Metadata != nil {
+		if raw, ok := order.Metadata["eventTime"].(string); ok && raw != "" {
+			if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+				eventTime = parsed
+			}
+		}
+	}
+
+	label := strings.TrimSpace(order.Side)
+	if reason, ok := order.Metadata["reason"].(string); ok && reason != "" {
+		label = reason
+	}
+	annotationType := "order"
+	switch strings.ToUpper(strings.TrimSpace(order.Side)) {
+	case "BUY":
+		annotationType = "buy"
+	case "SELL":
+		annotationType = "sell"
+	}
+
+	source := "live"
+	if order.Metadata != nil {
+		if raw, ok := order.Metadata["source"].(string); ok && strings.Contains(raw, "paper") {
+			source = "paper"
+		}
+	}
+
+	return domain.ChartAnnotation{
+		ID:     order.ID,
+		Source: source,
+		Type:   annotationType,
+		Symbol: NormalizeSymbol(order.Symbol),
+		Time:   eventTime.UTC(),
+		Price:  order.Price,
+		Label:  label,
+		Metadata: map[string]any{
+			"accountId":     order.AccountID,
+			"paperSession":  order.Metadata["paperSession"],
+			"strategyId":    order.Metadata["strategyId"],
+			"orderStatus":   order.Status,
+			"orderSide":     order.Side,
+			"executionMode": order.Metadata["executionMode"],
+		},
+	}, true
+}
+
 func resolutionToDuration(resolution string) time.Duration {
 	switch resolution {
 	case "1":
