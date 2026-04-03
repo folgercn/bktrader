@@ -139,7 +139,12 @@ func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[strin
 	if err != nil {
 		return domain.BacktestRun{}, err
 	}
-	return p.store.CreateBacktest(strategyVersionID, normalized)
+	backtest, err := p.store.CreateBacktest(strategyVersionID, normalized)
+	if err != nil {
+		return domain.BacktestRun{}, err
+	}
+	backtest = p.runBacktestSkeleton(backtest)
+	return p.store.UpdateBacktest(backtest)
 }
 
 func (p *Platform) BacktestOptions() map[string]any {

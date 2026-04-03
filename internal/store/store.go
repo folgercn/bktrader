@@ -56,6 +56,8 @@ type Repository interface {
 	ListBacktests() ([]domain.BacktestRun, error)
 	// CreateBacktest 创建新回测运行记录。
 	CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error)
+	// UpdateBacktest 更新回测运行记录状态和结果。
+	UpdateBacktest(backtest domain.BacktestRun) (domain.BacktestRun, error)
 
 	// --- 模拟交易会话 ---
 

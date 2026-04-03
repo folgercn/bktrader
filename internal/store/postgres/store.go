@@ -442,6 +442,24 @@ func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]a
 	return item, err
 }
 
+func (s *Store) UpdateBacktest(backtest domain.BacktestRun) (domain.BacktestRun, error) {
+	parametersRaw, _ := json.Marshal(backtest.Parameters)
+	summaryRaw, _ := json.Marshal(backtest.ResultSummary)
+	_, err := s.db.Exec(`
+		update backtest_runs
+		set strategy_version_id = $2,
+			status = $3,
+			parameters = $4,
+			result_summary = $5,
+			created_at = $6
+		where id = $1
+	`, backtest.ID, backtest.StrategyVersionID, backtest.Status, parametersRaw, summaryRaw, backtest.CreatedAt)
+	if err != nil {
+		return domain.BacktestRun{}, err
+	}
+	return backtest, nil
+}
+
 func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 	rows, err := s.db.Query(`
 		select id, account_id, strategy_id, status, start_equity, state, created_at

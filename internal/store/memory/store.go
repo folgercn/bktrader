@@ -444,6 +444,13 @@ func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]a
 	return backtest, nil
 }
 
+func (s *Store) UpdateBacktest(backtest domain.BacktestRun) (domain.BacktestRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.backtests[backtest.ID] = backtest
+	return backtest, nil
+}
+
 func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

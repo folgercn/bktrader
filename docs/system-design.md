@@ -147,6 +147,7 @@ Backtest configuration rules:
 - signal timeframe should reflect strategy decision bars, currently `4h` or `1d`
 - execution data source should reflect fill simulation granularity, currently `tick` or `1min`
 - `1min` is an execution proxy, not the strategy timeframe itself
+- if `tick` data is unavailable, the backtest runner should fail loudly with a dataset error instead of silently falling back
 
 ### 4.7 Paper Trading
 
