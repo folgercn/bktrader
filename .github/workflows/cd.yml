@@ -69,7 +69,7 @@ jobs:
           IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/bktrader
           IMAGE_TAG: latest
           APP_ENV_FILE: /Users/fujun/services/bktrader/.env
-          GHCR_USERNAME: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
         run: |
           bash /Users/fujun/services/bktrader/scripts/deploy.sh

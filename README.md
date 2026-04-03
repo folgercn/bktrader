@@ -96,13 +96,12 @@ npm run dev
 
 ### 需要配置的 GitHub Secrets
 
-在仓库 `Settings -> Secrets and variables -> Actions` 中添加：
+如果使用 self-hosted runner + GHCR 拉取镜像，至少需要添加：
 
-- `DEPLOY_HOST`：部署目标主机地址（Macmini 可填局域网 IP、Tailscale 地址或可直连域名）
-- `DEPLOY_USER`：部署用户，例如 `fujun`
-- `DEPLOY_PATH`：部署目录，例如 `/Users/fujun/services/bktrader`
-- `DEPLOY_SSH_KEY`：用于 SSH 部署的私钥
-- `APP_ENV_FILE`：部署机上的环境文件路径，例如 `/Users/fujun/services/bktrader/.env`
+- `GHCR_USERNAME`：有权读取 GHCR 包的 GitHub 用户名
+- `GHCR_READ_TOKEN`：用于读取 GHCR 包的 Personal Access Token（至少包含 `read:packages`）
+
+> 如果你把 `ghcr.io/wuyaocheng/bktrader` 这个包设为 Public，也可以不再依赖读取凭证。
 
 ### Macmini 部署建议
 
