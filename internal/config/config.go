@@ -7,6 +7,7 @@ type Config struct {
 	Environment  string
 	HTTPAddr     string
 	StoreBackend string
+	AutoMigrate  bool
 	PostgresDSN  string
 	RedisAddr    string
 	NATSURL      string
@@ -18,6 +19,7 @@ func Load() Config {
 		Environment:  getenv("APP_ENV", "development"),
 		HTTPAddr:     getenv("HTTP_ADDR", ":8080"),
 		StoreBackend: getenv("STORE_BACKEND", "memory"),
+		AutoMigrate:  getenv("AUTO_MIGRATE", "false") == "true",
 		PostgresDSN:  getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
 		RedisAddr:    getenv("REDIS_ADDR", "localhost:6379"),
 		NATSURL:      getenv("NATS_URL", "nats://localhost:4222"),

@@ -28,6 +28,11 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 func buildRepository(cfg config.Config) (store.Repository, error) {
 	switch cfg.StoreBackend {
 	case "postgres":
+		if cfg.AutoMigrate {
+			if err := postgres.Migrate(cfg.PostgresDSN); err != nil {
+				return nil, err
+			}
+		}
 		return postgres.New(cfg.PostgresDSN)
 	case "memory", "":
 		return memory.NewStore(), nil

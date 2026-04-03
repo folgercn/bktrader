@@ -219,6 +219,8 @@ Current implementation status:
 - candle feed endpoint suitable for TradingView integration scaffolding
 - PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions
 - backend selection controlled by `STORE_BACKEND`
+- embedded SQL migrations with `cmd/db-migrate`
+- optional local auto-migration controlled by `AUTO_MIGRATE`
 
 ### Phase 2: Live Trading
 
