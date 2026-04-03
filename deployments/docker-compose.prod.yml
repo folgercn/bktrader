@@ -1,0 +1,37 @@
+services:
+  app:
+    image: ${IMAGE_REPO:-ghcr.io/wuyaocheng/bktrader}:${IMAGE_TAG:-latest}
+    container_name: bktrader-app
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-/opt/bktrader/.env}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - nats
+
+  postgres:
+    image: postgres:16
+    container_name: bktrader-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bktrader}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: bktrader-redis
+    restart: unless-stopped
+
+  nats:
+    image: nats:2
+    container_name: bktrader-nats
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -84,6 +84,49 @@ export VITE_API_BASE=http://127.0.0.1:8080
 npm run dev
 ```
 
+## CI/CD
+
+仓库已提供一套最小可用的 Docker 化 CI/CD 骨架：
+
+- `.github/workflows/ci.yml`：后端 `go test/build`、前端 `npm run build`、Docker 构建校验
+- `.github/workflows/cd.yml`：构建镜像并推送到 GHCR，然后通过 SSH 到目标主机执行部署脚本
+- `Dockerfile`：多阶段构建，产出 `platform-api` 运行镜像
+- `deployments/docker-compose.prod.yml`：生产环境 Compose 编排
+- `scripts/deploy.sh`：远程部署脚本
+
+### 需要配置的 GitHub Secrets
+
+在仓库 `Settings -> Secrets and variables -> Actions` 中添加：
+
+- `DEPLOY_HOST`：部署目标主机地址
+- `DEPLOY_USER`：部署用户
+- `DEPLOY_PATH`：部署目录，例如 `/opt/bktrader`
+- `DEPLOY_SSH_KEY`：用于 SSH 部署的私钥
+- `APP_ENV_FILE`：部署机上的环境文件路径，例如 `/opt/bktrader/.env`
+
+### 推荐的部署机准备
+
+目标机器至少安装：
+
+- Docker
+- Docker Compose Plugin
+
+并准备好 `.env` 文件，例如：
+
+```env
+APP_NAME=bkTrader-platform
+APP_ENV=production
+HTTP_ADDR=:8080
+STORE_BACKEND=postgres
+AUTO_MIGRATE=true
+POSTGRES_DSN=postgres://postgres:postgres@postgres:5432/bktrader?sslmode=disable
+REDIS_ADDR=redis:6379
+NATS_URL=nats://nats:4222
+PAPER_TICK_INTERVAL=15
+```
+
+> 当前 `cd.yml` 默认推送镜像到 `ghcr.io/<owner>/bktrader:latest`，并在 `main` 分支 push 后触发部署。
+
 ## 备注
 
 - 现有的研究文件已整理至 `research/` 目录，避免干扰策略研究工作。
