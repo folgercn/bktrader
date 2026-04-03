@@ -442,7 +442,7 @@ func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]a
 	return item, err
 }
 
-func (s *Store) ListPaperSessions() ([]map[string]any, error) {
+func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 	rows, err := s.db.Query(`
 		select id, account_id, strategy_id, status, start_equity, created_at
 		from paper_sessions order by created_at asc
@@ -452,44 +452,31 @@ func (s *Store) ListPaperSessions() ([]map[string]any, error) {
 	}
 	defer rows.Close()
 
-	items := []map[string]any{}
+	items := []domain.PaperSession{}
 	for rows.Next() {
-		var (
-			id, accountID, strategyID, status string
-			startEquity                       float64
-			createdAt                         time.Time
-		)
-		if err := rows.Scan(&id, &accountID, &strategyID, &status, &startEquity, &createdAt); err != nil {
+		var item domain.PaperSession
+		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &item.StartEquity, &item.CreatedAt); err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]any{
-			"id":          id,
-			"accountId":   accountID,
-			"strategyId":  strategyID,
-			"status":      status,
-			"startEquity": startEquity,
-			"createdAt":   createdAt,
-		})
+		items = append(items, item)
 	}
 	return items, rows.Err()
 }
 
-func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity float64) (map[string]any, error) {
-	id := fmt.Sprintf("paper-session-%d", time.Now().UTC().UnixNano())
-	createdAt := time.Now().UTC()
-	item := map[string]any{
-		"id":          id,
-		"accountId":   accountID,
-		"strategyId":  strategyID,
-		"status":      "RUNNING",
-		"startEquity": startEquity,
-		"createdAt":   createdAt,
+func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error) {
+	item := domain.PaperSession{
+		ID:          fmt.Sprintf("paper-session-%d", time.Now().UTC().UnixNano()),
+		AccountID:   accountID,
+		StrategyID:  strategyID,
+		Status:      "RUNNING",
+		StartEquity: startEquity,
+		CreatedAt:   time.Now().UTC(),
 	}
 
 	_, err := s.db.Exec(`
 		insert into paper_sessions (id, account_id, strategy_id, status, start_equity, created_at)
 		values ($1, $2, $3, $4, $5, $6)
-	`, id, accountID, strategyID, "RUNNING", startEquity, createdAt)
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, item.StartEquity, item.CreatedAt)
 	return item, err
 }
 

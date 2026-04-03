@@ -25,6 +25,6 @@ type Repository interface {
 	ListBacktests() ([]domain.BacktestRun, error)
 	CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error)
 
-	ListPaperSessions() ([]map[string]any, error)
-	CreatePaperSession(accountID, strategyID string, startEquity float64) (map[string]any, error)
+	ListPaperSessions() ([]domain.PaperSession, error)
+	CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error)
 }

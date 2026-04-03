@@ -15,6 +15,12 @@ type Platform struct {
 	store store.Repository
 }
 
+type pnlState struct {
+	netQty      float64
+	avgPrice    float64
+	realizedPnL float64
+}
+
 func NewPlatform(store store.Repository) *Platform {
 	return &Platform{store: store}
 }
@@ -45,6 +51,107 @@ func (p *Platform) CreateStrategy(name, description string, parameters map[strin
 
 func (p *Platform) ListAccounts() ([]domain.Account, error) {
 	return p.store.ListAccounts()
+}
+
+func (p *Platform) ListAccountSummaries() ([]domain.AccountSummary, error) {
+	accounts, err := p.store.ListAccounts()
+	if err != nil {
+		return nil, err
+	}
+	orders, err := p.store.ListOrders()
+	if err != nil {
+		return nil, err
+	}
+	fills, err := p.store.ListFills()
+	if err != nil {
+		return nil, err
+	}
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return nil, err
+	}
+	paperSessions, err := p.store.ListPaperSessions()
+	if err != nil {
+		return nil, err
+	}
+
+	orderByID := make(map[string]domain.Order, len(orders))
+	for _, order := range orders {
+		orderByID[order.ID] = order
+	}
+
+	startEquityByAccount := make(map[string]float64, len(paperSessions))
+	for _, session := range paperSessions {
+		startEquityByAccount[session.AccountID] = session.StartEquity
+	}
+
+	states := map[string]*pnlState{}
+	feesByAccount := map[string]float64{}
+	for _, fill := range fills {
+		order, ok := orderByID[fill.OrderID]
+		if !ok {
+			continue
+		}
+		key := order.AccountID + "|" + order.Symbol
+		state := states[key]
+		if state == nil {
+			state = &pnlState{}
+			states[key] = state
+		}
+		feesByAccount[order.AccountID] += fill.Fee
+		applyPnLFill(state, order.Side, fill.Quantity, fill.Price)
+	}
+
+	summaries := make([]domain.AccountSummary, 0, len(accounts))
+	for _, account := range accounts {
+		startEquity := startEquityByAccount[account.ID]
+		if startEquity <= 0 && account.Mode == "PAPER" {
+			startEquity = 100000
+		}
+
+		realized := 0.0
+		for key, state := range states {
+			if strings.HasPrefix(key, account.ID+"|") {
+				realized += state.realizedPnL
+			}
+		}
+
+		unrealized := 0.0
+		exposure := 0.0
+		openCount := 0
+		for _, position := range positions {
+			if position.AccountID != account.ID {
+				continue
+			}
+			openCount++
+			exposure += absFloat(position.Quantity * position.MarkPrice)
+			switch strings.ToUpper(position.Side) {
+			case "LONG":
+				unrealized += (position.MarkPrice - position.EntryPrice) * position.Quantity
+			case "SHORT":
+				unrealized += (position.EntryPrice - position.MarkPrice) * position.Quantity
+			}
+		}
+
+		fees := feesByAccount[account.ID]
+		netEquity := startEquity + realized + unrealized - fees
+		summaries = append(summaries, domain.AccountSummary{
+			AccountID:         account.ID,
+			AccountName:       account.Name,
+			Mode:              account.Mode,
+			Exchange:          account.Exchange,
+			Status:            account.Status,
+			StartEquity:       round2(startEquity),
+			RealizedPnL:       round2(realized),
+			UnrealizedPnL:     round2(unrealized),
+			Fees:              round2(fees),
+			NetEquity:         round2(netEquity),
+			ExposureNotional:  round2(exposure),
+			OpenPositionCount: openCount,
+			UpdatedAt:         time.Now().UTC(),
+		})
+	}
+	return summaries, nil
 }
 
 func (p *Platform) CreateAccount(name, mode, exchange string) (domain.Account, error) {
@@ -109,11 +216,11 @@ func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[strin
 	return p.store.CreateBacktest(strategyVersionID, parameters)
 }
 
-func (p *Platform) ListPaperSessions() ([]map[string]any, error) {
+func (p *Platform) ListPaperSessions() ([]domain.PaperSession, error) {
 	return p.store.ListPaperSessions()
 }
 
-func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64) (map[string]any, error) {
+func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error) {
 	return p.store.CreatePaperSession(accountID, strategyID, startEquity)
 }
 
@@ -370,4 +477,60 @@ func toFloat64(value any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func applyPnLFill(state *pnlState, side string, qty, price float64) {
+	signedQty := qty
+	if strings.ToUpper(strings.TrimSpace(side)) == "SELL" {
+		signedQty = -qty
+	}
+
+	if state.netQty == 0 || sameSign(state.netQty, signedQty) {
+		totalQty := absFloat(state.netQty) + absFloat(signedQty)
+		if totalQty > 0 {
+			state.avgPrice = ((state.avgPrice * absFloat(state.netQty)) + (price * absFloat(signedQty))) / totalQty
+		}
+		state.netQty += signedQty
+		return
+	}
+
+	closingQty := minFloat(absFloat(state.netQty), absFloat(signedQty))
+	if state.netQty > 0 {
+		state.realizedPnL += (price - state.avgPrice) * closingQty
+	} else {
+		state.realizedPnL += (state.avgPrice - price) * closingQty
+	}
+
+	remaining := absFloat(signedQty) - closingQty
+	if remaining == 0 {
+		if absFloat(state.netQty) == closingQty {
+			state.netQty = 0
+			state.avgPrice = 0
+		} else {
+			if state.netQty > 0 {
+				state.netQty -= closingQty
+			} else {
+				state.netQty += closingQty
+			}
+		}
+		return
+	}
+
+	if signedQty > 0 {
+		state.netQty = remaining
+	} else {
+		state.netQty = -remaining
+	}
+	state.avgPrice = price
+}
+
+func sameSign(a, b float64) bool {
+	return (a > 0 && b > 0) || (a < 0 && b < 0)
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

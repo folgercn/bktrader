@@ -45,6 +45,19 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 	})
 
+	mux.HandleFunc("/api/v1/account-summaries", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		items, err := platform.ListAccountSummaries()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
 	mux.HandleFunc("/api/v1/positions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

@@ -39,6 +39,31 @@ type Account struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type PaperSession struct {
+	ID          string    `json:"id"`
+	AccountID   string    `json:"accountId"`
+	StrategyID  string    `json:"strategyId"`
+	Status      string    `json:"status"`
+	StartEquity float64   `json:"startEquity"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type AccountSummary struct {
+	AccountID         string    `json:"accountId"`
+	AccountName       string    `json:"accountName"`
+	Mode              string    `json:"mode"`
+	Exchange          string    `json:"exchange"`
+	Status            string    `json:"status"`
+	StartEquity       float64   `json:"startEquity"`
+	RealizedPnL       float64   `json:"realizedPnl"`
+	UnrealizedPnL     float64   `json:"unrealizedPnl"`
+	Fees              float64   `json:"fees"`
+	NetEquity         float64   `json:"netEquity"`
+	ExposureNotional  float64   `json:"exposureNotional"`
+	OpenPositionCount int       `json:"openPositionCount"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+}
+
 type Order struct {
 	ID                string         `json:"id"`
 	AccountID         string         `json:"accountId"`

@@ -19,7 +19,7 @@ type Store struct {
 	fills           map[string]domain.Fill
 	positions       map[string]domain.Position
 	backtests       map[string]domain.BacktestRun
-	paperSessions   map[string]map[string]any
+	paperSessions   map[string]domain.PaperSession
 	signalSources   []map[string]any
 	annotations     []domain.ChartAnnotation
 
@@ -36,7 +36,7 @@ func NewStore() *Store {
 		fills:           make(map[string]domain.Fill),
 		positions:       make(map[string]domain.Position),
 		backtests:       make(map[string]domain.BacktestRun),
-		paperSessions:   make(map[string]map[string]any),
+		paperSessions:   make(map[string]domain.PaperSession),
 		signalSources: []map[string]any{
 			{
 				"id":          "signal-source-bk-1d",
@@ -169,12 +169,13 @@ func NewStore() *Store {
 	}
 	store.backtests[backtest.ID] = backtest
 
-	store.paperSessions["paper-session-main"] = map[string]any{
-		"id":          "paper-session-main",
-		"accountId":   paper.ID,
-		"strategyId":  strategy.ID,
-		"status":      "RUNNING",
-		"startEquity": 100000.0,
+	store.paperSessions["paper-session-main"] = domain.PaperSession{
+		ID:          "paper-session-main",
+		AccountID:   paper.ID,
+		StrategyID:  strategy.ID,
+		Status:      "RUNNING",
+		StartEquity: 100000.0,
+		CreatedAt:   now,
 	}
 
 	return store
@@ -423,26 +424,28 @@ func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]a
 	return backtest, nil
 }
 
-func (s *Store) ListPaperSessions() ([]map[string]any, error) {
+func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	items := make([]map[string]any, 0, len(s.paperSessions))
+	items := make([]domain.PaperSession, 0, len(s.paperSessions))
 	for _, item := range s.paperSessions {
 		items = append(items, item)
 	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
 	return items, nil
 }
 
-func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity float64) (map[string]any, error) {
+func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := s.nextID("paper-session")
-	item := map[string]any{
-		"id":          id,
-		"accountId":   accountID,
-		"strategyId":  strategyID,
-		"status":      "RUNNING",
-		"startEquity": startEquity,
+	item := domain.PaperSession{
+		ID:          id,
+		AccountID:   accountID,
+		StrategyID:  strategyID,
+		Status:      "RUNNING",
+		StartEquity: startEquity,
+		CreatedAt:   time.Now().UTC(),
 	}
 	s.paperSessions[id] = item
 	return item, nil
