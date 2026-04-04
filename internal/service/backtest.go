@@ -120,6 +120,28 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 	if to != "" {
 		resultSummary["rangeTo"] = to
 	}
+	if len(parseBracketPlans(backtest.Parameters)) == 0 && !shouldReplayLedger(backtest.Parameters) {
+		strategySummary, err := p.runStrategyReplay(backtest.Parameters)
+		if err != nil {
+			backtest.Status = "FAILED"
+			backtest.ResultSummary = map[string]any{
+				"return":              0,
+				"maxDrawdown":         0,
+				"tradePairs":          0,
+				"signalTimeframe":     signalTimeframe,
+				"executionDataSource": executionSource,
+				"symbol":              symbol,
+				"error":               err.Error(),
+			}
+			return backtest
+		}
+		for key, value := range strategySummary {
+			resultSummary[key] = value
+		}
+		backtest.Status = "COMPLETED"
+		backtest.ResultSummary = resultSummary
+		return backtest
+	}
 	if strings.EqualFold(executionSource, "tick") {
 		preview, err := p.previewTickArchiveRange(symbol, from, to, 5000)
 		if err != nil {
