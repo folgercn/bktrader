@@ -214,6 +214,7 @@ function App() {
     stopLossPrice: "",
     takeProfitPrice: "",
     quantity: "1",
+    tradePlansJson: "",
   });
 
   const primaryAccount = summaries[0] ?? null;
@@ -318,6 +319,7 @@ function App() {
       stopLossPrice: current.stopLossPrice || "",
       takeProfitPrice: current.takeProfitPrice || "",
       quantity: current.quantity || "1",
+      tradePlansJson: current.tradePlansJson || "",
     }));
   }
 
@@ -424,6 +426,7 @@ function App() {
     try {
       setBacktestAction(true);
       setError(null);
+      const tradePlans = parseTradePlansJSON(backtestForm.tradePlansJson);
       await fetchJSON<BacktestRun>("/api/v1/backtests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -440,6 +443,7 @@ function App() {
             stopLossPrice: backtestForm.stopLossPrice ? Number(backtestForm.stopLossPrice) : undefined,
             takeProfitPrice: backtestForm.takeProfitPrice ? Number(backtestForm.takeProfitPrice) : undefined,
             quantity: backtestForm.quantity ? Number(backtestForm.quantity) : undefined,
+            tradePlans: tradePlans.length > 0 ? tradePlans : undefined,
           },
         }),
       });
@@ -617,6 +621,15 @@ function App() {
                     placeholder="1"
                   />
                 </label>
+                <label className="form-field form-field-wide">
+                  <span>Trade Plans JSON (Optional)</span>
+                  <textarea
+                    value={backtestForm.tradePlansJson}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, tradePlansJson: event.target.value }))}
+                    placeholder='[{"side":"BUY","entryPrice":7195.24,"stopLossPrice":7190,"takeProfitPrice":7200,"quantity":1}]'
+                    rows={5}
+                  />
+                </label>
               </div>
               <div className="backtest-actions">
                 <ActionButton
@@ -785,6 +798,22 @@ function App() {
                       <div className="detail-item">
                         <span>{processedCountLabel}</span>
                         <strong>{String(latestBacktestSummary.bracketProcessedTicks ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Trade Count</span>
+                        <strong>{String(latestBacktestSummary.executionTradeCount ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Closed Trades</span>
+                        <strong>{String(latestBacktestSummary.executionClosedCount ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Win Rate</span>
+                        <strong>{formatPercent(latestBacktestSummary.executionWinRate)}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Total PnL</span>
+                        <strong>{formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL))}</strong>
                       </div>
                     </div>
 
@@ -1850,6 +1879,18 @@ function formatShortTime(value: Date) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function parseTradePlansJSON(value: string) {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return [];
+  }
+  const parsed = JSON.parse(trimmed);
+  if (!Array.isArray(parsed)) {
+    throw new Error("tradePlansJson must be a JSON array");
+  }
+  return parsed;
 }
 
 function shrink(value: string) {

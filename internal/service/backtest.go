@@ -140,8 +140,8 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 		for key, value := range preview {
 			resultSummary[key] = value
 		}
-		if plan, ok := parseBracketPlan(backtest.Parameters); ok {
-			sim, err := p.simulateTickBracket(symbol, from, to, plan)
+		if plans := parseBracketPlans(backtest.Parameters); len(plans) > 0 {
+			sim, err := p.simulateTickBrackets(symbol, from, to, plans)
 			if err != nil {
 				resultSummary["bracketError"] = err.Error()
 			} else {
@@ -161,8 +161,8 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 			}
 		}
 	} else if strings.EqualFold(executionSource, "1min") {
-		if plan, ok := parseBracketPlan(backtest.Parameters); ok {
-			sim, err := p.simulateMinuteBracket(symbol, from, to, plan)
+		if plans := parseBracketPlans(backtest.Parameters); len(plans) > 0 {
+			sim, err := p.simulateMinuteBrackets(symbol, from, to, plans)
 			if err != nil {
 				resultSummary["bracketError"] = err.Error()
 			} else {
@@ -843,6 +843,44 @@ func parseBracketPlan(parameters map[string]any) (bracketPlan, bool) {
 	}, true
 }
 
+func parseBracketPlans(parameters map[string]any) []bracketPlan {
+	if rawPlans, ok := parameters["tradePlans"]; ok {
+		plans := make([]bracketPlan, 0)
+		switch items := rawPlans.(type) {
+		case []any:
+			for _, item := range items {
+				plan, ok := parseBracketPlanFromAny(item)
+				if ok {
+					plans = append(plans, plan)
+				}
+			}
+		case []map[string]any:
+			for _, item := range items {
+				plan, ok := parseBracketPlan(item)
+				if ok {
+					plans = append(plans, plan)
+				}
+			}
+		}
+		if len(plans) > 0 {
+			return plans
+		}
+	}
+	if plan, ok := parseBracketPlan(parameters); ok {
+		return []bracketPlan{plan}
+	}
+	return nil
+}
+
+func parseBracketPlanFromAny(value any) (bracketPlan, bool) {
+	switch item := value.(type) {
+	case map[string]any:
+		return parseBracketPlan(item)
+	default:
+		return bracketPlan{}, false
+	}
+}
+
 func simulateBracketEvent(event tickEvent, plan bracketPlan, state string) (nextState string, payload map[string]any, done bool) {
 	switch state {
 	case "waiting_entry":
@@ -925,6 +963,18 @@ func (p *Platform) simulateTickBracket(symbol, from, to string, plan bracketPlan
 			return result, nil
 		}
 	}
+}
+
+func (p *Platform) simulateTickBrackets(symbol, from, to string, plans []bracketPlan) (map[string]any, error) {
+	results := make([]map[string]any, 0, len(plans))
+	for _, plan := range plans {
+		result, err := p.simulateTickBracket(symbol, from, to, plan)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return summarizeExecutionResults(results), nil
 }
 
 func (p *Platform) simulateMinuteBracket(symbol, from, to string, plan bracketPlan) (map[string]any, error) {
@@ -1022,6 +1072,18 @@ func (p *Platform) simulateMinuteBracket(symbol, from, to string, plan bracketPl
 	result["executionTrades"] = buildExecutionTradeRecords("1min", plan, result)
 	result["executionTradeCount"] = len(result["executionTrades"].([]map[string]any))
 	return result, nil
+}
+
+func (p *Platform) simulateMinuteBrackets(symbol, from, to string, plans []bracketPlan) (map[string]any, error) {
+	results := make([]map[string]any, 0, len(plans))
+	for _, plan := range plans {
+		result, err := p.simulateMinuteBracket(symbol, from, to, plan)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return summarizeExecutionResults(results), nil
 }
 
 func shouldReplayLedger(parameters map[string]any) bool {
@@ -1361,6 +1423,97 @@ func buildExecutionTradeRecords(source string, plan bracketPlan, result map[stri
 		"status":        status,
 	}
 	return []map[string]any{record}
+}
+
+func summarizeExecutionResults(results []map[string]any) map[string]any {
+	summary := map[string]any{
+		"executionTradeCount":   0,
+		"executionClosedCount":  0,
+		"executionOpenCount":    0,
+		"executionPendingCount": 0,
+		"executionWins":         0,
+		"executionLosses":       0,
+		"executionRealizedPnL":  0.0,
+		"executionTrades":       []map[string]any{},
+	}
+	if len(results) == 0 {
+		return summary
+	}
+
+	allTrades := make([]map[string]any, 0, len(results))
+	totalPnL := 0.0
+	closedCount := 0
+	openCount := 0
+	pendingCount := 0
+	wins := 0
+	losses := 0
+
+	for index, result := range results {
+		if index == 0 {
+			for _, key := range []string{
+				"bracketSide",
+				"bracketEntryPrice",
+				"bracketStopLossPrice",
+				"bracketTakeProfitPrice",
+				"bracketQuantity",
+				"bracketEntryHit",
+				"bracketEntryTime",
+				"bracketEntryFill",
+				"bracketExitType",
+				"bracketExitTime",
+				"bracketExitPrice",
+				"bracketRealizedPnL",
+				"bracketProcessedTicks",
+				"bracketFinalState",
+				"streamMode",
+				"streamPreviewTicks",
+				"streamPreviewStart",
+				"streamPreviewEnd",
+				"streamPreviewLastPrice",
+			} {
+				if value, ok := result[key]; ok {
+					summary[key] = value
+				}
+			}
+		}
+
+		if trades, ok := result["executionTrades"].([]map[string]any); ok {
+			for _, trade := range trades {
+				allTrades = append(allTrades, trade)
+				switch stringValue(trade["status"]) {
+				case "closed":
+					closedCount++
+					pnl := parseFloatValue(trade["realizedPnL"])
+					totalPnL += pnl
+					if pnl > 0 {
+						wins++
+					} else if pnl < 0 {
+						losses++
+					}
+				case "open":
+					openCount++
+				default:
+					pendingCount++
+				}
+			}
+		}
+	}
+
+	winRate := 0.0
+	if closedCount > 0 {
+		winRate = float64(wins) / float64(closedCount)
+	}
+
+	summary["executionTradeCount"] = len(allTrades)
+	summary["executionClosedCount"] = closedCount
+	summary["executionOpenCount"] = openCount
+	summary["executionPendingCount"] = pendingCount
+	summary["executionWins"] = wins
+	summary["executionLosses"] = losses
+	summary["executionRealizedPnL"] = totalPnL
+	summary["executionWinRate"] = winRate
+	summary["executionTrades"] = allTrades
+	return summary
 }
 
 func minuteBarEntryTriggered(bar candleBar, plan bracketPlan) (bool, float64) {

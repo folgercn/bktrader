@@ -366,7 +366,8 @@ a {
 }
 
 .form-field input,
-.form-field select {
+.form-field select,
+.form-field textarea {
   width: 100%;
   padding: 11px 12px;
   border-radius: 12px;
@@ -374,6 +375,15 @@ a {
   background: rgba(255, 255, 255, 0.82);
   color: var(--ink);
   font: inherit;
+}
+
+.form-field textarea {
+  resize: vertical;
+  min-height: 116px;
+}
+
+.form-field-wide {
+  grid-column: 1 / -1;
 }
 
 .backtest-actions {
