@@ -209,12 +209,6 @@ function App() {
     symbol: "BTCUSDT",
     from: "",
     to: "",
-    side: "BUY",
-    entryPrice: "",
-    stopLossPrice: "",
-    takeProfitPrice: "",
-    quantity: "1",
-    tradePlansJson: "",
   });
 
   const primaryAccount = summaries[0] ?? null;
@@ -230,9 +224,6 @@ function App() {
     backtests.find((item) => item.id === selectedBacktestId) ??
     (backtests.length > 0 ? backtests[backtests.length - 1] : null);
   const latestBacktestSummary = (selectedBacktest?.resultSummary ?? {}) as Record<string, unknown>;
-  const selectedExecutionSource = String(selectedBacktest?.parameters?.executionDataSource ?? backtestForm.executionDataSource ?? "").toLowerCase();
-  const previewCountLabel = selectedExecutionSource === "1min" ? "Preview Bars" : "Preview Ticks";
-  const processedCountLabel = selectedExecutionSource === "1min" ? "Processed Bars" : "Processed Ticks";
   const latestReplayByReason = (latestBacktestSummary.replayLedgerByReason ?? {}) as ReplayReasonStats;
   const latestExecutionTrades = Array.isArray(latestBacktestSummary.executionTrades)
     ? (latestBacktestSummary.executionTrades as ExecutionTrade[])
@@ -314,12 +305,6 @@ function App() {
       symbol: current.symbol || "BTCUSDT",
       from: current.from || "",
       to: current.to || "",
-      side: current.side || "BUY",
-      entryPrice: current.entryPrice || "",
-      stopLossPrice: current.stopLossPrice || "",
-      takeProfitPrice: current.takeProfitPrice || "",
-      quantity: current.quantity || "1",
-      tradePlansJson: current.tradePlansJson || "",
     }));
   }
 
@@ -426,7 +411,6 @@ function App() {
     try {
       setBacktestAction(true);
       setError(null);
-      const tradePlans = parseTradePlansJSON(backtestForm.tradePlansJson);
       await fetchJSON<BacktestRun>("/api/v1/backtests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -438,12 +422,6 @@ function App() {
             symbol: backtestForm.symbol,
             from: backtestForm.from || undefined,
             to: backtestForm.to || undefined,
-            side: backtestForm.entryPrice ? backtestForm.side : undefined,
-            entryPrice: backtestForm.entryPrice ? Number(backtestForm.entryPrice) : undefined,
-            stopLossPrice: backtestForm.stopLossPrice ? Number(backtestForm.stopLossPrice) : undefined,
-            takeProfitPrice: backtestForm.takeProfitPrice ? Number(backtestForm.takeProfitPrice) : undefined,
-            quantity: backtestForm.quantity ? Number(backtestForm.quantity) : undefined,
-            tradePlans: tradePlans.length > 0 ? tradePlans : undefined,
           },
         }),
       });
@@ -582,80 +560,6 @@ function App() {
                     placeholder="2020-01-31T23:59:59Z"
                   />
                 </label>
-                <label className="form-field">
-                  <span>Side (Optional)</span>
-                  <select value={backtestForm.side} onChange={(event) => setBacktestForm((current) => ({ ...current, side: event.target.value }))}>
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Entry Price (Optional)</span>
-                  <input
-                    value={backtestForm.entryPrice}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, entryPrice: event.target.value }))}
-                    placeholder="7195.24"
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Stop Loss (Optional)</span>
-                  <input
-                    value={backtestForm.stopLossPrice}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, stopLossPrice: event.target.value }))}
-                    placeholder="7190"
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Take Profit (Optional)</span>
-                  <input
-                    value={backtestForm.takeProfitPrice}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, takeProfitPrice: event.target.value }))}
-                    placeholder="7200"
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Quantity (Optional)</span>
-                  <input
-                    value={backtestForm.quantity}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, quantity: event.target.value }))}
-                    placeholder="1"
-                  />
-                </label>
-                <label className="form-field form-field-wide">
-                  <span>Trade Plans JSON (Optional)</span>
-                  <textarea
-                    value={backtestForm.tradePlansJson}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, tradePlansJson: event.target.value }))}
-                    placeholder='[{"side":"BUY","entryPrice":7195.24,"stopLossPrice":7190,"takeProfitPrice":7200,"quantity":1}]'
-                    rows={5}
-                  />
-                </label>
-                <label className="form-field form-field-wide">
-                  <span>Trade Plans CSV (Optional)</span>
-                  <input
-                    type="file"
-                    accept=".csv,text/csv"
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) {
-                        return;
-                      }
-                      try {
-                        const text = await file.text();
-                        const plans = parseTradePlansCSV(text);
-                        setBacktestForm((current) => ({
-                          ...current,
-                          tradePlansJson: JSON.stringify(plans, null, 2),
-                        }));
-                        setError(null);
-                      } catch (err) {
-                        setError(err instanceof Error ? err.message : "Failed to parse trade plans CSV");
-                      } finally {
-                        event.target.value = "";
-                      }
-                    }}
-                  />
-                </label>
               </div>
               <div className="backtest-actions">
                 <ActionButton
@@ -748,7 +652,7 @@ function App() {
               <div className="backtest-detail-card">
                 <div className="panel-header">
                   <div>
-                    <p className="panel-kicker">Execution Replay</p>
+                    <p className="panel-kicker">Strategy Replay</p>
                     <h3>选中回测详情</h3>
                   </div>
                   <div className="range-box range-box-wrap">
@@ -800,30 +704,6 @@ function App() {
                       <div className="detail-item">
                         <span>{previewCountLabel}</span>
                         <strong>{String(latestBacktestSummary.streamPreviewTicks ?? "--")}</strong>
-                      </div>
-                      <div className="detail-item">
-                        <span>Entry Hit</span>
-                        <strong>{String(latestBacktestSummary.bracketEntryHit ?? "--")}</strong>
-                      </div>
-                      <div className="detail-item">
-                        <span>Exit Type</span>
-                        <strong>{String(latestBacktestSummary.bracketExitType ?? latestBacktestSummary.bracketFinalState ?? "--")}</strong>
-                      </div>
-                      <div className="detail-item">
-                        <span>Entry Fill</span>
-                        <strong>{formatMaybeNumber(latestBacktestSummary.bracketEntryFill)}</strong>
-                      </div>
-                      <div className="detail-item">
-                        <span>Exit Price</span>
-                        <strong>{formatMaybeNumber(latestBacktestSummary.bracketExitPrice)}</strong>
-                      </div>
-                      <div className="detail-item">
-                        <span>Bracket PnL</span>
-                        <strong>{formatSigned(getNumber(latestBacktestSummary.bracketRealizedPnL))}</strong>
-                      </div>
-                      <div className="detail-item">
-                        <span>{processedCountLabel}</span>
-                        <strong>{String(latestBacktestSummary.bracketProcessedTicks ?? "--")}</strong>
                       </div>
                       <div className="detail-item">
                         <span>Trade Count</span>
@@ -1904,60 +1784,6 @@ function formatShortTime(value: Date) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  });
-}
-
-function parseTradePlansJSON(value: string) {
-  const trimmed = value.trim();
-  if (trimmed === "") {
-    return [];
-  }
-  const parsed = JSON.parse(trimmed);
-  if (!Array.isArray(parsed)) {
-    throw new Error("tradePlansJson must be a JSON array");
-  }
-  return parsed;
-}
-
-function parseTradePlansCSV(value: string) {
-  const lines = value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== "");
-  if (lines.length < 2) {
-    throw new Error("trade plans CSV requires a header and at least one data row");
-  }
-
-  const header = lines[0].split(",").map((item) => item.trim());
-  const required = ["side", "entryPrice", "stopLossPrice", "takeProfitPrice", "quantity"];
-  for (const field of required) {
-    if (!header.includes(field)) {
-      throw new Error(`trade plans CSV missing required column: ${field}`);
-    }
-  }
-
-  return lines.slice(1).map((line, index) => {
-    const values = line.split(",").map((item) => item.trim());
-    const row: Record<string, string> = {};
-    header.forEach((key, headerIndex) => {
-      row[key] = values[headerIndex] ?? "";
-    });
-
-    const entryPrice = Number(row.entryPrice);
-    const stopLossPrice = Number(row.stopLossPrice);
-    const takeProfitPrice = Number(row.takeProfitPrice);
-    const quantity = Number(row.quantity);
-    if (!Number.isFinite(entryPrice) || !Number.isFinite(stopLossPrice) || !Number.isFinite(takeProfitPrice) || !Number.isFinite(quantity)) {
-      throw new Error(`invalid numeric value in trade plans CSV row ${index + 2}`);
-    }
-
-    return {
-      side: row.side,
-      entryPrice,
-      stopLossPrice,
-      takeProfitPrice,
-      quantity,
-    };
   });
 }
 
