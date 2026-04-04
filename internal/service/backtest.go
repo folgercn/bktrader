@@ -121,7 +121,7 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 		resultSummary["rangeTo"] = to
 	}
 	if len(parseBracketPlans(backtest.Parameters)) == 0 && !shouldReplayLedger(backtest.Parameters) {
-		strategySummary, err := p.runStrategyReplay(backtest.Parameters)
+		engine, engineKey, err := p.resolveStrategyEngine(backtest.StrategyVersionID, backtest.Parameters)
 		if err != nil {
 			backtest.Status = "FAILED"
 			backtest.ResultSummary = map[string]any{
@@ -135,6 +135,33 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 			}
 			return backtest
 		}
+		executionContext := StrategyExecutionContext{
+			StrategyEngineKey:   engineKey,
+			StrategyVersionID:   backtest.StrategyVersionID,
+			SignalTimeframe:     signalTimeframe,
+			ExecutionDataSource: executionSource,
+			Symbol:              symbol,
+			From:                parseOptionalRFC3339(from),
+			To:                  parseOptionalRFC3339(to),
+			Parameters:          cloneMetadata(backtest.Parameters),
+			Semantics:           defaultExecutionSemantics(ExecutionModeBacktest, backtest.Parameters),
+		}
+		strategySummary, err := engine.Run(executionContext)
+		if err != nil {
+			backtest.Status = "FAILED"
+			backtest.ResultSummary = map[string]any{
+				"return":              0,
+				"maxDrawdown":         0,
+				"tradePairs":          0,
+				"signalTimeframe":     signalTimeframe,
+				"executionDataSource": executionSource,
+				"symbol":              symbol,
+				"error":               err.Error(),
+			}
+			return backtest
+		}
+		resultSummary["strategyEngine"] = engineKey
+		resultSummary["executionSemantics"] = executionContext.Semantics
 		for key, value := range strategySummary {
 			resultSummary[key] = value
 		}

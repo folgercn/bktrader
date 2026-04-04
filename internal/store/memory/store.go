@@ -85,6 +85,7 @@ func NewStore() *Store {
 		SignalTimeframe:    "1D",
 		ExecutionTimeframe: "1m",
 		Parameters: map[string]any{
+			"strategyEngine":   "bk-default",
 			"maxTradesPerBar":  3,
 			"reentrySizes":     []float64{0.10, 0.20},
 			"stopMode":         "atr",

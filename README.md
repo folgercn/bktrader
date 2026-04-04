@@ -60,6 +60,7 @@ go run ./cmd/platform-api
 - `GET /healthz` — 健康检查
 - `GET /api/v1/overview` — 系统概览
 - `GET|POST /api/v1/strategies` — 策略管理
+- `GET /api/v1/strategy-engines` — 可用策略引擎列表
 - `GET|POST /api/v1/accounts` — 账户管理
 - `GET /api/v1/account-summaries` — 账户汇总（权益、PnL、费用）
 - `GET /api/v1/account-equity-snapshots?accountId=...` — 账户净值快照
@@ -130,6 +131,13 @@ TICK_DATA_DIR=./dataset/archive
 - 由 Go 版策略引擎直接生成交易并回放
 
 其中 `tick` 执行源现在已经是流式逐笔 `Strategy Replay`，会按信号窗口顺序消费 trade archive，而不是先把整段逐笔数据并入内存。
+
+## 策略模块约束
+
+- 策略引擎必须可插拔，平台通过 `StrategyEngine` registry 装载，不把单个策略硬编码在回测、模拟盘或实盘入口上。
+- 回测、模拟交易、实盘交易必须共享同一套策略执行语义和订单意图生成逻辑。
+- 只有回测允许显式注入模拟滑点；`paper/live` 默认使用 `observed` 执行语义，不在策略层额外叠加虚拟滑点。
+- 当前内置引擎键值为 `bk-default`，可通过策略参数中的 `strategyEngine` 绑定。
 
 `replayLedger=true` 仍然保留为可选内部审计能力，用于排查历史账本和执行层之间的差异，但它不是当前平台推荐的主回测入口。
 

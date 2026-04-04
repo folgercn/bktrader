@@ -88,8 +88,17 @@ Responsibilities:
 
 - manage strategy definitions
 - version parameters
+- register pluggable strategy engines
 - bind strategy versions to accounts
 - keep runtime config immutable per deployment
+
+Runtime rules:
+
+- strategy modules must be pluggable; the platform resolves a `StrategyEngine` by key instead of hard-coding one strategy into each workflow
+- the same strategy engine must be used across backtest, paper, and live modes
+- the only allowed execution-semantic difference is slippage:
+  - `BACKTEST`: simulated slippage may be injected
+  - `PAPER` / `LIVE`: no extra synthetic slippage inside strategy execution; fills must come from canonical execution flow
 
 Key parameters to snapshot:
 
@@ -189,6 +198,11 @@ No order placement is performed from the chart.
 8. positions and account equity are updated
 9. chart annotations and monitoring views are refreshed
 
+Execution consistency rule:
+
+- strategy decision logic and order-intent generation must stay identical across backtest, paper, and live
+- execution adapters may differ by environment, but strategy code must not fork behavior except for backtest-only slippage simulation
+
 ## 7. Data Consistency Rules
 
 - every order must reference strategy version when strategy-generated
@@ -225,7 +239,9 @@ No order placement is performed from the chart.
 Current implementation status:
 
 - pluggable repository layer with `memory` and `postgres` backends
+- pluggable `StrategyEngine` registry with built-in `bk-default`
 - HTTP CRUD-style endpoints for strategies, accounts, orders, backtests, and paper sessions
+- `GET /api/v1/strategy-engines` exposes registered strategy engines to the UI
 - paper account orders are executed immediately into `fills` and net `positions`
 - account summary snapshots expose start equity, fees, realized/unrealized PnL, and exposure
 - account equity snapshots provide a time series for paper account net-equity charts
@@ -239,10 +255,10 @@ Current implementation status:
 
 Current backtest focus:
 
-- primary workflow is direct execution replay on `tick` or `1min` data sources
+- primary workflow is pluggable strategy replay on `tick` or `1min` data sources
 - users choose the signal timeframe (`4h` / `1d`) separately from the execution source
-- optional bracket parameters can be supplied to run direct entry / stop / take-profit replay inside a chosen time window
-- ledger replay remains available only as a secondary audit tool, not as the primary backtest path
+- backtest runtime is now resolved through `StrategyEngine` plus `ExecutionSemantics`
+- `BACKTEST` semantics allow simulated slippage; `PAPER/LIVE` semantics are intended to share canonical execution behavior
 
 Current paper runner details:
 

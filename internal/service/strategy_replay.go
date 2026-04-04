@@ -62,8 +62,8 @@ type strategyReplayConfig struct {
 	ProfitProtectATR    float64
 }
 
-func (p *Platform) runStrategyReplay(backtest map[string]any) (map[string]any, error) {
-	cfg := buildStrategyReplayConfig(backtest)
+func (p *Platform) runStrategyReplay(context StrategyExecutionContext) (map[string]any, error) {
+	cfg := buildStrategyReplayConfig(context)
 	signals, err := p.loadStrategySignalBars(cfg.SignalTimeframe)
 	if err != nil {
 		return nil, err
@@ -892,7 +892,8 @@ func (e *strategyReplayEngine) summary(signals []strategySignalBar) map[string]a
 	return result
 }
 
-func buildStrategyReplayConfig(parameters map[string]any) strategyReplayConfig {
+func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayConfig {
+	parameters := context.Parameters
 	reentrySizes := []float64{0.10, 0.20}
 	if raw, ok := parameters["reentry_size_schedule"]; ok {
 		switch items := raw.(type) {
@@ -915,21 +916,28 @@ func buildStrategyReplayConfig(parameters map[string]any) strategyReplayConfig {
 		stopLossATR = 0.05
 	}
 	return strategyReplayConfig{
-		SignalTimeframe:     strings.ToLower(stringValue(parameters["signalTimeframe"])),
-		ExecutionDataSource: strings.ToLower(stringValue(parameters["executionDataSource"])),
-		Symbol:              normalizeBacktestSymbol(stringValue(parameters["symbol"])),
-		From:                parseOptionalRFC3339(stringValue(parameters["from"])),
-		To:                  parseOptionalRFC3339(stringValue(parameters["to"])),
+		SignalTimeframe:     strings.ToLower(context.SignalTimeframe),
+		ExecutionDataSource: strings.ToLower(context.ExecutionDataSource),
+		Symbol:              normalizeBacktestSymbol(context.Symbol),
+		From:                context.From,
+		To:                  context.To,
 		InitialBalance:      100000.0,
 		Dir1ReentryConfirm:  false,
 		Dir2ZeroInitial:     true,
-		FixedSlippage:       firstPositive(parseFloatValue(parameters["fixed_slippage"]), 0.0005),
+		FixedSlippage:       strategyReplaySlippage(context, parameters),
 		StopLossATR:         stopLossATR,
 		MaxTradesPerBar:     maxIntValue(parameters["max_trades_per_bar"], 3),
 		ReentrySizeSchedule: reentrySizes,
 		StopMode:            stopMode,
 		ProfitProtectATR:    firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0),
 	}
+}
+
+func strategyReplaySlippage(context StrategyExecutionContext, parameters map[string]any) float64 {
+	if context.Semantics.SlippageMode != SlippageModeSimulated {
+		return 0
+	}
+	return firstPositive(parseFloatValue(parameters["fixed_slippage"]), 0.0005)
 }
 
 func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignalBar, error) {

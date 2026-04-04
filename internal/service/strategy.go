@@ -20,7 +20,16 @@ func (p *Platform) CreateStrategy(name, description string, parameters map[strin
 	if parameters == nil {
 		parameters = map[string]any{}
 	}
+	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
 	return p.store.CreateStrategy(name, description, parameters)
+}
+
+func (p *Platform) StrategyEngines() []map[string]any {
+	items := make([]map[string]any, 0, len(p.strategyEngines))
+	for _, engine := range p.strategyEngines {
+		items = append(items, engine.Describe())
+	}
+	return items
 }
 
 // --- 账户管理服务方法 ---
@@ -309,6 +318,7 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["signalTimeframe"] = signalTimeframe
 	normalized["executionDataSource"] = executionDataSource
 	normalized["symbol"] = symbol
+	normalized["strategyEngine"] = normalizeStrategyEngineKey(stringValue(normalized["strategyEngine"]))
 	if from != "" {
 		normalized["from"] = from
 	}

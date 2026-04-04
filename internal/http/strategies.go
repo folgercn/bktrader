@@ -8,6 +8,14 @@ import (
 
 // registerStrategyRoutes 注册策略管理相关路由。
 func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
+	mux.HandleFunc("/api/v1/strategy-engines", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, platform.StrategyEngines())
+	})
+
 	mux.HandleFunc("/api/v1/strategies", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
