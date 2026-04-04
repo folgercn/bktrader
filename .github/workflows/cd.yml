@@ -63,6 +63,14 @@ jobs:
           cp scripts/deploy.sh /Users/fujun/services/bktrader/scripts/deploy.sh
           chmod +x /Users/fujun/services/bktrader/scripts/deploy.sh
 
+      - name: Validate deploy secrets
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          test -n "$GHCR_USERNAME" || { echo "Missing secret: GHCR_USERNAME" >&2; exit 1; }
+          test -n "$GHCR_TOKEN" || { echo "Missing secret: GHCR_READ_TOKEN" >&2; exit 1; }
+
       - name: Deploy via docker compose
         env:
           DEPLOY_PATH: /Users/fujun/services/bktrader

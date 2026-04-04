@@ -21,8 +21,20 @@ if [[ -n "${APP_ENV_FILE_CONTENT:-}" ]]; then
 ' "$APP_ENV_FILE_CONTENT" > "$APP_ENV_FILE"
 fi
 
-if [[ -n "${GHCR_USERNAME:-}" && -n "${GHCR_TOKEN:-}" ]]; then
+if [[ "$IMAGE_REPO" == ghcr.io/* ]]; then
+  if [[ -z "${GHCR_USERNAME:-}" || -z "${GHCR_TOKEN:-}" ]]; then
+    echo "Missing GHCR credentials for private image pull. Required env: GHCR_USERNAME and GHCR_TOKEN" >&2
+    echo "Current image: ${IMAGE_REPO}:${IMAGE_TAG}" >&2
+    exit 1
+  fi
+
   echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+  if ! docker manifest inspect "${IMAGE_REPO}:${IMAGE_TAG}" >/dev/null 2>&1; then
+    echo "Unable to access image manifest: ${IMAGE_REPO}:${IMAGE_TAG}" >&2
+    echo "Check GHCR token permissions (read:packages), package visibility, image tag, and repository linkage." >&2
+    exit 1
+  fi
 fi
 
 export IMAGE_REPO IMAGE_TAG APP_ENV_FILE
