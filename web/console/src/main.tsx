@@ -1336,13 +1336,17 @@ function SimpleTable(props: { columns: string[]; rows: string[][]; emptyMessage:
 
 function SampleCard(props: { sample: ReplaySample; selected?: boolean; onSelect: () => void }) {
   const sample = props.sample;
+  const status = sampleStatus(sample);
   return (
     <button
       type="button"
       className={`sample-card sample-card-button ${props.selected ? "sample-card-selected" : ""}`}
       onClick={props.onSelect}
     >
-      <div className="sample-title">{String(sample.reason ?? sample.entryCause ?? "sample")}</div>
+      <div className="sample-header">
+        <div className="sample-title">{String(sample.reason ?? sample.entryCause ?? "sample")}</div>
+        <span className={`sample-status sample-status-${status.tone}`}>{status.label}</span>
+      </div>
       <div className="sample-line">
         entry: {String(sample.entryTime ?? "--")} · {formatMaybeNumber(sample.entryPrice)}
       </div>
@@ -1358,6 +1362,23 @@ function SampleCard(props: { sample: ReplaySample; selected?: boolean; onSelect:
       <div className="sample-line">pnl: {formatMaybeNumber(sample.bracketRealizedPnL)}</div>
     </button>
   );
+}
+
+function sampleStatus(sample: ReplaySample) {
+  const reason = String(sample.reason ?? "").trim().toLowerCase();
+  if (reason === "entry_not_hit" || reason === "entry_missed") {
+    return { label: "Entry Missed", tone: "missed" };
+  }
+  if (reason === "exit_not_hit" || reason === "exit_missed") {
+    return { label: "Exit Missed", tone: "missed" };
+  }
+  if (reason.includes("invalid")) {
+    return { label: "Invalid", tone: "invalid" };
+  }
+  if (reason.includes("error")) {
+    return { label: "Error", tone: "error" };
+  }
+  return { label: "Completed", tone: "completed" };
 }
 
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
