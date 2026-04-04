@@ -193,6 +193,7 @@ function App() {
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
+  const [paperCreateAction, setPaperCreateAction] = useState(false);
   const [backtestAction, setBacktestAction] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
@@ -210,9 +211,23 @@ function App() {
     from: "",
     to: "",
   });
+  const [paperForm, setPaperForm] = useState({
+    accountId: "",
+    strategyId: "",
+    startEquity: "100000",
+    signalTimeframe: "1d",
+    executionDataSource: "1min",
+    symbol: "BTCUSDT",
+    from: "",
+    to: "",
+    tradingFeeBps: "10",
+    fundingRateBps: "0",
+    fundingIntervalHours: "8",
+  });
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
+  const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const selectedExecutionAvailability = backtestOptions?.availability?.[backtestForm.executionDataSource] ?? "unknown";
   const selectedExecutionDatasets = backtestOptions?.datasets?.[backtestForm.executionDataSource] ?? [];
   const selectedExecutionSymbols = backtestOptions?.supportedSymbols?.[backtestForm.executionDataSource] ?? [];
@@ -313,6 +328,19 @@ function App() {
       from: current.from || "",
       to: current.to || "",
     }));
+    setPaperForm((current) => ({
+      accountId: current.accountId || paperAccountsFromSummaries(summaryData)[0]?.accountId || "",
+      strategyId: current.strategyId || strategyData[0]?.id || "",
+      startEquity: current.startEquity || "100000",
+      signalTimeframe: current.signalTimeframe || backtestOptionsData.defaultSignalTimeframe,
+      executionDataSource: current.executionDataSource || "1min",
+      symbol: current.symbol || "BTCUSDT",
+      from: current.from || "",
+      to: current.to || "",
+      tradingFeeBps: current.tradingFeeBps || "10",
+      fundingRateBps: current.fundingRateBps || "0",
+      fundingIntervalHours: current.fundingIntervalHours || "8",
+    }));
   }
 
   useEffect(() => {
@@ -411,6 +439,39 @@ function App() {
       setError(err instanceof Error ? err.message : "Failed to execute paper session action");
     } finally {
       setSessionAction(null);
+    }
+  }
+
+  async function createPaperSession() {
+    if (!paperForm.accountId || !paperForm.strategyId) {
+      setError("Paper session needs an account and strategy");
+      return;
+    }
+    setPaperCreateAction(true);
+    try {
+      await fetchJSON("/api/v1/paper/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: paperForm.accountId,
+          strategyId: paperForm.strategyId,
+          startEquity: Number(paperForm.startEquity) || 100000,
+          signalTimeframe: paperForm.signalTimeframe,
+          executionDataSource: paperForm.executionDataSource,
+          symbol: paperForm.symbol,
+          from: paperForm.from || undefined,
+          to: paperForm.to || undefined,
+          tradingFeeBps: Number(paperForm.tradingFeeBps) || 0,
+          fundingRateBps: Number(paperForm.fundingRateBps) || 0,
+          fundingIntervalHours: Number(paperForm.fundingIntervalHours) || 8,
+        }),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create paper session");
+    } finally {
+      setPaperCreateAction(false);
     }
   }
 
@@ -856,6 +917,109 @@ function App() {
                 {primarySession.status}
               </div>
             ) : null}
+          </div>
+          <div className="backtest-form session-form">
+            <div className="form-grid">
+              <label className="form-field">
+                <span>Paper Account</span>
+                <select
+                  value={paperForm.accountId}
+                  onChange={(event) => setPaperForm((current) => ({ ...current, accountId: event.target.value }))}
+                >
+                  {paperAccounts.map((account) => (
+                    <option key={account.accountId} value={account.accountId}>
+                      {account.accountName} ({account.accountId})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-field">
+                <span>Strategy</span>
+                <select
+                  value={paperForm.strategyId}
+                  onChange={(event) => setPaperForm((current) => ({ ...current, strategyId: event.target.value }))}
+                >
+                  {strategies.map((strategy) => (
+                    <option key={strategy.id} value={strategy.id}>
+                      {strategy.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-field">
+                <span>Start Equity</span>
+                <input
+                  value={paperForm.startEquity}
+                  onChange={(event) => setPaperForm((current) => ({ ...current, startEquity: event.target.value }))}
+                />
+              </label>
+              <label className="form-field">
+                <span>Symbol</span>
+                <input value={paperForm.symbol} onChange={(event) => setPaperForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
+              </label>
+              <label className="form-field">
+                <span>Signal Timeframe</span>
+                <select
+                  value={paperForm.signalTimeframe}
+                  onChange={(event) => setPaperForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
+                >
+                  {(backtestOptions?.signalTimeframes ?? ["4h", "1d"]).map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-field">
+                <span>Execution Source</span>
+                <select
+                  value={paperForm.executionDataSource}
+                  onChange={(event) => setPaperForm((current) => ({ ...current, executionDataSource: event.target.value }))}
+                >
+                  {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-field">
+                <span>From (RFC3339)</span>
+                <input value={paperForm.from} onChange={(event) => setPaperForm((current) => ({ ...current, from: event.target.value }))} />
+              </label>
+              <label className="form-field">
+                <span>To (RFC3339)</span>
+                <input value={paperForm.to} onChange={(event) => setPaperForm((current) => ({ ...current, to: event.target.value }))} />
+              </label>
+              <label className="form-field">
+                <span>Trading Fee (bps)</span>
+                <input
+                  value={paperForm.tradingFeeBps}
+                  onChange={(event) => setPaperForm((current) => ({ ...current, tradingFeeBps: event.target.value }))}
+                />
+              </label>
+              <label className="form-field">
+                <span>Funding Rate (bps)</span>
+                <input
+                  value={paperForm.fundingRateBps}
+                  onChange={(event) => setPaperForm((current) => ({ ...current, fundingRateBps: event.target.value }))}
+                />
+              </label>
+              <label className="form-field">
+                <span>Funding Interval (hours)</span>
+                <input
+                  value={paperForm.fundingIntervalHours}
+                  onChange={(event) => setPaperForm((current) => ({ ...current, fundingIntervalHours: event.target.value }))}
+                />
+              </label>
+            </div>
+            <div className="backtest-actions">
+              <ActionButton
+                label={paperCreateAction ? "Creating..." : "Create Paper Session"}
+                disabled={paperCreateAction || !paperForm.accountId || !paperForm.strategyId}
+                onClick={createPaperSession}
+              />
+            </div>
           </div>
           {primarySession ? (
             <div className="session-layout">
@@ -1807,6 +1971,10 @@ function formatTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function paperAccountsFromSummaries(items: AccountSummary[]) {
+  return items.filter((item) => item.mode === "PAPER");
 }
 
 function formatShortTime(value: Date) {
