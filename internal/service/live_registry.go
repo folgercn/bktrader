@@ -12,6 +12,14 @@ type LiveExecutionAdapter interface {
 	Key() string
 	Describe() map[string]any
 	ValidateAccountConfig(config map[string]any) error
+	SubmitOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error)
+}
+
+type LiveOrderSubmission struct {
+	Status          string         `json:"status"`
+	ExchangeOrderID string         `json:"exchangeOrderId"`
+	AcceptedAt      string         `json:"acceptedAt"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
 type liveAdapterBinding struct {
@@ -153,12 +161,71 @@ func (a binanceFuturesLiveAdapter) ValidateAccountConfig(config map[string]any) 
 	return nil
 }
 
+func (a binanceFuturesLiveAdapter) SubmitOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
+	credentialRefs := normalizeCredentialRefs(binding["credentialRefs"])
+	if strings.TrimSpace(stringValue(credentialRefs["apiKeyRef"])) == "" {
+		return LiveOrderSubmission{}, fmt.Errorf("live adapter binding requires credentialRefs.apiKeyRef")
+	}
+	if strings.TrimSpace(stringValue(credentialRefs["apiSecretRef"])) == "" {
+		return LiveOrderSubmission{}, fmt.Errorf("live adapter binding requires credentialRefs.apiSecretRef")
+	}
+	acceptedAt := time.Now().UTC()
+	return LiveOrderSubmission{
+		Status:          "ACCEPTED",
+		ExchangeOrderID: fmt.Sprintf("binance-mock-%d", acceptedAt.UnixNano()),
+		AcceptedAt:      acceptedAt.Format(time.RFC3339),
+		Metadata: map[string]any{
+			"adapterMode":    "mock-submission",
+			"accountMode":    stringValue(binding["accountMode"]),
+			"marginMode":     stringValue(binding["marginMode"]),
+			"positionMode":   stringValue(binding["positionMode"]),
+			"sandbox":        boolValue(binding["sandbox"]),
+			"symbol":         order.Symbol,
+			"side":           order.Side,
+			"type":           order.Type,
+			"quantity":       order.Quantity,
+			"submittedPrice": order.Price,
+			"feeSource":      "exchange",
+			"fundingSource":  "exchange",
+			"exchange":       account.Exchange,
+		},
+	}, nil
+}
+
 func normalizeCredentialRefs(value any) map[string]any {
 	switch refs := value.(type) {
 	case map[string]any:
 		return refs
 	default:
 		return map[string]any{}
+	}
+}
+
+func resolveLiveBinding(account domain.Account) map[string]any {
+	if account.Metadata == nil {
+		return nil
+	}
+	switch binding := account.Metadata["liveBinding"].(type) {
+	case map[string]any:
+		return binding
+	case liveAdapterBinding:
+		return map[string]any{
+			"adapterKey":     binding.AdapterKey,
+			"connectionMode": binding.ConnectionMode,
+			"accountMode":    binding.AccountMode,
+			"marginMode":     binding.MarginMode,
+			"positionMode":   binding.PositionMode,
+			"feeSource":      binding.FeeSource,
+			"fundingSource":  binding.FundingSource,
+			"sandbox":        binding.Sandbox,
+			"restBaseUrl":    binding.RESTBaseURL,
+			"wsBaseUrl":      binding.WSBaseURL,
+			"recvWindowMs":   binding.RecvWindowMs,
+			"credentialRefs": binding.CredentialRefs,
+			"updatedAt":      binding.UpdatedAt,
+		}
+	default:
+		return nil
 	}
 }
 

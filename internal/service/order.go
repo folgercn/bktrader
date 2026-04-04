@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -21,9 +22,22 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 		return domain.Order{}, err
 	}
 
+	if account.Mode == "LIVE" {
+		if account.Status != "CONFIGURED" && account.Status != "READY" {
+			return domain.Order{}, fmt.Errorf("live account %s is not configured", account.ID)
+		}
+		if _, _, err := p.resolveLiveAdapterForAccount(account); err != nil {
+			return domain.Order{}, err
+		}
+	}
+
 	createdOrder, err := p.store.CreateOrder(order)
 	if err != nil {
 		return domain.Order{}, err
+	}
+
+	if account.Mode == "LIVE" {
+		return p.submitLiveOrder(account, createdOrder)
 	}
 
 	// 非模拟盘账户直接返回，等待真实交易所回报
@@ -66,6 +80,52 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 		return domain.Order{}, err
 	}
 	return updatedOrder, nil
+}
+
+func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (domain.Order, error) {
+	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	submission, err := adapter.SubmitOrder(account, order, binding)
+	order.Metadata = cloneMetadata(order.Metadata)
+	order.Metadata["executionMode"] = "live"
+	order.Metadata["adapterKey"] = normalizeLiveAdapterKey(stringValue(binding["adapterKey"]))
+	order.Metadata["feeSource"] = "exchange"
+	order.Metadata["fundingSource"] = "exchange"
+	order.Metadata["submitMode"] = "adapter"
+	if err != nil {
+		order.Status = "REJECTED"
+		order.Metadata["liveSubmitError"] = err.Error()
+		updatedOrder, updateErr := p.store.UpdateOrder(order)
+		if updateErr != nil {
+			return domain.Order{}, updateErr
+		}
+		return updatedOrder, err
+	}
+
+	order.Status = firstNonEmpty(submission.Status, "ACCEPTED")
+	order.Metadata["exchangeOrderId"] = submission.ExchangeOrderID
+	order.Metadata["acceptedAt"] = submission.AcceptedAt
+	order.Metadata["adapterSubmission"] = submission.Metadata
+	return p.store.UpdateOrder(order)
+}
+
+func (p *Platform) resolveLiveAdapterForAccount(account domain.Account) (LiveExecutionAdapter, map[string]any, error) {
+	binding := resolveLiveBinding(account)
+	if len(binding) == 0 {
+		return nil, nil, fmt.Errorf("live account %s has no adapter binding", account.ID)
+	}
+	adapterKey := normalizeLiveAdapterKey(stringValue(binding["adapterKey"]))
+	adapter, ok := p.liveAdapters[adapterKey]
+	if !ok {
+		return nil, nil, fmt.Errorf("live adapter not registered: %s", adapterKey)
+	}
+	if err := adapter.ValidateAccountConfig(binding); err != nil {
+		return nil, nil, err
+	}
+	return adapter, binding, nil
 }
 
 func resolvePaperTradingFeeRate(order domain.Order) float64 {

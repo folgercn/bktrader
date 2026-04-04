@@ -258,6 +258,7 @@ Current implementation status:
 - paper sessions support background runners that prebuild canonical strategy execution plans and persist replay progress in session state
 - paper session creation supports runtime overrides for timeframe, execution source, symbol, range, and cost semantics
 - live account bindings persist to `accounts.metadata.liveBinding` with adapter key, credential refs, and execution-mode settings
+- `LIVE` orders now route through the bound `LiveExecutionAdapter` and persist adapter acknowledgements in order metadata
 - chart annotation endpoint
 - candle feed endpoint suitable for TradingView integration scaffolding
 - PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions
@@ -286,6 +287,13 @@ Current paper runner details:
 - risk rules
 - alerting
 - reconciliation jobs
+
+Current live adapter details:
+
+- `GET /api/v1/live-adapters` lists registered live adapters
+- `POST /api/v1/live/accounts/{id}/binding` binds a `LIVE` account to an adapter using credential references
+- `POST /api/v1/orders` for a bound `LIVE` account resolves the adapter and stores an `ACCEPTED` acknowledgement
+- current `binance-futures` implementation is a mock submission adapter that returns exchange-style metadata without hitting the network
 
 ### Phase 3: Production Hardening
 

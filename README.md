@@ -96,6 +96,11 @@ go run ./cmd/platform-api
 - 凭证只保存引用，例如 `credentialRefs.apiKeyRef` / `credentialRefs.apiSecretRef`
 - 实盘手续费和资金费来源固定为交易所回报，不走平台静态配置
 
+当前 `LIVE` 订单流骨架：
+- `POST /api/v1/orders` 对 `LIVE` 账户会按 `accounts.metadata.liveBinding.adapterKey` 选择 adapter
+- 当前内置 `binance-futures` mock submission，会返回 `ACCEPTED`
+- 订单 metadata 会写入 `exchangeOrderId`、`acceptedAt`、`adapterSubmission`、`feeSource=exchange`、`fundingSource=exchange`
+
 ### 前端控制台
 
 ```bash
