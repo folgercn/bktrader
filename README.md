@@ -64,6 +64,10 @@ go run ./cmd/platform-api
 - `GET|POST /api/v1/accounts` — 账户管理
 - `GET /api/v1/live-adapters` — 可用实盘执行适配器
 - `POST /api/v1/live/accounts/{id}/binding` — 绑定实盘账户到交易所适配器
+- `GET /api/v1/signal-sources` — 信号源目录（按环境分组）
+- `GET /api/v1/signal-source-types` — 信号源类型说明
+- `GET|POST /api/v1/strategies/{id}/signal-bindings` — 策略级多信号源绑定
+- `GET|POST /api/v1/accounts/{id}/signal-bindings` — 账户级多信号源绑定
 - `GET /api/v1/account-summaries` — 账户汇总（权益、PnL、费用）
 - `GET /api/v1/account-equity-snapshots?accountId=...` — 账户净值快照
 - `GET|POST /api/v1/orders` — 订单管理
@@ -85,9 +89,15 @@ go run ./cmd/platform-api
 - `tradingFeeBps`
 - `fundingRateBps`
 - `fundingIntervalHours`
-- `GET /api/v1/signal-sources` — 信号源列表
 - `GET /api/v1/chart/annotations` — 图表标注数据
 - `GET /api/v1/chart/candles` — K 线数据
+
+信号源当前支持的建模方式：
+- 策略可以同时绑定多个信号源，例如 `trade_tick(trigger) + order_book(feature)`
+- 账户也可以同时绑定多个信号源，例如一个账户同时观察 `BINANCE trade tick` 和 `OKX order book`
+- 策略绑定解决“策略依赖哪些输入”
+- 账户绑定解决“这个账户实际接收哪些市场流”
+- 这两层分离后，后续做双市场交易和跨市场套利时不需要改模型
 
 实盘账户当前支持：
 - `LIVE` 账户默认状态为 `PENDING_SETUP`

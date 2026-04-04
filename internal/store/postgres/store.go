@@ -159,6 +159,42 @@ func (s *Store) CreateStrategy(name, description string, parameters map[string]a
 	}, nil
 }
 
+func (s *Store) UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error) {
+	items, err := s.ListStrategies()
+	if err != nil {
+		return nil, err
+	}
+
+	var current domain.StrategyVersion
+	var strategy map[string]any
+	found := false
+	for _, item := range items {
+		if fmt.Sprint(item["id"]) != strategyID {
+			continue
+		}
+		current, _ = item["currentVersion"].(domain.StrategyVersion)
+		strategy = item
+		found = true
+		break
+	}
+	if !found {
+		return nil, fmt.Errorf("strategy not found: %s", strategyID)
+	}
+
+	raw, _ := json.Marshal(parameters)
+	if _, err := s.db.Exec(`
+		update strategy_versions
+		set parameters = $2
+		where id = $1
+	`, current.ID, raw); err != nil {
+		return nil, err
+	}
+
+	current.Parameters = parameters
+	strategy["currentVersion"] = current
+	return strategy, nil
+}
+
 func (s *Store) ListAccounts() ([]domain.Account, error) {
 	rows, err := s.db.Query(`select id, name, mode, exchange, status, metadata, created_at from accounts order by created_at asc`)
 	if err != nil {

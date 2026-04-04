@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
@@ -47,6 +48,39 @@ func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
 				return
 			}
 			writeJSON(w, http.StatusCreated, item)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/v1/strategies/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/strategies/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) != 2 || parts[1] != "signal-bindings" {
+			writeError(w, http.StatusNotFound, "strategy signal binding route not found")
+			return
+		}
+		strategyID := parts[0]
+		switch r.Method {
+		case http.MethodGet:
+			items, err := platform.ListStrategySignalBindings(strategyID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, items)
+		case http.MethodPost:
+			var payload map[string]any
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.BindStrategySignalSource(strategyID, payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}

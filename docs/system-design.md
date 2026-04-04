@@ -68,8 +68,10 @@ Core Infrastructure
 
 Responsibilities:
 
-- register internal strategy feeds and future external feeds
-- deduplicate signals
+- register pluggable exchange and replay feeds
+- support both strategy-level and account-level source bindings
+- allow multiple sources per strategy and per account
+- distinguish trigger sources from feature sources
 - preserve full signal audit trail
 - expose recent signals to UI and monitoring
 
@@ -81,6 +83,18 @@ Signal record fields:
 - reason
 - bar timestamp
 - metadata including reentry index and stop mode
+
+Source binding rules:
+
+- strategy bindings answer "which inputs does this strategy require"
+- account bindings answer "which market feeds does this account actually subscribe to"
+- one strategy may bind multiple sources, for example:
+  - `BINANCE trade tick` as `trigger`
+  - `BINANCE order book` as `feature`
+- one account may also bind multiple sources, for example:
+  - `BINANCE trade tick` for local execution triggering
+  - `OKX trade tick` or `OKX order book` for cross-market arbitrage observation
+- trigger and feature sources must be modeled separately so future order-book features do not get mixed with execution trigger streams
 
 ### 4.2 Strategy Management
 
@@ -95,6 +109,7 @@ Responsibilities:
 Runtime rules:
 
 - strategy modules must be pluggable; the platform resolves a `StrategyEngine` by key instead of hard-coding one strategy into each workflow
+- signal sources must also be pluggable; the platform resolves registered source definitions by key instead of hard-coding Binance-only or single-stream behavior
 - the same strategy engine must be used across backtest, paper, and live modes
 - live exchange connectivity must also be pluggable; the platform resolves a `LiveExecutionAdapter` by key per account binding
 - the only allowed execution-semantic difference is slippage:
@@ -215,6 +230,8 @@ Execution consistency rule:
 ## 7. Data Consistency Rules
 
 - every order must reference strategy version when strategy-generated
+- every strategy version should snapshot its source bindings
+- every account should persist its active source bindings
 - every fill must reference an order
 - position state must be derivable from fills
 - chart annotations should be generated from canonical order/fill events

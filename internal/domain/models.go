@@ -35,6 +35,38 @@ type Signal struct {
 	CreatedAt         time.Time      `json:"createdAt"`
 }
 
+// SignalSourceDefinition 描述一个可插拔信号源/市场数据源。
+// 它可以承担交易触发源，也可以承担 order book 等特征输入源。
+type SignalSourceDefinition struct {
+	Key          string         `json:"key"`
+	Name         string         `json:"name"`
+	Exchange     string         `json:"exchange"`
+	StreamType   string         `json:"streamType"`   // trade_tick / order_book / minute_bar / replay_tick
+	Transport    string         `json:"transport"`    // websocket / replay / file
+	Status       string         `json:"status"`       // ACTIVE / PREVIEW
+	Roles        []string       `json:"roles"`        // trigger / feature
+	Environments []string       `json:"environments"` // backtest / paper / live
+	SymbolScope  string         `json:"symbolScope"`  // single_symbol / multi_symbol / wildcard
+	Description  string         `json:"description"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+}
+
+// AccountSignalBinding 描述账户级的信号源绑定。
+// 一个账户可以同时绑定多个交易触发源和多个特征源，以支持多市场交易和套利。
+type AccountSignalBinding struct {
+	ID         string         `json:"id"`
+	AccountID  string         `json:"accountId"`
+	SourceKey  string         `json:"sourceKey"`
+	SourceName string         `json:"sourceName"`
+	Exchange   string         `json:"exchange"`
+	Role       string         `json:"role"`       // trigger / feature
+	StreamType string         `json:"streamType"` // trade_tick / order_book ...
+	Symbol     string         `json:"symbol"`
+	Status     string         `json:"status"` // ACTIVE / DISABLED
+	Options    map[string]any `json:"options,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
+}
+
 // Account 交易账户，支持 LIVE（实盘）和 PAPER（模拟盘）两种模式。
 type Account struct {
 	ID        string         `json:"id"`

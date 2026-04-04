@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,12 +25,124 @@ func (p *Platform) CreateStrategy(name, description string, parameters map[strin
 	return p.store.CreateStrategy(name, description, parameters)
 }
 
+func (p *Platform) GetStrategy(strategyID string) (map[string]any, error) {
+	items, err := p.store.ListStrategies()
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if stringValue(item["id"]) == strategyID {
+			return item, nil
+		}
+	}
+	return nil, fmt.Errorf("strategy not found: %s", strategyID)
+}
+
 func (p *Platform) StrategyEngines() []map[string]any {
 	items := make([]map[string]any, 0, len(p.strategyEngines))
 	for _, engine := range p.strategyEngines {
 		items = append(items, engine.Describe())
 	}
 	return items
+}
+
+func (p *Platform) BindStrategySignalSource(strategyID string, payload map[string]any) (map[string]any, error) {
+	strategy, err := p.GetStrategy(strategyID)
+	if err != nil {
+		return nil, err
+	}
+	currentVersion, ok := strategy["currentVersion"].(domain.StrategyVersion)
+	if !ok {
+		return nil, fmt.Errorf("strategy %s has no current version", strategyID)
+	}
+
+	sourceKey := normalizeSignalSourceKey(stringValue(payload["sourceKey"]))
+	if sourceKey == "" {
+		return nil, fmt.Errorf("sourceKey is required")
+	}
+	provider, ok := p.signalSources[sourceKey]
+	if !ok {
+		return nil, fmt.Errorf("signal source not registered: %s", sourceKey)
+	}
+	source := provider.Describe()
+
+	role := normalizeSignalSourceRole(stringValue(payload["role"]))
+	if !slices.Contains(source.Roles, role) {
+		return nil, fmt.Errorf("signal source %s does not support role %s", source.Key, role)
+	}
+
+	symbol := NormalizeSymbol(stringValue(payload["symbol"]))
+	options := cloneMetadata(metadataValue(payload["options"]))
+	if options == nil {
+		options = map[string]any{}
+	}
+
+	parameters := cloneMetadata(currentVersion.Parameters)
+	if parameters == nil {
+		parameters = map[string]any{}
+	}
+	existing := resolveStrategySignalBindings(parameters)
+	binding := domain.AccountSignalBinding{
+		ID:         fmt.Sprintf("strategy-signal-binding-%d", time.Now().UnixNano()),
+		AccountID:  strategyID,
+		SourceKey:  source.Key,
+		SourceName: source.Name,
+		Exchange:   source.Exchange,
+		Role:       role,
+		StreamType: source.StreamType,
+		Symbol:     symbol,
+		Status:     "ACTIVE",
+		Options:    options,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	bindings := make([]map[string]any, 0, len(existing)+1)
+	replaced := false
+	for _, item := range existing {
+		if normalizeSignalSourceKey(stringValue(item["sourceKey"])) == source.Key &&
+			normalizeSignalSourceRole(stringValue(item["role"])) == role &&
+			NormalizeSymbol(stringValue(item["symbol"])) == symbol {
+			bindings = append(bindings, bindingToMap(binding))
+			replaced = true
+			continue
+		}
+		bindings = append(bindings, cloneMetadata(item))
+	}
+	if !replaced {
+		bindings = append(bindings, bindingToMap(binding))
+	}
+	parameters["signalBindings"] = bindings
+	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
+	return p.store.UpdateStrategyParameters(strategyID, parameters)
+}
+
+func (p *Platform) ListStrategySignalBindings(strategyID string) ([]domain.AccountSignalBinding, error) {
+	strategy, err := p.GetStrategy(strategyID)
+	if err != nil {
+		return nil, err
+	}
+	currentVersion, ok := strategy["currentVersion"].(domain.StrategyVersion)
+	if !ok {
+		return nil, fmt.Errorf("strategy %s has no current version", strategyID)
+	}
+	raw := resolveStrategySignalBindings(currentVersion.Parameters)
+	items := make([]domain.AccountSignalBinding, 0, len(raw))
+	for _, binding := range raw {
+		items = append(items, domain.AccountSignalBinding{
+			ID:         stringValue(binding["id"]),
+			AccountID:  strategyID,
+			SourceKey:  normalizeSignalSourceKey(stringValue(binding["sourceKey"])),
+			SourceName: stringValue(binding["sourceName"]),
+			Exchange:   normalizeSignalSourceExchange(stringValue(binding["exchange"])),
+			Role:       normalizeSignalSourceRole(stringValue(binding["role"])),
+			StreamType: stringValue(binding["streamType"]),
+			Symbol:     NormalizeSymbol(stringValue(binding["symbol"])),
+			Status:     firstNonEmpty(stringValue(binding["status"]), "ACTIVE"),
+			Options:    cloneMetadata(metadataValue(binding["options"])),
+			CreatedAt:  timeValue(binding["createdAt"]),
+		})
+	}
+	return items, nil
 }
 
 // --- 账户管理服务方法 ---
@@ -232,22 +345,6 @@ func (p *Platform) BacktestOptions() map[string]any {
 			"4h 和 1d 用于策略信号周期。",
 			"执行层测试可选 tick 或 1min。",
 			"回测模块聚焦单一执行源回放，不做 tick 与 1min 的结果对比分析。",
-		},
-	}
-}
-
-// --- 信号源服务方法 ---
-
-// SignalSources 返回当前已注册的信号源列表（静态数据，后续接入动态注册）。
-func (p *Platform) SignalSources() []map[string]any {
-	return []map[string]any{
-		{
-			"id":          "signal-source-bk-1d",
-			"name":        "BK 1D ATR Reentry",
-			"type":        "internal-strategy",
-			"status":      "ACTIVE",
-			"dedupeKey":   "symbol+strategyVersion+reason+bar",
-			"description": "1D 信号 / 1m 执行策略源。",
 		},
 	}
 }

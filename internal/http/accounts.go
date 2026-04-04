@@ -81,6 +81,39 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, item)
 	})
 
+	mux.HandleFunc("/api/v1/accounts/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/accounts/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) != 2 || parts[1] != "signal-bindings" {
+			writeError(w, http.StatusNotFound, "account signal binding route not found")
+			return
+		}
+		accountID := parts[0]
+		switch r.Method {
+		case http.MethodGet:
+			items, err := platform.ListAccountSignalBindings(accountID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, items)
+		case http.MethodPost:
+			var payload map[string]any
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.BindAccountSignalSource(accountID, payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
 	// GET /api/v1/account-summaries — 账户汇总（权益、PnL、费用、敞口）
 	mux.HandleFunc("/api/v1/account-summaries", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

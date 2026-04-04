@@ -295,6 +295,42 @@ func (s *Store) CreateStrategy(name, description string, parameters map[string]a
 	}, nil
 }
 
+func (s *Store) UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	strategy, ok := s.strategies[strategyID]
+	if !ok {
+		return nil, fmt.Errorf("strategy not found: %s", strategyID)
+	}
+
+	var current domain.StrategyVersion
+	found := false
+	for _, version := range s.strategyVersion {
+		if version.StrategyID != strategyID {
+			continue
+		}
+		if !found || version.CreatedAt.After(current.CreatedAt) {
+			current = version
+			found = true
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("strategy version not found: %s", strategyID)
+	}
+	current.Parameters = parameters
+	s.strategyVersion[current.ID] = current
+
+	return map[string]any{
+		"id":             strategy.ID,
+		"name":           strategy.Name,
+		"status":         strategy.Status,
+		"description":    strategy.Description,
+		"createdAt":      strategy.CreatedAt,
+		"currentVersion": current,
+	}, nil
+}
+
 func (s *Store) ListAccounts() ([]domain.Account, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

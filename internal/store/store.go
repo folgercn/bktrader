@@ -13,6 +13,8 @@ type Repository interface {
 	ListStrategies() ([]map[string]any, error)
 	// CreateStrategy 创建新策略。
 	CreateStrategy(name, description string, parameters map[string]any) (map[string]any, error)
+	// UpdateStrategyParameters 更新策略当前版本参数。
+	UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error)
 
 	// --- 账户管理 ---
 
