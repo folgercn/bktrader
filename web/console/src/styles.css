@@ -252,6 +252,13 @@ a {
   padding-bottom: 18px;
 }
 
+.live-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
 .panel-backtests {
   padding-bottom: 18px;
 }
@@ -386,12 +393,36 @@ a {
   min-height: 116px;
 }
 
+.form-field-checkbox {
+  align-items: start;
+}
+
+.form-field-checkbox input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
 .form-field-wide {
   grid-column: 1 / -1;
 }
 
 .backtest-actions {
   margin-top: 14px;
+}
+
+.live-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.live-account-meta {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .backtest-notes {

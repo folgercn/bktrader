@@ -19,6 +19,16 @@ type AccountSummary = {
   updatedAt: string;
 };
 
+type AccountRecord = {
+  id: string;
+  name: string;
+  mode: string;
+  exchange: string;
+  status: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+};
+
 type StrategyVersion = {
   id: string;
   strategyId: string;
@@ -143,6 +153,16 @@ type BacktestOptions = {
   notes: string[];
 };
 
+type LiveAdapter = {
+  key: string;
+  name: string;
+  environments?: string[];
+  positionModes?: string[];
+  marginModes?: string[];
+  feeSource?: string;
+  fundingSource?: string;
+};
+
 type ReplayReasonStats = Record<string, Record<string, number>>;
 type ReplaySample = Record<string, unknown>;
 type ExecutionTrade = Record<string, unknown>;
@@ -182,6 +202,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<AccountSummary[]>([]);
+  const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [fills, setFills] = useState<Fill[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -190,10 +211,14 @@ function App() {
   const [backtests, setBacktests] = useState<BacktestRun[]>([]);
   const [backtestOptions, setBacktestOptions] = useState<BacktestOptions | null>(null);
   const [paperSessions, setPaperSessions] = useState<PaperSession[]>([]);
+  const [liveAdapters, setLiveAdapters] = useState<LiveAdapter[]>([]);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
   const [paperCreateAction, setPaperCreateAction] = useState(false);
+  const [liveCreateAction, setLiveCreateAction] = useState(false);
+  const [liveBindAction, setLiveBindAction] = useState(false);
+  const [liveSyncAction, setLiveSyncAction] = useState<string | null>(null);
   const [backtestAction, setBacktestAction] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
@@ -224,10 +249,25 @@ function App() {
     fundingRateBps: "0",
     fundingIntervalHours: "8",
   });
+  const [liveAccountForm, setLiveAccountForm] = useState({
+    name: "Live Binance",
+    exchange: "binance-futures",
+  });
+  const [liveBindingForm, setLiveBindingForm] = useState({
+    accountId: "",
+    adapterKey: "binance-futures",
+    positionMode: "ONE_WAY",
+    marginMode: "CROSSED",
+    sandbox: true,
+    apiKeyRef: "",
+    apiSecretRef: "",
+  });
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
+  const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
+  const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const selectedExecutionAvailability = backtestOptions?.availability?.[backtestForm.executionDataSource] ?? "unknown";
   const selectedExecutionDatasets = backtestOptions?.datasets?.[backtestForm.executionDataSource] ?? [];
   const selectedExecutionSymbols = backtestOptions?.supportedSymbols?.[backtestForm.executionDataSource] ?? [];
@@ -273,8 +313,9 @@ function App() {
   );
 
   async function loadDashboard() {
-    const [summaryData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData] = await Promise.all([
+    const [summaryData, accountData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData, liveAdapterData] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
+      fetchJSON<AccountRecord[]>("/api/v1/accounts"),
       fetchJSON<Order[]>("/api/v1/orders"),
       fetchJSON<Fill[]>("/api/v1/fills"),
       fetchJSON<Position[]>("/api/v1/positions"),
@@ -282,6 +323,7 @@ function App() {
       fetchJSON<StrategyRecord[]>("/api/v1/strategies"),
       fetchJSON<BacktestRun[]>("/api/v1/backtests"),
       fetchJSON<BacktestOptions>("/api/v1/backtests/options"),
+      fetchJSON<LiveAdapter[]>("/api/v1/live-adapters"),
     ]);
 
     const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
@@ -304,6 +346,7 @@ function App() {
     ]);
 
     setSummaries(summaryData);
+    setAccounts(accountData);
     setOrders(ordersData);
     setFills(fillsData);
     setPositions(positionsData);
@@ -318,6 +361,7 @@ function App() {
     });
     setBacktestOptions(backtestOptionsData);
     setPaperSessions(paperSessionData);
+    setLiveAdapters(liveAdapterData);
     setCandles(candleData.candles ?? []);
     setAnnotations(annotationData);
     setBacktestForm((current) => ({
@@ -340,6 +384,15 @@ function App() {
       tradingFeeBps: current.tradingFeeBps || "10",
       fundingRateBps: current.fundingRateBps || "0",
       fundingIntervalHours: current.fundingIntervalHours || "8",
+    }));
+    setLiveBindingForm((current) => ({
+      accountId: current.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
+      adapterKey: current.adapterKey || liveAdapterData[0]?.key || "binance-futures",
+      positionMode: current.positionMode || "ONE_WAY",
+      marginMode: current.marginMode || "CROSSED",
+      sandbox: current.sandbox,
+      apiKeyRef: current.apiKeyRef,
+      apiSecretRef: current.apiSecretRef,
     }));
   }
 
@@ -475,6 +528,70 @@ function App() {
     }
   }
 
+  async function createLiveAccount() {
+    setLiveCreateAction(true);
+    try {
+      await fetchJSON("/api/v1/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: liveAccountForm.name,
+          mode: "LIVE",
+          exchange: liveAccountForm.exchange,
+        }),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create live account");
+    } finally {
+      setLiveCreateAction(false);
+    }
+  }
+
+  async function bindLiveAccount() {
+    if (!liveBindingForm.accountId) {
+      setError("Live binding needs an account");
+      return;
+    }
+    setLiveBindAction(true);
+    try {
+      await fetchJSON(`/api/v1/live/accounts/${liveBindingForm.accountId}/binding`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adapterKey: liveBindingForm.adapterKey,
+          positionMode: liveBindingForm.positionMode,
+          marginMode: liveBindingForm.marginMode,
+          sandbox: liveBindingForm.sandbox,
+          credentialRefs: {
+            apiKeyRef: liveBindingForm.apiKeyRef,
+            apiSecretRef: liveBindingForm.apiSecretRef,
+          },
+        }),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to bind live account");
+    } finally {
+      setLiveBindAction(false);
+    }
+  }
+
+  async function syncLiveOrder(orderId: string) {
+    setLiveSyncAction(orderId);
+    try {
+      await fetchJSON(`/api/v1/orders/${orderId}/sync`, { method: "POST" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sync live order");
+    } finally {
+      setLiveSyncAction(null);
+    }
+  }
+
   async function createBacktestRun() {
     try {
       setBacktestAction(true);
@@ -511,6 +628,7 @@ function App() {
         <nav>
           <a href="#overview">Overview</a>
           <a href="#paper">Paper</a>
+          <a href="#live">Live</a>
           <a href="#backtests">Backtests</a>
           <a href="#market">Market</a>
           <a href="#equity">Equity</a>
@@ -1089,6 +1207,156 @@ function App() {
           )}
         </section>
 
+        <section id="live" className="panel panel-session">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Live Trading</p>
+              <h3>实盘账户与订单同步</h3>
+            </div>
+          </div>
+          <div className="live-grid">
+            <div className="backtest-form session-form">
+              <h4>Create Live Account</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Name</span>
+                  <input value={liveAccountForm.name} onChange={(event) => setLiveAccountForm((current) => ({ ...current, name: event.target.value }))} />
+                </label>
+                <label className="form-field">
+                  <span>Exchange</span>
+                  <input value={liveAccountForm.exchange} onChange={(event) => setLiveAccountForm((current) => ({ ...current, exchange: event.target.value }))} />
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton label={liveCreateAction ? "Creating..." : "Create Live Account"} disabled={liveCreateAction} onClick={createLiveAccount} />
+              </div>
+            </div>
+
+            <div className="backtest-form session-form">
+              <h4>Bind Live Adapter</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Live Account</span>
+                  <select
+                    value={liveBindingForm.accountId}
+                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, accountId: event.target.value }))}
+                  >
+                    {liveAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} ({account.status})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Adapter</span>
+                  <select
+                    value={liveBindingForm.adapterKey}
+                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, adapterKey: event.target.value }))}
+                  >
+                    {liveAdapters.map((adapter) => (
+                      <option key={adapter.key} value={adapter.key}>
+                        {adapter.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Position Mode</span>
+                  <select
+                    value={liveBindingForm.positionMode}
+                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, positionMode: event.target.value }))}
+                  >
+                    <option value="ONE_WAY">ONE_WAY</option>
+                    <option value="HEDGE">HEDGE</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Margin Mode</span>
+                  <select
+                    value={liveBindingForm.marginMode}
+                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, marginMode: event.target.value }))}
+                  >
+                    <option value="CROSSED">CROSSED</option>
+                    <option value="ISOLATED">ISOLATED</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>API Key Ref</span>
+                  <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiKeyRef: event.target.value }))} />
+                </label>
+                <label className="form-field">
+                  <span>API Secret Ref</span>
+                  <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiSecretRef: event.target.value }))} />
+                </label>
+                <label className="form-field form-field-checkbox">
+                  <span>Sandbox</span>
+                  <input
+                    type="checkbox"
+                    checked={liveBindingForm.sandbox}
+                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, sandbox: event.target.checked }))}
+                  />
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton label={liveBindAction ? "Binding..." : "Bind Live Adapter"} disabled={liveBindAction || !liveBindingForm.accountId} onClick={bindLiveAccount} />
+              </div>
+            </div>
+          </div>
+
+          <div className="live-grid">
+            <div className="backtest-list">
+              <h4>Live Accounts</h4>
+              {liveAccounts.length > 0 ? (
+                <div className="live-card-list">
+                  {liveAccounts.map((account) => {
+                    const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
+                    return (
+                      <div key={account.id} className="session-stat">
+                        <span>{account.name}</span>
+                        <strong>{account.status}</strong>
+                        <div className="live-account-meta">
+                          <span>{account.exchange}</span>
+                          <span>{String(binding.adapterKey ?? "--")}</span>
+                          <span>{String(binding.positionMode ?? "--")} / {String(binding.marginMode ?? "--")}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="empty-state empty-state-compact">No live accounts yet</div>
+              )}
+            </div>
+
+            <div className="backtest-list">
+              <h4>Accepted Live Orders</h4>
+              {syncableLiveOrders.length > 0 ? (
+                <SimpleTable
+                  columns={["Order", "Account", "Symbol", "Side", "Qty", "Status", "Action"]}
+                  rows={syncableLiveOrders.map((order) => [
+                    shrink(order.id),
+                    order.accountId,
+                    order.symbol,
+                    order.side,
+                    formatMaybeNumber(order.quantity),
+                    order.status,
+                    <ActionButton
+                      key={order.id}
+                      label={liveSyncAction === order.id ? "Syncing..." : "Sync"}
+                      disabled={liveSyncAction !== null}
+                      onClick={() => syncLiveOrder(order.id)}
+                    />,
+                  ])}
+                  emptyMessage="No accepted live orders"
+                />
+              ) : (
+                <div className="empty-state empty-state-compact">No accepted live orders</div>
+              )}
+            </div>
+          </div>
+        </section>
+
         <section id="market" className="panel panel-market">
           <div className="panel-header">
             <div>
@@ -1538,7 +1806,7 @@ function MetricCard(props: { label: string; value: string; tone?: "accent" }) {
   );
 }
 
-function SimpleTable(props: { columns: string[]; rows: string[][]; emptyMessage: string }) {
+function SimpleTable(props: { columns: string[]; rows: React.ReactNode[][]; emptyMessage: string }) {
   if (props.rows.length === 0) {
     return <div className="empty-state">{props.emptyMessage}</div>;
   }
@@ -1555,9 +1823,9 @@ function SimpleTable(props: { columns: string[]; rows: string[][]; emptyMessage:
         </thead>
         <tbody>
           {props.rows.map((row, index) => (
-            <tr key={`${row.join("-")}-${index}`}>
+            <tr key={`row-${index}`}>
               {row.map((cell, cellIndex) => (
-                <td key={`${cell}-${cellIndex}`}>{cell}</td>
+                <td key={`cell-${index}-${cellIndex}`}>{cell}</td>
               ))}
             </tr>
           ))}
