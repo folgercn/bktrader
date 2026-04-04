@@ -129,6 +129,8 @@ TICK_DATA_DIR=./dataset/archive
 - 选择 `tick` 或 `1min` 作为执行数据源
 - 由 Go 版策略引擎直接生成交易并回放
 
+其中 `tick` 执行源现在已经是流式逐笔 `Strategy Replay`，会按信号窗口顺序消费 trade archive，而不是先把整段逐笔数据并入内存。
+
 `replayLedger=true` 仍然保留为可选内部审计能力，用于排查历史账本和执行层之间的差异，但它不是当前平台推荐的主回测入口。
 
 当前仓库还提供了一个对齐脚本，用于校验 Go 策略回放和 Python 研究版在 `1d -> 1min` 场景下的一致性：

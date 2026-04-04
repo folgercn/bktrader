@@ -41,7 +41,7 @@ func Load() Config {
 		NATSURL:           getenv("NATS_URL", "nats://localhost:4222"),
 		PaperTickInterval: tickInterval,
 		MinuteDataDir:     getenv("MINUTE_DATA_DIR", "."),
-		TickDataDir:       getenv("TICK_DATA_DIR", "."),
+		TickDataDir:       getenv("TICK_DATA_DIR", "./dataset/archive"),
 	}
 }
 

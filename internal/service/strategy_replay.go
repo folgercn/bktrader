@@ -85,21 +85,277 @@ func (p *Platform) runStrategyReplay(backtest map[string]any) (map[string]any, e
 		}
 		return runStrategyReplayOnMinuteBars(cfg, signals, minuteBars)
 	}
+	if cfg.ExecutionDataSource == "tick" {
+		return p.runStrategyReplayOnTick(cfg, signals)
+	}
 
 	engine := newStrategyReplayEngine(cfg)
 	switch cfg.ExecutionDataSource {
-	case "tick":
-		if err := p.walkTickExecutionBars(cfg.Symbol, rangeStart, rangeEnd, func(bar executionBar) error {
-			engine.process(bar, signals)
-			return nil
-		}); err != nil {
-			return nil, err
-		}
 	default:
 		return nil, fmt.Errorf("unsupported execution data source: %s", cfg.ExecutionDataSource)
 	}
 
 	return engine.summary(signals), nil
+}
+
+func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []strategySignalBar) (map[string]any, error) {
+	rangeStart, rangeEnd := resolveReplayRange(cfg, signals)
+	iterator, err := p.newTickArchiveIteratorForRange(cfg.Symbol, rangeStart.UTC().Format(time.RFC3339), rangeEnd.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+	defer iterator.Close()
+
+	engine := newStrategyReplayEngine(cfg)
+	reentryATR := 0.1
+	commission := 0.001
+	initialUsage := 0.10
+	if cfg.Dir2ZeroInitial {
+		initialUsage = 0.0
+	}
+
+	nextEvent, hasEvent, err := nextTickEvent(iterator)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < len(signals)-1; i++ {
+		startT, endT := signals[i].Time, signals[i+1].Time
+		if startT.Before(cfg.From) {
+			startT = cfg.From
+		}
+		if !cfg.To.IsZero() && endT.After(cfg.To) {
+			endT = cfg.To
+		}
+		if !cfg.To.IsZero() && startT.After(cfg.To) {
+			break
+		}
+		if endT.Before(startT) {
+			continue
+		}
+
+		for hasEvent && nextEvent.Time.Before(startT) {
+			nextEvent, hasEvent, err = nextTickEvent(iterator)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !hasEvent {
+			break
+		}
+
+		sig := signals[i]
+		if math.IsNaN(sig.ATR) || sig.ATR <= 0 {
+			continue
+		}
+		tradesInBar := 0
+		if i-engine.lastExitBarIndex > 1 {
+			engine.lastExitSide = ""
+		}
+
+		for hasEvent && !nextEvent.Time.After(endT) {
+			current := nextEvent
+			if engine.position == nil {
+				executed := false
+
+				if sig.Close > sig.MA20 {
+					reP := sig.PrevLow1 + reentryATR*sig.ATR
+					if tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
+						if current.Price >= sig.PrevHigh2 {
+							entry := math.Max(current.Price, sig.PrevHigh2) * (1 + cfg.FixedSlippage)
+							notional := engine.balance * initialUsage
+							stopLoss := resolveStopPrice("long", entry, sig, cfg.StopMode, cfg.StopLossATR)
+							engine.position = &strategyPosition{
+								Side:       "long",
+								EntryPrice: entry,
+								StopLoss:   stopLoss,
+								Protected:  false,
+								Notional:   notional,
+								Reason:     "Initial",
+								BarIndex:   i,
+							}
+							engine.balance -= notional * commission
+							engine.appendTrade("BUY", current.Time, entry, "Initial", notional, 0)
+							tradesInBar++
+							executed = true
+						}
+					} else if engine.lastExitSide == "long" && i-engine.lastExitBarIndex <= 1 {
+						if current.Price >= reP {
+							reason := "PT-Reentry"
+							if engine.lastExitReason == "SL" {
+								reason = "SL-Reentry"
+							}
+							if (reason == "SL-Reentry" && tradesInBar < cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
+								size := getReentrySize(tradesInBar, cfg.ReentrySizeSchedule)
+								notional := engine.balance * size
+								entry := reP * (1 + cfg.FixedSlippage)
+								stopLoss := resolveStopPrice("long", entry, sig, cfg.StopMode, cfg.StopLossATR)
+								engine.position = &strategyPosition{
+									Side:       "long",
+									EntryPrice: entry,
+									StopLoss:   stopLoss,
+									Protected:  false,
+									Notional:   notional,
+									Reason:     reason,
+									BarIndex:   i,
+								}
+								engine.balance -= notional * commission
+								engine.appendTrade("BUY", current.Time, entry, reason, notional, 0)
+								if reason == "SL-Reentry" {
+									tradesInBar++
+								}
+								executed = true
+							}
+							engine.lastExitSide = ""
+						}
+					}
+				} else if sig.Close < sig.MA20 {
+					reP := sig.PrevHigh1
+					if tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
+						if current.Price <= sig.PrevLow2 {
+							entry := math.Min(current.Price, sig.PrevLow2) * (1 - cfg.FixedSlippage)
+							notional := engine.balance * initialUsage
+							stopLoss := resolveStopPrice("short", entry, sig, cfg.StopMode, cfg.StopLossATR)
+							engine.position = &strategyPosition{
+								Side:       "short",
+								EntryPrice: entry,
+								StopLoss:   stopLoss,
+								Protected:  false,
+								Notional:   notional,
+								Reason:     "Initial",
+								BarIndex:   i,
+							}
+							engine.balance -= notional * commission
+							engine.appendTrade("SHORT", current.Time, entry, "Initial", notional, 0)
+							tradesInBar++
+							executed = true
+						}
+					} else if engine.lastExitSide == "short" && i-engine.lastExitBarIndex <= 1 {
+						if current.Price <= reP {
+							reason := "PT-Reentry"
+							if engine.lastExitReason == "SL" {
+								reason = "SL-Reentry"
+							}
+							if (reason == "SL-Reentry" && tradesInBar < cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
+								size := getReentrySize(tradesInBar, cfg.ReentrySizeSchedule)
+								notional := engine.balance * size
+								entry := reP * (1 - cfg.FixedSlippage)
+								stopLoss := resolveStopPrice("short", entry, sig, cfg.StopMode, cfg.StopLossATR)
+								engine.position = &strategyPosition{
+									Side:       "short",
+									EntryPrice: entry,
+									StopLoss:   stopLoss,
+									Protected:  false,
+									Notional:   notional,
+									Reason:     reason,
+									BarIndex:   i,
+								}
+								engine.balance -= notional * commission
+								engine.appendTrade("SHORT", current.Time, entry, reason, notional, 0)
+								if reason == "SL-Reentry" {
+									tradesInBar++
+								}
+								executed = true
+							}
+							engine.lastExitSide = ""
+						}
+					}
+				}
+
+				nextEvent, hasEvent, err = advanceTickIterator(iterator, current.Time)
+				if err != nil {
+					return nil, err
+				}
+				if executed {
+					continue
+				}
+				continue
+			}
+
+			exitTriggered := false
+			exitPrice := 0.0
+			exitReason := ""
+			if engine.position.Side == "long" {
+				if !engine.position.Protected && current.Price >= engine.position.EntryPrice+cfg.ProfitProtectATR*sig.ATR {
+					engine.position.Protected = true
+				}
+				if current.Price <= engine.position.StopLoss {
+					exitPrice = engine.position.StopLoss
+					exitReason = "SL"
+					exitTriggered = true
+				} else if engine.position.Protected && current.Price <= sig.PrevLow1 {
+					exitPrice = sig.PrevLow1
+					exitReason = "PT"
+					exitTriggered = true
+				}
+			} else {
+				if !engine.position.Protected && current.Price <= engine.position.EntryPrice-cfg.ProfitProtectATR*sig.ATR {
+					engine.position.Protected = true
+				}
+				if current.Price >= engine.position.StopLoss {
+					exitPrice = engine.position.StopLoss
+					exitReason = "SL"
+					exitTriggered = true
+				} else if engine.position.Protected && current.Price >= sig.PrevHigh1 {
+					exitPrice = sig.PrevHigh1
+					exitReason = "PT"
+					exitTriggered = true
+				}
+			}
+
+			nextEvent, hasEvent, err = advanceTickIterator(iterator, current.Time)
+			if err != nil {
+				return nil, err
+			}
+
+			if !exitTriggered {
+				continue
+			}
+
+			sideMult := 1.0
+			if engine.position.Side == "short" {
+				sideMult = -1.0
+				exitPrice *= (1 + cfg.FixedSlippage)
+			} else {
+				exitPrice *= (1 - cfg.FixedSlippage)
+			}
+			pnl := 0.0
+			if engine.position.Notional > 0 {
+				pnl = sideMult * (exitPrice - engine.position.EntryPrice) / engine.position.EntryPrice * engine.position.Notional
+				engine.balance += pnl - engine.position.Notional*commission
+			}
+			engine.appendTrade("EXIT", current.Time, exitPrice, exitReason, engine.position.Notional, pnl)
+			engine.lastExitReason = exitReason
+			engine.lastExitSide = engine.position.Side
+			engine.lastExitBarIndex = i
+			engine.position = nil
+		}
+	}
+
+	return engine.summary(signals), nil
+}
+
+func nextTickEvent(iterator *tickArchiveIterator) (tickEvent, bool, error) {
+	event, err := iterator.Next()
+	if err != nil {
+		if err.Error() == "EOF" {
+			return tickEvent{}, false, nil
+		}
+		return tickEvent{}, false, err
+	}
+	return event, true, nil
+}
+
+func advanceTickIterator(iterator *tickArchiveIterator, currentTime time.Time) (tickEvent, bool, error) {
+	for {
+		event, ok, err := nextTickEvent(iterator)
+		if err != nil || !ok {
+			return event, ok, err
+		}
+		if event.Time.After(currentTime) {
+			return event, true, nil
+		}
+	}
 }
 
 func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategySignalBar, minuteBars []candleBar) (map[string]any, error) {
