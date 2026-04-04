@@ -630,6 +630,32 @@ function App() {
                     rows={5}
                   />
                 </label>
+                <label className="form-field form-field-wide">
+                  <span>Trade Plans CSV (Optional)</span>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) {
+                        return;
+                      }
+                      try {
+                        const text = await file.text();
+                        const plans = parseTradePlansCSV(text);
+                        setBacktestForm((current) => ({
+                          ...current,
+                          tradePlansJson: JSON.stringify(plans, null, 2),
+                        }));
+                        setError(null);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Failed to parse trade plans CSV");
+                      } finally {
+                        event.target.value = "";
+                      }
+                    }}
+                  />
+                </label>
               </div>
               <div className="backtest-actions">
                 <ActionButton
@@ -1891,6 +1917,48 @@ function parseTradePlansJSON(value: string) {
     throw new Error("tradePlansJson must be a JSON array");
   }
   return parsed;
+}
+
+function parseTradePlansCSV(value: string) {
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  if (lines.length < 2) {
+    throw new Error("trade plans CSV requires a header and at least one data row");
+  }
+
+  const header = lines[0].split(",").map((item) => item.trim());
+  const required = ["side", "entryPrice", "stopLossPrice", "takeProfitPrice", "quantity"];
+  for (const field of required) {
+    if (!header.includes(field)) {
+      throw new Error(`trade plans CSV missing required column: ${field}`);
+    }
+  }
+
+  return lines.slice(1).map((line, index) => {
+    const values = line.split(",").map((item) => item.trim());
+    const row: Record<string, string> = {};
+    header.forEach((key, headerIndex) => {
+      row[key] = values[headerIndex] ?? "";
+    });
+
+    const entryPrice = Number(row.entryPrice);
+    const stopLossPrice = Number(row.stopLossPrice);
+    const takeProfitPrice = Number(row.takeProfitPrice);
+    const quantity = Number(row.quantity);
+    if (!Number.isFinite(entryPrice) || !Number.isFinite(stopLossPrice) || !Number.isFinite(takeProfitPrice) || !Number.isFinite(quantity)) {
+      throw new Error(`invalid numeric value in trade plans CSV row ${index + 2}`);
+    }
+
+    return {
+      side: row.side,
+      entryPrice,
+      stopLossPrice,
+      takeProfitPrice,
+      quantity,
+    };
+  });
 }
 
 function shrink(value: string) {
