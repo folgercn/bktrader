@@ -208,6 +208,11 @@ function App() {
     symbol: "BTCUSDT",
     from: "",
     to: "",
+    side: "BUY",
+    entryPrice: "",
+    stopLossPrice: "",
+    takeProfitPrice: "",
+    quantity: "1",
   });
 
   const primaryAccount = summaries[0] ?? null;
@@ -299,6 +304,13 @@ function App() {
       signalTimeframe: current.signalTimeframe || backtestOptionsData.defaultSignalTimeframe,
       executionDataSource: current.executionDataSource || backtestOptionsData.defaultExecutionDataSource,
       symbol: current.symbol || "BTCUSDT",
+      from: current.from || "",
+      to: current.to || "",
+      side: current.side || "BUY",
+      entryPrice: current.entryPrice || "",
+      stopLossPrice: current.stopLossPrice || "",
+      takeProfitPrice: current.takeProfitPrice || "",
+      quantity: current.quantity || "1",
     }));
   }
 
@@ -416,6 +428,11 @@ function App() {
             symbol: backtestForm.symbol,
             from: backtestForm.from || undefined,
             to: backtestForm.to || undefined,
+            side: backtestForm.entryPrice ? backtestForm.side : undefined,
+            entryPrice: backtestForm.entryPrice ? Number(backtestForm.entryPrice) : undefined,
+            stopLossPrice: backtestForm.stopLossPrice ? Number(backtestForm.stopLossPrice) : undefined,
+            takeProfitPrice: backtestForm.takeProfitPrice ? Number(backtestForm.takeProfitPrice) : undefined,
+            quantity: backtestForm.quantity ? Number(backtestForm.quantity) : undefined,
           },
         }),
       });
@@ -459,7 +476,7 @@ function App() {
             <p className="eyebrow">Paper Trading Operations</p>
             <h2>账户监控、K 线回放与执行流水</h2>
             <p className="hero-copy">
-              当前页面直接消费平台 API，展示 paper 账户的权益、成交、持仓，以及基于项目策略账本回放的 BTCUSDT 真实 1 分钟 K 线与开平仓标记。
+              当前页面直接消费平台 API，展示 paper 账户的权益、成交、持仓，以及基于执行数据源回放的 BTCUSDT 行情与订单标记。
             </p>
           </div>
           <div className="hero-side">
@@ -552,6 +569,45 @@ function App() {
                     value={backtestForm.to}
                     onChange={(event) => setBacktestForm((current) => ({ ...current, to: event.target.value }))}
                     placeholder="2020-01-31T23:59:59Z"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Side (Optional)</span>
+                  <select value={backtestForm.side} onChange={(event) => setBacktestForm((current) => ({ ...current, side: event.target.value }))}>
+                    <option value="BUY">BUY</option>
+                    <option value="SELL">SELL</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Entry Price (Optional)</span>
+                  <input
+                    value={backtestForm.entryPrice}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, entryPrice: event.target.value }))}
+                    placeholder="7195.24"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Stop Loss (Optional)</span>
+                  <input
+                    value={backtestForm.stopLossPrice}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, stopLossPrice: event.target.value }))}
+                    placeholder="7190"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Take Profit (Optional)</span>
+                  <input
+                    value={backtestForm.takeProfitPrice}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, takeProfitPrice: event.target.value }))}
+                    placeholder="7200"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Quantity (Optional)</span>
+                  <input
+                    value={backtestForm.quantity}
+                    onChange={(event) => setBacktestForm((current) => ({ ...current, quantity: event.target.value }))}
+                    placeholder="1"
                   />
                 </label>
               </div>
@@ -694,95 +750,107 @@ function App() {
                         <strong>{String(latestBacktestSummary.streamPreviewTicks ?? "--")}</strong>
                       </div>
                       <div className="detail-item">
-                        <span>Replay Trades</span>
-                        <strong>{String(latestBacktestSummary.replayLedgerTrades ?? "--")}</strong>
+                        <span>Entry Hit</span>
+                        <strong>{String(latestBacktestSummary.bracketEntryHit ?? "--")}</strong>
                       </div>
                       <div className="detail-item">
-                        <span>Replay Completed</span>
-                        <strong>{String(latestBacktestSummary.replayLedgerCompleted ?? "--")}</strong>
+                        <span>Exit Type</span>
+                        <strong>{String(latestBacktestSummary.bracketExitType ?? latestBacktestSummary.bracketFinalState ?? "--")}</strong>
                       </div>
                       <div className="detail-item">
-                        <span>Replay Skipped</span>
-                        <strong>{String(latestBacktestSummary.replayLedgerSkipped ?? "--")}</strong>
+                        <span>Entry Fill</span>
+                        <strong>{formatMaybeNumber(latestBacktestSummary.bracketEntryFill)}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Exit Price</span>
+                        <strong>{formatMaybeNumber(latestBacktestSummary.bracketExitPrice)}</strong>
                       </div>
                       <div className="detail-item">
                         <span>Replay PnL</span>
-                        <strong>{formatSigned(getNumber(latestBacktestSummary.replayLedgerPnL))}</strong>
+                        <strong>{formatSigned(getNumber(latestBacktestSummary.bracketRealizedPnL))}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Processed Ticks</span>
+                        <strong>{String(latestBacktestSummary.bracketProcessedTicks ?? "--")}</strong>
                       </div>
                     </div>
 
-                    <div className="backtest-breakdown">
-                      <h4>By Reason</h4>
-                      {Object.keys(latestReplayByReason).length > 0 ? (
-                        <SimpleTable
-                          columns={["Reason", "Trades", "Completed", "Skipped", "Entry", "Exit"]}
-                          rows={Object.entries(latestReplayByReason).map(([reason, stats]) => [
-                            reason,
-                            String(stats.trades ?? 0),
-                            String(stats.completed ?? 0),
-                            String(stats.skipped ?? 0),
-                            String(stats.skippedEntry ?? 0),
-                            String(stats.skippedExit ?? 0),
-                          ])}
-                          emptyMessage="No grouped replay stats"
-                        />
-                      ) : (
-                        <div className="empty-state empty-state-compact">No replay grouping data</div>
-                      )}
-                    </div>
+                    {Boolean(latestBacktestSummary.replayLedgerTrades) ? (
+                      <>
+                        <div className="backtest-breakdown">
+                          <h4>Optional Ledger Audit</h4>
+                          {Object.keys(latestReplayByReason).length > 0 ? (
+                            <SimpleTable
+                              columns={["Reason", "Trades", "Completed", "Skipped", "Entry", "Exit"]}
+                              rows={Object.entries(latestReplayByReason).map(([reason, stats]) => [
+                                reason,
+                                String(stats.trades ?? 0),
+                                String(stats.completed ?? 0),
+                                String(stats.skipped ?? 0),
+                                String(stats.skippedEntry ?? 0),
+                                String(stats.skippedExit ?? 0),
+                              ])}
+                              emptyMessage="No grouped replay stats"
+                            />
+                          ) : (
+                            <div className="empty-state empty-state-compact">No optional ledger audit data</div>
+                          )}
+                        </div>
 
-                    <div className="backtest-samples-grid">
-                      <div className="backtest-sample-panel">
-                        <h4>Completed Samples</h4>
-                        {latestReplayCompletedSamples.length > 0 ? (
-                          latestReplayCompletedSamples.map((sample, index) => (
-                            <SampleCard
-                              key={`completed-${index}`}
-                              sample={sample}
-                              selected={selectedSample?.key === buildSampleKey("completed", index, sample)}
-                              onSelect={() => {
-                                const range = buildSampleRange(sample);
-                                if (!range) {
-                                  return;
-                                }
-                                setSelectedSample({ key: buildSampleKey("completed", index, sample), sample });
-                                setChartOverrideRange(range);
-                                setSourceFilter("backtest");
-                                setEventFilter("all");
-                                setFocusNonce((value) => value + 1);
-                              }}
-                            />
-                          ))
-                        ) : (
-                          <div className="empty-state empty-state-compact">No completed samples</div>
-                        )}
-                      </div>
-                      <div className="backtest-sample-panel">
-                        <h4>Skipped Samples</h4>
-                        {latestReplaySkippedSamples.length > 0 ? (
-                          latestReplaySkippedSamples.map((sample, index) => (
-                            <SampleCard
-                              key={`skipped-${index}`}
-                              sample={sample}
-                              selected={selectedSample?.key === buildSampleKey("skipped", index, sample)}
-                              onSelect={() => {
-                                const range = buildSampleRange(sample);
-                                if (!range) {
-                                  return;
-                                }
-                                setSelectedSample({ key: buildSampleKey("skipped", index, sample), sample });
-                                setChartOverrideRange(range);
-                                setSourceFilter("backtest");
-                                setEventFilter("all");
-                                setFocusNonce((value) => value + 1);
-                              }}
-                            />
-                          ))
-                        ) : (
-                          <div className="empty-state empty-state-compact">No skipped samples</div>
-                        )}
-                      </div>
-                    </div>
+                        <div className="backtest-samples-grid">
+                          <div className="backtest-sample-panel">
+                            <h4>Completed Samples</h4>
+                            {latestReplayCompletedSamples.length > 0 ? (
+                              latestReplayCompletedSamples.map((sample, index) => (
+                                <SampleCard
+                                  key={`completed-${index}`}
+                                  sample={sample}
+                                  selected={selectedSample?.key === buildSampleKey("completed", index, sample)}
+                                  onSelect={() => {
+                                    const range = buildSampleRange(sample);
+                                    if (!range) {
+                                      return;
+                                    }
+                                    setSelectedSample({ key: buildSampleKey("completed", index, sample), sample });
+                                    setChartOverrideRange(range);
+                                    setSourceFilter("backtest");
+                                    setEventFilter("all");
+                                    setFocusNonce((value) => value + 1);
+                                  }}
+                                />
+                              ))
+                            ) : (
+                              <div className="empty-state empty-state-compact">No completed samples</div>
+                            )}
+                          </div>
+                          <div className="backtest-sample-panel">
+                            <h4>Skipped Samples</h4>
+                            {latestReplaySkippedSamples.length > 0 ? (
+                              latestReplaySkippedSamples.map((sample, index) => (
+                                <SampleCard
+                                  key={`skipped-${index}`}
+                                  sample={sample}
+                                  selected={selectedSample?.key === buildSampleKey("skipped", index, sample)}
+                                  onSelect={() => {
+                                    const range = buildSampleRange(sample);
+                                    if (!range) {
+                                      return;
+                                    }
+                                    setSelectedSample({ key: buildSampleKey("skipped", index, sample), sample });
+                                    setChartOverrideRange(range);
+                                    setSourceFilter("backtest");
+                                    setEventFilter("all");
+                                    setFocusNonce((value) => value + 1);
+                                  }}
+                                />
+                              ))
+                            ) : (
+                              <div className="empty-state empty-state-compact">No skipped samples</div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
                   </>
                 ) : (
                   <div className="empty-state empty-state-compact">No backtest detail yet</div>

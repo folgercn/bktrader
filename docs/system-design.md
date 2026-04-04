@@ -237,6 +237,13 @@ Current implementation status:
 - embedded SQL migrations with `cmd/db-migrate`
 - optional local auto-migration controlled by `AUTO_MIGRATE`
 
+Current backtest focus:
+
+- primary workflow is direct execution replay on `tick` or `1min` data sources
+- users choose the signal timeframe (`4h` / `1d`) separately from the execution source
+- optional bracket parameters can be supplied to run direct entry / stop / take-profit replay inside a chosen time window
+- ledger replay remains available only as a secondary audit tool, not as the primary backtest path
+
 Current paper runner details:
 
 - replay source: `FINAL_1D_LEDGER_BEST_SL.csv`

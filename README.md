@@ -139,18 +139,9 @@ TICK_DATA_DIR=./dataset/archive
 - `bracketExitType / bracketExitTime / bracketExitPrice`
 - `bracketRealizedPnL`
 
-如果在回测参数里传入 `replayLedger=true`，平台还会：
+这就是当前推荐的回测工作流：直接在选定的 `tick` 或 `1min` 执行数据源上做时间窗口执行回放。
 
-- 读取 [FINAL_1D_LEDGER_BEST_SL.csv](/Users/wuyaocheng/Downloads/bkTrader/FINAL_1D_LEDGER_BEST_SL.csv)
-- 将账本里的 entry/exit 事件配对成交易
-- 在对应时间窗口内用 `tick` 执行层做逐笔回放摘要
-
-当前返回的摘要字段包括：
-
-- `replayLedgerTrades`
-- `replayLedgerCompleted`
-- `replayLedgerSkipped`
-- `replayLedgerPnL`
+`replayLedger=true` 仍然保留为可选内部审计能力，用于排查历史账本和执行层之间的差异，但它不是当前平台推荐的主回测入口。
 
 推荐做法：
 
