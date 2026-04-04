@@ -134,6 +134,20 @@ func (p *Platform) ListBacktests() ([]domain.BacktestRun, error) {
 	return p.store.ListBacktests()
 }
 
+// GetBacktest 根据 ID 获取单个回测记录。
+func (p *Platform) GetBacktest(backtestID string) (domain.BacktestRun, error) {
+	items, err := p.store.ListBacktests()
+	if err != nil {
+		return domain.BacktestRun{}, err
+	}
+	for _, item := range items {
+		if item.ID == backtestID {
+			return item, nil
+		}
+	}
+	return domain.BacktestRun{}, fmt.Errorf("backtest not found: %s", backtestID)
+}
+
 // CreateBacktest 创建新的回测运行记录。
 func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error) {
 	normalized, err := NormalizeBacktestParameters(parameters)

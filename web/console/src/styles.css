@@ -651,6 +651,11 @@ a {
   background: var(--accent-soft);
 }
 
+.filter-chip-disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
 .range-box-wrap {
   flex-wrap: wrap;
   justify-content: flex-end;

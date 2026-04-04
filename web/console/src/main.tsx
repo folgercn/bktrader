@@ -743,6 +743,12 @@ function App() {
                     >
                       Back To Live Window
                     </button>
+                    <a
+                      className={`filter-chip ${selectedBacktest ? "" : "filter-chip-disabled"}`}
+                      href={selectedBacktest ? `${API_BASE}/api/v1/backtests/${selectedBacktest.id}/execution-trades.csv` : undefined}
+                    >
+                      Export Trades CSV
+                    </a>
                   </div>
                 </div>
                 {selectedBacktest ? (
