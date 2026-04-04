@@ -597,6 +597,11 @@ a {
   background: var(--accent-soft);
 }
 
+.range-box-wrap {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .equity-chart {
   width: 100%;
   height: 240px;

@@ -160,6 +160,12 @@ type MarkerDetail = {
   paperSession?: string;
 };
 
+type ChartOverrideRange = {
+  from: number;
+  to: number;
+  label: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -184,6 +190,7 @@ function App() {
   const [focusNonce, setFocusNonce] = useState(0);
   const [hoveredMarker, setHoveredMarker] = useState<MarkerDetail | null>(null);
   const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
+  const [chartOverrideRange, setChartOverrideRange] = useState<ChartOverrideRange | null>(null);
   const [backtestForm, setBacktestForm] = useState({
     strategyVersionId: "",
     signalTimeframe: "1d",
@@ -227,7 +234,7 @@ function App() {
     ]);
 
     const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
-    const range = buildTimeRange(anchorDate, timeWindow);
+    const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
     const from = range.from;
     const to = range.to;
 
@@ -298,7 +305,7 @@ function App() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [timeWindow]);
+  }, [timeWindow, chartOverrideRange]);
 
   const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
@@ -591,9 +598,37 @@ function App() {
                     <p className="panel-kicker">Selected Run</p>
                     <h3>选中回测详情</h3>
                   </div>
-                  <div className="range-box">
+                  <div className="range-box range-box-wrap">
                     <span>{selectedBacktest?.status ?? "NO RUN"}</span>
                     <span>{String(selectedBacktest?.parameters?.backtestMode ?? "--")}</span>
+                    <button
+                      type="button"
+                      className="filter-chip"
+                      disabled={!selectedBacktest?.parameters?.from || !selectedBacktest?.parameters?.to}
+                      onClick={() => {
+                        const from = Date.parse(String(selectedBacktest?.parameters?.from ?? ""));
+                        const to = Date.parse(String(selectedBacktest?.parameters?.to ?? ""));
+                        if (!Number.isFinite(from) || !Number.isFinite(to)) {
+                          return;
+                        }
+                        setChartOverrideRange({
+                          from: Math.floor(from / 1000),
+                          to: Math.floor(to / 1000),
+                          label: "Backtest Window",
+                        });
+                        setFocusNonce((value) => value + 1);
+                      }}
+                    >
+                      Use Backtest Window
+                    </button>
+                    <button
+                      type="button"
+                      className="filter-chip"
+                      disabled={!chartOverrideRange}
+                      onClick={() => setChartOverrideRange(null)}
+                    >
+                      Back To Live Window
+                    </button>
                   </div>
                 </div>
                 {selectedBacktest ? (
@@ -749,7 +784,7 @@ function App() {
             <div className="range-box">
               <span>{candles.length} bars</span>
               <span>{chartAnnotations.length} markers</span>
-              <span>{timeWindow}</span>
+              <span>{chartOverrideRange?.label ?? timeWindow}</span>
               <span>{candleRange.label}</span>
             </div>
           </div>
