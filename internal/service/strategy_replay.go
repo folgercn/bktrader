@@ -155,6 +155,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 
 		for hasEvent && !nextEvent.Time.After(endT) {
 			current := nextEvent
+			engine.processedCount++
 			if engine.position == nil {
 				executed := false
 
@@ -332,7 +333,9 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 		}
 	}
 
-	return engine.summary(signals), nil
+	result := engine.summary(signals)
+	result["matchedArchiveFiles"] = 1
+	return result, nil
 }
 
 func nextTickEvent(iterator *tickArchiveIterator) (tickEvent, bool, error) {
@@ -408,6 +411,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 
 		for currentIdx < windowEnd {
 			bar := minuteBars[currentIdx]
+			engine.processedCount++
 			var prevBar *candleBar
 			if currentIdx > windowStart {
 				prevBar = &minuteBars[currentIdx-1]
@@ -616,6 +620,7 @@ type strategyReplayEngine struct {
 	prevExecBar      *executionBar
 	equity           []float64
 	trades           []map[string]any
+	processedCount   int
 }
 
 func newStrategyReplayEngine(cfg strategyReplayConfig) *strategyReplayEngine {
@@ -864,6 +869,11 @@ func (e *strategyReplayEngine) summary(signals []strategySignalBar) map[string]a
 		"maxDrawdown":         0.0,
 		"executionTrades":     []map[string]any{},
 		"executionTradeCount": 0,
+	}
+	if e.cfg.ExecutionDataSource == "tick" {
+		result["processedTicks"] = e.processedCount
+	} else {
+		result["processedBars"] = e.processedCount
 	}
 	if len(e.trades) == 0 {
 		return result

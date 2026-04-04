@@ -224,6 +224,13 @@ function App() {
     backtests.find((item) => item.id === selectedBacktestId) ??
     (backtests.length > 0 ? backtests[backtests.length - 1] : null);
   const latestBacktestSummary = (selectedBacktest?.resultSummary ?? {}) as Record<string, unknown>;
+  const latestExecutionSource = String(latestBacktestSummary.executionDataSource ?? selectedBacktest?.parameters?.executionDataSource ?? "");
+  const previewCountLabel = latestExecutionSource === "tick" ? "Preview Ticks" : "Preview Bars";
+  const processedCountLabel = latestExecutionSource === "tick" ? "Processed Ticks" : "Processed Bars";
+  const processedCountValue =
+    latestExecutionSource === "tick"
+      ? String(latestBacktestSummary.processedTicks ?? "--")
+      : String(latestBacktestSummary.processedBars ?? "--");
   const latestReplayByReason = (latestBacktestSummary.replayLedgerByReason ?? {}) as ReplayReasonStats;
   const latestExecutionTrades = Array.isArray(latestBacktestSummary.executionTrades)
     ? (latestBacktestSummary.executionTrades as ExecutionTrade[])
@@ -698,12 +705,20 @@ function App() {
                   <>
                     <div className="detail-grid">
                       <div className="detail-item">
+                        <span>Execution Source</span>
+                        <strong>{latestExecutionSource || "--"}</strong>
+                      </div>
+                      <div className="detail-item">
                         <span>Matched Files</span>
                         <strong>{String(latestBacktestSummary.matchedArchiveFiles ?? "--")}</strong>
                       </div>
                       <div className="detail-item">
                         <span>{previewCountLabel}</span>
                         <strong>{String(latestBacktestSummary.streamPreviewTicks ?? "--")}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>{processedCountLabel}</span>
+                        <strong>{processedCountValue}</strong>
                       </div>
                       <div className="detail-item">
                         <span>Trade Count</span>
