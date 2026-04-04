@@ -228,6 +228,9 @@ function App() {
     backtests.find((item) => item.id === selectedBacktestId) ??
     (backtests.length > 0 ? backtests[backtests.length - 1] : null);
   const latestBacktestSummary = (selectedBacktest?.resultSummary ?? {}) as Record<string, unknown>;
+  const selectedExecutionSource = String(selectedBacktest?.parameters?.executionDataSource ?? backtestForm.executionDataSource ?? "").toLowerCase();
+  const previewCountLabel = selectedExecutionSource === "1min" ? "Preview Bars" : "Preview Ticks";
+  const processedCountLabel = selectedExecutionSource === "1min" ? "Processed Bars" : "Processed Ticks";
   const latestReplayByReason = (latestBacktestSummary.replayLedgerByReason ?? {}) as ReplayReasonStats;
   const latestReplaySkippedSamples = Array.isArray(latestBacktestSummary.replayLedgerSkippedSamples)
     ? (latestBacktestSummary.replayLedgerSkippedSamples as ReplaySample[])
@@ -702,7 +705,7 @@ function App() {
               <div className="backtest-detail-card">
                 <div className="panel-header">
                   <div>
-                    <p className="panel-kicker">Selected Run</p>
+                    <p className="panel-kicker">Execution Replay</p>
                     <h3>选中回测详情</h3>
                   </div>
                   <div className="range-box range-box-wrap">
@@ -746,7 +749,7 @@ function App() {
                         <strong>{String(latestBacktestSummary.matchedArchiveFiles ?? "--")}</strong>
                       </div>
                       <div className="detail-item">
-                        <span>Preview Ticks</span>
+                        <span>{previewCountLabel}</span>
                         <strong>{String(latestBacktestSummary.streamPreviewTicks ?? "--")}</strong>
                       </div>
                       <div className="detail-item">
@@ -766,11 +769,11 @@ function App() {
                         <strong>{formatMaybeNumber(latestBacktestSummary.bracketExitPrice)}</strong>
                       </div>
                       <div className="detail-item">
-                        <span>Replay PnL</span>
+                        <span>Bracket PnL</span>
                         <strong>{formatSigned(getNumber(latestBacktestSummary.bracketRealizedPnL))}</strong>
                       </div>
                       <div className="detail-item">
-                        <span>Processed Ticks</span>
+                        <span>{processedCountLabel}</span>
                         <strong>{String(latestBacktestSummary.bracketProcessedTicks ?? "--")}</strong>
                       </div>
                     </div>
