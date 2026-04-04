@@ -37,12 +37,13 @@ type Signal struct {
 
 // Account 交易账户，支持 LIVE（实盘）和 PAPER（模拟盘）两种模式。
 type Account struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Mode      string    `json:"mode"`     // LIVE / PAPER
-	Exchange  string    `json:"exchange"` // 交易所名称
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Mode      string         `json:"mode"`     // LIVE / PAPER
+	Exchange  string         `json:"exchange"` // 交易所名称
+	Status    string         `json:"status"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
 }
 
 // PaperSession 模拟交易会话，绑定账户和策略，管理回放状态。

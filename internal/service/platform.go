@@ -23,6 +23,7 @@ type Platform struct {
 	run             map[string]context.CancelFunc // 运行中的 paper session -> cancel 函数
 	paperPlans      map[string][]paperPlannedOrder
 	strategyEngines map[string]StrategyEngine
+	liveAdapters    map[string]LiveExecutionAdapter
 	manifestMu      sync.Mutex
 	once            sync.Once             // 确保 CSV ledger 只加载一次
 	ledger          []strategyReplayEvent // 缓存的策略回放账本
@@ -43,8 +44,10 @@ func NewPlatform(store store.Repository) *Platform {
 		run:             make(map[string]context.CancelFunc),
 		paperPlans:      make(map[string][]paperPlannedOrder),
 		strategyEngines: make(map[string]StrategyEngine),
+		liveAdapters:    make(map[string]LiveExecutionAdapter),
 	}
 	platform.registerBuiltInStrategyEngines()
+	platform.registerBuiltInLiveAdapters()
 	return platform
 }
 

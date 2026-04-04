@@ -96,13 +96,15 @@ Runtime rules:
 
 - strategy modules must be pluggable; the platform resolves a `StrategyEngine` by key instead of hard-coding one strategy into each workflow
 - the same strategy engine must be used across backtest, paper, and live modes
+- live exchange connectivity must also be pluggable; the platform resolves a `LiveExecutionAdapter` by key per account binding
 - the only allowed execution-semantic difference is slippage:
   - `BACKTEST`: simulated slippage may be injected
   - `PAPER` / `LIVE`: no extra synthetic slippage inside strategy execution; fills must come from canonical execution flow
 - fees and funding:
   - `BACKTEST`: trading fee / funding are configurable parameters
   - `PAPER`: trading fee is configurable; funding should be configurable when paper holding lifecycle is promoted to the canonical engine path
-  - `LIVE`: trading fee / funding / rebates must come from exchange responses and reconciled ledgers
+- `LIVE`: trading fee / funding / rebates must come from exchange responses and reconciled ledgers
+- `LIVE` account credentials should be referenced indirectly (`apiKeyRef`, `apiSecretRef`) rather than embedded in strategy configuration
 
 Key parameters to snapshot:
 
@@ -247,6 +249,7 @@ Current implementation status:
 
 - pluggable repository layer with `memory` and `postgres` backends
 - pluggable `StrategyEngine` registry with built-in `bk-default`
+- pluggable `LiveExecutionAdapter` registry with built-in `binance-futures`
 - HTTP CRUD-style endpoints for strategies, accounts, orders, backtests, and paper sessions
 - `GET /api/v1/strategy-engines` exposes registered strategy engines to the UI
 - paper account orders are executed immediately into `fills` and net `positions`
@@ -254,6 +257,7 @@ Current implementation status:
 - account equity snapshots provide a time series for paper account net-equity charts
 - paper sessions support background runners that prebuild canonical strategy execution plans and persist replay progress in session state
 - paper session creation supports runtime overrides for timeframe, execution source, symbol, range, and cost semantics
+- live account bindings persist to `accounts.metadata.liveBinding` with adapter key, credential refs, and execution-mode settings
 - chart annotation endpoint
 - candle feed endpoint suitable for TradingView integration scaffolding
 - PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions

@@ -62,6 +62,8 @@ go run ./cmd/platform-api
 - `GET|POST /api/v1/strategies` — 策略管理
 - `GET /api/v1/strategy-engines` — 可用策略引擎列表
 - `GET|POST /api/v1/accounts` — 账户管理
+- `GET /api/v1/live-adapters` — 可用实盘执行适配器
+- `POST /api/v1/live/accounts/{id}/binding` — 绑定实盘账户到交易所适配器
 - `GET /api/v1/account-summaries` — 账户汇总（权益、PnL、费用）
 - `GET /api/v1/account-equity-snapshots?accountId=...` — 账户净值快照
 - `GET|POST /api/v1/orders` — 订单管理
@@ -86,6 +88,13 @@ go run ./cmd/platform-api
 - `GET /api/v1/signal-sources` — 信号源列表
 - `GET /api/v1/chart/annotations` — 图表标注数据
 - `GET /api/v1/chart/candles` — K 线数据
+
+实盘账户当前支持：
+- `LIVE` 账户默认状态为 `PENDING_SETUP`
+- 通过 `POST /api/v1/live/accounts/{id}/binding` 绑定 adapter 后会切到 `CONFIGURED`
+- `LIVE` 账户 binding 写入 `accounts.metadata.liveBinding`
+- 凭证只保存引用，例如 `credentialRefs.apiKeyRef` / `credentialRefs.apiSecretRef`
+- 实盘手续费和资金费来源固定为交易所回报，不走平台静态配置
 
 ### 前端控制台
 

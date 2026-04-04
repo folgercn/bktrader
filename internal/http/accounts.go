@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
@@ -45,6 +46,39 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
+	})
+
+	mux.HandleFunc("/api/v1/live-adapters", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, platform.LiveAdapters())
+	})
+
+	mux.HandleFunc("/api/v1/live/accounts/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/live/accounts/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) != 2 || parts[1] != "binding" {
+			writeError(w, http.StatusNotFound, "live account binding route not found")
+			return
+		}
+		accountID := parts[0]
+		var payload map[string]any
+		if err := decodeJSON(r, &payload); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item, err := platform.BindLiveAccount(accountID, payload)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
 	})
 
 	// GET /api/v1/account-summaries — 账户汇总（权益、PnL、费用、敞口）

@@ -106,14 +106,23 @@ func NewStore() *Store {
 		Mode:      "PAPER",
 		Exchange:  "binance-futures",
 		Status:    "READY",
+		Metadata:  map[string]any{},
 		CreatedAt: now,
 	}
 	live := domain.Account{
-		ID:        "live-main",
-		Name:      "Live Main",
-		Mode:      "LIVE",
-		Exchange:  "binance-futures",
-		Status:    "PENDING_SETUP",
+		ID:       "live-main",
+		Name:     "Live Main",
+		Mode:     "LIVE",
+		Exchange: "binance-futures",
+		Status:   "PENDING_SETUP",
+		Metadata: map[string]any{
+			"liveBinding": map[string]any{
+				"adapterKey":     "binance-futures",
+				"feeSource":      "exchange",
+				"fundingSource":  "exchange",
+				"connectionMode": "disabled",
+			},
+		},
 		CreatedAt: now,
 	}
 	store.accounts[paper.ID] = paper
@@ -305,7 +314,8 @@ func (s *Store) CreateAccount(name, mode, exchange string) (domain.Account, erro
 		Name:      name,
 		Mode:      mode,
 		Exchange:  exchange,
-		Status:    "READY",
+		Status:    accountStatusForMode(mode),
+		Metadata:  map[string]any{},
 		CreatedAt: time.Now().UTC(),
 	}
 	s.accounts[account.ID] = account
@@ -320,6 +330,19 @@ func (s *Store) GetAccount(accountID string) (domain.Account, error) {
 	if !ok {
 		return domain.Account{}, fmt.Errorf("account not found: %s", accountID)
 	}
+	return account, nil
+}
+
+func (s *Store) UpdateAccount(account domain.Account) (domain.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.accounts[account.ID]; !ok {
+		return domain.Account{}, fmt.Errorf("account not found: %s", account.ID)
+	}
+	if account.Metadata == nil {
+		account.Metadata = map[string]any{}
+	}
+	s.accounts[account.ID] = account
 	return account, nil
 }
 
@@ -537,6 +560,13 @@ func (s *Store) CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapsho
 	snapshot.CreatedAt = time.Now().UTC()
 	s.equitySnapshots[snapshot.AccountID] = append(s.equitySnapshots[snapshot.AccountID], snapshot)
 	return snapshot, nil
+}
+
+func accountStatusForMode(mode string) string {
+	if mode == "LIVE" {
+		return "PENDING_SETUP"
+	}
+	return "READY"
 }
 
 func (s *Store) ListAnnotations(symbol string) []domain.ChartAnnotation {

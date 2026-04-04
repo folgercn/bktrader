@@ -39,6 +39,11 @@ func (p *Platform) ListAccounts() ([]domain.Account, error) {
 	return p.store.ListAccounts()
 }
 
+// GetAccount 获取单个账户。
+func (p *Platform) GetAccount(accountID string) (domain.Account, error) {
+	return p.store.GetAccount(accountID)
+}
+
 // CreateAccount 创建新账户，mode 自动转为大写（LIVE / PAPER）。
 func (p *Platform) CreateAccount(name, mode, exchange string) (domain.Account, error) {
 	return p.store.CreateAccount(name, strings.ToUpper(mode), exchange)

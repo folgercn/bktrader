@@ -22,6 +22,8 @@ type Repository interface {
 	GetAccount(accountID string) (domain.Account, error)
 	// CreateAccount 创建新账户。
 	CreateAccount(name, mode, exchange string) (domain.Account, error)
+	// UpdateAccount 更新账户信息（状态、metadata 等）。
+	UpdateAccount(account domain.Account) (domain.Account, error)
 
 	// --- 订单管理 ---
 

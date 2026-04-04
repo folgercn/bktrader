@@ -160,7 +160,7 @@ func (s *Store) CreateStrategy(name, description string, parameters map[string]a
 }
 
 func (s *Store) ListAccounts() ([]domain.Account, error) {
-	rows, err := s.db.Query(`select id, name, mode, exchange, status, created_at from accounts order by created_at asc`)
+	rows, err := s.db.Query(`select id, name, mode, exchange, status, metadata, created_at from accounts order by created_at asc`)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +169,13 @@ func (s *Store) ListAccounts() ([]domain.Account, error) {
 	items := []domain.Account{}
 	for rows.Next() {
 		var item domain.Account
-		if err := rows.Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &item.CreatedAt); err != nil {
+		var metadataRaw []byte
+		if err := rows.Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &metadataRaw, &item.CreatedAt); err != nil {
 			return nil, err
+		}
+		item.Metadata = map[string]any{}
+		if len(metadataRaw) > 0 {
+			_ = json.Unmarshal(metadataRaw, &item.Metadata)
 		}
 		items = append(items, item)
 	}
@@ -183,31 +188,58 @@ func (s *Store) CreateAccount(name, mode, exchange string) (domain.Account, erro
 		Name:      name,
 		Mode:      mode,
 		Exchange:  exchange,
-		Status:    "READY",
+		Status:    accountStatusForMode(mode),
+		Metadata:  map[string]any{},
 		CreatedAt: time.Now().UTC(),
 	}
+	raw, _ := json.Marshal(item.Metadata)
 
 	_, err := s.db.Exec(`
-		insert into accounts (id, name, mode, exchange, status, created_at)
-		values ($1, $2, $3, $4, $5, $6)
-	`, item.ID, item.Name, item.Mode, item.Exchange, item.Status, item.CreatedAt)
+		insert into accounts (id, name, mode, exchange, status, metadata, created_at)
+		values ($1, $2, $3, $4, $5, $6, $7)
+	`, item.ID, item.Name, item.Mode, item.Exchange, item.Status, raw, item.CreatedAt)
 	return item, err
 }
 
 func (s *Store) GetAccount(accountID string) (domain.Account, error) {
 	var item domain.Account
+	var metadataRaw []byte
 	err := s.db.QueryRow(`
-		select id, name, mode, exchange, status, created_at
+		select id, name, mode, exchange, status, metadata, created_at
 		from accounts
 		where id = $1
-	`, accountID).Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &item.CreatedAt)
+	`, accountID).Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &metadataRaw, &item.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return domain.Account{}, fmt.Errorf("account not found: %s", accountID)
 		}
 		return domain.Account{}, err
 	}
+	item.Metadata = map[string]any{}
+	if len(metadataRaw) > 0 {
+		_ = json.Unmarshal(metadataRaw, &item.Metadata)
+	}
 	return item, nil
+}
+
+func (s *Store) UpdateAccount(account domain.Account) (domain.Account, error) {
+	if account.Metadata == nil {
+		account.Metadata = map[string]any{}
+	}
+	raw, _ := json.Marshal(account.Metadata)
+	_, err := s.db.Exec(`
+		update accounts
+		set name = $2,
+			mode = $3,
+			exchange = $4,
+			status = $5,
+			metadata = $6
+		where id = $1
+	`, account.ID, account.Name, account.Mode, account.Exchange, account.Status, raw)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	return s.GetAccount(account.ID)
 }
 
 func (s *Store) ListOrders() ([]domain.Order, error) {
@@ -586,4 +618,11 @@ func nullIfEmpty(v string) any {
 		return nil
 	}
 	return v
+}
+
+func accountStatusForMode(mode string) string {
+	if mode == "LIVE" {
+		return "PENDING_SETUP"
+	}
+	return "READY"
 }
