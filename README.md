@@ -66,6 +66,8 @@ go run ./cmd/platform-api
 - `POST /api/v1/live/accounts/{id}/binding` — 绑定实盘账户到交易所适配器
 - `GET /api/v1/signal-sources` — 信号源目录（按环境分组）
 - `GET /api/v1/signal-source-types` — 信号源类型说明
+- `GET /api/v1/signal-runtime/adapters` — 可用信号 runtime adapter 列表
+- `GET /api/v1/signal-runtime/plan?accountId=...&strategyId=...` — 账户与策略的信号运行计划
 - `GET|POST /api/v1/strategies/{id}/signal-bindings` — 策略级多信号源绑定
 - `GET|POST /api/v1/accounts/{id}/signal-bindings` — 账户级多信号源绑定
 - `GET /api/v1/account-summaries` — 账户汇总（权益、PnL、费用）
@@ -98,6 +100,10 @@ go run ./cmd/platform-api
 - 策略绑定解决“策略依赖哪些输入”
 - 账户绑定解决“这个账户实际接收哪些市场流”
 - 这两层分离后，后续做双市场交易和跨市场套利时不需要改模型
+- `signal-runtime plan` 会把策略需要的源和账户实际绑定的源做匹配，直接告诉你：
+  - 哪些源已经 READY
+  - 哪些 trigger/feature 还缺失
+  - 这些源后面应由哪个 runtime adapter 驱动
 
 实盘账户当前支持：
 - `LIVE` 账户默认状态为 `PENDING_SETUP`

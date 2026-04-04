@@ -25,6 +25,7 @@ type Platform struct {
 	strategyEngines map[string]StrategyEngine
 	liveAdapters    map[string]LiveExecutionAdapter
 	signalSources   map[string]SignalSourceProvider
+	signalAdapters  map[string]SignalRuntimeAdapter
 	manifestMu      sync.Mutex
 	once            sync.Once             // 确保 CSV ledger 只加载一次
 	ledger          []strategyReplayEvent // 缓存的策略回放账本
@@ -47,10 +48,12 @@ func NewPlatform(store store.Repository) *Platform {
 		strategyEngines: make(map[string]StrategyEngine),
 		liveAdapters:    make(map[string]LiveExecutionAdapter),
 		signalSources:   make(map[string]SignalSourceProvider),
+		signalAdapters:  make(map[string]SignalRuntimeAdapter),
 	}
 	platform.registerBuiltInStrategyEngines()
 	platform.registerBuiltInLiveAdapters()
 	platform.registerBuiltInSignalSources()
+	platform.registerBuiltInSignalRuntimeAdapters()
 	return platform
 }
 

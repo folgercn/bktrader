@@ -95,6 +95,11 @@ Source binding rules:
   - `BINANCE trade tick` for local execution triggering
   - `OKX trade tick` or `OKX order book` for cross-market arbitrage observation
 - trigger and feature sources must be modeled separately so future order-book features do not get mixed with execution trigger streams
+- before paper/live starts, the platform should build a `signal runtime plan`:
+  - match required strategy bindings against active account bindings
+  - resolve which runtime adapter should drive each source
+  - fail early when required trigger streams are missing
+  - surface optional feature-stream gaps separately from blocking trigger gaps
 
 ### 4.2 Strategy Management
 
@@ -223,6 +228,10 @@ Execution consistency rule:
 
 - strategy decision logic and order-intent generation must stay identical across backtest, paper, and live
 - execution adapters may differ by environment, but strategy code must not fork behavior except for backtest-only slippage simulation
+- signal runtime wiring must also stay environment-consistent:
+  - backtest resolves replay file loaders
+  - paper/live resolves exchange market-data adapters
+  - the strategy should see the same logical source roles (`trigger`, `feature`) even when the underlying transport differs
 - cost accounting may differ only by data source:
   - backtest/paper use configured fee models
   - live uses exchange-reported fee/funding records
