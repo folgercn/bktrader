@@ -183,6 +183,7 @@ function App() {
   const [timeWindow, setTimeWindow] = useState<TimeWindow>("12h");
   const [focusNonce, setFocusNonce] = useState(0);
   const [hoveredMarker, setHoveredMarker] = useState<MarkerDetail | null>(null);
+  const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
   const [backtestForm, setBacktestForm] = useState({
     strategyVersionId: "",
     signalTimeframe: "1d",
@@ -200,8 +201,11 @@ function App() {
   const selectedExecutionSchema = backtestOptions?.schema?.[backtestForm.executionDataSource];
   const selectedSymbolAvailable =
     selectedExecutionSymbols.length === 0 || selectedExecutionSymbols.includes(backtestForm.symbol.trim().toUpperCase());
-  const latestBacktest = backtests.length > 0 ? backtests[backtests.length - 1] : null;
-  const latestBacktestSummary = (latestBacktest?.resultSummary ?? {}) as Record<string, unknown>;
+  const backtestItems = backtests.slice().reverse().slice(0, 8);
+  const selectedBacktest =
+    backtests.find((item) => item.id === selectedBacktestId) ??
+    (backtests.length > 0 ? backtests[backtests.length - 1] : null);
+  const latestBacktestSummary = (selectedBacktest?.resultSummary ?? {}) as Record<string, unknown>;
   const latestReplayByReason = (latestBacktestSummary.replayLedgerByReason ?? {}) as ReplayReasonStats;
   const latestReplaySkippedSamples = Array.isArray(latestBacktestSummary.replayLedgerSkippedSamples)
     ? (latestBacktestSummary.replayLedgerSkippedSamples as ReplaySample[])
@@ -248,6 +252,12 @@ function App() {
     setSnapshots(snapshotData);
     setStrategies(strategyData);
     setBacktests(backtestData);
+    setSelectedBacktestId((current) => {
+      if (current && backtestData.some((item) => item.id === current)) {
+        return current;
+      }
+      return backtestData.length > 0 ? backtestData[backtestData.length - 1].id : null;
+    });
     setBacktestOptions(backtestOptionsData);
     setPaperSessions(paperSessionData);
     setCandles(candleData.candles ?? []);
@@ -541,34 +551,52 @@ function App() {
               ) : null}
             </div>
             <div className="backtest-list">
-              <SimpleTable
-                columns={["Time", "Mode", "Symbol", "Status", "Return", "DD"]}
-                rows={backtests
-                  .slice()
-                  .reverse()
-                  .slice(0, 8)
-                  .map((item) => [
-                    formatTime(item.createdAt),
-                    String(item.parameters?.backtestMode ?? "--"),
-                    String(item.parameters?.symbol ?? "--"),
-                    item.status,
-                    formatPercent(item.resultSummary?.return),
-                    formatPercent(item.resultSummary?.maxDrawdown),
-                  ])}
-                emptyMessage="No backtests yet"
-              />
+              {backtestItems.length > 0 ? (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Mode</th>
+                        <th>Symbol</th>
+                        <th>Status</th>
+                        <th>Return</th>
+                        <th>DD</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {backtestItems.map((item) => (
+                        <tr
+                          key={item.id}
+                          className={item.id === selectedBacktest?.id ? "table-row-active" : ""}
+                          onClick={() => setSelectedBacktestId(item.id)}
+                        >
+                          <td>{formatTime(item.createdAt)}</td>
+                          <td>{String(item.parameters?.backtestMode ?? "--")}</td>
+                          <td>{String(item.parameters?.symbol ?? "--")}</td>
+                          <td>{item.status}</td>
+                          <td>{formatPercent(item.resultSummary?.return)}</td>
+                          <td>{formatPercent(item.resultSummary?.maxDrawdown)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="empty-state">No backtests yet</div>
+              )}
               <div className="backtest-detail-card">
                 <div className="panel-header">
                   <div>
-                    <p className="panel-kicker">Latest Run</p>
-                    <h3>最近一次回测详情</h3>
+                    <p className="panel-kicker">Selected Run</p>
+                    <h3>选中回测详情</h3>
                   </div>
                   <div className="range-box">
-                    <span>{latestBacktest?.status ?? "NO RUN"}</span>
-                    <span>{String(latestBacktest?.parameters?.backtestMode ?? "--")}</span>
+                    <span>{selectedBacktest?.status ?? "NO RUN"}</span>
+                    <span>{String(selectedBacktest?.parameters?.backtestMode ?? "--")}</span>
                   </div>
                 </div>
-                {latestBacktest ? (
+                {selectedBacktest ? (
                   <>
                     <div className="detail-grid">
                       <div className="detail-item">
