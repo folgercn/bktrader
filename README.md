@@ -249,4 +249,10 @@ Parity checks:
 ```bash
 python3 scripts/check_1d_1min_parity.py
 python3 scripts/check_4h_1min_parity.py
+python3 scripts/check_tick_strategy_regression.py
 ```
+
+说明：
+
+- `1min` 路径当前有 Python 研究版对齐脚本。
+- `tick` 路径当前使用 Go 主策略回放的稳定回归窗口校验，不再拿旧的 `run_tick_full_scan_dual` 做 parity；那段研究函数属于另一套历史参数口径，不是当前平台默认策略。
