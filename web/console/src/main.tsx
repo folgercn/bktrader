@@ -145,6 +145,7 @@ type BacktestOptions = {
 
 type ReplayReasonStats = Record<string, Record<string, number>>;
 type ReplaySample = Record<string, unknown>;
+type ExecutionTrade = Record<string, unknown>;
 
 type SourceFilter = "all" | "paper" | "backtest";
 type EventFilter = "all" | "initial" | "reentry" | "pt" | "sl";
@@ -232,6 +233,9 @@ function App() {
   const previewCountLabel = selectedExecutionSource === "1min" ? "Preview Bars" : "Preview Ticks";
   const processedCountLabel = selectedExecutionSource === "1min" ? "Processed Bars" : "Processed Ticks";
   const latestReplayByReason = (latestBacktestSummary.replayLedgerByReason ?? {}) as ReplayReasonStats;
+  const latestExecutionTrades = Array.isArray(latestBacktestSummary.executionTrades)
+    ? (latestBacktestSummary.executionTrades as ExecutionTrade[])
+    : [];
   const latestReplaySkippedSamples = Array.isArray(latestBacktestSummary.replayLedgerSkippedSamples)
     ? (latestBacktestSummary.replayLedgerSkippedSamples as ReplaySample[])
     : [];
@@ -776,6 +780,28 @@ function App() {
                         <span>{processedCountLabel}</span>
                         <strong>{String(latestBacktestSummary.bracketProcessedTicks ?? "--")}</strong>
                       </div>
+                    </div>
+
+                    <div className="backtest-breakdown">
+                      <h4>Execution Trades</h4>
+                      {latestExecutionTrades.length > 0 ? (
+                        <SimpleTable
+                          columns={["Status", "Source", "Side", "Qty", "Entry", "Exit", "Exit Type", "PnL"]}
+                          rows={latestExecutionTrades.map((trade) => [
+                            String(trade.status ?? "--"),
+                            String(trade.source ?? "--"),
+                            String(trade.side ?? "--"),
+                            formatMaybeNumber(trade.quantity),
+                            `${formatMaybeNumber(trade.entryPrice)} @ ${formatTime(String(trade.entryTime ?? ""))}`,
+                            `${formatMaybeNumber(trade.exitPrice)} @ ${formatTime(String(trade.exitTime ?? ""))}`,
+                            String(trade.exitType ?? "--"),
+                            formatSigned(getNumber(trade.realizedPnL)),
+                          ])}
+                          emptyMessage="No execution trades"
+                        />
+                      ) : (
+                        <div className="empty-state empty-state-compact">No execution trades yet</div>
+                      )}
                     </div>
 
                     {Boolean(latestBacktestSummary.replayLedgerTrades) ? (
@@ -1799,7 +1825,11 @@ function formatMaybeNumber(value: unknown) {
 }
 
 function formatTime(value: string) {
-  return new Date(value).toLocaleString("zh-CN", {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "--";
+  }
+  return parsed.toLocaleString("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

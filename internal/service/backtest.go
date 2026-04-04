@@ -902,6 +902,8 @@ func (p *Platform) simulateTickBracket(symbol, from, to string, plan bracketPlan
 		if err == io.EOF {
 			result["bracketProcessedTicks"] = processed
 			result["bracketFinalState"] = state
+			result["executionTrades"] = buildExecutionTradeRecords("tick", plan, result)
+			result["executionTradeCount"] = len(result["executionTrades"].([]map[string]any))
 			return result, nil
 		}
 		if err != nil {
@@ -918,6 +920,8 @@ func (p *Platform) simulateTickBracket(symbol, from, to string, plan bracketPlan
 		if done {
 			result["bracketProcessedTicks"] = processed
 			result["bracketFinalState"] = state
+			result["executionTrades"] = buildExecutionTradeRecords("tick", plan, result)
+			result["executionTradeCount"] = len(result["executionTrades"].([]map[string]any))
 			return result, nil
 		}
 	}
@@ -989,6 +993,8 @@ func (p *Platform) simulateMinuteBracket(symbol, from, to string, plan bracketPl
 				result["bracketSimulationOk"] = true
 				result["bracketProcessedTicks"] = processed
 				result["bracketFinalState"] = exitType
+				result["executionTrades"] = buildExecutionTradeRecords("1min", plan, result)
+				result["executionTradeCount"] = len(result["executionTrades"].([]map[string]any))
 				return result, nil
 			}
 		case "entered":
@@ -1005,12 +1011,16 @@ func (p *Platform) simulateMinuteBracket(symbol, from, to string, plan bracketPl
 			result["bracketSimulationOk"] = true
 			result["bracketProcessedTicks"] = processed
 			result["bracketFinalState"] = exitType
+			result["executionTrades"] = buildExecutionTradeRecords("1min", plan, result)
+			result["executionTradeCount"] = len(result["executionTrades"].([]map[string]any))
 			return result, nil
 		}
 	}
 
 	result["bracketProcessedTicks"] = processed
 	result["bracketFinalState"] = state
+	result["executionTrades"] = buildExecutionTradeRecords("1min", plan, result)
+	result["executionTradeCount"] = len(result["executionTrades"].([]map[string]any))
 	return result, nil
 }
 
@@ -1322,6 +1332,35 @@ func bracketPnLWithFill(plan bracketPlan, entryFill, exitPrice float64) float64 
 		return (exitPrice - entryFill) * plan.Quantity
 	}
 	return (entryFill - exitPrice) * plan.Quantity
+}
+
+func buildExecutionTradeRecords(source string, plan bracketPlan, result map[string]any) []map[string]any {
+	entryHit, _ := result["bracketEntryHit"].(bool)
+	status := "pending_entry"
+	if entryHit {
+		status = "open"
+	}
+	if simulationOK, _ := result["bracketSimulationOk"].(bool); simulationOK {
+		status = "closed"
+	}
+
+	record := map[string]any{
+		"source":        source,
+		"side":          plan.Side,
+		"quantity":      plan.Quantity,
+		"entryTarget":   plan.EntryPrice,
+		"stopLoss":      plan.StopLossPrice,
+		"takeProfit":    plan.TakeProfitPrice,
+		"entryTime":     result["bracketEntryTime"],
+		"entryPrice":    result["bracketEntryFill"],
+		"exitTime":      result["bracketExitTime"],
+		"exitPrice":     result["bracketExitPrice"],
+		"exitType":      result["bracketExitType"],
+		"realizedPnL":   result["bracketRealizedPnL"],
+		"processedBars": result["bracketProcessedTicks"],
+		"status":        status,
+	}
+	return []map[string]any{record}
 }
 
 func minuteBarEntryTriggered(bar candleBar, plan bracketPlan) (bool, float64) {
