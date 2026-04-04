@@ -100,6 +100,8 @@ go run ./cmd/platform-api
 - `POST /api/v1/orders` 对 `LIVE` 账户会按 `accounts.metadata.liveBinding.adapterKey` 选择 adapter
 - 当前内置 `binance-futures` mock submission，会返回 `ACCEPTED`
 - 订单 metadata 会写入 `exchangeOrderId`、`acceptedAt`、`adapterSubmission`、`feeSource=exchange`、`fundingSource=exchange`
+- `POST /api/v1/orders/{id}/sync` 会通过 adapter 把 `ACCEPTED` 订单同步成 `FILLED`
+- sync 后会写入真实风格的 `fill`、更新 `position`，并把 `adapterSync`、`lastSyncAt` 回写到订单 metadata
 
 ### 前端控制台
 

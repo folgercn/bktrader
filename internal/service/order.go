@@ -14,6 +14,19 @@ func (p *Platform) ListOrders() ([]domain.Order, error) {
 	return p.store.ListOrders()
 }
 
+func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
+	items, err := p.store.ListOrders()
+	if err != nil {
+		return domain.Order{}, err
+	}
+	for _, item := range items {
+		if item.ID == orderID {
+			return item, nil
+		}
+	}
+	return domain.Order{}, fmt.Errorf("order not found: %s", orderID)
+}
+
 // CreateOrder 创建订单。对于 PAPER 模式账户，订单会被立即执行（模拟成交），
 // 生成 fill 记录、更新持仓、捕获净值快照。
 func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
@@ -110,6 +123,70 @@ func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (
 	order.Metadata["acceptedAt"] = submission.AcceptedAt
 	order.Metadata["adapterSubmission"] = submission.Metadata
 	return p.store.UpdateOrder(order)
+}
+
+func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {
+	order, err := p.GetOrder(orderID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	account, err := p.store.GetAccount(order.AccountID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if account.Mode != "LIVE" {
+		return domain.Order{}, fmt.Errorf("order %s is not a live order", orderID)
+	}
+	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	syncResult, err := adapter.SyncOrder(account, order, binding)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	order.Metadata = cloneMetadata(order.Metadata)
+	order.Metadata["lastSyncAt"] = syncResult.SyncedAt
+	order.Metadata["syncMode"] = "adapter"
+	order.Metadata["feeSource"] = firstNonEmpty(syncResult.FeeSource, "exchange")
+	order.Metadata["fundingSource"] = firstNonEmpty(syncResult.FundingSrc, "exchange")
+	order.Metadata["adapterSync"] = syncResult.Metadata
+	order.Status = firstNonEmpty(syncResult.Status, order.Status)
+	if len(syncResult.Fills) > 0 {
+		for _, report := range syncResult.Fills {
+			if _, err := p.store.CreateFill(domain.Fill{
+				OrderID:  order.ID,
+				Price:    report.Price,
+				Quantity: report.Quantity,
+				Fee:      report.Fee - report.FundingPnL,
+			}); err != nil {
+				return domain.Order{}, err
+			}
+			liveExecutionPrice := report.Price
+			if liveExecutionPrice <= 0 {
+				liveExecutionPrice = resolveExecutionPrice(order)
+			}
+			execOrder := order
+			execOrder.Price = liveExecutionPrice
+			if execOrder.Metadata == nil {
+				execOrder.Metadata = map[string]any{}
+			}
+			execOrder.Metadata["fundingPnL"] = report.FundingPnL
+			if err := p.applyPaperFill(account, execOrder, liveExecutionPrice); err != nil {
+				return domain.Order{}, err
+			}
+		}
+		order.Price = syncResult.Fills[len(syncResult.Fills)-1].Price
+	}
+	updatedOrder, err := p.store.UpdateOrder(order)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if err := p.captureAccountSnapshot(account.ID); err != nil {
+		return domain.Order{}, err
+	}
+	return updatedOrder, nil
 }
 
 func (p *Platform) resolveLiveAdapterForAccount(account domain.Account) (LiveExecutionAdapter, map[string]any, error) {

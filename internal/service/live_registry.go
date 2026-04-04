@@ -13,6 +13,7 @@ type LiveExecutionAdapter interface {
 	Describe() map[string]any
 	ValidateAccountConfig(config map[string]any) error
 	SubmitOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error)
+	SyncOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error)
 }
 
 type LiveOrderSubmission struct {
@@ -20,6 +21,24 @@ type LiveOrderSubmission struct {
 	ExchangeOrderID string         `json:"exchangeOrderId"`
 	AcceptedAt      string         `json:"acceptedAt"`
 	Metadata        map[string]any `json:"metadata,omitempty"`
+}
+
+type LiveFillReport struct {
+	Price      float64        `json:"price"`
+	Quantity   float64        `json:"quantity"`
+	Fee        float64        `json:"fee"`
+	FundingPnL float64        `json:"fundingPnl"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+}
+
+type LiveOrderSync struct {
+	Status     string           `json:"status"`
+	SyncedAt   string           `json:"syncedAt"`
+	Fills      []LiveFillReport `json:"fills,omitempty"`
+	Metadata   map[string]any   `json:"metadata,omitempty"`
+	Terminal   bool             `json:"terminal"`
+	FeeSource  string           `json:"feeSource"`
+	FundingSrc string           `json:"fundingSource"`
 }
 
 type liveAdapterBinding struct {
@@ -189,6 +208,42 @@ func (a binanceFuturesLiveAdapter) SubmitOrder(account domain.Account, order dom
 			"fundingSource":  "exchange",
 			"exchange":       account.Exchange,
 		},
+	}, nil
+}
+
+func (a binanceFuturesLiveAdapter) SyncOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	if stringValue(order.Metadata["exchangeOrderId"]) == "" {
+		return LiveOrderSync{}, fmt.Errorf("live order has no exchangeOrderId")
+	}
+	syncedAt := time.Now().UTC()
+	executionPrice := order.Price
+	if executionPrice <= 0 {
+		executionPrice = resolveExecutionPrice(order)
+	}
+	fee := executionPrice * order.Quantity * 0.001
+	return LiveOrderSync{
+		Status:   "FILLED",
+		SyncedAt: syncedAt.Format(time.RFC3339),
+		Fills: []LiveFillReport{
+			{
+				Price:    executionPrice,
+				Quantity: order.Quantity,
+				Fee:      fee,
+				Metadata: map[string]any{
+					"source":          "exchange-sync",
+					"exchange":        account.Exchange,
+					"adapterKey":      a.Key(),
+					"exchangeOrderId": stringValue(order.Metadata["exchangeOrderId"]),
+				},
+			},
+		},
+		Metadata: map[string]any{
+			"adapterMode": "mock-sync",
+			"sandbox":     boolValue(binding["sandbox"]),
+		},
+		Terminal:   true,
+		FeeSource:  "exchange",
+		FundingSrc: "exchange",
 	}, nil
 }
 

@@ -293,7 +293,9 @@ Current live adapter details:
 - `GET /api/v1/live-adapters` lists registered live adapters
 - `POST /api/v1/live/accounts/{id}/binding` binds a `LIVE` account to an adapter using credential references
 - `POST /api/v1/orders` for a bound `LIVE` account resolves the adapter and stores an `ACCEPTED` acknowledgement
+- `POST /api/v1/orders/{id}/sync` asks the adapter for the latest exchange order state and materializes fills locally
 - current `binance-futures` implementation is a mock submission adapter that returns exchange-style metadata without hitting the network
+- current mock sync path can transition `ACCEPTED -> FILLED`, create `fills`, and update `positions`
 
 ### Phase 3: Production Hardening
 
