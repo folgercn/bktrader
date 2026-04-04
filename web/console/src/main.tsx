@@ -685,7 +685,18 @@ function App() {
                         <h4>Completed Samples</h4>
                         {latestReplayCompletedSamples.length > 0 ? (
                           latestReplayCompletedSamples.map((sample, index) => (
-                            <SampleCard key={`completed-${index}`} sample={sample} />
+                            <SampleCard
+                              key={`completed-${index}`}
+                              sample={sample}
+                              onSelect={() => {
+                                const range = buildSampleRange(sample);
+                                if (!range) {
+                                  return;
+                                }
+                                setChartOverrideRange(range);
+                                setFocusNonce((value) => value + 1);
+                              }}
+                            />
                           ))
                         ) : (
                           <div className="empty-state empty-state-compact">No completed samples</div>
@@ -695,7 +706,18 @@ function App() {
                         <h4>Skipped Samples</h4>
                         {latestReplaySkippedSamples.length > 0 ? (
                           latestReplaySkippedSamples.map((sample, index) => (
-                            <SampleCard key={`skipped-${index}`} sample={sample} />
+                            <SampleCard
+                              key={`skipped-${index}`}
+                              sample={sample}
+                              onSelect={() => {
+                                const range = buildSampleRange(sample);
+                                if (!range) {
+                                  return;
+                                }
+                                setChartOverrideRange(range);
+                                setFocusNonce((value) => value + 1);
+                              }}
+                            />
                           ))
                         ) : (
                           <div className="empty-state empty-state-compact">No skipped samples</div>
@@ -1214,10 +1236,10 @@ function SimpleTable(props: { columns: string[]; rows: string[][]; emptyMessage:
   );
 }
 
-function SampleCard(props: { sample: ReplaySample }) {
+function SampleCard(props: { sample: ReplaySample; onSelect: () => void }) {
   const sample = props.sample;
   return (
-    <div className="sample-card">
+    <button type="button" className="sample-card sample-card-button" onClick={props.onSelect}>
       <div className="sample-title">{String(sample.reason ?? sample.entryCause ?? "sample")}</div>
       <div className="sample-line">
         entry: {String(sample.entryTime ?? "--")} · {formatMaybeNumber(sample.entryPrice)}
@@ -1232,7 +1254,7 @@ function SampleCard(props: { sample: ReplaySample }) {
         cause: {String(sample.entryCause ?? "--")} / {String(sample.exitCause ?? sample.bracketExitType ?? "--")}
       </div>
       <div className="sample-line">pnl: {formatMaybeNumber(sample.bracketRealizedPnL)}</div>
-    </div>
+    </button>
   );
 }
 
@@ -1370,6 +1392,20 @@ function buildTimeRange(anchorDate: Date, window: TimeWindow) {
   return {
     from: anchor - beforeByWindow[window],
     to: anchor + afterByWindow[window],
+  };
+}
+
+function buildSampleRange(sample: ReplaySample): ChartOverrideRange | null {
+  const entryTime = Date.parse(String(sample.entryTime ?? ""));
+  const exitTime = Date.parse(String(sample.exitTime ?? sample.bracketExitTime ?? ""));
+  if (!Number.isFinite(entryTime)) {
+    return null;
+  }
+  const end = Number.isFinite(exitTime) ? exitTime : entryTime + 60 * 60 * 1000;
+  return {
+    from: Math.floor((entryTime - 30 * 60 * 1000) / 1000),
+    to: Math.floor((end + 30 * 60 * 1000) / 1000),
+    label: "Sample Window",
   };
 }
 

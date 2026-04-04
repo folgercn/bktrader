@@ -534,6 +534,18 @@ a {
   gap: 6px;
 }
 
+.sample-card-button {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.sample-card-button:hover {
+  border-color: rgba(14, 109, 96, 0.35);
+  background: rgba(217, 238, 232, 0.62);
+}
+
 .sample-title {
   font-weight: 700;
   color: var(--accent);
