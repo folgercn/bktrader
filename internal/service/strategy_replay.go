@@ -1,8 +1,13 @@
 package service
 
 import (
+	"encoding/csv"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -59,11 +64,7 @@ type strategyReplayConfig struct {
 
 func (p *Platform) runStrategyReplay(backtest map[string]any) (map[string]any, error) {
 	cfg := buildStrategyReplayConfig(backtest)
-	minuteBars, err := p.loadCandleBars()
-	if err != nil {
-		return nil, err
-	}
-	signals, err := buildSignalBars(minuteBars, cfg.SignalTimeframe)
+	signals, err := p.loadStrategySignalBars(cfg.SignalTimeframe)
 	if err != nil {
 		return nil, err
 	}
@@ -77,15 +78,16 @@ func (p *Platform) runStrategyReplay(backtest map[string]any) (map[string]any, e
 		return nil, fmt.Errorf("no %s signal bars in selected range", cfg.SignalTimeframe)
 	}
 
-	engine := newStrategyReplayEngine(cfg)
-	switch cfg.ExecutionDataSource {
-	case "1min":
-		if err := p.walkMinuteExecutionBars(rangeStart, rangeEnd, func(bar executionBar) error {
-			engine.process(bar, signals)
-			return nil
-		}); err != nil {
+	if cfg.ExecutionDataSource == "1min" {
+		minuteBars, err := p.loadCandleBars()
+		if err != nil {
 			return nil, err
 		}
+		return runStrategyReplayOnMinuteBars(cfg, signals, minuteBars)
+	}
+
+	engine := newStrategyReplayEngine(cfg)
+	switch cfg.ExecutionDataSource {
 	case "tick":
 		if err := p.walkTickExecutionBars(cfg.Symbol, rangeStart, rangeEnd, func(bar executionBar) error {
 			engine.process(bar, signals)
@@ -95,6 +97,252 @@ func (p *Platform) runStrategyReplay(backtest map[string]any) (map[string]any, e
 		}
 	default:
 		return nil, fmt.Errorf("unsupported execution data source: %s", cfg.ExecutionDataSource)
+	}
+
+	return engine.summary(signals), nil
+}
+
+func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategySignalBar, minuteBars []candleBar) (map[string]any, error) {
+	engine := newStrategyReplayEngine(cfg)
+	barCursor := 0
+	reentryATR := 0.1
+	commission := 0.001
+	initialUsage := 0.10
+	if cfg.Dir2ZeroInitial {
+		initialUsage = 0.0
+	}
+
+	for i := 0; i < len(signals)-1; i++ {
+		startT, endT := signals[i].Time, signals[i+1].Time
+		if startT.Before(cfg.From) {
+			startT = cfg.From
+		}
+		if !cfg.To.IsZero() && endT.After(cfg.To) {
+			endT = cfg.To
+		}
+		if !cfg.To.IsZero() && startT.After(cfg.To) {
+			break
+		}
+		if endT.Before(startT) {
+			continue
+		}
+
+		for barCursor < len(minuteBars) && minuteBars[barCursor].Time.Before(startT) {
+			barCursor++
+		}
+		windowStart := barCursor
+		windowEnd := windowStart
+		for windowEnd < len(minuteBars) && !minuteBars[windowEnd].Time.After(endT) {
+			windowEnd++
+		}
+		if windowStart >= windowEnd {
+			continue
+		}
+
+		sig := signals[i]
+		if math.IsNaN(sig.ATR) || sig.ATR <= 0 {
+			continue
+		}
+
+		tradesInBar := 0
+		currentIdx := windowStart
+		if i-engine.lastExitBarIndex > 1 {
+			engine.lastExitSide = ""
+		}
+
+		for currentIdx < windowEnd {
+			bar := minuteBars[currentIdx]
+			var prevBar *candleBar
+			if currentIdx > windowStart {
+				prevBar = &minuteBars[currentIdx-1]
+			}
+
+			if engine.position == nil {
+				executed := false
+
+				if sig.Close > sig.MA20 {
+					reP := sig.PrevLow1 + reentryATR*sig.ATR
+					if tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
+						if bar.High >= sig.PrevHigh2 {
+							entry := math.Max(bar.Open, sig.PrevHigh2) * (1 + cfg.FixedSlippage)
+							notional := engine.balance * initialUsage
+							stopLoss := resolveStopPrice("long", entry, sig, cfg.StopMode, cfg.StopLossATR)
+							engine.position = &strategyPosition{
+								Side:       "long",
+								EntryPrice: entry,
+								StopLoss:   stopLoss,
+								Protected:  false,
+								Notional:   notional,
+								Reason:     "Initial",
+								BarIndex:   i,
+							}
+							engine.balance -= notional * commission
+							engine.appendTrade("BUY", bar.Time, entry, "Initial", notional, 0)
+							tradesInBar++
+							executed = true
+						}
+					} else if engine.lastExitSide == "long" && i-engine.lastExitBarIndex <= 1 {
+						triggered := false
+						entryRaw := reP
+						if cfg.Dir1ReentryConfirm {
+							if prevBar != nil && bar.Close > reP && prevBar.Close > reP {
+								triggered = true
+								entryRaw = bar.Close
+							}
+						} else if bar.High >= reP {
+							triggered = true
+						}
+						if triggered {
+							reason := "PT-Reentry"
+							if engine.lastExitReason == "SL" {
+								reason = "SL-Reentry"
+							}
+							if (reason == "SL-Reentry" && tradesInBar < cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
+								size := getReentrySize(tradesInBar, cfg.ReentrySizeSchedule)
+								notional := engine.balance * size
+								entry := entryRaw * (1 + cfg.FixedSlippage)
+								stopLoss := resolveStopPrice("long", entry, sig, cfg.StopMode, cfg.StopLossATR)
+								engine.position = &strategyPosition{
+									Side:       "long",
+									EntryPrice: entry,
+									StopLoss:   stopLoss,
+									Protected:  false,
+									Notional:   notional,
+									Reason:     reason,
+									BarIndex:   i,
+								}
+								engine.balance -= notional * commission
+								engine.appendTrade("BUY", bar.Time, entry, reason, notional, 0)
+								if reason == "SL-Reentry" {
+									tradesInBar++
+								}
+								executed = true
+							}
+							engine.lastExitSide = ""
+						}
+					}
+				} else if sig.Close < sig.MA20 {
+					reP := sig.PrevHigh1
+					if tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
+						if bar.Low <= sig.PrevLow2 {
+							entry := math.Min(bar.Open, sig.PrevLow2) * (1 - cfg.FixedSlippage)
+							notional := engine.balance * initialUsage
+							stopLoss := resolveStopPrice("short", entry, sig, cfg.StopMode, cfg.StopLossATR)
+							engine.position = &strategyPosition{
+								Side:       "short",
+								EntryPrice: entry,
+								StopLoss:   stopLoss,
+								Protected:  false,
+								Notional:   notional,
+								Reason:     "Initial",
+								BarIndex:   i,
+							}
+							engine.balance -= notional * commission
+							engine.appendTrade("SHORT", bar.Time, entry, "Initial", notional, 0)
+							tradesInBar++
+							executed = true
+						}
+					} else if engine.lastExitSide == "short" && i-engine.lastExitBarIndex <= 1 {
+						triggered := false
+						entryRaw := reP
+						if cfg.Dir1ReentryConfirm {
+							if prevBar != nil && bar.Close < reP && prevBar.Close < reP {
+								triggered = true
+								entryRaw = bar.Close
+							}
+						} else if bar.Low <= reP {
+							triggered = true
+						}
+						if triggered {
+							reason := "PT-Reentry"
+							if engine.lastExitReason == "SL" {
+								reason = "SL-Reentry"
+							}
+							if (reason == "SL-Reentry" && tradesInBar < cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
+								size := getReentrySize(tradesInBar, cfg.ReentrySizeSchedule)
+								notional := engine.balance * size
+								entry := entryRaw * (1 - cfg.FixedSlippage)
+								stopLoss := resolveStopPrice("short", entry, sig, cfg.StopMode, cfg.StopLossATR)
+								engine.position = &strategyPosition{
+									Side:       "short",
+									EntryPrice: entry,
+									StopLoss:   stopLoss,
+									Protected:  false,
+									Notional:   notional,
+									Reason:     reason,
+									BarIndex:   i,
+								}
+								engine.balance -= notional * commission
+								engine.appendTrade("SHORT", bar.Time, entry, reason, notional, 0)
+								if reason == "SL-Reentry" {
+									tradesInBar++
+								}
+								executed = true
+							}
+							engine.lastExitSide = ""
+						}
+					}
+				}
+
+				currentIdx++
+				if executed {
+					continue
+				}
+				continue
+			}
+
+			exitTriggered := false
+			exitPrice := 0.0
+			exitReason := ""
+			if engine.position.Side == "long" {
+				if !engine.position.Protected && bar.High >= engine.position.EntryPrice+cfg.ProfitProtectATR*sig.ATR {
+					engine.position.Protected = true
+				}
+				if bar.Low <= engine.position.StopLoss {
+					exitPrice = engine.position.StopLoss
+					exitReason = "SL"
+					exitTriggered = true
+				} else if engine.position.Protected && bar.Low <= sig.PrevLow1 {
+					exitPrice = sig.PrevLow1
+					exitReason = "PT"
+					exitTriggered = true
+				}
+			} else {
+				if !engine.position.Protected && bar.Low <= engine.position.EntryPrice-cfg.ProfitProtectATR*sig.ATR {
+					engine.position.Protected = true
+				}
+				if bar.High >= engine.position.StopLoss {
+					exitPrice = engine.position.StopLoss
+					exitReason = "SL"
+					exitTriggered = true
+				} else if engine.position.Protected && bar.High >= sig.PrevHigh1 {
+					exitPrice = sig.PrevHigh1
+					exitReason = "PT"
+					exitTriggered = true
+				}
+			}
+
+			if exitTriggered {
+				sideMult := 1.0
+				if engine.position.Side == "short" {
+					sideMult = -1.0
+					exitPrice *= (1 + cfg.FixedSlippage)
+				} else {
+					exitPrice *= (1 - cfg.FixedSlippage)
+				}
+				pnl := 0.0
+				if engine.position.Notional > 0 {
+					pnl = sideMult * (exitPrice - engine.position.EntryPrice) / engine.position.EntryPrice * engine.position.Notional
+					engine.balance += pnl - engine.position.Notional*commission
+				}
+				engine.appendTrade("EXIT", bar.Time, exitPrice, exitReason, engine.position.Notional, pnl)
+				engine.lastExitReason = exitReason
+				engine.lastExitSide = engine.position.Side
+				engine.lastExitBarIndex = i
+				engine.position = nil
+			}
+			currentIdx++
+		}
 	}
 
 	return engine.summary(signals), nil
@@ -161,25 +409,26 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 
 	if sig.Close > sig.MA20 {
 		reP := sig.PrevLow1 + reentryATR*sig.ATR
-		if e.tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 && bar.High >= sig.PrevHigh2 {
-			entry := math.Max(bar.Open, sig.PrevHigh2) * (1 + e.cfg.FixedSlippage)
-			notional := e.balance * initialUsage
-			stopLoss := resolveStopPrice("long", entry, sig, e.cfg.StopMode, e.cfg.StopLossATR)
-			e.position = &strategyPosition{
-				Side:       "long",
-				EntryPrice: entry,
-				StopLoss:   stopLoss,
-				Protected:  false,
-				Notional:   notional,
-				Reason:     "Initial",
-				BarIndex:   e.currentBarIndex,
+		if e.tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
+			if bar.High >= sig.PrevHigh2 {
+				entry := math.Max(bar.Open, sig.PrevHigh2) * (1 + e.cfg.FixedSlippage)
+				notional := e.balance * initialUsage
+				stopLoss := resolveStopPrice("long", entry, sig, e.cfg.StopMode, e.cfg.StopLossATR)
+				e.position = &strategyPosition{
+					Side:       "long",
+					EntryPrice: entry,
+					StopLoss:   stopLoss,
+					Protected:  false,
+					Notional:   notional,
+					Reason:     "Initial",
+					BarIndex:   e.currentBarIndex,
+				}
+				e.balance -= notional * commission
+				e.tradesInBar++
+				e.appendTrade("BUY", bar.Time, entry, "Initial", notional, 0)
+				return
 			}
-			e.balance -= notional * commission
-			e.tradesInBar++
-			e.appendTrade("BUY", bar.Time, entry, "Initial", notional, 0)
-			return
-		}
-		if e.lastExitSide == "long" && e.currentBarIndex-e.lastExitBarIndex <= 1 {
+		} else if e.lastExitSide == "long" && e.currentBarIndex-e.lastExitBarIndex <= 1 {
 			triggered := false
 			entryRaw := reP
 			if e.cfg.Dir1ReentryConfirm {
@@ -204,7 +453,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 						Side:       "long",
 						EntryPrice: entry,
 						StopLoss:   stopLoss,
-						Protected:  reason == "PT-Reentry",
+						Protected:  false,
 						Notional:   notional,
 						Reason:     reason,
 						BarIndex:   e.currentBarIndex,
@@ -223,25 +472,26 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 
 	if sig.Close < sig.MA20 {
 		reP := sig.PrevHigh1
-		if e.tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 && bar.Low <= sig.PrevLow2 {
-			entry := math.Min(bar.Open, sig.PrevLow2) * (1 - e.cfg.FixedSlippage)
-			notional := e.balance * initialUsage
-			stopLoss := resolveStopPrice("short", entry, sig, e.cfg.StopMode, e.cfg.StopLossATR)
-			e.position = &strategyPosition{
-				Side:       "short",
-				EntryPrice: entry,
-				StopLoss:   stopLoss,
-				Protected:  false,
-				Notional:   notional,
-				Reason:     "Initial",
-				BarIndex:   e.currentBarIndex,
+		if e.tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
+			if bar.Low <= sig.PrevLow2 {
+				entry := math.Min(bar.Open, sig.PrevLow2) * (1 - e.cfg.FixedSlippage)
+				notional := e.balance * initialUsage
+				stopLoss := resolveStopPrice("short", entry, sig, e.cfg.StopMode, e.cfg.StopLossATR)
+				e.position = &strategyPosition{
+					Side:       "short",
+					EntryPrice: entry,
+					StopLoss:   stopLoss,
+					Protected:  false,
+					Notional:   notional,
+					Reason:     "Initial",
+					BarIndex:   e.currentBarIndex,
+				}
+				e.balance -= notional * commission
+				e.tradesInBar++
+				e.appendTrade("SHORT", bar.Time, entry, "Initial", notional, 0)
+				return
 			}
-			e.balance -= notional * commission
-			e.tradesInBar++
-			e.appendTrade("SHORT", bar.Time, entry, "Initial", notional, 0)
-			return
-		}
-		if e.lastExitSide == "short" && e.currentBarIndex-e.lastExitBarIndex <= 1 {
+		} else if e.lastExitSide == "short" && e.currentBarIndex-e.lastExitBarIndex <= 1 {
 			triggered := false
 			entryRaw := reP
 			if e.cfg.Dir1ReentryConfirm {
@@ -266,7 +516,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 						Side:       "short",
 						EntryPrice: entry,
 						StopLoss:   stopLoss,
-						Protected:  reason == "PT-Reentry",
+						Protected:  false,
 						Notional:   notional,
 						Reason:     reason,
 						BarIndex:   e.currentBarIndex,
@@ -472,6 +722,121 @@ func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignal
 		}
 	}
 	return signals, nil
+}
+
+func (p *Platform) loadStrategySignalBars(timeframe string) ([]strategySignalBar, error) {
+	switch strings.ToLower(timeframe) {
+	case "4h":
+		return readSignalBarsCSV("BTC_4H_Signals.csv")
+	case "1d":
+		minuteBars, err := p.loadCandleBars()
+		if err != nil {
+			return nil, err
+		}
+		return buildSignalBars(minuteBars, "1d")
+	default:
+		return nil, fmt.Errorf("unsupported signal timeframe: %s", timeframe)
+	}
+}
+
+func readSignalBarsCSV(path string) ([]strategySignalBar, error) {
+	resolved := path
+	if !filepath.IsAbs(path) {
+		_, currentFile, _, _ := runtime.Caller(0)
+		resolved = filepath.Join(filepath.Dir(currentFile), "..", "..", path)
+	}
+
+	file, err := os.Open(filepath.Clean(resolved))
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) <= 1 {
+		return nil, fmt.Errorf("signal csv is empty: %s", resolved)
+	}
+
+	signals := make([]strategySignalBar, 0, len(rows)-1)
+	for _, row := range rows[1:] {
+		if len(row) < 12 {
+			continue
+		}
+		ts, err := time.Parse("2006-01-02 15:04:05Z07:00", row[0])
+		if err != nil {
+			return nil, fmt.Errorf("parse signal time %q: %w", row[0], err)
+		}
+		openValue, err := strconv.ParseFloat(row[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		highValue, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			return nil, err
+		}
+		lowValue, err := strconv.ParseFloat(row[3], 64)
+		if err != nil {
+			return nil, err
+		}
+		closeValue, err := strconv.ParseFloat(row[4], 64)
+		if err != nil {
+			return nil, err
+		}
+		volumeValue, err := strconv.ParseFloat(row[5], 64)
+		if err != nil {
+			return nil, err
+		}
+		ma20Value, err := parseCSVFloatOrNaN(row[6])
+		if err != nil {
+			return nil, err
+		}
+		atrValue, err := parseCSVFloatOrNaN(row[7])
+		if err != nil {
+			return nil, err
+		}
+		prevHigh1Value, err := parseCSVFloatOrNaN(row[8])
+		if err != nil {
+			return nil, err
+		}
+		prevHigh2Value, err := parseCSVFloatOrNaN(row[9])
+		if err != nil {
+			return nil, err
+		}
+		prevLow1Value, err := parseCSVFloatOrNaN(row[10])
+		if err != nil {
+			return nil, err
+		}
+		prevLow2Value, err := parseCSVFloatOrNaN(row[11])
+		if err != nil {
+			return nil, err
+		}
+		signals = append(signals, strategySignalBar{
+			Time:      ts.UTC(),
+			Open:      openValue,
+			High:      highValue,
+			Low:       lowValue,
+			Close:     closeValue,
+			Volume:    volumeValue,
+			MA20:      ma20Value,
+			ATR:       atrValue,
+			PrevHigh1: prevHigh1Value,
+			PrevHigh2: prevHigh2Value,
+			PrevLow1:  prevLow1Value,
+			PrevLow2:  prevLow2Value,
+		})
+	}
+	return signals, nil
+}
+
+func parseCSVFloatOrNaN(raw string) (float64, error) {
+	if strings.TrimSpace(raw) == "" {
+		return math.NaN(), nil
+	}
+	return strconv.ParseFloat(raw, 64)
 }
 
 func trimSignalBars(signals []strategySignalBar, from, to time.Time) []strategySignalBar {
