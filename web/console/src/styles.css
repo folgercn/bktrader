@@ -546,6 +546,12 @@ a {
   background: rgba(217, 238, 232, 0.62);
 }
 
+.sample-card-selected {
+  border-color: rgba(197, 139, 45, 0.58);
+  background: rgba(255, 245, 214, 0.82);
+  box-shadow: 0 10px 24px rgba(197, 139, 45, 0.14);
+}
+
 .sample-title {
   font-weight: 700;
   color: var(--accent);

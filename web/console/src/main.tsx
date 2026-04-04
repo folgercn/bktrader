@@ -166,6 +166,11 @@ type ChartOverrideRange = {
   label: string;
 };
 
+type SelectedSample = {
+  key: string;
+  sample: ReplaySample;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -191,6 +196,7 @@ function App() {
   const [hoveredMarker, setHoveredMarker] = useState<MarkerDetail | null>(null);
   const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
   const [chartOverrideRange, setChartOverrideRange] = useState<ChartOverrideRange | null>(null);
+  const [selectedSample, setSelectedSample] = useState<SelectedSample | null>(null);
   const [backtestForm, setBacktestForm] = useState({
     strategyVersionId: "",
     signalTimeframe: "1d",
@@ -307,6 +313,10 @@ function App() {
     };
   }, [timeWindow, chartOverrideRange]);
 
+  useEffect(() => {
+    setSelectedSample(null);
+  }, [selectedBacktest?.id]);
+
   const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
   const candleRange = useMemo(() => summarizeTimeRange(candles.map((item) => item.time)), [candles]);
@@ -314,6 +324,18 @@ function App() {
     () => filterChartAnnotations(annotations, candles, primarySession?.id, sourceFilter, eventFilter),
     [annotations, candles, primarySession?.id, sourceFilter, eventFilter]
   );
+  const selectedAnnotationIds = useMemo(() => {
+    if (!selectedSample) {
+      return [];
+    }
+    return chartAnnotations.filter((item) => annotationMatchesSample(item, selectedSample.sample)).map((item) => item.id);
+  }, [chartAnnotations, selectedSample]);
+  const selectedAnnotationFocusTime = useMemo(() => {
+    if (selectedAnnotationIds.length === 0) {
+      return undefined;
+    }
+    return chartAnnotations.find((item) => item.id === selectedAnnotationIds[0])?.time;
+  }, [chartAnnotations, selectedAnnotationIds]);
   const latestVisibleAnnotationTime = useMemo(
     () => (chartAnnotations.length > 0 ? chartAnnotations[chartAnnotations.length - 1].time : undefined),
     [chartAnnotations]
@@ -688,12 +710,16 @@ function App() {
                             <SampleCard
                               key={`completed-${index}`}
                               sample={sample}
+                              selected={selectedSample?.key === buildSampleKey("completed", index, sample)}
                               onSelect={() => {
                                 const range = buildSampleRange(sample);
                                 if (!range) {
                                   return;
                                 }
+                                setSelectedSample({ key: buildSampleKey("completed", index, sample), sample });
                                 setChartOverrideRange(range);
+                                setSourceFilter("backtest");
+                                setEventFilter("all");
                                 setFocusNonce((value) => value + 1);
                               }}
                             />
@@ -709,12 +735,16 @@ function App() {
                             <SampleCard
                               key={`skipped-${index}`}
                               sample={sample}
+                              selected={selectedSample?.key === buildSampleKey("skipped", index, sample)}
                               onSelect={() => {
                                 const range = buildSampleRange(sample);
                                 if (!range) {
                                   return;
                                 }
+                                setSelectedSample({ key: buildSampleKey("skipped", index, sample), sample });
                                 setChartOverrideRange(range);
+                                setSourceFilter("backtest");
+                                setEventFilter("all");
                                 setFocusNonce((value) => value + 1);
                               }}
                             />
@@ -815,8 +845,9 @@ function App() {
               <TradingChart
                 candles={candles}
                 annotations={chartAnnotations}
-                focusTime={latestVisibleAnnotationTime}
+                focusTime={selectedAnnotationFocusTime ?? latestVisibleAnnotationTime}
                 focusNonce={focusNonce}
+                selectedAnnotationIds={selectedAnnotationIds}
                 onHoverMarker={setHoveredMarker}
               />
             ) : (
@@ -1046,6 +1077,7 @@ function TradingChart(props: {
   annotations: ChartAnnotation[];
   focusTime?: string;
   focusNonce: number;
+  selectedAnnotationIds: string[];
   onHoverMarker: (detail: MarkerDetail | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1103,18 +1135,18 @@ function TradingChart(props: {
       props.annotations.map((item) => ({
         time: Math.floor(new Date(item.time).getTime() / 1000),
         position: markerPosition(item.type),
-        color: markerColor(item),
+        color: markerColor(item, props.selectedAnnotationIds.includes(item.id)),
         shape: markerShape(item.type),
-        text: item.label,
+        text: markerText(item, props.selectedAnnotationIds.includes(item.id)),
       }))
     );
     markers.setMarkers(
       props.annotations.map((item) => ({
         time: Math.floor(new Date(item.time).getTime() / 1000),
         position: markerPosition(item.type),
-        color: markerColor(item),
+        color: markerColor(item, props.selectedAnnotationIds.includes(item.id)),
         shape: markerShape(item.type),
-        text: item.label,
+        text: markerText(item, props.selectedAnnotationIds.includes(item.id)),
       }))
     );
 
@@ -1150,7 +1182,7 @@ function TradingChart(props: {
       props.onHoverMarker(null);
       chart.remove();
     };
-  }, [props.annotations, props.candles, props.focusNonce, props.focusTime, props.onHoverMarker]);
+  }, [props.annotations, props.candles, props.focusNonce, props.focusTime, props.onHoverMarker, props.selectedAnnotationIds]);
 
   return <div ref={containerRef} className="tv-chart" />;
 }
@@ -1236,10 +1268,14 @@ function SimpleTable(props: { columns: string[]; rows: string[][]; emptyMessage:
   );
 }
 
-function SampleCard(props: { sample: ReplaySample; onSelect: () => void }) {
+function SampleCard(props: { sample: ReplaySample; selected?: boolean; onSelect: () => void }) {
   const sample = props.sample;
   return (
-    <button type="button" className="sample-card sample-card-button" onClick={props.onSelect}>
+    <button
+      type="button"
+      className={`sample-card sample-card-button ${props.selected ? "sample-card-selected" : ""}`}
+      onClick={props.onSelect}
+    >
       <div className="sample-title">{String(sample.reason ?? sample.entryCause ?? "sample")}</div>
       <div className="sample-line">
         entry: {String(sample.entryTime ?? "--")} · {formatMaybeNumber(sample.entryPrice)}
@@ -1409,6 +1445,43 @@ function buildSampleRange(sample: ReplaySample): ChartOverrideRange | null {
   };
 }
 
+function buildSampleKey(prefix: string, index: number, sample: ReplaySample) {
+  return [
+    prefix,
+    index,
+    String(sample.entryTime ?? ""),
+    String(sample.exitTime ?? sample.bracketExitTime ?? ""),
+    String(sample.entryCause ?? sample.reason ?? ""),
+  ].join(":");
+}
+
+function annotationMatchesSample(item: ChartAnnotation, sample: ReplaySample) {
+  if (item.source !== "backtest") {
+    return false;
+  }
+
+  const annotationTime = Date.parse(item.time);
+  if (!Number.isFinite(annotationTime)) {
+    return false;
+  }
+
+  const entryTime = Date.parse(String(sample.entryTime ?? ""));
+  const exitTime = Date.parse(String(sample.exitTime ?? sample.bracketExitTime ?? ""));
+  const reason = String(sample.entryCause ?? sample.exitCause ?? sample.reason ?? "").trim().toUpperCase();
+  const annotationReason = String(item.metadata?.reason ?? item.label ?? "")
+    .trim()
+    .toUpperCase();
+  const sameReason = reason === "" || annotationReason === reason;
+
+  if (Number.isFinite(entryTime) && Math.abs(annotationTime - entryTime) <= 60 * 1000 && item.type.includes("entry")) {
+    return sameReason;
+  }
+  if (Number.isFinite(exitTime) && Math.abs(annotationTime - exitTime) <= 60 * 1000 && item.type.includes("exit")) {
+    return true;
+  }
+  return false;
+}
+
 function findNearestAnnotation(items: ChartAnnotation[], hoveredSeconds: number) {
   let nearest: ChartAnnotation | null = null;
   let bestDelta = Number.POSITIVE_INFINITY;
@@ -1468,7 +1541,10 @@ function markerPosition(type: string) {
   return "aboveBar";
 }
 
-function markerColor(item: ChartAnnotation) {
+function markerColor(item: ChartAnnotation, highlighted = false) {
+  if (highlighted) {
+    return "#f0b429";
+  }
   if (item.source === "paper") {
     if (item.type.includes("exit-sl")) {
       return "#7d5877";
@@ -1494,6 +1570,10 @@ function markerColor(item: ChartAnnotation) {
     return "#b04a37";
   }
   return "#5d6971";
+}
+
+function markerText(item: ChartAnnotation, highlighted = false) {
+  return highlighted ? `★ ${item.label}` : item.label;
 }
 
 function annotationTone(item: ChartAnnotation) {
