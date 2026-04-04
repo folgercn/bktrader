@@ -12,6 +12,7 @@ type SignalRuntimeAdapter interface {
 	Key() string
 	Describe() map[string]any
 	Supports(source SignalSourceProvider) bool
+	BuildSubscription(source domain.SignalSourceDefinition, binding domain.AccountSignalBinding) map[string]any
 }
 
 type staticSignalRuntimeAdapter struct {
@@ -52,6 +53,42 @@ func (a staticSignalRuntimeAdapter) Supports(source SignalSourceProvider) bool {
 		return false
 	}
 	return true
+}
+
+func (a staticSignalRuntimeAdapter) BuildSubscription(source domain.SignalSourceDefinition, binding domain.AccountSignalBinding) map[string]any {
+	channel := binding.Symbol
+	switch source.Exchange {
+	case "BINANCE":
+		switch source.StreamType {
+		case "trade_tick":
+			channel = strings.ToLower(binding.Symbol) + "@trade"
+		case "order_book":
+			levels := maxIntValue(binding.Options["levels"], 20)
+			channel = strings.ToLower(binding.Symbol) + "@depth" + fmt.Sprintf("%d", levels)
+		}
+	case "OKX":
+		switch source.StreamType {
+		case "trade_tick":
+			channel = "trades:" + binding.Symbol
+		case "order_book":
+			levels := maxIntValue(binding.Options["levels"], 20)
+			channel = fmt.Sprintf("books%d:%s", levels, binding.Symbol)
+		}
+	case "INTERNAL":
+		channel = source.StreamType + ":" + binding.Symbol
+	}
+	return map[string]any{
+		"adapterKey":  a.Key(),
+		"sourceKey":   source.Key,
+		"exchange":    source.Exchange,
+		"streamType":  source.StreamType,
+		"role":        binding.Role,
+		"symbol":      binding.Symbol,
+		"channel":     channel,
+		"options":     cloneMetadata(binding.Options),
+		"transport":   source.Transport,
+		"environment": firstNonEmpty(firstString(source.Environments), "live"),
+	}
 }
 
 func (p *Platform) registerSignalRuntimeAdapter(adapter SignalRuntimeAdapter) {
@@ -149,6 +186,7 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 	required := make([]map[string]any, 0, len(strategyBindings))
 	matched := make([]map[string]any, 0, len(strategyBindings))
 	missing := make([]map[string]any, 0)
+	subscriptions := make([]map[string]any, 0, len(strategyBindings))
 	for _, binding := range strategyBindings {
 		item := bindingToMap(binding)
 		if adapter, err := p.resolveSignalRuntimeAdapterForSource(binding.SourceKey); err == nil {
@@ -174,6 +212,12 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		} else {
 			matchedItem["status"] = "READY"
 			matchedItem["runtimeAdapter"] = runtimeAdapter.Describe()
+			source := p.signalSources[normalizeSignalSourceKey(binding.SourceKey)].Describe()
+			subscription := runtimeAdapter.BuildSubscription(source, accountBinding)
+			subscription["environment"] = normalizeEnvironmentFromAccountMode(account.Mode)
+			subscription["accountMode"] = account.Mode
+			matchedItem["subscription"] = subscription
+			subscriptions = append(subscriptions, subscription)
 		}
 		matched = append(matched, matchedItem)
 	}
@@ -215,6 +259,7 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		"matchedBindings":      matched,
 		"missingBindings":      missing,
 		"extraAccountBindings": extra,
+		"subscriptions":        subscriptions,
 		"ready":                len(missing) == 0 && triggerReady,
 		"notes": []string{
 			"策略绑定定义所需输入源，账户绑定定义实际订阅的市场流。",
@@ -222,6 +267,13 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 			"feature 源缺失不会阻断最小运行，但会让依赖盘口特征的策略不可用。",
 		},
 	}, nil
+}
+
+func firstString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 func signalBindingMatchKey(sourceKey, role, symbol string) string {

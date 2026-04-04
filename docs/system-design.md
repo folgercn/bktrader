@@ -100,6 +100,11 @@ Source binding rules:
   - resolve which runtime adapter should drive each source
   - fail early when required trigger streams are missing
   - surface optional feature-stream gaps separately from blocking trigger gaps
+- after planning, the platform should create a `signal runtime session`:
+  - persist the resolved subscription set
+  - track runtime adapter, transport, health and heartbeat
+  - expose recent event summaries for operational visibility
+  - serve as the control point for starting/stopping exchange market-data consumers
 
 ### 4.2 Strategy Management
 

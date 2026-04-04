@@ -67,6 +67,21 @@ type AccountSignalBinding struct {
 	CreatedAt  time.Time      `json:"createdAt"`
 }
 
+// SignalRuntimeSession 表示一个账户+策略组合下的信号源运行时会话。
+// 首期以骨架形式保存订阅计划、连接状态和最近事件摘要。
+type SignalRuntimeSession struct {
+	ID              string         `json:"id"`
+	AccountID       string         `json:"accountId"`
+	StrategyID      string         `json:"strategyId"`
+	Status          string         `json:"status"` // READY / RUNNING / STOPPED / ERROR
+	RuntimeAdapter  string         `json:"runtimeAdapter"`
+	Transport       string         `json:"transport"`
+	SubscriptionCnt int            `json:"subscriptionCount"`
+	State           map[string]any `json:"state,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+}
+
 // Account 交易账户，支持 LIVE（实盘）和 PAPER（模拟盘）两种模式。
 type Account struct {
 	ID        string         `json:"id"`

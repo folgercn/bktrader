@@ -1,0 +1,179 @@
+package service
+
+import (
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/wuyaocheng/bktrader/internal/domain"
+)
+
+func (p *Platform) ListSignalRuntimeSessions() []domain.SignalRuntimeSession {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	items := make([]domain.SignalRuntimeSession, 0, len(p.signalSessions))
+	for _, session := range p.signalSessions {
+		items = append(items, session)
+	}
+	slices.SortFunc(items, func(a, b domain.SignalRuntimeSession) int {
+		if a.UpdatedAt.Equal(b.UpdatedAt) {
+			switch {
+			case a.ID < b.ID:
+				return -1
+			case a.ID > b.ID:
+				return 1
+			default:
+				return 0
+			}
+		}
+		if a.UpdatedAt.Before(b.UpdatedAt) {
+			return 1
+		}
+		return -1
+	})
+	return items
+}
+
+func (p *Platform) GetSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	session, ok := p.signalSessions[sessionID]
+	if !ok {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+	return session, nil
+}
+
+func (p *Platform) CreateSignalRuntimeSession(accountID, strategyID string) (domain.SignalRuntimeSession, error) {
+	plan, err := p.BuildSignalRuntimePlan(accountID, strategyID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	now := time.Now().UTC()
+	subscriptions := metadataList(plan["subscriptions"])
+	adapterKey := ""
+	if len(subscriptions) > 0 {
+		adapterKey = stringValue(subscriptions[0]["adapterKey"])
+	}
+	session := domain.SignalRuntimeSession{
+		ID:              fmt.Sprintf("signal-runtime-%d", now.UnixNano()),
+		AccountID:       accountID,
+		StrategyID:      strategyID,
+		Status:          "READY",
+		RuntimeAdapter:  adapterKey,
+		Transport:       inferSignalRuntimeTransport(subscriptions),
+		SubscriptionCnt: len(subscriptions),
+		State: map[string]any{
+			"plan":             plan,
+			"subscriptions":    subscriptions,
+			"health":           "idle",
+			"lastHeartbeatAt":  "",
+			"lastEventAt":      "",
+			"lastEventSummary": nil,
+			"startedAt":        "",
+			"stoppedAt":        "",
+			"errors":           []any{},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	p.mu.Lock()
+	p.signalSessions[session.ID] = session
+	p.mu.Unlock()
+	return session, nil
+}
+
+func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	p.mu.Lock()
+	session, ok := p.signalSessions[sessionID]
+	if !ok {
+		p.mu.Unlock()
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+	now := time.Now().UTC()
+	state := cloneMetadata(session.State)
+	state["health"] = "healthy"
+	state["startedAt"] = now.Format(time.RFC3339)
+	state["lastHeartbeatAt"] = now.Format(time.RFC3339)
+	state["lastEventAt"] = now.Format(time.RFC3339)
+	subscriptions := metadataList(state["subscriptions"])
+	state["lastEventSummary"] = map[string]any{
+		"type":              "runtime_started",
+		"subscriptionCount": len(subscriptions),
+		"subscriptions":     summarizeSubscriptions(subscriptions),
+		"message":           "signal runtime subscriptions prepared",
+	}
+	session.Status = "RUNNING"
+	session.State = state
+	session.UpdatedAt = now
+	p.signalSessions[session.ID] = session
+	p.mu.Unlock()
+	return session, nil
+}
+
+func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	p.mu.Lock()
+	session, ok := p.signalSessions[sessionID]
+	if !ok {
+		p.mu.Unlock()
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+	now := time.Now().UTC()
+	state := cloneMetadata(session.State)
+	state["health"] = "stopped"
+	state["stoppedAt"] = now.Format(time.RFC3339)
+	state["lastHeartbeatAt"] = now.Format(time.RFC3339)
+	state["lastEventAt"] = now.Format(time.RFC3339)
+	state["lastEventSummary"] = map[string]any{
+		"type":    "runtime_stopped",
+		"message": "signal runtime stopped",
+	}
+	session.Status = "STOPPED"
+	session.State = state
+	session.UpdatedAt = now
+	p.signalSessions[session.ID] = session
+	p.mu.Unlock()
+	return session, nil
+}
+
+func inferSignalRuntimeTransport(subscriptions []map[string]any) string {
+	if len(subscriptions) == 0 {
+		return ""
+	}
+	return stringValue(subscriptions[0]["transport"])
+}
+
+func summarizeSubscriptions(subscriptions []map[string]any) []map[string]any {
+	out := make([]map[string]any, 0, len(subscriptions))
+	for _, item := range subscriptions {
+		out = append(out, map[string]any{
+			"sourceKey":  item["sourceKey"],
+			"role":       item["role"],
+			"symbol":     item["symbol"],
+			"channel":    item["channel"],
+			"adapterKey": item["adapterKey"],
+		})
+	}
+	return out
+}
+
+func metadataList(value any) []map[string]any {
+	switch items := value.(type) {
+	case []map[string]any:
+		out := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			out = append(out, cloneMetadata(item))
+		}
+		return out
+	case []any:
+		out := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			if entry, ok := item.(map[string]any); ok {
+				out = append(out, cloneMetadata(entry))
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}

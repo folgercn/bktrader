@@ -68,6 +68,10 @@ go run ./cmd/platform-api
 - `GET /api/v1/signal-source-types` — 信号源类型说明
 - `GET /api/v1/signal-runtime/adapters` — 可用信号 runtime adapter 列表
 - `GET /api/v1/signal-runtime/plan?accountId=...&strategyId=...` — 账户与策略的信号运行计划
+- `GET|POST /api/v1/signal-runtime/sessions` — 信号运行时会话列表/创建
+- `GET /api/v1/signal-runtime/sessions/{id}` — 单个信号运行时会话
+- `POST /api/v1/signal-runtime/sessions/{id}/start` — 启动信号运行时会话
+- `POST /api/v1/signal-runtime/sessions/{id}/stop` — 停止信号运行时会话
 - `GET|POST /api/v1/strategies/{id}/signal-bindings` — 策略级多信号源绑定
 - `GET|POST /api/v1/accounts/{id}/signal-bindings` — 账户级多信号源绑定
 - `GET /api/v1/account-summaries` — 账户汇总（权益、PnL、费用）
@@ -104,6 +108,12 @@ go run ./cmd/platform-api
   - 哪些源已经 READY
   - 哪些 trigger/feature 还缺失
   - 这些源后面应由哪个 runtime adapter 驱动
+- `signal-runtime session` 会把一组绑定转换成可启动的运行时骨架，当前会记录：
+  - 订阅数和订阅 channel
+  - runtime adapter
+  - 健康状态
+  - 最近心跳
+  - 最近事件摘要
 
 实盘账户当前支持：
 - `LIVE` 账户默认状态为 `PENDING_SETUP`
