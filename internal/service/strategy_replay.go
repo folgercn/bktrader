@@ -43,23 +43,27 @@ type strategyPosition struct {
 	Notional   float64
 	Reason     string
 	BarIndex   int
+	EntryTime  time.Time
 }
 
 type strategyReplayConfig struct {
-	SignalTimeframe     string
-	ExecutionDataSource string
-	Symbol              string
-	From                time.Time
-	To                  time.Time
-	InitialBalance      float64
-	Dir1ReentryConfirm  bool
-	Dir2ZeroInitial     bool
-	FixedSlippage       float64
-	StopLossATR         float64
-	MaxTradesPerBar     int
-	ReentrySizeSchedule []float64
-	StopMode            string
-	ProfitProtectATR    float64
+	SignalTimeframe      string
+	ExecutionDataSource  string
+	Symbol               string
+	From                 time.Time
+	To                   time.Time
+	InitialBalance       float64
+	Dir1ReentryConfirm   bool
+	Dir2ZeroInitial      bool
+	FixedSlippage        float64
+	StopLossATR          float64
+	MaxTradesPerBar      int
+	ReentrySizeSchedule  []float64
+	StopMode             string
+	ProfitProtectATR     float64
+	TradingFeeRate       float64
+	FundingRate          float64
+	FundingIntervalHours int
 }
 
 func (p *Platform) runStrategyReplay(context StrategyExecutionContext) (map[string]any, error) {
@@ -108,7 +112,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 
 	engine := newStrategyReplayEngine(cfg)
 	reentryATR := 0.1
-	commission := 0.001
+	commission := cfg.TradingFeeRate
 	initialUsage := 0.10
 	if cfg.Dir2ZeroInitial {
 		initialUsage = 0.0
@@ -174,8 +178,11 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 								Notional:   notional,
 								Reason:     "Initial",
 								BarIndex:   i,
+								EntryTime:  current.Time,
 							}
-							engine.balance -= notional * commission
+							tradingFee := notional * commission
+							engine.balance -= tradingFee
+							engine.totalTradingFees += tradingFee
 							engine.appendTrade("BUY", current.Time, entry, "Initial", notional, 0)
 							tradesInBar++
 							executed = true
@@ -199,8 +206,11 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 									Notional:   notional,
 									Reason:     reason,
 									BarIndex:   i,
+									EntryTime:  current.Time,
 								}
-								engine.balance -= notional * commission
+								tradingFee := notional * commission
+								engine.balance -= tradingFee
+								engine.totalTradingFees += tradingFee
 								engine.appendTrade("BUY", current.Time, entry, reason, notional, 0)
 								if reason == "SL-Reentry" {
 									tradesInBar++
@@ -225,8 +235,11 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 								Notional:   notional,
 								Reason:     "Initial",
 								BarIndex:   i,
+								EntryTime:  current.Time,
 							}
-							engine.balance -= notional * commission
+							tradingFee := notional * commission
+							engine.balance -= tradingFee
+							engine.totalTradingFees += tradingFee
 							engine.appendTrade("SHORT", current.Time, entry, "Initial", notional, 0)
 							tradesInBar++
 							executed = true
@@ -250,8 +263,11 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 									Notional:   notional,
 									Reason:     reason,
 									BarIndex:   i,
+									EntryTime:  current.Time,
 								}
-								engine.balance -= notional * commission
+								tradingFee := notional * commission
+								engine.balance -= tradingFee
+								engine.totalTradingFees += tradingFee
 								engine.appendTrade("SHORT", current.Time, entry, reason, notional, 0)
 								if reason == "SL-Reentry" {
 									tradesInBar++
@@ -322,8 +338,12 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 			}
 			pnl := 0.0
 			if engine.position.Notional > 0 {
-				pnl = sideMult * (exitPrice - engine.position.EntryPrice) / engine.position.EntryPrice * engine.position.Notional
-				engine.balance += pnl - engine.position.Notional*commission
+				tradingFee := engine.position.Notional * commission
+				fundingPnL := computeFundingPnL(engine.position, current.Time, cfg)
+				pnl = sideMult*(exitPrice-engine.position.EntryPrice)/engine.position.EntryPrice*engine.position.Notional + fundingPnL
+				engine.balance += pnl - tradingFee
+				engine.totalTradingFees += tradingFee
+				engine.totalFundingPnL += fundingPnL
 			}
 			engine.appendTrade("EXIT", current.Time, exitPrice, exitReason, engine.position.Notional, pnl)
 			engine.lastExitReason = exitReason
@@ -365,7 +385,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 	engine := newStrategyReplayEngine(cfg)
 	barCursor := 0
 	reentryATR := 0.1
-	commission := 0.001
+	commission := cfg.TradingFeeRate
 	initialUsage := 0.10
 	if cfg.Dir2ZeroInitial {
 		initialUsage = 0.0
@@ -435,8 +455,11 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 								Notional:   notional,
 								Reason:     "Initial",
 								BarIndex:   i,
+								EntryTime:  bar.Time,
 							}
-							engine.balance -= notional * commission
+							tradingFee := notional * commission
+							engine.balance -= tradingFee
+							engine.totalTradingFees += tradingFee
 							engine.appendTrade("BUY", bar.Time, entry, "Initial", notional, 0)
 							tradesInBar++
 							executed = true
@@ -470,8 +493,11 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 									Notional:   notional,
 									Reason:     reason,
 									BarIndex:   i,
+									EntryTime:  bar.Time,
 								}
-								engine.balance -= notional * commission
+								tradingFee := notional * commission
+								engine.balance -= tradingFee
+								engine.totalTradingFees += tradingFee
 								engine.appendTrade("BUY", bar.Time, entry, reason, notional, 0)
 								if reason == "SL-Reentry" {
 									tradesInBar++
@@ -496,8 +522,11 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 								Notional:   notional,
 								Reason:     "Initial",
 								BarIndex:   i,
+								EntryTime:  bar.Time,
 							}
-							engine.balance -= notional * commission
+							tradingFee := notional * commission
+							engine.balance -= tradingFee
+							engine.totalTradingFees += tradingFee
 							engine.appendTrade("SHORT", bar.Time, entry, "Initial", notional, 0)
 							tradesInBar++
 							executed = true
@@ -531,8 +560,11 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 									Notional:   notional,
 									Reason:     reason,
 									BarIndex:   i,
+									EntryTime:  bar.Time,
 								}
-								engine.balance -= notional * commission
+								tradingFee := notional * commission
+								engine.balance -= tradingFee
+								engine.totalTradingFees += tradingFee
 								engine.appendTrade("SHORT", bar.Time, entry, reason, notional, 0)
 								if reason == "SL-Reentry" {
 									tradesInBar++
@@ -592,8 +624,12 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 				}
 				pnl := 0.0
 				if engine.position.Notional > 0 {
-					pnl = sideMult * (exitPrice - engine.position.EntryPrice) / engine.position.EntryPrice * engine.position.Notional
-					engine.balance += pnl - engine.position.Notional*commission
+					tradingFee := engine.position.Notional * commission
+					fundingPnL := computeFundingPnL(engine.position, bar.Time, cfg)
+					pnl = sideMult*(exitPrice-engine.position.EntryPrice)/engine.position.EntryPrice*engine.position.Notional + fundingPnL
+					engine.balance += pnl - tradingFee
+					engine.totalTradingFees += tradingFee
+					engine.totalFundingPnL += fundingPnL
 				}
 				engine.appendTrade("EXIT", bar.Time, exitPrice, exitReason, engine.position.Notional, pnl)
 				engine.lastExitReason = exitReason
@@ -621,6 +657,8 @@ type strategyReplayEngine struct {
 	equity           []float64
 	trades           []map[string]any
 	processedCount   int
+	totalTradingFees float64
+	totalFundingPnL  float64
 }
 
 func newStrategyReplayEngine(cfg strategyReplayConfig) *strategyReplayEngine {
@@ -875,6 +913,8 @@ func (e *strategyReplayEngine) summary(signals []strategySignalBar) map[string]a
 	} else {
 		result["processedBars"] = e.processedCount
 	}
+	result["tradingFees"] = e.totalTradingFees
+	result["fundingPnL"] = e.totalFundingPnL
 	if len(e.trades) == 0 {
 		return result
 	}
@@ -916,20 +956,23 @@ func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayC
 		stopLossATR = 0.05
 	}
 	return strategyReplayConfig{
-		SignalTimeframe:     strings.ToLower(context.SignalTimeframe),
-		ExecutionDataSource: strings.ToLower(context.ExecutionDataSource),
-		Symbol:              normalizeBacktestSymbol(context.Symbol),
-		From:                context.From,
-		To:                  context.To,
-		InitialBalance:      100000.0,
-		Dir1ReentryConfirm:  false,
-		Dir2ZeroInitial:     true,
-		FixedSlippage:       strategyReplaySlippage(context, parameters),
-		StopLossATR:         stopLossATR,
-		MaxTradesPerBar:     maxIntValue(parameters["max_trades_per_bar"], 3),
-		ReentrySizeSchedule: reentrySizes,
-		StopMode:            stopMode,
-		ProfitProtectATR:    firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0),
+		SignalTimeframe:      strings.ToLower(context.SignalTimeframe),
+		ExecutionDataSource:  strings.ToLower(context.ExecutionDataSource),
+		Symbol:               normalizeBacktestSymbol(context.Symbol),
+		From:                 context.From,
+		To:                   context.To,
+		InitialBalance:       100000.0,
+		Dir1ReentryConfirm:   false,
+		Dir2ZeroInitial:      true,
+		FixedSlippage:        strategyReplaySlippage(context, parameters),
+		StopLossATR:          stopLossATR,
+		MaxTradesPerBar:      maxIntValue(parameters["max_trades_per_bar"], 3),
+		ReentrySizeSchedule:  reentrySizes,
+		StopMode:             stopMode,
+		ProfitProtectATR:     firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0),
+		TradingFeeRate:       context.Semantics.TradingFeeBps / 10000.0,
+		FundingRate:          context.Semantics.FundingRateBps / 10000.0,
+		FundingIntervalHours: maxIntValue(context.Semantics.FundingIntervalHours, 8),
 	}
 }
 
@@ -938,6 +981,34 @@ func strategyReplaySlippage(context StrategyExecutionContext, parameters map[str
 		return 0
 	}
 	return firstPositive(parseFloatValue(parameters["fixed_slippage"]), 0.0005)
+}
+
+func computeFundingPnL(position *strategyPosition, exitTime time.Time, cfg strategyReplayConfig) float64 {
+	if position == nil || position.Notional <= 0 || cfg.FundingRate == 0 || cfg.FundingIntervalHours <= 0 {
+		return 0
+	}
+	intervals := countFundingIntervals(position.EntryTime, exitTime, cfg.FundingIntervalHours)
+	if intervals <= 0 {
+		return 0
+	}
+	sideMult := -1.0
+	if position.Side == "short" {
+		sideMult = 1.0
+	}
+	return sideMult * cfg.FundingRate * float64(intervals) * position.Notional
+}
+
+func countFundingIntervals(entryTime, exitTime time.Time, intervalHours int) int {
+	if intervalHours <= 0 || !exitTime.After(entryTime) {
+		return 0
+	}
+	step := time.Duration(intervalHours) * time.Hour
+	firstFunding := entryTime.Truncate(step).Add(step)
+	count := 0
+	for t := firstFunding; !t.After(exitTime); t = t.Add(step) {
+		count++
+	}
+	return count
 }
 
 func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignalBar, error) {

@@ -37,7 +37,7 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 		OrderID:  createdOrder.ID,
 		Price:    executionPrice,
 		Quantity: createdOrder.Quantity,
-		Fee:      executionPrice * createdOrder.Quantity * 0.001, // 模拟 0.1% 手续费
+		Fee:      executionPrice * createdOrder.Quantity * resolvePaperTradingFeeRate(createdOrder), // 模拟费率可配置
 	}
 	if _, err := p.store.CreateFill(fill); err != nil {
 		return domain.Order{}, err
@@ -54,6 +54,7 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 	createdOrder.Metadata = cloneMetadata(createdOrder.Metadata)
 	createdOrder.Metadata["executionMode"] = "paper"
 	createdOrder.Metadata["fillPolicy"] = "immediate"
+	createdOrder.Metadata["feeSource"] = "configured-paper-rate"
 	updatedOrder, err := p.store.UpdateOrder(createdOrder)
 	if err != nil {
 		return domain.Order{}, err
@@ -64,6 +65,19 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 		return domain.Order{}, err
 	}
 	return updatedOrder, nil
+}
+
+func resolvePaperTradingFeeRate(order domain.Order) float64 {
+	if order.Metadata != nil {
+		for _, key := range []string{"tradingFeeBps", "feeRateBps", "takerFeeBps"} {
+			if value, ok := order.Metadata[key]; ok {
+				if bps, ok := toFloat64(value); ok && bps >= 0 {
+					return bps / 10000.0
+				}
+			}
+		}
+	}
+	return 0.001
 }
 
 // ListPositions 获取所有持仓列表。

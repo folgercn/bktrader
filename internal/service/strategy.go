@@ -319,6 +319,13 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["executionDataSource"] = executionDataSource
 	normalized["symbol"] = symbol
 	normalized["strategyEngine"] = normalizeStrategyEngineKey(stringValue(normalized["strategyEngine"]))
+	if feeBps := parseFloatValue(normalized["tradingFeeBps"]); feeBps >= 0 {
+		normalized["tradingFeeBps"] = feeBps
+	} else {
+		normalized["tradingFeeBps"] = 10.0
+	}
+	normalized["fundingRateBps"] = parseFloatValue(normalized["fundingRateBps"])
+	normalized["fundingIntervalHours"] = maxIntValue(normalized["fundingIntervalHours"], 8)
 	if from != "" {
 		normalized["from"] = from
 	}

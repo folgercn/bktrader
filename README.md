@@ -137,7 +137,15 @@ TICK_DATA_DIR=./dataset/archive
 - 策略引擎必须可插拔，平台通过 `StrategyEngine` registry 装载，不把单个策略硬编码在回测、模拟盘或实盘入口上。
 - 回测、模拟交易、实盘交易必须共享同一套策略执行语义和订单意图生成逻辑。
 - 只有回测允许显式注入模拟滑点；`paper/live` 默认使用 `observed` 执行语义，不在策略层额外叠加虚拟滑点。
+- 回测和模拟盘的交易手续费、资金费参数可配置。
+- 实盘的手续费、资金费、返佣等成本项必须以交易所返回为准，不在平台里做静态硬编码。
 - 当前内置引擎键值为 `bk-default`，可通过策略参数中的 `strategyEngine` 绑定。
+
+当前默认成本参数：
+
+- `tradingFeeBps = 10`
+- `fundingRateBps = 0`
+- `fundingIntervalHours = 8`
 
 `replayLedger=true` 仍然保留为可选内部审计能力，用于排查历史账本和执行层之间的差异，但它不是当前平台推荐的主回测入口。
 

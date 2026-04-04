@@ -27,6 +27,9 @@ type StrategyExecutionSemantics struct {
 	Mode                  ExecutionMode `json:"mode"`
 	SlippageMode          SlippageMode  `json:"slippageMode"`
 	SimulatedSlippageBps  float64       `json:"simulatedSlippageBps"`
+	TradingFeeBps         float64       `json:"tradingFeeBps"`
+	FundingRateBps        float64       `json:"fundingRateBps"`
+	FundingIntervalHours  int           `json:"fundingIntervalHours"`
 	UseCanonicalExecution bool          `json:"useCanonicalExecution"`
 }
 
@@ -54,6 +57,9 @@ func defaultExecutionSemantics(mode ExecutionMode, parameters map[string]any) St
 		UseCanonicalExecution: true,
 		SlippageMode:          SlippageModeObserved,
 		SimulatedSlippageBps:  0,
+		TradingFeeBps:         firstPositive(parseFloatValue(parameters["tradingFeeBps"]), 10),
+		FundingRateBps:        parseFloatValue(parameters["fundingRateBps"]),
+		FundingIntervalHours:  maxIntValue(parameters["fundingIntervalHours"], 8),
 	}
 	if mode == ExecutionModeBacktest {
 		semantics.SlippageMode = SlippageModeSimulated

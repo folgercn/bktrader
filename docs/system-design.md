@@ -99,6 +99,10 @@ Runtime rules:
 - the only allowed execution-semantic difference is slippage:
   - `BACKTEST`: simulated slippage may be injected
   - `PAPER` / `LIVE`: no extra synthetic slippage inside strategy execution; fills must come from canonical execution flow
+- fees and funding:
+  - `BACKTEST`: trading fee / funding are configurable parameters
+  - `PAPER`: trading fee is configurable; funding should be configurable when paper holding lifecycle is promoted to the canonical engine path
+  - `LIVE`: trading fee / funding / rebates must come from exchange responses and reconciled ledgers
 
 Key parameters to snapshot:
 
@@ -202,6 +206,9 @@ Execution consistency rule:
 
 - strategy decision logic and order-intent generation must stay identical across backtest, paper, and live
 - execution adapters may differ by environment, but strategy code must not fork behavior except for backtest-only slippage simulation
+- cost accounting may differ only by data source:
+  - backtest/paper use configured fee models
+  - live uses exchange-reported fee/funding records
 
 ## 7. Data Consistency Rules
 
