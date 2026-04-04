@@ -33,11 +33,12 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 
 	// --- 模拟盘立即成交逻辑 ---
 	executionPrice := resolveExecutionPrice(createdOrder)
+	fillFee := resolvePaperFillFee(createdOrder, executionPrice)
 	fill := domain.Fill{
 		OrderID:  createdOrder.ID,
 		Price:    executionPrice,
 		Quantity: createdOrder.Quantity,
-		Fee:      executionPrice * createdOrder.Quantity * resolvePaperTradingFeeRate(createdOrder), // 模拟费率可配置
+		Fee:      fillFee,
 	}
 	if _, err := p.store.CreateFill(fill); err != nil {
 		return domain.Order{}, err
@@ -78,6 +79,25 @@ func resolvePaperTradingFeeRate(order domain.Order) float64 {
 		}
 	}
 	return 0.001
+}
+
+func resolvePaperFillFee(order domain.Order, executionPrice float64) float64 {
+	if order.Metadata != nil {
+		for _, key := range []string{"paperFeeAmount", "fillFeeAmount"} {
+			if value, ok := order.Metadata[key]; ok {
+				if fee, ok := toFloat64(value); ok {
+					return fee
+				}
+			}
+		}
+	}
+	fee := executionPrice * order.Quantity * resolvePaperTradingFeeRate(order)
+	if order.Metadata != nil {
+		if fundingPnL, ok := toFloat64(order.Metadata["fundingPnL"]); ok {
+			fee -= fundingPnL
+		}
+	}
+	return fee
 }
 
 // ListPositions 获取所有持仓列表。

@@ -515,8 +515,9 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		Status:      "READY",
 		StartEquity: startEquity,
 		State: map[string]any{
-			"runner":      "strategy-replay",
-			"ledgerIndex": 0,
+			"runner":      "strategy-engine",
+			"runtimeMode": "canonical-strategy-engine",
+			"planIndex":   0,
 		},
 		CreatedAt: time.Now().UTC(),
 	}

@@ -182,8 +182,9 @@ func NewStore() *Store {
 		Status:      "READY",
 		StartEquity: 100000.0,
 		State: map[string]any{
-			"runner":      "strategy-replay",
-			"ledgerIndex": 0,
+			"runner":      "strategy-engine",
+			"runtimeMode": "canonical-strategy-engine",
+			"planIndex":   0,
 		},
 		CreatedAt: now,
 	}
@@ -487,8 +488,9 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		Status:      "READY",
 		StartEquity: startEquity,
 		State: map[string]any{
-			"runner":      "strategy-replay",
-			"ledgerIndex": 0,
+			"runner":      "strategy-engine",
+			"runtimeMode": "canonical-strategy-engine",
+			"planIndex":   0,
 		},
 		CreatedAt: time.Now().UTC(),
 	}

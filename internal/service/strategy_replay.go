@@ -183,7 +183,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 							tradingFee := notional * commission
 							engine.balance -= tradingFee
 							engine.totalTradingFees += tradingFee
-							engine.appendTrade("BUY", current.Time, entry, "Initial", notional, 0)
+							engine.appendTrade("BUY", current.Time, entry, "Initial", notional, 0, tradingFee, 0)
 							tradesInBar++
 							executed = true
 						}
@@ -211,7 +211,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
-								engine.appendTrade("BUY", current.Time, entry, reason, notional, 0)
+								engine.appendTrade("BUY", current.Time, entry, reason, notional, 0, tradingFee, 0)
 								if reason == "SL-Reentry" {
 									tradesInBar++
 								}
@@ -240,7 +240,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 							tradingFee := notional * commission
 							engine.balance -= tradingFee
 							engine.totalTradingFees += tradingFee
-							engine.appendTrade("SHORT", current.Time, entry, "Initial", notional, 0)
+							engine.appendTrade("SHORT", current.Time, entry, "Initial", notional, 0, tradingFee, 0)
 							tradesInBar++
 							executed = true
 						}
@@ -268,7 +268,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
-								engine.appendTrade("SHORT", current.Time, entry, reason, notional, 0)
+								engine.appendTrade("SHORT", current.Time, entry, reason, notional, 0, tradingFee, 0)
 								if reason == "SL-Reentry" {
 									tradesInBar++
 								}
@@ -337,15 +337,17 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 				exitPrice *= (1 - cfg.FixedSlippage)
 			}
 			pnl := 0.0
+			tradingFee := 0.0
+			fundingPnL := 0.0
 			if engine.position.Notional > 0 {
-				tradingFee := engine.position.Notional * commission
-				fundingPnL := computeFundingPnL(engine.position, current.Time, cfg)
+				tradingFee = engine.position.Notional * commission
+				fundingPnL = computeFundingPnL(engine.position, current.Time, cfg)
 				pnl = sideMult*(exitPrice-engine.position.EntryPrice)/engine.position.EntryPrice*engine.position.Notional + fundingPnL
 				engine.balance += pnl - tradingFee
 				engine.totalTradingFees += tradingFee
 				engine.totalFundingPnL += fundingPnL
 			}
-			engine.appendTrade("EXIT", current.Time, exitPrice, exitReason, engine.position.Notional, pnl)
+			engine.appendTrade("EXIT", current.Time, exitPrice, exitReason, engine.position.Notional, pnl, tradingFee, fundingPnL)
 			engine.lastExitReason = exitReason
 			engine.lastExitSide = engine.position.Side
 			engine.lastExitBarIndex = i
@@ -460,7 +462,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 							tradingFee := notional * commission
 							engine.balance -= tradingFee
 							engine.totalTradingFees += tradingFee
-							engine.appendTrade("BUY", bar.Time, entry, "Initial", notional, 0)
+							engine.appendTrade("BUY", bar.Time, entry, "Initial", notional, 0, tradingFee, 0)
 							tradesInBar++
 							executed = true
 						}
@@ -498,7 +500,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
-								engine.appendTrade("BUY", bar.Time, entry, reason, notional, 0)
+								engine.appendTrade("BUY", bar.Time, entry, reason, notional, 0, tradingFee, 0)
 								if reason == "SL-Reentry" {
 									tradesInBar++
 								}
@@ -527,7 +529,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 							tradingFee := notional * commission
 							engine.balance -= tradingFee
 							engine.totalTradingFees += tradingFee
-							engine.appendTrade("SHORT", bar.Time, entry, "Initial", notional, 0)
+							engine.appendTrade("SHORT", bar.Time, entry, "Initial", notional, 0, tradingFee, 0)
 							tradesInBar++
 							executed = true
 						}
@@ -565,7 +567,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
-								engine.appendTrade("SHORT", bar.Time, entry, reason, notional, 0)
+								engine.appendTrade("SHORT", bar.Time, entry, reason, notional, 0, tradingFee, 0)
 								if reason == "SL-Reentry" {
 									tradesInBar++
 								}
@@ -623,15 +625,17 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 					exitPrice *= (1 - cfg.FixedSlippage)
 				}
 				pnl := 0.0
+				tradingFee := 0.0
+				fundingPnL := 0.0
 				if engine.position.Notional > 0 {
-					tradingFee := engine.position.Notional * commission
-					fundingPnL := computeFundingPnL(engine.position, bar.Time, cfg)
+					tradingFee = engine.position.Notional * commission
+					fundingPnL = computeFundingPnL(engine.position, bar.Time, cfg)
 					pnl = sideMult*(exitPrice-engine.position.EntryPrice)/engine.position.EntryPrice*engine.position.Notional + fundingPnL
 					engine.balance += pnl - tradingFee
 					engine.totalTradingFees += tradingFee
 					engine.totalFundingPnL += fundingPnL
 				}
-				engine.appendTrade("EXIT", bar.Time, exitPrice, exitReason, engine.position.Notional, pnl)
+				engine.appendTrade("EXIT", bar.Time, exitPrice, exitReason, engine.position.Notional, pnl, tradingFee, fundingPnL)
 				engine.lastExitReason = exitReason
 				engine.lastExitSide = engine.position.Side
 				engine.lastExitBarIndex = i
@@ -724,7 +728,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 				}
 				e.balance -= notional * commission
 				e.tradesInBar++
-				e.appendTrade("BUY", bar.Time, entry, "Initial", notional, 0)
+				e.appendTrade("BUY", bar.Time, entry, "Initial", notional, 0, notional*commission, 0)
 				return
 			}
 		} else if e.lastExitSide == "long" && e.currentBarIndex-e.lastExitBarIndex <= 1 {
@@ -761,7 +765,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 					if reason == "SL-Reentry" {
 						e.tradesInBar++
 					}
-					e.appendTrade("BUY", bar.Time, entry, reason, notional, 0)
+					e.appendTrade("BUY", bar.Time, entry, reason, notional, 0, notional*commission, 0)
 				}
 				e.lastExitSide = ""
 			}
@@ -787,7 +791,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 				}
 				e.balance -= notional * commission
 				e.tradesInBar++
-				e.appendTrade("SHORT", bar.Time, entry, "Initial", notional, 0)
+				e.appendTrade("SHORT", bar.Time, entry, "Initial", notional, 0, notional*commission, 0)
 				return
 			}
 		} else if e.lastExitSide == "short" && e.currentBarIndex-e.lastExitBarIndex <= 1 {
@@ -824,7 +828,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 					if reason == "SL-Reentry" {
 						e.tradesInBar++
 					}
-					e.appendTrade("SHORT", bar.Time, entry, reason, notional, 0)
+					e.appendTrade("SHORT", bar.Time, entry, reason, notional, 0, notional*commission, 0)
 				}
 				e.lastExitSide = ""
 			}
@@ -875,22 +879,24 @@ func (e *strategyReplayEngine) tryExit(bar executionBar, sig strategySignalBar) 
 		pnl = sideMult * (exitPrice - e.position.EntryPrice) / e.position.EntryPrice * e.position.Notional
 		e.balance += pnl - e.position.Notional*commission
 	}
-	e.appendTrade("EXIT", bar.Time, exitPrice, reason, e.position.Notional, pnl)
+	e.appendTrade("EXIT", bar.Time, exitPrice, reason, e.position.Notional, pnl, e.position.Notional*commission, 0)
 	e.lastExitReason = reason
 	e.lastExitSide = e.position.Side
 	e.lastExitBarIndex = e.currentBarIndex
 	e.position = nil
 }
 
-func (e *strategyReplayEngine) appendTrade(kind string, at time.Time, price float64, reason string, notional float64, pnl float64) {
+func (e *strategyReplayEngine) appendTrade(kind string, at time.Time, price float64, reason string, notional float64, pnl float64, tradingFee float64, fundingPnL float64) {
 	record := map[string]any{
-		"time":     at.UTC().Format(time.RFC3339),
-		"type":     kind,
-		"price":    price,
-		"reason":   reason,
-		"notional": notional,
-		"balance":  e.balance,
-		"pnl":      pnl,
+		"time":       at.UTC().Format(time.RFC3339),
+		"type":       kind,
+		"price":      price,
+		"reason":     reason,
+		"notional":   notional,
+		"balance":    e.balance,
+		"pnl":        pnl,
+		"tradingFee": tradingFee,
+		"fundingPnL": fundingPnL,
 	}
 	e.equity = append(e.equity, e.balance)
 	e.trades = append(e.trades, record)
@@ -1346,20 +1352,30 @@ func pairStrategyTrades(events []map[string]any, source string) []map[string]any
 			if current == nil {
 				continue
 			}
+			entryPrice := parseFloatValue(current["price"])
+			notional := parseFloatValue(current["notional"])
+			quantity := 0.0
+			if entryPrice > 0 && notional > 0 {
+				quantity = notional / entryPrice
+			}
 			trades = append(trades, map[string]any{
-				"source":        source,
-				"side":          stringValue(current["type"]),
-				"quantity":      float64(1),
-				"entryTarget":   current["price"],
-				"entryTime":     current["time"],
-				"entryPrice":    current["price"],
-				"entryReason":   current["reason"],
-				"exitTime":      event["time"],
-				"exitPrice":     event["price"],
-				"exitType":      event["reason"],
-				"realizedPnL":   event["pnl"],
-				"processedBars": 0,
-				"status":        "closed",
+				"source":          source,
+				"side":            stringValue(current["type"]),
+				"quantity":        quantity,
+				"notional":        notional,
+				"entryTarget":     current["price"],
+				"entryTime":       current["time"],
+				"entryPrice":      current["price"],
+				"entryReason":     current["reason"],
+				"entryTradingFee": current["tradingFee"],
+				"exitTime":        event["time"],
+				"exitPrice":       event["price"],
+				"exitType":        event["reason"],
+				"exitTradingFee":  event["tradingFee"],
+				"fundingPnL":      event["fundingPnL"],
+				"realizedPnL":     event["pnl"],
+				"processedBars":   0,
+				"status":          "closed",
 			})
 			current = nil
 		}

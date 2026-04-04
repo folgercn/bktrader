@@ -260,7 +260,7 @@ PAPER_TICK_INTERVAL=15
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
 - 净值快照在创建模拟会话时和模拟订单成交时自动追加。
 - 模拟交易会话支持启动、停止和手动推进；活跃会话从 `FINAL_1D_LEDGER_BEST_SL.csv` 回放策略交易账本。
-- 模拟会话状态在 `paper_sessions.state` 中持久化回放进度,`ledgerIndex` 可跨重启保持。
+- 模拟会话状态在 `paper_sessions.state` 中持久化策略执行计划进度，`planIndex` 可跨重启保持。
 Parity checks:
 ```bash
 python3 scripts/check_1d_1min_parity.py
