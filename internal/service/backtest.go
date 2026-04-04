@@ -160,6 +160,17 @@ func (p *Platform) runBacktestSkeleton(backtest domain.BacktestRun) domain.Backt
 				}
 			}
 		}
+	} else if strings.EqualFold(executionSource, "1min") {
+		if plan, ok := parseBracketPlan(backtest.Parameters); ok {
+			sim, err := p.simulateMinuteBracket(symbol, from, to, plan)
+			if err != nil {
+				resultSummary["bracketError"] = err.Error()
+			} else {
+				for key, value := range sim {
+					resultSummary[key] = value
+				}
+			}
+		}
 	}
 	backtest.Status = "COMPLETED"
 	backtest.ResultSummary = resultSummary
@@ -912,6 +923,97 @@ func (p *Platform) simulateTickBracket(symbol, from, to string, plan bracketPlan
 	}
 }
 
+func (p *Platform) simulateMinuteBracket(symbol, from, to string, plan bracketPlan) (map[string]any, error) {
+	if normalizeBacktestSymbol(symbol) != "BTCUSDT" {
+		return nil, fmt.Errorf("1min replay currently supports BTCUSDT only")
+	}
+
+	bars, err := p.loadCandleBars()
+	if err != nil {
+		return nil, err
+	}
+
+	fromTime := parseOptionalRFC3339(from)
+	toTime := parseOptionalRFC3339(to)
+	filtered := make([]candleBar, 0, len(bars))
+	for _, bar := range bars {
+		if !fromTime.IsZero() && bar.Time.Before(fromTime) {
+			continue
+		}
+		if !toTime.IsZero() && bar.Time.After(toTime) {
+			continue
+		}
+		filtered = append(filtered, bar)
+	}
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("no 1min bars found for %s in range", normalizeBacktestSymbol(symbol))
+	}
+
+	result := map[string]any{
+		"bracketSide":            plan.Side,
+		"bracketEntryPrice":      plan.EntryPrice,
+		"bracketStopLossPrice":   plan.StopLossPrice,
+		"bracketTakeProfitPrice": plan.TakeProfitPrice,
+		"bracketQuantity":        plan.Quantity,
+		"bracketSimulationOk":    false,
+		"streamMode":             "minute_bar_replay",
+		"streamPreviewTicks":     len(filtered),
+		"streamPreviewStart":     filtered[0].Time.UTC().Format(time.RFC3339),
+		"streamPreviewEnd":       filtered[len(filtered)-1].Time.UTC().Format(time.RFC3339),
+		"streamPreviewLastPrice": filtered[len(filtered)-1].Close,
+	}
+
+	state := "waiting_entry"
+	processed := 0
+	for _, bar := range filtered {
+		processed++
+		switch state {
+		case "waiting_entry":
+			entryHit, entryFill := minuteBarEntryTriggered(bar, plan)
+			if !entryHit {
+				continue
+			}
+			state = "entered"
+			result["bracketEntryHit"] = true
+			result["bracketEntryTime"] = bar.Time.UTC().Format(time.RFC3339)
+			result["bracketEntryFill"] = entryFill
+			result["bracketEntryQuantity"] = plan.Quantity
+
+			exitType, exitPrice, exitHit := minuteBarExitTriggered(bar, plan)
+			if exitHit {
+				result["bracketExitType"] = exitType
+				result["bracketExitTime"] = bar.Time.UTC().Format(time.RFC3339)
+				result["bracketExitPrice"] = exitPrice
+				result["bracketRealizedPnL"] = bracketPnLWithFill(plan, entryFill, exitPrice)
+				result["bracketQuantity"] = plan.Quantity
+				result["bracketSimulationOk"] = true
+				result["bracketProcessedTicks"] = processed
+				result["bracketFinalState"] = exitType
+				return result, nil
+			}
+		case "entered":
+			exitType, exitPrice, exitHit := minuteBarExitTriggered(bar, plan)
+			if !exitHit {
+				continue
+			}
+			entryFill := parseFloatValue(result["bracketEntryFill"])
+			result["bracketExitType"] = exitType
+			result["bracketExitTime"] = bar.Time.UTC().Format(time.RFC3339)
+			result["bracketExitPrice"] = exitPrice
+			result["bracketRealizedPnL"] = bracketPnLWithFill(plan, entryFill, exitPrice)
+			result["bracketQuantity"] = plan.Quantity
+			result["bracketSimulationOk"] = true
+			result["bracketProcessedTicks"] = processed
+			result["bracketFinalState"] = exitType
+			return result, nil
+		}
+	}
+
+	result["bracketProcessedTicks"] = processed
+	result["bracketFinalState"] = state
+	return result, nil
+}
+
 func shouldReplayLedger(parameters map[string]any) bool {
 	value := parameters["replayLedger"]
 	switch v := value.(type) {
@@ -1213,6 +1315,49 @@ func bracketPnL(plan bracketPlan, exitPrice float64) float64 {
 		return (exitPrice - plan.EntryPrice) * plan.Quantity
 	}
 	return (plan.EntryPrice - exitPrice) * plan.Quantity
+}
+
+func bracketPnLWithFill(plan bracketPlan, entryFill, exitPrice float64) float64 {
+	if plan.Side == "BUY" {
+		return (exitPrice - entryFill) * plan.Quantity
+	}
+	return (entryFill - exitPrice) * plan.Quantity
+}
+
+func minuteBarEntryTriggered(bar candleBar, plan bracketPlan) (bool, float64) {
+	if plan.Side == "BUY" {
+		if bar.Low <= plan.EntryPrice {
+			return true, plan.EntryPrice
+		}
+		return false, 0
+	}
+	if bar.High >= plan.EntryPrice {
+		return true, plan.EntryPrice
+	}
+	return false, 0
+}
+
+func minuteBarExitTriggered(bar candleBar, plan bracketPlan) (string, float64, bool) {
+	stopHit := false
+	tpHit := false
+	if plan.Side == "BUY" {
+		stopHit = plan.StopLossPrice > 0 && bar.Low <= plan.StopLossPrice
+		tpHit = plan.TakeProfitPrice > 0 && bar.High >= plan.TakeProfitPrice
+	} else {
+		stopHit = plan.StopLossPrice > 0 && bar.High >= plan.StopLossPrice
+		tpHit = plan.TakeProfitPrice > 0 && bar.Low <= plan.TakeProfitPrice
+	}
+
+	if stopHit && tpHit {
+		return "stop_loss", plan.StopLossPrice, true
+	}
+	if stopHit {
+		return "stop_loss", plan.StopLossPrice, true
+	}
+	if tpHit {
+		return "take_profit", plan.TakeProfitPrice, true
+	}
+	return "", 0, false
 }
 
 func (p *Platform) previewTickArchiveRange(symbol, from, to string, limit int) (map[string]any, error) {
