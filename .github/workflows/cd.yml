@@ -50,7 +50,7 @@ jobs:
     name: Deploy on Macmini runner
     needs: docker
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, macOS, MacminiM2]
+    runs-on: [MacminiM2]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
