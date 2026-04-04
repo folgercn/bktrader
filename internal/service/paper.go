@@ -46,10 +46,20 @@ func (p *Platform) ListPaperSessions() ([]domain.PaperSession, error) {
 }
 
 // CreatePaperSession 创建新的模拟交易会话，并捕获初始净值快照。
-func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error) {
+func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64, overrides map[string]any) (domain.PaperSession, error) {
 	session, err := p.store.CreatePaperSession(accountID, strategyID, startEquity)
 	if err != nil {
 		return domain.PaperSession{}, err
+	}
+	if len(overrides) > 0 {
+		state := cloneMetadata(session.State)
+		for key, value := range normalizePaperSessionOverrides(overrides) {
+			state[key] = value
+		}
+		session, err = p.store.UpdatePaperSessionState(session.ID, state)
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
 	}
 	session, err = p.syncPaperSessionRuntime(session)
 	if err != nil {
@@ -560,6 +570,42 @@ func normalizePaperExecutionSource(value string) string {
 	default:
 		return "1min"
 	}
+}
+
+func normalizePaperSessionOverrides(overrides map[string]any) map[string]any {
+	normalized := map[string]any{}
+	for key, value := range overrides {
+		switch key {
+		case "signalTimeframe":
+			if timeframe := normalizePaperSignalTimeframe(stringValue(value)); timeframe != "" {
+				normalized[key] = timeframe
+			}
+		case "executionDataSource":
+			if source := normalizePaperExecutionSource(stringValue(value)); source != "" {
+				normalized[key] = source
+			}
+		case "symbol":
+			if symbol := normalizeBacktestSymbol(stringValue(value)); symbol != "" {
+				normalized[key] = symbol
+			}
+		case "from", "to":
+			if parsed := parseOptionalRFC3339(stringValue(value)); !parsed.IsZero() {
+				normalized[key] = parsed.Format(time.RFC3339)
+			}
+		case "strategyEngine":
+			normalized[key] = normalizeStrategyEngineKey(stringValue(value))
+		case "tradingFeeBps", "fundingRateBps", "fixed_slippage", "stop_loss_atr", "profit_protect_atr":
+			normalized[key] = parseFloatValue(value)
+		case "fundingIntervalHours", "max_trades_per_bar":
+			normalized[key] = maxIntValue(value, 0)
+		case "stop_mode":
+			mode := strings.ToLower(strings.TrimSpace(stringValue(value)))
+			if mode != "" {
+				normalized[key] = mode
+			}
+		}
+	}
+	return normalized
 }
 
 func normalizePaperPlanSide(value string) string {

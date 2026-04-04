@@ -21,9 +21,18 @@ func registerPaperRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
 			var payload struct {
-				AccountID   string  `json:"accountId"`
-				StrategyID  string  `json:"strategyId"`
-				StartEquity float64 `json:"startEquity"`
+				AccountID            string  `json:"accountId"`
+				StrategyID           string  `json:"strategyId"`
+				StartEquity          float64 `json:"startEquity"`
+				SignalTimeframe      string  `json:"signalTimeframe"`
+				ExecutionDataSource  string  `json:"executionDataSource"`
+				Symbol               string  `json:"symbol"`
+				From                 string  `json:"from"`
+				To                   string  `json:"to"`
+				StrategyEngine       string  `json:"strategyEngine"`
+				TradingFeeBps        float64 `json:"tradingFeeBps"`
+				FundingRateBps       float64 `json:"fundingRateBps"`
+				FundingIntervalHours int     `json:"fundingIntervalHours"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -39,7 +48,33 @@ func registerPaperRoutes(mux *http.ServeMux, platform *service.Platform) {
 			if payload.StartEquity <= 0 {
 				payload.StartEquity = 100000 // 默认 10 万初始权益
 			}
-			item, err := platform.CreatePaperSession(payload.AccountID, payload.StrategyID, payload.StartEquity)
+			overrides := map[string]any{}
+			if payload.SignalTimeframe != "" {
+				overrides["signalTimeframe"] = payload.SignalTimeframe
+			}
+			if payload.ExecutionDataSource != "" {
+				overrides["executionDataSource"] = payload.ExecutionDataSource
+			}
+			if payload.Symbol != "" {
+				overrides["symbol"] = payload.Symbol
+			}
+			if payload.From != "" {
+				overrides["from"] = payload.From
+			}
+			if payload.To != "" {
+				overrides["to"] = payload.To
+			}
+			if payload.StrategyEngine != "" {
+				overrides["strategyEngine"] = payload.StrategyEngine
+			}
+			if payload.TradingFeeBps > 0 {
+				overrides["tradingFeeBps"] = payload.TradingFeeBps
+			}
+			overrides["fundingRateBps"] = payload.FundingRateBps
+			if payload.FundingIntervalHours > 0 {
+				overrides["fundingIntervalHours"] = payload.FundingIntervalHours
+			}
+			item, err := platform.CreatePaperSession(payload.AccountID, payload.StrategyID, payload.StartEquity, overrides)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return

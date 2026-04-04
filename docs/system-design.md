@@ -253,6 +253,7 @@ Current implementation status:
 - account summary snapshots expose start equity, fees, realized/unrealized PnL, and exposure
 - account equity snapshots provide a time series for paper account net-equity charts
 - paper sessions support background runners that prebuild canonical strategy execution plans and persist replay progress in session state
+- paper session creation supports runtime overrides for timeframe, execution source, symbol, range, and cost semantics
 - chart annotation endpoint
 - candle feed endpoint suitable for TradingView integration scaffolding
 - PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions

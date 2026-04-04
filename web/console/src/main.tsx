@@ -873,12 +873,28 @@ function App() {
                   <strong>{formatMoney(primarySession.startEquity)}</strong>
                 </div>
                 <div className="session-stat">
-                  <span>Ledger Index</span>
-                  <strong>{String(Math.trunc(getNumber(primarySession.state?.ledgerIndex) ?? 0))}</strong>
+                  <span>Plan Progress</span>
+                  <strong>
+                    {String(Math.trunc(getNumber(primarySession.state?.planIndex) ?? 0))} /{" "}
+                    {String(Math.trunc(getNumber(primarySession.state?.planLength) ?? 0))}
+                  </strong>
                 </div>
                 <div className="session-stat">
-                  <span>Last Replay Event</span>
-                  <strong>{String(primarySession.state?.lastLedgerReason ?? "--")}</strong>
+                  <span>Signal / Execution</span>
+                  <strong>
+                    {String(primarySession.state?.signalTimeframe ?? "--")} / {String(primarySession.state?.executionDataSource ?? "--")}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Trading / Funding</span>
+                  <strong>
+                    {formatMaybeNumber(primarySession.state?.tradingFeeBps)} bps /{" "}
+                    {formatMaybeNumber(primarySession.state?.fundingRateBps)} bps
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Last Event</span>
+                  <strong>{String(primarySession.state?.lastEventReason ?? "--")}</strong>
                 </div>
                 <div className="session-stat">
                   <span>Created</span>

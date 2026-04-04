@@ -73,6 +73,16 @@ go run ./cmd/platform-api
 - `POST /api/v1/paper/sessions/{id}/start` — 启动模拟会话
 - `POST /api/v1/paper/sessions/{id}/stop` — 停止模拟会话
 - `POST /api/v1/paper/sessions/{id}/tick` — 手动推进模拟会话
+
+创建模拟会话时支持可选 runtime overrides：
+- `signalTimeframe`
+- `executionDataSource`
+- `symbol`
+- `from` / `to`
+- `strategyEngine`
+- `tradingFeeBps`
+- `fundingRateBps`
+- `fundingIntervalHours`
 - `GET /api/v1/signal-sources` — 信号源列表
 - `GET /api/v1/chart/annotations` — 图表标注数据
 - `GET /api/v1/chart/candles` — K 线数据
