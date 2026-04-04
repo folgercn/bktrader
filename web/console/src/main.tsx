@@ -171,6 +171,10 @@ type SelectedSample = {
   sample: ReplaySample;
 };
 
+type SelectableSample = SelectedSample & {
+  group: "completed" | "skipped";
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -226,6 +230,21 @@ function App() {
   const latestReplayCompletedSamples = Array.isArray(latestBacktestSummary.replayLedgerCompletedSamples)
     ? (latestBacktestSummary.replayLedgerCompletedSamples as ReplaySample[])
     : [];
+  const selectableSamples = useMemo<SelectableSample[]>(
+    () => [
+      ...latestReplayCompletedSamples.map((sample, index) => ({
+        key: buildSampleKey("completed", index, sample),
+        sample,
+        group: "completed" as const,
+      })),
+      ...latestReplaySkippedSamples.map((sample, index) => ({
+        key: buildSampleKey("skipped", index, sample),
+        sample,
+        group: "skipped" as const,
+      })),
+    ],
+    [latestReplayCompletedSamples, latestReplaySkippedSamples]
+  );
 
   async function loadDashboard() {
     const [summaryData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData] = await Promise.all([
@@ -336,6 +355,13 @@ function App() {
     }
     return chartAnnotations.find((item) => item.id === selectedAnnotationIds[0])?.time;
   }, [chartAnnotations, selectedAnnotationIds]);
+  const selectedMarkerDetail = useMemo<MarkerDetail | null>(() => {
+    if (selectedAnnotationIds.length === 0) {
+      return null;
+    }
+    const item = chartAnnotations.find((annotation) => annotation.id === selectedAnnotationIds[0]);
+    return item ? toMarkerDetail(item) : null;
+  }, [chartAnnotations, selectedAnnotationIds]);
   const latestVisibleAnnotationTime = useMemo(
     () => (chartAnnotations.length > 0 ? chartAnnotations[chartAnnotations.length - 1].time : undefined),
     [chartAnnotations]
@@ -344,9 +370,12 @@ function App() {
     if (hoveredMarker) {
       return hoveredMarker;
     }
+    if (selectedMarkerDetail) {
+      return selectedMarkerDetail;
+    }
     const latest = chartAnnotations[chartAnnotations.length - 1];
     return latest ? toMarkerDetail(latest) : null;
-  }, [chartAnnotations, hoveredMarker]);
+  }, [chartAnnotations, hoveredMarker, selectedMarkerDetail]);
   const markerLegend = useMemo<MarkerLegendItem[]>(
     () => [
       { label: "Initial", color: "#7a8791" },
@@ -848,6 +877,20 @@ function App() {
                 focusTime={selectedAnnotationFocusTime ?? latestVisibleAnnotationTime}
                 focusNonce={focusNonce}
                 selectedAnnotationIds={selectedAnnotationIds}
+                onSelectAnnotation={(annotation) => {
+                  const matchedSample = selectableSamples.find((item) => annotationMatchesSample(annotation, item.sample));
+                  if (!matchedSample) {
+                    return;
+                  }
+                  setSelectedSample({ key: matchedSample.key, sample: matchedSample.sample });
+                  setSourceFilter("backtest");
+                  setEventFilter("all");
+                  const range = buildSampleRange(matchedSample.sample);
+                  if (range) {
+                    setChartOverrideRange(range);
+                  }
+                  setFocusNonce((value) => value + 1);
+                }}
                 onHoverMarker={setHoveredMarker}
               />
             ) : (
@@ -1078,6 +1121,7 @@ function TradingChart(props: {
   focusTime?: string;
   focusNonce: number;
   selectedAnnotationIds: string[];
+  onSelectAnnotation: (annotation: ChartAnnotation) => void;
   onHoverMarker: (detail: MarkerDetail | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1165,6 +1209,20 @@ function TradingChart(props: {
       props.onHoverMarker(nearest ? toMarkerDetail(nearest) : null);
     });
 
+    chart.subscribeClick((param) => {
+      if (param.time == null) {
+        return;
+      }
+      const clickedTime = Number(param.time);
+      if (!Number.isFinite(clickedTime)) {
+        return;
+      }
+      const nearest = findNearestAnnotation(props.annotations, clickedTime);
+      if (nearest) {
+        props.onSelectAnnotation(nearest);
+      }
+    });
+
     if (props.focusTime && props.focusNonce > 0) {
       const focusSeconds = Math.floor(new Date(props.focusTime).getTime() / 1000);
       const firstSeconds = Math.floor(new Date(props.candles[0].time).getTime() / 1000);
@@ -1182,7 +1240,15 @@ function TradingChart(props: {
       props.onHoverMarker(null);
       chart.remove();
     };
-  }, [props.annotations, props.candles, props.focusNonce, props.focusTime, props.onHoverMarker, props.selectedAnnotationIds]);
+  }, [
+    props.annotations,
+    props.candles,
+    props.focusNonce,
+    props.focusTime,
+    props.onHoverMarker,
+    props.onSelectAnnotation,
+    props.selectedAnnotationIds,
+  ]);
 
   return <div ref={containerRef} className="tv-chart" />;
 }
