@@ -131,6 +131,24 @@ TICK_DATA_DIR=./dataset/archive
 
 `replayLedger=true` 仍然保留为可选内部审计能力，用于排查历史账本和执行层之间的差异，但它不是当前平台推荐的主回测入口。
 
+当前仓库还提供了一个对齐脚本，用于校验 Go 策略回放和 Python 研究版在 `1d -> 1min` 场景下的一致性：
+
+```bash
+python3 scripts/check_1d_1min_parity.py
+```
+
+脚本会自动拉起本地 API，分别运行：
+
+- Python 研究版策略回测
+- Go `Strategy Replay`
+
+然后比较：
+
+- `return`
+- `maxDrawdown`
+- `tradePairs`
+- `finalBalance`
+
 推荐做法：
 
 1. 把真实逐笔数据清洗成统一 CSV。
