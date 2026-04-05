@@ -266,6 +266,13 @@ type RuntimeMarketSnapshot = {
   spreadBps?: number;
 };
 
+type RuntimeSourceSummary = {
+  tradeTickCount: number;
+  orderBookCount: number;
+  staleCount: number;
+  latestEventAt?: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -383,6 +390,7 @@ function App() {
     getRecord(primaryLinkedSignalRuntimeState.sourceStates),
     primaryLinkedSignalRuntimeSummary
   );
+  const primaryLinkedSignalRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(primaryLinkedSignalRuntimeState.sourceStates));
   const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
   const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
@@ -1504,6 +1512,17 @@ function App() {
                   <strong>{formatMaybeNumber(primaryLinkedSignalRuntimeMarket.spreadBps)} bps</strong>
                 </div>
                 <div className="session-stat">
+                  <span>Runtime Sources</span>
+                  <strong>
+                    tick {primaryLinkedSignalRuntimeSourceSummary.tradeTickCount} · book {primaryLinkedSignalRuntimeSourceSummary.orderBookCount} · stale{" "}
+                    {primaryLinkedSignalRuntimeSourceSummary.staleCount}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Source Freshness</span>
+                  <strong>{formatTime(String(primaryLinkedSignalRuntimeSourceSummary.latestEventAt ?? ""))}</strong>
+                </div>
+                <div className="session-stat">
                   <span>Trading / Funding</span>
                   <strong>
                     {formatMaybeNumber(primarySession.state?.tradingFeeBps)} bps /{" "}
@@ -2102,6 +2121,7 @@ function App() {
                     const activeRuntimeState = getRecord(activeRuntime?.state);
                     const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
                     const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
+                    const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates));
                     return (
                       <div key={account.id} className="session-stat">
                         <span>{account.name}</span>
@@ -2125,6 +2145,12 @@ function App() {
                           <span>trade {formatMaybeNumber(activeRuntimeMarket.tradePrice)}</span>
                           <span>bid/ask {formatMaybeNumber(activeRuntimeMarket.bestBid)} / {formatMaybeNumber(activeRuntimeMarket.bestAsk)}</span>
                           <span>spread {formatMaybeNumber(activeRuntimeMarket.spreadBps)} bps</span>
+                        </div>
+                        <div className="live-account-meta">
+                          <span>tick {activeRuntimeSourceSummary.tradeTickCount}</span>
+                          <span>book {activeRuntimeSourceSummary.orderBookCount}</span>
+                          <span>stale {activeRuntimeSourceSummary.staleCount}</span>
+                          <span>{formatTime(String(activeRuntimeSourceSummary.latestEventAt ?? ""))}</span>
                         </div>
                         {activeRuntime ? (
                           <div className="inline-actions">
@@ -3119,6 +3145,42 @@ function deriveRuntimeMarketSnapshot(sourceStates: Record<string, unknown>, summ
   }
 
   return snapshot;
+}
+
+function deriveRuntimeSourceSummary(sourceStates: Record<string, unknown>): RuntimeSourceSummary {
+  const states = Object.values(sourceStates).map((value) => getRecord(value));
+  const now = Date.now();
+  let tradeTickCount = 0;
+  let orderBookCount = 0;
+  let staleCount = 0;
+  let latestEventAt = "";
+
+  for (const state of states) {
+    const streamType = String(state.streamType ?? "").trim().toLowerCase();
+    if (streamType === "trade_tick") {
+      tradeTickCount += 1;
+    }
+    if (streamType === "order_book") {
+      orderBookCount += 1;
+    }
+    const lastEventAt = String(state.lastEventAt ?? "");
+    const parsed = Date.parse(lastEventAt);
+    if (Number.isFinite(parsed)) {
+      if (latestEventAt === "" || parsed > Date.parse(latestEventAt)) {
+        latestEventAt = lastEventAt;
+      }
+      if (now - parsed > 15_000) {
+        staleCount += 1;
+      }
+    }
+  }
+
+  return {
+    tradeTickCount,
+    orderBookCount,
+    staleCount,
+    latestEventAt: latestEventAt || undefined,
+  };
 }
 
 function boolLabel(value: unknown) {
