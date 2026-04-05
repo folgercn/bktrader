@@ -342,13 +342,21 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string) str
 	if action == "advance-plan" {
 		switch strings.ToLower(strings.TrimSpace(nextRole)) {
 		case "entry":
-			return "entry"
+			switch normalizeStrategyReasonTag(nextReason) {
+			case "initial":
+				return "initial-entry"
+			case "sl-reentry":
+				return "sl-reentry"
+			case "pt-reentry":
+				return "pt-reentry"
+			default:
+				return "entry"
+			}
 		case "exit":
-			reasonKey := strings.ToUpper(strings.TrimSpace(nextReason))
-			switch reasonKey {
-			case "PT":
+			switch normalizeStrategyReasonTag(nextReason) {
+			case "pt":
 				return "protect-exit"
-			case "SL":
+			case "sl":
 				return "risk-exit"
 			default:
 				return "exit"
@@ -369,4 +377,10 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string) str
 	default:
 		return "hold"
 	}
+}
+
+func normalizeStrategyReasonTag(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	return normalized
 }

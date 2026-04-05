@@ -142,7 +142,9 @@ go run ./cmd/platform-api
       - `waiting-price`
       - `waiting-inputs`
     - 同时也会产出更偏策略语义的 `signalKind`：
-      - `entry`
+      - `initial-entry`
+      - `sl-reentry`
+      - `pt-reentry`
       - `hold`
       - `protect-exit`
       - `risk-exit`
