@@ -128,6 +128,10 @@ Paper/runtime integration status:
 - starting a linked paper session will start the associated market-data runtime first
 - linked tick events now drive a throttled paper-session heartbeat
 - each signal-driven paper evaluation now records the linked runtime `sourceStates` snapshot into paper session state
+- before paper evaluation advances strategy execution, the platform now checks a `source gate`:
+  - all required strategy bindings must have a source-state snapshot
+  - required snapshots must be fresh enough for their stream type
+  - default freshness windows are short and stream-specific so stale market-data does not silently drive execution
 - strategy triggering is still a minimal event-driven rollout:
   - real tick events update the linked paper session
   - the session is nudged forward by runtime events at a throttled cadence

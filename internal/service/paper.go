@@ -204,6 +204,14 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		index = int(value)
 	}
 	state["lastStrategyEvaluationRemaining"] = maxInt(len(plan)-index, 0)
+	sourceGate := map[string]any{
+		"ready":          false,
+		"requiredCount":  0,
+		"availableCount": 0,
+		"freshCount":     0,
+		"missing":        []any{},
+		"stale":          []any{},
+	}
 	if runtimeSessionID != "" {
 		state["lastSignalRuntimeSessionId"] = runtimeSessionID
 	}
@@ -216,6 +224,16 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		state["lastStrategyEvaluationSourceStates"] = sourceStates
 		state["lastStrategyEvaluationSourceStateCount"] = len(sourceStates)
 		state["lastStrategyEvaluationRuntimeSummary"] = cloneMetadata(mapValue(runtimeSession.State["lastEventSummary"]))
+		sourceGate = p.evaluateSignalSourceReadiness(session, runtimeSession, eventTime)
+		state["lastStrategyEvaluationSourceGate"] = sourceGate
+	}
+	if !boolValue(sourceGate["ready"]) {
+		state["lastStrategyEvaluationStatus"] = "waiting-source-states"
+		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
+		if updateErr != nil {
+			return domain.Order{}, updateErr
+		}
+		return domain.Order{}, fmt.Errorf("paper session %s is waiting for fresh required signal source states", updatedSession.ID)
 	}
 	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
 	if err != nil {
@@ -245,6 +263,88 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 	state["lastStrategyEvaluationOrderId"] = order.ID
 	_, _ = p.store.UpdatePaperSessionState(session.ID, state)
 	return order, nil
+}
+
+func (p *Platform) evaluateSignalSourceReadiness(session domain.PaperSession, runtimeSession domain.SignalRuntimeSession, eventTime time.Time) map[string]any {
+	result := map[string]any{
+		"ready":          true,
+		"requiredCount":  0,
+		"availableCount": 0,
+		"freshCount":     0,
+		"missing":        []any{},
+		"stale":          []any{},
+	}
+
+	requiredBindings, err := p.ListStrategySignalBindings(session.StrategyID)
+	if err != nil {
+		result["ready"] = false
+		result["error"] = err.Error()
+		return result
+	}
+	sourceStates := cloneMetadata(mapValue(runtimeSession.State["sourceStates"]))
+	if sourceStates == nil {
+		sourceStates = map[string]any{}
+	}
+
+	missing := make([]any, 0)
+	stale := make([]any, 0)
+	requiredCount := 0
+	available := 0
+	fresh := 0
+	for _, binding := range requiredBindings {
+		if strings.ToUpper(strings.TrimSpace(binding.Status)) == "DISABLED" {
+			continue
+		}
+		requiredCount++
+		stateKey := signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)
+		entry := mapValue(sourceStates[stateKey])
+		if entry == nil {
+			missing = append(missing, map[string]any{
+				"sourceKey":  binding.SourceKey,
+				"role":       binding.Role,
+				"streamType": binding.StreamType,
+				"symbol":     binding.Symbol,
+			})
+			continue
+		}
+		available++
+		lastEventAt := parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
+		maxAge := signalSourceFreshnessWindow(binding)
+		if lastEventAt.IsZero() || eventTime.Sub(lastEventAt) > maxAge {
+			stale = append(stale, map[string]any{
+				"sourceKey":   binding.SourceKey,
+				"role":        binding.Role,
+				"streamType":  binding.StreamType,
+				"symbol":      binding.Symbol,
+				"lastEventAt": stringValue(entry["lastEventAt"]),
+				"maxAgeSec":   int(maxAge.Seconds()),
+			})
+			continue
+		}
+		fresh++
+	}
+
+	result["requiredCount"] = requiredCount
+	result["availableCount"] = available
+	result["freshCount"] = fresh
+	result["missing"] = missing
+	result["stale"] = stale
+	result["ready"] = len(missing) == 0 && len(stale) == 0
+	return result
+}
+
+func signalSourceFreshnessWindow(binding domain.AccountSignalBinding) time.Duration {
+	if value, ok := toFloat64(binding.Options["freshnessSeconds"]); ok && value > 0 {
+		return time.Duration(value) * time.Second
+	}
+	switch strings.ToLower(strings.TrimSpace(binding.StreamType)) {
+	case "trade_tick":
+		return 15 * time.Second
+	case "order_book":
+		return 10 * time.Second
+	default:
+		return 30 * time.Second
+	}
 }
 
 func buildStrategyEvaluationTriggerSource(summary map[string]any) map[string]any {

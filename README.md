@@ -129,6 +129,10 @@ go run ./cmd/platform-api
 - 启动 paper session 时，会先把 linked signal runtime 拉起
 - `PAPER + tick + linked runtime` 现在会在收到真实 tick 后，按节流频率推进一次策略 heartbeat
 - 每次事件驱动评估都会把当前 linked runtime 的 `sourceStates` 快照写入 paper session state
+- 事件驱动评估现在还会做 `source gate` 检查：
+  - 必需 trigger / feature 源没有状态快照时，不推进策略
+  - 快照超过新鲜度窗口时，不推进策略
+  - 默认新鲜度：`trade_tick=15s`，`order_book=10s`
 - 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
 
 实盘账户当前支持：

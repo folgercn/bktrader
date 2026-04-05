@@ -267,6 +267,7 @@ function App() {
   const primarySession = paperSessions[0] ?? null;
   const primarySessionSourceStates = getRecord(primarySession?.state?.lastStrategyEvaluationSourceStates);
   const primarySessionTriggerSource = getRecord(primarySession?.state?.lastStrategyEvaluationTriggerSource);
+  const primarySessionSourceGate = getRecord(primarySession?.state?.lastStrategyEvaluationSourceGate);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
@@ -1195,6 +1196,13 @@ function App() {
                 <div className="session-stat">
                   <span>Eval Status</span>
                   <strong>{String(primarySession.state?.lastStrategyEvaluationStatus ?? "--")}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Source Gate</span>
+                  <strong>
+                    {boolLabel(primarySessionSourceGate.ready)} · miss {String(Math.trunc(getNumber(primarySessionSourceGate.missing?.length) ?? 0))} · stale{" "}
+                    {String(Math.trunc(getNumber(primarySessionSourceGate.stale?.length) ?? 0))}
+                  </strong>
                 </div>
                 <div className="session-stat">
                   <span>Created</span>
@@ -2292,6 +2300,16 @@ function getRecord(value: unknown): Record<string, unknown> {
     return value as Record<string, unknown>;
   }
   return {};
+}
+
+function boolLabel(value: unknown) {
+  if (value === true) {
+    return "ready";
+  }
+  if (value === false) {
+    return "blocked";
+  }
+  return "--";
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
