@@ -144,10 +144,13 @@ go run ./cmd/platform-api
     - 同时也会产出更偏策略语义的 `signalKind`：
       - `initial-entry`
       - `initial-entry-watch`
+      - `initial-entry-near`
       - `sl-reentry`
       - `sl-reentry-watch`
+      - `sl-reentry-near`
       - `pt-reentry`
       - `pt-reentry-watch`
+      - `pt-reentry-near`
       - `hold`
       - `hold-long`
       - `hold-short`
@@ -161,6 +164,7 @@ go run ./cmd/platform-api
     - `signalKind` 现在已经开始结合当前 paper 持仓快照，而不只是看下一步计划角色
     - `protect-exit-watch` / `risk-exit-watch` 现在还会结合当前持仓相对市场价的盈亏方向
     - 当市场价距离下一步退出价足够近时，会进一步升级成 `protect-exit-near` / `risk-exit-near`
+    - 入场侧也一样：当市场价距离下一步入场价足够近时，会升级成 `initial-entry-near` / `sl-reentry-near` / `pt-reentry-near`
     - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
     - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
     - 当前还会比较“当前市场价”和“下一笔计划价”的偏离：

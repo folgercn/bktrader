@@ -212,8 +212,9 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		}
 	}
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
-	exitProximityBps := computeExitProximityBps(context.NextPlannedPrice, marketPrice)
-	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps, exitProximityBps)
+	entryProximityBps := computePriceProximityBps(context.NextPlannedPrice, marketPrice)
+	exitProximityBps := entryProximityBps
+	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps, entryProximityBps, exitProximityBps)
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
@@ -233,6 +234,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"marketPrice":       marketPrice,
 			"marketSource":      marketSource,
 			"positionPnLBps":    positionPnLBps,
+			"entryProximityBps": entryProximityBps,
 			"exitProximityBps":  exitProximityBps,
 			"maxDeviationBps":   maxDeviationBps,
 			"deviationBps":      deviationBps,
@@ -345,11 +347,12 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 	}
 }
 
-func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any, positionPnLBps float64, exitProximityBps float64) string {
+func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any, positionPnLBps float64, entryProximityBps float64, exitProximityBps float64) string {
 	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	positionQty := parseFloatValue(currentPosition["quantity"])
 	hasPosition := positionQty > 0 && positionSide != ""
 	reasonTag := normalizeStrategyReasonTag(nextReason)
+	nearEntry := entryProximityBps > 0 && entryProximityBps <= 10
 	nearExit := exitProximityBps > 0 && exitProximityBps <= 10
 	if action == "advance-plan" {
 		switch strings.ToLower(strings.TrimSpace(nextRole)) {
@@ -384,10 +387,19 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 	case "entry":
 		switch reasonTag {
 		case "initial":
+			if nearEntry {
+				return "initial-entry-near"
+			}
 			return "initial-entry-watch"
 		case "sl-reentry":
+			if nearEntry {
+				return "sl-reentry-near"
+			}
 			return "sl-reentry-watch"
 		case "pt-reentry":
+			if nearEntry {
+				return "pt-reentry-near"
+			}
 			return "pt-reentry-watch"
 		}
 	case "exit":
@@ -453,7 +465,7 @@ func computePositionPnLBps(currentPosition map[string]any, marketPrice float64) 
 	}
 }
 
-func computeExitProximityBps(plannedPrice, marketPrice float64) float64 {
+func computePriceProximityBps(plannedPrice, marketPrice float64) float64 {
 	if plannedPrice <= 0 || marketPrice <= 0 {
 		return 0
 	}

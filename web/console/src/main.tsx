@@ -1228,6 +1228,10 @@ function App() {
                   <strong>{formatMaybeNumber(primarySessionDecisionMeta.positionPnLBps)}</strong>
                 </div>
                 <div className="session-stat">
+                  <span>Entry Proximity (bps)</span>
+                  <strong>{formatMaybeNumber(primarySessionDecisionMeta.entryProximityBps)}</strong>
+                </div>
+                <div className="session-stat">
                   <span>Exit Proximity (bps)</span>
                   <strong>{formatMaybeNumber(primarySessionDecisionMeta.exitProximityBps)}</strong>
                 </div>
