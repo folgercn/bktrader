@@ -19,6 +19,17 @@ func (p *Platform) ListNotifications(includeAcked bool) ([]domain.PlatformNotifi
 	for _, ack := range acks {
 		ackByID[ack.ID] = ack
 	}
+	deliveries, err := p.store.ListNotificationDeliveries()
+	if err != nil {
+		return nil, err
+	}
+	telegramDeliveryByID := make(map[string]domain.NotificationDelivery, len(deliveries))
+	for _, delivery := range deliveries {
+		if !strings.EqualFold(delivery.Channel, "telegram") {
+			continue
+		}
+		telegramDeliveryByID[delivery.NotificationID] = delivery
+	}
 
 	items := make([]domain.PlatformNotification, 0, len(alerts))
 	for _, alert := range alerts {
@@ -36,6 +47,16 @@ func (p *Platform) ListNotifications(includeAcked bool) ([]domain.PlatformNotifi
 			if ack.UpdatedAt.After(notification.UpdatedAt) {
 				notification.UpdatedAt = ack.UpdatedAt
 			}
+		}
+		if delivery, ok := telegramDeliveryByID[alert.ID]; ok {
+			notification.Metadata["telegramStatus"] = "sent"
+			notification.Metadata["telegramSentAt"] = delivery.SentAt
+			notification.Metadata["telegramChannel"] = delivery.Channel
+			if delivery.UpdatedAt.After(notification.UpdatedAt) {
+				notification.UpdatedAt = delivery.UpdatedAt
+			}
+		} else {
+			notification.Metadata["telegramStatus"] = "pending"
 		}
 		if !includeAcked && notification.Status == "acked" {
 			continue

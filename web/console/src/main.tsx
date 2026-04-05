@@ -317,7 +317,10 @@ type PlatformNotification = {
   status: "active" | "acked" | string;
   ackedAt?: string;
   alert: PlatformAlert;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    telegramStatus?: string;
+    telegramSentAt?: string;
+  };
   updatedAt: string;
 };
 
@@ -1420,6 +1423,9 @@ function App() {
                     <div>
                       <StatusPill tone={alertLevelTone(item.alert.level)}>{item.alert.level}</StatusPill>
                       <StatusPill tone={item.status === "acked" ? "neutral" : alertScopeTone(item.alert.scope)}>{item.status}</StatusPill>
+                      <StatusPill tone={item.metadata?.telegramStatus === "sent" ? "ready" : "watch"}>
+                        telegram {item.metadata?.telegramStatus ?? "pending"}
+                      </StatusPill>
                     </div>
                     <span className="alert-time">{formatTime(String(item.updatedAt ?? item.alert.eventTime ?? ""))}</span>
                   </div>
@@ -1429,6 +1435,7 @@ function App() {
                     <span>{item.alert.accountName || item.alert.accountId || "--"}</span>
                     <span>{item.alert.strategyName || item.alert.strategyId || "--"}</span>
                     <span>{item.alert.runtimeSessionId || item.alert.paperSessionId || "--"}</span>
+                    <span>{item.metadata?.telegramSentAt ? `sent ${formatTime(String(item.metadata.telegramSentAt))}` : "telegram pending"}</span>
                   </div>
                   <div className="inline-actions">
                     <ActionButton
@@ -1440,7 +1447,14 @@ function App() {
                     <ActionButton
                       label={telegramAction === `send:${item.id}` ? "Sending..." : "Send Telegram"}
                       variant="ghost"
-                      disabled={notificationAction !== null || telegramAction !== null || !telegramConfig?.enabled || !telegramConfig?.hasBotToken || !telegramConfig?.chatId}
+                      disabled={
+                        notificationAction !== null ||
+                        telegramAction !== null ||
+                        !telegramConfig?.enabled ||
+                        !telegramConfig?.hasBotToken ||
+                        !telegramConfig?.chatId ||
+                        item.metadata?.telegramStatus === "sent"
+                      }
                       onClick={() => sendNotificationToTelegram(item)}
                     />
                     <button
