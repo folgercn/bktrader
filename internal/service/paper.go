@@ -204,6 +204,17 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		index = int(value)
 	}
 	state["lastStrategyEvaluationRemaining"] = maxInt(len(plan)-index, 0)
+	var nextPlannedEvent time.Time
+	var nextPlannedRole string
+	var nextPlannedReason string
+	if index >= 0 && index < len(plan) {
+		nextPlannedEvent = plan[index].EventTime
+		nextPlannedRole = plan[index].Role
+		nextPlannedReason = plan[index].Reason
+		state["lastStrategyEvaluationNextPlannedEventAt"] = formatOptionalRFC3339(nextPlannedEvent)
+		state["lastStrategyEvaluationNextPlannedRole"] = nextPlannedRole
+		state["lastStrategyEvaluationNextPlannedReason"] = nextPlannedReason
+	}
 	sourceGate := map[string]any{
 		"ready":          false,
 		"requiredCount":  0,
@@ -240,7 +251,7 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		}
 		return domain.Order{}, fmt.Errorf("paper session %s is waiting for fresh required signal source states", updatedSession.ID)
 	}
-	executionContext, signalDecision, err = p.evaluatePaperSignalDecision(session, summary, sourceStates, eventTime)
+	executionContext, signalDecision, err = p.evaluatePaperSignalDecision(session, summary, sourceStates, eventTime, nextPlannedEvent, nextPlannedRole, nextPlannedReason)
 	if err != nil {
 		state["lastStrategyEvaluationStatus"] = "decision-error"
 		state["lastStrategyDecision"] = map[string]any{
@@ -384,7 +395,7 @@ func signalSourceFreshnessWindow(binding domain.AccountSignalBinding) time.Durat
 	}
 }
 
-func (p *Platform) evaluatePaperSignalDecision(session domain.PaperSession, summary map[string]any, sourceStates map[string]any, eventTime time.Time) (StrategyExecutionContext, StrategySignalDecision, error) {
+func (p *Platform) evaluatePaperSignalDecision(session domain.PaperSession, summary map[string]any, sourceStates map[string]any, eventTime time.Time, nextPlannedEvent time.Time, nextPlannedRole, nextPlannedReason string) (StrategyExecutionContext, StrategySignalDecision, error) {
 	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
 	if err != nil {
 		return StrategyExecutionContext{}, StrategySignalDecision{}, err
@@ -416,11 +427,14 @@ func (p *Platform) evaluatePaperSignalDecision(session domain.PaperSession, summ
 		}, nil
 	}
 	decision, err := evaluator.EvaluateSignal(StrategySignalEvaluationContext{
-		ExecutionContext: executionContext,
-		PaperSessionID:   session.ID,
-		TriggerSummary:   cloneMetadata(summary),
-		SourceStates:     cloneMetadata(sourceStates),
-		EventTime:        eventTime.UTC(),
+		ExecutionContext:  executionContext,
+		PaperSessionID:    session.ID,
+		TriggerSummary:    cloneMetadata(summary),
+		SourceStates:      cloneMetadata(sourceStates),
+		EventTime:         eventTime.UTC(),
+		NextPlannedEvent:  nextPlannedEvent.UTC(),
+		NextPlannedRole:   nextPlannedRole,
+		NextPlannedReason: nextPlannedReason,
 	})
 	if err != nil {
 		return executionContext, StrategySignalDecision{}, err

@@ -136,6 +136,7 @@ go run ./cmd/platform-api
 - 通过 `source gate` 后，paper 现在会调用策略引擎的 `signal evaluation` 入口：
   - 策略引擎可以基于 `trigger + sourceStates` 决定本次是 `advance-plan` 还是 `wait`
   - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
+  - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
 - 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
 
 实盘账户当前支持：

@@ -135,6 +135,7 @@ Paper/runtime integration status:
 - after source gating passes, the platform now calls a strategy-engine-level `signal evaluation` hook:
   - the engine receives trigger summary + structured source-state snapshot
   - the engine decides whether this event should advance execution or wait
+  - the engine also sees the next planned execution timestamp so paper runtime can respect event-time ordering instead of advancing on any incoming tick
   - this hook is the migration path from plan-driven paper execution to true real-time strategy decisions
 - strategy triggering is still a minimal event-driven rollout:
   - real tick events update the linked paper session

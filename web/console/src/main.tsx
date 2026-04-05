@@ -1212,6 +1212,13 @@ function App() {
                   </strong>
                 </div>
                 <div className="session-stat">
+                  <span>Next Planned Event</span>
+                  <strong>
+                    {formatTime(String(primarySession.state?.lastStrategyEvaluationNextPlannedEventAt ?? ""))} ·{" "}
+                    {String(primarySession.state?.lastStrategyEvaluationNextPlannedRole ?? "--")}
+                  </strong>
+                </div>
+                <div className="session-stat">
                   <span>Created</span>
                   <strong>{formatTime(primarySession.createdAt)}</strong>
                 </div>

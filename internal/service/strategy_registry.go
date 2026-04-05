@@ -46,11 +46,14 @@ type StrategyExecutionContext struct {
 }
 
 type StrategySignalEvaluationContext struct {
-	ExecutionContext StrategyExecutionContext
-	PaperSessionID   string
-	TriggerSummary   map[string]any
-	SourceStates     map[string]any
-	EventTime        time.Time
+	ExecutionContext  StrategyExecutionContext
+	PaperSessionID    string
+	TriggerSummary    map[string]any
+	SourceStates      map[string]any
+	EventTime         time.Time
+	NextPlannedEvent  time.Time
+	NextPlannedRole   string
+	NextPlannedReason string
 }
 
 type StrategySignalDecision struct {
@@ -188,14 +191,28 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		action = "wait"
 		reason = "missing-source-states"
 	}
+	if action == "advance-plan" && !context.NextPlannedEvent.IsZero() && context.EventTime.Before(context.NextPlannedEvent) {
+		action = "wait"
+		reason = "planned-event-not-reached"
+	}
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
 		Metadata: map[string]any{
-			"trigger":          trigger,
-			"sourceStateCount": len(sourceStates),
-			"symbol":           symbol,
-			"triggerSymbol":    triggerSymbol,
+			"trigger":           trigger,
+			"sourceStateCount":  len(sourceStates),
+			"symbol":            symbol,
+			"triggerSymbol":     triggerSymbol,
+			"nextPlannedEvent":  formatOptionalRFC3339(context.NextPlannedEvent),
+			"nextPlannedRole":   context.NextPlannedRole,
+			"nextPlannedReason": context.NextPlannedReason,
 		},
 	}, nil
+}
+
+func formatOptionalRFC3339(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }
