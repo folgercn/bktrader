@@ -364,6 +364,13 @@ type LiveNextAction = {
   detail: string;
 };
 
+type LiveDispatchPreview = {
+  status: "ready" | "watch" | "blocked";
+  reason: string;
+  detail: string;
+  payload: Record<string, unknown>;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -543,6 +550,21 @@ function App() {
       requireTick: true,
       requireOrderBook: strategySignalBindingMap[primaryLiveSession?.strategyId ?? ""]?.some((item) => item.streamType === "order_book") ?? false,
     }
+  );
+  const primaryLiveAccount =
+    (primaryLiveSession ? liveAccounts.find((item) => item.id === primaryLiveSession.accountId) : null) ?? null;
+  const primaryLiveBindings = primaryLiveSession ? accountSignalBindingMap[primaryLiveSession.accountId] ?? [] : [];
+  const primaryLiveRuntimeSessions = primaryLiveSession
+    ? signalRuntimeSessions.filter((item) => item.accountId === primaryLiveSession.accountId)
+    : [];
+  const primaryLiveDispatchPreview = deriveLiveDispatchPreview(
+    primaryLiveSession,
+    primaryLiveAccount,
+    primaryLiveBindings,
+    primaryLiveRuntimeSessions,
+    primaryLiveSessionRuntime,
+    primaryLiveSessionRuntimeReadiness,
+    primaryLiveSessionIntent
   );
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
   const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
@@ -3195,6 +3217,10 @@ function App() {
                           <div className="note-item">
                             intent-context: spread {formatMaybeNumber(intent.spreadBps)} bps · bias {String(intent.liquidityBias ?? "--")} · proximity {formatMaybeNumber(intent.entryProximityBps)} bps
                           </div>
+                          <div className="note-item">
+                            dispatch-preview: {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.reason : "open session details"} ·{" "}
+                            {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.detail : "--"}
+                          </div>
                         </div>
                         <div className="inline-actions">
                           {String(session.state?.signalRuntimeSessionId ?? "") ? (
@@ -3214,7 +3240,8 @@ function App() {
                             disabled={
                               liveSessionAction !== null ||
                               !getRecord(session.state?.lastStrategyIntent).action ||
-                              String(session.state?.dispatchMode ?? "") !== "manual-review"
+                              String(session.state?.dispatchMode ?? "") !== "manual-review" ||
+                              (primaryLiveSession?.id === session.id && primaryLiveDispatchPreview.status === "blocked")
                             }
                             onClick={() => dispatchLiveSessionIntent(session.id)}
                           />
@@ -3254,6 +3281,12 @@ function App() {
                   </div>
                   <div className="note-item">
                     dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    dispatch-preview: {primaryLiveDispatchPreview.reason} · {primaryLiveDispatchPreview.detail}
+                  </div>
+                  <div className="note-item">
+                    final-order: {String(primaryLiveDispatchPreview.payload.side ?? "--")} {formatMaybeNumber(primaryLiveDispatchPreview.payload.quantity)} {String(primaryLiveDispatchPreview.payload.symbol ?? "--")} · {String(primaryLiveDispatchPreview.payload.type ?? "--")} @ {formatMaybeNumber(primaryLiveDispatchPreview.payload.price)}
                   </div>
                   {buildTimelineNotes(primaryLiveSessionTimeline).slice(0, 4).map((line) => (
                     <div key={line} className="note-item">
@@ -4910,6 +4943,78 @@ function deriveLivePreflightSummary(
     status: "ready",
     reason: "runtime-ready",
     detail: "live runtime preflight is satisfied",
+  };
+}
+
+function deriveLiveDispatchPreview(
+  session: LiveSession | null,
+  account: AccountRecord | null,
+  bindings: SignalBinding[],
+  runtimeSessionsForAccount: SignalRuntimeSession[],
+  activeRuntime: SignalRuntimeSession | null,
+  readiness: RuntimeReadiness,
+  intent: Record<string, unknown>
+): LiveDispatchPreview {
+  const payload: Record<string, unknown> = {
+    symbol: intent.symbol ?? session?.state?.symbol ?? "--",
+    side: intent.side ?? "--",
+    type: intent.type ?? "--",
+    quantity: intent.quantity ?? session?.state?.defaultOrderQuantity ?? undefined,
+    price: intent.priceHint ?? undefined,
+    priceSource: intent.priceSource ?? "--",
+    signalKind: intent.signalKind ?? "--",
+    spreadBps: intent.spreadBps ?? undefined,
+    liquidityBias: intent.liquidityBias ?? "--",
+  };
+  if (!session) {
+    return {
+      status: "blocked",
+      reason: "no-session",
+      detail: "create a live session first",
+      payload,
+    };
+  }
+  if (!account) {
+    return {
+      status: "blocked",
+      reason: "no-live-account",
+      detail: "linked live account is missing",
+      payload,
+    };
+  }
+  const preflight = deriveLivePreflightSummary(account, bindings, runtimeSessionsForAccount, activeRuntime, readiness);
+  if (preflight.status === "blocked") {
+    return {
+      status: "blocked",
+      reason: preflight.reason,
+      detail: preflight.detail,
+      payload,
+    };
+  }
+  if (!intent.action) {
+    return {
+      status: "watch",
+      reason: "no-intent",
+      detail: "waiting for a ready live intent from strategy evaluation",
+      payload,
+    };
+  }
+  if (String(session.state?.dispatchMode ?? "") !== "manual-review") {
+    return {
+      status: "blocked",
+      reason: "unsupported-dispatch-mode",
+      detail: "only manual-review dispatch is supported right now",
+      payload,
+    };
+  }
+  return {
+    status: preflight.status === "watch" ? "watch" : "ready",
+    reason: preflight.status === "watch" ? "preflight-warning" : "dispatch-ready",
+    detail:
+      preflight.status === "watch"
+        ? `dispatch is possible, but runtime still has a warning: ${preflight.reason}`
+        : "intent, runtime, and live preflight are aligned",
+    payload,
   };
 }
 
