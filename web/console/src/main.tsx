@@ -878,6 +878,11 @@ function App() {
     }
   }
 
+  function jumpToSignalRuntimeSession(sessionId: string) {
+    setSelectedSignalRuntimeId(sessionId);
+    window.location.hash = "signals";
+  }
+
   async function createBacktestRun() {
     try {
       setBacktestAction(true);
@@ -1568,6 +1573,14 @@ function App() {
                 </div>
               </div>
               <div className="session-actions">
+                {primaryLinkedSignalRuntime ? (
+                  <ActionButton
+                    label="Open Signal Runtime"
+                    variant="ghost"
+                    disabled={false}
+                    onClick={() => jumpToSignalRuntimeSession(primaryLinkedSignalRuntime.id)}
+                  />
+                ) : null}
                 <ActionButton
                   label="Start"
                   disabled={sessionAction !== null || primarySession.status === "RUNNING"}
@@ -2085,6 +2098,15 @@ function App() {
                           <span>{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</span>
                           <span>{formatTime(String(activeRuntimeState.lastEventAt ?? ""))}</span>
                         </div>
+                        {activeRuntime ? (
+                          <div className="inline-actions">
+                            <ActionButton
+                              label="Open Runtime"
+                              variant="ghost"
+                              onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
