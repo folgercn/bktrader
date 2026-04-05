@@ -121,6 +121,11 @@ go run ./cmd/platform-api
   - `order_book` 摘要会返回 `bestBid / bestAsk / bestBidQty / bestAskQty`
 - `okx-market-ws` 目前仍先作为可启动骨架保留，下一步再补齐真实消息消费
 
+当前 `paper session` 已经开始接入 signal runtime：
+- 创建 `executionDataSource=tick` 的 paper session 时，会自动生成并挂上 `signalRuntimeSessionId`
+- 启动 paper session 时，会先把 linked signal runtime 拉起
+- 现在这一步先打通“linked runtime lifecycle”，下一步再把实时 tick 事件真正推进到策略触发逻辑
+
 实盘账户当前支持：
 - `LIVE` 账户默认状态为 `PENDING_SETUP`
 - 通过 `POST /api/v1/live/accounts/{id}/binding` 绑定 adapter 后会切到 `CONFIGURED`

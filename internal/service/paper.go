@@ -81,6 +81,9 @@ func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, err
 	if err != nil {
 		return domain.PaperSession{}, err
 	}
+	if err := p.ensurePaperSignalRuntimeStarted(session); err != nil {
+		return domain.PaperSession{}, err
+	}
 	if _, _, err := p.ensurePaperExecutionPlan(session); err != nil {
 		return domain.PaperSession{}, err
 	}
@@ -125,6 +128,7 @@ func (p *Platform) StopPaperSession(sessionID string) (domain.PaperSession, erro
 	if exists {
 		cancel()
 	}
+	_, _ = p.stopLinkedSignalRuntime(session)
 	return session, nil
 }
 
@@ -475,11 +479,112 @@ func (p *Platform) syncPaperSessionRuntime(session domain.PaperSession) (domain.
 		state["planIndex"] = 0
 	}
 
+	if updatedState, err := p.syncPaperSignalRuntimeState(session, parameters, state); err == nil {
+		state = updatedState
+	} else {
+		return domain.PaperSession{}, err
+	}
+
 	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
 	if err != nil {
 		return domain.PaperSession{}, err
 	}
 	return updatedSession, nil
+}
+
+func (p *Platform) syncPaperSignalRuntimeState(session domain.PaperSession, parameters map[string]any, state map[string]any) (map[string]any, error) {
+	state = cloneMetadata(state)
+	executionDataSource := stringValue(parameters["executionDataSource"])
+	accountBindings, err := p.ListAccountSignalBindings(session.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	strategyBindings, err := p.ListStrategySignalBindings(session.StrategyID)
+	if err != nil {
+		return nil, err
+	}
+	hasBindings := len(accountBindings) > 0 || len(strategyBindings) > 0
+	state["signalRuntimeMode"] = "detached"
+	state["signalRuntimeRequired"] = false
+	if !hasBindings {
+		delete(state, "signalRuntimePlan")
+		delete(state, "signalRuntimeSessionId")
+		delete(state, "signalRuntimeStatus")
+		return state, nil
+	}
+
+	plan, err := p.BuildSignalRuntimePlan(session.AccountID, session.StrategyID)
+	if err != nil {
+		return nil, err
+	}
+	state["signalRuntimePlan"] = plan
+	state["signalRuntimeMode"] = "linked"
+	required := executionDataSource == "tick"
+	state["signalRuntimeRequired"] = required
+	state["signalRuntimeReady"] = boolValue(plan["ready"])
+
+	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		runtimeSession, err := p.CreateSignalRuntimeSession(session.AccountID, session.StrategyID)
+		if err != nil {
+			if required {
+				return nil, err
+			}
+			state["signalRuntimeStatus"] = "ERROR"
+			state["signalRuntimeError"] = err.Error()
+			return state, nil
+		}
+		runtimeSessionID = runtimeSession.ID
+		state["signalRuntimeSessionId"] = runtimeSession.ID
+		state["signalRuntimeStatus"] = runtimeSession.Status
+	} else {
+		runtimeSession, err := p.GetSignalRuntimeSession(runtimeSessionID)
+		if err == nil {
+			state["signalRuntimeStatus"] = runtimeSession.Status
+		}
+	}
+
+	if required && !boolValue(plan["ready"]) {
+		state["signalRuntimeStatus"] = "BLOCKED"
+	}
+	return state, nil
+}
+
+func (p *Platform) ensurePaperSignalRuntimeStarted(session domain.PaperSession) error {
+	state := cloneMetadata(session.State)
+	if !boolValue(state["signalRuntimeRequired"]) {
+		return nil
+	}
+	if !boolValue(state["signalRuntimeReady"]) {
+		return fmt.Errorf("paper session %s requires a ready signal runtime plan before start", session.ID)
+	}
+	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		return fmt.Errorf("paper session %s has no linked signal runtime session", session.ID)
+	}
+	runtimeSession, err := p.StartSignalRuntimeSession(runtimeSessionID)
+	if err != nil {
+		return err
+	}
+	state["signalRuntimeStatus"] = runtimeSession.Status
+	state["signalRuntimeSessionId"] = runtimeSession.ID
+	_, err = p.store.UpdatePaperSessionState(session.ID, state)
+	return err
+}
+
+func (p *Platform) stopLinkedSignalRuntime(session domain.PaperSession) (domain.SignalRuntimeSession, error) {
+	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("paper session %s has no linked signal runtime session", session.ID)
+	}
+	runtimeSession, err := p.StopSignalRuntimeSession(runtimeSessionID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	state := cloneMetadata(session.State)
+	state["signalRuntimeStatus"] = runtimeSession.Status
+	_, _ = p.store.UpdatePaperSessionState(session.ID, state)
+	return runtimeSession, nil
 }
 
 func (p *Platform) resolveCurrentStrategyVersion(strategyID string) (domain.StrategyVersion, error) {
