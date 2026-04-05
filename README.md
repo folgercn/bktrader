@@ -367,6 +367,11 @@ POSTGRES_DSN=postgres://postgres:postgres@postgres:5432/bktrader?sslmode=disable
 REDIS_ADDR=redis:6379
 NATS_URL=nats://nats:4222
 PAPER_TICK_INTERVAL=15
+TRADE_TICK_FRESHNESS_SECONDS=15
+ORDER_BOOK_FRESHNESS_SECONDS=10
+SIGNAL_BAR_FRESHNESS_SECONDS=30
+RUNTIME_QUIET_SECONDS=30
+PAPER_START_READINESS_TIMEOUT_SECONDS=5
 ```
 
 > 当前 `cd.yml` 默认推送镜像到 `ghcr.io/<owner>/bktrader:latest`，并在 `main` 分支 push 后触发部署。
@@ -389,6 +394,7 @@ PAPER_TICK_INTERVAL=15
 - 净值快照在创建模拟会话时和模拟订单成交时自动追加。
 - 模拟交易会话支持启动、停止和手动推进；活跃会话从 `FINAL_1D_LEDGER_BEST_SL.csv` 回放策略交易账本。
 - 模拟会话状态在 `paper_sessions.state` 中持久化策略执行计划进度，`planIndex` 可跨重启保持。
+- `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 paper preflight 共享同一套 freshness / quiet / readiness timeout 配置。
 Parity checks:
 ```bash
 python3 scripts/check_1d_1min_parity.py

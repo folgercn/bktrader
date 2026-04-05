@@ -40,6 +40,15 @@ type Platform struct {
 	minuteDataDir   string
 	tickDataDir     string
 	tickManifest    []tradeArchiveManifestEntry
+	runtimePolicy   RuntimePolicy
+}
+
+type RuntimePolicy struct {
+	TradeTickFreshnessSeconds      int `json:"tradeTickFreshnessSeconds"`
+	OrderBookFreshnessSeconds      int `json:"orderBookFreshnessSeconds"`
+	SignalBarFreshnessSeconds      int `json:"signalBarFreshnessSeconds"`
+	RuntimeQuietSeconds            int `json:"runtimeQuietSeconds"`
+	PaperStartReadinessTimeoutSecs int `json:"paperStartReadinessTimeoutSeconds"`
 }
 
 // NewPlatform 创建并初始化平台服务实例。
@@ -54,6 +63,13 @@ func NewPlatform(store store.Repository) *Platform {
 		signalSources:   make(map[string]SignalSourceProvider),
 		signalAdapters:  make(map[string]SignalRuntimeAdapter),
 		signalSessions:  make(map[string]domain.SignalRuntimeSession),
+		runtimePolicy: RuntimePolicy{
+			TradeTickFreshnessSeconds:      15,
+			OrderBookFreshnessSeconds:      10,
+			SignalBarFreshnessSeconds:      30,
+			RuntimeQuietSeconds:            30,
+			PaperStartReadinessTimeoutSecs: 5,
+		},
 	}
 	platform.registerBuiltInStrategyEngines()
 	platform.registerBuiltInLiveAdapters()
@@ -68,4 +84,26 @@ func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {
 	p.manifestMu.Lock()
 	p.tickManifest = nil
 	p.manifestMu.Unlock()
+}
+
+func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+	if policy.TradeTickFreshnessSeconds > 0 {
+		p.runtimePolicy.TradeTickFreshnessSeconds = policy.TradeTickFreshnessSeconds
+	}
+	if policy.OrderBookFreshnessSeconds > 0 {
+		p.runtimePolicy.OrderBookFreshnessSeconds = policy.OrderBookFreshnessSeconds
+	}
+	if policy.SignalBarFreshnessSeconds > 0 {
+		p.runtimePolicy.SignalBarFreshnessSeconds = policy.SignalBarFreshnessSeconds
+	}
+	if policy.RuntimeQuietSeconds > 0 {
+		p.runtimePolicy.RuntimeQuietSeconds = policy.RuntimeQuietSeconds
+	}
+	if policy.PaperStartReadinessTimeoutSecs > 0 {
+		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
+	}
+}
+
+func (p *Platform) RuntimePolicy() RuntimePolicy {
+	return p.runtimePolicy
 }

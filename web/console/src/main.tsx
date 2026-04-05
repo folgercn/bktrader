@@ -295,6 +295,14 @@ type AlertItem = {
   detail: string;
 };
 
+type RuntimePolicy = {
+  tradeTickFreshnessSeconds: number;
+  orderBookFreshnessSeconds: number;
+  signalBarFreshnessSeconds: number;
+  runtimeQuietSeconds: number;
+  paperStartReadinessTimeoutSeconds: number;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -315,6 +323,7 @@ function App() {
   const [signalSourceTypes, setSignalSourceTypes] = useState<SignalSourceType[]>([]);
   const [signalRuntimeAdapters, setSignalRuntimeAdapters] = useState<SignalRuntimeAdapter[]>([]);
   const [signalRuntimeSessions, setSignalRuntimeSessions] = useState<SignalRuntimeSession[]>([]);
+  const [runtimePolicy, setRuntimePolicy] = useState<RuntimePolicy | null>(null);
   const [accountSignalBindings, setAccountSignalBindings] = useState<SignalBinding[]>([]);
   const [strategySignalBindings, setStrategySignalBindings] = useState<SignalBinding[]>([]);
   const [accountSignalBindingMap, setAccountSignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
@@ -417,7 +426,10 @@ function App() {
     getRecord(primaryLinkedSignalRuntimeState.sourceStates),
     primaryLinkedSignalRuntimeSummary
   );
-  const primaryLinkedSignalRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(primaryLinkedSignalRuntimeState.sourceStates));
+  const primaryLinkedSignalRuntimeSourceSummary = deriveRuntimeSourceSummary(
+    getRecord(primaryLinkedSignalRuntimeState.sourceStates),
+    runtimePolicy
+  );
   const primaryPaperRuntimeReadiness = deriveRuntimeReadiness(
     primaryLinkedSignalRuntimeState,
     primaryLinkedSignalRuntimeSourceSummary,
@@ -433,7 +445,8 @@ function App() {
     primaryPaperRuntimeReadiness,
     primarySessionDecision,
     primarySessionDecisionMeta,
-    primarySessionSignalBarDecision
+    primarySessionSignalBarDecision,
+    runtimePolicy
   );
   const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
@@ -497,7 +510,23 @@ function App() {
   );
 
   async function loadDashboard() {
-    const [summaryData, accountData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData, liveAdapterData, signalCatalogData, signalSourceTypeData, signalRuntimeAdapterData, signalRuntimeSessionData] = await Promise.all([
+    const [
+      summaryData,
+      accountData,
+      ordersData,
+      fillsData,
+      positionsData,
+      paperSessionData,
+      strategyData,
+      backtestData,
+      backtestOptionsData,
+      liveAdapterData,
+      signalCatalogData,
+      signalSourceTypeData,
+      signalRuntimeAdapterData,
+      signalRuntimeSessionData,
+      runtimePolicyData,
+    ] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<AccountRecord[]>("/api/v1/accounts"),
       fetchJSON<Order[]>("/api/v1/orders"),
@@ -512,6 +541,7 @@ function App() {
       fetchJSON<SignalSourceType[]>("/api/v1/signal-source-types"),
       fetchJSON<SignalRuntimeAdapter[]>("/api/v1/signal-runtime/adapters"),
       fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions"),
+      fetchJSON<RuntimePolicy>("/api/v1/runtime-policy"),
     ]);
     const accountBindingEntries = await Promise.all(
       accountData.map(async (account) => [
@@ -566,6 +596,7 @@ function App() {
     setSignalSourceTypes(signalSourceTypeData);
     setSignalRuntimeAdapters(signalRuntimeAdapterData);
     setSignalRuntimeSessions(signalRuntimeSessionData);
+    setRuntimePolicy(runtimePolicyData);
     setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
     setSelectedSignalRuntimeId((current) => {
@@ -2317,7 +2348,10 @@ function App() {
                     const activeRuntimeState = getRecord(activeRuntime?.state);
                     const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
                     const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
-                    const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates));
+                    const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(
+                      getRecord(activeRuntimeState.sourceStates),
+                      runtimePolicy
+                    );
                     const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
                     const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
                     const activeRuntimeTimeline = getList(activeRuntimeState.timeline);
@@ -2330,7 +2364,8 @@ function App() {
                       activeRuntimeState,
                       activeRuntimeSourceSummary,
                       activeRuntimeReadiness,
-                      activeSignalAction
+                      activeSignalAction,
+                      runtimePolicy
                     );
                     return (
                       <div key={account.id} className="session-stat">
@@ -3480,7 +3515,7 @@ function deriveRuntimeMarketSnapshot(sourceStates: Record<string, unknown>, summ
   return snapshot;
 }
 
-function deriveRuntimeSourceSummary(sourceStates: Record<string, unknown>): RuntimeSourceSummary {
+function deriveRuntimeSourceSummary(sourceStates: Record<string, unknown>, policy: RuntimePolicy | null): RuntimeSourceSummary {
   const states = Object.values(sourceStates).map((value) => getRecord(value));
   const now = Date.now();
   let tradeTickCount = 0;
@@ -3490,6 +3525,14 @@ function deriveRuntimeSourceSummary(sourceStates: Record<string, unknown>): Runt
 
   for (const state of states) {
     const streamType = String(state.streamType ?? "").trim().toLowerCase();
+    const freshnessSeconds =
+      streamType === "trade_tick"
+        ? policy?.tradeTickFreshnessSeconds ?? 15
+        : streamType === "order_book"
+          ? policy?.orderBookFreshnessSeconds ?? 10
+          : streamType === "signal_bar"
+            ? policy?.signalBarFreshnessSeconds ?? 30
+            : policy?.runtimeQuietSeconds ?? 30;
     if (streamType === "trade_tick") {
       tradeTickCount += 1;
     }
@@ -3502,7 +3545,7 @@ function deriveRuntimeSourceSummary(sourceStates: Record<string, unknown>): Runt
       if (latestEventAt === "" || parsed > Date.parse(latestEventAt)) {
         latestEventAt = lastEventAt;
       }
-      if (now - parsed > 15_000) {
+      if (now-parsed > freshnessSeconds*1000) {
         staleCount += 1;
       }
     }
@@ -3718,10 +3761,12 @@ function derivePaperAlerts(
   readiness: RuntimeReadiness,
   decision: Record<string, unknown>,
   decisionMeta: Record<string, unknown>,
-  signalBarDecision: Record<string, unknown>
+  signalBarDecision: Record<string, unknown>,
+  policy: RuntimePolicy | null
 ): AlertItem[] {
   const alerts: AlertItem[] = [];
   const lastEventAt = Date.parse(String(runtimeState.lastEventAt ?? ""));
+  const runtimeQuietMs = (policy?.runtimeQuietSeconds ?? 30) * 1000;
   const evaluationStatus = String(session?.state?.lastStrategyEvaluationStatus ?? "").trim().toLowerCase();
   const decisionState = String(decisionMeta.decisionState ?? decision.action ?? "").trim().toLowerCase();
   const signalReason = String(signalBarDecision.reason ?? "").trim().toLowerCase();
@@ -3743,8 +3788,12 @@ function derivePaperAlerts(
   if (signalReason === "insufficient-signal-bars") {
     alerts.push({ level: "warning", title: "Signal filter blocked", detail: "insufficient closed signal bars for MA20 / t-1 / t-2" });
   }
-  if (Number.isFinite(lastEventAt) && Date.now() - lastEventAt > 30_000) {
-    alerts.push({ level: "warning", title: "Runtime quiet", detail: "no runtime events observed in the last 30s" });
+  if (Number.isFinite(lastEventAt) && Date.now()-lastEventAt > runtimeQuietMs) {
+    alerts.push({
+      level: "warning",
+      title: "Runtime quiet",
+      detail: `no runtime events observed in the last ${policy?.runtimeQuietSeconds ?? 30}s`,
+    });
   }
   return dedupeAlerts(alerts);
 }
@@ -3754,11 +3803,13 @@ function deriveLiveAlerts(
   runtimeState: Record<string, unknown>,
   sourceSummary: RuntimeSourceSummary,
   readiness: RuntimeReadiness,
-  signalAction: { bias: string; state: string; reason: string }
+  signalAction: { bias: string; state: string; reason: string },
+  policy: RuntimePolicy | null
 ): AlertItem[] {
   const alerts: AlertItem[] = [];
   const health = String(runtimeState.health ?? "").trim().toLowerCase();
   const lastEventAt = Date.parse(String(runtimeState.lastEventAt ?? ""));
+  const runtimeQuietMs = (policy?.runtimeQuietSeconds ?? 30) * 1000;
 
   if (account.status !== "CONFIGURED") {
     alerts.push({ level: "warning", title: "Account not configured", detail: `status=${account.status}` });
@@ -3777,8 +3828,12 @@ function deriveLiveAlerts(
   if (signalAction.state === "waiting") {
     alerts.push({ level: "info", title: "Signal waiting", detail: signalAction.reason });
   }
-  if (Number.isFinite(lastEventAt) && Date.now() - lastEventAt > 30_000) {
-    alerts.push({ level: "warning", title: "Runtime quiet", detail: "no runtime events observed in the last 30s" });
+  if (Number.isFinite(lastEventAt) && Date.now()-lastEventAt > runtimeQuietMs) {
+    alerts.push({
+      level: "warning",
+      title: "Runtime quiet",
+      detail: `no runtime events observed in the last ${policy?.runtimeQuietSeconds ?? 30}s`,
+    });
   }
   return dedupeAlerts(alerts);
 }

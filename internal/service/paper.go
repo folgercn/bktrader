@@ -291,10 +291,10 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		"metadata": cloneMetadata(signalDecision.Metadata),
 	}
 	appendTimelineEvent(state, "strategy", eventTime, "decision", map[string]any{
-		"action":       signalDecision.Action,
-		"reason":       signalDecision.Reason,
+		"action":        signalDecision.Action,
+		"reason":        signalDecision.Reason,
 		"decisionState": stringValue(signalDecision.Metadata["decisionState"]),
-		"signalKind":   stringValue(signalDecision.Metadata["signalKind"]),
+		"signalKind":    stringValue(signalDecision.Metadata["signalKind"]),
 	})
 	state["lastStrategyEvaluationContext"] = map[string]any{
 		"strategyVersionId":   executionContext.StrategyVersionID,
@@ -412,7 +412,7 @@ func (p *Platform) evaluateSignalSourceReadiness(session domain.PaperSession, ru
 		}
 		available++
 		lastEventAt := parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
-		maxAge := signalSourceFreshnessWindow(binding)
+		maxAge := p.signalSourceFreshnessWindow(binding)
 		if lastEventAt.IsZero() || eventTime.Sub(lastEventAt) > maxAge {
 			stale = append(stale, map[string]any{
 				"sourceKey":   binding.SourceKey,
@@ -436,17 +436,19 @@ func (p *Platform) evaluateSignalSourceReadiness(session domain.PaperSession, ru
 	return result
 }
 
-func signalSourceFreshnessWindow(binding domain.AccountSignalBinding) time.Duration {
+func (p *Platform) signalSourceFreshnessWindow(binding domain.AccountSignalBinding) time.Duration {
 	if value, ok := toFloat64(binding.Options["freshnessSeconds"]); ok && value > 0 {
 		return time.Duration(value) * time.Second
 	}
 	switch strings.ToLower(strings.TrimSpace(binding.StreamType)) {
 	case "trade_tick":
-		return 15 * time.Second
+		return time.Duration(p.runtimePolicy.TradeTickFreshnessSeconds) * time.Second
 	case "order_book":
-		return 10 * time.Second
+		return time.Duration(p.runtimePolicy.OrderBookFreshnessSeconds) * time.Second
+	case "signal_bar":
+		return time.Duration(p.runtimePolicy.SignalBarFreshnessSeconds) * time.Second
 	default:
-		return 30 * time.Second
+		return time.Duration(p.runtimePolicy.RuntimeQuietSeconds) * time.Second
 	}
 }
 
@@ -985,7 +987,7 @@ func (p *Platform) ensurePaperSignalRuntimeStarted(session domain.PaperSession) 
 	if err != nil {
 		return domain.PaperSession{}, err
 	}
-	session, err = p.awaitPaperSignalRuntimeReadiness(session, runtimeSession.ID, 5*time.Second)
+	session, err = p.awaitPaperSignalRuntimeReadiness(session, runtimeSession.ID, time.Duration(p.runtimePolicy.PaperStartReadinessTimeoutSecs)*time.Second)
 	if err != nil {
 		return domain.PaperSession{}, err
 	}

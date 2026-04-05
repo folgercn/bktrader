@@ -23,6 +23,13 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	// 设置模拟盘 Ticker 间隔（来自配置）
 	platform.SetTickInterval(cfg.PaperTickInterval)
 	platform.SetBacktestDataDirs(cfg.MinuteDataDir, cfg.TickDataDir)
+	platform.SetRuntimePolicy(service.RuntimePolicy{
+		TradeTickFreshnessSeconds:      cfg.TradeTickFreshnessSeconds,
+		OrderBookFreshnessSeconds:      cfg.OrderBookFreshnessSeconds,
+		SignalBarFreshnessSeconds:      cfg.SignalBarFreshnessSeconds,
+		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
+		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
+	})
 
 	return &http.Server{
 		Addr:    cfg.HTTPAddr,
