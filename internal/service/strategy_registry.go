@@ -51,6 +51,7 @@ type StrategySignalEvaluationContext struct {
 	PaperSessionID    string
 	TriggerSummary    map[string]any
 	SourceStates      map[string]any
+	SignalBarStates   map[string]any
 	CurrentPosition   map[string]any
 	EventTime         time.Time
 	NextPlannedEvent  time.Time
@@ -179,6 +180,7 @@ func (e bkStrategyEngine) Run(context StrategyExecutionContext) (map[string]any,
 func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
 	trigger := cloneMetadata(context.TriggerSummary)
 	sourceStates := cloneMetadata(context.SourceStates)
+	signalBarStates := cloneMetadata(context.SignalBarStates)
 	currentPosition := cloneMetadata(context.CurrentPosition)
 	action := "advance-plan"
 	reason := "trigger-source-ready"
@@ -196,9 +198,26 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		action = "wait"
 		reason = "missing-source-states"
 	}
+	signalBarState, signalBarStateKey := pickSignalBarState(signalBarStates, context.ExecutionContext.Symbol, context.ExecutionContext.SignalTimeframe)
+	if action == "advance-plan" && signalBarState == nil {
+		action = "wait"
+		reason = "missing-signal-bars"
+	}
 	if action == "advance-plan" && !context.NextPlannedEvent.IsZero() && context.EventTime.Before(context.NextPlannedEvent) {
 		action = "wait"
 		reason = "planned-event-not-reached"
+	}
+	signalBarDecision := map[string]any{}
+	signalFilterReady := true
+	if signalBarState != nil {
+		signalBarDecision = evaluateSignalBarGate(signalBarState, context.NextPlannedSide, context.NextPlannedRole)
+		if value, ok := signalBarDecision["ready"].(bool); ok {
+			signalFilterReady = value
+		}
+	}
+	if action == "advance-plan" && !signalFilterReady {
+		action = "wait"
+		reason = "signal-filter-not-ready"
 	}
 	marketPrice, marketSource := pickDecisionMarketPrice(trigger, sourceStates, context.NextPlannedSide)
 	orderBookStats := extractOrderBookStats(trigger, sourceStates)
@@ -234,9 +253,13 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"signalKind":        signalKind,
 			"trigger":           trigger,
 			"sourceStateCount":  len(sourceStates),
+			"signalBarStateCount": len(signalBarStates),
 			"currentPosition":   currentPosition,
 			"symbol":            symbol,
 			"triggerSymbol":     triggerSymbol,
+			"signalBarStateKey": signalBarStateKey,
+			"signalBarState":    cloneMetadata(signalBarState),
+			"signalBarDecision": signalBarDecision,
 			"nextPlannedEvent":  formatOptionalRFC3339(context.NextPlannedEvent),
 			"nextPlannedPrice":  context.NextPlannedPrice,
 			"nextPlannedSide":   context.NextPlannedSide,
@@ -356,8 +379,12 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 		return "ignore-event"
 	case "missing-source-states":
 		return "waiting-inputs"
+	case "missing-signal-bars":
+		return "waiting-signal-bars"
 	case "planned-event-not-reached":
 		return "waiting-time"
+	case "signal-filter-not-ready":
+		return "waiting-signal-filter"
 	case "price-not-actionable":
 		return "waiting-price"
 	case "spread-too-wide":
@@ -495,6 +522,16 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 			return "hold-" + strings.ToLower(positionSide)
 		}
 		return "hold"
+	case "missing-signal-bars":
+		if hasPosition {
+			return "hold-" + strings.ToLower(positionSide)
+		}
+		return "hold"
+	case "signal-filter-not-ready":
+		if hasPosition {
+			return "hold-" + strings.ToLower(positionSide)
+		}
+		return "hold"
 	case "non-trigger-event", "symbol-mismatch":
 		return "ignore"
 	default:
@@ -503,6 +540,70 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 		}
 		return "hold"
 	}
+}
+
+func pickSignalBarState(signalBarStates map[string]any, symbol, timeframe string) (map[string]any, string) {
+	normalizedSymbol := NormalizeSymbol(symbol)
+	normalizedTimeframe := strings.ToLower(strings.TrimSpace(timeframe))
+	for key, raw := range signalBarStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		if normalizedSymbol != "" && NormalizeSymbol(stringValue(entry["symbol"])) != normalizedSymbol {
+			continue
+		}
+		if normalizedTimeframe != "" && strings.ToLower(strings.TrimSpace(stringValue(entry["timeframe"]))) != normalizedTimeframe {
+			continue
+		}
+		return cloneMetadata(entry), key
+	}
+	return nil, ""
+}
+
+func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole string) map[string]any {
+	result := map[string]any{
+		"ready":   true,
+		"reason":  "signal-bar-ready",
+		"side":    strings.ToUpper(strings.TrimSpace(nextSide)),
+		"role":    strings.ToLower(strings.TrimSpace(nextRole)),
+		"ma20":    parseFloatValue(signalBarState["ma20"]),
+		"atr14":   parseFloatValue(signalBarState["atr14"]),
+		"current": cloneMetadata(mapValue(signalBarState["current"])),
+		"prevBar1": cloneMetadata(mapValue(signalBarState["prevBar1"])),
+		"prevBar2": cloneMetadata(mapValue(signalBarState["prevBar2"])),
+	}
+	current := mapValue(signalBarState["current"])
+	prevBar1 := mapValue(signalBarState["prevBar1"])
+	prevBar2 := mapValue(signalBarState["prevBar2"])
+	ma20 := parseFloatValue(signalBarState["ma20"])
+	if current == nil || prevBar1 == nil || prevBar2 == nil || ma20 <= 0 {
+		result["ready"] = false
+		result["reason"] = "insufficient-signal-bars"
+		return result
+	}
+	closePrice := parseFloatValue(current["close"])
+	prevHigh1 := parseFloatValue(prevBar1["high"])
+	prevHigh2 := parseFloatValue(prevBar2["high"])
+	prevLow1 := parseFloatValue(prevBar1["low"])
+	prevLow2 := parseFloatValue(prevBar2["low"])
+	longReady := closePrice > ma20 && prevHigh2 > prevHigh1
+	shortReady := closePrice < ma20 && prevLow2 < prevLow1
+	result["longReady"] = longReady
+	result["shortReady"] = shortReady
+	switch strings.ToUpper(strings.TrimSpace(nextSide)) {
+	case "BUY":
+		if !longReady {
+			result["ready"] = false
+			result["reason"] = "long-signal-not-ready"
+		}
+	case "SELL", "SHORT":
+		if !shortReady {
+			result["ready"] = false
+			result["reason"] = "short-signal-not-ready"
+		}
+	}
+	return result
 }
 
 func isFavorableBiasForPlan(nextRole, nextReason, liquidityBias string) bool {
