@@ -2261,6 +2261,7 @@ function App() {
                     const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
                     const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates));
                     const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
+                    const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
                     const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
                       requireTick: bindings.some((item) => item.streamType === "trade_tick"),
                       requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
@@ -2304,7 +2305,17 @@ function App() {
                           <span>ma20 {formatMaybeNumber(activeSignalBarState.ma20)}</span>
                           <span>atr14 {formatMaybeNumber(activeSignalBarState.atr14)}</span>
                         </div>
+                        <div className="live-account-meta">
+                          <span>signal {activeSignalAction.bias}</span>
+                          <span>{activeSignalAction.state}</span>
+                          <span>{activeSignalAction.reason}</span>
+                        </div>
                         <div className="backtest-notes">
+                          {buildSignalActionNotes(activeSignalAction).map((line) => (
+                            <div key={line} className="note-item">
+                              {line}
+                            </div>
+                          ))}
                           {buildSignalBarStateNotes(activeSignalBarState).map((line) => (
                             <div key={line} className="note-item">
                               {line}
@@ -3532,6 +3543,40 @@ function buildSignalBarStateNotes(signalBarState: Record<string, unknown>) {
     `t-1: ${formatMaybeNumber(prevBar1.open)} / ${formatMaybeNumber(prevBar1.high)} / ${formatMaybeNumber(prevBar1.low)} / ${formatMaybeNumber(prevBar1.close)}`,
     `t-2: ${formatMaybeNumber(prevBar2.open)} / ${formatMaybeNumber(prevBar2.high)} / ${formatMaybeNumber(prevBar2.low)} / ${formatMaybeNumber(prevBar2.close)}`,
   ];
+}
+
+function deriveSignalActionSummary(signalBarState: Record<string, unknown>) {
+  const current = getRecord(signalBarState.current);
+  const prevBar1 = getRecord(signalBarState.prevBar1);
+  const prevBar2 = getRecord(signalBarState.prevBar2);
+  const close = getNumber(current.close);
+  const ma20 = getNumber(signalBarState.ma20);
+  const prevHigh1 = getNumber(prevBar1.high);
+  const prevHigh2 = getNumber(prevBar2.high);
+  const prevLow1 = getNumber(prevBar1.low);
+  const prevLow2 = getNumber(prevBar2.low);
+  if (close == null || ma20 == null || prevHigh1 == null || prevHigh2 == null || prevLow1 == null || prevLow2 == null) {
+    return { bias: "neutral", state: "waiting", reason: "insufficient-signal-bars" };
+  }
+  const longReady = close > ma20 && prevHigh2 > prevHigh1;
+  const shortReady = close < ma20 && prevLow2 < prevLow1;
+  if (longReady && !shortReady) {
+    return { bias: "long", state: "ready", reason: "close>ma20 and high2>high1" };
+  }
+  if (shortReady && !longReady) {
+    return { bias: "short", state: "ready", reason: "close<ma20 and low2<low1" };
+  }
+  if (close > ma20) {
+    return { bias: "long", state: "watch", reason: "trend ok, structure not ready" };
+  }
+  if (close < ma20) {
+    return { bias: "short", state: "watch", reason: "trend ok, structure not ready" };
+  }
+  return { bias: "neutral", state: "watch", reason: "close around ma20" };
+}
+
+function buildSignalActionNotes(signalAction: { bias: string; state: string; reason: string }) {
+  return [`signal-action: ${signalAction.bias} · ${signalAction.state} · ${signalAction.reason}`];
 }
 
 function boolLabel(value: unknown) {
