@@ -320,6 +320,8 @@ type PlatformNotification = {
   metadata?: Record<string, unknown> & {
     telegramStatus?: string;
     telegramSentAt?: string;
+    telegramAttemptedAt?: string;
+    telegramLastError?: string;
   };
   updatedAt: string;
 };
@@ -1423,7 +1425,7 @@ function App() {
                     <div>
                       <StatusPill tone={alertLevelTone(item.alert.level)}>{item.alert.level}</StatusPill>
                       <StatusPill tone={item.status === "acked" ? "neutral" : alertScopeTone(item.alert.scope)}>{item.status}</StatusPill>
-                      <StatusPill tone={item.metadata?.telegramStatus === "sent" ? "ready" : "watch"}>
+                      <StatusPill tone={telegramDeliveryTone(item.metadata?.telegramStatus)}>
                         telegram {item.metadata?.telegramStatus ?? "pending"}
                       </StatusPill>
                     </div>
@@ -1435,8 +1437,19 @@ function App() {
                     <span>{item.alert.accountName || item.alert.accountId || "--"}</span>
                     <span>{item.alert.strategyName || item.alert.strategyId || "--"}</span>
                     <span>{item.alert.runtimeSessionId || item.alert.paperSessionId || "--"}</span>
-                    <span>{item.metadata?.telegramSentAt ? `sent ${formatTime(String(item.metadata.telegramSentAt))}` : "telegram pending"}</span>
+                    <span>
+                      {item.metadata?.telegramStatus === "sent" && item.metadata?.telegramSentAt
+                        ? `sent ${formatTime(String(item.metadata.telegramSentAt))}`
+                        : item.metadata?.telegramStatus === "failed" && item.metadata?.telegramAttemptedAt
+                          ? `failed ${formatTime(String(item.metadata.telegramAttemptedAt))}`
+                          : "telegram pending"}
+                    </span>
                   </div>
+                  {item.metadata?.telegramStatus === "failed" && item.metadata?.telegramLastError ? (
+                    <div className="note-item note-item-alert note-item-alert-critical">
+                      <strong>Telegram failed</strong> {String(item.metadata.telegramLastError)}
+                    </div>
+                  ) : null}
                   <div className="inline-actions">
                     <ActionButton
                       label={item.status === "acked" ? "Unack" : "Acknowledge"}
@@ -4814,6 +4827,19 @@ function alertScopeTone(scope: string): "ready" | "watch" | "blocked" | "neutral
       return "neutral";
     default:
       return "neutral";
+  }
+}
+
+function telegramDeliveryTone(status: unknown): "ready" | "watch" | "blocked" | "neutral" {
+  switch (String(status ?? "").trim().toLowerCase()) {
+    case "sent":
+      return "ready";
+    case "failed":
+      return "blocked";
+    case "pending":
+      return "watch";
+    default:
+      return "watch";
   }
 }
 

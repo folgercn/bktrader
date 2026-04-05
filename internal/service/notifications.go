@@ -49,8 +49,10 @@ func (p *Platform) ListNotifications(includeAcked bool) ([]domain.PlatformNotifi
 			}
 		}
 		if delivery, ok := telegramDeliveryByID[alert.ID]; ok {
-			notification.Metadata["telegramStatus"] = "sent"
+			notification.Metadata["telegramStatus"] = firstNonEmpty(delivery.Status, "sent")
 			notification.Metadata["telegramSentAt"] = delivery.SentAt
+			notification.Metadata["telegramAttemptedAt"] = delivery.AttemptedAt
+			notification.Metadata["telegramLastError"] = delivery.LastError
 			notification.Metadata["telegramChannel"] = delivery.Channel
 			if delivery.UpdatedAt.After(notification.UpdatedAt) {
 				notification.UpdatedAt = delivery.UpdatedAt

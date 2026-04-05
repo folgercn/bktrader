@@ -22,9 +22,10 @@ func (p *Platform) SendNotificationToTelegram(notificationID string) error {
 			continue
 		}
 		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
+			_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", err.Error())
 			return err
 		}
-		_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram")
+		_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", "")
 		return nil
 	}
 	return fmt.Errorf("notification not found: %s", notificationID)
@@ -125,7 +126,7 @@ func (p *Platform) DispatchTelegramNotifications() error {
 	}
 	delivered := make(map[string]struct{}, len(deliveries))
 	for _, item := range deliveries {
-		if strings.EqualFold(item.Channel, "telegram") {
+		if strings.EqualFold(item.Channel, "telegram") && strings.EqualFold(item.Status, "sent") {
 			delivered[item.NotificationID] = struct{}{}
 		}
 	}
@@ -142,9 +143,10 @@ func (p *Platform) DispatchTelegramNotifications() error {
 			continue
 		}
 		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
+			_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", err.Error())
 			return err
 		}
-		if _, err := p.store.UpsertNotificationDelivery(item.ID, "telegram"); err != nil {
+		if _, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", ""); err != nil {
 			return err
 		}
 	}

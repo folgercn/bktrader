@@ -263,6 +263,9 @@ type TelegramConfig struct {
 type NotificationDelivery struct {
 	NotificationID string    `json:"notificationId"`
 	Channel        string    `json:"channel"` // telegram
+	Status         string    `json:"status"`  // sent / failed
+	LastError      string    `json:"lastError,omitempty"`
+	AttemptedAt    time.Time `json:"attemptedAt"`
 	SentAt         time.Time `json:"sentAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 }

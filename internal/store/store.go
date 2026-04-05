@@ -106,5 +106,5 @@ type Repository interface {
 	// ListNotificationDeliveries 获取通知发送记录。
 	ListNotificationDeliveries() ([]domain.NotificationDelivery, error)
 	// UpsertNotificationDelivery 创建或更新通知发送记录。
-	UpsertNotificationDelivery(notificationID, channel string) (domain.NotificationDelivery, error)
+	UpsertNotificationDelivery(notificationID, channel, status, lastError string) (domain.NotificationDelivery, error)
 }

@@ -3,6 +3,7 @@ package memory
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -314,7 +315,7 @@ func (s *Store) ListNotificationDeliveries() ([]domain.NotificationDelivery, err
 	return items, nil
 }
 
-func (s *Store) UpsertNotificationDelivery(notificationID, channel string) (domain.NotificationDelivery, error) {
+func (s *Store) UpsertNotificationDelivery(notificationID, channel, status, lastError string) (domain.NotificationDelivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -322,8 +323,13 @@ func (s *Store) UpsertNotificationDelivery(notificationID, channel string) (doma
 	item := domain.NotificationDelivery{
 		NotificationID: notificationID,
 		Channel:        channel,
-		SentAt:         now,
+		Status:         status,
+		LastError:      lastError,
+		AttemptedAt:    now,
 		UpdatedAt:      now,
+	}
+	if strings.EqualFold(status, "sent") {
+		item.SentAt = now
 	}
 	s.deliveries[key] = item
 	return item, nil

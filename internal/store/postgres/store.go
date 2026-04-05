@@ -186,7 +186,7 @@ func (s *Store) UpsertTelegramConfig(config domain.TelegramConfig) (domain.Teleg
 
 func (s *Store) ListNotificationDeliveries() ([]domain.NotificationDelivery, error) {
 	rows, err := s.db.Query(`
-		select notification_id, channel, sent_at, updated_at
+		select notification_id, channel, status, last_error, attempted_at, sent_at, updated_at
 		from notification_deliveries
 		order by updated_at desc
 	`)
@@ -198,7 +198,7 @@ func (s *Store) ListNotificationDeliveries() ([]domain.NotificationDelivery, err
 	items := make([]domain.NotificationDelivery, 0)
 	for rows.Next() {
 		var item domain.NotificationDelivery
-		if err := rows.Scan(&item.NotificationID, &item.Channel, &item.SentAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.NotificationID, &item.Channel, &item.Status, &item.LastError, &item.AttemptedAt, &item.SentAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -206,20 +206,28 @@ func (s *Store) ListNotificationDeliveries() ([]domain.NotificationDelivery, err
 	return items, rows.Err()
 }
 
-func (s *Store) UpsertNotificationDelivery(notificationID, channel string) (domain.NotificationDelivery, error) {
+func (s *Store) UpsertNotificationDelivery(notificationID, channel, status, lastError string) (domain.NotificationDelivery, error) {
 	item := domain.NotificationDelivery{
 		NotificationID: notificationID,
 		Channel:        channel,
-		SentAt:         time.Now().UTC(),
+		Status:         status,
+		LastError:      lastError,
+		AttemptedAt:    time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
 	}
+	if status == "sent" {
+		item.SentAt = item.AttemptedAt
+	}
 	_, err := s.db.Exec(`
-		insert into notification_deliveries (notification_id, channel, sent_at, updated_at)
-		values ($1, $2, $3, $4)
+		insert into notification_deliveries (notification_id, channel, status, last_error, attempted_at, sent_at, updated_at)
+		values ($1, $2, $3, $4, $5, $6, $7)
 		on conflict (notification_id, channel) do update set
+			status = excluded.status,
+			last_error = excluded.last_error,
+			attempted_at = excluded.attempted_at,
 			sent_at = excluded.sent_at,
 			updated_at = excluded.updated_at
-	`, item.NotificationID, item.Channel, item.SentAt, item.UpdatedAt)
+	`, item.NotificationID, item.Channel, item.Status, item.LastError, item.AttemptedAt, item.SentAt, item.UpdatedAt)
 	if err != nil {
 		return domain.NotificationDelivery{}, err
 	}
