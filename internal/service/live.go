@@ -73,6 +73,10 @@ func (p *Platform) DispatchLiveSessionIntent(sessionID string) (domain.Order, er
 	if err != nil {
 		return domain.Order{}, err
 	}
+	return p.dispatchLiveSessionIntent(session)
+}
+
+func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain.Order, error) {
 	if !strings.EqualFold(session.Status, "RUNNING") && !strings.EqualFold(session.Status, "READY") {
 		return domain.Order{}, fmt.Errorf("live session %s is not dispatchable in status %s", session.ID, session.Status)
 	}
@@ -113,9 +117,11 @@ func (p *Platform) DispatchLiveSessionIntent(sessionID string) (domain.Order, er
 	}
 
 	state := cloneMetadata(session.State)
+	intentSignature := buildLiveIntentSignature(intent)
 	state["lastDispatchedOrderId"] = created.ID
 	state["lastDispatchedAt"] = time.Now().UTC().Format(time.RFC3339)
 	state["lastDispatchedIntent"] = intent
+	state["lastDispatchedIntentSignature"] = intentSignature
 	delete(state, "lastStrategyIntent")
 	appendTimelineEvent(state, "order", time.Now().UTC(), "live-intent-dispatched", map[string]any{
 		"orderId": created.ID,
@@ -233,8 +239,10 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	}
 	if intent != nil {
 		state["lastStrategyIntent"] = intent
+		state["lastStrategyIntentSignature"] = buildLiveIntentSignature(intent)
 	} else {
 		delete(state, "lastStrategyIntent")
+		delete(state, "lastStrategyIntentSignature")
 	}
 	appendTimelineEvent(state, "strategy", eventTime, "decision", map[string]any{
 		"action":        decision.Action,
@@ -250,8 +258,24 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	} else {
 		state["lastStrategyEvaluationStatus"] = "waiting-decision"
 	}
-	_, err = p.store.UpdateLiveSessionState(session.ID, state)
-	return err
+	updatedSession, err := p.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		return err
+	}
+	if !shouldAutoDispatchLiveIntent(updatedSession, intent, eventTime) {
+		return nil
+	}
+	if _, err := p.dispatchLiveSessionIntent(updatedSession); err != nil {
+		state = cloneMetadata(updatedSession.State)
+		state["lastAutoDispatchError"] = err.Error()
+		state["lastAutoDispatchAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
+		appendTimelineEvent(state, "order", eventTime, "live-auto-dispatch-error", map[string]any{
+			"error": err.Error(),
+		})
+		_, _ = p.store.UpdateLiveSessionState(updatedSession.ID, state)
+		return err
+	}
+	return nil
 }
 
 func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time) (StrategyExecutionContext, StrategySignalDecision, error) {
@@ -541,5 +565,40 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	if mode := strings.TrimSpace(stringValue(overrides["dispatchMode"])); mode != "" {
 		normalized["dispatchMode"] = mode
 	}
+	if seconds := maxIntValue(overrides["dispatchCooldownSeconds"], 0); seconds > 0 {
+		normalized["dispatchCooldownSeconds"] = seconds
+	}
 	return normalized
+}
+
+func buildLiveIntentSignature(intent map[string]any) string {
+	return strings.Join([]string{
+		stringValue(intent["action"]),
+		stringValue(intent["side"]),
+		NormalizeSymbol(stringValue(intent["symbol"])),
+		stringValue(intent["signalKind"]),
+		stringValue(intent["signalBarStateKey"]),
+	}, "|")
+}
+
+func shouldAutoDispatchLiveIntent(session domain.LiveSession, intent map[string]any, eventTime time.Time) bool {
+	if len(intent) == 0 {
+		return false
+	}
+	if strings.TrimSpace(stringValue(session.State["dispatchMode"])) != "auto-dispatch" {
+		return false
+	}
+	signature := buildLiveIntentSignature(intent)
+	if signature == "" {
+		return false
+	}
+	lastSignature := stringValue(session.State["lastDispatchedIntentSignature"])
+	if signature != "" && signature == lastSignature {
+		lastDispatchedAt := parseOptionalRFC3339(stringValue(session.State["lastDispatchedAt"]))
+		cooldown := time.Duration(maxIntValue(session.State["dispatchCooldownSeconds"], 30)) * time.Second
+		if !lastDispatchedAt.IsZero() && eventTime.Sub(lastDispatchedAt) < cooldown {
+			return false
+		}
+	}
+	return true
 }

@@ -477,6 +477,7 @@ function App() {
     symbol: "BTCUSDT",
     defaultOrderQuantity: "0.001",
     dispatchMode: "manual-review",
+    dispatchCooldownSeconds: "30",
   });
   const [accountSignalForm, setAccountSignalForm] = useState({
     accountId: "",
@@ -870,6 +871,7 @@ function App() {
           symbol: current.symbol || "BTCUSDT",
           defaultOrderQuantity: current.defaultOrderQuantity || "0.001",
           dispatchMode: current.dispatchMode || "manual-review",
+          dispatchCooldownSeconds: current.dispatchCooldownSeconds || "30",
         }));
     const availableSignalSources = signalCatalogData.sources ?? [];
     setAccountSignalForm((current) => ({
@@ -1174,6 +1176,7 @@ function App() {
           symbol: liveSessionForm.symbol,
           defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
           dispatchMode: liveSessionForm.dispatchMode,
+          dispatchCooldownSeconds: Number(liveSessionForm.dispatchCooldownSeconds) || 30,
         }),
       });
       await loadDashboard();
@@ -3156,7 +3159,15 @@ function App() {
                     onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchMode: event.target.value }))}
                   >
                     <option value="manual-review">manual-review</option>
+                    <option value="auto-dispatch">auto-dispatch</option>
                   </select>
+                </label>
+                <label className="form-field">
+                  <span>Dispatch Cooldown (s)</span>
+                  <input
+                    value={liveSessionForm.dispatchCooldownSeconds}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
+                  />
                 </label>
               </div>
               <div className="backtest-actions">
@@ -3280,7 +3291,10 @@ function App() {
                     intent-context: spread {formatMaybeNumber(primaryLiveSessionIntent.spreadBps)} bps · bias {String(primaryLiveSessionIntent.liquidityBias ?? "--")} · ma20 {formatMaybeNumber(primaryLiveSessionIntent.ma20)} · atr14 {formatMaybeNumber(primaryLiveSessionIntent.atr14)}
                   </div>
                   <div className="note-item">
-                    dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
+                    dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · cooldown {String(primaryLiveSession?.state?.dispatchCooldownSeconds ?? "--")}s · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    auto-dispatch: last-at {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · last-error {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}
                   </div>
                   <div className="note-item">
                     dispatch-preview: {primaryLiveDispatchPreview.reason} · {primaryLiveDispatchPreview.detail}
