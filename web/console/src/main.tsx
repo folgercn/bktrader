@@ -444,6 +444,7 @@ function App() {
   const [liveCreateAction, setLiveCreateAction] = useState(false);
   const [liveBindAction, setLiveBindAction] = useState(false);
   const [liveSyncAction, setLiveSyncAction] = useState<string | null>(null);
+  const [liveAccountSyncAction, setLiveAccountSyncAction] = useState<string | null>(null);
   const [liveOrderAction, setLiveOrderAction] = useState(false);
   const [liveSessionAction, setLiveSessionAction] = useState<string | null>(null);
   const [liveSessionCreateAction, setLiveSessionCreateAction] = useState(false);
@@ -1302,6 +1303,19 @@ function App() {
       setError(err instanceof Error ? err.message : "Failed to sync live order");
     } finally {
       setLiveSyncAction(null);
+    }
+  }
+
+  async function syncLiveAccount(accountId: string) {
+    setLiveAccountSyncAction(accountId);
+    try {
+      await fetchJSON(`/api/v1/live/accounts/${accountId}/sync`, { method: "POST" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sync live account");
+    } finally {
+      setLiveAccountSyncAction(null);
     }
   }
 
@@ -3799,6 +3813,7 @@ function App() {
                 <div className="live-card-list">
                   {liveAccounts.map((account) => {
                     const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
+                    const syncSnapshot = getRecord(getRecord(account.metadata).liveSyncSnapshot);
                     const bindings = accountSignalBindingMap[account.id] ?? [];
                     const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
                     const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
@@ -3840,6 +3855,11 @@ function App() {
                           <span>{account.exchange}</span>
                           <span>{String(binding.adapterKey ?? "--")}</span>
                           <span>{String(binding.positionMode ?? "--")} / {String(binding.marginMode ?? "--")}</span>
+                        </div>
+                        <div className="live-account-meta">
+                          <span>sync {String(syncSnapshot.syncStatus ?? "UNSYNCED")}</span>
+                          <span>{formatTime(String(getRecord(account.metadata).lastLiveSyncAt ?? ""))}</span>
+                          <span>{String(syncSnapshot.source ?? "--")}</span>
                         </div>
                         <div className="live-account-meta">
                           <span>{bindings.length} signal bindings</span>
@@ -3926,6 +3946,9 @@ function App() {
                           <div className="note-item">
                             next-action: {liveNextAction.label} · {liveNextAction.detail}
                           </div>
+                          <div className="note-item">
+                            account-sync: orders {String(syncSnapshot.orderCount ?? "--")} · fills {String(syncSnapshot.fillCount ?? "--")} · positions {String(syncSnapshot.positionCount ?? "--")}
+                          </div>
                           {buildSignalBarStateNotes(activeSignalBarState).map((line) => (
                             <div key={line} className="note-item">
                               {line}
@@ -3947,15 +3970,21 @@ function App() {
                             </div>
                           ))}
                         </div>
-                        {activeRuntime ? (
-                          <div className="inline-actions">
+                        <div className="inline-actions">
+                          <ActionButton
+                            label={liveAccountSyncAction === account.id ? "Syncing..." : "Sync Account"}
+                            variant="ghost"
+                            disabled={liveAccountSyncAction !== null}
+                            onClick={() => syncLiveAccount(account.id)}
+                          />
+                          {activeRuntime ? (
                             <ActionButton
                               label="Open Runtime"
                               variant="ghost"
                               onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}
                             />
-                          </div>
-                        ) : null}
+                          ) : null}
+                        </div>
                       </div>
                     );
                   })}

@@ -13,6 +13,85 @@ func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 	return p.store.ListLiveSessions()
 }
 
+func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
+	account, err := p.store.GetAccount(accountID)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	if !strings.EqualFold(account.Mode, "LIVE") {
+		return domain.Account{}, fmt.Errorf("account %s is not a LIVE account", accountID)
+	}
+	_, binding, err := p.resolveLiveAdapterForAccount(account)
+	if err != nil {
+		return domain.Account{}, err
+	}
+
+	orders, err := p.store.ListOrders()
+	if err != nil {
+		return domain.Account{}, err
+	}
+	fills, err := p.store.ListFills()
+	if err != nil {
+		return domain.Account{}, err
+	}
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return domain.Account{}, err
+	}
+
+	filteredOrders := make([]domain.Order, 0)
+	orderByID := make(map[string]domain.Order)
+	for _, order := range orders {
+		if order.AccountID != account.ID {
+			continue
+		}
+		filteredOrders = append(filteredOrders, order)
+		orderByID[order.ID] = order
+	}
+	filteredFills := make([]domain.Fill, 0)
+	for _, fill := range fills {
+		if _, ok := orderByID[fill.OrderID]; ok {
+			filteredFills = append(filteredFills, fill)
+		}
+	}
+	filteredPositions := make([]domain.Position, 0)
+	for _, position := range positions {
+		if position.AccountID == account.ID {
+			filteredPositions = append(filteredPositions, position)
+		}
+	}
+
+	syncedAt := time.Now().UTC()
+	openOrders := 0
+	for _, order := range filteredOrders {
+		status := strings.ToUpper(strings.TrimSpace(order.Status))
+		if status != "FILLED" && status != "CANCELLED" && status != "REJECTED" {
+			openOrders++
+		}
+	}
+
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":          "platform-live-reconciliation",
+		"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+		"syncedAt":        syncedAt.Format(time.RFC3339),
+		"orderCount":      len(filteredOrders),
+		"fillCount":       len(filteredFills),
+		"positionCount":   len(filteredPositions),
+		"openOrderCount":  openOrders,
+		"latestOrder":     summarizeLiveAccountLatestOrder(filteredOrders),
+		"latestFill":      summarizeLiveAccountLatestFill(filteredFills, orderByID),
+		"positions":       summarizeLiveAccountPositions(filteredPositions),
+		"bindingMode":     stringValue(binding["connectionMode"]),
+		"feeSource":       "exchange",
+		"fundingSource":   "exchange",
+		"syncStatus":      "SYNCED",
+		"accountExchange": account.Exchange,
+	}
+	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+	return p.store.UpdateAccount(account)
+}
+
 func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {
@@ -664,6 +743,67 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 		normalized["dispatchCooldownSeconds"] = seconds
 	}
 	return normalized
+}
+
+func summarizeLiveAccountLatestOrder(orders []domain.Order) map[string]any {
+	if len(orders) == 0 {
+		return map[string]any{}
+	}
+	latest := orders[0]
+	for _, item := range orders[1:] {
+		if item.CreatedAt.After(latest.CreatedAt) {
+			latest = item
+		}
+	}
+	return map[string]any{
+		"id":        latest.ID,
+		"symbol":    latest.Symbol,
+		"side":      latest.Side,
+		"type":      latest.Type,
+		"status":    latest.Status,
+		"quantity":  latest.Quantity,
+		"price":     latest.Price,
+		"createdAt": latest.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+func summarizeLiveAccountLatestFill(fills []domain.Fill, orderByID map[string]domain.Order) map[string]any {
+	if len(fills) == 0 {
+		return map[string]any{}
+	}
+	latest := fills[0]
+	for _, item := range fills[1:] {
+		if item.CreatedAt.After(latest.CreatedAt) {
+			latest = item
+		}
+	}
+	order := orderByID[latest.OrderID]
+	return map[string]any{
+		"orderId":    latest.OrderID,
+		"symbol":     order.Symbol,
+		"side":       order.Side,
+		"price":      latest.Price,
+		"quantity":   latest.Quantity,
+		"fee":        latest.Fee,
+		"createdAt":  latest.CreatedAt.Format(time.RFC3339),
+		"orderState": order.Status,
+	}
+}
+
+func summarizeLiveAccountPositions(positions []domain.Position) []map[string]any {
+	items := make([]map[string]any, 0, len(positions))
+	for _, position := range positions {
+		items = append(items, map[string]any{
+			"id":         position.ID,
+			"symbol":     position.Symbol,
+			"side":       position.Side,
+			"quantity":   position.Quantity,
+			"entryPrice": position.EntryPrice,
+			"markPrice":  position.MarkPrice,
+			"updatedAt":  position.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	return items
 }
 
 func buildLiveIntentSignature(intent map[string]any) string {

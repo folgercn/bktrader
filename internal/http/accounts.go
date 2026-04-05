@@ -63,22 +63,34 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/live/accounts/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(parts) != 2 || parts[1] != "binding" {
-			writeError(w, http.StatusNotFound, "live account binding route not found")
+		if len(parts) != 2 {
+			writeError(w, http.StatusNotFound, "live account route not found")
 			return
 		}
 		accountID := parts[0]
-		var payload map[string]any
-		if err := decodeJSON(r, &payload); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+		switch parts[1] {
+		case "binding":
+			var payload map[string]any
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.BindLiveAccount(accountID, payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case "sync":
+			item, err := platform.SyncLiveAccount(accountID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		default:
+			writeError(w, http.StatusNotFound, "live account route not found")
 		}
-		item, err := platform.BindLiveAccount(accountID, payload)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, item)
 	})
 
 	mux.HandleFunc("/api/v1/accounts/", func(w http.ResponseWriter, r *http.Request) {
