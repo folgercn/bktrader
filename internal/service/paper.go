@@ -172,13 +172,64 @@ func (p *Platform) triggerPaperSessionFromSignal(sessionID string, summary map[s
 		return err
 	}
 
-	_, err = p.placePaperSessionOrder(updatedSession)
+	_, err = p.evaluatePaperSessionOnSignal(updatedSession, summary, eventTime)
 	if err != nil {
 		state = cloneMetadata(updatedSession.State)
 		state["lastSignalTriggerError"] = err.Error()
 		_, _ = p.store.UpdatePaperSessionState(session.ID, state)
 	}
 	return nil
+}
+
+func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, summary map[string]any, eventTime time.Time) (domain.Order, error) {
+	session, err := p.syncPaperSessionRuntime(session)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	session, plan, err := p.ensurePaperExecutionPlan(session)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	state := cloneMetadata(session.State)
+	state["strategyEvaluationMode"] = "signal-runtime-heartbeat"
+	state["lastStrategyEvaluationAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastStrategyEvaluationTrigger"] = cloneMetadata(summary)
+	state["lastStrategyEvaluationStatus"] = "evaluated"
+	state["lastStrategyEvaluationPlanLength"] = len(plan)
+	index := 0
+	if value, ok := toFloat64(state["planIndex"]); ok && value >= 0 {
+		index = int(value)
+	}
+	state["lastStrategyEvaluationRemaining"] = maxInt(len(plan)-index, 0)
+	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	order, err := p.placePaperSessionOrder(updatedSession)
+	if err != nil {
+		latestSession, getErr := p.store.GetPaperSession(session.ID)
+		if getErr == nil {
+			state = cloneMetadata(latestSession.State)
+		} else {
+			state = cloneMetadata(updatedSession.State)
+		}
+		state["lastStrategyEvaluationStatus"] = "no-action"
+		_, _ = p.store.UpdatePaperSessionState(session.ID, state)
+		return domain.Order{}, err
+	}
+
+	latestSession, getErr := p.store.GetPaperSession(session.ID)
+	if getErr == nil {
+		state = cloneMetadata(latestSession.State)
+	} else {
+		state = cloneMetadata(updatedSession.State)
+	}
+	state["lastStrategyEvaluationStatus"] = "order-dispatched"
+	state["lastStrategyEvaluationOrderId"] = order.ID
+	_, _ = p.store.UpdatePaperSessionState(session.ID, state)
+	return order, nil
 }
 
 // SetTickInterval 设置模拟盘后台循环的 Ticker 间隔（秒）。
@@ -486,6 +537,13 @@ func buildPaperExecutionPlan(session domain.PaperSession, version domain.Strateg
 		})
 	}
 	return plan, nil
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (p *Platform) syncPaperSessionRuntime(session domain.PaperSession) (domain.PaperSession, error) {
