@@ -1236,6 +1236,12 @@ function App() {
                   <strong>{formatMaybeNumber(primarySessionDecisionMeta.exitProximityBps)}</strong>
                 </div>
                 <div className="session-stat">
+                  <span>Spread / Bias</span>
+                  <strong>
+                    {formatMaybeNumber(primarySessionDecisionMeta.spreadBps)} bps · {String(primarySessionDecisionMeta.liquidityBias ?? "--")}
+                  </strong>
+                </div>
+                <div className="session-stat">
                   <span>Next Planned Event</span>
                   <strong>
                     {formatTime(String(primarySession.state?.lastStrategyEvaluationNextPlannedEventAt ?? ""))} ·{" "}

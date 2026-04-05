@@ -168,11 +168,16 @@ go run ./cmd/platform-api
     - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
     - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
     - 当前还会比较“当前市场价”和“下一笔计划价”的偏离：
-    - `BUY` 优先看 `bestAsk`
-    - `SELL/SHORT` 优先看 `bestBid`
-    - 默认允许最大偏离 `50 bps`
-    - 并且按交易方向判断当前价格是否仍然“可执行”
-    - 不满足时会返回 `wait / price-not-actionable`
+      - `BUY` 优先看 `bestAsk`
+      - `SELL/SHORT` 优先看 `bestBid`
+      - 默认允许最大偏离 `50 bps`
+      - 并且按交易方向判断当前价格是否仍然“可执行”
+      - 不满足时会返回 `wait / price-not-actionable`
+    - 如果 order book 可用，还会检查盘口质量：
+      - 计算 `spread bps`
+      - 计算 `bid/ask imbalance`
+      - 生成简化的 `liquidityBias`
+      - 当 spread 过宽时会返回 `wait / spread-too-wide`
 - 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
 
 实盘账户当前支持：

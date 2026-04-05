@@ -201,7 +201,9 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		reason = "planned-event-not-reached"
 	}
 	marketPrice, marketSource := pickDecisionMarketPrice(trigger, sourceStates, context.NextPlannedSide)
+	orderBookStats := extractOrderBookStats(trigger, sourceStates)
 	maxDeviationBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxDeviationBps"]), 50)
+	maxSpreadBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxSpreadBps"]), 8)
 	deviationBps := 0.0
 	positionPnLBps := computePositionPnLBps(currentPosition, marketPrice)
 	if action == "advance-plan" && context.NextPlannedPrice > 0 && marketPrice > 0 {
@@ -210,6 +212,10 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			action = "wait"
 			reason = "price-not-actionable"
 		}
+	}
+	if action == "advance-plan" && orderBookStats.spreadBps > 0 && orderBookStats.spreadBps > maxSpreadBps {
+		action = "wait"
+		reason = "spread-too-wide"
 	}
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
 	entryProximityBps := computePriceProximityBps(context.NextPlannedPrice, marketPrice)
@@ -233,10 +239,16 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"nextPlannedReason": context.NextPlannedReason,
 			"marketPrice":       marketPrice,
 			"marketSource":      marketSource,
+			"bestBid":           orderBookStats.bestBid,
+			"bestAsk":           orderBookStats.bestAsk,
+			"spreadBps":         orderBookStats.spreadBps,
+			"bookImbalance":     orderBookStats.imbalance,
+			"liquidityBias":     orderBookStats.bias,
 			"positionPnLBps":    positionPnLBps,
 			"entryProximityBps": entryProximityBps,
 			"exitProximityBps":  exitProximityBps,
 			"maxDeviationBps":   maxDeviationBps,
+			"maxSpreadBps":      maxSpreadBps,
 			"deviationBps":      deviationBps,
 			"priceActionable":   isPlannedPriceActionable(context.NextPlannedSide, context.NextPlannedPrice, marketPrice, maxDeviationBps),
 		},
@@ -342,6 +354,8 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 		return "waiting-time"
 	case "price-not-actionable":
 		return "waiting-price"
+	case "spread-too-wide":
+		return "waiting-liquidity"
 	default:
 		return "waiting"
 	}
@@ -433,6 +447,11 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 			return "hold-" + strings.ToLower(positionSide)
 		}
 		return "hold"
+	case "spread-too-wide":
+		if hasPosition {
+			return "hold-" + strings.ToLower(positionSide)
+		}
+		return "hold"
 	case "missing-source-states":
 		if hasPosition {
 			return "hold-" + strings.ToLower(positionSide)
@@ -470,6 +489,56 @@ func computePriceProximityBps(plannedPrice, marketPrice float64) float64 {
 		return 0
 	}
 	return math.Abs(marketPrice/plannedPrice-1) * 10000
+}
+
+type orderBookDecisionStats struct {
+	bestBid   float64
+	bestAsk   float64
+	spreadBps float64
+	imbalance float64
+	bias      string
+}
+
+func extractOrderBookStats(trigger map[string]any, sourceStates map[string]any) orderBookDecisionStats {
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(trigger["subscriptionSymbol"]), stringValue(trigger["symbol"])))
+	stats := orderBookDecisionStats{}
+	for _, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(stringValue(entry["streamType"]))) != "order_book" {
+			continue
+		}
+		if symbol != "" && NormalizeSymbol(stringValue(entry["symbol"])) != symbol {
+			continue
+		}
+		summary := mapValue(entry["summary"])
+		stats.bestBid = parseFloatValue(summary["bestBid"])
+		stats.bestAsk = parseFloatValue(summary["bestAsk"])
+		bidQty := parseFloatValue(summary["bestBidQty"])
+		askQty := parseFloatValue(summary["bestAskQty"])
+		if stats.bestBid > 0 && stats.bestAsk > 0 {
+			mid := (stats.bestBid + stats.bestAsk) / 2
+			if mid > 0 {
+				stats.spreadBps = (stats.bestAsk - stats.bestBid) / mid * 10000
+			}
+		}
+		totalQty := bidQty + askQty
+		if totalQty > 0 {
+			stats.imbalance = (bidQty - askQty) / totalQty
+		}
+		switch {
+		case stats.imbalance > 0.15:
+			stats.bias = "bid-heavy"
+		case stats.imbalance < -0.15:
+			stats.bias = "ask-heavy"
+		default:
+			stats.bias = "balanced"
+		}
+		return stats
+	}
+	return stats
 }
 
 func normalizeStrategyReasonTag(value string) string {
