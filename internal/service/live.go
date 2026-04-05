@@ -68,6 +68,14 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 	return p.store.UpdateLiveSessionStatus(sessionID, "RUNNING")
 }
 
+func (p *Platform) SyncLiveSession(sessionID string) (domain.LiveSession, error) {
+	session, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return p.syncLatestLiveSessionOrder(session, time.Now().UTC())
+}
+
 func (p *Platform) DispatchLiveSessionIntent(sessionID string) (domain.Order, error) {
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
@@ -129,7 +137,10 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 		"symbol":  created.Symbol,
 		"price":   created.Price,
 	})
-	_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+	updatedSession, _ := p.store.UpdateLiveSessionState(session.ID, state)
+	if updatedSession.ID != "" {
+		_, _ = p.syncLatestLiveSessionOrder(updatedSession, time.Now().UTC())
+	}
 	return created, nil
 }
 
@@ -167,6 +178,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	if err != nil {
 		return err
 	}
+	session, _ = p.syncLatestLiveSessionOrder(session, eventTime)
 
 	state := cloneMetadata(session.State)
 	state["strategyEvaluationMode"] = "signal-runtime-heartbeat"
@@ -276,6 +288,54 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		return err
 	}
 	return nil
+}
+
+func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventTime time.Time) (domain.LiveSession, error) {
+	orderID := stringValue(session.State["lastDispatchedOrderId"])
+	if strings.TrimSpace(orderID) == "" {
+		return session, nil
+	}
+	order, err := p.GetOrder(orderID)
+	if err != nil {
+		return session, err
+	}
+	if isTerminalOrderStatus(order.Status) {
+		return session, nil
+	}
+	syncedOrder, err := p.SyncLiveOrder(order.ID)
+	state := cloneMetadata(session.State)
+	state["lastSyncAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
+	if err != nil {
+		state["lastSyncError"] = err.Error()
+		appendTimelineEvent(state, "order", eventTime, "live-order-sync-error", map[string]any{
+			"orderId": order.ID,
+			"error":   err.Error(),
+		})
+		updated, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
+		if updateErr != nil {
+			return domain.LiveSession{}, updateErr
+		}
+		return updated, err
+	}
+	delete(state, "lastSyncError")
+	state["lastSyncedOrderId"] = syncedOrder.ID
+	state["lastSyncedOrderStatus"] = syncedOrder.Status
+	state["lastSyncedAt"] = time.Now().UTC().Format(time.RFC3339)
+	appendTimelineEvent(state, "order", eventTime, "live-order-synced", map[string]any{
+		"orderId": syncedOrder.ID,
+		"status":  syncedOrder.Status,
+		"price":   syncedOrder.Price,
+	})
+	return p.store.UpdateLiveSessionState(session.ID, state)
+}
+
+func isTerminalOrderStatus(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "FILLED", "CANCELLED", "REJECTED":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time) (StrategyExecutionContext, StrategySignalDecision, error) {

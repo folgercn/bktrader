@@ -118,6 +118,13 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				return
 			}
 			writeJSON(w, http.StatusOK, item)
+		case "sync":
+			item, err := platform.SyncLiveSession(sessionID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
 		default:
 			writeError(w, http.StatusNotFound, "unsupported live session action")
 		}

@@ -1214,6 +1214,19 @@ function App() {
     }
   }
 
+  async function syncLiveSession(sessionId: string) {
+    try {
+      setLiveSessionAction(`${sessionId}:sync`);
+      setError(null);
+      await fetchJSON(`/api/v1/live/sessions/${sessionId}/sync`, { method: "POST" });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sync live session");
+    } finally {
+      setLiveSessionAction(null);
+    }
+  }
+
   async function bindAccountSignalSource() {
     if (!accountSignalForm.accountId || !accountSignalForm.sourceKey) {
       setError("Account signal binding needs an account and source");
@@ -3232,6 +3245,12 @@ function App() {
                             dispatch-preview: {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.reason : "open session details"} ·{" "}
                             {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.detail : "--"}
                           </div>
+                          <div className="note-item">
+                            last-sync: {String(session.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(session.state?.lastSyncedAt ?? ""))}
+                          </div>
+                          <div className="note-item">
+                            sync-error: {String(session.state?.lastSyncError ?? "--")}
+                          </div>
                         </div>
                         <div className="inline-actions">
                           {String(session.state?.signalRuntimeSessionId ?? "") ? (
@@ -3255,6 +3274,12 @@ function App() {
                               (primaryLiveSession?.id === session.id && primaryLiveDispatchPreview.status === "blocked")
                             }
                             onClick={() => dispatchLiveSessionIntent(session.id)}
+                          />
+                          <ActionButton
+                            label={liveSessionAction === `${session.id}:sync` ? "Syncing..." : "Sync Latest Order"}
+                            variant="ghost"
+                            disabled={liveSessionAction !== null || !String(session.state?.lastDispatchedOrderId ?? "")}
+                            onClick={() => syncLiveSession(session.id)}
                           />
                           <ActionButton
                             label={liveSessionAction === `${session.id}:stop` ? "Stopping..." : "Stop"}
@@ -3295,6 +3320,9 @@ function App() {
                   </div>
                   <div className="note-item">
                     auto-dispatch: last-at {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · last-error {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    sync: {String(primaryLiveSession?.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(primaryLiveSession?.state?.lastSyncedAt ?? ""))} · error {String(primaryLiveSession?.state?.lastSyncError ?? "--")}
                   </div>
                   <div className="note-item">
                     dispatch-preview: {primaryLiveDispatchPreview.reason} · {primaryLiveDispatchPreview.detail}
