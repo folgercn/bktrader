@@ -178,6 +178,7 @@ go run ./cmd/platform-api
       - 计算 `bid/ask imbalance`
       - 生成简化的 `liquidityBias`
       - 当 spread 过宽时会返回 `wait / spread-too-wide`
+      - 当盘口方向明显逆风时，会返回 `wait / bias-unfavorable`
 - 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
 
 实盘账户当前支持：

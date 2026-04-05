@@ -1242,6 +1242,10 @@ function App() {
                   </strong>
                 </div>
                 <div className="session-stat">
+                  <span>Bias Actionable</span>
+                  <strong>{boolLabel(primarySessionDecisionMeta.biasActionable)}</strong>
+                </div>
+                <div className="session-stat">
                   <span>Next Planned Event</span>
                   <strong>
                     {formatTime(String(primarySession.state?.lastStrategyEvaluationNextPlannedEventAt ?? ""))} ·{" "}

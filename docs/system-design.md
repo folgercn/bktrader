@@ -141,7 +141,7 @@ Paper/runtime integration status:
   - watch/exit semantics can now also incorporate current position PnL direction against live market price
   - the engine also sees the next planned execution timestamp so paper runtime can respect event-time ordering instead of advancing on any incoming tick
   - the engine now also sees current market price context from trade-tick / order-book state and can reject progression when the next planned action is no longer directionally actionable at current market prices
-  - when order-book state is available, the engine also considers microstructure quality such as spread and top-of-book imbalance before allowing progression
+  - when order-book state is available, the engine also considers microstructure quality such as spread and top-of-book imbalance before allowing progression, and may hold when liquidity bias is directionally unfavorable
   - this hook is the migration path from plan-driven paper execution to true real-time strategy decisions
 - strategy triggering is still a minimal event-driven rollout:
   - real tick events update the linked paper session

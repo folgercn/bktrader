@@ -217,6 +217,11 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		action = "wait"
 		reason = "spread-too-wide"
 	}
+	biasActionable := isLiquidityBiasActionable(context.NextPlannedSide, context.NextPlannedRole, context.NextPlannedReason, orderBookStats.bias)
+	if action == "advance-plan" && orderBookStats.bias != "" && !biasActionable {
+		action = "wait"
+		reason = "bias-unfavorable"
+	}
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
 	entryProximityBps := computePriceProximityBps(context.NextPlannedPrice, marketPrice)
 	exitProximityBps := entryProximityBps
@@ -244,6 +249,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"spreadBps":         orderBookStats.spreadBps,
 			"bookImbalance":     orderBookStats.imbalance,
 			"liquidityBias":     orderBookStats.bias,
+			"biasActionable":    biasActionable,
 			"positionPnLBps":    positionPnLBps,
 			"entryProximityBps": entryProximityBps,
 			"exitProximityBps":  exitProximityBps,
@@ -356,6 +362,8 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 		return "waiting-price"
 	case "spread-too-wide":
 		return "waiting-liquidity"
+	case "bias-unfavorable":
+		return "waiting-flow"
 	default:
 		return "waiting"
 	}
@@ -452,6 +460,11 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 			return "hold-" + strings.ToLower(positionSide)
 		}
 		return "hold"
+	case "bias-unfavorable":
+		if hasPosition {
+			return "hold-" + strings.ToLower(positionSide)
+		}
+		return "hold"
 	case "missing-source-states":
 		if hasPosition {
 			return "hold-" + strings.ToLower(positionSide)
@@ -539,6 +552,27 @@ func extractOrderBookStats(trigger map[string]any, sourceStates map[string]any) 
 		return stats
 	}
 	return stats
+}
+
+func isLiquidityBiasActionable(nextSide, nextRole, nextReason, bias string) bool {
+	role := strings.ToLower(strings.TrimSpace(nextRole))
+	reasonTag := normalizeStrategyReasonTag(nextReason)
+	side := strings.ToUpper(strings.TrimSpace(nextSide))
+	bias = strings.ToLower(strings.TrimSpace(bias))
+	if bias == "" || bias == "balanced" {
+		return true
+	}
+	if role == "exit" && reasonTag == "sl" {
+		return true
+	}
+	switch side {
+	case "BUY":
+		return bias != "ask-heavy"
+	case "SELL", "SHORT":
+		return bias != "bid-heavy"
+	default:
+		return true
+	}
 }
 
 func normalizeStrategyReasonTag(value string) string {
