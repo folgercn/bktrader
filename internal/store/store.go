@@ -82,4 +82,11 @@ type Repository interface {
 	ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error)
 	// CreateAccountEquitySnapshot 创建新的净值快照。
 	CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error)
+
+	// --- 平台运行配置 ---
+
+	// GetRuntimePolicy 获取持久化的运行时阈值配置。
+	GetRuntimePolicy() (domain.RuntimePolicy, bool, error)
+	// UpsertRuntimePolicy 创建或更新运行时阈值配置。
+	UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.RuntimePolicy, error)
 }

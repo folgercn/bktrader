@@ -23,6 +23,7 @@ type Store struct {
 	equitySnapshots map[string][]domain.AccountEquitySnapshot
 	signalSources   []map[string]any
 	annotations     []domain.ChartAnnotation
+	runtimePolicy   *domain.RuntimePolicy
 
 	sequence int64
 }
@@ -228,6 +229,24 @@ func (s *Store) SignalSources() []map[string]any {
 		out = append(out, item)
 	}
 	return out
+}
+
+func (s *Store) GetRuntimePolicy() (domain.RuntimePolicy, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.runtimePolicy == nil {
+		return domain.RuntimePolicy{}, false, nil
+	}
+	return *s.runtimePolicy, true, nil
+}
+
+func (s *Store) UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.RuntimePolicy, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	policy.UpdatedAt = time.Now().UTC()
+	copyPolicy := policy
+	s.runtimePolicy = &copyPolicy
+	return policy, nil
 }
 
 func (s *Store) ListStrategies() ([]map[string]any, error) {

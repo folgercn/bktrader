@@ -395,7 +395,7 @@ PAPER_START_READINESS_TIMEOUT_SECONDS=5
 - 模拟交易会话支持启动、停止和手动推进；活跃会话从 `FINAL_1D_LEDGER_BEST_SL.csv` 回放策略交易账本。
 - 模拟会话状态在 `paper_sessions.state` 中持久化策略执行计划进度，`planIndex` 可跨重启保持。
 - `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 paper preflight 共享同一套 freshness / quiet / readiness timeout 配置。
-- `POST /api/v1/runtime-policy` 支持热更新运行阈值，当前为进程级生效；控制台 `Signals` 页面已提供对应配置面板。
+- `POST /api/v1/runtime-policy` 支持热更新运行阈值；当前会持久化到平台配置表，服务重启后仍然保留，控制台 `Signals` 页面已提供对应配置面板。
 Parity checks:
 ```bash
 python3 scripts/check_1d_1min_parity.py

@@ -133,6 +133,7 @@ Paper/runtime integration status:
   - required snapshots must be fresh enough for their stream type
   - default freshness windows are short and stream-specific so stale market-data does not silently drive execution
   - the freshness / quiet / readiness timeout thresholds are now centralized as a runtime policy and shared by backend preflight and frontend alerts
+  - runtime policy is persisted by the platform so operational thresholds survive restarts
 - after source gating passes, the platform now calls a strategy-engine-level `signal evaluation` hook:
   - the engine receives trigger summary + structured source-state snapshot
   - the engine decides whether this event should advance execution or wait

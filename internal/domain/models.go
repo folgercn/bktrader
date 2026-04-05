@@ -204,3 +204,13 @@ type ChartAnnotation struct {
 	Label    string         `json:"label"`
 	Metadata map[string]any `json:"metadata"`
 }
+
+// RuntimePolicy 保存平台运行期告警与 readiness 阈值配置。
+type RuntimePolicy struct {
+	TradeTickFreshnessSeconds      int       `json:"tradeTickFreshnessSeconds"`
+	OrderBookFreshnessSeconds      int       `json:"orderBookFreshnessSeconds"`
+	SignalBarFreshnessSeconds      int       `json:"signalBarFreshnessSeconds"`
+	RuntimeQuietSeconds            int       `json:"runtimeQuietSeconds"`
+	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
+	UpdatedAt                      time.Time `json:"updatedAt"`
+}

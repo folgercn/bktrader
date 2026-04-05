@@ -30,6 +30,9 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
 		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
 	})
+	if err := platform.LoadPersistedRuntimePolicy(); err != nil {
+		return nil, err
+	}
 
 	return &http.Server{
 		Addr:    cfg.HTTPAddr,

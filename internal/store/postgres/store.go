@@ -36,6 +36,63 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+func (s *Store) GetRuntimePolicy() (domain.RuntimePolicy, bool, error) {
+	var item domain.RuntimePolicy
+	err := s.db.QueryRow(`
+		select trade_tick_freshness_seconds, order_book_freshness_seconds, signal_bar_freshness_seconds, runtime_quiet_seconds, paper_start_readiness_timeout_seconds, updated_at
+		from runtime_policies
+		where id = 1
+	`).Scan(
+		&item.TradeTickFreshnessSeconds,
+		&item.OrderBookFreshnessSeconds,
+		&item.SignalBarFreshnessSeconds,
+		&item.RuntimeQuietSeconds,
+		&item.PaperStartReadinessTimeoutSecs,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.RuntimePolicy{}, false, nil
+		}
+		return domain.RuntimePolicy{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *Store) UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.RuntimePolicy, error) {
+	policy.UpdatedAt = time.Now().UTC()
+	_, err := s.db.Exec(`
+		insert into runtime_policies (
+			id,
+			trade_tick_freshness_seconds,
+			order_book_freshness_seconds,
+			signal_bar_freshness_seconds,
+			runtime_quiet_seconds,
+			paper_start_readiness_timeout_seconds,
+			updated_at
+		)
+		values (1, $1, $2, $3, $4, $5, $6)
+		on conflict (id) do update set
+			trade_tick_freshness_seconds = excluded.trade_tick_freshness_seconds,
+			order_book_freshness_seconds = excluded.order_book_freshness_seconds,
+			signal_bar_freshness_seconds = excluded.signal_bar_freshness_seconds,
+			runtime_quiet_seconds = excluded.runtime_quiet_seconds,
+			paper_start_readiness_timeout_seconds = excluded.paper_start_readiness_timeout_seconds,
+			updated_at = excluded.updated_at
+	`,
+		policy.TradeTickFreshnessSeconds,
+		policy.OrderBookFreshnessSeconds,
+		policy.SignalBarFreshnessSeconds,
+		policy.RuntimeQuietSeconds,
+		policy.PaperStartReadinessTimeoutSecs,
+		policy.UpdatedAt,
+	)
+	if err != nil {
+		return domain.RuntimePolicy{}, err
+	}
+	return policy, nil
+}
+
 func (s *Store) ListStrategies() ([]map[string]any, error) {
 	rows, err := s.db.Query(`
 		select

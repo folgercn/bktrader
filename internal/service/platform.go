@@ -118,5 +118,40 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		return p.runtimePolicy, fmt.Errorf("runtime policy values must be non-negative")
 	}
 	p.SetRuntimePolicy(policy)
+	saved, err := p.store.UpsertRuntimePolicy(domain.RuntimePolicy{
+		TradeTickFreshnessSeconds:      p.runtimePolicy.TradeTickFreshnessSeconds,
+		OrderBookFreshnessSeconds:      p.runtimePolicy.OrderBookFreshnessSeconds,
+		SignalBarFreshnessSeconds:      p.runtimePolicy.SignalBarFreshnessSeconds,
+		RuntimeQuietSeconds:            p.runtimePolicy.RuntimeQuietSeconds,
+		PaperStartReadinessTimeoutSecs: p.runtimePolicy.PaperStartReadinessTimeoutSecs,
+	})
+	if err != nil {
+		return p.runtimePolicy, err
+	}
+	p.SetRuntimePolicy(RuntimePolicy{
+		TradeTickFreshnessSeconds:      saved.TradeTickFreshnessSeconds,
+		OrderBookFreshnessSeconds:      saved.OrderBookFreshnessSeconds,
+		SignalBarFreshnessSeconds:      saved.SignalBarFreshnessSeconds,
+		RuntimeQuietSeconds:            saved.RuntimeQuietSeconds,
+		PaperStartReadinessTimeoutSecs: saved.PaperStartReadinessTimeoutSecs,
+	})
 	return p.runtimePolicy, nil
+}
+
+func (p *Platform) LoadPersistedRuntimePolicy() error {
+	policy, ok, err := p.store.GetRuntimePolicy()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	p.SetRuntimePolicy(RuntimePolicy{
+		TradeTickFreshnessSeconds:      policy.TradeTickFreshnessSeconds,
+		OrderBookFreshnessSeconds:      policy.OrderBookFreshnessSeconds,
+		SignalBarFreshnessSeconds:      policy.SignalBarFreshnessSeconds,
+		RuntimeQuietSeconds:            policy.RuntimeQuietSeconds,
+		PaperStartReadinessTimeoutSecs: policy.PaperStartReadinessTimeoutSecs,
+	})
+	return nil
 }
