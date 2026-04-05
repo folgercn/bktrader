@@ -1558,7 +1558,12 @@ function App() {
                 </div>
                 <div className="session-stat">
                   <span>Runtime Ready</span>
-                  <strong>{`${primaryPaperRuntimeReadiness.status} · ${primaryPaperRuntimeReadiness.reason}`}</strong>
+                  <strong>
+                    <StatusPill tone={runtimeReadinessTone(primaryPaperRuntimeReadiness.status)}>
+                      {primaryPaperRuntimeReadiness.status}
+                    </StatusPill>{" "}
+                    {primaryPaperRuntimeReadiness.reason}
+                  </strong>
                 </div>
                 <div className="session-stat">
                   <span>Trading / Funding</span>
@@ -1597,12 +1602,19 @@ function App() {
                 <div className="session-stat">
                   <span>Strategy Decision</span>
                   <strong>
-                    {String(primarySessionDecisionMeta.decisionState ?? primarySessionDecision.action ?? "--")} · {String(primarySessionDecision.reason ?? "--")}
+                    <StatusPill tone={decisionStateTone(String(primarySessionDecisionMeta.decisionState ?? primarySessionDecision.action ?? "--"))}>
+                      {String(primarySessionDecisionMeta.decisionState ?? primarySessionDecision.action ?? "--")}
+                    </StatusPill>{" "}
+                    {String(primarySessionDecision.reason ?? "--")}
                   </strong>
                 </div>
                 <div className="session-stat">
                   <span>Signal Kind</span>
-                  <strong>{String(primarySessionDecisionMeta.signalKind ?? "--")}</strong>
+                  <strong>
+                    <StatusPill tone={signalKindTone(String(primarySessionDecisionMeta.signalKind ?? "--"))}>
+                      {String(primarySessionDecisionMeta.signalKind ?? "--")}
+                    </StatusPill>
+                  </strong>
                 </div>
                 <div className="session-stat">
                   <span>Signal Bar State</span>
@@ -1611,7 +1623,10 @@ function App() {
                 <div className="session-stat">
                   <span>Signal Filter</span>
                   <strong>
-                    {boolLabel(primarySessionSignalBarDecision.ready)} · {String(primarySessionSignalBarDecision.reason ?? "--")}
+                    <StatusPill tone={boolTone(primarySessionSignalBarDecision.ready)}>
+                      {boolLabel(primarySessionSignalBarDecision.ready)}
+                    </StatusPill>{" "}
+                    {String(primarySessionSignalBarDecision.reason ?? "--")}
                   </strong>
                 </div>
                 <div className="session-stat">
@@ -2297,7 +2312,11 @@ function App() {
                           <span>{formatTime(String(activeRuntimeSourceSummary.latestEventAt ?? ""))}</span>
                         </div>
                         <div className="live-account-meta">
-                          <span>{activeRuntimeReadiness.status}</span>
+                          <span>
+                            <StatusPill tone={runtimeReadinessTone(activeRuntimeReadiness.status)}>
+                              {activeRuntimeReadiness.status}
+                            </StatusPill>
+                          </span>
                           <span>{activeRuntimeReadiness.reason}</span>
                         </div>
                         <div className="live-account-meta">
@@ -2306,8 +2325,16 @@ function App() {
                           <span>atr14 {formatMaybeNumber(activeSignalBarState.atr14)}</span>
                         </div>
                         <div className="live-account-meta">
-                          <span>signal {activeSignalAction.bias}</span>
-                          <span>{activeSignalAction.state}</span>
+                          <span>
+                            <StatusPill tone={signalActionTone(activeSignalAction.bias, activeSignalAction.state)}>
+                              {activeSignalAction.bias}
+                            </StatusPill>
+                          </span>
+                          <span>
+                            <StatusPill tone={decisionStateTone(activeSignalAction.state)}>
+                              {activeSignalAction.state}
+                            </StatusPill>
+                          </span>
                           <span>{activeSignalAction.reason}</span>
                         </div>
                         <div className="backtest-notes">
@@ -2879,6 +2906,10 @@ function MetricCard(props: { label: string; value: string; tone?: "accent" }) {
       <strong>{props.value}</strong>
     </article>
   );
+}
+
+function StatusPill(props: { children: React.ReactNode; tone: "ready" | "watch" | "blocked" | "neutral" }) {
+  return <span className={`status-pill status-pill-${props.tone}`}>{props.children}</span>;
 }
 
 function SimpleTable(props: { columns: string[]; rows: React.ReactNode[][]; emptyMessage: string }) {
@@ -3577,6 +3608,71 @@ function deriveSignalActionSummary(signalBarState: Record<string, unknown>) {
 
 function buildSignalActionNotes(signalAction: { bias: string; state: string; reason: string }) {
   return [`signal-action: ${signalAction.bias} · ${signalAction.state} · ${signalAction.reason}`];
+}
+
+function runtimeReadinessTone(status: string): "ready" | "watch" | "blocked" | "neutral" {
+  switch (status) {
+    case "ready":
+      return "ready";
+    case "warning":
+      return "watch";
+    case "blocked":
+      return "blocked";
+    default:
+      return "neutral";
+  }
+}
+
+function decisionStateTone(state: string): "ready" | "watch" | "blocked" | "neutral" {
+  const normalized = state.trim().toLowerCase();
+  if (normalized.includes("ready")) {
+    return "ready";
+  }
+  if (normalized.startsWith("waiting") || normalized === "watch") {
+    return "watch";
+  }
+  if (normalized.includes("blocked") || normalized.includes("error")) {
+    return "blocked";
+  }
+  return "neutral";
+}
+
+function signalKindTone(kind: string): "ready" | "watch" | "blocked" | "neutral" {
+  const normalized = kind.trim().toLowerCase();
+  if (normalized.includes("near") || normalized.includes("entry") || normalized.includes("exit")) {
+    return "ready";
+  }
+  if (normalized.includes("watch") || normalized.includes("hold")) {
+    return "watch";
+  }
+  if (normalized === "ignore") {
+    return "neutral";
+  }
+  return "neutral";
+}
+
+function signalActionTone(bias: string, state: string): "ready" | "watch" | "blocked" | "neutral" {
+  const normalizedState = state.trim().toLowerCase();
+  if (normalizedState === "ready") {
+    return "ready";
+  }
+  if (normalizedState === "watch" || normalizedState === "waiting") {
+    return "watch";
+  }
+  if (bias.trim().toLowerCase() === "neutral") {
+    return "neutral";
+  }
+  return "neutral";
+}
+
+function boolTone(value: unknown): "ready" | "watch" | "blocked" | "neutral" {
+  if (value === true) {
+    return "ready";
+  }
+  if (value === false) {
+    return "blocked";
+  }
+  return "neutral";
 }
 
 function boolLabel(value: unknown) {
