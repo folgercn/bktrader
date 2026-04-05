@@ -468,6 +468,8 @@ function App() {
     signalTimeframe: "1d",
     executionDataSource: "tick",
     symbol: "BTCUSDT",
+    defaultOrderQuantity: "0.001",
+    dispatchMode: "manual-review",
   });
   const [accountSignalForm, setAccountSignalForm] = useState({
     accountId: "",
@@ -841,10 +843,12 @@ function App() {
     setLiveSessionForm((current) => ({
       accountId: current.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
       strategyId: current.strategyId || strategyData[0]?.id || "",
-      signalTimeframe: current.signalTimeframe || "1d",
-      executionDataSource: current.executionDataSource || "tick",
-      symbol: current.symbol || "BTCUSDT",
-    }));
+          signalTimeframe: current.signalTimeframe || "1d",
+          executionDataSource: current.executionDataSource || "tick",
+          symbol: current.symbol || "BTCUSDT",
+          defaultOrderQuantity: current.defaultOrderQuantity || "0.001",
+          dispatchMode: current.dispatchMode || "manual-review",
+        }));
     const availableSignalSources = signalCatalogData.sources ?? [];
     setAccountSignalForm((current) => ({
       accountId: current.accountId || summaryData[0]?.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
@@ -1146,6 +1150,8 @@ function App() {
           signalTimeframe: liveSessionForm.signalTimeframe,
           executionDataSource: liveSessionForm.executionDataSource,
           symbol: liveSessionForm.symbol,
+          defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+          dispatchMode: liveSessionForm.dispatchMode,
         }),
       });
       await loadDashboard();
@@ -3114,6 +3120,22 @@ function App() {
                     onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
                   />
                 </label>
+                <label className="form-field">
+                  <span>Default Qty</span>
+                  <input
+                    value={liveSessionForm.defaultOrderQuantity}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Dispatch Mode</span>
+                  <select
+                    value={liveSessionForm.dispatchMode}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchMode: event.target.value }))}
+                  >
+                    <option value="manual-review">manual-review</option>
+                  </select>
+                </label>
               </div>
               <div className="backtest-actions">
                 <ActionButton
@@ -3158,12 +3180,20 @@ function App() {
                           <span>{String(intent.action ?? "no-intent")}</span>
                           <span>{String(intent.side ?? "--")}</span>
                         </div>
+                        <div className="live-account-meta">
+                          <span>qty {formatMaybeNumber(intent.quantity)}</span>
+                          <span>{formatMaybeNumber(intent.priceHint)} via {String(intent.priceSource ?? "--")}</span>
+                          <span>{String(intent.signalKind ?? "--")}</span>
+                        </div>
                         <div className="backtest-notes">
                           <div className="note-item">
                             source-gate: {boolLabel(primaryLiveSession?.id === session.id ? primaryLiveSessionSourceGate.ready : getRecord(session.state?.lastStrategyEvaluationSourceGate).ready)}
                           </div>
                           <div className="note-item">
                             eval-status: {String(session.state?.lastStrategyEvaluationStatus ?? "--")}
+                          </div>
+                          <div className="note-item">
+                            intent-context: spread {formatMaybeNumber(intent.spreadBps)} bps · bias {String(intent.liquidityBias ?? "--")} · proximity {formatMaybeNumber(intent.entryProximityBps)} bps
                           </div>
                         </div>
                         <div className="inline-actions">
@@ -3215,6 +3245,12 @@ function App() {
                   </div>
                   <div className="note-item">
                     intent: {String(primaryLiveSessionIntent.action ?? "none")} · {String(primaryLiveSessionIntent.side ?? "--")} · {formatMaybeNumber(primaryLiveSessionIntent.priceHint)}
+                  </div>
+                  <div className="note-item">
+                    intent-preview: qty {formatMaybeNumber(primaryLiveSessionIntent.quantity)} · src {String(primaryLiveSessionIntent.priceSource ?? "--")} · kind {String(primaryLiveSessionIntent.signalKind ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    intent-context: spread {formatMaybeNumber(primaryLiveSessionIntent.spreadBps)} bps · bias {String(primaryLiveSessionIntent.liquidityBias ?? "--")} · ma20 {formatMaybeNumber(primaryLiveSessionIntent.ma20)} · atr14 {formatMaybeNumber(primaryLiveSessionIntent.atr14)}
                   </div>
                   <div className="note-item">
                     dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}

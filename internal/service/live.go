@@ -27,7 +27,7 @@ func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map
 	}
 	if len(overrides) > 0 {
 		state := cloneMetadata(session.State)
-		for key, value := range normalizePaperSessionOverrides(overrides) {
+		for key, value := range normalizeLiveSessionOverrides(overrides) {
 			state[key] = value
 		}
 		session, err = p.store.UpdateLiveSessionState(session.ID, state)
@@ -468,27 +468,78 @@ func deriveLiveSessionIntent(decision StrategySignalDecision, symbol string) map
 	longReady := boolValue(signalBarDecision["longReady"])
 	shortReady := boolValue(signalBarDecision["shortReady"])
 	marketPrice := parseFloatValue(meta["marketPrice"])
+	marketSource := stringValue(meta["marketSource"])
 	signalKind := stringValue(meta["signalKind"])
+	decisionState := stringValue(meta["decisionState"])
+	signalBarStateKey := stringValue(meta["signalBarStateKey"])
+	entryProximityBps := parseFloatValue(meta["entryProximityBps"])
+	spreadBps := parseFloatValue(meta["spreadBps"])
+	ma20 := parseFloatValue(signalBarDecision["ma20"])
+	atr14 := parseFloatValue(signalBarDecision["atr14"])
+	liquidityBias := stringValue(meta["liquidityBias"])
+	biasActionable := boolValue(meta["biasActionable"])
+	bestBid := parseFloatValue(meta["bestBid"])
+	bestAsk := parseFloatValue(meta["bestAsk"])
+	quantity := firstPositive(parseFloatValue(meta["suggestedQuantity"]), 0.001)
+
 	switch {
 	case longReady && !shortReady:
 		return map[string]any{
-			"action":     "entry",
-			"side":       "BUY",
-			"type":       "MARKET",
-			"symbol":     NormalizeSymbol(symbol),
-			"priceHint":  marketPrice,
-			"signalKind": signalKind,
+			"action":            "entry",
+			"side":              "BUY",
+			"type":              "MARKET",
+			"symbol":            NormalizeSymbol(symbol),
+			"priceHint":         marketPrice,
+			"priceSource":       marketSource,
+			"quantity":          quantity,
+			"signalKind":        signalKind,
+			"decisionState":     decisionState,
+			"signalBarStateKey": signalBarStateKey,
+			"entryProximityBps": entryProximityBps,
+			"spreadBps":         spreadBps,
+			"ma20":              ma20,
+			"atr14":             atr14,
+			"liquidityBias":     liquidityBias,
+			"biasActionable":    biasActionable,
+			"bestBid":           bestBid,
+			"bestAsk":           bestAsk,
 		}
 	case shortReady && !longReady:
 		return map[string]any{
-			"action":     "entry",
-			"side":       "SELL",
-			"type":       "MARKET",
-			"symbol":     NormalizeSymbol(symbol),
-			"priceHint":  marketPrice,
-			"signalKind": signalKind,
+			"action":            "entry",
+			"side":              "SELL",
+			"type":              "MARKET",
+			"symbol":            NormalizeSymbol(symbol),
+			"priceHint":         marketPrice,
+			"priceSource":       marketSource,
+			"quantity":          quantity,
+			"signalKind":        signalKind,
+			"decisionState":     decisionState,
+			"signalBarStateKey": signalBarStateKey,
+			"entryProximityBps": entryProximityBps,
+			"spreadBps":         spreadBps,
+			"ma20":              ma20,
+			"atr14":             atr14,
+			"liquidityBias":     liquidityBias,
+			"biasActionable":    biasActionable,
+			"bestBid":           bestBid,
+			"bestAsk":           bestAsk,
 		}
 	default:
 		return nil
 	}
+}
+
+func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
+	normalized := normalizePaperSessionOverrides(overrides)
+	if normalized == nil {
+		normalized = map[string]any{}
+	}
+	if quantity := parseFloatValue(overrides["defaultOrderQuantity"]); quantity > 0 {
+		normalized["defaultOrderQuantity"] = quantity
+	}
+	if mode := strings.TrimSpace(stringValue(overrides["dispatchMode"])); mode != "" {
+		normalized["dispatchMode"] = mode
+	}
+	return normalized
 }

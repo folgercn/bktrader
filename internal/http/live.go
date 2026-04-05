@@ -27,6 +27,8 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				From                string `json:"from"`
 				To                  string `json:"to"`
 				StrategyEngine      string `json:"strategyEngine"`
+				DefaultOrderQty     any    `json:"defaultOrderQuantity"`
+				DispatchMode        string `json:"dispatchMode"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -57,6 +59,12 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			if payload.StrategyEngine != "" {
 				overrides["strategyEngine"] = payload.StrategyEngine
+			}
+			if payload.DefaultOrderQty != nil {
+				overrides["defaultOrderQuantity"] = payload.DefaultOrderQty
+			}
+			if payload.DispatchMode != "" {
+				overrides["dispatchMode"] = payload.DispatchMode
 			}
 			item, err := platform.CreateLiveSession(payload.AccountID, payload.StrategyID, overrides)
 			if err != nil {
