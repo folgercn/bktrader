@@ -394,6 +394,8 @@ function App() {
   const primarySessionDecision = getRecord(primarySession?.state?.lastStrategyDecision);
   const primarySessionDecisionMeta = getRecord(primarySessionDecision.metadata);
   const primarySessionCurrentPosition = getRecord(primarySessionDecisionMeta.currentPosition);
+  const primarySessionSignalBarState = getRecord(primarySessionDecisionMeta.signalBarState);
+  const primarySessionSignalBarDecision = getRecord(primarySessionDecisionMeta.signalBarDecision);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
@@ -1603,6 +1605,23 @@ function App() {
                   <strong>{String(primarySessionDecisionMeta.signalKind ?? "--")}</strong>
                 </div>
                 <div className="session-stat">
+                  <span>Signal Bar State</span>
+                  <strong>{String(primarySessionDecisionMeta.signalBarStateKey ?? "--")}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Signal Filter</span>
+                  <strong>
+                    {boolLabel(primarySessionSignalBarDecision.ready)} · {String(primarySessionSignalBarDecision.reason ?? "--")}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Signal MA20 / ATR</span>
+                  <strong>
+                    {formatMaybeNumber(primarySessionSignalBarDecision.ma20 ?? primarySessionSignalBarState.ma20)} /{" "}
+                    {formatMaybeNumber(primarySessionSignalBarDecision.atr14 ?? primarySessionSignalBarState.atr14)}
+                  </strong>
+                </div>
+                <div className="session-stat">
                   <span>Current Position</span>
                   <strong>
                     {String(primarySessionCurrentPosition.side ?? "FLAT")} · {formatMaybeNumber(primarySessionCurrentPosition.quantity)}
@@ -1655,6 +1674,11 @@ function App() {
                 </div>
               ) : null}
               <div className="backtest-notes">
+                {buildSignalBarDecisionNotes(primarySessionSignalBarDecision, primarySessionSignalBarState).map((line) => (
+                  <div key={line} className="note-item">
+                    {line}
+                  </div>
+                ))}
                 {buildRuntimeEventNotes(primaryLinkedSignalRuntimeSummary).map((line) => (
                   <div key={line} className="note-item">
                     {line}
@@ -3462,6 +3486,21 @@ function buildSourceStateNotes(sourceStates: Record<string, unknown>) {
       formatMaybeNumber(state.price ?? state.bestAsk ?? state.bestBid),
     ].join(" · ");
   });
+}
+
+function buildSignalBarDecisionNotes(signalBarDecision: Record<string, unknown>, signalBarState: Record<string, unknown>) {
+  if (Object.keys(signalBarDecision).length === 0 && Object.keys(signalBarState).length === 0) {
+    return ["signal-bar: --"];
+  }
+  const current = getRecord(signalBarDecision.current);
+  const prevBar1 = getRecord(signalBarDecision.prevBar1);
+  const prevBar2 = getRecord(signalBarDecision.prevBar2);
+  return [
+    `signal-bar: ${String(signalBarDecision.reason ?? "--")} · longReady=${boolLabel(signalBarDecision.longReady)} · shortReady=${boolLabel(signalBarDecision.shortReady)}`,
+    `current: ${formatMaybeNumber(current.open)} / ${formatMaybeNumber(current.high)} / ${formatMaybeNumber(current.low)} / ${formatMaybeNumber(current.close)}`,
+    `t-1: ${formatMaybeNumber(prevBar1.open)} / ${formatMaybeNumber(prevBar1.high)} / ${formatMaybeNumber(prevBar1.low)} / ${formatMaybeNumber(prevBar1.close)}`,
+    `t-2: ${formatMaybeNumber(prevBar2.open)} / ${formatMaybeNumber(prevBar2.high)} / ${formatMaybeNumber(prevBar2.low)} / ${formatMaybeNumber(prevBar2.close)}`,
+  ];
 }
 
 function boolLabel(value: unknown) {
