@@ -2260,6 +2260,7 @@ function App() {
                     const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
                     const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
                     const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates));
+                    const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
                     const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
                       requireTick: bindings.some((item) => item.streamType === "trade_tick"),
                       requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
@@ -2298,7 +2299,17 @@ function App() {
                           <span>{activeRuntimeReadiness.status}</span>
                           <span>{activeRuntimeReadiness.reason}</span>
                         </div>
+                        <div className="live-account-meta">
+                          <span>{String(activeSignalBarState.timeframe ?? "--")}</span>
+                          <span>ma20 {formatMaybeNumber(activeSignalBarState.ma20)}</span>
+                          <span>atr14 {formatMaybeNumber(activeSignalBarState.atr14)}</span>
+                        </div>
                         <div className="backtest-notes">
+                          {buildSignalBarStateNotes(activeSignalBarState).map((line) => (
+                            <div key={line} className="note-item">
+                              {line}
+                            </div>
+                          ))}
                           {buildRuntimeEventNotes(activeRuntimeSummary).map((line) => (
                             <div key={line} className="note-item">
                               {line}
@@ -3453,6 +3464,11 @@ function deriveSignalBarCandles(sourceStates: Record<string, unknown>): SignalBa
   return candles.slice(-120);
 }
 
+function derivePrimarySignalBarState(signalBarStates: Record<string, unknown>) {
+  const first = Object.values(signalBarStates)[0];
+  return getRecord(first);
+}
+
 function buildRuntimeEventNotes(summary: Record<string, unknown>) {
   if (Object.keys(summary).length === 0) {
     return ["event: --"];
@@ -3497,6 +3513,21 @@ function buildSignalBarDecisionNotes(signalBarDecision: Record<string, unknown>,
   const prevBar2 = getRecord(signalBarDecision.prevBar2);
   return [
     `signal-bar: ${String(signalBarDecision.reason ?? "--")} · longReady=${boolLabel(signalBarDecision.longReady)} · shortReady=${boolLabel(signalBarDecision.shortReady)}`,
+    `current: ${formatMaybeNumber(current.open)} / ${formatMaybeNumber(current.high)} / ${formatMaybeNumber(current.low)} / ${formatMaybeNumber(current.close)}`,
+    `t-1: ${formatMaybeNumber(prevBar1.open)} / ${formatMaybeNumber(prevBar1.high)} / ${formatMaybeNumber(prevBar1.low)} / ${formatMaybeNumber(prevBar1.close)}`,
+    `t-2: ${formatMaybeNumber(prevBar2.open)} / ${formatMaybeNumber(prevBar2.high)} / ${formatMaybeNumber(prevBar2.low)} / ${formatMaybeNumber(prevBar2.close)}`,
+  ];
+}
+
+function buildSignalBarStateNotes(signalBarState: Record<string, unknown>) {
+  if (Object.keys(signalBarState).length === 0) {
+    return ["signal-state: --"];
+  }
+  const current = getRecord(signalBarState.current);
+  const prevBar1 = getRecord(signalBarState.prevBar1);
+  const prevBar2 = getRecord(signalBarState.prevBar2);
+  return [
+    `signal-state: tf=${String(signalBarState.timeframe ?? "--")} · bars=${String(signalBarState.barCount ?? "--")}`,
     `current: ${formatMaybeNumber(current.open)} / ${formatMaybeNumber(current.high)} / ${formatMaybeNumber(current.low)} / ${formatMaybeNumber(current.close)}`,
     `t-1: ${formatMaybeNumber(prevBar1.open)} / ${formatMaybeNumber(prevBar1.high)} / ${formatMaybeNumber(prevBar1.low)} / ${formatMaybeNumber(prevBar1.close)}`,
     `t-2: ${formatMaybeNumber(prevBar2.open)} / ${formatMaybeNumber(prevBar2.high)} / ${formatMaybeNumber(prevBar2.low)} / ${formatMaybeNumber(prevBar2.close)}`,
