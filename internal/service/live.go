@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -68,12 +69,46 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 	return p.store.UpdateLiveSessionStatus(sessionID, "RUNNING")
 }
 
+func (p *Platform) StartLiveSyncDispatcher(ctx context.Context) {
+	if ctx == nil {
+		return
+	}
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = p.syncActiveLiveSessions(time.Now().UTC())
+		}
+	}
+}
+
 func (p *Platform) SyncLiveSession(sessionID string) (domain.LiveSession, error) {
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
 	return p.syncLatestLiveSessionOrder(session, time.Now().UTC())
+}
+
+func (p *Platform) syncActiveLiveSessions(eventTime time.Time) error {
+	sessions, err := p.ListLiveSessions()
+	if err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		if !strings.EqualFold(session.Status, "RUNNING") {
+			continue
+		}
+		if strings.TrimSpace(stringValue(session.State["lastDispatchedOrderId"])) == "" {
+			continue
+		}
+		_, _ = p.syncLatestLiveSessionOrder(session, eventTime)
+	}
+	return nil
 }
 
 func (p *Platform) DispatchLiveSessionIntent(sessionID string) (domain.Order, error) {
