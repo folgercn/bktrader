@@ -56,33 +56,56 @@ func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/strategies/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/strategies/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(parts) != 2 || parts[1] != "signal-bindings" {
-			writeError(w, http.StatusNotFound, "strategy signal binding route not found")
+		strategyID := parts[0]
+		if len(parts) != 2 {
+			writeError(w, http.StatusNotFound, "strategy route not found")
 			return
 		}
-		strategyID := parts[0]
-		switch r.Method {
-		case http.MethodGet:
-			items, err := platform.ListStrategySignalBindings(strategyID)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
+		switch parts[1] {
+		case "signal-bindings":
+			switch r.Method {
+			case http.MethodGet:
+				items, err := platform.ListStrategySignalBindings(strategyID)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, items)
+			case http.MethodPost:
+				var payload map[string]any
+				if err := decodeJSON(r, &payload); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				item, err := platform.BindStrategySignalSource(strategyID, payload)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, item)
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		case "parameters":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
-			writeJSON(w, http.StatusOK, items)
-		case http.MethodPost:
-			var payload map[string]any
+			var payload struct {
+				Parameters map[string]any `json:"parameters"`
+			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			item, err := platform.BindStrategySignalSource(strategyID, payload)
+			item, err := platform.UpdateStrategyParameters(strategyID, payload.Parameters)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			writeJSON(w, http.StatusOK, item)
 		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(w, http.StatusNotFound, "strategy route not found")
 		}
 	})
 }

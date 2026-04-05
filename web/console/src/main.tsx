@@ -436,6 +436,7 @@ function App() {
   const [strategySignalBindingMap, setStrategySignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
   const [signalRuntimePlan, setSignalRuntimePlan] = useState<Record<string, unknown> | null>(null);
   const [selectedSignalRuntimeId, setSelectedSignalRuntimeId] = useState<string | null>(null);
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
@@ -452,6 +453,8 @@ function App() {
   const [telegramAction, setTelegramAction] = useState<string | null>(null);
   const [backtestAction, setBacktestAction] = useState(false);
   const [runtimePolicyAction, setRuntimePolicyAction] = useState(false);
+  const [strategyCreateAction, setStrategyCreateAction] = useState(false);
+  const [strategySaveAction, setStrategySaveAction] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [timeWindow, setTimeWindow] = useState<TimeWindow>("12h");
@@ -526,6 +529,17 @@ function App() {
     role: "trigger",
     symbol: "BTCUSDT",
     timeframe: "1d",
+  });
+  const [strategyCreateForm, setStrategyCreateForm] = useState({
+    name: "",
+    description: "",
+  });
+  const [strategyEditorForm, setStrategyEditorForm] = useState({
+    strategyId: "",
+    strategyEngine: "bk-default",
+    signalTimeframe: "1d",
+    executionDataSource: "tick",
+    parametersJson: "{}",
   });
   const [signalRuntimeForm, setSignalRuntimeForm] = useState({
     accountId: "",
@@ -629,16 +643,6 @@ function App() {
         : [],
     [highlightedLiveSession]
   );
-  const monitorSession = highlightedLiveSession?.session ?? primarySession ?? null;
-  const monitorMode = highlightedLiveSession?.session ? "LIVE" : primarySession ? "PAPER" : "--";
-  const monitorExecutionSummary = highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(primarySession, orders, fills, positions);
-  const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : primaryLinkedSignalRuntimeState;
-  const monitorBars = deriveSignalBarCandles(getRecord(monitorRuntimeState.sourceStates));
-  const monitorSignalState = derivePrimarySignalBarState(getRecord(monitorRuntimeState.signalBarStates));
-  const monitorMarket = deriveRuntimeMarketSnapshot(getRecord(monitorRuntimeState.sourceStates), getRecord(monitorRuntimeState.lastEventSummary));
-  const monitorSummary =
-    monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
-  const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
   const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
   const primaryLinkedSignalRuntime =
@@ -673,10 +677,28 @@ function App() {
     primarySessionSignalBarDecision,
     runtimePolicy
   );
+  const monitorSession = highlightedLiveSession?.session ?? primarySession ?? null;
+  const monitorMode = highlightedLiveSession?.session ? "LIVE" : primarySession ? "PAPER" : "--";
+  const monitorExecutionSummary =
+    highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(primarySession, orders, fills, positions);
+  const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : primaryLinkedSignalRuntimeState;
+  const monitorBars = deriveSignalBarCandles(getRecord(monitorRuntimeState.sourceStates));
+  const monitorSignalState = derivePrimarySignalBarState(getRecord(monitorRuntimeState.signalBarStates));
+  const monitorMarket = deriveRuntimeMarketSnapshot(
+    getRecord(monitorRuntimeState.sourceStates),
+    getRecord(monitorRuntimeState.lastEventSummary)
+  );
+  const monitorSummary =
+    monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
+  const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
   const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
   const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
   const selectedRuntimeStrategy = signalRuntimeForm.strategyId || selectedSignalStrategy;
+  const selectedStrategy =
+    strategies.find((item) => item.id === (selectedStrategyId || strategyEditorForm.strategyId)) ?? strategies[0] ?? null;
+  const selectedStrategyVersion = selectedStrategy?.currentVersion ?? null;
+  const selectedStrategyParameters = getRecord(selectedStrategyVersion?.parameters);
   const selectedSignalRuntime =
     signalRuntimeSessions.find((item) => item.id === selectedSignalRuntimeId) ?? signalRuntimeSessions[0] ?? null;
   const selectedSignalRuntimeState = getRecord(selectedSignalRuntime?.state);
@@ -854,6 +876,12 @@ function App() {
     setPositions(positionsData);
     setSnapshots(snapshotData);
     setStrategies(strategyData);
+    setSelectedStrategyId((current) => {
+      if (current && strategyData.some((item) => item.id === current)) {
+        return current;
+      }
+      return strategyData[0]?.id ?? null;
+    });
     setBacktests(backtestData);
     setSelectedBacktestId((current) => {
       if (current && backtestData.some((item) => item.id === current)) {
@@ -960,6 +988,10 @@ function App() {
       symbol: current.symbol || "BTCUSDT",
       timeframe: current.timeframe || "1d",
     }));
+    setStrategyCreateForm((current) => ({
+      name: current.name || "",
+      description: current.description || "",
+    }));
     setSignalRuntimeForm((current) => ({
       accountId: current.accountId || summaryData[0]?.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
       strategyId: current.strategyId || strategyData[0]?.id || "",
@@ -999,6 +1031,29 @@ function App() {
   useEffect(() => {
     setSelectedSample(null);
   }, [selectedBacktest?.id]);
+
+  useEffect(() => {
+    if (!selectedStrategy) {
+      return;
+    }
+    const currentParameters = getRecord(selectedStrategy.currentVersion?.parameters);
+    setStrategyEditorForm({
+      strategyId: selectedStrategy.id,
+      strategyEngine: String(currentParameters.strategyEngine ?? "bk-default"),
+      signalTimeframe: String(
+        currentParameters.signalTimeframe ??
+          selectedStrategy.currentVersion?.signalTimeframe ??
+          "1d"
+      ),
+      executionDataSource: String(
+        currentParameters.executionDataSource ??
+          currentParameters.executionTimeframe ??
+          selectedStrategy.currentVersion?.executionTimeframe ??
+          "tick"
+      ),
+      parametersJson: JSON.stringify(currentParameters, null, 2),
+    });
+  }, [selectedStrategy]);
 
   useEffect(() => {
     async function loadSignalDetails() {
@@ -1098,6 +1153,64 @@ function App() {
       setError(err instanceof Error ? err.message : "Failed to execute paper session action");
     } finally {
       setSessionAction(null);
+    }
+  }
+
+  async function createStrategy() {
+    if (!strategyCreateForm.name.trim()) {
+      setError("策略名称不能为空");
+      return;
+    }
+    setStrategyCreateAction(true);
+    try {
+      setError(null);
+      await fetchJSON("/api/v1/strategies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: strategyCreateForm.name.trim(),
+          description: strategyCreateForm.description.trim(),
+          parameters: {
+            strategyEngine: "bk-default",
+            signalTimeframe: "1d",
+            executionDataSource: "tick",
+          },
+        }),
+      });
+      setStrategyCreateForm({ name: "", description: "" });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建策略失败");
+    } finally {
+      setStrategyCreateAction(false);
+    }
+  }
+
+  async function saveStrategyParameters() {
+    if (!strategyEditorForm.strategyId) {
+      setError("请先选择策略");
+      return;
+    }
+    setStrategySaveAction(true);
+    try {
+      setError(null);
+      const parsed = JSON.parse(strategyEditorForm.parametersJson || "{}") as Record<string, unknown>;
+      const nextParameters: Record<string, unknown> = {
+        ...parsed,
+        strategyEngine: strategyEditorForm.strategyEngine,
+        signalTimeframe: strategyEditorForm.signalTimeframe,
+        executionDataSource: strategyEditorForm.executionDataSource,
+      };
+      await fetchJSON(`/api/v1/strategies/${strategyEditorForm.strategyId}/parameters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parameters: nextParameters }),
+      });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存策略参数失败");
+    } finally {
+      setStrategySaveAction(false);
     }
   }
 
@@ -1589,6 +1702,7 @@ function App() {
           <a href="#overview">总览</a>
           <a href="#notifications">通知</a>
           <a href="#alerts">告警</a>
+          <a href="#strategies">策略</a>
           <a href="#paper">模拟盘</a>
           <a href="#signals">信号源</a>
           <a href="#live">实盘</a>
@@ -1828,6 +1942,215 @@ function App() {
           ) : (
             <div className="empty-state empty-state-compact">No active alerts</div>
           )}
+        </section>
+
+        <section id="strategies" className="panel panel-backtests">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Strategies</p>
+              <h3>策略管理</h3>
+            </div>
+            <div className="range-box">
+              <span>{strategies.length} strategies</span>
+              <span>{signalRuntimeAdapters.length} engines</span>
+            </div>
+          </div>
+          <div className="live-grid">
+            <div className="backtest-form session-form">
+              <h4>创建策略</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>策略名称</span>
+                  <input
+                    value={strategyCreateForm.name}
+                    onChange={(event) => setStrategyCreateForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="例如：BK 4H Runner"
+                  />
+                </label>
+                <label className="form-field form-field-wide">
+                  <span>策略说明</span>
+                  <input
+                    value={strategyCreateForm.description}
+                    onChange={(event) =>
+                      setStrategyCreateForm((current) => ({ ...current, description: event.target.value }))
+                    }
+                    placeholder="记录这条策略的用途、市场和执行方式"
+                  />
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton
+                  label={strategyCreateAction ? "创建中..." : "创建策略"}
+                  disabled={strategyCreateAction || !strategyCreateForm.name.trim()}
+                  onClick={createStrategy}
+                />
+              </div>
+              <div className="backtest-notes">
+                <div className="note-item">第一版先直接创建当前版本，默认引擎是 bk-default。</div>
+                <div className="note-item">版本历史和回滚下一步再补，这一版先保证你能直接改参数。</div>
+              </div>
+            </div>
+
+            <div className="backtest-form session-form">
+              <h4>策略参数编辑</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>选择策略</span>
+                  <select
+                    value={strategyEditorForm.strategyId}
+                    onChange={(event) => {
+                      setSelectedStrategyId(event.target.value);
+                      setStrategyEditorForm((current) => ({ ...current, strategyId: event.target.value }));
+                    }}
+                  >
+                    {strategies.map((strategy) => (
+                      <option key={strategy.id} value={strategy.id}>
+                        {strategy.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>策略引擎</span>
+                  <select
+                    value={strategyEditorForm.strategyEngine}
+                    onChange={(event) =>
+                      setStrategyEditorForm((current) => ({ ...current, strategyEngine: event.target.value }))
+                    }
+                  >
+                    {[...new Set(["bk-default", ...strategies.map((item) => String(getRecord(item.currentVersion?.parameters).strategyEngine || "bk-default"))])].map((engineKey) => (
+                      <option key={engineKey} value={engineKey}>
+                        {engineKey}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>信号周期</span>
+                  <select
+                    value={strategyEditorForm.signalTimeframe}
+                    onChange={(event) =>
+                      setStrategyEditorForm((current) => ({ ...current, signalTimeframe: event.target.value }))
+                    }
+                  >
+                    <option value="4h">4h</option>
+                    <option value="1d">1d</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>执行数据源</span>
+                  <select
+                    value={strategyEditorForm.executionDataSource}
+                    onChange={(event) =>
+                      setStrategyEditorForm((current) => ({ ...current, executionDataSource: event.target.value }))
+                    }
+                  >
+                    <option value="tick">tick</option>
+                    <option value="1min">1min</option>
+                  </select>
+                </label>
+                <label className="form-field form-field-wide">
+                  <span>参数 JSON</span>
+                  <textarea
+                    rows={14}
+                    value={strategyEditorForm.parametersJson}
+                    onChange={(event) =>
+                      setStrategyEditorForm((current) => ({ ...current, parametersJson: event.target.value }))
+                    }
+                    placeholder='{"stop_loss_atr":0.05,"profit_protect_atr":1.0}'
+                  />
+                </label>
+              </div>
+              <div className="backtest-actions inline-actions">
+                <ActionButton
+                  label={strategySaveAction ? "保存中..." : "保存策略参数"}
+                  disabled={strategySaveAction || !strategyEditorForm.strategyId}
+                  onClick={saveStrategyParameters}
+                />
+                <button
+                  type="button"
+                  className="filter-chip"
+                  onClick={() => {
+                    if (!selectedStrategy) {
+                      return;
+                    }
+                    const currentParameters = getRecord(selectedStrategy.currentVersion?.parameters);
+                    setStrategyEditorForm({
+                      strategyId: selectedStrategy.id,
+                      strategyEngine: String(currentParameters.strategyEngine ?? "bk-default"),
+                      signalTimeframe: String(
+                        currentParameters.signalTimeframe ??
+                          selectedStrategy.currentVersion?.signalTimeframe ??
+                          "1d"
+                      ),
+                      executionDataSource: String(
+                        currentParameters.executionDataSource ??
+                          currentParameters.executionTimeframe ??
+                          selectedStrategy.currentVersion?.executionTimeframe ??
+                          "tick"
+                      ),
+                      parametersJson: JSON.stringify(currentParameters, null, 2),
+                    });
+                  }}
+                >
+                  还原当前版本
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="live-grid">
+            <div className="backtest-list">
+              <h4>策略列表</h4>
+              <SimpleTable
+                columns={["策略", "版本", "信号周期", "执行源", "引擎"]}
+                rows={strategies.map((strategy) => {
+                  const parameters = getRecord(strategy.currentVersion?.parameters);
+                  return [
+                    strategy.name,
+                    strategy.currentVersion?.version ?? "--",
+                    String(parameters.signalTimeframe ?? strategy.currentVersion?.signalTimeframe ?? "--"),
+                    String(parameters.executionDataSource ?? parameters.executionTimeframe ?? strategy.currentVersion?.executionTimeframe ?? "--"),
+                    String(parameters.strategyEngine ?? "bk-default"),
+                  ];
+                })}
+                emptyMessage="暂无策略"
+              />
+            </div>
+            <div className="backtest-list">
+              <h4>当前版本摘要</h4>
+              {selectedStrategy ? (
+                <div className="backtest-notes">
+                  <div className="note-item">
+                    <strong>策略</strong> {selectedStrategy.name}
+                  </div>
+                  <div className="note-item">
+                    <strong>说明</strong> {selectedStrategy.description || "--"}
+                  </div>
+                  <div className="note-item">
+                    <strong>当前版本</strong> {selectedStrategyVersion?.version ?? "--"}
+                  </div>
+                  <div className="note-item">
+                    <strong>创建时间</strong> {formatTime(selectedStrategy.createdAt)}
+                  </div>
+                  <div className="note-item">
+                    <strong>引擎</strong> {String(selectedStrategyParameters.strategyEngine ?? "bk-default")}
+                  </div>
+                  <div className="note-item">
+                    <strong>信号周期</strong> {String(selectedStrategyParameters.signalTimeframe ?? selectedStrategyVersion?.signalTimeframe ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    <strong>执行源</strong> {String(selectedStrategyParameters.executionDataSource ?? selectedStrategyVersion?.executionTimeframe ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    <strong>说明</strong> 这一版是直接编辑当前版本参数，不会新建版本。
+                  </div>
+                </div>
+              ) : (
+                <div className="empty-state empty-state-compact">暂无可编辑策略</div>
+              )}
+            </div>
+          </div>
         </section>
 
         <section id="backtests" className="panel panel-backtests">

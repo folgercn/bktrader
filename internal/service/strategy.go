@@ -25,6 +25,14 @@ func (p *Platform) CreateStrategy(name, description string, parameters map[strin
 	return p.store.CreateStrategy(name, description, parameters)
 }
 
+func (p *Platform) UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error) {
+	if parameters == nil {
+		parameters = map[string]any{}
+	}
+	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
+	return p.store.UpdateStrategyParameters(strategyID, parameters)
+}
+
 func (p *Platform) GetStrategy(strategyID string) (map[string]any, error) {
 	items, err := p.store.ListStrategies()
 	if err != nil {
