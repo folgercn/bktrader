@@ -209,11 +209,13 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		}
 	}
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
+	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason)
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
 		Metadata: map[string]any{
 			"decisionState":     decisionState,
+			"signalKind":        signalKind,
 			"trigger":           trigger,
 			"sourceStateCount":  len(sourceStates),
 			"symbol":            symbol,
@@ -333,5 +335,38 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 		return "waiting-price"
 	default:
 		return "waiting"
+	}
+}
+
+func classifyStrategySignalKind(action, reason, nextRole, nextReason string) string {
+	if action == "advance-plan" {
+		switch strings.ToLower(strings.TrimSpace(nextRole)) {
+		case "entry":
+			return "entry"
+		case "exit":
+			reasonKey := strings.ToUpper(strings.TrimSpace(nextReason))
+			switch reasonKey {
+			case "PT":
+				return "protect-exit"
+			case "SL":
+				return "risk-exit"
+			default:
+				return "exit"
+			}
+		default:
+			return "advance"
+		}
+	}
+	switch reason {
+	case "planned-event-not-reached":
+		return "hold"
+	case "price-not-actionable":
+		return "hold"
+	case "missing-source-states":
+		return "hold"
+	case "non-trigger-event", "symbol-mismatch":
+		return "ignore"
+	default:
+		return "hold"
 	}
 }

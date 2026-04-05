@@ -141,6 +141,12 @@ go run ./cmd/platform-api
       - `waiting-time`
       - `waiting-price`
       - `waiting-inputs`
+    - 同时也会产出更偏策略语义的 `signalKind`：
+      - `entry`
+      - `hold`
+      - `protect-exit`
+      - `risk-exit`
+      - `ignore`
     - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
     - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
     - 当前还会比较“当前市场价”和“下一笔计划价”的偏离：
