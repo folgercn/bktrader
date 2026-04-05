@@ -397,6 +397,14 @@ type LiveSessionFlowStep = {
   detail: string;
 };
 
+type SessionMarker = {
+  time: string;
+  position: "aboveBar" | "belowBar";
+  color: string;
+  shape: "arrowUp" | "arrowDown" | "circle" | "square";
+  text: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -603,6 +611,17 @@ function App() {
     () => deriveHighlightedLiveSession(liveSessions, orders, fills, positions),
     [liveSessions, orders, fills, positions]
   );
+  const highlightedLiveRuntime =
+    highlightedLiveSession?.session
+      ? signalRuntimeSessions.find((item) => item.id === String(highlightedLiveSession.session.state?.signalRuntimeSessionId ?? "")) ??
+        signalRuntimeSessions.find(
+          (item) =>
+            item.accountId === highlightedLiveSession.session.accountId &&
+            item.strategyId === highlightedLiveSession.session.strategyId
+        ) ??
+        null
+      : null;
+  const highlightedLiveRuntimeState = getRecord(highlightedLiveRuntime?.state);
   const highlightedLiveSessionFlow = useMemo(
     () =>
       highlightedLiveSession
@@ -610,6 +629,16 @@ function App() {
         : [],
     [highlightedLiveSession]
   );
+  const monitorSession = highlightedLiveSession?.session ?? primarySession ?? null;
+  const monitorMode = highlightedLiveSession?.session ? "LIVE" : primarySession ? "PAPER" : "--";
+  const monitorExecutionSummary = highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(primarySession, orders, fills, positions);
+  const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : primaryLinkedSignalRuntimeState;
+  const monitorBars = deriveSignalBarCandles(getRecord(monitorRuntimeState.sourceStates));
+  const monitorSignalState = derivePrimarySignalBarState(getRecord(monitorRuntimeState.signalBarStates));
+  const monitorMarket = deriveRuntimeMarketSnapshot(getRecord(monitorRuntimeState.sourceStates), getRecord(monitorRuntimeState.lastEventSummary));
+  const monitorSummary =
+    monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
+  const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
   const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
   const primaryLinkedSignalRuntime =
@@ -1553,28 +1582,28 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div>
-          <p className="sidebar-label">bkTrader Console</p>
-          <h1>Paper Monitor</h1>
+          <p className="sidebar-label">bkTrader 控制台</p>
+          <h1>交易运行台</h1>
         </div>
         <nav>
-          <a href="#overview">Overview</a>
-          <a href="#notifications">Inbox</a>
-          <a href="#alerts">Alerts</a>
-          <a href="#paper">Paper</a>
-          <a href="#signals">Signals</a>
-          <a href="#live">Live</a>
-          <a href="#backtests">Backtests</a>
-          <a href="#market">Market</a>
-          <a href="#equity">Equity</a>
-          <a href="#positions">Positions</a>
-          <a href="#orders">Orders</a>
-          <a href="#fills">Fills</a>
+          <a href="#overview">总览</a>
+          <a href="#notifications">通知</a>
+          <a href="#alerts">告警</a>
+          <a href="#paper">模拟盘</a>
+          <a href="#signals">信号源</a>
+          <a href="#live">实盘</a>
+          <a href="#backtests">回测</a>
+          <a href="#monitor">主监控</a>
+          <a href="#equity">权益</a>
+          <a href="#positions">持仓</a>
+          <a href="#orders">订单</a>
+          <a href="#fills">成交</a>
         </nav>
         <div className="status-panel">
           <span className={error ? "status-dot status-bad" : "status-dot status-good"} />
           <div>
-            <strong>{error ? "Feed Error" : "Feed Live"}</strong>
-            <p>{error ?? `Polling ${API_BASE} every 5s`}</p>
+            <strong>{error ? "连接异常" : "运行正常"}</strong>
+            <p>{error ?? `每 5 秒轮询 ${API_BASE}`}</p>
           </div>
         </div>
       </aside>
@@ -1582,15 +1611,15 @@ function App() {
       <main className="main">
         <section id="overview" className="hero">
           <div>
-            <p className="eyebrow">Paper Trading Operations</p>
-            <h2>账户监控、K 线回放与执行流水</h2>
+            <p className="eyebrow">交易主控</p>
+            <h2>实盘 / 模拟统一监控与执行运行台</h2>
             <p className="hero-copy">
-              当前页面直接消费平台 API，展示 paper 账户的权益、成交、持仓，以及基于执行数据源回放的 BTCUSDT 行情与订单标记。
+              当前页面直接消费平台 API，主监控优先展示正在运行的实盘会话；如果当前没有实盘会话，则回退展示模拟盘。大周期 K 线直接来自交易所信号源，执行侧信息则展示实时 tick、盘口、持仓、订单和盈亏。
             </p>
           </div>
           <div className="hero-side">
-            <div className="hero-pill">{loading ? "Loading..." : `${summaries.length} account`}</div>
-            <div className="hero-pill hero-pill-accent">{primaryAccount?.mode ?? "No account"}</div>
+            <div className="hero-pill">{loading ? "加载中..." : `${accounts.length} 个账户`}</div>
+            <div className="hero-pill hero-pill-accent">{monitorMode}</div>
           </div>
         </section>
 
@@ -3651,145 +3680,89 @@ function App() {
           </div>
         </section>
 
-        <section id="market" className="panel panel-market">
+        <section id="monitor" className="panel panel-market">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Market Replay</p>
-              <h3>BTCUSDT 1 分钟 K 线与开平仓标记</h3>
+              <p className="panel-kicker">主监控</p>
+              <h3>运行中会话的大周期 K 线与执行状态</h3>
             </div>
             <div className="range-box">
-              <span>{candles.length} bars</span>
-              <span>{chartAnnotations.length} markers</span>
-              <span>{chartOverrideRange?.label ?? timeWindow}</span>
-              <span>{candleRange.label}</span>
+              <span>{monitorMode}</span>
+              <span>{monitorBars.length} 根 K 线</span>
+              <span>{monitorMarkers.length} 个标记</span>
+              <span>{String(monitorSignalState.timeframe ?? "--")}</span>
             </div>
           </div>
           <div className="chart-shell chart-shell-market">
-            {candles.length > 0 ? (
-              <TradingChart
-                candles={candles}
-                annotations={chartAnnotations}
-                focusTime={selectedAnnotationFocusTime ?? latestVisibleAnnotationTime}
-                focusNonce={focusNonce}
-                selectedAnnotationIds={selectedAnnotationIds}
-                onSelectAnnotation={(annotation) => {
-                  const matchedSample = selectableSamples.find((item) => annotationMatchesSample(annotation, item.sample));
-                  if (!matchedSample) {
-                    return;
-                  }
-                  setSelectedSample({ key: matchedSample.key, sample: matchedSample.sample });
-                  setSourceFilter("backtest");
-                  setEventFilter("all");
-                  const range = buildSampleRange(matchedSample.sample);
-                  if (range) {
-                    setChartOverrideRange(range);
-                  }
-                  setFocusNonce((value) => value + 1);
-                }}
-                onHoverMarker={setHoveredMarker}
-              />
+            {monitorBars.length > 0 ? (
+              <SignalMonitorChart candles={monitorBars} markers={monitorMarkers} />
             ) : (
-              <div className="empty-state">No market candles yet</div>
+              <div className="empty-state">当前运行会话还没有交易所大周期 K 线缓存</div>
             )}
           </div>
-          <div className="filter-row">
-            <div className="filter-group filter-group-actions">
-              <span className="filter-label">Focus</span>
-              <div className="filter-chip-row">
-                <button
-                  type="button"
-                  className="filter-chip"
-                  disabled={!latestVisibleAnnotationTime}
-                  onClick={() => setFocusNonce((value) => value + 1)}
-                >
-                  Latest Trade
-                </button>
-              </div>
+          <div className="detail-grid">
+            <div className="detail-item">
+              <span>会话模式</span>
+              <strong>{monitorMode}</strong>
             </div>
-            <FilterGroup
-              label="Window"
-              value={timeWindow}
-              options={[
-                { value: "6h", label: "6h" },
-                { value: "12h", label: "12h" },
-                { value: "1d", label: "1d" },
-                { value: "3d", label: "3d" },
-              ]}
-              onChange={(value) => setTimeWindow(value as TimeWindow)}
-            />
-            <FilterGroup
-              label="Source"
-              value={sourceFilter}
-              options={[
-                { value: "all", label: "All" },
-                { value: "paper", label: "Paper" },
-                { value: "backtest", label: "Backtest" },
-              ]}
-              onChange={(value) => setSourceFilter(value as SourceFilter)}
-            />
-            <FilterGroup
-              label="Event"
-              value={eventFilter}
-              options={[
-                { value: "all", label: "All" },
-                { value: "initial", label: "Initial" },
-                { value: "reentry", label: "Reentry" },
-                { value: "pt", label: "PT" },
-                { value: "sl", label: "SL" },
-              ]}
-              onChange={(value) => setEventFilter(value as EventFilter)}
-            />
+            <div className="detail-item">
+              <span>账户净值</span>
+              <strong>{formatMoney(monitorSummary?.netEquity)}</strong>
+            </div>
+            <div className="detail-item">
+              <span>已实现盈亏</span>
+              <strong>{formatSigned(monitorSummary?.realizedPnl)}</strong>
+            </div>
+            <div className="detail-item">
+              <span>未实现盈亏</span>
+              <strong>{formatSigned(monitorSummary?.unrealizedPnl)}</strong>
+            </div>
+            <div className="detail-item">
+              <span>持仓方向</span>
+              <strong>{String(monitorExecutionSummary.position?.side ?? "FLAT")}</strong>
+            </div>
+            <div className="detail-item">
+              <span>持仓数量</span>
+              <strong>{formatMaybeNumber(monitorExecutionSummary.position?.quantity)}</strong>
+            </div>
+            <div className="detail-item">
+              <span>开仓均价</span>
+              <strong>{formatMaybeNumber(monitorExecutionSummary.position?.entryPrice)}</strong>
+            </div>
+            <div className="detail-item">
+              <span>标记价格</span>
+              <strong>{formatMaybeNumber(monitorExecutionSummary.position?.markPrice)}</strong>
+            </div>
+            <div className="detail-item">
+              <span>最新 Tick</span>
+              <strong>{formatMaybeNumber(monitorMarket.tradePrice)}</strong>
+            </div>
+            <div className="detail-item">
+              <span>盘口</span>
+              <strong>{formatMaybeNumber(monitorMarket.bestBid)} / {formatMaybeNumber(monitorMarket.bestAsk)}</strong>
+            </div>
+            <div className="detail-item">
+              <span>盘口价差</span>
+              <strong>{formatMaybeNumber(monitorMarket.spreadBps)} bps</strong>
+            </div>
+            <div className="detail-item">
+              <span>MA20 / ATR14</span>
+              <strong>{formatMaybeNumber(monitorSignalState.ma20)} / {formatMaybeNumber(monitorSignalState.atr14)}</strong>
+            </div>
           </div>
-          <div className="marker-legend">
-            {markerLegend.map((item) => (
-              <div key={item.label} className="legend-item">
-                <span className="legend-dot" style={{ backgroundColor: item.color }} />
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="detail-card">
-            <p className="panel-kicker">Marker Detail</p>
-            {markerDetail ? (
-              <div className="detail-grid">
-                <div className="detail-item">
-                  <span>Label</span>
-                  <strong>{markerDetail.label}</strong>
-                </div>
-                <div className="detail-item">
-                  <span>Source</span>
-                  <strong>{markerDetail.source.toUpperCase()}</strong>
-                </div>
-                <div className="detail-item">
-                  <span>Type</span>
-                  <strong>{markerDetail.type}</strong>
-                </div>
-                <div className="detail-item">
-                  <span>Price</span>
-                  <strong>{formatMoney(markerDetail.price)}</strong>
-                </div>
-                <div className="detail-item">
-                  <span>Time</span>
-                  <strong>{formatTime(markerDetail.time)}</strong>
-                </div>
-                <div className="detail-item">
-                  <span>Paper Session</span>
-                  <strong>{markerDetail.paperSession ? shrink(markerDetail.paperSession) : "--"}</strong>
-                </div>
-              </div>
-            ) : (
-              <div className="empty-state empty-state-compact">Move over the chart to inspect a trade marker</div>
-            )}
-          </div>
-          <div className="snapshot-strip">
-            {chartAnnotations.slice(-4).map((item) => (
-              <div key={item.id} className={`snapshot-item snapshot-item-${annotationTone(item)}`}>
-                <strong>{item.label}</strong>
-                <span>
-                  {item.source.toUpperCase()} · {formatMoney(item.price)} · {formatTime(item.time)}
-                </span>
-              </div>
-            ))}
+          <div className="backtest-notes">
+            <div className="note-item">
+              当前会话：{monitorSession ? shrink(monitorSession.id) : "--"} · 订单 {monitorExecutionSummary.orderCount} · 成交 {monitorExecutionSummary.fillCount}
+            </div>
+            <div className="note-item">
+              最新订单：{String(monitorExecutionSummary.latestOrder?.side ?? "--")} · {String(monitorExecutionSummary.latestOrder?.status ?? "--")} · {formatTime(String(monitorExecutionSummary.latestOrder?.createdAt ?? ""))}
+            </div>
+            <div className="note-item">
+              最新成交：{formatMaybeNumber(monitorExecutionSummary.latestFill?.price)} · 手续费 {formatMaybeNumber(monitorExecutionSummary.latestFill?.fee)} · {formatTime(String(monitorExecutionSummary.latestFill?.createdAt ?? ""))}
+            </div>
+            <div className="note-item">
+              当前大周期：tf={String(monitorSignalState.timeframe ?? "--")} · bars={String(monitorSignalState.barCount ?? "--")}
+            </div>
           </div>
         </section>
 
@@ -4259,6 +4232,80 @@ function SignalBarChart(props: { candles: SignalBarCandle[] }) {
     chart.timeScale().fitContent();
     return () => chart.remove();
   }, [props.candles]);
+
+  return <div ref={containerRef} className="tv-chart" />;
+}
+
+function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: SessionMarker[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || props.candles.length === 0) {
+      return;
+    }
+
+    const chart = createChart(containerRef.current, {
+      autoSize: true,
+      height: 360,
+      layout: {
+        background: { type: ColorType.Solid, color: "rgba(255, 251, 242, 0.20)" },
+        textColor: "#4f585d",
+      },
+      grid: {
+        vertLines: { color: "rgba(216, 207, 186, 0.25)", style: LineStyle.Dotted },
+        horzLines: { color: "rgba(216, 207, 186, 0.25)", style: LineStyle.Dotted },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "rgba(216, 207, 186, 0.9)" },
+      timeScale: {
+        borderColor: "rgba(216, 207, 186, 0.9)",
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor: "#0e6d60",
+      downColor: "#b04a37",
+      wickUpColor: "#0e6d60",
+      wickDownColor: "#b04a37",
+      borderVisible: false,
+      priceLineVisible: true,
+    });
+
+    series.setData(
+      props.candles.map((item) => ({
+        time: Math.floor(new Date(item.time).getTime() / 1000),
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+      }))
+    );
+
+    const markers = createSeriesMarkers(
+      series,
+      props.markers.map((item) => ({
+        time: Math.floor(new Date(item.time).getTime() / 1000),
+        position: item.position,
+        color: item.color,
+        shape: item.shape,
+        text: item.text,
+      }))
+    );
+    markers.setMarkers(
+      props.markers.map((item) => ({
+        time: Math.floor(new Date(item.time).getTime() / 1000),
+        position: item.position,
+        color: item.color,
+        shape: item.shape,
+        text: item.text,
+      }))
+    );
+
+    chart.timeScale().fitContent();
+    return () => chart.remove();
+  }, [props.candles, props.markers]);
 
   return <div ref={containerRef} className="tv-chart" />;
 }
@@ -5208,6 +5255,73 @@ function deriveLiveSessionExecutionSummary(
     latestFill: sessionFills[0] ?? null,
     position,
   };
+}
+
+function derivePaperSessionExecutionSummary(
+  session: PaperSession | null,
+  orders: Order[],
+  fills: Fill[],
+  positions: Position[]
+): LiveSessionExecutionSummary {
+  if (!session) {
+    return {
+      orderCount: 0,
+      fillCount: 0,
+      latestOrder: null,
+      latestFill: null,
+      position: null,
+    };
+  }
+  const sessionOrders = orders
+    .filter((order) => String(order.metadata?.paperSession ?? "") === session.id)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const sessionOrderIds = new Set(sessionOrders.map((order) => order.id));
+  const sessionFills = fills
+    .filter((fill) => sessionOrderIds.has(fill.orderId))
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const symbol = String(
+    sessionOrders[0]?.symbol ??
+      session.state?.symbol ??
+      ""
+  );
+  const position =
+    positions.find((item) => item.accountId === session.accountId && item.symbol === symbol) ??
+    null;
+  return {
+    orderCount: sessionOrders.length,
+    fillCount: sessionFills.length,
+    latestOrder: sessionOrders[0] ?? null,
+    latestFill: sessionFills[0] ?? null,
+    position,
+  };
+}
+
+function deriveSessionMarkers(session: LiveSession | PaperSession | null, orders: Order[], fills: Fill[]): SessionMarker[] {
+  if (!session) {
+    return [];
+  }
+  const isLiveSession = "strategyId" in session && !("startEquity" in session);
+  const sessionOrders = orders
+    .filter((order) =>
+      isLiveSession
+        ? String(order.metadata?.liveSessionId ?? "") === session.id
+        : String(order.metadata?.paperSession ?? "") === session.id
+    )
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+  const fillByOrderId = new Map(fills.map((fill) => [fill.orderId, fill] as const));
+
+  return sessionOrders.slice(-24).map((order) => {
+    const fill = fillByOrderId.get(order.id);
+    const side = String(order.side ?? "").toUpperCase();
+    const isBuy = side === "BUY";
+    return {
+      time: fill?.createdAt || order.createdAt,
+      position: isBuy ? "belowBar" : "aboveBar",
+      color: isBuy ? "#0e6d60" : "#b04a37",
+      shape: isBuy ? "arrowUp" : "arrowDown",
+      text: `${isBuy ? "开" : "平"} ${formatMaybeNumber(order.price)}`,
+    };
+  });
 }
 
 function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessionExecutionSummary): LiveSessionHealth {
