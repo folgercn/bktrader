@@ -281,6 +281,8 @@ function App() {
   const [signalRuntimeSessions, setSignalRuntimeSessions] = useState<SignalRuntimeSession[]>([]);
   const [accountSignalBindings, setAccountSignalBindings] = useState<SignalBinding[]>([]);
   const [strategySignalBindings, setStrategySignalBindings] = useState<SignalBinding[]>([]);
+  const [accountSignalBindingMap, setAccountSignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
+  const [strategySignalBindingMap, setStrategySignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
   const [signalRuntimePlan, setSignalRuntimePlan] = useState<Record<string, unknown> | null>(null);
   const [selectedSignalRuntimeId, setSelectedSignalRuntimeId] = useState<string | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
@@ -362,6 +364,14 @@ function App() {
   const primarySessionCurrentPosition = getRecord(primarySessionDecisionMeta.currentPosition);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
+  const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
+  const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
+  const primaryLinkedSignalRuntime =
+    signalRuntimeSessions.find((item) => item.id === String(primarySession?.state?.signalRuntimeSessionId ?? "")) ??
+    signalRuntimeSessions.find((item) => item.accountId === primarySession?.accountId && item.strategyId === primarySession?.strategyId) ??
+    null;
+  const primaryLinkedSignalRuntimeState = getRecord(primaryLinkedSignalRuntime?.state);
+  const primaryLinkedSignalRuntimeSummary = getRecord(primaryLinkedSignalRuntimeState.lastEventSummary);
   const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
   const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
@@ -437,6 +447,18 @@ function App() {
       fetchJSON<SignalRuntimeAdapter[]>("/api/v1/signal-runtime/adapters"),
       fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions"),
     ]);
+    const accountBindingEntries = await Promise.all(
+      accountData.map(async (account) => [
+        account.id,
+        await fetchJSON<SignalBinding[]>(`/api/v1/accounts/${account.id}/signal-bindings`),
+      ] as const)
+    );
+    const strategyBindingEntries = await Promise.all(
+      strategyData.map(async (strategy) => [
+        strategy.id,
+        await fetchJSON<SignalBinding[]>(`/api/v1/strategies/${strategy.id}/signal-bindings`),
+      ] as const)
+    );
 
     const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
     const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
@@ -478,6 +500,8 @@ function App() {
     setSignalSourceTypes(signalSourceTypeData);
     setSignalRuntimeAdapters(signalRuntimeAdapterData);
     setSignalRuntimeSessions(signalRuntimeSessionData);
+    setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
+    setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
     setSelectedSignalRuntimeId((current) => {
       if (current && signalRuntimeSessionData.some((item) => item.id === current)) {
         return current;
@@ -1431,6 +1455,28 @@ function App() {
                   </strong>
                 </div>
                 <div className="session-stat">
+                  <span>Signal Bindings</span>
+                  <strong>
+                    acct {primaryPaperAccountBindings.length} · strat {primaryPaperStrategyBindings.length}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Linked Runtime</span>
+                  <strong>
+                    {primaryLinkedSignalRuntime ? `${primaryLinkedSignalRuntime.status} · ${primaryLinkedSignalRuntime.runtimeAdapter}` : "detached"}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Runtime Health</span>
+                  <strong>{String(primaryLinkedSignalRuntimeState.health ?? primarySession.state?.signalRuntimeStatus ?? "--")}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Runtime Event</span>
+                  <strong>
+                    {String(primaryLinkedSignalRuntimeSummary.event ?? "--")} · {formatTime(String(primaryLinkedSignalRuntimeState.lastEventAt ?? ""))}
+                  </strong>
+                </div>
+                <div className="session-stat">
                   <span>Trading / Funding</span>
                   <strong>
                     {formatMaybeNumber(primarySession.state?.tradingFeeBps)} bps /{" "}
@@ -2015,6 +2061,11 @@ function App() {
                 <div className="live-card-list">
                   {liveAccounts.map((account) => {
                     const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
+                    const bindings = accountSignalBindingMap[account.id] ?? [];
+                    const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
+                    const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
+                    const activeRuntimeState = getRecord(activeRuntime?.state);
+                    const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
                     return (
                       <div key={account.id} className="session-stat">
                         <span>{account.name}</span>
@@ -2023,6 +2074,16 @@ function App() {
                           <span>{account.exchange}</span>
                           <span>{String(binding.adapterKey ?? "--")}</span>
                           <span>{String(binding.positionMode ?? "--")} / {String(binding.marginMode ?? "--")}</span>
+                        </div>
+                        <div className="live-account-meta">
+                          <span>{bindings.length} signal bindings</span>
+                          <span>{runtimeSessionsForAccount.length} runtime sessions</span>
+                          <span>{activeRuntime ? `${activeRuntime.status} · ${String(activeRuntimeState.health ?? "--")}` : "no runtime"}</span>
+                        </div>
+                        <div className="live-account-meta">
+                          <span>{String(activeRuntimeSummary.event ?? "--")}</span>
+                          <span>{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</span>
+                          <span>{formatTime(String(activeRuntimeState.lastEventAt ?? ""))}</span>
                         </div>
                       </div>
                     );
