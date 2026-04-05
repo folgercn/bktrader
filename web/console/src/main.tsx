@@ -309,6 +309,11 @@ type LivePreflightSummary = {
   detail: string;
 };
 
+type LiveNextAction = {
+  label: string;
+  detail: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -2491,6 +2496,7 @@ function App() {
                       activeRuntime,
                       activeRuntimeReadiness
                     );
+                    const liveNextAction = deriveLiveNextAction(livePreflight);
                     const liveAlerts = deriveLiveAlerts(
                       account,
                       activeRuntimeState,
@@ -2547,6 +2553,11 @@ function App() {
                           <span>{livePreflight.detail}</span>
                         </div>
                         <div className="live-account-meta">
+                          <span>next action</span>
+                          <span>{liveNextAction.label}</span>
+                          <span>{liveNextAction.detail}</span>
+                        </div>
+                        <div className="live-account-meta">
                           <span>{String(activeSignalBarState.timeframe ?? "--")}</span>
                           <span>ma20 {formatMaybeNumber(activeSignalBarState.ma20)}</span>
                           <span>atr14 {formatMaybeNumber(activeSignalBarState.atr14)}</span>
@@ -2577,6 +2588,9 @@ function App() {
                           ))}
                           <div className="note-item">
                             live-preflight: {livePreflight.reason} · {livePreflight.detail}
+                          </div>
+                          <div className="note-item">
+                            next-action: {liveNextAction.label} · {liveNextAction.detail}
                           </div>
                           {buildSignalBarStateNotes(activeSignalBarState).map((line) => (
                             <div key={line} className="note-item">
@@ -3929,6 +3943,62 @@ function deriveLivePreflightSummary(
     reason: "runtime-ready",
     detail: "live runtime preflight is satisfied",
   };
+}
+
+function deriveLiveNextAction(preflight: LivePreflightSummary): LiveNextAction {
+  switch (preflight.reason) {
+    case "account-not-configured":
+      return {
+        label: "bind live adapter",
+        detail: "finish account binding and credentials first",
+      };
+    case "no-signal-bindings":
+      return {
+        label: "bind signals",
+        detail: "attach required signal, trigger, and feature sources",
+      };
+    case "no-runtime-session":
+      return {
+        label: "create runtime",
+        detail: "create a signal runtime session for this account and strategy",
+      };
+    case "runtime-not-running":
+    case "no-active-runtime":
+      return {
+        label: "start runtime",
+        detail: "start the linked signal runtime session and wait for healthy data flow",
+      };
+    case "missing-trade-tick":
+      return {
+        label: "restore tick feed",
+        detail: "ensure trade tick binding is active and source states are flowing",
+      };
+    case "missing-order-book":
+      return {
+        label: "restore order book",
+        detail: "ensure order book feature binding is active and fresh",
+      };
+    case "stale-source-states":
+      return {
+        label: "wait for fresh data",
+        detail: "let the runtime refresh source states before submitting live orders",
+      };
+    case "strategy-version-required":
+      return {
+        label: "pass strategyVersionId",
+        detail: "multiple runtimes are linked, so live submission must choose one strategy version",
+      };
+    case "runtime-ready":
+      return {
+        label: "submit live order",
+        detail: "runtime preflight is satisfied",
+      };
+    default:
+      return {
+        label: "inspect runtime",
+        detail: "open the linked runtime session and review readiness details",
+      };
+  }
 }
 
 function buildSignalActionNotes(signalAction: { bias: string; state: string; reason: string }) {
