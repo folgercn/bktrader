@@ -1228,6 +1228,10 @@ function App() {
                   <strong>{formatMaybeNumber(primarySessionDecisionMeta.positionPnLBps)}</strong>
                 </div>
                 <div className="session-stat">
+                  <span>Exit Proximity (bps)</span>
+                  <strong>{formatMaybeNumber(primarySessionDecisionMeta.exitProximityBps)}</strong>
+                </div>
+                <div className="session-stat">
                   <span>Next Planned Event</span>
                   <strong>
                     {formatTime(String(primarySession.state?.lastStrategyEvaluationNextPlannedEventAt ?? ""))} ·{" "}

@@ -212,7 +212,8 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		}
 	}
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
-	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps)
+	exitProximityBps := computeExitProximityBps(context.NextPlannedPrice, marketPrice)
+	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps, exitProximityBps)
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
@@ -232,6 +233,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"marketPrice":       marketPrice,
 			"marketSource":      marketSource,
 			"positionPnLBps":    positionPnLBps,
+			"exitProximityBps":  exitProximityBps,
 			"maxDeviationBps":   maxDeviationBps,
 			"deviationBps":      deviationBps,
 			"priceActionable":   isPlannedPriceActionable(context.NextPlannedSide, context.NextPlannedPrice, marketPrice, maxDeviationBps),
@@ -343,11 +345,12 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 	}
 }
 
-func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any, positionPnLBps float64) string {
+func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any, positionPnLBps float64, exitProximityBps float64) string {
 	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	positionQty := parseFloatValue(currentPosition["quantity"])
 	hasPosition := positionQty > 0 && positionSide != ""
 	reasonTag := normalizeStrategyReasonTag(nextReason)
+	nearExit := exitProximityBps > 0 && exitProximityBps <= 10
 	if action == "advance-plan" {
 		switch strings.ToLower(strings.TrimSpace(nextRole)) {
 		case "entry":
@@ -390,11 +393,17 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 	case "exit":
 		switch reasonTag {
 		case "pt":
+			if nearExit {
+				return "protect-exit-near"
+			}
 			if hasPosition && positionPnLBps > 0 {
 				return "protect-exit-watch"
 			}
 			return "protect-exit-watch"
 		case "sl":
+			if nearExit {
+				return "risk-exit-near"
+			}
 			if hasPosition && positionPnLBps <= 0 {
 				return "risk-exit-watch"
 			}
@@ -442,6 +451,13 @@ func computePositionPnLBps(currentPosition map[string]any, marketPrice float64) 
 	default:
 		return 0
 	}
+}
+
+func computeExitProximityBps(plannedPrice, marketPrice float64) float64 {
+	if plannedPrice <= 0 || marketPrice <= 0 {
+		return 0
+	}
+	return math.Abs(marketPrice/plannedPrice-1) * 10000
 }
 
 func normalizeStrategyReasonTag(value string) string {
