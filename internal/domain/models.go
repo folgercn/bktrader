@@ -214,3 +214,21 @@ type RuntimePolicy struct {
 	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
 	UpdatedAt                      time.Time `json:"updatedAt"`
 }
+
+// PlatformAlert 是统一告警中心消费的聚合告警记录。
+type PlatformAlert struct {
+	ID               string         `json:"id"`
+	Scope            string         `json:"scope"` // paper / live / runtime
+	Level            string         `json:"level"` // critical / warning / info
+	Title            string         `json:"title"`
+	Detail           string         `json:"detail"`
+	AccountID        string         `json:"accountId,omitempty"`
+	AccountName      string         `json:"accountName,omitempty"`
+	StrategyID       string         `json:"strategyId,omitempty"`
+	StrategyName     string         `json:"strategyName,omitempty"`
+	PaperSessionID   string         `json:"paperSessionId,omitempty"`
+	RuntimeSessionID string         `json:"runtimeSessionId,omitempty"`
+	Anchor           string         `json:"anchor,omitempty"`
+	EventTime        time.Time      `json:"eventTime"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
+}

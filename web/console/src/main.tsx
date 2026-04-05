@@ -295,6 +295,23 @@ type AlertItem = {
   detail: string;
 };
 
+type PlatformAlert = {
+  id: string;
+  scope: "paper" | "live" | "runtime" | string;
+  level: "critical" | "warning" | "info" | string;
+  title: string;
+  detail: string;
+  accountId?: string;
+  accountName?: string;
+  strategyId?: string;
+  strategyName?: string;
+  paperSessionId?: string;
+  runtimeSessionId?: string;
+  anchor?: string;
+  eventTime?: string;
+  metadata?: Record<string, unknown>;
+};
+
 type RuntimePolicy = {
   tradeTickFreshnessSeconds: number;
   orderBookFreshnessSeconds: number;
@@ -336,6 +353,7 @@ function App() {
   const [signalRuntimeAdapters, setSignalRuntimeAdapters] = useState<SignalRuntimeAdapter[]>([]);
   const [signalRuntimeSessions, setSignalRuntimeSessions] = useState<SignalRuntimeSession[]>([]);
   const [runtimePolicy, setRuntimePolicy] = useState<RuntimePolicy | null>(null);
+  const [alerts, setAlerts] = useState<PlatformAlert[]>([]);
   const [accountSignalBindings, setAccountSignalBindings] = useState<SignalBinding[]>([]);
   const [strategySignalBindings, setStrategySignalBindings] = useState<SignalBinding[]>([]);
   const [accountSignalBindingMap, setAccountSignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
@@ -595,6 +613,7 @@ function App() {
       signalRuntimeAdapterData,
       signalRuntimeSessionData,
       runtimePolicyData,
+      alertData,
     ] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<AccountRecord[]>("/api/v1/accounts"),
@@ -611,6 +630,7 @@ function App() {
       fetchJSON<SignalRuntimeAdapter[]>("/api/v1/signal-runtime/adapters"),
       fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions"),
       fetchJSON<RuntimePolicy>("/api/v1/runtime-policy"),
+      fetchJSON<PlatformAlert[]>("/api/v1/alerts"),
     ]);
     const accountBindingEntries = await Promise.all(
       accountData.map(async (account) => [
@@ -666,6 +686,7 @@ function App() {
     setSignalRuntimeAdapters(signalRuntimeAdapterData);
     setSignalRuntimeSessions(signalRuntimeSessionData);
     setRuntimePolicy(runtimePolicyData);
+    setAlerts(alertData);
     setRuntimePolicyForm({
       tradeTickFreshnessSeconds: String(runtimePolicyData.tradeTickFreshnessSeconds ?? 15),
       orderBookFreshnessSeconds: String(runtimePolicyData.orderBookFreshnessSeconds ?? 10),
@@ -1171,6 +1192,26 @@ function App() {
     window.location.hash = "signals";
   }
 
+  function jumpToAlert(alert: PlatformAlert) {
+    switch (alert.anchor) {
+      case "signals":
+        if (alert.runtimeSessionId) {
+          jumpToSignalRuntimeSession(alert.runtimeSessionId);
+          return;
+        }
+        window.location.hash = "signals";
+        return;
+      case "paper":
+        window.location.hash = "paper";
+        return;
+      case "live":
+        window.location.hash = "live";
+        return;
+      default:
+        window.location.hash = alert.anchor;
+    }
+  }
+
   async function createBacktestRun() {
     try {
       setBacktestAction(true);
@@ -1206,6 +1247,7 @@ function App() {
         </div>
         <nav>
           <a href="#overview">Overview</a>
+          <a href="#alerts">Alerts</a>
           <a href="#paper">Paper</a>
           <a href="#signals">Signals</a>
           <a href="#live">Live</a>
@@ -1247,6 +1289,55 @@ function App() {
           <MetricCard label="Fees" value={formatMoney(primaryAccount?.fees)} />
           <MetricCard label="Exposure" value={formatMoney(primaryAccount?.exposureNotional)} />
           <MetricCard label="Open Positions" value={String(primaryAccount?.openPositionCount ?? 0)} />
+        </section>
+
+        <section id="alerts" className="panel panel-alerts">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Alerts</p>
+              <h3>统一运行告警</h3>
+            </div>
+            <div className="range-box">
+              <span>{alerts.length} alerts</span>
+              <span>{alerts.filter((item) => item.level === "critical").length} critical</span>
+              <span>{alerts.filter((item) => item.level === "warning").length} warning</span>
+            </div>
+          </div>
+          {alerts.length > 0 ? (
+            <div className="alerts-grid">
+              {alerts.map((alert) => (
+                <article key={alert.id} className="alert-card">
+                  <div className="alert-card-header">
+                    <div>
+                      <StatusPill tone={alertLevelTone(alert.level)}>{alert.level}</StatusPill>
+                      <StatusPill tone={alertScopeTone(alert.scope)}>{alert.scope}</StatusPill>
+                    </div>
+                    <span className="alert-time">{formatTime(String(alert.eventTime ?? ""))}</span>
+                  </div>
+                  <h4>{alert.title}</h4>
+                  <p>{alert.detail}</p>
+                  <div className="alert-meta">
+                    <span>{alert.accountName || alert.accountId || "--"}</span>
+                    <span>{alert.strategyName || alert.strategyId || "--"}</span>
+                    <span>{alert.runtimeSessionId || alert.paperSessionId || "--"}</span>
+                  </div>
+                  {alert.anchor ? (
+                    <div className="inline-actions">
+                      <button
+                        type="button"
+                        className="filter-chip"
+                        onClick={() => jumpToAlert(alert)}
+                      >
+                        Open
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state empty-state-compact">No active alerts</div>
+          )}
         </section>
 
         <section id="backtests" className="panel panel-backtests">
@@ -4453,6 +4544,32 @@ function dedupeAlerts(items: AlertItem[]) {
 
 function buildAlertNotes(items: AlertItem[]) {
   return items;
+}
+
+function alertLevelTone(level: string): "ready" | "watch" | "blocked" | "neutral" {
+  switch (level.trim().toLowerCase()) {
+    case "critical":
+      return "blocked";
+    case "warning":
+      return "watch";
+    case "info":
+      return "neutral";
+    default:
+      return "neutral";
+  }
+}
+
+function alertScopeTone(scope: string): "ready" | "watch" | "blocked" | "neutral" {
+  switch (scope.trim().toLowerCase()) {
+    case "paper":
+      return "watch";
+    case "live":
+      return "blocked";
+    case "runtime":
+      return "neutral";
+    default:
+      return "neutral";
+  }
 }
 
 function runtimeReadinessTone(status: string): "ready" | "watch" | "blocked" | "neutral" {
