@@ -384,6 +384,12 @@ type LiveSessionHealth = {
   detail: string;
 };
 
+type HighlightedLiveSession = {
+  session: LiveSession;
+  health: LiveSessionHealth;
+  execution: LiveSessionExecutionSummary;
+} | null;
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -585,6 +591,10 @@ function App() {
     orders,
     fills,
     positions
+  );
+  const highlightedLiveSession = useMemo(
+    () => deriveHighlightedLiveSession(liveSessions, orders, fills, positions),
+    [liveSessions, orders, fills, positions]
   );
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
   const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
@@ -3030,6 +3040,39 @@ function App() {
               <h3>实盘账户与订单同步</h3>
             </div>
           </div>
+          {highlightedLiveSession ? (
+            <div className="live-grid">
+              <div className="session-card session-card-primary">
+                <div className="session-card-header">
+                  <div>
+                    <p className="panel-kicker">Live Overview</p>
+                    <h4>当前优先处理会话</h4>
+                  </div>
+                  <StatusPill tone={liveSessionHealthTone(highlightedLiveSession.health.status)}>
+                    {highlightedLiveSession.health.status}
+                  </StatusPill>
+                </div>
+                <div className="live-account-meta">
+                  <span>{shrink(highlightedLiveSession.session.id)}</span>
+                  <span>{highlightedLiveSession.session.accountId}</span>
+                  <span>{highlightedLiveSession.session.strategyId}</span>
+                  <span>{String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}</span>
+                </div>
+                <div className="backtest-notes">
+                  <div className="note-item">health: {highlightedLiveSession.health.detail}</div>
+                  <div className="note-item">
+                    execution: orders {highlightedLiveSession.execution.orderCount} · fills {highlightedLiveSession.execution.fillCount}
+                  </div>
+                  <div className="note-item">
+                    latest-order: {String(highlightedLiveSession.execution.latestOrder?.status ?? "--")} · {String(highlightedLiveSession.execution.latestOrder?.side ?? "--")} · {formatMaybeNumber(highlightedLiveSession.execution.latestOrder?.price)}
+                  </div>
+                  <div className="note-item">
+                    position: {String(highlightedLiveSession.execution.position?.side ?? "FLAT")} · {formatMaybeNumber(highlightedLiveSession.execution.position?.quantity)} @ {formatMaybeNumber(highlightedLiveSession.execution.position?.entryPrice)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="live-grid">
             <div className="backtest-form session-form">
               <h4>Create Live Account</h4>
@@ -5175,6 +5218,47 @@ function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessionExecu
     status: "idle",
     detail: "waiting for the next valid strategy intent",
   };
+}
+
+function deriveHighlightedLiveSession(
+  sessions: LiveSession[],
+  orders: Order[],
+  fills: Fill[],
+  positions: Position[]
+): HighlightedLiveSession {
+  if (sessions.length === 0) {
+    return null;
+  }
+  const ranked = sessions
+    .map((session) => {
+      const execution = deriveLiveSessionExecutionSummary(session, orders, fills, positions);
+      const health = deriveLiveSessionHealth(session, execution);
+      return {
+        session,
+        execution,
+        health,
+        priority: liveSessionHealthPriority(health.status),
+      };
+    })
+    .sort((left, right) => right.priority - left.priority || Date.parse(right.session.createdAt) - Date.parse(left.session.createdAt));
+  return ranked[0] ?? null;
+}
+
+function liveSessionHealthPriority(status: string) {
+  switch (status) {
+    case "error":
+      return 5;
+    case "waiting-sync":
+      return 4;
+    case "ready":
+      return 3;
+    case "active":
+      return 2;
+    case "idle":
+      return 1;
+    default:
+      return 0;
+  }
 }
 
 function deriveLiveNextAction(preflight: LivePreflightSummary): LiveNextAction {

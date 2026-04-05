@@ -342,6 +342,29 @@ a {
   line-height: 1.25;
 }
 
+.session-card {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.session-card-primary {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(228, 242, 238, 0.88));
+}
+
+.session-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.session-card-header h4 {
+  margin: 6px 0 0;
+}
+
 .session-actions {
   display: flex;
   gap: 10px;
