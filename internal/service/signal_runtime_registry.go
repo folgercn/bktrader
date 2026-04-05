@@ -60,6 +60,9 @@ func (a staticSignalRuntimeAdapter) BuildSubscription(source domain.SignalSource
 	switch source.Exchange {
 	case "BINANCE":
 		switch source.StreamType {
+		case "signal_bar":
+			interval := normalizeSignalBarInterval(firstNonEmpty(strings.TrimSpace(stringValue(binding.Options["timeframe"])), "1d"))
+			channel = strings.ToLower(binding.Symbol) + "@kline_" + interval
 		case "trade_tick":
 			channel = strings.ToLower(binding.Symbol) + "@trade"
 		case "order_book":
@@ -108,7 +111,7 @@ func (p *Platform) registerBuiltInSignalRuntimeAdapters() {
 		name:         "Binance Market Data WebSocket",
 		transport:    "websocket",
 		exchange:     "BINANCE",
-		streamTypes:  []string{"trade_tick", "order_book"},
+		streamTypes:  []string{"signal_bar", "trade_tick", "order_book"},
 		environments: []string{"paper", "live"},
 		metadata: map[string]any{
 			"supportsCombinedStreams": true,
@@ -120,7 +123,7 @@ func (p *Platform) registerBuiltInSignalRuntimeAdapters() {
 		name:         "OKX Market Data WebSocket",
 		transport:    "websocket",
 		exchange:     "OKX",
-		streamTypes:  []string{"trade_tick", "order_book"},
+		streamTypes:  []string{"signal_bar", "trade_tick", "order_book"},
 		environments: []string{"paper", "live"},
 		metadata: map[string]any{
 			"supportsCombinedStreams": true,
@@ -149,6 +152,18 @@ func (p *Platform) SignalRuntimeAdapters() []map[string]any {
 		return strings.Compare(stringValue(a["key"]), stringValue(b["key"]))
 	})
 	return items
+}
+
+func normalizeSignalBarInterval(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "1d", "d", "1day":
+		return "1d"
+	case "4h", "240", "4hour":
+		return "4h"
+	default:
+		return value
+	}
 }
 
 func (p *Platform) resolveSignalRuntimeAdapterForSource(sourceKey string) (SignalRuntimeAdapter, error) {

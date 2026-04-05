@@ -362,12 +362,14 @@ function App() {
     sourceKey: "",
     role: "trigger",
     symbol: "BTCUSDT",
+    timeframe: "1d",
   });
   const [strategySignalForm, setStrategySignalForm] = useState({
     strategyId: "",
     sourceKey: "",
     role: "trigger",
     symbol: "BTCUSDT",
+    timeframe: "1d",
   });
   const [signalRuntimeForm, setSignalRuntimeForm] = useState({
     accountId: "",
@@ -579,12 +581,14 @@ function App() {
       sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
       role: current.role || "trigger",
       symbol: current.symbol || "BTCUSDT",
+      timeframe: current.timeframe || "1d",
     }));
     setStrategySignalForm((current) => ({
       strategyId: current.strategyId || strategyData[0]?.id || "",
       sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
       role: current.role || "trigger",
       symbol: current.symbol || "BTCUSDT",
+      timeframe: current.timeframe || "1d",
     }));
     setSignalRuntimeForm((current) => ({
       accountId: current.accountId || summaryData[0]?.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
@@ -838,6 +842,7 @@ function App() {
           sourceKey: accountSignalForm.sourceKey,
           role: accountSignalForm.role,
           symbol: accountSignalForm.symbol,
+          options: accountSignalForm.role === "signal" ? { timeframe: accountSignalForm.timeframe } : undefined,
         }),
       });
       await loadDashboard();
@@ -863,6 +868,7 @@ function App() {
           sourceKey: strategySignalForm.sourceKey,
           role: strategySignalForm.role,
           symbol: strategySignalForm.symbol,
+          options: strategySignalForm.role === "signal" ? { timeframe: strategySignalForm.timeframe } : undefined,
         }),
       });
       await loadDashboard();
@@ -1723,8 +1729,16 @@ function App() {
                 <label className="form-field">
                   <span>Role</span>
                   <select value={accountSignalForm.role} onChange={(event) => setAccountSignalForm((current) => ({ ...current, role: event.target.value }))}>
+                    <option value="signal">signal</option>
                     <option value="trigger">trigger</option>
                     <option value="feature">feature</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Timeframe</span>
+                  <select value={accountSignalForm.timeframe} onChange={(event) => setAccountSignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
+                    <option value="4h">4h</option>
+                    <option value="1d">1d</option>
                   </select>
                 </label>
                 <label className="form-field">
@@ -1763,8 +1777,16 @@ function App() {
                 <label className="form-field">
                   <span>Role</span>
                   <select value={strategySignalForm.role} onChange={(event) => setStrategySignalForm((current) => ({ ...current, role: event.target.value }))}>
+                    <option value="signal">signal</option>
                     <option value="trigger">trigger</option>
                     <option value="feature">feature</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Timeframe</span>
+                  <select value={strategySignalForm.timeframe} onChange={(event) => setStrategySignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
+                    <option value="4h">4h</option>
+                    <option value="1d">1d</option>
                   </select>
                 </label>
                 <label className="form-field">

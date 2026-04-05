@@ -298,6 +298,11 @@ func attachSubscriptionContext(summary map[string]any, subscription map[string]a
 	summary["streamType"] = stringValue(subscription["streamType"])
 	summary["channel"] = stringValue(subscription["channel"])
 	summary["subscriptionSymbol"] = stringValue(subscription["symbol"])
+	if options := metadataValue(subscription["options"]); options != nil {
+		if timeframe := strings.TrimSpace(stringValue(options["timeframe"])); timeframe != "" {
+			summary["timeframe"] = timeframe
+		}
+	}
 }
 
 func inferStreamTypeFromEvent(event string) string {
@@ -306,6 +311,8 @@ func inferStreamTypeFromEvent(event string) string {
 		return "trade_tick"
 	case "depthupdate":
 		return "order_book"
+	case "kline":
+		return "signal_bar"
 	default:
 		return ""
 	}
@@ -317,7 +324,7 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 		stateMap = cloneMetadata(current)
 	}
 	key := firstNonEmpty(
-		stringValue(summary["sourceKey"])+"|"+NormalizeSymbol(stringValue(summary["subscriptionSymbol"]))+"|"+stringValue(summary["role"]),
+		stringValue(summary["sourceKey"])+"|"+NormalizeSymbol(stringValue(summary["subscriptionSymbol"]))+"|"+stringValue(summary["role"])+"|"+strings.ToLower(strings.TrimSpace(stringValue(summary["timeframe"]))),
 		stringValue(summary["sourceKey"]),
 	)
 	if key == "|" {
@@ -328,6 +335,7 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 		"role":        stringValue(summary["role"]),
 		"streamType":  stringValue(summary["streamType"]),
 		"symbol":      NormalizeSymbol(firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"]))),
+		"timeframe":   strings.ToLower(strings.TrimSpace(stringValue(summary["timeframe"]))),
 		"event":       stringValue(summary["event"]),
 		"lastEventAt": eventTime.UTC().Format(time.RFC3339),
 		"summary":     cloneMetadata(summary),
@@ -393,6 +401,20 @@ func summarizeSignalMessage(adapterKey string, payload []byte) map[string]any {
 		summary["event"] = firstNonEmpty(stringValue(body["e"]), stringValue(body["result"]), "message")
 		summary["symbol"] = stringValue(body["s"])
 		summary["price"] = firstNonEmpty(stringValue(body["p"]), stringValue(body["a"]), stringValue(body["b"]))
+		if kline := metadataValue(body["k"]); kline != nil {
+			summary["event"] = "kline"
+			summary["symbol"] = firstNonEmpty(stringValue(kline["s"]), stringValue(body["s"]))
+			summary["timeframe"] = strings.ToLower(strings.TrimSpace(stringValue(kline["i"])))
+			summary["barStart"] = stringValue(kline["t"])
+			summary["barEnd"] = stringValue(kline["T"])
+			summary["open"] = stringValue(kline["o"])
+			summary["high"] = stringValue(kline["h"])
+			summary["low"] = stringValue(kline["l"])
+			summary["close"] = stringValue(kline["c"])
+			summary["volume"] = stringValue(kline["v"])
+			summary["isClosed"] = kline["x"]
+			summary["price"] = firstNonEmpty(stringValue(kline["c"]), stringValue(summary["price"]))
+		}
 		if bids, ok := body["b"].([]any); ok && len(bids) > 0 {
 			if first, ok := bids[0].([]any); ok && len(first) >= 2 {
 				summary["bestBid"] = stringValue(first[0])

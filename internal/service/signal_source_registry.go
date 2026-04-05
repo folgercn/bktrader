@@ -49,6 +49,8 @@ func normalizeSignalSourceRole(value string) string {
 	switch value {
 	case "", "trigger":
 		return "trigger"
+	case "signal":
+		return "signal"
 	case "feature":
 		return "feature"
 	default:
@@ -72,6 +74,23 @@ func (p *Platform) registerBuiltInSignalSources() {
 		p.signalSources[provider.Key()] = provider
 	}
 
+	register(staticSignalSourceProvider{definition: domain.SignalSourceDefinition{
+		Key:          "binance-kline",
+		Name:         "Binance Futures Kline",
+		Exchange:     "BINANCE",
+		StreamType:   "signal_bar",
+		Transport:    "websocket",
+		Status:       "ACTIVE",
+		Roles:        []string{"signal"},
+		Environments: []string{"paper", "live"},
+		SymbolScope:  "multi_symbol",
+		Description:  "交易所原生 4h/1d K 线流，用于实时策略信号计算、MA20 和前两根 OHLC 状态。",
+		Metadata: map[string]any{
+			"stream":               "kline",
+			"supportedTimeframes":  []string{"4h", "1d"},
+			"preferForSignalState": true,
+		},
+	}})
 	register(staticSignalSourceProvider{definition: domain.SignalSourceDefinition{
 		Key:          "binance-trade-tick",
 		Name:         "Binance Futures Trade Tick",
@@ -192,6 +211,7 @@ func (p *Platform) SignalSourceCatalog() map[string]any {
 		"sources": sources,
 		"notes": []string{
 			"账户级信号源绑定支持多源并行，可同时绑定交易触发源和盘口特征源。",
+			"4h / 1d 策略信号建议直接绑定交易所 kline 源，而不是从 tick 聚合大周期 bar。",
 			"paper/live 应优先绑定交易所 trade tick；order book 建议作为 feature 源单独接入。",
 			"跨市场套利可在单账户或多账户上并行绑定 Binance / OKX 等多个来源。",
 		},
@@ -201,6 +221,12 @@ func (p *Platform) SignalSourceCatalog() map[string]any {
 
 func (p *Platform) SignalSourceTypes() []map[string]any {
 	return []map[string]any{
+		{
+			"streamType":    "signal_bar",
+			"primaryRole":   "signal",
+			"description":   "交易所原生大周期 K 线流，适合作为 4h / 1d 策略信号源。",
+			"typicalInputs": []string{"open", "high", "low", "close", "volume", "interval", "barStart", "barEnd", "isClosed"},
+		},
 		{
 			"streamType":    "trade_tick",
 			"primaryRole":   "trigger",
