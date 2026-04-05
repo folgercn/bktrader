@@ -103,4 +103,8 @@ type Repository interface {
 	GetTelegramConfig() (domain.TelegramConfig, bool, error)
 	// UpsertTelegramConfig 创建或更新 Telegram 通知配置。
 	UpsertTelegramConfig(config domain.TelegramConfig) (domain.TelegramConfig, error)
+	// ListNotificationDeliveries 获取通知发送记录。
+	ListNotificationDeliveries() ([]domain.NotificationDelivery, error)
+	// UpsertNotificationDelivery 创建或更新通知发送记录。
+	UpsertNotificationDelivery(notificationID, channel string) (domain.NotificationDelivery, error)
 }

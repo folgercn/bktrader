@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,7 +21,11 @@ func (p *Platform) SendNotificationToTelegram(notificationID string) error {
 		if item.ID != strings.TrimSpace(notificationID) {
 			continue
 		}
-		return p.sendTelegramMessage(formatTelegramNotification(item))
+		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
+			return err
+		}
+		_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram")
+		return nil
 	}
 	return fmt.Errorf("notification not found: %s", notificationID)
 }
@@ -86,4 +91,62 @@ func formatTelegramNotification(item domain.PlatformNotification) string {
 		lines = append(lines, fmt.Sprintf("time: %s", alert.EventTime.Format(time.RFC3339)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (p *Platform) StartTelegramDispatcher(ctx context.Context) {
+	go p.runTelegramDispatcher(ctx)
+}
+
+func (p *Platform) runTelegramDispatcher(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = p.DispatchTelegramNotifications()
+		}
+	}
+}
+
+func (p *Platform) DispatchTelegramNotifications() error {
+	config := p.telegramConfig
+	if !config.Enabled || strings.TrimSpace(config.BotToken) == "" || strings.TrimSpace(config.ChatID) == "" {
+		return nil
+	}
+	notifications, err := p.ListNotifications(false)
+	if err != nil {
+		return err
+	}
+	deliveries, err := p.store.ListNotificationDeliveries()
+	if err != nil {
+		return err
+	}
+	delivered := make(map[string]struct{}, len(deliveries))
+	for _, item := range deliveries {
+		if strings.EqualFold(item.Channel, "telegram") {
+			delivered[item.NotificationID] = struct{}{}
+		}
+	}
+	allowedLevels := make(map[string]struct{}, len(config.SendLevels))
+	for _, level := range config.SendLevels {
+		allowedLevels[strings.ToLower(strings.TrimSpace(level))] = struct{}{}
+	}
+	for _, item := range notifications {
+		level := strings.ToLower(strings.TrimSpace(item.Alert.Level))
+		if _, ok := allowedLevels[level]; !ok {
+			continue
+		}
+		if _, ok := delivered[item.ID]; ok {
+			continue
+		}
+		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
+			return err
+		}
+		if _, err := p.store.UpsertNotificationDelivery(item.ID, "telegram"); err != nil {
+			return err
+		}
+	}
+	return nil
 }

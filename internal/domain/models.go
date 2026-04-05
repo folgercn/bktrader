@@ -258,3 +258,11 @@ type TelegramConfig struct {
 	SendLevels []string  `json:"sendLevels"`
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
+
+// NotificationDelivery 记录通知通过外部通道的发送结果。
+type NotificationDelivery struct {
+	NotificationID string    `json:"notificationId"`
+	Channel        string    `json:"channel"` // telegram
+	SentAt         time.Time `json:"sentAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}

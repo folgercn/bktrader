@@ -410,7 +410,8 @@ PAPER_START_READINESS_TIMEOUT_SECONDS=5
   - 可在控制台保存 `bot token / chat id / send levels`
   - 支持发送测试消息
   - 支持把单条平台通知手动转发到 Telegram
-  - 暂时不做自动群发，先保持手动、可控、可审计
+  - 平台后台每 `15s` 会自动扫描 active 通知，并只自动发送符合 `sendLevels` 的未发送通知
+  - 当前建议先把 `sendLevels` 保持在 `critical`
 - `LIVE` 下单前现在也会执行 runtime readiness preflight：要求账户对应策略的 signal runtime plan ready、runtime session 处于 `RUNNING/healthy`，并且必需 source states 不缺失且不过期。
 Parity checks:
 ```bash

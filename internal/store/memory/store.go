@@ -26,6 +26,7 @@ type Store struct {
 	runtimePolicy    *domain.RuntimePolicy
 	notificationAcks map[string]domain.NotificationAck
 	telegramConfig   *domain.TelegramConfig
+	deliveries       map[string]domain.NotificationDelivery
 
 	sequence int64
 }
@@ -73,6 +74,7 @@ func NewStore() *Store {
 			},
 		},
 		notificationAcks: make(map[string]domain.NotificationAck),
+		deliveries:       make(map[string]domain.NotificationDelivery),
 	}
 
 	strategy := domain.Strategy{
@@ -299,6 +301,32 @@ func (s *Store) UpsertTelegramConfig(config domain.TelegramConfig) (domain.Teleg
 	copyConfig := config
 	s.telegramConfig = &copyConfig
 	return config, nil
+}
+
+func (s *Store) ListNotificationDeliveries() ([]domain.NotificationDelivery, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.NotificationDelivery, 0, len(s.deliveries))
+	for _, item := range s.deliveries {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	return items, nil
+}
+
+func (s *Store) UpsertNotificationDelivery(notificationID, channel string) (domain.NotificationDelivery, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	key := notificationID + "::" + channel
+	item := domain.NotificationDelivery{
+		NotificationID: notificationID,
+		Channel:        channel,
+		SentAt:         now,
+		UpdatedAt:      now,
+	}
+	s.deliveries[key] = item
+	return item, nil
 }
 
 func (s *Store) ListStrategies() ([]map[string]any, error) {

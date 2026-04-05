@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -44,6 +45,7 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	if err := platform.LoadPersistedTelegramConfig(); err != nil {
 		return nil, err
 	}
+	platform.StartTelegramDispatcher(context.Background())
 
 	return &http.Server{
 		Addr:    cfg.HTTPAddr,

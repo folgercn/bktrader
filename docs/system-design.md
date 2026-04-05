@@ -139,7 +139,8 @@ Paper/runtime integration status:
   - the platform stores a Telegram channel config
   - supports a manual test message
   - supports manual forwarding of a single inbox notification to Telegram
-  - automatic broadcast remains intentionally disabled for now
+  - a lightweight background dispatcher now auto-sends unsent active notifications that match configured levels
+  - delivery records are persisted so the same notification is not resent after reload/restart
   - runtime policy is persisted by the platform so operational thresholds survive restarts
 - after source gating passes, the platform now calls a strategy-engine-level `signal evaluation` hook:
   - the engine receives trigger summary + structured source-state snapshot
