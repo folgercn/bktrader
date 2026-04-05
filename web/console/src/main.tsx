@@ -349,6 +349,7 @@ function App() {
   const [liveCreateAction, setLiveCreateAction] = useState(false);
   const [liveBindAction, setLiveBindAction] = useState(false);
   const [liveSyncAction, setLiveSyncAction] = useState<string | null>(null);
+  const [liveOrderAction, setLiveOrderAction] = useState(false);
   const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
   const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
   const [backtestAction, setBacktestAction] = useState(false);
@@ -394,6 +395,15 @@ function App() {
     sandbox: true,
     apiKeyRef: "",
     apiSecretRef: "",
+  });
+  const [liveOrderForm, setLiveOrderForm] = useState({
+    accountId: "",
+    strategyVersionId: "",
+    symbol: "BTCUSDT",
+    side: "BUY",
+    type: "LIMIT",
+    quantity: "0.001",
+    price: "",
   });
   const [accountSignalForm, setAccountSignalForm] = useState({
     accountId: "",
@@ -485,6 +495,38 @@ function App() {
     ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
     : [];
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
+  const selectedLiveOrderAccount =
+    liveAccounts.find((item) => item.id === liveOrderForm.accountId) ??
+    liveAccounts[0] ??
+    null;
+  const selectedLiveOrderBindings = selectedLiveOrderAccount ? accountSignalBindingMap[selectedLiveOrderAccount.id] ?? [] : [];
+  const selectedLiveOrderRuntimeSessions = selectedLiveOrderAccount
+    ? signalRuntimeSessions.filter((item) => item.accountId === selectedLiveOrderAccount.id)
+    : [];
+  const selectedLiveOrderActiveRuntime =
+    selectedLiveOrderRuntimeSessions.find((item) => item.status === "RUNNING") ?? selectedLiveOrderRuntimeSessions[0] ?? null;
+  const selectedLiveOrderRuntimeState = getRecord(selectedLiveOrderActiveRuntime?.state);
+  const selectedLiveOrderSourceSummary = deriveRuntimeSourceSummary(
+    getRecord(selectedLiveOrderRuntimeState.sourceStates),
+    runtimePolicy
+  );
+  const selectedLiveOrderReadiness = deriveRuntimeReadiness(selectedLiveOrderRuntimeState, selectedLiveOrderSourceSummary, {
+    requireTick: selectedLiveOrderBindings.some((item) => item.streamType === "trade_tick"),
+    requireOrderBook: selectedLiveOrderBindings.some((item) => item.streamType === "order_book"),
+  });
+  const selectedLiveOrderPreflight = selectedLiveOrderAccount
+    ? deriveLivePreflightSummary(
+        selectedLiveOrderAccount,
+        selectedLiveOrderBindings,
+        selectedLiveOrderRuntimeSessions,
+        selectedLiveOrderActiveRuntime,
+        selectedLiveOrderReadiness
+      )
+    : {
+        status: "blocked" as const,
+        reason: "no-live-account",
+        detail: "create or select a live account first",
+      };
   const selectedExecutionAvailability = backtestOptions?.availability?.[backtestForm.executionDataSource] ?? "unknown";
   const selectedExecutionDatasets = backtestOptions?.datasets?.[backtestForm.executionDataSource] ?? [];
   const selectedExecutionSymbols = backtestOptions?.supportedSymbols?.[backtestForm.executionDataSource] ?? [];
@@ -663,6 +705,15 @@ function App() {
       sandbox: current.sandbox,
       apiKeyRef: current.apiKeyRef,
       apiSecretRef: current.apiSecretRef,
+    }));
+    setLiveOrderForm((current) => ({
+      accountId: current.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
+      strategyVersionId: current.strategyVersionId || strategyData[0]?.currentVersion?.id || "",
+      symbol: current.symbol || "BTCUSDT",
+      side: current.side || "BUY",
+      type: current.type || "LIMIT",
+      quantity: current.quantity || "0.001",
+      price: current.price || "",
     }));
     const availableSignalSources = signalCatalogData.sources ?? [];
     setAccountSignalForm((current) => ({
@@ -914,6 +965,38 @@ function App() {
       setError(err instanceof Error ? err.message : "Failed to sync live order");
     } finally {
       setLiveSyncAction(null);
+    }
+  }
+
+  async function createLiveOrder() {
+    if (!liveOrderForm.accountId || !liveOrderForm.symbol || !liveOrderForm.side || !liveOrderForm.type) {
+      setError("Live order needs account, symbol, side, and type");
+      return;
+    }
+    setLiveOrderAction(true);
+    try {
+      await fetchJSON("/api/v1/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: liveOrderForm.accountId,
+          strategyVersionId: liveOrderForm.strategyVersionId || undefined,
+          symbol: liveOrderForm.symbol,
+          side: liveOrderForm.side,
+          type: liveOrderForm.type,
+          quantity: Number(liveOrderForm.quantity) || 0,
+          price: Number(liveOrderForm.price) || 0,
+          metadata: {
+            source: "live-console",
+          },
+        }),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create live order");
+    } finally {
+      setLiveOrderAction(false);
     }
   }
 
@@ -2913,6 +2996,103 @@ function App() {
               <div>
                 <p className="panel-kicker">Orders</p>
                 <h3>最新订单</h3>
+              </div>
+            </div>
+            <div className="backtest-form session-form">
+              <h4>Create Live Order</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Live Account</span>
+                  <select
+                    value={liveOrderForm.accountId}
+                    onChange={(event) => setLiveOrderForm((current) => ({ ...current, accountId: event.target.value }))}
+                  >
+                    {liveAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} ({account.status})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Strategy Version</span>
+                  <select
+                    value={liveOrderForm.strategyVersionId}
+                    onChange={(event) => setLiveOrderForm((current) => ({ ...current, strategyVersionId: event.target.value }))}
+                  >
+                    <option value="">Auto</option>
+                    {strategies.map((strategy) => (
+                      <option key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
+                        {strategy.name} · {strategy.currentVersion?.version ?? "no-version"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Symbol</span>
+                  <input
+                    value={liveOrderForm.symbol}
+                    onChange={(event) => setLiveOrderForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Side</span>
+                  <select
+                    value={liveOrderForm.side}
+                    onChange={(event) => setLiveOrderForm((current) => ({ ...current, side: event.target.value }))}
+                  >
+                    <option value="BUY">BUY</option>
+                    <option value="SELL">SELL</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Type</span>
+                  <select
+                    value={liveOrderForm.type}
+                    onChange={(event) => setLiveOrderForm((current) => ({ ...current, type: event.target.value }))}
+                  >
+                    <option value="LIMIT">LIMIT</option>
+                    <option value="MARKET">MARKET</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Quantity</span>
+                  <input
+                    value={liveOrderForm.quantity}
+                    onChange={(event) => setLiveOrderForm((current) => ({ ...current, quantity: event.target.value }))}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Price</span>
+                  <input
+                    value={liveOrderForm.price}
+                    onChange={(event) => setLiveOrderForm((current) => ({ ...current, price: event.target.value }))}
+                    placeholder={liveOrderForm.type === "MARKET" ? "optional" : "required for limit"}
+                  />
+                </label>
+              </div>
+              <div className="live-account-meta">
+                <span>
+                  <StatusPill tone={runtimeReadinessTone(selectedLiveOrderPreflight.status)}>
+                    {selectedLiveOrderPreflight.status}
+                  </StatusPill>
+                </span>
+                <span>{selectedLiveOrderPreflight.reason}</span>
+                <span>{selectedLiveOrderPreflight.detail}</span>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton
+                  label={liveOrderAction ? "Submitting..." : "Submit Live Order"}
+                  disabled={
+                    liveOrderAction ||
+                    selectedLiveOrderPreflight.status === "blocked" ||
+                    !liveOrderForm.accountId ||
+                    !liveOrderForm.symbol.trim() ||
+                    !(Number(liveOrderForm.quantity) > 0) ||
+                    (liveOrderForm.type === "LIMIT" && !(Number(liveOrderForm.price) > 0))
+                  }
+                  onClick={createLiveOrder}
+                />
               </div>
             </div>
             <SimpleTable
