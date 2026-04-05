@@ -157,6 +157,7 @@ go run ./cmd/platform-api
       - `risk-exit-watch`
       - `ignore`
     - `signalKind` 现在已经开始结合当前 paper 持仓快照，而不只是看下一步计划角色
+    - `protect-exit-watch` / `risk-exit-watch` 现在还会结合当前持仓相对市场价的盈亏方向
     - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
     - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
     - 当前还会比较“当前市场价”和“下一笔计划价”的偏离：

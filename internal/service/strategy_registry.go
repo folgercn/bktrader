@@ -203,6 +203,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	marketPrice, marketSource := pickDecisionMarketPrice(trigger, sourceStates, context.NextPlannedSide)
 	maxDeviationBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxDeviationBps"]), 50)
 	deviationBps := 0.0
+	positionPnLBps := computePositionPnLBps(currentPosition, marketPrice)
 	if action == "advance-plan" && context.NextPlannedPrice > 0 && marketPrice > 0 {
 		deviationBps = math.Abs(marketPrice/context.NextPlannedPrice-1) * 10000
 		if !isPlannedPriceActionable(context.NextPlannedSide, context.NextPlannedPrice, marketPrice, maxDeviationBps) {
@@ -211,7 +212,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		}
 	}
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
-	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition)
+	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps)
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
@@ -230,6 +231,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"nextPlannedReason": context.NextPlannedReason,
 			"marketPrice":       marketPrice,
 			"marketSource":      marketSource,
+			"positionPnLBps":    positionPnLBps,
 			"maxDeviationBps":   maxDeviationBps,
 			"deviationBps":      deviationBps,
 			"priceActionable":   isPlannedPriceActionable(context.NextPlannedSide, context.NextPlannedPrice, marketPrice, maxDeviationBps),
@@ -341,7 +343,7 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 	}
 }
 
-func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any) string {
+func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any, positionPnLBps float64) string {
 	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	positionQty := parseFloatValue(currentPosition["quantity"])
 	hasPosition := positionQty > 0 && positionSide != ""
@@ -388,8 +390,14 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 	case "exit":
 		switch reasonTag {
 		case "pt":
+			if hasPosition && positionPnLBps > 0 {
+				return "protect-exit-watch"
+			}
 			return "protect-exit-watch"
 		case "sl":
+			if hasPosition && positionPnLBps <= 0 {
+				return "risk-exit-watch"
+			}
 			return "risk-exit-watch"
 		}
 	}
@@ -416,6 +424,23 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 			return "hold-" + strings.ToLower(positionSide)
 		}
 		return "hold"
+	}
+}
+
+func computePositionPnLBps(currentPosition map[string]any, marketPrice float64) float64 {
+	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
+	qty := parseFloatValue(currentPosition["quantity"])
+	entryPrice := parseFloatValue(currentPosition["entryPrice"])
+	if qty <= 0 || entryPrice <= 0 || marketPrice <= 0 || side == "" {
+		return 0
+	}
+	switch side {
+	case "LONG":
+		return (marketPrice/entryPrice - 1) * 10000
+	case "SHORT":
+		return (entryPrice/marketPrice - 1) * 10000
+	default:
+		return 0
 	}
 }
 
