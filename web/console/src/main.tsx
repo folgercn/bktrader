@@ -1458,7 +1458,13 @@ function App() {
                       onClick={() => acknowledgeNotification(item, item.status !== "acked")}
                     />
                     <ActionButton
-                      label={telegramAction === `send:${item.id}` ? "Sending..." : "Send Telegram"}
+                      label={
+                        telegramAction === `send:${item.id}`
+                          ? "Sending..."
+                          : item.metadata?.telegramStatus === "failed"
+                            ? "Retry Telegram"
+                            : "Send Telegram"
+                      }
                       variant="ghost"
                       disabled={
                         notificationAction !== null ||

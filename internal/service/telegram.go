@@ -134,6 +134,7 @@ func (p *Platform) DispatchTelegramNotifications() error {
 	for _, level := range config.SendLevels {
 		allowedLevels[strings.ToLower(strings.TrimSpace(level))] = struct{}{}
 	}
+	var firstErr error
 	for _, item := range notifications {
 		level := strings.ToLower(strings.TrimSpace(item.Alert.Level))
 		if _, ok := allowedLevels[level]; !ok {
@@ -144,11 +145,17 @@ func (p *Platform) DispatchTelegramNotifications() error {
 		}
 		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
 			_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", err.Error())
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 		if _, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", ""); err != nil {
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 	}
-	return nil
+	return firstErr
 }
