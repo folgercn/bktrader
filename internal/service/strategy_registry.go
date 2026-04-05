@@ -345,10 +345,11 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	positionQty := parseFloatValue(currentPosition["quantity"])
 	hasPosition := positionQty > 0 && positionSide != ""
+	reasonTag := normalizeStrategyReasonTag(nextReason)
 	if action == "advance-plan" {
 		switch strings.ToLower(strings.TrimSpace(nextRole)) {
 		case "entry":
-			switch normalizeStrategyReasonTag(nextReason) {
+			switch reasonTag {
 			case "initial":
 				return "initial-entry"
 			case "sl-reentry":
@@ -359,7 +360,7 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 				return "entry"
 			}
 		case "exit":
-			switch normalizeStrategyReasonTag(nextReason) {
+			switch reasonTag {
 			case "pt":
 				return "protect-exit"
 			case "sl":
@@ -372,6 +373,24 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 			}
 		default:
 			return "advance"
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(nextRole)) {
+	case "entry":
+		switch reasonTag {
+		case "initial":
+			return "initial-entry-watch"
+		case "sl-reentry":
+			return "sl-reentry-watch"
+		case "pt-reentry":
+			return "pt-reentry-watch"
+		}
+	case "exit":
+		switch reasonTag {
+		case "pt":
+			return "protect-exit-watch"
+		case "sl":
+			return "risk-exit-watch"
 		}
 	}
 	switch reason {

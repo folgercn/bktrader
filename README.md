@@ -143,13 +143,18 @@ go run ./cmd/platform-api
       - `waiting-inputs`
     - 同时也会产出更偏策略语义的 `signalKind`：
       - `initial-entry`
+      - `initial-entry-watch`
       - `sl-reentry`
+      - `sl-reentry-watch`
       - `pt-reentry`
+      - `pt-reentry-watch`
       - `hold`
       - `hold-long`
       - `hold-short`
       - `protect-exit`
+      - `protect-exit-watch`
       - `risk-exit`
+      - `risk-exit-watch`
       - `ignore`
     - `signalKind` 现在已经开始结合当前 paper 持仓快照，而不只是看下一步计划角色
     - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
