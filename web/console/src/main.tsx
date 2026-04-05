@@ -476,10 +476,8 @@ function App() {
     strategyId: "",
     startEquity: "100000",
     signalTimeframe: "1d",
-    executionDataSource: "1min",
+    executionDataSource: "tick",
     symbol: "BTCUSDT",
-    from: "",
-    to: "",
     tradingFeeBps: "10",
     fundingRateBps: "0",
     fundingIntervalHours: "8",
@@ -937,10 +935,8 @@ function App() {
       strategyId: current.strategyId || strategyData[0]?.id || "",
       startEquity: current.startEquity || "100000",
       signalTimeframe: current.signalTimeframe || backtestOptionsData.defaultSignalTimeframe,
-      executionDataSource: current.executionDataSource || "1min",
+      executionDataSource: current.executionDataSource || "tick",
       symbol: current.symbol || "BTCUSDT",
-      from: current.from || "",
-      to: current.to || "",
       tradingFeeBps: current.tradingFeeBps || "10",
       fundingRateBps: current.fundingRateBps || "0",
       fundingIntervalHours: current.fundingIntervalHours || "8",
@@ -1231,8 +1227,6 @@ function App() {
           signalTimeframe: paperForm.signalTimeframe,
           executionDataSource: paperForm.executionDataSource,
           symbol: paperForm.symbol,
-          from: paperForm.from || undefined,
-          to: paperForm.to || undefined,
           tradingFeeBps: Number(paperForm.tradingFeeBps) || 0,
           fundingRateBps: Number(paperForm.fundingRateBps) || 0,
           fundingIntervalHours: Number(paperForm.fundingIntervalHours) || 8,
@@ -2586,14 +2580,6 @@ function App() {
                 </select>
               </label>
               <label className="form-field">
-                <span>From (RFC3339)</span>
-                <input value={paperForm.from} onChange={(event) => setPaperForm((current) => ({ ...current, from: event.target.value }))} />
-              </label>
-              <label className="form-field">
-                <span>To (RFC3339)</span>
-                <input value={paperForm.to} onChange={(event) => setPaperForm((current) => ({ ...current, to: event.target.value }))} />
-              </label>
-              <label className="form-field">
                 <span>Trading Fee (bps)</span>
                 <input
                   value={paperForm.tradingFeeBps}
@@ -2621,6 +2607,10 @@ function App() {
                 disabled={paperCreateAction || !paperForm.accountId || !paperForm.strategyId}
                 onClick={createPaperSession}
               />
+            </div>
+            <div className="backtest-notes">
+              <div className="note-item">模拟盘按实盘语义运行，核心是实时信号、tick / 盘口触发和虚拟账户记账。</div>
+              <div className="note-item">这里不再使用回测窗口参数，重点是实时执行与费用模型。</div>
             </div>
           </div>
           {primarySession ? (
