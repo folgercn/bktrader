@@ -396,6 +396,7 @@ PAPER_START_READINESS_TIMEOUT_SECONDS=5
 - 模拟会话状态在 `paper_sessions.state` 中持久化策略执行计划进度，`planIndex` 可跨重启保持。
 - `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 paper preflight 共享同一套 freshness / quiet / readiness timeout 配置。
 - `POST /api/v1/runtime-policy` 支持热更新运行阈值；当前会持久化到平台配置表，服务重启后仍然保留，控制台 `Signals` 页面已提供对应配置面板。
+- `LIVE` 下单前现在也会执行 runtime readiness preflight：要求账户对应策略的 signal runtime plan ready、runtime session 处于 `RUNNING/healthy`，并且必需 source states 不缺失且不过期。
 Parity checks:
 ```bash
 python3 scripts/check_1d_1min_parity.py

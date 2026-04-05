@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
@@ -40,6 +41,9 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 			return domain.Order{}, fmt.Errorf("live account %s is not configured", account.ID)
 		}
 		if _, _, err := p.resolveLiveAdapterForAccount(account); err != nil {
+			return domain.Order{}, err
+		}
+		if _, _, err := p.ensureLiveRuntimeReady(account, order); err != nil {
 			return domain.Order{}, err
 		}
 	}
@@ -100,6 +104,10 @@ func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (
 	if err != nil {
 		return domain.Order{}, err
 	}
+	runtimeSession, sourceGate, err := p.ensureLiveRuntimeReady(account, order)
+	if err != nil {
+		return domain.Order{}, err
+	}
 
 	submission, err := adapter.SubmitOrder(account, order, binding)
 	order.Metadata = cloneMetadata(order.Metadata)
@@ -108,6 +116,8 @@ func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (
 	order.Metadata["feeSource"] = "exchange"
 	order.Metadata["fundingSource"] = "exchange"
 	order.Metadata["submitMode"] = "adapter"
+	order.Metadata["runtimeSessionId"] = runtimeSession.ID
+	order.Metadata["runtimePreflight"] = sourceGate
 	if err != nil {
 		order.Status = "REJECTED"
 		order.Metadata["liveSubmitError"] = err.Error()
@@ -123,6 +133,118 @@ func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (
 	order.Metadata["acceptedAt"] = submission.AcceptedAt
 	order.Metadata["adapterSubmission"] = submission.Metadata
 	return p.store.UpdateOrder(order)
+}
+
+func (p *Platform) ensureLiveRuntimeReady(account domain.Account, order domain.Order) (domain.SignalRuntimeSession, map[string]any, error) {
+	strategyID, err := p.resolveLiveStrategyIDForOrder(account.ID, order)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, nil, err
+	}
+	plan, err := p.BuildSignalRuntimePlan(account.ID, strategyID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, nil, err
+	}
+	if !boolValue(plan["ready"]) {
+		return domain.SignalRuntimeSession{}, nil, fmt.Errorf(
+			"live runtime plan is not ready for account %s strategy %s: missing=%d",
+			account.ID,
+			strategyID,
+			len(metadataList(plan["missingBindings"])),
+		)
+	}
+
+	runtimeSession, err := p.resolveLiveRuntimeSession(account.ID, strategyID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, nil, err
+	}
+	if !strings.EqualFold(runtimeSession.Status, "RUNNING") {
+		return domain.SignalRuntimeSession{}, nil, fmt.Errorf(
+			"live runtime session %s is not running for account %s strategy %s",
+			runtimeSession.ID,
+			account.ID,
+			strategyID,
+		)
+	}
+	if !strings.EqualFold(stringValue(runtimeSession.State["health"]), "healthy") {
+		return domain.SignalRuntimeSession{}, nil, fmt.Errorf(
+			"live runtime session %s is not healthy for account %s strategy %s",
+			runtimeSession.ID,
+			account.ID,
+			strategyID,
+		)
+	}
+
+	sourceGate := p.evaluateRuntimeSignalSourceReadiness(strategyID, runtimeSession, time.Now().UTC())
+	if !boolValue(sourceGate["ready"]) {
+		return domain.SignalRuntimeSession{}, sourceGate, fmt.Errorf(
+			"live runtime session %s not ready: missing=%d stale=%d",
+			runtimeSession.ID,
+			len(metadataList(sourceGate["missing"])),
+			len(metadataList(sourceGate["stale"])),
+		)
+	}
+	return runtimeSession, sourceGate, nil
+}
+
+func (p *Platform) resolveLiveStrategyIDForOrder(accountID string, order domain.Order) (string, error) {
+	if strings.TrimSpace(order.StrategyVersionID) != "" {
+		return p.resolveStrategyIDFromVersionID(order.StrategyVersionID)
+	}
+	sessions := p.ListSignalRuntimeSessions()
+	matches := make([]domain.SignalRuntimeSession, 0)
+	for _, session := range sessions {
+		if session.AccountID == accountID {
+			matches = append(matches, session)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0].StrategyID, nil
+	}
+	if len(matches) == 0 {
+		return "", fmt.Errorf("live order requires strategyVersionId or a linked runtime session")
+	}
+	return "", fmt.Errorf("live order requires strategyVersionId when multiple runtime sessions are linked to account %s", accountID)
+}
+
+func (p *Platform) resolveLiveRuntimeSession(accountID, strategyID string) (domain.SignalRuntimeSession, error) {
+	sessions := p.ListSignalRuntimeSessions()
+	var fallback *domain.SignalRuntimeSession
+	for _, session := range sessions {
+		if session.AccountID != accountID || session.StrategyID != strategyID {
+			continue
+		}
+		if strings.EqualFold(session.Status, "RUNNING") {
+			return session, nil
+		}
+		if fallback == nil {
+			sessionCopy := session
+			fallback = &sessionCopy
+		}
+	}
+	if fallback != nil {
+		return *fallback, nil
+	}
+	return domain.SignalRuntimeSession{}, fmt.Errorf("no runtime session found for account %s strategy %s", accountID, strategyID)
+}
+
+func (p *Platform) resolveStrategyIDFromVersionID(strategyVersionID string) (string, error) {
+	items, err := p.ListStrategies()
+	if err != nil {
+		return "", err
+	}
+	for _, item := range items {
+		switch currentVersion := item["currentVersion"].(type) {
+		case domain.StrategyVersion:
+			if currentVersion.ID == strategyVersionID {
+				return stringValue(item["id"]), nil
+			}
+		case map[string]any:
+			if stringValue(currentVersion["id"]) == strategyVersionID {
+				return stringValue(item["id"]), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("strategy not found for strategy version %s", strategyVersionID)
 }
 
 func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {

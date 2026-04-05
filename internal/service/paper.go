@@ -369,6 +369,10 @@ func appendTimelineEvent(state map[string]any, category string, ts time.Time, ti
 }
 
 func (p *Platform) evaluateSignalSourceReadiness(session domain.PaperSession, runtimeSession domain.SignalRuntimeSession, eventTime time.Time) map[string]any {
+	return p.evaluateRuntimeSignalSourceReadiness(session.StrategyID, runtimeSession, eventTime)
+}
+
+func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runtimeSession domain.SignalRuntimeSession, eventTime time.Time) map[string]any {
 	result := map[string]any{
 		"ready":          true,
 		"requiredCount":  0,
@@ -378,7 +382,7 @@ func (p *Platform) evaluateSignalSourceReadiness(session domain.PaperSession, ru
 		"stale":          []any{},
 	}
 
-	requiredBindings, err := p.ListStrategySignalBindings(session.StrategyID)
+	requiredBindings, err := p.ListStrategySignalBindings(strategyID)
 	if err != nil {
 		result["ready"] = false
 		result["error"] = err.Error()
