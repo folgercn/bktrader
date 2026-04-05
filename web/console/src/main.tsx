@@ -1636,6 +1636,18 @@ function App() {
                   <div className="note-item">runtime blocked: {primaryPaperRuntimeReadiness.reason}</div>
                 </div>
               ) : null}
+              <div className="backtest-notes">
+                {buildRuntimeEventNotes(primaryLinkedSignalRuntimeSummary).map((line) => (
+                  <div key={line} className="note-item">
+                    {line}
+                  </div>
+                ))}
+                {buildSourceStateNotes(getRecord(primaryLinkedSignalRuntimeState.sourceStates)).map((line) => (
+                  <div key={line} className="note-item">
+                    {line}
+                  </div>
+                ))}
+              </div>
               <div className="session-actions">
                 {primaryLinkedSignalRuntime ? (
                   <ActionButton
@@ -2186,6 +2198,18 @@ function App() {
                         <div className="live-account-meta">
                           <span>{activeRuntimeReadiness.status}</span>
                           <span>{activeRuntimeReadiness.reason}</span>
+                        </div>
+                        <div className="backtest-notes">
+                          {buildRuntimeEventNotes(activeRuntimeSummary).map((line) => (
+                            <div key={line} className="note-item">
+                              {line}
+                            </div>
+                          ))}
+                          {buildSourceStateNotes(getRecord(activeRuntimeState.sourceStates)).map((line) => (
+                            <div key={line} className="note-item">
+                              {line}
+                            </div>
+                          ))}
                         </div>
                         {activeRuntime ? (
                           <div className="inline-actions">
@@ -3240,6 +3264,41 @@ function deriveRuntimeReadiness(
     return { ready: false, status: "warning", reason: "stale-source-states" };
   }
   return { ready: true, status: "ready", reason: "runtime-healthy" };
+}
+
+function buildRuntimeEventNotes(summary: Record<string, unknown>) {
+  if (Object.keys(summary).length === 0) {
+    return ["event: --"];
+  }
+  const notes: string[] = [];
+  const event = String(summary.event ?? summary.type ?? "--");
+  notes.push(`event: ${event}`);
+  if (summary.symbol != null) {
+    notes.push(`symbol: ${String(summary.symbol)}`);
+  }
+  if (summary.price != null) {
+    notes.push(`price: ${formatMaybeNumber(summary.price)}`);
+  }
+  if (summary.bestBid != null || summary.bestAsk != null) {
+    notes.push(`book: ${formatMaybeNumber(summary.bestBid)} / ${formatMaybeNumber(summary.bestAsk)}`);
+  }
+  return notes.slice(0, 3);
+}
+
+function buildSourceStateNotes(sourceStates: Record<string, unknown>) {
+  const entries = Object.entries(sourceStates).slice(0, 2);
+  if (entries.length === 0) {
+    return ["source-state: --"];
+  }
+  return entries.map(([key, value]) => {
+    const state = getRecord(value);
+    return [
+      key,
+      String(state.streamType ?? "--"),
+      String(state.role ?? "--"),
+      formatMaybeNumber(state.price ?? state.bestAsk ?? state.bestBid),
+    ].join(" · ");
+  });
 }
 
 function boolLabel(value: unknown) {
