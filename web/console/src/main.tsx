@@ -269,6 +269,7 @@ function App() {
   const primarySessionTriggerSource = getRecord(primarySession?.state?.lastStrategyEvaluationTriggerSource);
   const primarySessionSourceGate = getRecord(primarySession?.state?.lastStrategyEvaluationSourceGate);
   const primarySessionDecision = getRecord(primarySession?.state?.lastStrategyDecision);
+  const primarySessionDecisionMeta = getRecord(primarySessionDecision.metadata);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
@@ -1216,6 +1217,13 @@ function App() {
                   <strong>
                     {formatTime(String(primarySession.state?.lastStrategyEvaluationNextPlannedEventAt ?? ""))} ·{" "}
                     {String(primarySession.state?.lastStrategyEvaluationNextPlannedRole ?? "--")}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Market / Planned</span>
+                  <strong>
+                    {formatMaybeNumber(primarySessionDecisionMeta.marketPrice)} /{" "}
+                    {formatMaybeNumber(primarySessionDecisionMeta.nextPlannedPrice)}
                   </strong>
                 </div>
                 <div className="session-stat">

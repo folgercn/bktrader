@@ -136,6 +136,7 @@ Paper/runtime integration status:
   - the engine receives trigger summary + structured source-state snapshot
   - the engine decides whether this event should advance execution or wait
   - the engine also sees the next planned execution timestamp so paper runtime can respect event-time ordering instead of advancing on any incoming tick
+  - the engine now also sees current market price context from trade-tick / order-book state and can reject progression when the market has drifted too far from the next planned execution price
   - this hook is the migration path from plan-driven paper execution to true real-time strategy decisions
 - strategy triggering is still a minimal event-driven rollout:
   - real tick events update the linked paper session

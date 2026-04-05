@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -52,6 +53,8 @@ type StrategySignalEvaluationContext struct {
 	SourceStates      map[string]any
 	EventTime         time.Time
 	NextPlannedEvent  time.Time
+	NextPlannedPrice  float64
+	NextPlannedSide   string
 	NextPlannedRole   string
 	NextPlannedReason string
 }
@@ -195,6 +198,16 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		action = "wait"
 		reason = "planned-event-not-reached"
 	}
+	marketPrice, marketSource := pickDecisionMarketPrice(trigger, sourceStates, context.NextPlannedSide)
+	maxDeviationBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxDeviationBps"]), 50)
+	deviationBps := 0.0
+	if action == "advance-plan" && context.NextPlannedPrice > 0 && marketPrice > 0 {
+		deviationBps = math.Abs(marketPrice/context.NextPlannedPrice-1) * 10000
+		if deviationBps > maxDeviationBps {
+			action = "wait"
+			reason = "price-outside-tolerance"
+		}
+	}
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
@@ -204,8 +217,14 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"symbol":            symbol,
 			"triggerSymbol":     triggerSymbol,
 			"nextPlannedEvent":  formatOptionalRFC3339(context.NextPlannedEvent),
+			"nextPlannedPrice":  context.NextPlannedPrice,
+			"nextPlannedSide":   context.NextPlannedSide,
 			"nextPlannedRole":   context.NextPlannedRole,
 			"nextPlannedReason": context.NextPlannedReason,
+			"marketPrice":       marketPrice,
+			"marketSource":      marketSource,
+			"maxDeviationBps":   maxDeviationBps,
+			"deviationBps":      deviationBps,
 		},
 	}, nil
 }
@@ -215,4 +234,61 @@ func formatOptionalRFC3339(value time.Time) string {
 		return ""
 	}
 	return value.UTC().Format(time.RFC3339)
+}
+
+func pickDecisionMarketPrice(trigger map[string]any, sourceStates map[string]any, side string) (float64, string) {
+	normalizedSide := strings.ToUpper(strings.TrimSpace(side))
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(trigger["subscriptionSymbol"]), stringValue(trigger["symbol"])))
+
+	bestBid, bestAsk := 0.0, 0.0
+	tradePrice := parseFloatValue(trigger["price"])
+
+	for _, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		if symbol != "" && NormalizeSymbol(stringValue(entry["symbol"])) != symbol {
+			continue
+		}
+		streamType := strings.ToLower(strings.TrimSpace(stringValue(entry["streamType"])))
+		summary := mapValue(entry["summary"])
+		switch streamType {
+		case "order_book":
+			if bestBid <= 0 {
+				bestBid = parseFloatValue(summary["bestBid"])
+			}
+			if bestAsk <= 0 {
+				bestAsk = parseFloatValue(summary["bestAsk"])
+			}
+		case "trade_tick":
+			if tradePrice <= 0 {
+				tradePrice = parseFloatValue(summary["price"])
+			}
+		}
+	}
+
+	switch normalizedSide {
+	case "BUY":
+		if bestAsk > 0 {
+			return bestAsk, "order_book.bestAsk"
+		}
+		if tradePrice > 0 {
+			return tradePrice, "trade_tick.price"
+		}
+		if bestBid > 0 {
+			return bestBid, "order_book.bestBid"
+		}
+	case "SELL", "SHORT":
+		if bestBid > 0 {
+			return bestBid, "order_book.bestBid"
+		}
+		if tradePrice > 0 {
+			return tradePrice, "trade_tick.price"
+		}
+		if bestAsk > 0 {
+			return bestAsk, "order_book.bestAsk"
+		}
+	}
+	return tradePrice, "trigger.price"
 }
