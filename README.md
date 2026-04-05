@@ -116,8 +116,10 @@ go run ./cmd/platform-api
   - 最近事件摘要
 - 当前 `binance-market-ws` 已经接入真实公共 WebSocket：
   - 可以真实订阅 `trade_tick`
+  - 可以在同一 session 里同时真实订阅 `trade_tick + order_book`
   - 会更新 `connectedAt / lastHeartbeatAt / lastEventSummary`
-  - `order_book` 和 `okx-market-ws` 仍先作为可启动骨架保留，下一步再补齐真实消息消费
+  - `order_book` 摘要会返回 `bestBid / bestAsk / bestBidQty / bestAskQty`
+- `okx-market-ws` 目前仍先作为可启动骨架保留，下一步再补齐真实消息消费
 
 实盘账户当前支持：
 - `LIVE` 账户默认状态为 `PENDING_SETUP`

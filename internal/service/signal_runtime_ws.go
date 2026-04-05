@@ -295,6 +295,23 @@ func summarizeSignalMessage(adapterKey string, payload []byte) map[string]any {
 		summary["event"] = firstNonEmpty(stringValue(body["e"]), stringValue(body["result"]), "message")
 		summary["symbol"] = stringValue(body["s"])
 		summary["price"] = firstNonEmpty(stringValue(body["p"]), stringValue(body["a"]), stringValue(body["b"]))
+		if bids, ok := body["b"].([]any); ok && len(bids) > 0 {
+			if first, ok := bids[0].([]any); ok && len(first) >= 2 {
+				summary["bestBid"] = stringValue(first[0])
+				summary["bestBidQty"] = stringValue(first[1])
+				summary["event"] = firstNonEmpty(stringValue(body["e"]), "depthUpdate")
+			}
+		}
+		if asks, ok := body["a"].([]any); ok && len(asks) > 0 {
+			if first, ok := asks[0].([]any); ok && len(first) >= 2 {
+				summary["bestAsk"] = stringValue(first[0])
+				summary["bestAskQty"] = stringValue(first[1])
+				summary["event"] = firstNonEmpty(stringValue(body["e"]), "depthUpdate")
+			}
+		}
+		if summary["bestBid"] != nil || summary["bestAsk"] != nil {
+			summary["price"] = firstNonEmpty(stringValue(summary["bestAsk"]), stringValue(summary["bestBid"]), stringValue(summary["price"]))
+		}
 	case "okx-market-ws":
 		if arg := metadataValue(body["arg"]); arg != nil {
 			summary["channel"] = stringValue(arg["channel"])

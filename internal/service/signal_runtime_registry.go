@@ -64,7 +64,8 @@ func (a staticSignalRuntimeAdapter) BuildSubscription(source domain.SignalSource
 			channel = strings.ToLower(binding.Symbol) + "@trade"
 		case "order_book":
 			levels := maxIntValue(binding.Options["levels"], 20)
-			channel = strings.ToLower(binding.Symbol) + "@depth" + fmt.Sprintf("%d", levels)
+			updateSpeed := firstNonEmpty(strings.TrimSpace(stringValue(binding.Options["updateSpeed"])), "100ms")
+			channel = strings.ToLower(binding.Symbol) + "@depth" + fmt.Sprintf("%d", levels) + "@" + updateSpeed
 		}
 	case "OKX":
 		switch source.StreamType {

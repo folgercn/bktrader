@@ -110,6 +110,16 @@ Source binding rules:
   - then extend to order-book streams
   - only after stream stability is confirmed should strategy-trigger execution be switched onto the live runtime path
 
+Current implementation status:
+
+- Binance public market websocket:
+  - trade tick: connected
+  - order book: connected
+  - session health / heartbeat / recent event summary: connected
+- OKX websocket:
+  - adapter and subscription plan reserved
+  - full live message consumption pending
+
 ### 4.2 Strategy Management
 
 Responsibilities:
