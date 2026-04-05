@@ -225,7 +225,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
 	entryProximityBps := computePriceProximityBps(context.NextPlannedPrice, marketPrice)
 	exitProximityBps := entryProximityBps
-	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps, entryProximityBps, exitProximityBps)
+	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps, entryProximityBps, exitProximityBps, orderBookStats.bias)
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
@@ -369,13 +369,14 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 	}
 }
 
-func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any, positionPnLBps float64, entryProximityBps float64, exitProximityBps float64) string {
+func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any, positionPnLBps float64, entryProximityBps float64, exitProximityBps float64, liquidityBias string) string {
 	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	positionQty := parseFloatValue(currentPosition["quantity"])
 	hasPosition := positionQty > 0 && positionSide != ""
 	reasonTag := normalizeStrategyReasonTag(nextReason)
 	nearEntry := entryProximityBps > 0 && entryProximityBps <= 10
 	nearExit := exitProximityBps > 0 && exitProximityBps <= 10
+	favorableBias := isFavorableBiasForPlan(nextRole, nextReason, liquidityBias)
 	if action == "advance-plan" {
 		switch strings.ToLower(strings.TrimSpace(nextRole)) {
 		case "entry":
@@ -410,16 +411,25 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 		switch reasonTag {
 		case "initial":
 			if nearEntry {
+				if favorableBias {
+					return "initial-entry-near-strong"
+				}
 				return "initial-entry-near"
 			}
 			return "initial-entry-watch"
 		case "sl-reentry":
 			if nearEntry {
+				if favorableBias {
+					return "sl-reentry-near-strong"
+				}
 				return "sl-reentry-near"
 			}
 			return "sl-reentry-watch"
 		case "pt-reentry":
 			if nearEntry {
+				if favorableBias {
+					return "pt-reentry-near-strong"
+				}
 				return "pt-reentry-near"
 			}
 			return "pt-reentry-watch"
@@ -428,6 +438,12 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 		switch reasonTag {
 		case "pt":
 			if nearExit {
+				if favorableBias {
+					return "protect-exit-near-strong"
+				}
+				if liquidityBias != "" && liquidityBias != "balanced" {
+					return "protect-exit-near-weak"
+				}
 				return "protect-exit-near"
 			}
 			if hasPosition && positionPnLBps > 0 {
@@ -478,6 +494,22 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 		}
 		return "hold"
 	}
+}
+
+func isFavorableBiasForPlan(nextRole, nextReason, liquidityBias string) bool {
+	liquidityBias = strings.ToLower(strings.TrimSpace(liquidityBias))
+	if liquidityBias == "" || liquidityBias == "balanced" {
+		return false
+	}
+	role := strings.ToLower(strings.TrimSpace(nextRole))
+	reasonTag := normalizeStrategyReasonTag(nextReason)
+	if role == "entry" {
+		return liquidityBias == "bid-heavy"
+	}
+	if role == "exit" && reasonTag == "pt" {
+		return liquidityBias == "ask-heavy"
+	}
+	return false
 }
 
 func computePositionPnLBps(currentPosition map[string]any, marketPrice float64) float64 {

@@ -136,7 +136,7 @@ Paper/runtime integration status:
   - the engine receives trigger summary + structured source-state snapshot
   - the engine decides whether this event should advance execution or wait
   - the engine also emits a higher-level decision state such as `entry-ready`, `exit-ready`, `waiting-time`, or `waiting-price`
-  - the engine also emits a strategy-facing `signalKind` such as `initial-entry`, `initial-entry-watch`, `initial-entry-near`, `sl-reentry`, `sl-reentry-watch`, `sl-reentry-near`, `pt-reentry`, `pt-reentry-watch`, `pt-reentry-near`, `hold-long`, `hold-short`, `protect-exit`, `protect-exit-watch`, `protect-exit-near`, `risk-exit`, `risk-exit-watch`, or `risk-exit-near`
+  - the engine also emits a strategy-facing `signalKind` such as `initial-entry`, `initial-entry-watch`, `initial-entry-near`, `initial-entry-near-strong`, `sl-reentry`, `sl-reentry-watch`, `sl-reentry-near`, `sl-reentry-near-strong`, `pt-reentry`, `pt-reentry-watch`, `pt-reentry-near`, `pt-reentry-near-strong`, `hold-long`, `hold-short`, `protect-exit`, `protect-exit-watch`, `protect-exit-near`, `protect-exit-near-strong`, `protect-exit-near-weak`, `risk-exit`, `risk-exit-watch`, or `risk-exit-near`
   - signal evaluation now includes current paper position snapshot so strategy state is no longer inferred only from the next planned event
   - watch/exit semantics can now also incorporate current position PnL direction against live market price
   - the engine also sees the next planned execution timestamp so paper runtime can respect event-time ordering instead of advancing on any incoming tick
