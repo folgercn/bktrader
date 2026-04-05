@@ -31,11 +31,24 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 	})
 
 	mux.HandleFunc("/api/v1/runtime-policy", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, platform.RuntimePolicy())
+		case http.MethodPost:
+			var payload service.RuntimePolicy
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			policy, err := platform.UpdateRuntimePolicy(payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid runtime policy payload")
+				return
+			}
+			writeJSON(w, http.StatusOK, policy)
+		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
 		}
-		writeJSON(w, http.StatusOK, platform.RuntimePolicy())
 	})
 
 	mux.HandleFunc("/api/v1/signal-runtime/plan", func(w http.ResponseWriter, r *http.Request) {

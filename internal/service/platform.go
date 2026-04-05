@@ -10,6 +10,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -106,4 +107,16 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 
 func (p *Platform) RuntimePolicy() RuntimePolicy {
 	return p.runtimePolicy
+}
+
+func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, error) {
+	if policy.TradeTickFreshnessSeconds < 0 ||
+		policy.OrderBookFreshnessSeconds < 0 ||
+		policy.SignalBarFreshnessSeconds < 0 ||
+		policy.RuntimeQuietSeconds < 0 ||
+		policy.PaperStartReadinessTimeoutSecs < 0 {
+		return p.runtimePolicy, fmt.Errorf("runtime policy values must be non-negative")
+	}
+	p.SetRuntimePolicy(policy)
+	return p.runtimePolicy, nil
 }

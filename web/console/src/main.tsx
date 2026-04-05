@@ -340,6 +340,7 @@ function App() {
   const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
   const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
   const [backtestAction, setBacktestAction] = useState(false);
+  const [runtimePolicyAction, setRuntimePolicyAction] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [timeWindow, setTimeWindow] = useState<TimeWindow>("12h");
@@ -399,6 +400,13 @@ function App() {
   const [signalRuntimeForm, setSignalRuntimeForm] = useState({
     accountId: "",
     strategyId: "",
+  });
+  const [runtimePolicyForm, setRuntimePolicyForm] = useState({
+    tradeTickFreshnessSeconds: "15",
+    orderBookFreshnessSeconds: "10",
+    signalBarFreshnessSeconds: "30",
+    runtimeQuietSeconds: "30",
+    paperStartReadinessTimeoutSeconds: "5",
   });
 
   const primaryAccount = summaries[0] ?? null;
@@ -597,6 +605,13 @@ function App() {
     setSignalRuntimeAdapters(signalRuntimeAdapterData);
     setSignalRuntimeSessions(signalRuntimeSessionData);
     setRuntimePolicy(runtimePolicyData);
+    setRuntimePolicyForm({
+      tradeTickFreshnessSeconds: String(runtimePolicyData.tradeTickFreshnessSeconds ?? 15),
+      orderBookFreshnessSeconds: String(runtimePolicyData.orderBookFreshnessSeconds ?? 10),
+      signalBarFreshnessSeconds: String(runtimePolicyData.signalBarFreshnessSeconds ?? 30),
+      runtimeQuietSeconds: String(runtimePolicyData.runtimeQuietSeconds ?? 30),
+      paperStartReadinessTimeoutSeconds: String(runtimePolicyData.paperStartReadinessTimeoutSeconds ?? 5),
+    });
     setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
     setSelectedSignalRuntimeId((current) => {
@@ -963,6 +978,40 @@ function App() {
       setError(err instanceof Error ? err.message : "Failed to create signal runtime session");
     } finally {
       setSignalRuntimeAction(null);
+    }
+  }
+
+  async function updateRuntimePolicy() {
+    setRuntimePolicyAction(true);
+    try {
+      const payload = {
+        tradeTickFreshnessSeconds: Math.max(0, Number(runtimePolicyForm.tradeTickFreshnessSeconds) || 0),
+        orderBookFreshnessSeconds: Math.max(0, Number(runtimePolicyForm.orderBookFreshnessSeconds) || 0),
+        signalBarFreshnessSeconds: Math.max(0, Number(runtimePolicyForm.signalBarFreshnessSeconds) || 0),
+        runtimeQuietSeconds: Math.max(0, Number(runtimePolicyForm.runtimeQuietSeconds) || 0),
+        paperStartReadinessTimeoutSeconds: Math.max(0, Number(runtimePolicyForm.paperStartReadinessTimeoutSeconds) || 0),
+      };
+      const updated = await fetchJSON<RuntimePolicy>("/api/v1/runtime-policy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setRuntimePolicy(updated);
+      setRuntimePolicyForm({
+        tradeTickFreshnessSeconds: String(updated.tradeTickFreshnessSeconds ?? payload.tradeTickFreshnessSeconds),
+        orderBookFreshnessSeconds: String(updated.orderBookFreshnessSeconds ?? payload.orderBookFreshnessSeconds),
+        signalBarFreshnessSeconds: String(updated.signalBarFreshnessSeconds ?? payload.signalBarFreshnessSeconds),
+        runtimeQuietSeconds: String(updated.runtimeQuietSeconds ?? payload.runtimeQuietSeconds),
+        paperStartReadinessTimeoutSeconds: String(
+          updated.paperStartReadinessTimeoutSeconds ?? payload.paperStartReadinessTimeoutSeconds
+        ),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update runtime policy");
+    } finally {
+      setRuntimePolicyAction(false);
     }
   }
 
@@ -1969,6 +2018,76 @@ function App() {
           </div>
 
           <div className="live-grid">
+            <div className="backtest-form session-form">
+              <h4>Runtime Policy</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Trade Tick Freshness (s)</span>
+                  <input
+                    value={runtimePolicyForm.tradeTickFreshnessSeconds}
+                    onChange={(event) =>
+                      setRuntimePolicyForm((current) => ({ ...current, tradeTickFreshnessSeconds: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Order Book Freshness (s)</span>
+                  <input
+                    value={runtimePolicyForm.orderBookFreshnessSeconds}
+                    onChange={(event) =>
+                      setRuntimePolicyForm((current) => ({ ...current, orderBookFreshnessSeconds: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Signal Bar Freshness (s)</span>
+                  <input
+                    value={runtimePolicyForm.signalBarFreshnessSeconds}
+                    onChange={(event) =>
+                      setRuntimePolicyForm((current) => ({ ...current, signalBarFreshnessSeconds: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Runtime Quiet (s)</span>
+                  <input
+                    value={runtimePolicyForm.runtimeQuietSeconds}
+                    onChange={(event) =>
+                      setRuntimePolicyForm((current) => ({ ...current, runtimeQuietSeconds: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Paper Start Timeout (s)</span>
+                  <input
+                    value={runtimePolicyForm.paperStartReadinessTimeoutSeconds}
+                    onChange={(event) =>
+                      setRuntimePolicyForm((current) => ({
+                        ...current,
+                        paperStartReadinessTimeoutSeconds: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton
+                  label={runtimePolicyAction ? "Saving..." : "Save Runtime Policy"}
+                  disabled={runtimePolicyAction}
+                  onClick={updateRuntimePolicy}
+                />
+              </div>
+              <div className="backtest-notes">
+                <div className="note-item">
+                  active policy: tick {runtimePolicy?.tradeTickFreshnessSeconds ?? "--"}s · book {runtimePolicy?.orderBookFreshnessSeconds ?? "--"}s ·
+                  bar {runtimePolicy?.signalBarFreshnessSeconds ?? "--"}s
+                </div>
+                <div className="note-item">
+                  quiet {runtimePolicy?.runtimeQuietSeconds ?? "--"}s · paper preflight {runtimePolicy?.paperStartReadinessTimeoutSeconds ?? "--"}s
+                </div>
+              </div>
+            </div>
+
             <div className="backtest-form session-form">
               <h4>Create Runtime Session</h4>
               <div className="form-grid">
