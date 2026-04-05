@@ -125,7 +125,11 @@ Paper/runtime integration status:
 - paper sessions now link to signal runtime sessions when source bindings exist
 - tick-based paper sessions require a ready signal runtime plan before start
 - starting a linked paper session will start the associated market-data runtime first
-- strategy triggering is not yet fully event-driven; current rollout focuses on source-lifecycle consistency before replacing the execution scheduler
+- linked tick events now drive a throttled paper-session heartbeat
+- strategy triggering is still a minimal event-driven rollout:
+  - real tick events update the linked paper session
+  - the session is nudged forward by runtime events at a throttled cadence
+  - full per-tick strategy evaluation replacement is still pending
 
 ### 4.2 Strategy Management
 

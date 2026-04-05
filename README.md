@@ -124,7 +124,8 @@ go run ./cmd/platform-api
 当前 `paper session` 已经开始接入 signal runtime：
 - 创建 `executionDataSource=tick` 的 paper session 时，会自动生成并挂上 `signalRuntimeSessionId`
 - 启动 paper session 时，会先把 linked signal runtime 拉起
-- 现在这一步先打通“linked runtime lifecycle”，下一步再把实时 tick 事件真正推进到策略触发逻辑
+- `PAPER + tick + linked runtime` 现在会在收到真实 tick 后，按节流频率推进一次策略 heartbeat
+- 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
 
 实盘账户当前支持：
 - `LIVE` 账户默认状态为 `PENDING_SETUP`

@@ -145,6 +145,42 @@ func (p *Platform) TickPaperSession(sessionID string) (domain.Order, error) {
 	return p.placePaperSessionOrder(session)
 }
 
+func (p *Platform) triggerPaperSessionFromSignal(sessionID string, summary map[string]any, eventTime time.Time) error {
+	session, err := p.store.GetPaperSession(sessionID)
+	if err != nil {
+		return err
+	}
+	if session.Status != "RUNNING" {
+		return nil
+	}
+
+	state := cloneMetadata(session.State)
+	state["lastSignalRuntimeEventAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastSignalRuntimeEvent"] = cloneMetadata(summary)
+
+	throttleSeconds := maxIntValue(state["signalTriggerThrottleSeconds"], 5)
+	lastTriggeredAt := parseOptionalRFC3339(stringValue(state["lastSignalDrivenTickAt"]))
+	if !lastTriggeredAt.IsZero() && eventTime.Sub(lastTriggeredAt) < time.Duration(throttleSeconds)*time.Second {
+		_, err := p.store.UpdatePaperSessionState(session.ID, state)
+		return err
+	}
+
+	state["lastSignalDrivenTickAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["signalTriggerThrottleSeconds"] = throttleSeconds
+	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
+	if err != nil {
+		return err
+	}
+
+	_, err = p.placePaperSessionOrder(updatedSession)
+	if err != nil {
+		state = cloneMetadata(updatedSession.State)
+		state["lastSignalTriggerError"] = err.Error()
+		_, _ = p.store.UpdatePaperSessionState(session.ID, state)
+	}
+	return nil
+}
+
 // SetTickInterval 设置模拟盘后台循环的 Ticker 间隔（秒）。
 func (p *Platform) SetTickInterval(seconds int) {
 	if seconds > 0 {
@@ -162,7 +198,9 @@ func (p *Platform) runPaperSessionLoop(ctx context.Context, session domain.Paper
 	defer ticker.Stop()
 	defer p.removeRunner(session.ID)
 
-	_, _ = p.placePaperSessionOrder(session)
+	if !boolValue(session.State["signalRuntimeRequired"]) {
+		_, _ = p.placePaperSessionOrder(session)
+	}
 
 	for {
 		select {
@@ -175,6 +213,9 @@ func (p *Platform) runPaperSessionLoop(ctx context.Context, session domain.Paper
 			current, err := p.store.GetPaperSession(session.ID)
 			if err != nil || current.Status != "RUNNING" {
 				return
+			}
+			if boolValue(current.State["signalRuntimeRequired"]) {
+				continue
 			}
 			_, _ = p.placePaperSessionOrder(current)
 		}

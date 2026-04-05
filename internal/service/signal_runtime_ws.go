@@ -176,16 +176,18 @@ func (p *Platform) runExchangeWebsocketLoop(
 				continue
 			}
 			now := time.Now().UTC()
+			summary := summarizeSignalMessage(session.RuntimeAdapter, payload)
 			_ = conn.SetReadDeadline(now.Add(60 * time.Second))
 			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 				state := cloneMetadata(session.State)
 				state["health"] = "healthy"
 				state["lastHeartbeatAt"] = now.Format(time.RFC3339)
 				state["lastEventAt"] = now.Format(time.RFC3339)
-				state["lastEventSummary"] = summarizeSignalMessage(session.RuntimeAdapter, payload)
+				state["lastEventSummary"] = summary
 				session.State = state
 				session.UpdatedAt = now
 			})
+			_ = p.handleSignalRuntimeMessage(session.ID, summary, now)
 		}
 	}()
 
@@ -235,6 +237,29 @@ func (p *Platform) runExchangeWebsocketLoop(
 			})
 		}
 	}
+}
+
+func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
+	paperSessions, err := p.store.ListPaperSessions()
+	if err != nil {
+		return err
+	}
+	for _, session := range paperSessions {
+		if stringValue(session.State["signalRuntimeSessionId"]) != runtimeSessionID {
+			continue
+		}
+		if session.Status != "RUNNING" {
+			continue
+		}
+		if !boolValue(session.State["signalRuntimeRequired"]) {
+			continue
+		}
+		if stringValue(session.State["executionDataSource"]) != "tick" {
+			continue
+		}
+		_ = p.triggerPaperSessionFromSignal(session.ID, summary, eventTime)
+	}
+	return nil
 }
 
 func buildBinanceSubscribePayload(subscriptions []map[string]any) (map[string]any, error) {
