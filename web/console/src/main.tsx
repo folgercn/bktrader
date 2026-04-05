@@ -390,6 +390,13 @@ type HighlightedLiveSession = {
   execution: LiveSessionExecutionSummary;
 } | null;
 
+type LiveSessionFlowStep = {
+  key: string;
+  label: string;
+  status: "ready" | "watch" | "blocked" | "neutral";
+  detail: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -595,6 +602,13 @@ function App() {
   const highlightedLiveSession = useMemo(
     () => deriveHighlightedLiveSession(liveSessions, orders, fills, positions),
     [liveSessions, orders, fills, positions]
+  );
+  const highlightedLiveSessionFlow = useMemo(
+    () =>
+      highlightedLiveSession
+        ? deriveLiveSessionFlow(highlightedLiveSession.session, highlightedLiveSession.execution)
+        : [],
+    [highlightedLiveSession]
   );
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
   const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
@@ -3070,6 +3084,14 @@ function App() {
                     position: {String(highlightedLiveSession.execution.position?.side ?? "FLAT")} · {formatMaybeNumber(highlightedLiveSession.execution.position?.quantity)} @ {formatMaybeNumber(highlightedLiveSession.execution.position?.entryPrice)}
                   </div>
                 </div>
+                <div className="flow-row">
+                  {highlightedLiveSessionFlow.map((step) => (
+                    <div key={step.key} className="flow-step">
+                      <StatusPill tone={step.status}>{step.label}</StatusPill>
+                      <span>{step.detail}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           ) : null}
@@ -5242,6 +5264,54 @@ function deriveHighlightedLiveSession(
     })
     .sort((left, right) => right.priority - left.priority || Date.parse(right.session.createdAt) - Date.parse(left.session.createdAt));
   return ranked[0] ?? null;
+}
+
+function deriveLiveSessionFlow(session: LiveSession, summary: LiveSessionExecutionSummary): LiveSessionFlowStep[] {
+  const runtimeStatus = String(session.state?.signalRuntimeStatus ?? "").toUpperCase();
+  const hasIntent = !!getRecord(session.state?.lastStrategyIntent).action;
+  const lastOrderStatus = String(summary.latestOrder?.status ?? "").toUpperCase();
+  const hasPosition = !!summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0;
+  const syncError = String(session.state?.lastSyncError ?? "").trim();
+
+  return [
+    {
+      key: "runtime",
+      label: "runtime",
+      status: runtimeStatus === "RUNNING" ? "ready" : runtimeStatus === "" ? "neutral" : "blocked",
+      detail: runtimeStatus || "not-linked",
+    },
+    {
+      key: "intent",
+      label: "intent",
+      status: hasIntent ? "ready" : "watch",
+      detail: hasIntent ? String(getRecord(session.state?.lastStrategyIntent).signalKind ?? "ready") : "waiting",
+    },
+    {
+      key: "dispatch",
+      label: "dispatch",
+      status:
+        summary.latestOrder == null
+          ? "watch"
+          : ["NEW", "ACCEPTED"].includes(lastOrderStatus)
+            ? "watch"
+            : ["FILLED"].includes(lastOrderStatus)
+              ? "ready"
+              : "blocked",
+      detail: summary.latestOrder ? lastOrderStatus : "not-sent",
+    },
+    {
+      key: "sync",
+      label: "sync",
+      status: syncError ? "blocked" : ["FILLED", "CANCELLED", "REJECTED"].includes(lastOrderStatus) ? "ready" : summary.latestOrder ? "watch" : "neutral",
+      detail: syncError || String(session.state?.lastSyncedOrderStatus ?? (summary.latestOrder ? "pending" : "--")),
+    },
+    {
+      key: "position",
+      label: "position",
+      status: hasPosition ? "ready" : "neutral",
+      detail: hasPosition ? `${String(summary.position?.side ?? "OPEN")} ${formatMaybeNumber(summary.position?.quantity)}` : "flat",
+    },
+  ];
 }
 
 function liveSessionHealthPriority(status: string) {
