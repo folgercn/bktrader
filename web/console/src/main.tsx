@@ -3164,7 +3164,7 @@ function App() {
               </div>
             </div>
             <SimpleTable
-              columns={["Time", "Symbol", "Side", "Qty", "Price", "Status"]}
+              columns={["Time", "Symbol", "Side", "Qty", "Price", "Status", "Mode", "Runtime", "Preflight"]}
               rows={orders
                 .slice()
                 .reverse()
@@ -3176,6 +3176,9 @@ function App() {
                   formatNumber(order.quantity, 4),
                   formatMoney(order.price),
                   order.status,
+                  String(order.metadata?.executionMode ?? "--"),
+                  String(order.metadata?.runtimeSessionId ?? "--"),
+                  summarizeOrderPreflight(order.metadata?.runtimePreflight),
                 ])}
               emptyMessage="No orders"
             />
@@ -4338,6 +4341,18 @@ function buildTimelineNotes(items: Array<Record<string, unknown>>) {
       }
       return fragments.join(" · ");
     });
+}
+
+function summarizeOrderPreflight(value: unknown) {
+  const preflight = getRecord(value);
+  if (Object.keys(preflight).length === 0) {
+    return "--";
+  }
+  return [
+    `ready=${boolLabel(preflight.ready)}`,
+    `missing=${String(getList(preflight.missing).length)}`,
+    `stale=${String(getList(preflight.stale).length)}`,
+  ].join(" · ");
 }
 
 function derivePaperAlerts(
