@@ -22,6 +22,7 @@ type Platform struct {
 	store           store.Repository              // 存储层接口（内存 / PostgreSQL）
 	mu              sync.Mutex                    // 保护 run map 的并发访问
 	run             map[string]context.CancelFunc // 运行中的 paper session -> cancel 函数
+	signalRun       map[string]context.CancelFunc // 运行中的 signal runtime session -> cancel 函数
 	paperPlans      map[string][]paperPlannedOrder
 	strategyEngines map[string]StrategyEngine
 	liveAdapters    map[string]LiveExecutionAdapter
@@ -46,6 +47,7 @@ func NewPlatform(store store.Repository) *Platform {
 	platform := &Platform{
 		store:           store,
 		run:             make(map[string]context.CancelFunc),
+		signalRun:       make(map[string]context.CancelFunc),
 		paperPlans:      make(map[string][]paperPlannedOrder),
 		strategyEngines: make(map[string]StrategyEngine),
 		liveAdapters:    make(map[string]LiveExecutionAdapter),

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -90,6 +91,12 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 		p.mu.Unlock()
 		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
 	}
+	if _, exists := p.signalRun[sessionID]; exists {
+		p.mu.Unlock()
+		return session, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.signalRun[sessionID] = cancel
 	now := time.Now().UTC()
 	state := cloneMetadata(session.State)
 	state["health"] = "healthy"
@@ -108,6 +115,7 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 	session.UpdatedAt = now
 	p.signalSessions[session.ID] = session
 	p.mu.Unlock()
+	go p.runSignalRuntimeLoop(ctx, sessionID)
 	return session, nil
 }
 
@@ -117,6 +125,10 @@ func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRunt
 	if !ok {
 		p.mu.Unlock()
 		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+	cancel, running := p.signalRun[sessionID]
+	if running {
+		delete(p.signalRun, sessionID)
 	}
 	now := time.Now().UTC()
 	state := cloneMetadata(session.State)
@@ -133,7 +145,28 @@ func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRunt
 	session.UpdatedAt = now
 	p.signalSessions[session.ID] = session
 	p.mu.Unlock()
+	if running {
+		cancel()
+	}
 	return session, nil
+}
+
+func (p *Platform) updateSignalRuntimeSessionState(sessionID string, updater func(session *domain.SignalRuntimeSession)) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	session, ok := p.signalSessions[sessionID]
+	if !ok {
+		return fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+	updater(&session)
+	p.signalSessions[sessionID] = session
+	return nil
+}
+
+func (p *Platform) removeSignalRuntimeRunner(sessionID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.signalRun, sessionID)
 }
 
 func inferSignalRuntimeTransport(subscriptions []map[string]any) string {

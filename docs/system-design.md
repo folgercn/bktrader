@@ -105,6 +105,10 @@ Source binding rules:
   - track runtime adapter, transport, health and heartbeat
   - expose recent event summaries for operational visibility
   - serve as the control point for starting/stopping exchange market-data consumers
+- runtime rollout order:
+  - first connect public exchange trade-tick streams and verify heartbeats / recent events
+  - then extend to order-book streams
+  - only after stream stability is confirmed should strategy-trigger execution be switched onto the live runtime path
 
 ### 4.2 Strategy Management
 
