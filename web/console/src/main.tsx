@@ -1170,6 +1170,19 @@ function App() {
     }
   }
 
+  async function dispatchLiveSessionIntent(sessionId: string) {
+    try {
+      setLiveSessionAction(`${sessionId}:dispatch`);
+      setError(null);
+      await fetchJSON(`/api/v1/live/sessions/${sessionId}/dispatch`, { method: "POST" });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to dispatch live session intent");
+    } finally {
+      setLiveSessionAction(null);
+    }
+  }
+
   async function bindAccountSignalSource() {
     if (!accountSignalForm.accountId || !accountSignalForm.sourceKey) {
       setError("Account signal binding needs an account and source");
@@ -3167,6 +3180,15 @@ function App() {
                             onClick={() => runLiveSessionAction(session.id, "start")}
                           />
                           <ActionButton
+                            label={liveSessionAction === `${session.id}:dispatch` ? "Dispatching..." : "Dispatch Intent"}
+                            disabled={
+                              liveSessionAction !== null ||
+                              !getRecord(session.state?.lastStrategyIntent).action ||
+                              String(session.state?.dispatchMode ?? "") !== "manual-review"
+                            }
+                            onClick={() => dispatchLiveSessionIntent(session.id)}
+                          />
+                          <ActionButton
                             label={liveSessionAction === `${session.id}:stop` ? "Stopping..." : "Stop"}
                             variant="ghost"
                             disabled={liveSessionAction !== null || session.status === "STOPPED"}
@@ -3193,6 +3215,9 @@ function App() {
                   </div>
                   <div className="note-item">
                     intent: {String(primaryLiveSessionIntent.action ?? "none")} · {String(primaryLiveSessionIntent.side ?? "--")} · {formatMaybeNumber(primaryLiveSessionIntent.priceHint)}
+                  </div>
+                  <div className="note-item">
+                    dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
                   </div>
                   {buildTimelineNotes(primaryLiveSessionTimeline).slice(0, 4).map((line) => (
                     <div key={line} className="note-item">

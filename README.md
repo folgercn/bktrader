@@ -96,6 +96,7 @@ go run ./cmd/platform-api
 - `GET|POST /api/v1/live/sessions` — 实盘策略会话
 - `POST /api/v1/live/sessions/{id}/start` — 启动实盘策略会话
 - `POST /api/v1/live/sessions/{id}/stop` — 停止实盘策略会话
+- `POST /api/v1/live/sessions/{id}/dispatch` — 手动确认并派发当前实盘策略意图
 
 创建模拟会话时支持可选 runtime overrides：
 - `signalTimeframe`
@@ -212,6 +213,9 @@ go run ./cmd/platform-api
   - `lastStrategyIntent`
   - `lastStrategyEvaluationSourceGate`
   - `timeline`
+- 当前可以对 `lastStrategyIntent` 执行人工确认派单：
+  - 只有当 live session 产出了 ready intent 时才允许 dispatch
+  - dispatch 会复用现有 live preflight 和 live adapter 提交流程
 - 这一步先把“实盘策略会话”和“实盘自动派单”拆开，方便先把 runtime/策略评估链路跑稳
 
 实盘账户当前支持：

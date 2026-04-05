@@ -68,6 +68,65 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 	return p.store.UpdateLiveSessionStatus(sessionID, "RUNNING")
 }
 
+func (p *Platform) DispatchLiveSessionIntent(sessionID string) (domain.Order, error) {
+	session, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if !strings.EqualFold(session.Status, "RUNNING") && !strings.EqualFold(session.Status, "READY") {
+		return domain.Order{}, fmt.Errorf("live session %s is not dispatchable in status %s", session.ID, session.Status)
+	}
+
+	intent := cloneMetadata(mapValue(session.State["lastStrategyIntent"]))
+	if len(intent) == 0 {
+		return domain.Order{}, fmt.Errorf("live session %s has no ready intent", session.ID)
+	}
+	side := strings.ToUpper(strings.TrimSpace(stringValue(intent["side"])))
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(intent["type"]), "MARKET")))
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(intent["symbol"]), stringValue(session.State["symbol"])))
+	priceHint := parseFloatValue(intent["priceHint"])
+	quantity := firstPositive(parseFloatValue(intent["quantity"]), firstPositive(parseFloatValue(session.State["defaultOrderQuantity"]), 0.001))
+
+	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	order := domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: version.ID,
+		Symbol:            symbol,
+		Side:              side,
+		Type:              orderType,
+		Quantity:          quantity,
+		Price:             priceHint,
+		Metadata: map[string]any{
+			"source":        "live-session-intent",
+			"liveSessionId": session.ID,
+			"signalKind":    stringValue(intent["signalKind"]),
+			"dispatchMode":  stringValue(session.State["dispatchMode"]),
+			"intent":        cloneMetadata(intent),
+		},
+	}
+	created, err := p.CreateOrder(order)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	state := cloneMetadata(session.State)
+	state["lastDispatchedOrderId"] = created.ID
+	state["lastDispatchedAt"] = time.Now().UTC().Format(time.RFC3339)
+	state["lastDispatchedIntent"] = intent
+	delete(state, "lastStrategyIntent")
+	appendTimelineEvent(state, "order", time.Now().UTC(), "live-intent-dispatched", map[string]any{
+		"orderId": created.ID,
+		"side":    created.Side,
+		"symbol":  created.Symbol,
+		"price":   created.Price,
+	})
+	_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+	return created, nil
+}
+
 func (p *Platform) StopLiveSession(sessionID string) (domain.LiveSession, error) {
 	session, err := p.store.UpdateLiveSessionStatus(sessionID, "STOPPED")
 	if err != nil {
