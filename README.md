@@ -133,11 +133,17 @@ go run ./cmd/platform-api
   - 必需 trigger / feature 源没有状态快照时，不推进策略
   - 快照超过新鲜度窗口时，不推进策略
   - 默认新鲜度：`trade_tick=15s`，`order_book=10s`
-- 通过 `source gate` 后，paper 现在会调用策略引擎的 `signal evaluation` 入口：
-  - 策略引擎可以基于 `trigger + sourceStates` 决定本次是 `advance-plan` 还是 `wait`
-  - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
-  - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
-  - 当前还会比较“当前市场价”和“下一笔计划价”的偏离：
+  - 通过 `source gate` 后，paper 现在会调用策略引擎的 `signal evaluation` 入口：
+    - 策略引擎可以基于 `trigger + sourceStates` 决定本次是 `advance-plan` 还是 `wait`
+    - 同时会产出更明确的决策状态，例如：
+      - `entry-ready`
+      - `exit-ready`
+      - `waiting-time`
+      - `waiting-price`
+      - `waiting-inputs`
+    - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
+    - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
+    - 当前还会比较“当前市场价”和“下一笔计划价”的偏离：
     - `BUY` 优先看 `bestAsk`
     - `SELL/SHORT` 优先看 `bestBid`
     - 默认允许最大偏离 `50 bps`

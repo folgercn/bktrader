@@ -1209,7 +1209,7 @@ function App() {
                 <div className="session-stat">
                   <span>Strategy Decision</span>
                   <strong>
-                    {String(primarySessionDecision.action ?? "--")} · {String(primarySessionDecision.reason ?? "--")}
+                    {String(primarySessionDecisionMeta.decisionState ?? primarySessionDecision.action ?? "--")} · {String(primarySessionDecision.reason ?? "--")}
                   </strong>
                 </div>
                 <div className="session-stat">

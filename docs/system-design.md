@@ -135,6 +135,7 @@ Paper/runtime integration status:
 - after source gating passes, the platform now calls a strategy-engine-level `signal evaluation` hook:
   - the engine receives trigger summary + structured source-state snapshot
   - the engine decides whether this event should advance execution or wait
+  - the engine also emits a higher-level decision state such as `entry-ready`, `exit-ready`, `waiting-time`, or `waiting-price`
   - the engine also sees the next planned execution timestamp so paper runtime can respect event-time ordering instead of advancing on any incoming tick
   - the engine now also sees current market price context from trade-tick / order-book state and can reject progression when the next planned action is no longer directionally actionable at current market prices
   - this hook is the migration path from plan-driven paper execution to true real-time strategy decisions

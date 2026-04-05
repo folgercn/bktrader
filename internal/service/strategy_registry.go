@@ -208,10 +208,12 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			reason = "price-not-actionable"
 		}
 	}
+	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
 		Metadata: map[string]any{
+			"decisionState":     decisionState,
 			"trigger":           trigger,
 			"sourceStateCount":  len(sourceStates),
 			"symbol":            symbol,
@@ -306,5 +308,30 @@ func isPlannedPriceActionable(side string, plannedPrice, marketPrice, maxDeviati
 		return marketPrice >= plannedPrice*(1-tolerance)
 	default:
 		return math.Abs(marketPrice/plannedPrice-1) <= tolerance
+	}
+}
+
+func classifyStrategyDecisionState(action, reason, nextRole string) string {
+	if action == "advance-plan" {
+		switch strings.ToLower(strings.TrimSpace(nextRole)) {
+		case "entry":
+			return "entry-ready"
+		case "exit":
+			return "exit-ready"
+		default:
+			return "advance-ready"
+		}
+	}
+	switch reason {
+	case "non-trigger-event", "symbol-mismatch":
+		return "ignore-event"
+	case "missing-source-states":
+		return "waiting-inputs"
+	case "planned-event-not-reached":
+		return "waiting-time"
+	case "price-not-actionable":
+		return "waiting-price"
+	default:
+		return "waiting"
 	}
 }
