@@ -259,6 +259,13 @@ type SelectableSample = SelectedSample & {
   group: "completed" | "skipped";
 };
 
+type RuntimeMarketSnapshot = {
+  tradePrice?: number;
+  bestBid?: number;
+  bestAsk?: number;
+  spreadBps?: number;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -372,6 +379,10 @@ function App() {
     null;
   const primaryLinkedSignalRuntimeState = getRecord(primaryLinkedSignalRuntime?.state);
   const primaryLinkedSignalRuntimeSummary = getRecord(primaryLinkedSignalRuntimeState.lastEventSummary);
+  const primaryLinkedSignalRuntimeMarket = deriveRuntimeMarketSnapshot(
+    getRecord(primaryLinkedSignalRuntimeState.sourceStates),
+    primaryLinkedSignalRuntimeSummary
+  );
   const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
   const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
@@ -1482,6 +1493,17 @@ function App() {
                   </strong>
                 </div>
                 <div className="session-stat">
+                  <span>Runtime Market</span>
+                  <strong>
+                    {formatMaybeNumber(primaryLinkedSignalRuntimeMarket.tradePrice)} · {formatMaybeNumber(primaryLinkedSignalRuntimeMarket.bestBid)} /{" "}
+                    {formatMaybeNumber(primaryLinkedSignalRuntimeMarket.bestAsk)}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Runtime Spread</span>
+                  <strong>{formatMaybeNumber(primaryLinkedSignalRuntimeMarket.spreadBps)} bps</strong>
+                </div>
+                <div className="session-stat">
                   <span>Trading / Funding</span>
                   <strong>
                     {formatMaybeNumber(primarySession.state?.tradingFeeBps)} bps /{" "}
@@ -2079,6 +2101,7 @@ function App() {
                     const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
                     const activeRuntimeState = getRecord(activeRuntime?.state);
                     const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
+                    const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
                     return (
                       <div key={account.id} className="session-stat">
                         <span>{account.name}</span>
@@ -2097,6 +2120,11 @@ function App() {
                           <span>{String(activeRuntimeSummary.event ?? "--")}</span>
                           <span>{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</span>
                           <span>{formatTime(String(activeRuntimeState.lastEventAt ?? ""))}</span>
+                        </div>
+                        <div className="live-account-meta">
+                          <span>trade {formatMaybeNumber(activeRuntimeMarket.tradePrice)}</span>
+                          <span>bid/ask {formatMaybeNumber(activeRuntimeMarket.bestBid)} / {formatMaybeNumber(activeRuntimeMarket.bestAsk)}</span>
+                          <span>spread {formatMaybeNumber(activeRuntimeMarket.spreadBps)} bps</span>
                         </div>
                         {activeRuntime ? (
                           <div className="inline-actions">
@@ -3061,6 +3089,36 @@ function getRecord(value: unknown): Record<string, unknown> {
     return value as Record<string, unknown>;
   }
   return {};
+}
+
+function deriveRuntimeMarketSnapshot(sourceStates: Record<string, unknown>, summary: Record<string, unknown>): RuntimeMarketSnapshot {
+  const snapshot: RuntimeMarketSnapshot = {};
+  const states = Object.values(sourceStates).map((value) => getRecord(value));
+
+  for (const state of states) {
+    if (snapshot.tradePrice == null) {
+      snapshot.tradePrice = getNumber(state.price);
+    }
+    if (snapshot.bestBid == null) {
+      snapshot.bestBid = getNumber(state.bestBid);
+    }
+    if (snapshot.bestAsk == null) {
+      snapshot.bestAsk = getNumber(state.bestAsk);
+    }
+  }
+
+  snapshot.tradePrice ??= getNumber(summary.price);
+  snapshot.bestBid ??= getNumber(summary.bestBid);
+  snapshot.bestAsk ??= getNumber(summary.bestAsk);
+
+  if (snapshot.bestBid != null && snapshot.bestAsk != null && snapshot.bestBid > 0 && snapshot.bestAsk >= snapshot.bestBid) {
+    const mid = (snapshot.bestBid + snapshot.bestAsk) / 2;
+    if (mid > 0) {
+      snapshot.spreadBps = ((snapshot.bestAsk - snapshot.bestBid) / mid) * 10000;
+    }
+  }
+
+  return snapshot;
 }
 
 function boolLabel(value: unknown) {
