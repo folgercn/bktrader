@@ -81,7 +81,8 @@ func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, err
 	if err != nil {
 		return domain.PaperSession{}, err
 	}
-	if err := p.ensurePaperSignalRuntimeStarted(session); err != nil {
+	session, err = p.ensurePaperSignalRuntimeStarted(session)
+	if err != nil {
 		return domain.PaperSession{}, err
 	}
 	if _, _, err := p.ensurePaperExecutionPlan(session); err != nil {
@@ -913,26 +914,73 @@ func (p *Platform) syncPaperSignalRuntimeState(session domain.PaperSession, para
 	return state, nil
 }
 
-func (p *Platform) ensurePaperSignalRuntimeStarted(session domain.PaperSession) error {
+func (p *Platform) ensurePaperSignalRuntimeStarted(session domain.PaperSession) (domain.PaperSession, error) {
 	state := cloneMetadata(session.State)
 	if !boolValue(state["signalRuntimeRequired"]) {
-		return nil
+		return session, nil
 	}
 	if !boolValue(state["signalRuntimeReady"]) {
-		return fmt.Errorf("paper session %s requires a ready signal runtime plan before start", session.ID)
+		return domain.PaperSession{}, fmt.Errorf("paper session %s requires a ready signal runtime plan before start", session.ID)
 	}
 	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
 	if runtimeSessionID == "" {
-		return fmt.Errorf("paper session %s has no linked signal runtime session", session.ID)
+		return domain.PaperSession{}, fmt.Errorf("paper session %s has no linked signal runtime session", session.ID)
 	}
 	runtimeSession, err := p.StartSignalRuntimeSession(runtimeSessionID)
 	if err != nil {
-		return err
+		return domain.PaperSession{}, err
 	}
 	state["signalRuntimeStatus"] = runtimeSession.Status
 	state["signalRuntimeSessionId"] = runtimeSession.ID
-	_, err = p.store.UpdatePaperSessionState(session.ID, state)
-	return err
+	session, err = p.store.UpdatePaperSessionState(session.ID, state)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	session, err = p.awaitPaperSignalRuntimeReadiness(session, runtimeSession.ID, 5*time.Second)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	return session, nil
+}
+
+func (p *Platform) awaitPaperSignalRuntimeReadiness(session domain.PaperSession, runtimeSessionID string, timeout time.Duration) (domain.PaperSession, error) {
+	if !boolValue(session.State["signalRuntimeRequired"]) {
+		return session, nil
+	}
+	deadline := time.Now().Add(timeout)
+	var lastGate map[string]any
+	for {
+		runtimeSession, err := p.GetSignalRuntimeSession(runtimeSessionID)
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
+
+		lastGate = p.evaluateSignalSourceReadiness(session, runtimeSession, time.Now().UTC())
+		state := cloneMetadata(session.State)
+		state["signalRuntimeStatus"] = runtimeSession.Status
+		state["signalRuntimeStartReadiness"] = lastGate
+		state["signalRuntimeLastCheckedAt"] = time.Now().UTC().Format(time.RFC3339)
+		session, err = p.store.UpdatePaperSessionState(session.ID, state)
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
+
+		if boolValue(lastGate["ready"]) {
+			return session, nil
+		}
+		if strings.EqualFold(runtimeSession.Status, "ERROR") {
+			return domain.PaperSession{}, fmt.Errorf("paper session %s linked signal runtime entered error state during start", session.ID)
+		}
+		if time.Now().After(deadline) {
+			return domain.PaperSession{}, fmt.Errorf(
+				"paper session %s linked signal runtime not ready before start: missing=%d stale=%d",
+				session.ID,
+				len(metadataList(lastGate["missing"])),
+				len(metadataList(lastGate["stale"])),
+			)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func (p *Platform) stopLinkedSignalRuntime(session domain.PaperSession) (domain.SignalRuntimeSession, error) {
