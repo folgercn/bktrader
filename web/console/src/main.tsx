@@ -310,6 +310,7 @@ type LivePreflightSummary = {
 };
 
 type LiveNextAction = {
+  key: string;
   label: string;
   detail: string;
 };
@@ -1036,6 +1037,42 @@ function App() {
       setError(err instanceof Error ? err.message : "Failed to execute signal runtime action");
     } finally {
       setSignalRuntimeAction(null);
+    }
+  }
+
+  function runLiveNextAction(account: AccountRecord, action: LiveNextAction, activeRuntime: SignalRuntimeSession | null) {
+    switch (action.key) {
+      case "bind-live-adapter":
+        setLiveBindingForm((current) => ({ ...current, accountId: account.id }));
+        window.location.hash = "live";
+        break;
+      case "bind-signals":
+        setAccountSignalForm((current) => ({ ...current, accountId: account.id }));
+        setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
+        window.location.hash = "signals";
+        break;
+      case "create-runtime":
+        setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
+        window.location.hash = "signals";
+        break;
+      case "start-runtime":
+      case "inspect-runtime":
+        if (activeRuntime) {
+          jumpToSignalRuntimeSession(activeRuntime.id);
+        } else {
+          setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
+          window.location.hash = "signals";
+        }
+        break;
+      case "pass-strategy-version":
+        window.location.hash = "live";
+        break;
+      case "submit-live-order":
+        window.location.hash = "orders";
+        break;
+      default:
+        window.location.hash = "signals";
+        break;
     }
   }
 
@@ -2556,6 +2593,13 @@ function App() {
                           <span>next action</span>
                           <span>{liveNextAction.label}</span>
                           <span>{liveNextAction.detail}</span>
+                          <button
+                            type="button"
+                            className="filter-chip"
+                            onClick={() => runLiveNextAction(account, liveNextAction, activeRuntime)}
+                          >
+                            Open
+                          </button>
                         </div>
                         <div className="live-account-meta">
                           <span>{String(activeSignalBarState.timeframe ?? "--")}</span>
@@ -3949,52 +3993,62 @@ function deriveLiveNextAction(preflight: LivePreflightSummary): LiveNextAction {
   switch (preflight.reason) {
     case "account-not-configured":
       return {
+        key: "bind-live-adapter",
         label: "bind live adapter",
         detail: "finish account binding and credentials first",
       };
     case "no-signal-bindings":
       return {
+        key: "bind-signals",
         label: "bind signals",
         detail: "attach required signal, trigger, and feature sources",
       };
     case "no-runtime-session":
       return {
+        key: "create-runtime",
         label: "create runtime",
         detail: "create a signal runtime session for this account and strategy",
       };
     case "runtime-not-running":
     case "no-active-runtime":
       return {
+        key: "start-runtime",
         label: "start runtime",
         detail: "start the linked signal runtime session and wait for healthy data flow",
       };
     case "missing-trade-tick":
       return {
+        key: "inspect-runtime",
         label: "restore tick feed",
         detail: "ensure trade tick binding is active and source states are flowing",
       };
     case "missing-order-book":
       return {
+        key: "inspect-runtime",
         label: "restore order book",
         detail: "ensure order book feature binding is active and fresh",
       };
     case "stale-source-states":
       return {
+        key: "inspect-runtime",
         label: "wait for fresh data",
         detail: "let the runtime refresh source states before submitting live orders",
       };
     case "strategy-version-required":
       return {
+        key: "pass-strategy-version",
         label: "pass strategyVersionId",
         detail: "multiple runtimes are linked, so live submission must choose one strategy version",
       };
     case "runtime-ready":
       return {
+        key: "submit-live-order",
         label: "submit live order",
         detail: "runtime preflight is satisfied",
       };
     default:
       return {
+        key: "inspect-runtime",
         label: "inspect runtime",
         detail: "open the linked runtime session and review readiness details",
       };
