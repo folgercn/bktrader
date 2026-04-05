@@ -268,6 +268,7 @@ function App() {
   const primarySessionSourceStates = getRecord(primarySession?.state?.lastStrategyEvaluationSourceStates);
   const primarySessionTriggerSource = getRecord(primarySession?.state?.lastStrategyEvaluationTriggerSource);
   const primarySessionSourceGate = getRecord(primarySession?.state?.lastStrategyEvaluationSourceGate);
+  const primarySessionDecision = getRecord(primarySession?.state?.lastStrategyDecision);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
@@ -1202,6 +1203,12 @@ function App() {
                   <strong>
                     {boolLabel(primarySessionSourceGate.ready)} · miss {String(Math.trunc(getNumber(primarySessionSourceGate.missing?.length) ?? 0))} · stale{" "}
                     {String(Math.trunc(getNumber(primarySessionSourceGate.stale?.length) ?? 0))}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Strategy Decision</span>
+                  <strong>
+                    {String(primarySessionDecision.action ?? "--")} · {String(primarySessionDecision.reason ?? "--")}
                   </strong>
                 </div>
                 <div className="session-stat">

@@ -132,10 +132,14 @@ Paper/runtime integration status:
   - all required strategy bindings must have a source-state snapshot
   - required snapshots must be fresh enough for their stream type
   - default freshness windows are short and stream-specific so stale market-data does not silently drive execution
+- after source gating passes, the platform now calls a strategy-engine-level `signal evaluation` hook:
+  - the engine receives trigger summary + structured source-state snapshot
+  - the engine decides whether this event should advance execution or wait
+  - this hook is the migration path from plan-driven paper execution to true real-time strategy decisions
 - strategy triggering is still a minimal event-driven rollout:
   - real tick events update the linked paper session
   - the session is nudged forward by runtime events at a throttled cadence
-  - full per-tick strategy evaluation replacement is still pending
+  - full per-tick strategy evaluation replacement is still pending, but the decision entrypoint now lives in the strategy engine instead of the paper runner
 
 ### 4.2 Strategy Management
 

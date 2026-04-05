@@ -215,9 +215,14 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 	if runtimeSessionID != "" {
 		state["lastSignalRuntimeSessionId"] = runtimeSessionID
 	}
+	var signalDecision StrategySignalDecision
+	signalDecision.Action = "advance-plan"
+	signalDecision.Reason = "default"
+	var executionContext StrategyExecutionContext
+	var sourceStates map[string]any
 	if runtimeSession, runtimeErr := p.GetSignalRuntimeSession(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"]))); runtimeErr == nil {
 		state["lastSignalRuntimeStatus"] = runtimeSession.Status
-		sourceStates := cloneMetadata(mapValue(runtimeSession.State["sourceStates"]))
+		sourceStates = cloneMetadata(mapValue(runtimeSession.State["sourceStates"]))
 		if sourceStates == nil {
 			sourceStates = map[string]any{}
 		}
@@ -234,6 +239,38 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 			return domain.Order{}, updateErr
 		}
 		return domain.Order{}, fmt.Errorf("paper session %s is waiting for fresh required signal source states", updatedSession.ID)
+	}
+	executionContext, signalDecision, err = p.evaluatePaperSignalDecision(session, summary, sourceStates, eventTime)
+	if err != nil {
+		state["lastStrategyEvaluationStatus"] = "decision-error"
+		state["lastStrategyDecision"] = map[string]any{
+			"action": "error",
+			"reason": err.Error(),
+		}
+		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
+		if updateErr != nil {
+			return domain.Order{}, updateErr
+		}
+		return domain.Order{}, fmt.Errorf("paper session %s signal evaluation failed: %w", updatedSession.ID, err)
+	}
+	state["lastStrategyDecision"] = map[string]any{
+		"action":   signalDecision.Action,
+		"reason":   signalDecision.Reason,
+		"metadata": cloneMetadata(signalDecision.Metadata),
+	}
+	state["lastStrategyEvaluationContext"] = map[string]any{
+		"strategyVersionId":   executionContext.StrategyVersionID,
+		"signalTimeframe":     executionContext.SignalTimeframe,
+		"executionDataSource": executionContext.ExecutionDataSource,
+		"symbol":              executionContext.Symbol,
+	}
+	if signalDecision.Action != "advance-plan" {
+		state["lastStrategyEvaluationStatus"] = "waiting-decision"
+		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
+		if updateErr != nil {
+			return domain.Order{}, updateErr
+		}
+		return domain.Order{}, fmt.Errorf("paper session %s decision gate blocked: %s", updatedSession.ID, signalDecision.Reason)
 	}
 	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
 	if err != nil {
@@ -345,6 +382,56 @@ func signalSourceFreshnessWindow(binding domain.AccountSignalBinding) time.Durat
 	default:
 		return 30 * time.Second
 	}
+}
+
+func (p *Platform) evaluatePaperSignalDecision(session domain.PaperSession, summary map[string]any, sourceStates map[string]any, eventTime time.Time) (StrategyExecutionContext, StrategySignalDecision, error) {
+	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+	}
+	parameters, err := p.resolvePaperSessionParameters(session, version)
+	if err != nil {
+		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+	}
+	engine, engineKey, err := p.resolveStrategyEngine(version.ID, parameters)
+	if err != nil {
+		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+	}
+	executionContext := StrategyExecutionContext{
+		StrategyEngineKey:   engineKey,
+		StrategyVersionID:   version.ID,
+		SignalTimeframe:     stringValue(parameters["signalTimeframe"]),
+		ExecutionDataSource: stringValue(parameters["executionDataSource"]),
+		Symbol:              stringValue(parameters["symbol"]),
+		From:                parseOptionalRFC3339(stringValue(parameters["from"])),
+		To:                  parseOptionalRFC3339(stringValue(parameters["to"])),
+		Parameters:          parameters,
+		Semantics:           defaultExecutionSemantics(ExecutionModePaper, parameters),
+	}
+	evaluator, ok := engine.(SignalEvaluatingStrategyEngine)
+	if !ok {
+		return executionContext, StrategySignalDecision{
+			Action: "advance-plan",
+			Reason: "engine-has-no-signal-evaluator",
+		}, nil
+	}
+	decision, err := evaluator.EvaluateSignal(StrategySignalEvaluationContext{
+		ExecutionContext: executionContext,
+		PaperSessionID:   session.ID,
+		TriggerSummary:   cloneMetadata(summary),
+		SourceStates:     cloneMetadata(sourceStates),
+		EventTime:        eventTime.UTC(),
+	})
+	if err != nil {
+		return executionContext, StrategySignalDecision{}, err
+	}
+	if strings.TrimSpace(decision.Action) == "" {
+		decision.Action = "wait"
+	}
+	if strings.TrimSpace(decision.Reason) == "" {
+		decision.Reason = "unspecified"
+	}
+	return executionContext, decision, nil
 }
 
 func buildStrategyEvaluationTriggerSource(summary map[string]any) map[string]any {

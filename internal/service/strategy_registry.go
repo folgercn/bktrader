@@ -45,10 +45,29 @@ type StrategyExecutionContext struct {
 	Semantics           StrategyExecutionSemantics
 }
 
+type StrategySignalEvaluationContext struct {
+	ExecutionContext StrategyExecutionContext
+	PaperSessionID   string
+	TriggerSummary   map[string]any
+	SourceStates     map[string]any
+	EventTime        time.Time
+}
+
+type StrategySignalDecision struct {
+	Action   string         `json:"action"`
+	Reason   string         `json:"reason"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
 type StrategyEngine interface {
 	Key() string
 	Describe() map[string]any
 	Run(context StrategyExecutionContext) (map[string]any, error)
+}
+
+type SignalEvaluatingStrategyEngine interface {
+	StrategyEngine
+	EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error)
 }
 
 func defaultExecutionSemantics(mode ExecutionMode, parameters map[string]any) StrategyExecutionSemantics {
@@ -148,4 +167,35 @@ func (e bkStrategyEngine) Describe() map[string]any {
 
 func (e bkStrategyEngine) Run(context StrategyExecutionContext) (map[string]any, error) {
 	return e.platform.runStrategyReplay(context)
+}
+
+func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
+	trigger := cloneMetadata(context.TriggerSummary)
+	sourceStates := cloneMetadata(context.SourceStates)
+	action := "advance-plan"
+	reason := "trigger-source-ready"
+	if stringValue(trigger["role"]) != "trigger" {
+		action = "wait"
+		reason = "non-trigger-event"
+	}
+	symbol := NormalizeSymbol(context.ExecutionContext.Symbol)
+	triggerSymbol := NormalizeSymbol(firstNonEmpty(stringValue(trigger["subscriptionSymbol"]), stringValue(trigger["symbol"])))
+	if action == "advance-plan" && symbol != "" && triggerSymbol != "" && triggerSymbol != symbol {
+		action = "wait"
+		reason = "symbol-mismatch"
+	}
+	if action == "advance-plan" && len(sourceStates) == 0 {
+		action = "wait"
+		reason = "missing-source-states"
+	}
+	return StrategySignalDecision{
+		Action: action,
+		Reason: reason,
+		Metadata: map[string]any{
+			"trigger":          trigger,
+			"sourceStateCount": len(sourceStates),
+			"symbol":           symbol,
+			"triggerSymbol":    triggerSymbol,
+		},
+	}, nil
 }
