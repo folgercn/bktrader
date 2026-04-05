@@ -396,6 +396,7 @@ function App() {
   const primarySessionCurrentPosition = getRecord(primarySessionDecisionMeta.currentPosition);
   const primarySessionSignalBarState = getRecord(primarySessionDecisionMeta.signalBarState);
   const primarySessionSignalBarDecision = getRecord(primarySessionDecisionMeta.signalBarDecision);
+  const primarySessionTimeline = getList(primarySession?.state?.timeline);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
@@ -430,6 +431,7 @@ function App() {
   const selectedSignalRuntimeLastSummary = getRecord(selectedSignalRuntimeState.lastEventSummary);
   const selectedSignalRuntimeSourceStates = getRecord(selectedSignalRuntimeState.sourceStates);
   const selectedSignalBarStates = getRecord(selectedSignalRuntimeState.signalBarStates);
+  const selectedSignalRuntimeTimeline = getList(selectedSignalRuntimeState.timeline);
   const selectedSignalRuntimeSignalBars = deriveSignalBarCandles(selectedSignalRuntimeSourceStates);
   const selectedSignalRuntimeSubscriptions = Array.isArray(selectedSignalRuntimeState.subscriptions)
     ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
@@ -1705,6 +1707,16 @@ function App() {
                   </div>
                 ))}
               </div>
+              <div className="backtest-breakdown">
+                <h4>Paper Timeline</h4>
+                <div className="backtest-notes">
+                  {buildTimelineNotes(primarySessionTimeline).map((line) => (
+                    <div key={line} className="note-item">
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div className="session-actions">
                 {primaryLinkedSignalRuntime ? (
                   <ActionButton
@@ -2123,6 +2135,17 @@ function App() {
                         </div>
 
                         <div className="backtest-breakdown">
+                          <h4>Runtime Timeline</h4>
+                          <div className="backtest-notes">
+                            {buildTimelineNotes(selectedSignalRuntimeTimeline).map((line) => (
+                              <div key={line} className="note-item">
+                                {line}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="backtest-breakdown">
                           <h4>Last Event Summary</h4>
                           <div className="backtest-notes">
                             {Object.entries(selectedSignalRuntimeLastSummary).length > 0 ? (
@@ -2277,6 +2300,7 @@ function App() {
                     const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates));
                     const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
                     const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
+                    const activeRuntimeTimeline = getList(activeRuntimeState.timeline);
                     const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
                       requireTick: bindings.some((item) => item.streamType === "trade_tick"),
                       requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
@@ -2354,6 +2378,11 @@ function App() {
                             </div>
                           ))}
                           {buildSourceStateNotes(getRecord(activeRuntimeState.sourceStates)).map((line) => (
+                            <div key={line} className="note-item">
+                              {line}
+                            </div>
+                          ))}
+                          {buildTimelineNotes(activeRuntimeTimeline).slice(0, 3).map((line) => (
                             <div key={line} className="note-item">
                               {line}
                             </div>
@@ -3382,6 +3411,13 @@ function getRecord(value: unknown): Record<string, unknown> {
   return {};
 }
 
+function getList(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item));
+}
+
 function deriveRuntimeMarketSnapshot(sourceStates: Record<string, unknown>, summary: Record<string, unknown>): RuntimeMarketSnapshot {
   const snapshot: RuntimeMarketSnapshot = {};
   const states = Object.values(sourceStates).map((value) => getRecord(value));
@@ -3608,6 +3644,39 @@ function deriveSignalActionSummary(signalBarState: Record<string, unknown>) {
 
 function buildSignalActionNotes(signalAction: { bias: string; state: string; reason: string }) {
   return [`signal-action: ${signalAction.bias} · ${signalAction.state} · ${signalAction.reason}`];
+}
+
+function buildTimelineNotes(items: Array<Record<string, unknown>>) {
+  if (items.length === 0) {
+    return ["timeline: --"];
+  }
+  return items
+    .slice(-5)
+    .reverse()
+    .map((item) => {
+      const metadata = getRecord(item.metadata);
+      const fragments = [
+        formatTime(String(item.time ?? "")),
+        String(item.category ?? "--"),
+        String(item.title ?? "--"),
+      ];
+      if (metadata.symbol != null) {
+        fragments.push(String(metadata.symbol));
+      }
+      if (metadata.timeframe != null) {
+        fragments.push(String(metadata.timeframe));
+      }
+      if (metadata.reason != null) {
+        fragments.push(String(metadata.reason));
+      }
+      if (metadata.signalKind != null) {
+        fragments.push(String(metadata.signalKind));
+      }
+      if (metadata.action != null) {
+        fragments.push(String(metadata.action));
+      }
+      return fragments.join(" · ");
+    });
 }
 
 function runtimeReadinessTone(status: string): "ready" | "watch" | "blocked" | "neutral" {

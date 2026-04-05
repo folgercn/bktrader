@@ -158,6 +158,10 @@ func (p *Platform) runExchangeWebsocketLoop(
 			"subscriptionCount": len(subscriptions),
 			"url":               wsURL,
 		}
+		appendSignalRuntimeTimeline(state, now, "runtime", "subscribed", map[string]any{
+			"subscriptionCount": len(subscriptions),
+			"url":               wsURL,
+		})
 		session.State = state
 		session.UpdatedAt = now
 	})
@@ -189,6 +193,11 @@ func (p *Platform) runExchangeWebsocketLoop(
 				state["signalEventCount"] = maxIntValue(state["signalEventCount"], 0) + 1
 				state["sourceStates"] = mergeSignalSourceState(state["sourceStates"], summary, now)
 				state["signalBarStates"] = deriveSignalBarStates(mapValue(state["sourceStates"]))
+				appendSignalRuntimeTimeline(state, now, "market", firstNonEmpty(stringValue(summary["event"]), "message"), map[string]any{
+					"symbol":    stringValue(summary["symbol"]),
+					"timeframe": stringValue(summary["timeframe"]),
+					"price":     stringValue(summary["price"]),
+				})
 				session.State = state
 				session.UpdatedAt = now
 			})
@@ -210,6 +219,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 					"type":    "runtime_stopped",
 					"message": "signal runtime stopped",
 				}
+				appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "stopped", nil)
 				session.State = state
 				session.UpdatedAt = time.Now().UTC()
 			})
@@ -226,6 +236,9 @@ func (p *Platform) runExchangeWebsocketLoop(
 					"message": err.Error(),
 				}
 				appendSignalRuntimeError(state, err.Error())
+				appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "error", map[string]any{
+					"message": err.Error(),
+				})
 				session.State = state
 				session.UpdatedAt = time.Now().UTC()
 			})
@@ -604,4 +617,39 @@ func appendSignalRuntimeError(state map[string]any, message string) {
 		errors = errors[len(errors)-20:]
 	}
 	state["errors"] = errors
+}
+
+func appendSignalRuntimeTimeline(state map[string]any, ts time.Time, category, title string, metadata map[string]any) {
+	items := make([]any, 0)
+	switch current := state["timeline"].(type) {
+	case []any:
+		items = append(items, current...)
+	}
+
+	entry := map[string]any{
+		"time":     ts.UTC().Format(time.RFC3339),
+		"category": category,
+		"title":    title,
+		"metadata": cloneMetadata(metadata),
+	}
+
+	if len(items) > 0 {
+		if last, ok := items[len(items)-1].(map[string]any); ok {
+			if stringValue(last["category"]) == category && stringValue(last["title"]) == title {
+				lastMeta := mapValue(last["metadata"])
+				newMeta := metadata
+				if stringValue(lastMeta["symbol"]) == stringValue(newMeta["symbol"]) &&
+					stringValue(lastMeta["timeframe"]) == stringValue(newMeta["timeframe"]) &&
+					stringValue(lastMeta["price"]) == stringValue(newMeta["price"]) {
+					return
+				}
+			}
+		}
+	}
+
+	items = append(items, entry)
+	if len(items) > 60 {
+		items = items[len(items)-60:]
+	}
+	state["timeline"] = items
 }

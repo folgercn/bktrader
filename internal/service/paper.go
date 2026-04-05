@@ -259,6 +259,10 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 	}
 	if !boolValue(sourceGate["ready"]) {
 		state["lastStrategyEvaluationStatus"] = "waiting-source-states"
+		appendTimelineEvent(state, "strategy", eventTime, "waiting-source-states", map[string]any{
+			"missing": len(metadataList(sourceGate["missing"])),
+			"stale":   len(metadataList(sourceGate["stale"])),
+		})
 		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
 		if updateErr != nil {
 			return domain.Order{}, updateErr
@@ -272,6 +276,9 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 			"action": "error",
 			"reason": err.Error(),
 		}
+		appendTimelineEvent(state, "strategy", eventTime, "decision-error", map[string]any{
+			"error": err.Error(),
+		})
 		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
 		if updateErr != nil {
 			return domain.Order{}, updateErr
@@ -283,6 +290,12 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		"reason":   signalDecision.Reason,
 		"metadata": cloneMetadata(signalDecision.Metadata),
 	}
+	appendTimelineEvent(state, "strategy", eventTime, "decision", map[string]any{
+		"action":       signalDecision.Action,
+		"reason":       signalDecision.Reason,
+		"decisionState": stringValue(signalDecision.Metadata["decisionState"]),
+		"signalKind":   stringValue(signalDecision.Metadata["signalKind"]),
+	})
 	state["lastStrategyEvaluationContext"] = map[string]any{
 		"strategyVersionId":   executionContext.StrategyVersionID,
 		"signalTimeframe":     executionContext.SignalTimeframe,
@@ -311,6 +324,9 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 			state = cloneMetadata(updatedSession.State)
 		}
 		state["lastStrategyEvaluationStatus"] = "no-action"
+		appendTimelineEvent(state, "strategy", eventTime, "no-action", map[string]any{
+			"reason": "place-paper-order-returned-empty",
+		})
 		_, _ = p.store.UpdatePaperSessionState(session.ID, state)
 		return domain.Order{}, err
 	}
@@ -323,8 +339,33 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 	}
 	state["lastStrategyEvaluationStatus"] = "order-dispatched"
 	state["lastStrategyEvaluationOrderId"] = order.ID
+	appendTimelineEvent(state, "order", eventTime, "order-dispatched", map[string]any{
+		"orderId": order.ID,
+		"symbol":  order.Symbol,
+		"side":    order.Side,
+		"price":   order.Price,
+	})
 	_, _ = p.store.UpdatePaperSessionState(session.ID, state)
 	return order, nil
+}
+
+func appendTimelineEvent(state map[string]any, category string, ts time.Time, title string, metadata map[string]any) {
+	items := make([]any, 0)
+	switch current := state["timeline"].(type) {
+	case []any:
+		items = append(items, current...)
+	}
+	entry := map[string]any{
+		"time":     ts.UTC().Format(time.RFC3339),
+		"category": category,
+		"title":    title,
+		"metadata": cloneMetadata(metadata),
+	}
+	items = append(items, entry)
+	if len(items) > 40 {
+		items = items[len(items)-40:]
+	}
+	state["timeline"] = items
 }
 
 func (p *Platform) evaluateSignalSourceReadiness(session domain.PaperSession, runtimeSession domain.SignalRuntimeSession, eventTime time.Time) map[string]any {
