@@ -145,7 +145,7 @@ func (p *Platform) TickPaperSession(sessionID string) (domain.Order, error) {
 	return p.placePaperSessionOrder(session)
 }
 
-func (p *Platform) triggerPaperSessionFromSignal(sessionID string, summary map[string]any, eventTime time.Time) error {
+func (p *Platform) triggerPaperSessionFromSignal(sessionID, runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
 	session, err := p.store.GetPaperSession(sessionID)
 	if err != nil {
 		return err
@@ -157,6 +157,7 @@ func (p *Platform) triggerPaperSessionFromSignal(sessionID string, summary map[s
 	state := cloneMetadata(session.State)
 	state["lastSignalRuntimeEventAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastSignalRuntimeEvent"] = cloneMetadata(summary)
+	state["lastSignalRuntimeSessionId"] = runtimeSessionID
 
 	throttleSeconds := maxIntValue(state["signalTriggerThrottleSeconds"], 5)
 	lastTriggeredAt := parseOptionalRFC3339(stringValue(state["lastSignalDrivenTickAt"]))
@@ -172,7 +173,7 @@ func (p *Platform) triggerPaperSessionFromSignal(sessionID string, summary map[s
 		return err
 	}
 
-	_, err = p.evaluatePaperSessionOnSignal(updatedSession, summary, eventTime)
+	_, err = p.evaluatePaperSessionOnSignal(updatedSession, runtimeSessionID, summary, eventTime)
 	if err != nil {
 		state = cloneMetadata(updatedSession.State)
 		state["lastSignalTriggerError"] = err.Error()
@@ -181,7 +182,7 @@ func (p *Platform) triggerPaperSessionFromSignal(sessionID string, summary map[s
 	return nil
 }
 
-func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, summary map[string]any, eventTime time.Time) (domain.Order, error) {
+func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, runtimeSessionID string, summary map[string]any, eventTime time.Time) (domain.Order, error) {
 	session, err := p.syncPaperSessionRuntime(session)
 	if err != nil {
 		return domain.Order{}, err
@@ -195,6 +196,7 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, sum
 	state["strategyEvaluationMode"] = "signal-runtime-heartbeat"
 	state["lastStrategyEvaluationAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastStrategyEvaluationTrigger"] = cloneMetadata(summary)
+	state["lastStrategyEvaluationTriggerSource"] = buildStrategyEvaluationTriggerSource(summary)
 	state["lastStrategyEvaluationStatus"] = "evaluated"
 	state["lastStrategyEvaluationPlanLength"] = len(plan)
 	index := 0
@@ -202,6 +204,19 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, sum
 		index = int(value)
 	}
 	state["lastStrategyEvaluationRemaining"] = maxInt(len(plan)-index, 0)
+	if runtimeSessionID != "" {
+		state["lastSignalRuntimeSessionId"] = runtimeSessionID
+	}
+	if runtimeSession, runtimeErr := p.GetSignalRuntimeSession(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"]))); runtimeErr == nil {
+		state["lastSignalRuntimeStatus"] = runtimeSession.Status
+		sourceStates := cloneMetadata(mapValue(runtimeSession.State["sourceStates"]))
+		if sourceStates == nil {
+			sourceStates = map[string]any{}
+		}
+		state["lastStrategyEvaluationSourceStates"] = sourceStates
+		state["lastStrategyEvaluationSourceStateCount"] = len(sourceStates)
+		state["lastStrategyEvaluationRuntimeSummary"] = cloneMetadata(mapValue(runtimeSession.State["lastEventSummary"]))
+	}
 	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
 	if err != nil {
 		return domain.Order{}, err
@@ -230,6 +245,17 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, sum
 	state["lastStrategyEvaluationOrderId"] = order.ID
 	_, _ = p.store.UpdatePaperSessionState(session.ID, state)
 	return order, nil
+}
+
+func buildStrategyEvaluationTriggerSource(summary map[string]any) map[string]any {
+	return map[string]any{
+		"sourceKey":  stringValue(summary["sourceKey"]),
+		"role":       stringValue(summary["role"]),
+		"streamType": stringValue(summary["streamType"]),
+		"channel":    stringValue(summary["channel"]),
+		"symbol":     NormalizeSymbol(firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"]))),
+		"event":      stringValue(summary["event"]),
+	}
 }
 
 // SetTickInterval 设置模拟盘后台循环的 Ticker 间隔（秒）。

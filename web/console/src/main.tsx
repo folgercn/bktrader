@@ -265,6 +265,8 @@ function App() {
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
+  const primarySessionSourceStates = getRecord(primarySession?.state?.lastStrategyEvaluationSourceStates);
+  const primarySessionTriggerSource = getRecord(primarySession?.state?.lastStrategyEvaluationTriggerSource);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
@@ -1177,6 +1179,22 @@ function App() {
                 <div className="session-stat">
                   <span>Last Event</span>
                   <strong>{String(primarySession.state?.lastEventReason ?? "--")}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Signal Events / Sources</span>
+                  <strong>
+                    {String(Math.trunc(getNumber(primarySession.state?.signalEventCount) ?? 0))} / {String(Object.keys(primarySessionSourceStates).length)}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Eval Trigger</span>
+                  <strong>
+                    {String(primarySessionTriggerSource.streamType ?? "--")} · {String(primarySessionTriggerSource.role ?? "--")}
+                  </strong>
+                </div>
+                <div className="session-stat">
+                  <span>Eval Status</span>
+                  <strong>{String(primarySession.state?.lastStrategyEvaluationStatus ?? "--")}</strong>
                 </div>
                 <div className="session-stat">
                   <span>Created</span>
@@ -2267,6 +2285,13 @@ function getNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
+}
+
+function getRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

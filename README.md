@@ -114,6 +114,9 @@ go run ./cmd/platform-api
   - 健康状态
   - 最近心跳
   - 最近事件摘要
+- `signal-runtime session` 现在也会维护结构化 `sourceStates`：
+  - 按 `sourceKey + symbol + role` 聚合最近源状态
+  - 为后续策略实时评估提供稳定的 trade tick / order book 快照
 - 当前 `binance-market-ws` 已经接入真实公共 WebSocket：
   - 可以真实订阅 `trade_tick`
   - 可以在同一 session 里同时真实订阅 `trade_tick + order_book`
@@ -125,6 +128,7 @@ go run ./cmd/platform-api
 - 创建 `executionDataSource=tick` 的 paper session 时，会自动生成并挂上 `signalRuntimeSessionId`
 - 启动 paper session 时，会先把 linked signal runtime 拉起
 - `PAPER + tick + linked runtime` 现在会在收到真实 tick 后，按节流频率推进一次策略 heartbeat
+- 每次事件驱动评估都会把当前 linked runtime 的 `sourceStates` 快照写入 paper session state
 - 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
 
 实盘账户当前支持：

@@ -177,6 +177,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 			}
 			now := time.Now().UTC()
 			summary := summarizeSignalMessage(session.RuntimeAdapter, payload)
+			summary = enrichSignalRuntimeSummary(session, summary)
 			_ = conn.SetReadDeadline(now.Add(60 * time.Second))
 			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 				state := cloneMetadata(session.State)
@@ -184,6 +185,8 @@ func (p *Platform) runExchangeWebsocketLoop(
 				state["lastHeartbeatAt"] = now.Format(time.RFC3339)
 				state["lastEventAt"] = now.Format(time.RFC3339)
 				state["lastEventSummary"] = summary
+				state["signalEventCount"] = maxIntValue(state["signalEventCount"], 0) + 1
+				state["sourceStates"] = mergeSignalSourceState(state["sourceStates"], summary, now)
 				session.State = state
 				session.UpdatedAt = now
 			})
@@ -257,9 +260,79 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 		if stringValue(session.State["executionDataSource"]) != "tick" {
 			continue
 		}
-		_ = p.triggerPaperSessionFromSignal(session.ID, summary, eventTime)
+		_ = p.triggerPaperSessionFromSignal(session.ID, runtimeSessionID, summary, eventTime)
 	}
 	return nil
+}
+
+func enrichSignalRuntimeSummary(session domain.SignalRuntimeSession, summary map[string]any) map[string]any {
+	out := cloneMetadata(summary)
+	subscriptions := metadataList(session.State["subscriptions"])
+	if len(subscriptions) == 0 {
+		return out
+	}
+	if len(subscriptions) == 1 {
+		attachSubscriptionContext(out, subscriptions[0])
+		return out
+	}
+
+	symbol := NormalizeSymbol(stringValue(out["symbol"]))
+	event := strings.ToLower(strings.TrimSpace(stringValue(out["event"])))
+	streamType := inferStreamTypeFromEvent(event)
+	for _, subscription := range subscriptions {
+		if NormalizeSymbol(stringValue(subscription["symbol"])) != symbol {
+			continue
+		}
+		if streamType != "" && strings.TrimSpace(stringValue(subscription["streamType"])) != streamType {
+			continue
+		}
+		attachSubscriptionContext(out, subscription)
+		return out
+	}
+	return out
+}
+
+func attachSubscriptionContext(summary map[string]any, subscription map[string]any) {
+	summary["sourceKey"] = stringValue(subscription["sourceKey"])
+	summary["role"] = stringValue(subscription["role"])
+	summary["streamType"] = stringValue(subscription["streamType"])
+	summary["channel"] = stringValue(subscription["channel"])
+	summary["subscriptionSymbol"] = stringValue(subscription["symbol"])
+}
+
+func inferStreamTypeFromEvent(event string) string {
+	switch event {
+	case "trade", "aggtrade":
+		return "trade_tick"
+	case "depthupdate":
+		return "order_book"
+	default:
+		return ""
+	}
+}
+
+func mergeSignalSourceState(existing any, summary map[string]any, eventTime time.Time) map[string]any {
+	stateMap := map[string]any{}
+	if current := mapValue(existing); current != nil {
+		stateMap = cloneMetadata(current)
+	}
+	key := firstNonEmpty(
+		stringValue(summary["sourceKey"])+"|"+NormalizeSymbol(stringValue(summary["subscriptionSymbol"]))+"|"+stringValue(summary["role"]),
+		stringValue(summary["sourceKey"]),
+	)
+	if key == "|" {
+		key = "unknown"
+	}
+	stateMap[key] = map[string]any{
+		"sourceKey":   stringValue(summary["sourceKey"]),
+		"role":        stringValue(summary["role"]),
+		"streamType":  stringValue(summary["streamType"]),
+		"symbol":      NormalizeSymbol(firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"]))),
+		"event":       stringValue(summary["event"]),
+		"lastEventAt": eventTime.UTC().Format(time.RFC3339),
+		"summary":     cloneMetadata(summary),
+	}
+	return stateMap
 }
 
 func buildBinanceSubscribePayload(subscriptions []map[string]any) (map[string]any, error) {

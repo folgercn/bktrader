@@ -104,6 +104,7 @@ Source binding rules:
   - persist the resolved subscription set
   - track runtime adapter, transport, health and heartbeat
   - expose recent event summaries for operational visibility
+  - maintain structured per-source state snapshots so downstream strategy evaluation can read stable trigger / feature state instead of raw last-message strings
   - serve as the control point for starting/stopping exchange market-data consumers
 - runtime rollout order:
   - first connect public exchange trade-tick streams and verify heartbeats / recent events
@@ -126,6 +127,7 @@ Paper/runtime integration status:
 - tick-based paper sessions require a ready signal runtime plan before start
 - starting a linked paper session will start the associated market-data runtime first
 - linked tick events now drive a throttled paper-session heartbeat
+- each signal-driven paper evaluation now records the linked runtime `sourceStates` snapshot into paper session state
 - strategy triggering is still a minimal event-driven rollout:
   - real tick events update the linked paper session
   - the session is nudged forward by runtime events at a throttled cadence

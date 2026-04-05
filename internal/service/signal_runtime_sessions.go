@@ -68,6 +68,8 @@ func (p *Platform) CreateSignalRuntimeSession(accountID, strategyID string) (dom
 			"plan":             plan,
 			"subscriptions":    subscriptions,
 			"health":           "idle",
+			"signalEventCount": 0,
+			"sourceStates":     map[string]any{},
 			"lastHeartbeatAt":  "",
 			"lastEventAt":      "",
 			"lastEventSummary": nil,
