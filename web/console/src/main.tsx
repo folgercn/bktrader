@@ -303,6 +303,12 @@ type RuntimePolicy = {
   paperStartReadinessTimeoutSeconds: number;
 };
 
+type LivePreflightSummary = {
+  status: "ready" | "watch" | "blocked";
+  reason: string;
+  detail: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -2478,6 +2484,13 @@ function App() {
                       requireTick: bindings.some((item) => item.streamType === "trade_tick"),
                       requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
                     });
+                    const livePreflight = deriveLivePreflightSummary(
+                      account,
+                      bindings,
+                      runtimeSessionsForAccount,
+                      activeRuntime,
+                      activeRuntimeReadiness
+                    );
                     const liveAlerts = deriveLiveAlerts(
                       account,
                       activeRuntimeState,
@@ -2525,6 +2538,15 @@ function App() {
                           <span>{activeRuntimeReadiness.reason}</span>
                         </div>
                         <div className="live-account-meta">
+                          <span>
+                            <StatusPill tone={runtimeReadinessTone(livePreflight.status)}>
+                              {livePreflight.status}
+                            </StatusPill>
+                          </span>
+                          <span>{livePreflight.reason}</span>
+                          <span>{livePreflight.detail}</span>
+                        </div>
+                        <div className="live-account-meta">
                           <span>{String(activeSignalBarState.timeframe ?? "--")}</span>
                           <span>ma20 {formatMaybeNumber(activeSignalBarState.ma20)}</span>
                           <span>atr14 {formatMaybeNumber(activeSignalBarState.atr14)}</span>
@@ -2553,6 +2575,9 @@ function App() {
                               {line}
                             </div>
                           ))}
+                          <div className="note-item">
+                            live-preflight: {livePreflight.reason} · {livePreflight.detail}
+                          </div>
                           {buildSignalBarStateNotes(activeSignalBarState).map((line) => (
                             <div key={line} className="note-item">
                               {line}
@@ -3834,6 +3859,76 @@ function deriveSignalActionSummary(signalBarState: Record<string, unknown>) {
     return { bias: "short", state: "watch", reason: "trend ok, structure not ready" };
   }
   return { bias: "neutral", state: "watch", reason: "close around ma20" };
+}
+
+function deriveLivePreflightSummary(
+  account: AccountRecord,
+  bindings: SignalBinding[],
+  runtimeSessionsForAccount: SignalRuntimeSession[],
+  activeRuntime: SignalRuntimeSession | null,
+  readiness: RuntimeReadiness
+): LivePreflightSummary {
+  if (account.status !== "CONFIGURED" && account.status !== "READY") {
+    return {
+      status: "blocked",
+      reason: "account-not-configured",
+      detail: `account status is ${account.status}`,
+    };
+  }
+  if (bindings.length === 0) {
+    return {
+      status: "blocked",
+      reason: "no-signal-bindings",
+      detail: "bind required signal sources before live submission",
+    };
+  }
+  if (runtimeSessionsForAccount.length === 0) {
+    return {
+      status: "blocked",
+      reason: "no-runtime-session",
+      detail: "create and start a signal runtime session first",
+    };
+  }
+  if (runtimeSessionsForAccount.length > 1) {
+    return {
+      status: "watch",
+      reason: "strategy-version-required",
+      detail: "multiple runtime sessions linked; live orders should specify strategyVersionId",
+    };
+  }
+  if (!activeRuntime) {
+    return {
+      status: "blocked",
+      reason: "no-active-runtime",
+      detail: "no runtime session available for this live account",
+    };
+  }
+  if (activeRuntime.status !== "RUNNING") {
+    return {
+      status: "blocked",
+      reason: "runtime-not-running",
+      detail: `runtime status is ${activeRuntime.status}`,
+    };
+  }
+  if (readiness.status === "blocked") {
+    return {
+      status: "blocked",
+      reason: readiness.reason,
+      detail: "runtime preflight would reject live submission",
+    };
+  }
+  if (readiness.status === "warning") {
+    return {
+      status: "watch",
+      reason: readiness.reason,
+      detail: "runtime is degraded; live submission may be blocked soon",
+    };
+  }
+  return {
+    status: "ready",
+    reason: "runtime-ready",
+    detail: "live runtime preflight is satisfied",
+  };
 }
 
 function buildSignalActionNotes(signalAction: { bias: string; state: string; reason: string }) {
