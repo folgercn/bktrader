@@ -379,6 +379,11 @@ type LiveSessionExecutionSummary = {
   position: Position | null;
 };
 
+type LiveSessionHealth = {
+  status: "ready" | "active" | "waiting-sync" | "error" | "idle";
+  detail: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -3215,6 +3220,7 @@ function App() {
                     const decisionMeta = getRecord(decision.metadata);
                     const intent = getRecord(session.state?.lastStrategyIntent);
                     const executionSummary = deriveLiveSessionExecutionSummary(session, orders, fills, positions);
+                    const sessionHealth = deriveLiveSessionHealth(session, executionSummary);
                     return (
                       <div key={session.id} className="session-stat">
                         <span>{shrink(session.id)}</span>
@@ -3234,6 +3240,9 @@ function App() {
                             <StatusPill tone={signalKindTone(String(decisionMeta.signalKind ?? "--"))}>
                               {String(decisionMeta.signalKind ?? "--")}
                             </StatusPill>
+                          </span>
+                          <span>
+                            <StatusPill tone={liveSessionHealthTone(sessionHealth.status)}>{sessionHealth.status}</StatusPill>
                           </span>
                         </div>
                         <div className="live-account-meta">
@@ -3265,6 +3274,9 @@ function App() {
                           </div>
                           <div className="note-item">
                             sync-error: {String(session.state?.lastSyncError ?? "--")}
+                          </div>
+                          <div className="note-item">
+                            session-health: {sessionHealth.detail}
                           </div>
                           <div className="note-item">
                             orders/fills: {executionSummary.orderCount} / {executionSummary.fillCount}
@@ -5133,6 +5145,38 @@ function deriveLiveSessionExecutionSummary(
   };
 }
 
+function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessionExecutionSummary): LiveSessionHealth {
+  const syncError = String(session.state?.lastSyncError ?? "").trim();
+  if (syncError) {
+    return {
+      status: "error",
+      detail: `sync error: ${syncError}`,
+    };
+  }
+  if (summary.latestOrder && !["FILLED", "CANCELLED", "REJECTED"].includes(String(summary.latestOrder.status ?? "").toUpperCase())) {
+    return {
+      status: "waiting-sync",
+      detail: `latest order ${summary.latestOrder.status} is still waiting for terminal sync`,
+    };
+  }
+  if (summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0) {
+    return {
+      status: "active",
+      detail: `open ${summary.position.side ?? "position"} ${formatMaybeNumber(summary.position.quantity)} @ ${formatMaybeNumber(summary.position.entryPrice)}`,
+    };
+  }
+  if (String(session.state?.lastStrategyEvaluationStatus ?? "") === "intent-ready") {
+    return {
+      status: "ready",
+      detail: "intent is ready and session can dispatch",
+    };
+  }
+  return {
+    status: "idle",
+    detail: "waiting for the next valid strategy intent",
+  };
+}
+
 function deriveLiveNextAction(preflight: LivePreflightSummary): LiveNextAction {
   switch (preflight.reason) {
     case "account-not-configured":
@@ -5196,6 +5240,20 @@ function deriveLiveNextAction(preflight: LivePreflightSummary): LiveNextAction {
         label: "inspect runtime",
         detail: "open the linked runtime session and review readiness details",
       };
+  }
+}
+
+function liveSessionHealthTone(status: string): "ready" | "watch" | "blocked" | "neutral" {
+  switch (status) {
+    case "ready":
+      return "ready";
+    case "active":
+    case "waiting-sync":
+      return "watch";
+    case "error":
+      return "blocked";
+    default:
+      return "neutral";
   }
 }
 
