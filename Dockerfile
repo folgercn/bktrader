@@ -6,6 +6,8 @@ COPY web/console/ ./
 RUN npm run build
 
 FROM golang:1.22-alpine AS backend-builder
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 COPY go.mod go.sum ./
@@ -15,7 +17,7 @@ COPY internal ./internal
 COPY configs ./configs
 COPY db ./db
 COPY research ./research
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/platform-api ./cmd/platform-api
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o /out/platform-api ./cmd/platform-api
 
 FROM alpine:3.20
 WORKDIR /app
