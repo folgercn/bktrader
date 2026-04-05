@@ -11,6 +11,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -42,6 +43,7 @@ type Platform struct {
 	tickDataDir     string
 	tickManifest    []tradeArchiveManifestEntry
 	runtimePolicy   RuntimePolicy
+	telegramConfig  domain.TelegramConfig
 }
 
 type RuntimePolicy struct {
@@ -154,4 +156,91 @@ func (p *Platform) LoadPersistedRuntimePolicy() error {
 		PaperStartReadinessTimeoutSecs: policy.PaperStartReadinessTimeoutSecs,
 	})
 	return nil
+}
+
+func (p *Platform) SetTelegramConfig(config domain.TelegramConfig) {
+	p.telegramConfig.Enabled = config.Enabled
+	if strings.TrimSpace(config.BotToken) != "" {
+		p.telegramConfig.BotToken = strings.TrimSpace(config.BotToken)
+	}
+	if strings.TrimSpace(config.ChatID) != "" {
+		p.telegramConfig.ChatID = strings.TrimSpace(config.ChatID)
+	}
+	if len(config.SendLevels) > 0 {
+		p.telegramConfig.SendLevels = normalizeTelegramSendLevels(config.SendLevels)
+	}
+	if !config.UpdatedAt.IsZero() {
+		p.telegramConfig.UpdatedAt = config.UpdatedAt
+	}
+}
+
+func (p *Platform) TelegramConfigView() map[string]any {
+	token := strings.TrimSpace(p.telegramConfig.BotToken)
+	return map[string]any{
+		"enabled":        p.telegramConfig.Enabled,
+		"chatId":         p.telegramConfig.ChatID,
+		"sendLevels":     append([]string(nil), p.telegramConfig.SendLevels...),
+		"hasBotToken":    token != "",
+		"maskedBotToken": maskTelegramToken(token),
+		"updatedAt":      p.telegramConfig.UpdatedAt,
+	}
+}
+
+func (p *Platform) UpdateTelegramConfig(enabled bool, botToken, chatID string, sendLevels []string) (map[string]any, error) {
+	config := p.telegramConfig
+	config.Enabled = enabled
+	if strings.TrimSpace(botToken) != "" {
+		config.BotToken = strings.TrimSpace(botToken)
+	}
+	if strings.TrimSpace(chatID) != "" {
+		config.ChatID = strings.TrimSpace(chatID)
+	}
+	if len(sendLevels) > 0 {
+		config.SendLevels = normalizeTelegramSendLevels(sendLevels)
+	}
+	saved, err := p.store.UpsertTelegramConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	p.telegramConfig = saved
+	return p.TelegramConfigView(), nil
+}
+
+func (p *Platform) LoadPersistedTelegramConfig() error {
+	config, ok, err := p.store.GetTelegramConfig()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	p.telegramConfig = config
+	return nil
+}
+
+func normalizeTelegramSendLevels(levels []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(levels))
+	for _, level := range levels {
+		normalized := strings.ToLower(strings.TrimSpace(level))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	if len(out) == 0 {
+		return []string{"critical", "warning"}
+	}
+	return out
+}
+
+func maskTelegramToken(token string) string {
+	if len(token) <= 8 {
+		return ""
+	}
+	return token[:4] + "..." + token[len(token)-4:]
 }

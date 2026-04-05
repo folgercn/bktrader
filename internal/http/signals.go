@@ -60,28 +60,82 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/notifications/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/notifications/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(parts) != 2 || parts[1] != "ack" {
+		if len(parts) == 2 && parts[1] == "ack" {
+			notificationID := parts[0]
+			switch r.Method {
+			case http.MethodPost:
+				item, err := platform.AckNotification(notificationID)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, item)
+			case http.MethodDelete:
+				if err := platform.UnackNotification(notificationID); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if len(parts) == 2 && parts[1] == "telegram" {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if err := platform.SendNotificationToTelegram(parts[0]); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "sent"})
+			return
+		}
+		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "notification route not found")
 			return
 		}
-		notificationID := parts[0]
+		writeError(w, http.StatusNotFound, "notification route not found")
+	})
+
+	mux.HandleFunc("/api/v1/telegram/config", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, platform.TelegramConfigView())
 		case http.MethodPost:
-			item, err := platform.AckNotification(notificationID)
+			var payload struct {
+				Enabled    bool     `json:"enabled"`
+				BotToken   string   `json:"botToken"`
+				ChatID     string   `json:"chatId"`
+				SendLevels []string `json:"sendLevels"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.UpdateTelegramConfig(payload.Enabled, payload.BotToken, payload.ChatID, payload.SendLevels)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			writeJSON(w, http.StatusOK, item)
-		case http.MethodDelete:
-			if err := platform.UnackNotification(notificationID); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
+	})
+
+	mux.HandleFunc("/api/v1/telegram/test", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := platform.SendTelegramTestMessage(); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "sent"})
 	})
 
 	mux.HandleFunc("/api/v1/runtime-policy", func(w http.ResponseWriter, r *http.Request) {

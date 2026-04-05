@@ -321,6 +321,15 @@ type PlatformNotification = {
   updatedAt: string;
 };
 
+type TelegramConfig = {
+  enabled: boolean;
+  chatId: string;
+  sendLevels: string[];
+  hasBotToken: boolean;
+  maskedBotToken: string;
+  updatedAt?: string;
+};
+
 type RuntimePolicy = {
   tradeTickFreshnessSeconds: number;
   orderBookFreshnessSeconds: number;
@@ -364,6 +373,7 @@ function App() {
   const [runtimePolicy, setRuntimePolicy] = useState<RuntimePolicy | null>(null);
   const [alerts, setAlerts] = useState<PlatformAlert[]>([]);
   const [notifications, setNotifications] = useState<PlatformNotification[]>([]);
+  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
   const [accountSignalBindings, setAccountSignalBindings] = useState<SignalBinding[]>([]);
   const [strategySignalBindings, setStrategySignalBindings] = useState<SignalBinding[]>([]);
   const [accountSignalBindingMap, setAccountSignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
@@ -381,6 +391,7 @@ function App() {
   const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
   const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
   const [notificationAction, setNotificationAction] = useState<string | null>(null);
+  const [telegramAction, setTelegramAction] = useState<string | null>(null);
   const [backtestAction, setBacktestAction] = useState(false);
   const [runtimePolicyAction, setRuntimePolicyAction] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
@@ -458,6 +469,12 @@ function App() {
     signalBarFreshnessSeconds: "30",
     runtimeQuietSeconds: "30",
     paperStartReadinessTimeoutSeconds: "5",
+  });
+  const [telegramForm, setTelegramForm] = useState({
+    enabled: false,
+    botToken: "",
+    chatId: "",
+    sendLevels: "critical,warning",
   });
 
   const primaryAccount = summaries[0] ?? null;
@@ -626,6 +643,7 @@ function App() {
       runtimePolicyData,
       alertData,
       notificationData,
+      telegramConfigData,
     ] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<AccountRecord[]>("/api/v1/accounts"),
@@ -644,6 +662,7 @@ function App() {
       fetchJSON<RuntimePolicy>("/api/v1/runtime-policy"),
       fetchJSON<PlatformAlert[]>("/api/v1/alerts"),
       fetchJSON<PlatformNotification[]>("/api/v1/notifications?includeAcked=true"),
+      fetchJSON<TelegramConfig>("/api/v1/telegram/config"),
     ]);
     const accountBindingEntries = await Promise.all(
       accountData.map(async (account) => [
@@ -701,6 +720,13 @@ function App() {
     setRuntimePolicy(runtimePolicyData);
     setAlerts(alertData);
     setNotifications(notificationData);
+    setTelegramConfig(telegramConfigData);
+    setTelegramForm({
+      enabled: Boolean(telegramConfigData.enabled),
+      botToken: "",
+      chatId: String(telegramConfigData.chatId ?? ""),
+      sendLevels: (telegramConfigData.sendLevels ?? []).join(",") || "critical,warning",
+    });
     setRuntimePolicyForm({
       tradeTickFreshnessSeconds: String(runtimePolicyData.tradeTickFreshnessSeconds ?? 15),
       orderBookFreshnessSeconds: String(runtimePolicyData.orderBookFreshnessSeconds ?? 10),
@@ -1241,6 +1267,60 @@ function App() {
     }
   }
 
+  async function sendNotificationToTelegram(notification: PlatformNotification) {
+    setTelegramAction(`send:${notification.id}`);
+    try {
+      await fetchJSON(`/api/v1/notifications/${encodeURIComponent(notification.id)}/telegram`, {
+        method: "POST",
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send Telegram notification");
+    } finally {
+      setTelegramAction(null);
+    }
+  }
+
+  async function saveTelegramConfig() {
+    setTelegramAction("save-config");
+    try {
+      const updated = await fetchJSON<TelegramConfig>("/api/v1/telegram/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: telegramForm.enabled,
+          botToken: telegramForm.botToken || undefined,
+          chatId: telegramForm.chatId,
+          sendLevels: telegramForm.sendLevels
+            .split(",")
+            .map((item) => item.trim().toLowerCase())
+            .filter(Boolean),
+        }),
+      });
+      setTelegramConfig(updated);
+      setTelegramForm((current) => ({ ...current, botToken: "" }));
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save Telegram config");
+    } finally {
+      setTelegramAction(null);
+    }
+  }
+
+  async function sendTelegramTest() {
+    setTelegramAction("test");
+    try {
+      await fetchJSON("/api/v1/telegram/test", { method: "POST" });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send Telegram test message");
+    } finally {
+      setTelegramAction(null);
+    }
+  }
+
   async function createBacktestRun() {
     try {
       setBacktestAction(true);
@@ -1354,8 +1434,14 @@ function App() {
                     <ActionButton
                       label={item.status === "acked" ? "Unack" : "Acknowledge"}
                       variant="ghost"
-                      disabled={notificationAction !== null}
+                      disabled={notificationAction !== null || telegramAction !== null}
                       onClick={() => acknowledgeNotification(item, item.status !== "acked")}
+                    />
+                    <ActionButton
+                      label={telegramAction === `send:${item.id}` ? "Sending..." : "Send Telegram"}
+                      variant="ghost"
+                      disabled={notificationAction !== null || telegramAction !== null || !telegramConfig?.enabled || !telegramConfig?.hasBotToken || !telegramConfig?.chatId}
+                      onClick={() => sendNotificationToTelegram(item)}
                     />
                     <button
                       type="button"
@@ -1371,6 +1457,69 @@ function App() {
           ) : (
             <div className="empty-state empty-state-compact">No notifications yet</div>
           )}
+        </section>
+
+        <section className="panel panel-alerts">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Telegram</p>
+              <h3>Telegram 通知配置</h3>
+            </div>
+            <div className="range-box">
+              <span>{telegramConfig?.enabled ? "enabled" : "disabled"}</span>
+              <span>{telegramConfig?.maskedBotToken || "no-token"}</span>
+              <span>{telegramConfig?.chatId || "no-chat"}</span>
+            </div>
+          </div>
+          <div className="backtest-form">
+            <div className="form-grid">
+              <label className="form-field form-field-checkbox">
+                <span>Enabled</span>
+                <input
+                  type="checkbox"
+                  checked={telegramForm.enabled}
+                  onChange={(event) => setTelegramForm((current) => ({ ...current, enabled: event.target.checked }))}
+                />
+              </label>
+              <label className="form-field">
+                <span>Chat ID</span>
+                <input
+                  value={telegramForm.chatId}
+                  onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value }))}
+                  placeholder="123456789"
+                />
+              </label>
+              <label className="form-field form-field-wide">
+                <span>Bot Token</span>
+                <input
+                  value={telegramForm.botToken}
+                  onChange={(event) => setTelegramForm((current) => ({ ...current, botToken: event.target.value }))}
+                  placeholder={telegramConfig?.hasBotToken ? "leave blank to keep current token" : "123456:ABCDEF..."}
+                />
+              </label>
+              <label className="form-field form-field-wide">
+                <span>Send Levels</span>
+                <input
+                  value={telegramForm.sendLevels}
+                  onChange={(event) => setTelegramForm((current) => ({ ...current, sendLevels: event.target.value }))}
+                  placeholder="critical,warning"
+                />
+              </label>
+            </div>
+            <div className="backtest-actions inline-actions">
+              <ActionButton
+                label={telegramAction === "save-config" ? "Saving..." : "Save Telegram Config"}
+                disabled={telegramAction !== null}
+                onClick={saveTelegramConfig}
+              />
+              <ActionButton
+                label={telegramAction === "test" ? "Sending..." : "Send Test Message"}
+                variant="ghost"
+                disabled={telegramAction !== null || !telegramConfig?.enabled || !telegramConfig?.hasBotToken || !telegramConfig?.chatId}
+                onClick={sendTelegramTest}
+              />
+            </div>
+          </div>
         </section>
 
         <section id="alerts" className="panel panel-alerts">

@@ -25,6 +25,7 @@ type Store struct {
 	annotations      []domain.ChartAnnotation
 	runtimePolicy    *domain.RuntimePolicy
 	notificationAcks map[string]domain.NotificationAck
+	telegramConfig   *domain.TelegramConfig
 
 	sequence int64
 }
@@ -280,6 +281,24 @@ func (s *Store) DeleteNotificationAck(id string) error {
 	defer s.mu.Unlock()
 	delete(s.notificationAcks, id)
 	return nil
+}
+
+func (s *Store) GetTelegramConfig() (domain.TelegramConfig, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.telegramConfig == nil {
+		return domain.TelegramConfig{}, false, nil
+	}
+	return *s.telegramConfig, true, nil
+}
+
+func (s *Store) UpsertTelegramConfig(config domain.TelegramConfig) (domain.TelegramConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	config.UpdatedAt = time.Now().UTC()
+	copyConfig := config
+	s.telegramConfig = &copyConfig
+	return config, nil
 }
 
 func (s *Store) ListStrategies() ([]map[string]any, error) {

@@ -24,6 +24,10 @@ type Config struct {
 	SignalBarFreshnessSeconds      int    // signal bar 新鲜度阈值
 	RuntimeQuietSeconds            int    // runtime quiet 告警阈值
 	PaperStartReadinessTimeoutSecs int    // paper 启动前 runtime readiness 等待阈值
+	TelegramEnabled                bool   // Telegram 通知是否启用
+	TelegramBotToken               string // Telegram Bot Token
+	TelegramChatID                 string // Telegram Chat ID
+	TelegramSendLevels             string // Telegram 默认发送等级（逗号分隔）
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -57,6 +61,10 @@ func Load() Config {
 		SignalBarFreshnessSeconds:      signalBarFreshness,
 		RuntimeQuietSeconds:            runtimeQuiet,
 		PaperStartReadinessTimeoutSecs: paperReadinessTimeout,
+		TelegramEnabled:                getenv("TELEGRAM_ENABLED", "false") == "true",
+		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
+		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
 	}
 }
 

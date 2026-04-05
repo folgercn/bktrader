@@ -135,6 +135,11 @@ Paper/runtime integration status:
 - the freshness / quiet / readiness timeout thresholds are now centralized as a runtime policy and shared by backend preflight and frontend alerts
 - aggregated `paper / live / runtime` alerts are now exposed by a unified backend alert center
 - the platform now includes an in-app notification inbox built on top of active alerts, with persisted `ack / unack` state
+- external notification rollout is currently narrowed to Telegram only:
+  - the platform stores a Telegram channel config
+  - supports a manual test message
+  - supports manual forwarding of a single inbox notification to Telegram
+  - automatic broadcast remains intentionally disabled for now
   - runtime policy is persisted by the platform so operational thresholds survive restarts
 - after source gating passes, the platform now calls a strategy-engine-level `signal evaluation` hook:
   - the engine receives trigger summary + structured source-state snapshot

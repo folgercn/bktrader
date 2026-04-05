@@ -249,3 +249,12 @@ type PlatformNotification struct {
 	Metadata  map[string]any `json:"metadata,omitempty"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 }
+
+// TelegramConfig 保存 Telegram 通知通道配置。
+type TelegramConfig struct {
+	Enabled    bool      `json:"enabled"`
+	BotToken   string    `json:"botToken"`
+	ChatID     string    `json:"chatId"`
+	SendLevels []string  `json:"sendLevels"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}

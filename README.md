@@ -71,6 +71,10 @@ go run ./cmd/platform-api
 - `GET /api/v1/notifications?includeAcked=true|false` — 平台内通知中心
 - `POST /api/v1/notifications/{id}/ack` — 确认一条通知
 - `DELETE /api/v1/notifications/{id}/ack` — 取消确认一条通知
+- `POST /api/v1/notifications/{id}/telegram` — 将单条通知发送到 Telegram
+- `GET /api/v1/telegram/config` — Telegram 配置（脱敏）
+- `POST /api/v1/telegram/config` — 更新 Telegram 配置
+- `POST /api/v1/telegram/test` — 发送 Telegram 测试消息
 - `GET /api/v1/signal-runtime/plan?accountId=...&strategyId=...` — 账户与策略的信号运行计划
 - `GET|POST /api/v1/signal-runtime/sessions` — 信号运行时会话列表/创建
 - `GET /api/v1/signal-runtime/sessions/{id}` — 单个信号运行时会话
@@ -402,6 +406,11 @@ PAPER_START_READINESS_TIMEOUT_SECONDS=5
 - `POST /api/v1/runtime-policy` 支持热更新运行阈值；当前会持久化到平台配置表，服务重启后仍然保留，控制台 `Signals` 页面已提供对应配置面板。
 - `GET /api/v1/alerts` 统一聚合 `paper / live / runtime` 三类运行告警，作为控制台告警面板和后续外部通知通道的统一源头。
 - `GET /api/v1/notifications` 基于当前活跃告警生成平台内通知 Inbox；支持 `ack / unack`，当前确认状态已持久化。
+- Telegram 通知当前只接这一条通道：
+  - 可在控制台保存 `bot token / chat id / send levels`
+  - 支持发送测试消息
+  - 支持把单条平台通知手动转发到 Telegram
+  - 暂时不做自动群发，先保持手动、可控、可审计
 - `LIVE` 下单前现在也会执行 runtime readiness preflight：要求账户对应策略的 signal runtime plan ready、runtime session 处于 `RUNNING/healthy`，并且必需 source states 不缺失且不过期。
 Parity checks:
 ```bash

@@ -3,8 +3,10 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
+	"github.com/wuyaocheng/bktrader/internal/domain"
 	apihttp "github.com/wuyaocheng/bktrader/internal/http"
 	"github.com/wuyaocheng/bktrader/internal/service"
 	"github.com/wuyaocheng/bktrader/internal/store"
@@ -30,7 +32,16 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
 		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
 	})
+	platform.SetTelegramConfig(domain.TelegramConfig{
+		Enabled:    cfg.TelegramEnabled,
+		BotToken:   cfg.TelegramBotToken,
+		ChatID:     cfg.TelegramChatID,
+		SendLevels: strings.Split(cfg.TelegramSendLevels, ","),
+	})
 	if err := platform.LoadPersistedRuntimePolicy(); err != nil {
+		return nil, err
+	}
+	if err := platform.LoadPersistedTelegramConfig(); err != nil {
 		return nil, err
 	}
 

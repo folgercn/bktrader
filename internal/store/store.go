@@ -98,4 +98,9 @@ type Repository interface {
 	UpsertNotificationAck(id string) (domain.NotificationAck, error)
 	// DeleteNotificationAck 取消已确认通知键。
 	DeleteNotificationAck(id string) error
+
+	// GetTelegramConfig 获取持久化的 Telegram 通知配置。
+	GetTelegramConfig() (domain.TelegramConfig, bool, error)
+	// UpsertTelegramConfig 创建或更新 Telegram 通知配置。
+	UpsertTelegramConfig(config domain.TelegramConfig) (domain.TelegramConfig, error)
 }
