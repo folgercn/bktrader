@@ -51,6 +51,7 @@ type StrategySignalEvaluationContext struct {
 	PaperSessionID    string
 	TriggerSummary    map[string]any
 	SourceStates      map[string]any
+	CurrentPosition   map[string]any
 	EventTime         time.Time
 	NextPlannedEvent  time.Time
 	NextPlannedPrice  float64
@@ -178,6 +179,7 @@ func (e bkStrategyEngine) Run(context StrategyExecutionContext) (map[string]any,
 func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
 	trigger := cloneMetadata(context.TriggerSummary)
 	sourceStates := cloneMetadata(context.SourceStates)
+	currentPosition := cloneMetadata(context.CurrentPosition)
 	action := "advance-plan"
 	reason := "trigger-source-ready"
 	if stringValue(trigger["role"]) != "trigger" {
@@ -209,7 +211,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		}
 	}
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
-	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason)
+	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition)
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
@@ -218,6 +220,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"signalKind":        signalKind,
 			"trigger":           trigger,
 			"sourceStateCount":  len(sourceStates),
+			"currentPosition":   currentPosition,
 			"symbol":            symbol,
 			"triggerSymbol":     triggerSymbol,
 			"nextPlannedEvent":  formatOptionalRFC3339(context.NextPlannedEvent),
@@ -338,7 +341,10 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 	}
 }
 
-func classifyStrategySignalKind(action, reason, nextRole, nextReason string) string {
+func classifyStrategySignalKind(action, reason, nextRole, nextReason string, currentPosition map[string]any) string {
+	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
+	positionQty := parseFloatValue(currentPosition["quantity"])
+	hasPosition := positionQty > 0 && positionSide != ""
 	if action == "advance-plan" {
 		switch strings.ToLower(strings.TrimSpace(nextRole)) {
 		case "entry":
@@ -359,7 +365,10 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string) str
 			case "sl":
 				return "risk-exit"
 			default:
-				return "exit"
+				if hasPosition {
+					return "exit"
+				}
+				return "advance"
 			}
 		default:
 			return "advance"
@@ -367,14 +376,26 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string) str
 	}
 	switch reason {
 	case "planned-event-not-reached":
+		if hasPosition {
+			return "hold-" + strings.ToLower(positionSide)
+		}
 		return "hold"
 	case "price-not-actionable":
+		if hasPosition {
+			return "hold-" + strings.ToLower(positionSide)
+		}
 		return "hold"
 	case "missing-source-states":
+		if hasPosition {
+			return "hold-" + strings.ToLower(positionSide)
+		}
 		return "hold"
 	case "non-trigger-event", "symbol-mismatch":
 		return "ignore"
 	default:
+		if hasPosition {
+			return "hold-" + strings.ToLower(positionSide)
+		}
 		return "hold"
 	}
 }

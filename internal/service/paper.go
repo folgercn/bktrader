@@ -432,11 +432,16 @@ func (p *Platform) evaluatePaperSignalDecision(session domain.PaperSession, summ
 			Reason: "engine-has-no-signal-evaluator",
 		}, nil
 	}
+	currentPosition, _, err := p.resolvePaperSessionPositionSnapshot(session.AccountID, executionContext.Symbol)
+	if err != nil {
+		return executionContext, StrategySignalDecision{}, err
+	}
 	decision, err := evaluator.EvaluateSignal(StrategySignalEvaluationContext{
 		ExecutionContext:  executionContext,
 		PaperSessionID:    session.ID,
 		TriggerSummary:    cloneMetadata(summary),
 		SourceStates:      cloneMetadata(sourceStates),
+		CurrentPosition:   currentPosition,
 		EventTime:         eventTime.UTC(),
 		NextPlannedEvent:  nextPlannedEvent.UTC(),
 		NextPlannedPrice:  nextPlannedPrice,
@@ -454,6 +459,30 @@ func (p *Platform) evaluatePaperSignalDecision(session domain.PaperSession, summ
 		decision.Reason = "unspecified"
 	}
 	return executionContext, decision, nil
+}
+
+func (p *Platform) resolvePaperSessionPositionSnapshot(accountID, symbol string) (map[string]any, bool, error) {
+	position, found, err := p.store.FindPosition(accountID, symbol)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return map[string]any{
+			"symbol":   NormalizeSymbol(symbol),
+			"found":    false,
+			"quantity": 0.0,
+		}, false, nil
+	}
+	return map[string]any{
+		"id":         position.ID,
+		"symbol":     position.Symbol,
+		"side":       position.Side,
+		"quantity":   position.Quantity,
+		"entryPrice": position.EntryPrice,
+		"markPrice":  position.MarkPrice,
+		"updatedAt":  position.UpdatedAt.Format(time.RFC3339),
+		"found":      true,
+	}, true, nil
 }
 
 func buildStrategyEvaluationTriggerSource(summary map[string]any) map[string]any {

@@ -136,7 +136,8 @@ Paper/runtime integration status:
   - the engine receives trigger summary + structured source-state snapshot
   - the engine decides whether this event should advance execution or wait
   - the engine also emits a higher-level decision state such as `entry-ready`, `exit-ready`, `waiting-time`, or `waiting-price`
-  - the engine also emits a strategy-facing `signalKind` such as `initial-entry`, `sl-reentry`, `pt-reentry`, `hold`, `protect-exit`, or `risk-exit`
+  - the engine also emits a strategy-facing `signalKind` such as `initial-entry`, `sl-reentry`, `pt-reentry`, `hold-long`, `hold-short`, `protect-exit`, or `risk-exit`
+  - signal evaluation now includes current paper position snapshot so strategy state is no longer inferred only from the next planned event
   - the engine also sees the next planned execution timestamp so paper runtime can respect event-time ordering instead of advancing on any incoming tick
   - the engine now also sees current market price context from trade-tick / order-book state and can reject progression when the next planned action is no longer directionally actionable at current market prices
   - this hook is the migration path from plan-driven paper execution to true real-time strategy decisions

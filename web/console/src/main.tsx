@@ -270,6 +270,7 @@ function App() {
   const primarySessionSourceGate = getRecord(primarySession?.state?.lastStrategyEvaluationSourceGate);
   const primarySessionDecision = getRecord(primarySession?.state?.lastStrategyDecision);
   const primarySessionDecisionMeta = getRecord(primarySessionDecision.metadata);
+  const primarySessionCurrentPosition = getRecord(primarySessionDecisionMeta.currentPosition);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
@@ -1215,6 +1216,12 @@ function App() {
                 <div className="session-stat">
                   <span>Signal Kind</span>
                   <strong>{String(primarySessionDecisionMeta.signalKind ?? "--")}</strong>
+                </div>
+                <div className="session-stat">
+                  <span>Current Position</span>
+                  <strong>
+                    {String(primarySessionCurrentPosition.side ?? "FLAT")} · {formatMaybeNumber(primarySessionCurrentPosition.quantity)}
+                  </strong>
                 </div>
                 <div className="session-stat">
                   <span>Next Planned Event</span>
