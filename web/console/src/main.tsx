@@ -163,6 +163,69 @@ type LiveAdapter = {
   fundingSource?: string;
 };
 
+type SignalSourceDefinition = {
+  key: string;
+  name: string;
+  exchange: string;
+  streamType: string;
+  transport: string;
+  status: string;
+  roles: string[];
+  environments: string[];
+  symbolScope: string;
+  description: string;
+  metadata?: Record<string, unknown>;
+};
+
+type SignalSourceCatalog = {
+  sources: SignalSourceDefinition[];
+  notes: string[];
+  byEnvironment?: Record<string, SignalSourceDefinition[]>;
+};
+
+type SignalSourceType = {
+  streamType: string;
+  primaryRole: string;
+  description: string;
+  typicalInputs?: string[];
+};
+
+type SignalBinding = {
+  id: string;
+  accountId?: string;
+  strategyId?: string;
+  sourceKey: string;
+  sourceName: string;
+  exchange: string;
+  role: string;
+  streamType: string;
+  symbol: string;
+  status: string;
+  options?: Record<string, unknown>;
+  createdAt: string;
+};
+
+type SignalRuntimeAdapter = {
+  key: string;
+  name: string;
+  transport?: string;
+  environments?: string[];
+  streamTypes?: string[];
+};
+
+type SignalRuntimeSession = {
+  id: string;
+  accountId: string;
+  strategyId: string;
+  status: string;
+  runtimeAdapter: string;
+  transport: string;
+  subscriptionCount: number;
+  state?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type ReplayReasonStats = Record<string, Record<string, number>>;
 type ReplaySample = Record<string, unknown>;
 type ExecutionTrade = Record<string, unknown>;
@@ -212,6 +275,14 @@ function App() {
   const [backtestOptions, setBacktestOptions] = useState<BacktestOptions | null>(null);
   const [paperSessions, setPaperSessions] = useState<PaperSession[]>([]);
   const [liveAdapters, setLiveAdapters] = useState<LiveAdapter[]>([]);
+  const [signalCatalog, setSignalCatalog] = useState<SignalSourceCatalog | null>(null);
+  const [signalSourceTypes, setSignalSourceTypes] = useState<SignalSourceType[]>([]);
+  const [signalRuntimeAdapters, setSignalRuntimeAdapters] = useState<SignalRuntimeAdapter[]>([]);
+  const [signalRuntimeSessions, setSignalRuntimeSessions] = useState<SignalRuntimeSession[]>([]);
+  const [accountSignalBindings, setAccountSignalBindings] = useState<SignalBinding[]>([]);
+  const [strategySignalBindings, setStrategySignalBindings] = useState<SignalBinding[]>([]);
+  const [signalRuntimePlan, setSignalRuntimePlan] = useState<Record<string, unknown> | null>(null);
+  const [selectedSignalRuntimeId, setSelectedSignalRuntimeId] = useState<string | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
@@ -219,6 +290,8 @@ function App() {
   const [liveCreateAction, setLiveCreateAction] = useState(false);
   const [liveBindAction, setLiveBindAction] = useState(false);
   const [liveSyncAction, setLiveSyncAction] = useState<string | null>(null);
+  const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
+  const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
   const [backtestAction, setBacktestAction] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
@@ -262,6 +335,22 @@ function App() {
     apiKeyRef: "",
     apiSecretRef: "",
   });
+  const [accountSignalForm, setAccountSignalForm] = useState({
+    accountId: "",
+    sourceKey: "",
+    role: "trigger",
+    symbol: "BTCUSDT",
+  });
+  const [strategySignalForm, setStrategySignalForm] = useState({
+    strategyId: "",
+    sourceKey: "",
+    role: "trigger",
+    symbol: "BTCUSDT",
+  });
+  const [signalRuntimeForm, setSignalRuntimeForm] = useState({
+    accountId: "",
+    strategyId: "",
+  });
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
@@ -273,6 +362,19 @@ function App() {
   const primarySessionCurrentPosition = getRecord(primarySessionDecisionMeta.currentPosition);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
+  const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
+  const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
+  const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
+  const selectedRuntimeStrategy = signalRuntimeForm.strategyId || selectedSignalStrategy;
+  const selectedSignalRuntime =
+    signalRuntimeSessions.find((item) => item.id === selectedSignalRuntimeId) ?? signalRuntimeSessions[0] ?? null;
+  const selectedSignalRuntimeState = getRecord(selectedSignalRuntime?.state);
+  const selectedSignalRuntimePlan = getRecord(selectedSignalRuntimeState.plan);
+  const selectedSignalRuntimeLastSummary = getRecord(selectedSignalRuntimeState.lastEventSummary);
+  const selectedSignalRuntimeSourceStates = getRecord(selectedSignalRuntimeState.sourceStates);
+  const selectedSignalRuntimeSubscriptions = Array.isArray(selectedSignalRuntimeState.subscriptions)
+    ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
+    : [];
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const selectedExecutionAvailability = backtestOptions?.availability?.[backtestForm.executionDataSource] ?? "unknown";
   const selectedExecutionDatasets = backtestOptions?.datasets?.[backtestForm.executionDataSource] ?? [];
@@ -319,7 +421,7 @@ function App() {
   );
 
   async function loadDashboard() {
-    const [summaryData, accountData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData, liveAdapterData] = await Promise.all([
+    const [summaryData, accountData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData, liveAdapterData, signalCatalogData, signalSourceTypeData, signalRuntimeAdapterData, signalRuntimeSessionData] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<AccountRecord[]>("/api/v1/accounts"),
       fetchJSON<Order[]>("/api/v1/orders"),
@@ -330,6 +432,10 @@ function App() {
       fetchJSON<BacktestRun[]>("/api/v1/backtests"),
       fetchJSON<BacktestOptions>("/api/v1/backtests/options"),
       fetchJSON<LiveAdapter[]>("/api/v1/live-adapters"),
+      fetchJSON<SignalSourceCatalog>("/api/v1/signal-sources"),
+      fetchJSON<SignalSourceType[]>("/api/v1/signal-source-types"),
+      fetchJSON<SignalRuntimeAdapter[]>("/api/v1/signal-runtime/adapters"),
+      fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions"),
     ]);
 
     const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
@@ -368,6 +474,16 @@ function App() {
     setBacktestOptions(backtestOptionsData);
     setPaperSessions(paperSessionData);
     setLiveAdapters(liveAdapterData);
+    setSignalCatalog(signalCatalogData);
+    setSignalSourceTypes(signalSourceTypeData);
+    setSignalRuntimeAdapters(signalRuntimeAdapterData);
+    setSignalRuntimeSessions(signalRuntimeSessionData);
+    setSelectedSignalRuntimeId((current) => {
+      if (current && signalRuntimeSessionData.some((item) => item.id === current)) {
+        return current;
+      }
+      return signalRuntimeSessionData[0]?.id ?? null;
+    });
     setCandles(candleData.candles ?? []);
     setAnnotations(annotationData);
     setBacktestForm((current) => ({
@@ -399,6 +515,23 @@ function App() {
       sandbox: current.sandbox,
       apiKeyRef: current.apiKeyRef,
       apiSecretRef: current.apiSecretRef,
+    }));
+    const availableSignalSources = signalCatalogData.sources ?? [];
+    setAccountSignalForm((current) => ({
+      accountId: current.accountId || summaryData[0]?.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
+      sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
+      role: current.role || "trigger",
+      symbol: current.symbol || "BTCUSDT",
+    }));
+    setStrategySignalForm((current) => ({
+      strategyId: current.strategyId || strategyData[0]?.id || "",
+      sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
+      role: current.role || "trigger",
+      symbol: current.symbol || "BTCUSDT",
+    }));
+    setSignalRuntimeForm((current) => ({
+      accountId: current.accountId || summaryData[0]?.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
+      strategyId: current.strategyId || strategyData[0]?.id || "",
     }));
   }
 
@@ -435,6 +568,42 @@ function App() {
   useEffect(() => {
     setSelectedSample(null);
   }, [selectedBacktest?.id]);
+
+  useEffect(() => {
+    async function loadSignalDetails() {
+      try {
+        const tasks: Promise<unknown>[] = [];
+        if (selectedSignalAccount) {
+          tasks.push(
+            fetchJSON<SignalBinding[]>(`/api/v1/accounts/${selectedSignalAccount}/signal-bindings`).then(setAccountSignalBindings)
+          );
+        } else {
+          setAccountSignalBindings([]);
+        }
+        if (selectedSignalStrategy) {
+          tasks.push(
+            fetchJSON<SignalBinding[]>(`/api/v1/strategies/${selectedSignalStrategy}/signal-bindings`).then(setStrategySignalBindings)
+          );
+        } else {
+          setStrategySignalBindings([]);
+        }
+        if (selectedRuntimeAccount && selectedRuntimeStrategy) {
+          tasks.push(
+            fetchJSON<Record<string, unknown>>(
+              `/api/v1/signal-runtime/plan?accountId=${encodeURIComponent(selectedRuntimeAccount)}&strategyId=${encodeURIComponent(selectedRuntimeStrategy)}`
+            ).then(setSignalRuntimePlan)
+          );
+        } else {
+          setSignalRuntimePlan(null);
+        }
+        await Promise.all(tasks);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load signal runtime details");
+      }
+    }
+
+    void loadSignalDetails();
+  }, [selectedSignalAccount, selectedSignalStrategy, selectedRuntimeAccount, selectedRuntimeStrategy]);
 
   const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
@@ -598,6 +767,93 @@ function App() {
     }
   }
 
+  async function bindAccountSignalSource() {
+    if (!accountSignalForm.accountId || !accountSignalForm.sourceKey) {
+      setError("Account signal binding needs an account and source");
+      return;
+    }
+    setSignalBindingAction("account");
+    try {
+      await fetchJSON(`/api/v1/accounts/${accountSignalForm.accountId}/signal-bindings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceKey: accountSignalForm.sourceKey,
+          role: accountSignalForm.role,
+          symbol: accountSignalForm.symbol,
+        }),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to bind account signal source");
+    } finally {
+      setSignalBindingAction(null);
+    }
+  }
+
+  async function bindStrategySignalSource() {
+    if (!strategySignalForm.strategyId || !strategySignalForm.sourceKey) {
+      setError("Strategy signal binding needs a strategy and source");
+      return;
+    }
+    setSignalBindingAction("strategy");
+    try {
+      await fetchJSON(`/api/v1/strategies/${strategySignalForm.strategyId}/signal-bindings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceKey: strategySignalForm.sourceKey,
+          role: strategySignalForm.role,
+          symbol: strategySignalForm.symbol,
+        }),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to bind strategy signal source");
+    } finally {
+      setSignalBindingAction(null);
+    }
+  }
+
+  async function createSignalRuntimeSession() {
+    if (!signalRuntimeForm.accountId || !signalRuntimeForm.strategyId) {
+      setError("Signal runtime session needs an account and strategy");
+      return;
+    }
+    setSignalRuntimeAction("create");
+    try {
+      await fetchJSON("/api/v1/signal-runtime/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: signalRuntimeForm.accountId,
+          strategyId: signalRuntimeForm.strategyId,
+        }),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create signal runtime session");
+    } finally {
+      setSignalRuntimeAction(null);
+    }
+  }
+
+  async function runSignalRuntimeAction(sessionId: string, action: "start" | "stop") {
+    setSignalRuntimeAction(`${sessionId}:${action}`);
+    try {
+      await fetchJSON(`/api/v1/signal-runtime/sessions/${sessionId}/${action}`, { method: "POST" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to execute signal runtime action");
+    } finally {
+      setSignalRuntimeAction(null);
+    }
+  }
+
   async function createBacktestRun() {
     try {
       setBacktestAction(true);
@@ -634,6 +890,7 @@ function App() {
         <nav>
           <a href="#overview">Overview</a>
           <a href="#paper">Paper</a>
+          <a href="#signals">Signals</a>
           <a href="#live">Live</a>
           <a href="#backtests">Backtests</a>
           <a href="#market">Market</a>
@@ -1286,6 +1543,372 @@ function App() {
           ) : (
             <div className="empty-state">No paper session yet</div>
           )}
+        </section>
+
+        <section id="signals" className="panel panel-session">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Signal Runtime</p>
+              <h3>信号源绑定与市场数据运行时</h3>
+            </div>
+            <div className="range-box">
+              <span>{signalCatalog?.sources.length ?? 0} sources</span>
+              <span>{signalRuntimeSessions.length} sessions</span>
+            </div>
+          </div>
+
+          <div className="live-grid">
+            <div className="backtest-form session-form">
+              <h4>Bind Account Signal Source</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Account</span>
+                  <select value={accountSignalForm.accountId} onChange={(event) => setAccountSignalForm((current) => ({ ...current, accountId: event.target.value }))}>
+                    {[...paperAccounts.map((item) => ({ id: item.accountId, label: `${item.accountName} (${item.mode})` })), ...liveAccounts.map((item) => ({ id: item.id, label: `${item.name} (${item.mode})` }))].map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Source</span>
+                  <select value={accountSignalForm.sourceKey} onChange={(event) => setAccountSignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
+                    {(signalCatalog?.sources ?? []).map((source) => (
+                      <option key={source.key} value={source.key}>
+                        {source.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Role</span>
+                  <select value={accountSignalForm.role} onChange={(event) => setAccountSignalForm((current) => ({ ...current, role: event.target.value }))}>
+                    <option value="trigger">trigger</option>
+                    <option value="feature">feature</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Symbol</span>
+                  <input value={accountSignalForm.symbol} onChange={(event) => setAccountSignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton label={signalBindingAction === "account" ? "Binding..." : "Bind Account Source"} disabled={signalBindingAction !== null || !accountSignalForm.accountId} onClick={bindAccountSignalSource} />
+              </div>
+            </div>
+
+            <div className="backtest-form session-form">
+              <h4>Bind Strategy Signal Source</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Strategy</span>
+                  <select value={strategySignalForm.strategyId} onChange={(event) => setStrategySignalForm((current) => ({ ...current, strategyId: event.target.value }))}>
+                    {strategies.map((strategy) => (
+                      <option key={strategy.id} value={strategy.id}>
+                        {strategy.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Source</span>
+                  <select value={strategySignalForm.sourceKey} onChange={(event) => setStrategySignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
+                    {(signalCatalog?.sources ?? []).map((source) => (
+                      <option key={source.key} value={source.key}>
+                        {source.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Role</span>
+                  <select value={strategySignalForm.role} onChange={(event) => setStrategySignalForm((current) => ({ ...current, role: event.target.value }))}>
+                    <option value="trigger">trigger</option>
+                    <option value="feature">feature</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Symbol</span>
+                  <input value={strategySignalForm.symbol} onChange={(event) => setStrategySignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton label={signalBindingAction === "strategy" ? "Binding..." : "Bind Strategy Source"} disabled={signalBindingAction !== null || !strategySignalForm.strategyId} onClick={bindStrategySignalSource} />
+              </div>
+            </div>
+          </div>
+
+          <div className="live-grid">
+            <div className="backtest-list">
+              <h4>Signal Source Catalog</h4>
+              {signalCatalog?.sources?.length ? (
+                <SimpleTable
+                  columns={["Source", "Exchange", "Type", "Roles", "Env", "Transport"]}
+                  rows={signalCatalog.sources.map((source) => [
+                    source.name,
+                    source.exchange,
+                    source.streamType,
+                    source.roles.join(", "),
+                    source.environments.join(", "),
+                    source.transport,
+                  ])}
+                  emptyMessage="No signal sources"
+                />
+              ) : (
+                <div className="empty-state empty-state-compact">No signal source catalog</div>
+              )}
+              <div className="backtest-notes">
+                {(signalCatalog?.notes ?? []).map((note) => (
+                  <div key={note} className="note-item">
+                    {note}
+                  </div>
+                ))}
+                {(signalSourceTypes ?? []).map((item) => (
+                  <div key={item.streamType} className="note-item">
+                    {item.streamType}: {item.description}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="backtest-list">
+              <h4>Current Bindings</h4>
+              <div className="backtest-breakdown">
+                <h5>Account</h5>
+                <SimpleTable
+                  columns={["Source", "Role", "Symbol", "Exchange", "Status"]}
+                  rows={accountSignalBindings.map((item) => [item.sourceName, item.role, item.symbol || "--", item.exchange, item.status])}
+                  emptyMessage="No account bindings"
+                />
+              </div>
+              <div className="backtest-breakdown">
+                <h5>Strategy</h5>
+                <SimpleTable
+                  columns={["Source", "Role", "Symbol", "Exchange", "Status"]}
+                  rows={strategySignalBindings.map((item) => [item.sourceName, item.role, item.symbol || "--", item.exchange, item.status])}
+                  emptyMessage="No strategy bindings"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="live-grid">
+            <div className="backtest-form session-form">
+              <h4>Create Runtime Session</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Account</span>
+                  <select value={signalRuntimeForm.accountId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, accountId: event.target.value }))}>
+                    {[...paperAccounts.map((item) => ({ id: item.accountId, label: `${item.accountName} (${item.mode})` })), ...liveAccounts.map((item) => ({ id: item.id, label: `${item.name} (${item.mode})` }))].map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Strategy</span>
+                  <select value={signalRuntimeForm.strategyId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, strategyId: event.target.value }))}>
+                    {strategies.map((strategy) => (
+                      <option key={strategy.id} value={strategy.id}>
+                        {strategy.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton label={signalRuntimeAction === "create" ? "Creating..." : "Create Runtime Session"} disabled={signalRuntimeAction !== null || !signalRuntimeForm.accountId || !signalRuntimeForm.strategyId} onClick={createSignalRuntimeSession} />
+              </div>
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <span>Plan Ready</span>
+                  <strong>{boolLabel(signalRuntimePlan?.ready)}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Required</span>
+                  <strong>{String((signalRuntimePlan?.requiredBindings as unknown[] | undefined)?.length ?? 0)}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Matched</span>
+                  <strong>{String((signalRuntimePlan?.matchedBindings as unknown[] | undefined)?.length ?? 0)}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Missing</span>
+                  <strong>{String((signalRuntimePlan?.missingBindings as unknown[] | undefined)?.length ?? 0)}</strong>
+                </div>
+              </div>
+              <div className="backtest-notes">
+                <div className="note-item">runtime adapters: {signalRuntimeAdapters.map((item) => item.key).join(", ") || "--"}</div>
+                {((signalRuntimePlan?.missingBindings as unknown[] | undefined) ?? []).slice(0, 4).map((item, index) => (
+                  <div key={index} className="note-item">
+                    missing: {JSON.stringify(item)}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="backtest-list">
+              <h4>Runtime Sessions</h4>
+              {signalRuntimeSessions.length > 0 ? (
+                <>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Session</th>
+                          <th>Status</th>
+                          <th>Adapter</th>
+                          <th>Subs</th>
+                          <th>Heartbeat</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {signalRuntimeSessions.map((session) => (
+                          <tr
+                            key={session.id}
+                            className={session.id === selectedSignalRuntime?.id ? "table-row-active" : ""}
+                            onClick={() => setSelectedSignalRuntimeId(session.id)}
+                          >
+                            <td>{shrink(session.id)}</td>
+                            <td>{session.status}</td>
+                            <td>{session.runtimeAdapter || "--"}</td>
+                            <td>{String(session.subscriptionCount)}</td>
+                            <td>{formatTime(String(session.state?.lastHeartbeatAt ?? ""))}</td>
+                            <td>
+                              <div className="inline-actions">
+                                <ActionButton
+                                  label={signalRuntimeAction === `${session.id}:start` ? "Starting..." : "Start"}
+                                  disabled={signalRuntimeAction !== null || session.status === "RUNNING"}
+                                  onClick={() => runSignalRuntimeAction(session.id, "start")}
+                                />
+                                <ActionButton
+                                  label={signalRuntimeAction === `${session.id}:stop` ? "Stopping..." : "Stop"}
+                                  variant="ghost"
+                                  disabled={signalRuntimeAction !== null || session.status === "STOPPED"}
+                                  onClick={() => runSignalRuntimeAction(session.id, "stop")}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="backtest-detail-card">
+                    <div className="panel-header">
+                      <div>
+                        <p className="panel-kicker">Signal Session</p>
+                        <h3>选中 Runtime Session 详情</h3>
+                      </div>
+                      <div className="range-box">
+                        <span>{selectedSignalRuntime?.status ?? "NO SESSION"}</span>
+                        <span>{selectedSignalRuntime?.runtimeAdapter ?? "--"}</span>
+                      </div>
+                    </div>
+                    {selectedSignalRuntime ? (
+                      <>
+                        <div className="detail-grid">
+                          <div className="detail-item">
+                            <span>Session ID</span>
+                            <strong>{shrink(selectedSignalRuntime.id)}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Account</span>
+                            <strong>{shrink(selectedSignalRuntime.accountId)}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Strategy</span>
+                            <strong>{shrink(selectedSignalRuntime.strategyId)}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Transport</span>
+                            <strong>{selectedSignalRuntime.transport || "--"}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Health</span>
+                            <strong>{String(selectedSignalRuntimeState.health ?? "--")}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Signal Events</span>
+                            <strong>{String(Math.trunc(getNumber(selectedSignalRuntimeState.signalEventCount) ?? 0))}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Heartbeat</span>
+                            <strong>{formatTime(String(selectedSignalRuntimeState.lastHeartbeatAt ?? ""))}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Last Event</span>
+                            <strong>{formatTime(String(selectedSignalRuntimeState.lastEventAt ?? ""))}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Source States</span>
+                            <strong>{String(Object.keys(selectedSignalRuntimeSourceStates).length)}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Plan Ready</span>
+                            <strong>{boolLabel(selectedSignalRuntimePlan.ready)}</strong>
+                          </div>
+                        </div>
+
+                        <div className="backtest-breakdown">
+                          <h4>Subscriptions</h4>
+                          <SimpleTable
+                            columns={["Source", "Role", "Symbol", "Channel", "Adapter"]}
+                            rows={selectedSignalRuntimeSubscriptions.map((item) => [
+                              String(item.sourceKey ?? "--"),
+                              String(item.role ?? "--"),
+                              String(item.symbol ?? "--"),
+                              String(item.channel ?? "--"),
+                              String(item.adapterKey ?? "--"),
+                            ])}
+                            emptyMessage="No subscriptions"
+                          />
+                        </div>
+
+                        <div className="backtest-breakdown">
+                          <h4>Last Event Summary</h4>
+                          <div className="backtest-notes">
+                            {Object.entries(selectedSignalRuntimeLastSummary).length > 0 ? (
+                              Object.entries(selectedSignalRuntimeLastSummary).map(([key, value]) => (
+                                <div key={key} className="note-item">
+                                  {key}: {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="empty-state empty-state-compact">No event summary yet</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="backtest-breakdown">
+                          <h4>Source States</h4>
+                          <div className="backtest-notes">
+                            {Object.entries(selectedSignalRuntimeSourceStates).length > 0 ? (
+                              Object.entries(selectedSignalRuntimeSourceStates).slice(0, 8).map(([key, value]) => (
+                                <div key={key} className="note-item">
+                                  {key}: {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="empty-state empty-state-compact">No source states yet</div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="empty-state empty-state-compact">No runtime session selected</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="empty-state empty-state-compact">No runtime sessions</div>
+              )}
+            </div>
+          </div>
         </section>
 
         <section id="live" className="panel panel-session">

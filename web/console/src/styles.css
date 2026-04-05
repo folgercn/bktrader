@@ -425,6 +425,12 @@ a {
   font-size: 0.82rem;
 }
 
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .backtest-notes {
   margin-top: 14px;
   display: grid;
