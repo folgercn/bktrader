@@ -289,6 +289,12 @@ type SignalBarCandle = {
   isClosed: boolean;
 };
 
+type AlertItem = {
+  level: "critical" | "warning" | "info";
+  title: string;
+  detail: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -419,6 +425,15 @@ function App() {
       requireTick: String(primarySession?.state?.executionDataSource ?? "") === "tick",
       requireOrderBook: primaryPaperStrategyBindings.some((item) => item.streamType === "order_book"),
     }
+  );
+  const primaryPaperAlerts = derivePaperAlerts(
+    primarySession,
+    primaryLinkedSignalRuntimeState,
+    primaryLinkedSignalRuntimeSourceSummary,
+    primaryPaperRuntimeReadiness,
+    primarySessionDecision,
+    primarySessionDecisionMeta,
+    primarySessionSignalBarDecision
   );
   const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
@@ -1691,6 +1706,11 @@ function App() {
                 </div>
               ) : null}
               <div className="backtest-notes">
+                {buildAlertNotes(primaryPaperAlerts).map((item) => (
+                  <div key={`paper-alert-${item.title}-${item.detail}`} className={`note-item note-item-alert note-item-alert-${item.level}`}>
+                    <strong>{item.title}</strong> {item.detail}
+                  </div>
+                ))}
                 {buildSignalBarDecisionNotes(primarySessionSignalBarDecision, primarySessionSignalBarState).map((line) => (
                   <div key={line} className="note-item">
                     {line}
@@ -2305,6 +2325,13 @@ function App() {
                       requireTick: bindings.some((item) => item.streamType === "trade_tick"),
                       requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
                     });
+                    const liveAlerts = deriveLiveAlerts(
+                      account,
+                      activeRuntimeState,
+                      activeRuntimeSourceSummary,
+                      activeRuntimeReadiness,
+                      activeSignalAction
+                    );
                     return (
                       <div key={account.id} className="session-stat">
                         <span>{account.name}</span>
@@ -2362,6 +2389,11 @@ function App() {
                           <span>{activeSignalAction.reason}</span>
                         </div>
                         <div className="backtest-notes">
+                          {buildAlertNotes(liveAlerts).map((item) => (
+                            <div key={`${account.id}-${item.title}-${item.detail}`} className={`note-item note-item-alert note-item-alert-${item.level}`}>
+                              <strong>{item.title}</strong> {item.detail}
+                            </div>
+                          ))}
                           {buildSignalActionNotes(activeSignalAction).map((line) => (
                             <div key={line} className="note-item">
                               {line}
@@ -3677,6 +3709,94 @@ function buildTimelineNotes(items: Array<Record<string, unknown>>) {
       }
       return fragments.join(" · ");
     });
+}
+
+function derivePaperAlerts(
+  session: PaperSession | null,
+  runtimeState: Record<string, unknown>,
+  sourceSummary: RuntimeSourceSummary,
+  readiness: RuntimeReadiness,
+  decision: Record<string, unknown>,
+  decisionMeta: Record<string, unknown>,
+  signalBarDecision: Record<string, unknown>
+): AlertItem[] {
+  const alerts: AlertItem[] = [];
+  const lastEventAt = Date.parse(String(runtimeState.lastEventAt ?? ""));
+  const evaluationStatus = String(session?.state?.lastStrategyEvaluationStatus ?? "").trim().toLowerCase();
+  const decisionState = String(decisionMeta.decisionState ?? decision.action ?? "").trim().toLowerCase();
+  const signalReason = String(signalBarDecision.reason ?? "").trim().toLowerCase();
+
+  if (readiness.status === "blocked") {
+    alerts.push({ level: "critical", title: "Runtime blocked", detail: readiness.reason });
+  } else if (readiness.status === "warning") {
+    alerts.push({ level: "warning", title: "Runtime warning", detail: readiness.reason });
+  }
+  if (sourceSummary.staleCount > 0) {
+    alerts.push({ level: "warning", title: "Stale sources", detail: `${sourceSummary.staleCount} source state(s) outdated` });
+  }
+  if (evaluationStatus === "decision-error") {
+    alerts.push({ level: "critical", title: "Decision error", detail: "latest strategy evaluation returned an error" });
+  }
+  if (decisionState === "waiting-signal-bars") {
+    alerts.push({ level: "warning", title: "Signal bars missing", detail: "runtime has not collected enough higher-timeframe bars yet" });
+  }
+  if (signalReason === "insufficient-signal-bars") {
+    alerts.push({ level: "warning", title: "Signal filter blocked", detail: "insufficient closed signal bars for MA20 / t-1 / t-2" });
+  }
+  if (Number.isFinite(lastEventAt) && Date.now() - lastEventAt > 30_000) {
+    alerts.push({ level: "warning", title: "Runtime quiet", detail: "no runtime events observed in the last 30s" });
+  }
+  return dedupeAlerts(alerts);
+}
+
+function deriveLiveAlerts(
+  account: AccountRecord,
+  runtimeState: Record<string, unknown>,
+  sourceSummary: RuntimeSourceSummary,
+  readiness: RuntimeReadiness,
+  signalAction: { bias: string; state: string; reason: string }
+): AlertItem[] {
+  const alerts: AlertItem[] = [];
+  const health = String(runtimeState.health ?? "").trim().toLowerCase();
+  const lastEventAt = Date.parse(String(runtimeState.lastEventAt ?? ""));
+
+  if (account.status !== "CONFIGURED") {
+    alerts.push({ level: "warning", title: "Account not configured", detail: `status=${account.status}` });
+  }
+  if (readiness.status === "blocked") {
+    alerts.push({ level: "critical", title: "Runtime blocked", detail: readiness.reason });
+  } else if (readiness.status === "warning") {
+    alerts.push({ level: "warning", title: "Runtime warning", detail: readiness.reason });
+  }
+  if (health !== "" && health !== "healthy") {
+    alerts.push({ level: "critical", title: "Runtime health", detail: `health=${health}` });
+  }
+  if (sourceSummary.staleCount > 0) {
+    alerts.push({ level: "warning", title: "Stale sources", detail: `${sourceSummary.staleCount} source state(s) outdated` });
+  }
+  if (signalAction.state === "waiting") {
+    alerts.push({ level: "info", title: "Signal waiting", detail: signalAction.reason });
+  }
+  if (Number.isFinite(lastEventAt) && Date.now() - lastEventAt > 30_000) {
+    alerts.push({ level: "warning", title: "Runtime quiet", detail: "no runtime events observed in the last 30s" });
+  }
+  return dedupeAlerts(alerts);
+}
+
+function dedupeAlerts(items: AlertItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.level}:${item.title}:${item.detail}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildAlertNotes(items: AlertItem[]) {
+  return items;
 }
 
 function runtimeReadinessTone(status: string): "ready" | "watch" | "blocked" | "neutral" {

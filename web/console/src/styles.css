@@ -468,6 +468,32 @@ a {
   font-size: 0.9rem;
 }
 
+.note-item-alert {
+  border: 1px solid transparent;
+}
+
+.note-item-alert strong {
+  margin-right: 6px;
+}
+
+.note-item-alert-critical {
+  color: #9d2f1d;
+  background: rgba(176, 74, 55, 0.08);
+  border-color: rgba(176, 74, 55, 0.18);
+}
+
+.note-item-alert-warning {
+  color: #8a5b00;
+  background: rgba(240, 180, 41, 0.12);
+  border-color: rgba(240, 180, 41, 0.2);
+}
+
+.note-item-alert-info {
+  color: #53606a;
+  background: rgba(90, 104, 114, 0.09);
+  border-color: rgba(90, 104, 114, 0.14);
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
