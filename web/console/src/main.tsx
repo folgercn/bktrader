@@ -273,6 +273,12 @@ type RuntimeSourceSummary = {
   latestEventAt?: string;
 };
 
+type RuntimeReadiness = {
+  ready: boolean;
+  status: "ready" | "warning" | "blocked";
+  reason: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -391,6 +397,14 @@ function App() {
     primaryLinkedSignalRuntimeSummary
   );
   const primaryLinkedSignalRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(primaryLinkedSignalRuntimeState.sourceStates));
+  const primaryPaperRuntimeReadiness = deriveRuntimeReadiness(
+    primaryLinkedSignalRuntimeState,
+    primaryLinkedSignalRuntimeSourceSummary,
+    {
+      requireTick: String(primarySession?.state?.executionDataSource ?? "") === "tick",
+      requireOrderBook: primaryPaperStrategyBindings.some((item) => item.streamType === "order_book"),
+    }
+  );
   const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
   const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
@@ -1523,6 +1537,10 @@ function App() {
                   <strong>{formatTime(String(primaryLinkedSignalRuntimeSourceSummary.latestEventAt ?? ""))}</strong>
                 </div>
                 <div className="session-stat">
+                  <span>Runtime Ready</span>
+                  <strong>{`${primaryPaperRuntimeReadiness.status} · ${primaryPaperRuntimeReadiness.reason}`}</strong>
+                </div>
+                <div className="session-stat">
                   <span>Trading / Funding</span>
                   <strong>
                     {formatMaybeNumber(primarySession.state?.tradingFeeBps)} bps /{" "}
@@ -1613,6 +1631,11 @@ function App() {
                   <strong>{formatTime(primarySession.createdAt)}</strong>
                 </div>
               </div>
+              {!primaryPaperRuntimeReadiness.ready ? (
+                <div className="backtest-notes">
+                  <div className="note-item">runtime blocked: {primaryPaperRuntimeReadiness.reason}</div>
+                </div>
+              ) : null}
               <div className="session-actions">
                 {primaryLinkedSignalRuntime ? (
                   <ActionButton
@@ -1624,7 +1647,11 @@ function App() {
                 ) : null}
                 <ActionButton
                   label="Start"
-                  disabled={sessionAction !== null || primarySession.status === "RUNNING"}
+                  disabled={
+                    sessionAction !== null ||
+                    primarySession.status === "RUNNING" ||
+                    !primaryPaperRuntimeReadiness.ready
+                  }
                   onClick={() => runSessionAction(primarySession.id, "start")}
                 />
                 <ActionButton
@@ -2122,6 +2149,10 @@ function App() {
                     const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
                     const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
                     const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates));
+                    const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
+                      requireTick: bindings.some((item) => item.streamType === "trade_tick"),
+                      requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
+                    });
                     return (
                       <div key={account.id} className="session-stat">
                         <span>{account.name}</span>
@@ -2151,6 +2182,10 @@ function App() {
                           <span>book {activeRuntimeSourceSummary.orderBookCount}</span>
                           <span>stale {activeRuntimeSourceSummary.staleCount}</span>
                           <span>{formatTime(String(activeRuntimeSourceSummary.latestEventAt ?? ""))}</span>
+                        </div>
+                        <div className="live-account-meta">
+                          <span>{activeRuntimeReadiness.status}</span>
+                          <span>{activeRuntimeReadiness.reason}</span>
                         </div>
                         {activeRuntime ? (
                           <div className="inline-actions">
@@ -3181,6 +3216,30 @@ function deriveRuntimeSourceSummary(sourceStates: Record<string, unknown>): Runt
     staleCount,
     latestEventAt: latestEventAt || undefined,
   };
+}
+
+function deriveRuntimeReadiness(
+  runtimeState: Record<string, unknown>,
+  sourceSummary: RuntimeSourceSummary,
+  requirements: { requireTick: boolean; requireOrderBook: boolean }
+): RuntimeReadiness {
+  const health = String(runtimeState.health ?? "").trim().toLowerCase();
+  if (!runtimeState || Object.keys(runtimeState).length === 0) {
+    return { ready: false, status: "blocked", reason: "no-runtime" };
+  }
+  if (health !== "" && health !== "healthy") {
+    return { ready: false, status: "blocked", reason: `runtime-${health}` };
+  }
+  if (requirements.requireTick && sourceSummary.tradeTickCount <= 0) {
+    return { ready: false, status: "blocked", reason: "missing-trade-tick" };
+  }
+  if (requirements.requireOrderBook && sourceSummary.orderBookCount <= 0) {
+    return { ready: false, status: "blocked", reason: "missing-order-book" };
+  }
+  if (sourceSummary.staleCount > 0) {
+    return { ready: false, status: "warning", reason: "stale-source-states" };
+  }
+  return { ready: true, status: "ready", reason: "runtime-healthy" };
 }
 
 function boolLabel(value: unknown) {
