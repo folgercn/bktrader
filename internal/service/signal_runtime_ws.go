@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -187,6 +188,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 				state["lastEventSummary"] = summary
 				state["signalEventCount"] = maxIntValue(state["signalEventCount"], 0) + 1
 				state["sourceStates"] = mergeSignalSourceState(state["sourceStates"], summary, now)
+				state["signalBarStates"] = deriveSignalBarStates(mapValue(state["sourceStates"]))
 				session.State = state
 				session.UpdatedAt = now
 			})
@@ -398,6 +400,78 @@ func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.
 	out := make([]any, 0, len(items))
 	for _, item := range items {
 		out = append(out, item)
+	}
+	return out
+}
+
+func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
+	out := map[string]any{}
+	for key, value := range sourceStates {
+		state := mapValue(value)
+		if state == nil || !strings.EqualFold(stringValue(state["streamType"]), "signal_bar") {
+			continue
+		}
+		bars := normalizeSignalBarEntries(state["bars"])
+		closed := make([]map[string]any, 0, len(bars))
+		for _, bar := range bars {
+			if boolValue(bar["isClosed"]) {
+				closed = append(closed, bar)
+			}
+		}
+		if len(closed) == 0 {
+			continue
+		}
+		closes := make([]float64, 0, len(closed))
+		trueRanges := make([]float64, 0, len(closed))
+		for i, bar := range closed {
+			closePrice := parseFloatValue(bar["close"])
+			high := parseFloatValue(bar["high"])
+			low := parseFloatValue(bar["low"])
+			closes = append(closes, closePrice)
+			if i == 0 {
+				trueRanges = append(trueRanges, high-low)
+				continue
+			}
+			prevClose := parseFloatValue(closed[i-1]["close"])
+			highLow := high - low
+			highClose := math.Abs(high - prevClose)
+			lowClose := math.Abs(low - prevClose)
+			trueRanges = append(trueRanges, math.Max(highLow, math.Max(highClose, lowClose)))
+		}
+
+		last := closed[len(closed)-1]
+		entry := map[string]any{
+			"symbol":    stringValue(last["symbol"]),
+			"timeframe": stringValue(last["timeframe"]),
+			"barCount":  len(closed),
+			"ma20":      rollingMean(closes, len(closed)-1, 20),
+			"atr14":     rollingMean(trueRanges, len(closed)-1, 14),
+			"current":   cloneMetadata(last),
+		}
+		if len(closed) >= 2 {
+			entry["prevBar1"] = cloneMetadata(closed[len(closed)-2])
+		}
+		if len(closed) >= 3 {
+			entry["prevBar2"] = cloneMetadata(closed[len(closed)-3])
+		}
+		out[key] = entry
+	}
+	return out
+}
+
+func normalizeSignalBarEntries(value any) []map[string]any {
+	out := make([]map[string]any, 0)
+	switch items := value.(type) {
+	case []any:
+		for _, item := range items {
+			if entry := mapValue(item); entry != nil {
+				out = append(out, cloneMetadata(entry))
+			}
+		}
+	case []map[string]any:
+		for _, item := range items {
+			out = append(out, cloneMetadata(item))
+		}
 	}
 	return out
 }

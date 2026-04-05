@@ -427,6 +427,7 @@ function App() {
   const selectedSignalRuntimePlan = getRecord(selectedSignalRuntimeState.plan);
   const selectedSignalRuntimeLastSummary = getRecord(selectedSignalRuntimeState.lastEventSummary);
   const selectedSignalRuntimeSourceStates = getRecord(selectedSignalRuntimeState.sourceStates);
+  const selectedSignalBarStates = getRecord(selectedSignalRuntimeState.signalBarStates);
   const selectedSignalRuntimeSignalBars = deriveSignalBarCandles(selectedSignalRuntimeSourceStates);
   const selectedSignalRuntimeSubscriptions = Array.isArray(selectedSignalRuntimeState.subscriptions)
     ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
@@ -2050,6 +2051,36 @@ function App() {
                           ) : (
                             <div className="empty-state empty-state-compact">No 4h/1d signal bars cached yet</div>
                           )}
+                        </div>
+
+                        <div className="backtest-breakdown">
+                          <h4>Signal States</h4>
+                          <div className="backtest-notes">
+                            {Object.entries(selectedSignalBarStates).length > 0 ? (
+                              Object.entries(selectedSignalBarStates).map(([key, value]) => {
+                                const state = getRecord(value);
+                                const current = getRecord(state.current);
+                                const prevBar1 = getRecord(state.prevBar1);
+                                const prevBar2 = getRecord(state.prevBar2);
+                                return (
+                                  <div key={key} className="note-item">
+                                    {[
+                                      key,
+                                      `tf=${String(state.timeframe ?? "--")}`,
+                                      `bars=${String(state.barCount ?? "--")}`,
+                                      `ma20=${formatMaybeNumber(state.ma20)}`,
+                                      `atr14=${formatMaybeNumber(state.atr14)}`,
+                                      `t-1=${formatMaybeNumber(prevBar1.open)}/${formatMaybeNumber(prevBar1.high)}/${formatMaybeNumber(prevBar1.low)}/${formatMaybeNumber(prevBar1.close)}`,
+                                      `t-2=${formatMaybeNumber(prevBar2.open)}/${formatMaybeNumber(prevBar2.high)}/${formatMaybeNumber(prevBar2.low)}/${formatMaybeNumber(prevBar2.close)}`,
+                                      `current=${formatMaybeNumber(current.open)}/${formatMaybeNumber(current.high)}/${formatMaybeNumber(current.low)}/${formatMaybeNumber(current.close)}`,
+                                    ].join(" · ")}
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="empty-state empty-state-compact">No signal states yet</div>
+                            )}
+                          </div>
                         </div>
 
                         <div className="backtest-breakdown">
