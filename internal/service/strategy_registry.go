@@ -203,9 +203,9 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	deviationBps := 0.0
 	if action == "advance-plan" && context.NextPlannedPrice > 0 && marketPrice > 0 {
 		deviationBps = math.Abs(marketPrice/context.NextPlannedPrice-1) * 10000
-		if deviationBps > maxDeviationBps {
+		if !isPlannedPriceActionable(context.NextPlannedSide, context.NextPlannedPrice, marketPrice, maxDeviationBps) {
 			action = "wait"
-			reason = "price-outside-tolerance"
+			reason = "price-not-actionable"
 		}
 	}
 	return StrategySignalDecision{
@@ -225,6 +225,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"marketSource":      marketSource,
 			"maxDeviationBps":   maxDeviationBps,
 			"deviationBps":      deviationBps,
+			"priceActionable":   isPlannedPriceActionable(context.NextPlannedSide, context.NextPlannedPrice, marketPrice, maxDeviationBps),
 		},
 	}, nil
 }
@@ -291,4 +292,19 @@ func pickDecisionMarketPrice(trigger map[string]any, sourceStates map[string]any
 		}
 	}
 	return tradePrice, "trigger.price"
+}
+
+func isPlannedPriceActionable(side string, plannedPrice, marketPrice, maxDeviationBps float64) bool {
+	if plannedPrice <= 0 || marketPrice <= 0 {
+		return false
+	}
+	tolerance := maxDeviationBps / 10000
+	switch strings.ToUpper(strings.TrimSpace(side)) {
+	case "BUY":
+		return marketPrice <= plannedPrice*(1+tolerance)
+	case "SELL", "SHORT":
+		return marketPrice >= plannedPrice*(1-tolerance)
+	default:
+		return math.Abs(marketPrice/plannedPrice-1) <= tolerance
+	}
 }

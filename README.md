@@ -141,7 +141,8 @@ go run ./cmd/platform-api
     - `BUY` 优先看 `bestAsk`
     - `SELL/SHORT` 优先看 `bestBid`
     - 默认允许最大偏离 `50 bps`
-    - 超出后会返回 `wait / price-outside-tolerance`
+    - 并且按交易方向判断当前价格是否仍然“可执行”
+    - 不满足时会返回 `wait / price-not-actionable`
 - 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
 
 实盘账户当前支持：
