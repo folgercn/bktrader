@@ -232,3 +232,20 @@ type PlatformAlert struct {
 	EventTime        time.Time      `json:"eventTime"`
 	Metadata         map[string]any `json:"metadata,omitempty"`
 }
+
+// NotificationAck 保存用户已确认的通知键。
+type NotificationAck struct {
+	ID        string    `json:"id"`
+	AckedAt   time.Time `json:"ackedAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// PlatformNotification 是平台内通知中心使用的聚合对象。
+type PlatformNotification struct {
+	ID        string         `json:"id"`
+	Status    string         `json:"status"` // active / acked
+	AckedAt   *time.Time     `json:"ackedAt,omitempty"`
+	Alert     PlatformAlert  `json:"alert"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+}

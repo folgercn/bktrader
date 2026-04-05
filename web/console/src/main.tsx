@@ -312,6 +312,15 @@ type PlatformAlert = {
   metadata?: Record<string, unknown>;
 };
 
+type PlatformNotification = {
+  id: string;
+  status: "active" | "acked" | string;
+  ackedAt?: string;
+  alert: PlatformAlert;
+  metadata?: Record<string, unknown>;
+  updatedAt: string;
+};
+
 type RuntimePolicy = {
   tradeTickFreshnessSeconds: number;
   orderBookFreshnessSeconds: number;
@@ -354,6 +363,7 @@ function App() {
   const [signalRuntimeSessions, setSignalRuntimeSessions] = useState<SignalRuntimeSession[]>([]);
   const [runtimePolicy, setRuntimePolicy] = useState<RuntimePolicy | null>(null);
   const [alerts, setAlerts] = useState<PlatformAlert[]>([]);
+  const [notifications, setNotifications] = useState<PlatformNotification[]>([]);
   const [accountSignalBindings, setAccountSignalBindings] = useState<SignalBinding[]>([]);
   const [strategySignalBindings, setStrategySignalBindings] = useState<SignalBinding[]>([]);
   const [accountSignalBindingMap, setAccountSignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
@@ -370,6 +380,7 @@ function App() {
   const [liveOrderAction, setLiveOrderAction] = useState(false);
   const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
   const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
+  const [notificationAction, setNotificationAction] = useState<string | null>(null);
   const [backtestAction, setBacktestAction] = useState(false);
   const [runtimePolicyAction, setRuntimePolicyAction] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
@@ -614,6 +625,7 @@ function App() {
       signalRuntimeSessionData,
       runtimePolicyData,
       alertData,
+      notificationData,
     ] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<AccountRecord[]>("/api/v1/accounts"),
@@ -631,6 +643,7 @@ function App() {
       fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions"),
       fetchJSON<RuntimePolicy>("/api/v1/runtime-policy"),
       fetchJSON<PlatformAlert[]>("/api/v1/alerts"),
+      fetchJSON<PlatformNotification[]>("/api/v1/notifications?includeAcked=true"),
     ]);
     const accountBindingEntries = await Promise.all(
       accountData.map(async (account) => [
@@ -687,6 +700,7 @@ function App() {
     setSignalRuntimeSessions(signalRuntimeSessionData);
     setRuntimePolicy(runtimePolicyData);
     setAlerts(alertData);
+    setNotifications(notificationData);
     setRuntimePolicyForm({
       tradeTickFreshnessSeconds: String(runtimePolicyData.tradeTickFreshnessSeconds ?? 15),
       orderBookFreshnessSeconds: String(runtimePolicyData.orderBookFreshnessSeconds ?? 10),
@@ -1212,6 +1226,21 @@ function App() {
     }
   }
 
+  async function acknowledgeNotification(notification: PlatformNotification, acknowledged: boolean) {
+    setNotificationAction(`${notification.id}:${acknowledged ? "ack" : "unack"}`);
+    try {
+      await fetchJSON(`/api/v1/notifications/${encodeURIComponent(notification.id)}/ack`, {
+        method: acknowledged ? "POST" : "DELETE",
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update notification");
+    } finally {
+      setNotificationAction(null);
+    }
+  }
+
   async function createBacktestRun() {
     try {
       setBacktestAction(true);
@@ -1247,6 +1276,7 @@ function App() {
         </div>
         <nav>
           <a href="#overview">Overview</a>
+          <a href="#notifications">Inbox</a>
           <a href="#alerts">Alerts</a>
           <a href="#paper">Paper</a>
           <a href="#signals">Signals</a>
@@ -1289,6 +1319,58 @@ function App() {
           <MetricCard label="Fees" value={formatMoney(primaryAccount?.fees)} />
           <MetricCard label="Exposure" value={formatMoney(primaryAccount?.exposureNotional)} />
           <MetricCard label="Open Positions" value={String(primaryAccount?.openPositionCount ?? 0)} />
+        </section>
+
+        <section id="notifications" className="panel panel-alerts">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Inbox</p>
+              <h3>平台内通知中心</h3>
+            </div>
+            <div className="range-box">
+              <span>{notifications.filter((item) => item.status !== "acked").length} active</span>
+              <span>{notifications.filter((item) => item.status === "acked").length} acked</span>
+            </div>
+          </div>
+          {notifications.length > 0 ? (
+            <div className="alerts-grid">
+              {notifications.map((item) => (
+                <article key={item.id} className="alert-card">
+                  <div className="alert-card-header">
+                    <div>
+                      <StatusPill tone={alertLevelTone(item.alert.level)}>{item.alert.level}</StatusPill>
+                      <StatusPill tone={item.status === "acked" ? "neutral" : alertScopeTone(item.alert.scope)}>{item.status}</StatusPill>
+                    </div>
+                    <span className="alert-time">{formatTime(String(item.updatedAt ?? item.alert.eventTime ?? ""))}</span>
+                  </div>
+                  <h4>{item.alert.title}</h4>
+                  <p>{item.alert.detail}</p>
+                  <div className="alert-meta">
+                    <span>{item.alert.accountName || item.alert.accountId || "--"}</span>
+                    <span>{item.alert.strategyName || item.alert.strategyId || "--"}</span>
+                    <span>{item.alert.runtimeSessionId || item.alert.paperSessionId || "--"}</span>
+                  </div>
+                  <div className="inline-actions">
+                    <ActionButton
+                      label={item.status === "acked" ? "Unack" : "Acknowledge"}
+                      variant="ghost"
+                      disabled={notificationAction !== null}
+                      onClick={() => acknowledgeNotification(item, item.status !== "acked")}
+                    />
+                    <button
+                      type="button"
+                      className="filter-chip"
+                      onClick={() => jumpToAlert(item.alert)}
+                    >
+                      Open
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state empty-state-compact">No notifications yet</div>
+          )}
         </section>
 
         <section id="alerts" className="panel panel-alerts">

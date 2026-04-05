@@ -12,18 +12,19 @@ import (
 type Store struct {
 	mu sync.RWMutex
 
-	strategies      map[string]domain.Strategy
-	strategyVersion map[string]domain.StrategyVersion
-	accounts        map[string]domain.Account
-	orders          map[string]domain.Order
-	fills           map[string]domain.Fill
-	positions       map[string]domain.Position
-	backtests       map[string]domain.BacktestRun
-	paperSessions   map[string]domain.PaperSession
-	equitySnapshots map[string][]domain.AccountEquitySnapshot
-	signalSources   []map[string]any
-	annotations     []domain.ChartAnnotation
-	runtimePolicy   *domain.RuntimePolicy
+	strategies       map[string]domain.Strategy
+	strategyVersion  map[string]domain.StrategyVersion
+	accounts         map[string]domain.Account
+	orders           map[string]domain.Order
+	fills            map[string]domain.Fill
+	positions        map[string]domain.Position
+	backtests        map[string]domain.BacktestRun
+	paperSessions    map[string]domain.PaperSession
+	equitySnapshots  map[string][]domain.AccountEquitySnapshot
+	signalSources    []map[string]any
+	annotations      []domain.ChartAnnotation
+	runtimePolicy    *domain.RuntimePolicy
+	notificationAcks map[string]domain.NotificationAck
 
 	sequence int64
 }
@@ -70,6 +71,7 @@ func NewStore() *Store {
 				Label:  "PT",
 			},
 		},
+		notificationAcks: make(map[string]domain.NotificationAck),
 	}
 
 	strategy := domain.Strategy{
@@ -247,6 +249,37 @@ func (s *Store) UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.Runtime
 	copyPolicy := policy
 	s.runtimePolicy = &copyPolicy
 	return policy, nil
+}
+
+func (s *Store) ListNotificationAcks() ([]domain.NotificationAck, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.NotificationAck, 0, len(s.notificationAcks))
+	for _, item := range s.notificationAcks {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	return items, nil
+}
+
+func (s *Store) UpsertNotificationAck(id string) (domain.NotificationAck, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	item := domain.NotificationAck{
+		ID:        id,
+		AckedAt:   now,
+		UpdatedAt: now,
+	}
+	s.notificationAcks[id] = item
+	return item, nil
+}
+
+func (s *Store) DeleteNotificationAck(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.notificationAcks, id)
+	return nil
 }
 
 func (s *Store) ListStrategies() ([]map[string]any, error) {

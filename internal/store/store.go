@@ -89,4 +89,13 @@ type Repository interface {
 	GetRuntimePolicy() (domain.RuntimePolicy, bool, error)
 	// UpsertRuntimePolicy 创建或更新运行时阈值配置。
 	UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.RuntimePolicy, error)
+
+	// --- 通知中心 ---
+
+	// ListNotificationAcks 获取所有已确认通知键。
+	ListNotificationAcks() ([]domain.NotificationAck, error)
+	// UpsertNotificationAck 创建或更新时间已确认通知键。
+	UpsertNotificationAck(id string) (domain.NotificationAck, error)
+	// DeleteNotificationAck 取消已确认通知键。
+	DeleteNotificationAck(id string) error
 }

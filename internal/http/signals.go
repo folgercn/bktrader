@@ -43,6 +43,47 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, items)
 	})
 
+	mux.HandleFunc("/api/v1/notifications", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		includeAcked := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("includeAcked")), "true")
+		items, err := platform.ListNotifications(includeAcked)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
+	mux.HandleFunc("/api/v1/notifications/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/notifications/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) != 2 || parts[1] != "ack" {
+			writeError(w, http.StatusNotFound, "notification route not found")
+			return
+		}
+		notificationID := parts[0]
+		switch r.Method {
+		case http.MethodPost:
+			item, err := platform.AckNotification(notificationID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case http.MethodDelete:
+			if err := platform.UnackNotification(notificationID); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
 	mux.HandleFunc("/api/v1/runtime-policy", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

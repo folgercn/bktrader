@@ -93,6 +93,52 @@ func (s *Store) UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.Runtime
 	return policy, nil
 }
 
+func (s *Store) ListNotificationAcks() ([]domain.NotificationAck, error) {
+	rows, err := s.db.Query(`
+		select id, acked_at, updated_at
+		from notification_acks
+		order by updated_at desc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.NotificationAck, 0)
+	for rows.Next() {
+		var item domain.NotificationAck
+		if err := rows.Scan(&item.ID, &item.AckedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) UpsertNotificationAck(id string) (domain.NotificationAck, error) {
+	item := domain.NotificationAck{
+		ID:        id,
+		AckedAt:   time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	_, err := s.db.Exec(`
+		insert into notification_acks (id, acked_at, updated_at)
+		values ($1, $2, $3)
+		on conflict (id) do update set
+			acked_at = excluded.acked_at,
+			updated_at = excluded.updated_at
+	`, item.ID, item.AckedAt, item.UpdatedAt)
+	if err != nil {
+		return domain.NotificationAck{}, err
+	}
+	return item, nil
+}
+
+func (s *Store) DeleteNotificationAck(id string) error {
+	_, err := s.db.Exec(`delete from notification_acks where id = $1`, id)
+	return err
+}
+
 func (s *Store) ListStrategies() ([]map[string]any, error) {
 	rows, err := s.db.Query(`
 		select
