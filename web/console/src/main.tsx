@@ -279,6 +279,16 @@ type RuntimeReadiness = {
   reason: string;
 };
 
+type SignalBarCandle = {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  timeframe: string;
+  isClosed: boolean;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -417,6 +427,7 @@ function App() {
   const selectedSignalRuntimePlan = getRecord(selectedSignalRuntimeState.plan);
   const selectedSignalRuntimeLastSummary = getRecord(selectedSignalRuntimeState.lastEventSummary);
   const selectedSignalRuntimeSourceStates = getRecord(selectedSignalRuntimeState.sourceStates);
+  const selectedSignalRuntimeSignalBars = deriveSignalBarCandles(selectedSignalRuntimeSourceStates);
   const selectedSignalRuntimeSubscriptions = Array.isArray(selectedSignalRuntimeState.subscriptions)
     ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
     : [];
@@ -2031,6 +2042,17 @@ function App() {
                         </div>
 
                         <div className="backtest-breakdown">
+                          <h4>Signal Bars</h4>
+                          {selectedSignalRuntimeSignalBars.length > 0 ? (
+                            <div className="chart-shell">
+                              <SignalBarChart candles={selectedSignalRuntimeSignalBars} />
+                            </div>
+                          ) : (
+                            <div className="empty-state empty-state-compact">No 4h/1d signal bars cached yet</div>
+                          )}
+                        </div>
+
+                        <div className="backtest-breakdown">
                           <h4>Last Event Summary</h4>
                           <div className="backtest-notes">
                             {Object.entries(selectedSignalRuntimeLastSummary).length > 0 ? (
@@ -2676,6 +2698,60 @@ function TradingChart(props: {
   return <div ref={containerRef} className="tv-chart" />;
 }
 
+function SignalBarChart(props: { candles: SignalBarCandle[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || props.candles.length === 0) {
+      return;
+    }
+
+    const chart = createChart(containerRef.current, {
+      autoSize: true,
+      height: 260,
+      layout: {
+        background: { type: ColorType.Solid, color: "rgba(255, 251, 242, 0.16)" },
+        textColor: "#4f585d",
+      },
+      grid: {
+        vertLines: { color: "rgba(216, 207, 186, 0.25)", style: LineStyle.Dotted },
+        horzLines: { color: "rgba(216, 207, 186, 0.25)", style: LineStyle.Dotted },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "rgba(216, 207, 186, 0.9)" },
+      timeScale: {
+        borderColor: "rgba(216, 207, 186, 0.9)",
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor: "#0e6d60",
+      downColor: "#b04a37",
+      wickUpColor: "#0e6d60",
+      wickDownColor: "#b04a37",
+      borderVisible: false,
+      priceLineVisible: true,
+    });
+
+    series.setData(
+      props.candles.map((item) => ({
+        time: Math.floor(new Date(item.time).getTime() / 1000),
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+      }))
+    );
+
+    chart.timeScale().fitContent();
+    return () => chart.remove();
+  }, [props.candles]);
+
+  return <div ref={containerRef} className="tv-chart" />;
+}
+
 function ActionButton(props: {
   label: string;
   disabled?: boolean;
@@ -3286,6 +3362,40 @@ function deriveRuntimeReadiness(
     return { ready: false, status: "warning", reason: "stale-source-states" };
   }
   return { ready: true, status: "ready", reason: "runtime-healthy" };
+}
+
+function deriveSignalBarCandles(sourceStates: Record<string, unknown>): SignalBarCandle[] {
+  const candles: SignalBarCandle[] = [];
+  for (const value of Object.values(sourceStates)) {
+    const state = getRecord(value);
+    if (String(state.streamType ?? "") !== "signal_bar") {
+      continue;
+    }
+    const bars = Array.isArray(state.bars) ? (state.bars as Array<Record<string, unknown>>) : [];
+    for (const bar of bars) {
+      const barStart = String(bar.barStart ?? "");
+      const parsed = Number(barStart);
+      const time = Number.isFinite(parsed) && parsed > 0 ? new Date(parsed).toISOString() : "";
+      const open = getNumber(bar.open);
+      const high = getNumber(bar.high);
+      const low = getNumber(bar.low);
+      const close = getNumber(bar.close);
+      if (!time || open == null || high == null || low == null || close == null) {
+        continue;
+      }
+      candles.push({
+        time,
+        open,
+        high,
+        low,
+        close,
+        timeframe: String(bar.timeframe ?? "--"),
+        isClosed: Boolean(bar.isClosed),
+      });
+    }
+  }
+  candles.sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+  return candles.slice(-120);
 }
 
 function buildRuntimeEventNotes(summary: Record<string, unknown>) {
