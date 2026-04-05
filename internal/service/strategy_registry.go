@@ -410,6 +410,9 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 	case "entry":
 		switch reasonTag {
 		case "initial":
+			if nearEntry && reason == "bias-unfavorable" {
+				return "initial-entry-near-weak"
+			}
 			if nearEntry {
 				if favorableBias {
 					return "initial-entry-near-strong"
@@ -418,6 +421,9 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 			}
 			return "initial-entry-watch"
 		case "sl-reentry":
+			if nearEntry && reason == "bias-unfavorable" {
+				return "sl-reentry-near-weak"
+			}
 			if nearEntry {
 				if favorableBias {
 					return "sl-reentry-near-strong"
@@ -426,6 +432,9 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 			}
 			return "sl-reentry-watch"
 		case "pt-reentry":
+			if nearEntry && reason == "bias-unfavorable" {
+				return "pt-reentry-near-weak"
+			}
 			if nearEntry {
 				if favorableBias {
 					return "pt-reentry-near-strong"
@@ -504,7 +513,10 @@ func isFavorableBiasForPlan(nextRole, nextReason, liquidityBias string) bool {
 	role := strings.ToLower(strings.TrimSpace(nextRole))
 	reasonTag := normalizeStrategyReasonTag(nextReason)
 	if role == "entry" {
-		return liquidityBias == "bid-heavy"
+		switch reasonTag {
+		case "initial", "sl-reentry", "pt-reentry":
+			return liquidityBias == "bid-heavy"
+		}
 	}
 	if role == "exit" && reasonTag == "pt" {
 		return liquidityBias == "ask-heavy"
@@ -592,10 +604,23 @@ func isLiquidityBiasActionable(nextSide, nextRole, nextReason, bias string) bool
 	side := strings.ToUpper(strings.TrimSpace(nextSide))
 	bias = strings.ToLower(strings.TrimSpace(bias))
 	if bias == "" || bias == "balanced" {
+		if role == "entry" && reasonTag == "sl-reentry" {
+			return false
+		}
 		return true
 	}
 	if role == "exit" && reasonTag == "sl" {
 		return true
+	}
+	if role == "entry" && reasonTag == "sl-reentry" {
+		switch side {
+		case "BUY":
+			return bias == "bid-heavy"
+		case "SELL", "SHORT":
+			return bias == "ask-heavy"
+		default:
+			return false
+		}
 	}
 	switch side {
 	case "BUY":

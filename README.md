@@ -146,14 +146,17 @@ go run ./cmd/platform-api
       - `initial-entry-watch`
       - `initial-entry-near`
       - `initial-entry-near-strong`
+      - `initial-entry-near-weak`
       - `sl-reentry`
       - `sl-reentry-watch`
       - `sl-reentry-near`
       - `sl-reentry-near-strong`
+      - `sl-reentry-near-weak`
       - `pt-reentry`
       - `pt-reentry-watch`
       - `pt-reentry-near`
       - `pt-reentry-near-strong`
+      - `pt-reentry-near-weak`
       - `hold`
       - `hold-long`
       - `hold-short`
@@ -171,6 +174,7 @@ go run ./cmd/platform-api
     - 当市场价距离下一步退出价足够近时，会进一步升级成 `protect-exit-near` / `risk-exit-near`
     - 入场侧也一样：当市场价距离下一步入场价足够近时，会升级成 `initial-entry-near` / `sl-reentry-near` / `pt-reentry-near`
     - 如果盘口方向也支持当前 near 状态，会进一步升级成 `*-near-strong`；保护性退出在盘口方向逆风时会显示 `protect-exit-near-weak`
+    - `sl-reentry` 对盘口方向要求更严格：balanced book 也可能继续等待，避免止损后过早重入
     - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
     - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
     - 当前还会比较“当前市场价”和“下一笔计划价”的偏离：
