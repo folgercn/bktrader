@@ -277,6 +277,23 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 		}
 		_ = p.triggerPaperSessionFromSignal(session.ID, runtimeSessionID, summary, eventTime)
 	}
+
+	liveSessions, err := p.store.ListLiveSessions()
+	if err != nil {
+		return err
+	}
+	for _, session := range liveSessions {
+		if stringValue(session.State["signalRuntimeSessionId"]) != runtimeSessionID {
+			continue
+		}
+		if session.Status != "RUNNING" {
+			continue
+		}
+		if !boolValue(session.State["signalRuntimeRequired"]) {
+			continue
+		}
+		_ = p.triggerLiveSessionFromSignal(session.ID, runtimeSessionID, summary, eventTime)
+	}
 	return nil
 }
 

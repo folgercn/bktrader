@@ -104,6 +104,16 @@ type PaperSession struct {
 	CreatedAt   time.Time      `json:"createdAt"`
 }
 
+// LiveSession 实盘策略会话，绑定 LIVE 账户和策略，管理运行状态与实时评估上下文。
+type LiveSession struct {
+	ID         string         `json:"id"`
+	AccountID  string         `json:"accountId"`
+	StrategyID string         `json:"strategyId"`
+	Status     string         `json:"status"` // READY / RUNNING / STOPPED / BLOCKED
+	State      map[string]any `json:"state"`
+	CreatedAt  time.Time      `json:"createdAt"`
+}
+
 // AccountSummary 账户汇总视图，包含权益、盈亏和敞口信息。
 type AccountSummary struct {
 	AccountID         string    `json:"accountId"`

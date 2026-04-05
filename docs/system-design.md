@@ -157,6 +157,15 @@ Paper/runtime integration status:
   - real tick events update the linked paper session
   - the session is nudged forward by runtime events at a throttled cadence
   - full per-tick strategy evaluation replacement is still pending, but the decision entrypoint now lives in the strategy engine instead of the paper runner
+- live strategy session rollout:
+  - live sessions are now first-class persisted objects, separate from manual live orders
+  - a live session links one live account, one strategy, and one runtime session
+  - start/stop is gated by the same runtime readiness policy used by paper/live preflight
+  - runtime events now also update linked live sessions
+  - current live-session phase is `manual-review`:
+    - strategy evaluation runs on live runtime events
+    - the platform records `lastStrategyDecision`, `lastStrategyIntent`, and `timeline`
+    - automatic order dispatch remains intentionally off by default
 
 ### 4.2 Strategy Management
 

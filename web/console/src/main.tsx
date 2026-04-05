@@ -104,6 +104,15 @@ type PaperSession = {
   createdAt: string;
 };
 
+type LiveSession = {
+  id: string;
+  accountId: string;
+  strategyId: string;
+  status: string;
+  state?: Record<string, unknown>;
+  createdAt: string;
+};
+
 type ChartCandle = {
   symbol: string;
   resolution: string;
@@ -370,6 +379,7 @@ function App() {
   const [backtests, setBacktests] = useState<BacktestRun[]>([]);
   const [backtestOptions, setBacktestOptions] = useState<BacktestOptions | null>(null);
   const [paperSessions, setPaperSessions] = useState<PaperSession[]>([]);
+  const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
   const [liveAdapters, setLiveAdapters] = useState<LiveAdapter[]>([]);
   const [signalCatalog, setSignalCatalog] = useState<SignalSourceCatalog | null>(null);
   const [signalSourceTypes, setSignalSourceTypes] = useState<SignalSourceType[]>([]);
@@ -393,6 +403,8 @@ function App() {
   const [liveBindAction, setLiveBindAction] = useState(false);
   const [liveSyncAction, setLiveSyncAction] = useState<string | null>(null);
   const [liveOrderAction, setLiveOrderAction] = useState(false);
+  const [liveSessionAction, setLiveSessionAction] = useState<string | null>(null);
+  const [liveSessionCreateAction, setLiveSessionCreateAction] = useState(false);
   const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
   const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
   const [notificationAction, setNotificationAction] = useState<string | null>(null);
@@ -450,6 +462,13 @@ function App() {
     quantity: "0.001",
     price: "",
   });
+  const [liveSessionForm, setLiveSessionForm] = useState({
+    accountId: "",
+    strategyId: "",
+    signalTimeframe: "1d",
+    executionDataSource: "tick",
+    symbol: "BTCUSDT",
+  });
   const [accountSignalForm, setAccountSignalForm] = useState({
     accountId: "",
     sourceKey: "",
@@ -484,6 +503,7 @@ function App() {
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
+  const primaryLiveSession = liveSessions[0] ?? null;
   const primarySessionSourceStates = getRecord(primarySession?.state?.lastStrategyEvaluationSourceStates);
   const primarySessionTriggerSource = getRecord(primarySession?.state?.lastStrategyEvaluationTriggerSource);
   const primarySessionSourceGate = getRecord(primarySession?.state?.lastStrategyEvaluationSourceGate);
@@ -495,6 +515,33 @@ function App() {
   const primarySessionTimeline = getList(primarySession?.state?.timeline);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
+  const primaryLiveSessionDecision = getRecord(primaryLiveSession?.state?.lastStrategyDecision);
+  const primaryLiveSessionDecisionMeta = getRecord(primaryLiveSessionDecision.metadata);
+  const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
+  const primaryLiveSessionSourceGate = getRecord(primaryLiveSession?.state?.lastStrategyEvaluationSourceGate);
+  const primaryLiveSessionTimeline = getList(primaryLiveSession?.state?.timeline);
+  const primaryLiveSessionRuntime =
+    signalRuntimeSessions.find((item) => item.id === String(primaryLiveSession?.state?.signalRuntimeSessionId ?? "")) ??
+    signalRuntimeSessions.find((item) => item.accountId === primaryLiveSession?.accountId && item.strategyId === primaryLiveSession?.strategyId) ??
+    null;
+  const primaryLiveSessionRuntimeState = getRecord(primaryLiveSessionRuntime?.state);
+  const primaryLiveSessionRuntimeSummary = getRecord(primaryLiveSessionRuntimeState.lastEventSummary);
+  const primaryLiveSessionMarket = deriveRuntimeMarketSnapshot(
+    getRecord(primaryLiveSessionRuntimeState.sourceStates),
+    primaryLiveSessionRuntimeSummary
+  );
+  const primaryLiveSessionSourceSummary = deriveRuntimeSourceSummary(
+    getRecord(primaryLiveSessionRuntimeState.sourceStates),
+    runtimePolicy
+  );
+  const primaryLiveSessionRuntimeReadiness = deriveRuntimeReadiness(
+    primaryLiveSessionRuntimeState,
+    primaryLiveSessionSourceSummary,
+    {
+      requireTick: true,
+      requireOrderBook: strategySignalBindingMap[primaryLiveSession?.strategyId ?? ""]?.some((item) => item.streamType === "order_book") ?? false,
+    }
+  );
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
   const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
   const primaryLinkedSignalRuntime =
@@ -637,6 +684,7 @@ function App() {
       fillsData,
       positionsData,
       paperSessionData,
+      liveSessionData,
       strategyData,
       backtestData,
       backtestOptionsData,
@@ -656,6 +704,7 @@ function App() {
       fetchJSON<Fill[]>("/api/v1/fills"),
       fetchJSON<Position[]>("/api/v1/positions"),
       fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
+      fetchJSON<LiveSession[]>("/api/v1/live/sessions"),
       fetchJSON<StrategyRecord[]>("/api/v1/strategies"),
       fetchJSON<BacktestRun[]>("/api/v1/backtests"),
       fetchJSON<BacktestOptions>("/api/v1/backtests/options"),
@@ -717,6 +766,7 @@ function App() {
     });
     setBacktestOptions(backtestOptionsData);
     setPaperSessions(paperSessionData);
+    setLiveSessions(liveSessionData);
     setLiveAdapters(liveAdapterData);
     setSignalCatalog(signalCatalogData);
     setSignalSourceTypes(signalSourceTypeData);
@@ -787,6 +837,13 @@ function App() {
       type: current.type || "LIMIT",
       quantity: current.quantity || "0.001",
       price: current.price || "",
+    }));
+    setLiveSessionForm((current) => ({
+      accountId: current.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
+      strategyId: current.strategyId || strategyData[0]?.id || "",
+      signalTimeframe: current.signalTimeframe || "1d",
+      executionDataSource: current.executionDataSource || "tick",
+      symbol: current.symbol || "BTCUSDT",
     }));
     const availableSignalSources = signalCatalogData.sources ?? [];
     setAccountSignalForm((current) => ({
@@ -1070,6 +1127,46 @@ function App() {
       setError(err instanceof Error ? err.message : "Failed to create live order");
     } finally {
       setLiveOrderAction(false);
+    }
+  }
+
+  async function createLiveSession() {
+    if (!liveSessionForm.accountId || !liveSessionForm.strategyId) {
+      setError("Live session needs an account and strategy");
+      return;
+    }
+    setLiveSessionCreateAction(true);
+    try {
+      await fetchJSON("/api/v1/live/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: liveSessionForm.accountId,
+          strategyId: liveSessionForm.strategyId,
+          signalTimeframe: liveSessionForm.signalTimeframe,
+          executionDataSource: liveSessionForm.executionDataSource,
+          symbol: liveSessionForm.symbol,
+        }),
+      });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create live session");
+    } finally {
+      setLiveSessionCreateAction(false);
+    }
+  }
+
+  async function runLiveSessionAction(sessionId: string, action: "start" | "stop") {
+    try {
+      setLiveSessionAction(`${sessionId}:${action}`);
+      setError(null);
+      await fetchJSON(`/api/v1/live/sessions/${sessionId}/${action}`, { method: "POST" });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to execute live session action");
+    } finally {
+      setLiveSessionAction(null);
     }
   }
 
@@ -2944,6 +3041,166 @@ function App() {
               <div className="backtest-actions">
                 <ActionButton label={liveBindAction ? "Binding..." : "Bind Live Adapter"} disabled={liveBindAction || !liveBindingForm.accountId} onClick={bindLiveAccount} />
               </div>
+            </div>
+          </div>
+
+          <div className="live-grid">
+            <div className="backtest-form session-form">
+              <h4>Create Live Session</h4>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Live Account</span>
+                  <select
+                    value={liveSessionForm.accountId}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, accountId: event.target.value }))}
+                  >
+                    {liveAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} ({account.status})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Strategy</span>
+                  <select
+                    value={liveSessionForm.strategyId}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, strategyId: event.target.value }))}
+                  >
+                    {strategies.map((strategy) => (
+                      <option key={strategy.id} value={strategy.id}>
+                        {strategy.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Signal TF</span>
+                  <select
+                    value={liveSessionForm.signalTimeframe}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
+                  >
+                    <option value="4h">4h</option>
+                    <option value="1d">1d</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Execution Source</span>
+                  <select
+                    value={liveSessionForm.executionDataSource}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionDataSource: event.target.value }))}
+                  >
+                    <option value="tick">tick</option>
+                    <option value="1min">1min</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Symbol</span>
+                  <input
+                    value={liveSessionForm.symbol}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                  />
+                </label>
+              </div>
+              <div className="backtest-actions">
+                <ActionButton
+                  label={liveSessionCreateAction ? "Creating..." : "Create Live Session"}
+                  disabled={liveSessionCreateAction || !liveSessionForm.accountId || !liveSessionForm.strategyId}
+                  onClick={createLiveSession}
+                />
+              </div>
+            </div>
+
+            <div className="backtest-list">
+              <h4>Live Strategy Sessions</h4>
+              {liveSessions.length > 0 ? (
+                <div className="live-card-list">
+                  {liveSessions.map((session) => {
+                    const decision = getRecord(session.state?.lastStrategyDecision);
+                    const decisionMeta = getRecord(decision.metadata);
+                    const intent = getRecord(session.state?.lastStrategyIntent);
+                    return (
+                      <div key={session.id} className="session-stat">
+                        <span>{shrink(session.id)}</span>
+                        <strong>{session.status}</strong>
+                        <div className="live-account-meta">
+                          <span>{session.accountId}</span>
+                          <span>{session.strategyId}</span>
+                          <span>{String(session.state?.signalTimeframe ?? "--")}</span>
+                        </div>
+                        <div className="live-account-meta">
+                          <span>
+                            <StatusPill tone={decisionStateTone(String(decisionMeta.decisionState ?? decision.action ?? "--"))}>
+                              {String(decisionMeta.decisionState ?? decision.action ?? "--")}
+                            </StatusPill>
+                          </span>
+                          <span>
+                            <StatusPill tone={signalKindTone(String(decisionMeta.signalKind ?? "--"))}>
+                              {String(decisionMeta.signalKind ?? "--")}
+                            </StatusPill>
+                          </span>
+                        </div>
+                        <div className="live-account-meta">
+                          <span>{String(session.state?.signalRuntimeStatus ?? "--")}</span>
+                          <span>{String(intent.action ?? "no-intent")}</span>
+                          <span>{String(intent.side ?? "--")}</span>
+                        </div>
+                        <div className="backtest-notes">
+                          <div className="note-item">
+                            source-gate: {boolLabel(primaryLiveSession?.id === session.id ? primaryLiveSessionSourceGate.ready : getRecord(session.state?.lastStrategyEvaluationSourceGate).ready)}
+                          </div>
+                          <div className="note-item">
+                            eval-status: {String(session.state?.lastStrategyEvaluationStatus ?? "--")}
+                          </div>
+                        </div>
+                        <div className="inline-actions">
+                          {String(session.state?.signalRuntimeSessionId ?? "") ? (
+                            <ActionButton
+                              label="Open Runtime"
+                              variant="ghost"
+                              onClick={() => jumpToSignalRuntimeSession(String(session.state?.signalRuntimeSessionId ?? ""))}
+                            />
+                          ) : null}
+                          <ActionButton
+                            label={liveSessionAction === `${session.id}:start` ? "Starting..." : "Start"}
+                            disabled={liveSessionAction !== null || session.status === "RUNNING"}
+                            onClick={() => runLiveSessionAction(session.id, "start")}
+                          />
+                          <ActionButton
+                            label={liveSessionAction === `${session.id}:stop` ? "Stopping..." : "Stop"}
+                            variant="ghost"
+                            disabled={liveSessionAction !== null || session.status === "STOPPED"}
+                            onClick={() => runLiveSessionAction(session.id, "stop")}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="empty-state empty-state-compact">No live sessions yet</div>
+              )}
+              {primaryLiveSession ? (
+                <div className="backtest-notes">
+                  <div className="note-item">
+                    runtime: {String(primaryLiveSession.state?.signalRuntimeStatus ?? "--")} · {formatTime(String(primaryLiveSession.state?.lastSignalRuntimeEventAt ?? ""))}
+                  </div>
+                  <div className="note-item">
+                    market: {formatMaybeNumber(primaryLiveSessionMarket.tradePrice)} · {formatMaybeNumber(primaryLiveSessionMarket.bestBid)} / {formatMaybeNumber(primaryLiveSessionMarket.bestAsk)}
+                  </div>
+                  <div className="note-item">
+                    readiness: {primaryLiveSessionRuntimeReadiness.status} · {primaryLiveSessionRuntimeReadiness.reason}
+                  </div>
+                  <div className="note-item">
+                    intent: {String(primaryLiveSessionIntent.action ?? "none")} · {String(primaryLiveSessionIntent.side ?? "--")} · {formatMaybeNumber(primaryLiveSessionIntent.priceHint)}
+                  </div>
+                  {buildTimelineNotes(primaryLiveSessionTimeline).slice(0, 4).map((line) => (
+                    <div key={line} className="note-item">
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
 

@@ -76,6 +76,19 @@ type Repository interface {
 	// UpdatePaperSessionState 更新会话运行时状态（ledgerIndex 等）。
 	UpdatePaperSessionState(sessionID string, state map[string]any) (domain.PaperSession, error)
 
+	// --- 实盘策略会话 ---
+
+	// ListLiveSessions 获取所有实盘策略会话。
+	ListLiveSessions() ([]domain.LiveSession, error)
+	// GetLiveSession 根据 ID 获取单个实盘策略会话。
+	GetLiveSession(sessionID string) (domain.LiveSession, error)
+	// CreateLiveSession 创建新实盘策略会话。
+	CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error)
+	// UpdateLiveSessionStatus 更新实盘策略会话状态。
+	UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error)
+	// UpdateLiveSessionState 更新实盘策略会话运行时状态。
+	UpdateLiveSessionState(sessionID string, state map[string]any) (domain.LiveSession, error)
+
 	// --- 净值快照 ---
 
 	// ListAccountEquitySnapshots 获取指定账户的净值快照序列。

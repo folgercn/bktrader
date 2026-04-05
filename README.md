@@ -93,6 +93,9 @@ go run ./cmd/platform-api
 - `POST /api/v1/paper/sessions/{id}/start` — 启动模拟会话
 - `POST /api/v1/paper/sessions/{id}/stop` — 停止模拟会话
 - `POST /api/v1/paper/sessions/{id}/tick` — 手动推进模拟会话
+- `GET|POST /api/v1/live/sessions` — 实盘策略会话
+- `POST /api/v1/live/sessions/{id}/start` — 启动实盘策略会话
+- `POST /api/v1/live/sessions/{id}/stop` — 停止实盘策略会话
 
 创建模拟会话时支持可选 runtime overrides：
 - `signalTimeframe`
@@ -198,6 +201,18 @@ go run ./cmd/platform-api
       - 当 spread 过宽时会返回 `wait / spread-too-wide`
       - 当盘口方向明显逆风时，会返回 `wait / bias-unfavorable`
 - 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
+
+当前 `live session` 也已经接入主交易链路：
+- `live session` 绑定 `LIVE account + strategy`
+- 启动前会检查 live adapter、signal runtime plan、runtime health 和 source freshness
+- 启动后会随 linked runtime 的真实事件更新策略评估状态
+- 当前默认 `dispatchMode=manual-review`
+- 会在 session state 中记录：
+  - `lastStrategyDecision`
+  - `lastStrategyIntent`
+  - `lastStrategyEvaluationSourceGate`
+  - `timeline`
+- 这一步先把“实盘策略会话”和“实盘自动派单”拆开，方便先把 runtime/策略评估链路跑稳
 
 实盘账户当前支持：
 - `LIVE` 账户默认状态为 `PENDING_SETUP`

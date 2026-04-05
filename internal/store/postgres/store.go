@@ -813,6 +813,91 @@ func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) 
 	return s.GetPaperSession(sessionID)
 }
 
+func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
+	rows, err := s.db.Query(`
+		select id, account_id, strategy_id, status, state, created_at
+		from live_sessions order by created_at asc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.LiveSession{}
+	for rows.Next() {
+		var item domain.LiveSession
+		var stateRaw []byte
+		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		item.State = map[string]any{}
+		if len(stateRaw) > 0 {
+			_ = json.Unmarshal(stateRaw, &item.State)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) GetLiveSession(sessionID string) (domain.LiveSession, error) {
+	var item domain.LiveSession
+	var stateRaw []byte
+	err := s.db.QueryRow(`
+		select id, account_id, strategy_id, status, state, created_at
+		from live_sessions
+		where id = $1
+	`, sessionID).Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
+		}
+		return domain.LiveSession{}, err
+	}
+	item.State = map[string]any{}
+	if len(stateRaw) > 0 {
+		_ = json.Unmarshal(stateRaw, &item.State)
+	}
+	return item, nil
+}
+
+func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error) {
+	item := domain.LiveSession{
+		ID:         fmt.Sprintf("live-session-%d", time.Now().UTC().UnixNano()),
+		AccountID:  accountID,
+		StrategyID: strategyID,
+		Status:     "READY",
+		State: map[string]any{
+			"runner":       "strategy-engine",
+			"dispatchMode": "manual-review",
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	stateRaw, _ := json.Marshal(item.State)
+
+	_, err := s.db.Exec(`
+		insert into live_sessions (id, account_id, strategy_id, status, state, created_at)
+		values ($1, $2, $3, $4, $5, $6)
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, stateRaw, item.CreatedAt)
+	return item, err
+}
+
+func (s *Store) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
+	_, err := s.db.Exec(`update live_sessions set status = $2 where id = $1`, sessionID, status)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return s.GetLiveSession(sessionID)
+}
+
+func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (domain.LiveSession, error) {
+	stateRaw, _ := json.Marshal(state)
+	_, err := s.db.Exec(`update live_sessions set state = $2 where id = $1`, sessionID, stateRaw)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return s.GetLiveSession(sessionID)
+}
+
 func (s *Store) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
 	rows, err := s.db.Query(`
 		select id, account_id, start_equity, realized_pnl, unrealized_pnl, fees, net_equity, exposure_notional, open_position_count, created_at

@@ -21,6 +21,7 @@ type Store struct {
 	positions        map[string]domain.Position
 	backtests        map[string]domain.BacktestRun
 	paperSessions    map[string]domain.PaperSession
+	liveSessions     map[string]domain.LiveSession
 	equitySnapshots  map[string][]domain.AccountEquitySnapshot
 	signalSources    []map[string]any
 	annotations      []domain.ChartAnnotation
@@ -43,6 +44,7 @@ func NewStore() *Store {
 		positions:       make(map[string]domain.Position),
 		backtests:       make(map[string]domain.BacktestRun),
 		paperSessions:   make(map[string]domain.PaperSession),
+		liveSessions:    make(map[string]domain.LiveSession),
 		equitySnapshots: make(map[string][]domain.AccountEquitySnapshot),
 		signalSources: []map[string]any{
 			{
@@ -201,6 +203,17 @@ func NewStore() *Store {
 			"runner":      "strategy-engine",
 			"runtimeMode": "canonical-strategy-engine",
 			"planIndex":   0,
+		},
+		CreatedAt: now,
+	}
+	store.liveSessions["live-session-main"] = domain.LiveSession{
+		ID:         "live-session-main",
+		AccountID:  live.ID,
+		StrategyID: strategy.ID,
+		Status:     "READY",
+		State: map[string]any{
+			"runner":       "strategy-engine",
+			"dispatchMode": "manual-review",
 		},
 		CreatedAt: now,
 	}
@@ -683,6 +696,70 @@ func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) 
 	}
 	item.State = state
 	s.paperSessions[sessionID] = item
+	return item, nil
+}
+
+func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.LiveSession, 0, len(s.liveSessions))
+	for _, item := range s.liveSessions {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *Store) GetLiveSession(sessionID string) (domain.LiveSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.liveSessions[sessionID]
+	if !ok {
+		return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
+	}
+	return item, nil
+}
+
+func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.nextID("live-session")
+	item := domain.LiveSession{
+		ID:         id,
+		AccountID:  accountID,
+		StrategyID: strategyID,
+		Status:     "READY",
+		State: map[string]any{
+			"runner":       "strategy-engine",
+			"dispatchMode": "manual-review",
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	s.liveSessions[id] = item
+	return item, nil
+}
+
+func (s *Store) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.liveSessions[sessionID]
+	if !ok {
+		return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
+	}
+	item.Status = status
+	s.liveSessions[sessionID] = item
+	return item, nil
+}
+
+func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (domain.LiveSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.liveSessions[sessionID]
+	if !ok {
+		return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
+	}
+	item.State = state
+	s.liveSessions[sessionID] = item
 	return item, nil
 }
 
