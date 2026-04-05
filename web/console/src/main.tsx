@@ -371,6 +371,14 @@ type LiveDispatchPreview = {
   payload: Record<string, unknown>;
 };
 
+type LiveSessionExecutionSummary = {
+  orderCount: number;
+  fillCount: number;
+  latestOrder: Order | null;
+  latestFill: Fill | null;
+  position: Position | null;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
 
 function App() {
@@ -566,6 +574,12 @@ function App() {
     primaryLiveSessionRuntime,
     primaryLiveSessionRuntimeReadiness,
     primaryLiveSessionIntent
+  );
+  const primaryLiveExecutionSummary = deriveLiveSessionExecutionSummary(
+    primaryLiveSession,
+    orders,
+    fills,
+    positions
   );
   const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
   const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
@@ -3200,6 +3214,7 @@ function App() {
                     const decision = getRecord(session.state?.lastStrategyDecision);
                     const decisionMeta = getRecord(decision.metadata);
                     const intent = getRecord(session.state?.lastStrategyIntent);
+                    const executionSummary = deriveLiveSessionExecutionSummary(session, orders, fills, positions);
                     return (
                       <div key={session.id} className="session-stat">
                         <span>{shrink(session.id)}</span>
@@ -3250,6 +3265,18 @@ function App() {
                           </div>
                           <div className="note-item">
                             sync-error: {String(session.state?.lastSyncError ?? "--")}
+                          </div>
+                          <div className="note-item">
+                            orders/fills: {executionSummary.orderCount} / {executionSummary.fillCount}
+                          </div>
+                          <div className="note-item">
+                            latest-order: {String(executionSummary.latestOrder?.status ?? "--")} · {String(executionSummary.latestOrder?.side ?? "--")} · {formatMaybeNumber(executionSummary.latestOrder?.price)}
+                          </div>
+                          <div className="note-item">
+                            latest-fill: {formatMaybeNumber(executionSummary.latestFill?.price)} · fee {formatMaybeNumber(executionSummary.latestFill?.fee)}
+                          </div>
+                          <div className="note-item">
+                            position: {String(executionSummary.position?.side ?? "FLAT")} · {formatMaybeNumber(executionSummary.position?.quantity)} @ {formatMaybeNumber(executionSummary.position?.entryPrice)}
                           </div>
                         </div>
                         <div className="inline-actions">
@@ -3323,6 +3350,12 @@ function App() {
                   </div>
                   <div className="note-item">
                     sync: {String(primaryLiveSession?.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(primaryLiveSession?.state?.lastSyncedAt ?? ""))} · error {String(primaryLiveSession?.state?.lastSyncError ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    execution: orders {primaryLiveExecutionSummary.orderCount} · fills {primaryLiveExecutionSummary.fillCount} · latest-order {String(primaryLiveExecutionSummary.latestOrder?.status ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    position: {String(primaryLiveExecutionSummary.position?.side ?? "FLAT")} · {formatMaybeNumber(primaryLiveExecutionSummary.position?.quantity)} @ {formatMaybeNumber(primaryLiveExecutionSummary.position?.entryPrice)} · mark {formatMaybeNumber(primaryLiveExecutionSummary.position?.markPrice)}
                   </div>
                   <div className="note-item">
                     dispatch-preview: {primaryLiveDispatchPreview.reason} · {primaryLiveDispatchPreview.detail}
@@ -5057,6 +5090,46 @@ function deriveLiveDispatchPreview(
         ? `dispatch is possible, but runtime still has a warning: ${preflight.reason}`
         : "intent, runtime, and live preflight are aligned",
     payload,
+  };
+}
+
+function deriveLiveSessionExecutionSummary(
+  session: LiveSession | null,
+  orders: Order[],
+  fills: Fill[],
+  positions: Position[]
+): LiveSessionExecutionSummary {
+  if (!session) {
+    return {
+      orderCount: 0,
+      fillCount: 0,
+      latestOrder: null,
+      latestFill: null,
+      position: null,
+    };
+  }
+  const sessionOrders = orders
+    .filter((order) => String(order.metadata?.liveSessionId ?? "") === session.id)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const sessionOrderIds = new Set(sessionOrders.map((order) => order.id));
+  const sessionFills = fills
+    .filter((fill) => sessionOrderIds.has(fill.orderId))
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const symbol = String(
+    sessionOrders[0]?.symbol ??
+      session.state?.symbol ??
+      getRecord(session.state?.lastStrategyIntent).symbol ??
+      ""
+  );
+  const position =
+    positions.find((item) => item.accountId === session.accountId && item.symbol === symbol) ??
+    null;
+  return {
+    orderCount: sessionOrders.length,
+    fillCount: sessionFills.length,
+    latestOrder: sessionOrders[0] ?? null,
+    latestFill: sessionFills[0] ?? null,
+    position,
   };
 }
 
