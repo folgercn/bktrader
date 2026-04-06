@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { CandlestickSeries, ColorType, CrosshairMode, LineStyle, createChart, createSeriesMarkers } from "lightweight-charts";
 import "./styles.css";
@@ -160,9 +160,95 @@ type MarkerDetail = {
   paperSession?: string;
 };
 
+type AuthSession = {
+  token: string;
+  username: string;
+  expiresAt: string;
+};
+
+type LoginResponse = {
+  token: string;
+  tokenType: string;
+  expiresAt: string;
+  username: string;
+  environment: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8080";
+const AUTH_STORAGE_KEY = "bktrader.console.auth";
 
 function App() {
+  const [auth, setAuth] = useState<AuthSession | null>(() => readStoredAuth());
+
+  const handleLogin = useCallback((session: AuthSession) => {
+    persistAuth(session);
+    setAuth(session);
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    clearStoredAuth();
+    setAuth(null);
+  }, []);
+
+  return auth ? <Dashboard auth={auth} onLogout={handleLogout} /> : <LoginScreen onLogin={handleLogin} />;
+}
+
+function LoginScreen(props: { onLogin: (session: AuthSession) => void }) {
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetchJSON<LoginResponse>("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      props.onLogin({ token: response.token, username: response.username, expiresAt: response.expiresAt });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "登录失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="login-shell">
+      <div className="login-panel">
+        <p className="sidebar-label">bkTrader Console</p>
+        <h1>管理后台登录</h1>
+        <p className="login-copy">先完成鉴权，再开放公网。当前控制台需要登录后才能访问交易、回测、账户和监控接口。</p>
+        <form className="login-form" onSubmit={handleSubmit}>
+          <label className="form-field">
+            <span>用户名</span>
+            <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+          </label>
+          <label className="form-field">
+            <span>密码</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+            />
+          </label>
+          {error ? <div className="login-error">{error}</div> : null}
+          <button className="action-button login-button" type="submit" disabled={loading || username.trim() === "" || password === ""}>
+            {loading ? "登录中..." : "登录"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard(props: { auth: AuthSession; onLogout: () => void }) {
+  const { auth, onLogout } = props;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<AccountSummary[]>([]);
@@ -210,16 +296,32 @@ function App() {
     ? (latestBacktestSummary.replayLedgerCompletedSamples as ReplaySample[])
     : [];
 
-  async function loadDashboard() {
+  const handleUnauthorized = useCallback(() => {
+    onLogout();
+  }, [onLogout]);
+
+  const authedFetchJSON = useCallback(
+    <T,>(path: string, init?: RequestInit) =>
+      fetchJSON<T>(path, {
+        ...init,
+        headers: {
+          ...(init?.headers ?? {}),
+          Authorization: `Bearer ${auth.token}`,
+        },
+      }, handleUnauthorized),
+    [auth.token, handleUnauthorized]
+  );
+
+  const loadDashboard = useCallback(async () => {
     const [summaryData, ordersData, fillsData, positionsData, paperSessionData, strategyData, backtestData, backtestOptionsData] = await Promise.all([
-      fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
-      fetchJSON<Order[]>("/api/v1/orders"),
-      fetchJSON<Fill[]>("/api/v1/fills"),
-      fetchJSON<Position[]>("/api/v1/positions"),
-      fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
-      fetchJSON<StrategyRecord[]>("/api/v1/strategies"),
-      fetchJSON<BacktestRun[]>("/api/v1/backtests"),
-      fetchJSON<BacktestOptions>("/api/v1/backtests/options"),
+      authedFetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
+      authedFetchJSON<Order[]>("/api/v1/orders"),
+      authedFetchJSON<Fill[]>("/api/v1/fills"),
+      authedFetchJSON<Position[]>("/api/v1/positions"),
+      authedFetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
+      authedFetchJSON<StrategyRecord[]>("/api/v1/strategies"),
+      authedFetchJSON<BacktestRun[]>("/api/v1/backtests"),
+      authedFetchJSON<BacktestOptions>("/api/v1/backtests/options"),
     ]);
 
     const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
@@ -229,14 +331,14 @@ function App() {
 
     const [snapshotData, candleData, annotationData] = await Promise.all([
       summaryData[0]?.accountId
-        ? fetchJSON<AccountEquitySnapshot[]>(
+        ? authedFetchJSON<AccountEquitySnapshot[]>(
             `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(summaryData[0].accountId)}`
           )
         : Promise.resolve([]),
-      fetchJSON<{ candles: ChartCandle[] }>(
+      authedFetchJSON<{ candles: ChartCandle[] }>(
         `/api/v1/chart/candles?symbol=BTCUSDT&resolution=1&from=${from}&to=${to}&limit=840`
       ),
-      fetchJSON<ChartAnnotation[]>(
+      authedFetchJSON<ChartAnnotation[]>(
         `/api/v1/chart/annotations?symbol=BTCUSDT&from=${from}&to=${to}&limit=300`
       ),
     ]);
@@ -257,8 +359,10 @@ function App() {
       signalTimeframe: current.signalTimeframe || backtestOptionsData.defaultSignalTimeframe,
       executionDataSource: current.executionDataSource || backtestOptionsData.defaultExecutionDataSource,
       symbol: current.symbol || "BTCUSDT",
+      from: current.from,
+      to: current.to,
     }));
-  }
+  }, [authedFetchJSON, timeWindow]);
 
   useEffect(() => {
     let active = true;
@@ -288,7 +392,7 @@ function App() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [timeWindow]);
+  }, [loadDashboard]);
 
   const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
@@ -324,7 +428,7 @@ function App() {
     try {
       setSessionAction(`${sessionId}:${action}`);
       setError(null);
-      await fetchJSON(`/api/v1/paper/sessions/${sessionId}/${action}`, { method: "POST" });
+      await authedFetchJSON(`/api/v1/paper/sessions/${sessionId}/${action}`, { method: "POST" });
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to execute paper session action");
@@ -337,7 +441,7 @@ function App() {
     try {
       setBacktestAction(true);
       setError(null);
-      await fetchJSON<BacktestRun>("/api/v1/backtests", {
+      await authedFetchJSON<BacktestRun>("/api/v1/backtests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -394,9 +498,18 @@ function App() {
               当前页面直接消费平台 API，展示 paper 账户的权益、成交、持仓，以及基于项目策略账本回放的 BTCUSDT 真实 1 分钟 K 线与开平仓标记。
             </p>
           </div>
-          <div className="hero-side">
+          <div className="hero-side hero-side-stack">
             <div className="hero-pill">{loading ? "Loading..." : `${summaries.length} account`}</div>
             <div className="hero-pill hero-pill-accent">{primaryAccount?.mode ?? "No account"}</div>
+            <div className="hero-user-card">
+              <div>
+                <strong>{auth.username}</strong>
+                <p>Token 到期：{formatTime(auth.expiresAt)}</p>
+              </div>
+              <button type="button" className="action-button action-button-ghost hero-logout" onClick={onLogout}>
+                退出登录
+              </button>
+            </div>
           </div>
         </section>
 
@@ -1173,12 +1286,56 @@ function SampleCard(props: { sample: ReplaySample }) {
   );
 }
 
-async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
+async function fetchJSON<T>(path: string, init?: RequestInit, onUnauthorized?: () => void): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, init);
+  if (response.status === 401) {
+    onUnauthorized?.();
+    const payload = await safeReadError(response);
+    throw new Error(payload ?? "未登录或登录已过期");
+  }
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${path}`);
+    const payload = await safeReadError(response);
+    throw new Error(payload ?? `HTTP ${response.status} for ${path}`);
   }
   return (await response.json()) as T;
+}
+
+async function safeReadError(response: Response) {
+  try {
+    const payload = (await response.json()) as { error?: string };
+    return payload.error;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredAuth(): AuthSession | null {
+  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as AuthSession;
+    if (!parsed.token || !parsed.username || !parsed.expiresAt) {
+      return null;
+    }
+    if (new Date(parsed.expiresAt).getTime() <= Date.now()) {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    return null;
+  }
+}
+
+function persistAuth(session: AuthSession) {
+  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+}
+
+function clearStoredAuth() {
+  window.localStorage.removeItem(AUTH_STORAGE_KEY);
 }
 
 function buildLinePath(values: number[], width: number, height: number) {
@@ -1434,6 +1591,7 @@ function formatSigned(value?: number) {
   if (value == null) {
     return "--";
   }
+
   const prefix = value > 0 ? "+" : "";
   return `${prefix}${formatMoney(value)}`;
 }

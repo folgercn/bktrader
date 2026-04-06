@@ -32,6 +32,13 @@ body {
     linear-gradient(180deg, #f9f5ea 0%, var(--bg) 100%);
 }
 
+input,
+button,
+select,
+textarea {
+  font: inherit;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -45,6 +52,52 @@ a {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-panel {
+  width: min(460px, 100%);
+  padding: 28px;
+  border: 1px solid rgba(216, 207, 186, 0.9);
+  border-radius: 24px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.login-panel h1 {
+  margin: 10px 0 12px;
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.login-copy {
+  margin: 0 0 20px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-error {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(176, 74, 55, 0.2);
+  background: rgba(176, 74, 55, 0.08);
+  color: var(--danger);
+}
+
+.login-button {
+  width: 100%;
+  justify-content: center;
 }
 
 .sidebar {
@@ -180,6 +233,37 @@ a {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.hero-side-stack {
+  align-items: flex-end;
+}
+
+.hero-user-card {
+  min-width: 220px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.74);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hero-user-card strong {
+  display: block;
+}
+
+.hero-user-card p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.hero-logout {
+  min-width: auto;
+  padding: 10px 14px;
 }
 
 .hero-pill {

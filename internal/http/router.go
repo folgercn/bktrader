@@ -26,6 +26,8 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 		})
 	})
 
+	registerAuthRoutes(mux, cfg)
+
 	// 系统概览端点
 	mux.HandleFunc("/api/v1/overview", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -55,6 +57,7 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 
 	// 依次包裹中间件：CORS -> 请求日志 -> 路由
 	var handler http.Handler = mux
+	handler = authMiddleware(cfg, handler)
 	handler = corsMiddleware(handler)
 	handler = requestLogMiddleware(handler)
 	return handler
@@ -67,6 +70,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Expose-Headers", "Authorization")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		// 预检请求直接返回 204
