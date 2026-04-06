@@ -27,7 +27,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/bktrader
+          images: ghcr.io/${{ github.repository_owner }}/bktrader-app
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
@@ -75,7 +75,7 @@ jobs:
       - name: Deploy via docker compose
         env:
           DEPLOY_PATH: /Users/fujun/services/bktrader
-          IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/bktrader
+          IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/bktrader-app
           IMAGE_TAG: latest
           APP_ENV_FILE: /Users/fujun/services/bktrader/.env
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
