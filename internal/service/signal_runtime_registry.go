@@ -255,6 +255,27 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		extra = append(extra, item)
 	}
 
+	if len(strategyBindings) == 0 {
+		for _, binding := range accountBindings {
+			runtimeAdapter, err := p.resolveSignalRuntimeAdapterForSource(binding.SourceKey)
+			if err != nil {
+				continue
+			}
+			source := p.signalSources[normalizeSignalSourceKey(binding.SourceKey)].Describe()
+			subscription := runtimeAdapter.BuildSubscription(source, binding)
+			subscription["environment"] = normalizeEnvironmentFromAccountMode(account.Mode)
+			subscription["accountMode"] = account.Mode
+			subscriptions = append(subscriptions, subscription)
+			matched = append(matched, map[string]any{
+				"strategyBinding": nil,
+				"accountBinding":  bindingToMap(binding),
+				"status":          "READY",
+				"runtimeAdapter":  runtimeAdapter.Describe(),
+				"subscription":    subscription,
+			})
+		}
+	}
+
 	triggerReady := true
 	for _, binding := range strategyBindings {
 		if binding.Role != "trigger" {
@@ -264,6 +285,9 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 			triggerReady = false
 			break
 		}
+	}
+	if len(strategyBindings) == 0 {
+		triggerReady = len(subscriptions) > 0
 	}
 
 	return map[string]any{
