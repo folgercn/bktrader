@@ -1,38 +1,15 @@
-## Purpose
+## 目的
+_这次改动要解决什么问题 / 实现了什么功能_
 
-Explain what problem this PR solves.
+## 改动范围
+_改了哪些模块 / 文件_
 
-## Scope
+## 风险点
+_是否涉及默认行为、交易路径、部署流程、环境变量_
 
-List the modules, files, or flows changed in this PR.
+## 验证方式
+_本地怎么测，测试环境怎么验_
 
-## Risk
-
-State whether this touches:
-
-- default behavior
-- trading path
-- live execution
-- deployment or CI/CD
-- environment variables
-- schema or persistence
-
-## Validation
-
-Describe the checks you ran.
-
-Examples:
-
-- `go test ./...`
-- targeted package tests
-- local runtime smoke test
-- testnet verification
-
-## Main Branch Impact
-
-- [ ] No change to `main` default behavior
-- [ ] Yes, this changes `main` default behavior and is called out above
-
-## Notes
-
-Anything still incomplete, intentionally deferred, or requiring follow-up review.
+## 是否影响 main 默认行为
+- [ ] 否
+- [ ] 是，已在上述“风险点”说明
