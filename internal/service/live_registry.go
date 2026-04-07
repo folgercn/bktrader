@@ -47,6 +47,7 @@ type liveAdapterBinding struct {
 	AccountMode    string         `json:"accountMode"`
 	MarginMode     string         `json:"marginMode"`
 	PositionMode   string         `json:"positionMode"`
+	ExecutionMode  string         `json:"executionMode"`
 	FeeSource      string         `json:"feeSource"`
 	FundingSource  string         `json:"fundingSource"`
 	Sandbox        bool           `json:"sandbox"`
@@ -108,6 +109,7 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
 		"accountMode":    firstNonEmpty(strings.ToUpper(strings.TrimSpace(stringValue(binding["accountMode"]))), "ONE_WAY"),
 		"marginMode":     firstNonEmpty(strings.ToUpper(strings.TrimSpace(stringValue(binding["marginMode"]))), "CROSSED"),
 		"positionMode":   firstNonEmpty(strings.ToUpper(strings.TrimSpace(stringValue(binding["positionMode"]))), "ONE_WAY"),
+		"executionMode":  normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])),
 		"feeSource":      "exchange",
 		"fundingSource":  "exchange",
 		"sandbox":        boolValue(binding["sandbox"]),
@@ -127,6 +129,7 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
 		AccountMode:    stringValue(normalized["accountMode"]),
 		MarginMode:     stringValue(normalized["marginMode"]),
 		PositionMode:   stringValue(normalized["positionMode"]),
+		ExecutionMode:  stringValue(normalized["executionMode"]),
 		FeeSource:      "exchange",
 		FundingSource:  "exchange",
 		Sandbox:        boolValue(normalized["sandbox"]),
@@ -158,6 +161,7 @@ func (a binanceFuturesLiveAdapter) Describe() map[string]any {
 		"fundingSource":      "exchange",
 		"positionModes":      []string{"ONE_WAY", "HEDGE"},
 		"marginModes":        []string{"CROSSED", "ISOLATED"},
+		"executionModes":     []string{"mock", "rest"},
 	}
 }
 
@@ -181,6 +185,24 @@ func (a binanceFuturesLiveAdapter) ValidateAccountConfig(config map[string]any) 
 }
 
 func (a binanceFuturesLiveAdapter) SubmitOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
+	switch normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) {
+	case "rest":
+		return a.submitRESTOrder(account, order, binding)
+	default:
+		return a.submitMockOrder(account, order, binding)
+	}
+}
+
+func (a binanceFuturesLiveAdapter) SyncOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	switch normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) {
+	case "rest":
+		return a.syncRESTOrder(account, order, binding)
+	default:
+		return a.syncMockOrder(account, order, binding)
+	}
+}
+
+func (a binanceFuturesLiveAdapter) submitMockOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
 	credentialRefs := normalizeCredentialRefs(binding["credentialRefs"])
 	if strings.TrimSpace(stringValue(credentialRefs["apiKeyRef"])) == "" {
 		return LiveOrderSubmission{}, fmt.Errorf("live adapter binding requires credentialRefs.apiKeyRef")
@@ -195,6 +217,7 @@ func (a binanceFuturesLiveAdapter) SubmitOrder(account domain.Account, order dom
 		AcceptedAt:      acceptedAt.Format(time.RFC3339),
 		Metadata: map[string]any{
 			"adapterMode":    "mock-submission",
+			"executionMode":  "mock",
 			"accountMode":    stringValue(binding["accountMode"]),
 			"marginMode":     stringValue(binding["marginMode"]),
 			"positionMode":   stringValue(binding["positionMode"]),
@@ -211,7 +234,7 @@ func (a binanceFuturesLiveAdapter) SubmitOrder(account domain.Account, order dom
 	}, nil
 }
 
-func (a binanceFuturesLiveAdapter) SyncOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+func (a binanceFuturesLiveAdapter) syncMockOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
 	if stringValue(order.Metadata["exchangeOrderId"]) == "" {
 		return LiveOrderSync{}, fmt.Errorf("live order has no exchangeOrderId")
 	}
@@ -224,27 +247,45 @@ func (a binanceFuturesLiveAdapter) SyncOrder(account domain.Account, order domai
 	return LiveOrderSync{
 		Status:   "FILLED",
 		SyncedAt: syncedAt.Format(time.RFC3339),
-		Fills: []LiveFillReport{
-			{
-				Price:    executionPrice,
-				Quantity: order.Quantity,
-				Fee:      fee,
-				Metadata: map[string]any{
-					"source":          "exchange-sync",
-					"exchange":        account.Exchange,
-					"adapterKey":      a.Key(),
-					"exchangeOrderId": stringValue(order.Metadata["exchangeOrderId"]),
-				},
+		Fills: []LiveFillReport{{
+			Price:    executionPrice,
+			Quantity: order.Quantity,
+			Fee:      fee,
+			Metadata: map[string]any{
+				"source":          "exchange-sync",
+				"exchange":        account.Exchange,
+				"adapterKey":      a.Key(),
+				"exchangeOrderId": stringValue(order.Metadata["exchangeOrderId"]),
+				"executionMode":   "mock",
 			},
-		},
+		}},
 		Metadata: map[string]any{
-			"adapterMode": "mock-sync",
-			"sandbox":     boolValue(binding["sandbox"]),
+			"adapterMode":   "mock-sync",
+			"executionMode": "mock",
+			"sandbox":       boolValue(binding["sandbox"]),
 		},
 		Terminal:   true,
 		FeeSource:  "exchange",
 		FundingSrc: "exchange",
 	}, nil
+}
+
+func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
+	credentialRefs := normalizeCredentialRefs(binding["credentialRefs"])
+	if strings.TrimSpace(stringValue(credentialRefs["apiKeyRef"])) == "" {
+		return LiveOrderSubmission{}, fmt.Errorf("live adapter binding requires credentialRefs.apiKeyRef")
+	}
+	if strings.TrimSpace(stringValue(credentialRefs["apiSecretRef"])) == "" {
+		return LiveOrderSubmission{}, fmt.Errorf("live adapter binding requires credentialRefs.apiSecretRef")
+	}
+	return LiveOrderSubmission{}, fmt.Errorf("binance-futures rest submission is not implemented yet")
+}
+
+func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	if stringValue(order.Metadata["exchangeOrderId"]) == "" {
+		return LiveOrderSync{}, fmt.Errorf("live order has no exchangeOrderId")
+	}
+	return LiveOrderSync{}, fmt.Errorf("binance-futures rest sync is not implemented yet")
 }
 
 func normalizeCredentialRefs(value any) map[string]any {
@@ -270,6 +311,7 @@ func resolveLiveBinding(account domain.Account) map[string]any {
 			"accountMode":    binding.AccountMode,
 			"marginMode":     binding.MarginMode,
 			"positionMode":   binding.PositionMode,
+			"executionMode":  binding.ExecutionMode,
 			"feeSource":      binding.FeeSource,
 			"fundingSource":  binding.FundingSource,
 			"sandbox":        binding.Sandbox,
@@ -281,6 +323,23 @@ func resolveLiveBinding(account domain.Account) map[string]any {
 		}
 	default:
 		return nil
+	}
+}
+
+func normalizeLiveExecutionMode(value any, sandbox bool) string {
+	raw := strings.ToLower(strings.TrimSpace(stringValue(value)))
+	switch raw {
+	case "rest", "real", "live":
+		return "rest"
+	case "mock", "paper", "simulated":
+		return "mock"
+	case "":
+		if sandbox {
+			return "mock"
+		}
+		return "mock"
+	default:
+		return "mock"
 	}
 }
 
