@@ -46,6 +46,7 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 		return nil, err
 	}
 	platform.StartTelegramDispatcher(context.Background())
+	go platform.RecoverLiveTradingOnStartup(context.Background())
 	go platform.StartLiveSyncDispatcher(context.Background())
 
 	return &http.Server{

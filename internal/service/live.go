@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -53,6 +54,59 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 		}
 	}
 	return p.syncLiveAccountFromLocalState(account, binding)
+}
+
+func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
+	accounts, err := p.ListAccounts()
+	if err != nil {
+		return
+	}
+	for _, account := range accounts {
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+		if !strings.EqualFold(account.Mode, "LIVE") {
+			continue
+		}
+		syncedAccount, syncErr := p.SyncLiveAccount(account.ID)
+		if syncErr == nil {
+			account = syncedAccount
+		}
+	}
+
+	sessions, err := p.ListLiveSessions()
+	if err != nil {
+		return
+	}
+	for _, session := range sessions {
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+		if !strings.EqualFold(session.Status, "RUNNING") {
+			continue
+		}
+		recovered, recoverErr := p.recoverRunningLiveSession(session)
+		if recoverErr != nil {
+			state := cloneMetadata(session.State)
+			state["lastRecoveryError"] = recoverErr.Error()
+			state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
+			_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+			continue
+		}
+		state := cloneMetadata(recovered.State)
+		delete(state, "lastRecoveryError")
+		state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
+		state["lastRecoveryStatus"] = "recovered"
+		_, _ = p.store.UpdateLiveSessionState(recovered.ID, state)
+	}
 }
 
 func (p *Platform) syncLiveAccountFromLocalState(account domain.Account, binding map[string]any) (domain.Account, error) {
@@ -218,12 +272,16 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 			"status":        mapBinanceOrderStatus(stringValue(item["status"])),
 			"side":          stringValue(item["side"]),
 			"type":          stringValue(item["type"]),
+			"origType":      stringValue(item["origType"]),
 			"origQty":       parseFloatValue(item["origQty"]),
 			"executedQty":   parseFloatValue(item["executedQty"]),
 			"price":         parseFloatValue(item["price"]),
 			"avgPrice":      parseFloatValue(item["avgPrice"]),
+			"stopPrice":     parseFloatValue(item["stopPrice"]),
+			"workingType":   stringValue(item["workingType"]),
 			"positionSide":  stringValue(item["positionSide"]),
 			"reduceOnly":    item["reduceOnly"],
+			"closePosition": item["closePosition"],
 			"timeInForce":   stringValue(item["timeInForce"]),
 			"updateTime":    parseBinanceMillisToRFC3339(item["updateTime"]),
 		})
@@ -257,6 +315,19 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 		"restBaseUrl":           resolved.BaseURL,
 	}
 	account.Metadata["lastLiveSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+	account, err = p.store.UpdateAccount(account)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	if reconcileErr := p.reconcileLiveAccountPositions(account, openPositions); reconcileErr != nil {
+		account.Metadata = cloneMetadata(account.Metadata)
+		account.Metadata["lastLivePositionSyncError"] = reconcileErr.Error()
+		account, _ = p.store.UpdateAccount(account)
+		return account, reconcileErr
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	delete(account.Metadata, "lastLivePositionSyncError")
+	account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
 	return p.store.UpdateAccount(account)
 }
 
@@ -479,6 +550,195 @@ func (p *Platform) StartLiveSyncDispatcher(ctx context.Context) {
 			_ = p.syncActiveLiveSessions(time.Now().UTC())
 		}
 	}
+}
+
+func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain.LiveSession, error) {
+	account, err := p.store.GetAccount(session.AccountID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	if _, syncErr := p.SyncLiveAccount(account.ID); syncErr != nil {
+		// Keep recovery moving so runtime monitoring can still come back.
+	}
+	session, err = p.syncLiveSessionRuntime(session)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	session, err = p.ensureLiveSessionSignalRuntimeStarted(session)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	if strings.TrimSpace(stringValue(session.State["lastDispatchedOrderId"])) != "" {
+		session, _ = p.syncLatestLiveSessionOrder(session, time.Now().UTC())
+	}
+	session, _ = p.refreshLiveSessionProtectionState(session)
+	return p.store.UpdateLiveSessionStatus(session.ID, "RUNNING")
+}
+
+func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchangePositions []map[string]any) error {
+	existing, err := p.store.ListPositions()
+	if err != nil {
+		return err
+	}
+	existingBySymbol := make(map[string]domain.Position)
+	for _, position := range existing {
+		if position.AccountID != account.ID {
+			continue
+		}
+		existingBySymbol[NormalizeSymbol(position.Symbol)] = position
+	}
+
+	seenSymbols := make(map[string]struct{}, len(exchangePositions))
+	for _, item := range exchangePositions {
+		symbol := NormalizeSymbol(stringValue(item["symbol"]))
+		if symbol == "" {
+			continue
+		}
+		positionAmt := parseFloatValue(item["positionAmt"])
+		if positionAmt == 0 {
+			continue
+		}
+		seenSymbols[symbol] = struct{}{}
+		side := "LONG"
+		if positionAmt < 0 {
+			side = "SHORT"
+		}
+		quantity := math.Abs(positionAmt)
+		entryPrice := parseFloatValue(item["entryPrice"])
+		markPrice := firstPositive(parseFloatValue(item["markPrice"]), entryPrice)
+		strategyVersionID := p.resolveLivePositionStrategyVersionID(account.ID, symbol)
+		position := existingBySymbol[symbol]
+		position.AccountID = account.ID
+		position.StrategyVersionID = firstNonEmpty(strategyVersionID, position.StrategyVersionID)
+		position.Symbol = symbol
+		position.Side = side
+		position.Quantity = quantity
+		position.EntryPrice = entryPrice
+		position.MarkPrice = markPrice
+		if _, err := p.store.SavePosition(position); err != nil {
+			return err
+		}
+	}
+
+	for symbol, position := range existingBySymbol {
+		if _, ok := seenSymbols[symbol]; ok {
+			continue
+		}
+		if err := p.store.DeletePosition(position.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string) string {
+	sessions, err := p.ListLiveSessions()
+	if err == nil {
+		for _, session := range sessions {
+			if session.AccountID != accountID {
+				continue
+			}
+			sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+			if sessionSymbol != "" && sessionSymbol != symbol {
+				continue
+			}
+			version, versionErr := p.resolveCurrentStrategyVersion(session.StrategyID)
+			if versionErr == nil {
+				return version.ID
+			}
+		}
+	}
+	return ""
+}
+
+func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession) (domain.LiveSession, error) {
+	account, err := p.store.GetAccount(session.AccountID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+	openOrders := metadataList(snapshot["openOrders"])
+	sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+	position, found, err := p.resolvePaperSessionPositionSnapshot(session.AccountID, sessionSymbol)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+
+	protectedOrders := make([]map[string]any, 0)
+	stopOrders := make([]map[string]any, 0)
+	takeProfitOrders := make([]map[string]any, 0)
+	for _, item := range openOrders {
+		if sessionSymbol != "" && NormalizeSymbol(stringValue(item["symbol"])) != sessionSymbol {
+			continue
+		}
+		if !isProtectionOrder(item) {
+			continue
+		}
+		protectedOrders = append(protectedOrders, cloneMetadata(item))
+		if isStopProtectionOrder(item) {
+			stopOrders = append(stopOrders, cloneMetadata(item))
+		}
+		if isTakeProfitProtectionOrder(item) {
+			takeProfitOrders = append(takeProfitOrders, cloneMetadata(item))
+		}
+	}
+
+	state := cloneMetadata(session.State)
+	state["recoveredPosition"] = position
+	state["hasRecoveredPosition"] = found
+	state["recoveredProtectionOrders"] = protectedOrders
+	state["recoveredProtectionCount"] = len(protectedOrders)
+	state["recoveredStopOrderCount"] = len(stopOrders)
+	state["recoveredTakeProfitOrderCount"] = len(takeProfitOrders)
+	state["lastProtectionRecoveryAt"] = time.Now().UTC().Format(time.RFC3339)
+	state["lastProtectionRecoverySymbol"] = sessionSymbol
+	state["recoveredStopOrder"] = firstMetadataOrEmpty(stopOrders)
+	state["recoveredTakeProfitOrder"] = firstMetadataOrEmpty(takeProfitOrders)
+
+	status := "flat"
+	switch {
+	case found && len(protectedOrders) > 0:
+		status = "protected-open-position"
+	case found:
+		status = "unprotected-open-position"
+	}
+	state["positionRecoveryStatus"] = status
+	state["protectionRecoveryStatus"] = status
+	if found {
+		appendTimelineEvent(state, "recovery", time.Now().UTC(), "live-position-recovered", map[string]any{
+			"symbol":               sessionSymbol,
+			"protectionCount":      len(protectedOrders),
+			"stopOrderCount":       len(stopOrders),
+			"takeProfitOrderCount": len(takeProfitOrders),
+			"status":               status,
+		})
+	}
+	return p.store.UpdateLiveSessionState(session.ID, state)
+}
+
+func isProtectionOrder(order map[string]any) bool {
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(order["origType"]), stringValue(order["type"]))))
+	if boolValue(order["reduceOnly"]) || boolValue(order["closePosition"]) {
+		return true
+	}
+	return strings.Contains(orderType, "STOP") || strings.Contains(orderType, "TAKE_PROFIT")
+}
+
+func isStopProtectionOrder(order map[string]any) bool {
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(order["origType"]), stringValue(order["type"]))))
+	return strings.Contains(orderType, "STOP")
+}
+
+func isTakeProfitProtectionOrder(order map[string]any) bool {
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(order["origType"]), stringValue(order["type"]))))
+	return strings.Contains(orderType, "TAKE_PROFIT")
+}
+
+func firstMetadataOrEmpty(items []map[string]any) map[string]any {
+	if len(items) == 0 {
+		return map[string]any{}
+	}
+	return cloneMetadata(items[0])
 }
 
 func (p *Platform) SyncLiveSession(sessionID string) (domain.LiveSession, error) {
@@ -1081,11 +1341,57 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 	if _, ok := state["planIndex"]; !ok {
 		state["planIndex"] = 0
 	}
+	positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(session.AccountID, stringValue(parameters["symbol"]))
+	if positionErr != nil {
+		return domain.LiveSession{}, nil, positionErr
+	}
+	state["recoveredPosition"] = positionSnapshot
+	state["hasRecoveredPosition"] = foundPosition
+	state["lastRecoveredPositionAt"] = time.Now().UTC().Format(time.RFC3339)
+	state["positionRecoverySource"] = "platform-position-store"
+	state["positionRecoveryStatus"] = "flat"
+	if foundPosition {
+		state["positionRecoveryStatus"] = "monitoring-open-position"
+	}
+	if nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, resolveLivePlanIndex(state), positionSnapshot, foundPosition); adjusted {
+		state["planIndex"] = nextIndex
+		state["planIndexRecoveredFromPosition"] = true
+		state["recoveredPlanIndex"] = nextIndex
+	} else {
+		delete(state, "planIndexRecoveredFromPosition")
+	}
 	updatedSession, err := p.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		return domain.LiveSession{}, nil, err
 	}
 	return updatedSession, plan, nil
+}
+
+func reconcileLivePlanIndexWithPosition(plan []paperPlannedOrder, currentIndex int, position map[string]any, found bool) (int, bool) {
+	if len(plan) == 0 || currentIndex < 0 {
+		return currentIndex, false
+	}
+	if currentIndex >= len(plan) {
+		currentIndex = len(plan) - 1
+	}
+	if !found || parseFloatValue(position["quantity"]) <= 0 {
+		if strings.EqualFold(plan[currentIndex].Role, "exit") {
+			for i := currentIndex; i >= 0; i-- {
+				if strings.EqualFold(plan[i].Role, "entry") {
+					return i, true
+				}
+			}
+		}
+		return currentIndex, false
+	}
+	if strings.EqualFold(plan[currentIndex].Role, "entry") {
+		for i := currentIndex; i < len(plan); i++ {
+			if strings.EqualFold(plan[i].Role, "exit") {
+				return i, true
+			}
+		}
+	}
+	return currentIndex, false
 }
 
 func resolveLivePlanIndex(state map[string]any) int {

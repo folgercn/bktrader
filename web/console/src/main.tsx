@@ -3548,6 +3548,11 @@ function App() {
                 <div className="backtest-notes">
                   <div className="note-item">health: {highlightedLiveSession.health.detail}</div>
                   <div className="note-item">
+                    recovery: {String(highlightedLiveSession.session.state?.positionRecoveryStatus ?? "--")} · protection{" "}
+                    {String(highlightedLiveSession.session.state?.protectionRecoveryStatus ?? "--")} · orders{" "}
+                    {String(highlightedLiveSession.session.state?.recoveredProtectionCount ?? "--")}
+                  </div>
+                  <div className="note-item">
                     execution: orders {highlightedLiveSession.execution.orderCount} · fills {highlightedLiveSession.execution.fillCount}
                   </div>
                   <div className="note-item">
@@ -3822,6 +3827,18 @@ function App() {
                             last-sync: {String(session.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(session.state?.lastSyncedAt ?? ""))}
                           </div>
                           <div className="note-item">
+                            recovery: {String(session.state?.lastRecoveryStatus ?? "--")} · position {String(session.state?.positionRecoveryStatus ?? "--")} · protection{" "}
+                            {String(session.state?.protectionRecoveryStatus ?? "--")}
+                          </div>
+                          <div className="note-item">
+                            protection-orders: total {String(session.state?.recoveredProtectionCount ?? "--")} · stop{" "}
+                            {String(session.state?.recoveredStopOrderCount ?? "--")} · take-profit {String(session.state?.recoveredTakeProfitOrderCount ?? "--")}
+                          </div>
+                          <div className="note-item">
+                            last-recovery: {formatTime(String(session.state?.lastRecoveryAttemptAt ?? session.state?.lastProtectionRecoveryAt ?? ""))} · error{" "}
+                            {String(session.state?.lastRecoveryError ?? "--")}
+                          </div>
+                          <div className="note-item">
                             sync-error: {String(session.state?.lastSyncError ?? "--")}
                           </div>
                           <div className="note-item">
@@ -3913,10 +3930,24 @@ function App() {
                     sync: {String(primaryLiveSession?.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(primaryLiveSession?.state?.lastSyncedAt ?? ""))} · error {String(primaryLiveSession?.state?.lastSyncError ?? "--")}
                   </div>
                   <div className="note-item">
+                    recovery: {String(primaryLiveSession?.state?.lastRecoveryStatus ?? "--")} · position {String(primaryLiveSession?.state?.positionRecoveryStatus ?? "--")} · protection{" "}
+                    {String(primaryLiveSession?.state?.protectionRecoveryStatus ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    recovery-detail: last-at {formatTime(String(primaryLiveSession?.state?.lastRecoveryAttemptAt ?? primaryLiveSession?.state?.lastProtectionRecoveryAt ?? ""))} · protection-orders{" "}
+                    {String(primaryLiveSession?.state?.recoveredProtectionCount ?? "--")} · stop {String(primaryLiveSession?.state?.recoveredStopOrderCount ?? "--")} · take-profit{" "}
+                    {String(primaryLiveSession?.state?.recoveredTakeProfitOrderCount ?? "--")}
+                  </div>
+                  <div className="note-item">
                     execution: orders {primaryLiveExecutionSummary.orderCount} · fills {primaryLiveExecutionSummary.fillCount} · latest-order {String(primaryLiveExecutionSummary.latestOrder?.status ?? "--")}
                   </div>
                   <div className="note-item">
                     position: {String(primaryLiveExecutionSummary.position?.side ?? "FLAT")} · {formatMaybeNumber(primaryLiveExecutionSummary.position?.quantity)} @ {formatMaybeNumber(primaryLiveExecutionSummary.position?.entryPrice)} · mark {formatMaybeNumber(primaryLiveExecutionSummary.position?.markPrice)}
+                  </div>
+                  <div className="note-item">
+                    recovered-position: {String(getRecord(primaryLiveSession?.state?.recoveredPosition).side ?? "FLAT")} ·{" "}
+                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.recoveredPosition).quantity)} @{" "}
+                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.recoveredPosition).entryPrice)}
                   </div>
                   <div className="note-item">
                     dispatch-preview: {primaryLiveDispatchPreview.reason} · {primaryLiveDispatchPreview.detail}
@@ -5833,6 +5864,20 @@ function deriveSessionMarkers(session: LiveSession | PaperSession | null, orders
 }
 
 function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessionExecutionSummary): LiveSessionHealth {
+  const recoveryError = String(session.state?.lastRecoveryError ?? "").trim();
+  if (recoveryError) {
+    return {
+      status: "error",
+      detail: `recovery error: ${recoveryError}`,
+    };
+  }
+  const protectionRecoveryStatus = String(session.state?.protectionRecoveryStatus ?? "").trim();
+  if (protectionRecoveryStatus === "unprotected-open-position") {
+    return {
+      status: "error",
+      detail: "recovered open position has no stop-loss or take-profit protection",
+    };
+  }
   const syncError = String(session.state?.lastSyncError ?? "").trim();
   if (syncError) {
     return {

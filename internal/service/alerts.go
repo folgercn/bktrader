@@ -25,6 +25,10 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 	if err != nil {
 		return nil, err
 	}
+	liveSessions, err := p.ListLiveSessions()
+	if err != nil {
+		return nil, err
+	}
 	strategies, err := p.ListStrategies()
 	if err != nil {
 		return nil, err
@@ -256,10 +260,31 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 			})
 		}
 		runtimeSessionsForAccount := make([]domain.SignalRuntimeSession, 0)
+		runningLiveSessionsForAccount := make([]domain.LiveSession, 0)
 		for _, session := range runtimeSessions {
 			if session.AccountID == account.ID {
 				runtimeSessionsForAccount = append(runtimeSessionsForAccount, session)
 			}
+		}
+		for _, session := range liveSessions {
+			if session.AccountID == account.ID && strings.EqualFold(session.Status, "RUNNING") {
+				runningLiveSessionsForAccount = append(runningLiveSessionsForAccount, session)
+			}
+		}
+		snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+		openPositionCount := maxIntValue(snapshot["positionCount"], 0)
+		if openPositionCount > 0 && len(runningLiveSessionsForAccount) == 0 {
+			appendAlert(domain.PlatformAlert{
+				ID:          fmt.Sprintf("live-position-unmonitored-%s", account.ID),
+				Scope:       "live",
+				Level:       "critical",
+				Title:       "Open position without running session",
+				Detail:      fmt.Sprintf("exchange reports %d open position(s) but no live session is RUNNING", openPositionCount),
+				AccountID:   account.ID,
+				AccountName: account.Name,
+				Anchor:      "live",
+				EventTime:   parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"])),
+			})
 		}
 		activeRuntime, hasRuntime := pickActiveRuntime(runtimeSessionsForAccount)
 		if !hasRuntime {
@@ -306,6 +331,59 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				RuntimeSessionID: activeRuntime.ID,
 				Anchor:           "live",
 				EventTime:        parseOptionalRFC3339(stringValue(activeRuntime.State["lastEventAt"])),
+			})
+		}
+	}
+
+	for _, session := range liveSessions {
+		state := cloneMetadata(session.State)
+		recoveryStatus := strings.TrimSpace(stringValue(state["protectionRecoveryStatus"]))
+		recoveryError := strings.TrimSpace(stringValue(state["lastRecoveryError"]))
+		eventTime := parseOptionalRFC3339(firstNonEmpty(stringValue(state["lastProtectionRecoveryAt"]), stringValue(state["lastRecoveryAttemptAt"])))
+		if recoveryError != "" {
+			appendAlert(domain.PlatformAlert{
+				ID:           fmt.Sprintf("live-recovery-error-%s", session.ID),
+				Scope:        "live",
+				Level:        "critical",
+				Title:        "Live recovery failed",
+				Detail:       recoveryError,
+				AccountID:    session.AccountID,
+				StrategyID:   session.StrategyID,
+				StrategyName: strategyNameByID[session.StrategyID],
+				Anchor:       "live",
+				EventTime:    eventTime,
+			})
+		}
+		if recoveryStatus == "unprotected-open-position" {
+			appendAlert(domain.PlatformAlert{
+				ID:           fmt.Sprintf("live-unprotected-position-%s", session.ID),
+				Scope:        "live",
+				Level:        "critical",
+				Title:        "Recovered position has no protection",
+				Detail:       "open position was restored but no stop-loss / take-profit protection order was recovered",
+				AccountID:    session.AccountID,
+				StrategyID:   session.StrategyID,
+				StrategyName: strategyNameByID[session.StrategyID],
+				Anchor:       "live",
+				EventTime:    eventTime,
+			})
+		} else if recoveryStatus == "protected-open-position" {
+			appendAlert(domain.PlatformAlert{
+				ID:    fmt.Sprintf("live-protected-position-%s", session.ID),
+				Scope: "live",
+				Level: "info",
+				Title: "Recovered protected position",
+				Detail: fmt.Sprintf(
+					"recovered %d protection order(s): stop=%d take-profit=%d",
+					maxIntValue(state["recoveredProtectionCount"], 0),
+					maxIntValue(state["recoveredStopOrderCount"], 0),
+					maxIntValue(state["recoveredTakeProfitOrderCount"], 0),
+				),
+				AccountID:    session.AccountID,
+				StrategyID:   session.StrategyID,
+				StrategyName: strategyNameByID[session.StrategyID],
+				Anchor:       "live",
+				EventTime:    eventTime,
 			})
 		}
 	}
