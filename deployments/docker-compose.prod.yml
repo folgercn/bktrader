@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${IMAGE_REPO:-ghcr.io/wuyaocheng/bktrader}:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REPO:-ghcr.io/folgercn/bktrader-app}:${IMAGE_TAG:-latest}
     container_name: bktrader-app
     restart: unless-stopped
     env_file:

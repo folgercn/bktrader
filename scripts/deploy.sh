@@ -6,7 +6,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PA
 DEPLOY_PATH=${DEPLOY_PATH:-/opt/bktrader}
 COMPOSE_FILE="$DEPLOY_PATH/deployments/docker-compose.prod.yml"
 APP_ENV_FILE=${APP_ENV_FILE:-$DEPLOY_PATH/.env}
-IMAGE_REPO=${IMAGE_REPO:-ghcr.io/wuyaocheng/bktrader}
+IMAGE_REPO=${IMAGE_REPO:-ghcr.io/folgercn/bktrader-app}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 
 if ! command -v docker >/dev/null 2>&1; then

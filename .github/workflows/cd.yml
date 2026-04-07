@@ -27,7 +27,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/bktrader
+          images: ghcr.io/${{ github.repository_owner }}/bktrader-app
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
@@ -43,6 +43,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
@@ -50,7 +51,7 @@ jobs:
     name: Deploy on Macmini runner
     needs: docker
     if: github.ref == 'refs/heads/main'
-    runs-on: [MacminiM2]
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,7 +75,7 @@ jobs:
       - name: Deploy via docker compose
         env:
           DEPLOY_PATH: /Users/fujun/services/bktrader
-          IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/bktrader
+          IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/bktrader-app
           IMAGE_TAG: latest
           APP_ENV_FILE: /Users/fujun/services/bktrader/.env
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
