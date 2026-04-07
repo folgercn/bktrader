@@ -2,7 +2,10 @@ package service
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -82,6 +85,9 @@ func (p *Platform) CandleSeries(symbol string, resolution string, from int64, to
 	if resolution == "" {
 		resolution = "1"
 	}
+	if remoteBars, err := fetchBinanceFuturesCandles(symbol, resolution, from, to, limit); err == nil && len(remoteBars) > 0 {
+		return candleSeriesFromBars(symbol, resolution, remoteBars, limit)
+	}
 
 	bars, err := p.loadCandleBars()
 	if err != nil || len(bars) == 0 {
@@ -109,14 +115,17 @@ func (p *Platform) CandleSeries(symbol string, resolution string, from int64, to
 	if step > time.Minute {
 		filtered = aggregateCandleBars(filtered, resolution, step)
 	}
-	if len(filtered) > limit {
-		filtered = filtered[len(filtered)-limit:]
-	}
+	return candleSeriesFromBars(symbol, resolution, filtered, limit)
+}
 
-	series := make([]map[string]any, 0, len(filtered))
-	for _, bar := range filtered {
+func candleSeriesFromBars(symbol, resolution string, bars []candleBar, limit int) []map[string]any {
+	if len(bars) > limit && limit > 0 {
+		bars = bars[len(bars)-limit:]
+	}
+	series := make([]map[string]any, 0, len(bars))
+	for _, bar := range bars {
 		series = append(series, map[string]any{
-			"symbol":     symbol,
+			"symbol":     NormalizeSymbol(symbol),
 			"resolution": resolution,
 			"time":       bar.Time,
 			"open":       round2(bar.Open),
@@ -127,6 +136,110 @@ func (p *Platform) CandleSeries(symbol string, resolution string, from int64, to
 		})
 	}
 	return series
+}
+
+func fetchBinanceFuturesCandles(symbol string, resolution string, from int64, to int64, limit int) ([]candleBar, error) {
+	interval := resolutionToBinanceInterval(resolution)
+	if interval == "" {
+		return nil, fmt.Errorf("unsupported resolution: %s", resolution)
+	}
+	endpoint := os.Getenv("BINANCE_FUTURES_KLINE_BASE_URL")
+	if strings.TrimSpace(endpoint) == "" {
+		endpoint = "https://fapi.binance.com"
+	}
+	baseURL := strings.TrimRight(endpoint, "/") + "/fapi/v1/klines"
+	params := url.Values{}
+	params.Set("symbol", NormalizeSymbol(symbol))
+	params.Set("interval", interval)
+	if limit > 0 {
+		if limit > 1500 {
+			limit = 1500
+		}
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	if from > 0 {
+		params.Set("startTime", strconv.FormatInt(from*1000, 10))
+	}
+	if to > 0 {
+		params.Set("endTime", strconv.FormatInt(to*1000, 10))
+	}
+	resp, err := http.Get(baseURL + "?" + params.Encode())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("binance klines request failed: %s", resp.Status)
+	}
+	var payload [][]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	bars := make([]candleBar, 0, len(payload))
+	for _, row := range payload {
+		if len(row) < 6 {
+			continue
+		}
+		openTime, ok := toInt64(row[0])
+		if !ok {
+			continue
+		}
+		open, _ := toFloat64(row[1])
+		high, _ := toFloat64(row[2])
+		low, _ := toFloat64(row[3])
+		closePrice, _ := toFloat64(row[4])
+		volume, _ := toFloat64(row[5])
+		bars = append(bars, candleBar{
+			Time:   time.UnixMilli(openTime).UTC(),
+			Open:   open,
+			High:   high,
+			Low:    low,
+			Close:  closePrice,
+			Volume: volume,
+		})
+	}
+	return bars, nil
+}
+
+func resolutionToBinanceInterval(resolution string) string {
+	switch strings.ToUpper(strings.TrimSpace(resolution)) {
+	case "1":
+		return "1m"
+	case "3":
+		return "3m"
+	case "5":
+		return "5m"
+	case "15":
+		return "15m"
+	case "30":
+		return "30m"
+	case "60":
+		return "1h"
+	case "120":
+		return "2h"
+	case "240":
+		return "4h"
+	case "1D", "D":
+		return "1d"
+	default:
+		return ""
+	}
+}
+
+func toInt64(value any) (int64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return int64(v), true
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func (p *Platform) loadCandleBars() ([]candleBar, error) {
