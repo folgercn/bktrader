@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -332,21 +335,38 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 	if err != nil {
 		return LiveOrderSubmission{}, err
 	}
+	normalizedOrder, rules, err := a.normalizeRESTOrder(order, resolved)
+	if err != nil {
+		return LiveOrderSubmission{}, err
+	}
 	params := map[string]string{
-		"symbol":           NormalizeSymbol(order.Symbol),
-		"side":             strings.ToUpper(strings.TrimSpace(order.Side)),
-		"type":             strings.ToUpper(strings.TrimSpace(firstNonEmpty(order.Type, "MARKET"))),
+		"symbol":           NormalizeSymbol(normalizedOrder.Symbol),
+		"side":             strings.ToUpper(strings.TrimSpace(normalizedOrder.Side)),
+		"type":             strings.ToUpper(strings.TrimSpace(firstNonEmpty(normalizedOrder.Type, "MARKET"))),
 		"timestamp":        fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
 		"recvWindow":       fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
 		"newOrderRespType": "RESULT",
-		"newClientOrderId": order.ID,
+		"newClientOrderId": normalizedOrder.ID,
 	}
-	if order.Quantity > 0 {
-		params["quantity"] = trimFloat(order.Quantity)
+	if normalizedOrder.Quantity > 0 {
+		params["quantity"] = formatBinanceDecimal(normalizedOrder.Quantity, rules.StepSize)
 	}
-	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(order.Type, "MARKET")))
-	if order.Price > 0 && orderType != "MARKET" {
-		params["price"] = trimFloat(order.Price)
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(normalizedOrder.Type, "MARKET")))
+	timeInForce := strings.ToUpper(strings.TrimSpace(stringValue(normalizedOrder.Metadata["timeInForce"])))
+	if boolValue(normalizedOrder.Metadata["postOnly"]) {
+		timeInForce = "GTX"
+	}
+	if normalizedOrder.Price > 0 && orderType != "MARKET" {
+		params["price"] = formatBinanceDecimal(normalizedOrder.Price, rules.TickSize)
+	}
+	if orderType != "MARKET" && timeInForce != "" {
+		params["timeInForce"] = timeInForce
+	}
+	if boolValue(normalizedOrder.Metadata["reduceOnly"]) {
+		params["reduceOnly"] = "true"
+	}
+	if boolValue(normalizedOrder.Metadata["closePosition"]) {
+		params["closePosition"] = "true"
 	}
 	params["signature"] = signBinanceQuery(params, resolved.APISecret)
 	responseBody, err := doBinanceSignedRequest(http.MethodPost, resolved, "/fapi/v1/order", params)
@@ -388,6 +408,15 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 			"origType":        stringValue(payload["origType"]),
 			"timeInForce":     stringValue(payload["timeInForce"]),
 			"updateTime":      acceptedAt,
+			"normalizedQuantity": normalizedOrder.Quantity,
+			"normalizedPrice":    normalizedOrder.Price,
+			"symbolRules": map[string]any{
+				"tickSize":    rules.TickSize,
+				"stepSize":    rules.StepSize,
+				"minQty":      rules.MinQty,
+				"maxQty":      rules.MaxQty,
+				"minNotional": rules.MinNotional,
+			},
 		},
 	}, nil
 }
@@ -623,6 +652,21 @@ type binanceRESTCredentials struct {
 	BaseURL      string
 }
 
+type binanceSymbolRules struct {
+	Symbol      string
+	TickSize    float64
+	StepSize    float64
+	MinQty      float64
+	MaxQty      float64
+	MinNotional float64
+	UpdatedAt   time.Time
+}
+
+var (
+	binanceSymbolRulesCache   = map[string]binanceSymbolRules{}
+	binanceSymbolRulesCacheMu sync.Mutex
+)
+
 func resolveBinanceRESTCredentials(binding map[string]any) (binanceRESTCredentials, error) {
 	credentialRefs := normalizeCredentialRefs(binding["credentialRefs"])
 	apiKeyRef := strings.TrimSpace(stringValue(credentialRefs["apiKeyRef"]))
@@ -655,6 +699,180 @@ func resolveBinanceRESTCredentials(binding map[string]any) (binanceRESTCredentia
 		APISecret:    apiSecret,
 		BaseURL:      strings.TrimRight(baseURL, "/"),
 	}, nil
+}
+
+func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds binanceRESTCredentials) (domain.Order, binanceSymbolRules, error) {
+	normalized := order
+	normalized.Metadata = cloneMetadata(order.Metadata)
+	rules, err := fetchBinanceSymbolRules(creds, NormalizeSymbol(order.Symbol))
+	if err != nil {
+		return domain.Order{}, binanceSymbolRules{}, err
+	}
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(order.Type, "MARKET")))
+	normalized.Quantity = normalizeBinanceQuantity(order.Quantity, rules)
+	if normalized.Quantity <= 0 {
+		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order quantity is invalid for %s", rules.Symbol)
+	}
+	if rules.MaxQty > 0 && normalized.Quantity > rules.MaxQty {
+		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order quantity %.12f exceeds maxQty %.12f for %s", normalized.Quantity, rules.MaxQty, rules.Symbol)
+	}
+	priceReference := firstPositive(order.Price, parseFloatValue(order.Metadata["priceHint"]))
+	if orderType != "MARKET" {
+		normalized.Price = normalizeBinancePrice(priceReference, rules)
+		if normalized.Price <= 0 {
+			return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order price is invalid for %s", rules.Symbol)
+		}
+	}
+	if adjustedQty := normalizeBinanceQuantityForMinNotional(normalized.Quantity, firstPositive(normalized.Price, priceReference), rules); adjustedQty > normalized.Quantity {
+		normalized.Quantity = adjustedQty
+	}
+	normalized.Metadata["normalizedQuantity"] = normalized.Quantity
+	if normalized.Price > 0 {
+		normalized.Metadata["normalizedPrice"] = normalized.Price
+	}
+	normalized.Metadata["symbolRules"] = map[string]any{
+		"tickSize":    rules.TickSize,
+		"stepSize":    rules.StepSize,
+		"minQty":      rules.MinQty,
+		"maxQty":      rules.MaxQty,
+		"minNotional": rules.MinNotional,
+	}
+	return normalized, rules, nil
+}
+
+func fetchBinanceSymbolRules(creds binanceRESTCredentials, symbol string) (binanceSymbolRules, error) {
+	normalizedSymbol := NormalizeSymbol(symbol)
+	if normalizedSymbol == "" {
+		return binanceSymbolRules{}, fmt.Errorf("binance symbol is required")
+	}
+	cacheKey := creds.BaseURL + "|" + normalizedSymbol
+	binanceSymbolRulesCacheMu.Lock()
+	cached, ok := binanceSymbolRulesCache[cacheKey]
+	binanceSymbolRulesCacheMu.Unlock()
+	if ok && time.Since(cached.UpdatedAt) < 30*time.Minute {
+		return cached, nil
+	}
+	requestURL := creds.BaseURL + "/fapi/v1/exchangeInfo?symbol=" + url.QueryEscape(normalizedSymbol)
+	request, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	if err != nil {
+		return binanceSymbolRules{}, err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return binanceSymbolRules{}, err
+	}
+	defer response.Body.Close()
+	responseBody, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		return binanceSymbolRules{}, readErr
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return binanceSymbolRules{}, fmt.Errorf("binance exchangeInfo failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		return binanceSymbolRules{}, err
+	}
+	symbols, _ := payload["symbols"].([]any)
+	for _, item := range symbols {
+		entry, _ := item.(map[string]any)
+		if NormalizeSymbol(stringValue(entry["symbol"])) != normalizedSymbol {
+			continue
+		}
+		rules := parseBinanceSymbolRules(entry)
+		rules.Symbol = normalizedSymbol
+		rules.UpdatedAt = time.Now().UTC()
+		binanceSymbolRulesCacheMu.Lock()
+		binanceSymbolRulesCache[cacheKey] = rules
+		binanceSymbolRulesCacheMu.Unlock()
+		return rules, nil
+	}
+	return binanceSymbolRules{}, fmt.Errorf("binance symbol rules not found for %s", normalizedSymbol)
+}
+
+func parseBinanceSymbolRules(entry map[string]any) binanceSymbolRules {
+	rules := binanceSymbolRules{}
+	filters, _ := entry["filters"].([]any)
+	for _, raw := range filters {
+		filter, _ := raw.(map[string]any)
+		switch strings.ToUpper(strings.TrimSpace(stringValue(filter["filterType"]))) {
+		case "PRICE_FILTER":
+			rules.TickSize = parseFloatValue(filter["tickSize"])
+		case "LOT_SIZE", "MARKET_LOT_SIZE":
+			if rules.StepSize <= 0 {
+				rules.StepSize = parseFloatValue(filter["stepSize"])
+			}
+			if rules.MinQty <= 0 {
+				rules.MinQty = parseFloatValue(filter["minQty"])
+			}
+			if rules.MaxQty <= 0 {
+				rules.MaxQty = parseFloatValue(filter["maxQty"])
+			}
+		case "MIN_NOTIONAL", "NOTIONAL":
+			if rules.MinNotional <= 0 {
+				rules.MinNotional = firstPositive(parseFloatValue(filter["notional"]), parseFloatValue(filter["minNotional"]))
+			}
+		}
+	}
+	return rules
+}
+
+func normalizeBinanceQuantity(quantity float64, rules binanceSymbolRules) float64 {
+	normalized := quantity
+	if rules.StepSize > 0 {
+		normalized = roundToStep(normalized, rules.StepSize)
+	}
+	if rules.MinQty > 0 && normalized < rules.MinQty {
+		normalized = rules.MinQty
+	}
+	if rules.StepSize > 0 {
+		normalized = roundToStep(normalized, rules.StepSize)
+	}
+	return normalized
+}
+
+func normalizeBinancePrice(price float64, rules binanceSymbolRules) float64 {
+	if price <= 0 {
+		return 0
+	}
+	if rules.TickSize <= 0 {
+		return price
+	}
+	return roundToStep(price, rules.TickSize)
+}
+
+func normalizeBinanceQuantityForMinNotional(quantity, price float64, rules binanceSymbolRules) float64 {
+	if quantity <= 0 || price <= 0 || rules.MinNotional <= 0 {
+		return quantity
+	}
+	if quantity*price >= rules.MinNotional {
+		return quantity
+	}
+	required := rules.MinNotional / price
+	if rules.StepSize > 0 {
+		required = ceilToStep(required, rules.StepSize)
+	}
+	if rules.MinQty > 0 && required < rules.MinQty {
+		required = rules.MinQty
+	}
+	if rules.StepSize > 0 {
+		required = ceilToStep(required, rules.StepSize)
+	}
+	return required
+}
+
+func roundToStep(value, step float64) float64 {
+	if value <= 0 || step <= 0 {
+		return value
+	}
+	return math.Floor((value/step)+1e-9) * step
+}
+
+func ceilToStep(value, step float64) float64 {
+	if value <= 0 || step <= 0 {
+		return value
+	}
+	return math.Ceil((value-1e-12)/step) * step
 }
 
 func encodeBinanceQuery(params map[string]string, redactSignature bool) string {
@@ -692,6 +910,28 @@ func trimFloat(value float64) string {
 		return "0"
 	}
 	return text
+}
+
+func formatBinanceDecimal(value, step float64) string {
+	if step <= 0 {
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	}
+	precision := decimalPlacesForStep(step)
+	text := strconv.FormatFloat(value, 'f', precision, 64)
+	text = strings.TrimRight(text, "0")
+	text = strings.TrimRight(text, ".")
+	if text == "" {
+		return "0"
+	}
+	return text
+}
+
+func decimalPlacesForStep(step float64) int {
+	text := strconv.FormatFloat(step, 'f', -1, 64)
+	if idx := strings.IndexByte(text, '.'); idx >= 0 {
+		return len(strings.TrimRight(text[idx+1:], "0"))
+	}
+	return 0
 }
 
 func binanceSignedGET(creds binanceRESTCredentials, path string, params map[string]string) ([]byte, error) {

@@ -21,32 +21,33 @@ import (
 // Platform 是平台服务的核心门面，持有存储接口和运行时状态。
 // 所有业务方法通过 Platform 对外暴露，内部拆分到各个子文件中。
 type Platform struct {
-	store           store.Repository              // 存储层接口（内存 / PostgreSQL）
-	mu              sync.Mutex                    // 保护 run map 的并发访问
-	run             map[string]context.CancelFunc // 运行中的 paper session -> cancel 函数
-	signalRun       map[string]context.CancelFunc // 运行中的 signal runtime session -> cancel 函数
-	paperPlans      map[string][]paperPlannedOrder
-	livePlans       map[string][]paperPlannedOrder
-	strategyEngines map[string]StrategyEngine
-	liveAdapters    map[string]LiveExecutionAdapter
-	signalSources   map[string]SignalSourceProvider
-	signalAdapters  map[string]SignalRuntimeAdapter
-	signalSessions  map[string]domain.SignalRuntimeSession
-	liveMarketMu    sync.RWMutex
-	liveMarketData  map[string]liveMarketSnapshot
-	manifestMu      sync.Mutex
-	once            sync.Once             // 确保 CSV ledger 只加载一次
-	ledger          []strategyReplayEvent // 缓存的策略回放账本
-	ledgerErr       error                 // 加载账本时的错误
-	candleOnce      sync.Once
-	candles         []candleBar
-	candleErr       error
-	tickInterval    int // 模拟盘 Ticker 间隔（秒）
-	minuteDataDir   string
-	tickDataDir     string
-	tickManifest    []tradeArchiveManifestEntry
-	runtimePolicy   RuntimePolicy
-	telegramConfig  domain.TelegramConfig
+	store               store.Repository              // 存储层接口（内存 / PostgreSQL）
+	mu                  sync.Mutex                    // 保护 run map 的并发访问
+	run                 map[string]context.CancelFunc // 运行中的 paper session -> cancel 函数
+	signalRun           map[string]context.CancelFunc // 运行中的 signal runtime session -> cancel 函数
+	paperPlans          map[string][]paperPlannedOrder
+	livePlans           map[string][]paperPlannedOrder
+	strategyEngines     map[string]StrategyEngine
+	liveAdapters        map[string]LiveExecutionAdapter
+	signalSources       map[string]SignalSourceProvider
+	signalAdapters      map[string]SignalRuntimeAdapter
+	executionStrategies map[string]ExecutionStrategy
+	signalSessions      map[string]domain.SignalRuntimeSession
+	liveMarketMu        sync.RWMutex
+	liveMarketData      map[string]liveMarketSnapshot
+	manifestMu          sync.Mutex
+	once                sync.Once             // 确保 CSV ledger 只加载一次
+	ledger              []strategyReplayEvent // 缓存的策略回放账本
+	ledgerErr           error                 // 加载账本时的错误
+	candleOnce          sync.Once
+	candles             []candleBar
+	candleErr           error
+	tickInterval        int // 模拟盘 Ticker 间隔（秒）
+	minuteDataDir       string
+	tickDataDir         string
+	tickManifest        []tradeArchiveManifestEntry
+	runtimePolicy       RuntimePolicy
+	telegramConfig      domain.TelegramConfig
 }
 
 type RuntimePolicy struct {
@@ -60,17 +61,18 @@ type RuntimePolicy struct {
 // NewPlatform 创建并初始化平台服务实例。
 func NewPlatform(store store.Repository) *Platform {
 	platform := &Platform{
-		store:           store,
-		run:             make(map[string]context.CancelFunc),
-		signalRun:       make(map[string]context.CancelFunc),
-		paperPlans:      make(map[string][]paperPlannedOrder),
-		livePlans:       make(map[string][]paperPlannedOrder),
-		strategyEngines: make(map[string]StrategyEngine),
-		liveAdapters:    make(map[string]LiveExecutionAdapter),
-		signalSources:   make(map[string]SignalSourceProvider),
-		signalAdapters:  make(map[string]SignalRuntimeAdapter),
-		signalSessions:  make(map[string]domain.SignalRuntimeSession),
-		liveMarketData:  make(map[string]liveMarketSnapshot),
+		store:               store,
+		run:                 make(map[string]context.CancelFunc),
+		signalRun:           make(map[string]context.CancelFunc),
+		paperPlans:          make(map[string][]paperPlannedOrder),
+		livePlans:           make(map[string][]paperPlannedOrder),
+		strategyEngines:     make(map[string]StrategyEngine),
+		liveAdapters:        make(map[string]LiveExecutionAdapter),
+		signalSources:       make(map[string]SignalSourceProvider),
+		signalAdapters:      make(map[string]SignalRuntimeAdapter),
+		executionStrategies: make(map[string]ExecutionStrategy),
+		signalSessions:      make(map[string]domain.SignalRuntimeSession),
+		liveMarketData:      make(map[string]liveMarketSnapshot),
 		runtimePolicy: RuntimePolicy{
 			TradeTickFreshnessSeconds:      15,
 			OrderBookFreshnessSeconds:      10,
@@ -83,6 +85,7 @@ func NewPlatform(store store.Repository) *Platform {
 	platform.registerBuiltInLiveAdapters()
 	platform.registerBuiltInSignalSources()
 	platform.registerBuiltInSignalRuntimeAdapters()
+	platform.registerBuiltInExecutionStrategies()
 	return platform
 }
 

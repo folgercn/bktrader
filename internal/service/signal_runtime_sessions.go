@@ -97,15 +97,39 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 		p.mu.Unlock()
 		return session, nil
 	}
+	p.mu.Unlock()
+	plan, err := p.BuildSignalRuntimePlan(session.AccountID, session.StrategyID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	subscriptions := metadataList(plan["subscriptions"])
+	adapterKey := ""
+	if len(subscriptions) > 0 {
+		adapterKey = stringValue(subscriptions[0]["adapterKey"])
+	}
+	p.mu.Lock()
+	session, ok = p.signalSessions[sessionID]
+	if !ok {
+		p.mu.Unlock()
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+	if _, exists := p.signalRun[sessionID]; exists {
+		p.mu.Unlock()
+		return session, nil
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.signalRun[sessionID] = cancel
 	now := time.Now().UTC()
 	state := cloneMetadata(session.State)
+	state["plan"] = plan
+	state["subscriptions"] = subscriptions
+	session.RuntimeAdapter = adapterKey
+	session.Transport = inferSignalRuntimeTransport(subscriptions)
+	session.SubscriptionCnt = len(subscriptions)
 	state["health"] = "healthy"
 	state["startedAt"] = now.Format(time.RFC3339)
 	state["lastHeartbeatAt"] = now.Format(time.RFC3339)
 	state["lastEventAt"] = now.Format(time.RFC3339)
-	subscriptions := metadataList(state["subscriptions"])
 	state["lastEventSummary"] = map[string]any{
 		"type":              "runtime_started",
 		"subscriptionCount": len(subscriptions),

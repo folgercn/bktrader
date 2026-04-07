@@ -516,6 +516,16 @@ function App() {
     executionDataSource: "tick",
     symbol: "BTCUSDT",
     defaultOrderQuantity: "0.001",
+    executionEntryOrderType: "MARKET",
+    executionEntryMaxSpreadBps: "8",
+    executionEntryWideSpreadMode: "limit-maker",
+    executionEntryTimeoutFallbackOrderType: "MARKET",
+    executionPTExitOrderType: "LIMIT",
+    executionPTExitTimeInForce: "GTX",
+    executionPTExitPostOnly: true,
+    executionPTExitTimeoutFallbackOrderType: "MARKET",
+    executionSLExitOrderType: "MARKET",
+    executionSLExitMaxSpreadBps: "999",
     dispatchMode: "manual-review",
     dispatchCooldownSeconds: "30",
   });
@@ -1383,6 +1393,16 @@ function App() {
           executionDataSource: liveSessionForm.executionDataSource,
           symbol: liveSessionForm.symbol,
           defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+          executionEntryOrderType: liveSessionForm.executionEntryOrderType,
+          executionEntryMaxSpreadBps: Number(liveSessionForm.executionEntryMaxSpreadBps) || undefined,
+          executionEntryWideSpreadMode: liveSessionForm.executionEntryWideSpreadMode,
+          executionEntryTimeoutFallbackOrderType: liveSessionForm.executionEntryTimeoutFallbackOrderType,
+          executionPTExitOrderType: liveSessionForm.executionPTExitOrderType,
+          executionPTExitTimeInForce: liveSessionForm.executionPTExitTimeInForce,
+          executionPTExitPostOnly: liveSessionForm.executionPTExitPostOnly,
+          executionPTExitTimeoutFallbackOrderType: liveSessionForm.executionPTExitTimeoutFallbackOrderType,
+          executionSLExitOrderType: liveSessionForm.executionSLExitOrderType,
+          executionSLExitMaxSpreadBps: Number(liveSessionForm.executionSLExitMaxSpreadBps) || undefined,
           dispatchMode: liveSessionForm.dispatchMode,
           dispatchCooldownSeconds: Number(liveSessionForm.dispatchCooldownSeconds) || 30,
         }),
@@ -3327,6 +3347,101 @@ function App() {
                   <input
                     value={liveSessionForm.defaultOrderQuantity}
                     onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Entry Order</span>
+                  <select
+                    value={liveSessionForm.executionEntryOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryOrderType: event.target.value }))}
+                  >
+                    <option value="MARKET">MARKET</option>
+                    <option value="LIMIT">LIMIT</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Entry Max Spread</span>
+                  <input
+                    value={liveSessionForm.executionEntryMaxSpreadBps}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Wide Spread Mode</span>
+                  <select
+                    value={liveSessionForm.executionEntryWideSpreadMode}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryWideSpreadMode: event.target.value }))}
+                  >
+                    <option value="limit-maker">limit-maker</option>
+                    <option value="">wait</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Entry Fallback</span>
+                  <select
+                    value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryTimeoutFallbackOrderType: event.target.value }))}
+                  >
+                    <option value="MARKET">MARKET</option>
+                    <option value="LIMIT">LIMIT</option>
+                    <option value="">disabled</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>PT Exit Order</span>
+                  <select
+                    value={liveSessionForm.executionPTExitOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitOrderType: event.target.value }))}
+                  >
+                    <option value="LIMIT">LIMIT</option>
+                    <option value="MARKET">MARKET</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>PT Exit TIF</span>
+                  <select
+                    value={liveSessionForm.executionPTExitTimeInForce}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeInForce: event.target.value }))}
+                  >
+                    <option value="GTX">GTX</option>
+                    <option value="GTC">GTC</option>
+                    <option value="IOC">IOC</option>
+                  </select>
+                </label>
+                <label className="form-field checkbox-field">
+                  <span>PT Exit Post Only</span>
+                  <input
+                    type="checkbox"
+                    checked={liveSessionForm.executionPTExitPostOnly}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitPostOnly: event.target.checked }))}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>PT Exit Fallback</span>
+                  <select
+                    value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeoutFallbackOrderType: event.target.value }))}
+                  >
+                    <option value="MARKET">MARKET</option>
+                    <option value="LIMIT">LIMIT</option>
+                    <option value="">disabled</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>SL Exit Order</span>
+                  <select
+                    value={liveSessionForm.executionSLExitOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitOrderType: event.target.value }))}
+                  >
+                    <option value="MARKET">MARKET</option>
+                    <option value="LIMIT">LIMIT</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>SL Exit Max Spread</span>
+                  <input
+                    value={liveSessionForm.executionSLExitMaxSpreadBps}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
                   />
                 </label>
                 <label className="form-field">
