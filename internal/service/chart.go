@@ -78,44 +78,46 @@ func (p *Platform) ListAnnotations(symbol string, from, to int64, limit int) []d
 	return items
 }
 
-func (p *Platform) CandleSeries(symbol string, resolution string, from int64, to int64, limit int) []map[string]any {
+func (p *Platform) CandleSeries(symbol string, resolution string, from int64, to int64, limit int) ([]map[string]any, error) {
 	if limit <= 0 {
 		limit = 400
 	}
 	if resolution == "" {
 		resolution = "1"
 	}
-	if remoteBars, err := fetchBinanceFuturesCandles(symbol, resolution, from, to, limit); err == nil && len(remoteBars) > 0 {
-		return candleSeriesFromBars(symbol, resolution, remoteBars, limit)
+	remoteBars, err := fetchBinanceFuturesCandles(symbol, resolution, from, to, limit)
+	if err != nil {
+		return nil, err
 	}
+	if len(remoteBars) == 0 {
+		return nil, fmt.Errorf("no binance candles returned for %s %s", NormalizeSymbol(symbol), resolution)
+	}
+	return candleSeriesFromBars(symbol, resolution, remoteBars, limit), nil
+}
 
-	bars, err := p.loadCandleBars()
-	if err != nil || len(bars) == 0 {
-		return []map[string]any{}
+func (p *Platform) CandleIndicators(symbol string, resolution string, from int64, to int64, limit int) (map[string]any, error) {
+	if limit <= 0 {
+		limit = 400
 	}
-
-	step := resolutionToDuration(resolution)
-	if step <= 0 {
-		step = time.Minute
+	bars, err := fetchBinanceFuturesCandles(symbol, resolution, from, to, limit)
+	if err != nil {
+		return nil, err
 	}
-
-	end := bars[len(bars)-1].Time
-	if to > 0 {
-		end = time.Unix(to, 0).UTC()
+	if len(bars) == 0 {
+		return nil, fmt.Errorf("no binance candles returned for %s %s", NormalizeSymbol(symbol), resolution)
 	}
-	start := end.Add(-time.Duration(limit-1) * step)
-	if from > 0 {
-		start = time.Unix(from, 0).UTC()
-	}
-	if start.After(end) {
-		start = end.Add(-time.Duration(limit-1) * step)
-	}
-
-	filtered := filterCandleBars(bars, start, end)
-	if step > time.Minute {
-		filtered = aggregateCandleBars(filtered, resolution, step)
-	}
-	return candleSeriesFromBars(symbol, resolution, filtered, limit)
+	return map[string]any{
+		"symbol":     NormalizeSymbol(symbol),
+		"resolution": resolution,
+		"count":      len(bars),
+		"sma7":       buildLineIndicator(bars, 7, smaValue),
+		"sma20":      buildLineIndicator(bars, 20, smaValue),
+		"ema7":       buildEMAIndicator(bars, 7),
+		"ema20":      buildEMAIndicator(bars, 20),
+		"atr14":      buildATRIndicator(bars, 14),
+		"rsi14":      buildRSIIndicator(bars, 14),
+		"vma20":      buildLineIndicator(bars, 20, volumeMAValue),
+	}, nil
 }
 
 func candleSeriesFromBars(symbol, resolution string, bars []candleBar, limit int) []map[string]any {
@@ -199,6 +201,133 @@ func fetchBinanceFuturesCandles(symbol string, resolution string, from int64, to
 		})
 	}
 	return bars, nil
+}
+
+func buildLineIndicator(bars []candleBar, period int, valueFn func([]candleBar) float64) []map[string]any {
+	if len(bars) == 0 || period <= 0 {
+		return []map[string]any{}
+	}
+	items := make([]map[string]any, 0, len(bars))
+	for idx := range bars {
+		if idx+1 < period {
+			continue
+		}
+		window := bars[idx+1-period : idx+1]
+		items = append(items, map[string]any{
+			"time":  bars[idx].Time,
+			"value": round2(valueFn(window)),
+		})
+	}
+	return items
+}
+
+func buildEMAIndicator(bars []candleBar, period int) []map[string]any {
+	if len(bars) == 0 || period <= 0 || len(bars) < period {
+		return []map[string]any{}
+	}
+	items := make([]map[string]any, 0, len(bars)-period+1)
+	multiplier := 2.0 / float64(period+1)
+	ema := smaValue(bars[:period])
+	items = append(items, map[string]any{"time": bars[period-1].Time, "value": round2(ema)})
+	for idx := period; idx < len(bars); idx++ {
+		ema = ((bars[idx].Close - ema) * multiplier) + ema
+		items = append(items, map[string]any{"time": bars[idx].Time, "value": round2(ema)})
+	}
+	return items
+}
+
+func buildATRIndicator(bars []candleBar, period int) []map[string]any {
+	if len(bars) < period+1 || period <= 0 {
+		return []map[string]any{}
+	}
+	trs := make([]float64, 0, len(bars)-1)
+	for idx := 1; idx < len(bars); idx++ {
+		current := bars[idx]
+		prev := bars[idx-1]
+		tr := maxFloat(current.High-current.Low, maxFloat(absoluteFloat(current.High-prev.Close), absoluteFloat(current.Low-prev.Close)))
+		trs = append(trs, tr)
+	}
+	items := make([]map[string]any, 0, len(trs)-period+1)
+	atr := averageFloat(trs[:period])
+	items = append(items, map[string]any{"time": bars[period].Time, "value": round2(atr)})
+	for idx := period; idx < len(trs); idx++ {
+		atr = ((atr * float64(period-1)) + trs[idx]) / float64(period)
+		items = append(items, map[string]any{"time": bars[idx+1].Time, "value": round2(atr)})
+	}
+	return items
+}
+
+func buildRSIIndicator(bars []candleBar, period int) []map[string]any {
+	if len(bars) < period+1 || period <= 0 {
+		return []map[string]any{}
+	}
+	gains := make([]float64, 0, len(bars)-1)
+	losses := make([]float64, 0, len(bars)-1)
+	for idx := 1; idx < len(bars); idx++ {
+		delta := bars[idx].Close - bars[idx-1].Close
+		if delta >= 0 {
+			gains = append(gains, delta)
+			losses = append(losses, 0)
+		} else {
+			gains = append(gains, 0)
+			losses = append(losses, -delta)
+		}
+	}
+	avgGain := averageFloat(gains[:period])
+	avgLoss := averageFloat(losses[:period])
+	items := make([]map[string]any, 0, len(gains)-period+1)
+	items = append(items, map[string]any{"time": bars[period].Time, "value": round2(computeRSI(avgGain, avgLoss))})
+	for idx := period; idx < len(gains); idx++ {
+		avgGain = ((avgGain * float64(period-1)) + gains[idx]) / float64(period)
+		avgLoss = ((avgLoss * float64(period-1)) + losses[idx]) / float64(period)
+		items = append(items, map[string]any{"time": bars[idx+1].Time, "value": round2(computeRSI(avgGain, avgLoss))})
+	}
+	return items
+}
+
+func smaValue(window []candleBar) float64 {
+	total := 0.0
+	for _, bar := range window {
+		total += bar.Close
+	}
+	return total / float64(len(window))
+}
+
+func volumeMAValue(window []candleBar) float64 {
+	total := 0.0
+	for _, bar := range window {
+		total += bar.Volume
+	}
+	return total / float64(len(window))
+}
+
+func averageFloat(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	total := 0.0
+	for _, value := range values {
+		total += value
+	}
+	return total / float64(len(values))
+}
+
+func computeRSI(avgGain, avgLoss float64) float64 {
+	if avgLoss == 0 {
+		if avgGain == 0 {
+			return 50
+		}
+		return 100
+	}
+	rs := avgGain / avgLoss
+	return 100 - (100 / (1 + rs))
+}
+
+func absoluteFloat(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func resolutionToBinanceInterval(resolution string) string {

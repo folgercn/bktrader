@@ -35,10 +35,34 @@ func registerChartRoutes(mux *http.ServeMux, platform *service.Platform) {
 		to, _ := strconv.ParseInt(query.Get("to"), 10, 64)
 		limit, _ := strconv.Atoi(query.Get("limit"))
 
+		candles, err := platform.CandleSeries(symbol, resolution, from, to, limit)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"symbol":     symbol,
 			"resolution": resolution,
-			"candles":    platform.CandleSeries(symbol, resolution, from, to, limit),
+			"candles":    candles,
 		})
+	})
+
+	mux.HandleFunc("/api/v1/chart/indicators", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		query := r.URL.Query()
+		symbol := service.NormalizeSymbol(query.Get("symbol"))
+		resolution := query.Get("resolution")
+		from, _ := strconv.ParseInt(query.Get("from"), 10, 64)
+		to, _ := strconv.ParseInt(query.Get("to"), 10, 64)
+		limit, _ := strconv.Atoi(query.Get("limit"))
+		result, err := platform.CandleIndicators(symbol, resolution, from, to, limit)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 	})
 }
