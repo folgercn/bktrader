@@ -3537,6 +3537,19 @@ function App() {
                             intent-context: spread {formatMaybeNumber(intent.spreadBps)} bps · bias {String(intent.liquidityBias ?? "--")} · proximity {formatMaybeNumber(intent.entryProximityBps)} bps
                           </div>
                           <div className="note-item">
+                            execution-profile: {String(getRecord(session.state?.lastExecutionProfile).executionProfile ?? "--")} ·{" "}
+                            {String(getRecord(session.state?.lastExecutionProfile).orderType ?? "--")} · tif{" "}
+                            {String(getRecord(session.state?.lastExecutionProfile).timeInForce ?? "--")} · postOnly{" "}
+                            {boolLabel(getRecord(session.state?.lastExecutionProfile).postOnly)} · reduceOnly{" "}
+                            {boolLabel(getRecord(session.state?.lastExecutionProfile).reduceOnly)}
+                          </div>
+                          <div className="note-item">
+                            execution-dispatch: {String(getRecord(session.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
+                            {String(getRecord(session.state?.lastExecutionDispatch).executionMode ?? "--")} · fallback{" "}
+                            {boolLabel(getRecord(session.state?.lastExecutionDispatch).fallback)} ·{" "}
+                            {String(getRecord(session.state?.lastExecutionDispatch).fallbackOrderType ?? "--")}
+                          </div>
+                          <div className="note-item">
                             dispatch-preview: {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.reason : "open session details"} ·{" "}
                             {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.detail : "--"}
                           </div>
@@ -3639,6 +3652,19 @@ function App() {
                   </div>
                   <div className="note-item">
                     dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · cooldown {String(primaryLiveSession?.state?.dispatchCooldownSeconds ?? "--")}s · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    execution-profile: {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).executionProfile ?? "--")} ·{" "}
+                    {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).orderType ?? "--")} · tif{" "}
+                    {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).timeInForce ?? "--")} · postOnly{" "}
+                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).postOnly)} · reduceOnly{" "}
+                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).reduceOnly)}
+                  </div>
+                  <div className="note-item">
+                    execution-dispatch: {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
+                    {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).executionMode ?? "--")} · fallback{" "}
+                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallback)} ·{" "}
+                    {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallbackOrderType ?? "--")}
                   </div>
                   <div className="note-item">
                     auto-dispatch: last-at {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · last-error {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}
@@ -5827,6 +5853,21 @@ function buildTimelineNotes(items: Array<Record<string, unknown>>) {
       }
       if (metadata.action != null) {
         fragments.push(String(metadata.action));
+      }
+      if (metadata.executionProfile != null) {
+        fragments.push(`profile=${String(metadata.executionProfile)}`);
+      }
+      if (metadata.orderType != null) {
+        fragments.push(`type=${String(metadata.orderType)}`);
+      }
+      if (metadata.executionMode != null && String(metadata.executionMode) !== "") {
+        fragments.push(`mode=${String(metadata.executionMode)}`);
+      }
+      if (metadata.reduceOnly != null) {
+        fragments.push(`reduceOnly=${boolLabel(metadata.reduceOnly)}`);
+      }
+      if (metadata.fallback != null && boolLabel(metadata.fallback) !== "no") {
+        fragments.push(`fallback=${boolLabel(metadata.fallback)}`);
       }
       return fragments.join(" · ");
     });

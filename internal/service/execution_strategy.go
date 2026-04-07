@@ -171,6 +171,13 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 		Status:            "dispatchable",
 		Metadata:          meta,
 	}
+	proposal.Metadata["executionProfile"] = describeExecutionProfile(intent)
+	proposal.Metadata["executionProfileOrderType"] = profile.OrderType
+	proposal.Metadata["executionProfileTimeInForce"] = profile.TimeInForce
+	proposal.Metadata["executionProfilePostOnly"] = profile.PostOnly
+	proposal.Metadata["executionProfileReduceOnly"] = profile.ReduceOnly
+	proposal.Metadata["executionProfileWideSpreadMode"] = profile.WideSpreadMode
+	proposal.Metadata["executionStrategy"] = proposal.ExecutionStrategy
 	proposal.Metadata["signalSignature"] = signalSignature
 	if proposal.Type == "LIMIT" {
 		proposal.LimitPrice = priceHint
@@ -310,6 +317,21 @@ func overrideExecutionProfile(profile *executionProfile, parameters map[string]a
 	}
 }
 
+func describeExecutionProfile(intent SignalIntent) string {
+	reasonTag := normalizeStrategyReasonTag(intent.Reason)
+	role := strings.ToLower(strings.TrimSpace(intent.Role))
+	switch {
+	case role == "exit" && reasonTag == "sl":
+		return "sl-exit"
+	case role == "exit" && reasonTag == "pt":
+		return "pt-exit"
+	case role == "exit":
+		return "exit"
+	default:
+		return "entry"
+	}
+}
+
 func buildExecutionSignalSignature(intent SignalIntent) string {
 	return strings.Join([]string{
 		strings.ToLower(strings.TrimSpace(intent.Action)),
@@ -373,6 +395,24 @@ func executionProposalToMap(proposal ExecutionProposal) map[string]any {
 		"executionStrategy": proposal.ExecutionStrategy,
 		"status":            proposal.Status,
 		"metadata":          cloneMetadata(proposal.Metadata),
+	}
+}
+
+func executionProposalSummary(proposal map[string]any) map[string]any {
+	metadata := cloneMetadata(mapValue(proposal["metadata"]))
+	return map[string]any{
+		"status":            stringValue(proposal["status"]),
+		"executionStrategy": firstNonEmpty(stringValue(proposal["executionStrategy"]), stringValue(metadata["executionStrategy"])),
+		"executionProfile":  firstNonEmpty(stringValue(metadata["executionProfile"]), stringValue(proposal["role"])),
+		"executionMode":     stringValue(metadata["executionMode"]),
+		"orderType":         stringValue(proposal["type"]),
+		"timeInForce":       firstNonEmpty(stringValue(proposal["timeInForce"]), stringValue(metadata["executionProfileTimeInForce"])),
+		"postOnly":          boolValue(proposal["postOnly"]) || boolValue(metadata["executionProfilePostOnly"]),
+		"reduceOnly":        boolValue(proposal["reduceOnly"]) || boolValue(metadata["executionProfileReduceOnly"]),
+		"fallback":          boolValue(metadata["fallbackFromTimeout"]),
+		"fallbackOrderType": stringValue(metadata["fallbackOrderType"]),
+		"priceSource":       stringValue(proposal["priceSource"]),
+		"spreadBps":         parseFloatValue(proposal["spreadBps"]),
 	}
 }
 
