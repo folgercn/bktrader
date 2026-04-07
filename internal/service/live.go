@@ -692,6 +692,22 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			"missing": len(metadataList(sourceGate["missing"])),
 			"stale":   len(metadataList(sourceGate["stale"])),
 		})
+		_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+			"live",
+			session.ID,
+			"waiting-source-states",
+			eventTime,
+			StrategySignalDecision{Action: "wait", Reason: "waiting-source-states"},
+			nil,
+			nil,
+			StrategyExecutionContext{},
+			nextPlannedEvent,
+			nextPlannedPrice,
+			nextPlannedSide,
+			nextPlannedRole,
+			nextPlannedReason,
+			sourceGate,
+		))
 		_, err := p.store.UpdateLiveSessionState(session.ID, state)
 		return err
 	}
@@ -704,6 +720,22 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			"reason": err.Error(),
 		}
 		appendTimelineEvent(state, "strategy", eventTime, "decision-error", map[string]any{"error": err.Error()})
+		_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+			"live",
+			session.ID,
+			"decision-error",
+			eventTime,
+			StrategySignalDecision{Action: "error", Reason: err.Error()},
+			nil,
+			nil,
+			executionContext,
+			nextPlannedEvent,
+			nextPlannedPrice,
+			nextPlannedSide,
+			nextPlannedRole,
+			nextPlannedReason,
+			sourceGate,
+		))
 		_, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
 		if updateErr != nil {
 			return updateErr
@@ -744,6 +776,30 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	} else {
 		state["lastStrategyEvaluationStatus"] = "waiting-decision"
 	}
+	dispatchStatus := "intent-ready"
+	if intent == nil {
+		if decision.Action == "advance-plan" {
+			dispatchStatus = "monitoring"
+		} else {
+			dispatchStatus = "waiting-decision"
+		}
+	}
+	_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+		"live",
+		session.ID,
+		dispatchStatus,
+		eventTime,
+		decision,
+		intent,
+		nil,
+		executionContext,
+		nextPlannedEvent,
+		nextPlannedPrice,
+		nextPlannedSide,
+		nextPlannedRole,
+		nextPlannedReason,
+		sourceGate,
+	))
 	updatedSession, err := p.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		return err
@@ -751,16 +807,55 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	if !shouldAutoDispatchLiveIntent(updatedSession, intent, eventTime) {
 		return nil
 	}
-	if _, err := p.dispatchLiveSessionIntent(updatedSession); err != nil {
+	order, err := p.dispatchLiveSessionIntent(updatedSession)
+	if err != nil {
 		state = cloneMetadata(updatedSession.State)
 		state["lastAutoDispatchError"] = err.Error()
 		state["lastAutoDispatchAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
 		appendTimelineEvent(state, "order", eventTime, "live-auto-dispatch-error", map[string]any{
 			"error": err.Error(),
 		})
+		_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+			"live",
+			session.ID,
+			"auto-dispatch-error",
+			eventTime,
+			decision,
+			intent,
+			nil,
+			executionContext,
+			nextPlannedEvent,
+			nextPlannedPrice,
+			nextPlannedSide,
+			nextPlannedRole,
+			nextPlannedReason,
+			sourceGate,
+		))
 		_, _ = p.store.UpdateLiveSessionState(updatedSession.ID, state)
 		return err
 	}
+	_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(updatedSession.State["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+		"live",
+		session.ID,
+		"order-dispatched",
+		eventTime,
+		decision,
+		intent,
+		map[string]any{
+			"id":     order.ID,
+			"symbol": order.Symbol,
+			"side":   order.Side,
+			"status": order.Status,
+			"price":  order.Price,
+		},
+		executionContext,
+		nextPlannedEvent,
+		nextPlannedPrice,
+		nextPlannedSide,
+		nextPlannedRole,
+		nextPlannedReason,
+		sourceGate,
+	))
 	return nil
 }
 
@@ -893,7 +988,7 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 	state["signalRuntimeMode"] = "linked"
 	state["signalRuntimeRequired"] = required
 	state["signalRuntimeReady"] = boolValue(plan["ready"])
-	state["dispatchMode"] = firstNonEmpty(stringValue(state["dispatchMode"]), "manual-review")
+	state["dispatchMode"] = firstNonEmpty(stringValue(state["dispatchMode"]), "auto-dispatch")
 	if _, ok := state["planIndex"]; !ok {
 		state["planIndex"] = 0
 	}

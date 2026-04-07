@@ -263,6 +263,22 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 			"missing": len(metadataList(sourceGate["missing"])),
 			"stale":   len(metadataList(sourceGate["stale"])),
 		})
+		_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+			"paper",
+			session.ID,
+			"waiting-source-states",
+			eventTime,
+			StrategySignalDecision{Action: "wait", Reason: "waiting-source-states"},
+			nil,
+			nil,
+			StrategyExecutionContext{},
+			nextPlannedEvent,
+			nextPlannedPrice,
+			nextPlannedSide,
+			nextPlannedRole,
+			nextPlannedReason,
+			sourceGate,
+		))
 		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
 		if updateErr != nil {
 			return domain.Order{}, updateErr
@@ -279,6 +295,22 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		appendTimelineEvent(state, "strategy", eventTime, "decision-error", map[string]any{
 			"error": err.Error(),
 		})
+		_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+			"paper",
+			session.ID,
+			"decision-error",
+			eventTime,
+			StrategySignalDecision{Action: "error", Reason: err.Error()},
+			nil,
+			nil,
+			executionContext,
+			nextPlannedEvent,
+			nextPlannedPrice,
+			nextPlannedSide,
+			nextPlannedRole,
+			nextPlannedReason,
+			sourceGate,
+		))
 		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
 		if updateErr != nil {
 			return domain.Order{}, updateErr
@@ -304,12 +336,44 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 	}
 	if signalDecision.Action != "advance-plan" {
 		state["lastStrategyEvaluationStatus"] = "waiting-decision"
+		_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+			"paper",
+			session.ID,
+			"waiting-decision",
+			eventTime,
+			signalDecision,
+			nil,
+			nil,
+			executionContext,
+			nextPlannedEvent,
+			nextPlannedPrice,
+			nextPlannedSide,
+			nextPlannedRole,
+			nextPlannedReason,
+			sourceGate,
+		))
 		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
 		if updateErr != nil {
 			return domain.Order{}, updateErr
 		}
 		return domain.Order{}, fmt.Errorf("paper session %s decision gate blocked: %s", updatedSession.ID, signalDecision.Reason)
 	}
+	_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+		"paper",
+		session.ID,
+		"advance-plan",
+		eventTime,
+		signalDecision,
+		nil,
+		nil,
+		executionContext,
+		nextPlannedEvent,
+		nextPlannedPrice,
+		nextPlannedSide,
+		nextPlannedRole,
+		nextPlannedReason,
+		sourceGate,
+	))
 	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
 	if err != nil {
 		return domain.Order{}, err
@@ -345,6 +409,28 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		"side":    order.Side,
 		"price":   order.Price,
 	})
+	_ = p.persistRuntimeStrategySignal(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])), eventTime, buildRuntimeStrategySignalSnapshot(
+		"paper",
+		session.ID,
+		"order-dispatched",
+		eventTime,
+		signalDecision,
+		nil,
+		map[string]any{
+			"id":     order.ID,
+			"symbol": order.Symbol,
+			"side":   order.Side,
+			"status": order.Status,
+			"price":  order.Price,
+		},
+		executionContext,
+		nextPlannedEvent,
+		nextPlannedPrice,
+		nextPlannedSide,
+		nextPlannedRole,
+		nextPlannedReason,
+		sourceGate,
+	))
 	_, _ = p.store.UpdatePaperSessionState(session.ID, state)
 	return order, nil
 }

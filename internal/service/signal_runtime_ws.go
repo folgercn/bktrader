@@ -355,12 +355,13 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 	if current := mapValue(existing); current != nil {
 		stateMap = cloneMetadata(current)
 	}
-	key := firstNonEmpty(
-		stringValue(summary["sourceKey"])+"|"+NormalizeSymbol(stringValue(summary["subscriptionSymbol"]))+"|"+stringValue(summary["role"])+"|"+strings.ToLower(strings.TrimSpace(stringValue(summary["timeframe"]))),
+	key := signalBindingMatchKey(
 		stringValue(summary["sourceKey"]),
+		stringValue(summary["role"]),
+		firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"])),
 	)
-	if key == "|" {
-		key = "unknown"
+	if key == "||" {
+		key = firstNonEmpty(stringValue(summary["sourceKey"]), "unknown")
 	}
 	stateMap[key] = map[string]any{
 		"sourceKey":   stringValue(summary["sourceKey"]),

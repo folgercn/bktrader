@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -65,17 +66,21 @@ func (p *Platform) CreateSignalRuntimeSession(accountID, strategyID string) (dom
 		Transport:       inferSignalRuntimeTransport(subscriptions),
 		SubscriptionCnt: len(subscriptions),
 		State: map[string]any{
-			"plan":             plan,
-			"subscriptions":    subscriptions,
-			"health":           "idle",
-			"signalEventCount": 0,
-			"sourceStates":     map[string]any{},
-			"lastHeartbeatAt":  "",
-			"lastEventAt":      "",
-			"lastEventSummary": nil,
-			"startedAt":        "",
-			"stoppedAt":        "",
-			"errors":           []any{},
+			"plan":                   plan,
+			"subscriptions":          subscriptions,
+			"health":                 "idle",
+			"signalEventCount":       0,
+			"strategySignalCount":    0,
+			"sourceStates":           map[string]any{},
+			"strategySignalsByScope": map[string]any{},
+			"lastHeartbeatAt":        "",
+			"lastEventAt":            "",
+			"lastEventSummary":       nil,
+			"lastStrategySignalAt":   "",
+			"lastStrategySignal":     nil,
+			"startedAt":              "",
+			"stoppedAt":              "",
+			"errors":                 []any{},
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -210,5 +215,94 @@ func metadataList(value any) []map[string]any {
 		return out
 	default:
 		return nil
+	}
+}
+
+func (p *Platform) persistRuntimeStrategySignal(runtimeSessionID string, eventTime time.Time, snapshot map[string]any) error {
+	if strings.TrimSpace(runtimeSessionID) == "" || len(snapshot) == 0 {
+		return nil
+	}
+	return p.updateSignalRuntimeSessionState(runtimeSessionID, func(session *domain.SignalRuntimeSession) {
+		state := cloneMetadata(session.State)
+		if state == nil {
+			state = map[string]any{}
+		}
+
+		scope := strings.TrimSpace(stringValue(snapshot["scope"]))
+		scopeID := strings.TrimSpace(stringValue(snapshot["scopeId"]))
+		signalKey := firstNonEmpty(scope+"|"+scopeID, scopeID, scope, "runtime")
+
+		signalsByScope := cloneMetadata(mapValue(state["strategySignalsByScope"]))
+		if signalsByScope == nil {
+			signalsByScope = map[string]any{}
+		}
+		signalsByScope[signalKey] = cloneMetadata(snapshot)
+
+		state["strategySignalsByScope"] = signalsByScope
+		state["lastStrategySignalAt"] = eventTime.UTC().Format(time.RFC3339)
+		state["lastStrategySignal"] = cloneMetadata(snapshot)
+		state["strategySignalCount"] = maxIntValue(state["strategySignalCount"], 0) + 1
+
+		appendSignalRuntimeTimeline(state, eventTime, "strategy", firstNonEmpty(stringValue(snapshot["status"]), "evaluated"), map[string]any{
+			"scope":          scope,
+			"scopeId":        scopeID,
+			"decisionAction": stringValue(mapValue(snapshot["decision"])["action"]),
+			"decisionReason": stringValue(mapValue(snapshot["decision"])["reason"]),
+			"intentSide":     stringValue(mapValue(snapshot["intent"])["side"]),
+			"orderId":        stringValue(mapValue(snapshot["order"])["id"]),
+		})
+
+		session.State = state
+		session.UpdatedAt = eventTime.UTC()
+	})
+}
+
+func buildRuntimeStrategySignalSnapshot(
+	scope string,
+	scopeID string,
+	status string,
+	eventTime time.Time,
+	decision StrategySignalDecision,
+	intent map[string]any,
+	order map[string]any,
+	executionContext StrategyExecutionContext,
+	nextPlannedEvent time.Time,
+	nextPlannedPrice float64,
+	nextPlannedSide string,
+	nextPlannedRole string,
+	nextPlannedReason string,
+	sourceGate map[string]any,
+) map[string]any {
+	nextEvent := ""
+	if !nextPlannedEvent.IsZero() {
+		nextEvent = nextPlannedEvent.UTC().Format(time.RFC3339)
+	}
+	return map[string]any{
+		"scope":     strings.TrimSpace(scope),
+		"scopeId":   strings.TrimSpace(scopeID),
+		"status":    strings.TrimSpace(status),
+		"eventTime": eventTime.UTC().Format(time.RFC3339),
+		"decision": map[string]any{
+			"action":   decision.Action,
+			"reason":   decision.Reason,
+			"metadata": cloneMetadata(decision.Metadata),
+		},
+		"intent": cloneMetadata(intent),
+		"order":  cloneMetadata(order),
+		"context": map[string]any{
+			"strategyVersionId":   executionContext.StrategyVersionID,
+			"strategyEngine":      executionContext.StrategyEngineKey,
+			"signalTimeframe":     executionContext.SignalTimeframe,
+			"executionDataSource": executionContext.ExecutionDataSource,
+			"symbol":              executionContext.Symbol,
+		},
+		"nextPlan": map[string]any{
+			"eventAt": nextEvent,
+			"price":   nextPlannedPrice,
+			"side":    nextPlannedSide,
+			"role":    nextPlannedRole,
+			"reason":  nextPlannedReason,
+		},
+		"sourceGate": cloneMetadata(sourceGate),
 	}
 }
