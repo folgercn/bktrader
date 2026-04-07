@@ -109,15 +109,6 @@ func NewStore() *Store {
 	store.strategies[strategy.ID] = strategy
 	store.strategyVersion[version.ID] = version
 
-	paper := domain.Account{
-		ID:        "paper-main",
-		Name:      "Paper Main",
-		Mode:      "PAPER",
-		Exchange:  "binance-futures",
-		Status:    "READY",
-		Metadata:  map[string]any{},
-		CreatedAt: now,
-	}
 	live := domain.Account{
 		ID:       "live-main",
 		Name:     "Live Main",
@@ -134,49 +125,7 @@ func NewStore() *Store {
 		},
 		CreatedAt: now,
 	}
-	store.accounts[paper.ID] = paper
 	store.accounts[live.ID] = live
-
-	order := domain.Order{
-		ID:                "sample-order-1",
-		AccountID:         paper.ID,
-		StrategyVersionID: version.ID,
-		Symbol:            "BTCUSDT",
-		Side:              "BUY",
-		Type:              "MARKET",
-		Status:            "FILLED",
-		Quantity:          0.01,
-		Price:             68000.0,
-		Metadata: map[string]any{
-			"source":      "paper-trading",
-			"entryReason": "SL-Reentry",
-		},
-		CreatedAt: now,
-	}
-	store.orders[order.ID] = order
-
-	fill := domain.Fill{
-		ID:        "sample-fill-1",
-		OrderID:   order.ID,
-		Price:     68000.0,
-		Quantity:  0.01,
-		Fee:       0.68,
-		CreatedAt: now,
-	}
-	store.fills[fill.ID] = fill
-
-	position := domain.Position{
-		ID:                "position-paper-btcusdt",
-		AccountID:         paper.ID,
-		StrategyVersionID: version.ID,
-		Symbol:            "BTCUSDT",
-		Side:              "LONG",
-		Quantity:          0.01,
-		EntryPrice:        68000.0,
-		MarkPrice:         68420.0,
-		UpdatedAt:         now,
-	}
-	store.positions[position.ID] = position
 
 	backtest := domain.BacktestRun{
 		ID:                "backtest-20260403-001",
@@ -193,19 +142,6 @@ func NewStore() *Store {
 	}
 	store.backtests[backtest.ID] = backtest
 
-	store.paperSessions["paper-session-main"] = domain.PaperSession{
-		ID:          "paper-session-main",
-		AccountID:   paper.ID,
-		StrategyID:  strategy.ID,
-		Status:      "READY",
-		StartEquity: 100000.0,
-		State: map[string]any{
-			"runner":      "strategy-engine",
-			"runtimeMode": "canonical-strategy-engine",
-			"planIndex":   0,
-		},
-		CreatedAt: now,
-	}
 	store.liveSessions["live-session-main"] = domain.LiveSession{
 		ID:         "live-session-main",
 		AccountID:  live.ID,
@@ -218,21 +154,6 @@ func NewStore() *Store {
 		},
 		CreatedAt: now,
 	}
-	store.equitySnapshots[paper.ID] = []domain.AccountEquitySnapshot{
-		{
-			ID:                "equity-snapshot-main",
-			AccountID:         paper.ID,
-			StartEquity:       100000.0,
-			RealizedPnL:       0,
-			UnrealizedPnL:     4.2,
-			Fees:              0.68,
-			NetEquity:         100003.52,
-			ExposureNotional:  684.2,
-			OpenPositionCount: 1,
-			CreatedAt:         now,
-		},
-	}
-
 	return store
 }
 

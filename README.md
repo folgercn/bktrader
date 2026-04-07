@@ -35,7 +35,7 @@ cp configs/app.example.env .env
 go run ./cmd/platform-api
 ```
 
-默认使用 `STORE_BACKEND=memory`（内存存储）启动 API。
+默认使用 `STORE_BACKEND=memory`（内存存储）启动 API。服务启动时会优先读取 `APP_ENV_FILE` 指向的文件，其次读取当前工作目录下的 `.env`。
 
 如需使用 PostgreSQL 持久化存储：
 
@@ -89,26 +89,21 @@ go run ./cmd/platform-api
 - `GET /api/v1/positions` — 持仓查询
 - `GET|POST /api/v1/backtests` — 回测管理
 - `GET /api/v1/backtests/options` — 回测配置选项（信号周期、执行数据源、可发现数据文件、支持标的、CSV 字段规范）
-- `GET|POST /api/v1/paper/sessions` — 模拟交易会话
-- `POST /api/v1/paper/sessions/{id}/start` — 启动模拟会话
-- `POST /api/v1/paper/sessions/{id}/stop` — 停止模拟会话
-- `POST /api/v1/paper/sessions/{id}/tick` — 手动推进模拟会话
 - `GET|POST /api/v1/live/sessions` — 实盘策略会话
 - `POST /api/v1/live/sessions/{id}/start` — 启动实盘策略会话
 - `POST /api/v1/live/sessions/{id}/stop` — 停止实盘策略会话
 - `POST /api/v1/live/sessions/{id}/dispatch` — 手动确认并派发当前实盘策略意图
 
-创建模拟会话时支持可选 runtime overrides：
-- `signalTimeframe`
-- `executionDataSource`
-- `symbol`
-- `from` / `to`
-- `strategyEngine`
-- `tradingFeeBps`
-- `fundingRateBps`
-- `fundingIntervalHours`
 - `GET /api/v1/chart/annotations` — 图表标注数据
 - `GET /api/v1/chart/candles` — K 线数据
+
+当前推荐的模拟交易主链路：
+
+- 创建 `LIVE` 账户
+- 绑定 `binance-futures`
+- 设置 `sandbox=true`
+- 在 `.env` 中提供 `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
+- 通过 Live/Testnet 会话、订单同步和持仓恢复来跑完整模拟链路
 
 信号源当前支持的建模方式：
 - 策略可以同时绑定多个信号源，例如 `trade_tick(trigger) + order_book(feature)`
@@ -136,30 +131,10 @@ go run ./cmd/platform-api
   - `order_book` 摘要会返回 `bestBid / bestAsk / bestBidQty / bestAskQty`
 - `okx-market-ws` 目前仍先作为可启动骨架保留，下一步再补齐真实消息消费
 
-当前 `paper session` 已经开始接入 signal runtime：
-- 创建 `executionDataSource=tick` 的 paper session 时，会自动生成并挂上 `signalRuntimeSessionId`
-- 启动 paper session 时，会先把 linked signal runtime 拉起
-- `PAPER + tick + linked runtime` 现在会在收到真实 tick 后，按节流频率推进一次策略 heartbeat
-- 每次事件驱动评估都会把当前 linked runtime 的 `sourceStates` 快照写入 paper session state
-- 事件驱动评估现在还会做 `source gate` 检查：
-  - 必需 trigger / feature 源没有状态快照时，不推进策略
-  - 快照超过新鲜度窗口时，不推进策略
-  - 默认新鲜度：`trade_tick=15s`，`order_book=10s`
-  - 通过 `source gate` 后，paper 现在会调用策略引擎的 `signal evaluation` 入口：
-    - 策略引擎可以基于 `trigger + sourceStates` 决定本次是 `advance-plan` 还是 `wait`
-    - 同时会产出更明确的决策状态，例如：
-      - `entry-ready`
-      - `exit-ready`
-      - `waiting-time`
-      - `waiting-price`
-      - `waiting-inputs`
-    - 同时也会产出更偏策略语义的 `signalKind`：
-      - `initial-entry`
-      - `initial-entry-watch`
-      - `initial-entry-near`
-      - `initial-entry-near-strong`
-      - `initial-entry-near-weak`
-      - `sl-reentry`
+当前推荐的运行链路已经统一到 live/testnet：
+- 通过 `signal-runtime session` 拉起实时行情
+- 通过 `live session` 进行策略评估、派单、同步与恢复
+- 通过 Binance Futures testnet 完成模拟交易、订单同步与持仓恢复
       - `sl-reentry-watch`
       - `sl-reentry-near`
       - `sl-reentry-near-strong`
@@ -399,6 +374,8 @@ ORDER_BOOK_FRESHNESS_SECONDS=10
 SIGNAL_BAR_FRESHNESS_SECONDS=30
 RUNTIME_QUIET_SECONDS=30
 PAPER_START_READINESS_TIMEOUT_SECONDS=5
+BINANCE_TESTNET_API_KEY=your_testnet_api_key
+BINANCE_TESTNET_API_SECRET=your_testnet_api_secret
 ```
 
 > 当前 `cd.yml` 默认推送镜像到 `ghcr.io/<owner>/bktrader:latest`，并在 `main` 分支 push 后触发部署。
@@ -414,16 +391,13 @@ PAPER_START_READINESS_TIMEOUT_SECONDS=5
 - 现有的研究文件已整理至 `research/` 目录，避免干扰策略研究工作。
 - 平台脚手架采用模块化设计，初期以可部署的单体架构启动，便于快速迭代，后续可按需拆分。
 - Phase 1 支持内存存储和 PostgreSQL 两种存储后端，通过 `STORE_BACKEND` 环境变量切换。
-- PostgreSQL 持久化目前覆盖策略、账户、订单、持仓、回测记录和模拟交易会话。
+- PostgreSQL 持久化目前覆盖策略、账户、订单、持仓、回测记录和 live 运行状态。
 - `cmd/db-migrate` 执行嵌入式 SQL 迁移，并在 `schema_migrations` 表中记录迁移历史。
-- 提交到 `PAPER` 模式账户的订单会立即成交，生成 `fills` 记录并更新净 `positions`。
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
-- 净值快照在创建模拟会话时和模拟订单成交时自动追加。
-- 模拟交易会话支持启动、停止和手动推进；活跃会话从 `FINAL_1D_LEDGER_BEST_SL.csv` 回放策略交易账本。
-- 模拟会话状态在 `paper_sessions.state` 中持久化策略执行计划进度，`planIndex` 可跨重启保持。
-- `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 paper preflight 共享同一套 freshness / quiet / readiness timeout 配置。
+- 当前推荐的“模拟交易”已经切到 Binance Futures testnet，凭据默认从 `.env` 读取。
+- `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 live/runtime preflight 共享同一套 freshness / quiet / readiness timeout 配置。
 - `POST /api/v1/runtime-policy` 支持热更新运行阈值；当前会持久化到平台配置表，服务重启后仍然保留，控制台 `Signals` 页面已提供对应配置面板。
-- `GET /api/v1/alerts` 统一聚合 `paper / live / runtime` 三类运行告警，作为控制台告警面板和后续外部通知通道的统一源头。
+- `GET /api/v1/alerts` 统一聚合 `live / runtime` 两类运行告警，作为控制台告警面板和后续外部通知通道的统一源头。
 - `GET /api/v1/notifications` 基于当前活跃告警生成平台内通知 Inbox；支持 `ack / unack`，当前确认状态已持久化。
 - Telegram 通知当前只接这一条通道：
   - 可在控制台保存 `bot token / chat id / send levels`

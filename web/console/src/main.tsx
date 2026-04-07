@@ -488,7 +488,7 @@ function App() {
     fundingIntervalHours: "8",
   });
   const [liveAccountForm, setLiveAccountForm] = useState({
-    name: "Live Binance",
+    name: "Binance Testnet",
     exchange: "binance-futures",
   });
   const [liveBindingForm, setLiveBindingForm] = useState({
@@ -497,8 +497,8 @@ function App() {
     positionMode: "ONE_WAY",
     marginMode: "CROSSED",
     sandbox: true,
-    apiKeyRef: "",
-    apiSecretRef: "",
+    apiKeyRef: "BINANCE_TESTNET_API_KEY",
+    apiSecretRef: "BINANCE_TESTNET_API_SECRET",
   });
   const [liveOrderForm, setLiveOrderForm] = useState({
     accountId: "",
@@ -680,11 +680,10 @@ function App() {
     primarySessionSignalBarDecision,
     runtimePolicy
   );
-  const monitorSession = highlightedLiveSession?.session ?? primarySession ?? null;
-  const monitorMode = highlightedLiveSession?.session ? "LIVE" : primarySession ? "PAPER" : "--";
-  const monitorExecutionSummary =
-    highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(primarySession, orders, fills, positions);
-  const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : primaryLinkedSignalRuntimeState;
+  const monitorSession = highlightedLiveSession?.session ?? null;
+  const monitorMode = highlightedLiveSession?.session ? "LIVE" : "--";
+  const monitorExecutionSummary = highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(null, orders, fills, positions);
+  const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : {};
   const monitorBars = deriveSignalBarCandles(getRecord(monitorRuntimeState.sourceStates));
   const monitorSignalState = derivePrimarySignalBarState(getRecord(monitorRuntimeState.signalBarStates));
   const monitorMarket = deriveRuntimeMarketSnapshot(
@@ -694,10 +693,9 @@ function App() {
   const monitorSummary =
     monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
   const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
-  const monitorSessionSource: SourceFilter =
-    highlightedLiveSession?.session ? "live" : primarySession ? "paper" : "all";
+  const monitorSessionSource: SourceFilter = highlightedLiveSession?.session ? "live" : "all";
   const monitorSessionID = monitorSession?.id;
-  const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
+  const selectedSignalAccount = accountSignalForm.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
   const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
   const selectedRuntimeStrategy = signalRuntimeForm.strategyId || selectedSignalStrategy;
@@ -808,7 +806,6 @@ function App() {
       ordersData,
       fillsData,
       positionsData,
-      paperSessionData,
       liveSessionData,
       strategyData,
       backtestData,
@@ -828,7 +825,7 @@ function App() {
       fetchJSON<Order[]>("/api/v1/orders"),
       fetchJSON<Fill[]>("/api/v1/fills"),
       fetchJSON<Position[]>("/api/v1/positions"),
-      fetchJSON<PaperSession[]>("/api/v1/paper/sessions"),
+      Promise.resolve([] as PaperSession[]),
       fetchJSON<LiveSession[]>("/api/v1/live/sessions"),
       fetchJSON<StrategyRecord[]>("/api/v1/strategies"),
       fetchJSON<BacktestRun[]>("/api/v1/backtests"),
@@ -856,7 +853,7 @@ function App() {
       ] as const)
     );
 
-    const anchorDate = resolveChartAnchor(liveSessionData[0] ?? paperSessionData[0], ordersData);
+    const anchorDate = resolveChartAnchor(liveSessionData[0] ?? null, ordersData);
     const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
     const from = range.from;
     const to = range.to;
@@ -896,7 +893,7 @@ function App() {
       return backtestData.length > 0 ? backtestData[backtestData.length - 1].id : null;
     });
     setBacktestOptions(backtestOptionsData);
-    setPaperSessions(paperSessionData);
+    setPaperSessions([]);
     setLiveSessions(liveSessionData);
     setLiveAdapters(liveAdapterData);
     setSignalCatalog(signalCatalogData);
@@ -938,17 +935,7 @@ function App() {
       from: current.from || "",
       to: current.to || "",
     }));
-    setPaperForm((current) => ({
-      accountId: current.accountId || paperAccountsFromSummaries(summaryData)[0]?.accountId || "",
-      strategyId: current.strategyId || strategyData[0]?.id || "",
-      startEquity: current.startEquity || "100000",
-      signalTimeframe: current.signalTimeframe || backtestOptionsData.defaultSignalTimeframe,
-      executionDataSource: current.executionDataSource || "tick",
-      symbol: current.symbol || "BTCUSDT",
-      tradingFeeBps: current.tradingFeeBps || "10",
-      fundingRateBps: current.fundingRateBps || "0",
-      fundingIntervalHours: current.fundingIntervalHours || "8",
-    }));
+    setPaperForm((current) => current);
     setLiveBindingForm((current) => ({
       accountId: current.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
       adapterKey: current.adapterKey || liveAdapterData[0]?.key || "binance-futures",
@@ -1823,7 +1810,6 @@ function App() {
           <a href="#notifications">通知</a>
           <a href="#alerts">告警</a>
           <a href="#strategies">策略</a>
-          <a href="#paper">模拟盘</a>
           <a href="#signals">信号源</a>
           <a href="#live">实盘</a>
           <a href="#backtests">回测</a>
@@ -2628,394 +2614,6 @@ function App() {
           </div>
         </section>
 
-        <section id="paper" className="panel panel-session">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Paper Session</p>
-              <h3>模拟盘运行控制</h3>
-            </div>
-            {primarySession ? (
-              <div className={`session-badge session-${primarySession.status.toLowerCase()}`}>
-                {primarySession.status}
-              </div>
-            ) : null}
-          </div>
-          <div className="backtest-form session-form">
-            <div className="form-grid">
-              <label className="form-field">
-                <span>Paper Account</span>
-                <select
-                  value={paperForm.accountId}
-                  onChange={(event) => setPaperForm((current) => ({ ...current, accountId: event.target.value }))}
-                >
-                  {paperAccounts.map((account) => (
-                    <option key={account.accountId} value={account.accountId}>
-                      {account.accountName} ({account.accountId})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Strategy</span>
-                <select
-                  value={paperForm.strategyId}
-                  onChange={(event) => setPaperForm((current) => ({ ...current, strategyId: event.target.value }))}
-                >
-                  {strategies.map((strategy) => (
-                    <option key={strategy.id} value={strategy.id}>
-                      {strategy.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Start Equity</span>
-                <input
-                  value={paperForm.startEquity}
-                  onChange={(event) => setPaperForm((current) => ({ ...current, startEquity: event.target.value }))}
-                />
-              </label>
-              <label className="form-field">
-                <span>Symbol</span>
-                <input value={paperForm.symbol} onChange={(event) => setPaperForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
-              </label>
-              <label className="form-field">
-                <span>Signal Timeframe</span>
-                <select
-                  value={paperForm.signalTimeframe}
-                  onChange={(event) => setPaperForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
-                >
-                  {(backtestOptions?.signalTimeframes ?? ["4h", "1d"]).map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Execution Source</span>
-                <select
-                  value={paperForm.executionDataSource}
-                  onChange={(event) => setPaperForm((current) => ({ ...current, executionDataSource: event.target.value }))}
-                >
-                  {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Trading Fee (bps)</span>
-                <input
-                  value={paperForm.tradingFeeBps}
-                  onChange={(event) => setPaperForm((current) => ({ ...current, tradingFeeBps: event.target.value }))}
-                />
-              </label>
-              <label className="form-field">
-                <span>Funding Rate (bps)</span>
-                <input
-                  value={paperForm.fundingRateBps}
-                  onChange={(event) => setPaperForm((current) => ({ ...current, fundingRateBps: event.target.value }))}
-                />
-              </label>
-              <label className="form-field">
-                <span>Funding Interval (hours)</span>
-                <input
-                  value={paperForm.fundingIntervalHours}
-                  onChange={(event) => setPaperForm((current) => ({ ...current, fundingIntervalHours: event.target.value }))}
-                />
-              </label>
-            </div>
-            <div className="backtest-actions">
-              <ActionButton
-                label={paperCreateAction ? "Creating..." : "Create Paper Session"}
-                disabled={paperCreateAction || paperLaunchAction || !paperForm.accountId || !paperForm.strategyId}
-                onClick={createPaperSession}
-              />
-              <ActionButton
-                label={paperLaunchAction ? "Launching..." : "Create & Start"}
-                disabled={paperCreateAction || paperLaunchAction || sessionAction !== null || !paperForm.accountId || !paperForm.strategyId}
-                onClick={createAndStartPaperSession}
-              />
-            </div>
-            <div className="backtest-notes">
-              <div className="note-item">模拟盘按实盘语义运行，核心是实时信号、tick / 盘口触发和虚拟账户记账。</div>
-              <div className="note-item">这里不再使用回测窗口参数，重点是实时执行与费用模型。</div>
-            </div>
-          </div>
-          {primarySession ? (
-            <div className="session-layout">
-              <div className="session-meta">
-                <div className="session-stat">
-                  <span>Session ID</span>
-                  <strong>{shrink(primarySession.id)}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Strategy</span>
-                  <strong>{shrink(primarySession.strategyId)}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Started Equity</span>
-                  <strong>{formatMoney(primarySession.startEquity)}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Plan Progress</span>
-                  <strong>
-                    {String(Math.trunc(getNumber(primarySession.state?.planIndex) ?? 0))} /{" "}
-                    {String(Math.trunc(getNumber(primarySession.state?.planLength) ?? 0))}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Signal / Execution</span>
-                  <strong>
-                    {String(primarySession.state?.signalTimeframe ?? "--")} / {String(primarySession.state?.executionDataSource ?? "--")}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Signal Bindings</span>
-                  <strong>
-                    acct {primaryPaperAccountBindings.length} · strat {primaryPaperStrategyBindings.length}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Linked Runtime</span>
-                  <strong>
-                    {primaryLinkedSignalRuntime ? `${primaryLinkedSignalRuntime.status} · ${primaryLinkedSignalRuntime.runtimeAdapter}` : "detached"}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Runtime Health</span>
-                  <strong>{String(primaryLinkedSignalRuntimeState.health ?? primarySession.state?.signalRuntimeStatus ?? "--")}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Runtime Event</span>
-                  <strong>
-                    {String(primaryLinkedSignalRuntimeSummary.event ?? "--")} · {formatTime(String(primaryLinkedSignalRuntimeState.lastEventAt ?? ""))}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Runtime Market</span>
-                  <strong>
-                    {formatMaybeNumber(primaryLinkedSignalRuntimeMarket.tradePrice)} · {formatMaybeNumber(primaryLinkedSignalRuntimeMarket.bestBid)} /{" "}
-                    {formatMaybeNumber(primaryLinkedSignalRuntimeMarket.bestAsk)}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Runtime Spread</span>
-                  <strong>{formatMaybeNumber(primaryLinkedSignalRuntimeMarket.spreadBps)} bps</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Runtime Sources</span>
-                  <strong>
-                    tick {primaryLinkedSignalRuntimeSourceSummary.tradeTickCount} · book {primaryLinkedSignalRuntimeSourceSummary.orderBookCount} · stale{" "}
-                    {primaryLinkedSignalRuntimeSourceSummary.staleCount}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Source Freshness</span>
-                  <strong>{formatTime(String(primaryLinkedSignalRuntimeSourceSummary.latestEventAt ?? ""))}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Runtime Ready</span>
-                  <strong>
-                    <StatusPill tone={runtimeReadinessTone(primaryPaperRuntimeReadiness.status)}>
-                      {primaryPaperRuntimeReadiness.status}
-                    </StatusPill>{" "}
-                    {primaryPaperRuntimeReadiness.reason}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Trading / Funding</span>
-                  <strong>
-                    {formatMaybeNumber(primarySession.state?.tradingFeeBps)} bps /{" "}
-                    {formatMaybeNumber(primarySession.state?.fundingRateBps)} bps
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Last Event</span>
-                  <strong>{String(primarySession.state?.lastEventReason ?? "--")}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Signal Events / Sources</span>
-                  <strong>
-                    {String(Math.trunc(getNumber(primarySession.state?.signalEventCount) ?? 0))} / {String(Object.keys(primarySessionSourceStates).length)}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Eval Trigger</span>
-                  <strong>
-                    {String(primarySessionTriggerSource.streamType ?? "--")} · {String(primarySessionTriggerSource.role ?? "--")}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Eval Status</span>
-                  <strong>{String(primarySession.state?.lastStrategyEvaluationStatus ?? "--")}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Source Gate</span>
-                  <strong>
-                    {boolLabel(primarySessionSourceGate.ready)} · miss {String(Math.trunc(getNumber(primarySessionSourceGate.missing?.length) ?? 0))} · stale{" "}
-                    {String(Math.trunc(getNumber(primarySessionSourceGate.stale?.length) ?? 0))}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Strategy Decision</span>
-                  <strong>
-                    <StatusPill tone={decisionStateTone(String(primarySessionDecisionMeta.decisionState ?? primarySessionDecision.action ?? "--"))}>
-                      {String(primarySessionDecisionMeta.decisionState ?? primarySessionDecision.action ?? "--")}
-                    </StatusPill>{" "}
-                    {String(primarySessionDecision.reason ?? "--")}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Signal Kind</span>
-                  <strong>
-                    <StatusPill tone={signalKindTone(String(primarySessionDecisionMeta.signalKind ?? "--"))}>
-                      {String(primarySessionDecisionMeta.signalKind ?? "--")}
-                    </StatusPill>
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Signal Bar State</span>
-                  <strong>{String(primarySessionDecisionMeta.signalBarStateKey ?? "--")}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Signal Filter</span>
-                  <strong>
-                    <StatusPill tone={boolTone(primarySessionSignalBarDecision.ready)}>
-                      {boolLabel(primarySessionSignalBarDecision.ready)}
-                    </StatusPill>{" "}
-                    {String(primarySessionSignalBarDecision.reason ?? "--")}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Signal MA20 / ATR</span>
-                  <strong>
-                    {formatMaybeNumber(primarySessionSignalBarDecision.ma20 ?? primarySessionSignalBarState.ma20)} /{" "}
-                    {formatMaybeNumber(primarySessionSignalBarDecision.atr14 ?? primarySessionSignalBarState.atr14)}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Current Position</span>
-                  <strong>
-                    {String(primarySessionCurrentPosition.side ?? "FLAT")} · {formatMaybeNumber(primarySessionCurrentPosition.quantity)}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Position PnL (bps)</span>
-                  <strong>{formatMaybeNumber(primarySessionDecisionMeta.positionPnLBps)}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Entry Proximity (bps)</span>
-                  <strong>{formatMaybeNumber(primarySessionDecisionMeta.entryProximityBps)}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Exit Proximity (bps)</span>
-                  <strong>{formatMaybeNumber(primarySessionDecisionMeta.exitProximityBps)}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Spread / Bias</span>
-                  <strong>
-                    {formatMaybeNumber(primarySessionDecisionMeta.spreadBps)} bps · {String(primarySessionDecisionMeta.liquidityBias ?? "--")}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Bias Actionable</span>
-                  <strong>{boolLabel(primarySessionDecisionMeta.biasActionable)}</strong>
-                </div>
-                <div className="session-stat">
-                  <span>Next Planned Event</span>
-                  <strong>
-                    {formatTime(String(primarySession.state?.lastStrategyEvaluationNextPlannedEventAt ?? ""))} ·{" "}
-                    {String(primarySession.state?.lastStrategyEvaluationNextPlannedRole ?? "--")}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Market / Planned</span>
-                  <strong>
-                    {formatMaybeNumber(primarySessionDecisionMeta.marketPrice)} /{" "}
-                    {formatMaybeNumber(primarySessionDecisionMeta.nextPlannedPrice)}
-                  </strong>
-                </div>
-                <div className="session-stat">
-                  <span>Created</span>
-                  <strong>{formatTime(primarySession.createdAt)}</strong>
-                </div>
-              </div>
-              {!primaryPaperRuntimeReadiness.ready ? (
-                <div className="backtest-notes">
-                  <div className="note-item">runtime blocked: {primaryPaperRuntimeReadiness.reason}</div>
-                </div>
-              ) : null}
-              <div className="backtest-notes">
-                {buildAlertNotes(primaryPaperAlerts).map((item) => (
-                  <div key={`paper-alert-${item.title}-${item.detail}`} className={`note-item note-item-alert note-item-alert-${item.level}`}>
-                    <strong>{item.title}</strong> {item.detail}
-                  </div>
-                ))}
-                {buildSignalBarDecisionNotes(primarySessionSignalBarDecision, primarySessionSignalBarState).map((line) => (
-                  <div key={line} className="note-item">
-                    {line}
-                  </div>
-                ))}
-                {buildRuntimeEventNotes(primaryLinkedSignalRuntimeSummary).map((line) => (
-                  <div key={line} className="note-item">
-                    {line}
-                  </div>
-                ))}
-                {buildSourceStateNotes(getRecord(primaryLinkedSignalRuntimeState.sourceStates)).map((line) => (
-                  <div key={line} className="note-item">
-                    {line}
-                  </div>
-                ))}
-              </div>
-              <div className="backtest-breakdown">
-                <h4>Paper Timeline</h4>
-                <div className="backtest-notes">
-                  {buildTimelineNotes(primarySessionTimeline).map((line) => (
-                    <div key={line} className="note-item">
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="session-actions">
-                {primaryLinkedSignalRuntime ? (
-                  <ActionButton
-                    label="Open Signal Runtime"
-                    variant="ghost"
-                    disabled={false}
-                    onClick={() => jumpToSignalRuntimeSession(primaryLinkedSignalRuntime.id)}
-                  />
-                ) : null}
-                <ActionButton
-                  label="Start"
-                  disabled={
-                    sessionAction !== null ||
-                    primarySession.status === "RUNNING" ||
-                    !primaryPaperRuntimeReadiness.ready
-                  }
-                  onClick={() => runSessionAction(primarySession.id, "start")}
-                />
-                <ActionButton
-                  label="Tick"
-                  disabled={sessionAction !== null}
-                  onClick={() => runSessionAction(primarySession.id, "tick")}
-                />
-                <ActionButton
-                  label="Stop"
-                  variant="ghost"
-                  disabled={sessionAction !== null || primarySession.status === "STOPPED"}
-                  onClick={() => runSessionAction(primarySession.id, "stop")}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="empty-state">No paper session yet</div>
-          )}
-        </section>
-
         <section id="signals" className="panel panel-session">
           <div className="panel-header">
             <div>
@@ -3035,9 +2633,9 @@ function App() {
                 <label className="form-field">
                   <span>Account</span>
                   <select value={accountSignalForm.accountId} onChange={(event) => setAccountSignalForm((current) => ({ ...current, accountId: event.target.value }))}>
-                    {[...paperAccounts.map((item) => ({ id: item.accountId, label: `${item.accountName} (${item.mode})` })), ...liveAccounts.map((item) => ({ id: item.id, label: `${item.name} (${item.mode})` }))].map((item) => (
+                    {liveAccounts.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.label}
+                        {item.name} ({item.mode})
                       </option>
                     ))}
                   </select>
@@ -3257,9 +2855,9 @@ function App() {
                 <label className="form-field">
                   <span>Account</span>
                   <select value={signalRuntimeForm.accountId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, accountId: event.target.value }))}>
-                    {[...paperAccounts.map((item) => ({ id: item.accountId, label: `${item.accountName} (${item.mode})` })), ...liveAccounts.map((item) => ({ id: item.id, label: `${item.name} (${item.mode})` }))].map((item) => (
+                    {liveAccounts.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.label}
+                        {item.name} ({item.mode})
                       </option>
                     ))}
                   </select>
@@ -3592,7 +3190,7 @@ function App() {
             </div>
 
             <div className="backtest-form session-form">
-              <h4>Bind Live Adapter</h4>
+              <h4>Bind Live/Testnet Adapter</h4>
               <div className="form-grid">
                 <label className="form-field">
                   <span>Live Account</span>
@@ -3641,11 +3239,11 @@ function App() {
                   </select>
                 </label>
                 <label className="form-field">
-                  <span>API Key Ref</span>
+                  <span>API Key Env</span>
                   <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiKeyRef: event.target.value }))} />
                 </label>
                 <label className="form-field">
-                  <span>API Secret Ref</span>
+                  <span>API Secret Env</span>
                   <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiSecretRef: event.target.value }))} />
                 </label>
                 <label className="form-field form-field-checkbox">
@@ -3659,6 +3257,10 @@ function App() {
               </div>
               <div className="backtest-actions">
                 <ActionButton label={liveBindAction ? "Binding..." : "Bind Live Adapter"} disabled={liveBindAction || !liveBindingForm.accountId} onClick={bindLiveAccount} />
+              </div>
+              <div className="backtest-notes">
+                <div className="note-item">sandbox=true 时默认从 `.env` 读取 `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`。</div>
+                <div className="note-item">如果要接正式实盘，再把 sandbox 关闭并改成正式环境变量名即可。</div>
               </div>
             </div>
           </div>

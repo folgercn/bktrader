@@ -113,6 +113,7 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
 		return domain.Account{}, fmt.Errorf("live adapter not registered: %s", adapterKey)
 	}
 
+	credentialRefs := defaultLiveCredentialRefs(adapterKey, boolValue(binding["sandbox"]), binding["credentialRefs"])
 	normalized := map[string]any{
 		"adapterKey":     adapterKey,
 		"connectionMode": firstNonEmpty(stringValue(binding["connectionMode"]), "api-key-ref"),
@@ -126,7 +127,7 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
 		"restBaseUrl":    stringValue(binding["restBaseUrl"]),
 		"wsBaseUrl":      stringValue(binding["wsBaseUrl"]),
 		"recvWindowMs":   maxIntValue(binding["recvWindowMs"], 5000),
-		"credentialRefs": normalizeCredentialRefs(binding["credentialRefs"]),
+		"credentialRefs": credentialRefs,
 	}
 	if err := adapter.ValidateAccountConfig(normalized); err != nil {
 		return domain.Account{}, err
@@ -153,6 +154,28 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
 		account.Status = "CONFIGURED"
 	}
 	return p.store.UpdateAccount(account)
+}
+
+func defaultLiveCredentialRefs(adapterKey string, sandbox bool, raw any) map[string]any {
+	refs := normalizeCredentialRefs(raw)
+	switch normalizeLiveAdapterKey(adapterKey) {
+	case "binance-futures":
+		if strings.TrimSpace(stringValue(refs["apiKeyRef"])) == "" {
+			if sandbox {
+				refs["apiKeyRef"] = "BINANCE_TESTNET_API_KEY"
+			} else {
+				refs["apiKeyRef"] = "BINANCE_API_KEY"
+			}
+		}
+		if strings.TrimSpace(stringValue(refs["apiSecretRef"])) == "" {
+			if sandbox {
+				refs["apiSecretRef"] = "BINANCE_TESTNET_API_SECRET"
+			} else {
+				refs["apiSecretRef"] = "BINANCE_API_SECRET"
+			}
+		}
+	}
+	return refs
 }
 
 type binanceFuturesLiveAdapter struct{}

@@ -21,10 +21,6 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 	if err != nil {
 		return nil, err
 	}
-	paperSessions, err := p.ListPaperSessions()
-	if err != nil {
-		return nil, err
-	}
 	liveSessions, err := p.ListLiveSessions()
 	if err != nil {
 		return nil, err
@@ -124,103 +120,6 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				RuntimeSessionID: session.ID,
 				Anchor:           "signals",
 				EventTime:        parseOptionalRFC3339(stringValue(state["lastEventAt"])),
-			})
-		}
-	}
-
-	for _, session := range paperSessions {
-		account := accountByID[session.AccountID]
-		state := cloneMetadata(session.State)
-		runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
-		runtimeSession, hasRuntime := resolveRuntimeForAlert(runtimeSessionID, runtimeByKey, session.AccountID, session.StrategyID)
-		var sourceGate map[string]any
-		var sourceSummary runtimeSourceSummary
-		if hasRuntime {
-			sourceGate = p.evaluateSignalSourceReadiness(session, runtimeSession, time.Now().UTC())
-			sourceSummary = p.summarizeRuntimeSources(runtimeSession)
-		}
-		if hasRuntime && !boolValue(sourceGate["ready"]) {
-			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("paper-runtime-%s", session.ID),
-				Scope:            "paper",
-				Level:            "critical",
-				Title:            "Runtime blocked",
-				Detail:           summarizeSourceGate(sourceGate),
-				AccountID:        session.AccountID,
-				AccountName:      account.Name,
-				StrategyID:       session.StrategyID,
-				StrategyName:     strategyNameByID[session.StrategyID],
-				PaperSessionID:   session.ID,
-				RuntimeSessionID: runtimeSession.ID,
-				Anchor:           "paper",
-				EventTime:        parseOptionalRFC3339(stringValue(state["signalRuntimeLastCheckedAt"])),
-			})
-		}
-		if hasRuntime && sourceSummary.staleCount > 0 {
-			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("paper-stale-%s", session.ID),
-				Scope:            "paper",
-				Level:            "warning",
-				Title:            "Stale sources",
-				Detail:           fmt.Sprintf("%d source state(s) outdated", sourceSummary.staleCount),
-				AccountID:        session.AccountID,
-				AccountName:      account.Name,
-				StrategyID:       session.StrategyID,
-				StrategyName:     strategyNameByID[session.StrategyID],
-				PaperSessionID:   session.ID,
-				RuntimeSessionID: runtimeSession.ID,
-				Anchor:           "paper",
-				EventTime:        sourceSummary.latestEventAt,
-			})
-		}
-		if strings.EqualFold(stringValue(state["lastStrategyEvaluationStatus"]), "decision-error") {
-			appendAlert(domain.PlatformAlert{
-				ID:             fmt.Sprintf("paper-decision-%s", session.ID),
-				Scope:          "paper",
-				Level:          "critical",
-				Title:          "Decision error",
-				Detail:         "latest strategy evaluation returned an error",
-				AccountID:      session.AccountID,
-				AccountName:    account.Name,
-				StrategyID:     session.StrategyID,
-				StrategyName:   strategyNameByID[session.StrategyID],
-				PaperSessionID: session.ID,
-				Anchor:         "paper",
-				EventTime:      parseOptionalRFC3339(stringValue(state["lastStrategyEvaluationAt"])),
-			})
-		}
-		if strings.EqualFold(stringValue(state["lastStrategyEvaluationDecisionState"]), "waiting-signal-bars") ||
-			strings.EqualFold(stringValue(mapValue(state["lastStrategyEvaluationSignalBarDecision"])["reason"]), "insufficient-signal-bars") {
-			appendAlert(domain.PlatformAlert{
-				ID:             fmt.Sprintf("paper-signal-bars-%s", session.ID),
-				Scope:          "paper",
-				Level:          "warning",
-				Title:          "Signal bars missing",
-				Detail:         "insufficient closed signal bars for MA20 / t-1 / t-2",
-				AccountID:      session.AccountID,
-				AccountName:    account.Name,
-				StrategyID:     session.StrategyID,
-				StrategyName:   strategyNameByID[session.StrategyID],
-				PaperSessionID: session.ID,
-				Anchor:         "paper",
-				EventTime:      parseOptionalRFC3339(stringValue(state["lastStrategyEvaluationAt"])),
-			})
-		}
-		if hasRuntime && p.runtimeSessionQuiet(runtimeSession.State) {
-			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("paper-runtime-quiet-%s", session.ID),
-				Scope:            "paper",
-				Level:            "warning",
-				Title:            "Runtime quiet",
-				Detail:           fmt.Sprintf("no runtime events observed in the last %ds", p.runtimePolicy.RuntimeQuietSeconds),
-				AccountID:        session.AccountID,
-				AccountName:      account.Name,
-				StrategyID:       session.StrategyID,
-				StrategyName:     strategyNameByID[session.StrategyID],
-				PaperSessionID:   session.ID,
-				RuntimeSessionID: runtimeSession.ID,
-				Anchor:           "paper",
-				EventTime:        parseOptionalRFC3339(stringValue(runtimeSession.State["lastEventAt"])),
 			})
 		}
 	}
