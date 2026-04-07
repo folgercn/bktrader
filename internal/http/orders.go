@@ -72,16 +72,28 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/orders/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(parts) != 2 || parts[1] != "sync" {
-			writeError(w, http.StatusNotFound, "order sync route not found")
+		if len(parts) != 2 {
+			writeError(w, http.StatusNotFound, "order route not found")
 			return
 		}
-		item, err := platform.SyncLiveOrder(parts[0])
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+		switch parts[1] {
+		case "sync":
+			item, err := platform.SyncLiveOrder(parts[0])
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case "cancel":
+			item, err := platform.CancelLiveOrder(parts[0])
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		default:
+			writeError(w, http.StatusNotFound, "order route not found")
 		}
-		writeJSON(w, http.StatusOK, item)
 	})
 
 	// GET /api/v1/fills — 成交流水列表

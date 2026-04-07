@@ -273,18 +273,7 @@ func (p *Platform) resolveStrategyIDFromVersionID(strategyVersionID string) (str
 }
 
 func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {
-	order, err := p.GetOrder(orderID)
-	if err != nil {
-		return domain.Order{}, err
-	}
-	account, err := p.store.GetAccount(order.AccountID)
-	if err != nil {
-		return domain.Order{}, err
-	}
-	if account.Mode != "LIVE" {
-		return domain.Order{}, fmt.Errorf("order %s is not a live order", orderID)
-	}
-	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
+	order, account, adapter, binding, err := p.resolveLiveOrderContext(orderID)
 	if err != nil {
 		return domain.Order{}, err
 	}
@@ -293,6 +282,37 @@ func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {
 		return domain.Order{}, err
 	}
 	return p.applyLiveSyncResult(account, order, syncResult)
+}
+
+func (p *Platform) CancelLiveOrder(orderID string) (domain.Order, error) {
+	order, account, adapter, binding, err := p.resolveLiveOrderContext(orderID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	syncResult, err := adapter.CancelOrder(account, order, binding)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	return p.applyLiveSyncResult(account, order, syncResult)
+}
+
+func (p *Platform) resolveLiveOrderContext(orderID string) (domain.Order, domain.Account, LiveExecutionAdapter, map[string]any, error) {
+	order, err := p.GetOrder(orderID)
+	if err != nil {
+		return domain.Order{}, domain.Account{}, nil, nil, err
+	}
+	account, err := p.store.GetAccount(order.AccountID)
+	if err != nil {
+		return domain.Order{}, domain.Account{}, nil, nil, err
+	}
+	if account.Mode != "LIVE" {
+		return domain.Order{}, domain.Account{}, nil, nil, fmt.Errorf("order %s is not a live order", orderID)
+	}
+	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
+	if err != nil {
+		return domain.Order{}, domain.Account{}, nil, nil, err
+	}
+	return order, account, adapter, binding, nil
 }
 
 func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Order, syncResult LiveOrderSync) (domain.Order, error) {

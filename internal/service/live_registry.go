@@ -23,6 +23,7 @@ type LiveExecutionAdapter interface {
 	ValidateAccountConfig(config map[string]any) error
 	SubmitOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error)
 	SyncOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error)
+	CancelOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error)
 }
 
 type LiveOrderSubmission struct {
@@ -211,6 +212,15 @@ func (a binanceFuturesLiveAdapter) SyncOrder(account domain.Account, order domai
 	}
 }
 
+func (a binanceFuturesLiveAdapter) CancelOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	switch normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) {
+	case "rest":
+		return a.cancelRESTOrder(account, order, binding)
+	default:
+		return a.cancelMockOrder(account, order, binding)
+	}
+}
+
 func (a binanceFuturesLiveAdapter) submitMockOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
 	credentialRefs := normalizeCredentialRefs(binding["credentialRefs"])
 	if strings.TrimSpace(stringValue(credentialRefs["apiKeyRef"])) == "" {
@@ -272,6 +282,21 @@ func (a binanceFuturesLiveAdapter) syncMockOrder(account domain.Account, order d
 			"adapterMode":   "mock-sync",
 			"executionMode": "mock",
 			"sandbox":       boolValue(binding["sandbox"]),
+		},
+		Terminal:   true,
+		FeeSource:  "exchange",
+		FundingSrc: "exchange",
+	}, nil
+}
+
+func (a binanceFuturesLiveAdapter) cancelMockOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	return LiveOrderSync{
+		Status:   "CANCELLED",
+		SyncedAt: time.Now().UTC().Format(time.RFC3339),
+		Metadata: map[string]any{
+			"adapterMode":   "mock-cancel",
+			"executionMode": "mock",
+			"exchange":      account.Exchange,
 		},
 		Terminal:   true,
 		FeeSource:  "exchange",
@@ -373,7 +398,10 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 	filledQty := parseFloatValue(payload["executedQty"])
 	avgPrice := firstPositive(parseFloatValue(payload["avgPrice"]), parseFloatValue(payload["price"]))
 	fills := []LiveFillReport{}
-	if filledQty > 0 && strings.EqualFold(status, "FILLED") {
+	tradeReports, tradeErr := a.fetchRESTTradeReports(account, order, binding, resolved)
+	if tradeErr == nil && len(tradeReports) > 0 {
+		fills = tradeReports
+	} else if filledQty > 0 && strings.EqualFold(status, "FILLED") {
 		fills = append(fills, LiveFillReport{
 			Price:    avgPrice,
 			Quantity: filledQty,
@@ -409,11 +437,103 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 			"cumQty":          parseFloatValue(payload["cumQty"]),
 			"executedQty":     filledQty,
 			"avgPrice":        avgPrice,
+			"tradeReportCount": len(fills),
 		},
 		Terminal:   terminal,
 		FeeSource:  "exchange",
 		FundingSrc: "exchange",
 	}, nil
+}
+
+func (a binanceFuturesLiveAdapter) cancelRESTOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	resolved, err := resolveBinanceRESTCredentials(binding)
+	if err != nil {
+		return LiveOrderSync{}, err
+	}
+	params := map[string]string{
+		"symbol":     NormalizeSymbol(order.Symbol),
+		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+	}
+	if exchangeOrderID := strings.TrimSpace(stringValue(order.Metadata["exchangeOrderId"])); exchangeOrderID != "" {
+		params["orderId"] = exchangeOrderID
+	} else {
+		params["origClientOrderId"] = order.ID
+	}
+	params["signature"] = signBinanceQuery(params, resolved.APISecret)
+	responseBody, err := doBinanceSignedRequest(http.MethodDelete, resolved, "/fapi/v1/order", params)
+	if err != nil {
+		return LiveOrderSync{}, err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		return LiveOrderSync{}, err
+	}
+	status := mapBinanceOrderStatus(stringValue(payload["status"]))
+	if status == "" {
+		status = "CANCELLED"
+	}
+	return LiveOrderSync{
+		Status:   status,
+		SyncedAt: firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339)),
+		Metadata: map[string]any{
+			"adapterMode":     "rest-cancel",
+			"executionMode":   "rest",
+			"exchange":        account.Exchange,
+			"requestPath":     "/fapi/v1/order",
+			"requestQuery":    encodeBinanceQuery(params, true),
+			"binanceStatus":   stringValue(payload["status"]),
+			"clientOrderId":   stringValue(payload["clientOrderId"]),
+			"exchangeOrderId": stringValue(payload["orderId"]),
+		},
+		Terminal:   true,
+		FeeSource:  "exchange",
+		FundingSrc: "exchange",
+	}, nil
+}
+
+func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account, order domain.Order, binding map[string]any, resolved binanceRESTCredentials) ([]LiveFillReport, error) {
+	params := map[string]string{
+		"symbol":     NormalizeSymbol(order.Symbol),
+		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+	}
+	if exchangeOrderID := strings.TrimSpace(stringValue(order.Metadata["exchangeOrderId"])); exchangeOrderID != "" {
+		params["orderId"] = exchangeOrderID
+	}
+	payload, err := binanceSignedGET(resolved, "/fapi/v1/userTrades", params)
+	if err != nil {
+		return nil, err
+	}
+	var trades []map[string]any
+	if err := json.Unmarshal(payload, &trades); err != nil {
+		return nil, err
+	}
+	reports := make([]LiveFillReport, 0, len(trades))
+	for _, trade := range trades {
+		qty := parseFloatValue(trade["qty"])
+		if qty <= 0 {
+			continue
+		}
+		reports = append(reports, LiveFillReport{
+			Price:    parseFloatValue(trade["price"]),
+			Quantity: qty,
+			Fee:      parseFloatValue(trade["commission"]),
+			Metadata: map[string]any{
+				"source":          "binance-user-trades",
+				"exchange":        account.Exchange,
+				"adapterKey":      a.Key(),
+				"exchangeOrderId": firstNonEmpty(stringValue(trade["orderId"]), stringValue(order.Metadata["exchangeOrderId"])),
+				"tradeId":         stringValue(trade["id"]),
+				"commissionAsset": stringValue(trade["commissionAsset"]),
+				"realizedPnl":     parseFloatValue(trade["realizedPnl"]),
+				"maker":           trade["maker"],
+				"buyer":           trade["buyer"],
+				"executionMode":   "rest",
+			},
+		})
+	}
+	return reports, nil
 }
 
 func normalizeCredentialRefs(value any) map[string]any {
