@@ -343,7 +343,7 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 	}
 	return LiveOrderSubmission{
 		Status:          status,
-		ExchangeOrderID: firstNonEmpty(stringValue(payload["orderId"]), stringValue(payload["clientOrderId"])),
+		ExchangeOrderID: normalizeBinanceOrderID(payload["orderId"], payload["clientOrderId"]),
 		AcceptedAt:      acceptedAt,
 		Metadata: map[string]any{
 			"adapterMode":     "rest",
@@ -374,11 +374,11 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 		return LiveOrderSync{}, err
 	}
 	params := map[string]string{
-		"symbol":      NormalizeSymbol(order.Symbol),
-		"timestamp":   fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
-		"recvWindow":  fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+		"symbol":     NormalizeSymbol(order.Symbol),
+		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
 	}
-	if exchangeOrderID := strings.TrimSpace(stringValue(order.Metadata["exchangeOrderId"])); exchangeOrderID != "" {
+	if exchangeOrderID := normalizeBinanceOrderID(order.Metadata["exchangeOrderId"], nil); exchangeOrderID != "" {
 		params["orderId"] = exchangeOrderID
 	} else {
 		params["origClientOrderId"] = order.ID
@@ -411,7 +411,7 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 				"source":          "binance-order-query",
 				"exchange":        account.Exchange,
 				"adapterKey":      a.Key(),
-				"exchangeOrderId": firstNonEmpty(stringValue(payload["orderId"]), stringValue(order.Metadata["exchangeOrderId"])),
+				"exchangeOrderId": normalizeBinanceOrderID(payload["orderId"], order.Metadata["exchangeOrderId"]),
 				"clientOrderId":   stringValue(payload["clientOrderId"]),
 				"executionMode":   "rest",
 			},
@@ -468,7 +468,7 @@ func (a binanceFuturesLiveAdapter) cancelRESTOrder(account domain.Account, order
 		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
 		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
 	}
-	if exchangeOrderID := strings.TrimSpace(stringValue(order.Metadata["exchangeOrderId"])); exchangeOrderID != "" {
+	if exchangeOrderID := normalizeBinanceOrderID(order.Metadata["exchangeOrderId"], nil); exchangeOrderID != "" {
 		params["orderId"] = exchangeOrderID
 	} else {
 		params["origClientOrderId"] = order.ID
@@ -498,7 +498,7 @@ func (a binanceFuturesLiveAdapter) cancelRESTOrder(account domain.Account, order
 			"requestQuery":    encodeBinanceQuery(params, true),
 			"binanceStatus":   stringValue(payload["status"]),
 			"clientOrderId":   stringValue(payload["clientOrderId"]),
-			"exchangeOrderId": stringValue(payload["orderId"]),
+			"exchangeOrderId": normalizeBinanceOrderID(payload["orderId"], order.Metadata["exchangeOrderId"]),
 			"updateTime":      resolvedCancelAt,
 		},
 		Terminal:   true,
@@ -513,7 +513,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
 		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
 	}
-	if exchangeOrderID := strings.TrimSpace(stringValue(order.Metadata["exchangeOrderId"])); exchangeOrderID != "" {
+	if exchangeOrderID := normalizeBinanceOrderID(order.Metadata["exchangeOrderId"], nil); exchangeOrderID != "" {
 		params["orderId"] = exchangeOrderID
 	}
 	payload, err := binanceSignedGET(resolved, "/fapi/v1/userTrades", params)
@@ -539,7 +539,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 				"source":          "binance-user-trades",
 				"exchange":        account.Exchange,
 				"adapterKey":      a.Key(),
-				"exchangeOrderId": firstNonEmpty(stringValue(trade["orderId"]), stringValue(order.Metadata["exchangeOrderId"])),
+				"exchangeOrderId": normalizeBinanceOrderID(trade["orderId"], order.Metadata["exchangeOrderId"]),
 				"tradeId":         stringValue(trade["id"]),
 				"commissionAsset": stringValue(trade["commissionAsset"]),
 				"realizedPnl":     parseFloatValue(trade["realizedPnl"]),
@@ -734,6 +734,40 @@ func mapBinanceOrderStatus(status string) string {
 		return "REJECTED"
 	default:
 		return ""
+	}
+}
+
+func normalizeBinanceOrderID(primary any, fallback any) string {
+	if value := stringifyBinanceID(primary); value != "" {
+		return value
+	}
+	return stringifyBinanceID(fallback)
+}
+
+func stringifyBinanceID(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case float32:
+		return fmt.Sprintf("%.0f", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case int32:
+		return fmt.Sprintf("%d", v)
+	case uint64:
+		return fmt.Sprintf("%d", v)
+	case uint32:
+		return fmt.Sprintf("%d", v)
+	case json.Number:
+		return strings.TrimSpace(v.String())
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", v))
 	}
 }
 
