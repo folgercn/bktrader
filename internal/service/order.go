@@ -104,8 +104,18 @@ func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (
 	if err != nil {
 		return domain.Order{}, err
 	}
+	submission, submitErr := adapter.SubmitOrder(account, order, binding)
+	return p.applyLiveSubmissionResult(order, binding, runtimeSession, sourceGate, submission, submitErr)
+}
 
-	submission, err := adapter.SubmitOrder(account, order, binding)
+func (p *Platform) applyLiveSubmissionResult(
+	order domain.Order,
+	binding map[string]any,
+	runtimeSession domain.SignalRuntimeSession,
+	sourceGate map[string]any,
+	submission LiveOrderSubmission,
+	submitErr error,
+) (domain.Order, error) {
 	order.Metadata = cloneMetadata(order.Metadata)
 	order.Metadata["executionMode"] = "live"
 	order.Metadata["adapterKey"] = normalizeLiveAdapterKey(stringValue(binding["adapterKey"]))
@@ -114,16 +124,16 @@ func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (
 	order.Metadata["submitMode"] = "adapter"
 	order.Metadata["runtimeSessionId"] = runtimeSession.ID
 	order.Metadata["runtimePreflight"] = sourceGate
-	if err != nil {
+	if submitErr != nil {
 		order.Status = "REJECTED"
-		order.Metadata["liveSubmitError"] = err.Error()
+		order.Metadata["liveSubmitError"] = submitErr.Error()
 		updatedOrder, updateErr := p.store.UpdateOrder(order)
 		if updateErr != nil {
 			return domain.Order{}, updateErr
 		}
-		return updatedOrder, err
+		return updatedOrder, submitErr
 	}
-
+	delete(order.Metadata, "liveSubmitError")
 	order.Status = firstNonEmpty(submission.Status, "ACCEPTED")
 	order.Metadata["exchangeOrderId"] = submission.ExchangeOrderID
 	order.Metadata["acceptedAt"] = submission.AcceptedAt
@@ -263,7 +273,10 @@ func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {
 	if err != nil {
 		return domain.Order{}, err
 	}
+	return p.applyLiveSyncResult(account, order, syncResult)
+}
 
+func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Order, syncResult LiveOrderSync) (domain.Order, error) {
 	order.Metadata = cloneMetadata(order.Metadata)
 	order.Metadata["lastSyncAt"] = syncResult.SyncedAt
 	order.Metadata["syncMode"] = "adapter"
@@ -272,26 +285,33 @@ func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {
 	order.Metadata["adapterSync"] = syncResult.Metadata
 	order.Status = firstNonEmpty(syncResult.Status, order.Status)
 	if len(syncResult.Fills) > 0 {
-		fills := make([]domain.Fill, 0, len(syncResult.Fills))
-		lastPrice := 0.0
-		for _, report := range syncResult.Fills {
-			price := report.Price
-			if price <= 0 {
-				price = resolveExecutionPrice(order)
-			}
-			lastPrice = price
-			fills = append(fills, domain.Fill{
-				OrderID:  order.ID,
-				Price:    price,
-				Quantity: report.Quantity,
-				Fee:      report.Fee - report.FundingPnL,
-			})
-		}
+		fills, lastFundingPnL, lastPrice := buildLiveSyncSettlement(order, syncResult)
 		order.Price = lastPrice
-		order.Metadata["fundingPnL"] = syncResult.Fills[len(syncResult.Fills)-1].FundingPnL
+		order.Metadata["fundingPnL"] = lastFundingPnL
 		return p.finalizeExecutedOrder(account, order, fills)
 	}
 	return p.store.UpdateOrder(order)
+}
+
+func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]domain.Fill, float64, float64) {
+	fills := make([]domain.Fill, 0, len(syncResult.Fills))
+	lastFundingPnL := 0.0
+	lastPrice := order.Price
+	for _, report := range syncResult.Fills {
+		price := report.Price
+		if price <= 0 {
+			price = resolveExecutionPrice(order)
+		}
+		lastPrice = price
+		lastFundingPnL = report.FundingPnL
+		fills = append(fills, domain.Fill{
+			OrderID:  order.ID,
+			Price:    price,
+			Quantity: report.Quantity,
+			Fee:      report.Fee - report.FundingPnL,
+		})
+	}
+	return fills, lastFundingPnL, lastPrice
 }
 
 func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Order, fills []domain.Fill) (domain.Order, error) {
