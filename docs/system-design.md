@@ -189,6 +189,18 @@ No order placement is performed from the chart.
 8. positions and account equity are updated
 9. chart annotations and monitoring views are refreshed
 
+Execution consistency rule:
+
+- strategy decision logic and order-intent generation must stay identical across backtest, paper, and live
+- execution adapters may differ by environment, but strategy code must not fork behavior except for backtest-only slippage simulation
+- signal runtime wiring must also stay environment-consistent:
+  - backtest resolves replay file loaders
+  - paper/live resolves exchange market-data adapters
+  - the strategy should see the same logical source roles (`trigger`, `feature`) even when the underlying transport differs
+- cost accounting may differ only by data source:
+  - backtest/paper use configured fee models
+  - live uses exchange-reported fee/funding records
+
 ## 7. Data Consistency Rules
 
 - every order must reference strategy version when strategy-generated
@@ -252,6 +264,123 @@ Current paper runner details:
 - alerting
 - reconciliation jobs
 
+Current live-gap assessment:
+
+- current codebase already has a clear `PAPER` execution path:
+  - paper orders are accepted and immediately materialized into fills / positions / equity snapshots
+  - paper sessions can replay the current strategy ledger
+- current `LIVE` path is not yet fully closed-loop:
+  - `LIVE` accounts exist in the domain model
+  - but a real exchange execution adapter, exchange-order sync, and canonical fill reconciliation are still incomplete in this branch
+- therefore the project has reached `backtest + paper MVP`, but has **not yet fully connected a unified paper/live trading mainline**
+
+Immediate implementation plan: unify paper/live trading mainline
+
+#### Step 1. Introduce a single canonical execution pipeline
+
+Target flow:
+
+1. Strategy / signal runtime emits `OrderIntent`
+2. Risk layer validates intent
+3. Execution router resolves environment-specific executor
+4. Executor submits / simulates order
+5. Canonical order state is persisted
+6. Canonical fills are materialized
+7. Positions, equity snapshots, and chart annotations are updated through the same write path
+
+Design rule:
+
+- `BACKTEST`, `PAPER`, and `LIVE` must share the same strategy-decision and order-intent schema
+- only the executor implementation differs
+
+#### Step 2. Split executors by environment, unify post-trade write path
+
+Recommended interfaces:
+
+- `PaperExecutor`
+- `LiveExecutor`
+- shared post-trade reconciliation service
+
+Responsibilities:
+
+- `PaperExecutor`: immediate or simulated matching, configurable fee model
+- `LiveExecutor`: submit to exchange, record acknowledgement, fetch/sync latest order state, materialize fills
+- shared reconciliation path:
+  - update order status
+  - create fills
+  - update net positions
+  - capture account equity snapshot
+  - refresh chart annotations / monitoring views
+
+This is the key refactor needed to avoid maintaining two divergent trading pipelines.
+
+#### Step 3. Deliver the smallest usable Binance Futures live path first
+
+The first live MVP should intentionally stay narrow:
+
+- single exchange: Binance Futures
+- single symbol priority: BTCUSDT
+- single account first
+- market order first
+- basic open / close only
+- manual sync endpoint allowed in phase 1
+
+Minimum live capabilities required:
+
+- submit live order
+- persist exchange acknowledgement
+- query latest exchange order state
+- materialize fills locally
+- update positions locally
+- capture equity snapshots after fill sync
+
+Non-goals for this first live MVP:
+
+- multi-account rollout
+- complex order types
+- automatic retry orchestration
+- websocket-first execution lifecycle
+
+#### Step 4. Promote shared monitoring and control surfaces
+
+After the minimal live path works, the platform should expose the same operational views for paper and live:
+
+- account status
+- orders
+- fills
+- positions
+- equity curve
+- runtime alerts
+- chart annotations
+
+Operational safety controls should be added before enabling automatic live dispatch:
+
+- environment switch (`paper` / `live`)
+- account binding and credential reference validation
+- kill switch
+- `reduce-only` / `close-only` mode
+- manual-review mode before auto-dispatch
+
+#### Step 5. Production hardening after the mainline is connected
+
+Only after the canonical paper/live path is working end-to-end should the project expand to:
+
+- exchange websocket user data stream
+- automatic reconciliation jobs
+- retry / idempotency guards
+- alert delivery
+- failure runbooks
+- full live-session automation
+
+Near-term build order:
+
+1. extract canonical execution pipeline from current paper-order flow
+2. introduce executor abstraction and keep current paper behavior behind `PaperExecutor`
+3. implement minimal `BinanceFuturesLiveExecutor`
+4. add live order sync -> fill materialization -> position/equity update
+5. expose shared monitoring views for paper/live
+6. gate live auto-dispatch behind manual-review and runtime readiness checks
+
 ### Phase 3: Production Hardening
 
 - event bus
@@ -289,9 +418,9 @@ web/console
 
 ## 12. Next Build Steps
 
-1. add persistent repositories for strategies, accounts, and orders
-2. add Binance futures adapter
-3. add paper matching engine
-4. add TradingView-compatible candle datafeed endpoints
-5. add authentication and user model
-6. connect frontend console to platform API
+1. extract a canonical order-intent -> execution -> reconciliation pipeline
+2. keep current simulated immediate-fill logic behind a dedicated `PaperExecutor`
+3. add a minimal Binance Futures `LiveExecutor` for live submit/sync/materialize
+4. unify post-trade persistence for fills / positions / equity snapshots / annotations
+5. expose shared monitoring views for paper and live sessions
+6. gate live auto-dispatch behind manual-review, kill switch, and runtime-readiness checks
