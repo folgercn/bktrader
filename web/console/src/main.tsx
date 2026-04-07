@@ -588,6 +588,7 @@ function App() {
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const primaryLiveSessionDecision = getRecord(primaryLiveSession?.state?.lastStrategyDecision);
   const primaryLiveSessionDecisionMeta = getRecord(primaryLiveSessionDecision.metadata);
+  const primaryLiveSessionSignalBarDecision = getRecord(primaryLiveSessionDecisionMeta.signalBarDecision);
   const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
   const primaryLiveSessionSourceGate = getRecord(primaryLiveSession?.state?.lastStrategyEvaluationSourceGate);
   const primaryLiveSessionTimeline = getList(primaryLiveSession?.state?.timeline);
@@ -3651,6 +3652,11 @@ function App() {
                     intent-context: spread {formatMaybeNumber(primaryLiveSessionIntent.spreadBps)} bps · bias {String(primaryLiveSessionIntent.liquidityBias ?? "--")} · ma20 {formatMaybeNumber(primaryLiveSessionIntent.ma20)} · atr14 {formatMaybeNumber(primaryLiveSessionIntent.atr14)}
                   </div>
                   <div className="note-item">
+                    signal-filter: tf {String(primaryLiveSessionSignalBarDecision.timeframe ?? "--")} · sma5 {formatMaybeNumber(primaryLiveSessionSignalBarDecision.sma5)} · early-long{" "}
+                    {boolLabel(primaryLiveSessionSignalBarDecision.longEarlyReversalReady)} · early-short {boolLabel(primaryLiveSessionSignalBarDecision.shortEarlyReversalReady)} ·{" "}
+                    {String(primaryLiveSessionSignalBarDecision.reason ?? "--")}
+                  </div>
+                  <div className="note-item">
                     dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · cooldown {String(primaryLiveSession?.state?.dispatchCooldownSeconds ?? "--")}s · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
                   </div>
                   <div className="note-item">
@@ -5300,8 +5306,14 @@ function buildSignalBarDecisionNotes(signalBarDecision: Record<string, unknown>,
   const current = getRecord(signalBarDecision.current);
   const prevBar1 = getRecord(signalBarDecision.prevBar1);
   const prevBar2 = getRecord(signalBarDecision.prevBar2);
+  const timeframe = String(signalBarDecision.timeframe ?? signalBarState.timeframe ?? "--");
+  const filterLabel =
+    timeframe === "1d"
+      ? `sma5 ${formatMaybeNumber(signalBarDecision.sma5)} · early-long=${boolLabel(signalBarDecision.longEarlyReversalReady)} · early-short=${boolLabel(signalBarDecision.shortEarlyReversalReady)}`
+      : `ma20 ${formatMaybeNumber(signalBarDecision.ma20)}`;
   return [
     `signal-bar: ${String(signalBarDecision.reason ?? "--")} · longReady=${boolLabel(signalBarDecision.longReady)} · shortReady=${boolLabel(signalBarDecision.shortReady)}`,
+    `filter: tf=${timeframe} · ${filterLabel}`,
     `current: ${formatMaybeNumber(current.open)} / ${formatMaybeNumber(current.high)} / ${formatMaybeNumber(current.low)} / ${formatMaybeNumber(current.close)}`,
     `t-1: ${formatMaybeNumber(prevBar1.open)} / ${formatMaybeNumber(prevBar1.high)} / ${formatMaybeNumber(prevBar1.low)} / ${formatMaybeNumber(prevBar1.close)}`,
     `t-2: ${formatMaybeNumber(prevBar2.open)} / ${formatMaybeNumber(prevBar2.high)} / ${formatMaybeNumber(prevBar2.low)} / ${formatMaybeNumber(prevBar2.close)}`,
@@ -5328,29 +5340,63 @@ function deriveSignalActionSummary(signalBarState: Record<string, unknown>) {
   const prevBar1 = getRecord(signalBarState.prevBar1);
   const prevBar2 = getRecord(signalBarState.prevBar2);
   const close = getNumber(current.close);
+  const timeframe = String(signalBarState.timeframe ?? "").trim().toLowerCase();
+  const sma5 = getNumber(signalBarState.sma5);
   const ma20 = getNumber(signalBarState.ma20);
+  const atr14 = getNumber(signalBarState.atr14);
   const prevHigh1 = getNumber(prevBar1.high);
   const prevHigh2 = getNumber(prevBar2.high);
   const prevLow1 = getNumber(prevBar1.low);
   const prevLow2 = getNumber(prevBar2.low);
-  if (close == null || ma20 == null || prevHigh1 == null || prevHigh2 == null || prevLow1 == null || prevLow2 == null) {
+  if (close == null || prevHigh1 == null || prevHigh2 == null || prevLow1 == null || prevLow2 == null) {
     return { bias: "neutral", state: "waiting", reason: "insufficient-signal-bars" };
   }
-  const longReady = close > ma20 && prevHigh2 > prevHigh1;
-  const shortReady = close < ma20 && prevLow2 < prevLow1;
+  const longBreakoutShape = prevHigh2 > prevHigh1;
+  const shortBreakoutShape = prevLow2 < prevLow1;
+  let longReady = false;
+  let shortReady = false;
+  let longReason = "";
+  let shortReason = "";
+  if (timeframe === "1d" && sma5 != null && atr14 != null) {
+    const earlyBand = 0.06 * atr14;
+    const longHard = close > sma5;
+    const shortHard = close < sma5;
+    const longEarly = close >= sma5 - earlyBand && longBreakoutShape && prevLow1 >= prevLow2;
+    const shortEarly = close <= sma5 + earlyBand && shortBreakoutShape && prevHigh1 <= prevHigh2;
+    longReady = longHard || longEarly;
+    shortReady = shortHard || shortEarly;
+    longReason = longHard ? "close>sma5" : longEarly ? "early reversal gate" : "1d long filter blocked";
+    shortReason = shortHard ? "close<sma5" : shortEarly ? "early reversal gate" : "1d short filter blocked";
+  } else if (ma20 != null) {
+    longReady = close > ma20 && longBreakoutShape;
+    shortReady = close < ma20 && shortBreakoutShape;
+    longReason = longReady ? "close>ma20 and high2>high1" : "trend/structure not ready";
+    shortReason = shortReady ? "close<ma20 and low2<low1" : "trend/structure not ready";
+  } else {
+    return { bias: "neutral", state: "waiting", reason: "insufficient-signal-bars" };
+  }
   if (longReady && !shortReady) {
-    return { bias: "long", state: "ready", reason: "close>ma20 and high2>high1" };
+    return { bias: "long", state: "ready", reason: longReason };
   }
   if (shortReady && !longReady) {
-    return { bias: "short", state: "ready", reason: "close<ma20 and low2<low1" };
+    return { bias: "short", state: "ready", reason: shortReason };
   }
-  if (close > ma20) {
+  if (timeframe === "1d" && sma5 != null) {
+    if (close > sma5) {
+      return { bias: "long", state: "watch", reason: "above sma5, breakout not ready" };
+    }
+    if (close < sma5) {
+      return { bias: "short", state: "watch", reason: "below sma5, breakout not ready" };
+    }
+    return { bias: "neutral", state: "watch", reason: "close around sma5" };
+  }
+  if (ma20 != null && close > ma20) {
     return { bias: "long", state: "watch", reason: "trend ok, structure not ready" };
   }
-  if (close < ma20) {
+  if (ma20 != null && close < ma20) {
     return { bias: "short", state: "watch", reason: "trend ok, structure not ready" };
   }
-  return { bias: "neutral", state: "watch", reason: "close around ma20" };
+  return { bias: "neutral", state: "watch", reason: "close around filter" };
 }
 
 function deriveLivePreflightSummary(
