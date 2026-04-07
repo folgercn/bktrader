@@ -75,25 +75,7 @@ func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
 		if session.AccountID != account.ID {
 			continue
 		}
-		symbol := NormalizeSymbol(stringValue(session.State["symbol"]))
-		if symbol == "" {
-			continue
-		}
-		positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(account.ID, symbol)
-		if positionErr != nil {
-			continue
-		}
-		state := cloneMetadata(session.State)
-		state["recoveredPosition"] = positionSnapshot
-		state["hasRecoveredPosition"] = foundPosition
-		state["lastRecoveredPositionAt"] = time.Now().UTC().Format(time.RFC3339)
-		state["positionRecoverySource"] = "live-account-sync"
-		if foundPosition {
-			state["positionRecoveryStatus"] = "monitoring-open-position"
-		} else {
-			state["positionRecoveryStatus"] = "flat"
-		}
-		_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+		_, _ = p.refreshLiveSessionPositionContext(session, time.Now().UTC(), "live-account-sync")
 	}
 }
 
@@ -612,7 +594,7 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 	if strings.TrimSpace(stringValue(session.State["lastDispatchedOrderId"])) != "" {
 		session, _ = p.syncLatestLiveSessionOrder(session, time.Now().UTC())
 	}
-	session, _ = p.refreshLiveSessionProtectionState(session)
+	session, _ = p.refreshLiveSessionPositionContext(session, time.Now().UTC(), "live-startup-recovery")
 	return p.store.UpdateLiveSessionStatus(session.ID, "RUNNING")
 }
 
@@ -757,6 +739,70 @@ func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession)
 	return p.store.UpdateLiveSessionState(session.ID, state)
 }
 
+func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession, eventTime time.Time, source string) (domain.LiveSession, error) {
+	refreshed, err := p.refreshLiveSessionProtectionState(session)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	state := cloneMetadata(refreshed.State)
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(state["symbol"]), stringValue(state["lastSymbol"])))
+	if symbol == "" {
+		return refreshed, nil
+	}
+	positionSnapshot, foundPosition, err := p.resolvePaperSessionPositionSnapshot(refreshed.AccountID, symbol)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	state["recoveredPosition"] = positionSnapshot
+	state["hasRecoveredPosition"] = foundPosition
+	state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["positionRecoverySource"] = firstNonEmpty(source, "live-position-refresh")
+	if !foundPosition {
+		delete(state, "livePositionState")
+		state["lastLivePositionState"] = map[string]any{}
+		if !boolValue(mapValue(state["virtualPosition"])["virtual"]) {
+			state["positionRecoveryStatus"] = "flat"
+		}
+		return p.store.UpdateLiveSessionState(refreshed.ID, state)
+	}
+
+	version, err := p.resolveCurrentStrategyVersion(refreshed.StrategyID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	parameters, err := p.resolveLiveSessionParameters(refreshed, version)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	timeframe := firstNonEmpty(stringValue(state["signalTimeframe"]), stringValue(parameters["signalTimeframe"]))
+	signalBarStates := cloneMetadata(mapValue(state["lastStrategyEvaluationSignalBarStates"]))
+	if len(signalBarStates) == 0 {
+		bootstrapStates, bootstrapErr := p.liveSignalBarStates(symbol, timeframe)
+		if bootstrapErr == nil {
+			signalBarStates = bootstrapStates
+			state["lastStrategyEvaluationSignalBarStates"] = signalBarStates
+			state["lastStrategyEvaluationSignalBarBootstrap"] = "market-cache"
+		}
+	}
+	signalBarState, _ := pickSignalBarState(signalBarStates, symbol, timeframe)
+	if signalBarState == nil {
+		return p.store.UpdateLiveSessionState(refreshed.ID, state)
+	}
+	marketPrice := firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(mapValue(signalBarState["current"])["close"]))
+	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice)
+	if len(livePositionState) == 0 {
+		return p.store.UpdateLiveSessionState(refreshed.ID, state)
+	}
+	state["livePositionState"] = livePositionState
+	state["lastLivePositionState"] = livePositionState
+	state["lastPositionContextRefreshAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastPositionContextSource"] = firstNonEmpty(source, "live-position-refresh")
+	if boolValue(livePositionState["protected"]) && len(metadataList(state["recoveredProtectionOrders"])) > 0 {
+		state["positionRecoveryStatus"] = "protected-open-position"
+	}
+	return p.store.UpdateLiveSessionState(refreshed.ID, state)
+}
+
 func isProtectionOrder(order map[string]any) bool {
 	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(order["origType"]), stringValue(order["type"]))))
 	if boolValue(order["reduceOnly"]) || boolValue(order["closePosition"]) {
@@ -888,19 +934,14 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	if strings.EqualFold(created.Status, "FILLED") {
 		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil {
 			state["lastSyncError"] = syncErr.Error()
-		} else if positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(session.AccountID, created.Symbol); positionErr == nil {
-			state["recoveredPosition"] = positionSnapshot
-			state["hasRecoveredPosition"] = foundPosition
-			state["lastRecoveredPositionAt"] = dispatchedAt.Format(time.RFC3339)
-			state["positionRecoverySource"] = "live-order-fill-sync"
-			if foundPosition {
-				state["positionRecoveryStatus"] = "monitoring-open-position"
-			} else {
-				state["positionRecoveryStatus"] = "flat"
-			}
 		}
 	}
 	updatedSession, _ := p.store.UpdateLiveSessionState(session.ID, state)
+	if strings.EqualFold(created.Status, "FILLED") && updatedSession.ID != "" {
+		if refreshed, refreshErr := p.refreshLiveSessionPositionContext(updatedSession, dispatchedAt, "live-order-fill-sync"); refreshErr == nil {
+			updatedSession = refreshed
+		}
+	}
 	if updatedSession.ID != "" {
 		_, _ = p.syncLatestLiveSessionOrder(updatedSession, time.Now().UTC())
 	}
@@ -1297,21 +1338,18 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastSyncedOrderStatus"] = order.Status
 		state["lastDispatchedOrderStatus"] = order.Status
 		if strings.EqualFold(order.Status, "FILLED") {
-			if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr == nil {
-				if positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(session.AccountID, order.Symbol); positionErr == nil {
-					state["recoveredPosition"] = positionSnapshot
-					state["hasRecoveredPosition"] = foundPosition
-					state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
-					state["positionRecoverySource"] = "live-order-sync"
-					if foundPosition {
-						state["positionRecoveryStatus"] = "monitoring-open-position"
-					} else {
-						state["positionRecoveryStatus"] = "flat"
-					}
-				}
+			_, _ = p.SyncLiveAccount(session.AccountID)
+		}
+		updated, err := p.store.UpdateLiveSessionState(session.ID, state)
+		if err != nil {
+			return domain.LiveSession{}, err
+		}
+		if strings.EqualFold(order.Status, "FILLED") {
+			if refreshed, refreshErr := p.refreshLiveSessionPositionContext(updated, eventTime, "live-order-sync"); refreshErr == nil {
+				return refreshed, nil
 			}
 		}
-		return p.store.UpdateLiveSessionState(session.ID, state)
+		return updated, nil
 	}
 	if shouldCancelLiveOrderForExecutionTimeout(order, eventTime) {
 		cancelledOrder, cancelErr := p.CancelLiveOrder(order.ID)
@@ -1372,26 +1410,23 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	state["lastDispatchedOrderStatus"] = syncedOrder.Status
 	state["lastSyncedAt"] = time.Now().UTC().Format(time.RFC3339)
 	if strings.EqualFold(syncedOrder.Status, "FILLED") {
-		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr == nil {
-			if positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(session.AccountID, syncedOrder.Symbol); positionErr == nil {
-				state["recoveredPosition"] = positionSnapshot
-				state["hasRecoveredPosition"] = foundPosition
-				state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
-				state["positionRecoverySource"] = "live-order-sync"
-				if foundPosition {
-					state["positionRecoveryStatus"] = "monitoring-open-position"
-				} else {
-					state["positionRecoveryStatus"] = "flat"
-				}
-			}
-		}
+		_, _ = p.SyncLiveAccount(session.AccountID)
 	}
 	appendTimelineEvent(state, "order", eventTime, "live-order-synced", map[string]any{
 		"orderId": syncedOrder.ID,
 		"status":  syncedOrder.Status,
 		"price":   syncedOrder.Price,
 	})
-	return p.store.UpdateLiveSessionState(session.ID, state)
+	updated, err := p.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	if strings.EqualFold(syncedOrder.Status, "FILLED") {
+		if refreshed, refreshErr := p.refreshLiveSessionPositionContext(updated, eventTime, "live-order-sync"); refreshErr == nil {
+			return refreshed, nil
+		}
+	}
+	return updated, nil
 }
 
 func isTerminalOrderStatus(status string) bool {

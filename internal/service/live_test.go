@@ -1416,3 +1416,88 @@ func TestEvaluateLiveSessionOnSignalKeepsReentryDispatchable(t *testing.T) {
 		t.Fatal("expected reentry proposal to stay non-virtual")
 	}
 }
+
+func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"openOrders": []map[string]any{
+			{
+				"symbol":       "BTCUSDT",
+				"origType":     "TAKE_PROFIT_MARKET",
+				"reduceOnly":   true,
+				"closePosition": true,
+			},
+		},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        69000,
+		MarkPrice:         70000,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastStrategyEvaluationSignalBarStates"] = map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"ma20":      68000.0,
+			"atr14":     900.0,
+			"current": map[string]any{
+				"close": 70000.0,
+				"high":  70100.0,
+				"low":   69500.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 69800.0,
+				"low":  68800.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 69700.0,
+				"low":  68700.0,
+			},
+		},
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Now().UTC(), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	liveState := mapValue(updated.State["livePositionState"])
+	if liveState == nil {
+		t.Fatal("expected livePositionState to be rebuilt")
+	}
+	if !boolValue(liveState["protected"]) {
+		t.Fatal("expected live position to be marked protected after crossing profit threshold")
+	}
+	if parseFloatValue(liveState["stopLoss"]) <= 0 {
+		t.Fatal("expected stopLoss to be rebuilt")
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "protected-open-position" {
+		t.Fatalf("expected protected-open-position, got %s", got)
+	}
+}
