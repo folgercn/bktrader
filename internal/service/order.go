@@ -59,6 +59,9 @@ func (p *Platform) preflightOrderExecution(account domain.Account, order domain.
 	if _, _, err := p.resolveLiveAdapterForAccount(account); err != nil {
 		return err
 	}
+	if shouldSkipLiveRuntimeCheck(order) {
+		return nil
+	}
 	if _, _, err := p.ensureLiveRuntimeReady(account, order); err != nil {
 		return err
 	}
@@ -109,12 +112,23 @@ func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (
 	if err != nil {
 		return domain.Order{}, err
 	}
-	runtimeSession, sourceGate, err := p.ensureLiveRuntimeReady(account, order)
-	if err != nil {
-		return domain.Order{}, err
+	runtimeSession := domain.SignalRuntimeSession{}
+	sourceGate := map[string]any{"ready": true, "mode": "manual-smoke-test"}
+	if !shouldSkipLiveRuntimeCheck(order) {
+		runtimeSession, sourceGate, err = p.ensureLiveRuntimeReady(account, order)
+		if err != nil {
+			return domain.Order{}, err
+		}
 	}
 	submission, submitErr := adapter.SubmitOrder(account, order, binding)
 	return p.applyLiveSubmissionResult(order, binding, runtimeSession, sourceGate, submission, submitErr)
+}
+
+func shouldSkipLiveRuntimeCheck(order domain.Order) bool {
+	if order.Metadata == nil {
+		return false
+	}
+	return boolValue(order.Metadata["skipRuntimeCheck"]) || boolValue(order.Metadata["manualTest"])
 }
 
 func (p *Platform) applyLiveSubmissionResult(
