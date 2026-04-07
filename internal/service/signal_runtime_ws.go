@@ -258,26 +258,6 @@ func (p *Platform) runExchangeWebsocketLoop(
 }
 
 func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
-	paperSessions, err := p.store.ListPaperSessions()
-	if err != nil {
-		return err
-	}
-	for _, session := range paperSessions {
-		if stringValue(session.State["signalRuntimeSessionId"]) != runtimeSessionID {
-			continue
-		}
-		if session.Status != "RUNNING" {
-			continue
-		}
-		if !boolValue(session.State["signalRuntimeRequired"]) {
-			continue
-		}
-		if stringValue(session.State["executionDataSource"]) != "tick" {
-			continue
-		}
-		_ = p.triggerPaperSessionFromSignal(session.ID, runtimeSessionID, summary, eventTime)
-	}
-
 	liveSessions, err := p.store.ListLiveSessions()
 	if err != nil {
 		return err

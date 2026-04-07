@@ -21,7 +21,7 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 	if err != nil {
 		return nil, err
 	}
-	paperSessions, err := p.ListPaperSessions()
+	liveSessions, err := p.ListLiveSessions()
 	if err != nil {
 		return nil, err
 	}
@@ -124,103 +124,6 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		}
 	}
 
-	for _, session := range paperSessions {
-		account := accountByID[session.AccountID]
-		state := cloneMetadata(session.State)
-		runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
-		runtimeSession, hasRuntime := resolveRuntimeForAlert(runtimeSessionID, runtimeByKey, session.AccountID, session.StrategyID)
-		var sourceGate map[string]any
-		var sourceSummary runtimeSourceSummary
-		if hasRuntime {
-			sourceGate = p.evaluateSignalSourceReadiness(session, runtimeSession, time.Now().UTC())
-			sourceSummary = p.summarizeRuntimeSources(runtimeSession)
-		}
-		if hasRuntime && !boolValue(sourceGate["ready"]) {
-			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("paper-runtime-%s", session.ID),
-				Scope:            "paper",
-				Level:            "critical",
-				Title:            "Runtime blocked",
-				Detail:           summarizeSourceGate(sourceGate),
-				AccountID:        session.AccountID,
-				AccountName:      account.Name,
-				StrategyID:       session.StrategyID,
-				StrategyName:     strategyNameByID[session.StrategyID],
-				PaperSessionID:   session.ID,
-				RuntimeSessionID: runtimeSession.ID,
-				Anchor:           "paper",
-				EventTime:        parseOptionalRFC3339(stringValue(state["signalRuntimeLastCheckedAt"])),
-			})
-		}
-		if hasRuntime && sourceSummary.staleCount > 0 {
-			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("paper-stale-%s", session.ID),
-				Scope:            "paper",
-				Level:            "warning",
-				Title:            "Stale sources",
-				Detail:           fmt.Sprintf("%d source state(s) outdated", sourceSummary.staleCount),
-				AccountID:        session.AccountID,
-				AccountName:      account.Name,
-				StrategyID:       session.StrategyID,
-				StrategyName:     strategyNameByID[session.StrategyID],
-				PaperSessionID:   session.ID,
-				RuntimeSessionID: runtimeSession.ID,
-				Anchor:           "paper",
-				EventTime:        sourceSummary.latestEventAt,
-			})
-		}
-		if strings.EqualFold(stringValue(state["lastStrategyEvaluationStatus"]), "decision-error") {
-			appendAlert(domain.PlatformAlert{
-				ID:             fmt.Sprintf("paper-decision-%s", session.ID),
-				Scope:          "paper",
-				Level:          "critical",
-				Title:          "Decision error",
-				Detail:         "latest strategy evaluation returned an error",
-				AccountID:      session.AccountID,
-				AccountName:    account.Name,
-				StrategyID:     session.StrategyID,
-				StrategyName:   strategyNameByID[session.StrategyID],
-				PaperSessionID: session.ID,
-				Anchor:         "paper",
-				EventTime:      parseOptionalRFC3339(stringValue(state["lastStrategyEvaluationAt"])),
-			})
-		}
-		if strings.EqualFold(stringValue(state["lastStrategyEvaluationDecisionState"]), "waiting-signal-bars") ||
-			strings.EqualFold(stringValue(mapValue(state["lastStrategyEvaluationSignalBarDecision"])["reason"]), "insufficient-signal-bars") {
-			appendAlert(domain.PlatformAlert{
-				ID:             fmt.Sprintf("paper-signal-bars-%s", session.ID),
-				Scope:          "paper",
-				Level:          "warning",
-				Title:          "Signal bars missing",
-				Detail:         "insufficient closed signal bars for MA20 / t-1 / t-2",
-				AccountID:      session.AccountID,
-				AccountName:    account.Name,
-				StrategyID:     session.StrategyID,
-				StrategyName:   strategyNameByID[session.StrategyID],
-				PaperSessionID: session.ID,
-				Anchor:         "paper",
-				EventTime:      parseOptionalRFC3339(stringValue(state["lastStrategyEvaluationAt"])),
-			})
-		}
-		if hasRuntime && p.runtimeSessionQuiet(runtimeSession.State) {
-			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("paper-runtime-quiet-%s", session.ID),
-				Scope:            "paper",
-				Level:            "warning",
-				Title:            "Runtime quiet",
-				Detail:           fmt.Sprintf("no runtime events observed in the last %ds", p.runtimePolicy.RuntimeQuietSeconds),
-				AccountID:        session.AccountID,
-				AccountName:      account.Name,
-				StrategyID:       session.StrategyID,
-				StrategyName:     strategyNameByID[session.StrategyID],
-				PaperSessionID:   session.ID,
-				RuntimeSessionID: runtimeSession.ID,
-				Anchor:           "paper",
-				EventTime:        parseOptionalRFC3339(stringValue(runtimeSession.State["lastEventAt"])),
-			})
-		}
-	}
-
 	for _, account := range accounts {
 		if !strings.EqualFold(account.Mode, "LIVE") {
 			continue
@@ -256,10 +159,31 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 			})
 		}
 		runtimeSessionsForAccount := make([]domain.SignalRuntimeSession, 0)
+		runningLiveSessionsForAccount := make([]domain.LiveSession, 0)
 		for _, session := range runtimeSessions {
 			if session.AccountID == account.ID {
 				runtimeSessionsForAccount = append(runtimeSessionsForAccount, session)
 			}
+		}
+		for _, session := range liveSessions {
+			if session.AccountID == account.ID && strings.EqualFold(session.Status, "RUNNING") {
+				runningLiveSessionsForAccount = append(runningLiveSessionsForAccount, session)
+			}
+		}
+		snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+		openPositionCount := maxIntValue(snapshot["positionCount"], 0)
+		if openPositionCount > 0 && len(runningLiveSessionsForAccount) == 0 {
+			appendAlert(domain.PlatformAlert{
+				ID:          fmt.Sprintf("live-position-unmonitored-%s", account.ID),
+				Scope:       "live",
+				Level:       "critical",
+				Title:       "Open position without running session",
+				Detail:      fmt.Sprintf("exchange reports %d open position(s) but no live session is RUNNING", openPositionCount),
+				AccountID:   account.ID,
+				AccountName: account.Name,
+				Anchor:      "live",
+				EventTime:   parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"])),
+			})
 		}
 		activeRuntime, hasRuntime := pickActiveRuntime(runtimeSessionsForAccount)
 		if !hasRuntime {
@@ -306,6 +230,59 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				RuntimeSessionID: activeRuntime.ID,
 				Anchor:           "live",
 				EventTime:        parseOptionalRFC3339(stringValue(activeRuntime.State["lastEventAt"])),
+			})
+		}
+	}
+
+	for _, session := range liveSessions {
+		state := cloneMetadata(session.State)
+		recoveryStatus := strings.TrimSpace(stringValue(state["protectionRecoveryStatus"]))
+		recoveryError := strings.TrimSpace(stringValue(state["lastRecoveryError"]))
+		eventTime := parseOptionalRFC3339(firstNonEmpty(stringValue(state["lastProtectionRecoveryAt"]), stringValue(state["lastRecoveryAttemptAt"])))
+		if recoveryError != "" {
+			appendAlert(domain.PlatformAlert{
+				ID:           fmt.Sprintf("live-recovery-error-%s", session.ID),
+				Scope:        "live",
+				Level:        "critical",
+				Title:        "Live recovery failed",
+				Detail:       recoveryError,
+				AccountID:    session.AccountID,
+				StrategyID:   session.StrategyID,
+				StrategyName: strategyNameByID[session.StrategyID],
+				Anchor:       "live",
+				EventTime:    eventTime,
+			})
+		}
+		if recoveryStatus == "unprotected-open-position" {
+			appendAlert(domain.PlatformAlert{
+				ID:           fmt.Sprintf("live-unprotected-position-%s", session.ID),
+				Scope:        "live",
+				Level:        "critical",
+				Title:        "Recovered position has no protection",
+				Detail:       "open position was restored but no stop-loss / take-profit protection order was recovered",
+				AccountID:    session.AccountID,
+				StrategyID:   session.StrategyID,
+				StrategyName: strategyNameByID[session.StrategyID],
+				Anchor:       "live",
+				EventTime:    eventTime,
+			})
+		} else if recoveryStatus == "protected-open-position" {
+			appendAlert(domain.PlatformAlert{
+				ID:    fmt.Sprintf("live-protected-position-%s", session.ID),
+				Scope: "live",
+				Level: "info",
+				Title: "Recovered protected position",
+				Detail: fmt.Sprintf(
+					"recovered %d protection order(s): stop=%d take-profit=%d",
+					maxIntValue(state["recoveredProtectionCount"], 0),
+					maxIntValue(state["recoveredStopOrderCount"], 0),
+					maxIntValue(state["recoveredTakeProfitOrderCount"], 0),
+				),
+				AccountID:    session.AccountID,
+				StrategyID:   session.StrategyID,
+				StrategyName: strategyNameByID[session.StrategyID],
+				Anchor:       "live",
+				EventTime:    eventTime,
 			})
 		}
 	}

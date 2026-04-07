@@ -403,8 +403,7 @@ func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runti
 			continue
 		}
 		requiredCount++
-		stateKey := signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)
-		entry := mapValue(sourceStates[stateKey])
+		entry := resolveRuntimeSourceStateEntry(sourceStates, binding)
 		if entry == nil {
 			missing = append(missing, map[string]any{
 				"sourceKey":  binding.SourceKey,
@@ -454,6 +453,32 @@ func (p *Platform) signalSourceFreshnessWindow(binding domain.AccountSignalBindi
 	default:
 		return time.Duration(p.runtimePolicy.RuntimeQuietSeconds) * time.Second
 	}
+}
+
+func resolveRuntimeSourceStateEntry(sourceStates map[string]any, binding domain.AccountSignalBinding) map[string]any {
+	if sourceStates == nil {
+		return nil
+	}
+	if entry := mapValue(sourceStates[signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)]); entry != nil {
+		return entry
+	}
+	for _, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		if normalizeSignalSourceKey(stringValue(entry["sourceKey"])) != normalizeSignalSourceKey(binding.SourceKey) {
+			continue
+		}
+		if normalizeSignalSourceRole(stringValue(entry["role"])) != normalizeSignalSourceRole(binding.Role) {
+			continue
+		}
+		if NormalizeSymbol(stringValue(entry["symbol"])) != NormalizeSymbol(binding.Symbol) {
+			continue
+		}
+		return entry
+	}
+	return nil
 }
 
 func (p *Platform) evaluatePaperSignalDecision(session domain.PaperSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time, nextPlannedEvent time.Time, nextPlannedPrice float64, nextPlannedSide, nextPlannedRole, nextPlannedReason string) (StrategyExecutionContext, StrategySignalDecision, error) {

@@ -8,6 +8,8 @@ import (
 )
 
 func main() {
+	_ = config.LoadEnvFile()
+
 	cfg := config.Load()
 
 	if err := postgres.Migrate(cfg.PostgresDSN); err != nil {

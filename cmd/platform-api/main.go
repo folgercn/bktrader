@@ -14,6 +14,8 @@ import (
 )
 
 func main() {
+	_ = config.LoadEnvFile()
+
 	// 加载并验证配置
 	cfg := config.Load()
 	if err := cfg.Validate(); err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -45,7 +46,11 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	if err := platform.LoadPersistedTelegramConfig(); err != nil {
 		return nil, err
 	}
+	warmCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	_ = platform.WarmLiveMarketData(warmCtx)
+	cancel()
 	platform.StartTelegramDispatcher(context.Background())
+	go platform.RecoverLiveTradingOnStartup(context.Background())
 	go platform.StartLiveSyncDispatcher(context.Background())
 
 	return &http.Server{
