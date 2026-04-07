@@ -870,7 +870,14 @@ func (p *Platform) triggerLiveSessionFromSignal(sessionID, runtimeSessionID stri
 	if err != nil {
 		return err
 	}
-	return p.evaluateLiveSessionOnSignal(updatedSession, runtimeSessionID, summary, eventTime)
+	if err := p.evaluateLiveSessionOnSignal(updatedSession, runtimeSessionID, summary, eventTime); err != nil {
+		state = cloneMetadata(updatedSession.State)
+		state["lastStrategyTriggerError"] = err.Error()
+		state["lastStrategyTriggerErrorAt"] = eventTime.UTC().Format(time.RFC3339)
+		_, _ = p.store.UpdateLiveSessionState(updatedSession.ID, state)
+		return err
+	}
+	return nil
 }
 
 func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
@@ -1160,15 +1167,19 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 
 	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
 	if runtimeSessionID == "" && required {
-		runtimeSession, createErr := p.CreateSignalRuntimeSession(session.AccountID, session.StrategyID)
-		if createErr != nil {
-			state["signalRuntimeStatus"] = "ERROR"
-			state["signalRuntimeError"] = createErr.Error()
-			updated, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
-			if updateErr != nil {
-				return domain.LiveSession{}, updateErr
+		runtimeSession, resolveErr := p.resolveLiveRuntimeSession(session.AccountID, session.StrategyID)
+		if resolveErr != nil {
+			var createErr error
+			runtimeSession, createErr = p.CreateSignalRuntimeSession(session.AccountID, session.StrategyID)
+			if createErr != nil {
+				state["signalRuntimeStatus"] = "ERROR"
+				state["signalRuntimeError"] = createErr.Error()
+				updated, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
+				if updateErr != nil {
+					return domain.LiveSession{}, updateErr
+				}
+				return updated, createErr
 			}
-			return updated, createErr
 		}
 		runtimeSessionID = runtimeSession.ID
 		state["signalRuntimeSessionId"] = runtimeSession.ID
