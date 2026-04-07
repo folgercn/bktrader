@@ -226,9 +226,58 @@ func (p *Platform) ListAccountSummaries() ([]domain.AccountSummary, error) {
 
 	summaries := make([]domain.AccountSummary, 0, len(accounts))
 	for _, account := range accounts {
+		if liveSummary, ok := buildLiveAccountSummaryFromSnapshot(account); ok {
+			summaries = append(summaries, liveSummary)
+			continue
+		}
 		summaries = append(summaries, buildAccountSummary(account, positions, startEquityByAccount, states, feesByAccount))
 	}
 	return summaries, nil
+}
+
+func buildLiveAccountSummaryFromSnapshot(account domain.Account) (domain.AccountSummary, bool) {
+	if !strings.EqualFold(account.Mode, "LIVE") || account.Metadata == nil {
+		return domain.AccountSummary{}, false
+	}
+	snapshot := mapValue(account.Metadata["liveSyncSnapshot"])
+	if len(snapshot) == 0 || !strings.EqualFold(stringValue(snapshot["syncStatus"]), "SYNCED") {
+		return domain.AccountSummary{}, false
+	}
+	updatedAt := time.Now().UTC()
+	if raw := stringValue(account.Metadata["lastLiveSyncAt"]); raw != "" {
+		if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+			updatedAt = parsed
+		}
+	}
+	startEquity := parseFloatValue(snapshot["totalWalletBalance"]) - parseFloatValue(snapshot["totalUnrealizedProfit"])
+	return domain.AccountSummary{
+		AccountID:         account.ID,
+		AccountName:       account.Name,
+		Mode:              account.Mode,
+		Exchange:          account.Exchange,
+		Status:            account.Status,
+		StartEquity:       startEquity,
+		RealizedPnL:       0,
+		UnrealizedPnL:     parseFloatValue(snapshot["totalUnrealizedProfit"]),
+		Fees:              0,
+		NetEquity:         parseFloatValue(snapshot["totalMarginBalance"]),
+		ExposureNotional:  sumSnapshotPositionNotional(snapshot["positions"]),
+		OpenPositionCount: len(metadataList(snapshot["positions"])),
+		UpdatedAt:         updatedAt,
+	}, true
+}
+
+func sumSnapshotPositionNotional(value any) float64 {
+	items := metadataList(value)
+	total := 0.0
+	for _, item := range items {
+		notional := parseFloatValue(item["notional"])
+		if notional < 0 {
+			notional = -notional
+		}
+		total += notional
+	}
+	return total
 }
 
 // ListAccountEquitySnapshots 获取指定账户的净值快照时间序列。

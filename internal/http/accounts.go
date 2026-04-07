@@ -57,10 +57,6 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 	})
 
 	mux.HandleFunc("/api/v1/live/accounts/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/live/accounts/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
 		if len(parts) != 2 {
@@ -68,7 +64,34 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 			return
 		}
 		accountID := parts[0]
-		switch parts[1] {
+		action := parts[1]
+		if r.Method == http.MethodGet {
+			account, err := platform.GetAccount(accountID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			snapshot := map[string]any{}
+			if account.Metadata != nil {
+				if resolved, ok := account.Metadata["liveSyncSnapshot"].(map[string]any); ok {
+					snapshot = resolved
+				}
+			}
+			switch action {
+			case "positions":
+				writeJSON(w, http.StatusOK, snapshot["positions"])
+			case "open-orders":
+				writeJSON(w, http.StatusOK, snapshot["openOrders"])
+			default:
+				writeError(w, http.StatusNotFound, "live account route not found")
+			}
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		switch action {
 		case "binding":
 			var payload map[string]any
 			if err := decodeJSON(r, &payload); err != nil {
@@ -184,4 +207,5 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 		writeJSON(w, http.StatusOK, items)
 	})
+
 }
