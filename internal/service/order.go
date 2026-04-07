@@ -65,38 +65,16 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 	// --- 模拟盘立即成交逻辑 ---
 	executionPrice := resolveExecutionPrice(createdOrder)
 	fillFee := resolvePaperFillFee(createdOrder, executionPrice)
-	fill := domain.Fill{
-		OrderID:  createdOrder.ID,
-		Price:    executionPrice,
-		Quantity: createdOrder.Quantity,
-		Fee:      fillFee,
-	}
-	if _, err := p.store.CreateFill(fill); err != nil {
-		return domain.Order{}, err
-	}
-
-	// 更新持仓
-	if err := p.applyPaperFill(account, createdOrder, executionPrice); err != nil {
-		return domain.Order{}, err
-	}
-
-	// 标记订单为已成交
-	createdOrder.Status = "FILLED"
-	createdOrder.Price = executionPrice
 	createdOrder.Metadata = cloneMetadata(createdOrder.Metadata)
 	createdOrder.Metadata["executionMode"] = "paper"
 	createdOrder.Metadata["fillPolicy"] = "immediate"
 	createdOrder.Metadata["feeSource"] = "configured-paper-rate"
-	updatedOrder, err := p.store.UpdateOrder(createdOrder)
-	if err != nil {
-		return domain.Order{}, err
-	}
-
-	// 捕获成交后的净值快照
-	if err := p.captureAccountSnapshot(account.ID); err != nil {
-		return domain.Order{}, err
-	}
-	return updatedOrder, nil
+	return p.finalizeExecutedOrder(account, createdOrder, []domain.Fill{{
+		OrderID:  createdOrder.ID,
+		Price:    executionPrice,
+		Quantity: createdOrder.Quantity,
+		Fee:      fillFee,
+	}})
 }
 
 func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (domain.Order, error) {
@@ -276,31 +254,51 @@ func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {
 	order.Metadata["adapterSync"] = syncResult.Metadata
 	order.Status = firstNonEmpty(syncResult.Status, order.Status)
 	if len(syncResult.Fills) > 0 {
+		fills := make([]domain.Fill, 0, len(syncResult.Fills))
+		lastPrice := 0.0
 		for _, report := range syncResult.Fills {
-			if _, err := p.store.CreateFill(domain.Fill{
+			price := report.Price
+			if price <= 0 {
+				price = resolveExecutionPrice(order)
+			}
+			lastPrice = price
+			fills = append(fills, domain.Fill{
 				OrderID:  order.ID,
-				Price:    report.Price,
+				Price:    price,
 				Quantity: report.Quantity,
 				Fee:      report.Fee - report.FundingPnL,
-			}); err != nil {
-				return domain.Order{}, err
-			}
-			liveExecutionPrice := report.Price
-			if liveExecutionPrice <= 0 {
-				liveExecutionPrice = resolveExecutionPrice(order)
-			}
-			execOrder := order
-			execOrder.Price = liveExecutionPrice
-			if execOrder.Metadata == nil {
-				execOrder.Metadata = map[string]any{}
-			}
-			execOrder.Metadata["fundingPnL"] = report.FundingPnL
-			if err := p.applyPaperFill(account, execOrder, liveExecutionPrice); err != nil {
-				return domain.Order{}, err
-			}
+			})
 		}
-		order.Price = syncResult.Fills[len(syncResult.Fills)-1].Price
+		order.Price = lastPrice
+		order.Metadata["fundingPnL"] = syncResult.Fills[len(syncResult.Fills)-1].FundingPnL
+		return p.finalizeExecutedOrder(account, order, fills)
 	}
+	return p.store.UpdateOrder(order)
+}
+
+func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Order, fills []domain.Fill) (domain.Order, error) {
+	if len(fills) == 0 {
+		return p.store.UpdateOrder(order)
+	}
+	lastPrice := order.Price
+	for _, fill := range fills {
+		createdFill, err := p.store.CreateFill(fill)
+		if err != nil {
+			return domain.Order{}, err
+		}
+		executionPrice := createdFill.Price
+		if executionPrice <= 0 {
+			executionPrice = resolveExecutionPrice(order)
+		}
+		lastPrice = executionPrice
+		execOrder := order
+		execOrder.Price = executionPrice
+		if err := p.applyExecutionFill(account, execOrder, executionPrice); err != nil {
+			return domain.Order{}, err
+		}
+	}
+	order.Status = "FILLED"
+	order.Price = lastPrice
 	updatedOrder, err := p.store.UpdateOrder(order)
 	if err != nil {
 		return domain.Order{}, err
@@ -369,9 +367,9 @@ func (p *Platform) ListFills() ([]domain.Fill, error) {
 	return p.store.ListFills()
 }
 
-// applyPaperFill 根据模拟成交更新仓位。
-// 包含开仓、增仓、部分平仓、全部平仓、反向开仓等场景。
-func (p *Platform) applyPaperFill(account domain.Account, order domain.Order, executionPrice float64) error {
+// applyExecutionFill 根据已确认成交更新仓位。
+// 它是 paper/live 共用的持仓落账逻辑，只处理 canonical fill 之后的仓位变更。
+func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order, executionPrice float64) error {
 	position, exists, err := p.store.FindPosition(account.ID, order.Symbol)
 	if err != nil {
 		return err
