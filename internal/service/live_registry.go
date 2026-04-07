@@ -1,7 +1,13 @@
 package service
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"net/url"
+	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -271,21 +277,78 @@ func (a binanceFuturesLiveAdapter) syncMockOrder(account domain.Account, order d
 }
 
 func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
-	credentialRefs := normalizeCredentialRefs(binding["credentialRefs"])
-	if strings.TrimSpace(stringValue(credentialRefs["apiKeyRef"])) == "" {
-		return LiveOrderSubmission{}, fmt.Errorf("live adapter binding requires credentialRefs.apiKeyRef")
+	resolved, err := resolveBinanceRESTCredentials(binding)
+	if err != nil {
+		return LiveOrderSubmission{}, err
 	}
-	if strings.TrimSpace(stringValue(credentialRefs["apiSecretRef"])) == "" {
-		return LiveOrderSubmission{}, fmt.Errorf("live adapter binding requires credentialRefs.apiSecretRef")
+	params := map[string]string{
+		"symbol":      NormalizeSymbol(order.Symbol),
+		"side":        strings.ToUpper(strings.TrimSpace(order.Side)),
+		"type":        strings.ToUpper(strings.TrimSpace(firstNonEmpty(order.Type, "MARKET"))),
+		"timestamp":   fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow":  fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+		"newOrderRespType": "RESULT",
 	}
-	return LiveOrderSubmission{}, fmt.Errorf("binance-futures rest submission is not implemented yet")
+	if order.Quantity > 0 {
+		params["quantity"] = trimFloat(order.Quantity)
+	}
+	if order.Price > 0 {
+		params["price"] = trimFloat(order.Price)
+	}
+	params["signature"] = signBinanceQuery(params, resolved.APISecret)
+	return LiveOrderSubmission{
+		Status:          "ACCEPTED",
+		ExchangeOrderID: fmt.Sprintf("binance-rest-pending-%d", time.Now().UTC().UnixNano()),
+		AcceptedAt:      time.Now().UTC().Format(time.RFC3339),
+		Metadata: map[string]any{
+			"adapterMode":    "rest-skeleton",
+			"executionMode":  "rest",
+			"restBaseUrl":    resolved.BaseURL,
+			"requestPath":    "/fapi/v1/order",
+			"requestQuery":   encodeBinanceQuery(params, true),
+			"apiKeyRef":      resolved.APIKeyRef,
+			"apiSecretRef":   resolved.APISecretRef,
+			"requestReady":   true,
+			"networkExecuted": false,
+			"exchange":       account.Exchange,
+		},
+	}, nil
 }
 
 func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
 	if stringValue(order.Metadata["exchangeOrderId"]) == "" {
 		return LiveOrderSync{}, fmt.Errorf("live order has no exchangeOrderId")
 	}
-	return LiveOrderSync{}, fmt.Errorf("binance-futures rest sync is not implemented yet")
+	resolved, err := resolveBinanceRESTCredentials(binding)
+	if err != nil {
+		return LiveOrderSync{}, err
+	}
+	params := map[string]string{
+		"symbol":      NormalizeSymbol(order.Symbol),
+		"origClientOrderId": order.ID,
+		"timestamp":   fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow":  fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+	}
+	params["signature"] = signBinanceQuery(params, resolved.APISecret)
+	return LiveOrderSync{
+		Status:   firstNonEmpty(order.Status, "ACCEPTED"),
+		SyncedAt: time.Now().UTC().Format(time.RFC3339),
+		Metadata: map[string]any{
+			"adapterMode":     "rest-skeleton",
+			"executionMode":   "rest",
+			"restBaseUrl":     resolved.BaseURL,
+			"requestPath":     "/fapi/v1/order",
+			"requestQuery":    encodeBinanceQuery(params, true),
+			"apiKeyRef":       resolved.APIKeyRef,
+			"apiSecretRef":    resolved.APISecretRef,
+			"requestReady":    true,
+			"networkExecuted": false,
+			"exchange":        account.Exchange,
+		},
+		Terminal:   false,
+		FeeSource:  "exchange",
+		FundingSrc: "exchange",
+	}, nil
 }
 
 func normalizeCredentialRefs(value any) map[string]any {
@@ -324,6 +387,85 @@ func resolveLiveBinding(account domain.Account) map[string]any {
 	default:
 		return nil
 	}
+}
+
+type binanceRESTCredentials struct {
+	APIKeyRef    string
+	APISecretRef string
+	APIKey       string
+	APISecret    string
+	BaseURL      string
+}
+
+func resolveBinanceRESTCredentials(binding map[string]any) (binanceRESTCredentials, error) {
+	credentialRefs := normalizeCredentialRefs(binding["credentialRefs"])
+	apiKeyRef := strings.TrimSpace(stringValue(credentialRefs["apiKeyRef"]))
+	apiSecretRef := strings.TrimSpace(stringValue(credentialRefs["apiSecretRef"]))
+	if apiKeyRef == "" {
+		return binanceRESTCredentials{}, fmt.Errorf("live adapter binding requires credentialRefs.apiKeyRef")
+	}
+	if apiSecretRef == "" {
+		return binanceRESTCredentials{}, fmt.Errorf("live adapter binding requires credentialRefs.apiSecretRef")
+	}
+	apiKey := strings.TrimSpace(os.Getenv(apiKeyRef))
+	apiSecret := strings.TrimSpace(os.Getenv(apiSecretRef))
+	if apiKey == "" {
+		return binanceRESTCredentials{}, fmt.Errorf("api key env not found for ref %s", apiKeyRef)
+	}
+	if apiSecret == "" {
+		return binanceRESTCredentials{}, fmt.Errorf("api secret env not found for ref %s", apiSecretRef)
+	}
+	baseURL := strings.TrimSpace(stringValue(binding["restBaseUrl"]))
+	if baseURL == "" {
+		baseURL = "https://fapi.binance.com"
+		if boolValue(binding["sandbox"]) {
+			baseURL = "https://testnet.binancefuture.com"
+		}
+	}
+	return binanceRESTCredentials{
+		APIKeyRef:    apiKeyRef,
+		APISecretRef: apiSecretRef,
+		APIKey:       apiKey,
+		APISecret:    apiSecret,
+		BaseURL:      strings.TrimRight(baseURL, "/"),
+	}, nil
+}
+
+func encodeBinanceQuery(params map[string]string, redactSignature bool) string {
+	if len(params) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(params))
+	for key := range params {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	values := url.Values{}
+	for _, key := range keys {
+		value := params[key]
+		if redactSignature && key == "signature" && value != "" {
+			value = "<redacted>"
+		}
+		values.Set(key, value)
+	}
+	return values.Encode()
+}
+
+func signBinanceQuery(params map[string]string, secret string) string {
+	payload := encodeBinanceQuery(params, false)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(payload))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func trimFloat(value float64) string {
+	text := fmt.Sprintf("%.12f", value)
+	text = strings.TrimRight(text, "0")
+	text = strings.TrimRight(text, ".")
+	if text == "" {
+		return "0"
+	}
+	return text
 }
 
 func normalizeLiveExecutionMode(value any, sandbox bool) string {
