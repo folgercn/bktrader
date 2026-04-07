@@ -180,19 +180,19 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 		riskKey := strings.ToUpper(strings.TrimSpace(stringValue(item["symbol"]))) + "|" + strings.ToUpper(strings.TrimSpace(stringValue(item["positionSide"])))
 		risk := positionRiskIndex[riskKey]
 		openPositions = append(openPositions, map[string]any{
-			"symbol":            stringValue(item["symbol"]),
-			"positionAmt":       positionAmt,
-			"entryPrice":        parseFloatValue(item["entryPrice"]),
-			"markPrice":         firstPositive(parseFloatValue(risk["markPrice"]), parseFloatValue(item["markPrice"])),
-			"unrealizedProfit":  firstPositive(parseFloatValue(risk["unRealizedProfit"]), parseFloatValue(item["unrealizedProfit"])),
-			"liquidationPrice":  parseFloatValue(risk["liquidationPrice"]),
-			"notional":          parseFloatValue(risk["notional"]),
-			"isolatedMargin":    parseFloatValue(risk["isolatedMargin"]),
-			"leverage":          firstNonEmpty(stringValue(risk["leverage"]), stringValue(item["leverage"])),
-			"marginType":        firstNonEmpty(stringValue(risk["marginType"]), stringValue(item["marginType"])),
-			"positionSide":      firstNonEmpty(stringValue(risk["positionSide"]), stringValue(item["positionSide"])),
-			"breakEvenPrice":    parseFloatValue(risk["breakEvenPrice"]),
-			"maxNotionalValue":  parseFloatValue(risk["maxNotionalValue"]),
+			"symbol":           stringValue(item["symbol"]),
+			"positionAmt":      positionAmt,
+			"entryPrice":       parseFloatValue(item["entryPrice"]),
+			"markPrice":        firstPositive(parseFloatValue(risk["markPrice"]), parseFloatValue(item["markPrice"])),
+			"unrealizedProfit": firstPositive(parseFloatValue(risk["unRealizedProfit"]), parseFloatValue(item["unrealizedProfit"])),
+			"liquidationPrice": parseFloatValue(risk["liquidationPrice"]),
+			"notional":         parseFloatValue(risk["notional"]),
+			"isolatedMargin":   parseFloatValue(risk["isolatedMargin"]),
+			"leverage":         firstNonEmpty(stringValue(risk["leverage"]), stringValue(item["leverage"])),
+			"marginType":       firstNonEmpty(stringValue(risk["marginType"]), stringValue(item["marginType"])),
+			"positionSide":     firstNonEmpty(stringValue(risk["positionSide"]), stringValue(item["positionSide"])),
+			"breakEvenPrice":   parseFloatValue(risk["breakEvenPrice"]),
+			"maxNotionalValue": parseFloatValue(risk["maxNotionalValue"]),
 		})
 	}
 	assetSummaries := make([]map[string]any, 0)
@@ -212,20 +212,20 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 	openOrders := make([]map[string]any, 0, len(openOrdersBody))
 	for _, item := range openOrdersBody {
 		openOrders = append(openOrders, map[string]any{
-			"symbol":         stringValue(item["symbol"]),
-			"orderId":        stringValue(item["orderId"]),
-			"clientOrderId":  stringValue(item["clientOrderId"]),
-			"status":         mapBinanceOrderStatus(stringValue(item["status"])),
-			"side":           stringValue(item["side"]),
-			"type":           stringValue(item["type"]),
-			"origQty":        parseFloatValue(item["origQty"]),
-			"executedQty":    parseFloatValue(item["executedQty"]),
-			"price":          parseFloatValue(item["price"]),
-			"avgPrice":       parseFloatValue(item["avgPrice"]),
-			"positionSide":   stringValue(item["positionSide"]),
-			"reduceOnly":     item["reduceOnly"],
-			"timeInForce":    stringValue(item["timeInForce"]),
-			"updateTime":     parseBinanceMillisToRFC3339(item["updateTime"]),
+			"symbol":        stringValue(item["symbol"]),
+			"orderId":       stringValue(item["orderId"]),
+			"clientOrderId": stringValue(item["clientOrderId"]),
+			"status":        mapBinanceOrderStatus(stringValue(item["status"])),
+			"side":          stringValue(item["side"]),
+			"type":          stringValue(item["type"]),
+			"origQty":       parseFloatValue(item["origQty"]),
+			"executedQty":   parseFloatValue(item["executedQty"]),
+			"price":         parseFloatValue(item["price"]),
+			"avgPrice":      parseFloatValue(item["avgPrice"]),
+			"positionSide":  stringValue(item["positionSide"]),
+			"reduceOnly":    item["reduceOnly"],
+			"timeInForce":   stringValue(item["timeInForce"]),
+			"updateTime":    parseBinanceMillisToRFC3339(item["updateTime"]),
 		})
 	}
 	account.Metadata = cloneMetadata(account.Metadata)
@@ -556,16 +556,26 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(intent)
+	dispatchedAt := time.Now().UTC()
 	state["lastDispatchedOrderId"] = created.ID
-	state["lastDispatchedAt"] = time.Now().UTC().Format(time.RFC3339)
+	state["lastDispatchedOrderStatus"] = created.Status
+	state["lastDispatchedAt"] = dispatchedAt.Format(time.RFC3339)
 	state["lastDispatchedIntent"] = intent
 	state["lastDispatchedIntentSignature"] = intentSignature
+	state["planIndex"] = resolveNextLivePlanIndex(state)
+	state["lastEventTime"] = firstNonEmpty(stringValue(intent["plannedEventAt"]), dispatchedAt.Format(time.RFC3339))
+	state["lastEventSide"] = created.Side
+	state["lastEventRole"] = stringValue(intent["role"])
+	state["lastEventReason"] = stringValue(intent["reason"])
 	delete(state, "lastStrategyIntent")
-	appendTimelineEvent(state, "order", time.Now().UTC(), "live-intent-dispatched", map[string]any{
+	delete(state, "lastAutoDispatchError")
+	appendTimelineEvent(state, "order", dispatchedAt, "live-intent-dispatched", map[string]any{
 		"orderId": created.ID,
 		"side":    created.Side,
 		"symbol":  created.Symbol,
 		"price":   created.Price,
+		"role":    stringValue(intent["role"]),
+		"reason":  stringValue(intent["reason"]),
 	})
 	updatedSession, _ := p.store.UpdateLiveSessionState(session.ID, state)
 	if updatedSession.ID != "" {
@@ -609,6 +619,10 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		return err
 	}
 	session, _ = p.syncLatestLiveSessionOrder(session, eventTime)
+	session, plan, err := p.ensureLiveExecutionPlan(session)
+	if err != nil {
+		return err
+	}
 
 	state := cloneMetadata(session.State)
 	state["strategyEvaluationMode"] = "signal-runtime-heartbeat"
@@ -616,6 +630,36 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	state["lastStrategyEvaluationTrigger"] = cloneMetadata(summary)
 	state["lastStrategyEvaluationTriggerSource"] = buildStrategyEvaluationTriggerSource(summary)
 	state["lastStrategyEvaluationStatus"] = "evaluated"
+	state["lastStrategyEvaluationPlanLength"] = len(plan)
+	index := resolveLivePlanIndex(state)
+	state["lastStrategyEvaluationRemaining"] = maxInt(len(plan)-index, 0)
+	var nextPlannedEvent time.Time
+	var nextPlannedPrice float64
+	var nextPlannedSide string
+	var nextPlannedRole string
+	var nextPlannedReason string
+	if index >= 0 && index < len(plan) {
+		step := plan[index]
+		nextPlannedEvent = step.EventTime
+		nextPlannedPrice = step.Price
+		nextPlannedSide = step.Side
+		nextPlannedRole = step.Role
+		nextPlannedReason = step.Reason
+		state["lastStrategyEvaluationNextPlannedEventAt"] = formatOptionalRFC3339(nextPlannedEvent)
+		state["lastStrategyEvaluationNextPlannedPrice"] = nextPlannedPrice
+		state["lastStrategyEvaluationNextPlannedSide"] = nextPlannedSide
+		state["lastStrategyEvaluationNextPlannedRole"] = nextPlannedRole
+		state["lastStrategyEvaluationNextPlannedReason"] = nextPlannedReason
+	} else {
+		state["lastStrategyEvaluationStatus"] = "plan-exhausted"
+		delete(state, "lastStrategyIntent")
+		delete(state, "lastStrategyIntentSignature")
+		appendTimelineEvent(state, "strategy", eventTime, "plan-exhausted", map[string]any{
+			"planLength": len(plan),
+		})
+		_, err := p.store.UpdateLiveSessionState(session.ID, state)
+		return err
+	}
 
 	sourceGate := map[string]any{
 		"ready":   false,
@@ -652,7 +696,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		return err
 	}
 
-	executionContext, decision, err := p.evaluateLiveSignalDecision(session, summary, sourceStates, signalBarStates, eventTime)
+	executionContext, decision, err := p.evaluateLiveSignalDecision(session, summary, sourceStates, signalBarStates, eventTime, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason)
 	if err != nil {
 		state["lastStrategyEvaluationStatus"] = "decision-error"
 		state["lastStrategyDecision"] = map[string]any{
@@ -750,6 +794,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	delete(state, "lastSyncError")
 	state["lastSyncedOrderId"] = syncedOrder.ID
 	state["lastSyncedOrderStatus"] = syncedOrder.Status
+	state["lastDispatchedOrderStatus"] = syncedOrder.Status
 	state["lastSyncedAt"] = time.Now().UTC().Format(time.RFC3339)
 	appendTimelineEvent(state, "order", eventTime, "live-order-synced", map[string]any{
 		"orderId": syncedOrder.ID,
@@ -768,7 +813,7 @@ func isTerminalOrderStatus(status string) bool {
 	}
 }
 
-func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time) (StrategyExecutionContext, StrategySignalDecision, error) {
+func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time, nextPlannedEvent time.Time, nextPlannedPrice float64, nextPlannedSide, nextPlannedRole, nextPlannedReason string) (StrategyExecutionContext, StrategySignalDecision, error) {
 	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
 	if err != nil {
 		return StrategyExecutionContext{}, StrategySignalDecision{}, err
@@ -804,12 +849,17 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		return executionContext, StrategySignalDecision{}, err
 	}
 	decision, err := evaluator.EvaluateSignal(StrategySignalEvaluationContext{
-		ExecutionContext: executionContext,
-		TriggerSummary:   cloneMetadata(summary),
-		SourceStates:     cloneMetadata(sourceStates),
-		SignalBarStates:  cloneMetadata(signalBarStates),
-		CurrentPosition:  currentPosition,
-		EventTime:        eventTime.UTC(),
+		ExecutionContext:  executionContext,
+		TriggerSummary:    cloneMetadata(summary),
+		SourceStates:      cloneMetadata(sourceStates),
+		SignalBarStates:   cloneMetadata(signalBarStates),
+		CurrentPosition:   currentPosition,
+		EventTime:         eventTime.UTC(),
+		NextPlannedEvent:  nextPlannedEvent.UTC(),
+		NextPlannedPrice:  nextPlannedPrice,
+		NextPlannedSide:   nextPlannedSide,
+		NextPlannedRole:   nextPlannedRole,
+		NextPlannedReason: nextPlannedReason,
 	})
 	if err != nil {
 		return executionContext, StrategySignalDecision{}, err
@@ -844,6 +894,9 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 	state["signalRuntimeRequired"] = required
 	state["signalRuntimeReady"] = boolValue(plan["ready"])
 	state["dispatchMode"] = firstNonEmpty(stringValue(state["dispatchMode"]), "manual-review")
+	if _, ok := state["planIndex"]; !ok {
+		state["planIndex"] = 0
+	}
 
 	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
 	if runtimeSessionID == "" && required {
@@ -942,6 +995,110 @@ func (p *Platform) stopLinkedLiveSignalRuntime(session domain.LiveSession) (doma
 	return runtimeSession, nil
 }
 
+func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.LiveSession, []paperPlannedOrder, error) {
+	p.mu.Lock()
+	if plan, ok := p.livePlans[session.ID]; ok {
+		p.mu.Unlock()
+		return session, plan, nil
+	}
+	p.mu.Unlock()
+
+	session, err := p.syncLiveSessionRuntime(session)
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+
+	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+	parameters, err := p.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+	engine, engineKey, err := p.resolveStrategyEngine(version.ID, parameters)
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+
+	if !p.hasExecutionDataset(stringValue(parameters["executionDataSource"]), stringValue(parameters["symbol"])) {
+		return domain.LiveSession{}, nil, fmt.Errorf("no %s dataset found for symbol %s", stringValue(parameters["executionDataSource"]), stringValue(parameters["symbol"]))
+	}
+
+	semantics := defaultExecutionSemantics(ExecutionModeLive, parameters)
+	result, err := engine.Run(StrategyExecutionContext{
+		StrategyEngineKey:   engineKey,
+		StrategyVersionID:   version.ID,
+		SignalTimeframe:     stringValue(parameters["signalTimeframe"]),
+		ExecutionDataSource: stringValue(parameters["executionDataSource"]),
+		Symbol:              stringValue(parameters["symbol"]),
+		From:                parseOptionalRFC3339(stringValue(parameters["from"])),
+		To:                  parseOptionalRFC3339(stringValue(parameters["to"])),
+		Parameters:          parameters,
+		Semantics:           semantics,
+	})
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+
+	trades, err := executionTradesFromResult(result)
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+	plan, err := buildPaperExecutionPlan(domain.PaperSession{ID: session.ID, StrategyID: session.StrategyID}, version, engineKey, semantics, trades)
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+	for i := range plan {
+		plan[i].Metadata = cloneMetadata(plan[i].Metadata)
+		if plan[i].Metadata == nil {
+			plan[i].Metadata = map[string]any{}
+		}
+		plan[i].Metadata["source"] = "live-session-strategy-engine"
+		plan[i].Metadata["liveSessionId"] = session.ID
+		delete(plan[i].Metadata, "paperSession")
+	}
+
+	p.mu.Lock()
+	p.livePlans[session.ID] = plan
+	p.mu.Unlock()
+
+	state := cloneMetadata(session.State)
+	state["runner"] = "strategy-engine"
+	state["runtimeMode"] = "canonical-strategy-engine"
+	state["strategyVersionId"] = version.ID
+	state["strategyEngine"] = engineKey
+	state["signalTimeframe"] = stringValue(parameters["signalTimeframe"])
+	state["executionDataSource"] = stringValue(parameters["executionDataSource"])
+	state["symbol"] = stringValue(parameters["symbol"])
+	state["executionMode"] = string(semantics.Mode)
+	state["slippageMode"] = string(semantics.SlippageMode)
+	state["tradingFeeBps"] = semantics.TradingFeeBps
+	state["fundingRateBps"] = semantics.FundingRateBps
+	state["fundingIntervalHours"] = semantics.FundingIntervalHours
+	state["planLength"] = len(plan)
+	state["planReadyAt"] = time.Now().UTC().Format(time.RFC3339)
+	if _, ok := state["planIndex"]; !ok {
+		state["planIndex"] = 0
+	}
+	updatedSession, err := p.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+	return updatedSession, plan, nil
+}
+
+func resolveLivePlanIndex(state map[string]any) int {
+	if value, ok := toFloat64(state["planIndex"]); ok && value >= 0 {
+		return int(value)
+	}
+	return 0
+}
+
+func resolveNextLivePlanIndex(state map[string]any) int {
+	return resolveLivePlanIndex(state) + 1
+}
+
 func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, version domain.StrategyVersion) (map[string]any, error) {
 	parameters := cloneMetadata(version.Parameters)
 	if parameters == nil {
@@ -979,8 +1136,19 @@ func deriveLiveSessionIntent(decision StrategySignalDecision, symbol string) map
 	if strings.TrimSpace(decision.Action) != "advance-plan" || signalBarDecision == nil {
 		return nil
 	}
-	longReady := boolValue(signalBarDecision["longReady"])
-	shortReady := boolValue(signalBarDecision["shortReady"])
+	nextSide := strings.ToUpper(strings.TrimSpace(stringValue(meta["nextPlannedSide"])))
+	if nextSide == "" {
+		longReady := boolValue(signalBarDecision["longReady"])
+		shortReady := boolValue(signalBarDecision["shortReady"])
+		switch {
+		case longReady && !shortReady:
+			nextSide = "BUY"
+		case shortReady && !longReady:
+			nextSide = "SELL"
+		default:
+			return nil
+		}
+	}
 	marketPrice := parseFloatValue(meta["marketPrice"])
 	marketSource := stringValue(meta["marketSource"])
 	signalKind := stringValue(meta["signalKind"])
@@ -995,52 +1163,32 @@ func deriveLiveSessionIntent(decision StrategySignalDecision, symbol string) map
 	bestBid := parseFloatValue(meta["bestBid"])
 	bestAsk := parseFloatValue(meta["bestAsk"])
 	quantity := firstPositive(parseFloatValue(meta["suggestedQuantity"]), 0.001)
+	role := strings.ToLower(strings.TrimSpace(firstNonEmpty(stringValue(meta["nextPlannedRole"]), "entry")))
+	reason := stringValue(meta["nextPlannedReason"])
 
-	switch {
-	case longReady && !shortReady:
-		return map[string]any{
-			"action":            "entry",
-			"side":              "BUY",
-			"type":              "MARKET",
-			"symbol":            NormalizeSymbol(symbol),
-			"priceHint":         marketPrice,
-			"priceSource":       marketSource,
-			"quantity":          quantity,
-			"signalKind":        signalKind,
-			"decisionState":     decisionState,
-			"signalBarStateKey": signalBarStateKey,
-			"entryProximityBps": entryProximityBps,
-			"spreadBps":         spreadBps,
-			"ma20":              ma20,
-			"atr14":             atr14,
-			"liquidityBias":     liquidityBias,
-			"biasActionable":    biasActionable,
-			"bestBid":           bestBid,
-			"bestAsk":           bestAsk,
-		}
-	case shortReady && !longReady:
-		return map[string]any{
-			"action":            "entry",
-			"side":              "SELL",
-			"type":              "MARKET",
-			"symbol":            NormalizeSymbol(symbol),
-			"priceHint":         marketPrice,
-			"priceSource":       marketSource,
-			"quantity":          quantity,
-			"signalKind":        signalKind,
-			"decisionState":     decisionState,
-			"signalBarStateKey": signalBarStateKey,
-			"entryProximityBps": entryProximityBps,
-			"spreadBps":         spreadBps,
-			"ma20":              ma20,
-			"atr14":             atr14,
-			"liquidityBias":     liquidityBias,
-			"biasActionable":    biasActionable,
-			"bestBid":           bestBid,
-			"bestAsk":           bestAsk,
-		}
-	default:
-		return nil
+	return map[string]any{
+		"action":            role,
+		"role":              role,
+		"reason":            reason,
+		"side":              nextSide,
+		"type":              "MARKET",
+		"symbol":            NormalizeSymbol(symbol),
+		"priceHint":         marketPrice,
+		"priceSource":       marketSource,
+		"quantity":          quantity,
+		"signalKind":        signalKind,
+		"decisionState":     decisionState,
+		"signalBarStateKey": signalBarStateKey,
+		"entryProximityBps": entryProximityBps,
+		"spreadBps":         spreadBps,
+		"ma20":              ma20,
+		"atr14":             atr14,
+		"liquidityBias":     liquidityBias,
+		"biasActionable":    biasActionable,
+		"bestBid":           bestBid,
+		"bestAsk":           bestAsk,
+		"plannedEventAt":    stringValue(meta["nextPlannedEvent"]),
+		"plannedPrice":      parseFloatValue(meta["nextPlannedPrice"]),
 	}
 }
 
@@ -1137,6 +1285,10 @@ func shouldAutoDispatchLiveIntent(session domain.LiveSession, intent map[string]
 		return false
 	}
 	if strings.TrimSpace(stringValue(session.State["dispatchMode"])) != "auto-dispatch" {
+		return false
+	}
+	currentOrderStatus := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(session.State["lastSyncedOrderStatus"]), stringValue(session.State["lastDispatchedOrderStatus"]))))
+	if currentOrderStatus != "" && !isTerminalOrderStatus(currentOrderStatus) {
 		return false
 	}
 	signature := buildLiveIntentSignature(intent)

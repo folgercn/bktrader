@@ -26,6 +26,7 @@ type Platform struct {
 	run             map[string]context.CancelFunc // 运行中的 paper session -> cancel 函数
 	signalRun       map[string]context.CancelFunc // 运行中的 signal runtime session -> cancel 函数
 	paperPlans      map[string][]paperPlannedOrder
+	livePlans       map[string][]paperPlannedOrder
 	strategyEngines map[string]StrategyEngine
 	liveAdapters    map[string]LiveExecutionAdapter
 	signalSources   map[string]SignalSourceProvider
@@ -61,6 +62,7 @@ func NewPlatform(store store.Repository) *Platform {
 		run:             make(map[string]context.CancelFunc),
 		signalRun:       make(map[string]context.CancelFunc),
 		paperPlans:      make(map[string][]paperPlannedOrder),
+		livePlans:       make(map[string][]paperPlannedOrder),
 		strategyEngines: make(map[string]StrategyEngine),
 		liveAdapters:    make(map[string]LiveExecutionAdapter),
 		signalSources:   make(map[string]SignalSourceProvider),
