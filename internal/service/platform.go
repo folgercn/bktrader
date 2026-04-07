@@ -32,6 +32,8 @@ type Platform struct {
 	signalSources   map[string]SignalSourceProvider
 	signalAdapters  map[string]SignalRuntimeAdapter
 	signalSessions  map[string]domain.SignalRuntimeSession
+	liveMarketMu    sync.RWMutex
+	liveMarketData  map[string]liveMarketSnapshot
 	manifestMu      sync.Mutex
 	once            sync.Once             // 确保 CSV ledger 只加载一次
 	ledger          []strategyReplayEvent // 缓存的策略回放账本
@@ -68,6 +70,7 @@ func NewPlatform(store store.Repository) *Platform {
 		signalSources:   make(map[string]SignalSourceProvider),
 		signalAdapters:  make(map[string]SignalRuntimeAdapter),
 		signalSessions:  make(map[string]domain.SignalRuntimeSession),
+		liveMarketData:  make(map[string]liveMarketSnapshot),
 		runtimePolicy: RuntimePolicy{
 			TradeTickFreshnessSeconds:      15,
 			OrderBookFreshnessSeconds:      10,

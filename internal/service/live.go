@@ -50,10 +50,46 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	}
 	if normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) == "rest" {
 		if synced, restErr := p.syncLiveAccountFromBinance(account, binding); restErr == nil {
+			p.syncLiveSessionsForAccountSnapshot(synced)
 			return synced, nil
 		}
 	}
-	return p.syncLiveAccountFromLocalState(account, binding)
+	synced, err := p.syncLiveAccountFromLocalState(account, binding)
+	if err == nil {
+		p.syncLiveSessionsForAccountSnapshot(synced)
+	}
+	return synced, err
+}
+
+func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
+	sessions, err := p.ListLiveSessions()
+	if err != nil {
+		return
+	}
+	for _, session := range sessions {
+		if session.AccountID != account.ID {
+			continue
+		}
+		symbol := NormalizeSymbol(stringValue(session.State["symbol"]))
+		if symbol == "" {
+			continue
+		}
+		positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(account.ID, symbol)
+		if positionErr != nil {
+			continue
+		}
+		state := cloneMetadata(session.State)
+		state["recoveredPosition"] = positionSnapshot
+		state["hasRecoveredPosition"] = foundPosition
+		state["lastRecoveredPositionAt"] = time.Now().UTC().Format(time.RFC3339)
+		state["positionRecoverySource"] = "live-account-sync"
+		if foundPosition {
+			state["positionRecoveryStatus"] = "monitoring-open-position"
+		} else {
+			state["positionRecoveryStatus"] = "flat"
+		}
+		_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+	}
 }
 
 func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
@@ -787,7 +823,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(intent["type"]), "MARKET")))
 	symbol := NormalizeSymbol(firstNonEmpty(stringValue(intent["symbol"]), stringValue(session.State["symbol"])))
 	priceHint := parseFloatValue(intent["priceHint"])
-	quantity := firstPositive(parseFloatValue(intent["quantity"]), firstPositive(parseFloatValue(session.State["defaultOrderQuantity"]), 0.001))
+	quantity := firstPositive(parseFloatValue(session.State["defaultOrderQuantity"]), firstPositive(parseFloatValue(intent["quantity"]), 0.001))
 
 	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
 	if err != nil {
@@ -819,6 +855,10 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	dispatchedAt := time.Now().UTC()
 	state["lastDispatchedOrderId"] = created.ID
 	state["lastDispatchedOrderStatus"] = created.Status
+	if isTerminalOrderStatus(created.Status) {
+		state["lastSyncedOrderId"] = created.ID
+		state["lastSyncedOrderStatus"] = created.Status
+	}
 	state["lastDispatchedAt"] = dispatchedAt.Format(time.RFC3339)
 	state["lastDispatchedIntent"] = intent
 	state["lastDispatchedIntentSignature"] = intentSignature
@@ -837,6 +877,21 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 		"role":    stringValue(intent["role"]),
 		"reason":  stringValue(intent["reason"]),
 	})
+	if strings.EqualFold(created.Status, "FILLED") {
+		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil {
+			state["lastSyncError"] = syncErr.Error()
+		} else if positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(session.AccountID, created.Symbol); positionErr == nil {
+			state["recoveredPosition"] = positionSnapshot
+			state["hasRecoveredPosition"] = foundPosition
+			state["lastRecoveredPositionAt"] = dispatchedAt.Format(time.RFC3339)
+			state["positionRecoverySource"] = "live-order-fill-sync"
+			if foundPosition {
+				state["positionRecoveryStatus"] = "monitoring-open-position"
+			} else {
+				state["positionRecoveryStatus"] = "flat"
+			}
+		}
+	}
 	updatedSession, _ := p.store.UpdateLiveSessionState(session.ID, state)
 	if updatedSession.ID != "" {
 		_, _ = p.syncLatestLiveSessionOrder(updatedSession, time.Now().UTC())
@@ -953,6 +1008,15 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		sourceGate = p.evaluateRuntimeSignalSourceReadiness(session.StrategyID, runtimeSession, eventTime)
 		state["lastStrategyEvaluationSourceGate"] = sourceGate
 	}
+	if len(signalBarStates) == 0 {
+		bootstrapStates, bootstrapErr := p.liveSignalBarStates(stringValue(state["symbol"]), stringValue(state["signalTimeframe"]))
+		if bootstrapErr == nil && len(bootstrapStates) > 0 {
+			signalBarStates = bootstrapStates
+			state["lastStrategyEvaluationSignalBarStates"] = signalBarStates
+			state["lastStrategyEvaluationSignalBarStateCount"] = len(signalBarStates)
+			state["lastStrategyEvaluationSignalBarBootstrap"] = "market-cache"
+		}
+	}
 	if !boolValue(sourceGate["ready"]) {
 		state["lastStrategyEvaluationStatus"] = "waiting-source-states"
 		appendTimelineEvent(state, "strategy", eventTime, "waiting-source-states", map[string]any{
@@ -1040,11 +1104,29 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	if err != nil {
 		return session, err
 	}
+	state := cloneMetadata(session.State)
 	if isTerminalOrderStatus(order.Status) {
-		return session, nil
+		state["lastSyncedOrderId"] = order.ID
+		state["lastSyncedOrderStatus"] = order.Status
+		state["lastDispatchedOrderStatus"] = order.Status
+		if strings.EqualFold(order.Status, "FILLED") {
+			if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr == nil {
+				if positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(session.AccountID, order.Symbol); positionErr == nil {
+					state["recoveredPosition"] = positionSnapshot
+					state["hasRecoveredPosition"] = foundPosition
+					state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
+					state["positionRecoverySource"] = "live-order-sync"
+					if foundPosition {
+						state["positionRecoveryStatus"] = "monitoring-open-position"
+					} else {
+						state["positionRecoveryStatus"] = "flat"
+					}
+				}
+			}
+		}
+		return p.store.UpdateLiveSessionState(session.ID, state)
 	}
 	syncedOrder, err := p.SyncLiveOrder(order.ID)
-	state := cloneMetadata(session.State)
 	state["lastSyncAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
 	if err != nil {
 		state["lastSyncError"] = err.Error()
@@ -1063,6 +1145,21 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	state["lastSyncedOrderStatus"] = syncedOrder.Status
 	state["lastDispatchedOrderStatus"] = syncedOrder.Status
 	state["lastSyncedAt"] = time.Now().UTC().Format(time.RFC3339)
+	if strings.EqualFold(syncedOrder.Status, "FILLED") {
+		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr == nil {
+			if positionSnapshot, foundPosition, positionErr := p.resolvePaperSessionPositionSnapshot(session.AccountID, syncedOrder.Symbol); positionErr == nil {
+				state["recoveredPosition"] = positionSnapshot
+				state["hasRecoveredPosition"] = foundPosition
+				state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
+				state["positionRecoverySource"] = "live-order-sync"
+				if foundPosition {
+					state["positionRecoveryStatus"] = "monitoring-open-position"
+				} else {
+					state["positionRecoveryStatus"] = "flat"
+				}
+			}
+		}
+	}
 	appendTimelineEvent(state, "order", eventTime, "live-order-synced", map[string]any{
 		"orderId": syncedOrder.ID,
 		"status":  syncedOrder.Status,
@@ -1115,6 +1212,17 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 	if err != nil {
 		return executionContext, StrategySignalDecision{}, err
 	}
+	nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason = alignLivePlanStepToCurrentMarket(
+		signalBarStates,
+		executionContext.SignalTimeframe,
+		currentPosition,
+		eventTime,
+		nextPlannedEvent,
+		nextPlannedPrice,
+		nextPlannedSide,
+		nextPlannedRole,
+		nextPlannedReason,
+	)
 	decision, err := evaluator.EvaluateSignal(StrategySignalEvaluationContext{
 		ExecutionContext:  executionContext,
 		TriggerSummary:    cloneMetadata(summary),
@@ -1138,6 +1246,58 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		decision.Reason = "unspecified"
 	}
 	return executionContext, decision, nil
+}
+
+func alignLivePlanStepToCurrentMarket(
+	signalBarStates map[string]any,
+	signalTimeframe string,
+	currentPosition map[string]any,
+	eventTime time.Time,
+	nextPlannedEvent time.Time,
+	nextPlannedPrice float64,
+	nextPlannedSide, nextPlannedRole, nextPlannedReason string,
+) (time.Time, float64, string, string, string) {
+	if boolValue(currentPosition["found"]) || parseFloatValue(currentPosition["quantity"]) > 0 {
+		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
+	}
+	if !isLivePlanStepStale(nextPlannedEvent, signalTimeframe, eventTime) {
+		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
+	}
+	signalBarState, _ := pickSignalBarState(signalBarStates, NormalizeSymbol(stringValue(currentPosition["symbol"])), signalTimeframe)
+	if signalBarState == nil {
+		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
+	}
+	gate := evaluateSignalBarGate(signalBarState, "", "entry")
+	longReady := boolValue(gate["longReady"])
+	shortReady := boolValue(gate["shortReady"])
+	if longReady == shortReady {
+		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
+	}
+	current := mapValue(signalBarState["current"])
+	price := parseFloatValue(current["close"])
+	if price <= 0 {
+		price = nextPlannedPrice
+	}
+	side := "BUY"
+	if shortReady {
+		side = "SELL"
+	}
+	return eventTime.UTC(), price, side, "entry", "LiveSignalBootstrap"
+}
+
+func isLivePlanStepStale(nextPlannedEvent time.Time, signalTimeframe string, now time.Time) bool {
+	if nextPlannedEvent.IsZero() {
+		return true
+	}
+	resolution := "240"
+	if strings.EqualFold(strings.TrimSpace(signalTimeframe), "1d") {
+		resolution = "1D"
+	}
+	step := resolutionToDuration(resolution)
+	if step <= 0 {
+		step = 4 * time.Hour
+	}
+	return now.UTC().After(nextPlannedEvent.UTC().Add(step))
 }
 
 func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.LiveSession, error) {
@@ -1292,31 +1452,8 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 		return domain.LiveSession{}, nil, err
 	}
 
-	if !p.hasExecutionDataset(stringValue(parameters["executionDataSource"]), stringValue(parameters["symbol"])) {
-		return domain.LiveSession{}, nil, fmt.Errorf("no %s dataset found for symbol %s", stringValue(parameters["executionDataSource"]), stringValue(parameters["symbol"]))
-	}
-
 	semantics := defaultExecutionSemantics(ExecutionModeLive, parameters)
-	result, err := engine.Run(StrategyExecutionContext{
-		StrategyEngineKey:   engineKey,
-		StrategyVersionID:   version.ID,
-		SignalTimeframe:     stringValue(parameters["signalTimeframe"]),
-		ExecutionDataSource: stringValue(parameters["executionDataSource"]),
-		Symbol:              stringValue(parameters["symbol"]),
-		From:                parseOptionalRFC3339(stringValue(parameters["from"])),
-		To:                  parseOptionalRFC3339(stringValue(parameters["to"])),
-		Parameters:          parameters,
-		Semantics:           semantics,
-	})
-	if err != nil {
-		return domain.LiveSession{}, nil, err
-	}
-
-	trades, err := executionTradesFromResult(result)
-	if err != nil {
-		return domain.LiveSession{}, nil, err
-	}
-	plan, err := buildPaperExecutionPlan(domain.PaperSession{ID: session.ID, StrategyID: session.StrategyID}, version, engineKey, semantics, trades)
+	plan, err := p.buildLiveExecutionPlanFromMarketData(session, version, engine, engineKey, parameters, semantics)
 	if err != nil {
 		return domain.LiveSession{}, nil, err
 	}
@@ -1614,6 +1751,9 @@ func shouldAutoDispatchLiveIntent(session domain.LiveSession, intent map[string]
 	}
 	lastSignature := stringValue(session.State["lastDispatchedIntentSignature"])
 	if signature != "" && signature == lastSignature {
+		if currentOrderStatus != "" && !isTerminalOrderStatus(currentOrderStatus) {
+			return false
+		}
 		lastDispatchedAt := parseOptionalRFC3339(stringValue(session.State["lastDispatchedAt"]))
 		cooldown := time.Duration(maxIntValue(session.State["dispatchCooldownSeconds"], 30)) * time.Second
 		if !lastDispatchedAt.IsZero() && eventTime.Sub(lastDispatchedAt) < cooldown {

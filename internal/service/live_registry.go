@@ -344,7 +344,8 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 	if order.Quantity > 0 {
 		params["quantity"] = trimFloat(order.Quantity)
 	}
-	if order.Price > 0 {
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(order.Type, "MARKET")))
+	if order.Price > 0 && orderType != "MARKET" {
 		params["price"] = trimFloat(order.Price)
 	}
 	params["signature"] = signBinanceQuery(params, resolved.APISecret)
