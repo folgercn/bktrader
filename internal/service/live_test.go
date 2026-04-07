@@ -86,3 +86,15 @@ func TestShouldAutoDispatchLiveIntentAllowsTerminalOrder(t *testing.T) {
 		t.Fatal("expected terminal order to allow auto dispatch for new intent")
 	}
 }
+
+func TestShouldAdvanceLivePlanForOrderStatus(t *testing.T) {
+	if shouldAdvanceLivePlanForOrderStatus("REJECTED") {
+		t.Fatal("expected rejected live order to keep the current plan step actionable")
+	}
+	if !shouldAdvanceLivePlanForOrderStatus("NEW") {
+		t.Fatal("expected accepted/in-flight live order to advance the plan")
+	}
+	if !shouldAdvanceLivePlanForOrderStatus("FILLED") {
+		t.Fatal("expected filled live order to advance the plan")
+	}
+}

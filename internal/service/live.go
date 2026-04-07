@@ -862,12 +862,17 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	state["lastDispatchedAt"] = dispatchedAt.Format(time.RFC3339)
 	state["lastDispatchedIntent"] = intent
 	state["lastDispatchedIntentSignature"] = intentSignature
-	state["planIndex"] = resolveNextLivePlanIndex(state)
-	state["lastEventTime"] = firstNonEmpty(stringValue(intent["plannedEventAt"]), dispatchedAt.Format(time.RFC3339))
-	state["lastEventSide"] = created.Side
-	state["lastEventRole"] = stringValue(intent["role"])
-	state["lastEventReason"] = stringValue(intent["reason"])
-	delete(state, "lastStrategyIntent")
+	if shouldAdvanceLivePlanForOrderStatus(created.Status) {
+		state["planIndex"] = resolveNextLivePlanIndex(state)
+		state["lastEventTime"] = firstNonEmpty(stringValue(intent["plannedEventAt"]), dispatchedAt.Format(time.RFC3339))
+		state["lastEventSide"] = created.Side
+		state["lastEventRole"] = stringValue(intent["role"])
+		state["lastEventReason"] = stringValue(intent["reason"])
+		delete(state, "lastStrategyIntent")
+	} else {
+		state["lastDispatchRejectedAt"] = dispatchedAt.Format(time.RFC3339)
+		state["lastDispatchRejectedStatus"] = created.Status
+	}
 	delete(state, "lastAutoDispatchError")
 	appendTimelineEvent(state, "order", dispatchedAt, "live-intent-dispatched", map[string]any{
 		"orderId": created.ID,
@@ -1175,6 +1180,10 @@ func isTerminalOrderStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func shouldAdvanceLivePlanForOrderStatus(status string) bool {
+	return !strings.EqualFold(strings.TrimSpace(status), "REJECTED")
 }
 
 func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time, nextPlannedEvent time.Time, nextPlannedPrice float64, nextPlannedSide, nextPlannedRole, nextPlannedReason string) (StrategyExecutionContext, StrategySignalDecision, error) {
