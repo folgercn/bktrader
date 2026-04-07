@@ -239,7 +239,7 @@ type ReplayReasonStats = Record<string, Record<string, number>>;
 type ReplaySample = Record<string, unknown>;
 type ExecutionTrade = Record<string, unknown>;
 
-type SourceFilter = "all" | "paper" | "backtest";
+type SourceFilter = "all" | "paper" | "backtest" | "live";
 type EventFilter = "all" | "initial" | "reentry" | "pt" | "sl";
 type TimeWindow = "6h" | "12h" | "1d" | "3d";
 type MarkerDetail = {
@@ -251,6 +251,7 @@ type MarkerDetail = {
   price: number;
   reason?: string;
   paperSession?: string;
+  liveSession?: string;
 };
 
 type ChartOverrideRange = {
@@ -441,13 +442,16 @@ function App() {
   const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
   const [paperCreateAction, setPaperCreateAction] = useState(false);
+  const [paperLaunchAction, setPaperLaunchAction] = useState(false);
   const [liveCreateAction, setLiveCreateAction] = useState(false);
   const [liveBindAction, setLiveBindAction] = useState(false);
   const [liveSyncAction, setLiveSyncAction] = useState<string | null>(null);
   const [liveAccountSyncAction, setLiveAccountSyncAction] = useState<string | null>(null);
+  const [liveFlowAction, setLiveFlowAction] = useState<string | null>(null);
   const [liveOrderAction, setLiveOrderAction] = useState(false);
   const [liveSessionAction, setLiveSessionAction] = useState<string | null>(null);
   const [liveSessionCreateAction, setLiveSessionCreateAction] = useState(false);
+  const [liveSessionLaunchAction, setLiveSessionLaunchAction] = useState(false);
   const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
   const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
   const [notificationAction, setNotificationAction] = useState<string | null>(null);
@@ -690,6 +694,9 @@ function App() {
   const monitorSummary =
     monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
   const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
+  const monitorSessionSource: SourceFilter =
+    highlightedLiveSession?.session ? "live" : primarySession ? "paper" : "all";
+  const monitorSessionID = monitorSession?.id;
   const selectedSignalAccount = accountSignalForm.accountId || paperAccounts[0]?.accountId || liveAccounts[0]?.id || "";
   const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
   const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
@@ -849,7 +856,7 @@ function App() {
       ] as const)
     );
 
-    const anchorDate = resolveChartAnchor(paperSessionData[0], ordersData);
+    const anchorDate = resolveChartAnchor(liveSessionData[0] ?? paperSessionData[0], ordersData);
     const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
     const from = range.from;
     const to = range.to;
@@ -1092,8 +1099,8 @@ function App() {
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
   const candleRange = useMemo(() => summarizeTimeRange(candles.map((item) => item.time)), [candles]);
   const chartAnnotations = useMemo(
-    () => filterChartAnnotations(annotations, candles, primarySession?.id, sourceFilter, eventFilter),
-    [annotations, candles, primarySession?.id, sourceFilter, eventFilter]
+    () => filterChartAnnotations(annotations, candles, monitorSessionID, monitorSessionSource, sourceFilter, eventFilter),
+    [annotations, candles, monitorSessionID, monitorSessionSource, sourceFilter, eventFilter]
   );
   const selectedAnnotationIds = useMemo(() => {
     if (!selectedSample) {
@@ -1214,11 +1221,11 @@ function App() {
   async function createPaperSession() {
     if (!paperForm.accountId || !paperForm.strategyId) {
       setError("Paper session needs an account and strategy");
-      return;
+      return null;
     }
     setPaperCreateAction(true);
     try {
-      await fetchJSON("/api/v1/paper/sessions", {
+      const created = await fetchJSON<PaperSession>("/api/v1/paper/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1235,10 +1242,31 @@ function App() {
       });
       await loadDashboard();
       setError(null);
+      return created;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create paper session");
+      return null;
     } finally {
       setPaperCreateAction(false);
+    }
+  }
+
+  async function createAndStartPaperSession() {
+    setPaperLaunchAction(true);
+    try {
+      const created = await createPaperSession();
+      if (!created?.id) {
+        return;
+      }
+      setSessionAction(`${created.id}:start`);
+      await fetchJSON(`/api/v1/paper/sessions/${created.id}/start`, { method: "POST" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create and start paper session");
+    } finally {
+      setSessionAction(null);
+      setPaperLaunchAction(false);
     }
   }
 
@@ -1354,11 +1382,11 @@ function App() {
   async function createLiveSession() {
     if (!liveSessionForm.accountId || !liveSessionForm.strategyId) {
       setError("Live session needs an account and strategy");
-      return;
+      return null;
     }
     setLiveSessionCreateAction(true);
     try {
-      await fetchJSON("/api/v1/live/sessions", {
+      const created = await fetchJSON<LiveSession>("/api/v1/live/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1374,10 +1402,94 @@ function App() {
       });
       await loadDashboard();
       setError(null);
+      return created;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create live session");
+      return null;
     } finally {
       setLiveSessionCreateAction(false);
+    }
+  }
+
+  async function createAndStartLiveSession() {
+    setLiveSessionLaunchAction(true);
+    try {
+      const created = await createLiveSession();
+      if (!created?.id) {
+        return;
+      }
+      setLiveSessionAction(`${created.id}:start`);
+      await fetchJSON(`/api/v1/live/sessions/${created.id}/start`, { method: "POST" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create and start live session");
+    } finally {
+      setLiveSessionAction(null);
+      setLiveSessionLaunchAction(false);
+    }
+  }
+
+  async function launchLiveFlow(account: AccountRecord) {
+    const strategyId =
+      liveSessions.find((item) => item.accountId === account.id)?.strategyId ||
+      liveSessionForm.strategyId ||
+      strategies[0]?.id ||
+      "";
+    if (!strategyId) {
+      setError("Launch live flow needs a strategy");
+      return;
+    }
+
+    setLiveFlowAction(account.id);
+    setError(null);
+    setLiveBindingForm((current) => ({ ...current, accountId: account.id }));
+    setLiveSessionForm((current) => ({ ...current, accountId: account.id, strategyId }));
+    setSignalRuntimeForm((current) => ({ ...current, accountId: account.id, strategyId }));
+    setAccountSignalForm((current) => ({ ...current, accountId: account.id }));
+    setStrategySignalForm((current) => ({ ...current, strategyId }));
+
+    try {
+      const strategyBindings = strategySignalBindingMap[strategyId] ?? [];
+      if ((accountSignalBindingMap[account.id] ?? []).length === 0 && strategyBindings.length === 0) {
+        window.location.hash = "signals";
+        throw new Error("Launch live flow needs strategy signal bindings before it can continue");
+      }
+      await fetchJSON(`/api/v1/live/accounts/${account.id}/launch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategyId,
+          binding: {
+            adapterKey: liveBindingForm.adapterKey,
+            positionMode: liveBindingForm.positionMode,
+            marginMode: liveBindingForm.marginMode,
+            sandbox: liveBindingForm.sandbox,
+            credentialRefs: {
+              apiKeyRef: liveBindingForm.apiKeyRef,
+              apiSecretRef: liveBindingForm.apiSecretRef,
+            },
+          },
+          mirrorStrategySignals: true,
+          startRuntime: true,
+          startSession: true,
+          liveSessionOverrides: {
+            signalTimeframe: liveSessionForm.signalTimeframe,
+            executionDataSource: liveSessionForm.executionDataSource,
+            symbol: liveSessionForm.symbol,
+            defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+            dispatchMode: liveSessionForm.dispatchMode,
+            dispatchCooldownSeconds: Number(liveSessionForm.dispatchCooldownSeconds) || 30,
+          },
+        }),
+      });
+
+      await loadDashboard();
+      window.location.hash = "live";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to launch live flow");
+    } finally {
+      setLiveFlowAction(null);
     }
   }
 
@@ -2618,8 +2730,13 @@ function App() {
             <div className="backtest-actions">
               <ActionButton
                 label={paperCreateAction ? "Creating..." : "Create Paper Session"}
-                disabled={paperCreateAction || !paperForm.accountId || !paperForm.strategyId}
+                disabled={paperCreateAction || paperLaunchAction || !paperForm.accountId || !paperForm.strategyId}
                 onClick={createPaperSession}
+              />
+              <ActionButton
+                label={paperLaunchAction ? "Launching..." : "Create & Start"}
+                disabled={paperCreateAction || paperLaunchAction || sessionAction !== null || !paperForm.accountId || !paperForm.strategyId}
+                onClick={createAndStartPaperSession}
               />
             </div>
             <div className="backtest-notes">
@@ -3626,8 +3743,19 @@ function App() {
               <div className="backtest-actions">
                 <ActionButton
                   label={liveSessionCreateAction ? "Creating..." : "Create Live Session"}
-                  disabled={liveSessionCreateAction || !liveSessionForm.accountId || !liveSessionForm.strategyId}
+                  disabled={liveSessionCreateAction || liveSessionLaunchAction || !liveSessionForm.accountId || !liveSessionForm.strategyId}
                   onClick={createLiveSession}
+                />
+                <ActionButton
+                  label={liveSessionLaunchAction ? "Launching..." : "Create & Start"}
+                  disabled={
+                    liveSessionCreateAction ||
+                    liveSessionLaunchAction ||
+                    liveSessionAction !== null ||
+                    !liveSessionForm.accountId ||
+                    !liveSessionForm.strategyId
+                  }
+                  onClick={createAndStartLiveSession}
                 />
               </div>
             </div>
@@ -3903,6 +4031,22 @@ function App() {
                           <span>next action</span>
                           <span>{liveNextAction.label}</span>
                           <span>{liveNextAction.detail}</span>
+                          <button
+                            type="button"
+                            className="filter-chip"
+                            disabled={
+                              liveFlowAction !== null ||
+                              liveBindAction ||
+                              signalBindingAction !== null ||
+                              signalRuntimeAction !== null ||
+                              liveSessionAction !== null ||
+                              liveSessionCreateAction ||
+                              liveSessionLaunchAction
+                            }
+                            onClick={() => launchLiveFlow(account)}
+                          >
+                            {liveFlowAction === account.id ? "Launching..." : "Launch Live Flow"}
+                          </button>
                           <button
                             type="button"
                             className="filter-chip"
@@ -4839,6 +4983,7 @@ function filterChartAnnotations(
   items: ChartAnnotation[],
   candles: ChartCandle[],
   sessionID?: string,
+  sessionSource: SourceFilter = "all",
   sourceFilter: SourceFilter = "all",
   eventFilter: EventFilter = "all"
 ) {
@@ -4859,11 +5004,14 @@ function filterChartAnnotations(
     if (item.source === "paper" && item.metadata?.paperSession !== sessionID) {
       return false;
     }
-    if (item.source !== "paper" && item.source !== "backtest" && sourceFilter !== "all") {
+    if (item.source === "live" && sessionSource === "live" && item.metadata?.liveSessionId !== sessionID) {
+      return false;
+    }
+    if (!["paper", "backtest", "live"].includes(item.source) && sourceFilter !== "all") {
       return false;
     }
     if (eventFilter === "all") {
-      return item.source === "paper" || item.source === "backtest";
+      return item.source === "paper" || item.source === "backtest" || item.source === "live";
     }
     return matchesEventFilter(item, eventFilter);
   });
@@ -4884,10 +5032,12 @@ function matchesEventFilter(item: ChartAnnotation, filter: EventFilter) {
   }
 }
 
-function resolveChartAnchor(session?: PaperSession, orders: Order[] = []) {
-  const sessionEventTime = typeof session?.state?.lastLedgerTime === "string" ? session.state.lastLedgerTime : undefined;
-  if (sessionEventTime) {
-    return new Date(sessionEventTime);
+function resolveChartAnchor(session?: PaperSession | LiveSession | null, orders: Order[] = []) {
+  const state = getRecord(session?.state);
+  for (const key of ["lastSignalRuntimeEventAt", "lastSyncedAt", "lastDispatchedAt", "lastLedgerTime"]) {
+    if (typeof state[key] === "string" && state[key]) {
+      return new Date(String(state[key]));
+    }
   }
 
   const latestReplayOrder = orders
@@ -4999,6 +5149,7 @@ function toMarkerDetail(item: ChartAnnotation): MarkerDetail {
     price: item.price,
     reason: typeof item.metadata?.reason === "string" ? item.metadata.reason : undefined,
     paperSession: typeof item.metadata?.paperSession === "string" ? item.metadata.paperSession : undefined,
+    liveSession: typeof item.metadata?.liveSessionId === "string" ? item.metadata.liveSessionId : undefined,
   };
 }
 
@@ -5043,6 +5194,17 @@ function markerColor(item: ChartAnnotation, highlighted = false) {
       return "#284d86";
     }
     return "#284d86";
+  }
+  if (item.source === "live") {
+    if (item.type.includes("exit-sl")) {
+      return "#b04a37";
+    }
+    if (item.type.includes("exit-pt")) {
+      return "#c58b2d";
+    }
+    if (item.type.includes("entry")) {
+      return "#0e6d60";
+    }
   }
   if (item.type.includes("initial")) {
     return "#7a8791";
@@ -5540,11 +5702,15 @@ function deriveLiveDispatchPreview(
       payload,
     };
   }
-  if (String(session.state?.dispatchMode ?? "") !== "manual-review") {
+  const dispatchMode = String(session.state?.dispatchMode ?? "");
+  if (dispatchMode === "auto-dispatch") {
     return {
-      status: "blocked",
-      reason: "unsupported-dispatch-mode",
-      detail: "only manual-review dispatch is supported right now",
+      status: preflight.status === "watch" ? "watch" : "ready",
+      reason: preflight.status === "watch" ? "preflight-warning" : "auto-dispatch-armed",
+      detail:
+        preflight.status === "watch"
+          ? `auto-dispatch is armed, but runtime still has a warning: ${preflight.reason}`
+          : "auto-dispatch is armed and the next ready intent can submit automatically",
       payload,
     };
   }

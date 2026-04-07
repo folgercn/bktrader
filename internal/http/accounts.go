@@ -88,6 +88,18 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 				return
 			}
 			writeJSON(w, http.StatusOK, item)
+		case "launch":
+			var payload service.LiveLaunchOptions
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.LaunchLiveFlow(accountID, payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
 		default:
 			writeError(w, http.StatusNotFound, "live account route not found")
 		}

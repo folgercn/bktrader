@@ -9,6 +9,27 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
+type LiveLaunchOptions struct {
+	StrategyID            string         `json:"strategyId"`
+	Binding               map[string]any `json:"binding,omitempty"`
+	LiveSessionOverrides  map[string]any `json:"liveSessionOverrides,omitempty"`
+	MirrorStrategySignals bool           `json:"mirrorStrategySignals"`
+	StartRuntime          bool           `json:"startRuntime"`
+	StartSession          bool           `json:"startSession"`
+}
+
+type LiveLaunchResult struct {
+	Account               domain.Account              `json:"account"`
+	RuntimeSession        domain.SignalRuntimeSession `json:"runtimeSession"`
+	LiveSession           domain.LiveSession          `json:"liveSession"`
+	MirroredBindingCount  int                         `json:"mirroredBindingCount"`
+	AccountBindingApplied bool                        `json:"accountBindingApplied"`
+	RuntimeSessionCreated bool                        `json:"runtimeSessionCreated"`
+	RuntimeSessionStarted bool                        `json:"runtimeSessionStarted"`
+	LiveSessionCreated    bool                        `json:"liveSessionCreated"`
+	LiveSessionStarted    bool                        `json:"liveSessionStarted"`
+}
+
 func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 	return p.store.ListLiveSessions()
 }
@@ -116,6 +137,154 @@ func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map
 		}
 	}
 	return p.syncLiveSessionRuntime(session)
+}
+
+func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (LiveLaunchResult, error) {
+	account, err := p.store.GetAccount(accountID)
+	if err != nil {
+		return LiveLaunchResult{}, err
+	}
+	if !strings.EqualFold(account.Mode, "LIVE") {
+		return LiveLaunchResult{}, fmt.Errorf("account %s is not a LIVE account", accountID)
+	}
+	strategyID := strings.TrimSpace(options.StrategyID)
+	if strategyID == "" {
+		return LiveLaunchResult{}, fmt.Errorf("strategyId is required")
+	}
+	if !options.MirrorStrategySignals {
+		options.MirrorStrategySignals = true
+	}
+	if !options.StartRuntime {
+		options.StartRuntime = true
+	}
+	if !options.StartSession {
+		options.StartSession = true
+	}
+
+	result := LiveLaunchResult{Account: account}
+
+	if account.Status != "CONFIGURED" && account.Status != "READY" {
+		if len(options.Binding) == 0 {
+			return LiveLaunchResult{}, fmt.Errorf("live account %s requires binding before launch", account.ID)
+		}
+		account, err = p.BindLiveAccount(account.ID, options.Binding)
+		if err != nil {
+			return LiveLaunchResult{}, err
+		}
+		result.Account = account
+		result.AccountBindingApplied = true
+	}
+
+	if options.MirrorStrategySignals {
+		strategyBindings, err := p.ListStrategySignalBindings(strategyID)
+		if err != nil {
+			return LiveLaunchResult{}, err
+		}
+		accountBindings, err := p.ListAccountSignalBindings(account.ID)
+		if err != nil {
+			return LiveLaunchResult{}, err
+		}
+		if len(strategyBindings) == 0 && len(accountBindings) == 0 {
+			return LiveLaunchResult{}, fmt.Errorf("strategy %s has no signal bindings to mirror", strategyID)
+		}
+		for _, binding := range strategyBindings {
+			exists := false
+			for _, item := range accountBindings {
+				if item.SourceKey == binding.SourceKey && item.Role == binding.Role && item.Symbol == binding.Symbol {
+					exists = true
+					break
+				}
+			}
+			if exists {
+				continue
+			}
+			account, err = p.BindAccountSignalSource(account.ID, map[string]any{
+				"sourceKey": binding.SourceKey,
+				"role":      binding.Role,
+				"symbol":    binding.Symbol,
+				"options":   binding.Options,
+			})
+			if err != nil {
+				return LiveLaunchResult{}, err
+			}
+			result.Account = account
+			result.MirroredBindingCount++
+			accountBindings = append(accountBindings, binding)
+		}
+	}
+
+	runtimeSession, runtimeCreated, err := p.ensureLaunchRuntimeSession(account.ID, strategyID)
+	if err != nil {
+		return LiveLaunchResult{}, err
+	}
+	result.RuntimeSession = runtimeSession
+	result.RuntimeSessionCreated = runtimeCreated
+	if options.StartRuntime && !strings.EqualFold(runtimeSession.Status, "RUNNING") {
+		runtimeSession, err = p.StartSignalRuntimeSession(runtimeSession.ID)
+		if err != nil {
+			return LiveLaunchResult{}, err
+		}
+		result.RuntimeSession = runtimeSession
+		result.RuntimeSessionStarted = true
+	}
+
+	liveSession, liveCreated, err := p.ensureLaunchLiveSession(account.ID, strategyID, options.LiveSessionOverrides)
+	if err != nil {
+		return LiveLaunchResult{}, err
+	}
+	result.LiveSession = liveSession
+	result.LiveSessionCreated = liveCreated
+	if options.StartSession && !strings.EqualFold(liveSession.Status, "RUNNING") {
+		liveSession, err = p.StartLiveSession(liveSession.ID)
+		if err != nil {
+			return LiveLaunchResult{}, err
+		}
+		result.LiveSession = liveSession
+		result.LiveSessionStarted = true
+	}
+
+	account, err = p.store.GetAccount(account.ID)
+	if err == nil {
+		result.Account = account
+	}
+	return result, nil
+}
+
+func (p *Platform) ensureLaunchRuntimeSession(accountID, strategyID string) (domain.SignalRuntimeSession, bool, error) {
+	for _, session := range p.ListSignalRuntimeSessions() {
+		if session.AccountID == accountID && session.StrategyID == strategyID {
+			return session, false, nil
+		}
+	}
+	session, err := p.CreateSignalRuntimeSession(accountID, strategyID)
+	return session, true, err
+}
+
+func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrides map[string]any) (domain.LiveSession, bool, error) {
+	sessions, err := p.ListLiveSessions()
+	if err != nil {
+		return domain.LiveSession{}, false, err
+	}
+	for _, session := range sessions {
+		if session.AccountID != accountID || session.StrategyID != strategyID {
+			continue
+		}
+		if len(overrides) == 0 {
+			return session, false, nil
+		}
+		state := cloneMetadata(session.State)
+		for key, value := range normalizeLiveSessionOverrides(overrides) {
+			state[key] = value
+		}
+		updated, err := p.store.UpdateLiveSessionState(session.ID, state)
+		if err != nil {
+			return domain.LiveSession{}, false, err
+		}
+		synced, err := p.syncLiveSessionRuntime(updated)
+		return synced, false, err
+	}
+	session, err := p.CreateLiveSession(accountID, strategyID, overrides)
+	return session, true, err
 }
 
 func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error) {
