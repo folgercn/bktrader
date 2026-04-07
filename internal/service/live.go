@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -46,7 +49,15 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	if err != nil {
 		return domain.Account{}, err
 	}
+	if normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) == "rest" {
+		if synced, restErr := p.syncLiveAccountFromBinance(account, binding); restErr == nil {
+			return synced, nil
+		}
+	}
+	return p.syncLiveAccountFromLocalState(account, binding)
+}
 
+func (p *Platform) syncLiveAccountFromLocalState(account domain.Account, binding map[string]any) (domain.Account, error) {
 	orders, err := p.store.ListOrders()
 	if err != nil {
 		return domain.Account{}, err
@@ -104,12 +115,105 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 		"latestFill":      summarizeLiveAccountLatestFill(filteredFills, orderByID),
 		"positions":       summarizeLiveAccountPositions(filteredPositions),
 		"bindingMode":     stringValue(binding["connectionMode"]),
+		"executionMode":   normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])),
 		"feeSource":       "exchange",
 		"fundingSource":   "exchange",
 		"syncStatus":      "SYNCED",
 		"accountExchange": account.Exchange,
 	}
 	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+	return p.store.UpdateAccount(account)
+}
+
+func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding map[string]any) (domain.Account, error) {
+	resolved, err := resolveBinanceRESTCredentials(binding)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	params := map[string]string{
+		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+	}
+	params["signature"] = signBinanceQuery(params, resolved.APISecret)
+	requestURL := resolved.BaseURL + "/fapi/v3/account?" + encodeBinanceQuery(params, false)
+	request, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	request.Header.Set("X-MBX-APIKEY", resolved.APIKey)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(response.Body)
+		return domain.Account{}, fmt.Errorf("binance account sync failed: %s %s", response.Status, strings.TrimSpace(string(body)))
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return domain.Account{}, err
+	}
+	positions := metadataList(payload["positions"])
+	assets := metadataList(payload["assets"])
+	openPositions := make([]map[string]any, 0)
+	for _, item := range positions {
+		positionAmt := parseFloatValue(item["positionAmt"])
+		if positionAmt == 0 {
+			continue
+		}
+		openPositions = append(openPositions, map[string]any{
+			"symbol":           stringValue(item["symbol"]),
+			"positionAmt":      positionAmt,
+			"entryPrice":       parseFloatValue(item["entryPrice"]),
+			"markPrice":        parseFloatValue(item["markPrice"]),
+			"unrealizedProfit": parseFloatValue(item["unrealizedProfit"]),
+			"leverage":         stringValue(item["leverage"]),
+			"marginType":       stringValue(item["marginType"]),
+			"positionSide":     stringValue(item["positionSide"]),
+		})
+	}
+	assetSummaries := make([]map[string]any, 0)
+	for _, item := range assets {
+		walletBalance := parseFloatValue(item["walletBalance"])
+		if walletBalance == 0 && parseFloatValue(item["availableBalance"]) == 0 {
+			continue
+		}
+		assetSummaries = append(assetSummaries, map[string]any{
+			"asset":             stringValue(item["asset"]),
+			"walletBalance":     walletBalance,
+			"availableBalance":  parseFloatValue(item["availableBalance"]),
+			"crossWalletBalance": parseFloatValue(item["crossWalletBalance"]),
+			"crossUnPnl":        parseFloatValue(item["crossUnPnl"]),
+		})
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":                "binance-rest-account-v3",
+		"adapterKey":            normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+		"syncedAt":              time.Now().UTC().Format(time.RFC3339),
+		"bindingMode":           stringValue(binding["connectionMode"]),
+		"executionMode":         "rest",
+		"accountExchange":       account.Exchange,
+		"feeSource":             "exchange",
+		"fundingSource":         "exchange",
+		"syncStatus":            "SYNCED",
+		"feeTier":               payload["feeTier"],
+		"canTrade":              payload["canTrade"],
+		"canDeposit":            payload["canDeposit"],
+		"canWithdraw":           payload["canWithdraw"],
+		"totalWalletBalance":    parseFloatValue(payload["totalWalletBalance"]),
+		"totalUnrealizedProfit": parseFloatValue(payload["totalUnrealizedProfit"]),
+		"totalMarginBalance":    parseFloatValue(payload["totalMarginBalance"]),
+		"availableBalance":      parseFloatValue(payload["availableBalance"]),
+		"maxWithdrawAmount":     parseFloatValue(payload["maxWithdrawAmount"]),
+		"positionCount":         len(openPositions),
+		"positions":             openPositions,
+		"assets":                assetSummaries,
+		"apiKeyRef":             resolved.APIKeyRef,
+		"restBaseUrl":           resolved.BaseURL,
+	}
+	account.Metadata["lastLiveSyncAt"] = time.Now().UTC().Format(time.RFC3339)
 	return p.store.UpdateAccount(account)
 }
 
