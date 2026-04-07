@@ -35,14 +35,62 @@ type Signal struct {
 	CreatedAt         time.Time      `json:"createdAt"`
 }
 
+// SignalSourceDefinition 描述一个可插拔信号源/市场数据源。
+// 它可以承担交易触发源，也可以承担 order book 等特征输入源。
+type SignalSourceDefinition struct {
+	Key          string         `json:"key"`
+	Name         string         `json:"name"`
+	Exchange     string         `json:"exchange"`
+	StreamType   string         `json:"streamType"`   // trade_tick / order_book / minute_bar / replay_tick
+	Transport    string         `json:"transport"`    // websocket / replay / file
+	Status       string         `json:"status"`       // ACTIVE / PREVIEW
+	Roles        []string       `json:"roles"`        // trigger / feature
+	Environments []string       `json:"environments"` // backtest / paper / live
+	SymbolScope  string         `json:"symbolScope"`  // single_symbol / multi_symbol / wildcard
+	Description  string         `json:"description"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+}
+
+// AccountSignalBinding 描述账户级的信号源绑定。
+// 一个账户可以同时绑定多个交易触发源和多个特征源，以支持多市场交易和套利。
+type AccountSignalBinding struct {
+	ID         string         `json:"id"`
+	AccountID  string         `json:"accountId"`
+	SourceKey  string         `json:"sourceKey"`
+	SourceName string         `json:"sourceName"`
+	Exchange   string         `json:"exchange"`
+	Role       string         `json:"role"`       // trigger / feature
+	StreamType string         `json:"streamType"` // trade_tick / order_book ...
+	Symbol     string         `json:"symbol"`
+	Status     string         `json:"status"` // ACTIVE / DISABLED
+	Options    map[string]any `json:"options,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
+}
+
+// SignalRuntimeSession 表示一个账户+策略组合下的信号源运行时会话。
+// 首期以骨架形式保存订阅计划、连接状态和最近事件摘要。
+type SignalRuntimeSession struct {
+	ID              string         `json:"id"`
+	AccountID       string         `json:"accountId"`
+	StrategyID      string         `json:"strategyId"`
+	Status          string         `json:"status"` // READY / RUNNING / STOPPED / ERROR
+	RuntimeAdapter  string         `json:"runtimeAdapter"`
+	Transport       string         `json:"transport"`
+	SubscriptionCnt int            `json:"subscriptionCount"`
+	State           map[string]any `json:"state,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+}
+
 // Account 交易账户，支持 LIVE（实盘）和 PAPER（模拟盘）两种模式。
 type Account struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Mode      string    `json:"mode"`     // LIVE / PAPER
-	Exchange  string    `json:"exchange"` // 交易所名称
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Mode      string         `json:"mode"`     // LIVE / PAPER
+	Exchange  string         `json:"exchange"` // 交易所名称
+	Status    string         `json:"status"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
 }
 
 // PaperSession 模拟交易会话，绑定账户和策略，管理回放状态。
@@ -54,6 +102,16 @@ type PaperSession struct {
 	StartEquity float64        `json:"startEquity"` // 初始权益
 	State       map[string]any `json:"state"`       // 运行时状态（ledgerIndex 等）
 	CreatedAt   time.Time      `json:"createdAt"`
+}
+
+// LiveSession 实盘策略会话，绑定 LIVE 账户和策略，管理运行状态与实时评估上下文。
+type LiveSession struct {
+	ID         string         `json:"id"`
+	AccountID  string         `json:"accountId"`
+	StrategyID string         `json:"strategyId"`
+	Status     string         `json:"status"` // READY / RUNNING / STOPPED / BLOCKED
+	State      map[string]any `json:"state"`
+	CreatedAt  time.Time      `json:"createdAt"`
 }
 
 // AccountSummary 账户汇总视图，包含权益、盈亏和敞口信息。
@@ -155,4 +213,69 @@ type ChartAnnotation struct {
 	Price    float64        `json:"price"`
 	Label    string         `json:"label"`
 	Metadata map[string]any `json:"metadata"`
+}
+
+// RuntimePolicy 保存平台运行期告警与 readiness 阈值配置。
+type RuntimePolicy struct {
+	TradeTickFreshnessSeconds      int       `json:"tradeTickFreshnessSeconds"`
+	OrderBookFreshnessSeconds      int       `json:"orderBookFreshnessSeconds"`
+	SignalBarFreshnessSeconds      int       `json:"signalBarFreshnessSeconds"`
+	RuntimeQuietSeconds            int       `json:"runtimeQuietSeconds"`
+	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
+	UpdatedAt                      time.Time `json:"updatedAt"`
+}
+
+// PlatformAlert 是统一告警中心消费的聚合告警记录。
+type PlatformAlert struct {
+	ID               string         `json:"id"`
+	Scope            string         `json:"scope"` // paper / live / runtime
+	Level            string         `json:"level"` // critical / warning / info
+	Title            string         `json:"title"`
+	Detail           string         `json:"detail"`
+	AccountID        string         `json:"accountId,omitempty"`
+	AccountName      string         `json:"accountName,omitempty"`
+	StrategyID       string         `json:"strategyId,omitempty"`
+	StrategyName     string         `json:"strategyName,omitempty"`
+	PaperSessionID   string         `json:"paperSessionId,omitempty"`
+	RuntimeSessionID string         `json:"runtimeSessionId,omitempty"`
+	Anchor           string         `json:"anchor,omitempty"`
+	EventTime        time.Time      `json:"eventTime"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
+}
+
+// NotificationAck 保存用户已确认的通知键。
+type NotificationAck struct {
+	ID        string    `json:"id"`
+	AckedAt   time.Time `json:"ackedAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// PlatformNotification 是平台内通知中心使用的聚合对象。
+type PlatformNotification struct {
+	ID        string         `json:"id"`
+	Status    string         `json:"status"` // active / acked
+	AckedAt   *time.Time     `json:"ackedAt,omitempty"`
+	Alert     PlatformAlert  `json:"alert"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+}
+
+// TelegramConfig 保存 Telegram 通知通道配置。
+type TelegramConfig struct {
+	Enabled    bool      `json:"enabled"`
+	BotToken   string    `json:"botToken"`
+	ChatID     string    `json:"chatId"`
+	SendLevels []string  `json:"sendLevels"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+// NotificationDelivery 记录通知通过外部通道的发送结果。
+type NotificationDelivery struct {
+	NotificationID string    `json:"notificationId"`
+	Channel        string    `json:"channel"` // telegram
+	Status         string    `json:"status"`  // sent / failed
+	LastError      string    `json:"lastError,omitempty"`
+	AttemptedAt    time.Time `json:"attemptedAt"`
+	SentAt         time.Time `json:"sentAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }

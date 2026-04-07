@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
@@ -10,6 +11,239 @@ import (
 func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 	// GET /api/v1/signal-sources — 获取信号源列表
 	mux.HandleFunc("/api/v1/signal-sources", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, platform.SignalSources())
+		writeJSON(w, http.StatusOK, platform.SignalSourceCatalog())
+	})
+
+	mux.HandleFunc("/api/v1/signal-source-types", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, platform.SignalSourceTypes())
+	})
+
+	mux.HandleFunc("/api/v1/signal-runtime/adapters", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, platform.SignalRuntimeAdapters())
+	})
+
+	mux.HandleFunc("/api/v1/alerts", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		items, err := platform.ListAlerts()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
+	mux.HandleFunc("/api/v1/notifications", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		includeAcked := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("includeAcked")), "true")
+		items, err := platform.ListNotifications(includeAcked)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
+	mux.HandleFunc("/api/v1/notifications/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/notifications/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) == 2 && parts[1] == "ack" {
+			notificationID := parts[0]
+			switch r.Method {
+			case http.MethodPost:
+				item, err := platform.AckNotification(notificationID)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, item)
+			case http.MethodDelete:
+				if err := platform.UnackNotification(notificationID); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if len(parts) == 2 && parts[1] == "telegram" {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if err := platform.SendNotificationToTelegram(parts[0]); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "sent"})
+			return
+		}
+		if len(parts) != 2 {
+			writeError(w, http.StatusNotFound, "notification route not found")
+			return
+		}
+		writeError(w, http.StatusNotFound, "notification route not found")
+	})
+
+	mux.HandleFunc("/api/v1/telegram/config", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, platform.TelegramConfigView())
+		case http.MethodPost:
+			var payload struct {
+				Enabled    bool     `json:"enabled"`
+				BotToken   string   `json:"botToken"`
+				ChatID     string   `json:"chatId"`
+				SendLevels []string `json:"sendLevels"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.UpdateTelegramConfig(payload.Enabled, payload.BotToken, payload.ChatID, payload.SendLevels)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/v1/telegram/test", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := platform.SendTelegramTestMessage(); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "sent"})
+	})
+
+	mux.HandleFunc("/api/v1/runtime-policy", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, platform.RuntimePolicy())
+		case http.MethodPost:
+			var payload service.RuntimePolicy
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			policy, err := platform.UpdateRuntimePolicy(payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid runtime policy payload")
+				return
+			}
+			writeJSON(w, http.StatusOK, policy)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/v1/signal-runtime/plan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		accountID := r.URL.Query().Get("accountId")
+		strategyID := r.URL.Query().Get("strategyId")
+		if accountID == "" || strategyID == "" {
+			writeError(w, http.StatusBadRequest, "accountId and strategyId are required")
+			return
+		}
+		plan, err := platform.BuildSignalRuntimePlan(accountID, strategyID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, plan)
+	})
+
+	mux.HandleFunc("/api/v1/signal-runtime/sessions", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, platform.ListSignalRuntimeSessions())
+		case http.MethodPost:
+			var payload struct {
+				AccountID  string `json:"accountId"`
+				StrategyID string `json:"strategyId"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if payload.AccountID == "" || payload.StrategyID == "" {
+				writeError(w, http.StatusBadRequest, "accountId and strategyId are required")
+				return
+			}
+			item, err := platform.CreateSignalRuntimeSession(payload.AccountID, payload.StrategyID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusCreated, item)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/v1/signal-runtime/sessions/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/signal-runtime/sessions/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) == 1 && r.Method == http.MethodGet {
+			item, err := platform.GetSignalRuntimeSession(parts[0])
+			if err != nil {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+			return
+		}
+		if len(parts) != 2 {
+			writeError(w, http.StatusNotFound, "signal runtime session route not found")
+			return
+		}
+		sessionID, action := parts[0], parts[1]
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		switch action {
+		case "start":
+			item, err := platform.StartSignalRuntimeSession(sessionID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case "stop":
+			item, err := platform.StopSignalRuntimeSession(sessionID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		default:
+			writeError(w, http.StatusNotFound, "signal runtime session action not found")
+		}
 	})
 }

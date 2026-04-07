@@ -36,6 +36,204 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+func (s *Store) GetRuntimePolicy() (domain.RuntimePolicy, bool, error) {
+	var item domain.RuntimePolicy
+	err := s.db.QueryRow(`
+		select trade_tick_freshness_seconds, order_book_freshness_seconds, signal_bar_freshness_seconds, runtime_quiet_seconds, paper_start_readiness_timeout_seconds, updated_at
+		from runtime_policies
+		where id = 1
+	`).Scan(
+		&item.TradeTickFreshnessSeconds,
+		&item.OrderBookFreshnessSeconds,
+		&item.SignalBarFreshnessSeconds,
+		&item.RuntimeQuietSeconds,
+		&item.PaperStartReadinessTimeoutSecs,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.RuntimePolicy{}, false, nil
+		}
+		return domain.RuntimePolicy{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *Store) UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.RuntimePolicy, error) {
+	policy.UpdatedAt = time.Now().UTC()
+	_, err := s.db.Exec(`
+		insert into runtime_policies (
+			id,
+			trade_tick_freshness_seconds,
+			order_book_freshness_seconds,
+			signal_bar_freshness_seconds,
+			runtime_quiet_seconds,
+			paper_start_readiness_timeout_seconds,
+			updated_at
+		)
+		values (1, $1, $2, $3, $4, $5, $6)
+		on conflict (id) do update set
+			trade_tick_freshness_seconds = excluded.trade_tick_freshness_seconds,
+			order_book_freshness_seconds = excluded.order_book_freshness_seconds,
+			signal_bar_freshness_seconds = excluded.signal_bar_freshness_seconds,
+			runtime_quiet_seconds = excluded.runtime_quiet_seconds,
+			paper_start_readiness_timeout_seconds = excluded.paper_start_readiness_timeout_seconds,
+			updated_at = excluded.updated_at
+	`,
+		policy.TradeTickFreshnessSeconds,
+		policy.OrderBookFreshnessSeconds,
+		policy.SignalBarFreshnessSeconds,
+		policy.RuntimeQuietSeconds,
+		policy.PaperStartReadinessTimeoutSecs,
+		policy.UpdatedAt,
+	)
+	if err != nil {
+		return domain.RuntimePolicy{}, err
+	}
+	return policy, nil
+}
+
+func (s *Store) ListNotificationAcks() ([]domain.NotificationAck, error) {
+	rows, err := s.db.Query(`
+		select id, acked_at, updated_at
+		from notification_acks
+		order by updated_at desc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.NotificationAck, 0)
+	for rows.Next() {
+		var item domain.NotificationAck
+		if err := rows.Scan(&item.ID, &item.AckedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) UpsertNotificationAck(id string) (domain.NotificationAck, error) {
+	item := domain.NotificationAck{
+		ID:        id,
+		AckedAt:   time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	_, err := s.db.Exec(`
+		insert into notification_acks (id, acked_at, updated_at)
+		values ($1, $2, $3)
+		on conflict (id) do update set
+			acked_at = excluded.acked_at,
+			updated_at = excluded.updated_at
+	`, item.ID, item.AckedAt, item.UpdatedAt)
+	if err != nil {
+		return domain.NotificationAck{}, err
+	}
+	return item, nil
+}
+
+func (s *Store) DeleteNotificationAck(id string) error {
+	_, err := s.db.Exec(`delete from notification_acks where id = $1`, id)
+	return err
+}
+
+func (s *Store) GetTelegramConfig() (domain.TelegramConfig, bool, error) {
+	var item domain.TelegramConfig
+	var levelsRaw []byte
+	err := s.db.QueryRow(`
+		select enabled, bot_token, chat_id, send_levels, updated_at
+		from telegram_configs
+		where id = 1
+	`).Scan(
+		&item.Enabled,
+		&item.BotToken,
+		&item.ChatID,
+		&levelsRaw,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.TelegramConfig{}, false, nil
+		}
+		return domain.TelegramConfig{}, false, err
+	}
+	if len(levelsRaw) > 0 {
+		_ = json.Unmarshal(levelsRaw, &item.SendLevels)
+	}
+	return item, true, nil
+}
+
+func (s *Store) UpsertTelegramConfig(config domain.TelegramConfig) (domain.TelegramConfig, error) {
+	config.UpdatedAt = time.Now().UTC()
+	raw, _ := json.Marshal(config.SendLevels)
+	_, err := s.db.Exec(`
+		insert into telegram_configs (id, enabled, bot_token, chat_id, send_levels, updated_at)
+		values (1, $1, $2, $3, $4, $5)
+		on conflict (id) do update set
+			enabled = excluded.enabled,
+			bot_token = excluded.bot_token,
+			chat_id = excluded.chat_id,
+			send_levels = excluded.send_levels,
+			updated_at = excluded.updated_at
+	`, config.Enabled, config.BotToken, config.ChatID, raw, config.UpdatedAt)
+	if err != nil {
+		return domain.TelegramConfig{}, err
+	}
+	return config, nil
+}
+
+func (s *Store) ListNotificationDeliveries() ([]domain.NotificationDelivery, error) {
+	rows, err := s.db.Query(`
+		select notification_id, channel, status, last_error, attempted_at, sent_at, updated_at
+		from notification_deliveries
+		order by updated_at desc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.NotificationDelivery, 0)
+	for rows.Next() {
+		var item domain.NotificationDelivery
+		if err := rows.Scan(&item.NotificationID, &item.Channel, &item.Status, &item.LastError, &item.AttemptedAt, &item.SentAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) UpsertNotificationDelivery(notificationID, channel, status, lastError string) (domain.NotificationDelivery, error) {
+	item := domain.NotificationDelivery{
+		NotificationID: notificationID,
+		Channel:        channel,
+		Status:         status,
+		LastError:      lastError,
+		AttemptedAt:    time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+	}
+	if status == "sent" {
+		item.SentAt = item.AttemptedAt
+	}
+	_, err := s.db.Exec(`
+		insert into notification_deliveries (notification_id, channel, status, last_error, attempted_at, sent_at, updated_at)
+		values ($1, $2, $3, $4, $5, $6, $7)
+		on conflict (notification_id, channel) do update set
+			status = excluded.status,
+			last_error = excluded.last_error,
+			attempted_at = excluded.attempted_at,
+			sent_at = excluded.sent_at,
+			updated_at = excluded.updated_at
+	`, item.NotificationID, item.Channel, item.Status, item.LastError, item.AttemptedAt, item.SentAt, item.UpdatedAt)
+	if err != nil {
+		return domain.NotificationDelivery{}, err
+	}
+	return item, nil
+}
+
 func (s *Store) ListStrategies() ([]map[string]any, error) {
 	rows, err := s.db.Query(`
 		select
@@ -159,8 +357,44 @@ func (s *Store) CreateStrategy(name, description string, parameters map[string]a
 	}, nil
 }
 
+func (s *Store) UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error) {
+	items, err := s.ListStrategies()
+	if err != nil {
+		return nil, err
+	}
+
+	var current domain.StrategyVersion
+	var strategy map[string]any
+	found := false
+	for _, item := range items {
+		if fmt.Sprint(item["id"]) != strategyID {
+			continue
+		}
+		current, _ = item["currentVersion"].(domain.StrategyVersion)
+		strategy = item
+		found = true
+		break
+	}
+	if !found {
+		return nil, fmt.Errorf("strategy not found: %s", strategyID)
+	}
+
+	raw, _ := json.Marshal(parameters)
+	if _, err := s.db.Exec(`
+		update strategy_versions
+		set parameters = $2
+		where id = $1
+	`, current.ID, raw); err != nil {
+		return nil, err
+	}
+
+	current.Parameters = parameters
+	strategy["currentVersion"] = current
+	return strategy, nil
+}
+
 func (s *Store) ListAccounts() ([]domain.Account, error) {
-	rows, err := s.db.Query(`select id, name, mode, exchange, status, created_at from accounts order by created_at asc`)
+	rows, err := s.db.Query(`select id, name, mode, exchange, status, metadata, created_at from accounts order by created_at asc`)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +403,13 @@ func (s *Store) ListAccounts() ([]domain.Account, error) {
 	items := []domain.Account{}
 	for rows.Next() {
 		var item domain.Account
-		if err := rows.Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &item.CreatedAt); err != nil {
+		var metadataRaw []byte
+		if err := rows.Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &metadataRaw, &item.CreatedAt); err != nil {
 			return nil, err
+		}
+		item.Metadata = map[string]any{}
+		if len(metadataRaw) > 0 {
+			_ = json.Unmarshal(metadataRaw, &item.Metadata)
 		}
 		items = append(items, item)
 	}
@@ -183,31 +422,58 @@ func (s *Store) CreateAccount(name, mode, exchange string) (domain.Account, erro
 		Name:      name,
 		Mode:      mode,
 		Exchange:  exchange,
-		Status:    "READY",
+		Status:    accountStatusForMode(mode),
+		Metadata:  map[string]any{},
 		CreatedAt: time.Now().UTC(),
 	}
+	raw, _ := json.Marshal(item.Metadata)
 
 	_, err := s.db.Exec(`
-		insert into accounts (id, name, mode, exchange, status, created_at)
-		values ($1, $2, $3, $4, $5, $6)
-	`, item.ID, item.Name, item.Mode, item.Exchange, item.Status, item.CreatedAt)
+		insert into accounts (id, name, mode, exchange, status, metadata, created_at)
+		values ($1, $2, $3, $4, $5, $6, $7)
+	`, item.ID, item.Name, item.Mode, item.Exchange, item.Status, raw, item.CreatedAt)
 	return item, err
 }
 
 func (s *Store) GetAccount(accountID string) (domain.Account, error) {
 	var item domain.Account
+	var metadataRaw []byte
 	err := s.db.QueryRow(`
-		select id, name, mode, exchange, status, created_at
+		select id, name, mode, exchange, status, metadata, created_at
 		from accounts
 		where id = $1
-	`, accountID).Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &item.CreatedAt)
+	`, accountID).Scan(&item.ID, &item.Name, &item.Mode, &item.Exchange, &item.Status, &metadataRaw, &item.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return domain.Account{}, fmt.Errorf("account not found: %s", accountID)
 		}
 		return domain.Account{}, err
 	}
+	item.Metadata = map[string]any{}
+	if len(metadataRaw) > 0 {
+		_ = json.Unmarshal(metadataRaw, &item.Metadata)
+	}
 	return item, nil
+}
+
+func (s *Store) UpdateAccount(account domain.Account) (domain.Account, error) {
+	if account.Metadata == nil {
+		account.Metadata = map[string]any{}
+	}
+	raw, _ := json.Marshal(account.Metadata)
+	_, err := s.db.Exec(`
+		update accounts
+		set name = $2,
+			mode = $3,
+			exchange = $4,
+			status = $5,
+			metadata = $6
+		where id = $1
+	`, account.ID, account.Name, account.Mode, account.Exchange, account.Status, raw)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	return s.GetAccount(account.ID)
 }
 
 func (s *Store) ListOrders() ([]domain.Order, error) {
@@ -515,8 +781,9 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		Status:      "READY",
 		StartEquity: startEquity,
 		State: map[string]any{
-			"runner":      "strategy-replay",
-			"ledgerIndex": 0,
+			"runner":      "strategy-engine",
+			"runtimeMode": "canonical-strategy-engine",
+			"planIndex":   0,
 		},
 		CreatedAt: time.Now().UTC(),
 	}
@@ -544,6 +811,91 @@ func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) 
 		return domain.PaperSession{}, err
 	}
 	return s.GetPaperSession(sessionID)
+}
+
+func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
+	rows, err := s.db.Query(`
+		select id, account_id, strategy_id, status, state, created_at
+		from live_sessions order by created_at asc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.LiveSession{}
+	for rows.Next() {
+		var item domain.LiveSession
+		var stateRaw []byte
+		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		item.State = map[string]any{}
+		if len(stateRaw) > 0 {
+			_ = json.Unmarshal(stateRaw, &item.State)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) GetLiveSession(sessionID string) (domain.LiveSession, error) {
+	var item domain.LiveSession
+	var stateRaw []byte
+	err := s.db.QueryRow(`
+		select id, account_id, strategy_id, status, state, created_at
+		from live_sessions
+		where id = $1
+	`, sessionID).Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
+		}
+		return domain.LiveSession{}, err
+	}
+	item.State = map[string]any{}
+	if len(stateRaw) > 0 {
+		_ = json.Unmarshal(stateRaw, &item.State)
+	}
+	return item, nil
+}
+
+func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error) {
+	item := domain.LiveSession{
+		ID:         fmt.Sprintf("live-session-%d", time.Now().UTC().UnixNano()),
+		AccountID:  accountID,
+		StrategyID: strategyID,
+		Status:     "READY",
+		State: map[string]any{
+			"runner":       "strategy-engine",
+			"dispatchMode": "manual-review",
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	stateRaw, _ := json.Marshal(item.State)
+
+	_, err := s.db.Exec(`
+		insert into live_sessions (id, account_id, strategy_id, status, state, created_at)
+		values ($1, $2, $3, $4, $5, $6)
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, stateRaw, item.CreatedAt)
+	return item, err
+}
+
+func (s *Store) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
+	_, err := s.db.Exec(`update live_sessions set status = $2 where id = $1`, sessionID, status)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return s.GetLiveSession(sessionID)
+}
+
+func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (domain.LiveSession, error) {
+	stateRaw, _ := json.Marshal(state)
+	_, err := s.db.Exec(`update live_sessions set state = $2 where id = $1`, sessionID, stateRaw)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return s.GetLiveSession(sessionID)
 }
 
 func (s *Store) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
@@ -585,4 +937,11 @@ func nullIfEmpty(v string) any {
 		return nil
 	}
 	return v
+}
+
+func accountStatusForMode(mode string) string {
+	if mode == "LIVE" {
+		return "PENDING_SETUP"
+	}
+	return "READY"
 }

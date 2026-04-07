@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
@@ -42,6 +43,96 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 				return
 			}
 			writeJSON(w, http.StatusCreated, item)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/v1/live-adapters", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, platform.LiveAdapters())
+	})
+
+	mux.HandleFunc("/api/v1/live/accounts/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/live/accounts/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusNotFound, "live account route not found")
+			return
+		}
+		accountID := parts[0]
+		switch parts[1] {
+		case "binding":
+			var payload map[string]any
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.BindLiveAccount(accountID, payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case "sync":
+			item, err := platform.SyncLiveAccount(accountID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case "launch":
+			var payload service.LiveLaunchOptions
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.LaunchLiveFlow(accountID, payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		default:
+			writeError(w, http.StatusNotFound, "live account route not found")
+		}
+	})
+
+	mux.HandleFunc("/api/v1/accounts/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/accounts/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) != 2 || parts[1] != "signal-bindings" {
+			writeError(w, http.StatusNotFound, "account signal binding route not found")
+			return
+		}
+		accountID := parts[0]
+		switch r.Method {
+		case http.MethodGet:
+			items, err := platform.ListAccountSignalBindings(accountID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, items)
+		case http.MethodPost:
+			var payload map[string]any
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.BindAccountSignalSource(accountID, payload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}

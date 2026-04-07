@@ -13,6 +13,8 @@ type Repository interface {
 	ListStrategies() ([]map[string]any, error)
 	// CreateStrategy 创建新策略。
 	CreateStrategy(name, description string, parameters map[string]any) (map[string]any, error)
+	// UpdateStrategyParameters 更新策略当前版本参数。
+	UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error)
 
 	// --- 账户管理 ---
 
@@ -22,6 +24,8 @@ type Repository interface {
 	GetAccount(accountID string) (domain.Account, error)
 	// CreateAccount 创建新账户。
 	CreateAccount(name, mode, exchange string) (domain.Account, error)
+	// UpdateAccount 更新账户信息（状态、metadata 等）。
+	UpdateAccount(account domain.Account) (domain.Account, error)
 
 	// --- 订单管理 ---
 
@@ -72,10 +76,48 @@ type Repository interface {
 	// UpdatePaperSessionState 更新会话运行时状态（ledgerIndex 等）。
 	UpdatePaperSessionState(sessionID string, state map[string]any) (domain.PaperSession, error)
 
+	// --- 实盘策略会话 ---
+
+	// ListLiveSessions 获取所有实盘策略会话。
+	ListLiveSessions() ([]domain.LiveSession, error)
+	// GetLiveSession 根据 ID 获取单个实盘策略会话。
+	GetLiveSession(sessionID string) (domain.LiveSession, error)
+	// CreateLiveSession 创建新实盘策略会话。
+	CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error)
+	// UpdateLiveSessionStatus 更新实盘策略会话状态。
+	UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error)
+	// UpdateLiveSessionState 更新实盘策略会话运行时状态。
+	UpdateLiveSessionState(sessionID string, state map[string]any) (domain.LiveSession, error)
+
 	// --- 净值快照 ---
 
 	// ListAccountEquitySnapshots 获取指定账户的净值快照序列。
 	ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error)
 	// CreateAccountEquitySnapshot 创建新的净值快照。
 	CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error)
+
+	// --- 平台运行配置 ---
+
+	// GetRuntimePolicy 获取持久化的运行时阈值配置。
+	GetRuntimePolicy() (domain.RuntimePolicy, bool, error)
+	// UpsertRuntimePolicy 创建或更新运行时阈值配置。
+	UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.RuntimePolicy, error)
+
+	// --- 通知中心 ---
+
+	// ListNotificationAcks 获取所有已确认通知键。
+	ListNotificationAcks() ([]domain.NotificationAck, error)
+	// UpsertNotificationAck 创建或更新时间已确认通知键。
+	UpsertNotificationAck(id string) (domain.NotificationAck, error)
+	// DeleteNotificationAck 取消已确认通知键。
+	DeleteNotificationAck(id string) error
+
+	// GetTelegramConfig 获取持久化的 Telegram 通知配置。
+	GetTelegramConfig() (domain.TelegramConfig, bool, error)
+	// UpsertTelegramConfig 创建或更新 Telegram 通知配置。
+	UpsertTelegramConfig(config domain.TelegramConfig) (domain.TelegramConfig, error)
+	// ListNotificationDeliveries 获取通知发送记录。
+	ListNotificationDeliveries() ([]domain.NotificationDelivery, error)
+	// UpsertNotificationDelivery 创建或更新通知发送记录。
+	UpsertNotificationDelivery(notificationID, channel, status, lastError string) (domain.NotificationDelivery, error)
 }

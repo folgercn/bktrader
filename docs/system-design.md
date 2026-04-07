@@ -68,8 +68,10 @@ Core Infrastructure
 
 Responsibilities:
 
-- register internal strategy feeds and future external feeds
-- deduplicate signals
+- register pluggable exchange and replay feeds
+- support both strategy-level and account-level source bindings
+- allow multiple sources per strategy and per account
+- distinguish trigger sources from feature sources
 - preserve full signal audit trail
 - expose recent signals to UI and monitoring
 
@@ -82,14 +84,113 @@ Signal record fields:
 - bar timestamp
 - metadata including reentry index and stop mode
 
+Source binding rules:
+
+- strategy bindings answer "which inputs does this strategy require"
+- account bindings answer "which market feeds does this account actually subscribe to"
+- one strategy may bind multiple sources, for example:
+  - `BINANCE trade tick` as `trigger`
+  - `BINANCE order book` as `feature`
+- one account may also bind multiple sources, for example:
+  - `BINANCE trade tick` for local execution triggering
+  - `OKX trade tick` or `OKX order book` for cross-market arbitrage observation
+- trigger and feature sources must be modeled separately so future order-book features do not get mixed with execution trigger streams
+- before paper/live starts, the platform should build a `signal runtime plan`:
+  - match required strategy bindings against active account bindings
+  - resolve which runtime adapter should drive each source
+  - fail early when required trigger streams are missing
+  - surface optional feature-stream gaps separately from blocking trigger gaps
+- after planning, the platform should create a `signal runtime session`:
+  - persist the resolved subscription set
+  - track runtime adapter, transport, health and heartbeat
+  - expose recent event summaries for operational visibility
+  - maintain structured per-source state snapshots so downstream strategy evaluation can read stable trigger / feature state instead of raw last-message strings
+  - serve as the control point for starting/stopping exchange market-data consumers
+- runtime rollout order:
+  - first connect public exchange trade-tick streams and verify heartbeats / recent events
+  - then extend to order-book streams
+  - only after stream stability is confirmed should strategy-trigger execution be switched onto the live runtime path
+
+Current implementation status:
+
+- Binance public market websocket:
+  - trade tick: connected
+  - order book: connected
+  - session health / heartbeat / recent event summary: connected
+- OKX websocket:
+  - adapter and subscription plan reserved
+  - full live message consumption pending
+
+Paper/runtime integration status:
+
+- paper sessions now link to signal runtime sessions when source bindings exist
+- tick-based paper sessions require a ready signal runtime plan before start
+- starting a linked paper session will start the associated market-data runtime first
+- linked tick events now drive a throttled paper-session heartbeat
+- each signal-driven paper evaluation now records the linked runtime `sourceStates` snapshot into paper session state
+- before paper evaluation advances strategy execution, the platform now checks a `source gate`:
+  - all required strategy bindings must have a source-state snapshot
+  - required snapshots must be fresh enough for their stream type
+  - default freshness windows are short and stream-specific so stale market-data does not silently drive execution
+- the freshness / quiet / readiness timeout thresholds are now centralized as a runtime policy and shared by backend preflight and frontend alerts
+- aggregated `paper / live / runtime` alerts are now exposed by a unified backend alert center
+- the platform now includes an in-app notification inbox built on top of active alerts, with persisted `ack / unack` state
+- external notification rollout is currently narrowed to Telegram only:
+  - the platform stores a Telegram channel config
+  - supports a manual test message
+  - supports manual forwarding of a single inbox notification to Telegram
+  - a lightweight background dispatcher now auto-sends unsent active notifications that match configured levels
+  - delivery records are persisted so the same notification is not resent after reload/restart
+  - runtime policy is persisted by the platform so operational thresholds survive restarts
+- after source gating passes, the platform now calls a strategy-engine-level `signal evaluation` hook:
+  - the engine receives trigger summary + structured source-state snapshot
+  - the engine decides whether this event should advance execution or wait
+  - the engine also emits a higher-level decision state such as `entry-ready`, `exit-ready`, `waiting-time`, or `waiting-price`
+  - the engine also emits a strategy-facing `signalKind` such as `initial-entry`, `initial-entry-watch`, `initial-entry-near`, `initial-entry-near-strong`, `initial-entry-near-weak`, `sl-reentry`, `sl-reentry-watch`, `sl-reentry-near`, `sl-reentry-near-strong`, `sl-reentry-near-weak`, `pt-reentry`, `pt-reentry-watch`, `pt-reentry-near`, `pt-reentry-near-strong`, `pt-reentry-near-weak`, `hold-long`, `hold-short`, `protect-exit`, `protect-exit-watch`, `protect-exit-near`, `protect-exit-near-strong`, `protect-exit-near-weak`, `risk-exit`, `risk-exit-watch`, or `risk-exit-near`
+  - signal evaluation now includes current paper position snapshot so strategy state is no longer inferred only from the next planned event
+  - watch/exit semantics can now also incorporate current position PnL direction against live market price
+  - the engine also sees the next planned execution timestamp so paper runtime can respect event-time ordering instead of advancing on any incoming tick
+  - the engine now also sees current market price context from trade-tick / order-book state and can reject progression when the next planned action is no longer directionally actionable at current market prices
+  - when order-book state is available, the engine also considers microstructure quality such as spread and top-of-book imbalance before allowing progression, and may hold when liquidity bias is directionally unfavorable
+  - this hook is the migration path from plan-driven paper execution to true real-time strategy decisions
+- strategy triggering is still a minimal event-driven rollout:
+  - real tick events update the linked paper session
+  - the session is nudged forward by runtime events at a throttled cadence
+  - full per-tick strategy evaluation replacement is still pending, but the decision entrypoint now lives in the strategy engine instead of the paper runner
+- live strategy session rollout:
+  - live sessions are now first-class persisted objects, separate from manual live orders
+  - a live session links one live account, one strategy, and one runtime session
+  - start/stop is gated by the same runtime readiness policy used by paper/live preflight
+  - runtime events now also update linked live sessions
+  - current live-session phase is `manual-review`:
+    - strategy evaluation runs on live runtime events
+    - the platform records `lastStrategyDecision`, `lastStrategyIntent`, and `timeline`
+    - automatic order dispatch remains intentionally off by default
+
 ### 4.2 Strategy Management
 
 Responsibilities:
 
 - manage strategy definitions
 - version parameters
+- register pluggable strategy engines
 - bind strategy versions to accounts
 - keep runtime config immutable per deployment
+
+Runtime rules:
+
+- strategy modules must be pluggable; the platform resolves a `StrategyEngine` by key instead of hard-coding one strategy into each workflow
+- signal sources must also be pluggable; the platform resolves registered source definitions by key instead of hard-coding Binance-only or single-stream behavior
+- the same strategy engine must be used across backtest, paper, and live modes
+- live exchange connectivity must also be pluggable; the platform resolves a `LiveExecutionAdapter` by key per account binding
+- the only allowed execution-semantic difference is slippage:
+  - `BACKTEST`: simulated slippage may be injected
+  - `PAPER` / `LIVE`: no extra synthetic slippage inside strategy execution; fills must come from canonical execution flow
+- fees and funding:
+  - `BACKTEST`: trading fee / funding are configurable parameters
+  - `PAPER`: trading fee is configurable; funding should be configurable when paper holding lifecycle is promoted to the canonical engine path
+- `LIVE`: trading fee / funding / rebates must come from exchange responses and reconciled ledgers
+- `LIVE` account credentials should be referenced indirectly (`apiKeyRef`, `apiSecretRef`) rather than embedded in strategy configuration
 
 Key parameters to snapshot:
 
@@ -204,6 +305,8 @@ Execution consistency rule:
 ## 7. Data Consistency Rules
 
 - every order must reference strategy version when strategy-generated
+- every strategy version should snapshot its source bindings
+- every account should persist its active source bindings
 - every fill must reference an order
 - position state must be derivable from fills
 - chart annotations should be generated from canonical order/fill events
@@ -237,11 +340,17 @@ Execution consistency rule:
 Current implementation status:
 
 - pluggable repository layer with `memory` and `postgres` backends
+- pluggable `StrategyEngine` registry with built-in `bk-default`
+- pluggable `LiveExecutionAdapter` registry with built-in `binance-futures`
 - HTTP CRUD-style endpoints for strategies, accounts, orders, backtests, and paper sessions
+- `GET /api/v1/strategy-engines` exposes registered strategy engines to the UI
 - paper account orders are executed immediately into `fills` and net `positions`
 - account summary snapshots expose start equity, fees, realized/unrealized PnL, and exposure
 - account equity snapshots provide a time series for paper account net-equity charts
-- paper sessions support background runners that replay the current strategy ledger and persist replay progress in session state
+- paper sessions support background runners that prebuild canonical strategy execution plans and persist replay progress in session state
+- paper session creation supports runtime overrides for timeframe, execution source, symbol, range, and cost semantics
+- live account bindings persist to `accounts.metadata.liveBinding` with adapter key, credential refs, and execution-mode settings
+- `LIVE` orders now route through the bound `LiveExecutionAdapter` and persist adapter acknowledgements in order metadata
 - chart annotation endpoint
 - candle feed endpoint suitable for TradingView integration scaffolding
 - PostgreSQL persistence implemented for strategies, accounts, orders, positions, backtest runs, and paper sessions
@@ -249,12 +358,19 @@ Current implementation status:
 - embedded SQL migrations with `cmd/db-migrate`
 - optional local auto-migration controlled by `AUTO_MIGRATE`
 
+Current backtest focus:
+
+- primary workflow is pluggable strategy replay on `tick` or `1min` data sources
+- users choose the signal timeframe (`4h` / `1d`) separately from the execution source
+- backtest runtime is now resolved through `StrategyEngine` plus `ExecutionSemantics`
+- `BACKTEST` semantics allow simulated slippage; `PAPER/LIVE` semantics are intended to share canonical execution behavior
+
 Current paper runner details:
 
-- replay source: `FINAL_1D_LEDGER_BEST_SL.csv`
-- replay symbol: `BTCUSDT`
-- session state stores `ledgerIndex`, last replay event metadata, and completion marker
-- `notional=0` ledger rows are skipped so zero-initial bootstrap events do not create fake paper orders
+- runtime source: registered `StrategyEngine`
+- replay symbol: strategy-configured symbol, currently defaulting to `BTCUSDT`
+- session state stores `planIndex`, runtime semantics, last executed event metadata, and completion marker
+- `PAPER` uses the same canonical strategy runtime as backtests, with observed execution semantics and configurable fees/funding
 
 ### Phase 2: Live Trading
 
@@ -273,6 +389,131 @@ Current live-gap assessment:
   - `LIVE` accounts exist in the domain model
   - but a real exchange execution adapter, exchange-order sync, and canonical fill reconciliation are still incomplete in this branch
 - therefore the project has reached `backtest + paper MVP`, but has **not yet fully connected a unified paper/live trading mainline**
+
+Immediate implementation plan: unify paper/live trading mainline
+
+#### Step 1. Introduce a single canonical execution pipeline
+
+Target flow:
+
+1. Strategy / signal runtime emits `OrderIntent`
+2. Risk layer validates intent
+3. Execution router resolves environment-specific executor
+4. Executor submits / simulates order
+5. Canonical order state is persisted
+6. Canonical fills are materialized
+7. Positions, equity snapshots, and chart annotations are updated through the same write path
+
+Design rule:
+
+- `BACKTEST`, `PAPER`, and `LIVE` must share the same strategy-decision and order-intent schema
+- only the executor implementation differs
+
+#### Step 2. Split executors by environment, unify post-trade write path
+
+Recommended interfaces:
+
+- `PaperExecutor`
+- `LiveExecutor`
+- shared post-trade reconciliation service
+
+Responsibilities:
+
+- `PaperExecutor`: immediate or simulated matching, configurable fee model
+- `LiveExecutor`: submit to exchange, record acknowledgement, fetch/sync latest order state, materialize fills
+- shared reconciliation path:
+  - update order status
+  - create fills
+  - update net positions
+  - capture account equity snapshot
+  - refresh chart annotations / monitoring views
+
+This is the key refactor needed to avoid maintaining two divergent trading pipelines.
+
+#### Step 3. Deliver the smallest usable Binance Futures live path first
+
+The first live MVP should intentionally stay narrow:
+
+- single exchange: Binance Futures
+- single symbol priority: BTCUSDT
+- single account first
+- market order first
+- basic open / close only
+- manual sync endpoint allowed in phase 1
+
+Minimum live capabilities required:
+
+- submit live order
+- persist exchange acknowledgement
+- query latest exchange order state
+- materialize fills locally
+- update positions locally
+- capture equity snapshots after fill sync
+
+Non-goals for this first live MVP:
+
+- multi-account rollout
+- complex order types
+- automatic retry orchestration
+- websocket-first execution lifecycle
+
+#### Step 4. Promote shared monitoring and control surfaces
+
+After the minimal live path works, the platform should expose the same operational views for paper and live:
+
+- account status
+- orders
+- fills
+- positions
+- equity curve
+- runtime alerts
+- chart annotations
+
+Operational safety controls should be added before enabling automatic live dispatch:
+
+- environment switch (`paper` / `live`)
+- account binding and credential reference validation
+- kill switch
+- `reduce-only` / `close-only` mode
+- manual-review mode before auto-dispatch
+
+#### Step 5. Production hardening after the mainline is connected
+
+Only after the canonical paper/live path is working end-to-end should the project expand to:
+
+- exchange websocket user data stream
+- automatic reconciliation jobs
+- retry / idempotency guards
+- alert delivery
+- failure runbooks
+- full live-session automation
+
+Near-term build order:
+
+1. extract canonical execution pipeline from current paper-order flow
+2. introduce executor abstraction and keep current paper behavior behind `PaperExecutor`
+3. implement minimal `BinanceFuturesLiveExecutor`
+4. add live order sync -> fill materialization -> position/equity update
+5. expose shared monitoring views for paper/live
+6. gate live auto-dispatch behind manual-review and runtime readiness checks
+Current live adapter details:
+
+- `GET /api/v1/live-adapters` lists registered live adapters
+- `POST /api/v1/live/accounts/{id}/binding` binds a `LIVE` account to an adapter using credential references
+- `POST /api/v1/orders` for a bound `LIVE` account resolves the adapter and stores an `ACCEPTED` acknowledgement
+- `POST /api/v1/orders/{id}/sync` asks the adapter for the latest exchange order state and materializes fills locally
+- current `binance-futures` implementation is a mock submission adapter that returns exchange-style metadata without hitting the network
+- current mock sync path can transition `ACCEPTED -> FILLED`, create `fills`, and update `positions`
+
+Current live-gap assessment:
+
+- current codebase already has a clear `PAPER` execution path:
+  - paper orders are accepted and immediately materialized into fills / positions / equity snapshots
+  - paper sessions can replay the current strategy ledger
+- current `LIVE` path is still only partially closed-loop:
+  - this branch already introduces live adapter registration, binding, submit, and sync scaffolding
+  - but the production goal remains a fully unified canonical paper/live trading mainline
+- therefore the immediate focus is not to create a second parallel flow, but to finish unifying the execution and reconciliation path behind the new live scaffolding
 
 Immediate implementation plan: unify paper/live trading mainline
 

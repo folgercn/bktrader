@@ -3,6 +3,7 @@ package memory
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,17 +13,22 @@ import (
 type Store struct {
 	mu sync.RWMutex
 
-	strategies      map[string]domain.Strategy
-	strategyVersion map[string]domain.StrategyVersion
-	accounts        map[string]domain.Account
-	orders          map[string]domain.Order
-	fills           map[string]domain.Fill
-	positions       map[string]domain.Position
-	backtests       map[string]domain.BacktestRun
-	paperSessions   map[string]domain.PaperSession
-	equitySnapshots map[string][]domain.AccountEquitySnapshot
-	signalSources   []map[string]any
-	annotations     []domain.ChartAnnotation
+	strategies       map[string]domain.Strategy
+	strategyVersion  map[string]domain.StrategyVersion
+	accounts         map[string]domain.Account
+	orders           map[string]domain.Order
+	fills            map[string]domain.Fill
+	positions        map[string]domain.Position
+	backtests        map[string]domain.BacktestRun
+	paperSessions    map[string]domain.PaperSession
+	liveSessions     map[string]domain.LiveSession
+	equitySnapshots  map[string][]domain.AccountEquitySnapshot
+	signalSources    []map[string]any
+	annotations      []domain.ChartAnnotation
+	runtimePolicy    *domain.RuntimePolicy
+	notificationAcks map[string]domain.NotificationAck
+	telegramConfig   *domain.TelegramConfig
+	deliveries       map[string]domain.NotificationDelivery
 
 	sequence int64
 }
@@ -38,6 +44,7 @@ func NewStore() *Store {
 		positions:       make(map[string]domain.Position),
 		backtests:       make(map[string]domain.BacktestRun),
 		paperSessions:   make(map[string]domain.PaperSession),
+		liveSessions:    make(map[string]domain.LiveSession),
 		equitySnapshots: make(map[string][]domain.AccountEquitySnapshot),
 		signalSources: []map[string]any{
 			{
@@ -69,6 +76,8 @@ func NewStore() *Store {
 				Label:  "PT",
 			},
 		},
+		notificationAcks: make(map[string]domain.NotificationAck),
+		deliveries:       make(map[string]domain.NotificationDelivery),
 	}
 
 	strategy := domain.Strategy{
@@ -85,11 +94,15 @@ func NewStore() *Store {
 		SignalTimeframe:    "1D",
 		ExecutionTimeframe: "1m",
 		Parameters: map[string]any{
-			"maxTradesPerBar":  3,
-			"reentrySizes":     []float64{0.10, 0.20},
-			"stopMode":         "atr",
-			"stopLossATR":      0.05,
-			"profitProtectATR": 1.0,
+			"strategyEngine":       "bk-default",
+			"maxTradesPerBar":      3,
+			"reentrySizes":         []float64{0.10, 0.20},
+			"stopMode":             "atr",
+			"stopLossATR":          0.05,
+			"profitProtectATR":     1.0,
+			"tradingFeeBps":        10.0,
+			"fundingRateBps":       0.0,
+			"fundingIntervalHours": 8,
 		},
 		CreatedAt: now,
 	}
@@ -102,14 +115,23 @@ func NewStore() *Store {
 		Mode:      "PAPER",
 		Exchange:  "binance-futures",
 		Status:    "READY",
+		Metadata:  map[string]any{},
 		CreatedAt: now,
 	}
 	live := domain.Account{
-		ID:        "live-main",
-		Name:      "Live Main",
-		Mode:      "LIVE",
-		Exchange:  "binance-futures",
-		Status:    "PENDING_SETUP",
+		ID:       "live-main",
+		Name:     "Live Main",
+		Mode:     "LIVE",
+		Exchange: "binance-futures",
+		Status:   "PENDING_SETUP",
+		Metadata: map[string]any{
+			"liveBinding": map[string]any{
+				"adapterKey":     "binance-futures",
+				"feeSource":      "exchange",
+				"fundingSource":  "exchange",
+				"connectionMode": "disabled",
+			},
+		},
 		CreatedAt: now,
 	}
 	store.accounts[paper.ID] = paper
@@ -178,8 +200,20 @@ func NewStore() *Store {
 		Status:      "READY",
 		StartEquity: 100000.0,
 		State: map[string]any{
-			"runner":      "strategy-replay",
-			"ledgerIndex": 0,
+			"runner":      "strategy-engine",
+			"runtimeMode": "canonical-strategy-engine",
+			"planIndex":   0,
+		},
+		CreatedAt: now,
+	}
+	store.liveSessions["live-session-main"] = domain.LiveSession{
+		ID:         "live-session-main",
+		AccountID:  live.ID,
+		StrategyID: strategy.ID,
+		Status:     "READY",
+		State: map[string]any{
+			"runner":       "strategy-engine",
+			"dispatchMode": "manual-review",
 		},
 		CreatedAt: now,
 	}
@@ -214,6 +248,104 @@ func (s *Store) SignalSources() []map[string]any {
 		out = append(out, item)
 	}
 	return out
+}
+
+func (s *Store) GetRuntimePolicy() (domain.RuntimePolicy, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.runtimePolicy == nil {
+		return domain.RuntimePolicy{}, false, nil
+	}
+	return *s.runtimePolicy, true, nil
+}
+
+func (s *Store) UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.RuntimePolicy, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	policy.UpdatedAt = time.Now().UTC()
+	copyPolicy := policy
+	s.runtimePolicy = &copyPolicy
+	return policy, nil
+}
+
+func (s *Store) ListNotificationAcks() ([]domain.NotificationAck, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.NotificationAck, 0, len(s.notificationAcks))
+	for _, item := range s.notificationAcks {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	return items, nil
+}
+
+func (s *Store) UpsertNotificationAck(id string) (domain.NotificationAck, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	item := domain.NotificationAck{
+		ID:        id,
+		AckedAt:   now,
+		UpdatedAt: now,
+	}
+	s.notificationAcks[id] = item
+	return item, nil
+}
+
+func (s *Store) DeleteNotificationAck(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.notificationAcks, id)
+	return nil
+}
+
+func (s *Store) GetTelegramConfig() (domain.TelegramConfig, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.telegramConfig == nil {
+		return domain.TelegramConfig{}, false, nil
+	}
+	return *s.telegramConfig, true, nil
+}
+
+func (s *Store) UpsertTelegramConfig(config domain.TelegramConfig) (domain.TelegramConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	config.UpdatedAt = time.Now().UTC()
+	copyConfig := config
+	s.telegramConfig = &copyConfig
+	return config, nil
+}
+
+func (s *Store) ListNotificationDeliveries() ([]domain.NotificationDelivery, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.NotificationDelivery, 0, len(s.deliveries))
+	for _, item := range s.deliveries {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	return items, nil
+}
+
+func (s *Store) UpsertNotificationDelivery(notificationID, channel, status, lastError string) (domain.NotificationDelivery, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	key := notificationID + "::" + channel
+	item := domain.NotificationDelivery{
+		NotificationID: notificationID,
+		Channel:        channel,
+		Status:         status,
+		LastError:      lastError,
+		AttemptedAt:    now,
+		UpdatedAt:      now,
+	}
+	if strings.EqualFold(status, "sent") {
+		item.SentAt = now
+	}
+	s.deliveries[key] = item
+	return item, nil
 }
 
 func (s *Store) ListStrategies() ([]map[string]any, error) {
@@ -281,6 +413,42 @@ func (s *Store) CreateStrategy(name, description string, parameters map[string]a
 	}, nil
 }
 
+func (s *Store) UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	strategy, ok := s.strategies[strategyID]
+	if !ok {
+		return nil, fmt.Errorf("strategy not found: %s", strategyID)
+	}
+
+	var current domain.StrategyVersion
+	found := false
+	for _, version := range s.strategyVersion {
+		if version.StrategyID != strategyID {
+			continue
+		}
+		if !found || version.CreatedAt.After(current.CreatedAt) {
+			current = version
+			found = true
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("strategy version not found: %s", strategyID)
+	}
+	current.Parameters = parameters
+	s.strategyVersion[current.ID] = current
+
+	return map[string]any{
+		"id":             strategy.ID,
+		"name":           strategy.Name,
+		"status":         strategy.Status,
+		"description":    strategy.Description,
+		"createdAt":      strategy.CreatedAt,
+		"currentVersion": current,
+	}, nil
+}
+
 func (s *Store) ListAccounts() ([]domain.Account, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -300,7 +468,8 @@ func (s *Store) CreateAccount(name, mode, exchange string) (domain.Account, erro
 		Name:      name,
 		Mode:      mode,
 		Exchange:  exchange,
-		Status:    "READY",
+		Status:    accountStatusForMode(mode),
+		Metadata:  map[string]any{},
 		CreatedAt: time.Now().UTC(),
 	}
 	s.accounts[account.ID] = account
@@ -315,6 +484,19 @@ func (s *Store) GetAccount(accountID string) (domain.Account, error) {
 	if !ok {
 		return domain.Account{}, fmt.Errorf("account not found: %s", accountID)
 	}
+	return account, nil
+}
+
+func (s *Store) UpdateAccount(account domain.Account) (domain.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.accounts[account.ID]; !ok {
+		return domain.Account{}, fmt.Errorf("account not found: %s", account.ID)
+	}
+	if account.Metadata == nil {
+		account.Metadata = map[string]any{}
+	}
+	s.accounts[account.ID] = account
 	return account, nil
 }
 
@@ -483,8 +665,9 @@ func (s *Store) CreatePaperSession(accountID, strategyID string, startEquity flo
 		Status:      "READY",
 		StartEquity: startEquity,
 		State: map[string]any{
-			"runner":      "strategy-replay",
-			"ledgerIndex": 0,
+			"runner":      "strategy-engine",
+			"runtimeMode": "canonical-strategy-engine",
+			"planIndex":   0,
 		},
 		CreatedAt: time.Now().UTC(),
 	}
@@ -516,6 +699,70 @@ func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) 
 	return item, nil
 }
 
+func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.LiveSession, 0, len(s.liveSessions))
+	for _, item := range s.liveSessions {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *Store) GetLiveSession(sessionID string) (domain.LiveSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.liveSessions[sessionID]
+	if !ok {
+		return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
+	}
+	return item, nil
+}
+
+func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.nextID("live-session")
+	item := domain.LiveSession{
+		ID:         id,
+		AccountID:  accountID,
+		StrategyID: strategyID,
+		Status:     "READY",
+		State: map[string]any{
+			"runner":       "strategy-engine",
+			"dispatchMode": "manual-review",
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	s.liveSessions[id] = item
+	return item, nil
+}
+
+func (s *Store) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.liveSessions[sessionID]
+	if !ok {
+		return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
+	}
+	item.Status = status
+	s.liveSessions[sessionID] = item
+	return item, nil
+}
+
+func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (domain.LiveSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.liveSessions[sessionID]
+	if !ok {
+		return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
+	}
+	item.State = state
+	s.liveSessions[sessionID] = item
+	return item, nil
+}
+
 func (s *Store) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -531,6 +778,13 @@ func (s *Store) CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapsho
 	snapshot.CreatedAt = time.Now().UTC()
 	s.equitySnapshots[snapshot.AccountID] = append(s.equitySnapshots[snapshot.AccountID], snapshot)
 	return snapshot, nil
+}
+
+func accountStatusForMode(mode string) string {
+	if mode == "LIVE" {
+		return "PENDING_SETUP"
+	}
+	return "READY"
 }
 
 func (s *Store) ListAnnotations(symbol string) []domain.ChartAnnotation {

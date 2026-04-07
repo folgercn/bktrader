@@ -16,17 +16,29 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
-// strategyReplayEvent 表示从策略交易账本 CSV 中解析出的单条回放事件。
 type strategyReplayEvent struct {
-	Time     time.Time // 事件时间
-	Type     string    // 事件类型：BUY / SHORT / EXIT
-	Price    float64   // 执行价格
-	Reason   string    // 交易原因
-	Notional float64   // 名义金额
-	Balance  float64   // 账户余额
+	Time     time.Time
+	Type     string
+	Price    float64
+	Reason   string
+	Notional float64
+	Balance  float64
 }
 
-// --- 模拟交易会话管理 ---
+type paperPlannedOrder struct {
+	StrategyVersionID string
+	Symbol            string
+	Side              string
+	Type              string
+	Quantity          float64
+	Price             float64
+	EventTime         time.Time
+	Reason            string
+	Role              string
+	FeeAmount         float64
+	FundingPnL        float64
+	Metadata          map[string]any
+}
 
 // ListPaperSessions 获取所有模拟交易会话。
 func (p *Platform) ListPaperSessions() ([]domain.PaperSession, error) {
@@ -34,8 +46,22 @@ func (p *Platform) ListPaperSessions() ([]domain.PaperSession, error) {
 }
 
 // CreatePaperSession 创建新的模拟交易会话，并捕获初始净值快照。
-func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64) (domain.PaperSession, error) {
+func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64, overrides map[string]any) (domain.PaperSession, error) {
 	session, err := p.store.CreatePaperSession(accountID, strategyID, startEquity)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	if len(overrides) > 0 {
+		state := cloneMetadata(session.State)
+		for key, value := range normalizePaperSessionOverrides(overrides) {
+			state[key] = value
+		}
+		session, err = p.store.UpdatePaperSessionState(session.ID, state)
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
+	}
+	session, err = p.syncPaperSessionRuntime(session)
 	if err != nil {
 		return domain.PaperSession{}, err
 	}
@@ -45,11 +71,21 @@ func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity 
 	return session, nil
 }
 
-// StartPaperSession 启动模拟交易会话的后台回放循环。
-// 如果会话已在运行则忽略重复启动。
+// StartPaperSession 启动模拟交易会话的后台执行循环。
 func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, error) {
 	session, err := p.store.GetPaperSession(sessionID)
 	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	session, err = p.syncPaperSessionRuntime(session)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	session, err = p.ensurePaperSignalRuntimeStarted(session)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	if _, _, err := p.ensurePaperExecutionPlan(session); err != nil {
 		return domain.PaperSession{}, err
 	}
 
@@ -71,12 +107,11 @@ func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, err
 		return domain.PaperSession{}, err
 	}
 
-	// 启动后台 goroutine 执行策略回放
 	go p.runPaperSessionLoop(ctx, session)
 	return session, nil
 }
 
-// StopPaperSession 停止模拟交易会话，取消后台回放循环。
+// StopPaperSession 停止模拟交易会话，取消后台执行循环。
 func (p *Platform) StopPaperSession(sessionID string) (domain.PaperSession, error) {
 	session, err := p.store.UpdatePaperSessionStatus(sessionID, "STOPPED")
 	if err != nil {
@@ -88,21 +123,433 @@ func (p *Platform) StopPaperSession(sessionID string) (domain.PaperSession, erro
 	if exists {
 		delete(p.run, sessionID)
 	}
+	delete(p.paperPlans, sessionID)
 	p.mu.Unlock()
 
 	if exists {
 		cancel()
 	}
+	_, _ = p.stopLinkedSignalRuntime(session)
 	return session, nil
 }
 
-// TickPaperSession 手动触发会话前进一步（处理下一个回放事件）。
+// TickPaperSession 手动触发会话前进一步（处理下一笔策略计划订单）。
 func (p *Platform) TickPaperSession(sessionID string) (domain.Order, error) {
 	session, err := p.store.GetPaperSession(sessionID)
 	if err != nil {
 		return domain.Order{}, err
 	}
+	session, err = p.syncPaperSessionRuntime(session)
+	if err != nil {
+		return domain.Order{}, err
+	}
 	return p.placePaperSessionOrder(session)
+}
+
+func (p *Platform) triggerPaperSessionFromSignal(sessionID, runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
+	session, err := p.store.GetPaperSession(sessionID)
+	if err != nil {
+		return err
+	}
+	if session.Status != "RUNNING" {
+		return nil
+	}
+
+	state := cloneMetadata(session.State)
+	state["lastSignalRuntimeEventAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastSignalRuntimeEvent"] = cloneMetadata(summary)
+	state["lastSignalRuntimeSessionId"] = runtimeSessionID
+
+	throttleSeconds := maxIntValue(state["signalTriggerThrottleSeconds"], 5)
+	lastTriggeredAt := parseOptionalRFC3339(stringValue(state["lastSignalDrivenTickAt"]))
+	if !lastTriggeredAt.IsZero() && eventTime.Sub(lastTriggeredAt) < time.Duration(throttleSeconds)*time.Second {
+		_, err := p.store.UpdatePaperSessionState(session.ID, state)
+		return err
+	}
+
+	state["lastSignalDrivenTickAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["signalTriggerThrottleSeconds"] = throttleSeconds
+	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
+	if err != nil {
+		return err
+	}
+
+	_, err = p.evaluatePaperSessionOnSignal(updatedSession, runtimeSessionID, summary, eventTime)
+	if err != nil {
+		state = cloneMetadata(updatedSession.State)
+		state["lastSignalTriggerError"] = err.Error()
+		_, _ = p.store.UpdatePaperSessionState(session.ID, state)
+	}
+	return nil
+}
+
+func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, runtimeSessionID string, summary map[string]any, eventTime time.Time) (domain.Order, error) {
+	session, err := p.syncPaperSessionRuntime(session)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	session, plan, err := p.ensurePaperExecutionPlan(session)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	state := cloneMetadata(session.State)
+	state["strategyEvaluationMode"] = "signal-runtime-heartbeat"
+	state["lastStrategyEvaluationAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastStrategyEvaluationTrigger"] = cloneMetadata(summary)
+	state["lastStrategyEvaluationTriggerSource"] = buildStrategyEvaluationTriggerSource(summary)
+	state["lastStrategyEvaluationStatus"] = "evaluated"
+	state["lastStrategyEvaluationPlanLength"] = len(plan)
+	index := 0
+	if value, ok := toFloat64(state["planIndex"]); ok && value >= 0 {
+		index = int(value)
+	}
+	state["lastStrategyEvaluationRemaining"] = maxInt(len(plan)-index, 0)
+	var nextPlannedEvent time.Time
+	var nextPlannedPrice float64
+	var nextPlannedSide string
+	var nextPlannedRole string
+	var nextPlannedReason string
+	if index >= 0 && index < len(plan) {
+		nextPlannedEvent = plan[index].EventTime
+		nextPlannedPrice = plan[index].Price
+		nextPlannedSide = plan[index].Side
+		nextPlannedRole = plan[index].Role
+		nextPlannedReason = plan[index].Reason
+		state["lastStrategyEvaluationNextPlannedEventAt"] = formatOptionalRFC3339(nextPlannedEvent)
+		state["lastStrategyEvaluationNextPlannedPrice"] = nextPlannedPrice
+		state["lastStrategyEvaluationNextPlannedSide"] = nextPlannedSide
+		state["lastStrategyEvaluationNextPlannedRole"] = nextPlannedRole
+		state["lastStrategyEvaluationNextPlannedReason"] = nextPlannedReason
+	}
+	sourceGate := map[string]any{
+		"ready":          false,
+		"requiredCount":  0,
+		"availableCount": 0,
+		"freshCount":     0,
+		"missing":        []any{},
+		"stale":          []any{},
+	}
+	if runtimeSessionID != "" {
+		state["lastSignalRuntimeSessionId"] = runtimeSessionID
+	}
+	var signalDecision StrategySignalDecision
+	signalDecision.Action = "advance-plan"
+	signalDecision.Reason = "default"
+	var executionContext StrategyExecutionContext
+	var sourceStates map[string]any
+	var signalBarStates map[string]any
+	if runtimeSession, runtimeErr := p.GetSignalRuntimeSession(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"]))); runtimeErr == nil {
+		state["lastSignalRuntimeStatus"] = runtimeSession.Status
+		sourceStates = cloneMetadata(mapValue(runtimeSession.State["sourceStates"]))
+		if sourceStates == nil {
+			sourceStates = map[string]any{}
+		}
+		signalBarStates = cloneMetadata(mapValue(runtimeSession.State["signalBarStates"]))
+		if signalBarStates == nil {
+			signalBarStates = map[string]any{}
+		}
+		state["lastStrategyEvaluationSourceStates"] = sourceStates
+		state["lastStrategyEvaluationSignalBarStates"] = signalBarStates
+		state["lastStrategyEvaluationSignalBarStateCount"] = len(signalBarStates)
+		state["lastStrategyEvaluationSourceStateCount"] = len(sourceStates)
+		state["lastStrategyEvaluationRuntimeSummary"] = cloneMetadata(mapValue(runtimeSession.State["lastEventSummary"]))
+		sourceGate = p.evaluateSignalSourceReadiness(session, runtimeSession, eventTime)
+		state["lastStrategyEvaluationSourceGate"] = sourceGate
+	}
+	if !boolValue(sourceGate["ready"]) {
+		state["lastStrategyEvaluationStatus"] = "waiting-source-states"
+		appendTimelineEvent(state, "strategy", eventTime, "waiting-source-states", map[string]any{
+			"missing": len(metadataList(sourceGate["missing"])),
+			"stale":   len(metadataList(sourceGate["stale"])),
+		})
+		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
+		if updateErr != nil {
+			return domain.Order{}, updateErr
+		}
+		return domain.Order{}, fmt.Errorf("paper session %s is waiting for fresh required signal source states", updatedSession.ID)
+	}
+	executionContext, signalDecision, err = p.evaluatePaperSignalDecision(session, summary, sourceStates, signalBarStates, eventTime, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason)
+	if err != nil {
+		state["lastStrategyEvaluationStatus"] = "decision-error"
+		state["lastStrategyDecision"] = map[string]any{
+			"action": "error",
+			"reason": err.Error(),
+		}
+		appendTimelineEvent(state, "strategy", eventTime, "decision-error", map[string]any{
+			"error": err.Error(),
+		})
+		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
+		if updateErr != nil {
+			return domain.Order{}, updateErr
+		}
+		return domain.Order{}, fmt.Errorf("paper session %s signal evaluation failed: %w", updatedSession.ID, err)
+	}
+	state["lastStrategyDecision"] = map[string]any{
+		"action":   signalDecision.Action,
+		"reason":   signalDecision.Reason,
+		"metadata": cloneMetadata(signalDecision.Metadata),
+	}
+	appendTimelineEvent(state, "strategy", eventTime, "decision", map[string]any{
+		"action":        signalDecision.Action,
+		"reason":        signalDecision.Reason,
+		"decisionState": stringValue(signalDecision.Metadata["decisionState"]),
+		"signalKind":    stringValue(signalDecision.Metadata["signalKind"]),
+	})
+	state["lastStrategyEvaluationContext"] = map[string]any{
+		"strategyVersionId":   executionContext.StrategyVersionID,
+		"signalTimeframe":     executionContext.SignalTimeframe,
+		"executionDataSource": executionContext.ExecutionDataSource,
+		"symbol":              executionContext.Symbol,
+	}
+	if signalDecision.Action != "advance-plan" {
+		state["lastStrategyEvaluationStatus"] = "waiting-decision"
+		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
+		if updateErr != nil {
+			return domain.Order{}, updateErr
+		}
+		return domain.Order{}, fmt.Errorf("paper session %s decision gate blocked: %s", updatedSession.ID, signalDecision.Reason)
+	}
+	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
+	if err != nil {
+		return domain.Order{}, err
+	}
+
+	order, err := p.placePaperSessionOrder(updatedSession)
+	if err != nil {
+		latestSession, getErr := p.store.GetPaperSession(session.ID)
+		if getErr == nil {
+			state = cloneMetadata(latestSession.State)
+		} else {
+			state = cloneMetadata(updatedSession.State)
+		}
+		state["lastStrategyEvaluationStatus"] = "no-action"
+		appendTimelineEvent(state, "strategy", eventTime, "no-action", map[string]any{
+			"reason": "place-paper-order-returned-empty",
+		})
+		_, _ = p.store.UpdatePaperSessionState(session.ID, state)
+		return domain.Order{}, err
+	}
+
+	latestSession, getErr := p.store.GetPaperSession(session.ID)
+	if getErr == nil {
+		state = cloneMetadata(latestSession.State)
+	} else {
+		state = cloneMetadata(updatedSession.State)
+	}
+	state["lastStrategyEvaluationStatus"] = "order-dispatched"
+	state["lastStrategyEvaluationOrderId"] = order.ID
+	appendTimelineEvent(state, "order", eventTime, "order-dispatched", map[string]any{
+		"orderId": order.ID,
+		"symbol":  order.Symbol,
+		"side":    order.Side,
+		"price":   order.Price,
+	})
+	_, _ = p.store.UpdatePaperSessionState(session.ID, state)
+	return order, nil
+}
+
+func appendTimelineEvent(state map[string]any, category string, ts time.Time, title string, metadata map[string]any) {
+	items := make([]any, 0)
+	switch current := state["timeline"].(type) {
+	case []any:
+		items = append(items, current...)
+	}
+	entry := map[string]any{
+		"time":     ts.UTC().Format(time.RFC3339),
+		"category": category,
+		"title":    title,
+		"metadata": cloneMetadata(metadata),
+	}
+	items = append(items, entry)
+	if len(items) > 40 {
+		items = items[len(items)-40:]
+	}
+	state["timeline"] = items
+}
+
+func (p *Platform) evaluateSignalSourceReadiness(session domain.PaperSession, runtimeSession domain.SignalRuntimeSession, eventTime time.Time) map[string]any {
+	return p.evaluateRuntimeSignalSourceReadiness(session.StrategyID, runtimeSession, eventTime)
+}
+
+func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runtimeSession domain.SignalRuntimeSession, eventTime time.Time) map[string]any {
+	result := map[string]any{
+		"ready":          true,
+		"requiredCount":  0,
+		"availableCount": 0,
+		"freshCount":     0,
+		"missing":        []any{},
+		"stale":          []any{},
+	}
+
+	requiredBindings, err := p.ListStrategySignalBindings(strategyID)
+	if err != nil {
+		result["ready"] = false
+		result["error"] = err.Error()
+		return result
+	}
+	sourceStates := cloneMetadata(mapValue(runtimeSession.State["sourceStates"]))
+	if sourceStates == nil {
+		sourceStates = map[string]any{}
+	}
+
+	missing := make([]any, 0)
+	stale := make([]any, 0)
+	requiredCount := 0
+	available := 0
+	fresh := 0
+	for _, binding := range requiredBindings {
+		if strings.ToUpper(strings.TrimSpace(binding.Status)) == "DISABLED" {
+			continue
+		}
+		requiredCount++
+		stateKey := signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)
+		entry := mapValue(sourceStates[stateKey])
+		if entry == nil {
+			missing = append(missing, map[string]any{
+				"sourceKey":  binding.SourceKey,
+				"role":       binding.Role,
+				"streamType": binding.StreamType,
+				"symbol":     binding.Symbol,
+			})
+			continue
+		}
+		available++
+		lastEventAt := parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
+		maxAge := p.signalSourceFreshnessWindow(binding)
+		if lastEventAt.IsZero() || eventTime.Sub(lastEventAt) > maxAge {
+			stale = append(stale, map[string]any{
+				"sourceKey":   binding.SourceKey,
+				"role":        binding.Role,
+				"streamType":  binding.StreamType,
+				"symbol":      binding.Symbol,
+				"lastEventAt": stringValue(entry["lastEventAt"]),
+				"maxAgeSec":   int(maxAge.Seconds()),
+			})
+			continue
+		}
+		fresh++
+	}
+
+	result["requiredCount"] = requiredCount
+	result["availableCount"] = available
+	result["freshCount"] = fresh
+	result["missing"] = missing
+	result["stale"] = stale
+	result["ready"] = len(missing) == 0 && len(stale) == 0
+	return result
+}
+
+func (p *Platform) signalSourceFreshnessWindow(binding domain.AccountSignalBinding) time.Duration {
+	if value, ok := toFloat64(binding.Options["freshnessSeconds"]); ok && value > 0 {
+		return time.Duration(value) * time.Second
+	}
+	switch strings.ToLower(strings.TrimSpace(binding.StreamType)) {
+	case "trade_tick":
+		return time.Duration(p.runtimePolicy.TradeTickFreshnessSeconds) * time.Second
+	case "order_book":
+		return time.Duration(p.runtimePolicy.OrderBookFreshnessSeconds) * time.Second
+	case "signal_bar":
+		return time.Duration(p.runtimePolicy.SignalBarFreshnessSeconds) * time.Second
+	default:
+		return time.Duration(p.runtimePolicy.RuntimeQuietSeconds) * time.Second
+	}
+}
+
+func (p *Platform) evaluatePaperSignalDecision(session domain.PaperSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time, nextPlannedEvent time.Time, nextPlannedPrice float64, nextPlannedSide, nextPlannedRole, nextPlannedReason string) (StrategyExecutionContext, StrategySignalDecision, error) {
+	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+	}
+	parameters, err := p.resolvePaperSessionParameters(session, version)
+	if err != nil {
+		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+	}
+	engine, engineKey, err := p.resolveStrategyEngine(version.ID, parameters)
+	if err != nil {
+		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+	}
+	executionContext := StrategyExecutionContext{
+		StrategyEngineKey:   engineKey,
+		StrategyVersionID:   version.ID,
+		SignalTimeframe:     stringValue(parameters["signalTimeframe"]),
+		ExecutionDataSource: stringValue(parameters["executionDataSource"]),
+		Symbol:              stringValue(parameters["symbol"]),
+		From:                parseOptionalRFC3339(stringValue(parameters["from"])),
+		To:                  parseOptionalRFC3339(stringValue(parameters["to"])),
+		Parameters:          parameters,
+		Semantics:           defaultExecutionSemantics(ExecutionModePaper, parameters),
+	}
+	evaluator, ok := engine.(SignalEvaluatingStrategyEngine)
+	if !ok {
+		return executionContext, StrategySignalDecision{
+			Action: "advance-plan",
+			Reason: "engine-has-no-signal-evaluator",
+		}, nil
+	}
+	currentPosition, _, err := p.resolvePaperSessionPositionSnapshot(session.AccountID, executionContext.Symbol)
+	if err != nil {
+		return executionContext, StrategySignalDecision{}, err
+	}
+	decision, err := evaluator.EvaluateSignal(StrategySignalEvaluationContext{
+		ExecutionContext:  executionContext,
+		PaperSessionID:    session.ID,
+		TriggerSummary:    cloneMetadata(summary),
+		SourceStates:      cloneMetadata(sourceStates),
+		SignalBarStates:   cloneMetadata(signalBarStates),
+		CurrentPosition:   currentPosition,
+		EventTime:         eventTime.UTC(),
+		NextPlannedEvent:  nextPlannedEvent.UTC(),
+		NextPlannedPrice:  nextPlannedPrice,
+		NextPlannedSide:   nextPlannedSide,
+		NextPlannedRole:   nextPlannedRole,
+		NextPlannedReason: nextPlannedReason,
+	})
+	if err != nil {
+		return executionContext, StrategySignalDecision{}, err
+	}
+	if strings.TrimSpace(decision.Action) == "" {
+		decision.Action = "wait"
+	}
+	if strings.TrimSpace(decision.Reason) == "" {
+		decision.Reason = "unspecified"
+	}
+	return executionContext, decision, nil
+}
+
+func (p *Platform) resolvePaperSessionPositionSnapshot(accountID, symbol string) (map[string]any, bool, error) {
+	position, found, err := p.store.FindPosition(accountID, symbol)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return map[string]any{
+			"symbol":   NormalizeSymbol(symbol),
+			"found":    false,
+			"quantity": 0.0,
+		}, false, nil
+	}
+	return map[string]any{
+		"id":         position.ID,
+		"symbol":     position.Symbol,
+		"side":       position.Side,
+		"quantity":   position.Quantity,
+		"entryPrice": position.EntryPrice,
+		"markPrice":  position.MarkPrice,
+		"updatedAt":  position.UpdatedAt.Format(time.RFC3339),
+		"found":      true,
+	}, true, nil
+}
+
+func buildStrategyEvaluationTriggerSource(summary map[string]any) map[string]any {
+	return map[string]any{
+		"sourceKey":  stringValue(summary["sourceKey"]),
+		"role":       stringValue(summary["role"]),
+		"streamType": stringValue(summary["streamType"]),
+		"channel":    stringValue(summary["channel"]),
+		"symbol":     NormalizeSymbol(firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"]))),
+		"event":      stringValue(summary["event"]),
+	}
 }
 
 // SetTickInterval 设置模拟盘后台循环的 Ticker 间隔（秒）。
@@ -112,20 +559,19 @@ func (p *Platform) SetTickInterval(seconds int) {
 	}
 }
 
-// --- 后台回放循环 ---
-
-// runPaperSessionLoop 后台循环执行策略回放，按 tickInterval 间隔逐步前进。
+// runPaperSessionLoop 后台循环执行策略计划，按 tickInterval 间隔逐步前进。
 func (p *Platform) runPaperSessionLoop(ctx context.Context, session domain.PaperSession) {
 	interval := p.tickInterval
 	if interval <= 0 {
-		interval = 15 // 默认 15 秒
+		interval = 15
 	}
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 	defer p.removeRunner(session.ID)
 
-	// 立即执行第一步
-	_, _ = p.placePaperSessionOrder(session)
+	if !boolValue(session.State["signalRuntimeRequired"]) {
+		_, _ = p.placePaperSessionOrder(session)
+	}
 
 	for {
 		select {
@@ -139,81 +585,638 @@ func (p *Platform) runPaperSessionLoop(ctx context.Context, session domain.Paper
 			if err != nil || current.Status != "RUNNING" {
 				return
 			}
+			if boolValue(current.State["signalRuntimeRequired"]) {
+				continue
+			}
 			_, _ = p.placePaperSessionOrder(current)
 		}
 	}
 }
 
-// placePaperSessionOrder 从回放账本中取下一个事件，转换为订单并执行。
-// 跳过 notional=0 的事件（零初始化引导事件）。
+// placePaperSessionOrder 从统一 StrategyEngine 生成的计划里取下一笔订单并执行。
 func (p *Platform) placePaperSessionOrder(session domain.PaperSession) (domain.Order, error) {
-	ledger, err := p.loadReplayLedger()
+	session, plan, err := p.ensurePaperExecutionPlan(session)
 	if err != nil {
 		return domain.Order{}, err
 	}
 
 	state := cloneMetadata(session.State)
 	index := 0
-	if value, ok := toFloat64(state["ledgerIndex"]); ok && value >= 0 {
+	if value, ok := toFloat64(state["planIndex"]); ok && value >= 0 {
 		index = int(value)
 	}
 
-	positions, err := p.store.ListPositions()
+	if index >= len(plan) {
+		state["runner"] = "strategy-engine"
+		state["runtimeMode"] = "canonical-strategy-engine"
+		state["completedAt"] = time.Now().UTC().Format(time.RFC3339)
+		state["planIndex"] = len(plan)
+		state["planLength"] = len(plan)
+		if _, err := p.store.UpdatePaperSessionState(session.ID, state); err != nil {
+			return domain.Order{}, err
+		}
+		_, _ = p.store.UpdatePaperSessionStatus(session.ID, "STOPPED")
+		return domain.Order{}, fmt.Errorf("模拟会话 %s 已完成所有策略计划订单", session.ID)
+	}
+
+	step := plan[index]
+	state["runner"] = "strategy-engine"
+	state["runtimeMode"] = "canonical-strategy-engine"
+	state["planIndex"] = index + 1
+	state["planLength"] = len(plan)
+	state["lastEventTime"] = step.EventTime.UTC().Format(time.RFC3339)
+	state["lastEventSide"] = step.Side
+	state["lastEventRole"] = step.Role
+	state["lastEventReason"] = step.Reason
+	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
 	if err != nil {
 		return domain.Order{}, err
 	}
+	session = updatedSession
 
-	// 遍历账本直到找到一个可执行的事件
-	for index < len(ledger) {
-		event := ledger[index]
-		index++
-		state["runner"] = "strategy-replay"
-		state["ledgerIndex"] = index
-		state["lastLedgerTime"] = event.Time.Format(time.RFC3339)
-		state["lastLedgerType"] = event.Type
-		state["lastLedgerReason"] = event.Reason
-
-		updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
-		if err != nil {
-			return domain.Order{}, err
-		}
-		session = updatedSession
-
-		order, ok, err := p.translateReplayEvent(session, positions, event)
-		if err != nil {
-			return domain.Order{}, err
-		}
-		if !ok {
-			continue
-		}
-
-		created, err := p.CreateOrder(order)
-		if err != nil {
-			return domain.Order{}, err
-		}
-		return created, nil
+	order := domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: step.StrategyVersionID,
+		Symbol:            step.Symbol,
+		Side:              step.Side,
+		Type:              firstNonEmpty(step.Type, "MARKET"),
+		Quantity:          roundQuantity(step.Quantity),
+		Price:             step.Price,
+		Metadata:          cloneMetadata(step.Metadata),
 	}
-
-	// 账本回放完毕，标记会话完成
-	state["runner"] = "strategy-replay"
-	state["completedAt"] = time.Now().UTC().Format(time.RFC3339)
-	if _, err := p.store.UpdatePaperSessionState(session.ID, state); err != nil {
+	created, err := p.CreateOrder(order)
+	if err != nil {
 		return domain.Order{}, err
 	}
-	_, _ = p.store.UpdatePaperSessionStatus(session.ID, "STOPPED")
-	return domain.Order{}, fmt.Errorf("模拟会话 %s 已完成所有回放事件", session.ID)
+	return created, nil
 }
 
-// removeRunner 从运行中列表移除指定会话。
-func (p *Platform) removeRunner(sessionID string) {
+func (p *Platform) ensurePaperExecutionPlan(session domain.PaperSession) (domain.PaperSession, []paperPlannedOrder, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	delete(p.run, sessionID)
+	if plan, ok := p.paperPlans[session.ID]; ok {
+		p.mu.Unlock()
+		return session, plan, nil
+	}
+	p.mu.Unlock()
+
+	session, err := p.syncPaperSessionRuntime(session)
+	if err != nil {
+		return domain.PaperSession{}, nil, err
+	}
+
+	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		return domain.PaperSession{}, nil, err
+	}
+	parameters, err := p.resolvePaperSessionParameters(session, version)
+	if err != nil {
+		return domain.PaperSession{}, nil, err
+	}
+	engine, engineKey, err := p.resolveStrategyEngine(version.ID, parameters)
+	if err != nil {
+		return domain.PaperSession{}, nil, err
+	}
+
+	if !p.hasExecutionDataset(stringValue(parameters["executionDataSource"]), stringValue(parameters["symbol"])) {
+		return domain.PaperSession{}, nil, fmt.Errorf("no %s dataset found for symbol %s", stringValue(parameters["executionDataSource"]), stringValue(parameters["symbol"]))
+	}
+
+	from := parseOptionalRFC3339(stringValue(parameters["from"]))
+	to := parseOptionalRFC3339(stringValue(parameters["to"]))
+
+	semantics := defaultExecutionSemantics(ExecutionModePaper, parameters)
+	result, err := engine.Run(StrategyExecutionContext{
+		StrategyEngineKey:   engineKey,
+		StrategyVersionID:   version.ID,
+		SignalTimeframe:     stringValue(parameters["signalTimeframe"]),
+		ExecutionDataSource: stringValue(parameters["executionDataSource"]),
+		Symbol:              stringValue(parameters["symbol"]),
+		From:                from,
+		To:                  to,
+		Parameters:          parameters,
+		Semantics:           semantics,
+	})
+	if err != nil {
+		return domain.PaperSession{}, nil, err
+	}
+
+	trades, err := executionTradesFromResult(result)
+	if err != nil {
+		return domain.PaperSession{}, nil, err
+	}
+	plan, err := buildPaperExecutionPlan(session, version, engineKey, semantics, trades)
+	if err != nil {
+		return domain.PaperSession{}, nil, err
+	}
+
+	p.mu.Lock()
+	p.paperPlans[session.ID] = plan
+	p.mu.Unlock()
+
+	state := cloneMetadata(session.State)
+	state["runner"] = "strategy-engine"
+	state["runtimeMode"] = "canonical-strategy-engine"
+	state["strategyVersionId"] = version.ID
+	state["strategyEngine"] = engineKey
+	state["signalTimeframe"] = stringValue(parameters["signalTimeframe"])
+	state["executionDataSource"] = stringValue(parameters["executionDataSource"])
+	state["symbol"] = stringValue(parameters["symbol"])
+	state["executionMode"] = string(semantics.Mode)
+	state["slippageMode"] = string(semantics.SlippageMode)
+	state["tradingFeeBps"] = semantics.TradingFeeBps
+	state["fundingRateBps"] = semantics.FundingRateBps
+	state["fundingIntervalHours"] = semantics.FundingIntervalHours
+	state["planLength"] = len(plan)
+	state["planReadyAt"] = time.Now().UTC().Format(time.RFC3339)
+	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
+	if err != nil {
+		return domain.PaperSession{}, nil, err
+	}
+	return updatedSession, plan, nil
 }
 
-// --- CSV 账本回放 ---
+func executionTradesFromResult(result map[string]any) ([]map[string]any, error) {
+	raw, ok := result["executionTrades"]
+	if !ok || raw == nil {
+		return []map[string]any{}, nil
+	}
+	switch items := raw.(type) {
+	case []map[string]any:
+		return items, nil
+	case []any:
+		trades := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			mapped, ok := item.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("invalid execution trade payload")
+			}
+			trades = append(trades, mapped)
+		}
+		return trades, nil
+	default:
+		return nil, fmt.Errorf("unsupported executionTrades payload type")
+	}
+}
 
-// loadReplayLedger 延迟加载策略交易账本 CSV（使用 sync.Once 确保只读取一次）。
+func buildPaperExecutionPlan(session domain.PaperSession, version domain.StrategyVersion, engineKey string, semantics StrategyExecutionSemantics, trades []map[string]any) ([]paperPlannedOrder, error) {
+	plan := make([]paperPlannedOrder, 0, len(trades)*2)
+	for _, trade := range trades {
+		entryTime := parseOptionalRFC3339(stringValue(trade["entryTime"]))
+		if entryTime.IsZero() {
+			return nil, fmt.Errorf("invalid execution trade entry time")
+		}
+		entryPrice := parseFloatValue(trade["entryPrice"])
+		quantity := parseFloatValue(trade["quantity"])
+		if quantity <= 0 {
+			notional := parseFloatValue(trade["notional"])
+			if entryPrice > 0 && notional > 0 {
+				quantity = notional / entryPrice
+			}
+		}
+		if quantity <= 0 || entryPrice <= 0 {
+			continue
+		}
+		entrySide := normalizePaperPlanSide(stringValue(trade["side"]))
+		if entrySide == "" {
+			continue
+		}
+		symbol := normalizeBacktestSymbol(stringValue(trade["symbol"]))
+		if symbol == "" {
+			symbol = resolvePaperPlanSymbol(version)
+		}
+
+		entryReason := firstNonEmpty(stringValue(trade["entryReason"]), "StrategyEntry")
+		entryFee := parseFloatValue(trade["entryTradingFee"])
+		plan = append(plan, paperPlannedOrder{
+			StrategyVersionID: version.ID,
+			Symbol:            symbol,
+			Side:              entrySide,
+			Type:              "MARKET",
+			Quantity:          quantity,
+			Price:             entryPrice,
+			EventTime:         entryTime,
+			Reason:            entryReason,
+			Role:              "entry",
+			FeeAmount:         entryFee,
+			Metadata: map[string]any{
+				"markPrice":        entryPrice,
+				"source":           "paper-session-strategy-engine",
+				"paperSession":     session.ID,
+				"strategyId":       session.StrategyID,
+				"strategyEngine":   engineKey,
+				"eventTime":        entryTime.UTC().Format(time.RFC3339),
+				"reason":           entryReason,
+				"orderRole":        "entry",
+				"paperFeeAmount":   entryFee,
+				"tradingFeeAmount": entryFee,
+				"tradingFeeBps":    semantics.TradingFeeBps,
+				"fundingRateBps":   semantics.FundingRateBps,
+				"slippageMode":     string(semantics.SlippageMode),
+			},
+		})
+
+		exitTime := parseOptionalRFC3339(stringValue(trade["exitTime"]))
+		if exitTime.IsZero() {
+			continue
+		}
+		exitPrice := parseFloatValue(trade["exitPrice"])
+		if exitPrice <= 0 {
+			continue
+		}
+		exitFee := parseFloatValue(trade["exitTradingFee"])
+		fundingPnL := parseFloatValue(trade["fundingPnL"])
+		exitReason := firstNonEmpty(stringValue(trade["exitType"]), "StrategyExit")
+		plan = append(plan, paperPlannedOrder{
+			StrategyVersionID: version.ID,
+			Symbol:            symbol,
+			Side:              oppositePaperPlanSide(entrySide),
+			Type:              "MARKET",
+			Quantity:          quantity,
+			Price:             exitPrice,
+			EventTime:         exitTime,
+			Reason:            exitReason,
+			Role:              "exit",
+			FeeAmount:         exitFee - fundingPnL,
+			FundingPnL:        fundingPnL,
+			Metadata: map[string]any{
+				"markPrice":        exitPrice,
+				"source":           "paper-session-strategy-engine",
+				"paperSession":     session.ID,
+				"strategyId":       session.StrategyID,
+				"strategyEngine":   engineKey,
+				"eventTime":        exitTime.UTC().Format(time.RFC3339),
+				"reason":           exitReason,
+				"orderRole":        "exit",
+				"paperFeeAmount":   exitFee - fundingPnL,
+				"tradingFeeAmount": exitFee,
+				"fundingPnL":       fundingPnL,
+				"tradingFeeBps":    semantics.TradingFeeBps,
+				"fundingRateBps":   semantics.FundingRateBps,
+				"slippageMode":     string(semantics.SlippageMode),
+			},
+		})
+	}
+	return plan, nil
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (p *Platform) syncPaperSessionRuntime(session domain.PaperSession) (domain.PaperSession, error) {
+	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	parameters, err := p.resolvePaperSessionParameters(session, version)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	_, engineKey, err := p.resolveStrategyEngine(version.ID, parameters)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	semantics := defaultExecutionSemantics(ExecutionModePaper, parameters)
+
+	state := cloneMetadata(session.State)
+	state["runner"] = "strategy-engine"
+	state["runtimeMode"] = "canonical-strategy-engine"
+	state["strategyVersionId"] = version.ID
+	state["strategyEngine"] = engineKey
+	state["signalTimeframe"] = stringValue(parameters["signalTimeframe"])
+	state["executionDataSource"] = stringValue(parameters["executionDataSource"])
+	state["symbol"] = stringValue(parameters["symbol"])
+	state["executionMode"] = string(semantics.Mode)
+	state["slippageMode"] = string(semantics.SlippageMode)
+	state["tradingFeeBps"] = semantics.TradingFeeBps
+	state["fundingRateBps"] = semantics.FundingRateBps
+	state["fundingIntervalHours"] = semantics.FundingIntervalHours
+	if _, ok := state["planIndex"]; !ok {
+		state["planIndex"] = 0
+	}
+
+	if updatedState, err := p.syncPaperSignalRuntimeState(session, parameters, state); err == nil {
+		state = updatedState
+	} else {
+		return domain.PaperSession{}, err
+	}
+
+	updatedSession, err := p.store.UpdatePaperSessionState(session.ID, state)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	return updatedSession, nil
+}
+
+func (p *Platform) syncPaperSignalRuntimeState(session domain.PaperSession, parameters map[string]any, state map[string]any) (map[string]any, error) {
+	state = cloneMetadata(state)
+	executionDataSource := stringValue(parameters["executionDataSource"])
+	accountBindings, err := p.ListAccountSignalBindings(session.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	strategyBindings, err := p.ListStrategySignalBindings(session.StrategyID)
+	if err != nil {
+		return nil, err
+	}
+	hasBindings := len(accountBindings) > 0 || len(strategyBindings) > 0
+	state["signalRuntimeMode"] = "detached"
+	state["signalRuntimeRequired"] = false
+	if !hasBindings {
+		delete(state, "signalRuntimePlan")
+		delete(state, "signalRuntimeSessionId")
+		delete(state, "signalRuntimeStatus")
+		return state, nil
+	}
+
+	plan, err := p.BuildSignalRuntimePlan(session.AccountID, session.StrategyID)
+	if err != nil {
+		return nil, err
+	}
+	state["signalRuntimePlan"] = plan
+	state["signalRuntimeMode"] = "linked"
+	required := executionDataSource == "tick"
+	state["signalRuntimeRequired"] = required
+	state["signalRuntimeReady"] = boolValue(plan["ready"])
+
+	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		runtimeSession, err := p.CreateSignalRuntimeSession(session.AccountID, session.StrategyID)
+		if err != nil {
+			if required {
+				return nil, err
+			}
+			state["signalRuntimeStatus"] = "ERROR"
+			state["signalRuntimeError"] = err.Error()
+			return state, nil
+		}
+		runtimeSessionID = runtimeSession.ID
+		state["signalRuntimeSessionId"] = runtimeSession.ID
+		state["signalRuntimeStatus"] = runtimeSession.Status
+	} else {
+		runtimeSession, err := p.GetSignalRuntimeSession(runtimeSessionID)
+		if err == nil {
+			state["signalRuntimeStatus"] = runtimeSession.Status
+		}
+	}
+
+	if required && !boolValue(plan["ready"]) {
+		state["signalRuntimeStatus"] = "BLOCKED"
+	}
+	return state, nil
+}
+
+func (p *Platform) ensurePaperSignalRuntimeStarted(session domain.PaperSession) (domain.PaperSession, error) {
+	state := cloneMetadata(session.State)
+	if !boolValue(state["signalRuntimeRequired"]) {
+		return session, nil
+	}
+	if !boolValue(state["signalRuntimeReady"]) {
+		return domain.PaperSession{}, fmt.Errorf("paper session %s requires a ready signal runtime plan before start", session.ID)
+	}
+	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		return domain.PaperSession{}, fmt.Errorf("paper session %s has no linked signal runtime session", session.ID)
+	}
+	runtimeSession, err := p.StartSignalRuntimeSession(runtimeSessionID)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	state["signalRuntimeStatus"] = runtimeSession.Status
+	state["signalRuntimeSessionId"] = runtimeSession.ID
+	session, err = p.store.UpdatePaperSessionState(session.ID, state)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	session, err = p.awaitPaperSignalRuntimeReadiness(session, runtimeSession.ID, time.Duration(p.runtimePolicy.PaperStartReadinessTimeoutSecs)*time.Second)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	return session, nil
+}
+
+func (p *Platform) awaitPaperSignalRuntimeReadiness(session domain.PaperSession, runtimeSessionID string, timeout time.Duration) (domain.PaperSession, error) {
+	if !boolValue(session.State["signalRuntimeRequired"]) {
+		return session, nil
+	}
+	deadline := time.Now().Add(timeout)
+	var lastGate map[string]any
+	for {
+		runtimeSession, err := p.GetSignalRuntimeSession(runtimeSessionID)
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
+
+		lastGate = p.evaluateSignalSourceReadiness(session, runtimeSession, time.Now().UTC())
+		state := cloneMetadata(session.State)
+		state["signalRuntimeStatus"] = runtimeSession.Status
+		state["signalRuntimeStartReadiness"] = lastGate
+		state["signalRuntimeLastCheckedAt"] = time.Now().UTC().Format(time.RFC3339)
+		session, err = p.store.UpdatePaperSessionState(session.ID, state)
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
+
+		if boolValue(lastGate["ready"]) {
+			return session, nil
+		}
+		if strings.EqualFold(runtimeSession.Status, "ERROR") {
+			return domain.PaperSession{}, fmt.Errorf("paper session %s linked signal runtime entered error state during start", session.ID)
+		}
+		if time.Now().After(deadline) {
+			return domain.PaperSession{}, fmt.Errorf(
+				"paper session %s linked signal runtime not ready before start: missing=%d stale=%d",
+				session.ID,
+				len(metadataList(lastGate["missing"])),
+				len(metadataList(lastGate["stale"])),
+			)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+func (p *Platform) stopLinkedSignalRuntime(session domain.PaperSession) (domain.SignalRuntimeSession, error) {
+	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("paper session %s has no linked signal runtime session", session.ID)
+	}
+	runtimeSession, err := p.StopSignalRuntimeSession(runtimeSessionID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	state := cloneMetadata(session.State)
+	state["signalRuntimeStatus"] = runtimeSession.Status
+	_, _ = p.store.UpdatePaperSessionState(session.ID, state)
+	return runtimeSession, nil
+}
+
+func (p *Platform) resolveCurrentStrategyVersion(strategyID string) (domain.StrategyVersion, error) {
+	items, err := p.ListStrategies()
+	if err != nil {
+		return domain.StrategyVersion{}, err
+	}
+	for _, item := range items {
+		if stringValue(item["id"]) != strategyID {
+			continue
+		}
+		switch currentVersion := item["currentVersion"].(type) {
+		case domain.StrategyVersion:
+			return currentVersion, nil
+		case map[string]any:
+			return domain.StrategyVersion{
+				ID:                 stringValue(currentVersion["id"]),
+				StrategyID:         strategyID,
+				Version:            stringValue(currentVersion["version"]),
+				SignalTimeframe:    stringValue(currentVersion["signalTimeframe"]),
+				ExecutionTimeframe: stringValue(currentVersion["executionTimeframe"]),
+				Parameters:         cloneMetadata(mapValue(currentVersion["parameters"])),
+			}, nil
+		}
+	}
+	return domain.StrategyVersion{}, fmt.Errorf("strategy version not found for strategy %s", strategyID)
+}
+
+func (p *Platform) resolvePaperSessionParameters(session domain.PaperSession, version domain.StrategyVersion) (map[string]any, error) {
+	parameters := cloneMetadata(version.Parameters)
+	if parameters == nil {
+		parameters = map[string]any{}
+	}
+	if stringValue(parameters["signalTimeframe"]) == "" {
+		parameters["signalTimeframe"] = normalizePaperSignalTimeframe(version.SignalTimeframe)
+	}
+	if stringValue(parameters["executionDataSource"]) == "" {
+		parameters["executionDataSource"] = normalizePaperExecutionSource(version.ExecutionTimeframe)
+	}
+	if stringValue(parameters["symbol"]) == "" {
+		parameters["symbol"] = resolvePaperPlanSymbol(version)
+	}
+	state := cloneMetadata(session.State)
+	for _, key := range []string{
+		"signalTimeframe",
+		"executionDataSource",
+		"symbol",
+		"from",
+		"to",
+		"strategyEngine",
+		"tradingFeeBps",
+		"fundingRateBps",
+		"fundingIntervalHours",
+		"stop_mode",
+		"stop_loss_atr",
+		"profit_protect_atr",
+		"max_trades_per_bar",
+		"fixed_slippage",
+	} {
+		if value, ok := state[key]; ok {
+			parameters[key] = value
+		}
+	}
+	return NormalizeBacktestParameters(parameters)
+}
+
+func normalizePaperSignalTimeframe(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "4h", "1d":
+		return value
+	case "d", "1day":
+		return "1d"
+	case "240", "4hour":
+		return "4h"
+	default:
+		return "1d"
+	}
+}
+
+func normalizePaperExecutionSource(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "tick", "1min":
+		return value
+	case "1m", "1":
+		return "1min"
+	default:
+		return "1min"
+	}
+}
+
+func normalizePaperSessionOverrides(overrides map[string]any) map[string]any {
+	normalized := map[string]any{}
+	for key, value := range overrides {
+		switch key {
+		case "signalTimeframe":
+			if timeframe := normalizePaperSignalTimeframe(stringValue(value)); timeframe != "" {
+				normalized[key] = timeframe
+			}
+		case "executionDataSource":
+			if source := normalizePaperExecutionSource(stringValue(value)); source != "" {
+				normalized[key] = source
+			}
+		case "symbol":
+			if symbol := normalizeBacktestSymbol(stringValue(value)); symbol != "" {
+				normalized[key] = symbol
+			}
+		case "from", "to":
+			if parsed := parseOptionalRFC3339(stringValue(value)); !parsed.IsZero() {
+				normalized[key] = parsed.Format(time.RFC3339)
+			}
+		case "strategyEngine":
+			normalized[key] = normalizeStrategyEngineKey(stringValue(value))
+		case "tradingFeeBps", "fundingRateBps", "fixed_slippage", "stop_loss_atr", "profit_protect_atr":
+			normalized[key] = parseFloatValue(value)
+		case "fundingIntervalHours", "max_trades_per_bar":
+			normalized[key] = maxIntValue(value, 0)
+		case "stop_mode":
+			mode := strings.ToLower(strings.TrimSpace(stringValue(value)))
+			if mode != "" {
+				normalized[key] = mode
+			}
+		}
+	}
+	return normalized
+}
+
+func normalizePaperPlanSide(value string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "BUY", "LONG":
+		return "BUY"
+	case "SHORT", "SELL":
+		return "SELL"
+	default:
+		return ""
+	}
+}
+
+func oppositePaperPlanSide(value string) string {
+	if strings.EqualFold(value, "BUY") {
+		return "SELL"
+	}
+	return "BUY"
+}
+
+func resolvePaperPlanSymbol(version domain.StrategyVersion) string {
+	if symbol := normalizeBacktestSymbol(stringValue(version.Parameters["symbol"])); symbol != "" {
+		return symbol
+	}
+	return "BTCUSDT"
+}
+
+func mapValue(value any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	switch mapped := value.(type) {
+	case map[string]any:
+		return mapped
+	default:
+		return nil
+	}
+}
+
+// loadReplayLedger 继续保留给图表与旧审计能力使用。
 func (p *Platform) loadReplayLedger() ([]strategyReplayEvent, error) {
 	p.once.Do(func() {
 		p.ledger, p.ledgerErr = readStrategyReplayLedger("FINAL_1D_LEDGER_BEST_SL.csv")
@@ -221,8 +1224,6 @@ func (p *Platform) loadReplayLedger() ([]strategyReplayEvent, error) {
 	return p.ledger, p.ledgerErr
 }
 
-// readStrategyReplayLedger 读取策略回放账本 CSV 文件，解析为事件列表。
-// CSV 格式：时间, 类型, 价格, 原因, 名义金额, 余额
 func readStrategyReplayLedger(path string) ([]strategyReplayEvent, error) {
 	resolved := path
 	if !filepath.IsAbs(path) {
@@ -254,7 +1255,7 @@ func readStrategyReplayLedger(path string) ([]strategyReplayEvent, error) {
 		if err != nil {
 			return nil, fmt.Errorf("解析回放时间 %q: %w", row[0], err)
 		}
-		price, err := strconv.ParseFloat(row[1+1], 64)
+		price, err := strconv.ParseFloat(row[2], 64)
 		if err != nil {
 			return nil, fmt.Errorf("解析回放价格 %q: %w", row[2], err)
 		}
@@ -267,7 +1268,7 @@ func readStrategyReplayLedger(path string) ([]strategyReplayEvent, error) {
 			return nil, fmt.Errorf("解析回放余额 %q: %w", row[5], err)
 		}
 		events = append(events, strategyReplayEvent{
-			Time:     eventTime,
+			Time:     eventTime.UTC(),
 			Type:     strings.ToUpper(strings.TrimSpace(row[1])),
 			Price:    price,
 			Reason:   strings.TrimSpace(row[3]),
@@ -276,124 +1277,24 @@ func readStrategyReplayLedger(path string) ([]strategyReplayEvent, error) {
 		})
 	}
 
-	// 按时间排序确保回放顺序正确
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
 	return events, nil
 }
 
-// translateReplayEvent 将回放事件转换为交易订单。
-// BUY -> 买入做多，SHORT -> 卖出做空，EXIT -> 平掉当前持仓。
-func (p *Platform) translateReplayEvent(session domain.PaperSession, positions []domain.Position, event strategyReplayEvent) (domain.Order, bool, error) {
-	symbol := "BTCUSDT"
-	position, hasPosition := findAccountPosition(positions, session.AccountID, symbol)
-	strategyVersionID, _ := p.resolveStrategyVersionID(session.StrategyID)
-
-	switch event.Type {
-	case "BUY":
-		if event.Notional <= 0 || event.Price <= 0 {
-			return domain.Order{}, false, nil
-		}
-		return domain.Order{
-			AccountID:         session.AccountID,
-			StrategyVersionID: strategyVersionID,
-			Symbol:            symbol,
-			Side:              "BUY",
-			Type:              "MARKET",
-			Quantity:          roundQuantity(event.Notional / event.Price),
-			Price:             event.Price,
-			Metadata: map[string]any{
-				"markPrice":    event.Price,
-				"source":       "paper-session-replay",
-				"paperSession": session.ID,
-				"strategyId":   session.StrategyID,
-				"eventTime":    event.Time.Format(time.RFC3339),
-				"reason":       event.Reason,
-				"balance":      event.Balance,
-				"notional":     event.Notional,
-			},
-		}, true, nil
-	case "SHORT":
-		if event.Notional <= 0 || event.Price <= 0 {
-			return domain.Order{}, false, nil
-		}
-		return domain.Order{
-			AccountID:         session.AccountID,
-			StrategyVersionID: strategyVersionID,
-			Symbol:            symbol,
-			Side:              "SELL",
-			Type:              "MARKET",
-			Quantity:          roundQuantity(event.Notional / event.Price),
-			Price:             event.Price,
-			Metadata: map[string]any{
-				"markPrice":    event.Price,
-				"source":       "paper-session-replay",
-				"paperSession": session.ID,
-				"strategyId":   session.StrategyID,
-				"eventTime":    event.Time.Format(time.RFC3339),
-				"reason":       event.Reason,
-				"balance":      event.Balance,
-				"notional":     event.Notional,
-			},
-		}, true, nil
-	case "EXIT":
-		if !hasPosition || position.Quantity <= 0 {
-			return domain.Order{}, false, nil
-		}
-		side := "SELL"
-		if strings.EqualFold(position.Side, "SHORT") {
-			side = "BUY"
-		}
-		return domain.Order{
-			AccountID:         session.AccountID,
-			StrategyVersionID: firstNonEmpty(strategyVersionID, position.StrategyVersionID),
-			Symbol:            symbol,
-			Side:              side,
-			Type:              "MARKET",
-			Quantity:          roundQuantity(position.Quantity),
-			Price:             event.Price,
-			Metadata: map[string]any{
-				"markPrice":    event.Price,
-				"source":       "paper-session-replay",
-				"paperSession": session.ID,
-				"strategyId":   session.StrategyID,
-				"eventTime":    event.Time.Format(time.RFC3339),
-				"reason":       event.Reason,
-				"balance":      event.Balance,
-				"notional":     event.Notional,
-			},
-		}, true, nil
-	default:
-		return domain.Order{}, false, nil
-	}
-}
-
 // resolveStrategyVersionID 从策略 ID 查找当前版本 ID。
 func (p *Platform) resolveStrategyVersionID(strategyID string) (string, error) {
-	strategies, err := p.store.ListStrategies()
+	version, err := p.resolveCurrentStrategyVersion(strategyID)
 	if err != nil {
 		return "", err
 	}
-	for _, strategy := range strategies {
-		id, _ := strategy["id"].(string)
-		if id != strategyID {
-			continue
-		}
-		currentVersion, ok := strategy["currentVersion"].(domain.StrategyVersion)
-		if ok {
-			return currentVersion.ID, nil
-		}
-	}
-	return "", nil
+	return version.ID, nil
 }
 
-// findAccountPosition 在持仓列表中查找指定账户和交易对的持仓。
-func findAccountPosition(positions []domain.Position, accountID, symbol string) (domain.Position, bool) {
-	for _, position := range positions {
-		if position.AccountID == accountID && position.Symbol == symbol {
-			return position, true
-		}
-	}
-	return domain.Position{}, false
+// removeRunner 从运行中列表移除指定会话。
+func (p *Platform) removeRunner(sessionID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.run, sessionID)
 }
 
 // roundQuantity 将数量精确到小数点后 6 位。

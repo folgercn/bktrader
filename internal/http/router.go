@@ -50,6 +50,7 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 	registerSignalRoutes(mux, platform)
 	registerStrategyRoutes(mux, platform)
 	registerAccountRoutes(mux, platform)
+	registerLiveRoutes(mux, platform)
 	registerOrderRoutes(mux, platform)
 	registerBacktestRoutes(mux, platform)
 	registerPaperRoutes(mux, platform)

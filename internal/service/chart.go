@@ -332,6 +332,7 @@ func orderAnnotation(symbol string, order domain.Order) (domain.ChartAnnotation,
 		Label:  label,
 		Metadata: map[string]any{
 			"accountId":      order.AccountID,
+			"liveSessionId":  order.Metadata["liveSessionId"],
 			"paperSession":   order.Metadata["paperSession"],
 			"strategyId":     order.Metadata["strategyId"],
 			"orderStatus":    order.Status,

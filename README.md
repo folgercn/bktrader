@@ -60,7 +60,28 @@ go run ./cmd/platform-api
 - `GET /healthz` — 健康检查
 - `GET /api/v1/overview` — 系统概览
 - `GET|POST /api/v1/strategies` — 策略管理
+- `GET /api/v1/strategy-engines` — 可用策略引擎列表
 - `GET|POST /api/v1/accounts` — 账户管理
+- `GET /api/v1/live-adapters` — 可用实盘执行适配器
+- `POST /api/v1/live/accounts/{id}/binding` — 绑定实盘账户到交易所适配器
+- `GET /api/v1/signal-sources` — 信号源目录（按环境分组）
+- `GET /api/v1/signal-source-types` — 信号源类型说明
+- `GET /api/v1/signal-runtime/adapters` — 可用信号 runtime adapter 列表
+- `GET /api/v1/alerts` — 统一运行告警列表
+- `GET /api/v1/notifications?includeAcked=true|false` — 平台内通知中心
+- `POST /api/v1/notifications/{id}/ack` — 确认一条通知
+- `DELETE /api/v1/notifications/{id}/ack` — 取消确认一条通知
+- `POST /api/v1/notifications/{id}/telegram` — 将单条通知发送到 Telegram
+- `GET /api/v1/telegram/config` — Telegram 配置（脱敏）
+- `POST /api/v1/telegram/config` — 更新 Telegram 配置
+- `POST /api/v1/telegram/test` — 发送 Telegram 测试消息
+- `GET /api/v1/signal-runtime/plan?accountId=...&strategyId=...` — 账户与策略的信号运行计划
+- `GET|POST /api/v1/signal-runtime/sessions` — 信号运行时会话列表/创建
+- `GET /api/v1/signal-runtime/sessions/{id}` — 单个信号运行时会话
+- `POST /api/v1/signal-runtime/sessions/{id}/start` — 启动信号运行时会话
+- `POST /api/v1/signal-runtime/sessions/{id}/stop` — 停止信号运行时会话
+- `GET|POST /api/v1/strategies/{id}/signal-bindings` — 策略级多信号源绑定
+- `GET|POST /api/v1/accounts/{id}/signal-bindings` — 账户级多信号源绑定
 - `GET /api/v1/account-summaries` — 账户汇总（权益、PnL、费用）
 - `GET /api/v1/account-equity-snapshots?accountId=...` — 账户净值快照
 - `GET|POST /api/v1/orders` — 订单管理
@@ -72,9 +93,144 @@ go run ./cmd/platform-api
 - `POST /api/v1/paper/sessions/{id}/start` — 启动模拟会话
 - `POST /api/v1/paper/sessions/{id}/stop` — 停止模拟会话
 - `POST /api/v1/paper/sessions/{id}/tick` — 手动推进模拟会话
-- `GET /api/v1/signal-sources` — 信号源列表
+- `GET|POST /api/v1/live/sessions` — 实盘策略会话
+- `POST /api/v1/live/sessions/{id}/start` — 启动实盘策略会话
+- `POST /api/v1/live/sessions/{id}/stop` — 停止实盘策略会话
+- `POST /api/v1/live/sessions/{id}/dispatch` — 手动确认并派发当前实盘策略意图
+
+创建模拟会话时支持可选 runtime overrides：
+- `signalTimeframe`
+- `executionDataSource`
+- `symbol`
+- `from` / `to`
+- `strategyEngine`
+- `tradingFeeBps`
+- `fundingRateBps`
+- `fundingIntervalHours`
 - `GET /api/v1/chart/annotations` — 图表标注数据
 - `GET /api/v1/chart/candles` — K 线数据
+
+信号源当前支持的建模方式：
+- 策略可以同时绑定多个信号源，例如 `trade_tick(trigger) + order_book(feature)`
+- 账户也可以同时绑定多个信号源，例如一个账户同时观察 `BINANCE trade tick` 和 `OKX order book`
+- 策略绑定解决“策略依赖哪些输入”
+- 账户绑定解决“这个账户实际接收哪些市场流”
+- 这两层分离后，后续做双市场交易和跨市场套利时不需要改模型
+- `signal-runtime plan` 会把策略需要的源和账户实际绑定的源做匹配，直接告诉你：
+  - 哪些源已经 READY
+  - 哪些 trigger/feature 还缺失
+  - 这些源后面应由哪个 runtime adapter 驱动
+- `signal-runtime session` 会把一组绑定转换成可启动的运行时骨架，当前会记录：
+  - 订阅数和订阅 channel
+  - runtime adapter
+  - 健康状态
+  - 最近心跳
+  - 最近事件摘要
+- `signal-runtime session` 现在也会维护结构化 `sourceStates`：
+  - 按 `sourceKey + symbol + role` 聚合最近源状态
+  - 为后续策略实时评估提供稳定的 trade tick / order book 快照
+- 当前 `binance-market-ws` 已经接入真实公共 WebSocket：
+  - 可以真实订阅 `trade_tick`
+  - 可以在同一 session 里同时真实订阅 `trade_tick + order_book`
+  - 会更新 `connectedAt / lastHeartbeatAt / lastEventSummary`
+  - `order_book` 摘要会返回 `bestBid / bestAsk / bestBidQty / bestAskQty`
+- `okx-market-ws` 目前仍先作为可启动骨架保留，下一步再补齐真实消息消费
+
+当前 `paper session` 已经开始接入 signal runtime：
+- 创建 `executionDataSource=tick` 的 paper session 时，会自动生成并挂上 `signalRuntimeSessionId`
+- 启动 paper session 时，会先把 linked signal runtime 拉起
+- `PAPER + tick + linked runtime` 现在会在收到真实 tick 后，按节流频率推进一次策略 heartbeat
+- 每次事件驱动评估都会把当前 linked runtime 的 `sourceStates` 快照写入 paper session state
+- 事件驱动评估现在还会做 `source gate` 检查：
+  - 必需 trigger / feature 源没有状态快照时，不推进策略
+  - 快照超过新鲜度窗口时，不推进策略
+  - 默认新鲜度：`trade_tick=15s`，`order_book=10s`
+  - 通过 `source gate` 后，paper 现在会调用策略引擎的 `signal evaluation` 入口：
+    - 策略引擎可以基于 `trigger + sourceStates` 决定本次是 `advance-plan` 还是 `wait`
+    - 同时会产出更明确的决策状态，例如：
+      - `entry-ready`
+      - `exit-ready`
+      - `waiting-time`
+      - `waiting-price`
+      - `waiting-inputs`
+    - 同时也会产出更偏策略语义的 `signalKind`：
+      - `initial-entry`
+      - `initial-entry-watch`
+      - `initial-entry-near`
+      - `initial-entry-near-strong`
+      - `initial-entry-near-weak`
+      - `sl-reentry`
+      - `sl-reentry-watch`
+      - `sl-reentry-near`
+      - `sl-reentry-near-strong`
+      - `sl-reentry-near-weak`
+      - `pt-reentry`
+      - `pt-reentry-watch`
+      - `pt-reentry-near`
+      - `pt-reentry-near-strong`
+      - `pt-reentry-near-weak`
+      - `hold`
+      - `hold-long`
+      - `hold-short`
+      - `protect-exit`
+      - `protect-exit-watch`
+      - `protect-exit-near`
+      - `protect-exit-near-strong`
+      - `protect-exit-near-weak`
+      - `risk-exit`
+      - `risk-exit-watch`
+      - `risk-exit-near`
+      - `ignore`
+    - `signalKind` 现在已经开始结合当前 paper 持仓快照，而不只是看下一步计划角色
+    - `protect-exit-watch` / `risk-exit-watch` 现在还会结合当前持仓相对市场价的盈亏方向
+    - 当市场价距离下一步退出价足够近时，会进一步升级成 `protect-exit-near` / `risk-exit-near`
+    - 入场侧也一样：当市场价距离下一步入场价足够近时，会升级成 `initial-entry-near` / `sl-reentry-near` / `pt-reentry-near`
+    - 如果盘口方向也支持当前 near 状态，会进一步升级成 `*-near-strong`；保护性退出在盘口方向逆风时会显示 `protect-exit-near-weak`
+    - `sl-reentry` 对盘口方向要求更严格：balanced book 也可能继续等待，避免止损后过早重入
+    - 当前 `bk-default` 先实现了最小决策：非 trigger 事件、symbol 不匹配、缺少源状态时不会推进
+    - 同时还会检查 `next planned event` 的事件时间，没走到下一步计划时间之前不会推进
+    - 当前还会比较“当前市场价”和“下一笔计划价”的偏离：
+      - `BUY` 优先看 `bestAsk`
+      - `SELL/SHORT` 优先看 `bestBid`
+      - 默认允许最大偏离 `50 bps`
+      - 并且按交易方向判断当前价格是否仍然“可执行”
+      - 不满足时会返回 `wait / price-not-actionable`
+    - 如果 order book 可用，还会检查盘口质量：
+      - 计算 `spread bps`
+      - 计算 `bid/ask imbalance`
+      - 生成简化的 `liquidityBias`
+      - 当 spread 过宽时会返回 `wait / spread-too-wide`
+      - 当盘口方向明显逆风时，会返回 `wait / bias-unfavorable`
+- 当前这一步仍是最小事件驱动版本：先让实时 tick 参与推进调度，再逐步替换掉旧的计划式推进
+
+当前 `live session` 也已经接入主交易链路：
+- `live session` 绑定 `LIVE account + strategy`
+- 启动前会检查 live adapter、signal runtime plan、runtime health 和 source freshness
+- 启动后会随 linked runtime 的真实事件更新策略评估状态
+- 当前默认 `dispatchMode=manual-review`
+- 会在 session state 中记录：
+  - `lastStrategyDecision`
+  - `lastStrategyIntent`
+  - `lastStrategyEvaluationSourceGate`
+  - `timeline`
+- 当前可以对 `lastStrategyIntent` 执行人工确认派单：
+  - 只有当 live session 产出了 ready intent 时才允许 dispatch
+  - dispatch 会复用现有 live preflight 和 live adapter 提交流程
+- 这一步先把“实盘策略会话”和“实盘自动派单”拆开，方便先把 runtime/策略评估链路跑稳
+
+实盘账户当前支持：
+- `LIVE` 账户默认状态为 `PENDING_SETUP`
+- 通过 `POST /api/v1/live/accounts/{id}/binding` 绑定 adapter 后会切到 `CONFIGURED`
+- `LIVE` 账户 binding 写入 `accounts.metadata.liveBinding`
+- 凭证只保存引用，例如 `credentialRefs.apiKeyRef` / `credentialRefs.apiSecretRef`
+- 实盘手续费和资金费来源固定为交易所回报，不走平台静态配置
+
+当前 `LIVE` 订单流骨架：
+- `POST /api/v1/orders` 对 `LIVE` 账户会按 `accounts.metadata.liveBinding.adapterKey` 选择 adapter
+- 当前内置 `binance-futures` mock submission，会返回 `ACCEPTED`
+- 订单 metadata 会写入 `exchangeOrderId`、`acceptedAt`、`adapterSubmission`、`feeSource=exchange`、`fundingSource=exchange`
+- `POST /api/v1/orders/{id}/sync` 会通过 adapter 把 `ACCEPTED` 订单同步成 `FILLED`
+- sync 后会写入真实风格的 `fill`、更新 `position`，并把 `adapterSync`、`lastSyncAt` 回写到订单 metadata
 
 ### 前端控制台
 
@@ -123,34 +279,48 @@ TICK_DATA_DIR=./dataset/archive
 - `to`：RFC3339 结束时间
 
 当前 `tick` runner 已接入按时间窗口挑选月分片和流式预览，不会默认把整个 archive 全量扫完。
-`tick` 和 `1min` 都可以单独拿来做执行测试，但当前平台不再以“对比两者结果差异”为目标。
+当前平台的主回测入口是 `Strategy Replay`：
 
-如果在 tick 回测参数里额外传入这些字段：
+- 选择 `4h` 或 `1d` 作为信号周期
+- 选择 `tick` 或 `1min` 作为执行数据源
+- 由 Go 版策略引擎直接生成交易并回放
 
-- `side`
-- `entryPrice`
-- `stopLossPrice`
-- `takeProfitPrice`
-- `quantity`
+其中 `tick` 执行源现在已经是流式逐笔 `Strategy Replay`，会按信号窗口顺序消费 trade archive，而不是先把整段逐笔数据并入内存。
 
-平台会在 `tick` 窗口上执行一个最小 `bracket` 撮合模拟，并返回：
+## 策略模块约束
 
-- `bracketEntryTime / bracketEntryFill`
-- `bracketExitType / bracketExitTime / bracketExitPrice`
-- `bracketRealizedPnL`
+- 策略引擎必须可插拔，平台通过 `StrategyEngine` registry 装载，不把单个策略硬编码在回测、模拟盘或实盘入口上。
+- 回测、模拟交易、实盘交易必须共享同一套策略执行语义和订单意图生成逻辑。
+- 只有回测允许显式注入模拟滑点；`paper/live` 默认使用 `observed` 执行语义，不在策略层额外叠加虚拟滑点。
+- 回测和模拟盘的交易手续费、资金费参数可配置。
+- 实盘的手续费、资金费、返佣等成本项必须以交易所返回为准，不在平台里做静态硬编码。
+- 当前内置引擎键值为 `bk-default`，可通过策略参数中的 `strategyEngine` 绑定。
 
-如果在回测参数里传入 `replayLedger=true`，平台还会：
+当前默认成本参数：
 
-- 读取 [FINAL_1D_LEDGER_BEST_SL.csv](/Users/wuyaocheng/Downloads/bkTrader/FINAL_1D_LEDGER_BEST_SL.csv)
-- 将账本里的 entry/exit 事件配对成交易
-- 在对应时间窗口内用 `tick` 执行层做逐笔回放摘要
+- `tradingFeeBps = 10`
+- `fundingRateBps = 0`
+- `fundingIntervalHours = 8`
 
-当前返回的摘要字段包括：
+`replayLedger=true` 仍然保留为可选内部审计能力，用于排查历史账本和执行层之间的差异，但它不是当前平台推荐的主回测入口。
 
-- `replayLedgerTrades`
-- `replayLedgerCompleted`
-- `replayLedgerSkipped`
-- `replayLedgerPnL`
+当前仓库还提供了一个对齐脚本，用于校验 Go 策略回放和 Python 研究版在 `1d -> 1min` 场景下的一致性：
+
+```bash
+python3 scripts/check_1d_1min_parity.py
+```
+
+脚本会自动拉起本地 API，分别运行：
+
+- Python 研究版策略回测
+- Go `Strategy Replay`
+
+然后比较：
+
+- `return`
+- `maxDrawdown`
+- `tradePairs`
+- `finalBalance`
 
 推荐做法：
 
@@ -224,6 +394,11 @@ POSTGRES_DSN=postgres://postgres:postgres@postgres:5432/bktrader?sslmode=disable
 REDIS_ADDR=redis:6379
 NATS_URL=nats://nats:4222
 PAPER_TICK_INTERVAL=15
+TRADE_TICK_FRESHNESS_SECONDS=15
+ORDER_BOOK_FRESHNESS_SECONDS=10
+SIGNAL_BAR_FRESHNESS_SECONDS=30
+RUNTIME_QUIET_SECONDS=30
+PAPER_START_READINESS_TIMEOUT_SECONDS=5
 ```
 
 > 当前 `cd.yml` 默认推送镜像到 `ghcr.io/<owner>/bktrader:latest`，并在 `main` 分支 push 后触发部署。
@@ -245,4 +420,26 @@ PAPER_TICK_INTERVAL=15
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
 - 净值快照在创建模拟会话时和模拟订单成交时自动追加。
 - 模拟交易会话支持启动、停止和手动推进；活跃会话从 `FINAL_1D_LEDGER_BEST_SL.csv` 回放策略交易账本。
-- 模拟会话状态在 `paper_sessions.state` 中持久化回放进度,`ledgerIndex` 可跨重启保持。
+- 模拟会话状态在 `paper_sessions.state` 中持久化策略执行计划进度，`planIndex` 可跨重启保持。
+- `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 paper preflight 共享同一套 freshness / quiet / readiness timeout 配置。
+- `POST /api/v1/runtime-policy` 支持热更新运行阈值；当前会持久化到平台配置表，服务重启后仍然保留，控制台 `Signals` 页面已提供对应配置面板。
+- `GET /api/v1/alerts` 统一聚合 `paper / live / runtime` 三类运行告警，作为控制台告警面板和后续外部通知通道的统一源头。
+- `GET /api/v1/notifications` 基于当前活跃告警生成平台内通知 Inbox；支持 `ack / unack`，当前确认状态已持久化。
+- Telegram 通知当前只接这一条通道：
+  - 可在控制台保存 `bot token / chat id / send levels`
+  - 支持发送测试消息
+  - 支持把单条平台通知手动转发到 Telegram
+  - 平台后台每 `15s` 会自动扫描 active 通知，并只自动发送符合 `sendLevels` 的未发送通知
+  - 当前建议先把 `sendLevels` 保持在 `critical`
+- `LIVE` 下单前现在也会执行 runtime readiness preflight：要求账户对应策略的 signal runtime plan ready、runtime session 处于 `RUNNING/healthy`，并且必需 source states 不缺失且不过期。
+Parity checks:
+```bash
+python3 scripts/check_1d_1min_parity.py
+python3 scripts/check_4h_1min_parity.py
+python3 scripts/check_tick_strategy_regression.py
+```
+
+说明：
+
+- `1min` 路径当前有 Python 研究版对齐脚本。
+- `tick` 路径当前使用 Go 主策略回放的稳定回归窗口校验，不再拿旧的 `run_tick_full_scan_dual` 做 parity；那段研究函数属于另一套历史参数口径，不是当前平台默认策略。
