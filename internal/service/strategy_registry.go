@@ -588,14 +588,20 @@ func pickSignalBarState(signalBarStates map[string]any, symbol, timeframe string
 
 func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole string) map[string]any {
 	role := strings.ToLower(strings.TrimSpace(nextRole))
+	timeframe := strings.ToLower(strings.TrimSpace(stringValue(signalBarState["timeframe"])))
+	if timeframe == "" {
+		timeframe = strings.ToLower(strings.TrimSpace(stringValue(mapValue(signalBarState["current"])["timeframe"])))
+	}
 	result := map[string]any{
-		"ready":   true,
-		"reason":  "signal-bar-ready",
-		"side":    strings.ToUpper(strings.TrimSpace(nextSide)),
-		"role":    role,
-		"ma20":    parseFloatValue(signalBarState["ma20"]),
-		"atr14":   parseFloatValue(signalBarState["atr14"]),
-		"current": cloneMetadata(mapValue(signalBarState["current"])),
+		"ready":    true,
+		"reason":   "signal-bar-ready",
+		"side":     strings.ToUpper(strings.TrimSpace(nextSide)),
+		"role":     role,
+		"timeframe": timeframe,
+		"sma5":     parseFloatValue(signalBarState["sma5"]),
+		"ma20":     parseFloatValue(signalBarState["ma20"]),
+		"atr14":    parseFloatValue(signalBarState["atr14"]),
+		"current":  cloneMetadata(mapValue(signalBarState["current"])),
 		"prevBar1": cloneMetadata(mapValue(signalBarState["prevBar1"])),
 		"prevBar2": cloneMetadata(mapValue(signalBarState["prevBar2"])),
 	}
@@ -603,7 +609,9 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole str
 	prevBar1 := mapValue(signalBarState["prevBar1"])
 	prevBar2 := mapValue(signalBarState["prevBar2"])
 	ma20 := parseFloatValue(signalBarState["ma20"])
-	if current == nil || prevBar1 == nil || prevBar2 == nil || ma20 <= 0 {
+	sma5 := parseFloatValue(signalBarState["sma5"])
+	atr14 := parseFloatValue(signalBarState["atr14"])
+	if current == nil || prevBar1 == nil || prevBar2 == nil {
 		result["ready"] = false
 		result["reason"] = "insufficient-signal-bars"
 		return result
@@ -615,14 +623,52 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole str
 	prevHigh2 := parseFloatValue(prevBar2["high"])
 	prevLow1 := parseFloatValue(prevBar1["low"])
 	prevLow2 := parseFloatValue(prevBar2["low"])
-	longStructureReady := closePrice > ma20 && prevHigh2 > prevHigh1
-	shortStructureReady := closePrice < ma20 && prevLow2 < prevLow1
+	longStructureReady := false
+	shortStructureReady := false
+	longEarlyReversalReady := false
+	shortEarlyReversalReady := false
+	switch timeframe {
+	case "1d":
+		if atr14 <= 0 {
+			result["ready"] = false
+			result["reason"] = "insufficient-signal-bars"
+			return result
+		}
+		if sma5 <= 0 {
+			if ma20 <= 0 {
+				result["ready"] = false
+				result["reason"] = "insufficient-signal-bars"
+				return result
+			}
+			result["usedLegacyMA20Fallback"] = true
+			longStructureReady = closePrice > ma20
+			shortStructureReady = closePrice < ma20
+			break
+		}
+		earlyBand := 0.06 * atr14
+		longStructureReady = closePrice > sma5
+		shortStructureReady = closePrice < sma5
+		longEarlyReversalReady = closePrice >= (sma5-earlyBand) && prevHigh2 > prevHigh1 && prevLow1 >= prevLow2
+		shortEarlyReversalReady = closePrice <= (sma5+earlyBand) && prevLow2 < prevLow1 && prevHigh1 <= prevHigh2
+		longStructureReady = longStructureReady || longEarlyReversalReady
+		shortStructureReady = shortStructureReady || shortEarlyReversalReady
+	default:
+		if ma20 <= 0 {
+			result["ready"] = false
+			result["reason"] = "insufficient-signal-bars"
+			return result
+		}
+		longStructureReady = closePrice > ma20
+		shortStructureReady = closePrice < ma20
+	}
 	longBreakoutReady := highPrice >= prevHigh2 && prevHigh2 > 0
 	shortBreakoutReady := lowPrice <= prevLow2 && prevLow2 > 0
 	longReady := longStructureReady && longBreakoutReady
 	shortReady := shortStructureReady && shortBreakoutReady
 	result["longStructureReady"] = longStructureReady
 	result["shortStructureReady"] = shortStructureReady
+	result["longEarlyReversalReady"] = longEarlyReversalReady
+	result["shortEarlyReversalReady"] = shortEarlyReversalReady
 	result["longBreakoutReady"] = longBreakoutReady
 	result["shortBreakoutReady"] = shortBreakoutReady
 	result["longReady"] = longReady

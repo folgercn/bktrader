@@ -454,6 +454,7 @@ func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
 			"symbol":    stringValue(last["symbol"]),
 			"timeframe": stringValue(last["timeframe"]),
 			"barCount":  len(closed),
+			"sma5":      rollingMean(closes, len(closed)-1, 5),
 			"ma20":      rollingMean(closes, len(closed)-1, 20),
 			"atr14":     rollingMean(trueRanges, len(closed)-1, 14),
 			"current":   cloneMetadata(last),

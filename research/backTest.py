@@ -288,6 +288,7 @@ def generate_1d_signals(df_1min):
         'volume': 'sum'
     })
     df_1d.dropna(subset=['close'], inplace=True)
+    df_1d['ma5'] = df_1d['close'].rolling(window=5).mean()
     df_1d['ma20'] = df_1d['close'].rolling(window=20).mean()
     high_low = df_1d['high'] - df_1d['low']
     high_close = np.abs(df_1d['high'] - df_1d['close'].shift())
@@ -301,6 +302,27 @@ def generate_1d_signals(df_1min):
     df_1d['prev_low_2'] = df_1d['low'].shift(2)
     print("1D 信号生成完成，总行数: ", len(df_1d))
     return df_1d
+
+def _resolve_regime_ready(sig, timeframe):
+    normalized = str(timeframe).lower().strip()
+    if normalized == '1d':
+        ma5 = sig.get('ma5', np.nan)
+        atr = sig.get('atr', np.nan)
+        if pd.isna(ma5) or ma5 <= 0 or pd.isna(atr) or atr <= 0:
+            return False, False
+        early_band = 0.06 * atr
+        long_ready = sig['close'] > ma5 or (
+            sig['close'] >= (ma5 - early_band)
+            and sig['prev_high_2'] > sig['prev_high_1']
+            and sig['prev_low_1'] >= sig['prev_low_2']
+        )
+        short_ready = sig['close'] < ma5 or (
+            sig['close'] <= (ma5 + early_band)
+            and sig['prev_low_2'] < sig['prev_low_1']
+            and sig['prev_high_1'] <= sig['prev_high_2']
+        )
+        return long_ready, short_ready
+    return sig['close'] > sig['ma20'], sig['close'] < sig['ma20']
 
 def _normalize_reentry_sizes(reentry_size_schedule):
     if reentry_size_schedule is None:
@@ -389,6 +411,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
         
         sig = df_4h.iloc[i]
         if pd.isna(sig['atr']): continue
+        long_regime_ready, short_regime_ready = _resolve_regime_ready(sig, '1d' if 'ma5' in df_4h.columns else '4h')
         
         trades_in_bar = 0
         current_idx = 0
@@ -408,7 +431,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                 executed = False
                 
                 # 1. 多头逻辑 (MA20 之上)
-                if sig['close'] > sig['ma20']:
+                if long_regime_ready:
                     re_p = sig['prev_low_1'] + (REENTRY_ATR * sig['atr'])
                     # 初始进场
                     if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
@@ -461,7 +484,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                             last_exit_side = None
 
                 # 2. 空头逻辑 (MA20 之下)
-                elif sig['close'] < sig['ma20']:
+                elif short_regime_ready:
                     re_p = sig['prev_high_1']
                     # 初始进场
                     if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
