@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -130,47 +128,71 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 	if err != nil {
 		return domain.Account{}, err
 	}
-	params := map[string]string{
+	accountPayload, err := binanceSignedGET(resolved, "/fapi/v3/account", map[string]string{
 		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
 		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
-	}
-	params["signature"] = signBinanceQuery(params, resolved.APISecret)
-	requestURL := resolved.BaseURL + "/fapi/v3/account?" + encodeBinanceQuery(params, false)
-	request, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	})
 	if err != nil {
-		return domain.Account{}, err
+		return domain.Account{}, fmt.Errorf("binance account sync failed: %w", err)
 	}
-	request.Header.Set("X-MBX-APIKEY", resolved.APIKey)
-	response, err := http.DefaultClient.Do(request)
+	positionRiskPayload, err := binanceSignedGET(resolved, "/fapi/v2/positionRisk", map[string]string{
+		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+	})
 	if err != nil {
+		return domain.Account{}, fmt.Errorf("binance position risk sync failed: %w", err)
+	}
+	openOrdersPayload, err := binanceSignedGET(resolved, "/fapi/v1/openOrders", map[string]string{
+		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+	})
+	if err != nil {
+		return domain.Account{}, fmt.Errorf("binance open orders sync failed: %w", err)
+	}
+
+	var accountBody map[string]any
+	if err := json.Unmarshal(accountPayload, &accountBody); err != nil {
 		return domain.Account{}, err
 	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(response.Body)
-		return domain.Account{}, fmt.Errorf("binance account sync failed: %s %s", response.Status, strings.TrimSpace(string(body)))
-	}
-	var payload map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	var positionRiskBody []map[string]any
+	if err := json.Unmarshal(positionRiskPayload, &positionRiskBody); err != nil {
 		return domain.Account{}, err
 	}
-	positions := metadataList(payload["positions"])
-	assets := metadataList(payload["assets"])
+	var openOrdersBody []map[string]any
+	if err := json.Unmarshal(openOrdersPayload, &openOrdersBody); err != nil {
+		return domain.Account{}, err
+	}
+
+	positions := metadataList(accountBody["positions"])
+	assets := metadataList(accountBody["assets"])
+	positionRiskIndex := make(map[string]map[string]any, len(positionRiskBody))
+	for _, item := range positionRiskBody {
+		key := strings.ToUpper(strings.TrimSpace(stringValue(item["symbol"]))) + "|" + strings.ToUpper(strings.TrimSpace(stringValue(item["positionSide"])))
+		positionRiskIndex[key] = item
+	}
+
 	openPositions := make([]map[string]any, 0)
 	for _, item := range positions {
 		positionAmt := parseFloatValue(item["positionAmt"])
 		if positionAmt == 0 {
 			continue
 		}
+		riskKey := strings.ToUpper(strings.TrimSpace(stringValue(item["symbol"]))) + "|" + strings.ToUpper(strings.TrimSpace(stringValue(item["positionSide"])))
+		risk := positionRiskIndex[riskKey]
 		openPositions = append(openPositions, map[string]any{
-			"symbol":           stringValue(item["symbol"]),
-			"positionAmt":      positionAmt,
-			"entryPrice":       parseFloatValue(item["entryPrice"]),
-			"markPrice":        parseFloatValue(item["markPrice"]),
-			"unrealizedProfit": parseFloatValue(item["unrealizedProfit"]),
-			"leverage":         stringValue(item["leverage"]),
-			"marginType":       stringValue(item["marginType"]),
-			"positionSide":     stringValue(item["positionSide"]),
+			"symbol":            stringValue(item["symbol"]),
+			"positionAmt":       positionAmt,
+			"entryPrice":        parseFloatValue(item["entryPrice"]),
+			"markPrice":         firstPositive(parseFloatValue(risk["markPrice"]), parseFloatValue(item["markPrice"])),
+			"unrealizedProfit":  firstPositive(parseFloatValue(risk["unRealizedProfit"]), parseFloatValue(item["unrealizedProfit"])),
+			"liquidationPrice":  parseFloatValue(risk["liquidationPrice"]),
+			"notional":          parseFloatValue(risk["notional"]),
+			"isolatedMargin":    parseFloatValue(risk["isolatedMargin"]),
+			"leverage":          firstNonEmpty(stringValue(risk["leverage"]), stringValue(item["leverage"])),
+			"marginType":        firstNonEmpty(stringValue(risk["marginType"]), stringValue(item["marginType"])),
+			"positionSide":      firstNonEmpty(stringValue(risk["positionSide"]), stringValue(item["positionSide"])),
+			"breakEvenPrice":    parseFloatValue(risk["breakEvenPrice"]),
+			"maxNotionalValue":  parseFloatValue(risk["maxNotionalValue"]),
 		})
 	}
 	assetSummaries := make([]map[string]any, 0)
@@ -180,11 +202,30 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 			continue
 		}
 		assetSummaries = append(assetSummaries, map[string]any{
-			"asset":             stringValue(item["asset"]),
-			"walletBalance":     walletBalance,
-			"availableBalance":  parseFloatValue(item["availableBalance"]),
+			"asset":              stringValue(item["asset"]),
+			"walletBalance":      walletBalance,
+			"availableBalance":   parseFloatValue(item["availableBalance"]),
 			"crossWalletBalance": parseFloatValue(item["crossWalletBalance"]),
-			"crossUnPnl":        parseFloatValue(item["crossUnPnl"]),
+			"crossUnPnl":         parseFloatValue(item["crossUnPnl"]),
+		})
+	}
+	openOrders := make([]map[string]any, 0, len(openOrdersBody))
+	for _, item := range openOrdersBody {
+		openOrders = append(openOrders, map[string]any{
+			"symbol":         stringValue(item["symbol"]),
+			"orderId":        stringValue(item["orderId"]),
+			"clientOrderId":  stringValue(item["clientOrderId"]),
+			"status":         mapBinanceOrderStatus(stringValue(item["status"])),
+			"side":           stringValue(item["side"]),
+			"type":           stringValue(item["type"]),
+			"origQty":        parseFloatValue(item["origQty"]),
+			"executedQty":    parseFloatValue(item["executedQty"]),
+			"price":          parseFloatValue(item["price"]),
+			"avgPrice":       parseFloatValue(item["avgPrice"]),
+			"positionSide":   stringValue(item["positionSide"]),
+			"reduceOnly":     item["reduceOnly"],
+			"timeInForce":    stringValue(item["timeInForce"]),
+			"updateTime":     parseBinanceMillisToRFC3339(item["updateTime"]),
 		})
 	}
 	account.Metadata = cloneMetadata(account.Metadata)
@@ -198,18 +239,20 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 		"feeSource":             "exchange",
 		"fundingSource":         "exchange",
 		"syncStatus":            "SYNCED",
-		"feeTier":               payload["feeTier"],
-		"canTrade":              payload["canTrade"],
-		"canDeposit":            payload["canDeposit"],
-		"canWithdraw":           payload["canWithdraw"],
-		"totalWalletBalance":    parseFloatValue(payload["totalWalletBalance"]),
-		"totalUnrealizedProfit": parseFloatValue(payload["totalUnrealizedProfit"]),
-		"totalMarginBalance":    parseFloatValue(payload["totalMarginBalance"]),
-		"availableBalance":      parseFloatValue(payload["availableBalance"]),
-		"maxWithdrawAmount":     parseFloatValue(payload["maxWithdrawAmount"]),
+		"feeTier":               accountBody["feeTier"],
+		"canTrade":              accountBody["canTrade"],
+		"canDeposit":            accountBody["canDeposit"],
+		"canWithdraw":           accountBody["canWithdraw"],
+		"totalWalletBalance":    parseFloatValue(accountBody["totalWalletBalance"]),
+		"totalUnrealizedProfit": parseFloatValue(accountBody["totalUnrealizedProfit"]),
+		"totalMarginBalance":    parseFloatValue(accountBody["totalMarginBalance"]),
+		"availableBalance":      parseFloatValue(accountBody["availableBalance"]),
+		"maxWithdrawAmount":     parseFloatValue(accountBody["maxWithdrawAmount"]),
 		"positionCount":         len(openPositions),
 		"positions":             openPositions,
 		"assets":                assetSummaries,
+		"openOrderCount":        len(openOrders),
+		"openOrders":            openOrders,
 		"apiKeyRef":             resolved.APIKeyRef,
 		"restBaseUrl":           resolved.BaseURL,
 	}

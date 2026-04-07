@@ -533,6 +533,23 @@ func trimFloat(value float64) string {
 	return text
 }
 
+func binanceSignedGET(creds binanceRESTCredentials, path string, params map[string]string) ([]byte, error) {
+	params = cloneStringMap(params)
+	params["signature"] = signBinanceQuery(params, creds.APISecret)
+	return doBinanceSignedRequest(http.MethodGet, creds, path, params)
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
 func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path string, params map[string]string) ([]byte, error) {
 	query := encodeBinanceQuery(params, false)
 	requestURL := creds.BaseURL + path
