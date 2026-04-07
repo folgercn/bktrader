@@ -80,9 +80,18 @@ func (p *Platform) executePaperOrder(account domain.Account, order domain.Order)
 	executionPrice := resolveExecutionPrice(order)
 	fillFee := resolvePaperFillFee(order, executionPrice)
 	order.Metadata = cloneMetadata(order.Metadata)
-	order.Metadata["executionMode"] = "paper"
-	order.Metadata["fillPolicy"] = "immediate"
-	order.Metadata["feeSource"] = "configured-paper-rate"
+	applyExecutionMetadata(order.Metadata, map[string]any{
+		"executionMode": "paper",
+		"fillPolicy":    "immediate",
+		"feeSource":     "configured-paper-rate",
+		"fundingSource": "paper-simulated",
+		"orderLifecycle": map[string]any{
+			"submitted": false,
+			"accepted":  true,
+			"synced":    false,
+			"filled":    true,
+		},
+	})
 	return p.finalizeExecutedOrder(account, order, []domain.Fill{{
 		OrderID:  order.ID,
 		Price:    executionPrice,
@@ -117,16 +126,25 @@ func (p *Platform) applyLiveSubmissionResult(
 	submitErr error,
 ) (domain.Order, error) {
 	order.Metadata = cloneMetadata(order.Metadata)
-	order.Metadata["executionMode"] = "live"
-	order.Metadata["adapterKey"] = normalizeLiveAdapterKey(stringValue(binding["adapterKey"]))
-	order.Metadata["feeSource"] = "exchange"
-	order.Metadata["fundingSource"] = "exchange"
-	order.Metadata["submitMode"] = "adapter"
-	order.Metadata["runtimeSessionId"] = runtimeSession.ID
-	order.Metadata["runtimePreflight"] = sourceGate
+	applyExecutionMetadata(order.Metadata, map[string]any{
+		"executionMode":    "live",
+		"adapterKey":       normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+		"feeSource":        "exchange",
+		"fundingSource":    "exchange",
+		"submitMode":       "adapter",
+		"runtimeSessionId": runtimeSession.ID,
+		"runtimePreflight": sourceGate,
+		"orderLifecycle": map[string]any{
+			"submitted": true,
+			"accepted":  false,
+			"synced":    false,
+			"filled":    false,
+		},
+	})
 	if submitErr != nil {
 		order.Status = "REJECTED"
 		order.Metadata["liveSubmitError"] = submitErr.Error()
+		markOrderLifecycle(order.Metadata, "accepted", false)
 		updatedOrder, updateErr := p.store.UpdateOrder(order)
 		if updateErr != nil {
 			return domain.Order{}, updateErr
@@ -138,6 +156,7 @@ func (p *Platform) applyLiveSubmissionResult(
 	order.Metadata["exchangeOrderId"] = submission.ExchangeOrderID
 	order.Metadata["acceptedAt"] = submission.AcceptedAt
 	order.Metadata["adapterSubmission"] = submission.Metadata
+	markOrderLifecycle(order.Metadata, "accepted", true)
 	return p.store.UpdateOrder(order)
 }
 
@@ -278,16 +297,20 @@ func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {
 
 func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Order, syncResult LiveOrderSync) (domain.Order, error) {
 	order.Metadata = cloneMetadata(order.Metadata)
-	order.Metadata["lastSyncAt"] = syncResult.SyncedAt
-	order.Metadata["syncMode"] = "adapter"
-	order.Metadata["feeSource"] = firstNonEmpty(syncResult.FeeSource, "exchange")
-	order.Metadata["fundingSource"] = firstNonEmpty(syncResult.FundingSrc, "exchange")
-	order.Metadata["adapterSync"] = syncResult.Metadata
+	applyExecutionMetadata(order.Metadata, map[string]any{
+		"lastSyncAt":    syncResult.SyncedAt,
+		"syncMode":      "adapter",
+		"feeSource":     firstNonEmpty(syncResult.FeeSource, "exchange"),
+		"fundingSource": firstNonEmpty(syncResult.FundingSrc, "exchange"),
+		"adapterSync":   syncResult.Metadata,
+	})
 	order.Status = firstNonEmpty(syncResult.Status, order.Status)
+	markOrderLifecycle(order.Metadata, "synced", true)
 	if len(syncResult.Fills) > 0 {
 		fills, lastFundingPnL, lastPrice := buildLiveSyncSettlement(order, syncResult)
 		order.Price = lastPrice
 		order.Metadata["fundingPnL"] = lastFundingPnL
+		markOrderLifecycle(order.Metadata, "filled", true)
 		return p.finalizeExecutedOrder(account, order, fills)
 	}
 	return p.store.UpdateOrder(order)
@@ -337,6 +360,11 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	}
 	order.Status = "FILLED"
 	order.Price = lastPrice
+	markOrderLifecycle(order.Metadata, "filled", true)
+	if order.Metadata["acceptedAt"] == nil {
+		order.Metadata["acceptedAt"] = time.Now().UTC().Format(time.RFC3339)
+	}
+	order.Metadata["lastFilledAt"] = time.Now().UTC().Format(time.RFC3339)
 	updatedOrder, err := p.store.UpdateOrder(order)
 	if err != nil {
 		return domain.Order{}, err
@@ -466,6 +494,27 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 	position.StrategyVersionID = firstNonEmpty(order.StrategyVersionID, position.StrategyVersionID)
 	_, err = p.store.SavePosition(position)
 	return err
+}
+
+func applyExecutionMetadata(target map[string]any, updates map[string]any) {
+	if target == nil || len(updates) == 0 {
+		return
+	}
+	for key, value := range updates {
+		target[key] = value
+	}
+}
+
+func markOrderLifecycle(metadata map[string]any, key string, value bool) {
+	if metadata == nil {
+		return
+	}
+	lifecycle := cloneMetadata(mapValue(metadata["orderLifecycle"]))
+	if lifecycle == nil {
+		lifecycle = map[string]any{}
+	}
+	lifecycle[key] = value
+	metadata["orderLifecycle"] = lifecycle
 }
 
 // resolveExecutionPrice 确定订单的执行价格。
