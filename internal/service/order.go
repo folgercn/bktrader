@@ -31,50 +31,68 @@ func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
 // CreateOrder 创建订单。对于 PAPER 模式账户，订单会被立即执行（模拟成交），
 // 生成 fill 记录、更新持仓、捕获净值快照。
 func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
-	account, err := p.store.GetAccount(order.AccountID)
+	account, err := p.prepareOrderAccount(order)
 	if err != nil {
 		return domain.Order{}, err
 	}
-
-	if account.Mode == "LIVE" {
-		if account.Status != "CONFIGURED" && account.Status != "READY" {
-			return domain.Order{}, fmt.Errorf("live account %s is not configured", account.ID)
-		}
-		if _, _, err := p.resolveLiveAdapterForAccount(account); err != nil {
-			return domain.Order{}, err
-		}
-		if _, _, err := p.ensureLiveRuntimeReady(account, order); err != nil {
-			return domain.Order{}, err
-		}
+	if err := p.preflightOrderExecution(account, order); err != nil {
+		return domain.Order{}, err
 	}
-
 	createdOrder, err := p.store.CreateOrder(order)
 	if err != nil {
 		return domain.Order{}, err
 	}
+	return p.executeCreatedOrder(account, createdOrder)
+}
 
-	if account.Mode == "LIVE" {
-		return p.submitLiveOrder(account, createdOrder)
+func (p *Platform) prepareOrderAccount(order domain.Order) (domain.Account, error) {
+	return p.store.GetAccount(order.AccountID)
+}
+
+func (p *Platform) preflightOrderExecution(account domain.Account, order domain.Order) error {
+	if account.Mode != "LIVE" {
+		return nil
 	}
-
-	// 非模拟盘账户直接返回，等待真实交易所回报
-	if account.Mode != "PAPER" {
-		return createdOrder, nil
+	if account.Status != "CONFIGURED" && account.Status != "READY" {
+		return fmt.Errorf("live account %s is not configured", account.ID)
 	}
+	if _, _, err := p.resolveLiveAdapterForAccount(account); err != nil {
+		return err
+	}
+	if _, _, err := p.ensureLiveRuntimeReady(account, order); err != nil {
+		return err
+	}
+	return nil
+}
 
-	// --- 模拟盘立即成交逻辑 ---
-	executionPrice := resolveExecutionPrice(createdOrder)
-	fillFee := resolvePaperFillFee(createdOrder, executionPrice)
-	createdOrder.Metadata = cloneMetadata(createdOrder.Metadata)
-	createdOrder.Metadata["executionMode"] = "paper"
-	createdOrder.Metadata["fillPolicy"] = "immediate"
-	createdOrder.Metadata["feeSource"] = "configured-paper-rate"
-	return p.finalizeExecutedOrder(account, createdOrder, []domain.Fill{{
-		OrderID:  createdOrder.ID,
+func (p *Platform) executeCreatedOrder(account domain.Account, order domain.Order) (domain.Order, error) {
+	switch strings.ToUpper(strings.TrimSpace(account.Mode)) {
+	case "LIVE":
+		return p.executeLiveOrder(account, order)
+	case "PAPER":
+		return p.executePaperOrder(account, order)
+	default:
+		return order, nil
+	}
+}
+
+func (p *Platform) executePaperOrder(account domain.Account, order domain.Order) (domain.Order, error) {
+	executionPrice := resolveExecutionPrice(order)
+	fillFee := resolvePaperFillFee(order, executionPrice)
+	order.Metadata = cloneMetadata(order.Metadata)
+	order.Metadata["executionMode"] = "paper"
+	order.Metadata["fillPolicy"] = "immediate"
+	order.Metadata["feeSource"] = "configured-paper-rate"
+	return p.finalizeExecutedOrder(account, order, []domain.Fill{{
+		OrderID:  order.ID,
 		Price:    executionPrice,
-		Quantity: createdOrder.Quantity,
+		Quantity: order.Quantity,
 		Fee:      fillFee,
 	}})
+}
+
+func (p *Platform) executeLiveOrder(account domain.Account, order domain.Order) (domain.Order, error) {
+	return p.submitLiveOrder(account, order)
 }
 
 func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (domain.Order, error) {
