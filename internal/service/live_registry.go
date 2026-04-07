@@ -363,6 +363,7 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 			"avgPrice":        parseFloatValue(payload["avgPrice"]),
 			"origType":        stringValue(payload["origType"]),
 			"timeInForce":     stringValue(payload["timeInForce"]),
+			"updateTime":      acceptedAt,
 		},
 	}, nil
 }
@@ -417,27 +418,39 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 		})
 	}
 	terminal := status == "FILLED" || status == "CANCELLED" || status == "REJECTED"
+	resolvedSyncAt := firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339))
+	totalFee := 0.0
+	totalRealizedPnL := 0.0
+	for _, fill := range fills {
+		totalFee += fill.Fee
+		if fill.Metadata != nil {
+			totalRealizedPnL += parseFloatValue(fill.Metadata["realizedPnl"])
+		}
+	}
 	return LiveOrderSync{
 		Status:   status,
-		SyncedAt: firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339)),
+		SyncedAt: resolvedSyncAt,
 		Fills:    fills,
 		Metadata: map[string]any{
-			"adapterMode":     "rest",
-			"executionMode":   "rest",
-			"restBaseUrl":     resolved.BaseURL,
-			"requestPath":     "/fapi/v1/order",
-			"requestQuery":    encodeBinanceQuery(params, true),
-			"apiKeyRef":       resolved.APIKeyRef,
-			"apiSecretRef":    resolved.APISecretRef,
-			"requestReady":    true,
-			"networkExecuted": true,
-			"exchange":        account.Exchange,
-			"binanceStatus":   stringValue(payload["status"]),
-			"clientOrderId":   stringValue(payload["clientOrderId"]),
-			"cumQty":          parseFloatValue(payload["cumQty"]),
-			"executedQty":     filledQty,
-			"avgPrice":        avgPrice,
+			"adapterMode":      "rest",
+			"executionMode":    "rest",
+			"restBaseUrl":      resolved.BaseURL,
+			"requestPath":      "/fapi/v1/order",
+			"requestQuery":     encodeBinanceQuery(params, true),
+			"apiKeyRef":        resolved.APIKeyRef,
+			"apiSecretRef":     resolved.APISecretRef,
+			"requestReady":     true,
+			"networkExecuted":  true,
+			"exchange":         account.Exchange,
+			"binanceStatus":    stringValue(payload["status"]),
+			"clientOrderId":    stringValue(payload["clientOrderId"]),
+			"cumQty":           parseFloatValue(payload["cumQty"]),
+			"executedQty":      filledQty,
+			"avgPrice":         avgPrice,
 			"tradeReportCount": len(fills),
+			"totalFee":         totalFee,
+			"totalRealizedPnl": totalRealizedPnL,
+			"updateTime":       resolvedSyncAt,
 		},
 		Terminal:   terminal,
 		FeeSource:  "exchange",
@@ -473,9 +486,10 @@ func (a binanceFuturesLiveAdapter) cancelRESTOrder(account domain.Account, order
 	if status == "" {
 		status = "CANCELLED"
 	}
+	resolvedCancelAt := firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339))
 	return LiveOrderSync{
 		Status:   status,
-		SyncedAt: firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339)),
+		SyncedAt: resolvedCancelAt,
 		Metadata: map[string]any{
 			"adapterMode":     "rest-cancel",
 			"executionMode":   "rest",
@@ -485,6 +499,7 @@ func (a binanceFuturesLiveAdapter) cancelRESTOrder(account domain.Account, order
 			"binanceStatus":   stringValue(payload["status"]),
 			"clientOrderId":   stringValue(payload["clientOrderId"]),
 			"exchangeOrderId": stringValue(payload["orderId"]),
+			"updateTime":      resolvedCancelAt,
 		},
 		Terminal:   true,
 		FeeSource:  "exchange",
@@ -516,9 +531,10 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 			continue
 		}
 		reports = append(reports, LiveFillReport{
-			Price:    parseFloatValue(trade["price"]),
-			Quantity: qty,
-			Fee:      parseFloatValue(trade["commission"]),
+			Price:      parseFloatValue(trade["price"]),
+			Quantity:   qty,
+			Fee:        parseFloatValue(trade["commission"]),
+			FundingPnL: 0,
 			Metadata: map[string]any{
 				"source":          "binance-user-trades",
 				"exchange":        account.Exchange,
@@ -529,6 +545,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 				"realizedPnl":     parseFloatValue(trade["realizedPnl"]),
 				"maker":           trade["maker"],
 				"buyer":           trade["buyer"],
+				"tradeTime":       parseBinanceMillisToRFC3339(trade["time"]),
 				"executionMode":   "rest",
 			},
 		})

@@ -156,7 +156,12 @@ func (p *Platform) applyLiveSubmissionResult(
 	order.Metadata["exchangeOrderId"] = submission.ExchangeOrderID
 	order.Metadata["acceptedAt"] = submission.AcceptedAt
 	order.Metadata["adapterSubmission"] = submission.Metadata
+	order.Metadata["lastExchangeStatus"] = order.Status
+	order.Metadata["lastExchangeUpdateAt"] = firstNonEmpty(submission.AcceptedAt, time.Now().UTC().Format(time.RFC3339))
 	markOrderLifecycle(order.Metadata, "accepted", true)
+	if strings.EqualFold(order.Status, "FILLED") {
+		markOrderLifecycle(order.Metadata, "filled", true)
+	}
 	return p.store.UpdateOrder(order)
 }
 
@@ -318,18 +323,25 @@ func (p *Platform) resolveLiveOrderContext(orderID string) (domain.Order, domain
 func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Order, syncResult LiveOrderSync) (domain.Order, error) {
 	order.Metadata = cloneMetadata(order.Metadata)
 	applyExecutionMetadata(order.Metadata, map[string]any{
-		"lastSyncAt":    syncResult.SyncedAt,
-		"syncMode":      "adapter",
-		"feeSource":     firstNonEmpty(syncResult.FeeSource, "exchange"),
-		"fundingSource": firstNonEmpty(syncResult.FundingSrc, "exchange"),
-		"adapterSync":   syncResult.Metadata,
+		"lastSyncAt":          syncResult.SyncedAt,
+		"syncMode":            "adapter",
+		"feeSource":           firstNonEmpty(syncResult.FeeSource, "exchange"),
+		"fundingSource":       firstNonEmpty(syncResult.FundingSrc, "exchange"),
+		"adapterSync":         syncResult.Metadata,
+		"lastExchangeStatus":  firstNonEmpty(syncResult.Status, order.Status),
+		"lastExchangeUpdateAt": firstNonEmpty(syncResult.SyncedAt, time.Now().UTC().Format(time.RFC3339)),
 	})
 	order.Status = firstNonEmpty(syncResult.Status, order.Status)
+	if strings.EqualFold(order.Status, "CANCELLED") || strings.EqualFold(order.Status, "REJECTED") {
+		markOrderLifecycle(order.Metadata, "filled", false)
+	}
 	markOrderLifecycle(order.Metadata, "synced", true)
 	if len(syncResult.Fills) > 0 {
 		fills, lastFundingPnL, lastPrice := buildLiveSyncSettlement(order, syncResult)
 		order.Price = lastPrice
 		order.Metadata["fundingPnL"] = lastFundingPnL
+		order.Metadata["fillCount"] = len(fills)
+		order.Metadata["lastFillAt"] = firstNonEmpty(syncResult.SyncedAt, time.Now().UTC().Format(time.RFC3339))
 		markOrderLifecycle(order.Metadata, "filled", true)
 		return p.finalizeExecutedOrder(account, order, fills)
 	}
