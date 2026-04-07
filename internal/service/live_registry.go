@@ -4,7 +4,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"sort"
@@ -282,12 +285,13 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 		return LiveOrderSubmission{}, err
 	}
 	params := map[string]string{
-		"symbol":      NormalizeSymbol(order.Symbol),
-		"side":        strings.ToUpper(strings.TrimSpace(order.Side)),
-		"type":        strings.ToUpper(strings.TrimSpace(firstNonEmpty(order.Type, "MARKET"))),
-		"timestamp":   fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
-		"recvWindow":  fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+		"symbol":           NormalizeSymbol(order.Symbol),
+		"side":             strings.ToUpper(strings.TrimSpace(order.Side)),
+		"type":             strings.ToUpper(strings.TrimSpace(firstNonEmpty(order.Type, "MARKET"))),
+		"timestamp":        fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow":       fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
 		"newOrderRespType": "RESULT",
+		"newClientOrderId": order.ID,
 	}
 	if order.Quantity > 0 {
 		params["quantity"] = trimFloat(order.Quantity)
@@ -296,45 +300,28 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 		params["price"] = trimFloat(order.Price)
 	}
 	params["signature"] = signBinanceQuery(params, resolved.APISecret)
-	return LiveOrderSubmission{
-		Status:          "ACCEPTED",
-		ExchangeOrderID: fmt.Sprintf("binance-rest-pending-%d", time.Now().UTC().UnixNano()),
-		AcceptedAt:      time.Now().UTC().Format(time.RFC3339),
-		Metadata: map[string]any{
-			"adapterMode":    "rest-skeleton",
-			"executionMode":  "rest",
-			"restBaseUrl":    resolved.BaseURL,
-			"requestPath":    "/fapi/v1/order",
-			"requestQuery":   encodeBinanceQuery(params, true),
-			"apiKeyRef":      resolved.APIKeyRef,
-			"apiSecretRef":   resolved.APISecretRef,
-			"requestReady":   true,
-			"networkExecuted": false,
-			"exchange":       account.Exchange,
-		},
-	}, nil
-}
-
-func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
-	if stringValue(order.Metadata["exchangeOrderId"]) == "" {
-		return LiveOrderSync{}, fmt.Errorf("live order has no exchangeOrderId")
-	}
-	resolved, err := resolveBinanceRESTCredentials(binding)
+	responseBody, err := doBinanceSignedRequest(http.MethodPost, resolved, "/fapi/v1/order", params)
 	if err != nil {
-		return LiveOrderSync{}, err
+		return LiveOrderSubmission{}, err
 	}
-	params := map[string]string{
-		"symbol":      NormalizeSymbol(order.Symbol),
-		"origClientOrderId": order.ID,
-		"timestamp":   fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
-		"recvWindow":  fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+	var payload map[string]any
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		return LiveOrderSubmission{}, err
 	}
-	params["signature"] = signBinanceQuery(params, resolved.APISecret)
-	return LiveOrderSync{
-		Status:   firstNonEmpty(order.Status, "ACCEPTED"),
-		SyncedAt: time.Now().UTC().Format(time.RFC3339),
+	status := mapBinanceOrderStatus(stringValue(payload["status"]))
+	if status == "" {
+		status = "ACCEPTED"
+	}
+	acceptedAt := parseBinanceMillisToRFC3339(payload["updateTime"])
+	if acceptedAt == "" {
+		acceptedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	return LiveOrderSubmission{
+		Status:          status,
+		ExchangeOrderID: firstNonEmpty(stringValue(payload["orderId"]), stringValue(payload["clientOrderId"])),
+		AcceptedAt:      acceptedAt,
 		Metadata: map[string]any{
-			"adapterMode":     "rest-skeleton",
+			"adapterMode":     "rest",
 			"executionMode":   "rest",
 			"restBaseUrl":     resolved.BaseURL,
 			"requestPath":     "/fapi/v1/order",
@@ -342,10 +329,88 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 			"apiKeyRef":       resolved.APIKeyRef,
 			"apiSecretRef":    resolved.APISecretRef,
 			"requestReady":    true,
-			"networkExecuted": false,
+			"networkExecuted": true,
 			"exchange":        account.Exchange,
+			"binanceStatus":   stringValue(payload["status"]),
+			"clientOrderId":   stringValue(payload["clientOrderId"]),
+			"cumQty":          parseFloatValue(payload["cumQty"]),
+			"executedQty":     parseFloatValue(payload["executedQty"]),
+			"avgPrice":        parseFloatValue(payload["avgPrice"]),
+			"origType":        stringValue(payload["origType"]),
+			"timeInForce":     stringValue(payload["timeInForce"]),
 		},
-		Terminal:   false,
+	}, nil
+}
+
+func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	resolved, err := resolveBinanceRESTCredentials(binding)
+	if err != nil {
+		return LiveOrderSync{}, err
+	}
+	params := map[string]string{
+		"symbol":      NormalizeSymbol(order.Symbol),
+		"timestamp":   fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
+		"recvWindow":  fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+	}
+	if exchangeOrderID := strings.TrimSpace(stringValue(order.Metadata["exchangeOrderId"])); exchangeOrderID != "" {
+		params["orderId"] = exchangeOrderID
+	} else {
+		params["origClientOrderId"] = order.ID
+	}
+	params["signature"] = signBinanceQuery(params, resolved.APISecret)
+	responseBody, err := doBinanceSignedRequest(http.MethodGet, resolved, "/fapi/v1/order", params)
+	if err != nil {
+		return LiveOrderSync{}, err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		return LiveOrderSync{}, err
+	}
+	status := mapBinanceOrderStatus(stringValue(payload["status"]))
+	if status == "" {
+		status = firstNonEmpty(order.Status, "ACCEPTED")
+	}
+	filledQty := parseFloatValue(payload["executedQty"])
+	avgPrice := firstPositive(parseFloatValue(payload["avgPrice"]), parseFloatValue(payload["price"]))
+	fills := []LiveFillReport{}
+	if filledQty > 0 && strings.EqualFold(status, "FILLED") {
+		fills = append(fills, LiveFillReport{
+			Price:    avgPrice,
+			Quantity: filledQty,
+			Fee:      0,
+			Metadata: map[string]any{
+				"source":          "binance-order-query",
+				"exchange":        account.Exchange,
+				"adapterKey":      a.Key(),
+				"exchangeOrderId": firstNonEmpty(stringValue(payload["orderId"]), stringValue(order.Metadata["exchangeOrderId"])),
+				"clientOrderId":   stringValue(payload["clientOrderId"]),
+				"executionMode":   "rest",
+			},
+		})
+	}
+	terminal := status == "FILLED" || status == "CANCELLED" || status == "REJECTED"
+	return LiveOrderSync{
+		Status:   status,
+		SyncedAt: firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339)),
+		Fills:    fills,
+		Metadata: map[string]any{
+			"adapterMode":     "rest",
+			"executionMode":   "rest",
+			"restBaseUrl":     resolved.BaseURL,
+			"requestPath":     "/fapi/v1/order",
+			"requestQuery":    encodeBinanceQuery(params, true),
+			"apiKeyRef":       resolved.APIKeyRef,
+			"apiSecretRef":    resolved.APISecretRef,
+			"requestReady":    true,
+			"networkExecuted": true,
+			"exchange":        account.Exchange,
+			"binanceStatus":   stringValue(payload["status"]),
+			"clientOrderId":   stringValue(payload["clientOrderId"]),
+			"cumQty":          parseFloatValue(payload["cumQty"]),
+			"executedQty":     filledQty,
+			"avgPrice":        avgPrice,
+		},
+		Terminal:   terminal,
 		FeeSource:  "exchange",
 		FundingSrc: "exchange",
 	}, nil
@@ -466,6 +531,64 @@ func trimFloat(value float64) string {
 		return "0"
 	}
 	return text
+}
+
+func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path string, params map[string]string) ([]byte, error) {
+	query := encodeBinanceQuery(params, false)
+	requestURL := creds.BaseURL + path
+	var body io.Reader
+	if method == http.MethodGet || method == http.MethodDelete {
+		requestURL += "?" + query
+	} else {
+		body = strings.NewReader(query)
+	}
+	request, err := http.NewRequest(method, requestURL, body)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("X-MBX-APIKEY", creds.APIKey)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if method != http.MethodGet && method != http.MethodDelete {
+		request.Header.Set("Accept", "application/json")
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	responseBody, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		return nil, readErr
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("binance request failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
+	}
+	return responseBody, nil
+}
+
+func mapBinanceOrderStatus(status string) string {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "NEW":
+		return "ACCEPTED"
+	case "PARTIALLY_FILLED":
+		return "PARTIALLY_FILLED"
+	case "FILLED":
+		return "FILLED"
+	case "CANCELED", "CANCELLED", "EXPIRED":
+		return "CANCELLED"
+	case "REJECTED":
+		return "REJECTED"
+	default:
+		return ""
+	}
+}
+
+func parseBinanceMillisToRFC3339(value any) string {
+	millis, ok := toInt64(value)
+	if !ok || millis <= 0 {
+		return ""
+	}
+	return time.UnixMilli(millis).UTC().Format(time.RFC3339)
 }
 
 func normalizeLiveExecutionMode(value any, sandbox bool) string {
