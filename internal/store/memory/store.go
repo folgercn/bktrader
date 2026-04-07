@@ -213,7 +213,7 @@ func NewStore() *Store {
 		Status:     "READY",
 		State: map[string]any{
 			"runner":       "strategy-engine",
-			"dispatchMode": "auto-dispatch",
+			"dispatchMode": "manual-review",
 			"planIndex":    0,
 		},
 		CreatedAt: now,
@@ -732,7 +732,7 @@ func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSess
 		Status:     "READY",
 		State: map[string]any{
 			"runner":       "strategy-engine",
-			"dispatchMode": "auto-dispatch",
+			"dispatchMode": "manual-review",
 			"planIndex":    0,
 		},
 		CreatedAt: time.Now().UTC(),

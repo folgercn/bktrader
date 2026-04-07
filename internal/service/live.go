@@ -988,7 +988,7 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 	state["signalRuntimeMode"] = "linked"
 	state["signalRuntimeRequired"] = required
 	state["signalRuntimeReady"] = boolValue(plan["ready"])
-	state["dispatchMode"] = firstNonEmpty(stringValue(state["dispatchMode"]), "auto-dispatch")
+	state["dispatchMode"] = firstNonEmpty(stringValue(state["dispatchMode"]), "manual-review")
 	if _, ok := state["planIndex"]; !ok {
 		state["planIndex"] = 0
 	}

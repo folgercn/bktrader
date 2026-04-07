@@ -244,7 +244,23 @@ func TestDispatchLiveSessionIntentCreatesLiveOrderFromRuntimeIntent(t *testing.T
 	if got := stringValue(latest.State["lastDispatchedOrderId"]); got == "" {
 		t.Fatal("expected lastDispatchedOrderId to be set")
 	}
-	if got := stringValue(latest.State["lastDispatchedOrderStatus"]); got != "ACCEPTED" {
-		t.Fatalf("expected lastDispatchedOrderStatus ACCEPTED, got %q", got)
+	if got := stringValue(latest.State["lastDispatchedOrderStatus"]); got != "FILLED" {
+		t.Fatalf("expected lastDispatchedOrderStatus FILLED after mock sync, got %q", got)
+	}
+}
+
+func TestCreateLiveSessionDefaultsToManualReviewDispatch(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.CreateAccount("live-main", "LIVE", "BINANCE")
+	if err != nil {
+		t.Fatalf("CreateAccount returned error: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession(account.ID, "strategy-bk-1d", nil)
+	if err != nil {
+		t.Fatalf("CreateLiveSession returned error: %v", err)
+	}
+	if got := stringValue(session.State["dispatchMode"]); got != "manual-review" {
+		t.Fatalf("expected default dispatchMode manual-review, got %q", got)
 	}
 }
