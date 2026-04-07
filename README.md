@@ -398,6 +398,8 @@ BINANCE_TESTNET_API_SECRET=your_testnet_api_secret
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
 - 当前推荐的“模拟交易”已经切到 Binance Futures testnet，凭据默认从 `.env` 读取。
 - live/testnet 当前默认建议使用 `defaultOrderQuantity=0.002` 跑 BTCUSDT smoke test，`0.001` 可能低于 testnet 最小名义价值限制。
+- `scripts/testnet_live_session_smoke.sh` 现在会同时校验退出侧 execution profile 默认值：`PT exit => LIMIT / GTX / postOnly / reduceOnly`，`SL exit => MARKET / reduceOnly`。
+- 给 `EXPECT_EXIT_PROFILE=pt-exit` 或 `EXPECT_EXIT_PROFILE=sl-exit` 后，脚本会轮询 live session 的 `lastExecutionProfile / lastExecutionDispatch`，用于等待真实 testnet 退出信号并校验最终执行策略是否按预期落地。
 - `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 live/runtime preflight 共享同一套 freshness / quiet / readiness timeout 配置。
 - `POST /api/v1/runtime-policy` 支持热更新运行阈值；当前会持久化到平台配置表，服务重启后仍然保留，控制台 `Signals` 页面已提供对应配置面板。
 - `GET /api/v1/alerts` 统一聚合 `live / runtime` 两类运行告警，作为控制台告警面板和后续外部通知通道的统一源头。
