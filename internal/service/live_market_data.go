@@ -146,6 +146,7 @@ func (p *Platform) liveSignalBarStates(symbol, timeframe string) (map[string]any
 		"symbol":    NormalizeSymbol(symbol),
 		"timeframe": strings.ToLower(strings.TrimSpace(timeframe)),
 		"barCount":  index + 1,
+		"sma5":      current.MA5,
 		"ma20":      current.MA20,
 		"atr14":     current.ATR,
 		"current":   strategySignalBarToStateEntry(current, symbol, timeframe),

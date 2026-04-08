@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 )
 
 const (
-	binanceFuturesWSURL = "wss://fstream.binance.com/ws"
-	okxPublicWSURL      = "wss://ws.okx.com:8443/ws/v5/public"
+	defaultBinanceFuturesWSURL = "wss://fstream.binance.com/ws"
+	defaultOKXPublicWSURL      = "wss://ws.okx.com:8443/ws/v5/public"
 )
 
 func (p *Platform) runSignalRuntimeLoop(ctx context.Context, sessionID string) {
@@ -26,9 +27,9 @@ func (p *Platform) runSignalRuntimeLoop(ctx context.Context, sessionID string) {
 
 	switch session.RuntimeAdapter {
 	case "binance-market-ws":
-		p.runExchangeWebsocketLoop(ctx, session, binanceFuturesWSURL, buildBinanceSubscribePayload)
+		p.runExchangeWebsocketLoop(ctx, session, configuredBinanceFuturesWSURL(), buildBinanceSubscribePayload)
 	case "okx-market-ws":
-		p.runExchangeWebsocketLoop(ctx, session, okxPublicWSURL, buildOKXSubscribePayload)
+		p.runExchangeWebsocketLoop(ctx, session, configuredOKXPublicWSURL(), buildOKXSubscribePayload)
 	default:
 		_ = p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
 			session.Status = "ERROR"
@@ -44,6 +45,22 @@ func (p *Platform) runSignalRuntimeLoop(ctx context.Context, sessionID string) {
 			session.UpdatedAt = time.Now().UTC()
 		})
 	}
+}
+
+func configuredBinanceFuturesWSURL() string {
+	url := strings.TrimSpace(os.Getenv("BINANCE_FUTURES_WS_URL"))
+	if url == "" {
+		return defaultBinanceFuturesWSURL
+	}
+	return url
+}
+
+func configuredOKXPublicWSURL() string {
+	url := strings.TrimSpace(os.Getenv("OKX_PUBLIC_WS_URL"))
+	if url == "" {
+		return defaultOKXPublicWSURL
+	}
+	return url
 }
 
 func (p *Platform) runExchangeWebsocketLoop(
@@ -454,6 +471,7 @@ func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
 			"symbol":    stringValue(last["symbol"]),
 			"timeframe": stringValue(last["timeframe"]),
 			"barCount":  len(closed),
+			"sma5":      rollingMean(closes, len(closed)-1, 5),
 			"ma20":      rollingMean(closes, len(closed)-1, 20),
 			"atr14":     rollingMean(trueRanges, len(closed)-1, 14),
 			"current":   cloneMetadata(last),

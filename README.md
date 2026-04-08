@@ -135,7 +135,7 @@ go run ./cmd/platform-api
 - 通过 `signal-runtime session` 拉起实时行情
 - 通过 `live session` 进行策略评估、派单、同步与恢复
 - 通过 Binance Futures testnet 完成模拟交易、订单同步与持仓恢复
-- 服务启动时会主动从 Binance 行情源预热 `1m / 4h / 1d` 市场缓存，并计算 `MA20 / ATR14`，live 链路不再依赖本地 CSV
+- 服务启动时会主动从 Binance 行情源预热 `1m / 4h / 1d` 市场缓存，并计算 `SMA5 / MA20 / ATR14`，live 链路不再依赖本地 CSV
 - 已验证一条真实的 `4h -> live intent -> auto-dispatch -> Binance Futures testnet FILLED` 主链路
       - `sl-reentry-watch`
       - `sl-reentry-near`
@@ -378,6 +378,9 @@ RUNTIME_QUIET_SECONDS=30
 PAPER_START_READINESS_TIMEOUT_SECONDS=5
 BINANCE_TESTNET_API_KEY=your_testnet_api_key
 BINANCE_TESTNET_API_SECRET=your_testnet_api_secret
+BINANCE_FUTURES_KLINE_BASE_URL=https://fapi.binance.com
+BINANCE_FUTURES_WS_URL=wss://fstream.binance.com/ws
+OKX_PUBLIC_WS_URL=wss://ws.okx.com:8443/ws/v5/public
 ```
 
 > 当前 `cd.yml` 默认推送镜像到 `ghcr.io/<owner>/bktrader:latest`，并在 `main` 分支 push 后触发部署。
@@ -397,7 +400,19 @@ BINANCE_TESTNET_API_SECRET=your_testnet_api_secret
 - `cmd/db-migrate` 执行嵌入式 SQL 迁移，并在 `schema_migrations` 表中记录迁移历史。
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
 - 当前推荐的“模拟交易”已经切到 Binance Futures testnet，凭据默认从 `.env` 读取。
+- live session 现在支持两种下单仓位模式：
+  - `positionSizingMode=fixed_quantity`：使用 `defaultOrderQuantity`
+  - `positionSizingMode=fixed_fraction`：使用 `defaultOrderFraction` 按账户可用余额/权益换算数量
+- 固定比例模式算出的数量在实际提交到 Binance 前，仍会走交易所 `stepSize / minQty / minNotional` 归一化，避免小数位和最小名义价值不符合要求。
+- 行情数据接入当前也已经配置化：
+  - `BINANCE_FUTURES_KLINE_BASE_URL`：启动预热和图表历史 K 线读取地址
+  - `BINANCE_FUTURES_WS_URL`：`binance-market-ws` signal runtime 的公共 WebSocket 地址
+  - `OKX_PUBLIC_WS_URL`：`okx-market-ws` 的公共 WebSocket 地址
+  - 未配置时会分别回退到 Binance Futures / OKX 官方公共地址
+- 服务启动时会从行情源主动预热 `1m / 4h / 1d` bars，并计算 `SMA5 / MA20 / ATR14`，后续 `live / testnet / 实盘` 的策略评估直接复用这批缓存。
 - live/testnet 当前默认建议使用 `defaultOrderQuantity=0.002` 跑 BTCUSDT smoke test，`0.001` 可能低于 testnet 最小名义价值限制。
+- `scripts/testnet_live_session_smoke.sh` 现在会同时校验退出侧 execution profile 默认值：`PT exit => LIMIT / GTX / postOnly / reduceOnly`，`SL exit => MARKET / reduceOnly`。
+- 给 `EXPECT_EXIT_PROFILE=pt-exit` 或 `EXPECT_EXIT_PROFILE=sl-exit` 后，脚本会轮询 live session 的 `lastExecutionProfile / lastExecutionDispatch`，用于等待真实 testnet 退出信号并校验最终执行策略是否按预期落地。
 - `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 live/runtime preflight 共享同一套 freshness / quiet / readiness timeout 配置。
 - `POST /api/v1/runtime-policy` 支持热更新运行阈值；当前会持久化到平台配置表，服务重启后仍然保留，控制台 `Signals` 页面已提供对应配置面板。
 - `GET /api/v1/alerts` 统一聚合 `live / runtime` 两类运行告警，作为控制台告警面板和后续外部通知通道的统一源头。

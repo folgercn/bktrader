@@ -19,3 +19,5 @@ btc_perp_1m_dataset/
 .vscode/*.code-workspace
 /platform-api
 /db-migrate
+*.lock
+.gomodcache/

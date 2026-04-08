@@ -19,6 +19,7 @@ type strategySignalBar struct {
 	Low       float64
 	Close     float64
 	Volume    float64
+	MA5       float64
 	MA20      float64
 	ATR       float64
 	PrevHigh1 float64
@@ -163,7 +164,8 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 			if engine.position == nil {
 				executed := false
 
-				if sig.Close > sig.MA20 {
+				longRegimeReady, shortRegimeReady := strategySignalRegimeReady(sig, engine.cfg.SignalTimeframe)
+				if longRegimeReady {
 					reP := sig.PrevLow1 + reentryATR*sig.ATR
 					if tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
 						if current.Price >= sig.PrevHigh2 {
@@ -220,7 +222,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 							engine.lastExitSide = ""
 						}
 					}
-				} else if sig.Close < sig.MA20 {
+				} else if shortRegimeReady {
 					reP := sig.PrevHigh1
 					if tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
 						if current.Price <= sig.PrevLow2 {
@@ -442,7 +444,8 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 			if engine.position == nil {
 				executed := false
 
-				if sig.Close > sig.MA20 {
+				longRegimeReady, shortRegimeReady := strategySignalRegimeReady(sig, engine.cfg.SignalTimeframe)
+				if longRegimeReady {
 					reP := sig.PrevLow1 + reentryATR*sig.ATR
 					if tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
 						if bar.High >= sig.PrevHigh2 {
@@ -509,7 +512,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 							engine.lastExitSide = ""
 						}
 					}
-				} else if sig.Close < sig.MA20 {
+				} else if shortRegimeReady {
 					reP := sig.PrevHigh1
 					if tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
 						if bar.Low <= sig.PrevLow2 {
@@ -689,7 +692,7 @@ func (e *strategyReplayEngine) process(bar executionBar, signals []strategySigna
 		return
 	}
 	sig := signals[e.currentBarIndex]
-	if math.IsNaN(sig.ATR) || sig.ATR <= 0 || math.IsNaN(sig.MA20) {
+	if math.IsNaN(sig.ATR) || sig.ATR <= 0 {
 		e.prevExecBar = &bar
 		return
 	}
@@ -710,7 +713,8 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 		initialUsage = 0.0
 	}
 
-	if sig.Close > sig.MA20 {
+	longRegimeReady, shortRegimeReady := strategySignalRegimeReady(sig, e.cfg.SignalTimeframe)
+	if longRegimeReady {
 		reP := sig.PrevLow1 + reentryATR*sig.ATR
 		if e.tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
 			if bar.High >= sig.PrevHigh2 {
@@ -773,7 +777,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 		return
 	}
 
-	if sig.Close < sig.MA20 {
+	if shortRegimeReady {
 		reP := sig.PrevHigh1
 		if e.tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
 			if bar.Low <= sig.PrevLow2 {
@@ -1055,6 +1059,7 @@ func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignal
 	}
 
 	for i := range signals {
+		signals[i].MA5 = rollingMean(closes, i, 5)
 		signals[i].MA20 = rollingMean(closes, i, 20)
 		signals[i].ATR = rollingMean(trueRanges, i, 14)
 		if i >= 1 {
@@ -1073,6 +1078,31 @@ func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignal
 		}
 	}
 	return signals, nil
+}
+
+func strategySignalRegimeReady(sig strategySignalBar, timeframe string) (bool, bool) {
+	tf := strings.ToLower(strings.TrimSpace(timeframe))
+	if tf == "1d" {
+		if math.IsNaN(sig.ATR) || sig.ATR <= 0 {
+			return false, false
+		}
+		if math.IsNaN(sig.MA5) || sig.MA5 <= 0 {
+			if math.IsNaN(sig.MA20) || sig.MA20 <= 0 {
+				return false, false
+			}
+			return sig.Close > sig.MA20, sig.Close < sig.MA20
+		}
+		earlyBand := 0.06 * sig.ATR
+		longHard := sig.Close > sig.MA5
+		shortHard := sig.Close < sig.MA5
+		longEarly := sig.Close >= (sig.MA5-earlyBand) && sig.PrevHigh2 > sig.PrevHigh1 && sig.PrevLow1 >= sig.PrevLow2
+		shortEarly := sig.Close <= (sig.MA5+earlyBand) && sig.PrevLow2 < sig.PrevLow1 && sig.PrevHigh1 <= sig.PrevHigh2
+		return longHard || longEarly, shortHard || shortEarly
+	}
+	if math.IsNaN(sig.MA20) || sig.MA20 <= 0 {
+		return false, false
+	}
+	return sig.Close > sig.MA20, sig.Close < sig.MA20
 }
 
 func (p *Platform) loadStrategySignalBars(timeframe string) ([]strategySignalBar, error) {
@@ -1145,6 +1175,13 @@ func readSignalBarsCSV(path string) ([]strategySignalBar, error) {
 		if err != nil {
 			return nil, err
 		}
+		ma5Value := math.NaN()
+		if len(row) >= 13 {
+			ma5Value, err = parseCSVFloatOrNaN(row[12])
+			if err != nil {
+				return nil, err
+			}
+		}
 		atrValue, err := parseCSVFloatOrNaN(row[7])
 		if err != nil {
 			return nil, err
@@ -1172,6 +1209,7 @@ func readSignalBarsCSV(path string) ([]strategySignalBar, error) {
 			Low:       lowValue,
 			Close:     closeValue,
 			Volume:    volumeValue,
+			MA5:       ma5Value,
 			MA20:      ma20Value,
 			ATR:       atrValue,
 			PrevHigh1: prevHigh1Value,

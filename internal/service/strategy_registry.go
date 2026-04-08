@@ -223,26 +223,50 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	orderBookStats := extractOrderBookStats(trigger, sourceStates)
 	maxDeviationBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxDeviationBps"]), 50)
 	maxSpreadBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxSpreadBps"]), 8)
+	effectivePlannedPrice := context.NextPlannedPrice
+	livePositionState := map[string]any{}
+	if signalBarState != nil {
+		livePositionState = evaluateLivePositionState(context.ExecutionContext.Parameters, currentPosition, signalBarState, marketPrice)
+		if strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") {
+			livePositionState = evaluateLiveExitState(context.ExecutionContext.Parameters, currentPosition, signalBarState, marketPrice, context.NextPlannedReason)
+		}
+		if len(livePositionState) > 0 {
+			mergedPosition := cloneMetadata(currentPosition)
+			for key, value := range livePositionState {
+				mergedPosition[key] = value
+			}
+			currentPosition = mergedPosition
+			signalBarDecision["livePositionState"] = cloneMetadata(livePositionState)
+			if targetPrice := parseFloatValue(livePositionState["targetPrice"]); targetPrice > 0 && strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") {
+				effectivePlannedPrice = targetPrice
+			}
+			if action == "advance-plan" && strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") && !boolValue(livePositionState["ready"]) {
+				action = "wait"
+				reason = firstNonEmpty(stringValue(livePositionState["waitReason"]), "exit-signal-not-ready")
+			}
+		}
+	}
 	deviationBps := 0.0
 	positionPnLBps := computePositionPnLBps(currentPosition, marketPrice)
-	if action == "advance-plan" && context.NextPlannedPrice > 0 && marketPrice > 0 {
-		deviationBps = math.Abs(marketPrice/context.NextPlannedPrice-1) * 10000
-		if !isPlannedPriceActionable(context.NextPlannedSide, context.NextPlannedPrice, marketPrice, maxDeviationBps) {
+	if action == "advance-plan" && effectivePlannedPrice > 0 && marketPrice > 0 {
+		deviationBps = math.Abs(marketPrice/effectivePlannedPrice-1) * 10000
+		if !strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") &&
+			!isPlannedPriceActionable(context.NextPlannedSide, effectivePlannedPrice, marketPrice, maxDeviationBps) {
 			action = "wait"
 			reason = "price-not-actionable"
 		}
 	}
-	if action == "advance-plan" && orderBookStats.spreadBps > 0 && orderBookStats.spreadBps > maxSpreadBps {
+	if action == "advance-plan" && !strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") && orderBookStats.spreadBps > 0 && orderBookStats.spreadBps > maxSpreadBps {
 		action = "wait"
 		reason = "spread-too-wide"
 	}
 	biasActionable := isLiquidityBiasActionable(context.NextPlannedSide, context.NextPlannedRole, context.NextPlannedReason, orderBookStats.bias)
-	if action == "advance-plan" && orderBookStats.bias != "" && !biasActionable {
+	if action == "advance-plan" && !strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") && orderBookStats.bias != "" && !biasActionable {
 		action = "wait"
 		reason = "bias-unfavorable"
 	}
 	decisionState := classifyStrategyDecisionState(action, reason, context.NextPlannedRole)
-	entryProximityBps := computePriceProximityBps(context.NextPlannedPrice, marketPrice)
+	entryProximityBps := computePriceProximityBps(effectivePlannedPrice, marketPrice)
 	exitProximityBps := entryProximityBps
 	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps, entryProximityBps, exitProximityBps, orderBookStats.bias)
 	return StrategySignalDecision{
@@ -260,8 +284,9 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"signalBarStateKey":   signalBarStateKey,
 			"signalBarState":      cloneMetadata(signalBarState),
 			"signalBarDecision":   signalBarDecision,
+			"livePositionState":   cloneMetadata(livePositionState),
 			"nextPlannedEvent":    formatOptionalRFC3339(context.NextPlannedEvent),
-			"nextPlannedPrice":    context.NextPlannedPrice,
+			"nextPlannedPrice":    effectivePlannedPrice,
 			"nextPlannedSide":     context.NextPlannedSide,
 			"nextPlannedRole":     context.NextPlannedRole,
 			"nextPlannedReason":   context.NextPlannedReason,
@@ -269,6 +294,8 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"marketSource":        marketSource,
 			"bestBid":             orderBookStats.bestBid,
 			"bestAsk":             orderBookStats.bestAsk,
+			"bestBidQty":          orderBookStats.bestBidQty,
+			"bestAskQty":          orderBookStats.bestAskQty,
 			"spreadBps":           orderBookStats.spreadBps,
 			"bookImbalance":       orderBookStats.imbalance,
 			"liquidityBias":       orderBookStats.bias,
@@ -279,7 +306,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"maxDeviationBps":     maxDeviationBps,
 			"maxSpreadBps":        maxSpreadBps,
 			"deviationBps":        deviationBps,
-			"priceActionable":     isPlannedPriceActionable(context.NextPlannedSide, context.NextPlannedPrice, marketPrice, maxDeviationBps),
+			"priceActionable":     strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") || isPlannedPriceActionable(context.NextPlannedSide, effectivePlannedPrice, marketPrice, maxDeviationBps),
 		},
 	}, nil
 }
@@ -562,35 +589,95 @@ func pickSignalBarState(signalBarStates map[string]any, symbol, timeframe string
 }
 
 func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole string) map[string]any {
+	role := strings.ToLower(strings.TrimSpace(nextRole))
+	timeframe := strings.ToLower(strings.TrimSpace(stringValue(signalBarState["timeframe"])))
+	if timeframe == "" {
+		timeframe = strings.ToLower(strings.TrimSpace(stringValue(mapValue(signalBarState["current"])["timeframe"])))
+	}
 	result := map[string]any{
-		"ready":    true,
-		"reason":   "signal-bar-ready",
-		"side":     strings.ToUpper(strings.TrimSpace(nextSide)),
-		"role":     strings.ToLower(strings.TrimSpace(nextRole)),
-		"ma20":     parseFloatValue(signalBarState["ma20"]),
-		"atr14":    parseFloatValue(signalBarState["atr14"]),
-		"current":  cloneMetadata(mapValue(signalBarState["current"])),
-		"prevBar1": cloneMetadata(mapValue(signalBarState["prevBar1"])),
-		"prevBar2": cloneMetadata(mapValue(signalBarState["prevBar2"])),
+		"ready":     true,
+		"reason":    "signal-bar-ready",
+		"side":      strings.ToUpper(strings.TrimSpace(nextSide)),
+		"role":      role,
+		"timeframe": timeframe,
+		"sma5":      parseFloatValue(signalBarState["sma5"]),
+		"ma20":      parseFloatValue(signalBarState["ma20"]),
+		"atr14":     parseFloatValue(signalBarState["atr14"]),
+		"current":   cloneMetadata(mapValue(signalBarState["current"])),
+		"prevBar1":  cloneMetadata(mapValue(signalBarState["prevBar1"])),
+		"prevBar2":  cloneMetadata(mapValue(signalBarState["prevBar2"])),
 	}
 	current := mapValue(signalBarState["current"])
 	prevBar1 := mapValue(signalBarState["prevBar1"])
 	prevBar2 := mapValue(signalBarState["prevBar2"])
 	ma20 := parseFloatValue(signalBarState["ma20"])
-	if current == nil || prevBar1 == nil || prevBar2 == nil || ma20 <= 0 {
+	sma5 := parseFloatValue(signalBarState["sma5"])
+	atr14 := parseFloatValue(signalBarState["atr14"])
+	if current == nil || prevBar1 == nil || prevBar2 == nil {
 		result["ready"] = false
 		result["reason"] = "insufficient-signal-bars"
 		return result
 	}
 	closePrice := parseFloatValue(current["close"])
+	highPrice := parseFloatValue(current["high"])
+	lowPrice := parseFloatValue(current["low"])
 	prevHigh1 := parseFloatValue(prevBar1["high"])
 	prevHigh2 := parseFloatValue(prevBar2["high"])
 	prevLow1 := parseFloatValue(prevBar1["low"])
 	prevLow2 := parseFloatValue(prevBar2["low"])
-	longReady := closePrice > ma20 && prevHigh2 > prevHigh1
-	shortReady := closePrice < ma20 && prevLow2 < prevLow1
+	longStructureReady := false
+	shortStructureReady := false
+	longEarlyReversalReady := false
+	shortEarlyReversalReady := false
+	switch timeframe {
+	case "1d":
+		if atr14 <= 0 {
+			result["ready"] = false
+			result["reason"] = "insufficient-signal-bars"
+			return result
+		}
+		if sma5 <= 0 {
+			if ma20 <= 0 {
+				result["ready"] = false
+				result["reason"] = "insufficient-signal-bars"
+				return result
+			}
+			result["usedLegacyMA20Fallback"] = true
+			longStructureReady = closePrice > ma20
+			shortStructureReady = closePrice < ma20
+			break
+		}
+		earlyBand := 0.06 * atr14
+		longStructureReady = closePrice > sma5
+		shortStructureReady = closePrice < sma5
+		longEarlyReversalReady = closePrice >= (sma5-earlyBand) && prevHigh2 > prevHigh1 && prevLow1 >= prevLow2
+		shortEarlyReversalReady = closePrice <= (sma5+earlyBand) && prevLow2 < prevLow1 && prevHigh1 <= prevHigh2
+		longStructureReady = longStructureReady || longEarlyReversalReady
+		shortStructureReady = shortStructureReady || shortEarlyReversalReady
+	default:
+		if ma20 <= 0 {
+			result["ready"] = false
+			result["reason"] = "insufficient-signal-bars"
+			return result
+		}
+		longStructureReady = closePrice > ma20
+		shortStructureReady = closePrice < ma20
+	}
+	longBreakoutReady := highPrice >= prevHigh2 && prevHigh2 > 0
+	shortBreakoutReady := lowPrice <= prevLow2 && prevLow2 > 0
+	longReady := longStructureReady && longBreakoutReady
+	shortReady := shortStructureReady && shortBreakoutReady
+	result["longStructureReady"] = longStructureReady
+	result["shortStructureReady"] = shortStructureReady
+	result["longEarlyReversalReady"] = longEarlyReversalReady
+	result["shortEarlyReversalReady"] = shortEarlyReversalReady
+	result["longBreakoutReady"] = longBreakoutReady
+	result["shortBreakoutReady"] = shortBreakoutReady
 	result["longReady"] = longReady
 	result["shortReady"] = shortReady
+	if role == "exit" {
+		return result
+	}
 	switch strings.ToUpper(strings.TrimSpace(nextSide)) {
 	case "BUY":
 		if !longReady {
@@ -649,12 +736,139 @@ func computePriceProximityBps(plannedPrice, marketPrice float64) float64 {
 	return math.Abs(marketPrice/plannedPrice-1) * 10000
 }
 
+func evaluateLivePositionState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64) map[string]any {
+	if !boolValue(currentPosition["found"]) && parseFloatValue(currentPosition["quantity"]) <= 0 && !boolValue(currentPosition["virtual"]) {
+		return nil
+	}
+	current := mapValue(signalBarState["current"])
+	prevBar1 := mapValue(signalBarState["prevBar1"])
+	prevBar2 := mapValue(signalBarState["prevBar2"])
+	if current == nil || prevBar1 == nil || prevBar2 == nil {
+		return nil
+	}
+	entryPrice := parseFloatValue(currentPosition["entryPrice"])
+	if entryPrice <= 0 {
+		return nil
+	}
+	side := strings.ToLower(strings.TrimSpace(stringValue(currentPosition["side"])))
+	if side == "" {
+		return nil
+	}
+	sig := strategySignalBar{
+		ATR:       parseFloatValue(signalBarState["atr14"]),
+		PrevHigh1: parseFloatValue(prevBar1["high"]),
+		PrevLow1:  parseFloatValue(prevBar1["low"]),
+		PrevHigh2: parseFloatValue(prevBar2["high"]),
+		PrevLow2:  parseFloatValue(prevBar2["low"]),
+	}
+	stopMode := firstNonEmpty(stringValue(parameters["stop_mode"]), "atr")
+	stopLossATR := parseFloatValue(parameters["stop_loss_atr"])
+	if stopLossATR <= 0 {
+		stopLossATR = 0.05
+	}
+	stopLoss := parseFloatValue(currentPosition["stopLoss"])
+	if stopLoss <= 0 {
+		stopLoss = resolveStopPrice(side, entryPrice, sig, stopMode, stopLossATR)
+	}
+	protected := boolValue(currentPosition["protected"])
+	profitProtectATR := firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0)
+	protectionPrice := 0.0
+	if side == "long" {
+		protectionPrice = entryPrice + profitProtectATR*sig.ATR
+		if !protected && marketPrice > 0 && marketPrice >= protectionPrice {
+			protected = true
+		}
+	} else if side == "short" {
+		protectionPrice = entryPrice - profitProtectATR*sig.ATR
+		if !protected && marketPrice > 0 && marketPrice <= protectionPrice {
+			protected = true
+		}
+	}
+	return map[string]any{
+		"found":             true,
+		"symbol":            NormalizeSymbol(stringValue(currentPosition["symbol"])),
+		"side":              strings.ToUpper(side),
+		"entryPrice":        entryPrice,
+		"stopLoss":          stopLoss,
+		"protected":         protected,
+		"protectionTrigger": protectionPrice,
+		"prevHigh1":         sig.PrevHigh1,
+		"prevLow1":          sig.PrevLow1,
+		"atr14":             sig.ATR,
+		"profitProtectATR":  profitProtectATR,
+	}
+}
+
+func evaluateLiveExitState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, nextReason string) map[string]any {
+	positionState := evaluateLivePositionState(parameters, currentPosition, signalBarState, marketPrice)
+	if len(positionState) == 0 {
+		return map[string]any{
+			"ready":      false,
+			"waitReason": "position-unavailable",
+		}
+	}
+	side := strings.ToLower(strings.TrimSpace(stringValue(currentPosition["side"])))
+	stopLoss := parseFloatValue(positionState["stopLoss"])
+	protected := boolValue(positionState["protected"])
+	prevHigh1 := parseFloatValue(positionState["prevHigh1"])
+	prevLow1 := parseFloatValue(positionState["prevLow1"])
+	reasonTag := normalizeStrategyReasonTag(nextReason)
+	state := cloneMetadata(positionState)
+	state["ready"] = false
+	switch side {
+	case "long":
+		switch reasonTag {
+		case "sl":
+			state["targetPrice"] = stopLoss
+			if marketPrice > 0 && stopLoss > 0 && marketPrice <= stopLoss {
+				state["ready"] = true
+			} else {
+				state["waitReason"] = "sl-not-triggered"
+			}
+		case "pt":
+			state["targetPrice"] = prevLow1
+			if !protected {
+				state["waitReason"] = "profit-protection-not-armed"
+			} else if marketPrice > 0 && prevLow1 > 0 && marketPrice <= prevLow1 {
+				state["ready"] = true
+			} else {
+				state["waitReason"] = "pt-not-triggered"
+			}
+		}
+	case "short":
+		switch reasonTag {
+		case "sl":
+			state["targetPrice"] = stopLoss
+			if marketPrice > 0 && stopLoss > 0 && marketPrice >= stopLoss {
+				state["ready"] = true
+			} else {
+				state["waitReason"] = "sl-not-triggered"
+			}
+		case "pt":
+			state["targetPrice"] = prevHigh1
+			if !protected {
+				state["waitReason"] = "profit-protection-not-armed"
+			} else if marketPrice > 0 && prevHigh1 > 0 && marketPrice >= prevHigh1 {
+				state["ready"] = true
+			} else {
+				state["waitReason"] = "pt-not-triggered"
+			}
+		}
+	}
+	if strings.TrimSpace(stringValue(state["waitReason"])) == "" && !boolValue(state["ready"]) {
+		state["waitReason"] = "exit-signal-not-ready"
+	}
+	return state
+}
+
 type orderBookDecisionStats struct {
-	bestBid   float64
-	bestAsk   float64
-	spreadBps float64
-	imbalance float64
-	bias      string
+	bestBid    float64
+	bestAsk    float64
+	bestBidQty float64
+	bestAskQty float64
+	spreadBps  float64
+	imbalance  float64
+	bias       string
 }
 
 func extractOrderBookStats(trigger map[string]any, sourceStates map[string]any) orderBookDecisionStats {
@@ -676,6 +890,8 @@ func extractOrderBookStats(trigger map[string]any, sourceStates map[string]any) 
 		stats.bestAsk = parseFloatValue(summary["bestAsk"])
 		bidQty := parseFloatValue(summary["bestBidQty"])
 		askQty := parseFloatValue(summary["bestAskQty"])
+		stats.bestBidQty = bidQty
+		stats.bestAskQty = askQty
 		if stats.bestBid > 0 && stats.bestAsk > 0 {
 			mid := (stats.bestBid + stats.bestAsk) / 2
 			if mid > 0 {

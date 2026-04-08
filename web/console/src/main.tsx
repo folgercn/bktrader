@@ -516,6 +516,16 @@ function App() {
     executionDataSource: "tick",
     symbol: "BTCUSDT",
     defaultOrderQuantity: "0.001",
+    executionEntryOrderType: "MARKET",
+    executionEntryMaxSpreadBps: "8",
+    executionEntryWideSpreadMode: "limit-maker",
+    executionEntryTimeoutFallbackOrderType: "MARKET",
+    executionPTExitOrderType: "LIMIT",
+    executionPTExitTimeInForce: "GTX",
+    executionPTExitPostOnly: true,
+    executionPTExitTimeoutFallbackOrderType: "MARKET",
+    executionSLExitOrderType: "MARKET",
+    executionSLExitMaxSpreadBps: "999",
     dispatchMode: "manual-review",
     dispatchCooldownSeconds: "30",
   });
@@ -578,6 +588,7 @@ function App() {
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
   const primaryLiveSessionDecision = getRecord(primaryLiveSession?.state?.lastStrategyDecision);
   const primaryLiveSessionDecisionMeta = getRecord(primaryLiveSessionDecision.metadata);
+  const primaryLiveSessionSignalBarDecision = getRecord(primaryLiveSessionDecisionMeta.signalBarDecision);
   const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
   const primaryLiveSessionSourceGate = getRecord(primaryLiveSession?.state?.lastStrategyEvaluationSourceGate);
   const primaryLiveSessionTimeline = getList(primaryLiveSession?.state?.timeline);
@@ -1383,6 +1394,16 @@ function App() {
           executionDataSource: liveSessionForm.executionDataSource,
           symbol: liveSessionForm.symbol,
           defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+          executionEntryOrderType: liveSessionForm.executionEntryOrderType,
+          executionEntryMaxSpreadBps: Number(liveSessionForm.executionEntryMaxSpreadBps) || undefined,
+          executionEntryWideSpreadMode: liveSessionForm.executionEntryWideSpreadMode,
+          executionEntryTimeoutFallbackOrderType: liveSessionForm.executionEntryTimeoutFallbackOrderType,
+          executionPTExitOrderType: liveSessionForm.executionPTExitOrderType,
+          executionPTExitTimeInForce: liveSessionForm.executionPTExitTimeInForce,
+          executionPTExitPostOnly: liveSessionForm.executionPTExitPostOnly,
+          executionPTExitTimeoutFallbackOrderType: liveSessionForm.executionPTExitTimeoutFallbackOrderType,
+          executionSLExitOrderType: liveSessionForm.executionSLExitOrderType,
+          executionSLExitMaxSpreadBps: Number(liveSessionForm.executionSLExitMaxSpreadBps) || undefined,
           dispatchMode: liveSessionForm.dispatchMode,
           dispatchCooldownSeconds: Number(liveSessionForm.dispatchCooldownSeconds) || 30,
         }),
@@ -3330,6 +3351,101 @@ function App() {
                   />
                 </label>
                 <label className="form-field">
+                  <span>Entry Order</span>
+                  <select
+                    value={liveSessionForm.executionEntryOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryOrderType: event.target.value }))}
+                  >
+                    <option value="MARKET">MARKET</option>
+                    <option value="LIMIT">LIMIT</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Entry Max Spread</span>
+                  <input
+                    value={liveSessionForm.executionEntryMaxSpreadBps}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Wide Spread Mode</span>
+                  <select
+                    value={liveSessionForm.executionEntryWideSpreadMode}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryWideSpreadMode: event.target.value }))}
+                  >
+                    <option value="limit-maker">limit-maker</option>
+                    <option value="">wait</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Entry Fallback</span>
+                  <select
+                    value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryTimeoutFallbackOrderType: event.target.value }))}
+                  >
+                    <option value="MARKET">MARKET</option>
+                    <option value="LIMIT">LIMIT</option>
+                    <option value="">disabled</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>PT Exit Order</span>
+                  <select
+                    value={liveSessionForm.executionPTExitOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitOrderType: event.target.value }))}
+                  >
+                    <option value="LIMIT">LIMIT</option>
+                    <option value="MARKET">MARKET</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>PT Exit TIF</span>
+                  <select
+                    value={liveSessionForm.executionPTExitTimeInForce}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeInForce: event.target.value }))}
+                  >
+                    <option value="GTX">GTX</option>
+                    <option value="GTC">GTC</option>
+                    <option value="IOC">IOC</option>
+                  </select>
+                </label>
+                <label className="form-field checkbox-field">
+                  <span>PT Exit Post Only</span>
+                  <input
+                    type="checkbox"
+                    checked={liveSessionForm.executionPTExitPostOnly}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitPostOnly: event.target.checked }))}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>PT Exit Fallback</span>
+                  <select
+                    value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeoutFallbackOrderType: event.target.value }))}
+                  >
+                    <option value="MARKET">MARKET</option>
+                    <option value="LIMIT">LIMIT</option>
+                    <option value="">disabled</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>SL Exit Order</span>
+                  <select
+                    value={liveSessionForm.executionSLExitOrderType}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitOrderType: event.target.value }))}
+                  >
+                    <option value="MARKET">MARKET</option>
+                    <option value="LIMIT">LIMIT</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>SL Exit Max Spread</span>
+                  <input
+                    value={liveSessionForm.executionSLExitMaxSpreadBps}
+                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
+                  />
+                </label>
+                <label className="form-field">
                   <span>Dispatch Mode</span>
                   <select
                     value={liveSessionForm.dispatchMode}
@@ -3420,6 +3536,19 @@ function App() {
                           </div>
                           <div className="note-item">
                             intent-context: spread {formatMaybeNumber(intent.spreadBps)} bps · bias {String(intent.liquidityBias ?? "--")} · proximity {formatMaybeNumber(intent.entryProximityBps)} bps
+                          </div>
+                          <div className="note-item">
+                            execution-profile: {String(getRecord(session.state?.lastExecutionProfile).executionProfile ?? "--")} ·{" "}
+                            {String(getRecord(session.state?.lastExecutionProfile).orderType ?? "--")} · tif{" "}
+                            {String(getRecord(session.state?.lastExecutionProfile).timeInForce ?? "--")} · postOnly{" "}
+                            {boolLabel(getRecord(session.state?.lastExecutionProfile).postOnly)} · reduceOnly{" "}
+                            {boolLabel(getRecord(session.state?.lastExecutionProfile).reduceOnly)}
+                          </div>
+                          <div className="note-item">
+                            execution-dispatch: {String(getRecord(session.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
+                            {String(getRecord(session.state?.lastExecutionDispatch).executionMode ?? "--")} · fallback{" "}
+                            {boolLabel(getRecord(session.state?.lastExecutionDispatch).fallback)} ·{" "}
+                            {String(getRecord(session.state?.lastExecutionDispatch).fallbackOrderType ?? "--")}
                           </div>
                           <div className="note-item">
                             dispatch-preview: {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.reason : "open session details"} ·{" "}
@@ -3523,7 +3652,40 @@ function App() {
                     intent-context: spread {formatMaybeNumber(primaryLiveSessionIntent.spreadBps)} bps · bias {String(primaryLiveSessionIntent.liquidityBias ?? "--")} · ma20 {formatMaybeNumber(primaryLiveSessionIntent.ma20)} · atr14 {formatMaybeNumber(primaryLiveSessionIntent.atr14)}
                   </div>
                   <div className="note-item">
+                    signal-filter: tf {String(primaryLiveSessionSignalBarDecision.timeframe ?? "--")} · sma5 {formatMaybeNumber(primaryLiveSessionSignalBarDecision.sma5)} · early-long{" "}
+                    {boolLabel(primaryLiveSessionSignalBarDecision.longEarlyReversalReady)} · early-short {boolLabel(primaryLiveSessionSignalBarDecision.shortEarlyReversalReady)} ·{" "}
+                    {String(primaryLiveSessionSignalBarDecision.reason ?? "--")}
+                  </div>
+                  <div className="note-item">
                     dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · cooldown {String(primaryLiveSession?.state?.dispatchCooldownSeconds ?? "--")}s · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    execution-profile: {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).executionProfile ?? "--")} ·{" "}
+                    {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).orderType ?? "--")} · tif{" "}
+                    {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).timeInForce ?? "--")} · postOnly{" "}
+                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).postOnly)} · reduceOnly{" "}
+                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).reduceOnly)}
+                  </div>
+                  <div className="note-item">
+                    execution-telemetry: {String(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).decision ?? "--")} · spread{" "}
+                    {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).spreadBps)} bps · imbalance{" "}
+                    {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).bookImbalance)}
+                  </div>
+                  <div className="note-item">
+                    execution-dispatch: {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
+                    {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).executionMode ?? "--")} · fallback{" "}
+                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallback)} ·{" "}
+                    {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallbackOrderType ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    execution-fill: expected {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).expectedPrice)} · drift{" "}
+                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).priceDriftBps)} bps
+                  </div>
+                  <div className="note-item">
+                    execution-event-stats: proposals {String(getRecord(primaryLiveSession?.state?.executionEventStats).proposalCount ?? "--")} · maker{" "}
+                    {String(getRecord(primaryLiveSession?.state?.executionEventStats).makerRestingDecisionCount ?? "--")} · fallback{" "}
+                    {String(getRecord(primaryLiveSession?.state?.executionEventStats).fallbackDispatchCount ?? "--")} · avg drift{" "}
+                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.executionEventStats).avgPriceDriftBps)} bps
                   </div>
                   <div className="note-item">
                     auto-dispatch: last-at {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · last-error {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}
@@ -5159,8 +5321,14 @@ function buildSignalBarDecisionNotes(signalBarDecision: Record<string, unknown>,
   const current = getRecord(signalBarDecision.current);
   const prevBar1 = getRecord(signalBarDecision.prevBar1);
   const prevBar2 = getRecord(signalBarDecision.prevBar2);
+  const timeframe = String(signalBarDecision.timeframe ?? signalBarState.timeframe ?? "--");
+  const filterLabel =
+    timeframe === "1d"
+      ? `sma5 ${formatMaybeNumber(signalBarDecision.sma5)} · early-long=${boolLabel(signalBarDecision.longEarlyReversalReady)} · early-short=${boolLabel(signalBarDecision.shortEarlyReversalReady)}`
+      : `ma20 ${formatMaybeNumber(signalBarDecision.ma20)}`;
   return [
     `signal-bar: ${String(signalBarDecision.reason ?? "--")} · longReady=${boolLabel(signalBarDecision.longReady)} · shortReady=${boolLabel(signalBarDecision.shortReady)}`,
+    `filter: tf=${timeframe} · ${filterLabel}`,
     `current: ${formatMaybeNumber(current.open)} / ${formatMaybeNumber(current.high)} / ${formatMaybeNumber(current.low)} / ${formatMaybeNumber(current.close)}`,
     `t-1: ${formatMaybeNumber(prevBar1.open)} / ${formatMaybeNumber(prevBar1.high)} / ${formatMaybeNumber(prevBar1.low)} / ${formatMaybeNumber(prevBar1.close)}`,
     `t-2: ${formatMaybeNumber(prevBar2.open)} / ${formatMaybeNumber(prevBar2.high)} / ${formatMaybeNumber(prevBar2.low)} / ${formatMaybeNumber(prevBar2.close)}`,
@@ -5187,29 +5355,63 @@ function deriveSignalActionSummary(signalBarState: Record<string, unknown>) {
   const prevBar1 = getRecord(signalBarState.prevBar1);
   const prevBar2 = getRecord(signalBarState.prevBar2);
   const close = getNumber(current.close);
+  const timeframe = String(signalBarState.timeframe ?? "").trim().toLowerCase();
+  const sma5 = getNumber(signalBarState.sma5);
   const ma20 = getNumber(signalBarState.ma20);
+  const atr14 = getNumber(signalBarState.atr14);
   const prevHigh1 = getNumber(prevBar1.high);
   const prevHigh2 = getNumber(prevBar2.high);
   const prevLow1 = getNumber(prevBar1.low);
   const prevLow2 = getNumber(prevBar2.low);
-  if (close == null || ma20 == null || prevHigh1 == null || prevHigh2 == null || prevLow1 == null || prevLow2 == null) {
+  if (close == null || prevHigh1 == null || prevHigh2 == null || prevLow1 == null || prevLow2 == null) {
     return { bias: "neutral", state: "waiting", reason: "insufficient-signal-bars" };
   }
-  const longReady = close > ma20 && prevHigh2 > prevHigh1;
-  const shortReady = close < ma20 && prevLow2 < prevLow1;
+  const longBreakoutShape = prevHigh2 > prevHigh1;
+  const shortBreakoutShape = prevLow2 < prevLow1;
+  let longReady = false;
+  let shortReady = false;
+  let longReason = "";
+  let shortReason = "";
+  if (timeframe === "1d" && sma5 != null && atr14 != null) {
+    const earlyBand = 0.06 * atr14;
+    const longHard = close > sma5;
+    const shortHard = close < sma5;
+    const longEarly = close >= sma5 - earlyBand && longBreakoutShape && prevLow1 >= prevLow2;
+    const shortEarly = close <= sma5 + earlyBand && shortBreakoutShape && prevHigh1 <= prevHigh2;
+    longReady = longHard || longEarly;
+    shortReady = shortHard || shortEarly;
+    longReason = longHard ? "close>sma5" : longEarly ? "early reversal gate" : "1d long filter blocked";
+    shortReason = shortHard ? "close<sma5" : shortEarly ? "early reversal gate" : "1d short filter blocked";
+  } else if (ma20 != null) {
+    longReady = close > ma20 && longBreakoutShape;
+    shortReady = close < ma20 && shortBreakoutShape;
+    longReason = longReady ? "close>ma20 and high2>high1" : "trend/structure not ready";
+    shortReason = shortReady ? "close<ma20 and low2<low1" : "trend/structure not ready";
+  } else {
+    return { bias: "neutral", state: "waiting", reason: "insufficient-signal-bars" };
+  }
   if (longReady && !shortReady) {
-    return { bias: "long", state: "ready", reason: "close>ma20 and high2>high1" };
+    return { bias: "long", state: "ready", reason: longReason };
   }
   if (shortReady && !longReady) {
-    return { bias: "short", state: "ready", reason: "close<ma20 and low2<low1" };
+    return { bias: "short", state: "ready", reason: shortReason };
   }
-  if (close > ma20) {
+  if (timeframe === "1d" && sma5 != null) {
+    if (close > sma5) {
+      return { bias: "long", state: "watch", reason: "above sma5, breakout not ready" };
+    }
+    if (close < sma5) {
+      return { bias: "short", state: "watch", reason: "below sma5, breakout not ready" };
+    }
+    return { bias: "neutral", state: "watch", reason: "close around sma5" };
+  }
+  if (ma20 != null && close > ma20) {
     return { bias: "long", state: "watch", reason: "trend ok, structure not ready" };
   }
-  if (close < ma20) {
+  if (ma20 != null && close < ma20) {
     return { bias: "short", state: "watch", reason: "trend ok, structure not ready" };
   }
-  return { bias: "neutral", state: "watch", reason: "close around ma20" };
+  return { bias: "neutral", state: "watch", reason: "close around filter" };
 }
 
 function deriveLivePreflightSummary(
@@ -5712,6 +5914,21 @@ function buildTimelineNotes(items: Array<Record<string, unknown>>) {
       }
       if (metadata.action != null) {
         fragments.push(String(metadata.action));
+      }
+      if (metadata.executionProfile != null) {
+        fragments.push(`profile=${String(metadata.executionProfile)}`);
+      }
+      if (metadata.orderType != null) {
+        fragments.push(`type=${String(metadata.orderType)}`);
+      }
+      if (metadata.executionMode != null && String(metadata.executionMode) !== "") {
+        fragments.push(`mode=${String(metadata.executionMode)}`);
+      }
+      if (metadata.reduceOnly != null) {
+        fragments.push(`reduceOnly=${boolLabel(metadata.reduceOnly)}`);
+      }
+      if (metadata.fallback != null && boolLabel(metadata.fallback) !== "no") {
+        fragments.push(`fallback=${boolLabel(metadata.fallback)}`);
       }
       return fragments.join(" · ");
     });
