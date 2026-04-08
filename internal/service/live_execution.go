@@ -227,7 +227,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 
 func buildLiveOrderFromExecutionProposal(session domain.LiveSession, strategyVersionID string, proposal ExecutionProposal, proposalMap map[string]any) domain.Order {
 	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(proposal.Type, "MARKET")))
-	quantity := firstPositive(parseFloatValue(session.State["defaultOrderQuantity"]), firstPositive(proposal.Quantity, 0.001))
+	quantity := firstPositive(proposal.Quantity, firstPositive(parseFloatValue(session.State["defaultOrderQuantity"]), 0.001))
 	price := proposal.PriceHint
 	if orderType != "MARKET" {
 		price = firstPositive(proposal.LimitPrice, proposal.PriceHint)

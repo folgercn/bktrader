@@ -26,6 +26,7 @@ type SignalIntent struct {
 
 type ExecutionPlanningContext struct {
 	Session        domain.LiveSession
+	Account        domain.Account
 	Execution      StrategyExecutionContext
 	TriggerSummary map[string]any
 	SourceStates   map[string]any
@@ -152,6 +153,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 			priceSource = "order_book.bestBid"
 		}
 	}
+	quantity, sizingMeta := resolveExecutionQuantity(ctx.Session, ctx.Account, intent, priceHint)
 
 	proposal := ExecutionProposal{
 		Action:            intent.Action,
@@ -182,6 +184,9 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	proposal.Metadata["executionProfileWideSpreadMode"] = profile.WideSpreadMode
 	proposal.Metadata["executionStrategy"] = proposal.ExecutionStrategy
 	proposal.Metadata["signalSignature"] = signalSignature
+	for key, value := range sizingMeta {
+		proposal.Metadata[key] = value
+	}
 	proposal.Metadata["executionEvaluatedAt"] = ctx.EventTime.UTC().Format(time.RFC3339)
 	proposal.Metadata["orderBookSnapshot"] = map[string]any{
 		"bestBid":       bestBid,
@@ -260,6 +265,86 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	}
 	proposal.Metadata["executionDecision"] = "direct-dispatch"
 	return proposal, nil
+}
+
+func normalizePositionSizingMode(raw any) string {
+	value := strings.ToLower(strings.TrimSpace(stringValue(raw)))
+	switch value {
+	case "", "fixed-quantity", "fixed_quantity", "quantity":
+		return "fixed_quantity"
+	case "fixed-fraction", "fixed_fraction", "fraction", "percent", "percentage":
+		return "fixed_fraction"
+	default:
+		return value
+	}
+}
+
+func resolveExecutionQuantity(session domain.LiveSession, account domain.Account, intent SignalIntent, priceHint float64) (float64, map[string]any) {
+	mode := normalizePositionSizingMode(session.State["positionSizingMode"])
+	fixedQuantity := parseFloatValue(session.State["defaultOrderQuantity"])
+	fixedFraction := parseFloatValue(session.State["defaultOrderFraction"])
+	if mode == "" {
+		if fixedFraction > 0 {
+			mode = "fixed_fraction"
+		} else {
+			mode = "fixed_quantity"
+		}
+	}
+	metadata := map[string]any{
+		"positionSizingMode": mode,
+	}
+	if fixedQuantity > 0 {
+		metadata["configuredOrderQuantity"] = fixedQuantity
+	}
+	if fixedFraction > 0 {
+		metadata["configuredOrderFraction"] = fixedFraction
+	}
+	if mode == "fixed_fraction" && fixedFraction > 0 && priceHint > 0 {
+		if balance, basis := resolveLiveSizingBalance(account); balance > 0 {
+			quantity := balance * fixedFraction / priceHint
+			metadata["sizingBalance"] = balance
+			metadata["sizingBalanceBasis"] = basis
+			metadata["sizingComputedQuantity"] = quantity
+			return quantity, metadata
+		}
+	}
+	quantity := firstPositive(fixedQuantity, firstPositive(intent.Quantity, 0.001))
+	metadata["sizingComputedQuantity"] = quantity
+	if fixedQuantity > 0 {
+		metadata["sizingBalanceBasis"] = "fixed_quantity"
+	} else if intent.Quantity > 0 {
+		metadata["sizingBalanceBasis"] = "intent_quantity"
+	} else {
+		metadata["sizingBalanceBasis"] = "default_minimum"
+	}
+	return quantity, metadata
+}
+
+func resolveLiveSizingBalance(account domain.Account) (float64, string) {
+	snapshot := mapValue(account.Metadata["liveSyncSnapshot"])
+	if available := parseFloatValue(snapshot["availableBalance"]); available > 0 {
+		return available, "availableBalance"
+	}
+	if totalMargin := parseFloatValue(snapshot["totalMarginBalance"]); totalMargin > 0 {
+		return totalMargin, "totalMarginBalance"
+	}
+	if totalWallet := parseFloatValue(snapshot["totalWalletBalance"]); totalWallet > 0 {
+		return totalWallet, "totalWalletBalance"
+	}
+	if maxWithdraw := parseFloatValue(snapshot["maxWithdrawAmount"]); maxWithdraw > 0 {
+		return maxWithdraw, "maxWithdrawAmount"
+	}
+	for _, item := range metadataList(snapshot["assets"]) {
+		if strings.EqualFold(stringValue(item["asset"]), "USDT") {
+			if available := parseFloatValue(item["availableBalance"]); available > 0 {
+				return available, "assets.USDT.availableBalance"
+			}
+			if wallet := parseFloatValue(item["walletBalance"]); wallet > 0 {
+				return wallet, "assets.USDT.walletBalance"
+			}
+		}
+	}
+	return 0, ""
 }
 
 func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) executionProfile {

@@ -400,6 +400,10 @@ OKX_PUBLIC_WS_URL=wss://ws.okx.com:8443/ws/v5/public
 - `cmd/db-migrate` 执行嵌入式 SQL 迁移，并在 `schema_migrations` 表中记录迁移历史。
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
 - 当前推荐的“模拟交易”已经切到 Binance Futures testnet，凭据默认从 `.env` 读取。
+- live session 现在支持两种下单仓位模式：
+  - `positionSizingMode=fixed_quantity`：使用 `defaultOrderQuantity`
+  - `positionSizingMode=fixed_fraction`：使用 `defaultOrderFraction` 按账户可用余额/权益换算数量
+- 固定比例模式算出的数量在实际提交到 Binance 前，仍会走交易所 `stepSize / minQty / minNotional` 归一化，避免小数位和最小名义价值不符合要求。
 - 行情数据接入当前也已经配置化：
   - `BINANCE_FUTURES_KLINE_BASE_URL`：启动预热和图表历史 K 线读取地址
   - `BINANCE_FUTURES_WS_URL`：`binance-market-ws` signal runtime 的公共 WebSocket 地址

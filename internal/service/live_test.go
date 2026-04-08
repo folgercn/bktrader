@@ -48,7 +48,7 @@ func TestDeriveLiveSignalIntentUsesNextPlannedStep(t *testing.T) {
 
 func TestEvaluateSignalBarGateRequiresLongBreakoutAlignmentWithResearch(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
-		"ma20": 68000.0,
+		"ma20":  68000.0,
 		"atr14": 900.0,
 		"current": map[string]any{
 			"close": 68100.0,
@@ -80,7 +80,7 @@ func TestEvaluateSignalBarGateRequiresLongBreakoutAlignmentWithResearch(t *testi
 
 func TestEvaluateSignalBarGateAllowsLongAfterBreakoutAlignmentWithResearch(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
-		"ma20": 68000.0,
+		"ma20":  68000.0,
 		"atr14": 900.0,
 		"current": map[string]any{
 			"close": 68100.0,
@@ -109,7 +109,7 @@ func TestEvaluateSignalBarGateAllowsLongAfterBreakoutAlignmentWithResearch(t *te
 
 func TestEvaluateSignalBarGateDoesNotRequireOppositeBreakoutForExit(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
-		"ma20": 68000.0,
+		"ma20":  68000.0,
 		"atr14": 900.0,
 		"current": map[string]any{
 			"close": 68100.0,
@@ -394,6 +394,61 @@ func TestBookAwareExecutionStrategyBuildsProposalFromOrderBook(t *testing.T) {
 	}
 }
 
+func TestBookAwareExecutionStrategyBuildsProposalFromBalanceFraction(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{
+			State: map[string]any{
+				"positionSizingMode":   "fixed_fraction",
+				"defaultOrderFraction": 0.1,
+				"defaultOrderQuantity": 0.002,
+			},
+		},
+		Account: domain.Account{
+			Metadata: map[string]any{
+				"liveSyncSnapshot": map[string]any{
+					"availableBalance": 1000.0,
+				},
+			},
+		},
+		Execution: StrategyExecutionContext{
+			Parameters: map[string]any{
+				"executionMaxSpreadBps": 8.0,
+			},
+		},
+		Intent: SignalIntent{
+			Action:        "entry",
+			Role:          "entry",
+			Reason:        "SL-Reentry",
+			Side:          "BUY",
+			Symbol:        "BTCUSDT",
+			SignalKind:    "sl-reentry",
+			DecisionState: "entry-ready",
+			PriceHint:     50000,
+			PriceSource:   "trade_tick.price",
+			Quantity:      0.001,
+			Metadata: map[string]any{
+				"bestBid":           49999.5,
+				"bestAsk":           50000.0,
+				"spreadBps":         0.1,
+				"signalBarStateKey": "state-fraction",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proposal.Quantity != 0.002 {
+		t.Fatalf("expected fraction-based quantity 0.002, got %v", proposal.Quantity)
+	}
+	if got := stringValue(proposal.Metadata["positionSizingMode"]); got != "fixed_fraction" {
+		t.Fatalf("expected fixed_fraction metadata, got %s", got)
+	}
+	if got := stringValue(proposal.Metadata["sizingBalanceBasis"]); got != "availableBalance" {
+		t.Fatalf("expected availableBalance sizing basis, got %s", got)
+	}
+}
+
 func TestBookAwareExecutionStrategyUsesReduceOnlyMakerProfileForPTExit(t *testing.T) {
 	strategy := bookAwareExecutionStrategy{}
 	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
@@ -608,7 +663,7 @@ func TestBookAwareExecutionStrategyUsesFallbackOrderAfterTimeoutMatch(t *testing
 		},
 		Execution: StrategyExecutionContext{
 			Parameters: map[string]any{
-				"executionMaxSpreadBps":            5.0,
+				"executionMaxSpreadBps":             5.0,
 				"executionTimeoutFallbackOrderType": "MARKET",
 			},
 		},
@@ -706,6 +761,34 @@ func TestBuildLiveOrderFromExecutionProposalUsesExecutionFields(t *testing.T) {
 	}
 }
 
+func TestBuildLiveOrderUsesProposalQuantityOverSessionDefault(t *testing.T) {
+	session := domain.LiveSession{
+		ID:        "live-session-1",
+		AccountID: "live-main",
+		State: map[string]any{
+			"symbol":               "BTCUSDT",
+			"defaultOrderQuantity": 0.01,
+			"dispatchMode":         "manual-review",
+		},
+	}
+	proposal := ExecutionProposal{
+		Action:            "entry",
+		Role:              "entry",
+		Reason:            "SL-Reentry",
+		Side:              "BUY",
+		Symbol:            "BTCUSDT",
+		Type:              "MARKET",
+		Quantity:          0.002,
+		PriceHint:         68000,
+		ExecutionStrategy: "book-aware-v1",
+		SignalKind:        "sl-reentry",
+	}
+	order := buildLiveOrderFromExecutionProposal(session, "strategy-version-1", proposal, executionProposalToMap(proposal))
+	if order.Quantity != 0.002 {
+		t.Fatalf("expected proposal quantity to win, got %v", order.Quantity)
+	}
+}
+
 func TestDispatchLiveSessionIntentRejectsNonDispatchableProposal(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session := domain.LiveSession{
@@ -784,6 +867,19 @@ func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	}
 	if got := parseFloatValue(overrides["executionSLExitMaxSpreadBps"]); got != 999.0 {
 		t.Fatalf("expected SL exit max spread override, got %v", got)
+	}
+}
+
+func TestNormalizeLiveSessionOverridesIncludesPositionSizing(t *testing.T) {
+	overrides := normalizeLiveSessionOverrides(map[string]any{
+		"positionSizingMode":   "fixed-fraction",
+		"defaultOrderFraction": 0.12,
+	})
+	if got := stringValue(overrides["positionSizingMode"]); got != "fixed_fraction" {
+		t.Fatalf("expected fixed_fraction mode, got %s", got)
+	}
+	if got := parseFloatValue(overrides["defaultOrderFraction"]); got != 0.12 {
+		t.Fatalf("expected default order fraction 0.12, got %v", got)
 	}
 }
 
@@ -1427,9 +1523,9 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 	account.Metadata["liveSyncSnapshot"] = map[string]any{
 		"openOrders": []map[string]any{
 			{
-				"symbol":       "BTCUSDT",
-				"origType":     "TAKE_PROFIT_MARKET",
-				"reduceOnly":   true,
+				"symbol":        "BTCUSDT",
+				"origType":      "TAKE_PROFIT_MARKET",
+				"reduceOnly":    true,
 				"closePosition": true,
 			},
 		},

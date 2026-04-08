@@ -1474,8 +1474,10 @@ func (p *Platform) buildLiveExecutionProposal(session domain.LiveSession, execut
 	if err != nil {
 		return ExecutionProposal{}, err
 	}
+	account, _ := p.store.GetAccount(session.AccountID)
 	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
 		Session:        session,
+		Account:        account,
 		Execution:      executionContext,
 		TriggerSummary: cloneMetadata(summary),
 		SourceStates:   cloneMetadata(sourceStates),
@@ -1545,6 +1547,14 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if quantity := parseFloatValue(overrides["defaultOrderQuantity"]); quantity > 0 {
 		normalized["defaultOrderQuantity"] = quantity
+	}
+	if _, ok := overrides["positionSizingMode"]; ok {
+		if mode := normalizePositionSizingMode(overrides["positionSizingMode"]); mode != "" {
+			normalized["positionSizingMode"] = mode
+		}
+	}
+	if fraction := parseFloatValue(overrides["defaultOrderFraction"]); fraction > 0 {
+		normalized["defaultOrderFraction"] = fraction
 	}
 	if strategy := strings.TrimSpace(stringValue(overrides["executionStrategy"])); strategy != "" {
 		normalized["executionStrategy"] = strategy

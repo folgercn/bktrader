@@ -19,50 +19,52 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
 			var payload struct {
-				AccountID                           string `json:"accountId"`
-				StrategyID                          string `json:"strategyId"`
-				SignalTimeframe                     string `json:"signalTimeframe"`
-				ExecutionDataSource                 string `json:"executionDataSource"`
-				ExecutionStrategy                   string `json:"executionStrategy"`
-				ExecutionOrderType                  string `json:"executionOrderType"`
-				ExecutionTimeInForce                string `json:"executionTimeInForce"`
-				ExecutionPostOnly                   *bool  `json:"executionPostOnly"`
-				ExecutionMaxSpreadBps               any    `json:"executionMaxSpreadBps"`
-				ExecutionWideSpreadMode             string `json:"executionWideSpreadMode"`
-				ExecutionRestingTimeoutSeconds      int    `json:"executionRestingTimeoutSeconds"`
-				ExecutionTimeoutFallbackOrderType   string `json:"executionTimeoutFallbackOrderType"`
-				ExecutionTimeoutFallbackTimeInForce string `json:"executionTimeoutFallbackTimeInForce"`
-				ExecutionEntryOrderType                  string `json:"executionEntryOrderType"`
-				ExecutionEntryTimeInForce                string `json:"executionEntryTimeInForce"`
-				ExecutionEntryPostOnly                   *bool  `json:"executionEntryPostOnly"`
-				ExecutionEntryMaxSpreadBps               any    `json:"executionEntryMaxSpreadBps"`
-				ExecutionEntryWideSpreadMode             string `json:"executionEntryWideSpreadMode"`
-				ExecutionEntryRestingTimeoutSeconds      int    `json:"executionEntryRestingTimeoutSeconds"`
-				ExecutionEntryTimeoutFallbackOrderType   string `json:"executionEntryTimeoutFallbackOrderType"`
-				ExecutionEntryTimeoutFallbackTimeInForce string `json:"executionEntryTimeoutFallbackTimeInForce"`
-				ExecutionPTExitOrderType                 string `json:"executionPTExitOrderType"`
-				ExecutionPTExitTimeInForce               string `json:"executionPTExitTimeInForce"`
-				ExecutionPTExitPostOnly                  *bool  `json:"executionPTExitPostOnly"`
-				ExecutionPTExitMaxSpreadBps              any    `json:"executionPTExitMaxSpreadBps"`
-				ExecutionPTExitWideSpreadMode            string `json:"executionPTExitWideSpreadMode"`
-				ExecutionPTExitRestingTimeoutSeconds     int    `json:"executionPTExitRestingTimeoutSeconds"`
-				ExecutionPTExitTimeoutFallbackOrderType  string `json:"executionPTExitTimeoutFallbackOrderType"`
+				AccountID                                 string `json:"accountId"`
+				StrategyID                                string `json:"strategyId"`
+				PositionSizingMode                        string `json:"positionSizingMode"`
+				DefaultOrderFraction                      any    `json:"defaultOrderFraction"`
+				SignalTimeframe                           string `json:"signalTimeframe"`
+				ExecutionDataSource                       string `json:"executionDataSource"`
+				ExecutionStrategy                         string `json:"executionStrategy"`
+				ExecutionOrderType                        string `json:"executionOrderType"`
+				ExecutionTimeInForce                      string `json:"executionTimeInForce"`
+				ExecutionPostOnly                         *bool  `json:"executionPostOnly"`
+				ExecutionMaxSpreadBps                     any    `json:"executionMaxSpreadBps"`
+				ExecutionWideSpreadMode                   string `json:"executionWideSpreadMode"`
+				ExecutionRestingTimeoutSeconds            int    `json:"executionRestingTimeoutSeconds"`
+				ExecutionTimeoutFallbackOrderType         string `json:"executionTimeoutFallbackOrderType"`
+				ExecutionTimeoutFallbackTimeInForce       string `json:"executionTimeoutFallbackTimeInForce"`
+				ExecutionEntryOrderType                   string `json:"executionEntryOrderType"`
+				ExecutionEntryTimeInForce                 string `json:"executionEntryTimeInForce"`
+				ExecutionEntryPostOnly                    *bool  `json:"executionEntryPostOnly"`
+				ExecutionEntryMaxSpreadBps                any    `json:"executionEntryMaxSpreadBps"`
+				ExecutionEntryWideSpreadMode              string `json:"executionEntryWideSpreadMode"`
+				ExecutionEntryRestingTimeoutSeconds       int    `json:"executionEntryRestingTimeoutSeconds"`
+				ExecutionEntryTimeoutFallbackOrderType    string `json:"executionEntryTimeoutFallbackOrderType"`
+				ExecutionEntryTimeoutFallbackTimeInForce  string `json:"executionEntryTimeoutFallbackTimeInForce"`
+				ExecutionPTExitOrderType                  string `json:"executionPTExitOrderType"`
+				ExecutionPTExitTimeInForce                string `json:"executionPTExitTimeInForce"`
+				ExecutionPTExitPostOnly                   *bool  `json:"executionPTExitPostOnly"`
+				ExecutionPTExitMaxSpreadBps               any    `json:"executionPTExitMaxSpreadBps"`
+				ExecutionPTExitWideSpreadMode             string `json:"executionPTExitWideSpreadMode"`
+				ExecutionPTExitRestingTimeoutSeconds      int    `json:"executionPTExitRestingTimeoutSeconds"`
+				ExecutionPTExitTimeoutFallbackOrderType   string `json:"executionPTExitTimeoutFallbackOrderType"`
 				ExecutionPTExitTimeoutFallbackTimeInForce string `json:"executionPTExitTimeoutFallbackTimeInForce"`
-				ExecutionSLExitOrderType                 string `json:"executionSLExitOrderType"`
-				ExecutionSLExitTimeInForce               string `json:"executionSLExitTimeInForce"`
-				ExecutionSLExitPostOnly                  *bool  `json:"executionSLExitPostOnly"`
-				ExecutionSLExitMaxSpreadBps              any    `json:"executionSLExitMaxSpreadBps"`
-				ExecutionSLExitWideSpreadMode            string `json:"executionSLExitWideSpreadMode"`
-				ExecutionSLExitRestingTimeoutSeconds     int    `json:"executionSLExitRestingTimeoutSeconds"`
-				ExecutionSLExitTimeoutFallbackOrderType  string `json:"executionSLExitTimeoutFallbackOrderType"`
+				ExecutionSLExitOrderType                  string `json:"executionSLExitOrderType"`
+				ExecutionSLExitTimeInForce                string `json:"executionSLExitTimeInForce"`
+				ExecutionSLExitPostOnly                   *bool  `json:"executionSLExitPostOnly"`
+				ExecutionSLExitMaxSpreadBps               any    `json:"executionSLExitMaxSpreadBps"`
+				ExecutionSLExitWideSpreadMode             string `json:"executionSLExitWideSpreadMode"`
+				ExecutionSLExitRestingTimeoutSeconds      int    `json:"executionSLExitRestingTimeoutSeconds"`
+				ExecutionSLExitTimeoutFallbackOrderType   string `json:"executionSLExitTimeoutFallbackOrderType"`
 				ExecutionSLExitTimeoutFallbackTimeInForce string `json:"executionSLExitTimeoutFallbackTimeInForce"`
-				Symbol                              string `json:"symbol"`
-				From                                string `json:"from"`
-				To                                  string `json:"to"`
-				StrategyEngine                      string `json:"strategyEngine"`
-				DefaultOrderQty                     any    `json:"defaultOrderQuantity"`
-				DispatchMode                        string `json:"dispatchMode"`
-				DispatchCooldownSec                 int    `json:"dispatchCooldownSeconds"`
+				Symbol                                    string `json:"symbol"`
+				From                                      string `json:"from"`
+				To                                        string `json:"to"`
+				StrategyEngine                            string `json:"strategyEngine"`
+				DefaultOrderQty                           any    `json:"defaultOrderQuantity"`
+				DispatchMode                              string `json:"dispatchMode"`
+				DispatchCooldownSec                       int    `json:"dispatchCooldownSeconds"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -78,6 +80,12 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			overrides := map[string]any{}
 			if payload.SignalTimeframe != "" {
 				overrides["signalTimeframe"] = payload.SignalTimeframe
+			}
+			if payload.PositionSizingMode != "" {
+				overrides["positionSizingMode"] = payload.PositionSizingMode
+			}
+			if payload.DefaultOrderFraction != nil {
+				overrides["defaultOrderFraction"] = payload.DefaultOrderFraction
 			}
 			if payload.ExecutionDataSource != "" {
 				overrides["executionDataSource"] = payload.ExecutionDataSource
