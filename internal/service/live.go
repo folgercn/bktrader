@@ -861,6 +861,14 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		executionProposal = executionProposalToMap(proposal)
 		state["lastExecutionProposal"] = executionProposal
 		state["lastExecutionProfile"] = executionProposalSummary(executionProposal)
+		state["lastExecutionTelemetry"] = map[string]any{
+			"evaluatedAt":     stringValue(mapValue(executionProposal["metadata"])["executionEvaluatedAt"]),
+			"decision":        stringValue(mapValue(executionProposal["metadata"])["executionDecision"]),
+			"book":            cloneMetadata(mapValue(mapValue(executionProposal["metadata"])["orderBookSnapshot"])),
+			"decisionContext": cloneMetadata(mapValue(mapValue(executionProposal["metadata"])["executionDecisionContext"])),
+			"profile":         cloneMetadata(mapValue(state["lastExecutionProfile"])),
+		}
+		updateExecutionTelemetryStats(state, executionProposal, nil)
 		intent = executionProposal
 		state["lastStrategyIntent"] = executionProposal
 		state["lastStrategyIntentSignature"] = buildLiveIntentSignature(executionProposal)
@@ -880,9 +888,11 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		"intent":            cloneMetadata(intent),
 		"executionStrategy": stringValue(executionProposal["executionStrategy"]),
 		"executionProfile":  stringValue(mapValue(executionProposal["metadata"])["executionProfile"]),
+		"executionDecision": stringValue(mapValue(executionProposal["metadata"])["executionDecision"]),
 		"executionMode":     stringValue(mapValue(executionProposal["metadata"])["executionMode"]),
 		"reduceOnly":        boolValue(executionProposal["reduceOnly"]),
 		"fallback":          boolValue(mapValue(executionProposal["metadata"])["fallbackFromTimeout"]),
+		"book":              cloneMetadata(mapValue(mapValue(executionProposal["metadata"])["orderBookSnapshot"])),
 	})
 	if executionProposal != nil && strings.EqualFold(stringValue(executionProposal["status"]), "dispatchable") {
 		state["lastStrategyEvaluationStatus"] = "intent-ready"
@@ -1423,6 +1433,8 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 	biasActionable := boolValue(meta["biasActionable"])
 	bestBid := parseFloatValue(meta["bestBid"])
 	bestAsk := parseFloatValue(meta["bestAsk"])
+	bestBidQty := parseFloatValue(meta["bestBidQty"])
+	bestAskQty := parseFloatValue(meta["bestAskQty"])
 	quantity := firstPositive(parseFloatValue(meta["suggestedQuantity"]), 0.001)
 	role := strings.ToLower(strings.TrimSpace(firstNonEmpty(stringValue(meta["nextPlannedRole"]), "entry")))
 	reason := stringValue(meta["nextPlannedReason"])
@@ -1450,6 +1462,9 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 			"biasActionable":    biasActionable,
 			"bestBid":           bestBid,
 			"bestAsk":           bestAsk,
+			"bestBidQty":        bestBidQty,
+			"bestAskQty":        bestAskQty,
+			"bookImbalance":     parseFloatValue(meta["bookImbalance"]),
 		},
 	}
 }

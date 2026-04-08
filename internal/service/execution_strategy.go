@@ -125,7 +125,10 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	meta := cloneMetadata(intent.Metadata)
 	bestBid := parseFloatValue(meta["bestBid"])
 	bestAsk := parseFloatValue(meta["bestAsk"])
+	bestBidQty := parseFloatValue(meta["bestBidQty"])
+	bestAskQty := parseFloatValue(meta["bestAskQty"])
 	spreadBps := parseFloatValue(meta["spreadBps"])
+	bookImbalance := parseFloatValue(meta["bookImbalance"])
 	quantity := firstPositive(parseFloatValue(ctx.Session.State["defaultOrderQuantity"]), firstPositive(intent.Quantity, 0.001))
 	priceHint := intent.PriceHint
 	priceSource := intent.PriceSource
@@ -179,6 +182,26 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	proposal.Metadata["executionProfileWideSpreadMode"] = profile.WideSpreadMode
 	proposal.Metadata["executionStrategy"] = proposal.ExecutionStrategy
 	proposal.Metadata["signalSignature"] = signalSignature
+	proposal.Metadata["executionEvaluatedAt"] = ctx.EventTime.UTC().Format(time.RFC3339)
+	proposal.Metadata["orderBookSnapshot"] = map[string]any{
+		"bestBid":       bestBid,
+		"bestAsk":       bestAsk,
+		"bestBidQty":    bestBidQty,
+		"bestAskQty":    bestAskQty,
+		"spreadBps":     spreadBps,
+		"bookImbalance": bookImbalance,
+	}
+	proposal.Metadata["executionDecisionContext"] = map[string]any{
+		"intentPriceHint":       intent.PriceHint,
+		"intentPriceSource":     intent.PriceSource,
+		"resolvedPriceHint":     priceHint,
+		"resolvedPriceSource":   priceSource,
+		"maxSpreadBps":          maxSpreadBps,
+		"wideSpreadMode":        wideSpreadMode,
+		"useTimeoutFallback":    useTimeoutFallback,
+		"timeoutFallbackType":   timeoutFallbackType,
+		"restingTimeoutSeconds": profile.RestingTimeoutSeconds,
+	}
 	if proposal.Type == "LIMIT" {
 		proposal.LimitPrice = priceHint
 		proposal.TimeInForce = strings.ToUpper(strings.TrimSpace(firstNonEmpty(profile.TimeInForce, "GTC")))
@@ -190,11 +213,13 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	if proposal.Quantity <= 0 {
 		proposal.Status = "blocked"
 		proposal.Reason = "invalid-quantity"
+		proposal.Metadata["executionDecision"] = "blocked-invalid-quantity"
 		return proposal, nil
 	}
 	if proposal.PriceHint <= 0 {
 		proposal.Status = "wait"
 		proposal.Reason = "market-price-unavailable"
+		proposal.Metadata["executionDecision"] = "wait-market-price-unavailable"
 		return proposal, nil
 	}
 	if spreadBps > 0 && spreadBps > maxSpreadBps {
@@ -210,6 +235,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 				proposal.LimitPrice = resolvePassiveBookPrice(intent.Side, bestBid, bestAsk, priceHint)
 				proposal.TimeInForce = strings.ToUpper(strings.TrimSpace(firstNonEmpty(profile.TimeoutFallbackTIF, "GTC")))
 			}
+			proposal.Metadata["executionDecision"] = "timeout-fallback"
 			return proposal, nil
 		}
 		if wideSpreadMode == "limit-maker" {
@@ -224,12 +250,15 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 				proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(time.Duration(restingTimeout) * time.Second).Format(time.RFC3339)
 				proposal.Metadata["executionRestingTimeoutSeconds"] = restingTimeout
 			}
+			proposal.Metadata["executionDecision"] = "maker-resting"
 			return proposal, nil
 		}
 		proposal.Status = "wait"
 		proposal.Reason = "spread-too-wide"
+		proposal.Metadata["executionDecision"] = "wait-spread-too-wide"
 		return proposal, nil
 	}
+	proposal.Metadata["executionDecision"] = "direct-dispatch"
 	return proposal, nil
 }
 
@@ -405,6 +434,7 @@ func executionProposalSummary(proposal map[string]any) map[string]any {
 		"executionStrategy": firstNonEmpty(stringValue(proposal["executionStrategy"]), stringValue(metadata["executionStrategy"])),
 		"executionProfile":  firstNonEmpty(stringValue(metadata["executionProfile"]), stringValue(proposal["role"])),
 		"executionMode":     stringValue(metadata["executionMode"]),
+		"executionDecision": stringValue(metadata["executionDecision"]),
 		"orderType":         stringValue(proposal["type"]),
 		"timeInForce":       firstNonEmpty(stringValue(proposal["timeInForce"]), stringValue(metadata["executionProfileTimeInForce"])),
 		"postOnly":          boolValue(proposal["postOnly"]) || boolValue(metadata["executionProfilePostOnly"]),
@@ -413,6 +443,7 @@ func executionProposalSummary(proposal map[string]any) map[string]any {
 		"fallbackOrderType": stringValue(metadata["fallbackOrderType"]),
 		"priceSource":       stringValue(proposal["priceSource"]),
 		"spreadBps":         parseFloatValue(proposal["spreadBps"]),
+		"bookImbalance":     parseFloatValue(metadata["bookImbalance"]),
 	}
 }
 

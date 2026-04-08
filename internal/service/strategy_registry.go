@@ -273,38 +273,40 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		Action: action,
 		Reason: reason,
 		Metadata: map[string]any{
-			"decisionState":     decisionState,
-			"signalKind":        signalKind,
-			"trigger":           trigger,
-			"sourceStateCount":  len(sourceStates),
+			"decisionState":       decisionState,
+			"signalKind":          signalKind,
+			"trigger":             trigger,
+			"sourceStateCount":    len(sourceStates),
 			"signalBarStateCount": len(signalBarStates),
-			"currentPosition":   currentPosition,
-			"symbol":            symbol,
-			"triggerSymbol":     triggerSymbol,
-			"signalBarStateKey": signalBarStateKey,
-			"signalBarState":    cloneMetadata(signalBarState),
-			"signalBarDecision": signalBarDecision,
-			"livePositionState": cloneMetadata(livePositionState),
-			"nextPlannedEvent":  formatOptionalRFC3339(context.NextPlannedEvent),
-			"nextPlannedPrice":  effectivePlannedPrice,
-			"nextPlannedSide":   context.NextPlannedSide,
-			"nextPlannedRole":   context.NextPlannedRole,
-			"nextPlannedReason": context.NextPlannedReason,
-			"marketPrice":       marketPrice,
-			"marketSource":      marketSource,
-			"bestBid":           orderBookStats.bestBid,
-			"bestAsk":           orderBookStats.bestAsk,
-			"spreadBps":         orderBookStats.spreadBps,
-			"bookImbalance":     orderBookStats.imbalance,
-			"liquidityBias":     orderBookStats.bias,
-			"biasActionable":    biasActionable,
-			"positionPnLBps":    positionPnLBps,
-			"entryProximityBps": entryProximityBps,
-			"exitProximityBps":  exitProximityBps,
-			"maxDeviationBps":   maxDeviationBps,
-			"maxSpreadBps":      maxSpreadBps,
-			"deviationBps":      deviationBps,
-			"priceActionable":   strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") || isPlannedPriceActionable(context.NextPlannedSide, effectivePlannedPrice, marketPrice, maxDeviationBps),
+			"currentPosition":     currentPosition,
+			"symbol":              symbol,
+			"triggerSymbol":       triggerSymbol,
+			"signalBarStateKey":   signalBarStateKey,
+			"signalBarState":      cloneMetadata(signalBarState),
+			"signalBarDecision":   signalBarDecision,
+			"livePositionState":   cloneMetadata(livePositionState),
+			"nextPlannedEvent":    formatOptionalRFC3339(context.NextPlannedEvent),
+			"nextPlannedPrice":    effectivePlannedPrice,
+			"nextPlannedSide":     context.NextPlannedSide,
+			"nextPlannedRole":     context.NextPlannedRole,
+			"nextPlannedReason":   context.NextPlannedReason,
+			"marketPrice":         marketPrice,
+			"marketSource":        marketSource,
+			"bestBid":             orderBookStats.bestBid,
+			"bestAsk":             orderBookStats.bestAsk,
+			"bestBidQty":          orderBookStats.bestBidQty,
+			"bestAskQty":          orderBookStats.bestAskQty,
+			"spreadBps":           orderBookStats.spreadBps,
+			"bookImbalance":       orderBookStats.imbalance,
+			"liquidityBias":       orderBookStats.bias,
+			"biasActionable":      biasActionable,
+			"positionPnLBps":      positionPnLBps,
+			"entryProximityBps":   entryProximityBps,
+			"exitProximityBps":    exitProximityBps,
+			"maxDeviationBps":     maxDeviationBps,
+			"maxSpreadBps":        maxSpreadBps,
+			"deviationBps":        deviationBps,
+			"priceActionable":     strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") || isPlannedPriceActionable(context.NextPlannedSide, effectivePlannedPrice, marketPrice, maxDeviationBps),
 		},
 	}, nil
 }
@@ -593,17 +595,17 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole str
 		timeframe = strings.ToLower(strings.TrimSpace(stringValue(mapValue(signalBarState["current"])["timeframe"])))
 	}
 	result := map[string]any{
-		"ready":    true,
-		"reason":   "signal-bar-ready",
-		"side":     strings.ToUpper(strings.TrimSpace(nextSide)),
-		"role":     role,
+		"ready":     true,
+		"reason":    "signal-bar-ready",
+		"side":      strings.ToUpper(strings.TrimSpace(nextSide)),
+		"role":      role,
 		"timeframe": timeframe,
-		"sma5":     parseFloatValue(signalBarState["sma5"]),
-		"ma20":     parseFloatValue(signalBarState["ma20"]),
-		"atr14":    parseFloatValue(signalBarState["atr14"]),
-		"current":  cloneMetadata(mapValue(signalBarState["current"])),
-		"prevBar1": cloneMetadata(mapValue(signalBarState["prevBar1"])),
-		"prevBar2": cloneMetadata(mapValue(signalBarState["prevBar2"])),
+		"sma5":      parseFloatValue(signalBarState["sma5"]),
+		"ma20":      parseFloatValue(signalBarState["ma20"]),
+		"atr14":     parseFloatValue(signalBarState["atr14"]),
+		"current":   cloneMetadata(mapValue(signalBarState["current"])),
+		"prevBar1":  cloneMetadata(mapValue(signalBarState["prevBar1"])),
+		"prevBar2":  cloneMetadata(mapValue(signalBarState["prevBar2"])),
 	}
 	current := mapValue(signalBarState["current"])
 	prevBar1 := mapValue(signalBarState["prevBar1"])
@@ -783,17 +785,17 @@ func evaluateLivePositionState(parameters map[string]any, currentPosition map[st
 		}
 	}
 	return map[string]any{
-		"found":                true,
-		"symbol":               NormalizeSymbol(stringValue(currentPosition["symbol"])),
-		"side":                 strings.ToUpper(side),
-		"entryPrice":           entryPrice,
-		"stopLoss":             stopLoss,
-		"protected":            protected,
-		"protectionTrigger":    protectionPrice,
-		"prevHigh1":            sig.PrevHigh1,
-		"prevLow1":             sig.PrevLow1,
-		"atr14":                sig.ATR,
-		"profitProtectATR":     profitProtectATR,
+		"found":             true,
+		"symbol":            NormalizeSymbol(stringValue(currentPosition["symbol"])),
+		"side":              strings.ToUpper(side),
+		"entryPrice":        entryPrice,
+		"stopLoss":          stopLoss,
+		"protected":         protected,
+		"protectionTrigger": protectionPrice,
+		"prevHigh1":         sig.PrevHigh1,
+		"prevLow1":          sig.PrevLow1,
+		"atr14":             sig.ATR,
+		"profitProtectATR":  profitProtectATR,
 	}
 }
 
@@ -860,11 +862,13 @@ func evaluateLiveExitState(parameters map[string]any, currentPosition map[string
 }
 
 type orderBookDecisionStats struct {
-	bestBid   float64
-	bestAsk   float64
-	spreadBps float64
-	imbalance float64
-	bias      string
+	bestBid    float64
+	bestAsk    float64
+	bestBidQty float64
+	bestAskQty float64
+	spreadBps  float64
+	imbalance  float64
+	bias       string
 }
 
 func extractOrderBookStats(trigger map[string]any, sourceStates map[string]any) orderBookDecisionStats {
@@ -886,6 +890,8 @@ func extractOrderBookStats(trigger map[string]any, sourceStates map[string]any) 
 		stats.bestAsk = parseFloatValue(summary["bestAsk"])
 		bidQty := parseFloatValue(summary["bestBidQty"])
 		askQty := parseFloatValue(summary["bestAskQty"])
+		stats.bestBidQty = bidQty
+		stats.bestAskQty = askQty
 		if stats.bestBid > 0 && stats.bestAsk > 0 {
 			mid := (stats.bestBid + stats.bestAsk) / 2
 			if mid > 0 {

@@ -3667,10 +3667,25 @@ function App() {
                     {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).reduceOnly)}
                   </div>
                   <div className="note-item">
+                    execution-telemetry: {String(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).decision ?? "--")} · spread{" "}
+                    {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).spreadBps)} bps · imbalance{" "}
+                    {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).bookImbalance)}
+                  </div>
+                  <div className="note-item">
                     execution-dispatch: {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
                     {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).executionMode ?? "--")} · fallback{" "}
                     {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallback)} ·{" "}
                     {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallbackOrderType ?? "--")}
+                  </div>
+                  <div className="note-item">
+                    execution-fill: expected {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).expectedPrice)} · drift{" "}
+                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).priceDriftBps)} bps
+                  </div>
+                  <div className="note-item">
+                    execution-stats: proposals {String(getRecord(primaryLiveSession?.state?.executionTelemetryStats).proposalCount ?? "--")} · maker{" "}
+                    {String(getRecord(primaryLiveSession?.state?.executionTelemetryStats).makerRestingDecisionCount ?? "--")} · fallback{" "}
+                    {String(getRecord(primaryLiveSession?.state?.executionTelemetryStats).fallbackDispatchCount ?? "--")} · avg drift{" "}
+                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.executionTelemetryStats).avgPriceDriftBps)} bps
                   </div>
                   <div className="note-item">
                     auto-dispatch: last-at {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · last-error {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}

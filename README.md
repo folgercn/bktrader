@@ -135,7 +135,7 @@ go run ./cmd/platform-api
 - 通过 `signal-runtime session` 拉起实时行情
 - 通过 `live session` 进行策略评估、派单、同步与恢复
 - 通过 Binance Futures testnet 完成模拟交易、订单同步与持仓恢复
-- 服务启动时会主动从 Binance 行情源预热 `1m / 4h / 1d` 市场缓存，并计算 `MA20 / ATR14`，live 链路不再依赖本地 CSV
+- 服务启动时会主动从 Binance 行情源预热 `1m / 4h / 1d` 市场缓存，并计算 `SMA5 / MA20 / ATR14`，live 链路不再依赖本地 CSV
 - 已验证一条真实的 `4h -> live intent -> auto-dispatch -> Binance Futures testnet FILLED` 主链路
       - `sl-reentry-watch`
       - `sl-reentry-near`
@@ -378,6 +378,9 @@ RUNTIME_QUIET_SECONDS=30
 PAPER_START_READINESS_TIMEOUT_SECONDS=5
 BINANCE_TESTNET_API_KEY=your_testnet_api_key
 BINANCE_TESTNET_API_SECRET=your_testnet_api_secret
+BINANCE_FUTURES_KLINE_BASE_URL=https://fapi.binance.com
+BINANCE_FUTURES_WS_URL=wss://fstream.binance.com/ws
+OKX_PUBLIC_WS_URL=wss://ws.okx.com:8443/ws/v5/public
 ```
 
 > 当前 `cd.yml` 默认推送镜像到 `ghcr.io/<owner>/bktrader:latest`，并在 `main` 分支 push 后触发部署。
@@ -397,6 +400,12 @@ BINANCE_TESTNET_API_SECRET=your_testnet_api_secret
 - `cmd/db-migrate` 执行嵌入式 SQL 迁移，并在 `schema_migrations` 表中记录迁移历史。
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
 - 当前推荐的“模拟交易”已经切到 Binance Futures testnet，凭据默认从 `.env` 读取。
+- 行情数据接入当前也已经配置化：
+  - `BINANCE_FUTURES_KLINE_BASE_URL`：启动预热和图表历史 K 线读取地址
+  - `BINANCE_FUTURES_WS_URL`：`binance-market-ws` signal runtime 的公共 WebSocket 地址
+  - `OKX_PUBLIC_WS_URL`：`okx-market-ws` 的公共 WebSocket 地址
+  - 未配置时会分别回退到 Binance Futures / OKX 官方公共地址
+- 服务启动时会从行情源主动预热 `1m / 4h / 1d` bars，并计算 `SMA5 / MA20 / ATR14`，后续 `live / testnet / 实盘` 的策略评估直接复用这批缓存。
 - live/testnet 当前默认建议使用 `defaultOrderQuantity=0.002` 跑 BTCUSDT smoke test，`0.001` 可能低于 testnet 最小名义价值限制。
 - `scripts/testnet_live_session_smoke.sh` 现在会同时校验退出侧 execution profile 默认值：`PT exit => LIMIT / GTX / postOnly / reduceOnly`，`SL exit => MARKET / reduceOnly`。
 - 给 `EXPECT_EXIT_PROFILE=pt-exit` 或 `EXPECT_EXIT_PROFILE=sl-exit` 后，脚本会轮询 live session 的 `lastExecutionProfile / lastExecutionDispatch`，用于等待真实 testnet 退出信号并校验最终执行策略是否按预期落地。

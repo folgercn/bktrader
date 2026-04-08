@@ -2,11 +2,110 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
+
+func updateExecutionTelemetryStats(state map[string]any, proposalMap map[string]any, dispatchSummary map[string]any) {
+	if state == nil {
+		return
+	}
+	stats := cloneMetadata(mapValue(state["executionTelemetryStats"]))
+	if stats == nil {
+		stats = map[string]any{}
+	}
+	metadata := cloneMetadata(mapValue(proposalMap["metadata"]))
+	incrementInt := func(key string) {
+		stats[key] = maxIntValue(stats[key], 0) + 1
+	}
+	accumulateFloat := func(key string, value float64) {
+		if value == 0 {
+			return
+		}
+		stats[key] = parseFloatValue(stats[key]) + value
+	}
+	updateAverage := func(sumKey, countKey, avgKey string) {
+		sum := parseFloatValue(stats[sumKey])
+		count := maxIntValue(stats[countKey], 0)
+		if count > 0 {
+			stats[avgKey] = sum / float64(count)
+		}
+	}
+
+	if len(proposalMap) > 0 {
+		incrementInt("proposalCount")
+		switch strings.ToLower(strings.TrimSpace(stringValue(proposalMap["status"]))) {
+		case "dispatchable":
+			incrementInt("dispatchableProposalCount")
+		case "wait":
+			incrementInt("waitProposalCount")
+		case "blocked":
+			incrementInt("blockedProposalCount")
+		case "virtual-initial", "virtual-exit":
+			incrementInt("virtualProposalCount")
+		}
+		switch strings.ToLower(strings.TrimSpace(stringValue(metadata["executionDecision"]))) {
+		case "maker-resting":
+			incrementInt("makerRestingDecisionCount")
+		case "timeout-fallback":
+			incrementInt("timeoutFallbackDecisionCount")
+		case "direct-dispatch":
+			incrementInt("directDispatchDecisionCount")
+		case "wait-spread-too-wide":
+			incrementInt("waitWideSpreadDecisionCount")
+		}
+		spreadBps := parseFloatValue(proposalMap["spreadBps"])
+		if spreadBps > 0 {
+			accumulateFloat("proposalSpreadBpsSum", spreadBps)
+			incrementInt("proposalSpreadSampleCount")
+			updateAverage("proposalSpreadBpsSum", "proposalSpreadSampleCount", "avgProposalSpreadBps")
+		}
+		bookImbalance := parseFloatValue(metadata["bookImbalance"])
+		if bookImbalance != 0 {
+			accumulateFloat("bookImbalanceSum", bookImbalance)
+			incrementInt("bookImbalanceSampleCount")
+			updateAverage("bookImbalanceSum", "bookImbalanceSampleCount", "avgBookImbalance")
+		}
+	}
+
+	if len(dispatchSummary) > 0 {
+		incrementInt("dispatchEventCount")
+		switch strings.ToUpper(strings.TrimSpace(stringValue(dispatchSummary["status"]))) {
+		case "FILLED":
+			incrementInt("filledCount")
+		case "REJECTED":
+			incrementInt("rejectedCount")
+		case "CANCELLED":
+			incrementInt("cancelledCount")
+		}
+		if boolValue(dispatchSummary["fallback"]) {
+			incrementInt("fallbackDispatchCount")
+		}
+		if boolValue(dispatchSummary["postOnly"]) {
+			incrementInt("postOnlyDispatchCount")
+		}
+		if boolValue(dispatchSummary["reduceOnly"]) {
+			incrementInt("reduceOnlyDispatchCount")
+		}
+		switch strings.ToUpper(strings.TrimSpace(stringValue(dispatchSummary["orderType"]))) {
+		case "MARKET":
+			incrementInt("marketOrderCount")
+		case "LIMIT":
+			incrementInt("limitOrderCount")
+		}
+		driftBps := parseFloatValue(dispatchSummary["priceDriftBps"])
+		if driftBps >= 0 {
+			accumulateFloat("priceDriftBpsSum", driftBps)
+			incrementInt("priceDriftSampleCount")
+			updateAverage("priceDriftBpsSum", "priceDriftSampleCount", "avgPriceDriftBps")
+		}
+	}
+
+	state["executionTelemetryStats"] = stats
+}
 
 func (p *Platform) SyncLiveSession(sessionID string) (domain.LiveSession, error) {
 	session, err := p.store.GetLiveSession(sessionID)
@@ -71,6 +170,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	state["lastDispatchedOrderId"] = created.ID
 	state["lastDispatchedOrderStatus"] = created.Status
 	state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, created, false)
+	updateExecutionTelemetryStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 	if isTerminalOrderStatus(created.Status) {
 		state["lastSyncedOrderId"] = created.ID
 		state["lastSyncedOrderStatus"] = created.Status
@@ -187,6 +287,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 		Price:    firstPositive(proposal.LimitPrice, proposal.PriceHint),
 		Status:   liveOrderStatusVirtualInitial,
 	}, false)
+	updateExecutionTelemetryStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 	state["lastVirtualSignalAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastVirtualSignalType"] = "initial"
 	state["virtualPosition"] = map[string]any{
@@ -236,6 +337,7 @@ func (p *Platform) applyLiveVirtualExitEvent(session domain.LiveSession, proposa
 		Price:    firstPositive(proposal.LimitPrice, proposal.PriceHint),
 		Status:   liveOrderStatusVirtualExit,
 	}, false)
+	updateExecutionTelemetryStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 	state["lastVirtualSignalAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastVirtualSignalType"] = "exit"
 	delete(state, "virtualPosition")
@@ -273,6 +375,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastSyncedOrderStatus"] = order.Status
 		state["lastDispatchedOrderStatus"] = order.Status
 		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), order, false)
+		updateExecutionTelemetryStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 		if strings.EqualFold(order.Status, "FILLED") {
 			_, _ = p.SyncLiveAccount(session.AccountID)
 		}
@@ -310,6 +413,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastExecutionTimeoutAt"] = eventTime.UTC().Format(time.RFC3339)
 		state["lastExecutionTimeoutReason"] = "resting-order-expired"
 		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), cancelledOrder, false)
+		updateExecutionTelemetryStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 		timeoutSignature := buildLiveIntentSignature(mapValue(order.Metadata["executionProposal"]))
 		if timeoutSignature == "" {
 			timeoutSignature = buildLiveIntentSignature(mapValue(order.Metadata["intent"]))
@@ -340,6 +444,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	state["lastDispatchedOrderStatus"] = syncedOrder.Status
 	state["lastSyncedAt"] = time.Now().UTC().Format(time.RFC3339)
 	state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), syncedOrder, false)
+	updateExecutionTelemetryStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 	if strings.EqualFold(syncedOrder.Status, "FILLED") {
 		_, _ = p.SyncLiveAccount(session.AccountID)
 	}
@@ -391,6 +496,12 @@ func firstNonEmptyMapValue(values ...any) map[string]any {
 
 func executionDispatchSummary(proposalMap map[string]any, order domain.Order, failed bool) map[string]any {
 	proposalMeta := cloneMetadata(mapValue(proposalMap["metadata"]))
+	expectedPrice := firstPositive(parseFloatValue(proposalMap["limitPrice"]), parseFloatValue(proposalMap["priceHint"]))
+	actualPrice := firstPositive(order.Price, expectedPrice)
+	priceDriftBps := 0.0
+	if expectedPrice > 0 && actualPrice > 0 {
+		priceDriftBps = math.Abs(actualPrice/expectedPrice-1) * 10000
+	}
 	return map[string]any{
 		"status":            firstNonEmpty(order.Status, stringValue(proposalMap["status"])),
 		"side":              firstNonEmpty(order.Side, stringValue(proposalMap["side"])),
@@ -400,12 +511,19 @@ func executionDispatchSummary(proposalMap map[string]any, order domain.Order, fa
 		"price":             firstPositive(order.Price, firstPositive(parseFloatValue(proposalMap["limitPrice"]), parseFloatValue(proposalMap["priceHint"]))),
 		"executionStrategy": firstNonEmpty(stringValue(proposalMap["executionStrategy"]), stringValue(proposalMeta["executionStrategy"])),
 		"executionProfile":  firstNonEmpty(stringValue(proposalMeta["executionProfile"]), stringValue(proposalMap["role"])),
+		"executionDecision": stringValue(proposalMeta["executionDecision"]),
 		"executionMode":     stringValue(proposalMeta["executionMode"]),
 		"timeInForce":       firstNonEmpty(stringValue(proposalMap["timeInForce"]), stringValue(proposalMeta["executionProfileTimeInForce"])),
 		"postOnly":          boolValue(proposalMap["postOnly"]) || boolValue(proposalMeta["executionProfilePostOnly"]),
 		"reduceOnly":        boolValue(proposalMap["reduceOnly"]) || boolValue(proposalMeta["executionProfileReduceOnly"]),
 		"fallback":          boolValue(proposalMeta["fallbackFromTimeout"]),
 		"fallbackOrderType": stringValue(proposalMeta["fallbackOrderType"]),
+		"spreadBps":         parseFloatValue(proposalMap["spreadBps"]),
+		"bookImbalance":     parseFloatValue(proposalMeta["bookImbalance"]),
+		"expectedPrice":     expectedPrice,
+		"priceDriftBps":     priceDriftBps,
+		"decisionContext":   cloneMetadata(mapValue(proposalMeta["executionDecisionContext"])),
+		"book":              cloneMetadata(mapValue(proposalMeta["orderBookSnapshot"])),
 		"failed":            failed,
 	}
 }
