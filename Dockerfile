@@ -1,10 +1,3 @@
-FROM node:20-alpine AS frontend-builder
-WORKDIR /app/web/console
-COPY web/console/package*.json ./
-RUN npm ci
-COPY web/console/ ./
-RUN npm run build
-
 FROM golang:1.22-alpine AS backend-builder
 ARG TARGETOS
 ARG TARGETARCH
@@ -23,7 +16,6 @@ FROM alpine:3.20
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=backend-builder /out/platform-api /usr/local/bin/platform-api
-COPY --from=frontend-builder /app/web/console/dist ./web/console/dist
 COPY configs/app.example.env ./configs/app.example.env
 EXPOSE 8080
 CMD ["platform-api"]
