@@ -1132,6 +1132,12 @@ func TestShouldAdvanceLivePlanForOrderStatus(t *testing.T) {
 	if shouldAdvanceLivePlanForOrderStatus("REJECTED") {
 		t.Fatal("expected rejected live order to keep the current plan step actionable")
 	}
+	if shouldAdvanceLivePlanForOrderStatus("") {
+		t.Fatal("expected empty status to keep the current plan step actionable")
+	}
+	if shouldAdvanceLivePlanForOrderStatus("UNKNOWN") {
+		t.Fatal("expected unknown status to keep the current plan step actionable")
+	}
 	if !shouldAdvanceLivePlanForOrderStatus("NEW") {
 		t.Fatal("expected accepted/in-flight live order to advance the plan")
 	}

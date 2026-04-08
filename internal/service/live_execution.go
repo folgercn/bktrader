@@ -482,7 +482,12 @@ func shouldCancelLiveOrderForExecutionTimeout(order domain.Order, eventTime time
 }
 
 func shouldAdvanceLivePlanForOrderStatus(status string) bool {
-	return !strings.EqualFold(strings.TrimSpace(status), "REJECTED")
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "NEW", "ACCEPTED", "PARTIALLY_FILLED", "FILLED", "CANCELLED", liveOrderStatusVirtualInitial, liveOrderStatusVirtualExit:
+		return true
+	default:
+		return false
+	}
 }
 
 func firstNonEmptyMapValue(values ...any) map[string]any {
