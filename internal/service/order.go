@@ -337,12 +337,12 @@ func (p *Platform) resolveLiveOrderContext(orderID string) (domain.Order, domain
 func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Order, syncResult LiveOrderSync) (domain.Order, error) {
 	order.Metadata = cloneMetadata(order.Metadata)
 	applyExecutionMetadata(order.Metadata, map[string]any{
-		"lastSyncAt":          syncResult.SyncedAt,
-		"syncMode":            "adapter",
-		"feeSource":           firstNonEmpty(syncResult.FeeSource, "exchange"),
-		"fundingSource":       firstNonEmpty(syncResult.FundingSrc, "exchange"),
-		"adapterSync":         syncResult.Metadata,
-		"lastExchangeStatus":  firstNonEmpty(syncResult.Status, order.Status),
+		"lastSyncAt":           syncResult.SyncedAt,
+		"syncMode":             "adapter",
+		"feeSource":            firstNonEmpty(syncResult.FeeSource, "exchange"),
+		"fundingSource":        firstNonEmpty(syncResult.FundingSrc, "exchange"),
+		"adapterSync":          syncResult.Metadata,
+		"lastExchangeStatus":   firstNonEmpty(syncResult.Status, order.Status),
 		"lastExchangeUpdateAt": firstNonEmpty(syncResult.SyncedAt, time.Now().UTC().Format(time.RFC3339)),
 	})
 	order.Status = firstNonEmpty(syncResult.Status, order.Status)
