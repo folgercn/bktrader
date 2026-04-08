@@ -302,11 +302,14 @@ func TestResolveLiveSessionPositionSnapshotUsesVirtualPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !found {
-		t.Fatal("expected virtual position to be treated as found")
+	if found {
+		t.Fatal("expected virtual position not to masquerade as a real found position")
 	}
 	if !boolValue(position["virtual"]) {
 		t.Fatal("expected returned position snapshot to be marked virtual")
+	}
+	if !boolValue(position["hasVirtualPosition"]) {
+		t.Fatal("expected returned position snapshot to expose virtual position explicitly")
 	}
 }
 
@@ -786,6 +789,38 @@ func TestBuildLiveOrderUsesProposalQuantityOverSessionDefault(t *testing.T) {
 	order := buildLiveOrderFromExecutionProposal(session, "strategy-version-1", proposal, executionProposalToMap(proposal))
 	if order.Quantity != 0.002 {
 		t.Fatalf("expected proposal quantity to win, got %v", order.Quantity)
+	}
+}
+
+func TestUpdateExecutionEventStatsMarksEventAggregationSemantics(t *testing.T) {
+	state := map[string]any{}
+	proposal := map[string]any{
+		"status":    "dispatchable",
+		"spreadBps": 1.2,
+		"metadata": map[string]any{
+			"executionDecision": "maker-resting",
+			"bookImbalance":     0.3,
+		},
+	}
+	dispatch := map[string]any{
+		"status":        "FILLED",
+		"orderType":     "LIMIT",
+		"reduceOnly":    true,
+		"priceDriftBps": 0.8,
+	}
+	updateExecutionEventStats(state, proposal, dispatch)
+	stats := mapValue(state["executionEventStats"])
+	if got := stringValue(stats["aggregationMode"]); got != "event" {
+		t.Fatalf("expected event aggregation mode, got %s", got)
+	}
+	if boolValue(stats["deduplicated"]) {
+		t.Fatal("expected event stats to remain explicitly non-deduplicated")
+	}
+	if got := maxIntValue(stats["proposalCount"], 0); got != 1 {
+		t.Fatalf("expected one proposal event, got %d", got)
+	}
+	if got := maxIntValue(stats["dispatchEventCount"], 0); got != 1 {
+		t.Fatalf("expected one dispatch event, got %d", got)
 	}
 }
 

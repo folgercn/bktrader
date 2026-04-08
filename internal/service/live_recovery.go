@@ -42,6 +42,8 @@ func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession)
 	state := cloneMetadata(session.State)
 	state["recoveredPosition"] = position
 	state["hasRecoveredPosition"] = found
+	state["hasRecoveredRealPosition"] = found
+	state["hasRecoveredVirtualPosition"] = false
 	state["recoveredProtectionOrders"] = protectedOrders
 	state["recoveredProtectionCount"] = len(protectedOrders)
 	state["recoveredStopOrderCount"] = len(stopOrders)
@@ -88,6 +90,8 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	}
 	state["recoveredPosition"] = positionSnapshot
 	state["hasRecoveredPosition"] = foundPosition
+	state["hasRecoveredRealPosition"] = foundPosition
+	state["hasRecoveredVirtualPosition"] = boolValue(mapValue(state["virtualPosition"])["virtual"]) && !foundPosition
 	state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = firstNonEmpty(source, "live-position-refresh")
 	if !foundPosition {

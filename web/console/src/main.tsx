@@ -3682,10 +3682,10 @@ function App() {
                     {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).priceDriftBps)} bps
                   </div>
                   <div className="note-item">
-                    execution-stats: proposals {String(getRecord(primaryLiveSession?.state?.executionTelemetryStats).proposalCount ?? "--")} · maker{" "}
-                    {String(getRecord(primaryLiveSession?.state?.executionTelemetryStats).makerRestingDecisionCount ?? "--")} · fallback{" "}
-                    {String(getRecord(primaryLiveSession?.state?.executionTelemetryStats).fallbackDispatchCount ?? "--")} · avg drift{" "}
-                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.executionTelemetryStats).avgPriceDriftBps)} bps
+                    execution-event-stats: proposals {String(getRecord(primaryLiveSession?.state?.executionEventStats).proposalCount ?? "--")} · maker{" "}
+                    {String(getRecord(primaryLiveSession?.state?.executionEventStats).makerRestingDecisionCount ?? "--")} · fallback{" "}
+                    {String(getRecord(primaryLiveSession?.state?.executionEventStats).fallbackDispatchCount ?? "--")} · avg drift{" "}
+                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.executionEventStats).avgPriceDriftBps)} bps
                   </div>
                   <div className="note-item">
                     auto-dispatch: last-at {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · last-error {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}

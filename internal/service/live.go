@@ -868,7 +868,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			"decisionContext": cloneMetadata(mapValue(mapValue(executionProposal["metadata"])["executionDecisionContext"])),
 			"profile":         cloneMetadata(mapValue(state["lastExecutionProfile"])),
 		}
-		updateExecutionTelemetryStats(state, executionProposal, nil)
+		updateExecutionEventStats(state, executionProposal, nil)
 		intent = executionProposal
 		state["lastStrategyIntent"] = executionProposal
 		state["lastStrategyIntentSignature"] = buildLiveIntentSignature(executionProposal)
@@ -1269,11 +1269,15 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 	}
 	state["recoveredPosition"] = positionSnapshot
 	state["hasRecoveredPosition"] = foundPosition
+	state["hasRecoveredRealPosition"] = foundPosition
+	state["hasRecoveredVirtualPosition"] = boolValue(positionSnapshot["virtual"])
 	state["lastRecoveredPositionAt"] = time.Now().UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = "platform-position-store"
 	state["positionRecoveryStatus"] = "flat"
 	if foundPosition {
 		state["positionRecoveryStatus"] = "monitoring-open-position"
+	} else if boolValue(positionSnapshot["virtual"]) {
+		state["positionRecoveryStatus"] = "monitoring-virtual-position"
 	}
 	if nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, resolveLivePlanIndex(state), positionSnapshot, foundPosition); adjusted {
 		state["planIndex"] = nextIndex
@@ -1297,7 +1301,7 @@ func reconcileLivePlanIndexWithPosition(plan []paperPlannedOrder, currentIndex i
 		currentIndex = len(plan) - 1
 	}
 	virtualFound := boolValue(position["virtual"])
-	if !found || (parseFloatValue(position["quantity"]) <= 0 && !virtualFound) {
+	if (!found && !virtualFound) || (parseFloatValue(position["quantity"]) <= 0 && !virtualFound) {
 		if strings.EqualFold(plan[currentIndex].Role, "exit") {
 			for i := currentIndex; i >= 0; i-- {
 				if strings.EqualFold(plan[i].Role, "entry") {
@@ -1355,10 +1359,12 @@ func (p *Platform) resolveLiveSessionPositionSnapshot(session domain.LiveSession
 	if NormalizeSymbol(symbol) != "" && virtualSymbol != NormalizeSymbol(symbol) {
 		return positionSnapshot, foundPosition, nil
 	}
-	virtualPosition["found"] = true
+	virtualPosition["found"] = false
+	virtualPosition["hasRealPosition"] = false
+	virtualPosition["hasVirtualPosition"] = true
 	virtualPosition["virtual"] = true
 	virtualPosition["symbol"] = virtualSymbol
-	return virtualPosition, true, nil
+	return virtualPosition, false, nil
 }
 
 func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, version domain.StrategyVersion) (map[string]any, error) {

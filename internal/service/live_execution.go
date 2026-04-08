@@ -9,13 +9,16 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
-func updateExecutionTelemetryStats(state map[string]any, proposalMap map[string]any, dispatchSummary map[string]any) {
+func updateExecutionEventStats(state map[string]any, proposalMap map[string]any, dispatchSummary map[string]any) {
 	if state == nil {
 		return
 	}
-	stats := cloneMetadata(mapValue(state["executionTelemetryStats"]))
-	if stats == nil {
-		stats = map[string]any{}
+	stats := cloneMetadata(mapValue(state["executionEventStats"]))
+	if len(stats) == 0 {
+		stats = map[string]any{
+			"aggregationMode": "event",
+			"deduplicated":    false,
+		}
 	}
 	metadata := cloneMetadata(mapValue(proposalMap["metadata"]))
 	incrementInt := func(key string) {
@@ -104,7 +107,7 @@ func updateExecutionTelemetryStats(state map[string]any, proposalMap map[string]
 		}
 	}
 
-	state["executionTelemetryStats"] = stats
+	state["executionEventStats"] = stats
 }
 
 func (p *Platform) SyncLiveSession(sessionID string) (domain.LiveSession, error) {
@@ -170,7 +173,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	state["lastDispatchedOrderId"] = created.ID
 	state["lastDispatchedOrderStatus"] = created.Status
 	state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, created, false)
-	updateExecutionTelemetryStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
+	updateExecutionEventStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 	if isTerminalOrderStatus(created.Status) {
 		state["lastSyncedOrderId"] = created.ID
 		state["lastSyncedOrderStatus"] = created.Status
@@ -287,7 +290,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 		Price:    firstPositive(proposal.LimitPrice, proposal.PriceHint),
 		Status:   liveOrderStatusVirtualInitial,
 	}, false)
-	updateExecutionTelemetryStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
+	updateExecutionEventStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 	state["lastVirtualSignalAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastVirtualSignalType"] = "initial"
 	state["virtualPosition"] = map[string]any{
@@ -337,7 +340,7 @@ func (p *Platform) applyLiveVirtualExitEvent(session domain.LiveSession, proposa
 		Price:    firstPositive(proposal.LimitPrice, proposal.PriceHint),
 		Status:   liveOrderStatusVirtualExit,
 	}, false)
-	updateExecutionTelemetryStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
+	updateExecutionEventStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 	state["lastVirtualSignalAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastVirtualSignalType"] = "exit"
 	delete(state, "virtualPosition")
@@ -375,7 +378,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastSyncedOrderStatus"] = order.Status
 		state["lastDispatchedOrderStatus"] = order.Status
 		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), order, false)
-		updateExecutionTelemetryStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
+		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 		if strings.EqualFold(order.Status, "FILLED") {
 			_, _ = p.SyncLiveAccount(session.AccountID)
 		}
@@ -413,7 +416,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastExecutionTimeoutAt"] = eventTime.UTC().Format(time.RFC3339)
 		state["lastExecutionTimeoutReason"] = "resting-order-expired"
 		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), cancelledOrder, false)
-		updateExecutionTelemetryStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
+		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 		timeoutSignature := buildLiveIntentSignature(mapValue(order.Metadata["executionProposal"]))
 		if timeoutSignature == "" {
 			timeoutSignature = buildLiveIntentSignature(mapValue(order.Metadata["intent"]))
@@ -444,7 +447,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	state["lastDispatchedOrderStatus"] = syncedOrder.Status
 	state["lastSyncedAt"] = time.Now().UTC().Format(time.RFC3339)
 	state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), syncedOrder, false)
-	updateExecutionTelemetryStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
+	updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 	if strings.EqualFold(syncedOrder.Status, "FILLED") {
 		_, _ = p.SyncLiveAccount(session.AccountID)
 	}
