@@ -3,14 +3,17 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
-const liveMarketWarmWindow = 30 * 24 * time.Hour
+const liveSignalWarmWindow = 400 * 24 * time.Hour
+const liveMinuteWarmWindow = 30 * 24 * time.Hour
 
 type liveMarketSnapshot struct {
 	Symbol     string
@@ -78,19 +81,20 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 		normalizedSymbol = "BTCUSDT"
 	}
 	end := time.Now().UTC().Truncate(time.Minute)
-	start := end.Add(-liveMarketWarmWindow)
-	minuteBars, err := fetchBinanceFuturesCandleRange(normalizedSymbol, "1", start, end)
+	minuteStart := end.Add(-liveMinuteWarmWindow)
+	signalStart := end.Add(-liveSignalWarmWindow)
+	minuteBars, err := fetchBinanceFuturesCandleRange(normalizedSymbol, "1", minuteStart, end)
 	if err != nil {
 		return err
 	}
 	if len(minuteBars) == 0 {
 		return fmt.Errorf("no live market minute bars returned for %s", normalizedSymbol)
 	}
-	signal1D, err := buildSignalBars(minuteBars, "1d")
+	signal1D, err := p.syncStoredSignalBars(normalizedSymbol, "1d", signalStart, end)
 	if err != nil {
 		return err
 	}
-	signal4H, err := buildSignalBars(minuteBars, "4h")
+	signal4H, err := p.syncStoredSignalBars(normalizedSymbol, "4h", signalStart, end)
 	if err != nil {
 		return err
 	}
@@ -131,6 +135,31 @@ func (p *Platform) liveMarketSnapshot(symbol string) (liveMarketSnapshot, error)
 	return snapshot, nil
 }
 
+func (p *Platform) syncStoredSignalBars(symbol, timeframe string, start, end time.Time) ([]strategySignalBar, error) {
+	resolution := liveSignalResolution(timeframe)
+	if resolution == "" {
+		return nil, fmt.Errorf("unsupported signal timeframe: %s", timeframe)
+	}
+	fetchedBars, err := fetchBinanceFuturesCandleRange(symbol, resolution, start, end)
+	if err != nil {
+		return nil, err
+	}
+	if len(fetchedBars) == 0 {
+		return nil, fmt.Errorf("no live market %s bars returned for %s", timeframe, symbol)
+	}
+	if err := p.store.UpsertMarketBars(candleBarsToMarketBars("BINANCE", symbol, timeframe, fetchedBars, "binance-rest-warm")); err != nil {
+		return nil, err
+	}
+	storedBars, err := p.store.ListMarketBars("BINANCE", symbol, timeframe, start.Unix(), end.Unix(), 0)
+	if err != nil {
+		return nil, err
+	}
+	if len(storedBars) == 0 {
+		return nil, fmt.Errorf("no stored %s bars cached for %s", timeframe, symbol)
+	}
+	return buildStrategySignalBarsFromCandles(marketBarsToCandles(storedBars))
+}
+
 func (p *Platform) liveSignalBarStates(symbol, timeframe string) (map[string]any, error) {
 	snapshot, err := p.liveMarketSnapshot(symbol)
 	if err != nil {
@@ -162,6 +191,64 @@ func (p *Platform) liveSignalBarStates(symbol, timeframe string) (map[string]any
 	}, nil
 }
 
+func (p *Platform) ingestLiveSignalBarSummary(summary map[string]any, eventTime time.Time) error {
+	if !strings.EqualFold(stringValue(summary["streamType"]), "signal_bar") {
+		return nil
+	}
+	timeframe := strings.ToLower(strings.TrimSpace(stringValue(summary["timeframe"])))
+	if timeframe != "1d" && timeframe != "4h" {
+		return nil
+	}
+	symbol := NormalizeSymbol(stringValue(summary["symbol"]))
+	if symbol == "" {
+		return nil
+	}
+	openTime := parseUnixMillisTime(summary["barStart"])
+	closeTime := parseUnixMillisTime(summary["barEnd"])
+	if openTime.IsZero() {
+		return nil
+	}
+	bar := domain.MarketBar{
+		ID:        fmt.Sprintf("BINANCE|%s|%s|%s", symbol, timeframe, openTime.UTC().Format(time.RFC3339)),
+		Exchange:  "BINANCE",
+		Symbol:    symbol,
+		Timeframe: timeframe,
+		OpenTime:  openTime,
+		CloseTime: closeTime,
+		Open:      parseFloatValue(summary["open"]),
+		High:      parseFloatValue(summary["high"]),
+		Low:       parseFloatValue(summary["low"]),
+		Close:     parseFloatValue(summary["close"]),
+		Volume:    parseFloatValue(summary["volume"]),
+		IsClosed:  boolValue(summary["isClosed"]),
+		Source:    stringValue(summary["adapter"]),
+		UpdatedAt: eventTime.UTC(),
+	}
+	if err := p.store.UpsertMarketBars([]domain.MarketBar{bar}); err != nil {
+		return err
+	}
+	start := eventTime.UTC().Add(-liveSignalWarmWindow)
+	storedBars, err := p.store.ListMarketBars("BINANCE", symbol, timeframe, start.Unix(), eventTime.UTC().Unix(), 0)
+	if err != nil {
+		return err
+	}
+	signals, err := buildStrategySignalBarsFromCandles(marketBarsToCandles(storedBars))
+	if err != nil {
+		return err
+	}
+	p.liveMarketMu.Lock()
+	snapshot := p.liveMarketData[symbol]
+	if snapshot.SignalBars == nil {
+		snapshot.SignalBars = map[string][]strategySignalBar{}
+	}
+	snapshot.Symbol = symbol
+	snapshot.SignalBars[timeframe] = signals
+	snapshot.UpdatedAt = eventTime.UTC()
+	p.liveMarketData[symbol] = snapshot
+	p.liveMarketMu.Unlock()
+	return nil
+}
+
 func strategySignalBarToStateEntry(bar strategySignalBar, symbol, timeframe string) map[string]any {
 	return map[string]any{
 		"symbol":    NormalizeSymbol(symbol),
@@ -174,6 +261,121 @@ func strategySignalBarToStateEntry(bar strategySignalBar, symbol, timeframe stri
 		"updatedAt": bar.Time.UTC().Format(time.RFC3339),
 		"isClosed":  true,
 	}
+}
+
+func liveSignalResolution(timeframe string) string {
+	switch strings.ToLower(strings.TrimSpace(timeframe)) {
+	case "1d":
+		return "1D"
+	case "4h":
+		return "240"
+	default:
+		return ""
+	}
+}
+
+func candleBarsToMarketBars(exchange, symbol, timeframe string, bars []candleBar, source string) []domain.MarketBar {
+	step := resolutionToDuration(liveSignalResolution(timeframe))
+	if step <= 0 {
+		return nil
+	}
+	items := make([]domain.MarketBar, 0, len(bars))
+	now := time.Now().UTC()
+	for _, bar := range bars {
+		openTime := bar.Time.UTC()
+		items = append(items, domain.MarketBar{
+			ID:        fmt.Sprintf("%s|%s|%s|%s", strings.ToUpper(strings.TrimSpace(exchange)), NormalizeSymbol(symbol), strings.ToLower(strings.TrimSpace(timeframe)), openTime.Format(time.RFC3339)),
+			Exchange:  strings.ToUpper(strings.TrimSpace(exchange)),
+			Symbol:    NormalizeSymbol(symbol),
+			Timeframe: strings.ToLower(strings.TrimSpace(timeframe)),
+			OpenTime:  openTime,
+			CloseTime: openTime.Add(step),
+			Open:      bar.Open,
+			High:      bar.High,
+			Low:       bar.Low,
+			Close:     bar.Close,
+			Volume:    bar.Volume,
+			IsClosed:  true,
+			Source:    source,
+			UpdatedAt: now,
+		})
+	}
+	return items
+}
+
+func marketBarsToCandles(items []domain.MarketBar) []candleBar {
+	out := make([]candleBar, 0, len(items))
+	for _, item := range items {
+		out = append(out, candleBar{
+			Time:   item.OpenTime.UTC(),
+			Open:   item.Open,
+			High:   item.High,
+			Low:    item.Low,
+			Close:  item.Close,
+			Volume: item.Volume,
+		})
+	}
+	return out
+}
+
+func buildStrategySignalBarsFromCandles(bars []candleBar) ([]strategySignalBar, error) {
+	if len(bars) == 0 {
+		return nil, fmt.Errorf("no signal bars available")
+	}
+	signals := make([]strategySignalBar, len(bars))
+	closes := make([]float64, len(bars))
+	trueRanges := make([]float64, len(bars))
+	for i, bar := range bars {
+		signals[i] = strategySignalBar{
+			Time:   bar.Time,
+			Open:   bar.Open,
+			High:   bar.High,
+			Low:    bar.Low,
+			Close:  bar.Close,
+			Volume: bar.Volume,
+		}
+		closes[i] = bar.Close
+		if i == 0 {
+			trueRanges[i] = bar.High - bar.Low
+		} else {
+			highLow := bar.High - bar.Low
+			highClose := math.Abs(bar.High - bars[i-1].Close)
+			lowClose := math.Abs(bar.Low - bars[i-1].Close)
+			trueRanges[i] = math.Max(highLow, math.Max(highClose, lowClose))
+		}
+	}
+	for i := range signals {
+		signals[i].MA5 = rollingMean(closes, i, 5)
+		signals[i].MA20 = rollingMean(closes, i, 20)
+		signals[i].ATR = rollingMean(trueRanges, i, 14)
+		if i >= 1 {
+			signals[i].PrevHigh1 = bars[i-1].High
+			signals[i].PrevLow1 = bars[i-1].Low
+		} else {
+			signals[i].PrevHigh1 = math.NaN()
+			signals[i].PrevLow1 = math.NaN()
+		}
+		if i >= 2 {
+			signals[i].PrevHigh2 = bars[i-2].High
+			signals[i].PrevLow2 = bars[i-2].Low
+		} else {
+			signals[i].PrevHigh2 = math.NaN()
+			signals[i].PrevLow2 = math.NaN()
+		}
+	}
+	return signals, nil
+}
+
+func parseUnixMillisTime(value any) time.Time {
+	raw := strings.TrimSpace(stringValue(value))
+	if raw == "" {
+		return time.Time{}
+	}
+	ms, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms).UTC()
 }
 
 func fetchBinanceFuturesCandleRange(symbol, resolution string, from, to time.Time) ([]candleBar, error) {

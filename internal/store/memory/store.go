@@ -23,6 +23,7 @@ type Store struct {
 	paperSessions    map[string]domain.PaperSession
 	liveSessions     map[string]domain.LiveSession
 	equitySnapshots  map[string][]domain.AccountEquitySnapshot
+	marketBars       map[string]domain.MarketBar
 	signalSources    []map[string]any
 	annotations      []domain.ChartAnnotation
 	runtimePolicy    *domain.RuntimePolicy
@@ -46,6 +47,7 @@ func NewStore() *Store {
 		paperSessions:   make(map[string]domain.PaperSession),
 		liveSessions:    make(map[string]domain.LiveSession),
 		equitySnapshots: make(map[string][]domain.AccountEquitySnapshot),
+		marketBars:      make(map[string]domain.MarketBar),
 		signalSources: []map[string]any{
 			{
 				"id":          "signal-source-bk-1d",
@@ -662,6 +664,26 @@ func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSess
 	return item, nil
 }
 
+func (s *Store) UpdateLiveSession(session domain.LiveSession) (domain.LiveSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.liveSessions[session.ID]; !ok {
+		return domain.LiveSession{}, fmt.Errorf("live session not found: %s", session.ID)
+	}
+	s.liveSessions[session.ID] = session
+	return session, nil
+}
+
+func (s *Store) DeleteLiveSession(sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.liveSessions[sessionID]; !ok {
+		return fmt.Errorf("live session not found: %s", sessionID)
+	}
+	delete(s.liveSessions, sessionID)
+	return nil
+}
+
 func (s *Store) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -701,6 +723,72 @@ func (s *Store) CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapsho
 	snapshot.CreatedAt = time.Now().UTC()
 	s.equitySnapshots[snapshot.AccountID] = append(s.equitySnapshots[snapshot.AccountID], snapshot)
 	return snapshot, nil
+}
+
+func (s *Store) ListMarketBars(exchange, symbol, timeframe string, from, to int64, limit int) ([]domain.MarketBar, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.MarketBar, 0)
+	normalizedExchange := strings.ToUpper(strings.TrimSpace(exchange))
+	normalizedSymbol := strings.ToUpper(strings.TrimSpace(symbol))
+	normalizedTimeframe := strings.ToLower(strings.TrimSpace(timeframe))
+	var startTime time.Time
+	var endTime time.Time
+	if from > 0 {
+		startTime = time.Unix(from, 0).UTC()
+	}
+	if to > 0 {
+		endTime = time.Unix(to, 0).UTC()
+	}
+	for _, item := range s.marketBars {
+		if normalizedExchange != "" && strings.ToUpper(strings.TrimSpace(item.Exchange)) != normalizedExchange {
+			continue
+		}
+		if normalizedSymbol != "" && strings.ToUpper(strings.TrimSpace(item.Symbol)) != normalizedSymbol {
+			continue
+		}
+		if normalizedTimeframe != "" && strings.ToLower(strings.TrimSpace(item.Timeframe)) != normalizedTimeframe {
+			continue
+		}
+		if !startTime.IsZero() && item.OpenTime.Before(startTime) {
+			continue
+		}
+		if !endTime.IsZero() && item.OpenTime.After(endTime) {
+			continue
+		}
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].OpenTime.Before(items[j].OpenTime) })
+	if limit > 0 && len(items) > limit {
+		items = items[len(items)-limit:]
+	}
+	return items, nil
+}
+
+func (s *Store) UpsertMarketBars(bars []domain.MarketBar) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	for _, item := range bars {
+		if strings.TrimSpace(item.Exchange) == "" || strings.TrimSpace(item.Symbol) == "" || strings.TrimSpace(item.Timeframe) == "" || item.OpenTime.IsZero() {
+			continue
+		}
+		if item.ID == "" {
+			item.ID = marketBarMemoryKey(item.Exchange, item.Symbol, item.Timeframe, item.OpenTime)
+		}
+		if item.UpdatedAt.IsZero() {
+			item.UpdatedAt = now
+		}
+		s.marketBars[item.ID] = item
+	}
+	return nil
+}
+
+func marketBarMemoryKey(exchange, symbol, timeframe string, openTime time.Time) string {
+	return strings.ToUpper(strings.TrimSpace(exchange)) + "|" +
+		strings.ToUpper(strings.TrimSpace(symbol)) + "|" +
+		strings.ToLower(strings.TrimSpace(timeframe)) + "|" +
+		openTime.UTC().Format(time.RFC3339)
 }
 
 func accountStatusForMode(mode string) string {

@@ -407,10 +407,46 @@ type SessionMarker = {
 };
 
 const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").replace(/\/$/, "");
+const AUTH_STORAGE_KEY = "bktrader-console-auth";
+
+type AuthSession = {
+  token: string;
+  username: string;
+  expiresAt?: string;
+};
+
+function readStoredAuthSession(): AuthSession | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as AuthSession;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredAuthSession(session: AuthSession | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (!session) {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+}
 
 function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authSession, setAuthSession] = useState<AuthSession | null>(() => readStoredAuthSession());
+  const [loginForm, setLoginForm] = useState({ username: "admin", password: "" });
+  const [loginAction, setLoginAction] = useState(false);
   const [summaries, setSummaries] = useState<AccountSummary[]>([]);
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -439,6 +475,7 @@ function App() {
   const [selectedSignalRuntimeId, setSelectedSignalRuntimeId] = useState<string | null>(null);
   const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
+  const [monitorCandles, setMonitorCandles] = useState<ChartCandle[]>([]);
   const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
   const [sessionAction, setSessionAction] = useState<string | null>(null);
   const [paperCreateAction, setPaperCreateAction] = useState(false);
@@ -452,6 +489,8 @@ function App() {
   const [liveSessionAction, setLiveSessionAction] = useState<string | null>(null);
   const [liveSessionCreateAction, setLiveSessionCreateAction] = useState(false);
   const [liveSessionLaunchAction, setLiveSessionLaunchAction] = useState(false);
+  const [liveSessionDeleteAction, setLiveSessionDeleteAction] = useState<string | null>(null);
+  const [editingLiveSessionId, setEditingLiveSessionId] = useState<string | null>(null);
   const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
   const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
   const [notificationAction, setNotificationAction] = useState<string | null>(null);
@@ -571,6 +610,14 @@ function App() {
     chatId: "",
     sendLevels: "critical,warning",
   });
+  const [liveAccountError, setLiveAccountError] = useState<string | null>(null);
+  const [liveBindingError, setLiveBindingError] = useState<string | null>(null);
+  const [liveSessionError, setLiveSessionError] = useState<string | null>(null);
+  const [liveAccountNotice, setLiveAccountNotice] = useState<string | null>(null);
+  const [liveBindingNotice, setLiveBindingNotice] = useState<string | null>(null);
+  const [liveSessionNotice, setLiveSessionNotice] = useState<string | null>(null);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [activeSettingsModal, setActiveSettingsModal] = useState<"telegram" | "live-account" | "live-binding" | "live-session" | null>(null);
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
@@ -586,6 +633,8 @@ function App() {
   const primarySessionTimeline = getList(primarySession?.state?.timeline);
   const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
   const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
+  const quickLiveAccountId = liveSessionForm.accountId || liveBindingForm.accountId || liveAccounts[0]?.id || "";
+  const quickLiveAccount = liveAccounts.find((item) => item.id === quickLiveAccountId) ?? null;
   const primaryLiveSessionDecision = getRecord(primaryLiveSession?.state?.lastStrategyDecision);
   const primaryLiveSessionDecisionMeta = getRecord(primaryLiveSessionDecision.metadata);
   const primaryLiveSessionSignalBarDecision = getRecord(primaryLiveSessionDecisionMeta.signalBarDecision);
@@ -695,8 +744,15 @@ function App() {
   const monitorMode = highlightedLiveSession?.session ? "LIVE" : "--";
   const monitorExecutionSummary = highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(null, orders, fills, positions);
   const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : {};
-  const monitorBars = deriveSignalBarCandles(getRecord(monitorRuntimeState.sourceStates));
-  const monitorSignalState = derivePrimarySignalBarState(getRecord(monitorRuntimeState.signalBarStates));
+  const monitorSessionState = getRecord(monitorSession?.state);
+  const monitorBars = mapChartCandlesToSignalBarCandles(
+    monitorCandles,
+    String(monitorSessionState.signalTimeframe ?? "1d")
+  );
+  const monitorSignalState = derivePrimarySignalBarState(
+    getRecord(monitorRuntimeState.signalBarStates),
+    getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates)
+  );
   const monitorMarket = deriveRuntimeMarketSnapshot(
     getRecord(monitorRuntimeState.sourceStates),
     getRecord(monitorRuntimeState.lastEventSummary)
@@ -704,12 +760,105 @@ function App() {
   const monitorSummary =
     monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
   const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
+  const topPositions = positions.slice(0, 8);
+  const topFills = fills.slice().reverse().slice(0, 8);
+
+  function selectQuickLiveAccount(accountId: string) {
+    setLiveBindingForm((current) => ({ ...current, accountId }));
+    setLiveSessionForm((current) => ({ ...current, accountId }));
+    setLiveOrderForm((current) => ({ ...current, accountId }));
+    setAccountSignalForm((current) => ({ ...current, accountId }));
+    setSignalRuntimeForm((current) => ({ ...current, accountId }));
+  }
+
+  function openLiveAccountModal() {
+    const baseName = "Binance Testnet";
+    const existingNames = new Set(liveAccounts.map((item) => item.name));
+    let nextName = baseName;
+    let suffix = 2;
+    while (existingNames.has(nextName)) {
+      nextName = `${baseName} ${suffix}`;
+      suffix += 1;
+    }
+    setLiveAccountForm((current) => ({
+      ...current,
+      name: current.name.trim() === "" || existingNames.has(current.name) ? nextName : current.name,
+      exchange: current.exchange || "binance-futures",
+    }));
+    setError(null);
+    setLiveAccountError(null);
+    setLiveAccountNotice(null);
+    setActiveSettingsModal("live-account");
+  }
+  function openLiveBindingModal() {
+    if (quickLiveAccountId) {
+      selectQuickLiveAccount(quickLiveAccountId);
+    }
+    setError(null);
+    setLiveBindingError(null);
+    setLiveBindingNotice(null);
+    setActiveSettingsModal("live-binding");
+  }
+  function openLiveSessionModal(session?: LiveSession | null) {
+    const nextAccountId = session?.accountId || quickLiveAccountId || liveAccounts[0]?.id || "";
+    const nextStrategyId = normalizeStrategyId(session?.strategyId ?? "", strategies[0]?.id || "");
+    const sessionState = getRecord(session?.state);
+    if (nextAccountId) {
+      selectQuickLiveAccount(nextAccountId);
+    }
+    setLiveSessionForm((current) => ({
+      ...current,
+      accountId: nextAccountId || current.accountId,
+      strategyId: nextStrategyId,
+      signalTimeframe: String(sessionState.signalTimeframe ?? current.signalTimeframe ?? "1d"),
+      executionDataSource: String(sessionState.executionDataSource ?? current.executionDataSource ?? "tick"),
+      symbol: String(sessionState.symbol ?? current.symbol ?? "BTCUSDT"),
+      defaultOrderQuantity: String(sessionState.defaultOrderQuantity ?? current.defaultOrderQuantity ?? "0.001"),
+      executionEntryOrderType: String(sessionState.executionEntryOrderType ?? current.executionEntryOrderType ?? "MARKET"),
+      executionEntryMaxSpreadBps: String(sessionState.executionEntryMaxSpreadBps ?? current.executionEntryMaxSpreadBps ?? "8"),
+      executionEntryWideSpreadMode: String(sessionState.executionEntryWideSpreadMode ?? current.executionEntryWideSpreadMode ?? "limit-maker"),
+      executionEntryTimeoutFallbackOrderType: String(
+        sessionState.executionEntryTimeoutFallbackOrderType ?? current.executionEntryTimeoutFallbackOrderType ?? "MARKET"
+      ),
+      executionPTExitOrderType: String(sessionState.executionPTExitOrderType ?? current.executionPTExitOrderType ?? "LIMIT"),
+      executionPTExitTimeInForce: String(sessionState.executionPTExitTimeInForce ?? current.executionPTExitTimeInForce ?? "GTX"),
+      executionPTExitPostOnly: Boolean(sessionState.executionPTExitPostOnly ?? current.executionPTExitPostOnly),
+      executionPTExitTimeoutFallbackOrderType: String(
+        sessionState.executionPTExitTimeoutFallbackOrderType ?? current.executionPTExitTimeoutFallbackOrderType ?? "MARKET"
+      ),
+      executionSLExitOrderType: String(sessionState.executionSLExitOrderType ?? current.executionSLExitOrderType ?? "MARKET"),
+      executionSLExitMaxSpreadBps: String(sessionState.executionSLExitMaxSpreadBps ?? current.executionSLExitMaxSpreadBps ?? "999"),
+      dispatchMode: String(sessionState.dispatchMode ?? current.dispatchMode ?? "manual-review"),
+      dispatchCooldownSeconds: String(sessionState.dispatchCooldownSeconds ?? current.dispatchCooldownSeconds ?? "30"),
+    }));
+    setEditingLiveSessionId(session?.id ?? null);
+    setError(null);
+    setLiveSessionError(null);
+    setLiveSessionNotice(null);
+    setActiveSettingsModal("live-session");
+  }
+  const strategyIds = useMemo(() => new Set(strategies.map((item) => item.id)), [strategies]);
+  const strategyOptions = useMemo(
+    () =>
+      strategies.map((strategy) => ({
+        value: strategy.id,
+        label: strategyLabel(strategy),
+      })),
+    [strategies]
+  );
+  const validLiveSessions = useMemo(
+    () => liveSessions.filter((item) => strategyIds.has(item.strategyId)),
+    [liveSessions, strategyIds]
+  );
+  function normalizeStrategyId(candidate: string, fallback = "") {
+    return strategyIds.has(candidate) ? candidate : fallback;
+  }
   const monitorSessionSource: SourceFilter = highlightedLiveSession?.session ? "live" : "all";
   const monitorSessionID = monitorSession?.id;
   const selectedSignalAccount = accountSignalForm.accountId || liveAccounts[0]?.id || "";
-  const selectedSignalStrategy = strategySignalForm.strategyId || strategies[0]?.id || "";
+  const selectedSignalStrategy = normalizeStrategyId(strategySignalForm.strategyId, strategies[0]?.id || "");
   const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
-  const selectedRuntimeStrategy = signalRuntimeForm.strategyId || selectedSignalStrategy;
+  const selectedRuntimeStrategy = normalizeStrategyId(signalRuntimeForm.strategyId, selectedSignalStrategy);
   const selectedStrategy =
     strategies.find((item) => item.id === (selectedStrategyId || strategyEditorForm.strategyId)) ?? strategies[0] ?? null;
   const selectedStrategyVersion = selectedStrategy?.currentVersion ?? null;
@@ -817,6 +966,7 @@ function App() {
       ordersData,
       fillsData,
       positionsData,
+      paperSessionData,
       liveSessionData,
       strategyData,
       backtestData,
@@ -869,7 +1019,11 @@ function App() {
     const from = range.from;
     const to = range.to;
 
-    const [snapshotData, candleData, annotationData] = await Promise.all([
+    const monitorSessionForChart = liveSessionData[0] ?? null;
+    const monitorSignalTimeframe = String(monitorSessionForChart?.state?.signalTimeframe ?? "1d");
+    const monitorResolution = monitorSignalTimeframe.toLowerCase() === "4h" ? "240" : "1D";
+
+    const [snapshotData, candleData, monitorCandleData, annotationData] = await Promise.all([
       summaryData[0]?.accountId
         ? fetchJSON<AccountEquitySnapshot[]>(
             `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(summaryData[0].accountId)}`
@@ -878,42 +1032,69 @@ function App() {
       fetchJSON<{ candles: ChartCandle[] }>(
         `/api/v1/chart/candles?symbol=BTCUSDT&resolution=1&from=${from}&to=${to}&limit=840`
       ),
+      fetchJSON<{ candles: ChartCandle[] }>(
+        `/api/v1/chart/candles?symbol=BTCUSDT&resolution=${encodeURIComponent(monitorResolution)}&limit=400`
+      ),
       fetchJSON<ChartAnnotation[]>(
         `/api/v1/chart/annotations?symbol=BTCUSDT&from=${from}&to=${to}&limit=300`
       ),
     ]);
 
-    setSummaries(summaryData);
-    setAccounts(accountData);
-    setOrders(ordersData);
-    setFills(fillsData);
-    setPositions(positionsData);
-    setSnapshots(snapshotData);
-    setStrategies(strategyData);
+    const normalizedSummaries = Array.isArray(summaryData) ? summaryData : [];
+    const normalizedAccounts = Array.isArray(accountData) ? accountData : [];
+    const normalizedOrders = Array.isArray(ordersData) ? ordersData : [];
+    const normalizedFills = Array.isArray(fillsData) ? fillsData : [];
+    const normalizedPositions = Array.isArray(positionsData) ? positionsData : [];
+    const normalizedPaperSessions = Array.isArray(paperSessionData) ? paperSessionData : [];
+    const normalizedLiveSessions = Array.isArray(liveSessionData) ? liveSessionData : [];
+    const normalizedStrategies = Array.isArray(strategyData) ? strategyData : [];
+    const normalizedBacktests = Array.isArray(backtestData) ? backtestData : [];
+    const normalizedLiveAdapters = Array.isArray(liveAdapterData) ? liveAdapterData : [];
+    const normalizedSignalSourceTypes = Array.isArray(signalSourceTypeData) ? signalSourceTypeData : [];
+    const normalizedSignalRuntimeAdapters = Array.isArray(signalRuntimeAdapterData) ? signalRuntimeAdapterData : [];
+    const normalizedSignalRuntimeSessions = Array.isArray(signalRuntimeSessionData) ? signalRuntimeSessionData : [];
+    const normalizedAlerts = Array.isArray(alertData) ? alertData : [];
+    const normalizedNotifications = Array.isArray(notificationData) ? notificationData : [];
+    const normalizedSnapshots = Array.isArray(snapshotData) ? snapshotData : [];
+    const normalizedAnnotations = Array.isArray(annotationData) ? annotationData : [];
+    const normalizedCandles = Array.isArray(candleData?.candles) ? candleData.candles : [];
+    const normalizedMonitorCandles = Array.isArray(monitorCandleData?.candles) ? monitorCandleData.candles : [];
+    const normalizedSignalCatalog = signalCatalogData && typeof signalCatalogData === "object" ? signalCatalogData : { sources: [], notes: [] };
+    const normalizedBacktestOptions =
+      backtestOptionsData && typeof backtestOptionsData === "object" ? backtestOptionsData : ({} as BacktestOptions);
+
+    setSummaries(normalizedSummaries);
+    setAccounts(normalizedAccounts);
+    setOrders(normalizedOrders);
+    setFills(normalizedFills);
+    setPositions(normalizedPositions);
+    setSnapshots(normalizedSnapshots);
+    setMonitorCandles(normalizedMonitorCandles);
+    setStrategies(normalizedStrategies);
     setSelectedStrategyId((current) => {
-      if (current && strategyData.some((item) => item.id === current)) {
+      if (current && normalizedStrategies.some((item) => item.id === current)) {
         return current;
       }
-      return strategyData[0]?.id ?? null;
+      return normalizedStrategies[0]?.id ?? null;
     });
-    setBacktests(backtestData);
+    setBacktests(normalizedBacktests);
     setSelectedBacktestId((current) => {
-      if (current && backtestData.some((item) => item.id === current)) {
+      if (current && normalizedBacktests.some((item) => item.id === current)) {
         return current;
       }
-      return backtestData.length > 0 ? backtestData[backtestData.length - 1].id : null;
+      return normalizedBacktests.length > 0 ? normalizedBacktests[normalizedBacktests.length - 1].id : null;
     });
-    setBacktestOptions(backtestOptionsData);
-    setPaperSessions([]);
-    setLiveSessions(liveSessionData);
-    setLiveAdapters(liveAdapterData);
-    setSignalCatalog(signalCatalogData);
-    setSignalSourceTypes(signalSourceTypeData);
-    setSignalRuntimeAdapters(signalRuntimeAdapterData);
-    setSignalRuntimeSessions(signalRuntimeSessionData);
+    setBacktestOptions(normalizedBacktestOptions);
+    setPaperSessions(normalizedPaperSessions);
+    setLiveSessions(normalizedLiveSessions);
+    setLiveAdapters(normalizedLiveAdapters);
+    setSignalCatalog(normalizedSignalCatalog as SignalSourceCatalog);
+    setSignalSourceTypes(normalizedSignalSourceTypes);
+    setSignalRuntimeAdapters(normalizedSignalRuntimeAdapters);
+    setSignalRuntimeSessions(normalizedSignalRuntimeSessions);
     setRuntimePolicy(runtimePolicyData);
-    setAlerts(alertData);
-    setNotifications(notificationData);
+    setAlerts(normalizedAlerts);
+    setNotifications(normalizedNotifications);
     setTelegramConfig(telegramConfigData);
     setTelegramForm({
       enabled: Boolean(telegramConfigData.enabled),
@@ -931,25 +1112,28 @@ function App() {
     setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
     setSelectedSignalRuntimeId((current) => {
-      if (current && signalRuntimeSessionData.some((item) => item.id === current)) {
+      if (current && normalizedSignalRuntimeSessions.some((item) => item.id === current)) {
         return current;
       }
-      return signalRuntimeSessionData[0]?.id ?? null;
+      return normalizedSignalRuntimeSessions[0]?.id ?? null;
     });
-    setCandles(candleData.candles ?? []);
-    setAnnotations(annotationData);
+    setCandles(normalizedCandles);
+    setAnnotations(normalizedAnnotations);
     setBacktestForm((current) => ({
-      strategyVersionId: current.strategyVersionId || strategyData[0]?.currentVersion?.id || "",
-      signalTimeframe: current.signalTimeframe || backtestOptionsData.defaultSignalTimeframe,
-      executionDataSource: current.executionDataSource || backtestOptionsData.defaultExecutionDataSource,
+      strategyVersionId: current.strategyVersionId || normalizedStrategies[0]?.currentVersion?.id || "",
+      signalTimeframe: current.signalTimeframe || normalizedBacktestOptions.defaultSignalTimeframe,
+      executionDataSource: current.executionDataSource || normalizedBacktestOptions.defaultExecutionDataSource,
       symbol: current.symbol || "BTCUSDT",
       from: current.from || "",
       to: current.to || "",
     }));
     setPaperForm((current) => current);
+    const strategyIDSet = new Set(normalizedStrategies.map((item) => item.id));
+    const normalizeLoadedStrategyId = (candidate: string, fallback = "") =>
+      candidate && strategyIDSet.has(candidate) ? candidate : fallback;
     setLiveBindingForm((current) => ({
-      accountId: current.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
-      adapterKey: current.adapterKey || liveAdapterData[0]?.key || "binance-futures",
+      accountId: current.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
+      adapterKey: current.adapterKey || normalizedLiveAdapters[0]?.key || "binance-futures",
       positionMode: current.positionMode || "ONE_WAY",
       marginMode: current.marginMode || "CROSSED",
       sandbox: current.sandbox,
@@ -957,8 +1141,8 @@ function App() {
       apiSecretRef: current.apiSecretRef,
     }));
     setLiveOrderForm((current) => ({
-      accountId: current.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
-      strategyVersionId: current.strategyVersionId || strategyData[0]?.currentVersion?.id || "",
+      accountId: current.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
+      strategyVersionId: current.strategyVersionId || normalizedStrategies[0]?.currentVersion?.id || "",
       symbol: current.symbol || "BTCUSDT",
       side: current.side || "BUY",
       type: current.type || "LIMIT",
@@ -966,8 +1150,8 @@ function App() {
       price: current.price || "",
     }));
     setLiveSessionForm((current) => ({
-      accountId: current.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
-      strategyId: current.strategyId || strategyData[0]?.id || "",
+      accountId: current.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
+      strategyId: normalizeLoadedStrategyId(current.strategyId, normalizedStrategies[0]?.id || ""),
           signalTimeframe: current.signalTimeframe || "1d",
           executionDataSource: current.executionDataSource || "tick",
           symbol: current.symbol || "BTCUSDT",
@@ -975,16 +1159,16 @@ function App() {
           dispatchMode: current.dispatchMode || "manual-review",
           dispatchCooldownSeconds: current.dispatchCooldownSeconds || "30",
         }));
-    const availableSignalSources = signalCatalogData.sources ?? [];
+    const availableSignalSources = (normalizedSignalCatalog as SignalSourceCatalog).sources ?? [];
     setAccountSignalForm((current) => ({
-      accountId: current.accountId || summaryData[0]?.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
+      accountId: current.accountId || normalizedSummaries[0]?.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
       role: current.role || "trigger",
       symbol: current.symbol || "BTCUSDT",
       timeframe: current.timeframe || "1d",
     }));
     setStrategySignalForm((current) => ({
-      strategyId: current.strategyId || strategyData[0]?.id || "",
+      strategyId: normalizeLoadedStrategyId(current.strategyId, normalizedStrategies[0]?.id || ""),
       sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
       role: current.role || "trigger",
       symbol: current.symbol || "BTCUSDT",
@@ -995,8 +1179,8 @@ function App() {
       description: current.description || "",
     }));
     setSignalRuntimeForm((current) => ({
-      accountId: current.accountId || summaryData[0]?.accountId || accountData.find((item) => item.mode === "LIVE")?.id || "",
-      strategyId: current.strategyId || strategyData[0]?.id || "",
+      accountId: current.accountId || normalizedSummaries[0]?.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
+      strategyId: normalizeLoadedStrategyId(current.strategyId, normalizedStrategies[0]?.id || ""),
     }));
   }
 
@@ -1004,6 +1188,10 @@ function App() {
     let active = true;
 
     async function load() {
+      if (!authSession?.token) {
+        setLoading(false);
+        return;
+      }
       try {
         await loadDashboard();
         if (!active) {
@@ -1012,6 +1200,12 @@ function App() {
         setError(null);
       } catch (err) {
         if (!active) {
+          return;
+        }
+        if (typeof err === "object" && err && "status" in err && (err as { status?: number }).status === 401) {
+          writeStoredAuthSession(null);
+          setAuthSession(null);
+          setError("登录已失效，请重新登录");
           return;
         }
         setError(err instanceof Error ? err.message : "Failed to load monitoring data");
@@ -1028,7 +1222,7 @@ function App() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [timeWindow, chartOverrideRange]);
+  }, [authSession?.token, timeWindow, chartOverrideRange]);
 
   useEffect(() => {
     setSelectedSample(null);
@@ -1058,6 +1252,18 @@ function App() {
   }, [selectedStrategy]);
 
   useEffect(() => {
+    if (strategySignalForm.strategyId && !strategyIds.has(strategySignalForm.strategyId)) {
+      setStrategySignalForm((current) => ({ ...current, strategyId: strategies[0]?.id || "" }));
+    }
+    if (signalRuntimeForm.strategyId && !strategyIds.has(signalRuntimeForm.strategyId)) {
+      setSignalRuntimeForm((current) => ({ ...current, strategyId: strategies[0]?.id || "" }));
+    }
+    if (liveSessionForm.strategyId && !strategyIds.has(liveSessionForm.strategyId)) {
+      setLiveSessionForm((current) => ({ ...current, strategyId: strategies[0]?.id || "" }));
+    }
+  }, [liveSessionForm.strategyId, signalRuntimeForm.strategyId, strategies, strategyIds, strategySignalForm.strategyId]);
+
+  useEffect(() => {
     async function loadSignalDetails() {
       try {
         const tasks: Promise<unknown>[] = [];
@@ -1068,14 +1274,14 @@ function App() {
         } else {
           setAccountSignalBindings([]);
         }
-        if (selectedSignalStrategy) {
+        if (selectedSignalStrategy && strategyIds.has(selectedSignalStrategy)) {
           tasks.push(
             fetchJSON<SignalBinding[]>(`/api/v1/strategies/${selectedSignalStrategy}/signal-bindings`).then(setStrategySignalBindings)
           );
         } else {
           setStrategySignalBindings([]);
         }
-        if (selectedRuntimeAccount && selectedRuntimeStrategy) {
+        if (selectedRuntimeAccount && selectedRuntimeStrategy && strategyIds.has(selectedRuntimeStrategy)) {
           tasks.push(
             fetchJSON<Record<string, unknown>>(
               `/api/v1/signal-runtime/plan?accountId=${encodeURIComponent(selectedRuntimeAccount)}&strategyId=${encodeURIComponent(selectedRuntimeStrategy)}`
@@ -1085,13 +1291,14 @@ function App() {
           setSignalRuntimePlan(null);
         }
         await Promise.all(tasks);
+        setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load signal runtime details");
       }
     }
 
     void loadSignalDetails();
-  }, [selectedSignalAccount, selectedSignalStrategy, selectedRuntimeAccount, selectedRuntimeStrategy]);
+  }, [selectedSignalAccount, selectedSignalStrategy, selectedRuntimeAccount, selectedRuntimeStrategy, strategyIds]);
 
   const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
   const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
@@ -1269,9 +1476,18 @@ function App() {
   }
 
   async function createLiveAccount() {
+    if (!liveAccountForm.name.trim()) {
+      setLiveAccountError("Live account name is required");
+      return;
+    }
+    if (!liveAccountForm.exchange.trim()) {
+      setLiveAccountError("Exchange is required");
+      return;
+    }
+    setLiveAccountError(null);
     setLiveCreateAction(true);
     try {
-      await fetchJSON("/api/v1/accounts", {
+      const created = await fetchJSON<AccountRecord>("/api/v1/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1280,10 +1496,15 @@ function App() {
           exchange: liveAccountForm.exchange,
         }),
       });
+      if (created?.id) {
+        selectQuickLiveAccount(created.id);
+        setLiveAccountNotice(`已创建并选中账户：${created.name} (${created.id})`);
+      }
       await loadDashboard();
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create live account");
+      setLiveAccountNotice(null);
+      setLiveAccountError(err instanceof Error ? err.message : "Failed to create live account");
     } finally {
       setLiveCreateAction(false);
     }
@@ -1291,9 +1512,10 @@ function App() {
 
   async function bindLiveAccount() {
     if (!liveBindingForm.accountId) {
-      setError("Live binding needs an account");
+      setLiveBindingError("Live binding needs an account");
       return;
     }
+    setLiveBindingError(null);
     setLiveBindAction(true);
     try {
       await fetchJSON(`/api/v1/live/accounts/${liveBindingForm.accountId}/binding`, {
@@ -1311,9 +1533,17 @@ function App() {
         }),
       });
       await loadDashboard();
+      const boundAccount =
+        accounts.find((item) => item.id === liveBindingForm.accountId) ??
+        quickLiveAccount ??
+        null;
+      setLiveBindingNotice(
+        `绑定成功：${boundAccount?.name ?? liveBindingForm.accountId} · ${liveBindingForm.adapterKey} · sandbox=${String(liveBindingForm.sandbox)}`
+      );
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to bind live account");
+      setLiveBindingNotice(null);
+      setLiveBindingError(err instanceof Error ? err.message : "Failed to bind live account");
     } finally {
       setLiveBindAction(false);
     }
@@ -1378,10 +1608,13 @@ function App() {
   }
 
   async function createLiveSession() {
-    if (!liveSessionForm.accountId || !liveSessionForm.strategyId) {
-      setError("Live session needs an account and strategy");
+    const normalizedStrategyId = strategyIds.has(liveSessionForm.strategyId) ? liveSessionForm.strategyId : strategies[0]?.id || "";
+    if (!liveSessionForm.accountId || !normalizedStrategyId) {
+      setLiveSessionError("Live session needs an account and strategy");
       return null;
     }
+    setLiveSessionError(null);
+    setLiveSessionForm((current) => ({ ...current, strategyId: normalizedStrategyId }));
     setLiveSessionCreateAction(true);
     try {
       const created = await fetchJSON<LiveSession>("/api/v1/live/sessions", {
@@ -1389,7 +1622,7 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accountId: liveSessionForm.accountId,
-          strategyId: liveSessionForm.strategyId,
+          strategyId: normalizedStrategyId,
           signalTimeframe: liveSessionForm.signalTimeframe,
           executionDataSource: liveSessionForm.executionDataSource,
           symbol: liveSessionForm.symbol,
@@ -1409,10 +1642,67 @@ function App() {
         }),
       });
       await loadDashboard();
+      setLiveSessionForm((current) => ({ ...current, strategyId: normalizedStrategyId }));
+      setLiveSessionNotice(
+        `会话已创建：${created?.id ?? "--"} · ${liveSessionForm.symbol} · ${liveSessionForm.signalTimeframe} · ${liveSessionForm.dispatchMode}`
+      );
+      setActiveSettingsModal(null);
+      window.location.hash = "live";
       setError(null);
       return created;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create live session");
+      setLiveSessionNotice(null);
+      setLiveSessionError(err instanceof Error ? err.message : "Failed to create live session");
+      return null;
+    } finally {
+      setLiveSessionCreateAction(false);
+    }
+  }
+
+  async function saveLiveSession() {
+    if (!editingLiveSessionId) {
+      return createLiveSession();
+    }
+    const normalizedStrategyId = strategyIds.has(liveSessionForm.strategyId) ? liveSessionForm.strategyId : strategies[0]?.id || "";
+    if (!liveSessionForm.accountId || !normalizedStrategyId) {
+      setLiveSessionError("Live session needs an account and strategy");
+      return null;
+    }
+    setLiveSessionError(null);
+    setLiveSessionCreateAction(true);
+    try {
+      const updated = await fetchJSON<LiveSession>(`/api/v1/live/sessions/${editingLiveSessionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: liveSessionForm.accountId,
+          strategyId: normalizedStrategyId,
+          signalTimeframe: liveSessionForm.signalTimeframe,
+          executionDataSource: liveSessionForm.executionDataSource,
+          symbol: liveSessionForm.symbol,
+          defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+          executionEntryOrderType: liveSessionForm.executionEntryOrderType,
+          executionEntryMaxSpreadBps: Number(liveSessionForm.executionEntryMaxSpreadBps) || undefined,
+          executionEntryWideSpreadMode: liveSessionForm.executionEntryWideSpreadMode,
+          executionEntryTimeoutFallbackOrderType: liveSessionForm.executionEntryTimeoutFallbackOrderType,
+          executionPTExitOrderType: liveSessionForm.executionPTExitOrderType,
+          executionPTExitTimeInForce: liveSessionForm.executionPTExitTimeInForce,
+          executionPTExitPostOnly: liveSessionForm.executionPTExitPostOnly,
+          executionPTExitTimeoutFallbackOrderType: liveSessionForm.executionPTExitTimeoutFallbackOrderType,
+          executionSLExitOrderType: liveSessionForm.executionSLExitOrderType,
+          executionSLExitMaxSpreadBps: Number(liveSessionForm.executionSLExitMaxSpreadBps) || undefined,
+          dispatchMode: liveSessionForm.dispatchMode,
+          dispatchCooldownSeconds: Number(liveSessionForm.dispatchCooldownSeconds) || 30,
+        }),
+      });
+      await loadDashboard();
+      setLiveSessionNotice(`会话已更新：${updated?.id ?? editingLiveSessionId}`);
+      setActiveSettingsModal(null);
+      setEditingLiveSessionId(null);
+      setError(null);
+      return updated;
+    } catch (err) {
+      setLiveSessionError(err instanceof Error ? err.message : "Failed to update live session");
       return null;
     } finally {
       setLiveSessionCreateAction(false);
@@ -1421,6 +1711,7 @@ function App() {
 
   async function createAndStartLiveSession() {
     setLiveSessionLaunchAction(true);
+    setLiveSessionError(null);
     try {
       const created = await createLiveSession();
       if (!created?.id) {
@@ -1431,16 +1722,32 @@ function App() {
       await loadDashboard();
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create and start live session");
+      setLiveSessionError(err instanceof Error ? err.message : "Failed to create and start live session");
     } finally {
       setLiveSessionAction(null);
       setLiveSessionLaunchAction(false);
     }
   }
 
+  async function deleteLiveSession(sessionId: string) {
+    setLiveSessionDeleteAction(sessionId);
+    try {
+      await fetchJSON(`/api/v1/live/sessions/${sessionId}`, { method: "DELETE" });
+      await loadDashboard();
+      if (activeSettingsModal === "live-session") {
+        setLiveSessionNotice(`已删除会话：${sessionId}`);
+      }
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete live session");
+    } finally {
+      setLiveSessionDeleteAction(null);
+    }
+  }
+
   async function launchLiveFlow(account: AccountRecord) {
     const strategyId =
-      liveSessions.find((item) => item.accountId === account.id)?.strategyId ||
+      validLiveSessions.find((item) => item.accountId === account.id)?.strategyId ||
       liveSessionForm.strategyId ||
       strategies[0]?.id ||
       "";
@@ -1508,7 +1815,16 @@ function App() {
       await fetchJSON(`/api/v1/live/sessions/${sessionId}/${action}`, { method: "POST" });
       await loadDashboard();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to execute live session action");
+      const message = err instanceof Error ? err.message : "Failed to execute live session action";
+      setError(message);
+      if (action === "start" && message.includes("is not configured")) {
+        const session = liveSessions.find((item) => item.id === sessionId);
+        if (session?.accountId) {
+          selectQuickLiveAccount(session.accountId);
+          setLiveBindingError(message);
+          setActiveSettingsModal("live-binding");
+        }
+      }
     } finally {
       setLiveSessionAction(null);
     }
@@ -1819,6 +2135,59 @@ function App() {
     }
   }
 
+  async function login() {
+    if (!loginForm.username.trim() || !loginForm.password) {
+      setError("请输入用户名和密码");
+      return;
+    }
+    setLoginAction(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: loginForm.username.trim(),
+          password: loginForm.password,
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || `HTTP ${response.status} for /api/v1/auth/login`);
+      }
+      const payload = (await response.json()) as { token: string; username: string; expiresAt?: string };
+      const session: AuthSession = {
+        token: payload.token,
+        username: payload.username,
+        expiresAt: payload.expiresAt,
+      };
+      writeStoredAuthSession(session);
+      setAuthSession(session);
+      setLoginForm((current) => ({ ...current, password: "" }));
+      setError(null);
+      setLoading(true);
+      await loadDashboard();
+      setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "登录失败");
+    } finally {
+      setLoginAction(false);
+    }
+  }
+
+  function logout() {
+    writeStoredAuthSession(null);
+    setAuthSession(null);
+    setSummaries([]);
+    setAccounts([]);
+    setOrders([]);
+    setFills([]);
+    setPositions([]);
+    setSnapshots([]);
+    setLiveSessions([]);
+    setError(null);
+    setLoading(false);
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -1841,10 +2210,10 @@ function App() {
           <a href="#fills">成交</a>
         </nav>
         <div className="status-panel">
-          <span className={error ? "status-dot status-bad" : "status-dot status-good"} />
+          <span className={!authSession?.token || error ? "status-dot status-bad" : "status-dot status-good"} />
           <div>
-            <strong>{error ? "连接异常" : "运行正常"}</strong>
-            <p>{error ?? `每 5 秒轮询 ${API_BASE}`}</p>
+            <strong>{!authSession?.token ? "需要登录" : error ? "连接异常" : "运行正常"}</strong>
+            <p>{!authSession?.token ? "请先登录平台 API" : error ?? `每 5 秒轮询 ${API_BASE}`}</p>
           </div>
         </div>
       </aside>
@@ -1861,6 +2230,63 @@ function App() {
           <div className="hero-side">
             <div className="hero-pill">{loading ? "加载中..." : `${accounts.length} 个账户`}</div>
             <div className="hero-pill hero-pill-accent">{monitorMode}</div>
+            <div className="hero-user-card">
+              <div>
+                <strong>{authSession?.username ?? "未登录"}</strong>
+                <p>{authSession?.expiresAt ? `有效至 ${formatTime(authSession.expiresAt)}` : "登录后即可加载账户与监控"}</p>
+              </div>
+              {authSession ? (
+                <button type="button" className="hero-menu-button hero-logout" onClick={logout}>
+                  退出
+                </button>
+              ) : null}
+            </div>
+            <div className="hero-menu">
+              <button
+                type="button"
+                className="hero-menu-button"
+                onClick={() => setSettingsMenuOpen((current) => !current)}
+              >
+                设置
+              </button>
+              {settingsMenuOpen ? (
+                <div className="hero-menu-popover">
+                  <button
+                    type="button"
+                    className="hero-menu-item"
+                    onClick={() => {
+                      openLiveAccountModal();
+                      setSettingsMenuOpen(false);
+                    }}
+                  >
+                    新建账户
+                  </button>
+                  <button
+                    type="button"
+                    className="hero-menu-item"
+                    onClick={() => {
+                      if (quickLiveAccountId) {
+                        selectQuickLiveAccount(quickLiveAccountId);
+                      }
+                      openLiveBindingModal();
+                      setSettingsMenuOpen(false);
+                    }}
+                  >
+                    绑定账户
+                  </button>
+                  <button
+                    type="button"
+                    className="hero-menu-item"
+                    onClick={() => {
+                      setActiveSettingsModal("telegram");
+                      setSettingsMenuOpen(false);
+                    }}
+                  >
+                    Telegram 通知
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </section>
 
@@ -1871,6 +2297,242 @@ function App() {
           <MetricCard label="Fees" value={formatMoney(primaryAccount?.fees)} />
           <MetricCard label="Exposure" value={formatMoney(primaryAccount?.exposureNotional)} />
           <MetricCard label="Open Positions" value={String(primaryAccount?.openPositionCount ?? 0)} />
+        </section>
+
+        <section className="panel panel-compact live-quick-panel">
+          <div className="panel-header panel-header-tight">
+            <div>
+              <p className="panel-kicker">Live Quick Actions</p>
+              <h3>账户和会话常用操作</h3>
+            </div>
+            <div className="range-box">
+              <span>{liveAccounts.length} accounts</span>
+              <span>{liveSessions.length} sessions</span>
+              <span>{quickLiveAccount?.name ?? "no-account"}</span>
+            </div>
+          </div>
+          <div className="live-quick-toolbar">
+            <label className="form-field live-quick-select">
+              <span>Live Account</span>
+              <select
+                value={quickLiveAccountId || "__create__"}
+                onChange={(event) => {
+                  if (event.target.value === "__create__") {
+                    openLiveAccountModal();
+                    return;
+                  }
+                  selectQuickLiveAccount(event.target.value);
+                }}
+              >
+                {liveAccounts.length === 0 ? <option value="__create__">+ 新建账户</option> : null}
+                {liveAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} ({account.status})
+                  </option>
+                ))}
+                {liveAccounts.length > 0 ? <option value="__create__">+ 新建账户</option> : null}
+              </select>
+            </label>
+            <div className="live-quick-actions">
+              <ActionButton label="新建账户" variant="ghost" onClick={openLiveAccountModal} />
+              <ActionButton
+                label="绑定适配器"
+                variant="ghost"
+                disabled={!quickLiveAccountId}
+                onClick={() => {
+                  if (quickLiveAccountId) {
+                    selectQuickLiveAccount(quickLiveAccountId);
+                  }
+                  openLiveBindingModal();
+                }}
+              />
+              <ActionButton
+                label="创建会话"
+                variant="ghost"
+                disabled={!quickLiveAccountId}
+                onClick={() => {
+                  if (quickLiveAccountId) {
+                    selectQuickLiveAccount(quickLiveAccountId);
+                  }
+                  openLiveSessionModal();
+                }}
+              />
+              <ActionButton
+                label={quickLiveAccountId && liveFlowAction === quickLiveAccountId ? "Launching..." : "一键拉起"}
+                disabled={!quickLiveAccount || liveFlowAction !== null}
+                onClick={() => {
+                  if (quickLiveAccount) {
+                    void launchLiveFlow(quickLiveAccount);
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <div className="backtest-notes notes-compact">
+            <div className="note-item">available-accounts: {liveAccounts.length > 0 ? liveAccounts.map((item) => item.name).join(" / ") : "暂无，请先新建"}</div>
+            <div className="note-item">selected-account: {quickLiveAccount?.name ?? "--"} · {quickLiveAccount?.exchange ?? "--"} · {quickLiveAccount?.status ?? "--"}</div>
+            <div className="note-item">adapter: {String(quickLiveAccount?.bindings?.live?.adapterKey ?? "--")} · sandbox {String(quickLiveAccount?.bindings?.live?.sandbox ?? "--")}</div>
+            <div className="note-item">session: {liveSessions.find((item) => item.accountId === quickLiveAccountId)?.status ?? "--"} · strategy {liveSessions.find((item) => item.accountId === quickLiveAccountId)?.strategyId ?? "--"}</div>
+            {liveBindingNotice ? <div className="note-item note-item-success">{liveBindingNotice}</div> : null}
+            {liveSessionNotice ? <div className="note-item note-item-success">{liveSessionNotice}</div> : null}
+          </div>
+        </section>
+
+        <section className="monitor-top-grid">
+          <section id="monitor" className="panel panel-market panel-compact monitor-panel-main">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">主监控</p>
+                <h3>运行中会话的大周期 K 线与执行状态</h3>
+              </div>
+              <div className="range-box">
+                <span>{monitorMode}</span>
+                <span>{monitorBars.length} 根 K 线</span>
+                <span>{monitorMarkers.length} 个标记</span>
+                <span>{String(monitorSignalState.timeframe ?? "--")}</span>
+              </div>
+            </div>
+            <div className="chart-shell chart-shell-market">
+              {monitorBars.length > 0 ? (
+                <SignalMonitorChart candles={monitorBars} markers={monitorMarkers} />
+              ) : (
+                <div className="empty-state">当前运行会话还没有交易所大周期 K 线缓存</div>
+              )}
+            </div>
+            <div className="detail-grid detail-grid-compact">
+              <div className="detail-item">
+                <span>会话模式</span>
+                <strong>{monitorMode}</strong>
+              </div>
+              <div className="detail-item">
+                <span>账户净值</span>
+                <strong>{formatMoney(monitorSummary?.netEquity)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>未实现盈亏</span>
+                <strong>{formatSigned(monitorSummary?.unrealizedPnl)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>持仓方向</span>
+                <strong>{String(monitorExecutionSummary.position?.side ?? "FLAT")}</strong>
+              </div>
+              <div className="detail-item">
+                <span>持仓数量</span>
+                <strong>{formatMaybeNumber(monitorExecutionSummary.position?.quantity)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>标记价格</span>
+                <strong>{formatMaybeNumber(monitorExecutionSummary.position?.markPrice)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>盘口</span>
+                <strong>{formatMaybeNumber(monitorMarket.bestBid)} / {formatMaybeNumber(monitorMarket.bestAsk)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>SMA5 / ATR14</span>
+                <strong>{formatMaybeNumber(monitorSignalState.sma5)} / {formatMaybeNumber(monitorSignalState.atr14)}</strong>
+              </div>
+            </div>
+            <div className="backtest-notes notes-compact">
+              <div className="note-item">
+                当前会话：{monitorSession ? shrink(monitorSession.id) : "--"} · 订单 {monitorExecutionSummary.orderCount} · 成交 {monitorExecutionSummary.fillCount}
+              </div>
+              <div className="note-item">
+                最新订单：{String(monitorExecutionSummary.latestOrder?.side ?? "--")} · {String(monitorExecutionSummary.latestOrder?.status ?? "--")} · {formatTime(String(monitorExecutionSummary.latestOrder?.createdAt ?? ""))}
+              </div>
+              <div className="note-item">
+                最新成交：{formatMaybeNumber(monitorExecutionSummary.latestFill?.price)} · 手续费 {formatMaybeNumber(monitorExecutionSummary.latestFill?.fee)} · {formatTime(String(monitorExecutionSummary.latestFill?.createdAt ?? ""))}
+              </div>
+            </div>
+          </section>
+
+          <article id="positions" className="panel panel-compact monitor-side-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Positions</p>
+                <h3>当前持仓</h3>
+              </div>
+              <div className="range-box">
+                <span>{positions.length} open</span>
+              </div>
+            </div>
+            <SimpleTable
+              columns={["Symbol", "Side", "Qty", "Entry", "Mark", "PnL"]}
+              rows={topPositions.map((position) => [
+                position.symbol,
+                position.side,
+                formatNumber(position.quantity, 4),
+                formatMoney(position.entryPrice),
+                formatMoney(position.markPrice),
+                formatSigned(
+                  position.side === "LONG"
+                    ? (position.markPrice - position.entryPrice) * position.quantity
+                    : (position.entryPrice - position.markPrice) * position.quantity
+                ),
+              ])}
+              emptyMessage="No open positions"
+            />
+          </article>
+
+          <article id="fills" className="panel panel-compact monitor-side-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Fills</p>
+                <h3>历史成交</h3>
+              </div>
+              <div className="range-box">
+                <span>{fills.length} fills</span>
+              </div>
+            </div>
+            <SimpleTable
+              columns={["Time", "Order", "Qty", "Price", "Fee"]}
+              rows={topFills.map((fill) => [
+                formatTime(fill.createdAt),
+                shrink(fill.orderId),
+                formatNumber(fill.quantity, 4),
+                formatMoney(fill.price),
+                formatMoney(fill.fee),
+              ])}
+              emptyMessage="No fills"
+            />
+          </article>
+        </section>
+
+        <section id="equity" className="panel panel-chart">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Equity History</p>
+              <h3>账户净值曲线</h3>
+            </div>
+            <div className="range-box">
+              <span>Low {formatMoney(chartRange.min)}</span>
+              <span>High {formatMoney(chartRange.max)}</span>
+            </div>
+          </div>
+          <div className="chart-shell">
+            {snapshots.length > 0 ? (
+              <svg viewBox="0 0 560 180" className="equity-chart" preserveAspectRatio="none" role="img">
+                <defs>
+                  <linearGradient id="equityFill" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor="rgba(13,108,95,0.28)" />
+                    <stop offset="100%" stopColor="rgba(13,108,95,0.02)" />
+                  </linearGradient>
+                </defs>
+                <path d={`${chartPath.area} L 560 180 L 0 180 Z`} fill="url(#equityFill)" />
+                <path d={chartPath.line} fill="none" stroke="#0d6c5f" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <div className="empty-state">No equity snapshots yet</div>
+            )}
+          </div>
+          <div className="snapshot-strip">
+            {snapshots.slice(-4).map((item) => (
+              <div key={item.id} className="snapshot-item">
+                <strong>{formatMoney(item.netEquity)}</strong>
+                <span>{formatTime(item.createdAt)}</span>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section id="notifications" className="panel panel-alerts">
@@ -1886,24 +2548,34 @@ function App() {
           </div>
           {notifications.length > 0 ? (
             <div className="alerts-grid">
-              {notifications.map((item) => (
+              {notifications.map((item) => {
+                const alert = item.alert ?? ({
+                  id: item.id,
+                  scope: String(item.metadata?.scope ?? "live"),
+                  level: String(item.metadata?.level ?? "warning"),
+                  title: "Notification",
+                  detail: "missing alert payload",
+                  anchor: "notifications",
+                  eventTime: String(item.updatedAt ?? ""),
+                } as PlatformAlert);
+                return (
                 <article key={item.id} className="alert-card">
                   <div className="alert-card-header">
                     <div>
-                      <StatusPill tone={alertLevelTone(item.alert.level)}>{item.alert.level}</StatusPill>
-                      <StatusPill tone={item.status === "acked" ? "neutral" : alertScopeTone(item.alert.scope)}>{item.status}</StatusPill>
+                      <StatusPill tone={alertLevelTone(String(alert.level ?? "warning"))}>{String(alert.level ?? "warning")}</StatusPill>
+                      <StatusPill tone={item.status === "acked" ? "neutral" : alertScopeTone(String(alert.scope ?? "live"))}>{item.status}</StatusPill>
                       <StatusPill tone={telegramDeliveryTone(item.metadata?.telegramStatus)}>
                         telegram {item.metadata?.telegramStatus ?? "pending"}
                       </StatusPill>
                     </div>
-                    <span className="alert-time">{formatTime(String(item.updatedAt ?? item.alert.eventTime ?? ""))}</span>
+                    <span className="alert-time">{formatTime(String(item.updatedAt ?? alert.eventTime ?? ""))}</span>
                   </div>
-                  <h4>{item.alert.title}</h4>
-                  <p>{item.alert.detail}</p>
+                  <h4>{alert.title}</h4>
+                  <p>{alert.detail}</p>
                   <div className="alert-meta">
-                    <span>{item.alert.accountName || item.alert.accountId || "--"}</span>
-                    <span>{item.alert.strategyName || item.alert.strategyId || "--"}</span>
-                    <span>{item.alert.runtimeSessionId || item.alert.paperSessionId || "--"}</span>
+                    <span>{alert.accountName || alert.accountId || "--"}</span>
+                    <span>{alert.strategyName || alert.strategyId || "--"}</span>
+                    <span>{alert.runtimeSessionId || alert.paperSessionId || "--"}</span>
                     <span>
                       {item.metadata?.telegramStatus === "sent" && item.metadata?.telegramSentAt
                         ? `sent ${formatTime(String(item.metadata.telegramSentAt))}`
@@ -1946,80 +2618,18 @@ function App() {
                     <button
                       type="button"
                       className="filter-chip"
-                      onClick={() => jumpToAlert(item.alert)}
+                      onClick={() => jumpToAlert(alert)}
                     >
                       Open
                     </button>
                   </div>
                 </article>
-              ))}
+              );
+            })}
             </div>
           ) : (
             <div className="empty-state empty-state-compact">No notifications yet</div>
           )}
-        </section>
-
-        <section className="panel panel-alerts">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Telegram</p>
-              <h3>Telegram 通知配置</h3>
-            </div>
-            <div className="range-box">
-              <span>{telegramConfig?.enabled ? "enabled" : "disabled"}</span>
-              <span>{telegramConfig?.maskedBotToken || "no-token"}</span>
-              <span>{telegramConfig?.chatId || "no-chat"}</span>
-            </div>
-          </div>
-          <div className="backtest-form">
-            <div className="form-grid">
-              <label className="form-field form-field-checkbox">
-                <span>Enabled</span>
-                <input
-                  type="checkbox"
-                  checked={telegramForm.enabled}
-                  onChange={(event) => setTelegramForm((current) => ({ ...current, enabled: event.target.checked }))}
-                />
-              </label>
-              <label className="form-field">
-                <span>Chat ID</span>
-                <input
-                  value={telegramForm.chatId}
-                  onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value }))}
-                  placeholder="123456789"
-                />
-              </label>
-              <label className="form-field form-field-wide">
-                <span>Bot Token</span>
-                <input
-                  value={telegramForm.botToken}
-                  onChange={(event) => setTelegramForm((current) => ({ ...current, botToken: event.target.value }))}
-                  placeholder={telegramConfig?.hasBotToken ? "leave blank to keep current token" : "123456:ABCDEF..."}
-                />
-              </label>
-              <label className="form-field form-field-wide">
-                <span>Send Levels</span>
-                <input
-                  value={telegramForm.sendLevels}
-                  onChange={(event) => setTelegramForm((current) => ({ ...current, sendLevels: event.target.value }))}
-                  placeholder="critical,warning"
-                />
-              </label>
-            </div>
-            <div className="backtest-actions inline-actions">
-              <ActionButton
-                label={telegramAction === "save-config" ? "Saving..." : "Save Telegram Config"}
-                disabled={telegramAction !== null}
-                onClick={saveTelegramConfig}
-              />
-              <ActionButton
-                label={telegramAction === "test" ? "Sending..." : "Send Test Message"}
-                variant="ghost"
-                disabled={telegramAction !== null || !telegramConfig?.enabled || !telegramConfig?.hasBotToken || !telegramConfig?.chatId}
-                onClick={sendTelegramTest}
-              />
-            </div>
-          </div>
         </section>
 
         <section id="alerts" className="panel panel-alerts">
@@ -2037,11 +2647,11 @@ function App() {
           {alerts.length > 0 ? (
             <div className="alerts-grid">
               {alerts.map((alert) => (
-                <article key={alert.id} className="alert-card">
+                <article key={alert.id || `${alert.scope}-${alert.title}-${alert.detail}`} className="alert-card">
                   <div className="alert-card-header">
                     <div>
-                      <StatusPill tone={alertLevelTone(alert.level)}>{alert.level}</StatusPill>
-                      <StatusPill tone={alertScopeTone(alert.scope)}>{alert.scope}</StatusPill>
+                      <StatusPill tone={alertLevelTone(String(alert.level ?? "warning"))}>{String(alert.level ?? "warning")}</StatusPill>
+                      <StatusPill tone={alertScopeTone(String(alert.scope ?? "live"))}>{String(alert.scope ?? "live")}</StatusPill>
                     </div>
                     <span className="alert-time">{formatTime(String(alert.eventTime ?? ""))}</span>
                   </div>
@@ -2130,9 +2740,9 @@ function App() {
                       setStrategyEditorForm((current) => ({ ...current, strategyId: event.target.value }));
                     }}
                   >
-                    {strategies.map((strategy) => (
-                      <option key={strategy.id} value={strategy.id}>
-                        {strategy.name}
+                    {strategyOptions.map((strategy) => (
+                      <option key={strategy.value} value={strategy.value}>
+                        {strategy.label}
                       </option>
                     ))}
                   </select>
@@ -2302,7 +2912,7 @@ function App() {
                   >
                     {strategies.map((strategy) => (
                       <option key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
-                        {strategy.name} · {strategy.currentVersion?.version ?? "no-version"}
+                        {strategyLabel(strategy)}
                       </option>
                     ))}
                   </select>
@@ -2403,7 +3013,7 @@ function App() {
                       {dataset.fileCount ? ` · files ${dataset.fileCount}` : ""}
                     </div>
                   ))}
-                  {backtestOptions.notes.map((note) => (
+                  {(backtestOptions.notes ?? []).map((note) => (
                     <div key={note} className="note-item">
                       {note}
                     </div>
@@ -2642,7 +3252,7 @@ function App() {
               <h3>信号源绑定与市场数据运行时</h3>
             </div>
             <div className="range-box">
-              <span>{signalCatalog?.sources.length ?? 0} sources</span>
+              <span>{signalCatalog?.sources?.length ?? 0} sources</span>
               <span>{signalRuntimeSessions.length} sessions</span>
             </div>
           </div>
@@ -2702,9 +3312,9 @@ function App() {
                 <label className="form-field">
                   <span>Strategy</span>
                   <select value={strategySignalForm.strategyId} onChange={(event) => setStrategySignalForm((current) => ({ ...current, strategyId: event.target.value }))}>
-                    {strategies.map((strategy) => (
-                      <option key={strategy.id} value={strategy.id}>
-                        {strategy.name}
+                    {strategyOptions.map((strategy) => (
+                      <option key={strategy.value} value={strategy.value}>
+                        {strategy.label}
                       </option>
                     ))}
                   </select>
@@ -2886,9 +3496,9 @@ function App() {
                 <label className="form-field">
                   <span>Strategy</span>
                   <select value={signalRuntimeForm.strategyId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, strategyId: event.target.value }))}>
-                    {strategies.map((strategy) => (
-                      <option key={strategy.id} value={strategy.id}>
-                        {strategy.name}
+                    {strategyOptions.map((strategy) => (
+                      <option key={strategy.value} value={strategy.value}>
+                        {strategy.label}
                       </option>
                     ))}
                   </select>
@@ -3193,402 +3803,86 @@ function App() {
             </div>
           ) : null}
           <div className="live-grid">
-            <div className="backtest-form session-form">
-              <h4>Create Live Account</h4>
-              <div className="form-grid">
-                <label className="form-field">
-                  <span>Name</span>
-                  <input value={liveAccountForm.name} onChange={(event) => setLiveAccountForm((current) => ({ ...current, name: event.target.value }))} />
-                </label>
-                <label className="form-field">
-                  <span>Exchange</span>
-                  <input value={liveAccountForm.exchange} onChange={(event) => setLiveAccountForm((current) => ({ ...current, exchange: event.target.value }))} />
-                </label>
-              </div>
-              <div className="backtest-actions">
-                <ActionButton label={liveCreateAction ? "Creating..." : "Create Live Account"} disabled={liveCreateAction} onClick={createLiveAccount} />
-              </div>
-            </div>
-
-            <div className="backtest-form session-form">
-              <h4>Bind Live/Testnet Adapter</h4>
-              <div className="form-grid">
-                <label className="form-field">
-                  <span>Live Account</span>
-                  <select
-                    value={liveBindingForm.accountId}
-                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, accountId: event.target.value }))}
-                  >
-                    {liveAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name} ({account.status})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Adapter</span>
-                  <select
-                    value={liveBindingForm.adapterKey}
-                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, adapterKey: event.target.value }))}
-                  >
-                    {liveAdapters.map((adapter) => (
-                      <option key={adapter.key} value={adapter.key}>
-                        {adapter.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Position Mode</span>
-                  <select
-                    value={liveBindingForm.positionMode}
-                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, positionMode: event.target.value }))}
-                  >
-                    <option value="ONE_WAY">ONE_WAY</option>
-                    <option value="HEDGE">HEDGE</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Margin Mode</span>
-                  <select
-                    value={liveBindingForm.marginMode}
-                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, marginMode: event.target.value }))}
-                  >
-                    <option value="CROSSED">CROSSED</option>
-                    <option value="ISOLATED">ISOLATED</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>API Key Env</span>
-                  <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiKeyRef: event.target.value }))} />
-                </label>
-                <label className="form-field">
-                  <span>API Secret Env</span>
-                  <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiSecretRef: event.target.value }))} />
-                </label>
-                <label className="form-field form-field-checkbox">
-                  <span>Sandbox</span>
-                  <input
-                    type="checkbox"
-                    checked={liveBindingForm.sandbox}
-                    onChange={(event) => setLiveBindingForm((current) => ({ ...current, sandbox: event.target.checked }))}
-                  />
-                </label>
-              </div>
-              <div className="backtest-actions">
-                <ActionButton label={liveBindAction ? "Binding..." : "Bind Live Adapter"} disabled={liveBindAction || !liveBindingForm.accountId} onClick={bindLiveAccount} />
-              </div>
-              <div className="backtest-notes">
+            <div className="backtest-form session-form panel-compact">
+              <h4>配置入口已收进弹窗</h4>
+              <div className="backtest-notes notes-compact">
+                <div className="note-item">首屏顶部提供账户下拉、创建账户、绑定适配器、创建会话和一键拉起。</div>
+                <div className="note-item">当前选中账户：{quickLiveAccount?.name ?? "--"} · {quickLiveAccount?.status ?? "--"} · {quickLiveAccount?.exchange ?? "--"}</div>
                 <div className="note-item">sandbox=true 时默认从 `.env` 读取 `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`。</div>
-                <div className="note-item">如果要接正式实盘，再把 sandbox 关闭并改成正式环境变量名即可。</div>
               </div>
-            </div>
-          </div>
-
-          <div className="live-grid">
-            <div className="backtest-form session-form">
-              <h4>Create Live Session</h4>
-              <div className="form-grid">
-                <label className="form-field">
-                  <span>Live Account</span>
-                  <select
-                    value={liveSessionForm.accountId}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, accountId: event.target.value }))}
-                  >
-                    {liveAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name} ({account.status})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Strategy</span>
-                  <select
-                    value={liveSessionForm.strategyId}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, strategyId: event.target.value }))}
-                  >
-                    {strategies.map((strategy) => (
-                      <option key={strategy.id} value={strategy.id}>
-                        {strategy.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Signal TF</span>
-                  <select
-                    value={liveSessionForm.signalTimeframe}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
-                  >
-                    <option value="4h">4h</option>
-                    <option value="1d">1d</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Execution Source</span>
-                  <select
-                    value={liveSessionForm.executionDataSource}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionDataSource: event.target.value }))}
-                  >
-                    <option value="tick">tick</option>
-                    <option value="1min">1min</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Symbol</span>
-                  <input
-                    value={liveSessionForm.symbol}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Default Qty</span>
-                  <input
-                    value={liveSessionForm.defaultOrderQuantity}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Entry Order</span>
-                  <select
-                    value={liveSessionForm.executionEntryOrderType}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryOrderType: event.target.value }))}
-                  >
-                    <option value="MARKET">MARKET</option>
-                    <option value="LIMIT">LIMIT</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Entry Max Spread</span>
-                  <input
-                    value={liveSessionForm.executionEntryMaxSpreadBps}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Wide Spread Mode</span>
-                  <select
-                    value={liveSessionForm.executionEntryWideSpreadMode}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryWideSpreadMode: event.target.value }))}
-                  >
-                    <option value="limit-maker">limit-maker</option>
-                    <option value="">wait</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Entry Fallback</span>
-                  <select
-                    value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryTimeoutFallbackOrderType: event.target.value }))}
-                  >
-                    <option value="MARKET">MARKET</option>
-                    <option value="LIMIT">LIMIT</option>
-                    <option value="">disabled</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>PT Exit Order</span>
-                  <select
-                    value={liveSessionForm.executionPTExitOrderType}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitOrderType: event.target.value }))}
-                  >
-                    <option value="LIMIT">LIMIT</option>
-                    <option value="MARKET">MARKET</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>PT Exit TIF</span>
-                  <select
-                    value={liveSessionForm.executionPTExitTimeInForce}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeInForce: event.target.value }))}
-                  >
-                    <option value="GTX">GTX</option>
-                    <option value="GTC">GTC</option>
-                    <option value="IOC">IOC</option>
-                  </select>
-                </label>
-                <label className="form-field checkbox-field">
-                  <span>PT Exit Post Only</span>
-                  <input
-                    type="checkbox"
-                    checked={liveSessionForm.executionPTExitPostOnly}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitPostOnly: event.target.checked }))}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>PT Exit Fallback</span>
-                  <select
-                    value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeoutFallbackOrderType: event.target.value }))}
-                  >
-                    <option value="MARKET">MARKET</option>
-                    <option value="LIMIT">LIMIT</option>
-                    <option value="">disabled</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>SL Exit Order</span>
-                  <select
-                    value={liveSessionForm.executionSLExitOrderType}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitOrderType: event.target.value }))}
-                  >
-                    <option value="MARKET">MARKET</option>
-                    <option value="LIMIT">LIMIT</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>SL Exit Max Spread</span>
-                  <input
-                    value={liveSessionForm.executionSLExitMaxSpreadBps}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Dispatch Mode</span>
-                  <select
-                    value={liveSessionForm.dispatchMode}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchMode: event.target.value }))}
-                  >
-                    <option value="manual-review">manual-review</option>
-                    <option value="auto-dispatch">auto-dispatch</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Dispatch Cooldown (s)</span>
-                  <input
-                    value={liveSessionForm.dispatchCooldownSeconds}
-                    onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
-                  />
-                </label>
-              </div>
-              <div className="backtest-actions">
+              <div className="backtest-actions inline-actions">
+                <ActionButton label="新建账户" variant="ghost" onClick={openLiveAccountModal} />
                 <ActionButton
-                  label={liveSessionCreateAction ? "Creating..." : "Create Live Session"}
-                  disabled={liveSessionCreateAction || liveSessionLaunchAction || !liveSessionForm.accountId || !liveSessionForm.strategyId}
-                  onClick={createLiveSession}
+                  label="绑定适配器"
+                  variant="ghost"
+                  disabled={!quickLiveAccountId}
+                  onClick={() => {
+                    if (quickLiveAccountId) {
+                      selectQuickLiveAccount(quickLiveAccountId);
+                    }
+                    openLiveBindingModal();
+                  }}
                 />
                 <ActionButton
-                  label={liveSessionLaunchAction ? "Launching..." : "Create & Start"}
-                  disabled={
-                    liveSessionCreateAction ||
-                    liveSessionLaunchAction ||
-                    liveSessionAction !== null ||
-                    !liveSessionForm.accountId ||
-                    !liveSessionForm.strategyId
-                  }
-                  onClick={createAndStartLiveSession}
+                  label="创建会话"
+                  variant="ghost"
+                  disabled={!quickLiveAccountId}
+                  onClick={() => {
+                    if (quickLiveAccountId) {
+                      selectQuickLiveAccount(quickLiveAccountId);
+                    }
+                    openLiveSessionModal();
+                  }}
                 />
               </div>
             </div>
 
             <div className="backtest-list">
               <h4>Live Strategy Sessions</h4>
-              {liveSessions.length > 0 ? (
+              <div className="backtest-notes notes-compact">
+                <div className="note-item">有效会话：{validLiveSessions.length}</div>
+              </div>
+              {validLiveSessions.length > 0 ? (
                 <div className="live-card-list">
-                  {liveSessions.map((session) => {
-                    const decision = getRecord(session.state?.lastStrategyDecision);
-                    const decisionMeta = getRecord(decision.metadata);
+                  {validLiveSessions.map((session) => {
                     const intent = getRecord(session.state?.lastStrategyIntent);
                     const executionSummary = deriveLiveSessionExecutionSummary(session, orders, fills, positions);
                     const sessionHealth = deriveLiveSessionHealth(session, executionSummary);
+                    const sessionAccount = liveAccounts.find((account) => account.id === session.accountId) ?? null;
+                    const sessionBinding = getRecord(sessionAccount?.metadata?.liveBinding);
+                    const sessionAccountReady =
+                      sessionAccount?.status === "CONFIGURED" ||
+                      sessionAccount?.status === "READY" ||
+                      String(sessionBinding.connectionMode ?? "") !== "" && String(sessionBinding.connectionMode ?? "") !== "disabled";
                     return (
-                      <div key={session.id} className="session-stat">
-                        <span>{shrink(session.id)}</span>
-                        <strong>{session.status}</strong>
-                        <div className="live-account-meta">
-                          <span>{session.accountId}</span>
-                          <span>{session.strategyId}</span>
-                          <span>{String(session.state?.signalTimeframe ?? "--")}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>
-                            <StatusPill tone={decisionStateTone(String(decisionMeta.decisionState ?? decision.action ?? "--"))}>
-                              {String(decisionMeta.decisionState ?? decision.action ?? "--")}
-                            </StatusPill>
-                          </span>
-                          <span>
-                            <StatusPill tone={signalKindTone(String(decisionMeta.signalKind ?? "--"))}>
-                              {String(decisionMeta.signalKind ?? "--")}
-                            </StatusPill>
-                          </span>
-                          <span>
+                      <div key={session.id} className="session-row">
+                        <div className="session-row-main">
+                          <div className="session-row-title">
+                            <strong>{shrink(session.id)}</strong>
                             <StatusPill tone={liveSessionHealthTone(sessionHealth.status)}>{sessionHealth.status}</StatusPill>
-                          </span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>{String(session.state?.signalRuntimeStatus ?? "--")}</span>
-                          <span>{String(intent.action ?? "no-intent")}</span>
-                          <span>{String(intent.side ?? "--")}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>qty {formatMaybeNumber(intent.quantity)}</span>
-                          <span>{formatMaybeNumber(intent.priceHint)} via {String(intent.priceSource ?? "--")}</span>
-                          <span>{String(intent.signalKind ?? "--")}</span>
-                        </div>
-                        <div className="backtest-notes">
-                          <div className="note-item">
-                            source-gate: {boolLabel(primaryLiveSession?.id === session.id ? primaryLiveSessionSourceGate.ready : getRecord(session.state?.lastStrategyEvaluationSourceGate).ready)}
+                            <StatusPill tone={session.status === "RUNNING" ? "good" : session.status === "STOPPED" ? "warn" : "neutral"}>
+                              {session.status}
+                            </StatusPill>
                           </div>
-                          <div className="note-item">
-                            eval-status: {String(session.state?.lastStrategyEvaluationStatus ?? "--")}
-                          </div>
-                          <div className="note-item">
-                            intent-context: spread {formatMaybeNumber(intent.spreadBps)} bps · bias {String(intent.liquidityBias ?? "--")} · proximity {formatMaybeNumber(intent.entryProximityBps)} bps
-                          </div>
-                          <div className="note-item">
-                            execution-profile: {String(getRecord(session.state?.lastExecutionProfile).executionProfile ?? "--")} ·{" "}
-                            {String(getRecord(session.state?.lastExecutionProfile).orderType ?? "--")} · tif{" "}
-                            {String(getRecord(session.state?.lastExecutionProfile).timeInForce ?? "--")} · postOnly{" "}
-                            {boolLabel(getRecord(session.state?.lastExecutionProfile).postOnly)} · reduceOnly{" "}
-                            {boolLabel(getRecord(session.state?.lastExecutionProfile).reduceOnly)}
-                          </div>
-                          <div className="note-item">
-                            execution-dispatch: {String(getRecord(session.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
-                            {String(getRecord(session.state?.lastExecutionDispatch).executionMode ?? "--")} · fallback{" "}
-                            {boolLabel(getRecord(session.state?.lastExecutionDispatch).fallback)} ·{" "}
-                            {String(getRecord(session.state?.lastExecutionDispatch).fallbackOrderType ?? "--")}
-                          </div>
-                          <div className="note-item">
-                            dispatch-preview: {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.reason : "open session details"} ·{" "}
-                            {primaryLiveSession?.id === session.id ? primaryLiveDispatchPreview.detail : "--"}
-                          </div>
-                          <div className="note-item">
-                            last-sync: {String(session.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(session.state?.lastSyncedAt ?? ""))}
-                          </div>
-                          <div className="note-item">
-                            recovery: {String(session.state?.lastRecoveryStatus ?? "--")} · position {String(session.state?.positionRecoveryStatus ?? "--")} · protection{" "}
-                            {String(session.state?.protectionRecoveryStatus ?? "--")}
-                          </div>
-                          <div className="note-item">
-                            protection-orders: total {String(session.state?.recoveredProtectionCount ?? "--")} · stop{" "}
-                            {String(session.state?.recoveredStopOrderCount ?? "--")} · take-profit {String(session.state?.recoveredTakeProfitOrderCount ?? "--")}
-                          </div>
-                          <div className="note-item">
-                            last-recovery: {formatTime(String(session.state?.lastRecoveryAttemptAt ?? session.state?.lastProtectionRecoveryAt ?? ""))} · error{" "}
-                            {String(session.state?.lastRecoveryError ?? "--")}
-                          </div>
-                          <div className="note-item">
-                            sync-error: {String(session.state?.lastSyncError ?? "--")}
-                          </div>
-                          <div className="note-item">
-                            session-health: {sessionHealth.detail}
-                          </div>
-                          <div className="note-item">
-                            orders/fills: {executionSummary.orderCount} / {executionSummary.fillCount}
-                          </div>
-                          <div className="note-item">
-                            latest-order: {String(executionSummary.latestOrder?.status ?? "--")} · {String(executionSummary.latestOrder?.side ?? "--")} · {formatMaybeNumber(executionSummary.latestOrder?.price)}
-                          </div>
-                          <div className="note-item">
-                            latest-fill: {formatMaybeNumber(executionSummary.latestFill?.price)} · fee {formatMaybeNumber(executionSummary.latestFill?.fee)}
-                          </div>
-                          <div className="note-item">
-                            position: {String(executionSummary.position?.side ?? "FLAT")} · {formatMaybeNumber(executionSummary.position?.quantity)} @ {formatMaybeNumber(executionSummary.position?.entryPrice)}
+                          <div className="live-account-meta session-row-meta">
+                            <span>{session.accountId}</span>
+                            <span>{strategyLabel(strategies.find((strategy) => strategy.id === session.strategyId))}</span>
+                            <span>{String(session.state?.signalTimeframe ?? "--")}</span>
+                            <span>{sessionAccount?.status ?? "--"}</span>
+                            <span>{String(intent.action ?? "no-intent")}</span>
+                            <span>{String(executionSummary.position?.side ?? "FLAT")}</span>
+                            <span>{formatMaybeNumber(executionSummary.position?.quantity)}</span>
+                            <span>{executionSummary.orderCount}/{executionSummary.fillCount}</span>
+                            {!sessionAccountReady ? <span>先绑定适配器</span> : null}
                           </div>
                         </div>
-                        <div className="inline-actions">
+                        <div className="session-row-actions inline-actions">
+                          <ActionButton
+                            label="Edit"
+                            variant="ghost"
+                            disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
+                            onClick={() => openLiveSessionModal(session)}
+                          />
                           {String(session.state?.signalRuntimeSessionId ?? "") ? (
                             <ActionButton
                               label="Open Runtime"
@@ -3598,9 +3892,20 @@ function App() {
                           ) : null}
                           <ActionButton
                             label={liveSessionAction === `${session.id}:start` ? "Starting..." : "Start"}
-                            disabled={liveSessionAction !== null || session.status === "RUNNING"}
+                            disabled={liveSessionAction !== null || session.status === "RUNNING" || !sessionAccountReady}
                             onClick={() => runLiveSessionAction(session.id, "start")}
                           />
+                          {!sessionAccountReady ? (
+                            <ActionButton
+                              label="Bind Adapter"
+                              variant="ghost"
+                              disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
+                              onClick={() => {
+                                selectQuickLiveAccount(session.accountId);
+                                openLiveBindingModal();
+                              }}
+                            />
+                          ) : null}
                           <ActionButton
                             label={liveSessionAction === `${session.id}:dispatch` ? "Dispatching..." : "Dispatch Intent"}
                             disabled={
@@ -3623,13 +3928,19 @@ function App() {
                             disabled={liveSessionAction !== null || session.status === "STOPPED"}
                             onClick={() => runLiveSessionAction(session.id, "stop")}
                           />
+                          <ActionButton
+                            label={liveSessionDeleteAction === session.id ? "Deleting..." : "Delete"}
+                            variant="ghost"
+                            disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
+                            onClick={() => void deleteLiveSession(session.id)}
+                          />
                         </div>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="empty-state empty-state-compact">No live sessions yet</div>
+                <div className="empty-state empty-state-compact">No valid live sessions yet</div>
               )}
               {primaryLiveSession ? (
                 <div className="backtest-notes">
@@ -3961,155 +4272,7 @@ function App() {
           </div>
         </section>
 
-        <section id="monitor" className="panel panel-market">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">主监控</p>
-              <h3>运行中会话的大周期 K 线与执行状态</h3>
-            </div>
-            <div className="range-box">
-              <span>{monitorMode}</span>
-              <span>{monitorBars.length} 根 K 线</span>
-              <span>{monitorMarkers.length} 个标记</span>
-              <span>{String(monitorSignalState.timeframe ?? "--")}</span>
-            </div>
-          </div>
-          <div className="chart-shell chart-shell-market">
-            {monitorBars.length > 0 ? (
-              <SignalMonitorChart candles={monitorBars} markers={monitorMarkers} />
-            ) : (
-              <div className="empty-state">当前运行会话还没有交易所大周期 K 线缓存</div>
-            )}
-          </div>
-          <div className="detail-grid">
-            <div className="detail-item">
-              <span>会话模式</span>
-              <strong>{monitorMode}</strong>
-            </div>
-            <div className="detail-item">
-              <span>账户净值</span>
-              <strong>{formatMoney(monitorSummary?.netEquity)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>已实现盈亏</span>
-              <strong>{formatSigned(monitorSummary?.realizedPnl)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>未实现盈亏</span>
-              <strong>{formatSigned(monitorSummary?.unrealizedPnl)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>持仓方向</span>
-              <strong>{String(monitorExecutionSummary.position?.side ?? "FLAT")}</strong>
-            </div>
-            <div className="detail-item">
-              <span>持仓数量</span>
-              <strong>{formatMaybeNumber(monitorExecutionSummary.position?.quantity)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>开仓均价</span>
-              <strong>{formatMaybeNumber(monitorExecutionSummary.position?.entryPrice)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>标记价格</span>
-              <strong>{formatMaybeNumber(monitorExecutionSummary.position?.markPrice)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>最新 Tick</span>
-              <strong>{formatMaybeNumber(monitorMarket.tradePrice)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>盘口</span>
-              <strong>{formatMaybeNumber(monitorMarket.bestBid)} / {formatMaybeNumber(monitorMarket.bestAsk)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>盘口价差</span>
-              <strong>{formatMaybeNumber(monitorMarket.spreadBps)} bps</strong>
-            </div>
-            <div className="detail-item">
-              <span>MA20 / ATR14</span>
-              <strong>{formatMaybeNumber(monitorSignalState.ma20)} / {formatMaybeNumber(monitorSignalState.atr14)}</strong>
-            </div>
-          </div>
-          <div className="backtest-notes">
-            <div className="note-item">
-              当前会话：{monitorSession ? shrink(monitorSession.id) : "--"} · 订单 {monitorExecutionSummary.orderCount} · 成交 {monitorExecutionSummary.fillCount}
-            </div>
-            <div className="note-item">
-              最新订单：{String(monitorExecutionSummary.latestOrder?.side ?? "--")} · {String(monitorExecutionSummary.latestOrder?.status ?? "--")} · {formatTime(String(monitorExecutionSummary.latestOrder?.createdAt ?? ""))}
-            </div>
-            <div className="note-item">
-              最新成交：{formatMaybeNumber(monitorExecutionSummary.latestFill?.price)} · 手续费 {formatMaybeNumber(monitorExecutionSummary.latestFill?.fee)} · {formatTime(String(monitorExecutionSummary.latestFill?.createdAt ?? ""))}
-            </div>
-            <div className="note-item">
-              当前大周期：tf={String(monitorSignalState.timeframe ?? "--")} · bars={String(monitorSignalState.barCount ?? "--")}
-            </div>
-          </div>
-        </section>
-
-        <section id="equity" className="panel panel-chart">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Equity History</p>
-              <h3>账户净值曲线</h3>
-            </div>
-            <div className="range-box">
-              <span>Low {formatMoney(chartRange.min)}</span>
-              <span>High {formatMoney(chartRange.max)}</span>
-            </div>
-          </div>
-          <div className="chart-shell">
-            {snapshots.length > 0 ? (
-              <svg viewBox="0 0 560 180" className="equity-chart" preserveAspectRatio="none" role="img">
-                <defs>
-                  <linearGradient id="equityFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="rgba(13,108,95,0.28)" />
-                    <stop offset="100%" stopColor="rgba(13,108,95,0.02)" />
-                  </linearGradient>
-                </defs>
-                <path d={`${chartPath.area} L 560 180 L 0 180 Z`} fill="url(#equityFill)" />
-                <path d={chartPath.line} fill="none" stroke="#0d6c5f" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <div className="empty-state">No equity snapshots yet</div>
-            )}
-          </div>
-          <div className="snapshot-strip">
-            {snapshots.slice(-4).map((item) => (
-              <div key={item.id} className="snapshot-item">
-                <strong>{formatMoney(item.netEquity)}</strong>
-                <span>{formatTime(item.createdAt)}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="content-grid">
-          <article id="positions" className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Positions</p>
-                <h3>当前持仓</h3>
-              </div>
-            </div>
-            <SimpleTable
-              columns={["Symbol", "Side", "Qty", "Entry", "Mark", "PnL"]}
-              rows={positions.map((position) => [
-                position.symbol,
-                position.side,
-                formatNumber(position.quantity, 4),
-                formatMoney(position.entryPrice),
-                formatMoney(position.markPrice),
-                formatSigned(
-                  position.side === "LONG"
-                    ? (position.markPrice - position.entryPrice) * position.quantity
-                    : (position.entryPrice - position.markPrice) * position.quantity
-                ),
-              ])}
-              emptyMessage="No open positions"
-            />
-          </article>
-
+        <section>
           <article id="orders" className="panel">
             <div className="panel-header">
               <div>
@@ -4297,29 +4460,525 @@ function App() {
           </article>
         </section>
 
-        <section id="fills" className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Fills</p>
-              <h3>成交流水</h3>
+        {activeSettingsModal === "live-account" ? (
+          <div className="modal-overlay" onClick={() => setActiveSettingsModal(null)}>
+            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+              <div className="panel-header panel-header-tight">
+                <div>
+                  <p className="panel-kicker">Live Account</p>
+                  <h3>新建实盘 / Testnet 账户</h3>
+                </div>
+                <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
+                  关闭
+                </button>
+              </div>
+              <div className="backtest-form modal-form">
+                <div className="backtest-notes notes-compact">
+                  <div className="note-item">当前选中账户：{quickLiveAccount?.name ?? "--"} · {quickLiveAccount?.status ?? "--"} · {quickLiveAccount?.exchange ?? "--"}</div>
+                  <div className="note-item">已有账户：{liveAccounts.length > 0 ? liveAccounts.map((item) => item.name).join(" / ") : "暂无账户"}</div>
+                </div>
+                {liveAccounts.length > 0 ? (
+                  <div className="form-grid live-account-picker">
+                    <label className="form-field form-field-wide">
+                      <span>切换到已有账户</span>
+                      <select
+                        value={quickLiveAccountId}
+                        onChange={(event) => selectQuickLiveAccount(event.target.value)}
+                      >
+                        {liveAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} ({account.status})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ) : null}
+                {liveAccountError ? <div className="modal-error">{liveAccountError}</div> : null}
+                {liveAccountNotice ? <div className="modal-success">{liveAccountNotice}</div> : null}
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>Name</span>
+                    <input value={liveAccountForm.name} onChange={(event) => setLiveAccountForm((current) => ({ ...current, name: event.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>Exchange</span>
+                    <input value={liveAccountForm.exchange} onChange={(event) => setLiveAccountForm((current) => ({ ...current, exchange: event.target.value }))} />
+                  </label>
+                </div>
+                <div className="backtest-notes notes-compact">
+                  <div className="note-item">默认会自动补一个不冲突的 testnet 名称，避免和已有账户重名。</div>
+                </div>
+                <div className="backtest-actions inline-actions">
+                  <ActionButton
+                    label={liveCreateAction ? "Creating..." : "Create Live Account"}
+                    disabled={liveCreateAction || !liveAccountForm.name.trim() || !liveAccountForm.exchange.trim()}
+                    onClick={createLiveAccount}
+                  />
+                  <ActionButton
+                    label="使用当前选中账户去绑定"
+                    variant="ghost"
+                    disabled={!quickLiveAccountId}
+                    onClick={() => {
+                      if (quickLiveAccountId) {
+                        selectQuickLiveAccount(quickLiveAccountId);
+                      }
+                      openLiveBindingModal();
+                    }}
+                  />
+                </div>
+              </div>
             </div>
           </div>
-          <SimpleTable
-            columns={["Time", "Order", "Qty", "Price", "Fee"]}
-            rows={fills
-              .slice()
-              .reverse()
-              .slice(0, 10)
-              .map((fill) => [
-                formatTime(fill.createdAt),
-                shrink(fill.orderId),
-                formatNumber(fill.quantity, 4),
-                formatMoney(fill.price),
-                formatMoney(fill.fee),
-              ])}
-            emptyMessage="No fills"
-          />
-        </section>
+        ) : null}
+
+        {!authSession ? (
+          <div className="modal-overlay">
+            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+              <div className="panel-header panel-header-tight">
+                <div>
+                  <p className="panel-kicker">Authentication</p>
+                  <h3>登录平台 API</h3>
+                </div>
+              </div>
+              <div className="backtest-form modal-form">
+                {error ? <div className="modal-error">{error}</div> : null}
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>Username</span>
+                    <input
+                      value={loginForm.username}
+                      onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
+                      placeholder="admin"
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Password</span>
+                    <input
+                      type="password"
+                      value={loginForm.password}
+                      onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+                      placeholder="change-this-password"
+                    />
+                  </label>
+                </div>
+                <div className="backtest-notes notes-compact">
+                  <div className="note-item">当前页面需要 Bearer token 才能加载账户、持仓和交易监控。</div>
+                </div>
+                <div className="backtest-actions inline-actions">
+                  <ActionButton
+                    label={loginAction ? "登录中..." : "登录"}
+                    disabled={loginAction || !loginForm.username.trim() || !loginForm.password}
+                    onClick={login}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeSettingsModal === "live-binding" ? (
+          <div className="modal-overlay" onClick={() => setActiveSettingsModal(null)}>
+            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+              <div className="panel-header panel-header-tight">
+                <div>
+                  <p className="panel-kicker">Live Binding</p>
+                  <h3>绑定 Live / Testnet 适配器</h3>
+                </div>
+                <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
+                  关闭
+                </button>
+              </div>
+              <div className="backtest-form modal-form">
+                {liveBindingError ? <div className="modal-error">{liveBindingError}</div> : null}
+                {liveBindingNotice ? <div className="modal-success">{liveBindingNotice}</div> : null}
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>Live Account</span>
+                    <select
+                      value={liveBindingForm.accountId}
+                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, accountId: event.target.value }))}
+                    >
+                      {liveAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name} ({account.status})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Adapter</span>
+                    <select
+                      value={liveBindingForm.adapterKey}
+                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, adapterKey: event.target.value }))}
+                    >
+                      {liveAdapters.map((adapter) => (
+                        <option key={adapter.key} value={adapter.key}>
+                          {adapter.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Position Mode</span>
+                    <select
+                      value={liveBindingForm.positionMode}
+                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, positionMode: event.target.value }))}
+                    >
+                      <option value="ONE_WAY">ONE_WAY</option>
+                      <option value="HEDGE">HEDGE</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Margin Mode</span>
+                    <select
+                      value={liveBindingForm.marginMode}
+                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, marginMode: event.target.value }))}
+                    >
+                      <option value="CROSSED">CROSSED</option>
+                      <option value="ISOLATED">ISOLATED</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>API Key Env</span>
+                    <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiKeyRef: event.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>API Secret Env</span>
+                    <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiSecretRef: event.target.value }))} />
+                  </label>
+                  <label className="form-field form-field-checkbox">
+                    <span>Sandbox</span>
+                    <input
+                      type="checkbox"
+                      checked={liveBindingForm.sandbox}
+                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, sandbox: event.target.checked }))}
+                    />
+                  </label>
+                </div>
+                <div className="backtest-notes notes-compact">
+                  <div className="note-item">sandbox=true 时默认从 `.env` 读取 `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`。</div>
+                  <div className="note-item">当前账户绑定状态：{String(quickLiveAccount?.bindings?.live?.adapterKey ?? "--")} · sandbox {String(quickLiveAccount?.bindings?.live?.sandbox ?? "--")}</div>
+                </div>
+                <div className="backtest-actions inline-actions">
+                  <ActionButton label={liveBindAction ? "Binding..." : "Bind Live Adapter"} disabled={liveBindAction || !liveBindingForm.accountId} onClick={bindLiveAccount} />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeSettingsModal === "live-session" ? (
+          <div className="modal-overlay" onClick={() => setActiveSettingsModal(null)}>
+            <div className="modal-panel modal-panel-wide" onClick={(event) => event.stopPropagation()}>
+              <div className="panel-header panel-header-tight">
+                <div>
+                  <p className="panel-kicker">Live Session</p>
+                  <h3>创建 Live Session</h3>
+                </div>
+                <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
+                  关闭
+                </button>
+              </div>
+              <div className="backtest-form modal-form">
+                {liveSessionError ? <div className="modal-error">{liveSessionError}</div> : null}
+                {liveSessionNotice ? <div className="modal-success">{liveSessionNotice}</div> : null}
+                <div className="backtest-notes notes-compact">
+                  <div className="note-item">当前账户：{liveAccounts.find((account) => account.id === liveSessionForm.accountId)?.name ?? liveSessionForm.accountId ?? "--"}</div>
+                  <div className="note-item">当前策略：{strategyLabel(strategies.find((strategy) => strategy.id === liveSessionForm.strategyId))}</div>
+                  <div className="note-item">有效会话：{validLiveSessions.filter((session) => session.accountId === liveSessionForm.accountId).length}</div>
+                  {editingLiveSessionId ? <div className="note-item">编辑会话：{editingLiveSessionId}</div> : null}
+                </div>
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>Live Account</span>
+                    <select
+                      value={liveSessionForm.accountId}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, accountId: event.target.value }))}
+                    >
+                      {liveAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name} ({account.status})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Strategy</span>
+                    <select
+                      value={liveSessionForm.strategyId}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, strategyId: event.target.value }))}
+                    >
+                      {strategyOptions.map((strategy) => (
+                        <option key={strategy.value} value={strategy.value}>
+                          {strategy.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Signal TF</span>
+                    <select
+                      value={liveSessionForm.signalTimeframe}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
+                    >
+                      <option value="4h">4h</option>
+                      <option value="1d">1d</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Execution Source</span>
+                    <select
+                      value={liveSessionForm.executionDataSource}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionDataSource: event.target.value }))}
+                    >
+                      <option value="tick">tick</option>
+                      <option value="1min">1min</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Symbol</span>
+                    <input
+                      value={liveSessionForm.symbol}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Default Qty</span>
+                    <input
+                      value={liveSessionForm.defaultOrderQuantity}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Entry Order</span>
+                    <select
+                      value={liveSessionForm.executionEntryOrderType}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryOrderType: event.target.value }))}
+                    >
+                      <option value="MARKET">MARKET</option>
+                      <option value="LIMIT">LIMIT</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Entry Max Spread</span>
+                    <input
+                      value={liveSessionForm.executionEntryMaxSpreadBps}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Wide Spread Mode</span>
+                    <select
+                      value={liveSessionForm.executionEntryWideSpreadMode}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryWideSpreadMode: event.target.value }))}
+                    >
+                      <option value="limit-maker">limit-maker</option>
+                      <option value="">wait</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Entry Fallback</span>
+                    <select
+                      value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryTimeoutFallbackOrderType: event.target.value }))}
+                    >
+                      <option value="MARKET">MARKET</option>
+                      <option value="LIMIT">LIMIT</option>
+                      <option value="">disabled</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>PT Exit Order</span>
+                    <select
+                      value={liveSessionForm.executionPTExitOrderType}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitOrderType: event.target.value }))}
+                    >
+                      <option value="LIMIT">LIMIT</option>
+                      <option value="MARKET">MARKET</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>PT Exit TIF</span>
+                    <select
+                      value={liveSessionForm.executionPTExitTimeInForce}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeInForce: event.target.value }))}
+                    >
+                      <option value="GTX">GTX</option>
+                      <option value="GTC">GTC</option>
+                      <option value="IOC">IOC</option>
+                    </select>
+                  </label>
+                  <label className="form-field checkbox-field">
+                    <span>PT Exit Post Only</span>
+                    <input
+                      type="checkbox"
+                      checked={liveSessionForm.executionPTExitPostOnly}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitPostOnly: event.target.checked }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>PT Exit Fallback</span>
+                    <select
+                      value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeoutFallbackOrderType: event.target.value }))}
+                    >
+                      <option value="MARKET">MARKET</option>
+                      <option value="LIMIT">LIMIT</option>
+                      <option value="">disabled</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>SL Exit Order</span>
+                    <select
+                      value={liveSessionForm.executionSLExitOrderType}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitOrderType: event.target.value }))}
+                    >
+                      <option value="MARKET">MARKET</option>
+                      <option value="LIMIT">LIMIT</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>SL Exit Max Spread</span>
+                    <input
+                      value={liveSessionForm.executionSLExitMaxSpreadBps}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Dispatch Mode</span>
+                    <select
+                      value={liveSessionForm.dispatchMode}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchMode: event.target.value }))}
+                    >
+                      <option value="manual-review">manual-review</option>
+                      <option value="auto-dispatch">auto-dispatch</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Dispatch Cooldown (s)</span>
+                    <input
+                      value={liveSessionForm.dispatchCooldownSeconds}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
+                    />
+                  </label>
+                </div>
+                <div className="backtest-actions inline-actions">
+                  <ActionButton
+                    label={liveSessionCreateAction ? (editingLiveSessionId ? "Saving..." : "Creating...") : editingLiveSessionId ? "Save Live Session" : "Create Live Session"}
+                    disabled={liveSessionCreateAction || liveSessionLaunchAction || !liveSessionForm.accountId || !liveSessionForm.strategyId}
+                    onClick={saveLiveSession}
+                  />
+                  <ActionButton
+                    label={liveSessionLaunchAction ? (editingLiveSessionId ? "Saving..." : "Launching...") : editingLiveSessionId ? "Save & Start" : "Create & Start"}
+                    disabled={
+                      liveSessionCreateAction ||
+                      liveSessionLaunchAction ||
+                      liveSessionAction !== null ||
+                      !liveSessionForm.accountId ||
+                      !liveSessionForm.strategyId
+                    }
+                    onClick={async () => {
+                      if (!editingLiveSessionId) {
+                        await createAndStartLiveSession();
+                        return;
+                      }
+                      setLiveSessionLaunchAction(true);
+                      try {
+                        const updated = await saveLiveSession();
+                        if (!updated?.id) {
+                          return;
+                        }
+                        setLiveSessionAction(`${updated.id}:start`);
+                        await fetchJSON(`/api/v1/live/sessions/${updated.id}/start`, { method: "POST" });
+                        await loadDashboard();
+                        setError(null);
+                      } catch (err) {
+                        setLiveSessionError(err instanceof Error ? err.message : "Failed to save and start live session");
+                      } finally {
+                        setLiveSessionAction(null);
+                        setLiveSessionLaunchAction(false);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeSettingsModal === "telegram" ? (
+          <div
+            className="modal-overlay"
+            onClick={() => setActiveSettingsModal(null)}
+          >
+            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+              <div className="panel-header">
+                <div>
+                  <p className="panel-kicker">Telegram</p>
+                  <h3>Telegram 通知配置</h3>
+                </div>
+                <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
+                  关闭
+                </button>
+              </div>
+              <div className="range-box">
+                <span>{telegramConfig?.enabled ? "enabled" : "disabled"}</span>
+                <span>{telegramConfig?.maskedBotToken || "no-token"}</span>
+                <span>{telegramConfig?.chatId || "no-chat"}</span>
+              </div>
+              <div className="backtest-form modal-form">
+                <div className="form-grid">
+                  <label className="form-field form-field-checkbox">
+                    <span>Enabled</span>
+                    <input
+                      type="checkbox"
+                      checked={telegramForm.enabled}
+                      onChange={(event) => setTelegramForm((current) => ({ ...current, enabled: event.target.checked }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Chat ID</span>
+                    <input
+                      value={telegramForm.chatId}
+                      onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value }))}
+                      placeholder="123456789"
+                    />
+                  </label>
+                  <label className="form-field form-field-wide">
+                    <span>Bot Token</span>
+                    <input
+                      value={telegramForm.botToken}
+                      onChange={(event) => setTelegramForm((current) => ({ ...current, botToken: event.target.value }))}
+                      placeholder={telegramConfig?.hasBotToken ? "leave blank to keep current token" : "123456:ABCDEF..."}
+                    />
+                  </label>
+                  <label className="form-field form-field-wide">
+                    <span>Send Levels</span>
+                    <input
+                      value={telegramForm.sendLevels}
+                      onChange={(event) => setTelegramForm((current) => ({ ...current, sendLevels: event.target.value }))}
+                      placeholder="critical,warning"
+                    />
+                  </label>
+                </div>
+                <div className="backtest-actions inline-actions">
+                  <ActionButton
+                    label={telegramAction === "save-config" ? "Saving..." : "Save Telegram Config"}
+                    disabled={telegramAction !== null}
+                    onClick={saveTelegramConfig}
+                  />
+                  <ActionButton
+                    label={telegramAction === "test" ? "Sending..." : "Send Test Message"}
+                    variant="ghost"
+                    disabled={telegramAction !== null || !telegramConfig?.enabled || !telegramConfig?.hasBotToken || !telegramConfig?.chatId}
+                    onClick={sendTelegramTest}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </div>
   );
@@ -4510,7 +5169,7 @@ function SignalBarChart(props: { candles: SignalBarCandle[] }) {
       }))
     );
 
-    chart.timeScale().fitContent();
+    applyDefaultChartWindow(chart, props.candles.length, 90);
     return () => chart.remove();
   }, [props.candles]);
 
@@ -4542,6 +5201,9 @@ function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: Sessio
         borderColor: "rgba(216, 207, 186, 0.9)",
         timeVisible: true,
         secondsVisible: false,
+        barSpacing: 10,
+        minBarSpacing: 4,
+        rightOffset: 6,
       },
     });
 
@@ -4584,7 +5246,7 @@ function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: Sessio
       }))
     );
 
-    chart.timeScale().fitContent();
+    applyDefaultChartWindow(chart, props.candles.length, 90);
     return () => chart.remove();
   }, [props.candles, props.markers]);
 
@@ -4724,9 +5386,27 @@ function sampleStatus(sample: ReplaySample) {
 }
 
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, init);
+  const authSession = readStoredAuthSession();
+  const headers = new Headers(init?.headers ?? {});
+  if (authSession?.token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${authSession.token}`);
+  }
+  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${path}`);
+    let message = `HTTP ${response.status} for ${path}`;
+    try {
+      const payload = (await response.json()) as { error?: string; message?: string } | null;
+      if (payload?.error) {
+        message = payload.error;
+      } else if (payload?.message) {
+        message = payload.message;
+      }
+    } catch {
+      // ignore body parsing and fall back to status text
+    }
+    const error = new Error(message) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
   return (await response.json()) as T;
 }
@@ -5113,8 +5793,34 @@ function formatShortTime(value: Date) {
   });
 }
 
-function shrink(value: string) {
-  return value.length > 16 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+function shrink(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (text === "") {
+    return "--";
+  }
+  return text.length > 16 ? `${text.slice(0, 8)}...${text.slice(-4)}` : text;
+}
+
+function strategyLabel(strategy: Partial<StrategyRecord> | null | undefined) {
+  if (!strategy) {
+    return "--";
+  }
+  const name = String(strategy.name ?? "").trim();
+  const id = String(strategy.id ?? "").trim();
+  const version = String(strategy.currentVersion?.version ?? "").trim();
+  if (name && version) {
+    return `${name} · ${version}`;
+  }
+  if (name) {
+    return name;
+  }
+  if (id && version) {
+    return `${id} · ${version}`;
+  }
+  if (id) {
+    return id;
+  }
+  return "Unnamed strategy";
 }
 
 function getNumber(value: unknown) {
@@ -5274,8 +5980,35 @@ function deriveSignalBarCandles(sourceStates: Record<string, unknown>): SignalBa
   return candles.slice(-120);
 }
 
-function derivePrimarySignalBarState(signalBarStates: Record<string, unknown>) {
-  const first = Object.values(signalBarStates)[0];
+function mapChartCandlesToSignalBarCandles(candles: ChartCandle[], timeframe: string): SignalBarCandle[] {
+  return candles.map((item) => ({
+    time: item.time,
+    open: item.open,
+    high: item.high,
+    low: item.low,
+    close: item.close,
+    timeframe,
+    isClosed: true,
+  }));
+}
+
+function applyDefaultChartWindow(chart: ReturnType<typeof createChart>, candleCount: number, preferredBars: number) {
+  if (candleCount <= 0) {
+    return;
+  }
+  chart.timeScale().fitContent();
+  const visibleBars = Math.min(Math.max(preferredBars, 24), candleCount);
+  const to = candleCount + 5;
+  const from = Math.max(0, to-visibleBars);
+  chart.timeScale().setVisibleLogicalRange({ from, to });
+}
+
+function derivePrimarySignalBarState(signalBarStates: Record<string, unknown>, fallbackStates?: Record<string, unknown>) {
+  const primary = Object.values(signalBarStates)[0];
+  if (primary != null) {
+    return getRecord(primary);
+  }
+  const first = Object.values(fallbackStates ?? {})[0];
   return getRecord(first);
 }
 
@@ -6160,8 +6893,55 @@ function boolLabel(value: unknown) {
   return "--";
 }
 
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null; componentStack: string }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null, componentStack: "" };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error, componentStack: "" };
+  }
+
+  override componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("console-render-error", error, info);
+    this.setState({ componentStack: info.componentStack || "" });
+  }
+
+  override render() {
+    if (this.state.error) {
+      return (
+        <div className="app-shell">
+          <main className="main">
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <p className="panel-kicker">Render Error</p>
+                  <h3>前端渲染失败</h3>
+                </div>
+              </div>
+              <div className="modal-error">
+                {this.state.error.message}
+              </div>
+              {this.state.error.stack ? (
+                <pre className="error-stack">{this.state.error.stack}</pre>
+              ) : null}
+              {this.state.componentStack ? (
+                <pre className="error-stack">{this.state.componentStack}</pre>
+              ) : null}
+            </section>
+          </main>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

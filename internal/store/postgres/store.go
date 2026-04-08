@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -882,6 +883,41 @@ func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSess
 	return item, err
 }
 
+func (s *Store) UpdateLiveSession(item domain.LiveSession) (domain.LiveSession, error) {
+	stateRaw, _ := json.Marshal(item.State)
+	result, err := s.db.Exec(`
+		update live_sessions
+		set account_id = $2, strategy_id = $3, status = $4, state = $5
+		where id = $1
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, stateRaw)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	if rows == 0 {
+		return domain.LiveSession{}, fmt.Errorf("live session not found: %s", item.ID)
+	}
+	return s.GetLiveSession(item.ID)
+}
+
+func (s *Store) DeleteLiveSession(sessionID string) error {
+	result, err := s.db.Exec(`delete from live_sessions where id = $1`, sessionID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("live session not found: %s", sessionID)
+	}
+	return nil
+}
+
 func (s *Store) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
 	_, err := s.db.Exec(`update live_sessions set status = $2 where id = $1`, sessionID, status)
 	if err != nil {
@@ -931,6 +967,109 @@ func (s *Store) CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapsho
 		) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`, snapshot.ID, snapshot.AccountID, snapshot.StartEquity, snapshot.RealizedPnL, snapshot.UnrealizedPnL, snapshot.Fees, snapshot.NetEquity, snapshot.ExposureNotional, snapshot.OpenPositionCount, snapshot.CreatedAt)
 	return snapshot, err
+}
+
+func (s *Store) ListMarketBars(exchange, symbol, timeframe string, from, to int64, limit int) ([]domain.MarketBar, error) {
+	query := `
+		select id, exchange, symbol, timeframe, open_time, close_time, open, high, low, close, volume, is_closed, source, updated_at
+		from market_bars
+		where ($1 = '' or upper(exchange) = upper($1))
+		  and ($2 = '' or upper(symbol) = upper($2))
+		  and ($3 = '' or lower(timeframe) = lower($3))
+		  and ($4 = 0 or open_time >= to_timestamp($4))
+		  and ($5 = 0 or open_time <= to_timestamp($5))
+		order by open_time asc
+	`
+	args := []any{exchange, symbol, timeframe, from, to}
+	if limit > 0 {
+		query += ` limit $6`
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.MarketBar{}
+	for rows.Next() {
+		var item domain.MarketBar
+		if err := rows.Scan(
+			&item.ID,
+			&item.Exchange,
+			&item.Symbol,
+			&item.Timeframe,
+			&item.OpenTime,
+			&item.CloseTime,
+			&item.Open,
+			&item.High,
+			&item.Low,
+			&item.Close,
+			&item.Volume,
+			&item.IsClosed,
+			&item.Source,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) UpsertMarketBars(bars []domain.MarketBar) error {
+	for _, item := range bars {
+		if item.OpenTime.IsZero() {
+			continue
+		}
+		if strings.TrimSpace(item.ID) == "" {
+			item.ID = strings.ToUpper(strings.TrimSpace(item.Exchange)) + "|" +
+				strings.ToUpper(strings.TrimSpace(item.Symbol)) + "|" +
+				strings.ToLower(strings.TrimSpace(item.Timeframe)) + "|" +
+				item.OpenTime.UTC().Format(time.RFC3339)
+		}
+		if item.UpdatedAt.IsZero() {
+			item.UpdatedAt = time.Now().UTC()
+		}
+		if strings.TrimSpace(item.Source) == "" {
+			item.Source = "exchange"
+		}
+		_, err := s.db.Exec(`
+			insert into market_bars (
+				id, exchange, symbol, timeframe, open_time, close_time, open, high, low, close, volume, is_closed, source, updated_at
+			) values (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			)
+			on conflict (exchange, symbol, timeframe, open_time) do update set
+				close_time = excluded.close_time,
+				open = excluded.open,
+				high = excluded.high,
+				low = excluded.low,
+				close = excluded.close,
+				volume = excluded.volume,
+				is_closed = excluded.is_closed,
+				source = excluded.source,
+				updated_at = excluded.updated_at
+		`,
+			item.ID,
+			item.Exchange,
+			item.Symbol,
+			item.Timeframe,
+			item.OpenTime,
+			item.CloseTime,
+			item.Open,
+			item.High,
+			item.Low,
+			item.Close,
+			item.Volume,
+			item.IsClosed,
+			item.Source,
+			item.UpdatedAt,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func nullIfEmpty(v string) any {

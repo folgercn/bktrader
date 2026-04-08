@@ -84,6 +84,10 @@ type Repository interface {
 	GetLiveSession(sessionID string) (domain.LiveSession, error)
 	// CreateLiveSession 创建新实盘策略会话。
 	CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error)
+	// UpdateLiveSession 更新指定实盘策略会话的账户、策略或状态载荷。
+	UpdateLiveSession(session domain.LiveSession) (domain.LiveSession, error)
+	// DeleteLiveSession 删除指定实盘策略会话。
+	DeleteLiveSession(sessionID string) error
 	// UpdateLiveSessionStatus 更新实盘策略会话状态。
 	UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error)
 	// UpdateLiveSessionState 更新实盘策略会话运行时状态。
@@ -95,6 +99,13 @@ type Repository interface {
 	ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error)
 	// CreateAccountEquitySnapshot 创建新的净值快照。
 	CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error)
+
+	// --- 市场 Bar 缓存 ---
+
+	// ListMarketBars 获取指定交易所/交易对/周期的缓存 K 线。
+	ListMarketBars(exchange, symbol, timeframe string, from, to int64, limit int) ([]domain.MarketBar, error)
+	// UpsertMarketBars 批量写入或更新市场 K 线缓存。
+	UpsertMarketBars(bars []domain.MarketBar) error
 
 	// --- 平台运行配置 ---
 

@@ -200,6 +200,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 			now := time.Now().UTC()
 			summary := summarizeSignalMessage(session.RuntimeAdapter, payload)
 			summary = enrichSignalRuntimeSummary(session, summary)
+			_ = p.ingestLiveSignalBarSummary(summary, now)
 			_ = conn.SetReadDeadline(now.Add(60 * time.Second))
 			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 				state := cloneMetadata(session.State)

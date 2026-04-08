@@ -67,6 +67,10 @@ func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
 			case http.MethodGet:
 				items, err := platform.ListStrategySignalBindings(strategyID)
 				if err != nil {
+					if strings.Contains(err.Error(), "strategy not found:") {
+						writeJSON(w, http.StatusOK, []any{})
+						return
+					}
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
 				}

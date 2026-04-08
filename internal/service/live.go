@@ -41,6 +41,40 @@ func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 	return p.store.ListLiveSessions()
 }
 
+func (p *Platform) DeleteLiveSession(sessionID string) error {
+	return p.store.DeleteLiveSession(sessionID)
+}
+
+func (p *Platform) UpdateLiveSession(sessionID, accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
+	session, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	if strings.TrimSpace(accountID) != "" {
+		account, err := p.store.GetAccount(accountID)
+		if err != nil {
+			return domain.LiveSession{}, err
+		}
+		if !strings.EqualFold(account.Mode, "LIVE") {
+			return domain.LiveSession{}, fmt.Errorf("live session requires a LIVE account: %s", accountID)
+		}
+		session.AccountID = accountID
+	}
+	if strings.TrimSpace(strategyID) != "" {
+		session.StrategyID = strategyID
+	}
+	state := cloneMetadata(session.State)
+	for key, value := range normalizeLiveSessionOverrides(overrides) {
+		state[key] = value
+	}
+	session.State = state
+	session, err = p.store.UpdateLiveSession(session)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return p.syncLiveSessionRuntime(session)
+}
+
 func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {

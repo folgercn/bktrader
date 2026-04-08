@@ -145,6 +145,24 @@ type AccountEquitySnapshot struct {
 	CreatedAt         time.Time `json:"createdAt"`
 }
 
+// MarketBar 市场 K 线缓存，按交易所/交易对/周期/开盘时间唯一。
+type MarketBar struct {
+	ID        string    `json:"id"`
+	Exchange  string    `json:"exchange"`
+	Symbol    string    `json:"symbol"`
+	Timeframe string    `json:"timeframe"`
+	OpenTime  time.Time `json:"openTime"`
+	CloseTime time.Time `json:"closeTime"`
+	Open      float64   `json:"open"`
+	High      float64   `json:"high"`
+	Low       float64   `json:"low"`
+	Close     float64   `json:"close"`
+	Volume    float64   `json:"volume"`
+	IsClosed  bool      `json:"isClosed"`
+	Source    string    `json:"source"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // Order 交易订单，关联账户和策略版本。
 type Order struct {
 	ID                string         `json:"id"`
