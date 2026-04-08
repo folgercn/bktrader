@@ -218,6 +218,46 @@ export VITE_API_BASE=http://127.0.0.1:8080
 npm run dev
 ```
 
+前端开发环境默认通过 `VITE_API_BASE` 直连本地后端，例如：
+
+- `VITE_API_BASE=http://127.0.0.1:8080`
+
+生产环境推荐改为同域部署，不显式配置 `VITE_API_BASE`，让前端直接请求当前域名下的 `/api/...`。这样可以避免跨域，并通过反向代理统一前后端入口。
+
+### 前端生产发布
+
+当前推荐的前端生产部署方式不是 Docker，而是：
+
+1. GitHub Actions 在 `web/console` 下执行 `npm ci` 和 `npm run build`
+2. 产出静态文件 `web/console/dist`
+3. 通过 `rsync` 直接覆盖远端 Nginx 静态目录，例如 `/var/www/bktrader`
+4. 由 Nginx 提供前端页面，并把 `/api/` 和 `/healthz` 反代到后端
+
+推荐的 Nginx 路由结构如下：
+
+- `/`：前端静态文件目录，例如 `/var/www/bktrader`
+- `/api/`：反代到后端 API
+- `/healthz`：反代到后端健康检查
+
+当前一套可工作的线上结构示例：
+
+- 前端静态目录：`/var/www/bktrader`
+- 前端站点：`https://trade.sunnywifi.cn:3088`
+- 后端公网入口：由 FRP 暴露到远端 `127.0.0.1:3081`
+- Nginx 反代：`/api/` -> `http://127.0.0.1:3081`
+
+如果沿用仓库里的 `cd.yml`，前端发布链路是：
+
+1. 在 self-hosted macOS runner 上构建 `web/console/dist`
+2. 通过 `ssh root@1.95.71.247 'mkdir -p /var/www/bktrader'` 确保目录存在
+3. 通过 `rsync -av --delete dist/ root@1.95.71.247:/var/www/bktrader/` 覆盖远端静态目录
+
+这种模式适合当前项目，因为：
+
+- 前端是 Vite 静态站点，没有必要再套一层容器
+- 回滚和排障更直接，核心就是 `dist/` 目录内容
+- Nginx 可以同时处理静态资源、TLS 和 `/api` 反代
+
 ## 回测执行数据源
 
 平台将策略信号周期与执行层数据源分开管理，回测模块支持可选执行测试源：
@@ -324,10 +364,10 @@ python3 scripts/check_1d_1min_parity.py
 
 ## CI/CD
 
-仓库已提供一套最小可用的 Docker 化 CI/CD 骨架：
+仓库已提供一套最小可用的 CI/CD 骨架：
 
 - `.github/workflows/ci.yml`：后端 `go test/build`、前端 `npm run build`、Docker 构建校验
-- `.github/workflows/cd.yml`：构建镜像并推送到 GHCR，然后通过 SSH 到目标主机执行部署脚本
+- `.github/workflows/cd.yml`：构建后端镜像并推送到 GHCR，在 self-hosted runner 上部署后端 Docker，同时构建并发布前端静态文件
 - `Dockerfile`：多阶段构建，产出 `platform-api` 运行镜像
 - `deployments/docker-compose.prod.yml`：生产环境 Compose 编排
 - `scripts/deploy.sh`：远程部署脚本
@@ -354,10 +394,23 @@ python3 scripts/check_1d_1min_parity.py
 
 ### 推荐的部署机准备
 
-目标机器至少安装：
+后端部署节点至少安装：
 
 - Docker
 - Docker Compose Plugin
+
+前端静态发布目标机至少需要：
+
+- Nginx
+- 可写的静态目录，例如 `/var/www/bktrader`
+- GitHub Actions runner 到目标机的 SSH 可达性
+- `rsync`
+
+如果前端和 Nginx 在同一台机器，建议额外确认：
+
+- 防火墙已放行站点监听端口，例如 `3088`
+- 站点证书和 `server_name` 已配置
+- `/api/` 和 `/healthz` 已反代到后端入口
 
 并准备好 `.env` 文件，例如：
 
