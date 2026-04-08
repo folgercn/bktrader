@@ -46,9 +46,9 @@ fi
 
 export IMAGE_REPO IMAGE_TAG APP_ENV_FILE
 
-docker compose -f "$COMPOSE_FILE" pull
+docker-compose -f "$COMPOSE_FILE" pull
 
-docker compose -f "$COMPOSE_FILE" up -d
+docker-compose -f "$COMPOSE_FILE" up -d
 
 docker image prune -f >/dev/null 2>&1 || true
 
