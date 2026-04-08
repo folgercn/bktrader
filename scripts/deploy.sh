@@ -17,7 +17,7 @@ fi
 
 mkdir -p "$DEPLOY_PATH/deployments" "$DEPLOY_PATH/scripts"
 mkdir -p "$DOCKER_CONFIG_DIR"
-printf '%s\n' '{"auths":{}}' > "$DOCKER_CONFIG_DIR/config.json"
+chmod 700 "$DOCKER_CONFIG_DIR"
 
 if [[ -n "${APP_ENV_FILE_CONTENT:-}" ]]; then
   printf '%s
@@ -33,7 +33,9 @@ if [[ "$IMAGE_REPO" == ghcr.io/* ]]; then
     exit 1
   fi
 
-  echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+  auth_b64="$(printf '%s' "${GHCR_USERNAME}:${GHCR_TOKEN}" | base64 | tr -d '\r\n')"
+  printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$auth_b64" > "$DOCKER_CONFIG_DIR/config.json"
+  chmod 600 "$DOCKER_CONFIG_DIR/config.json"
 
   if ! docker manifest inspect "${IMAGE_REPO}:${IMAGE_TAG}" >/dev/null 2>&1; then
     echo "Unable to access image manifest: ${IMAGE_REPO}:${IMAGE_TAG}" >&2
