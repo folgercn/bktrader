@@ -172,6 +172,19 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 		plan, err := platform.BuildSignalRuntimePlan(accountID, strategyID)
 		if err != nil {
+			if strings.Contains(err.Error(), "strategy not found:") {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"accountId":        accountID,
+					"strategyId":       strategyID,
+					"requiredBindings": []any{},
+					"matchedBindings":  []any{},
+					"missingBindings":  []any{},
+					"subscriptions":    []any{},
+					"ready":            false,
+					"notes":            []string{"strategy not found; likely stale session or form state"},
+				})
+				return
+			}
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
