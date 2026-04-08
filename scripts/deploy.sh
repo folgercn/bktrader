@@ -8,6 +8,7 @@ COMPOSE_FILE="$DEPLOY_PATH/deployments/docker-compose.prod.yml"
 APP_ENV_FILE=${APP_ENV_FILE:-$DEPLOY_PATH/.env}
 IMAGE_REPO=${IMAGE_REPO:-ghcr.io/folgercn/bktrader-app}
 IMAGE_TAG=${IMAGE_TAG:-latest}
+DOCKER_CONFIG_DIR=${DOCKER_CONFIG_DIR:-$DEPLOY_PATH/.docker-ci}
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker command not found; install Docker Desktop or another Docker runtime on this Mac." >&2
@@ -15,11 +16,14 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 mkdir -p "$DEPLOY_PATH/deployments" "$DEPLOY_PATH/scripts"
+mkdir -p "$DOCKER_CONFIG_DIR"
 
 if [[ -n "${APP_ENV_FILE_CONTENT:-}" ]]; then
   printf '%s
 ' "$APP_ENV_FILE_CONTENT" > "$APP_ENV_FILE"
 fi
+
+export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
 
 if [[ "$IMAGE_REPO" == ghcr.io/* ]]; then
   if [[ -z "${GHCR_USERNAME:-}" || -z "${GHCR_TOKEN:-}" ]]; then
