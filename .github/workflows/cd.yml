@@ -49,6 +49,7 @@ jobs:
 
   frontend:
     name: Build and deploy frontend
+    needs: deploy
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, macOS, ARM64]
     defaults:
