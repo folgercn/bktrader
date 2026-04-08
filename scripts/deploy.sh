@@ -17,6 +17,7 @@ fi
 
 mkdir -p "$DEPLOY_PATH/deployments" "$DEPLOY_PATH/scripts"
 mkdir -p "$DOCKER_CONFIG_DIR"
+printf '%s\n' '{"auths":{}}' > "$DOCKER_CONFIG_DIR/config.json"
 
 if [[ -n "${APP_ENV_FILE_CONTENT:-}" ]]; then
   printf '%s
