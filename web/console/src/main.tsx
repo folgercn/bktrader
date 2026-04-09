@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { SlideOver } from './components/SlideOver';
 import { WorkbenchLayout } from './layouts/WorkbenchLayout';
 import { useUIStore } from './store/useUIStore';
 import { useTradingStore } from './store/useTradingStore';
