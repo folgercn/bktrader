@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession } from '../types/domain';
-import { readStoredAuthSession } from '../main';
+import { readStoredAuthSession } from '../utils/auth';
 
 
 export interface useTradingStoreState {
