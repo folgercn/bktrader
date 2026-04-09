@@ -19,6 +19,11 @@ import { SampleCard } from './components/ui/SampleCard';
 import { TradingChart } from './components/charts/TradingChart';
 import { SignalBarChart } from './components/charts/SignalBarChart';
 import { SignalMonitorChart } from './components/charts/SignalMonitorChart';
+import { LoginModal } from './modals/LoginModal';
+import { LiveAccountModal } from './modals/LiveAccountModal';
+import { LiveBindingModal } from './modals/LiveBindingModal';
+import { LiveSessionModal } from './modals/LiveSessionModal';
+import { TelegramModal } from './modals/TelegramModal';
 
 import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, AuthSession } from './types/domain';
 import { sampleStatus, buildLinePath, summarizeRange, summarizeTimeRange, filterChartAnnotations, matchesEventFilter, resolveChartAnchor, buildTimeRange, buildSampleRange, buildSampleKey, annotationMatchesSample, findNearestAnnotation, toMarkerDetail, markerShape, markerPosition, markerColor, markerText, annotationTone, paperAccountsFromSummaries, strategyLabel, getNumber, getRecord, getList, deriveRuntimeMarketSnapshot, deriveRuntimeSourceSummary, deriveRuntimeReadiness, deriveSignalBarCandles, mapChartCandlesToSignalBarCandles, applyDefaultChartWindow, derivePrimarySignalBarState, buildRuntimeEventNotes, buildSourceStateNotes, buildSignalBarDecisionNotes, buildSignalBarStateNotes, deriveSignalActionSummary, deriveLivePreflightSummary, deriveLiveDispatchPreview, deriveLiveSessionExecutionSummary, derivePaperSessionExecutionSummary, deriveSessionMarkers, deriveLiveSessionHealth, deriveHighlightedLiveSession, deriveLiveSessionFlow, liveSessionHealthPriority, deriveLiveNextAction, liveSessionHealthTone, buildSignalActionNotes, buildTimelineNotes, summarizeOrderPreflight, derivePaperAlerts, deriveLiveAlerts, dedupeAlerts, buildAlertNotes, alertLevelTone, alertScopeTone, telegramDeliveryTone, runtimeReadinessTone, decisionStateTone, signalKindTone, signalActionTone, boolTone, boolLabel } from './utils/derivation';
@@ -3883,525 +3888,80 @@ function App() {
 
 
 
-        {activeSettingsModal === "live-account" ? (
-          <div className="modal-overlay" onClick={() => setActiveSettingsModal(null)}>
-            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
-              <div className="panel-header panel-header-tight">
-                <div>
-                  <p className="panel-kicker">Live Account</p>
-                  <h3>新建实盘 / Testnet 账户</h3>
-                </div>
-                <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
-                  关闭
-                </button>
-              </div>
-              <div className="backtest-form modal-form">
-                <div className="backtest-notes notes-compact">
-                  <div className="note-item">当前选中账户：{quickLiveAccount?.name ?? "--"} · {quickLiveAccount?.status ?? "--"} · {quickLiveAccount?.exchange ?? "--"}</div>
-                  <div className="note-item">已有账户：{liveAccounts.length > 0 ? liveAccounts.map((item) => item.name).join(" / ") : "暂无账户"}</div>
-                </div>
-                {liveAccounts.length > 0 ? (
-                  <div className="form-grid live-account-picker">
-                    <label className="form-field form-field-wide">
-                      <span>切换到已有账户</span>
-                      <select
-                        value={quickLiveAccountId}
-                        onChange={(event) => selectQuickLiveAccount(event.target.value)}
-                      >
-                        {liveAccounts.map((account) => (
-                          <option key={account.id} value={account.id}>
-                            {account.name} ({account.status})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                ) : null}
-                {liveAccountError ? <div className="modal-error">{liveAccountError}</div> : null}
-                {liveAccountNotice ? <div className="modal-success">{liveAccountNotice}</div> : null}
-                <div className="form-grid">
-                  <label className="form-field">
-                    <span>Name</span>
-                    <input value={liveAccountForm.name} onChange={(event) => setLiveAccountForm((current: any) => ({ ...current, name: event.target.value }))} />
-                  </label>
-                  <label className="form-field">
-                    <span>Exchange</span>
-                    <input value={liveAccountForm.exchange} onChange={(event) => setLiveAccountForm((current: any) => ({ ...current, exchange: event.target.value }))} />
-                  </label>
-                </div>
-                <div className="backtest-notes notes-compact">
-                  <div className="note-item">默认会自动补一个不冲突的 testnet 名称，避免和已有账户重名。</div>
-                </div>
-                <div className="backtest-actions inline-actions">
-                  <ActionButton
-                    label={liveCreateAction ? "Creating..." : "Create Live Account"}
-                    disabled={liveCreateAction || !liveAccountForm.name.trim() || !liveAccountForm.exchange.trim()}
-                    onClick={createLiveAccount}
-                  />
-                  <ActionButton
-                    label="使用当前选中账户去绑定"
-                    variant="ghost"
-                    disabled={!quickLiveAccountId}
-                    onClick={() => {
-                      if (quickLiveAccountId) {
-                        selectQuickLiveAccount(quickLiveAccountId);
-                      }
-                      openLiveBindingModal();
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <LiveAccountModal
+          activeSettingsModal={activeSettingsModal}
+          setActiveSettingsModal={setActiveSettingsModal}
+          quickLiveAccount={quickLiveAccount}
+          liveAccounts={liveAccounts}
+          quickLiveAccountId={quickLiveAccountId}
+          selectQuickLiveAccount={selectQuickLiveAccount}
+          liveAccountError={liveAccountError}
+          liveAccountNotice={liveAccountNotice}
+          liveAccountForm={liveAccountForm}
+          setLiveAccountForm={setLiveAccountForm}
+          liveCreateAction={liveCreateAction}
+          createLiveAccount={createLiveAccount}
+          openLiveBindingModal={openLiveBindingModal}
+        />
 
-        {!authSession ? (
-          <div className="modal-overlay">
-            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
-              <div className="panel-header panel-header-tight">
-                <div>
-                  <p className="panel-kicker">Authentication</p>
-                  <h3>登录平台 API</h3>
-                </div>
-              </div>
-              <div className="backtest-form modal-form">
-                {error ? <div className="modal-error">{error}</div> : null}
-                <div className="form-grid">
-                  <label className="form-field">
-                    <span>Username</span>
-                    <input
-                      value={loginForm.username}
-                      onChange={(event) => setLoginForm((current: any) => ({ ...current, username: event.target.value }))}
-                      placeholder="admin"
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Password</span>
-                    <input
-                      type="password"
-                      value={loginForm.password}
-                      onChange={(event) => setLoginForm((current: any) => ({ ...current, password: event.target.value }))}
-                      placeholder="change-this-password"
-                    />
-                  </label>
-                </div>
-                <div className="backtest-notes notes-compact">
-                  <div className="note-item">当前页面需要 Bearer token 才能加载账户、持仓和交易监控。</div>
-                </div>
-                <div className="backtest-actions inline-actions">
-                  <ActionButton
-                    label={loginAction ? "登录中..." : "登录"}
-                    disabled={loginAction || !loginForm.username.trim() || !loginForm.password}
-                    onClick={login}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <LoginModal
+          authSession={authSession}
+          error={error}
+          loginForm={loginForm}
+          loginAction={loginAction}
+          setLoginForm={setLoginForm}
+          login={login}
+        />
 
-        {activeSettingsModal === "live-binding" ? (
-          <div className="modal-overlay" onClick={() => setActiveSettingsModal(null)}>
-            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
-              <div className="panel-header panel-header-tight">
-                <div>
-                  <p className="panel-kicker">Live Binding</p>
-                  <h3>绑定 Live / Testnet 适配器</h3>
-                </div>
-                <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
-                  关闭
-                </button>
-              </div>
-              <div className="backtest-form modal-form">
-                {liveBindingError ? <div className="modal-error">{liveBindingError}</div> : null}
-                {liveBindingNotice ? <div className="modal-success">{liveBindingNotice}</div> : null}
-                <div className="form-grid">
-                  <label className="form-field">
-                    <span>Live Account</span>
-                    <select
-                      value={liveBindingForm.accountId}
-                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, accountId: event.target.value }))}
-                    >
-                      {liveAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} ({account.status})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Adapter</span>
-                    <select
-                      value={liveBindingForm.adapterKey}
-                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, adapterKey: event.target.value }))}
-                    >
-                      {liveAdapters.map((adapter) => (
-                        <option key={adapter.key} value={adapter.key}>
-                          {adapter.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Position Mode</span>
-                    <select
-                      value={liveBindingForm.positionMode}
-                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, positionMode: event.target.value }))}
-                    >
-                      <option value="ONE_WAY">ONE_WAY</option>
-                      <option value="HEDGE">HEDGE</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Margin Mode</span>
-                    <select
-                      value={liveBindingForm.marginMode}
-                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, marginMode: event.target.value }))}
-                    >
-                      <option value="CROSSED">CROSSED</option>
-                      <option value="ISOLATED">ISOLATED</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>API Key Env</span>
-                    <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, apiKeyRef: event.target.value }))} />
-                  </label>
-                  <label className="form-field">
-                    <span>API Secret Env</span>
-                    <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, apiSecretRef: event.target.value }))} />
-                  </label>
-                  <label className="form-field form-field-checkbox">
-                    <span>Sandbox</span>
-                    <input
-                      type="checkbox"
-                      checked={liveBindingForm.sandbox}
-                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, sandbox: event.target.checked }))}
-                    />
-                  </label>
-                </div>
-                <div className="backtest-notes notes-compact">
-                  <div className="note-item">sandbox=true 时默认从 `.env` 读取 `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`。</div>
-                  <div className="note-item">当前账户绑定状态：{String(quickLiveAccount?.bindings?.live?.adapterKey ?? "--")} · sandbox {String(quickLiveAccount?.bindings?.live?.sandbox ?? "--")}</div>
-                </div>
-                <div className="backtest-actions inline-actions">
-                  <ActionButton label={liveBindAction ? "Binding..." : "Bind Live Adapter"} disabled={liveBindAction || !liveBindingForm.accountId} onClick={bindLiveAccount} />
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <LiveBindingModal
+          activeSettingsModal={activeSettingsModal}
+          setActiveSettingsModal={setActiveSettingsModal}
+          liveBindingError={liveBindingError}
+          liveBindingNotice={liveBindingNotice}
+          liveBindingForm={liveBindingForm}
+          setLiveBindingForm={setLiveBindingForm}
+          liveAccounts={liveAccounts}
+          liveAdapters={liveAdapters}
+          quickLiveAccount={quickLiveAccount}
+          liveBindAction={liveBindAction}
+          bindLiveAccount={bindLiveAccount}
+        />
 
-        {activeSettingsModal === "live-session" ? (
-          <div className="modal-overlay" onClick={() => setActiveSettingsModal(null)}>
-            <div className="modal-panel modal-panel-wide" onClick={(event) => event.stopPropagation()}>
-              <div className="panel-header panel-header-tight">
-                <div>
-                  <p className="panel-kicker">Live Session</p>
-                  <h3>创建 Live Session</h3>
-                </div>
-                <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
-                  关闭
-                </button>
-              </div>
-              <div className="backtest-form modal-form">
-                {liveSessionError ? <div className="modal-error">{liveSessionError}</div> : null}
-                {liveSessionNotice ? <div className="modal-success">{liveSessionNotice}</div> : null}
-                <div className="backtest-notes notes-compact">
-                  <div className="note-item">当前账户：{liveAccounts.find((account) => account.id === liveSessionForm.accountId)?.name ?? liveSessionForm.accountId ?? "--"}</div>
-                  <div className="note-item">当前策略：{strategyLabel(strategies.find((strategy) => strategy.id === liveSessionForm.strategyId))}</div>
-                  <div className="note-item">有效会话：{validLiveSessions.filter((session) => session.accountId === liveSessionForm.accountId).length}</div>
-                  {editingLiveSessionId ? <div className="note-item">编辑会话：{editingLiveSessionId}</div> : null}
-                </div>
-                <div className="form-grid">
-                  <label className="form-field">
-                    <span>Live Account</span>
-                    <select
-                      value={liveSessionForm.accountId}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, accountId: event.target.value }))}
-                    >
-                      {liveAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} ({account.status})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Strategy</span>
-                    <select
-                      value={liveSessionForm.strategyId}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, strategyId: event.target.value }))}
-                    >
-                      {strategyOptions.map((strategy) => (
-                        <option key={strategy.value} value={strategy.value}>
-                          {strategy.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Signal TF</span>
-                    <select
-                      value={liveSessionForm.signalTimeframe}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, signalTimeframe: event.target.value }))}
-                    >
-                      <option value="4h">4h</option>
-                      <option value="1d">1d</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Execution Source</span>
-                    <select
-                      value={liveSessionForm.executionDataSource}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionDataSource: event.target.value }))}
-                    >
-                      <option value="tick">tick</option>
-                      <option value="1min">1min</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Symbol</span>
-                    <input
-                      value={liveSessionForm.symbol}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Default Qty</span>
-                    <input
-                      value={liveSessionForm.defaultOrderQuantity}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, defaultOrderQuantity: event.target.value }))}
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Entry Order</span>
-                    <select
-                      value={liveSessionForm.executionEntryOrderType}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionEntryOrderType: event.target.value }))}
-                    >
-                      <option value="MARKET">MARKET</option>
-                      <option value="LIMIT">LIMIT</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Entry Max Spread</span>
-                    <input
-                      value={liveSessionForm.executionEntryMaxSpreadBps}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Wide Spread Mode</span>
-                    <select
-                      value={liveSessionForm.executionEntryWideSpreadMode}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionEntryWideSpreadMode: event.target.value }))}
-                    >
-                      <option value="limit-maker">limit-maker</option>
-                      <option value="">wait</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Entry Fallback</span>
-                    <select
-                      value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionEntryTimeoutFallbackOrderType: event.target.value }))}
-                    >
-                      <option value="MARKET">MARKET</option>
-                      <option value="LIMIT">LIMIT</option>
-                      <option value="">disabled</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>PT Exit Order</span>
-                    <select
-                      value={liveSessionForm.executionPTExitOrderType}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionPTExitOrderType: event.target.value }))}
-                    >
-                      <option value="LIMIT">LIMIT</option>
-                      <option value="MARKET">MARKET</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>PT Exit TIF</span>
-                    <select
-                      value={liveSessionForm.executionPTExitTimeInForce}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionPTExitTimeInForce: event.target.value }))}
-                    >
-                      <option value="GTX">GTX</option>
-                      <option value="GTC">GTC</option>
-                      <option value="IOC">IOC</option>
-                    </select>
-                  </label>
-                  <label className="form-field checkbox-field">
-                    <span>PT Exit Post Only</span>
-                    <input
-                      type="checkbox"
-                      checked={liveSessionForm.executionPTExitPostOnly}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionPTExitPostOnly: event.target.checked }))}
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>PT Exit Fallback</span>
-                    <select
-                      value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionPTExitTimeoutFallbackOrderType: event.target.value }))}
-                    >
-                      <option value="MARKET">MARKET</option>
-                      <option value="LIMIT">LIMIT</option>
-                      <option value="">disabled</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>SL Exit Order</span>
-                    <select
-                      value={liveSessionForm.executionSLExitOrderType}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionSLExitOrderType: event.target.value }))}
-                    >
-                      <option value="MARKET">MARKET</option>
-                      <option value="LIMIT">LIMIT</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>SL Exit Max Spread</span>
-                    <input
-                      value={liveSessionForm.executionSLExitMaxSpreadBps}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Dispatch Mode</span>
-                    <select
-                      value={liveSessionForm.dispatchMode}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, dispatchMode: event.target.value }))}
-                    >
-                      <option value="manual-review">manual-review</option>
-                      <option value="auto-dispatch">auto-dispatch</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Dispatch Cooldown (s)</span>
-                    <input
-                      value={liveSessionForm.dispatchCooldownSeconds}
-                      onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
-                    />
-                  </label>
-                </div>
-                <div className="backtest-actions inline-actions">
-                  <ActionButton
-                    label={liveSessionCreateAction ? (editingLiveSessionId ? "Saving..." : "Creating...") : editingLiveSessionId ? "Save Live Session" : "Create Live Session"}
-                    disabled={liveSessionCreateAction || liveSessionLaunchAction || !liveSessionForm.accountId || !liveSessionForm.strategyId}
-                    onClick={saveLiveSession}
-                  />
-                  <ActionButton
-                    label={liveSessionLaunchAction ? (editingLiveSessionId ? "Saving..." : "Launching...") : editingLiveSessionId ? "Save & Start" : "Create & Start"}
-                    disabled={
-                      liveSessionCreateAction ||
-                      liveSessionLaunchAction ||
-                      liveSessionAction !== null ||
-                      !liveSessionForm.accountId ||
-                      !liveSessionForm.strategyId
-                    }
-                    onClick={async () => {
-                      if (!editingLiveSessionId) {
-                        await createAndStartLiveSession();
-                        return;
-                      }
-                      setLiveSessionLaunchAction(true);
-                      try {
-                        const updated = await saveLiveSession();
-                        if (!updated?.id) {
-                          return;
-                        }
-                        setLiveSessionAction(`${updated.id}:start`);
-                        await fetchJSON(`/api/v1/live/sessions/${updated.id}/start`, { method: "POST" });
-                        await loadDashboard();
-                        setError(null);
-                      } catch (err) {
-                        setLiveSessionError(err instanceof Error ? err.message : "Failed to save and start live session");
-                      } finally {
-                        setLiveSessionAction(null);
-                        setLiveSessionLaunchAction(false);
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <LiveSessionModal
+          activeSettingsModal={activeSettingsModal}
+          setActiveSettingsModal={setActiveSettingsModal}
+          liveSessionError={liveSessionError}
+          liveSessionNotice={liveSessionNotice}
+          liveAccounts={liveAccounts}
+          liveSessionForm={liveSessionForm}
+          setLiveSessionForm={setLiveSessionForm}
+          strategies={strategies}
+          validLiveSessions={validLiveSessions}
+          editingLiveSessionId={editingLiveSessionId}
+          strategyOptions={strategyOptions}
+          liveSessionCreateAction={liveSessionCreateAction}
+          liveSessionLaunchAction={liveSessionLaunchAction}
+          liveSessionAction={liveSessionAction}
+          saveLiveSession={saveLiveSession}
+          createAndStartLiveSession={createAndStartLiveSession}
+          setLiveSessionLaunchAction={setLiveSessionLaunchAction}
+          setLiveSessionAction={setLiveSessionAction}
+          setLiveSessionError={setLiveSessionError}
+          loadDashboard={loadDashboard}
+          setError={setError}
+          fetchJSON={fetchJSON}
+        />
 
-        {activeSettingsModal === "telegram" ? (
-          <div
-            className="modal-overlay"
-            onClick={() => setActiveSettingsModal(null)}
-          >
-            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
-              <div className="panel-header">
-                <div>
-                  <p className="panel-kicker">Telegram</p>
-                  <h3>Telegram 通知配置</h3>
-                </div>
-                <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
-                  关闭
-                </button>
-              </div>
-              <div className="range-box">
-                <span>{telegramConfig?.enabled ? "enabled" : "disabled"}</span>
-                <span>{telegramConfig?.maskedBotToken || "no-token"}</span>
-                <span>{telegramConfig?.chatId || "no-chat"}</span>
-              </div>
-              <div className="backtest-form modal-form">
-                <div className="form-grid">
-                  <label className="form-field form-field-checkbox">
-                    <span>Enabled</span>
-                    <input
-                      type="checkbox"
-                      checked={telegramForm.enabled}
-                      onChange={(event) => setTelegramForm((current: any) => ({ ...current, enabled: event.target.checked }))}
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Chat ID</span>
-                    <input
-                      value={telegramForm.chatId}
-                      onChange={(event) => setTelegramForm((current: any) => ({ ...current, chatId: event.target.value }))}
-                      placeholder="123456789"
-                    />
-                  </label>
-                  <label className="form-field form-field-wide">
-                    <span>Bot Token</span>
-                    <input
-                      value={telegramForm.botToken}
-                      onChange={(event) => setTelegramForm((current: any) => ({ ...current, botToken: event.target.value }))}
-                      placeholder={telegramConfig?.hasBotToken ? "leave blank to keep current token" : "123456:ABCDEF..."}
-                    />
-                  </label>
-                  <label className="form-field form-field-wide">
-                    <span>Send Levels</span>
-                    <input
-                      value={telegramForm.sendLevels}
-                      onChange={(event) => setTelegramForm((current: any) => ({ ...current, sendLevels: event.target.value }))}
-                      placeholder="critical,warning"
-                    />
-                  </label>
-                </div>
-                <div className="backtest-actions inline-actions">
-                  <ActionButton
-                    label={telegramAction === "save-config" ? "Saving..." : "Save Telegram Config"}
-                    disabled={telegramAction !== null}
-                    onClick={saveTelegramConfig}
-                  />
-                  <ActionButton
-                    label={telegramAction === "test" ? "Sending..." : "Send Test Message"}
-                    variant="ghost"
-                    disabled={telegramAction !== null || !telegramConfig?.enabled || !telegramConfig?.hasBotToken || !telegramConfig?.chatId}
-                    onClick={sendTelegramTest}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <TelegramModal
+          activeSettingsModal={activeSettingsModal}
+          setActiveSettingsModal={setActiveSettingsModal}
+          telegramConfig={telegramConfig}
+          telegramForm={telegramForm}
+          setTelegramForm={setTelegramForm}
+          telegramAction={telegramAction}
+          saveTelegramConfig={saveTelegramConfig}
+          sendTelegramTest={sendTelegramTest}
+        />
 
     </>
 
