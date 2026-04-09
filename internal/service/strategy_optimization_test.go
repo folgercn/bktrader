@@ -140,3 +140,21 @@ func TestResolveExecutionQuantityVolatilityAdjustedUsesStopDistance(t *testing.T
 		t.Fatalf("expected risk per unit 50, got %v", got)
 	}
 }
+
+func TestUpdateLivePositionWatermarksResetsWhenPositionChanges(t *testing.T) {
+	sessionState := map[string]any{
+		"hwm":                  52000.0,
+		"lwm":                  50000.0,
+		"watermarkPositionKey": "LONG|50000.00000000",
+	}
+	hwm, lwm := updateLivePositionWatermarks(sessionState, "short", 48000.0, 47900.0)
+	if hwm != 48000.0 {
+		t.Fatalf("expected hwm to reset to new entry price, got %v", hwm)
+	}
+	if lwm != 47900.0 {
+		t.Fatalf("expected lwm to update from new position context, got %v", lwm)
+	}
+	if got := stringValue(sessionState["watermarkPositionKey"]); got != "SHORT|48000.00000000" {
+		t.Fatalf("expected watermark key to reset, got %s", got)
+	}
+}

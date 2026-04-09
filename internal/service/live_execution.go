@@ -254,24 +254,6 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	delete(state, "lastExecutionTimeoutReason")
 	delete(state, "lastExecutionTimeoutIntentSignature")
 	if shouldAdvanceLivePlanForOrderStatus(created.Status) {
-		currentBarKey := stringValue(proposalMap["signalBarStateKey"])
-		lastBarKey := stringValue(state["lastSignalBarStateKey"])
-		reentryCount := parseFloatValue(state["sessionReentryCount"])
-
-		reasonTag := normalizeStrategyReasonTag(proposal.Reason)
-
-		// Reset count if bar changes
-		if currentBarKey != "" && currentBarKey != lastBarKey {
-			reentryCount = 0
-			state["lastSignalBarStateKey"] = currentBarKey
-		}
-
-		// Count only confirmed reentries so the first real reentry keeps 100% sizing.
-		if reasonTag == "sl-reentry" || reasonTag == "pt-reentry" {
-			reentryCount++
-		}
-		state["sessionReentryCount"] = reentryCount
-
 		state["planIndex"] = resolveNextLivePlanIndex(state)
 		state["lastEventTime"] = firstNonEmpty(stringValue(proposalMap["plannedEventAt"]), dispatchedAt.Format(time.RFC3339))
 		state["lastEventSide"] = created.Side
@@ -461,6 +443,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	}
 	state := cloneMetadata(session.State)
 	if isTerminalOrderStatus(order.Status) {
+		maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), order.ID, order.Status)
 		state["lastSyncedOrderId"] = order.ID
 		state["lastSyncedOrderStatus"] = order.Status
 		state["lastDispatchedOrderStatus"] = order.Status
@@ -529,6 +512,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		return updated, err
 	}
 	delete(state, "lastSyncError")
+	maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), syncedOrder.ID, syncedOrder.Status)
 	state["lastSyncedOrderId"] = syncedOrder.ID
 	state["lastSyncedOrderStatus"] = syncedOrder.Status
 	state["lastDispatchedOrderStatus"] = syncedOrder.Status
@@ -577,6 +561,33 @@ func shouldAdvanceLivePlanForOrderStatus(status string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map[string]any, orderID, status string) {
+	if state == nil || !strings.EqualFold(strings.TrimSpace(status), "FILLED") {
+		return
+	}
+	reasonTag := normalizeStrategyReasonTag(stringValue(proposalMap["reason"]))
+	if reasonTag != "sl-reentry" && reasonTag != "pt-reentry" {
+		return
+	}
+	if orderID != "" && stringValue(state["lastCountedReentryOrderId"]) == orderID {
+		return
+	}
+
+	currentBarKey := stringValue(proposalMap["signalBarStateKey"])
+	lastBarKey := stringValue(state["lastSignalBarStateKey"])
+	reentryCount := parseFloatValue(state["sessionReentryCount"])
+	if currentBarKey != "" && currentBarKey != lastBarKey {
+		reentryCount = 0
+		state["lastSignalBarStateKey"] = currentBarKey
+		delete(state, "lastCountedReentryOrderId")
+	}
+	reentryCount++
+	state["sessionReentryCount"] = reentryCount
+	if orderID != "" {
+		state["lastCountedReentryOrderId"] = orderID
 	}
 }
 

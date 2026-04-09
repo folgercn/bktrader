@@ -886,7 +886,9 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	}
 	if signalIntent != nil {
 		state["lastSignalIntent"] = signalIntentToMap(*signalIntent)
-		proposal, proposalErr := p.buildLiveExecutionProposal(session, executionContext, summary, sourceStates, eventTime, *signalIntent)
+		planningSession := session
+		planningSession.State = cloneMetadata(state)
+		proposal, proposalErr := p.buildLiveExecutionProposal(planningSession, executionContext, summary, sourceStates, eventTime, *signalIntent)
 		if proposalErr != nil {
 			state["lastStrategyEvaluationStatus"] = "execution-planning-error"
 			state["lastExecutionProposalError"] = proposalErr.Error()

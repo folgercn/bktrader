@@ -775,7 +775,7 @@ func evaluateLivePositionState(parameters map[string]any, currentPosition map[st
 		stopLoss = resolveStopPrice(side, entryPrice, sig, stopMode, stopLossATR)
 	}
 
-	hwm, lwm := updateLivePositionWatermarks(sessionState, entryPrice, marketPrice)
+	hwm, lwm := updateLivePositionWatermarks(sessionState, side, entryPrice, marketPrice)
 
 	// Calculate Trailing Stop Loss
 	if trailingStopATR := parseFloatValue(parameters["trailing_stop_atr"]); trailingStopATR > 0 {
@@ -838,7 +838,15 @@ func evaluateLivePositionState(parameters map[string]any, currentPosition map[st
 	}
 }
 
-func updateLivePositionWatermarks(sessionState map[string]any, entryPrice, marketPrice float64) (float64, float64) {
+func updateLivePositionWatermarks(sessionState map[string]any, side string, entryPrice, marketPrice float64) (float64, float64) {
+	positionKey := fmt.Sprintf("%s|%.8f", strings.ToUpper(strings.TrimSpace(side)), entryPrice)
+	if sessionState != nil {
+		if lastKey := stringValue(sessionState["watermarkPositionKey"]); lastKey != positionKey {
+			sessionState["hwm"] = entryPrice
+			sessionState["lwm"] = entryPrice
+			sessionState["watermarkPositionKey"] = positionKey
+		}
+	}
 	hwm := parseFloatValue(sessionState["hwm"])
 	if hwm == 0 {
 		hwm = entryPrice
