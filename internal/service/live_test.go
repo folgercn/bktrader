@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -155,7 +156,7 @@ func TestEvaluateLiveExitStateRequiresProtectionBeforePT(t *testing.T) {
 			"high": 69400.0,
 			"low":  68700.0,
 		},
-	}, 68900.0, "PT")
+	}, 68900.0, map[string]any{}, "PT")
 	if boolValue(state["ready"]) {
 		t.Fatal("expected PT exit to stay blocked before protection is armed")
 	}
@@ -189,7 +190,7 @@ func TestEvaluateLiveExitStateArmsProtectionAndTriggersPTForLong(t *testing.T) {
 			"high": 69400.0,
 			"low":  68700.0,
 		},
-	}, 68790.0, "PT")
+	}, 68790.0, map[string]any{}, "PT")
 	if !boolValue(state["ready"]) {
 		t.Fatalf("expected PT exit to trigger once protected and price <= prevLow1, got waitReason=%s", stringValue(state["waitReason"]))
 	}
@@ -222,7 +223,7 @@ func TestEvaluateLiveExitStateTriggersSLForLong(t *testing.T) {
 			"high": 69400.0,
 			"low":  68700.0,
 		},
-	}, 68940.0, "SL")
+	}, 68940.0, map[string]any{}, "SL")
 	if !boolValue(state["ready"]) {
 		t.Fatalf("expected SL exit to trigger once price <= stopLoss, got waitReason=%s", stringValue(state["waitReason"]))
 	}
@@ -512,6 +513,7 @@ func TestBookAwareExecutionStrategyUsesAggressiveReduceOnlyProfileForSLExit(t *t
 		Execution: StrategyExecutionContext{
 			Parameters: map[string]any{
 				"executionOrderType":                "LIMIT",
+				"executionMaxSpreadBps":             5.0,
 				"executionWideSpreadMode":           "limit-maker",
 				"executionTimeoutFallbackOrderType": "LIMIT",
 			},
@@ -548,6 +550,9 @@ func TestBookAwareExecutionStrategyUsesAggressiveReduceOnlyProfileForSLExit(t *t
 	}
 	if proposal.Status != "dispatchable" {
 		t.Fatalf("expected SL exit to stay dispatchable despite wide spread, got %s", proposal.Status)
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "direct-dispatch" {
+		t.Fatalf("expected explicit SL direct dispatch path, got %s", got)
 	}
 }
 
@@ -631,6 +636,55 @@ func TestBookAwareExecutionStrategyUsesMakerLimitOnWideSpreadWhenConfigured(t *t
 	}
 	if got := stringValue(proposal.Metadata["executionExpiresAt"]); got != eventTime.Add(45*time.Second).Format(time.RFC3339) {
 		t.Fatalf("expected execution expiry to be set, got %s", got)
+	}
+}
+
+func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	eventTime := time.Date(2026, 4, 7, 8, 0, 0, 0, time.UTC)
+	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{},
+		Execution: StrategyExecutionContext{
+			Parameters: map[string]any{
+				"executionMaxSpreadBps":                5.0,
+				"executionSLExitRestingTimeoutSeconds": 15,
+				"executionSLMaxSlippageBps":            20.0,
+			},
+		},
+		EventTime: eventTime,
+		Intent: SignalIntent{
+			Action:      "exit",
+			Role:        "exit",
+			Reason:      "SL",
+			Side:        "SELL",
+			Symbol:      "BTCUSDT",
+			PriceHint:   68000,
+			PriceSource: "order_book.bestBid",
+			Metadata: map[string]any{
+				"bestBid":           68000.0,
+				"bestAsk":           68150.0,
+				"spreadBps":         22.0,
+				"signalBarStateKey": "state-1",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := proposal.Type; got != "LIMIT" {
+		t.Fatalf("expected LIMIT SL protection order, got %s", got)
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "sl-slippage-protected" {
+		t.Fatalf("expected sl-slippage-protected, got %s", got)
+	}
+	if got := proposal.LimitPrice; got != 68013.85 {
+		t.Fatalf("expected spread-capped SL protection price 68013.85, got %v", got)
+	}
+	if got := stringValue(proposal.Metadata["executionExpiresAt"]); got != eventTime.Add(15*time.Second).Format(time.RFC3339) {
+		t.Fatalf("expected configured SL expiry, got %s", got)
+	}
+	if !boolValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionBranch"]) {
+		t.Fatal("expected explicit SL protection branch marker")
 	}
 }
 
@@ -1041,6 +1095,52 @@ func TestShouldCancelLiveOrderForExecutionTimeout(t *testing.T) {
 	}
 	if !shouldCancelLiveOrderForExecutionTimeout(order, now) {
 		t.Fatal("expected expired live order to be cancelled")
+	}
+}
+
+func TestMaybeIncrementLiveSessionReentryCountOnlyCountsFilledReentries(t *testing.T) {
+	state := map[string]any{
+		"sessionReentryCount": 0.0,
+	}
+	proposal := map[string]any{
+		"reason":            "SL-Reentry",
+		"signalBarStateKey": "bar-1",
+	}
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "NEW")
+	if got := parseFloatValue(state["sessionReentryCount"]); got != 0 {
+		t.Fatalf("expected no increment for NEW order, got %v", got)
+	}
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED")
+	if got := parseFloatValue(state["sessionReentryCount"]); got != 1 {
+		t.Fatalf("expected increment on FILLED reentry, got %v", got)
+	}
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED")
+	if got := parseFloatValue(state["sessionReentryCount"]); got != 1 {
+		t.Fatalf("expected duplicate FILLED sync to be ignored, got %v", got)
+	}
+}
+
+func TestEvaluateExecutionQualityDoesNotTreatCancelsAsRejections(t *testing.T) {
+	state := map[string]any{
+		"executionEventStats": map[string]any{
+			"filledCount":              4,
+			"rejectedCount":            0,
+			"cancelledCount":           4,
+			"avgPriceDriftBps":         1.0,
+			"avgProposalSpreadBps":     2.0,
+			"slProtectedDispatchCount": 0,
+		},
+	}
+	evaluateExecutionQuality(state)
+	if got := stringValue(state["executionQuality"]); got != "degraded" {
+		t.Fatalf("expected degraded quality from excessive cancels, got %s", got)
+	}
+	rawReasons, _ := state["executionQualityReasons"].([]string)
+	gotReasons := rawReasons
+	for _, reason := range gotReasons {
+		if strings.HasPrefix(reason, "high-rejection:") {
+			t.Fatalf("did not expect high-rejection reason for pure cancels: %v", gotReasons)
+		}
 	}
 }
 
@@ -1551,6 +1651,254 @@ func TestEvaluateLiveSessionOnSignalKeepsReentryDispatchable(t *testing.T) {
 	}
 	if boolValue(mapValue(proposal["metadata"])["virtualPosition"]) {
 		t.Fatal("expected reentry proposal to stay non-virtual")
+	}
+}
+
+func TestEvaluateLiveSessionOnSignalUsesInjectedATRForVolatilitySizing(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal failed: %v", err)
+	}
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-trade-tick",
+		"role":      "trigger",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind strategy trigger failed: %v", err)
+	}
+	if _, err := platform.BindAccountSignalSource("live-main", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind account signal failed: %v", err)
+	}
+	if _, err := platform.BindAccountSignalSource("live-main", map[string]any{
+		"sourceKey": "binance-trade-tick",
+		"role":      "trigger",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind account trigger failed: %v", err)
+	}
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{"availableBalance": 10000.0}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"dispatchMode":        "manual-review",
+		"positionSizingMode":  "volatility_adjusted",
+		"targetRiskBps":       100.0,
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		t.Fatal("expected linked runtime session id")
+	}
+
+	eventTime := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{{
+		EventTime: eventTime,
+		Price:     68900.0,
+		Side:      "BUY",
+		Role:      "entry",
+		Reason:    "SL-Reentry",
+	}}
+	platform.mu.Unlock()
+
+	signalKey := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT")
+	triggerKey := signalBindingMatchKey("binance-trade-tick", "trigger", "BTCUSDT")
+	summary := map[string]any{
+		"role":               "trigger",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"price":              69010.0,
+		"event":              "trade_tick",
+	}
+	err = platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		runtimeSession.Status = "RUNNING"
+		state := cloneMetadata(runtimeSession.State)
+		state["health"] = "healthy"
+		state["lastEventAt"] = eventTime.UTC().Format(time.RFC3339)
+		state["lastHeartbeatAt"] = eventTime.UTC().Format(time.RFC3339)
+		state["lastEventSummary"] = cloneMetadata(summary)
+		state["sourceStates"] = map[string]any{
+			triggerKey: map[string]any{
+				"sourceKey":   "binance-trade-tick",
+				"role":        "trigger",
+				"symbol":      "BTCUSDT",
+				"streamType":  "trade_tick",
+				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
+				"summary": map[string]any{
+					"price": 69010.0,
+				},
+			},
+			signalKey: map[string]any{
+				"sourceKey":   "binance-kline",
+				"role":        "signal",
+				"symbol":      "BTCUSDT",
+				"streamType":  "signal_bar",
+				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
+			},
+		}
+		state["signalBarStates"] = map[string]any{
+			signalKey: map[string]any{
+				"symbol":    "BTCUSDT",
+				"timeframe": "1d",
+				"ma20":      68000.0,
+				"atr14":     900.0,
+				"current": map[string]any{
+					"close": 68100.0,
+					"high":  69010.0,
+					"low":   67800.0,
+				},
+				"prevBar1": map[string]any{
+					"high": 68850.0,
+					"low":  67750.0,
+				},
+				"prevBar2": map[string]any{
+					"high": 69000.0,
+					"low":  67600.0,
+				},
+			},
+		}
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = eventTime
+	})
+	if err != nil {
+		t.Fatalf("update runtime state failed: %v", err)
+	}
+
+	if err := platform.evaluateLiveSessionOnSignal(session, runtimeSessionID, summary, eventTime); err != nil {
+		t.Fatalf("evaluate live session failed: %v", err)
+	}
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	proposal := mapValue(updated.State["lastExecutionProposal"])
+	if proposal == nil {
+		t.Fatal("expected lastExecutionProposal to be recorded")
+	}
+	metadata := mapValue(proposal["metadata"])
+	if got := parseFloatValue(metadata["sizingATR14"]); got != 900.0 {
+		t.Fatalf("expected sizing ATR to be injected in same cycle, got %v", got)
+	}
+	if got := parseFloatValue(metadata["sizingComputedQuantity"]); got <= 0 {
+		t.Fatalf("expected positive volatility-adjusted quantity, got %v", got)
+	}
+}
+
+func TestEvaluateLiveSignalDecisionDoesNotMutateOriginalSessionState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        69000,
+		MarkPrice:         70000,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	eventTime := time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"sma5":      69900.0,
+			"ma20":      68600.0,
+			"atr14":     900.0,
+			"current": map[string]any{
+				"close": 70000.0,
+				"high":  70100.0,
+				"low":   69500.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 69800.0,
+				"low":  68800.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 69700.0,
+				"low":  68700.0,
+			},
+		},
+	}
+	summary := map[string]any{
+		"role":               "trigger",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"price":              70000.0,
+		"event":              "trade_tick",
+	}
+	sourceStates := map[string]any{
+		signalBindingMatchKey("binance-trade-tick", "trigger", "BTCUSDT"): map[string]any{
+			"sourceKey":   "binance-trade-tick",
+			"role":        "trigger",
+			"symbol":      "BTCUSDT",
+			"streamType":  "trade_tick",
+			"lastEventAt": eventTime.Format(time.RFC3339),
+			"summary": map[string]any{
+				"price": 70000.0,
+			},
+		},
+	}
+
+	_, decision, err := platform.evaluateLiveSignalDecision(
+		session,
+		summary,
+		sourceStates,
+		signalStates,
+		eventTime,
+		eventTime,
+		68800.0,
+		"SELL",
+		"exit",
+		"PT",
+	)
+	if err != nil {
+		t.Fatalf("evaluate live signal decision failed: %v", err)
+	}
+	if len(session.State) == 0 {
+		t.Fatal("expected session state to remain initialized")
+	}
+	if _, ok := session.State["hwm"]; ok {
+		t.Fatal("expected original session state to remain unmutated by signal evaluation")
+	}
+	if _, ok := session.State["watermarkPositionKey"]; ok {
+		t.Fatal("expected watermark key to stay out of original session state")
+	}
+	livePositionState := mapValue(decision.Metadata["livePositionState"])
+	if parseFloatValue(livePositionState["stopLoss"]) <= 0 {
+		t.Fatal("expected evaluated live position state to still be populated")
 	}
 }
 

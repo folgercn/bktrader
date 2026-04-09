@@ -126,7 +126,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		return p.store.UpdateLiveSessionState(refreshed.ID, state)
 	}
 	marketPrice := firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(mapValue(signalBarState["current"])["close"]))
-	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice)
+	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, state)
 	if len(livePositionState) == 0 {
 		return p.store.UpdateLiveSessionState(refreshed.ID, state)
 	}

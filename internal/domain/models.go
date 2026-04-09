@@ -126,6 +126,9 @@ type AccountSummary struct {
 	UnrealizedPnL     float64   `json:"unrealizedPnl"`     // 未实现盈亏
 	Fees              float64   `json:"fees"`              // 累计手续费
 	NetEquity         float64   `json:"netEquity"`         // 净权益 = 初始 + 已实现 + 未实现 - 费用
+	AvailableBalance  float64   `json:"availableBalance"`  // 可用余额（live/testnet 优先来自交易所快照）
+	WalletBalance     float64   `json:"walletBalance"`     // 钱包余额
+	MarginBalance     float64   `json:"marginBalance"`     // 保证金余额
 	ExposureNotional  float64   `json:"exposureNotional"`  // 风险敞口（名义值）
 	OpenPositionCount int       `json:"openPositionCount"` // 持仓数量
 	UpdatedAt         time.Time `json:"updatedAt"`

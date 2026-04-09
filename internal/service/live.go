@@ -83,12 +83,12 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	if !strings.EqualFold(account.Mode, "LIVE") {
 		return domain.Account{}, fmt.Errorf("account %s is not a LIVE account", accountID)
 	}
-	_, binding, err := p.resolveLiveAdapterForAccount(account)
+	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
 	if err != nil {
 		return domain.Account{}, err
 	}
-	if normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) == "rest" {
-		if synced, restErr := p.syncLiveAccountFromBinance(account, binding); restErr == nil {
+	if syncCapable, ok := adapter.(LiveAccountSyncAdapter); ok {
+		if synced, syncErr := syncCapable.SyncAccountSnapshot(p, account, binding); syncErr == nil {
 			p.syncLiveSessionsForAccountSnapshot(synced)
 			return synced, nil
 		}
@@ -878,9 +878,17 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		"executionDataSource": executionContext.ExecutionDataSource,
 		"symbol":              executionContext.Symbol,
 	}
+	// P0-3: Inject ATR14 from signal bar state for volatility-adjusted sizing
+	if signalBarState := mapValue(decision.Metadata["signalBarState"]); len(signalBarState) > 0 {
+		if atr14 := parseFloatValue(signalBarState["atr14"]); atr14 > 0 {
+			state["atr14"] = atr14
+		}
+	}
 	if signalIntent != nil {
 		state["lastSignalIntent"] = signalIntentToMap(*signalIntent)
-		proposal, proposalErr := p.buildLiveExecutionProposal(session, executionContext, summary, sourceStates, eventTime, *signalIntent)
+		planningSession := session
+		planningSession.State = cloneMetadata(state)
+		proposal, proposalErr := p.buildLiveExecutionProposal(planningSession, executionContext, summary, sourceStates, eventTime, *signalIntent)
 		if proposalErr != nil {
 			state["lastStrategyEvaluationStatus"] = "execution-planning-error"
 			state["lastExecutionProposalError"] = proposalErr.Error()
@@ -1037,6 +1045,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		SourceStates:      cloneMetadata(sourceStates),
 		SignalBarStates:   cloneMetadata(signalBarStates),
 		CurrentPosition:   currentPosition,
+		SessionState:      cloneMetadata(session.State),
 		EventTime:         eventTime.UTC(),
 		NextPlannedEvent:  nextPlannedEvent.UTC(),
 		NextPlannedPrice:  nextPlannedPrice,

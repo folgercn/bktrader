@@ -59,6 +59,8 @@ func updateExecutionEventStats(state map[string]any, proposalMap map[string]any,
 			incrementInt("directDispatchDecisionCount")
 		case "wait-spread-too-wide":
 			incrementInt("waitWideSpreadDecisionCount")
+		case "sl-slippage-protected":
+			incrementInt("slProtectedDispatchCount")
 		}
 		spreadBps := parseFloatValue(proposalMap["spreadBps"])
 		if spreadBps > 0 {
@@ -108,6 +110,73 @@ func updateExecutionEventStats(state map[string]any, proposalMap map[string]any,
 	}
 
 	state["executionEventStats"] = stats
+	evaluateExecutionQuality(state)
+}
+
+// evaluateExecutionQuality 基于累计执行统计数据评估执行质量等级。
+// 输出 "good" / "degraded" / "poor" 三档评级及原因列表，写入 session state。
+func evaluateExecutionQuality(state map[string]any) {
+	stats := mapValue(state["executionEventStats"])
+	if len(stats) == 0 {
+		return
+	}
+	avgDrift := parseFloatValue(stats["avgPriceDriftBps"])
+	avgSpread := parseFloatValue(stats["avgProposalSpreadBps"])
+	filledCount := maxIntValue(stats["filledCount"], 0)
+	rejectedCount := maxIntValue(stats["rejectedCount"], 0)
+	cancelledCount := maxIntValue(stats["cancelledCount"], 0)
+
+	quality := "good"
+	reasons := make([]string, 0)
+
+	// Drift quality
+	if avgDrift > 10 {
+		quality = "poor"
+		reasons = append(reasons, fmt.Sprintf("high-drift:%.1fbps", avgDrift))
+	} else if avgDrift > 5 {
+		quality = "degraded"
+		reasons = append(reasons, fmt.Sprintf("elevated-drift:%.1fbps", avgDrift))
+	}
+
+	// Spread quality
+	if avgSpread > 15 {
+		quality = "poor"
+		reasons = append(reasons, fmt.Sprintf("wide-spread:%.1fbps", avgSpread))
+	} else if avgSpread > 8 {
+		if quality != "poor" {
+			quality = "degraded"
+		}
+		reasons = append(reasons, fmt.Sprintf("elevated-spread:%.1fbps", avgSpread))
+	}
+
+	// Rejection rate
+	totalDispatched := filledCount + rejectedCount
+	if totalDispatched > 3 {
+		rejectionRate := float64(rejectedCount) / float64(totalDispatched)
+		if rejectionRate > 0.3 {
+			quality = "poor"
+			reasons = append(reasons, fmt.Sprintf("high-rejection:%.0f%%", rejectionRate*100))
+		}
+	}
+	if cancelledCount > 0 {
+		cancelRate := float64(cancelledCount) / float64(maxInt(totalDispatched+cancelledCount, 1))
+		if cancelRate >= 0.5 && quality == "good" {
+			quality = "degraded"
+		}
+		if cancelRate >= 0.5 {
+			reasons = append(reasons, fmt.Sprintf("high-cancel:%.0f%%", cancelRate*100))
+		}
+	}
+
+	// SL slippage protection events
+	slProtectedCount := maxIntValue(stats["slProtectedDispatchCount"], 0)
+	if slProtectedCount > 0 {
+		reasons = append(reasons, fmt.Sprintf("sl-protected:%d", slProtectedCount))
+	}
+
+	state["executionQuality"] = quality
+	state["executionQualityReasons"] = reasons
+	state["executionQualityEvaluatedAt"] = time.Now().UTC().Format(time.RFC3339)
 }
 
 func (p *Platform) SyncLiveSession(sessionID string) (domain.LiveSession, error) {
@@ -374,6 +443,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	}
 	state := cloneMetadata(session.State)
 	if isTerminalOrderStatus(order.Status) {
+		maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), order.ID, order.Status)
 		state["lastSyncedOrderId"] = order.ID
 		state["lastSyncedOrderStatus"] = order.Status
 		state["lastDispatchedOrderStatus"] = order.Status
@@ -442,6 +512,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		return updated, err
 	}
 	delete(state, "lastSyncError")
+	maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), syncedOrder.ID, syncedOrder.Status)
 	state["lastSyncedOrderId"] = syncedOrder.ID
 	state["lastSyncedOrderStatus"] = syncedOrder.Status
 	state["lastDispatchedOrderStatus"] = syncedOrder.Status
@@ -490,6 +561,33 @@ func shouldAdvanceLivePlanForOrderStatus(status string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map[string]any, orderID, status string) {
+	if state == nil || !strings.EqualFold(strings.TrimSpace(status), "FILLED") {
+		return
+	}
+	reasonTag := normalizeStrategyReasonTag(stringValue(proposalMap["reason"]))
+	if reasonTag != "sl-reentry" && reasonTag != "pt-reentry" {
+		return
+	}
+	if orderID != "" && stringValue(state["lastCountedReentryOrderId"]) == orderID {
+		return
+	}
+
+	currentBarKey := stringValue(proposalMap["signalBarStateKey"])
+	lastBarKey := stringValue(state["lastSignalBarStateKey"])
+	reentryCount := parseFloatValue(state["sessionReentryCount"])
+	if currentBarKey != "" && currentBarKey != lastBarKey {
+		reentryCount = 0
+		state["lastSignalBarStateKey"] = currentBarKey
+		delete(state, "lastCountedReentryOrderId")
+	}
+	reentryCount++
+	state["sessionReentryCount"] = reentryCount
+	if orderID != "" {
+		state["lastCountedReentryOrderId"] = orderID
 	}
 }
 
