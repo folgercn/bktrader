@@ -59,6 +59,8 @@ func updateExecutionEventStats(state map[string]any, proposalMap map[string]any,
 			incrementInt("directDispatchDecisionCount")
 		case "wait-spread-too-wide":
 			incrementInt("waitWideSpreadDecisionCount")
+		case "sl-slippage-protected":
+			incrementInt("slProtectedDispatchCount")
 		}
 		spreadBps := parseFloatValue(proposalMap["spreadBps"])
 		if spreadBps > 0 {
@@ -108,6 +110,64 @@ func updateExecutionEventStats(state map[string]any, proposalMap map[string]any,
 	}
 
 	state["executionEventStats"] = stats
+	evaluateExecutionQuality(state)
+}
+
+// evaluateExecutionQuality 基于累计执行统计数据评估执行质量等级。
+// 输出 "good" / "degraded" / "poor" 三档评级及原因列表，写入 session state。
+func evaluateExecutionQuality(state map[string]any) {
+	stats := mapValue(state["executionEventStats"])
+	if len(stats) == 0 {
+		return
+	}
+	avgDrift := parseFloatValue(stats["avgPriceDriftBps"])
+	avgSpread := parseFloatValue(stats["avgProposalSpreadBps"])
+	filledCount := maxIntValue(stats["filledCount"], 0)
+	rejectedCount := maxIntValue(stats["rejectedCount"], 0)
+	cancelledCount := maxIntValue(stats["cancelledCount"], 0)
+
+	quality := "good"
+	reasons := make([]string, 0)
+
+	// Drift quality
+	if avgDrift > 10 {
+		quality = "poor"
+		reasons = append(reasons, fmt.Sprintf("high-drift:%.1fbps", avgDrift))
+	} else if avgDrift > 5 {
+		quality = "degraded"
+		reasons = append(reasons, fmt.Sprintf("elevated-drift:%.1fbps", avgDrift))
+	}
+
+	// Spread quality
+	if avgSpread > 15 {
+		quality = "poor"
+		reasons = append(reasons, fmt.Sprintf("wide-spread:%.1fbps", avgSpread))
+	} else if avgSpread > 8 {
+		if quality != "poor" {
+			quality = "degraded"
+		}
+		reasons = append(reasons, fmt.Sprintf("elevated-spread:%.1fbps", avgSpread))
+	}
+
+	// Rejection rate
+	totalDispatched := filledCount + rejectedCount + cancelledCount
+	if totalDispatched > 3 {
+		rejectionRate := float64(rejectedCount+cancelledCount) / float64(totalDispatched)
+		if rejectionRate > 0.3 {
+			quality = "poor"
+			reasons = append(reasons, fmt.Sprintf("high-rejection:%.0f%%", rejectionRate*100))
+		}
+	}
+
+	// SL slippage protection events
+	slProtectedCount := maxIntValue(stats["slProtectedDispatchCount"], 0)
+	if slProtectedCount > 0 {
+		reasons = append(reasons, fmt.Sprintf("sl-protected:%d", slProtectedCount))
+	}
+
+	state["executionQuality"] = quality
+	state["executionQualityReasons"] = reasons
+	state["executionQualityEvaluatedAt"] = time.Now().UTC().Format(time.RFC3339)
 }
 
 func (p *Platform) SyncLiveSession(sessionID string) (domain.LiveSession, error) {
@@ -185,6 +245,24 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	delete(state, "lastExecutionTimeoutReason")
 	delete(state, "lastExecutionTimeoutIntentSignature")
 	if shouldAdvanceLivePlanForOrderStatus(created.Status) {
+		currentBarKey := stringValue(proposalMap["signalBarStateKey"])
+		lastBarKey := stringValue(state["lastSignalBarStateKey"])
+		reentryCount := parseFloatValue(state["sessionReentryCount"])
+		
+		reasonTag := normalizeStrategyReasonTag(proposal.Reason)
+		
+		// Reset count if bar changes
+		if currentBarKey != "" && currentBarKey != lastBarKey {
+			reentryCount = 0
+			state["lastSignalBarStateKey"] = currentBarKey
+		}
+		
+		// Increment for entries that count towards the limit (Initial and SL-Reentry)
+		if reasonTag == "initial" || reasonTag == "sl-reentry" {
+			reentryCount++
+		}
+		state["sessionReentryCount"] = reentryCount
+
 		state["planIndex"] = resolveNextLivePlanIndex(state)
 		state["lastEventTime"] = firstNonEmpty(stringValue(proposalMap["plannedEventAt"]), dispatchedAt.Format(time.RFC3339))
 		state["lastEventSide"] = created.Side

@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -108,6 +109,7 @@ type executionProfile struct {
 	TimeoutFallbackType   string
 	TimeoutFallbackTIF    string
 	ReduceOnly            bool
+	SLMaxSlippageBps      float64
 }
 
 func (bookAwareExecutionStrategy) Key() string {
@@ -154,6 +156,22 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 		}
 	}
 	quantity, sizingMeta := resolveExecutionQuantity(ctx.Session, ctx.Account, intent, priceHint)
+
+	// Reentry Decay: 衰减重入仓位大小
+	reentryDecayFactor := parseFloatValue(ctx.Execution.Parameters["reentry_decay_factor"])
+	if reentryDecayFactor > 0 && reentryDecayFactor < 1.0 {
+		reasonTag := normalizeStrategyReasonTag(intent.Reason)
+		if reasonTag == "sl-reentry" || reasonTag == "pt-reentry" {
+			reentryCount := parseFloatValue(ctx.Session.State["sessionReentryCount"])
+			if reentryCount > 0 {
+				decayMultiplier := math.Pow(reentryDecayFactor, reentryCount)
+				quantity = quantity * decayMultiplier
+				sizingMeta["sizingReentryDecayFactor"] = reentryDecayFactor
+				sizingMeta["sizingReentryCount"] = reentryCount
+				sizingMeta["sizingDecayMultiplier"] = decayMultiplier
+			}
+		}
+	}
 
 	proposal := ExecutionProposal{
 		Action:            intent.Action,
@@ -263,6 +281,27 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 		proposal.Metadata["executionDecision"] = "wait-spread-too-wide"
 		return proposal, nil
 	}
+	// P0-2: SL Slippage Protection — 当止损时 spread 极端，使用 aggressive LIMIT 控制滑点
+	if profile.ReduceOnly && normalizeStrategyReasonTag(intent.Reason) == "sl" && spreadBps > 0 {
+		slMaxSlippageBps := firstPositive(profile.SLMaxSlippageBps, 50)
+		if spreadBps > slMaxSlippageBps {
+			cappedPrice := resolveAggressiveSLPrice(intent.Side, priceHint, slMaxSlippageBps)
+			proposal.Type = "LIMIT"
+			proposal.LimitPrice = cappedPrice
+			proposal.TimeInForce = "GTC"
+			proposal.PostOnly = false
+			if profile.RestingTimeoutSeconds <= 0 {
+				proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(5 * time.Second).Format(time.RFC3339)
+				proposal.Metadata["executionRestingTimeoutSeconds"] = 5
+			}
+			proposal.Metadata["slProtectionActive"] = true
+			proposal.Metadata["slCappedPrice"] = cappedPrice
+			proposal.Metadata["slOriginalSpreadBps"] = spreadBps
+			proposal.Metadata["slMaxSlippageBps"] = slMaxSlippageBps
+			proposal.Metadata["executionDecision"] = "sl-slippage-protected"
+			return proposal, nil
+		}
+	}
 	proposal.Metadata["executionDecision"] = "direct-dispatch"
 	return proposal, nil
 }
@@ -274,6 +313,8 @@ func normalizePositionSizingMode(raw any) string {
 		return "fixed_quantity"
 	case "fixed-fraction", "fixed_fraction", "fraction", "percent", "percentage":
 		return "fixed_fraction"
+	case "volatility-adjusted", "volatility_adjusted", "vol_adjusted", "atr_adjusted":
+		return "volatility_adjusted"
 	default:
 		return value
 	}
@@ -306,6 +347,25 @@ func resolveExecutionQuantity(session domain.LiveSession, account domain.Account
 			metadata["sizingBalanceBasis"] = basis
 			metadata["sizingComputedQuantity"] = quantity
 			return quantity, metadata
+		}
+	}
+	// P0-3: Volatility-Adjusted Sizing — 根据 ATR 归一化风险暴露
+	if mode == "volatility_adjusted" && priceHint > 0 {
+		atr14 := parseFloatValue(session.State["atr14"])
+		targetRiskBps := firstPositive(parseFloatValue(session.State["targetRiskBps"]), 100)
+		if balance, basis := resolveLiveSizingBalance(account); balance > 0 && atr14 > 0 {
+			riskFraction := targetRiskBps / 10000.0
+			quantity := (balance * riskFraction) / atr14
+			metadata["sizingBalance"] = balance
+			metadata["sizingBalanceBasis"] = basis
+			metadata["sizingATR14"] = atr14
+			metadata["sizingTargetRiskBps"] = targetRiskBps
+			metadata["sizingComputedQuantity"] = quantity
+			return quantity, metadata
+		}
+		metadata["sizingFallbackReason"] = "volatility_adjusted_missing_inputs"
+		if atr14 <= 0 {
+			metadata["sizingMissingField"] = "atr14"
 		}
 	}
 	quantity := firstPositive(fixedQuantity, firstPositive(intent.Quantity, 0.001))
@@ -374,6 +434,7 @@ func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) exe
 		if profile.TimeoutFallbackType == "" {
 			profile.TimeoutFallbackType = "MARKET"
 		}
+		profile.SLMaxSlippageBps = firstPositive(parseFloatValue(parameters["executionSLMaxSlippageBps"]), 50)
 	case role == "exit" && reasonTag == "pt":
 		overrideExecutionProfile(&profile, parameters, "executionPTExit")
 		profile.ReduceOnly = true
@@ -464,6 +525,21 @@ func resolvePassiveBookPrice(side string, bestBid, bestAsk, fallback float64) fl
 		return firstPositive(bestAsk, fallback)
 	default:
 		return fallback
+	}
+}
+
+// resolveAggressiveSLPrice 计算止损单的最大可接受成交价。
+// 卖出平仓（多头止损）：最低价 = priceHint * (1 - tolerance)
+// 买入平仓（空头止损）：最高价 = priceHint * (1 + tolerance)
+func resolveAggressiveSLPrice(side string, priceHint, maxSlippageBps float64) float64 {
+	tolerance := maxSlippageBps / 10000
+	switch strings.ToUpper(strings.TrimSpace(side)) {
+	case "SELL", "SHORT":
+		return priceHint * (1 - tolerance)
+	case "BUY":
+		return priceHint * (1 + tolerance)
+	default:
+		return priceHint
 	}
 }
 

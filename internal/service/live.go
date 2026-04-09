@@ -87,7 +87,7 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	if err != nil {
 		return domain.Account{}, err
 	}
-	if normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) == "rest" {
+	if normalizeLiveAdapterKey(stringValue(binding["adapterKey"])) == "binance-futures" {
 		if synced, restErr := p.syncLiveAccountFromBinance(account, binding); restErr == nil {
 			p.syncLiveSessionsForAccountSnapshot(synced)
 			return synced, nil
@@ -878,6 +878,12 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		"executionDataSource": executionContext.ExecutionDataSource,
 		"symbol":              executionContext.Symbol,
 	}
+	// P0-3: Inject ATR14 from signal bar state for volatility-adjusted sizing
+	if signalBarState := mapValue(decision.Metadata["signalBarState"]); len(signalBarState) > 0 {
+		if atr14 := parseFloatValue(signalBarState["atr14"]); atr14 > 0 {
+			state["atr14"] = atr14
+		}
+	}
 	if signalIntent != nil {
 		state["lastSignalIntent"] = signalIntentToMap(*signalIntent)
 		proposal, proposalErr := p.buildLiveExecutionProposal(session, executionContext, summary, sourceStates, eventTime, *signalIntent)
@@ -1037,6 +1043,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		SourceStates:      cloneMetadata(sourceStates),
 		SignalBarStates:   cloneMetadata(signalBarStates),
 		CurrentPosition:   currentPosition,
+		SessionState:      session.State,
 		EventTime:         eventTime.UTC(),
 		NextPlannedEvent:  nextPlannedEvent.UTC(),
 		NextPlannedPrice:  nextPlannedPrice,

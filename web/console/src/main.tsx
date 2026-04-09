@@ -14,6 +14,9 @@ type AccountSummary = {
   unrealizedPnl: number;
   fees: number;
   netEquity: number;
+  availableBalance: number;
+  walletBalance: number;
+  marginBalance: number;
   exposureNotional: number;
   openPositionCount: number;
   updatedAt: string;
@@ -2292,6 +2295,8 @@ function App() {
 
         <section className="metrics-grid">
           <MetricCard label="Net Equity" value={formatMoney(primaryAccount?.netEquity)} tone="accent" />
+          <MetricCard label="Available Balance" value={formatMoney(primaryAccount?.availableBalance)} tone="accent" />
+          <MetricCard label="Wallet Balance" value={formatMoney(primaryAccount?.walletBalance)} />
           <MetricCard label="Realized PnL" value={formatSigned(primaryAccount?.realizedPnl)} />
           <MetricCard label="Unrealized PnL" value={formatSigned(primaryAccount?.unrealizedPnl)} />
           <MetricCard label="Fees" value={formatMoney(primaryAccount?.fees)} />
@@ -4048,6 +4053,12 @@ function App() {
                   {liveAccounts.map((account) => {
                     const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
                     const syncSnapshot = getRecord(getRecord(account.metadata).liveSyncSnapshot);
+                    const accountSummary = summaries.find((item) => item.accountId === account.id) ?? null;
+                    const hasBalanceSnapshot =
+                      String(syncSnapshot.syncStatus ?? "").toUpperCase() === "SYNCED" &&
+                      (accountSummary?.availableBalance != null ||
+                        accountSummary?.walletBalance != null ||
+                        accountSummary?.netEquity != null);
                     const bindings = accountSignalBindingMap[account.id] ?? [];
                     const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
                     const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
@@ -4094,6 +4105,20 @@ function App() {
                           <span>sync {String(syncSnapshot.syncStatus ?? "UNSYNCED")}</span>
                           <span>{formatTime(String(getRecord(account.metadata).lastLiveSyncAt ?? ""))}</span>
                           <span>{String(syncSnapshot.source ?? "--")}</span>
+                        </div>
+                        <div className="live-account-meta">
+                          {hasBalanceSnapshot ? (
+                            <>
+                              <span>equity {formatMoney(accountSummary?.netEquity)}</span>
+                              <span>available {formatMoney(accountSummary?.availableBalance)}</span>
+                              <span>wallet {formatMoney(accountSummary?.walletBalance)}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>余额未同步</span>
+                              <span>请先执行 live account sync</span>
+                            </>
+                          )}
                         </div>
                         <div className="live-account-meta">
                           <span>{bindings.length} signal bindings</span>

@@ -155,7 +155,7 @@ func TestEvaluateLiveExitStateRequiresProtectionBeforePT(t *testing.T) {
 			"high": 69400.0,
 			"low":  68700.0,
 		},
-	}, 68900.0, "PT")
+	}, 68900.0, map[string]any{}, "PT")
 	if boolValue(state["ready"]) {
 		t.Fatal("expected PT exit to stay blocked before protection is armed")
 	}
@@ -189,7 +189,7 @@ func TestEvaluateLiveExitStateArmsProtectionAndTriggersPTForLong(t *testing.T) {
 			"high": 69400.0,
 			"low":  68700.0,
 		},
-	}, 68790.0, "PT")
+	}, 68790.0, map[string]any{}, "PT")
 	if !boolValue(state["ready"]) {
 		t.Fatalf("expected PT exit to trigger once protected and price <= prevLow1, got waitReason=%s", stringValue(state["waitReason"]))
 	}
@@ -222,7 +222,7 @@ func TestEvaluateLiveExitStateTriggersSLForLong(t *testing.T) {
 			"high": 69400.0,
 			"low":  68700.0,
 		},
-	}, 68940.0, "SL")
+	}, 68940.0, map[string]any{}, "SL")
 	if !boolValue(state["ready"]) {
 		t.Fatalf("expected SL exit to trigger once price <= stopLoss, got waitReason=%s", stringValue(state["waitReason"]))
 	}
