@@ -125,6 +125,7 @@ func (bookAwareExecutionStrategy) Describe() map[string]any {
 
 func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (ExecutionProposal, error) {
 	intent := ctx.Intent
+	reasonTag := normalizeStrategyReasonTag(intent.Reason)
 	meta := cloneMetadata(intent.Metadata)
 	bestBid := parseFloatValue(meta["bestBid"])
 	bestAsk := parseFloatValue(meta["bestAsk"])
@@ -160,7 +161,6 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	// Reentry Decay: 衰减重入仓位大小
 	reentryDecayFactor := parseFloatValue(ctx.Execution.Parameters["reentry_decay_factor"])
 	if reentryDecayFactor > 0 && reentryDecayFactor < 1.0 {
-		reasonTag := normalizeStrategyReasonTag(intent.Reason)
 		if reasonTag == "sl-reentry" || reasonTag == "pt-reentry" {
 			reentryCount := effectiveReentryCountForSizing(ctx.Session.State, intent.Metadata)
 			if reentryCount > 0 {
@@ -245,6 +245,44 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 		proposal.Metadata["executionDecision"] = "wait-market-price-unavailable"
 		return proposal, nil
 	}
+	if profile.ReduceOnly && reasonTag == "sl" {
+		slMaxSlippageBps := firstPositive(profile.SLMaxSlippageBps, 50)
+		if spreadBps > 0 && slMaxSlippageBps > 0 && spreadBps > slMaxSlippageBps {
+			cappedPrice := resolveAggressiveSLProtectionPrice(intent.Side, bestBid, bestAsk, priceHint, slMaxSlippageBps)
+			proposal.Type = "LIMIT"
+			proposal.LimitPrice = cappedPrice
+			proposal.TimeInForce = "GTC"
+			proposal.PostOnly = false
+			timeoutSeconds := profile.RestingTimeoutSeconds
+			if timeoutSeconds <= 0 {
+				timeoutSeconds = 5
+			}
+			proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(time.Duration(timeoutSeconds) * time.Second).Format(time.RFC3339)
+			proposal.Metadata["executionRestingTimeoutSeconds"] = timeoutSeconds
+			proposal.Metadata["slProtectionActive"] = true
+			proposal.Metadata["slCappedPrice"] = cappedPrice
+			proposal.Metadata["slOriginalSpreadBps"] = spreadBps
+			proposal.Metadata["slMaxSlippageBps"] = slMaxSlippageBps
+			proposal.Metadata["executionDecision"] = "sl-slippage-protected"
+			proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
+				mapValue(proposal.Metadata["executionDecisionContext"]),
+				map[string]any{
+					"slProtectionBranch": true,
+					"slProtectionMode":   "spread-capped-limit",
+				},
+			)
+			return proposal, nil
+		}
+		proposal.Metadata["executionDecision"] = "direct-dispatch"
+		proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
+			mapValue(proposal.Metadata["executionDecisionContext"]),
+			map[string]any{
+				"slProtectionBranch": true,
+				"slProtectionMode":   "direct-dispatch",
+			},
+		)
+		return proposal, nil
+	}
 	if spreadBps > 0 && spreadBps > maxSpreadBps {
 		if useTimeoutFallback {
 			proposal.Type = timeoutFallbackType
@@ -280,29 +318,6 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 		proposal.Reason = "spread-too-wide"
 		proposal.Metadata["executionDecision"] = "wait-spread-too-wide"
 		return proposal, nil
-	}
-	// P0-2: SL Slippage Protection — 当止损时 spread 极端，使用 aggressive LIMIT 控制滑点
-	if profile.ReduceOnly && normalizeStrategyReasonTag(intent.Reason) == "sl" && spreadBps > 0 {
-		slMaxSlippageBps := firstPositive(profile.SLMaxSlippageBps, 50)
-		if spreadBps > slMaxSlippageBps {
-			cappedPrice := resolveAggressiveSLPrice(intent.Side, priceHint, slMaxSlippageBps)
-			proposal.Type = "LIMIT"
-			proposal.LimitPrice = cappedPrice
-			proposal.TimeInForce = "GTC"
-			proposal.PostOnly = false
-			timeoutSeconds := profile.RestingTimeoutSeconds
-			if timeoutSeconds <= 0 {
-				timeoutSeconds = 5
-			}
-			proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(time.Duration(timeoutSeconds) * time.Second).Format(time.RFC3339)
-			proposal.Metadata["executionRestingTimeoutSeconds"] = timeoutSeconds
-			proposal.Metadata["slProtectionActive"] = true
-			proposal.Metadata["slCappedPrice"] = cappedPrice
-			proposal.Metadata["slOriginalSpreadBps"] = spreadBps
-			proposal.Metadata["slMaxSlippageBps"] = slMaxSlippageBps
-			proposal.Metadata["executionDecision"] = "sl-slippage-protected"
-			return proposal, nil
-		}
 	}
 	proposal.Metadata["executionDecision"] = "direct-dispatch"
 	return proposal, nil
@@ -442,9 +457,6 @@ func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) exe
 		profile.OrderType = strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(parameters["executionSLExitOrderType"]), "MARKET")))
 		profile.TimeInForce = strings.ToUpper(strings.TrimSpace(stringValue(parameters["executionSLExitTimeInForce"])))
 		profile.PostOnly = boolValue(parameters["executionSLExitPostOnly"])
-		if profile.MaxSpreadBps <= 0 {
-			profile.MaxSpreadBps = 100000
-		}
 		profile.WideSpreadMode = ""
 		if profile.TimeoutFallbackType == "" {
 			profile.TimeoutFallbackType = "MARKET"
@@ -532,6 +544,14 @@ func buildExecutionSignalSignature(intent SignalIntent) string {
 	}, "|")
 }
 
+func mergeExecutionDecisionContext(base map[string]any, extra map[string]any) map[string]any {
+	merged := cloneMetadata(base)
+	for key, value := range extra {
+		merged[key] = value
+	}
+	return merged
+}
+
 func effectiveReentryCountForSizing(sessionState map[string]any, intentMetadata map[string]any) float64 {
 	currentBarKey := stringValue(intentMetadata["signalBarStateKey"])
 	if currentBarKey != "" && currentBarKey != stringValue(sessionState["lastSignalBarStateKey"]) {
@@ -551,18 +571,30 @@ func resolvePassiveBookPrice(side string, bestBid, bestAsk, fallback float64) fl
 	}
 }
 
-// resolveAggressiveSLPrice 计算止损单的最大可接受成交价。
-// 卖出平仓（多头止损）：最低价 = priceHint * (1 - tolerance)
-// 买入平仓（空头止损）：最高价 = priceHint * (1 + tolerance)
-func resolveAggressiveSLPrice(side string, priceHint, maxSlippageBps float64) float64 {
+// resolveAggressiveSLProtectionPrice 基于整段盘口 spread 计算 SL 保护限价。
+// 当 spread 已经大于容忍阈值时，不再基于单边 quote 继续偏移，而是从盘口两侧推导一个
+// “最多跨越 maxSlippageBps 对应价格宽度”的保护限价。这样触发条件和控制手段都围绕同一段 spread。
+func resolveAggressiveSLProtectionPrice(side string, bestBid, bestAsk, fallback, maxSlippageBps float64) float64 {
+	if bestBid > 0 && bestAsk > 0 && bestAsk >= bestBid {
+		mid := (bestBid + bestAsk) / 2
+		if mid > 0 {
+			allowedCross := mid * maxSlippageBps / 10000
+			switch strings.ToUpper(strings.TrimSpace(side)) {
+			case "SELL", "SHORT":
+				return math.Max(bestBid, bestAsk-allowedCross)
+			case "BUY":
+				return math.Min(bestAsk, bestBid+allowedCross)
+			}
+		}
+	}
 	tolerance := maxSlippageBps / 10000
 	switch strings.ToUpper(strings.TrimSpace(side)) {
 	case "SELL", "SHORT":
-		return priceHint * (1 - tolerance)
+		return fallback * (1 - tolerance)
 	case "BUY":
-		return priceHint * (1 + tolerance)
+		return fallback * (1 + tolerance)
 	default:
-		return priceHint
+		return fallback
 	}
 }
 

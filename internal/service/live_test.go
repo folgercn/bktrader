@@ -513,6 +513,7 @@ func TestBookAwareExecutionStrategyUsesAggressiveReduceOnlyProfileForSLExit(t *t
 		Execution: StrategyExecutionContext{
 			Parameters: map[string]any{
 				"executionOrderType":                "LIMIT",
+				"executionMaxSpreadBps":             5.0,
 				"executionWideSpreadMode":           "limit-maker",
 				"executionTimeoutFallbackOrderType": "LIMIT",
 			},
@@ -549,6 +550,9 @@ func TestBookAwareExecutionStrategyUsesAggressiveReduceOnlyProfileForSLExit(t *t
 	}
 	if proposal.Status != "dispatchable" {
 		t.Fatalf("expected SL exit to stay dispatchable despite wide spread, got %s", proposal.Status)
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "direct-dispatch" {
+		t.Fatalf("expected explicit SL direct dispatch path, got %s", got)
 	}
 }
 
@@ -642,6 +646,7 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 		Session: domain.LiveSession{},
 		Execution: StrategyExecutionContext{
 			Parameters: map[string]any{
+				"executionMaxSpreadBps":                5.0,
 				"executionSLExitRestingTimeoutSeconds": 15,
 				"executionSLMaxSlippageBps":            20.0,
 			},
@@ -672,8 +677,14 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 	if got := stringValue(proposal.Metadata["executionDecision"]); got != "sl-slippage-protected" {
 		t.Fatalf("expected sl-slippage-protected, got %s", got)
 	}
+	if got := proposal.LimitPrice; got != 68013.85 {
+		t.Fatalf("expected spread-capped SL protection price 68013.85, got %v", got)
+	}
 	if got := stringValue(proposal.Metadata["executionExpiresAt"]); got != eventTime.Add(15*time.Second).Format(time.RFC3339) {
 		t.Fatalf("expected configured SL expiry, got %s", got)
+	}
+	if !boolValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionBranch"]) {
+		t.Fatal("expected explicit SL protection branch marker")
 	}
 }
 
