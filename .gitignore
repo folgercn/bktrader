@@ -21,3 +21,9 @@ btc_perp_1m_dataset/
 /db-migrate
 *.lock
 .gomodcache/
+
+# Agents & Scripts
+.agents/
+迁移计划.md
+web/console/*.py
+configs/app.env
