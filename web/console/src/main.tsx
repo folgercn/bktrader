@@ -1398,7 +1398,7 @@ function App() {
       dockTab={dockTab}
       onDockTabChange={setDockTab}
       headerMetrics={
-        <div className="flex space-x-6">
+        <div className="flex space-x-2">
           <MetricCard label="账户" value={monitorMode} />
           <MetricCard label="策略" value={String(highlightedLiveSession?.session?.strategyId ?? "--")} />
           <MetricCard label="实盘状态" value={highlightedLiveSession?.health.status ?? "--"} tone={highlightedLiveSession?.health.status === "ready" ? "accent" : undefined} />
