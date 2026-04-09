@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession } from '../types/domain';
 import { readStoredAuthSession } from '../utils/auth';
+import { resolveUpdater } from './helpers';
 
 
 export interface useTradingStoreState {
-  summaries: any[];
-  setSummaries: (valOrUpdater: any[] | ((prev: any[]) => any[])) => void;
-  accounts: any[];
-  setAccounts: (valOrUpdater: any[] | ((prev: any[]) => any[])) => void;
+  summaries: AccountSummary[];
+  setSummaries: (valOrUpdater: AccountSummary[] | ((prev: AccountSummary[]) => AccountSummary[])) => void;
+  accounts: AccountRecord[];
+  setAccounts: (valOrUpdater: AccountRecord[] | ((prev: AccountRecord[]) => AccountRecord[])) => void;
   orders: Order[];
   setOrders: (valOrUpdater: Order[] | ((prev: Order[]) => Order[])) => void;
   fills: Fill[];
@@ -70,65 +71,65 @@ export interface useTradingStoreState {
 
 export const useTradingStore = create<useTradingStoreState>((set) => ({
   summaries: [],
-  setSummaries: (valOrUpdater) => set((state) => ({ summaries: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.summaries) : valOrUpdater })),
+  setSummaries: (valOrUpdater) => set((state) => ({ summaries: resolveUpdater(valOrUpdater, state.summaries) })),
   accounts: [],
-  setAccounts: (valOrUpdater) => set((state) => ({ accounts: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.accounts) : valOrUpdater })),
+  setAccounts: (valOrUpdater) => set((state) => ({ accounts: resolveUpdater(valOrUpdater, state.accounts) })),
   orders: [],
-  setOrders: (valOrUpdater) => set((state) => ({ orders: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.orders) : valOrUpdater })),
+  setOrders: (valOrUpdater) => set((state) => ({ orders: resolveUpdater(valOrUpdater, state.orders) })),
   fills: [],
-  setFills: (valOrUpdater) => set((state) => ({ fills: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.fills) : valOrUpdater })),
+  setFills: (valOrUpdater) => set((state) => ({ fills: resolveUpdater(valOrUpdater, state.fills) })),
   positions: [],
-  setPositions: (valOrUpdater) => set((state) => ({ positions: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.positions) : valOrUpdater })),
+  setPositions: (valOrUpdater) => set((state) => ({ positions: resolveUpdater(valOrUpdater, state.positions) })),
   snapshots: [],
-  setSnapshots: (valOrUpdater) => set((state) => ({ snapshots: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.snapshots) : valOrUpdater })),
+  setSnapshots: (valOrUpdater) => set((state) => ({ snapshots: resolveUpdater(valOrUpdater, state.snapshots) })),
   strategies: [],
-  setStrategies: (valOrUpdater) => set((state) => ({ strategies: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.strategies) : valOrUpdater })),
+  setStrategies: (valOrUpdater) => set((state) => ({ strategies: resolveUpdater(valOrUpdater, state.strategies) })),
   backtests: [],
-  setBacktests: (valOrUpdater) => set((state) => ({ backtests: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.backtests) : valOrUpdater })),
+  setBacktests: (valOrUpdater) => set((state) => ({ backtests: resolveUpdater(valOrUpdater, state.backtests) })),
   backtestOptions: null,
-  setBacktestOptions: (valOrUpdater) => set((state) => ({ backtestOptions: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.backtestOptions) : valOrUpdater })),
+  setBacktestOptions: (valOrUpdater) => set((state) => ({ backtestOptions: resolveUpdater(valOrUpdater, state.backtestOptions) })),
   paperSessions: [],
-  setPaperSessions: (valOrUpdater) => set((state) => ({ paperSessions: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.paperSessions) : valOrUpdater })),
+  setPaperSessions: (valOrUpdater) => set((state) => ({ paperSessions: resolveUpdater(valOrUpdater, state.paperSessions) })),
   liveSessions: [],
-  setLiveSessions: (valOrUpdater) => set((state) => ({ liveSessions: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSessions) : valOrUpdater })),
+  setLiveSessions: (valOrUpdater) => set((state) => ({ liveSessions: resolveUpdater(valOrUpdater, state.liveSessions) })),
   liveAdapters: [],
-  setLiveAdapters: (valOrUpdater) => set((state) => ({ liveAdapters: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveAdapters) : valOrUpdater })),
+  setLiveAdapters: (valOrUpdater) => set((state) => ({ liveAdapters: resolveUpdater(valOrUpdater, state.liveAdapters) })),
   signalCatalog: null,
-  setSignalCatalog: (valOrUpdater) => set((state) => ({ signalCatalog: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.signalCatalog) : valOrUpdater })),
+  setSignalCatalog: (valOrUpdater) => set((state) => ({ signalCatalog: resolveUpdater(valOrUpdater, state.signalCatalog) })),
   signalSourceTypes: [],
-  setSignalSourceTypes: (valOrUpdater) => set((state) => ({ signalSourceTypes: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.signalSourceTypes) : valOrUpdater })),
+  setSignalSourceTypes: (valOrUpdater) => set((state) => ({ signalSourceTypes: resolveUpdater(valOrUpdater, state.signalSourceTypes) })),
   signalRuntimeAdapters: [],
-  setSignalRuntimeAdapters: (valOrUpdater) => set((state) => ({ signalRuntimeAdapters: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.signalRuntimeAdapters) : valOrUpdater })),
+  setSignalRuntimeAdapters: (valOrUpdater) => set((state) => ({ signalRuntimeAdapters: resolveUpdater(valOrUpdater, state.signalRuntimeAdapters) })),
   signalRuntimeSessions: [],
-  setSignalRuntimeSessions: (valOrUpdater) => set((state) => ({ signalRuntimeSessions: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.signalRuntimeSessions) : valOrUpdater })),
+  setSignalRuntimeSessions: (valOrUpdater) => set((state) => ({ signalRuntimeSessions: resolveUpdater(valOrUpdater, state.signalRuntimeSessions) })),
   runtimePolicy: null,
-  setRuntimePolicy: (valOrUpdater) => set((state) => ({ runtimePolicy: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.runtimePolicy) : valOrUpdater })),
+  setRuntimePolicy: (valOrUpdater) => set((state) => ({ runtimePolicy: resolveUpdater(valOrUpdater, state.runtimePolicy) })),
   alerts: [],
-  setAlerts: (valOrUpdater) => set((state) => ({ alerts: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.alerts) : valOrUpdater })),
+  setAlerts: (valOrUpdater) => set((state) => ({ alerts: resolveUpdater(valOrUpdater, state.alerts) })),
   notifications: [],
-  setNotifications: (valOrUpdater) => set((state) => ({ notifications: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.notifications) : valOrUpdater })),
+  setNotifications: (valOrUpdater) => set((state) => ({ notifications: resolveUpdater(valOrUpdater, state.notifications) })),
   telegramConfig: null,
-  setTelegramConfig: (valOrUpdater) => set((state) => ({ telegramConfig: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.telegramConfig) : valOrUpdater })),
+  setTelegramConfig: (valOrUpdater) => set((state) => ({ telegramConfig: resolveUpdater(valOrUpdater, state.telegramConfig) })),
   accountSignalBindings: [],
-  setAccountSignalBindings: (valOrUpdater) => set((state) => ({ accountSignalBindings: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.accountSignalBindings) : valOrUpdater })),
+  setAccountSignalBindings: (valOrUpdater) => set((state) => ({ accountSignalBindings: resolveUpdater(valOrUpdater, state.accountSignalBindings) })),
   strategySignalBindings: [],
-  setStrategySignalBindings: (valOrUpdater) => set((state) => ({ strategySignalBindings: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.strategySignalBindings) : valOrUpdater })),
+  setStrategySignalBindings: (valOrUpdater) => set((state) => ({ strategySignalBindings: resolveUpdater(valOrUpdater, state.strategySignalBindings) })),
   accountSignalBindingMap: {},
-  setAccountSignalBindingMap: (valOrUpdater) => set((state) => ({ accountSignalBindingMap: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.accountSignalBindingMap) : valOrUpdater })),
+  setAccountSignalBindingMap: (valOrUpdater) => set((state) => ({ accountSignalBindingMap: resolveUpdater(valOrUpdater, state.accountSignalBindingMap) })),
   strategySignalBindingMap: {},
-  setStrategySignalBindingMap: (valOrUpdater) => set((state) => ({ strategySignalBindingMap: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.strategySignalBindingMap) : valOrUpdater })),
+  setStrategySignalBindingMap: (valOrUpdater) => set((state) => ({ strategySignalBindingMap: resolveUpdater(valOrUpdater, state.strategySignalBindingMap) })),
   signalRuntimePlan: null,
-  setSignalRuntimePlan: (valOrUpdater) => set((state) => ({ signalRuntimePlan: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.signalRuntimePlan) : valOrUpdater })),
+  setSignalRuntimePlan: (valOrUpdater) => set((state) => ({ signalRuntimePlan: resolveUpdater(valOrUpdater, state.signalRuntimePlan) })),
   selectedSignalRuntimeId: null,
-  setSelectedSignalRuntimeId: (valOrUpdater) => set((state) => ({ selectedSignalRuntimeId: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.selectedSignalRuntimeId) : valOrUpdater })),
+  setSelectedSignalRuntimeId: (valOrUpdater) => set((state) => ({ selectedSignalRuntimeId: resolveUpdater(valOrUpdater, state.selectedSignalRuntimeId) })),
   selectedStrategyId: null,
-  setSelectedStrategyId: (valOrUpdater) => set((state) => ({ selectedStrategyId: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.selectedStrategyId) : valOrUpdater })),
+  setSelectedStrategyId: (valOrUpdater) => set((state) => ({ selectedStrategyId: resolveUpdater(valOrUpdater, state.selectedStrategyId) })),
   candles: [],
-  setCandles: (valOrUpdater) => set((state) => ({ candles: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.candles) : valOrUpdater })),
+  setCandles: (valOrUpdater) => set((state) => ({ candles: resolveUpdater(valOrUpdater, state.candles) })),
   monitorCandles: [],
-  setMonitorCandles: (valOrUpdater) => set((state) => ({ monitorCandles: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.monitorCandles) : valOrUpdater })),
+  setMonitorCandles: (valOrUpdater) => set((state) => ({ monitorCandles: resolveUpdater(valOrUpdater, state.monitorCandles) })),
   annotations: [],
-  setAnnotations: (valOrUpdater) => set((state) => ({ annotations: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.annotations) : valOrUpdater })),
+  setAnnotations: (valOrUpdater) => set((state) => ({ annotations: resolveUpdater(valOrUpdater, state.annotations) })),
   editingLiveSessionId: null,
-  setEditingLiveSessionId: (valOrUpdater) => set((state) => ({ editingLiveSessionId: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.editingLiveSessionId) : valOrUpdater })),
+  setEditingLiveSessionId: (valOrUpdater) => set((state) => ({ editingLiveSessionId: resolveUpdater(valOrUpdater, state.editingLiveSessionId) })),
 }));

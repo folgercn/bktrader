@@ -417,3 +417,126 @@ export type AuthSession = {
   expiresAt?: string;
 };
 
+// ─── Form Types ──────────────────────────────────────────
+
+export interface LoginForm {
+  username: string;
+  password: string;
+}
+
+export interface BacktestForm {
+  strategyVersionId: string;
+  signalTimeframe: string;
+  executionDataSource: string;
+  symbol: string;
+  from: string;
+  to: string;
+}
+
+export interface PaperForm {
+  accountId: string;
+  strategyId: string;
+  startEquity: string;
+  signalTimeframe: string;
+  executionDataSource: string;
+  symbol: string;
+  tradingFeeBps: string;
+  fundingRateBps: string;
+  fundingIntervalHours: string;
+}
+
+export interface LiveAccountForm {
+  name: string;
+  exchange: string;
+}
+
+export interface LiveBindingForm {
+  accountId: string;
+  adapterKey: string;
+  positionMode: string;
+  marginMode: string;
+  sandbox: boolean;
+  apiKeyRef: string;
+  apiSecretRef: string;
+}
+
+export interface LiveOrderForm {
+  accountId: string;
+  strategyVersionId: string;
+  symbol: string;
+  side: string;
+  type: string;
+  quantity: string;
+  price: string;
+}
+
+export interface LiveSessionForm {
+  accountId: string;
+  strategyId: string;
+  signalTimeframe: string;
+  executionDataSource: string;
+  symbol: string;
+  defaultOrderQuantity: string;
+  executionEntryOrderType: string;
+  executionEntryMaxSpreadBps: string;
+  executionEntryWideSpreadMode: string;
+  executionEntryTimeoutFallbackOrderType: string;
+  executionPTExitOrderType: string;
+  executionPTExitTimeInForce: string;
+  executionPTExitPostOnly: boolean;
+  executionPTExitTimeoutFallbackOrderType: string;
+  executionSLExitOrderType: string;
+  executionSLExitMaxSpreadBps: string;
+  dispatchMode: string;
+  dispatchCooldownSeconds: string;
+}
+
+export interface AccountSignalForm {
+  accountId: string;
+  sourceKey: string;
+  role: string;
+  symbol: string;
+  timeframe: string;
+}
+
+export interface StrategySignalForm {
+  strategyId: string;
+  sourceKey: string;
+  role: string;
+  symbol: string;
+  timeframe: string;
+}
+
+export interface StrategyCreateForm {
+  name: string;
+  description: string;
+}
+
+export interface StrategyEditorForm {
+  strategyId: string;
+  strategyEngine: string;
+  signalTimeframe: string;
+  executionDataSource: string;
+  parametersJson: string;
+}
+
+export interface SignalRuntimeForm {
+  accountId: string;
+  strategyId: string;
+}
+
+export interface RuntimePolicyForm {
+  tradeTickFreshnessSeconds: string;
+  orderBookFreshnessSeconds: string;
+  signalBarFreshnessSeconds: string;
+  runtimeQuietSeconds: string;
+  paperStartReadinessTimeoutSeconds: string;
+}
+
+export interface TelegramForm {
+  enabled: boolean;
+  botToken: string;
+  chatId: string;
+  sendLevels: string;
+}
+

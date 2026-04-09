@@ -1,6 +1,10 @@
 import { create } from 'zustand';
-import { AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession } from '../types/domain';
+import { 
+  AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession,
+  LoginForm, BacktestForm, PaperForm, LiveAccountForm, LiveBindingForm, LiveOrderForm, LiveSessionForm, AccountSignalForm, StrategySignalForm, StrategyCreateForm, StrategyEditorForm, SignalRuntimeForm, RuntimePolicyForm, TelegramForm
+} from '../types/domain';
 import { readStoredAuthSession } from '../utils/auth';
+import { resolveUpdater } from './helpers';
 
 
 export interface useUIStoreState {
@@ -14,8 +18,8 @@ export interface useUIStoreState {
   setError: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
   authSession: AuthSession | null;
   setAuthSession: (valOrUpdater: AuthSession | null | ((prev: AuthSession | null) => AuthSession | null)) => void;
-  loginForm: any;
-  setLoginForm: (valOrUpdater: any | ((prev: any) => any)) => void;
+  loginForm: LoginForm;
+  setLoginForm: (valOrUpdater: LoginForm | ((prev: LoginForm) => LoginForm)) => void;
   loginAction: boolean;
   setLoginAction: (valOrUpdater: boolean | ((prev: boolean) => boolean)) => void;
   sessionAction: string | null;
@@ -76,32 +80,32 @@ export interface useUIStoreState {
   setChartOverrideRange: (valOrUpdater: ChartOverrideRange | null | ((prev: ChartOverrideRange | null) => ChartOverrideRange | null)) => void;
   selectedSample: SelectedSample | null;
   setSelectedSample: (valOrUpdater: SelectedSample | null | ((prev: SelectedSample | null) => SelectedSample | null)) => void;
-  backtestForm: any;
-  setBacktestForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  paperForm: any;
-  setPaperForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  liveAccountForm: any;
-  setLiveAccountForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  liveBindingForm: any;
-  setLiveBindingForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  liveOrderForm: any;
-  setLiveOrderForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  liveSessionForm: any;
-  setLiveSessionForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  accountSignalForm: any;
-  setAccountSignalForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  strategySignalForm: any;
-  setStrategySignalForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  strategyCreateForm: any;
-  setStrategyCreateForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  strategyEditorForm: any;
-  setStrategyEditorForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  signalRuntimeForm: any;
-  setSignalRuntimeForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  runtimePolicyForm: any;
-  setRuntimePolicyForm: (valOrUpdater: any | ((prev: any) => any)) => void;
-  telegramForm: any;
-  setTelegramForm: (valOrUpdater: any | ((prev: any) => any)) => void;
+  backtestForm: BacktestForm;
+  setBacktestForm: (valOrUpdater: BacktestForm | ((prev: BacktestForm) => BacktestForm)) => void;
+  paperForm: PaperForm;
+  setPaperForm: (valOrUpdater: PaperForm | ((prev: PaperForm) => PaperForm)) => void;
+  liveAccountForm: LiveAccountForm;
+  setLiveAccountForm: (valOrUpdater: LiveAccountForm | ((prev: LiveAccountForm) => LiveAccountForm)) => void;
+  liveBindingForm: LiveBindingForm;
+  setLiveBindingForm: (valOrUpdater: LiveBindingForm | ((prev: LiveBindingForm) => LiveBindingForm)) => void;
+  liveOrderForm: LiveOrderForm;
+  setLiveOrderForm: (valOrUpdater: LiveOrderForm | ((prev: LiveOrderForm) => LiveOrderForm)) => void;
+  liveSessionForm: LiveSessionForm;
+  setLiveSessionForm: (valOrUpdater: LiveSessionForm | ((prev: LiveSessionForm) => LiveSessionForm)) => void;
+  accountSignalForm: AccountSignalForm;
+  setAccountSignalForm: (valOrUpdater: AccountSignalForm | ((prev: AccountSignalForm) => AccountSignalForm)) => void;
+  strategySignalForm: StrategySignalForm;
+  setStrategySignalForm: (valOrUpdater: StrategySignalForm | ((prev: StrategySignalForm) => StrategySignalForm)) => void;
+  strategyCreateForm: StrategyCreateForm;
+  setStrategyCreateForm: (valOrUpdater: StrategyCreateForm | ((prev: StrategyCreateForm) => StrategyCreateForm)) => void;
+  strategyEditorForm: StrategyEditorForm;
+  setStrategyEditorForm: (valOrUpdater: StrategyEditorForm | ((prev: StrategyEditorForm) => StrategyEditorForm)) => void;
+  signalRuntimeForm: SignalRuntimeForm;
+  setSignalRuntimeForm: (valOrUpdater: SignalRuntimeForm | ((prev: SignalRuntimeForm) => SignalRuntimeForm)) => void;
+  runtimePolicyForm: RuntimePolicyForm;
+  setRuntimePolicyForm: (valOrUpdater: RuntimePolicyForm | ((prev: RuntimePolicyForm) => RuntimePolicyForm)) => void;
+  telegramForm: TelegramForm;
+  setTelegramForm: (valOrUpdater: TelegramForm | ((prev: TelegramForm) => TelegramForm)) => void;
   liveAccountError: string | null;
   setLiveAccountError: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
   liveBindingError: string | null;
@@ -126,113 +130,113 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   dockTab: "orders",
   setDockTab: (val) => set({ dockTab: val }),
   loading: true,
-  setLoading: (valOrUpdater) => set((state) => ({ loading: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.loading) : valOrUpdater })),
+  setLoading: (valOrUpdater) => set((state) => ({ loading: resolveUpdater(valOrUpdater, state.loading) })),
   error: null,
-  setError: (valOrUpdater) => set((state) => ({ error: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.error) : valOrUpdater })),
+  setError: (valOrUpdater) => set((state) => ({ error: resolveUpdater(valOrUpdater, state.error) })),
   authSession: readStoredAuthSession(),
-  setAuthSession: (valOrUpdater) => set((state) => ({ authSession: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.authSession) : valOrUpdater })),
+  setAuthSession: (valOrUpdater) => set((state) => ({ authSession: resolveUpdater(valOrUpdater, state.authSession) })),
   loginForm: { username: "admin", password: "" },
-  setLoginForm: (valOrUpdater) => set((state) => ({ loginForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.loginForm) : valOrUpdater })),
+  setLoginForm: (valOrUpdater) => set((state) => ({ loginForm: resolveUpdater(valOrUpdater, state.loginForm) })),
   loginAction: false,
-  setLoginAction: (valOrUpdater) => set((state) => ({ loginAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.loginAction) : valOrUpdater })),
+  setLoginAction: (valOrUpdater) => set((state) => ({ loginAction: resolveUpdater(valOrUpdater, state.loginAction) })),
   sessionAction: null,
-  setSessionAction: (valOrUpdater) => set((state) => ({ sessionAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.sessionAction) : valOrUpdater })),
+  setSessionAction: (valOrUpdater) => set((state) => ({ sessionAction: resolveUpdater(valOrUpdater, state.sessionAction) })),
   paperCreateAction: false,
-  setPaperCreateAction: (valOrUpdater) => set((state) => ({ paperCreateAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.paperCreateAction) : valOrUpdater })),
+  setPaperCreateAction: (valOrUpdater) => set((state) => ({ paperCreateAction: resolveUpdater(valOrUpdater, state.paperCreateAction) })),
   paperLaunchAction: false,
-  setPaperLaunchAction: (valOrUpdater) => set((state) => ({ paperLaunchAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.paperLaunchAction) : valOrUpdater })),
+  setPaperLaunchAction: (valOrUpdater) => set((state) => ({ paperLaunchAction: resolveUpdater(valOrUpdater, state.paperLaunchAction) })),
   liveCreateAction: false,
-  setLiveCreateAction: (valOrUpdater) => set((state) => ({ liveCreateAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveCreateAction) : valOrUpdater })),
+  setLiveCreateAction: (valOrUpdater) => set((state) => ({ liveCreateAction: resolveUpdater(valOrUpdater, state.liveCreateAction) })),
   liveBindAction: false,
-  setLiveBindAction: (valOrUpdater) => set((state) => ({ liveBindAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveBindAction) : valOrUpdater })),
+  setLiveBindAction: (valOrUpdater) => set((state) => ({ liveBindAction: resolveUpdater(valOrUpdater, state.liveBindAction) })),
   liveSyncAction: null,
-  setLiveSyncAction: (valOrUpdater) => set((state) => ({ liveSyncAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSyncAction) : valOrUpdater })),
+  setLiveSyncAction: (valOrUpdater) => set((state) => ({ liveSyncAction: resolveUpdater(valOrUpdater, state.liveSyncAction) })),
   liveAccountSyncAction: null,
-  setLiveAccountSyncAction: (valOrUpdater) => set((state) => ({ liveAccountSyncAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveAccountSyncAction) : valOrUpdater })),
+  setLiveAccountSyncAction: (valOrUpdater) => set((state) => ({ liveAccountSyncAction: resolveUpdater(valOrUpdater, state.liveAccountSyncAction) })),
   liveFlowAction: null,
-  setLiveFlowAction: (valOrUpdater) => set((state) => ({ liveFlowAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveFlowAction) : valOrUpdater })),
+  setLiveFlowAction: (valOrUpdater) => set((state) => ({ liveFlowAction: resolveUpdater(valOrUpdater, state.liveFlowAction) })),
   liveOrderAction: false,
-  setLiveOrderAction: (valOrUpdater) => set((state) => ({ liveOrderAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveOrderAction) : valOrUpdater })),
+  setLiveOrderAction: (valOrUpdater) => set((state) => ({ liveOrderAction: resolveUpdater(valOrUpdater, state.liveOrderAction) })),
   liveSessionAction: null,
-  setLiveSessionAction: (valOrUpdater) => set((state) => ({ liveSessionAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSessionAction) : valOrUpdater })),
+  setLiveSessionAction: (valOrUpdater) => set((state) => ({ liveSessionAction: resolveUpdater(valOrUpdater, state.liveSessionAction) })),
   liveSessionCreateAction: false,
-  setLiveSessionCreateAction: (valOrUpdater) => set((state) => ({ liveSessionCreateAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSessionCreateAction) : valOrUpdater })),
+  setLiveSessionCreateAction: (valOrUpdater) => set((state) => ({ liveSessionCreateAction: resolveUpdater(valOrUpdater, state.liveSessionCreateAction) })),
   liveSessionLaunchAction: false,
-  setLiveSessionLaunchAction: (valOrUpdater) => set((state) => ({ liveSessionLaunchAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSessionLaunchAction) : valOrUpdater })),
+  setLiveSessionLaunchAction: (valOrUpdater) => set((state) => ({ liveSessionLaunchAction: resolveUpdater(valOrUpdater, state.liveSessionLaunchAction) })),
   liveSessionDeleteAction: null,
-  setLiveSessionDeleteAction: (valOrUpdater) => set((state) => ({ liveSessionDeleteAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSessionDeleteAction) : valOrUpdater })),
+  setLiveSessionDeleteAction: (valOrUpdater) => set((state) => ({ liveSessionDeleteAction: resolveUpdater(valOrUpdater, state.liveSessionDeleteAction) })),
   signalBindingAction: null,
-  setSignalBindingAction: (valOrUpdater) => set((state) => ({ signalBindingAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.signalBindingAction) : valOrUpdater })),
+  setSignalBindingAction: (valOrUpdater) => set((state) => ({ signalBindingAction: resolveUpdater(valOrUpdater, state.signalBindingAction) })),
   signalRuntimeAction: null,
-  setSignalRuntimeAction: (valOrUpdater) => set((state) => ({ signalRuntimeAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.signalRuntimeAction) : valOrUpdater })),
+  setSignalRuntimeAction: (valOrUpdater) => set((state) => ({ signalRuntimeAction: resolveUpdater(valOrUpdater, state.signalRuntimeAction) })),
   notificationAction: null,
-  setNotificationAction: (valOrUpdater) => set((state) => ({ notificationAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.notificationAction) : valOrUpdater })),
+  setNotificationAction: (valOrUpdater) => set((state) => ({ notificationAction: resolveUpdater(valOrUpdater, state.notificationAction) })),
   telegramAction: null,
-  setTelegramAction: (valOrUpdater) => set((state) => ({ telegramAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.telegramAction) : valOrUpdater })),
+  setTelegramAction: (valOrUpdater) => set((state) => ({ telegramAction: resolveUpdater(valOrUpdater, state.telegramAction) })),
   backtestAction: false,
-  setBacktestAction: (valOrUpdater) => set((state) => ({ backtestAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.backtestAction) : valOrUpdater })),
+  setBacktestAction: (valOrUpdater) => set((state) => ({ backtestAction: resolveUpdater(valOrUpdater, state.backtestAction) })),
   runtimePolicyAction: false,
-  setRuntimePolicyAction: (valOrUpdater) => set((state) => ({ runtimePolicyAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.runtimePolicyAction) : valOrUpdater })),
+  setRuntimePolicyAction: (valOrUpdater) => set((state) => ({ runtimePolicyAction: resolveUpdater(valOrUpdater, state.runtimePolicyAction) })),
   strategyCreateAction: false,
-  setStrategyCreateAction: (valOrUpdater) => set((state) => ({ strategyCreateAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.strategyCreateAction) : valOrUpdater })),
+  setStrategyCreateAction: (valOrUpdater) => set((state) => ({ strategyCreateAction: resolveUpdater(valOrUpdater, state.strategyCreateAction) })),
   strategySaveAction: false,
-  setStrategySaveAction: (valOrUpdater) => set((state) => ({ strategySaveAction: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.strategySaveAction) : valOrUpdater })),
+  setStrategySaveAction: (valOrUpdater) => set((state) => ({ strategySaveAction: resolveUpdater(valOrUpdater, state.strategySaveAction) })),
   sourceFilter: "all",
-  setSourceFilter: (valOrUpdater) => set((state) => ({ sourceFilter: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.sourceFilter) : valOrUpdater })),
+  setSourceFilter: (valOrUpdater) => set((state) => ({ sourceFilter: resolveUpdater(valOrUpdater, state.sourceFilter) })),
   eventFilter: "all",
-  setEventFilter: (valOrUpdater) => set((state) => ({ eventFilter: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.eventFilter) : valOrUpdater })),
+  setEventFilter: (valOrUpdater) => set((state) => ({ eventFilter: resolveUpdater(valOrUpdater, state.eventFilter) })),
   timeWindow: "12h",
-  setTimeWindow: (valOrUpdater) => set((state) => ({ timeWindow: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.timeWindow) : valOrUpdater })),
+  setTimeWindow: (valOrUpdater) => set((state) => ({ timeWindow: resolveUpdater(valOrUpdater, state.timeWindow) })),
   focusNonce: 0,
-  setFocusNonce: (valOrUpdater) => set((state) => ({ focusNonce: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.focusNonce) : valOrUpdater })),
+  setFocusNonce: (valOrUpdater) => set((state) => ({ focusNonce: resolveUpdater(valOrUpdater, state.focusNonce) })),
   hoveredMarker: null,
-  setHoveredMarker: (valOrUpdater) => set((state) => ({ hoveredMarker: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.hoveredMarker) : valOrUpdater })),
+  setHoveredMarker: (valOrUpdater) => set((state) => ({ hoveredMarker: resolveUpdater(valOrUpdater, state.hoveredMarker) })),
   selectedBacktestId: null,
-  setSelectedBacktestId: (valOrUpdater) => set((state) => ({ selectedBacktestId: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.selectedBacktestId) : valOrUpdater })),
+  setSelectedBacktestId: (valOrUpdater) => set((state) => ({ selectedBacktestId: resolveUpdater(valOrUpdater, state.selectedBacktestId) })),
   chartOverrideRange: null,
-  setChartOverrideRange: (valOrUpdater) => set((state) => ({ chartOverrideRange: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.chartOverrideRange) : valOrUpdater })),
+  setChartOverrideRange: (valOrUpdater) => set((state) => ({ chartOverrideRange: resolveUpdater(valOrUpdater, state.chartOverrideRange) })),
   selectedSample: null,
-  setSelectedSample: (valOrUpdater) => set((state) => ({ selectedSample: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.selectedSample) : valOrUpdater })),
+  setSelectedSample: (valOrUpdater) => set((state) => ({ selectedSample: resolveUpdater(valOrUpdater, state.selectedSample) })),
   backtestForm: { strategyVersionId: "", signalTimeframe: "1d", executionDataSource: "1min", symbol: "BTCUSDT", from: "", to: "", },
-  setBacktestForm: (valOrUpdater) => set((state) => ({ backtestForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.backtestForm) : valOrUpdater })),
+  setBacktestForm: (valOrUpdater) => set((state) => ({ backtestForm: resolveUpdater(valOrUpdater, state.backtestForm) })),
   paperForm: { accountId: "", strategyId: "", startEquity: "100000", signalTimeframe: "1d", executionDataSource: "tick", symbol: "BTCUSDT", tradingFeeBps: "10", fundingRateBps: "0", fundingIntervalHours: "8", },
-  setPaperForm: (valOrUpdater) => set((state) => ({ paperForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.paperForm) : valOrUpdater })),
+  setPaperForm: (valOrUpdater) => set((state) => ({ paperForm: resolveUpdater(valOrUpdater, state.paperForm) })),
   liveAccountForm: { name: "Binance Testnet", exchange: "binance-futures", },
-  setLiveAccountForm: (valOrUpdater) => set((state) => ({ liveAccountForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveAccountForm) : valOrUpdater })),
+  setLiveAccountForm: (valOrUpdater) => set((state) => ({ liveAccountForm: resolveUpdater(valOrUpdater, state.liveAccountForm) })),
   liveBindingForm: { accountId: "", adapterKey: "binance-futures", positionMode: "ONE_WAY", marginMode: "CROSSED", sandbox: true, apiKeyRef: "BINANCE_TESTNET_API_KEY", apiSecretRef: "BINANCE_TESTNET_API_SECRET", },
-  setLiveBindingForm: (valOrUpdater) => set((state) => ({ liveBindingForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveBindingForm) : valOrUpdater })),
+  setLiveBindingForm: (valOrUpdater) => set((state) => ({ liveBindingForm: resolveUpdater(valOrUpdater, state.liveBindingForm) })),
   liveOrderForm: { accountId: "", strategyVersionId: "", symbol: "BTCUSDT", side: "BUY", type: "LIMIT", quantity: "0.001", price: "", },
-  setLiveOrderForm: (valOrUpdater) => set((state) => ({ liveOrderForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveOrderForm) : valOrUpdater })),
+  setLiveOrderForm: (valOrUpdater) => set((state) => ({ liveOrderForm: resolveUpdater(valOrUpdater, state.liveOrderForm) })),
   liveSessionForm: { accountId: "", strategyId: "", signalTimeframe: "1d", executionDataSource: "tick", symbol: "BTCUSDT", defaultOrderQuantity: "0.001", executionEntryOrderType: "MARKET", executionEntryMaxSpreadBps: "8", executionEntryWideSpreadMode: "limit-maker", executionEntryTimeoutFallbackOrderType: "MARKET", executionPTExitOrderType: "LIMIT", executionPTExitTimeInForce: "GTX", executionPTExitPostOnly: true, executionPTExitTimeoutFallbackOrderType: "MARKET", executionSLExitOrderType: "MARKET", executionSLExitMaxSpreadBps: "999", dispatchMode: "manual-review", dispatchCooldownSeconds: "30", },
-  setLiveSessionForm: (valOrUpdater) => set((state) => ({ liveSessionForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSessionForm) : valOrUpdater })),
+  setLiveSessionForm: (valOrUpdater) => set((state) => ({ liveSessionForm: resolveUpdater(valOrUpdater, state.liveSessionForm) })),
   accountSignalForm: { accountId: "", sourceKey: "", role: "trigger", symbol: "BTCUSDT", timeframe: "1d", },
-  setAccountSignalForm: (valOrUpdater) => set((state) => ({ accountSignalForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.accountSignalForm) : valOrUpdater })),
+  setAccountSignalForm: (valOrUpdater) => set((state) => ({ accountSignalForm: resolveUpdater(valOrUpdater, state.accountSignalForm) })),
   strategySignalForm: { strategyId: "", sourceKey: "", role: "trigger", symbol: "BTCUSDT", timeframe: "1d", },
-  setStrategySignalForm: (valOrUpdater) => set((state) => ({ strategySignalForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.strategySignalForm) : valOrUpdater })),
+  setStrategySignalForm: (valOrUpdater) => set((state) => ({ strategySignalForm: resolveUpdater(valOrUpdater, state.strategySignalForm) })),
   strategyCreateForm: { name: "", description: "", },
-  setStrategyCreateForm: (valOrUpdater) => set((state) => ({ strategyCreateForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.strategyCreateForm) : valOrUpdater })),
+  setStrategyCreateForm: (valOrUpdater) => set((state) => ({ strategyCreateForm: resolveUpdater(valOrUpdater, state.strategyCreateForm) })),
   strategyEditorForm: { strategyId: "", strategyEngine: "bk-default", signalTimeframe: "1d", executionDataSource: "tick", parametersJson: "{}", },
-  setStrategyEditorForm: (valOrUpdater) => set((state) => ({ strategyEditorForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.strategyEditorForm) : valOrUpdater })),
+  setStrategyEditorForm: (valOrUpdater) => set((state) => ({ strategyEditorForm: resolveUpdater(valOrUpdater, state.strategyEditorForm) })),
   signalRuntimeForm: { accountId: "", strategyId: "", },
-  setSignalRuntimeForm: (valOrUpdater) => set((state) => ({ signalRuntimeForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.signalRuntimeForm) : valOrUpdater })),
+  setSignalRuntimeForm: (valOrUpdater) => set((state) => ({ signalRuntimeForm: resolveUpdater(valOrUpdater, state.signalRuntimeForm) })),
   runtimePolicyForm: { tradeTickFreshnessSeconds: "15", orderBookFreshnessSeconds: "10", signalBarFreshnessSeconds: "30", runtimeQuietSeconds: "30", paperStartReadinessTimeoutSeconds: "5", },
-  setRuntimePolicyForm: (valOrUpdater) => set((state) => ({ runtimePolicyForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.runtimePolicyForm) : valOrUpdater })),
+  setRuntimePolicyForm: (valOrUpdater) => set((state) => ({ runtimePolicyForm: resolveUpdater(valOrUpdater, state.runtimePolicyForm) })),
   telegramForm: { enabled: false, botToken: "", chatId: "", sendLevels: "critical,warning", },
-  setTelegramForm: (valOrUpdater) => set((state) => ({ telegramForm: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.telegramForm) : valOrUpdater })),
+  setTelegramForm: (valOrUpdater) => set((state) => ({ telegramForm: resolveUpdater(valOrUpdater, state.telegramForm) })),
   liveAccountError: null,
-  setLiveAccountError: (valOrUpdater) => set((state) => ({ liveAccountError: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveAccountError) : valOrUpdater })),
+  setLiveAccountError: (valOrUpdater) => set((state) => ({ liveAccountError: resolveUpdater(valOrUpdater, state.liveAccountError) })),
   liveBindingError: null,
-  setLiveBindingError: (valOrUpdater) => set((state) => ({ liveBindingError: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveBindingError) : valOrUpdater })),
+  setLiveBindingError: (valOrUpdater) => set((state) => ({ liveBindingError: resolveUpdater(valOrUpdater, state.liveBindingError) })),
   liveSessionError: null,
-  setLiveSessionError: (valOrUpdater) => set((state) => ({ liveSessionError: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSessionError) : valOrUpdater })),
+  setLiveSessionError: (valOrUpdater) => set((state) => ({ liveSessionError: resolveUpdater(valOrUpdater, state.liveSessionError) })),
   liveAccountNotice: null,
-  setLiveAccountNotice: (valOrUpdater) => set((state) => ({ liveAccountNotice: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveAccountNotice) : valOrUpdater })),
+  setLiveAccountNotice: (valOrUpdater) => set((state) => ({ liveAccountNotice: resolveUpdater(valOrUpdater, state.liveAccountNotice) })),
   liveBindingNotice: null,
-  setLiveBindingNotice: (valOrUpdater) => set((state) => ({ liveBindingNotice: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveBindingNotice) : valOrUpdater })),
+  setLiveBindingNotice: (valOrUpdater) => set((state) => ({ liveBindingNotice: resolveUpdater(valOrUpdater, state.liveBindingNotice) })),
   liveSessionNotice: null,
-  setLiveSessionNotice: (valOrUpdater) => set((state) => ({ liveSessionNotice: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.liveSessionNotice) : valOrUpdater })),
+  setLiveSessionNotice: (valOrUpdater) => set((state) => ({ liveSessionNotice: resolveUpdater(valOrUpdater, state.liveSessionNotice) })),
   settingsMenuOpen: false,
-  setSettingsMenuOpen: (valOrUpdater) => set((state) => ({ settingsMenuOpen: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.settingsMenuOpen) : valOrUpdater })),
+  setSettingsMenuOpen: (valOrUpdater) => set((state) => ({ settingsMenuOpen: resolveUpdater(valOrUpdater, state.settingsMenuOpen) })),
   activeSettingsModal: null,
-  setActiveSettingsModal: (valOrUpdater) => set((state) => ({ activeSettingsModal: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.activeSettingsModal) : valOrUpdater })),
+  setActiveSettingsModal: (valOrUpdater) => set((state) => ({ activeSettingsModal: resolveUpdater(valOrUpdater, state.activeSettingsModal) })),
 }));
