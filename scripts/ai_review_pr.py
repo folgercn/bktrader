@@ -246,14 +246,31 @@ def write_json(path, payload):
     Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def write_summary(path, reviewed, skipped, comments, warnings):
+def write_summary(path, reviewed_files, skipped, comments, warnings):
+    reviewed_count = len(reviewed_files)
+    candidate_line_count = sum(len(file_diff.added_lines) for file_diff in reviewed_files)
+    comment_count = len(comments)
+    conclusion = (
+        f"已生成 {comment_count} 条通过 diff 校验的行级评论。"
+        if comment_count
+        else "本轮未发现需要发布行级评论的高置信度问题。"
+    )
     lines = [
         "## AI 代码审查摘要",
         "",
-        f"- 已审查文件：{reviewed}",
+        f"- 结论：{conclusion}",
+        f"- 已审查文件：{reviewed_count}",
+        f"- 候选新增行：{candidate_line_count}",
         f"- 已跳过文件：{skipped}",
-        f"- 行级评论：{len(comments)}",
+        f"- 行级评论：{comment_count}",
+        f"- 审查方式：按文件调用 Codex，只发布绑定到 PR 新增行的评论",
     ]
+    if reviewed_files:
+        lines.append("")
+        lines.append("### 本轮审查范围")
+        lines.extend(f"- `{file_diff.path}`" for file_diff in reviewed_files[:20])
+        if reviewed_count > 20:
+            lines.append(f"- ... 另有 {reviewed_count - 20} 个文件")
     if warnings:
         lines.append("")
         lines.append("### 审查器警告")
@@ -303,7 +320,7 @@ def main():
     skipped = max(0, len(all_file_diffs) - len(reviewable))
 
     write_json(args.output, {"comments": comments, "warnings": warnings})
-    write_summary(args.summary, len(reviewable), skipped, comments, warnings)
+    write_summary(args.summary, reviewable, skipped, comments, warnings)
 
     print(f"reviewed_files={len(reviewable)}")
     print(f"skipped_files={skipped}")
