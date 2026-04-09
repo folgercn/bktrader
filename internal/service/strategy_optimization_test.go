@@ -69,7 +69,7 @@ func TestReentryDecayLogic(t *testing.T) {
 		State: map[string]any{
 			"positionSizingMode":   "fixed_quantity",
 			"defaultOrderQuantity": 0.1,
-			"sessionReentryCount":  2.0, // This is the 3rd trade (Initial, SL-Reentry 1, SL-Reentry 2)
+			"sessionReentryCount":  2.0, // Two prior confirmed reentries => this is the 3rd reentry.
 		},
 	}
 

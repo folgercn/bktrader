@@ -83,12 +83,12 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	if !strings.EqualFold(account.Mode, "LIVE") {
 		return domain.Account{}, fmt.Errorf("account %s is not a LIVE account", accountID)
 	}
-	_, binding, err := p.resolveLiveAdapterForAccount(account)
+	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
 	if err != nil {
 		return domain.Account{}, err
 	}
-	if normalizeLiveAdapterKey(stringValue(binding["adapterKey"])) == "binance-futures" {
-		if synced, restErr := p.syncLiveAccountFromBinance(account, binding); restErr == nil {
+	if syncCapable, ok := adapter.(LiveAccountSyncAdapter); ok {
+		if synced, syncErr := syncCapable.SyncAccountSnapshot(p, account, binding); syncErr == nil {
 			p.syncLiveSessionsForAccountSnapshot(synced)
 			return synced, nil
 		}

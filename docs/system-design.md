@@ -29,14 +29,8 @@ The platform should support both research-to-production consistency and day-2 op
 ### Out of scope for first release
 
 - chart-embedded order placement
-- console-level manual live order placement page card
 - multi-tenant SaaS billing
 - high-frequency co-location execution
-
-Release note:
-
-- `Create Live Order` is currently retained only as an internal debugging / adapter smoke-test tool.
-- Before production rollout, the console should remove this page card and keep manual order injection out of the default operator workflow.
 
 ## 3. Architecture
 

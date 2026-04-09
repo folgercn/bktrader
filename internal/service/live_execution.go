@@ -266,8 +266,8 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 			state["lastSignalBarStateKey"] = currentBarKey
 		}
 
-		// Increment for entries that count towards the limit (Initial and SL-Reentry)
-		if reasonTag == "initial" || reasonTag == "sl-reentry" {
+		// Count only confirmed reentries so the first real reentry keeps 100% sizing.
+		if reasonTag == "sl-reentry" || reasonTag == "pt-reentry" {
 			reentryCount++
 		}
 		state["sessionReentryCount"] = reentryCount

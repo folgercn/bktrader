@@ -737,6 +737,9 @@ func computePriceProximityBps(plannedPrice, marketPrice float64) float64 {
 	return math.Abs(marketPrice/plannedPrice-1) * 10000
 }
 
+// evaluateLivePositionState derives the current live position risk state.
+// When sessionState is provided, it also refreshes HWM/LWM watermarks used by
+// trailing-stop logic so callers do not need to duplicate watermark handling.
 func evaluateLivePositionState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, sessionState map[string]any) map[string]any {
 	if !boolValue(currentPosition["found"]) && parseFloatValue(currentPosition["quantity"]) <= 0 && !boolValue(currentPosition["virtual"]) {
 		return nil
@@ -772,27 +775,7 @@ func evaluateLivePositionState(parameters map[string]any, currentPosition map[st
 		stopLoss = resolveStopPrice(side, entryPrice, sig, stopMode, stopLossATR)
 	}
 
-	// Update High/Low Watermarks in Session State
-	hwm := parseFloatValue(sessionState["hwm"])
-	if hwm == 0 {
-		hwm = entryPrice
-	}
-	lwm := parseFloatValue(sessionState["lwm"])
-	if lwm == 0 {
-		lwm = entryPrice
-	}
-	if marketPrice > 0 {
-		if marketPrice > hwm {
-			hwm = marketPrice
-		}
-		if marketPrice < lwm {
-			lwm = marketPrice
-		}
-		if sessionState != nil {
-			sessionState["hwm"] = hwm
-			sessionState["lwm"] = lwm
-		}
-	}
+	hwm, lwm := updateLivePositionWatermarks(sessionState, entryPrice, marketPrice)
 
 	// Calculate Trailing Stop Loss
 	if trailingStopATR := parseFloatValue(parameters["trailing_stop_atr"]); trailingStopATR > 0 {
@@ -853,6 +836,30 @@ func evaluateLivePositionState(parameters map[string]any, currentPosition map[st
 		"atr14":             sig.ATR,
 		"profitProtectATR":  profitProtectATR,
 	}
+}
+
+func updateLivePositionWatermarks(sessionState map[string]any, entryPrice, marketPrice float64) (float64, float64) {
+	hwm := parseFloatValue(sessionState["hwm"])
+	if hwm == 0 {
+		hwm = entryPrice
+	}
+	lwm := parseFloatValue(sessionState["lwm"])
+	if lwm == 0 {
+		lwm = entryPrice
+	}
+	if marketPrice > 0 {
+		if marketPrice > hwm {
+			hwm = marketPrice
+		}
+		if marketPrice < lwm {
+			lwm = marketPrice
+		}
+		if sessionState != nil {
+			sessionState["hwm"] = hwm
+			sessionState["lwm"] = lwm
+		}
+	}
+	return hwm, lwm
 }
 
 func evaluateLiveExitState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, sessionState map[string]any, nextReason string) map[string]any {

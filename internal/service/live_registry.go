@@ -29,6 +29,10 @@ type LiveExecutionAdapter interface {
 	CancelOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error)
 }
 
+type LiveAccountSyncAdapter interface {
+	SyncAccountSnapshot(platform *Platform, account domain.Account, binding map[string]any) (domain.Account, error)
+}
+
 type LiveOrderSubmission struct {
 	Status          string         `json:"status"`
 	ExchangeOrderID string         `json:"exchangeOrderId"`
@@ -236,6 +240,13 @@ func (a binanceFuturesLiveAdapter) SyncOrder(account domain.Account, order domai
 	default:
 		return a.syncMockOrder(account, order, binding)
 	}
+}
+
+func (a binanceFuturesLiveAdapter) SyncAccountSnapshot(platform *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+	if platform == nil {
+		return domain.Account{}, fmt.Errorf("platform is required")
+	}
+	return platform.syncLiveAccountFromBinance(account, binding)
 }
 
 func (a binanceFuturesLiveAdapter) CancelOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
