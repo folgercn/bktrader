@@ -4,6 +4,10 @@ import { readStoredAuthSession } from '../main';
 
 
 export interface useUIStoreState {
+  sidebarTab: "monitor" | "strategy" | "account";
+  setSidebarTab: (val: "monitor" | "strategy" | "account") => void;
+  dockTab: "orders" | "positions" | "fills" | "alerts";
+  setDockTab: (val: "orders" | "positions" | "fills" | "alerts") => void;
   loading: boolean;
   setLoading: (valOrUpdater: boolean | ((prev: boolean) => boolean)) => void;
   error: string | null;
@@ -117,6 +121,10 @@ export interface useUIStoreState {
 }
 
 export const useUIStore = create<useUIStoreState>((set) => ({
+  sidebarTab: "monitor",
+  setSidebarTab: (val) => set({ sidebarTab: val }),
+  dockTab: "orders",
+  setDockTab: (val) => set({ dockTab: val }),
   loading: true,
   setLoading: (valOrUpdater) => set((state) => ({ loading: typeof valOrUpdater === 'function' ? (valOrUpdater as any)(state.loading) : valOrUpdater })),
   error: null,

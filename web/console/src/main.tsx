@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { WorkbenchLayout } from './layouts/WorkbenchLayout';
 import { useUIStore } from './store/useUIStore';
 import { useTradingStore } from './store/useTradingStore';
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -84,6 +85,11 @@ function writeStoredAuthSession(session: AuthSession | null) {
 }
 
 function App() {
+
+  const sidebarTab = useUIStore(s => s.sidebarTab);
+  const setSidebarTab = useUIStore(s => s.setSidebarTab);
+  const dockTab = useUIStore(s => s.dockTab);
+  const setDockTab = useUIStore(s => s.setDockTab);
   const loading = useUIStore(s => s.loading);
   const setLoading = useUIStore(s => s.setLoading);
   const error = useUIStore(s => s.error);
@@ -1829,35 +1835,27 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div>
-          <p className="sidebar-label">bkTrader 控制台</p>
-          <h1>交易运行台</h1>
+    <WorkbenchLayout
+      sidebarTab={sidebarTab}
+      onSidebarTabChange={setSidebarTab}
+      dockTab={dockTab}
+      onDockTabChange={setDockTab}
+      headerMetrics={
+        <div className="flex space-x-6">
+          <MetricCard label="账户" value={monitorMode} />
+          <MetricCard label="策略" value={String(highlightedLiveSession?.session?.strategyId ?? "--")} />
+          <MetricCard label="实盘状态" value={highlightedLiveSession?.health.status ?? "--"} tone={highlightedLiveSession?.health.status === "ready" ? "accent" : undefined} />
         </div>
-        <nav>
-          <a href="#overview">总览</a>
-          <a href="#notifications">通知</a>
-          <a href="#alerts">告警</a>
-          <a href="#strategies">策略</a>
-          <a href="#signals">信号源</a>
-          <a href="#live">实盘</a>
-          <a href="#backtests">回测</a>
-          <a href="#monitor">主监控</a>
-          <a href="#equity">权益</a>
-          <a href="#positions">持仓</a>
-          <a href="#orders">订单</a>
-          <a href="#fills">成交</a>
-        </nav>
-        <div className="status-panel">
-          <span className={!authSession?.token || error ? "status-dot status-bad" : "status-dot status-good"} />
-          <div>
-            <strong>{!authSession?.token ? "需要登录" : error ? "连接异常" : "运行正常"}</strong>
-            <p>{!authSession?.token ? "请先登录平台 API" : error ?? `每 5 秒轮询 ${API_BASE}`}</p>
-          </div>
+      }
+      headerConnection={
+        <div className="flex items-center space-x-2">
+          <span className={!authSession?.token || error ? "w-2 h-2 rounded-full bg-rose-500" : "w-2 h-2 rounded-full bg-emerald-500 animate-pulse"} />
+          <span className="text-zinc-400 text-xs">{!authSession?.token ? "需要登录" : error ? "连接异常" : "运行正常"}</span>
         </div>
-      </aside>
-
+      }
+      dockContent={<div className="p-4 text-zinc-500 text-sm text-center">尚未迁移至新版 Dock...</div>}
+      mainStageContent={
+        <div className="w-full h-full overflow-y-auto" style={{ backgroundColor: 'var(--bg)' }}>
       <main className="main">
         <section id="overview" className="hero">
           <div>
@@ -4620,7 +4618,9 @@ function App() {
           </div>
         ) : null}
       </main>
-    </div>
+        </div>
+      }
+    />
   );
 }
 
