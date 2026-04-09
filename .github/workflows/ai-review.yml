@@ -82,7 +82,7 @@ jobs:
             const payload = JSON.parse(fs.readFileSync('pr/.ai-review/review-comments.json', 'utf8'));
             const summary = fs.existsSync('pr/.ai-review/summary.md')
               ? fs.readFileSync('pr/.ai-review/summary.md', 'utf8')
-              : 'AI review finished.';
+              : 'AI 代码审查已完成。';
 
             const existing = await github.paginate(github.rest.pulls.listReviewComments, {
               owner,
@@ -98,7 +98,13 @@ jobs:
 
             const comments = [];
             for (const item of payload.comments || []) {
-              const body = `${marker}\n**AI Review / ${item.severity}**\n\n${item.message}`;
+              const severityLabels = {
+                critical: '严重',
+                warning: '警告',
+                suggestion: '建议',
+              };
+              const severityLabel = severityLabels[item.severity] || item.severity || '警告';
+              const body = `${marker}\n**AI 代码审查 / ${severityLabel}**\n\n${item.message}`;
               const key = `${item.path}:${item.line}:${body}`;
               if (duplicateKeys.has(key)) {
                 continue;
