@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   color-scheme: light;
   --bg: #f3f0e7;
@@ -363,6 +365,11 @@ a {
 
 .panel {
   padding: 14px;
+  color: var(--ink);
+}
+
+.panel h3 {
+  color: var(--ink);
 }
 
 .panel-compact {
@@ -941,7 +948,8 @@ a {
 }
 
 .detail-grid-compact {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
 }
 
 .detail-item {
