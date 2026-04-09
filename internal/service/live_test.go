@@ -686,6 +686,41 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 	if !boolValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionBranch"]) {
 		t.Fatal("expected explicit SL protection branch marker")
 	}
+	if got := stringValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionDepthMode"]); got != "spread-capped-fallback" {
+		t.Fatalf("expected fallback SL depth mode without qty data, got %s", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenDepthCoversOrder(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68150, 1.2, 0, 68000, 20)
+	if got := decision.Price; got != 68000 {
+		t.Fatalf("expected top-book bid price, got %v", got)
+	}
+	if got := decision.DepthMode; got != "top-book-cover" {
+		t.Fatalf("expected top-book-cover mode, got %s", got)
+	}
+	if got := decision.TopDepthNotional; got != 81600 {
+		t.Fatalf("expected top depth notional 81600, got %v", got)
+	}
+	if got := decision.ExpectedCoverage; got != 1 {
+		t.Fatalf("expected full coverage, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCap(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 2.0, 68000, 68150, 1.0, 0, 68000, 20)
+	if got := decision.DepthMode; got != "coverage-weighted-cap" {
+		t.Fatalf("expected coverage-weighted-cap mode, got %s", got)
+	}
+	if got := decision.ExpectedCoverage; got != 0.5 {
+		t.Fatalf("expected 50%% coverage, got %v", got)
+	}
+	if got := decision.Price; got != 68006.925 {
+		t.Fatalf("expected weighted protection price 68006.925, got %v", got)
+	}
+	if got := decision.QuoteGapBps; got <= 0 {
+		t.Fatalf("expected positive quote gap bps, got %v", got)
+	}
 }
 
 func TestBookAwareExecutionStrategyUsesFallbackOrderAfterTimeoutMatch(t *testing.T) {
