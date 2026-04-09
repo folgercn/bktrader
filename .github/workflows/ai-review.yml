@@ -1,0 +1,150 @@
+name: AI PR Review
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Codex inline review
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          path: pr
+
+      - name: Checkout trusted review tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref || github.ref_name }}
+          fetch-depth: 1
+          path: review-tools
+
+      - name: Fetch base branch
+        working-directory: pr
+        run: |
+          git fetch origin "${{ github.base_ref || 'main' }}:refs/remotes/origin/${{ github.base_ref || 'main' }}"
+
+      - name: Verify Codex login
+        working-directory: pr
+        run: |
+          codex --version
+          codex login status
+
+      - name: Run AI review
+        working-directory: pr
+        env:
+          AI_REVIEW_MAX_WORKERS: "1"
+          AI_REVIEW_MAX_FILES: "30"
+          AI_REVIEW_MAX_TOTAL_COMMENTS: "20"
+          AI_REVIEW_CODEX_TIMEOUT: "240"
+        run: |
+          python3 ../review-tools/scripts/ai_review_pr.py \
+            --repo-root "$PWD" \
+            --base "origin/${{ github.base_ref || 'main' }}" \
+            --output .ai-review/review-comments.json \
+            --summary .ai-review/summary.md
+
+      - name: Upload review artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-review
+          path: pr/.ai-review/
+
+      - name: Publish inline comments
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- bktrader-ai-review -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.pull_request.number;
+            const commit_id = context.payload.pull_request.head.sha;
+            const payload = JSON.parse(fs.readFileSync('pr/.ai-review/review-comments.json', 'utf8'));
+            const summary = fs.existsSync('pr/.ai-review/summary.md')
+              ? fs.readFileSync('pr/.ai-review/summary.md', 'utf8')
+              : 'AI review finished.';
+
+            const existing = await github.paginate(github.rest.pulls.listReviewComments, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100,
+            });
+            const duplicateKeys = new Set(
+              existing
+                .filter(comment => comment.commit_id === commit_id && comment.body.includes(marker))
+                .map(comment => `${comment.path}:${comment.line}:${comment.body}`)
+            );
+
+            const comments = [];
+            for (const item of payload.comments || []) {
+              const body = `${marker}\n**AI Review / ${item.severity}**\n\n${item.message}`;
+              const key = `${item.path}:${item.line}:${body}`;
+              if (duplicateKeys.has(key)) {
+                continue;
+              }
+              comments.push({
+                path: item.path,
+                line: item.line,
+                side: item.side || 'RIGHT',
+                body,
+              });
+            }
+
+            if (comments.length > 0) {
+              await github.rest.pulls.createReview({
+                owner,
+                repo,
+                pull_number,
+                commit_id,
+                event: 'COMMENT',
+                body: `${marker}\n${summary}`,
+                comments,
+              });
+            } else {
+              const body = `${marker}\n${summary}`;
+              const { data: issueComments } = await github.rest.issues.listComments({
+                owner,
+                repo,
+                issue_number: pull_number,
+                per_page: 100,
+              });
+              const previous = issueComments.find(comment =>
+                comment.user.type === 'Bot' && comment.body.includes(marker)
+              );
+              if (previous) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: previous.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: pull_number,
+                  body,
+                });
+              }
+            }

@@ -7,10 +7,37 @@
 项目目前包含两个主要的 GitHub Actions 工作流：
 - **CI (`ci.yml`)**: 自动执行后端 (Go) 格式检查、编译、前端 (Vite) 构建以及 Docker 镜像构建验证。
 - **CD (`cd.yml`)**: 自动构建并推送后端 Docker 镜像，在自托管 (Self-hosted) 的 Macmini 节点上执行后端部署脚本，并构建前端静态文件后同步到远端 Nginx 目录。
+- **AI PR Review (`ai-review.yml`)**: 在自托管 Macmini runner 上调用已登录的 Codex CLI，按文件审查 PR diff，并把通过校验的结果写成 PR 行级评论。
 
 ---
 
 ## 常见问题与解决方法
+
+### 0. AI PR Review 没有评论或启动失败
+
+**现象**：`AI PR Review` 工作流失败，或只留下 summary，没有行级评论。
+
+**排查顺序**：
+
+1. 在 self-hosted runner 使用的 macOS 用户下确认 Codex 已登录：
+   ```bash
+   codex login status
+   ```
+2. 确认非交互模式能工作：
+   ```bash
+   printf '只回复 OK\n' | codex exec --ephemeral --sandbox read-only --color never -
+   ```
+3. 确认 runner 能执行 Python 脚本：
+   ```bash
+   python3 --version
+   ```
+4. 下载 Actions 中的 `ai-review` artifact，查看 `.ai-review/summary.md` 和 `.ai-review/review-comments.json`。
+
+**设计约定**：
+
+- 工作流会把 PR checkout 到 `pr/`，把 base 分支上的审查工具 checkout 到 `review-tools/`，避免直接执行 PR 自己修改过的审查脚本。
+- Codex 只允许返回 JSON；脚本会丢弃不在新增 diff 行中的评论。
+- 默认并发数是 `1`，优先稳定，不追求马上出结果。
 
 ### 1. 后端格式检查失败 (Verify formatting)
 
