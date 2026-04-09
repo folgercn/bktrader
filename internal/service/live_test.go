@@ -1797,6 +1797,100 @@ func TestEvaluateLiveSessionOnSignalUsesInjectedATRForVolatilitySizing(t *testin
 	}
 }
 
+func TestEvaluateLiveSignalDecisionDoesNotMutateOriginalSessionState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        69000,
+		MarkPrice:         70000,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	eventTime := time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"sma5":      69900.0,
+			"ma20":      68600.0,
+			"atr14":     900.0,
+			"current": map[string]any{
+				"close": 70000.0,
+				"high":  70100.0,
+				"low":   69500.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 69800.0,
+				"low":  68800.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 69700.0,
+				"low":  68700.0,
+			},
+		},
+	}
+	summary := map[string]any{
+		"role":               "trigger",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"price":              70000.0,
+		"event":              "trade_tick",
+	}
+	sourceStates := map[string]any{
+		signalBindingMatchKey("binance-trade-tick", "trigger", "BTCUSDT"): map[string]any{
+			"sourceKey":   "binance-trade-tick",
+			"role":        "trigger",
+			"symbol":      "BTCUSDT",
+			"streamType":  "trade_tick",
+			"lastEventAt": eventTime.Format(time.RFC3339),
+			"summary": map[string]any{
+				"price": 70000.0,
+			},
+		},
+	}
+
+	_, decision, err := platform.evaluateLiveSignalDecision(
+		session,
+		summary,
+		sourceStates,
+		signalStates,
+		eventTime,
+		eventTime,
+		68800.0,
+		"SELL",
+		"exit",
+		"PT",
+	)
+	if err != nil {
+		t.Fatalf("evaluate live signal decision failed: %v", err)
+	}
+	if len(session.State) == 0 {
+		t.Fatal("expected session state to remain initialized")
+	}
+	if _, ok := session.State["hwm"]; ok {
+		t.Fatal("expected original session state to remain unmutated by signal evaluation")
+	}
+	if _, ok := session.State["watermarkPositionKey"]; ok {
+		t.Fatal("expected watermark key to stay out of original session state")
+	}
+	livePositionState := mapValue(decision.Metadata["livePositionState"])
+	if parseFloatValue(livePositionState["stopLoss"]) <= 0 {
+		t.Fatal("expected evaluated live position state to still be populated")
+	}
+}
+
 func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	account, err := platform.store.GetAccount("live-main")

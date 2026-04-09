@@ -111,6 +111,23 @@ func TestReentryDecayLogic(t *testing.T) {
 	}
 }
 
+func TestEffectiveReentryCountForSizingResetsOnNewSignalBar(t *testing.T) {
+	sessionState := map[string]any{
+		"sessionReentryCount":   2.0,
+		"lastSignalBarStateKey": "bar-1",
+	}
+	if got := effectiveReentryCountForSizing(sessionState, map[string]any{
+		"signalBarStateKey": "bar-2",
+	}); got != 0 {
+		t.Fatalf("expected new bar to reset effective reentry count, got %v", got)
+	}
+	if got := effectiveReentryCountForSizing(sessionState, map[string]any{
+		"signalBarStateKey": "bar-1",
+	}); got != 2 {
+		t.Fatalf("expected same bar to keep reentry count, got %v", got)
+	}
+}
+
 func TestResolveExecutionQuantityVolatilityAdjustedUsesStopDistance(t *testing.T) {
 	quantity, metadata := resolveExecutionQuantity(
 		domain.LiveSession{

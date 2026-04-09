@@ -162,7 +162,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	if reentryDecayFactor > 0 && reentryDecayFactor < 1.0 {
 		reasonTag := normalizeStrategyReasonTag(intent.Reason)
 		if reasonTag == "sl-reentry" || reasonTag == "pt-reentry" {
-			reentryCount := parseFloatValue(ctx.Session.State["sessionReentryCount"])
+			reentryCount := effectiveReentryCountForSizing(ctx.Session.State, intent.Metadata)
 			if reentryCount > 0 {
 				decayMultiplier := math.Pow(reentryDecayFactor, reentryCount)
 				quantity = quantity * decayMultiplier
@@ -530,6 +530,14 @@ func buildExecutionSignalSignature(intent SignalIntent) string {
 		strings.TrimSpace(intent.SignalKind),
 		stringValue(intent.Metadata["signalBarStateKey"]),
 	}, "|")
+}
+
+func effectiveReentryCountForSizing(sessionState map[string]any, intentMetadata map[string]any) float64 {
+	currentBarKey := stringValue(intentMetadata["signalBarStateKey"])
+	if currentBarKey != "" && currentBarKey != stringValue(sessionState["lastSignalBarStateKey"]) {
+		return 0
+	}
+	return parseFloatValue(sessionState["sessionReentryCount"])
 }
 
 func resolvePassiveBookPrice(side string, bestBid, bestAsk, fallback float64) float64 {

@@ -1045,7 +1045,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		SourceStates:      cloneMetadata(sourceStates),
 		SignalBarStates:   cloneMetadata(signalBarStates),
 		CurrentPosition:   currentPosition,
-		SessionState:      session.State,
+		SessionState:      cloneMetadata(session.State),
 		EventTime:         eventTime.UTC(),
 		NextPlannedEvent:  nextPlannedEvent.UTC(),
 		NextPlannedPrice:  nextPlannedPrice,
