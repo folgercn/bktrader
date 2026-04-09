@@ -257,15 +257,15 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 		currentBarKey := stringValue(proposalMap["signalBarStateKey"])
 		lastBarKey := stringValue(state["lastSignalBarStateKey"])
 		reentryCount := parseFloatValue(state["sessionReentryCount"])
-		
+
 		reasonTag := normalizeStrategyReasonTag(proposal.Reason)
-		
+
 		// Reset count if bar changes
 		if currentBarKey != "" && currentBarKey != lastBarKey {
 			reentryCount = 0
 			state["lastSignalBarStateKey"] = currentBarKey
 		}
-		
+
 		// Increment for entries that count towards the limit (Initial and SL-Reentry)
 		if reasonTag == "initial" || reasonTag == "sl-reentry" {
 			reentryCount++
