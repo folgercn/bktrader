@@ -86,7 +86,7 @@ export function AccountSidePanel({
             <div className="form-grid">
               <label className="form-field">
                 <span>Account</span>
-                <select value={accountSignalForm.accountId} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, accountId: event.target.value }))}>
+                <select value={accountSignalForm.accountId} onChange={(event) => setAccountSignalForm((current) => ({ ...current, accountId: event.target.value }))}>
                   {liveAccounts.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name} ({item.mode})
@@ -96,7 +96,7 @@ export function AccountSidePanel({
               </label>
               <label className="form-field">
                 <span>Source</span>
-                <select value={accountSignalForm.sourceKey} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, sourceKey: event.target.value }))}>
+                <select value={accountSignalForm.sourceKey} onChange={(event) => setAccountSignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
                   {(signalCatalog?.sources ?? []).map((source) => (
                     <option key={source.key} value={source.key}>
                       {source.name}
@@ -106,7 +106,7 @@ export function AccountSidePanel({
               </label>
               <label className="form-field">
                 <span>Role</span>
-                <select value={accountSignalForm.role} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, role: event.target.value }))}>
+                <select value={accountSignalForm.role} onChange={(event) => setAccountSignalForm((current) => ({ ...current, role: event.target.value }))}>
                   <option value="signal">signal</option>
                   <option value="trigger">trigger</option>
                   <option value="feature">feature</option>
@@ -114,14 +114,14 @@ export function AccountSidePanel({
               </label>
               <label className="form-field">
                 <span>Timeframe</span>
-                <select value={accountSignalForm.timeframe} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, timeframe: event.target.value }))}>
+                <select value={accountSignalForm.timeframe} onChange={(event) => setAccountSignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
                   <option value="4h">4h</option>
                   <option value="1d">1d</option>
                 </select>
               </label>
               <label className="form-field">
                 <span>Symbol</span>
-                <input value={accountSignalForm.symbol} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
+                <input value={accountSignalForm.symbol} onChange={(event) => setAccountSignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
               </label>
             </div>
             <div className="backtest-actions">
@@ -134,7 +134,7 @@ export function AccountSidePanel({
             <div className="form-grid">
               <label className="form-field">
                 <span>Strategy</span>
-                <select value={strategySignalForm.strategyId} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, strategyId: event.target.value }))}>
+                <select value={strategySignalForm.strategyId} onChange={(event) => setStrategySignalForm((current) => ({ ...current, strategyId: event.target.value }))}>
                   {strategyOptions.map((strategy) => (
                     <option key={strategy.value} value={strategy.value}>
                       {strategy.label}
@@ -144,7 +144,7 @@ export function AccountSidePanel({
               </label>
               <label className="form-field">
                 <span>Source</span>
-                <select value={strategySignalForm.sourceKey} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, sourceKey: event.target.value }))}>
+                <select value={strategySignalForm.sourceKey} onChange={(event) => setStrategySignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
                   {(signalCatalog?.sources ?? []).map((source) => (
                     <option key={source.key} value={source.key}>
                       {source.name}
@@ -154,7 +154,7 @@ export function AccountSidePanel({
               </label>
               <label className="form-field">
                 <span>Role</span>
-                <select value={strategySignalForm.role} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, role: event.target.value }))}>
+                <select value={strategySignalForm.role} onChange={(event) => setStrategySignalForm((current) => ({ ...current, role: event.target.value }))}>
                   <option value="signal">signal</option>
                   <option value="trigger">trigger</option>
                   <option value="feature">feature</option>
@@ -162,14 +162,14 @@ export function AccountSidePanel({
               </label>
               <label className="form-field">
                 <span>Timeframe</span>
-                <select value={strategySignalForm.timeframe} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, timeframe: event.target.value }))}>
+                <select value={strategySignalForm.timeframe} onChange={(event) => setStrategySignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
                   <option value="4h">4h</option>
                   <option value="1d">1d</option>
                 </select>
               </label>
               <label className="form-field">
                 <span>Symbol</span>
-                <input value={strategySignalForm.symbol} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
+                <input value={strategySignalForm.symbol} onChange={(event) => setStrategySignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
               </label>
             </div>
             <div className="backtest-actions">
@@ -241,7 +241,7 @@ export function AccountSidePanel({
                 <input
                   value={runtimePolicyForm.tradeTickFreshnessSeconds}
                   onChange={(event) =>
-                    setRuntimePolicyForm((current: any) => ({ ...current, tradeTickFreshnessSeconds: event.target.value }))
+                    setRuntimePolicyForm((current) => ({ ...current, tradeTickFreshnessSeconds: event.target.value }))
                   }
                 />
               </label>
@@ -250,7 +250,7 @@ export function AccountSidePanel({
                 <input
                   value={runtimePolicyForm.orderBookFreshnessSeconds}
                   onChange={(event) =>
-                    setRuntimePolicyForm((current: any) => ({ ...current, orderBookFreshnessSeconds: event.target.value }))
+                    setRuntimePolicyForm((current) => ({ ...current, orderBookFreshnessSeconds: event.target.value }))
                   }
                 />
               </label>
@@ -259,7 +259,7 @@ export function AccountSidePanel({
                 <input
                   value={runtimePolicyForm.signalBarFreshnessSeconds}
                   onChange={(event) =>
-                    setRuntimePolicyForm((current: any) => ({ ...current, signalBarFreshnessSeconds: event.target.value }))
+                    setRuntimePolicyForm((current) => ({ ...current, signalBarFreshnessSeconds: event.target.value }))
                   }
                 />
               </label>
@@ -268,7 +268,7 @@ export function AccountSidePanel({
                 <input
                   value={runtimePolicyForm.runtimeQuietSeconds}
                   onChange={(event) =>
-                    setRuntimePolicyForm((current: any) => ({ ...current, runtimeQuietSeconds: event.target.value }))
+                    setRuntimePolicyForm((current) => ({ ...current, runtimeQuietSeconds: event.target.value }))
                   }
                 />
               </label>
@@ -277,7 +277,7 @@ export function AccountSidePanel({
                 <input
                   value={runtimePolicyForm.paperStartReadinessTimeoutSeconds}
                   onChange={(event) =>
-                    setRuntimePolicyForm((current: any) => ({
+                    setRuntimePolicyForm((current) => ({
                       ...current,
                       paperStartReadinessTimeoutSeconds: event.target.value,
                     }))
@@ -308,7 +308,7 @@ export function AccountSidePanel({
             <div className="form-grid">
               <label className="form-field">
                 <span>Account</span>
-                <select value={signalRuntimeForm.accountId} onChange={(event) => setSignalRuntimeForm((current: any) => ({ ...current, accountId: event.target.value }))}>
+                <select value={signalRuntimeForm.accountId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, accountId: event.target.value }))}>
                   {liveAccounts.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name} ({item.mode})
@@ -318,7 +318,7 @@ export function AccountSidePanel({
               </label>
               <label className="form-field">
                 <span>Strategy</span>
-                <select value={signalRuntimeForm.strategyId} onChange={(event) => setSignalRuntimeForm((current: any) => ({ ...current, strategyId: event.target.value }))}>
+                <select value={signalRuntimeForm.strategyId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, strategyId: event.target.value }))}>
                   {strategyOptions.map((strategy) => (
                     <option key={strategy.value} value={strategy.value}>
                       {strategy.label}

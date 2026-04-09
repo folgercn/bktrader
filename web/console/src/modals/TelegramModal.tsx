@@ -1,13 +1,13 @@
 import React from 'react';
 import { ActionButton } from '../components/ui/ActionButton';
-import { TelegramConfig } from '../types/domain';
+import { TelegramConfig, TelegramForm, ActiveSettingsModal } from '../types/domain';
 
 interface TelegramModalProps {
-  activeSettingsModal: string | null;
-  setActiveSettingsModal: (modal: any) => void;
+  activeSettingsModal: ActiveSettingsModal;
+  setActiveSettingsModal: (modal: ActiveSettingsModal) => void;
   telegramConfig: TelegramConfig | null;
-  telegramForm: any;
-  setTelegramForm: (valOrUpdater: any | ((prev: any) => any)) => void;
+  telegramForm: TelegramForm;
+  setTelegramForm: (valOrUpdater: TelegramForm | ((prev: TelegramForm) => TelegramForm)) => void;
   telegramAction: string | null;
   saveTelegramConfig: () => void;
   sendTelegramTest: () => void;
@@ -52,14 +52,14 @@ export function TelegramModal({
               <input
                 type="checkbox"
                 checked={telegramForm.enabled}
-                onChange={(event) => setTelegramForm((current: any) => ({ ...current, enabled: event.target.checked }))}
+                onChange={(event) => setTelegramForm((current) => ({ ...current, enabled: event.target.checked }))}
               />
             </label>
             <label className="form-field">
               <span>Chat ID</span>
               <input
                 value={telegramForm.chatId}
-                onChange={(event) => setTelegramForm((current: any) => ({ ...current, chatId: event.target.value }))}
+                onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value }))}
                 placeholder="123456789"
               />
             </label>
@@ -67,7 +67,7 @@ export function TelegramModal({
               <span>Bot Token</span>
               <input
                 value={telegramForm.botToken}
-                onChange={(event) => setTelegramForm((current: any) => ({ ...current, botToken: event.target.value }))}
+                onChange={(event) => setTelegramForm((current) => ({ ...current, botToken: event.target.value }))}
                 placeholder={telegramConfig?.hasBotToken ? "leave blank to keep current token" : "123456:ABCDEF..."}
               />
             </label>
@@ -75,7 +75,7 @@ export function TelegramModal({
               <span>Send Levels</span>
               <input
                 value={telegramForm.sendLevels}
-                onChange={(event) => setTelegramForm((current: any) => ({ ...current, sendLevels: event.target.value }))}
+                onChange={(event) => setTelegramForm((current) => ({ ...current, sendLevels: event.target.value }))}
                 placeholder="critical,warning"
               />
             </label>

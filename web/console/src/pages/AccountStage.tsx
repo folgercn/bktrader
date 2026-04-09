@@ -34,7 +34,7 @@ import {
   boolLabel,
   liveSessionHealthTone
 } from '../utils/derivation';
-import { AccountRecord, LiveSession, SignalRuntimeSession } from '../types/domain';
+import { AccountRecord, LiveSession, SignalRuntimeSession, LiveNextAction, ActiveSettingsModal } from '../types/domain';
 
 interface AccountStageProps {
   logout: () => void;
@@ -49,7 +49,7 @@ interface AccountStageProps {
   syncLiveAccount: (id: string) => void;
   syncLiveOrder: (id: string) => void;
   jumpToSignalRuntimeSession: (id: string) => void;
-  runLiveNextAction: (account: AccountRecord, nextAction: any, runtime: SignalRuntimeSession | null) => void;
+  runLiveNextAction: (account: AccountRecord, nextAction: LiveNextAction, runtime: SignalRuntimeSession | null) => void;
   selectQuickLiveAccount: (id: string) => void;
 }
 
@@ -165,7 +165,7 @@ export function AccountStage({
 
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
 
-  function setActiveSettingsModal(modal: any) {
+  function setActiveSettingsModal(modal: ActiveSettingsModal) {
     useUIStore.getState().setActiveSettingsModal(modal);
   }
 
@@ -197,7 +197,7 @@ export function AccountStage({
             <button
               type="button"
               className="hero-menu-button"
-              onClick={() => setSettingsMenuOpen((current: any) => !current)}
+              onClick={() => setSettingsMenuOpen((current) => !current)}
             >
               设置
             </button>

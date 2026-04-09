@@ -1,13 +1,13 @@
 import React from 'react';
 import { ActionButton } from '../components/ui/ActionButton';
-import { AuthSession } from '../types/domain';
+import { AuthSession, LoginForm } from '../types/domain';
 
 interface LoginModalProps {
   authSession: AuthSession | null;
   error: string | null;
-  loginForm: any;
+  loginForm: LoginForm;
   loginAction: boolean;
-  setLoginForm: (valOrUpdater: any | ((prev: any) => any)) => void;
+  setLoginForm: (valOrUpdater: LoginForm | ((prev: LoginForm) => LoginForm)) => void;
   login: () => void;
 }
 
@@ -37,7 +37,7 @@ export function LoginModal({
               <span>Username</span>
               <input
                 value={loginForm.username}
-                onChange={(event) => setLoginForm((current: any) => ({ ...current, username: event.target.value }))}
+                onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
                 placeholder="admin"
               />
             </label>
@@ -46,7 +46,7 @@ export function LoginModal({
               <input
                 type="password"
                 value={loginForm.password}
-                onChange={(event) => setLoginForm((current: any) => ({ ...current, password: event.target.value }))}
+                onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
                 placeholder="change-this-password"
               />
             </label>

@@ -275,11 +275,11 @@ function App() {
   }
 
   function selectQuickLiveAccount(accountId: string) {
-    setLiveBindingForm((current: any) => ({ ...current, accountId }));
-    setLiveSessionForm((current: any) => ({ ...current, accountId }));
-    setLiveOrderForm((current: any) => ({ ...current, accountId }));
-    setAccountSignalForm((current: any) => ({ ...current, accountId }));
-    setSignalRuntimeForm((current: any) => ({ ...current, accountId }));
+    setLiveBindingForm((current) => ({ ...current, accountId }));
+    setLiveSessionForm((current) => ({ ...current, accountId }));
+    setLiveOrderForm((current) => ({ ...current, accountId }));
+    setAccountSignalForm((current) => ({ ...current, accountId }));
+    setSignalRuntimeForm((current) => ({ ...current, accountId }));
   }
 
   function openLiveAccountModal() {
@@ -291,7 +291,7 @@ function App() {
       nextName = `${baseName} ${suffix}`;
       suffix += 1;
     }
-    setLiveAccountForm((current: any) => ({
+    setLiveAccountForm((current) => ({
       ...current,
       name: current.name.trim() === "" || existingNames.has(current.name) ? nextName : current.name,
       exchange: current.exchange || "binance-futures",
@@ -319,7 +319,7 @@ function App() {
     if (nextAccountId) {
       selectQuickLiveAccount(nextAccountId);
     }
-    setLiveSessionForm((current: any) => ({
+    setLiveSessionForm((current) => ({
       ...current,
       accountId: nextAccountId || current.accountId,
       strategyId: nextStrategyId,
@@ -465,14 +465,14 @@ function App() {
     setSnapshots(normalizedSnapshots);
     setMonitorCandles(normalizedMonitorCandles);
     setStrategies(normalizedStrategies);
-    setSelectedStrategyId((current: any) => {
+    setSelectedStrategyId((current) => {
       if (current && normalizedStrategies.some((item) => item.id === current)) {
         return current;
       }
       return normalizedStrategies[0]?.id ?? null;
     });
     setBacktests(normalizedBacktests);
-    setSelectedBacktestId((current: any) => {
+    setSelectedBacktestId((current) => {
       if (current && normalizedBacktests.some((item) => item.id === current)) {
         return current;
       }
@@ -505,7 +505,7 @@ function App() {
     });
     setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
-    setSelectedSignalRuntimeId((current: any) => {
+    setSelectedSignalRuntimeId((current) => {
       if (current && normalizedSignalRuntimeSessions.some((item) => item.id === current)) {
         return current;
       }
@@ -513,7 +513,7 @@ function App() {
     });
     setCandles(normalizedCandles);
     setAnnotations(normalizedAnnotations);
-    setBacktestForm((current: any) => ({
+    setBacktestForm((current) => ({
       strategyVersionId: current.strategyVersionId || normalizedStrategies[0]?.currentVersion?.id || "",
       signalTimeframe: current.signalTimeframe || normalizedBacktestOptions.defaultSignalTimeframe,
       executionDataSource: current.executionDataSource || normalizedBacktestOptions.defaultExecutionDataSource,
@@ -521,11 +521,11 @@ function App() {
       from: current.from || "",
       to: current.to || "",
     }));
-    setPaperForm((current: any) => current);
+    setPaperForm((current) => current);
     const strategyIDSet = new Set(normalizedStrategies.map((item) => item.id));
     const normalizeLoadedStrategyId = (candidate: string, fallback = "") =>
       candidate && strategyIDSet.has(candidate) ? candidate : fallback;
-    setLiveBindingForm((current: any) => ({
+    setLiveBindingForm((current) => ({
       accountId: current.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       adapterKey: current.adapterKey || normalizedLiveAdapters[0]?.key || "binance-futures",
       positionMode: current.positionMode || "ONE_WAY",
@@ -534,7 +534,7 @@ function App() {
       apiKeyRef: current.apiKeyRef,
       apiSecretRef: current.apiSecretRef,
     }));
-    setLiveOrderForm((current: any) => ({
+    setLiveOrderForm((current) => ({
       accountId: current.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       strategyVersionId: current.strategyVersionId || normalizedStrategies[0]?.currentVersion?.id || "",
       symbol: current.symbol || "BTCUSDT",
@@ -543,7 +543,7 @@ function App() {
       quantity: current.quantity || "0.001",
       price: current.price || "",
     }));
-    setLiveSessionForm((current: any) => ({
+    setLiveSessionForm((current) => ({
       ...current,
       accountId: current.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       strategyId: normalizeLoadedStrategyId(current.strategyId, normalizedStrategies[0]?.id || ""),
@@ -555,25 +555,25 @@ function App() {
           dispatchCooldownSeconds: current.dispatchCooldownSeconds || "30",
         }));
     const availableSignalSources = (normalizedSignalCatalog as SignalSourceCatalog).sources ?? [];
-    setAccountSignalForm((current: any) => ({
+    setAccountSignalForm((current) => ({
       accountId: current.accountId || normalizedSummaries[0]?.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
       role: current.role || "trigger",
       symbol: current.symbol || "BTCUSDT",
       timeframe: current.timeframe || "1d",
     }));
-    setStrategySignalForm((current: any) => ({
+    setStrategySignalForm((current) => ({
       strategyId: normalizeLoadedStrategyId(current.strategyId, normalizedStrategies[0]?.id || ""),
       sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
       role: current.role || "trigger",
       symbol: current.symbol || "BTCUSDT",
       timeframe: current.timeframe || "1d",
     }));
-    setStrategyCreateForm((current: any) => ({
+    setStrategyCreateForm((current) => ({
       name: current.name || "",
       description: current.description || "",
     }));
-    setSignalRuntimeForm((current: any) => ({
+    setSignalRuntimeForm((current) => ({
       accountId: current.accountId || normalizedSummaries[0]?.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       strategyId: normalizeLoadedStrategyId(current.strategyId, normalizedStrategies[0]?.id || ""),
     }));
@@ -776,7 +776,7 @@ function App() {
       return null;
     }
     setLiveSessionError(null);
-    setLiveSessionForm((current: any) => ({ ...current, strategyId: normalizedStrategyId }));
+    setLiveSessionForm((current) => ({ ...current, strategyId: normalizedStrategyId }));
     setLiveSessionCreateAction(true);
     try {
       const created = await fetchJSON<LiveSession>("/api/v1/live/sessions", {
@@ -804,7 +804,7 @@ function App() {
         }),
       });
       await loadDashboard();
-      setLiveSessionForm((current: any) => ({ ...current, strategyId: normalizedStrategyId }));
+      setLiveSessionForm((current) => ({ ...current, strategyId: normalizedStrategyId }));
       setLiveSessionNotice(
         `会话已创建：${created?.id ?? "--"} · ${liveSessionForm.symbol} · ${liveSessionForm.signalTimeframe} · ${liveSessionForm.dispatchMode}`
       );
@@ -920,11 +920,11 @@ function App() {
 
     setLiveFlowAction(account.id);
     setError(null);
-    setLiveBindingForm((current: any) => ({ ...current, accountId: account.id }));
-    setLiveSessionForm((current: any) => ({ ...current, accountId: account.id, strategyId }));
-    setSignalRuntimeForm((current: any) => ({ ...current, accountId: account.id, strategyId }));
-    setAccountSignalForm((current: any) => ({ ...current, accountId: account.id }));
-    setStrategySignalForm((current: any) => ({ ...current, strategyId }));
+    setLiveBindingForm((current) => ({ ...current, accountId: account.id }));
+    setLiveSessionForm((current) => ({ ...current, accountId: account.id, strategyId }));
+    setSignalRuntimeForm((current) => ({ ...current, accountId: account.id, strategyId }));
+    setAccountSignalForm((current) => ({ ...current, accountId: account.id }));
+    setStrategySignalForm((current) => ({ ...current, strategyId }));
 
     try {
       const strategyBindings = strategySignalBindingMap[strategyId] ?? [];
@@ -1144,16 +1144,16 @@ function App() {
   function runLiveNextAction(account: AccountRecord, action: LiveNextAction, activeRuntime: SignalRuntimeSession | null) {
     switch (action.key) {
       case "bind-live-adapter":
-        setLiveBindingForm((current: any) => ({ ...current, accountId: account.id }));
+        setLiveBindingForm((current) => ({ ...current, accountId: account.id }));
         window.location.hash = "live";
         break;
       case "bind-signals":
-        setAccountSignalForm((current: any) => ({ ...current, accountId: account.id }));
-        setSignalRuntimeForm((current: any) => ({ ...current, accountId: account.id }));
+        setAccountSignalForm((current) => ({ ...current, accountId: account.id }));
+        setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
         window.location.hash = "signals";
         break;
       case "create-runtime":
-        setSignalRuntimeForm((current: any) => ({ ...current, accountId: account.id }));
+        setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
         window.location.hash = "signals";
         break;
       case "start-runtime":
@@ -1161,7 +1161,7 @@ function App() {
         if (activeRuntime) {
           jumpToSignalRuntimeSession(activeRuntime.id);
         } else {
-          setSignalRuntimeForm((current: any) => ({ ...current, accountId: account.id }));
+          setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
           window.location.hash = "signals";
         }
         break;
@@ -1249,7 +1249,7 @@ function App() {
         }),
       });
       setTelegramConfig(updated);
-      setTelegramForm((current: any) => ({ ...current, botToken: "" }));
+      setTelegramForm((current) => ({ ...current, botToken: "" }));
       await loadDashboard();
       setError(null);
     } catch (err) {
@@ -1324,7 +1324,7 @@ function App() {
       };
       writeStoredAuthSession(session);
       setAuthSession(session);
-      setLoginForm((current: any) => ({ ...current, password: "" }));
+      setLoginForm((current) => ({ ...current, password: "" }));
       setError(null);
       setLoading(true);
       await loadDashboard();

@@ -1,25 +1,24 @@
-import React from 'react';
-import { ActionButton } from '../components/ui/ActionButton';
-import { StatusPill } from '../components/ui/StatusPill';
-import { SimpleTable } from '../components/ui/SimpleTable';
-import { AccountRecord, StrategyRecord, Order } from '../types/domain';
 import { formatTime, formatNumber, formatMoney, formatMaybeNumber } from '../utils/format';
 import { runtimeReadinessTone, summarizeOrderPreflight, buildSignalActionNotes, buildSignalBarStateNotes, buildRuntimeEventNotes } from '../utils/derivation';
+import { AccountRecord, StrategyRecord, Order, LiveOrderForm, LivePreflightSummary, SignalRuntimeSession, RuntimeMarketSnapshot } from '../types/domain';
+import { StatusPill } from '../components/ui/StatusPill';
+import { ActionButton } from '../components/ui/ActionButton';
+import { SimpleTable } from '../components/ui/SimpleTable';
 
 interface OrdersPanelProps {
-  liveOrderForm: any;
-  setLiveOrderForm: (valOrUpdater: any | ((prev: any) => any)) => void;
+  liveOrderForm: LiveOrderForm;
+  setLiveOrderForm: (valOrUpdater: LiveOrderForm | ((prev: LiveOrderForm) => LiveOrderForm)) => void;
   liveAccounts: AccountRecord[];
   strategies: StrategyRecord[];
   selectedLiveOrderPreflight: any;
   liveOrderAction: boolean;
   createLiveOrder: () => void;
-  selectedLiveOrderActiveRuntime: any;
-  selectedLiveOrderRuntimeState: any;
-  selectedLiveOrderSignalAction: any;
-  selectedLiveOrderMarket: any;
-  selectedLiveOrderSignalBarState: any;
-  selectedLiveOrderRuntimeSummary: any;
+  selectedLiveOrderActiveRuntime: SignalRuntimeSession | null;
+  selectedLiveOrderRuntimeState: Record<string, any>; // Derivation result, complex object
+  selectedLiveOrderSignalAction: Record<string, any>; // Derivation result, complex object
+  selectedLiveOrderMarket: RuntimeMarketSnapshot;
+  selectedLiveOrderSignalBarState: Record<string, any>; // Derivation result, complex object
+  selectedLiveOrderRuntimeSummary: Record<string, any>; // Derivation result, complex object
   orders: Order[];
 }
 
@@ -55,7 +54,7 @@ export function OrdersPanel({
               <span>Live Account</span>
               <select
                 value={liveOrderForm.accountId}
-                onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, accountId: event.target.value }))}
+                onChange={(event) => setLiveOrderForm((current) => ({ ...current, accountId: event.target.value }))}
               >
                 {liveAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
@@ -68,7 +67,7 @@ export function OrdersPanel({
               <span>Strategy Version</span>
               <select
                 value={liveOrderForm.strategyVersionId}
-                onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, strategyVersionId: event.target.value }))}
+                onChange={(event) => setLiveOrderForm((current) => ({ ...current, strategyVersionId: event.target.value }))}
               >
                 <option value="">Auto</option>
                 {strategies.map((strategy) => (
@@ -82,14 +81,14 @@ export function OrdersPanel({
               <span>Symbol</span>
               <input
                 value={liveOrderForm.symbol}
-                onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                onChange={(event) => setLiveOrderForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
               />
             </label>
             <label className="form-field">
               <span>Side</span>
               <select
                 value={liveOrderForm.side}
-                onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, side: event.target.value }))}
+                onChange={(event) => setLiveOrderForm((current) => ({ ...current, side: event.target.value }))}
               >
                 <option value="BUY">BUY</option>
                 <option value="SELL">SELL</option>
@@ -99,7 +98,7 @@ export function OrdersPanel({
               <span>Type</span>
               <select
                 value={liveOrderForm.type}
-                onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, type: event.target.value }))}
+                onChange={(event) => setLiveOrderForm((current) => ({ ...current, type: event.target.value }))}
               >
                 <option value="LIMIT">LIMIT</option>
                 <option value="MARKET">MARKET</option>
@@ -109,14 +108,14 @@ export function OrdersPanel({
               <span>Quantity</span>
               <input
                 value={liveOrderForm.quantity}
-                onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, quantity: event.target.value }))}
+                onChange={(event) => setLiveOrderForm((current) => ({ ...current, quantity: event.target.value }))}
               />
             </label>
             <label className="form-field">
               <span>Price</span>
               <input
                 value={liveOrderForm.price}
-                onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, price: event.target.value }))}
+                onChange={(event) => setLiveOrderForm((current) => ({ ...current, price: event.target.value }))}
                 placeholder={liveOrderForm.type === "MARKET" ? "optional" : "required for limit"}
               />
             </label>
@@ -187,7 +186,7 @@ export function OrdersPanel({
             </div>
           </div>
           <div className="backtest-notes">
-            {buildSignalActionNotes(selectedLiveOrderSignalAction).map((line: string) => (
+            {buildSignalActionNotes(selectedLiveOrderSignalAction as any).map((line: string) => (
               <div key={line} className="note-item">
                 {line}
               </div>

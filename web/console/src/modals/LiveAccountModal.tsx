@@ -1,18 +1,18 @@
 import React from 'react';
 import { ActionButton } from '../components/ui/ActionButton';
-import { AccountRecord } from '../types/domain';
+import { AccountRecord, LiveAccountForm, ActiveSettingsModal } from '../types/domain';
 
 interface LiveAccountModalProps {
-  activeSettingsModal: string | null;
-  setActiveSettingsModal: (modal: any) => void;
+  activeSettingsModal: ActiveSettingsModal;
+  setActiveSettingsModal: (modal: ActiveSettingsModal) => void;
   quickLiveAccount: AccountRecord | null;
   liveAccounts: AccountRecord[];
   quickLiveAccountId: string;
   selectQuickLiveAccount: (id: string) => void;
   liveAccountError: string | null;
   liveAccountNotice: string | null;
-  liveAccountForm: any;
-  setLiveAccountForm: (valOrUpdater: any | ((prev: any) => any)) => void;
+  liveAccountForm: LiveAccountForm;
+  setLiveAccountForm: (valOrUpdater: LiveAccountForm | ((prev: LiveAccountForm) => LiveAccountForm)) => void;
   liveCreateAction: boolean;
   createLiveAccount: () => void;
   openLiveBindingModal: () => void;
@@ -74,11 +74,11 @@ export function LiveAccountModal({
           <div className="form-grid">
             <label className="form-field">
               <span>Name</span>
-              <input value={liveAccountForm.name} onChange={(event) => setLiveAccountForm((current: any) => ({ ...current, name: event.target.value }))} />
+              <input value={liveAccountForm.name} onChange={(event) => setLiveAccountForm((current) => ({ ...current, name: event.target.value }))} />
             </label>
             <label className="form-field">
               <span>Exchange</span>
-              <input value={liveAccountForm.exchange} onChange={(event) => setLiveAccountForm((current: any) => ({ ...current, exchange: event.target.value }))} />
+              <input value={liveAccountForm.exchange} onChange={(event) => setLiveAccountForm((current) => ({ ...current, exchange: event.target.value }))} />
             </label>
           </div>
           <div className="backtest-notes notes-compact">

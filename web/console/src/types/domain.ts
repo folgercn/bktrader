@@ -417,6 +417,8 @@ export type AuthSession = {
   expiresAt?: string;
 };
 
+export type ActiveSettingsModal = "telegram" | "live-account" | "live-binding" | "live-session" | null;
+
 // ─── Form Types ──────────────────────────────────────────
 
 export interface LoginForm {

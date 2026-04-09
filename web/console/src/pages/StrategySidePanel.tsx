@@ -80,7 +80,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 <span>Strategy Version</span>
                 <select
                   value={backtestForm.strategyVersionId}
-                  onChange={(event) => setBacktestForm((current: any) => ({ ...current, strategyVersionId: event.target.value }))}
+                  onChange={(event) => setBacktestForm((current) => ({ ...current, strategyVersionId: event.target.value }))}
                 >
                   {strategies.map((strategy) => (
                     <option key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
@@ -93,7 +93,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 <span>Signal Timeframe</span>
                 <select
                   value={backtestForm.signalTimeframe}
-                  onChange={(event) => setBacktestForm((current: any) => ({ ...current, signalTimeframe: event.target.value }))}
+                  onChange={(event) => setBacktestForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
                 >
                   {(backtestOptions?.signalTimeframes ?? ["4h", "1d"]).map((item) => (
                     <option key={item} value={item}>
@@ -106,7 +106,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 <span>Execution Source</span>
                 <select
                   value={backtestForm.executionDataSource}
-                  onChange={(event) => setBacktestForm((current: any) => ({ ...current, executionDataSource: event.target.value }))}
+                  onChange={(event) => setBacktestForm((current) => ({ ...current, executionDataSource: event.target.value }))}
                 >
                   {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
                     <option key={item} value={item}>
@@ -119,7 +119,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 <span>Symbol</span>
                 <input
                   value={backtestForm.symbol}
-                  onChange={(event) => setBacktestForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                  onChange={(event) => setBacktestForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
                   placeholder="BTCUSDT"
                 />
               </label>
@@ -127,7 +127,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 <span>From (RFC3339)</span>
                 <input
                   value={backtestForm.from}
-                  onChange={(event) => setBacktestForm((current: any) => ({ ...current, from: event.target.value }))}
+                  onChange={(event) => setBacktestForm((current) => ({ ...current, from: event.target.value }))}
                   placeholder="2020-01-01T00:00:00Z"
                 />
               </label>
@@ -135,7 +135,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 <span>To (RFC3339)</span>
                 <input
                   value={backtestForm.to}
-                  onChange={(event) => setBacktestForm((current: any) => ({ ...current, to: event.target.value }))}
+                  onChange={(event) => setBacktestForm((current) => ({ ...current, to: event.target.value }))}
                   placeholder="2020-01-31T23:59:59Z"
                 />
               </label>

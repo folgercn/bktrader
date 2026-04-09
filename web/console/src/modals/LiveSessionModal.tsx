@@ -1,16 +1,16 @@
 import React from 'react';
 import { ActionButton } from '../components/ui/ActionButton';
-import { AccountRecord, StrategyRecord, LiveSession } from '../types/domain';
+import { AccountRecord, StrategyRecord, LiveSession, LiveSessionForm, ActiveSettingsModal } from '../types/domain';
 import { strategyLabel } from '../utils/derivation';
 
 interface LiveSessionModalProps {
-  activeSettingsModal: string | null;
-  setActiveSettingsModal: (modal: any) => void;
+  activeSettingsModal: ActiveSettingsModal;
+  setActiveSettingsModal: (modal: ActiveSettingsModal) => void;
   liveSessionError: string | null;
   liveSessionNotice: string | null;
   liveAccounts: AccountRecord[];
-  liveSessionForm: any;
-  setLiveSessionForm: (valOrUpdater: any | ((prev: any) => any)) => void;
+  liveSessionForm: LiveSessionForm;
+  setLiveSessionForm: (valOrUpdater: LiveSessionForm | ((prev: LiveSessionForm) => LiveSessionForm)) => void;
   strategies: StrategyRecord[];
   validLiveSessions: LiveSession[];
   editingLiveSessionId: string | null;
@@ -80,7 +80,7 @@ export function LiveSessionModal({
               <span>Live Account</span>
               <select
                 value={liveSessionForm.accountId}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, accountId: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, accountId: event.target.value }))}
               >
                 {liveAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
@@ -93,7 +93,7 @@ export function LiveSessionModal({
               <span>Strategy</span>
               <select
                 value={liveSessionForm.strategyId}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, strategyId: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, strategyId: event.target.value }))}
               >
                 {strategyOptions.map((strategy) => (
                   <option key={strategy.value} value={strategy.value}>
@@ -106,7 +106,7 @@ export function LiveSessionModal({
               <span>Signal TF</span>
               <select
                 value={liveSessionForm.signalTimeframe}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, signalTimeframe: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
               >
                 <option value="4h">4h</option>
                 <option value="1d">1d</option>
@@ -116,7 +116,7 @@ export function LiveSessionModal({
               <span>Execution Source</span>
               <select
                 value={liveSessionForm.executionDataSource}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionDataSource: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionDataSource: event.target.value }))}
               >
                 <option value="tick">tick</option>
                 <option value="1min">1min</option>
@@ -126,21 +126,21 @@ export function LiveSessionModal({
               <span>Symbol</span>
               <input
                 value={liveSessionForm.symbol}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
               />
             </label>
             <label className="form-field">
               <span>Default Qty</span>
               <input
                 value={liveSessionForm.defaultOrderQuantity}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, defaultOrderQuantity: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
               />
             </label>
             <label className="form-field">
               <span>Entry Order</span>
               <select
                 value={liveSessionForm.executionEntryOrderType}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionEntryOrderType: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryOrderType: event.target.value }))}
               >
                 <option value="MARKET">MARKET</option>
                 <option value="LIMIT">LIMIT</option>
@@ -150,14 +150,14 @@ export function LiveSessionModal({
               <span>Entry Max Spread</span>
               <input
                 value={liveSessionForm.executionEntryMaxSpreadBps}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
               />
             </label>
             <label className="form-field">
               <span>Wide Spread Mode</span>
               <select
                 value={liveSessionForm.executionEntryWideSpreadMode}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionEntryWideSpreadMode: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryWideSpreadMode: event.target.value }))}
               >
                 <option value="limit-maker">limit-maker</option>
                 <option value="">wait</option>
@@ -167,7 +167,7 @@ export function LiveSessionModal({
               <span>Entry Fallback</span>
               <select
                 value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionEntryTimeoutFallbackOrderType: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryTimeoutFallbackOrderType: event.target.value }))}
               >
                 <option value="MARKET">MARKET</option>
                 <option value="LIMIT">LIMIT</option>
@@ -178,7 +178,7 @@ export function LiveSessionModal({
               <span>PT Exit Order</span>
               <select
                 value={liveSessionForm.executionPTExitOrderType}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionPTExitOrderType: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitOrderType: event.target.value }))}
               >
                 <option value="LIMIT">LIMIT</option>
                 <option value="MARKET">MARKET</option>
@@ -188,7 +188,7 @@ export function LiveSessionModal({
               <span>PT Exit TIF</span>
               <select
                 value={liveSessionForm.executionPTExitTimeInForce}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionPTExitTimeInForce: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeInForce: event.target.value }))}
               >
                 <option value="GTX">GTX</option>
                 <option value="GTC">GTC</option>
@@ -200,14 +200,14 @@ export function LiveSessionModal({
               <input
                 type="checkbox"
                 checked={liveSessionForm.executionPTExitPostOnly}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionPTExitPostOnly: event.target.checked }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitPostOnly: event.target.checked }))}
               />
             </label>
             <label className="form-field">
               <span>PT Exit Fallback</span>
               <select
                 value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionPTExitTimeoutFallbackOrderType: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeoutFallbackOrderType: event.target.value }))}
               >
                 <option value="MARKET">MARKET</option>
                 <option value="LIMIT">LIMIT</option>
@@ -218,7 +218,7 @@ export function LiveSessionModal({
               <span>SL Exit Order</span>
               <select
                 value={liveSessionForm.executionSLExitOrderType}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionSLExitOrderType: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitOrderType: event.target.value }))}
               >
                 <option value="MARKET">MARKET</option>
                 <option value="LIMIT">LIMIT</option>
@@ -228,14 +228,14 @@ export function LiveSessionModal({
               <span>SL Exit Max Spread</span>
               <input
                 value={liveSessionForm.executionSLExitMaxSpreadBps}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
               />
             </label>
             <label className="form-field">
               <span>Dispatch Mode</span>
               <select
                 value={liveSessionForm.dispatchMode}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, dispatchMode: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchMode: event.target.value }))}
               >
                 <option value="manual-review">manual-review</option>
                 <option value="auto-dispatch">auto-dispatch</option>
@@ -245,7 +245,7 @@ export function LiveSessionModal({
               <span>Dispatch Cooldown (s)</span>
               <input
                 value={liveSessionForm.dispatchCooldownSeconds}
-                onChange={(event) => setLiveSessionForm((current: any) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
+                onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
               />
             </label>
           </div>

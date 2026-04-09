@@ -59,7 +59,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                 <span>策略名称</span>
                 <input
                   value={strategyCreateForm.name}
-                  onChange={(event) => setStrategyCreateForm((current: any) => ({ ...current, name: event.target.value }))}
+                  onChange={(event) => setStrategyCreateForm((current) => ({ ...current, name: event.target.value }))}
                   placeholder="例如：BK 4H Runner"
                 />
               </label>
@@ -68,7 +68,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                 <input
                   value={strategyCreateForm.description}
                   onChange={(event) =>
-                    setStrategyCreateForm((current: any) => ({ ...current, description: event.target.value }))
+                    setStrategyCreateForm((current) => ({ ...current, description: event.target.value }))
                   }
                   placeholder="记录这条策略的用途、市场和执行方式"
                 />
@@ -96,7 +96,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                   value={strategyEditorForm.strategyId}
                   onChange={(event) => {
                     setSelectedStrategyId(event.target.value);
-                    setStrategyEditorForm((current: any) => ({ ...current, strategyId: event.target.value }));
+                    setStrategyEditorForm((current) => ({ ...current, strategyId: event.target.value }));
                   }}
                 >
                   {strategyOptions.map((strategy) => (
@@ -111,7 +111,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                 <select
                   value={strategyEditorForm.strategyEngine}
                   onChange={(event) =>
-                    setStrategyEditorForm((current: any) => ({ ...current, strategyEngine: event.target.value }))
+                    setStrategyEditorForm((current) => ({ ...current, strategyEngine: event.target.value }))
                   }
                 >
                   {[...new Set(["bk-default", ...strategies.map((item) => String(getRecord(item.currentVersion?.parameters).strategyEngine || "bk-default"))])].map((engineKey) => (
@@ -126,7 +126,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                 <select
                   value={strategyEditorForm.signalTimeframe}
                   onChange={(event) =>
-                    setStrategyEditorForm((current: any) => ({ ...current, signalTimeframe: event.target.value }))
+                    setStrategyEditorForm((current) => ({ ...current, signalTimeframe: event.target.value }))
                   }
                 >
                   <option value="4h">4h</option>
@@ -138,7 +138,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                 <select
                   value={strategyEditorForm.executionDataSource}
                   onChange={(event) =>
-                    setStrategyEditorForm((current: any) => ({ ...current, executionDataSource: event.target.value }))
+                    setStrategyEditorForm((current) => ({ ...current, executionDataSource: event.target.value }))
                   }
                 >
                   <option value="tick">tick</option>
@@ -151,7 +151,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                   rows={14}
                   value={strategyEditorForm.parametersJson}
                   onChange={(event) =>
-                    setStrategyEditorForm((current: any) => ({ ...current, parametersJson: event.target.value }))
+                    setStrategyEditorForm((current) => ({ ...current, parametersJson: event.target.value }))
                   }
                   placeholder='{"stop_loss_atr":0.05,"profit_protect_atr":1.0}'
                 />

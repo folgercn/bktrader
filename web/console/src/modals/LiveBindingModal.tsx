@@ -1,14 +1,14 @@
 import React from 'react';
 import { ActionButton } from '../components/ui/ActionButton';
-import { AccountRecord, LiveAdapter } from '../types/domain';
+import { AccountRecord, LiveAdapter, LiveBindingForm, ActiveSettingsModal } from '../types/domain';
 
 interface LiveBindingModalProps {
-  activeSettingsModal: string | null;
-  setActiveSettingsModal: (modal: any) => void;
+  activeSettingsModal: ActiveSettingsModal;
+  setActiveSettingsModal: (modal: ActiveSettingsModal) => void;
   liveBindingError: string | null;
   liveBindingNotice: string | null;
-  liveBindingForm: any;
-  setLiveBindingForm: (valOrUpdater: any | ((prev: any) => any)) => void;
+  liveBindingForm: LiveBindingForm;
+  setLiveBindingForm: (valOrUpdater: LiveBindingForm | ((prev: LiveBindingForm) => LiveBindingForm)) => void;
   liveAccounts: AccountRecord[];
   liveAdapters: LiveAdapter[];
   quickLiveAccount: AccountRecord | null;
@@ -51,7 +51,7 @@ export function LiveBindingModal({
               <span>Live Account</span>
               <select
                 value={liveBindingForm.accountId}
-                onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, accountId: event.target.value }))}
+                onChange={(event) => setLiveBindingForm((current) => ({ ...current, accountId: event.target.value }))}
               >
                 {liveAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
@@ -64,7 +64,7 @@ export function LiveBindingModal({
               <span>Adapter</span>
               <select
                 value={liveBindingForm.adapterKey}
-                onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, adapterKey: event.target.value }))}
+                onChange={(event) => setLiveBindingForm((current) => ({ ...current, adapterKey: event.target.value }))}
               >
                 {liveAdapters.map((adapter) => (
                   <option key={adapter.key} value={adapter.key}>
@@ -77,7 +77,7 @@ export function LiveBindingModal({
               <span>Position Mode</span>
               <select
                 value={liveBindingForm.positionMode}
-                onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, positionMode: event.target.value }))}
+                onChange={(event) => setLiveBindingForm((current) => ({ ...current, positionMode: event.target.value }))}
               >
                 <option value="ONE_WAY">ONE_WAY</option>
                 <option value="HEDGE">HEDGE</option>
@@ -87,7 +87,7 @@ export function LiveBindingModal({
               <span>Margin Mode</span>
               <select
                 value={liveBindingForm.marginMode}
-                onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, marginMode: event.target.value }))}
+                onChange={(event) => setLiveBindingForm((current) => ({ ...current, marginMode: event.target.value }))}
               >
                 <option value="CROSSED">CROSSED</option>
                 <option value="ISOLATED">ISOLATED</option>
@@ -95,18 +95,18 @@ export function LiveBindingModal({
             </label>
             <label className="form-field">
               <span>API Key Env</span>
-              <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, apiKeyRef: event.target.value }))} />
+              <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiKeyRef: event.target.value }))} />
             </label>
             <label className="form-field">
               <span>API Secret Env</span>
-              <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, apiSecretRef: event.target.value }))} />
+              <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiSecretRef: event.target.value }))} />
             </label>
             <label className="form-field form-field-checkbox">
               <span>Sandbox</span>
               <input
                 type="checkbox"
                 checked={liveBindingForm.sandbox}
-                onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, sandbox: event.target.checked }))}
+                onChange={(event) => setLiveBindingForm((current) => ({ ...current, sandbox: event.target.checked }))}
               />
             </label>
           </div>
