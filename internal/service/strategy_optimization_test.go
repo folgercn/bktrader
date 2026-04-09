@@ -3,6 +3,7 @@ package service
 import (
 	"math"
 	"testing"
+
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
@@ -95,7 +96,7 @@ func TestReentryDecayLogic(t *testing.T) {
 	// Expected quantity = 0.1 * 0.25 = 0.025
 	
 	priceHint := 50000.0
-	baseQuantity, _ := resolveExecutionQuantity(ctx.Session, ctx.Account, ctx.Intent, priceHint)
+	baseQuantity, _ := resolveExecutionQuantity(ctx.Session, ctx.Account, ctx.Execution.Parameters, ctx.Intent, priceHint)
 	
 	// Simulate the decay logic added in BuildProposal
 	reentryDecayFactor := parseFloatValue(ctx.Execution.Parameters["reentry_decay_factor"])
@@ -107,5 +108,35 @@ func TestReentryDecayLogic(t *testing.T) {
 	
 	if finalQuantity != 0.025 {
 		t.Fatalf("expected decayed quantity 0.025, got %v", finalQuantity)
+	}
+}
+
+func TestResolveExecutionQuantityVolatilityAdjustedUsesStopDistance(t *testing.T) {
+	quantity, metadata := resolveExecutionQuantity(
+		domain.LiveSession{
+			State: map[string]any{
+				"positionSizingMode": "volatility_adjusted",
+				"atr14":              1000.0,
+				"targetRiskBps":      100.0,
+			},
+		},
+		domain.Account{
+			Metadata: map[string]any{
+				"liveSyncSnapshot": map[string]any{
+					"availableBalance": 10000.0,
+				},
+			},
+		},
+		map[string]any{
+			"stop_loss_atr": 0.05,
+		},
+		SignalIntent{},
+		50000.0,
+	)
+	if quantity != 2.0 {
+		t.Fatalf("expected quantity 2.0 with 50 USDT/unit risk, got %v", quantity)
+	}
+	if got := parseFloatValue(metadata["sizingRiskPerUnit"]); got != 50.0 {
+		t.Fatalf("expected risk per unit 50, got %v", got)
 	}
 }

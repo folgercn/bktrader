@@ -150,12 +150,21 @@ func evaluateExecutionQuality(state map[string]any) {
 	}
 
 	// Rejection rate
-	totalDispatched := filledCount + rejectedCount + cancelledCount
+	totalDispatched := filledCount + rejectedCount
 	if totalDispatched > 3 {
-		rejectionRate := float64(rejectedCount+cancelledCount) / float64(totalDispatched)
+		rejectionRate := float64(rejectedCount) / float64(totalDispatched)
 		if rejectionRate > 0.3 {
 			quality = "poor"
 			reasons = append(reasons, fmt.Sprintf("high-rejection:%.0f%%", rejectionRate*100))
+		}
+	}
+	if cancelledCount > 0 {
+		cancelRate := float64(cancelledCount) / float64(maxInt(totalDispatched+cancelledCount, 1))
+		if cancelRate >= 0.5 && quality == "good" {
+			quality = "degraded"
+		}
+		if cancelRate >= 0.5 {
+			reasons = append(reasons, fmt.Sprintf("high-cancel:%.0f%%", cancelRate*100))
 		}
 	}
 

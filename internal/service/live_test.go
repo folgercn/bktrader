@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -634,6 +635,48 @@ func TestBookAwareExecutionStrategyUsesMakerLimitOnWideSpreadWhenConfigured(t *t
 	}
 }
 
+func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	eventTime := time.Date(2026, 4, 7, 8, 0, 0, 0, time.UTC)
+	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{},
+		Execution: StrategyExecutionContext{
+			Parameters: map[string]any{
+				"executionSLExitRestingTimeoutSeconds": 15,
+				"executionSLMaxSlippageBps":            20.0,
+			},
+		},
+		EventTime: eventTime,
+		Intent: SignalIntent{
+			Action:      "exit",
+			Role:        "exit",
+			Reason:      "SL",
+			Side:        "SELL",
+			Symbol:      "BTCUSDT",
+			PriceHint:   68000,
+			PriceSource: "order_book.bestBid",
+			Metadata: map[string]any{
+				"bestBid":           68000.0,
+				"bestAsk":           68150.0,
+				"spreadBps":         22.0,
+				"signalBarStateKey": "state-1",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := proposal.Type; got != "LIMIT" {
+		t.Fatalf("expected LIMIT SL protection order, got %s", got)
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "sl-slippage-protected" {
+		t.Fatalf("expected sl-slippage-protected, got %s", got)
+	}
+	if got := stringValue(proposal.Metadata["executionExpiresAt"]); got != eventTime.Add(15*time.Second).Format(time.RFC3339) {
+		t.Fatalf("expected configured SL expiry, got %s", got)
+	}
+}
+
 func TestBookAwareExecutionStrategyUsesFallbackOrderAfterTimeoutMatch(t *testing.T) {
 	strategy := bookAwareExecutionStrategy{}
 	intent := SignalIntent{
@@ -1041,6 +1084,30 @@ func TestShouldCancelLiveOrderForExecutionTimeout(t *testing.T) {
 	}
 	if !shouldCancelLiveOrderForExecutionTimeout(order, now) {
 		t.Fatal("expected expired live order to be cancelled")
+	}
+}
+
+func TestEvaluateExecutionQualityDoesNotTreatCancelsAsRejections(t *testing.T) {
+	state := map[string]any{
+		"executionEventStats": map[string]any{
+			"filledCount":              4,
+			"rejectedCount":            0,
+			"cancelledCount":           4,
+			"avgPriceDriftBps":         1.0,
+			"avgProposalSpreadBps":     2.0,
+			"slProtectedDispatchCount": 0,
+		},
+	}
+	evaluateExecutionQuality(state)
+	if got := stringValue(state["executionQuality"]); got != "degraded" {
+		t.Fatalf("expected degraded quality from excessive cancels, got %s", got)
+	}
+	rawReasons, _ := state["executionQualityReasons"].([]string)
+	gotReasons := rawReasons
+	for _, reason := range gotReasons {
+		if strings.HasPrefix(reason, "high-rejection:") {
+			t.Fatalf("did not expect high-rejection reason for pure cancels: %v", gotReasons)
+		}
 	}
 }
 

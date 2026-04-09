@@ -155,7 +155,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 			priceSource = "order_book.bestBid"
 		}
 	}
-	quantity, sizingMeta := resolveExecutionQuantity(ctx.Session, ctx.Account, intent, priceHint)
+	quantity, sizingMeta := resolveExecutionQuantity(ctx.Session, ctx.Account, ctx.Execution.Parameters, intent, priceHint)
 
 	// Reentry Decay: 衰减重入仓位大小
 	reentryDecayFactor := parseFloatValue(ctx.Execution.Parameters["reentry_decay_factor"])
@@ -290,10 +290,12 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 			proposal.LimitPrice = cappedPrice
 			proposal.TimeInForce = "GTC"
 			proposal.PostOnly = false
-			if profile.RestingTimeoutSeconds <= 0 {
-				proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(5 * time.Second).Format(time.RFC3339)
-				proposal.Metadata["executionRestingTimeoutSeconds"] = 5
+			timeoutSeconds := profile.RestingTimeoutSeconds
+			if timeoutSeconds <= 0 {
+				timeoutSeconds = 5
 			}
+			proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(time.Duration(timeoutSeconds) * time.Second).Format(time.RFC3339)
+			proposal.Metadata["executionRestingTimeoutSeconds"] = timeoutSeconds
 			proposal.Metadata["slProtectionActive"] = true
 			proposal.Metadata["slCappedPrice"] = cappedPrice
 			proposal.Metadata["slOriginalSpreadBps"] = spreadBps
@@ -320,7 +322,7 @@ func normalizePositionSizingMode(raw any) string {
 	}
 }
 
-func resolveExecutionQuantity(session domain.LiveSession, account domain.Account, intent SignalIntent, priceHint float64) (float64, map[string]any) {
+func resolveExecutionQuantity(session domain.LiveSession, account domain.Account, parameters map[string]any, intent SignalIntent, priceHint float64) (float64, map[string]any) {
 	mode := normalizePositionSizingMode(session.State["positionSizingMode"])
 	fixedQuantity := parseFloatValue(session.State["defaultOrderQuantity"])
 	fixedFraction := parseFloatValue(session.State["defaultOrderFraction"])
@@ -355,13 +357,26 @@ func resolveExecutionQuantity(session domain.LiveSession, account domain.Account
 		targetRiskBps := firstPositive(parseFloatValue(session.State["targetRiskBps"]), 100)
 		if balance, basis := resolveLiveSizingBalance(account); balance > 0 && atr14 > 0 {
 			riskFraction := targetRiskBps / 10000.0
-			quantity := (balance * riskFraction) / atr14
+			stopLossATR := firstPositive(parseFloatValue(parameters["stop_loss_atr"]), 0.05)
+			riskPerUnit := stopLossATR * atr14
+			if riskPerUnit > 0 {
+				quantity := (balance * riskFraction) / riskPerUnit
+				metadata["sizingBalance"] = balance
+				metadata["sizingBalanceBasis"] = basis
+				metadata["sizingATR14"] = atr14
+				metadata["sizingTargetRiskBps"] = targetRiskBps
+				metadata["sizingStopLossATR"] = stopLossATR
+				metadata["sizingRiskPerUnit"] = riskPerUnit
+				metadata["sizingComputedQuantity"] = quantity
+				return quantity, metadata
+			}
 			metadata["sizingBalance"] = balance
 			metadata["sizingBalanceBasis"] = basis
 			metadata["sizingATR14"] = atr14
 			metadata["sizingTargetRiskBps"] = targetRiskBps
-			metadata["sizingComputedQuantity"] = quantity
-			return quantity, metadata
+			metadata["sizingFallbackReason"] = "volatility_adjusted_invalid_risk_distance"
+			metadata["sizingMissingField"] = "stop_loss_atr"
+			return 0, metadata
 		}
 		metadata["sizingFallbackReason"] = "volatility_adjusted_missing_inputs"
 		if atr14 <= 0 {
