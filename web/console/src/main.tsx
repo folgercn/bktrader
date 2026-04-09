@@ -30,6 +30,9 @@ import { PositionsPanel } from './panels/PositionsPanel';
 import { FillsPanel } from './panels/FillsPanel';
 import { StrategySidePanel } from './pages/StrategySidePanel';
 import { AccountSidePanel } from './pages/AccountSidePanel';
+import { MonitorStage } from './pages/MonitorStage';
+import { StrategyStage } from './pages/StrategyStage';
+import { AccountStage } from './pages/AccountStage';
 
 import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, AuthSession } from './types/domain';
 import { sampleStatus, buildLinePath, summarizeRange, summarizeTimeRange, filterChartAnnotations, matchesEventFilter, resolveChartAnchor, buildTimeRange, buildSampleRange, buildSampleKey, annotationMatchesSample, findNearestAnnotation, toMarkerDetail, markerShape, markerPosition, markerColor, markerText, annotationTone, paperAccountsFromSummaries, strategyLabel, getNumber, getRecord, getList, deriveRuntimeMarketSnapshot, deriveRuntimeSourceSummary, deriveRuntimeReadiness, deriveSignalBarCandles, mapChartCandlesToSignalBarCandles, applyDefaultChartWindow, derivePrimarySignalBarState, buildRuntimeEventNotes, buildSourceStateNotes, buildSignalBarDecisionNotes, buildSignalBarStateNotes, deriveSignalActionSummary, deriveLivePreflightSummary, deriveLiveDispatchPreview, deriveLiveSessionExecutionSummary, derivePaperSessionExecutionSummary, deriveSessionMarkers, deriveLiveSessionHealth, deriveHighlightedLiveSession, deriveLiveSessionFlow, liveSessionHealthPriority, deriveLiveNextAction, liveSessionHealthTone, buildSignalActionNotes, buildTimelineNotes, summarizeOrderPreflight, derivePaperAlerts, deriveLiveAlerts, dedupeAlerts, buildAlertNotes, alertLevelTone, alertScopeTone, telegramDeliveryTone, runtimeReadinessTone, decisionStateTone, signalKindTone, signalActionTone, boolTone, boolLabel } from './utils/derivation';
@@ -151,6 +154,7 @@ function App() {
   const setSettingsMenuOpen = useUIStore(s => s.setSettingsMenuOpen);
   const activeSettingsModal = useUIStore(s => s.activeSettingsModal);
   const setActiveSettingsModal = useUIStore(s => s.setActiveSettingsModal);
+
   const summaries = useTradingStore(s => s.summaries);
   const setSummaries = useTradingStore(s => s.setSummaries);
   const accounts = useTradingStore(s => s.accounts);
@@ -214,150 +218,61 @@ function App() {
   const editingLiveSessionId = useTradingStore(s => s.editingLiveSessionId);
   const setEditingLiveSessionId = useTradingStore(s => s.setEditingLiveSessionId);
 
+  const liveAccounts = accounts;
 
-  const primaryAccount = summaries[0] ?? null;
-  const primarySession = paperSessions[0] ?? null;
-  const primaryLiveSession = liveSessions[0] ?? null;
-  const primarySessionSourceStates = getRecord(primarySession?.state?.lastStrategyEvaluationSourceStates);
-  const primarySessionTriggerSource = getRecord(primarySession?.state?.lastStrategyEvaluationTriggerSource);
-  const primarySessionSourceGate = getRecord(primarySession?.state?.lastStrategyEvaluationSourceGate);
-  const primarySessionDecision = getRecord(primarySession?.state?.lastStrategyDecision);
-  const primarySessionDecisionMeta = getRecord(primarySessionDecision.metadata);
-  const primarySessionCurrentPosition = getRecord(primarySessionDecisionMeta.currentPosition);
-  const primarySessionSignalBarState = getRecord(primarySessionDecisionMeta.signalBarState);
-  const primarySessionSignalBarDecision = getRecord(primarySessionDecisionMeta.signalBarDecision);
-  const primarySessionTimeline = getList(primarySession?.state?.timeline);
-  const paperAccounts = summaries.filter((item) => item.mode === "PAPER");
-  const liveAccounts = accounts.filter((item) => item.mode === "LIVE");
-  const quickLiveAccountId = liveSessionForm.accountId || liveBindingForm.accountId || liveAccounts[0]?.id || "";
-  const quickLiveAccount = liveAccounts.find((item) => item.id === quickLiveAccountId) ?? null;
-  const primaryLiveSessionDecision = getRecord(primaryLiveSession?.state?.lastStrategyDecision);
-  const primaryLiveSessionDecisionMeta = getRecord(primaryLiveSessionDecision.metadata);
-  const primaryLiveSessionSignalBarDecision = getRecord(primaryLiveSessionDecisionMeta.signalBarDecision);
-  const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
-  const primaryLiveSessionSourceGate = getRecord(primaryLiveSession?.state?.lastStrategyEvaluationSourceGate);
-  const primaryLiveSessionTimeline = getList(primaryLiveSession?.state?.timeline);
-  const primaryLiveSessionRuntime =
-    signalRuntimeSessions.find((item) => item.id === String(primaryLiveSession?.state?.signalRuntimeSessionId ?? "")) ??
-    signalRuntimeSessions.find((item) => item.accountId === primaryLiveSession?.accountId && item.strategyId === primaryLiveSession?.strategyId) ??
-    null;
-  const primaryLiveSessionRuntimeState = getRecord(primaryLiveSessionRuntime?.state);
-  const primaryLiveSessionRuntimeSummary = getRecord(primaryLiveSessionRuntimeState.lastEventSummary);
-  const primaryLiveSessionMarket = deriveRuntimeMarketSnapshot(
-    getRecord(primaryLiveSessionRuntimeState.sourceStates),
-    primaryLiveSessionRuntimeSummary
-  );
-  const primaryLiveSessionSourceSummary = deriveRuntimeSourceSummary(
-    getRecord(primaryLiveSessionRuntimeState.sourceStates),
-    runtimePolicy
-  );
-  const primaryLiveSessionRuntimeReadiness = deriveRuntimeReadiness(
-    primaryLiveSessionRuntimeState,
-    primaryLiveSessionSourceSummary,
-    {
-      requireTick: true,
-      requireOrderBook: strategySignalBindingMap[primaryLiveSession?.strategyId ?? ""]?.some((item) => item.streamType === "order_book") ?? false,
-    }
-  );
-  const primaryLiveAccount =
-    (primaryLiveSession ? liveAccounts.find((item) => item.id === primaryLiveSession.accountId) : null) ?? null;
-  const primaryLiveBindings = primaryLiveSession ? accountSignalBindingMap[primaryLiveSession.accountId] ?? [] : [];
-  const primaryLiveRuntimeSessions = primaryLiveSession
-    ? signalRuntimeSessions.filter((item) => item.accountId === primaryLiveSession.accountId)
-    : [];
-  const primaryLiveDispatchPreview = deriveLiveDispatchPreview(
-    primaryLiveSession,
-    primaryLiveAccount,
-    primaryLiveBindings,
-    primaryLiveRuntimeSessions,
-    primaryLiveSessionRuntime,
-    primaryLiveSessionRuntimeReadiness,
-    primaryLiveSessionIntent
-  );
-  const primaryLiveExecutionSummary = deriveLiveSessionExecutionSummary(
-    primaryLiveSession,
-    orders,
-    fills,
-    positions
-  );
+  // --- Derived State ---
+
   const highlightedLiveSession = useMemo(
     () => deriveHighlightedLiveSession(liveSessions, orders, fills, positions),
     [liveSessions, orders, fills, positions]
   );
-  const highlightedLiveRuntime =
-    highlightedLiveSession?.session
-      ? signalRuntimeSessions.find((item) => item.id === String(highlightedLiveSession.session.state?.signalRuntimeSessionId ?? "")) ??
-        signalRuntimeSessions.find(
-          (item) =>
-            item.accountId === highlightedLiveSession.session.accountId &&
-            item.strategyId === highlightedLiveSession.session.strategyId
-        ) ??
-        null
-      : null;
-  const highlightedLiveRuntimeState = getRecord(highlightedLiveRuntime?.state);
-  const highlightedLiveSessionFlow = useMemo(
-    () =>
-      highlightedLiveSession
-        ? deriveLiveSessionFlow(highlightedLiveSession.session, highlightedLiveSession.execution)
-        : [],
-    [highlightedLiveSession]
-  );
-  const primaryPaperAccountBindings = primarySession ? accountSignalBindingMap[primarySession.accountId] ?? [] : [];
-  const primaryPaperStrategyBindings = primarySession ? strategySignalBindingMap[primarySession.strategyId] ?? [] : [];
-  const primaryLinkedSignalRuntime =
-    signalRuntimeSessions.find((item) => item.id === String(primarySession?.state?.signalRuntimeSessionId ?? "")) ??
-    signalRuntimeSessions.find((item) => item.accountId === primarySession?.accountId && item.strategyId === primarySession?.strategyId) ??
-    null;
-  const primaryLinkedSignalRuntimeState = getRecord(primaryLinkedSignalRuntime?.state);
-  const primaryLinkedSignalRuntimeSummary = getRecord(primaryLinkedSignalRuntimeState.lastEventSummary);
-  const primaryLinkedSignalRuntimeMarket = deriveRuntimeMarketSnapshot(
-    getRecord(primaryLinkedSignalRuntimeState.sourceStates),
-    primaryLinkedSignalRuntimeSummary
-  );
-  const primaryLinkedSignalRuntimeSourceSummary = deriveRuntimeSourceSummary(
-    getRecord(primaryLinkedSignalRuntimeState.sourceStates),
-    runtimePolicy
-  );
-  const primaryPaperRuntimeReadiness = deriveRuntimeReadiness(
-    primaryLinkedSignalRuntimeState,
-    primaryLinkedSignalRuntimeSourceSummary,
-    {
-      requireTick: String(primarySession?.state?.executionDataSource ?? "") === "tick",
-      requireOrderBook: primaryPaperStrategyBindings.some((item) => item.streamType === "order_book"),
-    }
-  );
-  const primaryPaperAlerts = derivePaperAlerts(
-    primarySession,
-    primaryLinkedSignalRuntimeState,
-    primaryLinkedSignalRuntimeSourceSummary,
-    primaryPaperRuntimeReadiness,
-    primarySessionDecision,
-    primarySessionDecisionMeta,
-    primarySessionSignalBarDecision,
-    runtimePolicy
-  );
-  const monitorSession = highlightedLiveSession?.session ?? null;
+
   const monitorMode = highlightedLiveSession?.session ? "LIVE" : "--";
-  const monitorExecutionSummary = highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(null, orders, fills, positions);
-  const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : {};
-  const monitorSessionState = getRecord(monitorSession?.state);
-  const monitorBars = mapChartCandlesToSignalBarCandles(
-    monitorCandles,
-    String(monitorSessionState.signalTimeframe ?? "1d")
+
+  const quickLiveAccountId = liveSessionForm.accountId || liveBindingForm.accountId || liveAccounts[0]?.id || "";
+
+  const strategyIds = useMemo(() => new Set(strategies.map((item) => item.id)), [strategies]);
+  
+  const strategyOptions = useMemo(
+    () =>
+      strategies.map((strategy) => ({
+        value: strategy.id,
+        label: strategyLabel(strategy),
+      })),
+    [strategies]
   );
-  const monitorSignalState = derivePrimarySignalBarState(
-    getRecord(monitorRuntimeState.signalBarStates),
-    getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates)
+
+  const validLiveSessions = useMemo(
+    () => liveSessions.filter((item) => strategyIds.has(item.strategyId)),
+    [liveSessions, strategyIds]
   );
-  const monitorMarket = deriveRuntimeMarketSnapshot(
-    getRecord(monitorRuntimeState.sourceStates),
-    getRecord(monitorRuntimeState.lastEventSummary)
+
+  const quickLiveAccount = useMemo(
+    () => liveAccounts.find((a) => a.id === quickLiveAccountId) || null,
+    [liveAccounts, quickLiveAccountId]
   );
-  const monitorSummary =
-    monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
-  const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
-  const topPositions = positions.slice(0, 8);
-  const topFills = fills.slice().reverse().slice(0, 8);
+
+  const selectedLiveOrderPreflight = useMemo(
+    () => summarizeOrderPreflight({ liveOrderForm, liveAccounts, signalRuntimeSessions, runtimePolicy }),
+    [liveOrderForm, liveAccounts, signalRuntimeSessions, runtimePolicy]
+  );
+
+  const selectedLiveOrderActiveRuntime = useMemo(() => {
+    const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === liveOrderForm.accountId);
+    return runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
+  }, [signalRuntimeSessions, liveOrderForm.accountId]);
+
+  const selectedLiveOrderRuntimeState = getRecord(selectedLiveOrderActiveRuntime?.state);
+  const selectedLiveOrderRuntimeSummary = getRecord(selectedLiveOrderRuntimeState.lastEventSummary);
+  const selectedLiveOrderMarket = deriveRuntimeMarketSnapshot(getRecord(selectedLiveOrderRuntimeState.sourceStates), selectedLiveOrderRuntimeSummary);
+  const selectedLiveOrderSignalBarState = derivePrimarySignalBarState(getRecord(selectedLiveOrderRuntimeState.signalBarStates));
+  const selectedLiveOrderSignalAction = deriveSignalActionSummary(selectedLiveOrderSignalBarState);
+
+  // --- Helpers ---
+
+  function normalizeStrategyId(candidate: string, fallback = "") {
+    return strategyIds.has(candidate) ? candidate : fallback;
+  }
 
   function selectQuickLiveAccount(accountId: string) {
     setLiveBindingForm((current: any) => ({ ...current, accountId }));
@@ -386,6 +301,7 @@ function App() {
     setLiveAccountNotice(null);
     setActiveSettingsModal("live-account");
   }
+
   function openLiveBindingModal() {
     if (quickLiveAccountId) {
       selectQuickLiveAccount(quickLiveAccountId);
@@ -395,6 +311,7 @@ function App() {
     setLiveBindingNotice(null);
     setActiveSettingsModal("live-binding");
   }
+
   function openLiveSessionModal(session?: LiveSession | null) {
     const nextAccountId = session?.accountId || quickLiveAccountId || liveAccounts[0]?.id || "";
     const nextStrategyId = normalizeStrategyId(session?.strategyId ?? "", strategies[0]?.id || "");
@@ -433,127 +350,8 @@ function App() {
     setLiveSessionNotice(null);
     setActiveSettingsModal("live-session");
   }
-  const strategyIds = useMemo(() => new Set(strategies.map((item) => item.id)), [strategies]);
-  const strategyOptions = useMemo(
-    () =>
-      strategies.map((strategy) => ({
-        value: strategy.id,
-        label: strategyLabel(strategy),
-      })),
-    [strategies]
-  );
-  const validLiveSessions = useMemo(
-    () => liveSessions.filter((item) => strategyIds.has(item.strategyId)),
-    [liveSessions, strategyIds]
-  );
-  function normalizeStrategyId(candidate: string, fallback = "") {
-    return strategyIds.has(candidate) ? candidate : fallback;
-  }
-  const monitorSessionSource: SourceFilter = highlightedLiveSession?.session ? "live" : "all";
-  const monitorSessionID = monitorSession?.id;
-  const selectedSignalAccount = accountSignalForm.accountId || liveAccounts[0]?.id || "";
-  const selectedSignalStrategy = normalizeStrategyId(strategySignalForm.strategyId, strategies[0]?.id || "");
-  const selectedRuntimeAccount = signalRuntimeForm.accountId || selectedSignalAccount;
-  const selectedRuntimeStrategy = normalizeStrategyId(signalRuntimeForm.strategyId, selectedSignalStrategy);
-  const selectedStrategy =
-    strategies.find((item) => item.id === (selectedStrategyId || strategyEditorForm.strategyId)) ?? strategies[0] ?? null;
-  const selectedStrategyVersion = selectedStrategy?.currentVersion ?? null;
-  const selectedStrategyParameters = getRecord(selectedStrategyVersion?.parameters);
-  const selectedSignalRuntime =
-    signalRuntimeSessions.find((item) => item.id === selectedSignalRuntimeId) ?? signalRuntimeSessions[0] ?? null;
-  const selectedSignalRuntimeState = getRecord(selectedSignalRuntime?.state);
-  const selectedSignalRuntimePlan = getRecord(selectedSignalRuntimeState.plan);
-  const selectedSignalRuntimeLastSummary = getRecord(selectedSignalRuntimeState.lastEventSummary);
-  const selectedSignalRuntimeSourceStates = getRecord(selectedSignalRuntimeState.sourceStates);
-  const selectedSignalBarStates = getRecord(selectedSignalRuntimeState.signalBarStates);
-  const selectedSignalRuntimeTimeline = getList(selectedSignalRuntimeState.timeline);
-  const selectedSignalRuntimeSignalBars = deriveSignalBarCandles(selectedSignalRuntimeSourceStates);
-  const selectedSignalRuntimeSubscriptions = Array.isArray(selectedSignalRuntimeState.subscriptions)
-    ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
-    : [];
-  const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
-  const selectedLiveOrderAccount =
-    liveAccounts.find((item) => item.id === liveOrderForm.accountId) ??
-    liveAccounts[0] ??
-    null;
-  const selectedLiveOrderBindings = selectedLiveOrderAccount ? accountSignalBindingMap[selectedLiveOrderAccount.id] ?? [] : [];
-  const selectedLiveOrderRuntimeSessions = selectedLiveOrderAccount
-    ? signalRuntimeSessions.filter((item) => item.accountId === selectedLiveOrderAccount.id)
-    : [];
-  const selectedLiveOrderActiveRuntime =
-    selectedLiveOrderRuntimeSessions.find((item) => item.status === "RUNNING") ?? selectedLiveOrderRuntimeSessions[0] ?? null;
-  const selectedLiveOrderRuntimeState = getRecord(selectedLiveOrderActiveRuntime?.state);
-  const selectedLiveOrderSourceSummary = deriveRuntimeSourceSummary(
-    getRecord(selectedLiveOrderRuntimeState.sourceStates),
-    runtimePolicy
-  );
-  const selectedLiveOrderReadiness = deriveRuntimeReadiness(selectedLiveOrderRuntimeState, selectedLiveOrderSourceSummary, {
-    requireTick: selectedLiveOrderBindings.some((item) => item.streamType === "trade_tick"),
-    requireOrderBook: selectedLiveOrderBindings.some((item) => item.streamType === "order_book"),
-  });
-  const selectedLiveOrderRuntimeSummary = getRecord(selectedLiveOrderRuntimeState.lastEventSummary);
-  const selectedLiveOrderMarket = deriveRuntimeMarketSnapshot(
-    getRecord(selectedLiveOrderRuntimeState.sourceStates),
-    selectedLiveOrderRuntimeSummary
-  );
-  const selectedLiveOrderSignalBarState = derivePrimarySignalBarState(getRecord(selectedLiveOrderRuntimeState.signalBarStates));
-  const selectedLiveOrderSignalAction = deriveSignalActionSummary(selectedLiveOrderSignalBarState);
-  const selectedLiveOrderPreflight = selectedLiveOrderAccount
-    ? deriveLivePreflightSummary(
-        selectedLiveOrderAccount,
-        selectedLiveOrderBindings,
-        selectedLiveOrderRuntimeSessions,
-        selectedLiveOrderActiveRuntime,
-        selectedLiveOrderReadiness
-      )
-    : {
-        status: "blocked" as const,
-        reason: "no-live-account",
-        detail: "create or select a live account first",
-      };
-  const selectedExecutionAvailability = backtestOptions?.availability?.[backtestForm.executionDataSource] ?? "unknown";
-  const selectedExecutionDatasets = backtestOptions?.datasets?.[backtestForm.executionDataSource] ?? [];
-  const selectedExecutionSymbols = backtestOptions?.supportedSymbols?.[backtestForm.executionDataSource] ?? [];
-  const selectedExecutionSchema = backtestOptions?.schema?.[backtestForm.executionDataSource];
-  const selectedSymbolAvailable =
-    selectedExecutionSymbols.length === 0 || selectedExecutionSymbols.includes(backtestForm.symbol.trim().toUpperCase());
-  const backtestItems = backtests.slice().reverse().slice(0, 8);
-  const selectedBacktest =
-    backtests.find((item) => item.id === selectedBacktestId) ??
-    (backtests.length > 0 ? backtests[backtests.length - 1] : null);
-  const latestBacktestSummary = (selectedBacktest?.resultSummary ?? {}) as Record<string, unknown>;
-  const latestExecutionSource = String(latestBacktestSummary.executionDataSource ?? selectedBacktest?.parameters?.executionDataSource ?? "");
-  const previewCountLabel = latestExecutionSource === "tick" ? "Preview Ticks" : "Preview Bars";
-  const processedCountLabel = latestExecutionSource === "tick" ? "Processed Ticks" : "Processed Bars";
-  const processedCountValue =
-    latestExecutionSource === "tick"
-      ? String(latestBacktestSummary.processedTicks ?? "--")
-      : String(latestBacktestSummary.processedBars ?? "--");
-  const latestReplayByReason = (latestBacktestSummary.replayLedgerByReason ?? {}) as ReplayReasonStats;
-  const latestExecutionTrades = Array.isArray(latestBacktestSummary.executionTrades)
-    ? (latestBacktestSummary.executionTrades as ExecutionTrade[])
-    : [];
-  const latestReplaySkippedSamples = Array.isArray(latestBacktestSummary.replayLedgerSkippedSamples)
-    ? (latestBacktestSummary.replayLedgerSkippedSamples as ReplaySample[])
-    : [];
-  const latestReplayCompletedSamples = Array.isArray(latestBacktestSummary.replayLedgerCompletedSamples)
-    ? (latestBacktestSummary.replayLedgerCompletedSamples as ReplaySample[])
-    : [];
-  const selectableSamples = useMemo<SelectableSample[]>(
-    () => [
-      ...latestReplayCompletedSamples.map((sample, index) => ({
-        key: buildSampleKey("completed", index, sample),
-        sample,
-        group: "completed" as const,
-      })),
-      ...latestReplaySkippedSamples.map((sample, index) => ({
-        key: buildSampleKey("skipped", index, sample),
-        sample,
-        group: "skipped" as const,
-      })),
-    ],
-    [latestReplayCompletedSamples, latestReplaySkippedSamples]
-  );
+
+  // --- Handlers ---
 
   async function loadDashboard() {
     const [
@@ -781,187 +579,6 @@ function App() {
     }));
   }
 
-  useEffect(() => {
-    let active = true;
-
-    async function load() {
-      if (!authSession?.token) {
-        setLoading(false);
-        return;
-      }
-      try {
-        await loadDashboard();
-        if (!active) {
-          return;
-        }
-        setError(null);
-      } catch (err) {
-        if (!active) {
-          return;
-        }
-        if (typeof err === "object" && err && "status" in err && (err as { status?: number }).status === 401) {
-          writeStoredAuthSession(null);
-          setAuthSession(null);
-          setError("登录已失效，请重新登录");
-          return;
-        }
-        setError(err instanceof Error ? err.message : "Failed to load monitoring data");
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
-    load();
-    const timer = window.setInterval(load, 5000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [authSession?.token, timeWindow, chartOverrideRange]);
-
-  useEffect(() => {
-    setSelectedSample(null);
-  }, [selectedBacktest?.id]);
-
-  useEffect(() => {
-    if (!selectedStrategy) {
-      return;
-    }
-    const currentParameters = getRecord(selectedStrategy.currentVersion?.parameters);
-    setStrategyEditorForm({
-      strategyId: selectedStrategy.id,
-      strategyEngine: String(currentParameters.strategyEngine ?? "bk-default"),
-      signalTimeframe: String(
-        currentParameters.signalTimeframe ??
-          selectedStrategy.currentVersion?.signalTimeframe ??
-          "1d"
-      ),
-      executionDataSource: String(
-        currentParameters.executionDataSource ??
-          currentParameters.executionTimeframe ??
-          selectedStrategy.currentVersion?.executionTimeframe ??
-          "tick"
-      ),
-      parametersJson: JSON.stringify(currentParameters, null, 2),
-    });
-  }, [selectedStrategy]);
-
-  useEffect(() => {
-    if (strategySignalForm.strategyId && !strategyIds.has(strategySignalForm.strategyId)) {
-      setStrategySignalForm((current: any) => ({ ...current, strategyId: strategies[0]?.id || "" }));
-    }
-    if (signalRuntimeForm.strategyId && !strategyIds.has(signalRuntimeForm.strategyId)) {
-      setSignalRuntimeForm((current: any) => ({ ...current, strategyId: strategies[0]?.id || "" }));
-    }
-    if (liveSessionForm.strategyId && !strategyIds.has(liveSessionForm.strategyId)) {
-      setLiveSessionForm((current: any) => ({ ...current, strategyId: strategies[0]?.id || "" }));
-    }
-  }, [liveSessionForm.strategyId, signalRuntimeForm.strategyId, strategies, strategyIds, strategySignalForm.strategyId]);
-
-  useEffect(() => {
-    async function loadSignalDetails() {
-      try {
-        const tasks: Promise<unknown>[] = [];
-        if (selectedSignalAccount) {
-          tasks.push(
-            fetchJSON<SignalBinding[]>(`/api/v1/accounts/${selectedSignalAccount}/signal-bindings`).then(setAccountSignalBindings)
-          );
-        } else {
-          setAccountSignalBindings([]);
-        }
-        if (selectedSignalStrategy && strategyIds.has(selectedSignalStrategy)) {
-          tasks.push(
-            fetchJSON<SignalBinding[]>(`/api/v1/strategies/${selectedSignalStrategy}/signal-bindings`).then(setStrategySignalBindings)
-          );
-        } else {
-          setStrategySignalBindings([]);
-        }
-        if (selectedRuntimeAccount && selectedRuntimeStrategy && strategyIds.has(selectedRuntimeStrategy)) {
-          tasks.push(
-            fetchJSON<Record<string, unknown>>(
-              `/api/v1/signal-runtime/plan?accountId=${encodeURIComponent(selectedRuntimeAccount)}&strategyId=${encodeURIComponent(selectedRuntimeStrategy)}`
-            ).then(setSignalRuntimePlan)
-          );
-        } else {
-          setSignalRuntimePlan(null);
-        }
-        await Promise.all(tasks);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load signal runtime details");
-      }
-    }
-
-    void loadSignalDetails();
-  }, [selectedSignalAccount, selectedSignalStrategy, selectedRuntimeAccount, selectedRuntimeStrategy, strategyIds]);
-
-  const chartPath = useMemo(() => buildLinePath(snapshots.map((item) => item.netEquity), 560, 180), [snapshots]);
-  const chartRange = useMemo(() => summarizeRange(snapshots.map((item) => item.netEquity)), [snapshots]);
-  const candleRange = useMemo(() => summarizeTimeRange(candles.map((item) => item.time)), [candles]);
-  const chartAnnotations = useMemo(
-    () => filterChartAnnotations(annotations, candles, monitorSessionID, monitorSessionSource, sourceFilter, eventFilter),
-    [annotations, candles, monitorSessionID, monitorSessionSource, sourceFilter, eventFilter]
-  );
-  const selectedAnnotationIds = useMemo(() => {
-    if (!selectedSample) {
-      return [];
-    }
-    return chartAnnotations.filter((item) => annotationMatchesSample(item, selectedSample.sample)).map((item) => item.id);
-  }, [chartAnnotations, selectedSample]);
-  const selectedAnnotationFocusTime = useMemo(() => {
-    if (selectedAnnotationIds.length === 0) {
-      return undefined;
-    }
-    return chartAnnotations.find((item) => item.id === selectedAnnotationIds[0])?.time;
-  }, [chartAnnotations, selectedAnnotationIds]);
-  const selectedMarkerDetail = useMemo<MarkerDetail | null>(() => {
-    if (selectedAnnotationIds.length === 0) {
-      return null;
-    }
-    const item = chartAnnotations.find((annotation) => annotation.id === selectedAnnotationIds[0]);
-    return item ? toMarkerDetail(item) : null;
-  }, [chartAnnotations, selectedAnnotationIds]);
-  const latestVisibleAnnotationTime = useMemo(
-    () => (chartAnnotations.length > 0 ? chartAnnotations[chartAnnotations.length - 1].time : undefined),
-    [chartAnnotations]
-  );
-  const markerDetail = useMemo<MarkerDetail | null>(() => {
-    if (hoveredMarker) {
-      return hoveredMarker;
-    }
-    if (selectedMarkerDetail) {
-      return selectedMarkerDetail;
-    }
-    const latest = chartAnnotations[chartAnnotations.length - 1];
-    return latest ? toMarkerDetail(latest) : null;
-  }, [chartAnnotations, hoveredMarker, selectedMarkerDetail]);
-  const markerLegend = useMemo<MarkerLegendItem[]>(
-    () => [
-      { label: "Initial", color: "#7a8791" },
-      { label: "PT-Reentry", color: "#0e6d60" },
-      { label: "SL-Reentry", color: "#1f8f7d" },
-      { label: "PT Exit", color: "#c58b2d" },
-      { label: "SL Exit", color: "#b04a37" },
-      { label: "Paper Fill", color: "#284d86" },
-    ],
-    []
-  );
-
-  async function runSessionAction(sessionId: string, action: "start" | "stop" | "tick") {
-    try {
-      setSessionAction(`${sessionId}:${action}`);
-      setError(null);
-      await fetchJSON(`/api/v1/paper/sessions/${sessionId}/${action}`, { method: "POST" });
-      await loadDashboard();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to execute paper session action");
-    } finally {
-      setSessionAction(null);
-    }
-  }
-
   async function createStrategy() {
     if (!strategyCreateForm.name.trim()) {
       setError("策略名称不能为空");
@@ -1017,58 +634,6 @@ function App() {
       setError(err instanceof Error ? err.message : "保存策略参数失败");
     } finally {
       setStrategySaveAction(false);
-    }
-  }
-
-  async function createPaperSession() {
-    if (!paperForm.accountId || !paperForm.strategyId) {
-      setError("Paper session needs an account and strategy");
-      return null;
-    }
-    setPaperCreateAction(true);
-    try {
-      const created = await fetchJSON<PaperSession>("/api/v1/paper/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountId: paperForm.accountId,
-          strategyId: paperForm.strategyId,
-          startEquity: Number(paperForm.startEquity) || 100000,
-          signalTimeframe: paperForm.signalTimeframe,
-          executionDataSource: paperForm.executionDataSource,
-          symbol: paperForm.symbol,
-          tradingFeeBps: Number(paperForm.tradingFeeBps) || 0,
-          fundingRateBps: Number(paperForm.fundingRateBps) || 0,
-          fundingIntervalHours: Number(paperForm.fundingIntervalHours) || 8,
-        }),
-      });
-      await loadDashboard();
-      setError(null);
-      return created;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create paper session");
-      return null;
-    } finally {
-      setPaperCreateAction(false);
-    }
-  }
-
-  async function createAndStartPaperSession() {
-    setPaperLaunchAction(true);
-    try {
-      const created = await createPaperSession();
-      if (!created?.id) {
-        return;
-      }
-      setSessionAction(`${created.id}:start`);
-      await fetchJSON(`/api/v1/paper/sessions/${created.id}/start`, { method: "POST" });
-      await loadDashboard();
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create and start paper session");
-    } finally {
-      setSessionAction(null);
-      setPaperLaunchAction(false);
     }
   }
 
@@ -1205,7 +770,7 @@ function App() {
   }
 
   async function createLiveSession() {
-    const normalizedStrategyId = strategyIds.has(liveSessionForm.strategyId) ? liveSessionForm.strategyId : strategies[0]?.id || "";
+    const normalizedStrategyId = normalizeStrategyId(liveSessionForm.strategyId, strategies[0]?.id || "");
     if (!liveSessionForm.accountId || !normalizedStrategyId) {
       setLiveSessionError("Live session needs an account and strategy");
       return null;
@@ -1260,7 +825,7 @@ function App() {
     if (!editingLiveSessionId) {
       return createLiveSession();
     }
-    const normalizedStrategyId = strategyIds.has(liveSessionForm.strategyId) ? liveSessionForm.strategyId : strategies[0]?.id || "";
+    const normalizedStrategyId = normalizeStrategyId(liveSessionForm.strategyId, strategies[0]?.id || "");
     if (!liveSessionForm.accountId || !normalizedStrategyId) {
       setLiveSessionError("Live session needs an account and strategy");
       return null;
@@ -1785,6 +1350,46 @@ function App() {
     setLoading(false);
   }
 
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      if (!authSession?.token) {
+        setLoading(false);
+        return;
+      }
+      try {
+        await loadDashboard();
+        if (!active) {
+          return;
+        }
+        setError(null);
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+        if (typeof err === "object" && err && "status" in err && (err as { status?: number }).status === 401) {
+          writeStoredAuthSession(null);
+          setAuthSession(null);
+          setError("登录已失效，请重新登录");
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Failed to load monitoring data");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [authSession?.token, timeWindow, chartOverrideRange]);
+
   return (
     <>
     <WorkbenchLayout
@@ -1866,880 +1471,31 @@ function App() {
       }
       mainStageContent={
         sidebarTab === 'monitor' ? (
-          <div className="flex flex-col p-4 bg-zinc-950/20">
-            <section id="monitor" className="panel panel-market panel-compact monitor-panel-main w-full">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">主监控</p>
-                <h3>运行中会话的大周期 K 线与执行状态</h3>
-              </div>
-              <div className="range-box">
-                <span>{monitorMode}</span>
-                <span>{monitorBars.length} 根 K 线</span>
-                <span>{monitorMarkers.length} 个标记</span>
-                <span>{String(monitorSignalState.timeframe ?? "--")}</span>
-              </div>
-            </div>
-            <div className="chart-shell chart-shell-market h-[320px] min-h-[260px]">
-              {monitorBars.length > 0 ? (
-                <SignalMonitorChart candles={monitorBars} markers={monitorMarkers} />
-              ) : (
-                <div className="empty-state">当前运行会话还没有交易所大周期 K 线缓存</div>
-              )}
-            </div>
-            <div className="detail-grid detail-grid-compact">
-              <div className="detail-item">
-                <span>会话模式</span>
-                <strong>{monitorMode}</strong>
-              </div>
-              <div className="detail-item">
-                <span>账户净值</span>
-                <strong>{formatMoney(monitorSummary?.netEquity)}</strong>
-              </div>
-              <div className="detail-item">
-                <span>未实现盈亏</span>
-                <strong>{formatSigned(monitorSummary?.unrealizedPnl)}</strong>
-              </div>
-              <div className="detail-item">
-                <span>持仓方向</span>
-                <strong>{String(monitorExecutionSummary.position?.side ?? "FLAT")}</strong>
-              </div>
-              <div className="detail-item">
-                <span>持仓数量</span>
-                <strong>{formatMaybeNumber(monitorExecutionSummary.position?.quantity)}</strong>
-              </div>
-              <div className="detail-item">
-                <span>标记价格</span>
-                <strong>{formatMaybeNumber(monitorExecutionSummary.position?.markPrice)}</strong>
-              </div>
-              <div className="detail-item">
-                <span>盘口</span>
-                <strong>{formatMaybeNumber(monitorMarket.bestBid)} / {formatMaybeNumber(monitorMarket.bestAsk)}</strong>
-              </div>
-              <div className="detail-item">
-                <span>SMA5 / ATR14</span>
-                <strong>{formatMaybeNumber(monitorSignalState.sma5)} / {formatMaybeNumber(monitorSignalState.atr14)}</strong>
-              </div>
-            </div>
-            <div className="backtest-notes notes-compact">
-              <div className="note-item">
-                当前会话：{monitorSession ? shrink(monitorSession.id) : "--"} · 订单 {monitorExecutionSummary.orderCount} · 成交 {monitorExecutionSummary.fillCount}
-              </div>
-              <div className="note-item">
-                最新订单：{String(monitorExecutionSummary.latestOrder?.side ?? "--")} · {String(monitorExecutionSummary.latestOrder?.status ?? "--")} · {formatTime(String(monitorExecutionSummary.latestOrder?.createdAt ?? ""))}
-              </div>
-              <div className="note-item">
-                最新成交：{formatMaybeNumber(monitorExecutionSummary.latestFill?.price)} · 手续费 {formatMaybeNumber(monitorExecutionSummary.latestFill?.fee)} · {formatTime(String(monitorExecutionSummary.latestFill?.createdAt ?? ""))}
-              </div>
-            </div>
-          </section>
-          </div>
-        ) : sidebarTab === 'strategy' ? (
-          <div className="absolute inset-0 overflow-y-auto p-6 space-y-6 bg-zinc-950/50">
-            <section id="strategies" className="panel panel-backtests">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Strategies</p>
-              <h3>策略管理</h3>
-            </div>
-            <div className="range-box">
-              <span>{strategies.length} strategies</span>
-              <span>{signalRuntimeAdapters.length} engines</span>
-            </div>
-          </div>
-          <div className="live-grid">
-            <div className="backtest-form session-form">
-              <h4>创建策略</h4>
-              <div className="form-grid">
-                <label className="form-field">
-                  <span>策略名称</span>
-                  <input
-                    value={strategyCreateForm.name}
-                    onChange={(event) => setStrategyCreateForm((current: any) => ({ ...current, name: event.target.value }))}
-                    placeholder="例如：BK 4H Runner"
-                  />
-                </label>
-                <label className="form-field form-field-wide">
-                  <span>策略说明</span>
-                  <input
-                    value={strategyCreateForm.description}
-                    onChange={(event) =>
-                      setStrategyCreateForm((current: any) => ({ ...current, description: event.target.value }))
-                    }
-                    placeholder="记录这条策略的用途、市场和执行方式"
-                  />
-                </label>
-              </div>
-              <div className="backtest-actions">
-                <ActionButton
-                  label={strategyCreateAction ? "创建中..." : "创建策略"}
-                  disabled={strategyCreateAction || !strategyCreateForm.name.trim()}
-                  onClick={createStrategy}
-                />
-              </div>
-              <div className="backtest-notes">
-                <div className="note-item">第一版先直接创建当前版本，默认引擎是 bk-default。</div>
-                <div className="note-item">版本历史和回滚下一步再补，这一版先保证你能直接改参数。</div>
-              </div>
-            </div>
-
-            <div className="backtest-form session-form">
-              <h4>策略参数编辑</h4>
-              <div className="form-grid">
-                <label className="form-field">
-                  <span>选择策略</span>
-                  <select
-                    value={strategyEditorForm.strategyId}
-                    onChange={(event) => {
-                      setSelectedStrategyId(event.target.value);
-                      setStrategyEditorForm((current: any) => ({ ...current, strategyId: event.target.value }));
-                    }}
-                  >
-                    {strategyOptions.map((strategy) => (
-                      <option key={strategy.value} value={strategy.value}>
-                        {strategy.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>策略引擎</span>
-                  <select
-                    value={strategyEditorForm.strategyEngine}
-                    onChange={(event) =>
-                      setStrategyEditorForm((current: any) => ({ ...current, strategyEngine: event.target.value }))
-                    }
-                  >
-                    {[...new Set(["bk-default", ...strategies.map((item) => String(getRecord(item.currentVersion?.parameters).strategyEngine || "bk-default"))])].map((engineKey) => (
-                      <option key={engineKey} value={engineKey}>
-                        {engineKey}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>信号周期</span>
-                  <select
-                    value={strategyEditorForm.signalTimeframe}
-                    onChange={(event) =>
-                      setStrategyEditorForm((current: any) => ({ ...current, signalTimeframe: event.target.value }))
-                    }
-                  >
-                    <option value="4h">4h</option>
-                    <option value="1d">1d</option>
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>执行数据源</span>
-                  <select
-                    value={strategyEditorForm.executionDataSource}
-                    onChange={(event) =>
-                      setStrategyEditorForm((current: any) => ({ ...current, executionDataSource: event.target.value }))
-                    }
-                  >
-                    <option value="tick">tick</option>
-                    <option value="1min">1min</option>
-                  </select>
-                </label>
-                <label className="form-field form-field-wide">
-                  <span>参数 JSON</span>
-                  <textarea
-                    rows={14}
-                    value={strategyEditorForm.parametersJson}
-                    onChange={(event) =>
-                      setStrategyEditorForm((current: any) => ({ ...current, parametersJson: event.target.value }))
-                    }
-                    placeholder='{"stop_loss_atr":0.05,"profit_protect_atr":1.0}'
-                  />
-                </label>
-              </div>
-              <div className="backtest-actions inline-actions">
-                <ActionButton
-                  label={strategySaveAction ? "保存中..." : "保存策略参数"}
-                  disabled={strategySaveAction || !strategyEditorForm.strategyId}
-                  onClick={saveStrategyParameters}
-                />
-                <button
-                  type="button"
-                  className="filter-chip"
-                  onClick={() => {
-                    if (!selectedStrategy) {
-                      return;
-                    }
-                    const currentParameters = getRecord(selectedStrategy.currentVersion?.parameters);
-                    setStrategyEditorForm({
-                      strategyId: selectedStrategy.id,
-                      strategyEngine: String(currentParameters.strategyEngine ?? "bk-default"),
-                      signalTimeframe: String(
-                        currentParameters.signalTimeframe ??
-                          selectedStrategy.currentVersion?.signalTimeframe ??
-                          "1d"
-                      ),
-                      executionDataSource: String(
-                        currentParameters.executionDataSource ??
-                          currentParameters.executionTimeframe ??
-                          selectedStrategy.currentVersion?.executionTimeframe ??
-                          "tick"
-                      ),
-                      parametersJson: JSON.stringify(currentParameters, null, 2),
-                    });
-                  }}
-                >
-                  还原当前版本
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="live-grid">
-            <div className="backtest-list">
-              <h4>策略列表</h4>
-              <SimpleTable
-                columns={["策略", "版本", "信号周期", "执行源", "引擎"]}
-                rows={strategies.map((strategy) => {
-                  const parameters = getRecord(strategy.currentVersion?.parameters);
-                  return [
-                    strategy.name,
-                    strategy.currentVersion?.version ?? "--",
-                    String(parameters.signalTimeframe ?? strategy.currentVersion?.signalTimeframe ?? "--"),
-                    String(parameters.executionDataSource ?? parameters.executionTimeframe ?? strategy.currentVersion?.executionTimeframe ?? "--"),
-                    String(parameters.strategyEngine ?? "bk-default"),
-                  ];
-                })}
-                emptyMessage="暂无策略"
-              />
-            </div>
-            <div className="backtest-list">
-              <h4>当前版本摘要</h4>
-              {selectedStrategy ? (
-                <div className="backtest-notes">
-                  <div className="note-item">
-                    <strong>策略</strong> {selectedStrategy.name}
-                  </div>
-                  <div className="note-item">
-                    <strong>说明</strong> {selectedStrategy.description || "--"}
-                  </div>
-                  <div className="note-item">
-                    <strong>当前版本</strong> {selectedStrategyVersion?.version ?? "--"}
-                  </div>
-                  <div className="note-item">
-                    <strong>创建时间</strong> {formatTime(selectedStrategy.createdAt)}
-                  </div>
-                  <div className="note-item">
-                    <strong>引擎</strong> {String(selectedStrategyParameters.strategyEngine ?? "bk-default")}
-                  </div>
-                  <div className="note-item">
-                    <strong>信号周期</strong> {String(selectedStrategyParameters.signalTimeframe ?? selectedStrategyVersion?.signalTimeframe ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    <strong>执行源</strong> {String(selectedStrategyParameters.executionDataSource ?? selectedStrategyVersion?.executionTimeframe ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    <strong>说明</strong> 这一版是直接编辑当前版本参数，不会新建版本。
-                  </div>
-                </div>
-              ) : (
-                <div className="empty-state empty-state-compact">暂无可编辑策略</div>
-              )}
-            </div>
-          </div>
-        </section>
-          </div>
-        ) : (
-          <div className="absolute inset-0 overflow-y-auto p-6 space-y-6 bg-zinc-950/50">
-            <section id="overview" className="hero">
-          <div>
-            <p className="eyebrow">交易主控</p>
-            <h2>实盘 / 模拟统一监控与执行运行台</h2>
-            <p className="hero-copy">
-              当前页面直接消费平台 API，主监控优先展示正在运行的实盘会话；如果当前没有实盘会话，则回退展示模拟盘。大周期 K 线直接来自交易所信号源，执行侧信息则展示实时 tick、盘口、持仓、订单和盈亏。
-            </p>
-          </div>
-          <div className="hero-side">
-            <div className="hero-pill">{loading ? "加载中..." : `${accounts.length} 个账户`}</div>
-            <div className="hero-pill hero-pill-accent">{monitorMode}</div>
-            <div className="hero-user-card">
-              <div>
-                <strong>{authSession?.username ?? "未登录"}</strong>
-                <p>{authSession?.expiresAt ? `有效至 ${formatTime(authSession.expiresAt)}` : "登录后即可加载账户与监控"}</p>
-              </div>
-              {authSession ? (
-                <button type="button" className="hero-menu-button hero-logout" onClick={logout}>
-                  退出
-                </button>
-              ) : null}
-            </div>
-            <div className="hero-menu">
-              <button
-                type="button"
-                className="hero-menu-button"
-                onClick={() => setSettingsMenuOpen((current: any) => !current)}
-              >
-                设置
-              </button>
-              {settingsMenuOpen ? (
-                <div className="hero-menu-popover">
-                  <button
-                    type="button"
-                    className="hero-menu-item"
-                    onClick={() => {
-                      openLiveAccountModal();
-                      setSettingsMenuOpen(false);
-                    }}
-                  >
-                    新建账户
-                  </button>
-                  <button
-                    type="button"
-                    className="hero-menu-item"
-                    onClick={() => {
-                      if (quickLiveAccountId) {
-                        selectQuickLiveAccount(quickLiveAccountId);
-                      }
-                      openLiveBindingModal();
-                      setSettingsMenuOpen(false);
-                    }}
-                  >
-                    绑定账户
-                  </button>
-                  <button
-                    type="button"
-                    className="hero-menu-item"
-                    onClick={() => {
-                      setActiveSettingsModal("telegram");
-                      setSettingsMenuOpen(false);
-                    }}
-                  >
-                    Telegram 通知
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </section>
-            <section id="live" className="panel panel-session">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Live Trading</p>
-              <h3>实盘账户与订单同步</h3>
-            </div>
-          </div>
-          {highlightedLiveSession ? (
-            <div className="live-grid">
-              <div className="session-card session-card-primary">
-                <div className="session-card-header">
-                  <div>
-                    <p className="panel-kicker">Live Overview</p>
-                    <h4>当前优先处理会话</h4>
-                  </div>
-                  <StatusPill tone={liveSessionHealthTone(highlightedLiveSession.health.status)}>
-                    {highlightedLiveSession.health.status}
-                  </StatusPill>
-                </div>
-                <div className="live-account-meta">
-                  <span>{shrink(highlightedLiveSession.session.id)}</span>
-                  <span>{highlightedLiveSession.session.accountId}</span>
-                  <span>{highlightedLiveSession.session.strategyId}</span>
-                  <span>{String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}</span>
-                </div>
-                <div className="backtest-notes">
-                  <div className="note-item">health: {highlightedLiveSession.health.detail}</div>
-                  <div className="note-item">
-                    recovery: {String(highlightedLiveSession.session.state?.positionRecoveryStatus ?? "--")} · protection{" "}
-                    {String(highlightedLiveSession.session.state?.protectionRecoveryStatus ?? "--")} · orders{" "}
-                    {String(highlightedLiveSession.session.state?.recoveredProtectionCount ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    execution: orders {highlightedLiveSession.execution.orderCount} · fills {highlightedLiveSession.execution.fillCount}
-                  </div>
-                  <div className="note-item">
-                    latest-order: {String(highlightedLiveSession.execution.latestOrder?.status ?? "--")} · {String(highlightedLiveSession.execution.latestOrder?.side ?? "--")} · {formatMaybeNumber(highlightedLiveSession.execution.latestOrder?.price)}
-                  </div>
-                  <div className="note-item">
-                    position: {String(highlightedLiveSession.execution.position?.side ?? "FLAT")} · {formatMaybeNumber(highlightedLiveSession.execution.position?.quantity)} @ {formatMaybeNumber(highlightedLiveSession.execution.position?.entryPrice)}
-                  </div>
-                </div>
-                <div className="flow-row">
-                  {highlightedLiveSessionFlow.map((step) => (
-                    <div key={step.key} className="flow-step">
-                      <StatusPill tone={step.status}>{step.label}</StatusPill>
-                      <span>{step.detail}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : null}
-          <div className="live-grid">
-            <div className="backtest-form session-form panel-compact">
-              <h4>配置入口已收进弹窗</h4>
-              <div className="backtest-notes notes-compact">
-                <div className="note-item">首屏顶部提供账户下拉、创建账户、绑定适配器、创建会话和一键拉起。</div>
-                <div className="note-item">当前选中账户：{quickLiveAccount?.name ?? "--"} · {quickLiveAccount?.status ?? "--"} · {quickLiveAccount?.exchange ?? "--"}</div>
-                <div className="note-item">sandbox=true 时默认从 `.env` 读取 `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`。</div>
-              </div>
-              <div className="backtest-actions inline-actions">
-                <ActionButton label="新建账户" variant="ghost" onClick={openLiveAccountModal} />
-                <ActionButton
-                  label="绑定适配器"
-                  variant="ghost"
-                  disabled={!quickLiveAccountId}
-                  onClick={() => {
-                    if (quickLiveAccountId) {
-                      selectQuickLiveAccount(quickLiveAccountId);
-                    }
-                    openLiveBindingModal();
-                  }}
-                />
-                <ActionButton
-                  label="创建会话"
-                  variant="ghost"
-                  disabled={!quickLiveAccountId}
-                  onClick={() => {
-                    if (quickLiveAccountId) {
-                      selectQuickLiveAccount(quickLiveAccountId);
-                    }
-                    openLiveSessionModal();
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="backtest-list">
-              <h4>Live Strategy Sessions</h4>
-              <div className="backtest-notes notes-compact">
-                <div className="note-item">有效会话：{validLiveSessions.length}</div>
-              </div>
-              {validLiveSessions.length > 0 ? (
-                <div className="live-card-list">
-                  {validLiveSessions.map((session) => {
-                    const intent = getRecord(session.state?.lastStrategyIntent);
-                    const executionSummary = deriveLiveSessionExecutionSummary(session, orders, fills, positions);
-                    const sessionHealth = deriveLiveSessionHealth(session, executionSummary);
-                    const sessionAccount = liveAccounts.find((account) => account.id === session.accountId) ?? null;
-                    const sessionBinding = getRecord(sessionAccount?.metadata?.liveBinding);
-                    const sessionAccountReady =
-                      sessionAccount?.status === "CONFIGURED" ||
-                      sessionAccount?.status === "READY" ||
-                      String(sessionBinding.connectionMode ?? "") !== "" && String(sessionBinding.connectionMode ?? "") !== "disabled";
-                    return (
-                      <div key={session.id} className="session-row">
-                        <div className="session-row-main">
-                          <div className="session-row-title">
-                            <strong>{shrink(session.id)}</strong>
-                            <StatusPill tone={liveSessionHealthTone(sessionHealth.status)}>{sessionHealth.status}</StatusPill>
-                            <StatusPill tone={session.status === "RUNNING" ? "ready" : session.status === "STOPPED" ? "watch" : "neutral"}>
-                              {session.status}
-                            </StatusPill>
-                          </div>
-                          <div className="live-account-meta session-row-meta">
-                            <span>{session.accountId}</span>
-                            <span>{strategyLabel(strategies.find((strategy) => strategy.id === session.strategyId))}</span>
-                            <span>{String(session.state?.signalTimeframe ?? "--")}</span>
-                            <span>{sessionAccount?.status ?? "--"}</span>
-                            <span>{String(intent.action ?? "no-intent")}</span>
-                            <span>{String(executionSummary.position?.side ?? "FLAT")}</span>
-                            <span>{formatMaybeNumber(executionSummary.position?.quantity)}</span>
-                            <span>{executionSummary.orderCount}/{executionSummary.fillCount}</span>
-                            {!sessionAccountReady ? <span>先绑定适配器</span> : null}
-                          </div>
-                        </div>
-                        <div className="session-row-actions inline-actions">
-                          <ActionButton
-                            label="Edit"
-                            variant="ghost"
-                            disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
-                            onClick={() => openLiveSessionModal(session)}
-                          />
-                          {String(session.state?.signalRuntimeSessionId ?? "") ? (
-                            <ActionButton
-                              label="Open Runtime"
-                              variant="ghost"
-                              onClick={() => jumpToSignalRuntimeSession(String(session.state?.signalRuntimeSessionId ?? ""))}
-                            />
-                          ) : null}
-                          <ActionButton
-                            label={liveSessionAction === `${session.id}:start` ? "Starting..." : "Start"}
-                            disabled={liveSessionAction !== null || session.status === "RUNNING" || !sessionAccountReady}
-                            onClick={() => runLiveSessionAction(session.id, "start")}
-                          />
-                          {!sessionAccountReady ? (
-                            <ActionButton
-                              label="Bind Adapter"
-                              variant="ghost"
-                              disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
-                              onClick={() => {
-                                selectQuickLiveAccount(session.accountId);
-                                openLiveBindingModal();
-                              }}
-                            />
-                          ) : null}
-                          <ActionButton
-                            label={liveSessionAction === `${session.id}:dispatch` ? "Dispatching..." : "Dispatch Intent"}
-                            disabled={
-                              liveSessionAction !== null ||
-                              !getRecord(session.state?.lastStrategyIntent).action ||
-                              String(session.state?.dispatchMode ?? "") !== "manual-review" ||
-                              (primaryLiveSession?.id === session.id && primaryLiveDispatchPreview.status === "blocked")
-                            }
-                            onClick={() => dispatchLiveSessionIntent(session.id)}
-                          />
-                          <ActionButton
-                            label={liveSessionAction === `${session.id}:sync` ? "Syncing..." : "Sync Latest Order"}
-                            variant="ghost"
-                            disabled={liveSessionAction !== null || !String(session.state?.lastDispatchedOrderId ?? "")}
-                            onClick={() => syncLiveSession(session.id)}
-                          />
-                          <ActionButton
-                            label={liveSessionAction === `${session.id}:stop` ? "Stopping..." : "Stop"}
-                            variant="ghost"
-                            disabled={liveSessionAction !== null || session.status === "STOPPED"}
-                            onClick={() => runLiveSessionAction(session.id, "stop")}
-                          />
-                          <ActionButton
-                            label={liveSessionDeleteAction === session.id ? "Deleting..." : "Delete"}
-                            variant="ghost"
-                            disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
-                            onClick={() => void deleteLiveSession(session.id)}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state empty-state-compact">No valid live sessions yet</div>
-              )}
-              {primaryLiveSession ? (
-                <div className="backtest-notes">
-                  <div className="note-item">
-                    runtime: {String(primaryLiveSession.state?.signalRuntimeStatus ?? "--")} · {formatTime(String(primaryLiveSession.state?.lastSignalRuntimeEventAt ?? ""))}
-                  </div>
-                  <div className="note-item">
-                    market: {formatMaybeNumber(primaryLiveSessionMarket.tradePrice)} · {formatMaybeNumber(primaryLiveSessionMarket.bestBid)} / {formatMaybeNumber(primaryLiveSessionMarket.bestAsk)}
-                  </div>
-                  <div className="note-item">
-                    readiness: {primaryLiveSessionRuntimeReadiness.status} · {primaryLiveSessionRuntimeReadiness.reason}
-                  </div>
-                  <div className="note-item">
-                    intent: {String(primaryLiveSessionIntent.action ?? "none")} · {String(primaryLiveSessionIntent.side ?? "--")} · {formatMaybeNumber(primaryLiveSessionIntent.priceHint)}
-                  </div>
-                  <div className="note-item">
-                    intent-preview: qty {formatMaybeNumber(primaryLiveSessionIntent.quantity)} · src {String(primaryLiveSessionIntent.priceSource ?? "--")} · kind {String(primaryLiveSessionIntent.signalKind ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    intent-context: spread {formatMaybeNumber(primaryLiveSessionIntent.spreadBps)} bps · bias {String(primaryLiveSessionIntent.liquidityBias ?? "--")} · ma20 {formatMaybeNumber(primaryLiveSessionIntent.ma20)} · atr14 {formatMaybeNumber(primaryLiveSessionIntent.atr14)}
-                  </div>
-                  <div className="note-item">
-                    signal-filter: tf {String(primaryLiveSessionSignalBarDecision.timeframe ?? "--")} · sma5 {formatMaybeNumber(primaryLiveSessionSignalBarDecision.sma5)} · early-long{" "}
-                    {boolLabel(primaryLiveSessionSignalBarDecision.longEarlyReversalReady)} · early-short {boolLabel(primaryLiveSessionSignalBarDecision.shortEarlyReversalReady)} ·{" "}
-                    {String(primaryLiveSessionSignalBarDecision.reason ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · cooldown {String(primaryLiveSession?.state?.dispatchCooldownSeconds ?? "--")}s · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    execution-profile: {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).executionProfile ?? "--")} ·{" "}
-                    {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).orderType ?? "--")} · tif{" "}
-                    {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).timeInForce ?? "--")} · postOnly{" "}
-                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).postOnly)} · reduceOnly{" "}
-                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).reduceOnly)}
-                  </div>
-                  <div className="note-item">
-                    execution-telemetry: {String(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).decision ?? "--")} · spread{" "}
-                    {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).spreadBps)} bps · imbalance{" "}
-                    {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).bookImbalance)}
-                  </div>
-                  <div className="note-item">
-                    execution-dispatch: {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
-                    {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).executionMode ?? "--")} · fallback{" "}
-                    {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallback)} ·{" "}
-                    {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallbackOrderType ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    execution-fill: expected {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).expectedPrice)} · drift{" "}
-                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).priceDriftBps)} bps
-                  </div>
-                  <div className="note-item">
-                    execution-event-stats: proposals {String(getRecord(primaryLiveSession?.state?.executionEventStats).proposalCount ?? "--")} · maker{" "}
-                    {String(getRecord(primaryLiveSession?.state?.executionEventStats).makerRestingDecisionCount ?? "--")} · fallback{" "}
-                    {String(getRecord(primaryLiveSession?.state?.executionEventStats).fallbackDispatchCount ?? "--")} · avg drift{" "}
-                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.executionEventStats).avgPriceDriftBps)} bps
-                  </div>
-                  <div className="note-item">
-                    auto-dispatch: last-at {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · last-error {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    sync: {String(primaryLiveSession?.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(primaryLiveSession?.state?.lastSyncedAt ?? ""))} · error {String(primaryLiveSession?.state?.lastSyncError ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    recovery: {String(primaryLiveSession?.state?.lastRecoveryStatus ?? "--")} · position {String(primaryLiveSession?.state?.positionRecoveryStatus ?? "--")} · protection{" "}
-                    {String(primaryLiveSession?.state?.protectionRecoveryStatus ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    recovery-detail: last-at {formatTime(String(primaryLiveSession?.state?.lastRecoveryAttemptAt ?? primaryLiveSession?.state?.lastProtectionRecoveryAt ?? ""))} · protection-orders{" "}
-                    {String(primaryLiveSession?.state?.recoveredProtectionCount ?? "--")} · stop {String(primaryLiveSession?.state?.recoveredStopOrderCount ?? "--")} · take-profit{" "}
-                    {String(primaryLiveSession?.state?.recoveredTakeProfitOrderCount ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    execution: orders {primaryLiveExecutionSummary.orderCount} · fills {primaryLiveExecutionSummary.fillCount} · latest-order {String(primaryLiveExecutionSummary.latestOrder?.status ?? "--")}
-                  </div>
-                  <div className="note-item">
-                    position: {String(primaryLiveExecutionSummary.position?.side ?? "FLAT")} · {formatMaybeNumber(primaryLiveExecutionSummary.position?.quantity)} @ {formatMaybeNumber(primaryLiveExecutionSummary.position?.entryPrice)} · mark {formatMaybeNumber(primaryLiveExecutionSummary.position?.markPrice)}
-                  </div>
-                  <div className="note-item">
-                    recovered-position: {String(getRecord(primaryLiveSession?.state?.recoveredPosition).side ?? "FLAT")} ·{" "}
-                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.recoveredPosition).quantity)} @{" "}
-                    {formatMaybeNumber(getRecord(primaryLiveSession?.state?.recoveredPosition).entryPrice)}
-                  </div>
-                  <div className="note-item">
-                    dispatch-preview: {primaryLiveDispatchPreview.reason} · {primaryLiveDispatchPreview.detail}
-                  </div>
-                  <div className="note-item">
-                    final-order: {String(primaryLiveDispatchPreview.payload.side ?? "--")} {formatMaybeNumber(primaryLiveDispatchPreview.payload.quantity)} {String(primaryLiveDispatchPreview.payload.symbol ?? "--")} · {String(primaryLiveDispatchPreview.payload.type ?? "--")} @ {formatMaybeNumber(primaryLiveDispatchPreview.payload.price)}
-                  </div>
-                  {buildTimelineNotes(primaryLiveSessionTimeline).slice(0, 4).map((line) => (
-                    <div key={line} className="note-item">
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="live-grid">
-            <div className="backtest-list">
-              <h4>Live Accounts</h4>
-              {liveAccounts.length > 0 ? (
-                <div className="live-card-list">
-                  {liveAccounts.map((account) => {
-                    const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
-                    const syncSnapshot = getRecord(getRecord(account.metadata).liveSyncSnapshot);
-                    const bindings = accountSignalBindingMap[account.id] ?? [];
-                    const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
-                    const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
-                    const activeRuntimeState = getRecord(activeRuntime?.state);
-                    const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
-                    const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
-                    const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(
-                      getRecord(activeRuntimeState.sourceStates),
-                      runtimePolicy
-                    );
-                    const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
-                    const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
-                    const activeRuntimeTimeline = getList(activeRuntimeState.timeline);
-                    const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
-                      requireTick: bindings.some((item) => item.streamType === "trade_tick"),
-                      requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
-                    });
-                    const livePreflight = deriveLivePreflightSummary(
-                      account,
-                      bindings,
-                      runtimeSessionsForAccount,
-                      activeRuntime,
-                      activeRuntimeReadiness
-                    );
-                    const liveNextAction = deriveLiveNextAction(livePreflight);
-                    const liveAlerts = deriveLiveAlerts(
-                      account,
-                      activeRuntimeState,
-                      activeRuntimeSourceSummary,
-                      activeRuntimeReadiness,
-                      activeSignalAction,
-                      runtimePolicy
-                    );
-                    return (
-                      <div key={account.id} className="session-stat">
-                        <span>{account.name}</span>
-                        <strong>{account.status}</strong>
-                        <div className="live-account-meta">
-                          <span>{account.exchange}</span>
-                          <span>{String(binding.adapterKey ?? "--")}</span>
-                          <span>{String(binding.positionMode ?? "--")} / {String(binding.marginMode ?? "--")}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>sync {String(syncSnapshot.syncStatus ?? "UNSYNCED")}</span>
-                          <span>{formatTime(String(getRecord(account.metadata).lastLiveSyncAt ?? ""))}</span>
-                          <span>{String(syncSnapshot.source ?? "--")}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>{bindings.length} signal bindings</span>
-                          <span>{runtimeSessionsForAccount.length} runtime sessions</span>
-                          <span>{activeRuntime ? `${activeRuntime.status} · ${String(activeRuntimeState.health ?? "--")}` : "no runtime"}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>{String(activeRuntimeSummary.event ?? "--")}</span>
-                          <span>{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</span>
-                          <span>{formatTime(String(activeRuntimeState.lastEventAt ?? ""))}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>trade {formatMaybeNumber(activeRuntimeMarket.tradePrice)}</span>
-                          <span>bid/ask {formatMaybeNumber(activeRuntimeMarket.bestBid)} / {formatMaybeNumber(activeRuntimeMarket.bestAsk)}</span>
-                          <span>spread {formatMaybeNumber(activeRuntimeMarket.spreadBps)} bps</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>tick {activeRuntimeSourceSummary.tradeTickCount}</span>
-                          <span>book {activeRuntimeSourceSummary.orderBookCount}</span>
-                          <span>stale {activeRuntimeSourceSummary.staleCount}</span>
-                          <span>{formatTime(String(activeRuntimeSourceSummary.latestEventAt ?? ""))}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>
-                            <StatusPill tone={runtimeReadinessTone(activeRuntimeReadiness.status)}>
-                              {activeRuntimeReadiness.status}
-                            </StatusPill>
-                          </span>
-                          <span>{activeRuntimeReadiness.reason}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>
-                            <StatusPill tone={runtimeReadinessTone(livePreflight.status)}>
-                              {livePreflight.status}
-                            </StatusPill>
-                          </span>
-                          <span>{livePreflight.reason}</span>
-                          <span>{livePreflight.detail}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>next action</span>
-                          <span>{liveNextAction.label}</span>
-                          <span>{liveNextAction.detail}</span>
-                          <button
-                            type="button"
-                            className="filter-chip"
-                            disabled={
-                              liveFlowAction !== null ||
-                              liveBindAction ||
-                              signalBindingAction !== null ||
-                              signalRuntimeAction !== null ||
-                              liveSessionAction !== null ||
-                              liveSessionCreateAction ||
-                              liveSessionLaunchAction
-                            }
-                            onClick={() => launchLiveFlow(account)}
-                          >
-                            {liveFlowAction === account.id ? "Launching..." : "Launch Live Flow"}
-                          </button>
-                          <button
-                            type="button"
-                            className="filter-chip"
-                            onClick={() => runLiveNextAction(account, liveNextAction, activeRuntime)}
-                          >
-                            Open
-                          </button>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>{String(activeSignalBarState.timeframe ?? "--")}</span>
-                          <span>ma20 {formatMaybeNumber(activeSignalBarState.ma20)}</span>
-                          <span>atr14 {formatMaybeNumber(activeSignalBarState.atr14)}</span>
-                        </div>
-                        <div className="live-account-meta">
-                          <span>
-                            <StatusPill tone={signalActionTone(activeSignalAction.bias, activeSignalAction.state)}>
-                              {activeSignalAction.bias}
-                            </StatusPill>
-                          </span>
-                          <span>
-                            <StatusPill tone={decisionStateTone(activeSignalAction.state)}>
-                              {activeSignalAction.state}
-                            </StatusPill>
-                          </span>
-                          <span>{activeSignalAction.reason}</span>
-                        </div>
-                        <div className="backtest-notes">
-                          {buildAlertNotes(liveAlerts).map((item) => (
-                            <div key={`${account.id}-${item.title}-${item.detail}`} className={`note-item note-item-alert note-item-alert-${item.level}`}>
-                              <strong>{item.title}</strong> {item.detail}
-                            </div>
-                          ))}
-                          {buildSignalActionNotes(activeSignalAction).map((line) => (
-                            <div key={line} className="note-item">
-                              {line}
-                            </div>
-                          ))}
-                          <div className="note-item">
-                            live-preflight: {livePreflight.reason} · {livePreflight.detail}
-                          </div>
-                          <div className="note-item">
-                            next-action: {liveNextAction.label} · {liveNextAction.detail}
-                          </div>
-                          <div className="note-item">
-                            account-sync: orders {String(syncSnapshot.orderCount ?? "--")} · fills {String(syncSnapshot.fillCount ?? "--")} · positions {String(syncSnapshot.positionCount ?? "--")}
-                          </div>
-                          {buildSignalBarStateNotes(activeSignalBarState).map((line) => (
-                            <div key={line} className="note-item">
-                              {line}
-                            </div>
-                          ))}
-                          {buildRuntimeEventNotes(activeRuntimeSummary).map((line) => (
-                            <div key={line} className="note-item">
-                              {line}
-                            </div>
-                          ))}
-                          {buildSourceStateNotes(getRecord(activeRuntimeState.sourceStates)).map((line) => (
-                            <div key={line} className="note-item">
-                              {line}
-                            </div>
-                          ))}
-                          {buildTimelineNotes(activeRuntimeTimeline).slice(0, 3).map((line) => (
-                            <div key={line} className="note-item">
-                              {line}
-                            </div>
-                          ))}
-                        </div>
-                        <div className="inline-actions">
-                          <ActionButton
-                            label={liveAccountSyncAction === account.id ? "Syncing..." : "Sync Account"}
-                            variant="ghost"
-                            disabled={liveAccountSyncAction !== null}
-                            onClick={() => syncLiveAccount(account.id)}
-                          />
-                          {activeRuntime ? (
-                            <ActionButton
-                              label="Open Runtime"
-                              variant="ghost"
-                              onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}
-                            />
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state empty-state-compact">No live accounts yet</div>
-              )}
-            </div>
-
-            <div className="backtest-list">
-              <h4>Accepted Live Orders</h4>
-              {syncableLiveOrders.length > 0 ? (
-                <SimpleTable
-                  columns={["Order", "Account", "Symbol", "Side", "Qty", "Status", "Action"]}
-                  rows={syncableLiveOrders.map((order) => [
-                    shrink(order.id),
-                    order.accountId,
-                    order.symbol,
-                    order.side,
-                    formatMaybeNumber(order.quantity),
-                    order.status,
-                    <ActionButton
-                      key={order.id}
-                      label={liveSyncAction === order.id ? "Syncing..." : "Sync"}
-                      disabled={liveSyncAction !== null}
-                      onClick={() => syncLiveOrder(order.id)}
-                    />,
-                  ])}
-                  emptyMessage="No accepted live orders"
-                />
-              ) : (
-                <div className="empty-state empty-state-compact">No accepted live orders</div>
-              )}
-            </div>
-          </div>
-        </section>
-          </div>
+          <MonitorStage />
+        ) :
+ sidebarTab === 'strategy' ? (
+   <StrategyStage
+     createStrategy={createStrategy}
+     saveStrategyParameters={saveStrategyParameters}
+   />
+ ) :
+         (
+          <AccountStage
+            logout={logout}
+            openLiveAccountModal={openLiveAccountModal}
+            openLiveBindingModal={openLiveBindingModal}
+            openLiveSessionModal={openLiveSessionModal}
+            launchLiveFlow={launchLiveFlow}
+            runLiveSessionAction={runLiveSessionAction}
+            dispatchLiveSessionIntent={dispatchLiveSessionIntent}
+            syncLiveSession={syncLiveSession}
+            deleteLiveSession={deleteLiveSession}
+            syncLiveAccount={syncLiveAccount}
+            syncLiveOrder={syncLiveOrder}
+            jumpToSignalRuntimeSession={jumpToSignalRuntimeSession}
+            runLiveNextAction={runLiveNextAction}
+            selectQuickLiveAccount={selectQuickLiveAccount}
+          />
         )
       }
     />
