@@ -24,6 +24,10 @@ import { LiveAccountModal } from './modals/LiveAccountModal';
 import { LiveBindingModal } from './modals/LiveBindingModal';
 import { LiveSessionModal } from './modals/LiveSessionModal';
 import { TelegramModal } from './modals/TelegramModal';
+import { OrdersPanel } from './panels/OrdersPanel';
+import { AlertsPanel } from './panels/AlertsPanel';
+import { PositionsPanel } from './panels/PositionsPanel';
+import { FillsPanel } from './panels/FillsPanel';
 
 import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, AuthSession } from './types/domain';
 import { sampleStatus, buildLinePath, summarizeRange, summarizeTimeRange, filterChartAnnotations, matchesEventFilter, resolveChartAnchor, buildTimeRange, buildSampleRange, buildSampleKey, annotationMatchesSample, findNearestAnnotation, toMarkerDetail, markerShape, markerPosition, markerColor, markerText, annotationTone, paperAccountsFromSummaries, strategyLabel, getNumber, getRecord, getList, deriveRuntimeMarketSnapshot, deriveRuntimeSourceSummary, deriveRuntimeReadiness, deriveSignalBarCandles, mapChartCandlesToSignalBarCandles, applyDefaultChartWindow, derivePrimarySignalBarState, buildRuntimeEventNotes, buildSourceStateNotes, buildSignalBarDecisionNotes, buildSignalBarStateNotes, deriveSignalActionSummary, deriveLivePreflightSummary, deriveLiveDispatchPreview, deriveLiveSessionExecutionSummary, derivePaperSessionExecutionSummary, deriveSessionMarkers, deriveLiveSessionHealth, deriveHighlightedLiveSession, deriveLiveSessionFlow, liveSessionHealthPriority, deriveLiveNextAction, liveSessionHealthTone, buildSignalActionNotes, buildTimelineNotes, summarizeOrderPreflight, derivePaperAlerts, deriveLiveAlerts, dedupeAlerts, buildAlertNotes, alertLevelTone, alertScopeTone, telegramDeliveryTone, runtimeReadinessTone, decisionStateTone, signalKindTone, signalActionTone, boolTone, boolLabel } from './utils/derivation';
@@ -2673,336 +2677,42 @@ function App() {
       }
       dockContent={
         <div className="h-full">
-          <div style={{ display: dockTab === 'orders' ? 'block' : 'none' }} className="h-full p-4"><article id="orders" className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Orders</p>
-                <h3>最新订单</h3>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-8 items-start">
-              <div className="backtest-form session-form">
-                <h4>Create Live Order</h4>
-                <div className="form-grid">
-                  <label className="form-field">
-                    <span>Live Account</span>
-                    <select
-                      value={liveOrderForm.accountId}
-                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, accountId: event.target.value }))}
-                    >
-                      {liveAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} ({account.status})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Strategy Version</span>
-                    <select
-                      value={liveOrderForm.strategyVersionId}
-                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, strategyVersionId: event.target.value }))}
-                    >
-                      <option value="">Auto</option>
-                      {strategies.map((strategy) => (
-                        <option key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
-                          {strategy.name} · {strategy.currentVersion?.version ?? "no-version"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Symbol</span>
-                    <input
-                      value={liveOrderForm.symbol}
-                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Side</span>
-                    <select
-                      value={liveOrderForm.side}
-                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, side: event.target.value }))}
-                    >
-                      <option value="BUY">BUY</option>
-                      <option value="SELL">SELL</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Type</span>
-                    <select
-                      value={liveOrderForm.type}
-                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, type: event.target.value }))}
-                    >
-                      <option value="LIMIT">LIMIT</option>
-                      <option value="MARKET">MARKET</option>
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    <span>Quantity</span>
-                    <input
-                      value={liveOrderForm.quantity}
-                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, quantity: event.target.value }))}
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Price</span>
-                    <input
-                      value={liveOrderForm.price}
-                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, price: event.target.value }))}
-                      placeholder={liveOrderForm.type === "MARKET" ? "optional" : "required for limit"}
-                    />
-                  </label>
-                </div>
-                <div className="live-account-meta">
-                  <span>
-                    <StatusPill tone={runtimeReadinessTone(selectedLiveOrderPreflight.status)}>
-                      {selectedLiveOrderPreflight.status}
-                    </StatusPill>
-                  </span>
-                  <span>{selectedLiveOrderPreflight.reason}</span>
-                  <span>{selectedLiveOrderPreflight.detail}</span>
-                </div>
-                <div className="backtest-actions">
-                  <ActionButton
-                    label={liveOrderAction ? "Submitting..." : "Submit Live Order"}
-                    disabled={
-                      liveOrderAction ||
-                      selectedLiveOrderPreflight.status === "blocked" ||
-                      !liveOrderForm.accountId ||
-                      !liveOrderForm.symbol.trim() ||
-                      !(Number(liveOrderForm.quantity) > 0) ||
-                      (liveOrderForm.type === "LIMIT" && !(Number(liveOrderForm.price) > 0))
-                    }
-                    onClick={createLiveOrder}
-                  />
-                </div>
-              </div>
-
-              <div className="backtest-list session-form">
-                <h4>Live Execution Context</h4>
-                <div className="detail-grid">
-                  <div className="detail-item">
-                    <span>Runtime</span>
-                    <strong>{selectedLiveOrderActiveRuntime ? `${selectedLiveOrderActiveRuntime.status} · ${selectedLiveOrderActiveRuntime.runtimeAdapter}` : "--"}</strong>
-                  </div>
-                  <div className="detail-item">
-                    <span>Health</span>
-                    <strong>{String(selectedLiveOrderRuntimeState.health ?? "--")}</strong>
-                  </div>
-                  <div className="detail-item">
-                    <span>Signal Bias</span>
-                    <strong>{selectedLiveOrderSignalAction.bias}</strong>
-                  </div>
-                  <div className="detail-item">
-                    <span>Signal State</span>
-                    <strong>{selectedLiveOrderSignalAction.state}</strong>
-                  </div>
-                  <div className="detail-item">
-                    <span>Trade</span>
-                    <strong>{formatMaybeNumber(selectedLiveOrderMarket.tradePrice)}</strong>
-                  </div>
-                  <div className="detail-item">
-                    <span>Bid / Ask</span>
-                    <strong>{formatMaybeNumber(selectedLiveOrderMarket.bestBid)} / {formatMaybeNumber(selectedLiveOrderMarket.bestAsk)}</strong>
-                  </div>
-                  <div className="detail-item">
-                    <span>Spread</span>
-                    <strong>{formatMaybeNumber(selectedLiveOrderMarket.spreadBps)} bps</strong>
-                  </div>
-                  <div className="detail-item">
-                    <span>Signal TF</span>
-                    <strong>{String(selectedLiveOrderSignalBarState.timeframe ?? "--")}</strong>
-                  </div>
-                  <div className="detail-item">
-                    <span>MA20 / ATR14</span>
-                    <strong>{formatMaybeNumber(selectedLiveOrderSignalBarState.ma20)} / {formatMaybeNumber(selectedLiveOrderSignalBarState.atr14)}</strong>
-                  </div>
-                </div>
-                <div className="backtest-notes">
-                  {buildSignalActionNotes(selectedLiveOrderSignalAction).map((line) => (
-                    <div key={line} className="note-item">
-                      {line}
-                    </div>
-                  ))}
-                  {buildSignalBarStateNotes(selectedLiveOrderSignalBarState).slice(0, 2).map((line) => (
-                    <div key={line} className="note-item">
-                      {line}
-                    </div>
-                  ))}
-                  {buildRuntimeEventNotes(selectedLiveOrderRuntimeSummary).map((line) => (
-                    <div key={line} className="note-item">
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <SimpleTable
-              columns={["Time", "Symbol", "Side", "Qty", "Price", "Status", "Mode", "Runtime", "Preflight"]}
-              rows={orders
-                .slice()
-                .reverse()
-                .slice(0, 8)
-                .map((order) => [
-                  formatTime(String(order.metadata?.eventTime ?? order.createdAt)),
-                  order.symbol,
-                  order.side,
-                  formatNumber(order.quantity, 4),
-                  formatMoney(order.price),
-                  order.status,
-                  String(order.metadata?.executionMode ?? "--"),
-                  String(order.metadata?.runtimeSessionId ?? "--"),
-                  summarizeOrderPreflight(order.metadata?.runtimePreflight),
-                ])}
-              emptyMessage="No orders"
+          <div style={{ display: dockTab === 'orders' ? 'block' : 'none' }} className="h-full p-4">
+            <OrdersPanel
+              liveOrderForm={liveOrderForm}
+              setLiveOrderForm={setLiveOrderForm}
+              liveAccounts={liveAccounts}
+              strategies={strategies}
+              selectedLiveOrderPreflight={selectedLiveOrderPreflight}
+              liveOrderAction={liveOrderAction}
+              createLiveOrder={createLiveOrder}
+              selectedLiveOrderActiveRuntime={selectedLiveOrderActiveRuntime}
+              selectedLiveOrderRuntimeState={selectedLiveOrderRuntimeState}
+              selectedLiveOrderSignalAction={selectedLiveOrderSignalAction}
+              selectedLiveOrderMarket={selectedLiveOrderMarket}
+              selectedLiveOrderSignalBarState={selectedLiveOrderSignalBarState}
+              selectedLiveOrderRuntimeSummary={selectedLiveOrderRuntimeSummary}
+              orders={orders}
             />
-          </article></div>
-          <div style={{ display: dockTab === 'positions' ? 'block' : 'none' }} className="h-full p-4 space-y-6">{/* missing equity */}{/* missing positions */}</div>
-          <div style={{ display: dockTab === 'fills' ? 'block' : 'none' }} className="h-full p-4">{/* missing fills */}</div>
-          <div style={{ display: dockTab === 'alerts' ? 'block' : 'none' }} className="h-full p-4 space-y-6"><section id="alerts" className="panel panel-alerts">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Alerts</p>
-              <h3>统一运行告警</h3>
-            </div>
-            <div className="range-box">
-              <span>{alerts.length} alerts</span>
-              <span>{alerts.filter((item) => item.level === "critical").length} critical</span>
-              <span>{alerts.filter((item) => item.level === "warning").length} warning</span>
-            </div>
           </div>
-          {alerts.length > 0 ? (
-            <div className="alerts-grid">
-              {alerts.map((alert) => (
-                <article key={alert.id || `${alert.scope}-${alert.title}-${alert.detail}`} className="alert-card">
-                  <div className="alert-card-header">
-                    <div>
-                      <StatusPill tone={alertLevelTone(String(alert.level ?? "warning"))}>{String(alert.level ?? "warning")}</StatusPill>
-                      <StatusPill tone={alertScopeTone(String(alert.scope ?? "live"))}>{String(alert.scope ?? "live")}</StatusPill>
-                    </div>
-                    <span className="alert-time">{formatTime(String(alert.eventTime ?? ""))}</span>
-                  </div>
-                  <h4>{alert.title}</h4>
-                  <p>{alert.detail}</p>
-                  <div className="alert-meta">
-                    <span>{alert.accountName || alert.accountId || "--"}</span>
-                    <span>{alert.strategyName || alert.strategyId || "--"}</span>
-                    <span>{alert.runtimeSessionId || alert.paperSessionId || "--"}</span>
-                  </div>
-                  {alert.anchor ? (
-                    <div className="inline-actions">
-                      <button
-                        type="button"
-                        className="filter-chip"
-                        onClick={() => jumpToAlert(alert)}
-                      >
-                        Open
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state empty-state-compact">No active alerts</div>
-          )}
-        </section><section id="notifications" className="panel panel-alerts">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Inbox</p>
-              <h3>平台内通知中心</h3>
-            </div>
-            <div className="range-box">
-              <span>{notifications.filter((item) => item.status !== "acked").length} active</span>
-              <span>{notifications.filter((item) => item.status === "acked").length} acked</span>
-            </div>
+          <div style={{ display: dockTab === 'positions' ? 'block' : 'none' }} className="h-full p-4 space-y-6">
+            <PositionsPanel />
           </div>
-          {notifications.length > 0 ? (
-            <div className="alerts-grid">
-              {notifications.map((item) => {
-                const alert = item.alert ?? ({
-                  id: item.id,
-                  scope: String(item.metadata?.scope ?? "live"),
-                  level: String(item.metadata?.level ?? "warning"),
-                  title: "Notification",
-                  detail: "missing alert payload",
-                  anchor: "notifications",
-                  eventTime: String(item.updatedAt ?? ""),
-                } as PlatformAlert);
-                return (
-                <article key={item.id} className="alert-card">
-                  <div className="alert-card-header">
-                    <div>
-                      <StatusPill tone={alertLevelTone(String(alert.level ?? "warning"))}>{String(alert.level ?? "warning")}</StatusPill>
-                      <StatusPill tone={item.status === "acked" ? "neutral" : alertScopeTone(String(alert.scope ?? "live"))}>{item.status}</StatusPill>
-                      <StatusPill tone={telegramDeliveryTone(item.metadata?.telegramStatus)}>
-                        telegram {item.metadata?.telegramStatus ?? "pending"}
-                      </StatusPill>
-                    </div>
-                    <span className="alert-time">{formatTime(String(item.updatedAt ?? alert.eventTime ?? ""))}</span>
-                  </div>
-                  <h4>{alert.title}</h4>
-                  <p>{alert.detail}</p>
-                  <div className="alert-meta">
-                    <span>{alert.accountName || alert.accountId || "--"}</span>
-                    <span>{alert.strategyName || alert.strategyId || "--"}</span>
-                    <span>{alert.runtimeSessionId || alert.paperSessionId || "--"}</span>
-                    <span>
-                      {item.metadata?.telegramStatus === "sent" && item.metadata?.telegramSentAt
-                        ? `sent ${formatTime(String(item.metadata.telegramSentAt))}`
-                        : item.metadata?.telegramStatus === "failed" && item.metadata?.telegramAttemptedAt
-                          ? `failed ${formatTime(String(item.metadata.telegramAttemptedAt))}`
-                          : "telegram pending"}
-                    </span>
-                  </div>
-                  {item.metadata?.telegramStatus === "failed" && item.metadata?.telegramLastError ? (
-                    <div className="note-item note-item-alert note-item-alert-critical">
-                      <strong>Telegram failed</strong> {String(item.metadata.telegramLastError)}
-                    </div>
-                  ) : null}
-                  <div className="inline-actions">
-                    <ActionButton
-                      label={item.status === "acked" ? "Unack" : "Acknowledge"}
-                      variant="ghost"
-                      disabled={notificationAction !== null || telegramAction !== null}
-                      onClick={() => acknowledgeNotification(item, item.status !== "acked")}
-                    />
-                    <ActionButton
-                      label={
-                        telegramAction === `send:${item.id}`
-                          ? "Sending..."
-                          : item.metadata?.telegramStatus === "failed"
-                            ? "Retry Telegram"
-                            : "Send Telegram"
-                      }
-                      variant="ghost"
-                      disabled={
-                        notificationAction !== null ||
-                        telegramAction !== null ||
-                        !telegramConfig?.enabled ||
-                        !telegramConfig?.hasBotToken ||
-                        !telegramConfig?.chatId ||
-                        item.metadata?.telegramStatus === "sent"
-                      }
-                      onClick={() => sendNotificationToTelegram(item)}
-                    />
-                    <button
-                      type="button"
-                      className="filter-chip"
-                      onClick={() => jumpToAlert(alert)}
-                    >
-                      Open
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-            </div>
-          ) : (
-            <div className="empty-state empty-state-compact">No notifications yet</div>
-          )}
-        </section></div>
+          <div style={{ display: dockTab === 'fills' ? 'block' : 'none' }} className="h-full p-4">
+            <FillsPanel />
+          </div>
+          <div style={{ display: dockTab === 'alerts' ? 'block' : 'none' }} className="h-full p-4 space-y-6">
+            <AlertsPanel
+              alerts={alerts}
+              jumpToAlert={jumpToAlert}
+              notifications={notifications}
+              notificationAction={notificationAction}
+              telegramAction={telegramAction}
+              acknowledgeNotification={acknowledgeNotification}
+              telegramConfig={telegramConfig}
+              sendNotificationToTelegram={sendNotificationToTelegram}
+            />
+          </div>
         </div>
       }
       mainStageContent={
