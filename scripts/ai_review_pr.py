@@ -248,15 +248,15 @@ def write_json(path, payload):
 
 def write_summary(path, reviewed, skipped, comments, warnings):
     lines = [
-        "## AI Review Summary",
+        "## AI 代码审查摘要",
         "",
-        f"- Reviewed files: {reviewed}",
-        f"- Skipped files: {skipped}",
-        f"- Inline comments: {len(comments)}",
+        f"- 已审查文件：{reviewed}",
+        f"- 已跳过文件：{skipped}",
+        f"- 行级评论：{len(comments)}",
     ]
     if warnings:
         lines.append("")
-        lines.append("### Warnings")
+        lines.append("### 审查器警告")
         lines.extend(f"- {warning}" for warning in warnings[:10])
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
