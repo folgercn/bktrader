@@ -56,14 +56,13 @@ import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, Account
 import { sampleStatus, buildLinePath, summarizeRange, summarizeTimeRange, filterChartAnnotations, matchesEventFilter, resolveChartAnchor, buildTimeRange, buildSampleRange, buildSampleKey, annotationMatchesSample, findNearestAnnotation, toMarkerDetail, markerShape, markerPosition, markerColor, markerText, annotationTone, paperAccountsFromSummaries, strategyLabel, getNumber, getRecord, getList, deriveRuntimeMarketSnapshot, deriveRuntimeSourceSummary, deriveRuntimeReadiness, deriveSignalBarCandles, mapChartCandlesToSignalBarCandles, applyDefaultChartWindow, derivePrimarySignalBarState, buildRuntimeEventNotes, buildSourceStateNotes, buildSignalBarDecisionNotes, buildSignalBarStateNotes, deriveSignalActionSummary, deriveLivePreflightSummary, deriveLiveDispatchPreview, deriveLiveSessionExecutionSummary, derivePaperSessionExecutionSummary, deriveSessionMarkers, deriveLiveSessionHealth, deriveHighlightedLiveSession, deriveLiveSessionFlow, liveSessionHealthPriority, deriveLiveNextAction, liveSessionHealthTone, buildSignalActionNotes, buildTimelineNotes, summarizeOrderPreflight, derivePaperAlerts, deriveLiveAlerts, dedupeAlerts, buildAlertNotes, alertLevelTone, alertScopeTone, telegramDeliveryTone, runtimeReadinessTone, decisionStateTone, signalKindTone, signalActionTone, boolTone, boolLabel } from './utils/derivation';
 import { formatMoney, formatSigned, formatPercent, formatNumber, formatMaybeNumber, formatTime, formatShortTime, shrink } from './utils/format';
 const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").replace(/\/$/, "");
-const AUTH_STORAGE_KEY = "bktrader-console-auth";
 
 
 export function readStoredAuthSession(): AuthSession | null {
   if (typeof window === "undefined") {
     return null;
   }
-  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  const raw = window.localStorage.getItem("bktrader-console-auth");
   if (!raw) {
     return null;
   }
@@ -79,10 +78,10 @@ function writeStoredAuthSession(session: AuthSession | null) {
     return;
   }
   if (!session) {
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    window.localStorage.removeItem("bktrader-console-auth");
     return;
   }
-  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  window.localStorage.setItem("bktrader-console-auth", JSON.stringify(session));
 }
 
 function App() {
@@ -1850,9 +1849,15 @@ function App() {
         </div>
       }
       headerConnection={
-        <div className="flex items-center space-x-2">
-          <span className={!authSession?.token || error ? "w-2 h-2 rounded-full bg-rose-500" : "w-2 h-2 rounded-full bg-emerald-500 animate-pulse"} />
-          <span className="text-zinc-400 text-xs">{!authSession?.token ? "需要登录" : error ? "连接异常" : "运行正常"}</span>
+        <div 
+          className={`flex items-center space-x-2 ${error ? 'cursor-pointer hover:bg-white/5 px-2 py-1 rounded transition-colors' : ''}`}
+          onClick={() => { if (error) setError(null); }}
+          title={error || undefined}
+        >
+          <span className={!authSession?.token || error ? "w-2 h-2 rounded-full bg-rose-500" : "w-2 h-2 rounded-full bg-emerald-500"} />
+          <span className="text-zinc-400 text-xs truncate max-w-[200px]">
+            {!authSession?.token ? "需要登录" : error ? `连接异常: ${error}` : "运行正常"}
+          </span>
         </div>
       }
             sidePanelContent={
@@ -2730,7 +2735,7 @@ function App() {
                 <h3>最新订单</h3>
               </div>
             </div>
-            <div className="content-grid">
+            <div className="grid grid-cols-2 gap-8 items-start">
               <div className="backtest-form session-form">
                 <h4>Create Live Order</h4>
                 <div className="form-grid">
@@ -3057,8 +3062,8 @@ function App() {
       }
       mainStageContent={
         sidebarTab === 'monitor' ? (
-          <div className="absolute inset-0 flex flex-col p-4 bg-zinc-950/50">
-            <section id="monitor" className="panel panel-market panel-compact monitor-panel-main">
+          <div className="flex flex-col p-4 bg-zinc-950/20">
+            <section id="monitor" className="panel panel-market panel-compact monitor-panel-main w-full">
             <div className="panel-header">
               <div>
                 <p className="panel-kicker">主监控</p>
@@ -3071,7 +3076,7 @@ function App() {
                 <span>{String(monitorSignalState.timeframe ?? "--")}</span>
               </div>
             </div>
-            <div className="chart-shell chart-shell-market">
+            <div className="chart-shell chart-shell-market h-[320px] min-h-[260px]">
               {monitorBars.length > 0 ? (
                 <SignalMonitorChart candles={monitorBars} markers={monitorMarkers} />
               ) : (
@@ -3936,201 +3941,7 @@ function App() {
     />
         
 
-        <section className="metrics-grid">
-          <MetricCard label="Net Equity" value={formatMoney(primaryAccount?.netEquity)} tone="accent" />
-          <MetricCard label="Realized PnL" value={formatSigned(primaryAccount?.realizedPnl)} />
-          <MetricCard label="Unrealized PnL" value={formatSigned(primaryAccount?.unrealizedPnl)} />
-          <MetricCard label="Fees" value={formatMoney(primaryAccount?.fees)} />
-          <MetricCard label="Exposure" value={formatMoney(primaryAccount?.exposureNotional)} />
-          <MetricCard label="Open Positions" value={String(primaryAccount?.openPositionCount ?? 0)} />
-        </section>
 
-        <section className="panel panel-compact live-quick-panel">
-          <div className="panel-header panel-header-tight">
-            <div>
-              <p className="panel-kicker">Live Quick Actions</p>
-              <h3>账户和会话常用操作</h3>
-            </div>
-            <div className="range-box">
-              <span>{liveAccounts.length} accounts</span>
-              <span>{liveSessions.length} sessions</span>
-              <span>{quickLiveAccount?.name ?? "no-account"}</span>
-            </div>
-          </div>
-          <div className="live-quick-toolbar">
-            <label className="form-field live-quick-select">
-              <span>Live Account</span>
-              <select
-                value={quickLiveAccountId || "__create__"}
-                onChange={(event) => {
-                  if (event.target.value === "__create__") {
-                    openLiveAccountModal();
-                    return;
-                  }
-                  selectQuickLiveAccount(event.target.value);
-                }}
-              >
-                {liveAccounts.length === 0 ? <option value="__create__">+ 新建账户</option> : null}
-                {liveAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} ({account.status})
-                  </option>
-                ))}
-                {liveAccounts.length > 0 ? <option value="__create__">+ 新建账户</option> : null}
-              </select>
-            </label>
-            <div className="live-quick-actions">
-              <ActionButton label="新建账户" variant="ghost" onClick={openLiveAccountModal} />
-              <ActionButton
-                label="绑定适配器"
-                variant="ghost"
-                disabled={!quickLiveAccountId}
-                onClick={() => {
-                  if (quickLiveAccountId) {
-                    selectQuickLiveAccount(quickLiveAccountId);
-                  }
-                  openLiveBindingModal();
-                }}
-              />
-              <ActionButton
-                label="创建会话"
-                variant="ghost"
-                disabled={!quickLiveAccountId}
-                onClick={() => {
-                  if (quickLiveAccountId) {
-                    selectQuickLiveAccount(quickLiveAccountId);
-                  }
-                  openLiveSessionModal();
-                }}
-              />
-              <ActionButton
-                label={quickLiveAccountId && liveFlowAction === quickLiveAccountId ? "Launching..." : "一键拉起"}
-                disabled={!quickLiveAccount || liveFlowAction !== null}
-                onClick={() => {
-                  if (quickLiveAccount) {
-                    void launchLiveFlow(quickLiveAccount);
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <div className="backtest-notes notes-compact">
-            <div className="note-item">available-accounts: {liveAccounts.length > 0 ? liveAccounts.map((item) => item.name).join(" / ") : "暂无，请先新建"}</div>
-            <div className="note-item">selected-account: {quickLiveAccount?.name ?? "--"} · {quickLiveAccount?.exchange ?? "--"} · {quickLiveAccount?.status ?? "--"}</div>
-            <div className="note-item">adapter: {String(quickLiveAccount?.bindings?.live?.adapterKey ?? "--")} · sandbox {String(quickLiveAccount?.bindings?.live?.sandbox ?? "--")}</div>
-            <div className="note-item">session: {liveSessions.find((item) => item.accountId === quickLiveAccountId)?.status ?? "--"} · strategy {liveSessions.find((item) => item.accountId === quickLiveAccountId)?.strategyId ?? "--"}</div>
-            {liveBindingNotice ? <div className="note-item note-item-success">{liveBindingNotice}</div> : null}
-            {liveSessionNotice ? <div className="note-item note-item-success">{liveSessionNotice}</div> : null}
-          </div>
-        </section>
-
-        <section className="monitor-top-grid">
-          
-
-          <article id="positions" className="panel panel-compact monitor-side-panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Positions</p>
-                <h3>当前持仓</h3>
-              </div>
-              <div className="range-box">
-                <span>{positions.length} open</span>
-              </div>
-            </div>
-            <SimpleTable
-              columns={["Symbol", "Side", "Qty", "Entry", "Mark", "PnL"]}
-              rows={topPositions.map((position) => [
-                position.symbol,
-                position.side,
-                formatNumber(position.quantity, 4),
-                formatMoney(position.entryPrice),
-                formatMoney(position.markPrice),
-                formatSigned(
-                  position.side === "LONG"
-                    ? (position.markPrice - position.entryPrice) * position.quantity
-                    : (position.entryPrice - position.markPrice) * position.quantity
-                ),
-              ])}
-              emptyMessage="No open positions"
-            />
-          </article>
-
-          <article id="fills" className="panel panel-compact monitor-side-panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Fills</p>
-                <h3>历史成交</h3>
-              </div>
-              <div className="range-box">
-                <span>{fills.length} fills</span>
-              </div>
-            </div>
-            <SimpleTable
-              columns={["Time", "Order", "Qty", "Price", "Fee"]}
-              rows={topFills.map((fill) => [
-                formatTime(fill.createdAt),
-                shrink(fill.orderId),
-                formatNumber(fill.quantity, 4),
-                formatMoney(fill.price),
-                formatMoney(fill.fee),
-              ])}
-              emptyMessage="No fills"
-            />
-          </article>
-        </section>
-
-        <section id="equity" className="panel panel-chart">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Equity History</p>
-              <h3>账户净值曲线</h3>
-            </div>
-            <div className="range-box">
-              <span>Low {formatMoney(chartRange.min)}</span>
-              <span>High {formatMoney(chartRange.max)}</span>
-            </div>
-          </div>
-          <div className="chart-shell">
-            {snapshots.length > 0 ? (
-              <svg viewBox="0 0 560 180" className="equity-chart" preserveAspectRatio="none" role="img">
-                <defs>
-                  <linearGradient id="equityFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="rgba(13,108,95,0.28)" />
-                    <stop offset="100%" stopColor="rgba(13,108,95,0.02)" />
-                  </linearGradient>
-                </defs>
-                <path d={`${chartPath.area} L 560 180 L 0 180 Z`} fill="url(#equityFill)" />
-                <path d={chartPath.line} fill="none" stroke="#0d6c5f" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <div className="empty-state">No equity snapshots yet</div>
-            )}
-          </div>
-          <div className="snapshot-strip">
-            {snapshots.slice(-4).map((item) => (
-              <div key={item.id} className="snapshot-item">
-                <strong>{formatMoney(item.netEquity)}</strong>
-                <span>{formatTime(item.createdAt)}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        
-
-        
-
-        
-
-        
-
-        
-
-        
-
-        <section>
-          
-        </section>
 
         {activeSettingsModal === "live-account" ? (
           <div className="modal-overlay" onClick={() => setActiveSettingsModal(null)}>

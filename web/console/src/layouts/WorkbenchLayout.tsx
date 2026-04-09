@@ -63,7 +63,7 @@ export function WorkbenchLayout({
         </header>
 
         {/* Middle Area: Main Stage + Right Side Panel */}
-        <div className="flex-1 flex min-h-0 relative">
+        <div className={`flex flex-row w-full min-h-0 relative ${sidebarTab !== 'monitor' ? 'flex-1' : ''}`}>
           {/* Main Stage (Charts, etc.) */}
           <main className="flex-1 relative overflow-hidden bg-zinc-950/50">
             {mainStageContent}
@@ -79,7 +79,7 @@ export function WorkbenchLayout({
 
         {/* Bottom Dock (Tabs + Content) */}
         {sidebarTab === 'monitor' && (
-          <section className="h-64 flex-shrink-0 border-t border-white/5 bg-zinc-900/60 backdrop-blur-xl flex flex-col">
+          <section className="flex-1 border-t border-white/5 bg-zinc-900/60 backdrop-blur-xl flex flex-col min-h-0">
             <div className="h-10 flex items-center px-4 border-b border-white/5 space-x-6 text-xs text-zinc-500">
               <DockTab 
                 icon={<ListOrdered size={14} />} 
