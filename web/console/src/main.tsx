@@ -1,4 +1,6 @@
 /// <reference types="vite/client" />
+import { useUIStore } from './store/useUIStore';
+import { useTradingStore } from './store/useTradingStore';
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { Time, CandlestickSeries, ColorType, CrosshairMode, LineStyle, createChart, createSeriesMarkers } from "lightweight-charts";
@@ -55,7 +57,7 @@ const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").r
 const AUTH_STORAGE_KEY = "bktrader-console-auth";
 
 
-function readStoredAuthSession(): AuthSession | null {
+export function readStoredAuthSession(): AuthSession | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -82,182 +84,179 @@ function writeStoredAuthSession(session: AuthSession | null) {
 }
 
 function App() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [authSession, setAuthSession] = useState<AuthSession | null>(() => readStoredAuthSession());
-  const [loginForm, setLoginForm] = useState({ username: "admin", password: "" });
-  const [loginAction, setLoginAction] = useState(false);
-  const [summaries, setSummaries] = useState<AccountSummary[]>([]);
-  const [accounts, setAccounts] = useState<AccountRecord[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [fills, setFills] = useState<Fill[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [snapshots, setSnapshots] = useState<AccountEquitySnapshot[]>([]);
-  const [strategies, setStrategies] = useState<StrategyRecord[]>([]);
-  const [backtests, setBacktests] = useState<BacktestRun[]>([]);
-  const [backtestOptions, setBacktestOptions] = useState<BacktestOptions | null>(null);
-  const [paperSessions, setPaperSessions] = useState<PaperSession[]>([]);
-  const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
-  const [liveAdapters, setLiveAdapters] = useState<LiveAdapter[]>([]);
-  const [signalCatalog, setSignalCatalog] = useState<SignalSourceCatalog | null>(null);
-  const [signalSourceTypes, setSignalSourceTypes] = useState<SignalSourceType[]>([]);
-  const [signalRuntimeAdapters, setSignalRuntimeAdapters] = useState<SignalRuntimeAdapter[]>([]);
-  const [signalRuntimeSessions, setSignalRuntimeSessions] = useState<SignalRuntimeSession[]>([]);
-  const [runtimePolicy, setRuntimePolicy] = useState<RuntimePolicy | null>(null);
-  const [alerts, setAlerts] = useState<PlatformAlert[]>([]);
-  const [notifications, setNotifications] = useState<PlatformNotification[]>([]);
-  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
-  const [accountSignalBindings, setAccountSignalBindings] = useState<SignalBinding[]>([]);
-  const [strategySignalBindings, setStrategySignalBindings] = useState<SignalBinding[]>([]);
-  const [accountSignalBindingMap, setAccountSignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
-  const [strategySignalBindingMap, setStrategySignalBindingMap] = useState<Record<string, SignalBinding[]>>({});
-  const [signalRuntimePlan, setSignalRuntimePlan] = useState<Record<string, unknown> | null>(null);
-  const [selectedSignalRuntimeId, setSelectedSignalRuntimeId] = useState<string | null>(null);
-  const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(null);
-  const [candles, setCandles] = useState<ChartCandle[]>([]);
-  const [monitorCandles, setMonitorCandles] = useState<ChartCandle[]>([]);
-  const [annotations, setAnnotations] = useState<ChartAnnotation[]>([]);
-  const [sessionAction, setSessionAction] = useState<string | null>(null);
-  const [paperCreateAction, setPaperCreateAction] = useState(false);
-  const [paperLaunchAction, setPaperLaunchAction] = useState(false);
-  const [liveCreateAction, setLiveCreateAction] = useState(false);
-  const [liveBindAction, setLiveBindAction] = useState(false);
-  const [liveSyncAction, setLiveSyncAction] = useState<string | null>(null);
-  const [liveAccountSyncAction, setLiveAccountSyncAction] = useState<string | null>(null);
-  const [liveFlowAction, setLiveFlowAction] = useState<string | null>(null);
-  const [liveOrderAction, setLiveOrderAction] = useState(false);
-  const [liveSessionAction, setLiveSessionAction] = useState<string | null>(null);
-  const [liveSessionCreateAction, setLiveSessionCreateAction] = useState(false);
-  const [liveSessionLaunchAction, setLiveSessionLaunchAction] = useState(false);
-  const [liveSessionDeleteAction, setLiveSessionDeleteAction] = useState<string | null>(null);
-  const [editingLiveSessionId, setEditingLiveSessionId] = useState<string | null>(null);
-  const [signalBindingAction, setSignalBindingAction] = useState<string | null>(null);
-  const [signalRuntimeAction, setSignalRuntimeAction] = useState<string | null>(null);
-  const [notificationAction, setNotificationAction] = useState<string | null>(null);
-  const [telegramAction, setTelegramAction] = useState<string | null>(null);
-  const [backtestAction, setBacktestAction] = useState(false);
-  const [runtimePolicyAction, setRuntimePolicyAction] = useState(false);
-  const [strategyCreateAction, setStrategyCreateAction] = useState(false);
-  const [strategySaveAction, setStrategySaveAction] = useState(false);
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
-  const [timeWindow, setTimeWindow] = useState<TimeWindow>("12h");
-  const [focusNonce, setFocusNonce] = useState(0);
-  const [hoveredMarker, setHoveredMarker] = useState<MarkerDetail | null>(null);
-  const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
-  const [chartOverrideRange, setChartOverrideRange] = useState<ChartOverrideRange | null>(null);
-  const [selectedSample, setSelectedSample] = useState<SelectedSample | null>(null);
-  const [backtestForm, setBacktestForm] = useState({
-    strategyVersionId: "",
-    signalTimeframe: "1d",
-    executionDataSource: "1min",
-    symbol: "BTCUSDT",
-    from: "",
-    to: "",
-  });
-  const [paperForm, setPaperForm] = useState({
-    accountId: "",
-    strategyId: "",
-    startEquity: "100000",
-    signalTimeframe: "1d",
-    executionDataSource: "tick",
-    symbol: "BTCUSDT",
-    tradingFeeBps: "10",
-    fundingRateBps: "0",
-    fundingIntervalHours: "8",
-  });
-  const [liveAccountForm, setLiveAccountForm] = useState({
-    name: "Binance Testnet",
-    exchange: "binance-futures",
-  });
-  const [liveBindingForm, setLiveBindingForm] = useState({
-    accountId: "",
-    adapterKey: "binance-futures",
-    positionMode: "ONE_WAY",
-    marginMode: "CROSSED",
-    sandbox: true,
-    apiKeyRef: "BINANCE_TESTNET_API_KEY",
-    apiSecretRef: "BINANCE_TESTNET_API_SECRET",
-  });
-  const [liveOrderForm, setLiveOrderForm] = useState({
-    accountId: "",
-    strategyVersionId: "",
-    symbol: "BTCUSDT",
-    side: "BUY",
-    type: "LIMIT",
-    quantity: "0.001",
-    price: "",
-  });
-  const [liveSessionForm, setLiveSessionForm] = useState({
-    accountId: "",
-    strategyId: "",
-    signalTimeframe: "1d",
-    executionDataSource: "tick",
-    symbol: "BTCUSDT",
-    defaultOrderQuantity: "0.001",
-    executionEntryOrderType: "MARKET",
-    executionEntryMaxSpreadBps: "8",
-    executionEntryWideSpreadMode: "limit-maker",
-    executionEntryTimeoutFallbackOrderType: "MARKET",
-    executionPTExitOrderType: "LIMIT",
-    executionPTExitTimeInForce: "GTX",
-    executionPTExitPostOnly: true,
-    executionPTExitTimeoutFallbackOrderType: "MARKET",
-    executionSLExitOrderType: "MARKET",
-    executionSLExitMaxSpreadBps: "999",
-    dispatchMode: "manual-review",
-    dispatchCooldownSeconds: "30",
-  });
-  const [accountSignalForm, setAccountSignalForm] = useState({
-    accountId: "",
-    sourceKey: "",
-    role: "trigger",
-    symbol: "BTCUSDT",
-    timeframe: "1d",
-  });
-  const [strategySignalForm, setStrategySignalForm] = useState({
-    strategyId: "",
-    sourceKey: "",
-    role: "trigger",
-    symbol: "BTCUSDT",
-    timeframe: "1d",
-  });
-  const [strategyCreateForm, setStrategyCreateForm] = useState({
-    name: "",
-    description: "",
-  });
-  const [strategyEditorForm, setStrategyEditorForm] = useState({
-    strategyId: "",
-    strategyEngine: "bk-default",
-    signalTimeframe: "1d",
-    executionDataSource: "tick",
-    parametersJson: "{}",
-  });
-  const [signalRuntimeForm, setSignalRuntimeForm] = useState({
-    accountId: "",
-    strategyId: "",
-  });
-  const [runtimePolicyForm, setRuntimePolicyForm] = useState({
-    tradeTickFreshnessSeconds: "15",
-    orderBookFreshnessSeconds: "10",
-    signalBarFreshnessSeconds: "30",
-    runtimeQuietSeconds: "30",
-    paperStartReadinessTimeoutSeconds: "5",
-  });
-  const [telegramForm, setTelegramForm] = useState({
-    enabled: false,
-    botToken: "",
-    chatId: "",
-    sendLevels: "critical,warning",
-  });
-  const [liveAccountError, setLiveAccountError] = useState<string | null>(null);
-  const [liveBindingError, setLiveBindingError] = useState<string | null>(null);
-  const [liveSessionError, setLiveSessionError] = useState<string | null>(null);
-  const [liveAccountNotice, setLiveAccountNotice] = useState<string | null>(null);
-  const [liveBindingNotice, setLiveBindingNotice] = useState<string | null>(null);
-  const [liveSessionNotice, setLiveSessionNotice] = useState<string | null>(null);
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
-  const [activeSettingsModal, setActiveSettingsModal] = useState<"telegram" | "live-account" | "live-binding" | "live-session" | null>(null);
+  const loading = useUIStore(s => s.loading);
+  const setLoading = useUIStore(s => s.setLoading);
+  const error = useUIStore(s => s.error);
+  const setError = useUIStore(s => s.setError);
+  const authSession = useUIStore(s => s.authSession);
+  const setAuthSession = useUIStore(s => s.setAuthSession);
+  const loginForm = useUIStore(s => s.loginForm);
+  const setLoginForm = useUIStore(s => s.setLoginForm);
+  const loginAction = useUIStore(s => s.loginAction);
+  const setLoginAction = useUIStore(s => s.setLoginAction);
+  const sessionAction = useUIStore(s => s.sessionAction);
+  const setSessionAction = useUIStore(s => s.setSessionAction);
+  const paperCreateAction = useUIStore(s => s.paperCreateAction);
+  const setPaperCreateAction = useUIStore(s => s.setPaperCreateAction);
+  const paperLaunchAction = useUIStore(s => s.paperLaunchAction);
+  const setPaperLaunchAction = useUIStore(s => s.setPaperLaunchAction);
+  const liveCreateAction = useUIStore(s => s.liveCreateAction);
+  const setLiveCreateAction = useUIStore(s => s.setLiveCreateAction);
+  const liveBindAction = useUIStore(s => s.liveBindAction);
+  const setLiveBindAction = useUIStore(s => s.setLiveBindAction);
+  const liveSyncAction = useUIStore(s => s.liveSyncAction);
+  const setLiveSyncAction = useUIStore(s => s.setLiveSyncAction);
+  const liveAccountSyncAction = useUIStore(s => s.liveAccountSyncAction);
+  const setLiveAccountSyncAction = useUIStore(s => s.setLiveAccountSyncAction);
+  const liveFlowAction = useUIStore(s => s.liveFlowAction);
+  const setLiveFlowAction = useUIStore(s => s.setLiveFlowAction);
+  const liveOrderAction = useUIStore(s => s.liveOrderAction);
+  const setLiveOrderAction = useUIStore(s => s.setLiveOrderAction);
+  const liveSessionAction = useUIStore(s => s.liveSessionAction);
+  const setLiveSessionAction = useUIStore(s => s.setLiveSessionAction);
+  const liveSessionCreateAction = useUIStore(s => s.liveSessionCreateAction);
+  const setLiveSessionCreateAction = useUIStore(s => s.setLiveSessionCreateAction);
+  const liveSessionLaunchAction = useUIStore(s => s.liveSessionLaunchAction);
+  const setLiveSessionLaunchAction = useUIStore(s => s.setLiveSessionLaunchAction);
+  const liveSessionDeleteAction = useUIStore(s => s.liveSessionDeleteAction);
+  const setLiveSessionDeleteAction = useUIStore(s => s.setLiveSessionDeleteAction);
+  const signalBindingAction = useUIStore(s => s.signalBindingAction);
+  const setSignalBindingAction = useUIStore(s => s.setSignalBindingAction);
+  const signalRuntimeAction = useUIStore(s => s.signalRuntimeAction);
+  const setSignalRuntimeAction = useUIStore(s => s.setSignalRuntimeAction);
+  const notificationAction = useUIStore(s => s.notificationAction);
+  const setNotificationAction = useUIStore(s => s.setNotificationAction);
+  const telegramAction = useUIStore(s => s.telegramAction);
+  const setTelegramAction = useUIStore(s => s.setTelegramAction);
+  const backtestAction = useUIStore(s => s.backtestAction);
+  const setBacktestAction = useUIStore(s => s.setBacktestAction);
+  const runtimePolicyAction = useUIStore(s => s.runtimePolicyAction);
+  const setRuntimePolicyAction = useUIStore(s => s.setRuntimePolicyAction);
+  const strategyCreateAction = useUIStore(s => s.strategyCreateAction);
+  const setStrategyCreateAction = useUIStore(s => s.setStrategyCreateAction);
+  const strategySaveAction = useUIStore(s => s.strategySaveAction);
+  const setStrategySaveAction = useUIStore(s => s.setStrategySaveAction);
+  const sourceFilter = useUIStore(s => s.sourceFilter);
+  const setSourceFilter = useUIStore(s => s.setSourceFilter);
+  const eventFilter = useUIStore(s => s.eventFilter);
+  const setEventFilter = useUIStore(s => s.setEventFilter);
+  const timeWindow = useUIStore(s => s.timeWindow);
+  const setTimeWindow = useUIStore(s => s.setTimeWindow);
+  const focusNonce = useUIStore(s => s.focusNonce);
+  const setFocusNonce = useUIStore(s => s.setFocusNonce);
+  const hoveredMarker = useUIStore(s => s.hoveredMarker);
+  const setHoveredMarker = useUIStore(s => s.setHoveredMarker);
+  const selectedBacktestId = useUIStore(s => s.selectedBacktestId);
+  const setSelectedBacktestId = useUIStore(s => s.setSelectedBacktestId);
+  const chartOverrideRange = useUIStore(s => s.chartOverrideRange);
+  const setChartOverrideRange = useUIStore(s => s.setChartOverrideRange);
+  const selectedSample = useUIStore(s => s.selectedSample);
+  const setSelectedSample = useUIStore(s => s.setSelectedSample);
+  const backtestForm = useUIStore(s => s.backtestForm);
+  const setBacktestForm = useUIStore(s => s.setBacktestForm);
+  const paperForm = useUIStore(s => s.paperForm);
+  const setPaperForm = useUIStore(s => s.setPaperForm);
+  const liveAccountForm = useUIStore(s => s.liveAccountForm);
+  const setLiveAccountForm = useUIStore(s => s.setLiveAccountForm);
+  const liveBindingForm = useUIStore(s => s.liveBindingForm);
+  const setLiveBindingForm = useUIStore(s => s.setLiveBindingForm);
+  const liveOrderForm = useUIStore(s => s.liveOrderForm);
+  const setLiveOrderForm = useUIStore(s => s.setLiveOrderForm);
+  const liveSessionForm = useUIStore(s => s.liveSessionForm);
+  const setLiveSessionForm = useUIStore(s => s.setLiveSessionForm);
+  const accountSignalForm = useUIStore(s => s.accountSignalForm);
+  const setAccountSignalForm = useUIStore(s => s.setAccountSignalForm);
+  const strategySignalForm = useUIStore(s => s.strategySignalForm);
+  const setStrategySignalForm = useUIStore(s => s.setStrategySignalForm);
+  const strategyCreateForm = useUIStore(s => s.strategyCreateForm);
+  const setStrategyCreateForm = useUIStore(s => s.setStrategyCreateForm);
+  const strategyEditorForm = useUIStore(s => s.strategyEditorForm);
+  const setStrategyEditorForm = useUIStore(s => s.setStrategyEditorForm);
+  const signalRuntimeForm = useUIStore(s => s.signalRuntimeForm);
+  const setSignalRuntimeForm = useUIStore(s => s.setSignalRuntimeForm);
+  const runtimePolicyForm = useUIStore(s => s.runtimePolicyForm);
+  const setRuntimePolicyForm = useUIStore(s => s.setRuntimePolicyForm);
+  const telegramForm = useUIStore(s => s.telegramForm);
+  const setTelegramForm = useUIStore(s => s.setTelegramForm);
+  const liveAccountError = useUIStore(s => s.liveAccountError);
+  const setLiveAccountError = useUIStore(s => s.setLiveAccountError);
+  const liveBindingError = useUIStore(s => s.liveBindingError);
+  const setLiveBindingError = useUIStore(s => s.setLiveBindingError);
+  const liveSessionError = useUIStore(s => s.liveSessionError);
+  const setLiveSessionError = useUIStore(s => s.setLiveSessionError);
+  const liveAccountNotice = useUIStore(s => s.liveAccountNotice);
+  const setLiveAccountNotice = useUIStore(s => s.setLiveAccountNotice);
+  const liveBindingNotice = useUIStore(s => s.liveBindingNotice);
+  const setLiveBindingNotice = useUIStore(s => s.setLiveBindingNotice);
+  const liveSessionNotice = useUIStore(s => s.liveSessionNotice);
+  const setLiveSessionNotice = useUIStore(s => s.setLiveSessionNotice);
+  const settingsMenuOpen = useUIStore(s => s.settingsMenuOpen);
+  const setSettingsMenuOpen = useUIStore(s => s.setSettingsMenuOpen);
+  const activeSettingsModal = useUIStore(s => s.activeSettingsModal);
+  const setActiveSettingsModal = useUIStore(s => s.setActiveSettingsModal);
+  const summaries = useTradingStore(s => s.summaries);
+  const setSummaries = useTradingStore(s => s.setSummaries);
+  const accounts = useTradingStore(s => s.accounts);
+  const setAccounts = useTradingStore(s => s.setAccounts);
+  const orders = useTradingStore(s => s.orders);
+  const setOrders = useTradingStore(s => s.setOrders);
+  const fills = useTradingStore(s => s.fills);
+  const setFills = useTradingStore(s => s.setFills);
+  const positions = useTradingStore(s => s.positions);
+  const setPositions = useTradingStore(s => s.setPositions);
+  const snapshots = useTradingStore(s => s.snapshots);
+  const setSnapshots = useTradingStore(s => s.setSnapshots);
+  const strategies = useTradingStore(s => s.strategies);
+  const setStrategies = useTradingStore(s => s.setStrategies);
+  const backtests = useTradingStore(s => s.backtests);
+  const setBacktests = useTradingStore(s => s.setBacktests);
+  const backtestOptions = useTradingStore(s => s.backtestOptions);
+  const setBacktestOptions = useTradingStore(s => s.setBacktestOptions);
+  const paperSessions = useTradingStore(s => s.paperSessions);
+  const setPaperSessions = useTradingStore(s => s.setPaperSessions);
+  const liveSessions = useTradingStore(s => s.liveSessions);
+  const setLiveSessions = useTradingStore(s => s.setLiveSessions);
+  const liveAdapters = useTradingStore(s => s.liveAdapters);
+  const setLiveAdapters = useTradingStore(s => s.setLiveAdapters);
+  const signalCatalog = useTradingStore(s => s.signalCatalog);
+  const setSignalCatalog = useTradingStore(s => s.setSignalCatalog);
+  const signalSourceTypes = useTradingStore(s => s.signalSourceTypes);
+  const setSignalSourceTypes = useTradingStore(s => s.setSignalSourceTypes);
+  const signalRuntimeAdapters = useTradingStore(s => s.signalRuntimeAdapters);
+  const setSignalRuntimeAdapters = useTradingStore(s => s.setSignalRuntimeAdapters);
+  const signalRuntimeSessions = useTradingStore(s => s.signalRuntimeSessions);
+  const setSignalRuntimeSessions = useTradingStore(s => s.setSignalRuntimeSessions);
+  const runtimePolicy = useTradingStore(s => s.runtimePolicy);
+  const setRuntimePolicy = useTradingStore(s => s.setRuntimePolicy);
+  const alerts = useTradingStore(s => s.alerts);
+  const setAlerts = useTradingStore(s => s.setAlerts);
+  const notifications = useTradingStore(s => s.notifications);
+  const setNotifications = useTradingStore(s => s.setNotifications);
+  const telegramConfig = useTradingStore(s => s.telegramConfig);
+  const setTelegramConfig = useTradingStore(s => s.setTelegramConfig);
+  const accountSignalBindings = useTradingStore(s => s.accountSignalBindings);
+  const setAccountSignalBindings = useTradingStore(s => s.setAccountSignalBindings);
+  const strategySignalBindings = useTradingStore(s => s.strategySignalBindings);
+  const setStrategySignalBindings = useTradingStore(s => s.setStrategySignalBindings);
+  const accountSignalBindingMap = useTradingStore(s => s.accountSignalBindingMap);
+  const setAccountSignalBindingMap = useTradingStore(s => s.setAccountSignalBindingMap);
+  const strategySignalBindingMap = useTradingStore(s => s.strategySignalBindingMap);
+  const setStrategySignalBindingMap = useTradingStore(s => s.setStrategySignalBindingMap);
+  const signalRuntimePlan = useTradingStore(s => s.signalRuntimePlan);
+  const setSignalRuntimePlan = useTradingStore(s => s.setSignalRuntimePlan);
+  const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
+  const setSelectedSignalRuntimeId = useTradingStore(s => s.setSelectedSignalRuntimeId);
+  const selectedStrategyId = useTradingStore(s => s.selectedStrategyId);
+  const setSelectedStrategyId = useTradingStore(s => s.setSelectedStrategyId);
+  const candles = useTradingStore(s => s.candles);
+  const setCandles = useTradingStore(s => s.setCandles);
+  const monitorCandles = useTradingStore(s => s.monitorCandles);
+  const setMonitorCandles = useTradingStore(s => s.setMonitorCandles);
+  const annotations = useTradingStore(s => s.annotations);
+  const setAnnotations = useTradingStore(s => s.setAnnotations);
+  const editingLiveSessionId = useTradingStore(s => s.editingLiveSessionId);
+  const setEditingLiveSessionId = useTradingStore(s => s.setEditingLiveSessionId);
+
 
   const primaryAccount = summaries[0] ?? null;
   const primarySession = paperSessions[0] ?? null;
@@ -404,11 +403,11 @@ function App() {
   const topFills = fills.slice().reverse().slice(0, 8);
 
   function selectQuickLiveAccount(accountId: string) {
-    setLiveBindingForm((current) => ({ ...current, accountId }));
+    setLiveBindingForm((current: any) => ({ ...current, accountId }));
     setLiveSessionForm((current: any) => ({ ...current, accountId }));
-    setLiveOrderForm((current) => ({ ...current, accountId }));
-    setAccountSignalForm((current) => ({ ...current, accountId }));
-    setSignalRuntimeForm((current) => ({ ...current, accountId }));
+    setLiveOrderForm((current: any) => ({ ...current, accountId }));
+    setAccountSignalForm((current: any) => ({ ...current, accountId }));
+    setSignalRuntimeForm((current: any) => ({ ...current, accountId }));
   }
 
   function openLiveAccountModal() {
@@ -420,7 +419,7 @@ function App() {
       nextName = `${baseName} ${suffix}`;
       suffix += 1;
     }
-    setLiveAccountForm((current) => ({
+    setLiveAccountForm((current: any) => ({
       ...current,
       name: current.name.trim() === "" || existingNames.has(current.name) ? nextName : current.name,
       exchange: current.exchange || "binance-futures",
@@ -711,14 +710,14 @@ function App() {
     setSnapshots(normalizedSnapshots);
     setMonitorCandles(normalizedMonitorCandles);
     setStrategies(normalizedStrategies);
-    setSelectedStrategyId((current) => {
+    setSelectedStrategyId((current: any) => {
       if (current && normalizedStrategies.some((item) => item.id === current)) {
         return current;
       }
       return normalizedStrategies[0]?.id ?? null;
     });
     setBacktests(normalizedBacktests);
-    setSelectedBacktestId((current) => {
+    setSelectedBacktestId((current: any) => {
       if (current && normalizedBacktests.some((item) => item.id === current)) {
         return current;
       }
@@ -751,7 +750,7 @@ function App() {
     });
     setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
-    setSelectedSignalRuntimeId((current) => {
+    setSelectedSignalRuntimeId((current: any) => {
       if (current && normalizedSignalRuntimeSessions.some((item) => item.id === current)) {
         return current;
       }
@@ -759,7 +758,7 @@ function App() {
     });
     setCandles(normalizedCandles);
     setAnnotations(normalizedAnnotations);
-    setBacktestForm((current) => ({
+    setBacktestForm((current: any) => ({
       strategyVersionId: current.strategyVersionId || normalizedStrategies[0]?.currentVersion?.id || "",
       signalTimeframe: current.signalTimeframe || normalizedBacktestOptions.defaultSignalTimeframe,
       executionDataSource: current.executionDataSource || normalizedBacktestOptions.defaultExecutionDataSource,
@@ -767,11 +766,11 @@ function App() {
       from: current.from || "",
       to: current.to || "",
     }));
-    setPaperForm((current) => current);
+    setPaperForm((current: any) => current);
     const strategyIDSet = new Set(normalizedStrategies.map((item) => item.id));
     const normalizeLoadedStrategyId = (candidate: string, fallback = "") =>
       candidate && strategyIDSet.has(candidate) ? candidate : fallback;
-    setLiveBindingForm((current) => ({
+    setLiveBindingForm((current: any) => ({
       accountId: current.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       adapterKey: current.adapterKey || normalizedLiveAdapters[0]?.key || "binance-futures",
       positionMode: current.positionMode || "ONE_WAY",
@@ -780,7 +779,7 @@ function App() {
       apiKeyRef: current.apiKeyRef,
       apiSecretRef: current.apiSecretRef,
     }));
-    setLiveOrderForm((current) => ({
+    setLiveOrderForm((current: any) => ({
       accountId: current.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       strategyVersionId: current.strategyVersionId || normalizedStrategies[0]?.currentVersion?.id || "",
       symbol: current.symbol || "BTCUSDT",
@@ -801,25 +800,25 @@ function App() {
           dispatchCooldownSeconds: current.dispatchCooldownSeconds || "30",
         }));
     const availableSignalSources = (normalizedSignalCatalog as SignalSourceCatalog).sources ?? [];
-    setAccountSignalForm((current) => ({
+    setAccountSignalForm((current: any) => ({
       accountId: current.accountId || normalizedSummaries[0]?.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
       role: current.role || "trigger",
       symbol: current.symbol || "BTCUSDT",
       timeframe: current.timeframe || "1d",
     }));
-    setStrategySignalForm((current) => ({
+    setStrategySignalForm((current: any) => ({
       strategyId: normalizeLoadedStrategyId(current.strategyId, normalizedStrategies[0]?.id || ""),
       sourceKey: current.sourceKey || availableSignalSources[0]?.key || "",
       role: current.role || "trigger",
       symbol: current.symbol || "BTCUSDT",
       timeframe: current.timeframe || "1d",
     }));
-    setStrategyCreateForm((current) => ({
+    setStrategyCreateForm((current: any) => ({
       name: current.name || "",
       description: current.description || "",
     }));
-    setSignalRuntimeForm((current) => ({
+    setSignalRuntimeForm((current: any) => ({
       accountId: current.accountId || normalizedSummaries[0]?.accountId || normalizedAccounts.find((item) => item.mode === "LIVE")?.id || "",
       strategyId: normalizeLoadedStrategyId(current.strategyId, normalizedStrategies[0]?.id || ""),
     }));
@@ -894,10 +893,10 @@ function App() {
 
   useEffect(() => {
     if (strategySignalForm.strategyId && !strategyIds.has(strategySignalForm.strategyId)) {
-      setStrategySignalForm((current) => ({ ...current, strategyId: strategies[0]?.id || "" }));
+      setStrategySignalForm((current: any) => ({ ...current, strategyId: strategies[0]?.id || "" }));
     }
     if (signalRuntimeForm.strategyId && !strategyIds.has(signalRuntimeForm.strategyId)) {
-      setSignalRuntimeForm((current) => ({ ...current, strategyId: strategies[0]?.id || "" }));
+      setSignalRuntimeForm((current: any) => ({ ...current, strategyId: strategies[0]?.id || "" }));
     }
     if (liveSessionForm.strategyId && !strategyIds.has(liveSessionForm.strategyId)) {
       setLiveSessionForm((current: any) => ({ ...current, strategyId: strategies[0]?.id || "" }));
@@ -1399,11 +1398,11 @@ function App() {
 
     setLiveFlowAction(account.id);
     setError(null);
-    setLiveBindingForm((current) => ({ ...current, accountId: account.id }));
+    setLiveBindingForm((current: any) => ({ ...current, accountId: account.id }));
     setLiveSessionForm((current: any) => ({ ...current, accountId: account.id, strategyId }));
-    setSignalRuntimeForm((current) => ({ ...current, accountId: account.id, strategyId }));
-    setAccountSignalForm((current) => ({ ...current, accountId: account.id }));
-    setStrategySignalForm((current) => ({ ...current, strategyId }));
+    setSignalRuntimeForm((current: any) => ({ ...current, accountId: account.id, strategyId }));
+    setAccountSignalForm((current: any) => ({ ...current, accountId: account.id }));
+    setStrategySignalForm((current: any) => ({ ...current, strategyId }));
 
     try {
       const strategyBindings = strategySignalBindingMap[strategyId] ?? [];
@@ -1623,16 +1622,16 @@ function App() {
   function runLiveNextAction(account: AccountRecord, action: LiveNextAction, activeRuntime: SignalRuntimeSession | null) {
     switch (action.key) {
       case "bind-live-adapter":
-        setLiveBindingForm((current) => ({ ...current, accountId: account.id }));
+        setLiveBindingForm((current: any) => ({ ...current, accountId: account.id }));
         window.location.hash = "live";
         break;
       case "bind-signals":
-        setAccountSignalForm((current) => ({ ...current, accountId: account.id }));
-        setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
+        setAccountSignalForm((current: any) => ({ ...current, accountId: account.id }));
+        setSignalRuntimeForm((current: any) => ({ ...current, accountId: account.id }));
         window.location.hash = "signals";
         break;
       case "create-runtime":
-        setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
+        setSignalRuntimeForm((current: any) => ({ ...current, accountId: account.id }));
         window.location.hash = "signals";
         break;
       case "start-runtime":
@@ -1640,7 +1639,7 @@ function App() {
         if (activeRuntime) {
           jumpToSignalRuntimeSession(activeRuntime.id);
         } else {
-          setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
+          setSignalRuntimeForm((current: any) => ({ ...current, accountId: account.id }));
           window.location.hash = "signals";
         }
         break;
@@ -1723,12 +1722,12 @@ function App() {
           chatId: telegramForm.chatId,
           sendLevels: telegramForm.sendLevels
             .split(",")
-            .map((item) => item.trim().toLowerCase())
+            .map((item: string) => item.trim().toLowerCase())
             .filter(Boolean),
         }),
       });
       setTelegramConfig(updated);
-      setTelegramForm((current) => ({ ...current, botToken: "" }));
+      setTelegramForm((current: any) => ({ ...current, botToken: "" }));
       await loadDashboard();
       setError(null);
     } catch (err) {
@@ -1803,7 +1802,7 @@ function App() {
       };
       writeStoredAuthSession(session);
       setAuthSession(session);
-      setLoginForm((current) => ({ ...current, password: "" }));
+      setLoginForm((current: any) => ({ ...current, password: "" }));
       setError(null);
       setLoading(true);
       await loadDashboard();
@@ -1886,7 +1885,7 @@ function App() {
               <button
                 type="button"
                 className="hero-menu-button"
-                onClick={() => setSettingsMenuOpen((current) => !current)}
+                onClick={() => setSettingsMenuOpen((current: any) => !current)}
               >
                 设置
               </button>
@@ -2341,7 +2340,7 @@ function App() {
                   <span>策略名称</span>
                   <input
                     value={strategyCreateForm.name}
-                    onChange={(event) => setStrategyCreateForm((current) => ({ ...current, name: event.target.value }))}
+                    onChange={(event) => setStrategyCreateForm((current: any) => ({ ...current, name: event.target.value }))}
                     placeholder="例如：BK 4H Runner"
                   />
                 </label>
@@ -2350,7 +2349,7 @@ function App() {
                   <input
                     value={strategyCreateForm.description}
                     onChange={(event) =>
-                      setStrategyCreateForm((current) => ({ ...current, description: event.target.value }))
+                      setStrategyCreateForm((current: any) => ({ ...current, description: event.target.value }))
                     }
                     placeholder="记录这条策略的用途、市场和执行方式"
                   />
@@ -2378,7 +2377,7 @@ function App() {
                     value={strategyEditorForm.strategyId}
                     onChange={(event) => {
                       setSelectedStrategyId(event.target.value);
-                      setStrategyEditorForm((current) => ({ ...current, strategyId: event.target.value }));
+                      setStrategyEditorForm((current: any) => ({ ...current, strategyId: event.target.value }));
                     }}
                   >
                     {strategyOptions.map((strategy) => (
@@ -2393,7 +2392,7 @@ function App() {
                   <select
                     value={strategyEditorForm.strategyEngine}
                     onChange={(event) =>
-                      setStrategyEditorForm((current) => ({ ...current, strategyEngine: event.target.value }))
+                      setStrategyEditorForm((current: any) => ({ ...current, strategyEngine: event.target.value }))
                     }
                   >
                     {[...new Set(["bk-default", ...strategies.map((item) => String(getRecord(item.currentVersion?.parameters).strategyEngine || "bk-default"))])].map((engineKey) => (
@@ -2408,7 +2407,7 @@ function App() {
                   <select
                     value={strategyEditorForm.signalTimeframe}
                     onChange={(event) =>
-                      setStrategyEditorForm((current) => ({ ...current, signalTimeframe: event.target.value }))
+                      setStrategyEditorForm((current: any) => ({ ...current, signalTimeframe: event.target.value }))
                     }
                   >
                     <option value="4h">4h</option>
@@ -2420,7 +2419,7 @@ function App() {
                   <select
                     value={strategyEditorForm.executionDataSource}
                     onChange={(event) =>
-                      setStrategyEditorForm((current) => ({ ...current, executionDataSource: event.target.value }))
+                      setStrategyEditorForm((current: any) => ({ ...current, executionDataSource: event.target.value }))
                     }
                   >
                     <option value="tick">tick</option>
@@ -2433,7 +2432,7 @@ function App() {
                     rows={14}
                     value={strategyEditorForm.parametersJson}
                     onChange={(event) =>
-                      setStrategyEditorForm((current) => ({ ...current, parametersJson: event.target.value }))
+                      setStrategyEditorForm((current: any) => ({ ...current, parametersJson: event.target.value }))
                     }
                     placeholder='{"stop_loss_atr":0.05,"profit_protect_atr":1.0}'
                   />
@@ -2549,7 +2548,7 @@ function App() {
                   <span>Strategy Version</span>
                   <select
                     value={backtestForm.strategyVersionId}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, strategyVersionId: event.target.value }))}
+                    onChange={(event) => setBacktestForm((current: any) => ({ ...current, strategyVersionId: event.target.value }))}
                   >
                     {strategies.map((strategy) => (
                       <option key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
@@ -2562,7 +2561,7 @@ function App() {
                   <span>Signal Timeframe</span>
                   <select
                     value={backtestForm.signalTimeframe}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
+                    onChange={(event) => setBacktestForm((current: any) => ({ ...current, signalTimeframe: event.target.value }))}
                   >
                     {(backtestOptions?.signalTimeframes ?? ["4h", "1d"]).map((item) => (
                       <option key={item} value={item}>
@@ -2575,7 +2574,7 @@ function App() {
                   <span>Execution Source</span>
                   <select
                     value={backtestForm.executionDataSource}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, executionDataSource: event.target.value }))}
+                    onChange={(event) => setBacktestForm((current: any) => ({ ...current, executionDataSource: event.target.value }))}
                   >
                     {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
                       <option key={item} value={item}>
@@ -2588,7 +2587,7 @@ function App() {
                   <span>Symbol</span>
                   <input
                     value={backtestForm.symbol}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                    onChange={(event) => setBacktestForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
                     placeholder="BTCUSDT"
                   />
                 </label>
@@ -2596,7 +2595,7 @@ function App() {
                   <span>From (RFC3339)</span>
                   <input
                     value={backtestForm.from}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, from: event.target.value }))}
+                    onChange={(event) => setBacktestForm((current: any) => ({ ...current, from: event.target.value }))}
                     placeholder="2020-01-01T00:00:00Z"
                   />
                 </label>
@@ -2604,7 +2603,7 @@ function App() {
                   <span>To (RFC3339)</span>
                   <input
                     value={backtestForm.to}
-                    onChange={(event) => setBacktestForm((current) => ({ ...current, to: event.target.value }))}
+                    onChange={(event) => setBacktestForm((current: any) => ({ ...current, to: event.target.value }))}
                     placeholder="2020-01-31T23:59:59Z"
                   />
                 </label>
@@ -2904,7 +2903,7 @@ function App() {
               <div className="form-grid">
                 <label className="form-field">
                   <span>Account</span>
-                  <select value={accountSignalForm.accountId} onChange={(event) => setAccountSignalForm((current) => ({ ...current, accountId: event.target.value }))}>
+                  <select value={accountSignalForm.accountId} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, accountId: event.target.value }))}>
                     {liveAccounts.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name} ({item.mode})
@@ -2914,7 +2913,7 @@ function App() {
                 </label>
                 <label className="form-field">
                   <span>Source</span>
-                  <select value={accountSignalForm.sourceKey} onChange={(event) => setAccountSignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
+                  <select value={accountSignalForm.sourceKey} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, sourceKey: event.target.value }))}>
                     {(signalCatalog?.sources ?? []).map((source) => (
                       <option key={source.key} value={source.key}>
                         {source.name}
@@ -2924,7 +2923,7 @@ function App() {
                 </label>
                 <label className="form-field">
                   <span>Role</span>
-                  <select value={accountSignalForm.role} onChange={(event) => setAccountSignalForm((current) => ({ ...current, role: event.target.value }))}>
+                  <select value={accountSignalForm.role} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, role: event.target.value }))}>
                     <option value="signal">signal</option>
                     <option value="trigger">trigger</option>
                     <option value="feature">feature</option>
@@ -2932,14 +2931,14 @@ function App() {
                 </label>
                 <label className="form-field">
                   <span>Timeframe</span>
-                  <select value={accountSignalForm.timeframe} onChange={(event) => setAccountSignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
+                  <select value={accountSignalForm.timeframe} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, timeframe: event.target.value }))}>
                     <option value="4h">4h</option>
                     <option value="1d">1d</option>
                   </select>
                 </label>
                 <label className="form-field">
                   <span>Symbol</span>
-                  <input value={accountSignalForm.symbol} onChange={(event) => setAccountSignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
+                  <input value={accountSignalForm.symbol} onChange={(event) => setAccountSignalForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
                 </label>
               </div>
               <div className="backtest-actions">
@@ -2952,7 +2951,7 @@ function App() {
               <div className="form-grid">
                 <label className="form-field">
                   <span>Strategy</span>
-                  <select value={strategySignalForm.strategyId} onChange={(event) => setStrategySignalForm((current) => ({ ...current, strategyId: event.target.value }))}>
+                  <select value={strategySignalForm.strategyId} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, strategyId: event.target.value }))}>
                     {strategyOptions.map((strategy) => (
                       <option key={strategy.value} value={strategy.value}>
                         {strategy.label}
@@ -2962,7 +2961,7 @@ function App() {
                 </label>
                 <label className="form-field">
                   <span>Source</span>
-                  <select value={strategySignalForm.sourceKey} onChange={(event) => setStrategySignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
+                  <select value={strategySignalForm.sourceKey} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, sourceKey: event.target.value }))}>
                     {(signalCatalog?.sources ?? []).map((source) => (
                       <option key={source.key} value={source.key}>
                         {source.name}
@@ -2972,7 +2971,7 @@ function App() {
                 </label>
                 <label className="form-field">
                   <span>Role</span>
-                  <select value={strategySignalForm.role} onChange={(event) => setStrategySignalForm((current) => ({ ...current, role: event.target.value }))}>
+                  <select value={strategySignalForm.role} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, role: event.target.value }))}>
                     <option value="signal">signal</option>
                     <option value="trigger">trigger</option>
                     <option value="feature">feature</option>
@@ -2980,14 +2979,14 @@ function App() {
                 </label>
                 <label className="form-field">
                   <span>Timeframe</span>
-                  <select value={strategySignalForm.timeframe} onChange={(event) => setStrategySignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
+                  <select value={strategySignalForm.timeframe} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, timeframe: event.target.value }))}>
                     <option value="4h">4h</option>
                     <option value="1d">1d</option>
                   </select>
                 </label>
                 <label className="form-field">
                   <span>Symbol</span>
-                  <input value={strategySignalForm.symbol} onChange={(event) => setStrategySignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
+                  <input value={strategySignalForm.symbol} onChange={(event) => setStrategySignalForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
                 </label>
               </div>
               <div className="backtest-actions">
@@ -3059,7 +3058,7 @@ function App() {
                   <input
                     value={runtimePolicyForm.tradeTickFreshnessSeconds}
                     onChange={(event) =>
-                      setRuntimePolicyForm((current) => ({ ...current, tradeTickFreshnessSeconds: event.target.value }))
+                      setRuntimePolicyForm((current: any) => ({ ...current, tradeTickFreshnessSeconds: event.target.value }))
                     }
                   />
                 </label>
@@ -3068,7 +3067,7 @@ function App() {
                   <input
                     value={runtimePolicyForm.orderBookFreshnessSeconds}
                     onChange={(event) =>
-                      setRuntimePolicyForm((current) => ({ ...current, orderBookFreshnessSeconds: event.target.value }))
+                      setRuntimePolicyForm((current: any) => ({ ...current, orderBookFreshnessSeconds: event.target.value }))
                     }
                   />
                 </label>
@@ -3077,7 +3076,7 @@ function App() {
                   <input
                     value={runtimePolicyForm.signalBarFreshnessSeconds}
                     onChange={(event) =>
-                      setRuntimePolicyForm((current) => ({ ...current, signalBarFreshnessSeconds: event.target.value }))
+                      setRuntimePolicyForm((current: any) => ({ ...current, signalBarFreshnessSeconds: event.target.value }))
                     }
                   />
                 </label>
@@ -3086,7 +3085,7 @@ function App() {
                   <input
                     value={runtimePolicyForm.runtimeQuietSeconds}
                     onChange={(event) =>
-                      setRuntimePolicyForm((current) => ({ ...current, runtimeQuietSeconds: event.target.value }))
+                      setRuntimePolicyForm((current: any) => ({ ...current, runtimeQuietSeconds: event.target.value }))
                     }
                   />
                 </label>
@@ -3095,7 +3094,7 @@ function App() {
                   <input
                     value={runtimePolicyForm.paperStartReadinessTimeoutSeconds}
                     onChange={(event) =>
-                      setRuntimePolicyForm((current) => ({
+                      setRuntimePolicyForm((current: any) => ({
                         ...current,
                         paperStartReadinessTimeoutSeconds: event.target.value,
                       }))
@@ -3126,7 +3125,7 @@ function App() {
               <div className="form-grid">
                 <label className="form-field">
                   <span>Account</span>
-                  <select value={signalRuntimeForm.accountId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, accountId: event.target.value }))}>
+                  <select value={signalRuntimeForm.accountId} onChange={(event) => setSignalRuntimeForm((current: any) => ({ ...current, accountId: event.target.value }))}>
                     {liveAccounts.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name} ({item.mode})
@@ -3136,7 +3135,7 @@ function App() {
                 </label>
                 <label className="form-field">
                   <span>Strategy</span>
-                  <select value={signalRuntimeForm.strategyId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, strategyId: event.target.value }))}>
+                  <select value={signalRuntimeForm.strategyId} onChange={(event) => setSignalRuntimeForm((current: any) => ({ ...current, strategyId: event.target.value }))}>
                     {strategyOptions.map((strategy) => (
                       <option key={strategy.value} value={strategy.value}>
                         {strategy.label}
@@ -3929,7 +3928,7 @@ function App() {
                     <span>Live Account</span>
                     <select
                       value={liveOrderForm.accountId}
-                      onChange={(event) => setLiveOrderForm((current) => ({ ...current, accountId: event.target.value }))}
+                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, accountId: event.target.value }))}
                     >
                       {liveAccounts.map((account) => (
                         <option key={account.id} value={account.id}>
@@ -3942,7 +3941,7 @@ function App() {
                     <span>Strategy Version</span>
                     <select
                       value={liveOrderForm.strategyVersionId}
-                      onChange={(event) => setLiveOrderForm((current) => ({ ...current, strategyVersionId: event.target.value }))}
+                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, strategyVersionId: event.target.value }))}
                     >
                       <option value="">Auto</option>
                       {strategies.map((strategy) => (
@@ -3956,14 +3955,14 @@ function App() {
                     <span>Symbol</span>
                     <input
                       value={liveOrderForm.symbol}
-                      onChange={(event) => setLiveOrderForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
                     />
                   </label>
                   <label className="form-field">
                     <span>Side</span>
                     <select
                       value={liveOrderForm.side}
-                      onChange={(event) => setLiveOrderForm((current) => ({ ...current, side: event.target.value }))}
+                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, side: event.target.value }))}
                     >
                       <option value="BUY">BUY</option>
                       <option value="SELL">SELL</option>
@@ -3973,7 +3972,7 @@ function App() {
                     <span>Type</span>
                     <select
                       value={liveOrderForm.type}
-                      onChange={(event) => setLiveOrderForm((current) => ({ ...current, type: event.target.value }))}
+                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, type: event.target.value }))}
                     >
                       <option value="LIMIT">LIMIT</option>
                       <option value="MARKET">MARKET</option>
@@ -3983,14 +3982,14 @@ function App() {
                     <span>Quantity</span>
                     <input
                       value={liveOrderForm.quantity}
-                      onChange={(event) => setLiveOrderForm((current) => ({ ...current, quantity: event.target.value }))}
+                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, quantity: event.target.value }))}
                     />
                   </label>
                   <label className="form-field">
                     <span>Price</span>
                     <input
                       value={liveOrderForm.price}
-                      onChange={(event) => setLiveOrderForm((current) => ({ ...current, price: event.target.value }))}
+                      onChange={(event) => setLiveOrderForm((current: any) => ({ ...current, price: event.target.value }))}
                       placeholder={liveOrderForm.type === "MARKET" ? "optional" : "required for limit"}
                     />
                   </label>
@@ -4140,11 +4139,11 @@ function App() {
                 <div className="form-grid">
                   <label className="form-field">
                     <span>Name</span>
-                    <input value={liveAccountForm.name} onChange={(event) => setLiveAccountForm((current) => ({ ...current, name: event.target.value }))} />
+                    <input value={liveAccountForm.name} onChange={(event) => setLiveAccountForm((current: any) => ({ ...current, name: event.target.value }))} />
                   </label>
                   <label className="form-field">
                     <span>Exchange</span>
-                    <input value={liveAccountForm.exchange} onChange={(event) => setLiveAccountForm((current) => ({ ...current, exchange: event.target.value }))} />
+                    <input value={liveAccountForm.exchange} onChange={(event) => setLiveAccountForm((current: any) => ({ ...current, exchange: event.target.value }))} />
                   </label>
                 </div>
                 <div className="backtest-notes notes-compact">
@@ -4189,7 +4188,7 @@ function App() {
                     <span>Username</span>
                     <input
                       value={loginForm.username}
-                      onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
+                      onChange={(event) => setLoginForm((current: any) => ({ ...current, username: event.target.value }))}
                       placeholder="admin"
                     />
                   </label>
@@ -4198,7 +4197,7 @@ function App() {
                     <input
                       type="password"
                       value={loginForm.password}
-                      onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+                      onChange={(event) => setLoginForm((current: any) => ({ ...current, password: event.target.value }))}
                       placeholder="change-this-password"
                     />
                   </label>
@@ -4238,7 +4237,7 @@ function App() {
                     <span>Live Account</span>
                     <select
                       value={liveBindingForm.accountId}
-                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, accountId: event.target.value }))}
+                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, accountId: event.target.value }))}
                     >
                       {liveAccounts.map((account) => (
                         <option key={account.id} value={account.id}>
@@ -4251,7 +4250,7 @@ function App() {
                     <span>Adapter</span>
                     <select
                       value={liveBindingForm.adapterKey}
-                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, adapterKey: event.target.value }))}
+                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, adapterKey: event.target.value }))}
                     >
                       {liveAdapters.map((adapter) => (
                         <option key={adapter.key} value={adapter.key}>
@@ -4264,7 +4263,7 @@ function App() {
                     <span>Position Mode</span>
                     <select
                       value={liveBindingForm.positionMode}
-                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, positionMode: event.target.value }))}
+                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, positionMode: event.target.value }))}
                     >
                       <option value="ONE_WAY">ONE_WAY</option>
                       <option value="HEDGE">HEDGE</option>
@@ -4274,7 +4273,7 @@ function App() {
                     <span>Margin Mode</span>
                     <select
                       value={liveBindingForm.marginMode}
-                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, marginMode: event.target.value }))}
+                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, marginMode: event.target.value }))}
                     >
                       <option value="CROSSED">CROSSED</option>
                       <option value="ISOLATED">ISOLATED</option>
@@ -4282,18 +4281,18 @@ function App() {
                   </label>
                   <label className="form-field">
                     <span>API Key Env</span>
-                    <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiKeyRef: event.target.value }))} />
+                    <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, apiKeyRef: event.target.value }))} />
                   </label>
                   <label className="form-field">
                     <span>API Secret Env</span>
-                    <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiSecretRef: event.target.value }))} />
+                    <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, apiSecretRef: event.target.value }))} />
                   </label>
                   <label className="form-field form-field-checkbox">
                     <span>Sandbox</span>
                     <input
                       type="checkbox"
                       checked={liveBindingForm.sandbox}
-                      onChange={(event) => setLiveBindingForm((current) => ({ ...current, sandbox: event.target.checked }))}
+                      onChange={(event) => setLiveBindingForm((current: any) => ({ ...current, sandbox: event.target.checked }))}
                     />
                   </label>
                 </div>
@@ -4575,14 +4574,14 @@ function App() {
                     <input
                       type="checkbox"
                       checked={telegramForm.enabled}
-                      onChange={(event) => setTelegramForm((current) => ({ ...current, enabled: event.target.checked }))}
+                      onChange={(event) => setTelegramForm((current: any) => ({ ...current, enabled: event.target.checked }))}
                     />
                   </label>
                   <label className="form-field">
                     <span>Chat ID</span>
                     <input
                       value={telegramForm.chatId}
-                      onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value }))}
+                      onChange={(event) => setTelegramForm((current: any) => ({ ...current, chatId: event.target.value }))}
                       placeholder="123456789"
                     />
                   </label>
@@ -4590,7 +4589,7 @@ function App() {
                     <span>Bot Token</span>
                     <input
                       value={telegramForm.botToken}
-                      onChange={(event) => setTelegramForm((current) => ({ ...current, botToken: event.target.value }))}
+                      onChange={(event) => setTelegramForm((current: any) => ({ ...current, botToken: event.target.value }))}
                       placeholder={telegramConfig?.hasBotToken ? "leave blank to keep current token" : "123456:ABCDEF..."}
                     />
                   </label>
@@ -4598,7 +4597,7 @@ function App() {
                     <span>Send Levels</span>
                     <input
                       value={telegramForm.sendLevels}
-                      onChange={(event) => setTelegramForm((current) => ({ ...current, sendLevels: event.target.value }))}
+                      onChange={(event) => setTelegramForm((current: any) => ({ ...current, sendLevels: event.target.value }))}
                       placeholder="critical,warning"
                     />
                   </label>
