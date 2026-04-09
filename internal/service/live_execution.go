@@ -602,6 +602,7 @@ func firstNonEmptyMapValue(values ...any) map[string]any {
 
 func executionDispatchSummary(proposalMap map[string]any, order domain.Order, failed bool) map[string]any {
 	proposalMeta := cloneMetadata(mapValue(proposalMap["metadata"]))
+	adapterSubmission := cloneMetadata(mapValue(order.Metadata["adapterSubmission"]))
 	expectedPrice := firstPositive(parseFloatValue(proposalMap["limitPrice"]), parseFloatValue(proposalMap["priceHint"]))
 	actualPrice := firstPositive(order.Price, expectedPrice)
 	priceDriftBps := 0.0
@@ -630,7 +631,19 @@ func executionDispatchSummary(proposalMap map[string]any, order domain.Order, fa
 		"priceDriftBps":     priceDriftBps,
 		"decisionContext":   cloneMetadata(mapValue(proposalMeta["executionDecisionContext"])),
 		"book":              cloneMetadata(mapValue(proposalMeta["orderBookSnapshot"])),
-		"failed":            failed,
+		"rawQuantity":       firstPositive(parseFloatValue(adapterSubmission["rawQuantity"]), parseFloatValue(mapValue(adapterSubmission["normalization"])["rawQuantity"])),
+		"normalizedQuantity": firstPositive(
+			parseFloatValue(adapterSubmission["normalizedQuantity"]),
+			parseFloatValue(mapValue(adapterSubmission["normalization"])["normalizedQuantity"]),
+		),
+		"rawPriceReference": firstPositive(
+			parseFloatValue(adapterSubmission["rawPriceReference"]),
+			parseFloatValue(mapValue(adapterSubmission["normalization"])["rawPriceReference"]),
+		),
+		"normalizedPrice": parseFloatValue(adapterSubmission["normalizedPrice"]),
+		"normalization":   cloneMetadata(mapValue(adapterSubmission["normalization"])),
+		"symbolRules":     cloneMetadata(mapValue(adapterSubmission["symbolRules"])),
+		"failed":          failed,
 	}
 }
 

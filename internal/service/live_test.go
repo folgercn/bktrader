@@ -1355,6 +1355,112 @@ func TestNormalizeBinanceQuantityForMinNotional(t *testing.T) {
 	}
 }
 
+func TestNormalizeRESTOrderRecordsNormalizationTelemetry(t *testing.T) {
+	adapter := binanceFuturesLiveAdapter{}
+	creds := binanceRESTCredentials{BaseURL: "https://example.test"}
+	cacheKey := creds.BaseURL + "|BTCUSDT"
+	binanceSymbolRulesCacheMu.Lock()
+	binanceSymbolRulesCache[cacheKey] = binanceSymbolRules{
+		Symbol:      "BTCUSDT",
+		TickSize:    0.1,
+		StepSize:    0.001,
+		MinQty:      0.001,
+		MaxQty:      1000,
+		MinNotional: 100,
+		UpdatedAt:   time.Now().UTC(),
+	}
+	binanceSymbolRulesCacheMu.Unlock()
+
+	normalized, _, err := adapter.normalizeRESTOrder(domain.Order{
+		Symbol:   "BTCUSDT",
+		Type:     "LIMIT",
+		Quantity: 0.0019,
+		Price:    68643.67,
+	}, creds)
+	if err != nil {
+		t.Fatalf("normalize REST order failed: %v", err)
+	}
+	norm := mapValue(normalized.Metadata["normalization"])
+	if got := parseFloatValue(norm["rawQuantity"]); got != 0.0019 {
+		t.Fatalf("expected raw quantity 0.0019, got %v", got)
+	}
+	if got := parseFloatValue(norm["normalizedQuantity"]); got != 0.002 {
+		t.Fatalf("expected normalized quantity 0.002, got %v", got)
+	}
+	if got := parseFloatValue(norm["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected normalized price 68643.6, got %v", got)
+	}
+	quantityAdjustmentCount := normalizationItemCount(norm["quantityAdjustments"])
+	if quantityAdjustmentCount != 2 {
+		t.Fatalf("expected 2 quantity adjustments, got %v", norm["quantityAdjustments"])
+	}
+	if !boolValue(norm["stepSizeAdjusted"]) || !boolValue(norm["minNotionalAdjusted"]) {
+		t.Fatalf("expected step size and min notional adjustments, got %+v", norm)
+	}
+	if !boolValue(norm["tickSizeAdjusted"]) {
+		t.Fatalf("expected tick size adjustment, got %+v", norm)
+	}
+}
+
+func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
+	summary := executionDispatchSummary(map[string]any{
+		"type":       "LIMIT",
+		"quantity":   0.0019,
+		"limitPrice": 68643.6,
+		"priceHint":  68643.67,
+		"metadata": map[string]any{
+			"executionDecision": "direct-dispatch",
+		},
+	}, domain.Order{
+		Status:   "NEW",
+		Symbol:   "BTCUSDT",
+		Side:     "BUY",
+		Type:     "LIMIT",
+		Quantity: 0.002,
+		Price:    68643.6,
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"rawQuantity":        0.0019,
+				"rawPriceReference":  68643.67,
+				"normalizedQuantity": 0.002,
+				"normalizedPrice":    68643.6,
+				"normalization": map[string]any{
+					"quantityAdjustments": []any{"step_size", "min_notional"},
+					"priceAdjustments":    []any{"tick_size"},
+				},
+				"symbolRules": map[string]any{
+					"stepSize":    0.001,
+					"tickSize":    0.1,
+					"minNotional": 100.0,
+				},
+			},
+		},
+	}, false)
+	if got := parseFloatValue(summary["rawQuantity"]); got != 0.0019 {
+		t.Fatalf("expected raw quantity in dispatch summary, got %v", got)
+	}
+	if got := parseFloatValue(summary["normalizedQuantity"]); got != 0.002 {
+		t.Fatalf("expected normalized quantity in dispatch summary, got %v", got)
+	}
+	if got := parseFloatValue(summary["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected normalized price in dispatch summary, got %v", got)
+	}
+	if normalizationItemCount(mapValue(summary["normalization"])["quantityAdjustments"]) != 2 {
+		t.Fatalf("expected quantity adjustment details in dispatch summary, got %+v", summary["normalization"])
+	}
+}
+
+func normalizationItemCount(raw any) int {
+	switch value := raw.(type) {
+	case []string:
+		return len(value)
+	case []any:
+		return len(value)
+	default:
+		return 0
+	}
+}
+
 func TestShouldMarkLiveExecutionFallback(t *testing.T) {
 	order := domain.Order{
 		Status: "REJECTED",
