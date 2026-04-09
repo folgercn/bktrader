@@ -335,20 +335,24 @@ a {
 }
 
 .metric-card {
-  padding: 12px;
+  padding: 6px 14px;
+  border-radius: 12px;
+  min-width: 100px;
 }
 
 .metric-card p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.72rem;
+  font-family: inherit;
 }
 
 .metric-card strong {
   display: block;
-  margin-top: 8px;
-  font-size: 1.3rem;
-  line-height: 1.05;
+  margin-top: 2px;
+  font-size: 0.95rem;
+  line-height: 1.1;
+  font-family: inherit;
 }
 
 .metric-card-accent {
