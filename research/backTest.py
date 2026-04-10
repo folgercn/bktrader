@@ -80,7 +80,7 @@ def run_tick_full_scan_dual(df_4h, tick_file,current_bal):
                             if (reason == 'SL-Reentry' and trades_in_bar < MAX_TRADES_PER_BAR) or reason == 'PT-Reentry':
                                 notional_value = balance * CASH_USAGE_RATE
                                 entry_price = re_p * (1 + SLIPPAGE)
-                                position = {'side': 'long', 'entry_p': entry_price, 'sl': sig['prev_low_1'], 'protected': (reason == 'PT'),'notional': notional_value}
+                                position = {'side': 'long', 'entry_p': entry_price, 'sl': sig['prev_low_1'], 'protected': reason.startswith('PT'),'notional': notional_value}
                                 balance -= notional_value * COMMISSION
                                 trade_logs.append({'time': current_time, 'type': 'BUY', 'price': entry_price, 'reason': reason, 'bal': balance,'notional': notional_value})
                                 if reason == 'SL-Reentry': trades_in_bar += 1
@@ -106,7 +106,7 @@ def run_tick_full_scan_dual(df_4h, tick_file,current_bal):
                             if (reason == 'SL-Reentry' and trades_in_bar < MAX_TRADES_PER_BAR) or reason == 'PT-Reentry':
                                 notional_value = balance * CASH_USAGE_RATE
                                 entry_price=re_p*(1 - SLIPPAGE)
-                                position = {'side': 'short', 'entry_p': entry_price, 'sl': sig['prev_high_1'], 'protected': (reason == 'PT'),'notional': notional_value}
+                                position = {'side': 'short', 'entry_p': entry_price, 'sl': sig['prev_high_1'], 'protected': reason.startswith('PT'),'notional': notional_value}
                                 balance -= notional_value * COMMISSION
                                 trade_logs.append({'time': current_time, 'type': 'SHORT', 'price': entry_price, 'reason': reason,'notional': notional_value, 'bal': balance})
                                 if reason == 'SL-Reentry': trades_in_bar += 1
@@ -474,7 +474,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                                 position = {
                                     'side': 'long', 'entry_p': entry_price, 
                                     'sl': reentry_sl, 
-                                    'protected': (reason == 'PT'),
+                                    'protected': reason.startswith('PT'),
                                     'notional': notional_value
                                 }
                                 balance -= notional_value * COMMISSION
@@ -527,7 +527,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                                 position = {
                                     'side': 'short', 'entry_p': entry_price, 
                                     'sl': reentry_sl, 
-                                    'protected': (reason == 'PT'),
+                                    'protected': reason.startswith('PT'),
                                     'notional': notional_value
                                 }
                                 balance -= notional_value * COMMISSION
@@ -592,6 +592,23 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
             'time': last_bar_time,
             'type': 'EXIT',
             'price': exit_p,
+            'reason': 'FinalMarkToMarket',
+            'notional': position['notional'],
+            'bal': balance,
+        })
+
+    if position is not None and not df_1min.empty:
+        last_bar_time = df_1min.index[-1]
+        last_close = float(df_1min.iloc[-1]['close'])
+        side_mult = 1 if position['side'] == 'long' else -1
+        final_exit_p = last_close * (1 - SLIPPAGE) if position['side'] == 'long' else last_close * (1 + SLIPPAGE)
+        if position['notional'] > 0:
+            pnl = side_mult * (final_exit_p - position['entry_p']) / position['entry_p'] * position['notional']
+            balance += pnl - (position['notional'] * COMMISSION)
+        trade_logs.append({
+            'time': last_bar_time,
+            'type': 'EXIT',
+            'price': final_exit_p,
             'reason': 'FinalMarkToMarket',
             'notional': position['notional'],
             'bal': balance,
@@ -1198,6 +1215,23 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
 
                 current_idx += 1
 
+    if position is not None and not df_1min.empty:
+        last_bar_time = df_1min.index[-1]
+        last_close = float(df_1min.iloc[-1]['close'])
+        side_mult = 1 if position['side'] == 'long' else -1
+        final_exit_p = last_close * (1 - SLIPPAGE) if position['side'] == 'long' else last_close * (1 + SLIPPAGE)
+        if position['notional'] > 0:
+            pnl = side_mult * (final_exit_p - position['entry_p']) / position['entry_p'] * position['notional']
+            balance += pnl - (position['notional'] * COMMISSION)
+        trade_logs.append({
+            'time': last_bar_time,
+            'type': 'EXIT',
+            'price': final_exit_p,
+            'reason': 'FinalMarkToMarket',
+            'notional': position['notional'],
+            'bal': balance,
+        })
+
     return pd.DataFrame(trade_logs)
 
 
@@ -1217,6 +1251,11 @@ def _compute_backtest_stats(ledger, initial_balance):
     max_dd = ledger_copy['drawdown'].min()
 
     # 配对交易统计
+    def normalize_exit_reason(reason):
+        if isinstance(reason, str) and reason.startswith('PT-'):
+            return 'PT'
+        return reason
+
     trades = []
     temp = None
     for _, row in ledger_copy.iterrows():
@@ -1232,7 +1271,7 @@ def _compute_backtest_stats(ledger, initial_balance):
                 'pnl_val': row['bal'] - temp['bal'],
                 'pnl_pct': pnl_pct,
                 'side': 'Long' if temp['type'] == 'BUY' else 'Short',
-                'reason': row['reason']
+                'reason': normalize_exit_reason(row['reason'])
             })
             temp = None
 
