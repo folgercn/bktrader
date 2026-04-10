@@ -1708,8 +1708,8 @@ func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testi
 	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
 		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
 	}
-	if got := boolValue(submission["reduceOnly"]); got {
-		t.Fatal("expected explicit false reduceOnly to be preserved")
+	if got := boolValue(submission["reduceOnly"]); !got {
+		t.Fatal("expected zero-value reduceOnly to fall back to original true")
 	}
 }
 

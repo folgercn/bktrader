@@ -332,14 +332,14 @@ func TestRefreshLivePositionWatermarksClearsStateWhenPositionIsInactive(t *testi
 	if watermarks.PositionKey != "" || watermarks.HWM != 0 || watermarks.LWM != 0 {
 		t.Fatalf("expected empty watermarks for inactive position, got %+v", watermarks)
 	}
-	if _, ok := sessionState["watermarkPositionKey"]; ok {
-		t.Fatal("expected watermarkPositionKey to be cleared when position becomes inactive")
+	if got := stringValue(sessionState["watermarkPositionKey"]); got != "position-1|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected inactive refresh to preserve existing watermark key, got %s", got)
 	}
-	if _, ok := sessionState["hwm"]; ok {
-		t.Fatal("expected hwm to be cleared when position becomes inactive")
+	if got := parseFloatValue(sessionState["hwm"]); got != 52000.0 {
+		t.Fatalf("expected inactive refresh to preserve HWM, got %v", got)
 	}
-	if _, ok := sessionState["lwm"]; ok {
-		t.Fatal("expected lwm to be cleared when position becomes inactive")
+	if got := parseFloatValue(sessionState["lwm"]); got != 50000.0 {
+		t.Fatalf("expected inactive refresh to preserve LWM, got %v", got)
 	}
 }
 

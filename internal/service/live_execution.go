@@ -678,7 +678,15 @@ func executionSubmissionValuePresent(path string, value any) bool {
 }
 
 func executionSubmissionBooleanValuePresent(path string, value bool) bool {
-	return true
+	if value {
+		return true
+	}
+	switch path {
+	case "postOnly", "reduceOnly", "closePosition", "slProtectionActive":
+		return false
+	default:
+		return true
+	}
 }
 
 func executionSubmissionNumericValuePresent(path string, value float64) bool {
