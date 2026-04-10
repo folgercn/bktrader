@@ -1395,6 +1395,18 @@ func TestNormalizeRESTOrderRecordsNormalizationTelemetry(t *testing.T) {
 	creds := binanceRESTCredentials{BaseURL: "https://example.test"}
 	cacheKey := creds.BaseURL + "|BTCUSDT"
 	binanceSymbolRulesCacheMu.Lock()
+	previous, existed := binanceSymbolRulesCache[cacheKey]
+	binanceSymbolRulesCacheMu.Unlock()
+	t.Cleanup(func() {
+		binanceSymbolRulesCacheMu.Lock()
+		defer binanceSymbolRulesCacheMu.Unlock()
+		if existed {
+			binanceSymbolRulesCache[cacheKey] = previous
+		} else {
+			delete(binanceSymbolRulesCache, cacheKey)
+		}
+	})
+	binanceSymbolRulesCacheMu.Lock()
 	binanceSymbolRulesCache[cacheKey] = binanceSymbolRules{
 		Symbol:      "BTCUSDT",
 		TickSize:    0.1,
@@ -1482,6 +1494,67 @@ func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
 	}
 	if normalizationItemCount(mapValue(summary["normalization"])["quantityAdjustments"]) != 2 {
 		t.Fatalf("expected quantity adjustment details in dispatch summary, got %+v", summary["normalization"])
+	}
+}
+
+func TestExecutionDispatchSummaryFallsBackToNestedNormalizedPrice(t *testing.T) {
+	summary := executionDispatchSummary(map[string]any{
+		"type":       "LIMIT",
+		"quantity":   0.0019,
+		"limitPrice": 68643.6,
+		"priceHint":  68643.67,
+	}, domain.Order{
+		Status:   "NEW",
+		Symbol:   "BTCUSDT",
+		Side:     "BUY",
+		Type:     "LIMIT",
+		Quantity: 0.002,
+		Price:    68643.6,
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalization": map[string]any{
+					"normalizedPrice":    68643.6,
+					"normalizedQuantity": 0.002,
+					"rawPriceReference":  68643.67,
+					"rawQuantity":        0.0019,
+				},
+			},
+		},
+	}, false)
+	if got := parseFloatValue(summary["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected normalized price fallback from normalization payload, got %v", got)
+	}
+}
+
+func TestExecutionTimeoutTimelineMetadataUsesOriginalSubmissionNormalization(t *testing.T) {
+	order := domain.Order{
+		ID: "order-1",
+		Metadata: map[string]any{
+			"executionExpiresAt": "2026-04-10T01:00:00Z",
+			"executionProposal": map[string]any{
+				"type":       "LIMIT",
+				"quantity":   0.0019,
+				"limitPrice": 68643.6,
+				"priceHint":  68643.67,
+			},
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 68643.6,
+				"normalization": map[string]any{
+					"normalizedPrice":    68643.6,
+					"normalizedQuantity": 0.002,
+					"rawPriceReference":  68643.67,
+					"rawQuantity":        0.0019,
+				},
+			},
+		},
+	}
+	cancelledOrder := domain.Order{
+		ID:     "order-1",
+		Status: "CANCELLED",
+	}
+	metadata := executionTimeoutTimelineMetadata(order, withExecutionSubmissionFallback(cancelledOrder, order))
+	if got := parseFloatValue(metadata["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected timeout metadata to preserve normalized price, got %v", got)
 	}
 }
 

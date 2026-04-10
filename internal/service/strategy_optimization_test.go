@@ -204,6 +204,12 @@ func TestResolveAndApplyLivePositionWatermarksAreSeparated(t *testing.T) {
 	if parseFloatValue(sessionState["hwm"]) != 52500.0 {
 		t.Fatalf("expected apply to persist advanced HWM, got %v", sessionState["hwm"])
 	}
+	if parseFloatValue(sessionState["lwm"]) != 50000.0 {
+		t.Fatalf("expected apply to preserve LWM, got %v", sessionState["lwm"])
+	}
+	if got := stringValue(sessionState["watermarkPositionKey"]); got != "LONG|50000.00000000" {
+		t.Fatalf("expected apply to persist watermark key, got %s", got)
+	}
 }
 
 func TestDeriveLivePositionStateUsesProvidedWatermarks(t *testing.T) {
@@ -237,5 +243,39 @@ func TestDeriveLivePositionStateUsesProvidedWatermarks(t *testing.T) {
 	}
 	if got := parseFloatValue(state["hwm"]); got != 50600.0 {
 		t.Fatalf("expected returned HWM 50600, got %v", got)
+	}
+}
+
+func TestDeriveLivePositionStateUsesProvidedWatermarksForShort(t *testing.T) {
+	parameters := map[string]any{
+		"trailing_stop_atr":               0.3,
+		"delayed_trailing_activation_atr": 0.5,
+		"stop_loss_atr":                   0.05,
+		"stop_mode":                       "atr",
+	}
+	signalBarState := map[string]any{
+		"atr14":    1000.0,
+		"current":  map[string]any{"close": 49400.0},
+		"prevBar1": map[string]any{"high": 50500.0, "low": 49500.0},
+		"prevBar2": map[string]any{"high": 50600.0, "low": 49400.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"side":       "SHORT",
+		"entryPrice": 50000.0,
+		"stopLoss":   50050.0,
+		"quantity":   1.0,
+	}
+	watermarks := livePositionWatermarks{
+		PositionKey: "SHORT|50000.00000000",
+		HWM:         50000.0,
+		LWM:         49400.0,
+	}
+	state := deriveLivePositionState(parameters, currentPosition, signalBarState, 49400.0, watermarks)
+	if got := parseFloatValue(state["stopLoss"]); got != 49700.0 {
+		t.Fatalf("expected trailing SL 49700 from provided short watermarks, got %v", got)
+	}
+	if got := parseFloatValue(state["lwm"]); got != 49400.0 {
+		t.Fatalf("expected returned LWM 49400, got %v", got)
 	}
 }

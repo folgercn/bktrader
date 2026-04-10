@@ -485,7 +485,8 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastSyncedAt"] = eventTime.UTC().Format(time.RFC3339)
 		state["lastExecutionTimeoutAt"] = eventTime.UTC().Format(time.RFC3339)
 		state["lastExecutionTimeoutReason"] = "resting-order-expired"
-		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), cancelledOrder, false)
+		timeoutOrder := withExecutionSubmissionFallback(cancelledOrder, order)
+		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), timeoutOrder, false)
 		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 		timeoutSignature := buildLiveIntentSignature(mapValue(order.Metadata["executionProposal"]))
 		if timeoutSignature == "" {
@@ -494,7 +495,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		if timeoutSignature != "" {
 			state["lastExecutionTimeoutIntentSignature"] = timeoutSignature
 		}
-		appendTimelineEvent(state, "order", eventTime, "live-order-cancelled-timeout", executionTimeoutTimelineMetadata(order, cancelledOrder))
+		appendTimelineEvent(state, "order", eventTime, "live-order-cancelled-timeout", executionTimeoutTimelineMetadata(order, timeoutOrder))
 		return p.store.UpdateLiveSessionState(session.ID, state)
 	}
 	syncedOrder, err := p.SyncLiveOrder(order.ID)
@@ -600,6 +601,23 @@ func firstNonEmptyMapValue(values ...any) map[string]any {
 	return nil
 }
 
+func withExecutionSubmissionFallback(order domain.Order, fallback domain.Order) domain.Order {
+	if len(mapValue(order.Metadata["adapterSubmission"])) > 0 {
+		return order
+	}
+	fallbackSubmission := cloneMetadata(mapValue(fallback.Metadata["adapterSubmission"]))
+	if len(fallbackSubmission) == 0 {
+		return order
+	}
+	enriched := order
+	enriched.Metadata = cloneMetadata(order.Metadata)
+	if enriched.Metadata == nil {
+		enriched.Metadata = map[string]any{}
+	}
+	enriched.Metadata["adapterSubmission"] = fallbackSubmission
+	return enriched
+}
+
 func executionDispatchSummary(proposalMap map[string]any, order domain.Order, failed bool) map[string]any {
 	proposalMeta := cloneMetadata(mapValue(proposalMap["metadata"]))
 	adapterSubmission := cloneMetadata(mapValue(order.Metadata["adapterSubmission"]))
@@ -640,10 +658,13 @@ func executionDispatchSummary(proposalMap map[string]any, order domain.Order, fa
 			parseFloatValue(adapterSubmission["rawPriceReference"]),
 			parseFloatValue(mapValue(adapterSubmission["normalization"])["rawPriceReference"]),
 		),
-		"normalizedPrice": parseFloatValue(adapterSubmission["normalizedPrice"]),
-		"normalization":   cloneMetadata(mapValue(adapterSubmission["normalization"])),
-		"symbolRules":     cloneMetadata(mapValue(adapterSubmission["symbolRules"])),
-		"failed":          failed,
+		"normalizedPrice": firstPositive(
+			parseFloatValue(adapterSubmission["normalizedPrice"]),
+			parseFloatValue(mapValue(adapterSubmission["normalization"])["normalizedPrice"]),
+		),
+		"normalization": cloneMetadata(mapValue(adapterSubmission["normalization"])),
+		"symbolRules":   cloneMetadata(mapValue(adapterSubmission["symbolRules"])),
+		"failed":        failed,
 	}
 }
 
