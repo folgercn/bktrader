@@ -723,6 +723,22 @@ func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCap(t *testing
 	}
 }
 
+func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCapForBuy(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("BUY", 2.0, 68000, 68150, 0, 1.0, 68150, 20)
+	if got := decision.DepthMode; got != "coverage-weighted-cap" {
+		t.Fatalf("expected coverage-weighted-cap mode, got %s", got)
+	}
+	if got := decision.ExpectedCoverage; got != 0.5 {
+		t.Fatalf("expected 50%% coverage, got %v", got)
+	}
+	if got := decision.Price; got != 68143.075 {
+		t.Fatalf("expected weighted protection price 68143.075, got %v", got)
+	}
+	if got := decision.QuoteGapBps; got <= 0 {
+		t.Fatalf("expected positive quote gap bps, got %v", got)
+	}
+}
+
 func TestBookAwareExecutionStrategyUsesFallbackOrderAfterTimeoutMatch(t *testing.T) {
 	strategy := bookAwareExecutionStrategy{}
 	intent := SignalIntent{

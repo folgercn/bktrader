@@ -636,7 +636,7 @@ func resolveAggressiveSLProtectionDecision(side string, quantity, bestBid, bestA
 						decision.DepthMode = "top-book-cover"
 						return decision
 					}
-					decision.Price = spreadCapped + (bestAsk-spreadCapped)*(1-coverage)
+					decision.Price = spreadCapped + (bestAsk-spreadCapped)*coverage
 					decision.DepthMode = "coverage-weighted-cap"
 					return decision
 				}
