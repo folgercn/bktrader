@@ -175,3 +175,67 @@ func TestUpdateLivePositionWatermarksResetsWhenPositionChanges(t *testing.T) {
 		t.Fatalf("expected watermark key to reset, got %s", got)
 	}
 }
+
+func TestResolveAndApplyLivePositionWatermarksAreSeparated(t *testing.T) {
+	sessionState := map[string]any{
+		"hwm":                  52000.0,
+		"lwm":                  50000.0,
+		"watermarkPositionKey": "LONG|50000.00000000",
+	}
+	currentPosition := map[string]any{
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+	}
+	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
+	if watermarks.HWM != 52000.0 || watermarks.LWM != 50000.0 {
+		t.Fatalf("expected resolved watermarks from session state, got %+v", watermarks)
+	}
+	if got := stringValue(sessionState["watermarkPositionKey"]); got != "LONG|50000.00000000" {
+		t.Fatalf("expected resolve to stay side-effect free, got %s", got)
+	}
+	advanced := advanceLivePositionWatermarks(watermarks, 52500.0)
+	if advanced.HWM != 52500.0 {
+		t.Fatalf("expected advanced HWM 52500, got %v", advanced.HWM)
+	}
+	if parseFloatValue(sessionState["hwm"]) != 52000.0 {
+		t.Fatalf("expected advance to stay side-effect free, got %v", sessionState["hwm"])
+	}
+	applyLivePositionWatermarks(sessionState, advanced)
+	if parseFloatValue(sessionState["hwm"]) != 52500.0 {
+		t.Fatalf("expected apply to persist advanced HWM, got %v", sessionState["hwm"])
+	}
+}
+
+func TestDeriveLivePositionStateUsesProvidedWatermarks(t *testing.T) {
+	parameters := map[string]any{
+		"trailing_stop_atr":               0.3,
+		"delayed_trailing_activation_atr": 0.5,
+		"stop_loss_atr":                   0.05,
+		"stop_mode":                       "atr",
+	}
+	signalBarState := map[string]any{
+		"atr14":    1000.0,
+		"current":  map[string]any{"close": 50600.0},
+		"prevBar1": map[string]any{"high": 50500.0, "low": 49500.0},
+		"prevBar2": map[string]any{"high": 50600.0, "low": 49400.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+		"stopLoss":   49950.0,
+		"quantity":   1.0,
+	}
+	watermarks := livePositionWatermarks{
+		PositionKey: "LONG|50000.00000000",
+		HWM:         50600.0,
+		LWM:         50000.0,
+	}
+	state := deriveLivePositionState(parameters, currentPosition, signalBarState, 50600.0, watermarks)
+	if got := parseFloatValue(state["stopLoss"]); got != 50300.0 {
+		t.Fatalf("expected trailing SL 50300 from provided watermarks, got %v", got)
+	}
+	if got := parseFloatValue(state["hwm"]); got != 50600.0 {
+		t.Fatalf("expected returned HWM 50600, got %v", got)
+	}
+}
