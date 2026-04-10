@@ -752,16 +752,15 @@ func hasActiveLivePositionSnapshot(currentPosition map[string]any) bool {
 }
 
 func buildLivePositionWatermarkBaseKey(currentPosition map[string]any) string {
-	entryPrice := parseFloatValue(currentPosition["entryPrice"])
 	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
-	if entryPrice <= 0 || side == "" {
+	if side == "" {
 		return ""
 	}
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 2)
 	if symbol := NormalizeSymbol(stringValue(currentPosition["symbol"])); symbol != "" {
 		parts = append(parts, symbol)
 	}
-	parts = append(parts, side, fmt.Sprintf("%.8f", entryPrice))
+	parts = append(parts, side)
 	return strings.Join(parts, "|")
 }
 
@@ -771,18 +770,24 @@ func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState 
 		return ""
 	}
 	lastKey := stringValue(sessionState["watermarkPositionKey"])
+	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
+		return positionID + "|" + baseKey
+	}
 	if lastKey != "" {
 		if lastKey == baseKey || strings.HasSuffix(lastKey, "|"+baseKey) {
 			return lastKey
 		}
-		if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" && lastKey == positionID {
-			return lastKey
-		}
-	}
-	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
-		return positionID + "|" + baseKey
 	}
 	return baseKey
+}
+
+func clearLivePositionWatermarks(sessionState map[string]any) {
+	if sessionState == nil {
+		return
+	}
+	delete(sessionState, "watermarkPositionKey")
+	delete(sessionState, "hwm")
+	delete(sessionState, "lwm")
 }
 
 func resolveLivePositionWatermarks(currentPosition map[string]any, sessionState map[string]any) livePositionWatermarks {
@@ -807,6 +812,13 @@ func resolveLivePositionWatermarks(currentPosition map[string]any, sessionState 
 		lwm = entryPrice
 	}
 	if lastKey := stringValue(sessionState["watermarkPositionKey"]); lastKey != positionKey {
+		if currentID := strings.TrimSpace(stringValue(currentPosition["id"])); currentID != "" && lastKey == currentID {
+			return livePositionWatermarks{
+				PositionKey: positionKey,
+				HWM:         hwm,
+				LWM:         lwm,
+			}
+		}
 		hwm = entryPrice
 		lwm = entryPrice
 	}
@@ -846,6 +858,10 @@ func applyLivePositionWatermarks(sessionState map[string]any, watermarks livePos
 }
 
 func refreshLivePositionWatermarks(sessionState map[string]any, currentPosition map[string]any, marketPrice float64) livePositionWatermarks {
+	if !hasActiveLivePositionSnapshot(currentPosition) {
+		clearLivePositionWatermarks(sessionState)
+		return livePositionWatermarks{}
+	}
 	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
 	watermarks = advanceLivePositionWatermarks(watermarks, marketPrice)
 	applyLivePositionWatermarks(sessionState, watermarks)
@@ -859,6 +875,8 @@ func evaluateLivePositionState(parameters map[string]any, currentPosition map[st
 	var watermarks livePositionWatermarks
 	if hasActiveLivePositionSnapshot(currentPosition) {
 		watermarks = refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
+	} else {
+		clearLivePositionWatermarks(sessionState)
 	}
 	return deriveLivePositionState(parameters, currentPosition, signalBarState, marketPrice, watermarks)
 }

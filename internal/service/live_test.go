@@ -1689,14 +1689,14 @@ func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testi
 	}
 	merged := withExecutionSubmissionFallback(order, fallback)
 	submission := mapValue(merged.Metadata["adapterSubmission"])
-	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
-		t.Fatalf("expected zero normalized price to fall back, got %v", got)
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 0 {
+		t.Fatalf("expected explicit zero normalized price to be preserved, got %v", got)
 	}
-	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
-		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
+	if got := parseFloatValue(submission["rawQuantity"]); got != 0 {
+		t.Fatalf("expected explicit zero raw quantity to be preserved, got %v", got)
 	}
-	if got := boolValue(submission["reduceOnly"]); !got {
-		t.Fatal("expected zero-value reduceOnly to fall back to original true")
+	if got := boolValue(submission["reduceOnly"]); got {
+		t.Fatal("expected explicit false reduceOnly to be preserved")
 	}
 }
 

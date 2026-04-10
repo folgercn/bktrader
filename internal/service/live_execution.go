@@ -678,15 +678,7 @@ func executionSubmissionValuePresent(path string, value any) bool {
 }
 
 func executionSubmissionBooleanValuePresent(path string, value bool) bool {
-	if value {
-		return true
-	}
-	switch path {
-	case "postOnly", "reduceOnly", "closePosition", "slProtectionActive":
-		return false
-	default:
-		return true
-	}
+	return true
 }
 
 func executionSubmissionNumericValuePresent(path string, value float64) bool {
@@ -694,19 +686,12 @@ func executionSubmissionNumericValuePresent(path string, value float64) bool {
 		return true
 	}
 	switch path {
-	case "rawQuantity",
-		"normalizedQuantity",
-		"rawPriceReference",
-		"normalizedPrice",
-		"normalization.rawQuantity",
-		"normalization.normalizedQuantity",
-		"normalization.rawPriceReference",
-		"normalization.normalizedPrice":
+	case "symbolRules.minQty",
+		"symbolRules.stepSize",
+		"symbolRules.tickSize",
+		"symbolRules.minNotional":
 		return false
 	default:
-		if strings.HasPrefix(path, "symbolRules.") {
-			return false
-		}
 		return true
 	}
 }
