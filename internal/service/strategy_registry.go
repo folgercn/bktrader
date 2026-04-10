@@ -230,6 +230,8 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		var watermarks livePositionWatermarks
 		if hasActiveLivePositionSnapshot(currentPosition) {
 			watermarks = refreshLivePositionWatermarks(context.SessionState, currentPosition, marketPrice)
+		} else {
+			clearLivePositionWatermarks(context.SessionState)
 		}
 		livePositionState = deriveLivePositionState(context.ExecutionContext.Parameters, currentPosition, signalBarState, marketPrice, watermarks)
 		if strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") {
@@ -782,10 +784,11 @@ func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState 
 	lastKey := stringValue(sessionState["watermarkPositionKey"])
 	legacyBaseKey := buildLegacyLivePositionWatermarkKey(currentPosition)
 	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
-		if lastKey == positionID || strings.HasPrefix(lastKey, positionID+"|") || lastKey == baseKey || lastKey == legacyBaseKey {
-			return lastKey
+		currentKey := positionID + "|" + baseKey
+		if lastKey == positionID || strings.HasPrefix(lastKey, positionID+"|") {
+			return currentKey
 		}
-		return positionID + "|" + baseKey
+		return currentKey
 	}
 	if lastKey != "" {
 		if lastKey == baseKey || lastKey == legacyBaseKey || strings.HasSuffix(lastKey, "|"+baseKey) || strings.HasSuffix(lastKey, "|"+legacyBaseKey) {
