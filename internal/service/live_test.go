@@ -753,6 +753,19 @@ func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenWithinCapForBuy(t *
 	}
 }
 
+func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenWithinCapForBuy(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("BUY", 2.0, 68000, 68010, 0, 1.0, 68010, 20)
+	if got := decision.DepthMode; got != "top-book-partial-within-cap" {
+		t.Fatalf("expected top-book-partial-within-cap mode, got %s", got)
+	}
+	if got := decision.ExpectedCoverage; got != 0.5 {
+		t.Fatalf("expected 50%% coverage, got %v", got)
+	}
+	if got := decision.Price; got != 68010 {
+		t.Fatalf("expected within-cap BUY price to remain at ask 68010, got %v", got)
+	}
+}
+
 func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenWithinCap(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68010, 1.2, 0, 68000, 20)
 	if got := decision.DepthMode; got != "top-book-cover-within-cap" {
@@ -1689,11 +1702,11 @@ func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testi
 	}
 	merged := withExecutionSubmissionFallback(order, fallback)
 	submission := mapValue(merged.Metadata["adapterSubmission"])
-	if got := parseFloatValue(submission["normalizedPrice"]); got != 0 {
-		t.Fatalf("expected explicit zero normalized price to be preserved, got %v", got)
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected zero normalized price to fall back, got %v", got)
 	}
-	if got := parseFloatValue(submission["rawQuantity"]); got != 0 {
-		t.Fatalf("expected explicit zero raw quantity to be preserved, got %v", got)
+	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
+		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
 	}
 	if got := boolValue(submission["reduceOnly"]); got {
 		t.Fatal("expected explicit false reduceOnly to be preserved")

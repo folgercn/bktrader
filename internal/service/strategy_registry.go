@@ -230,6 +230,8 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		var watermarks livePositionWatermarks
 		if hasActiveLivePositionSnapshot(currentPosition) {
 			watermarks = refreshLivePositionWatermarks(context.SessionState, currentPosition, marketPrice)
+		} else {
+			clearLivePositionWatermarks(context.SessionState)
 		}
 		livePositionState = deriveLivePositionState(context.ExecutionContext.Parameters, currentPosition, signalBarState, marketPrice, watermarks)
 		if strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") {
@@ -752,16 +754,26 @@ func hasActiveLivePositionSnapshot(currentPosition map[string]any) bool {
 }
 
 func buildLivePositionWatermarkBaseKey(currentPosition map[string]any) string {
+	entryPrice := parseFloatValue(currentPosition["entryPrice"])
 	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
-	if side == "" {
+	if entryPrice <= 0 || side == "" {
 		return ""
 	}
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 3)
 	if symbol := NormalizeSymbol(stringValue(currentPosition["symbol"])); symbol != "" {
 		parts = append(parts, symbol)
 	}
-	parts = append(parts, side)
+	parts = append(parts, side, fmt.Sprintf("%.8f", entryPrice))
 	return strings.Join(parts, "|")
+}
+
+func buildLegacyLivePositionWatermarkKey(currentPosition map[string]any) string {
+	entryPrice := parseFloatValue(currentPosition["entryPrice"])
+	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
+	if entryPrice <= 0 || side == "" {
+		return ""
+	}
+	return strings.Join([]string{side, fmt.Sprintf("%.8f", entryPrice)}, "|")
 }
 
 func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState map[string]any) string {
@@ -770,11 +782,15 @@ func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState 
 		return ""
 	}
 	lastKey := stringValue(sessionState["watermarkPositionKey"])
+	legacyBaseKey := buildLegacyLivePositionWatermarkKey(currentPosition)
 	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
+		if lastKey == positionID || strings.HasPrefix(lastKey, positionID+"|") || lastKey == baseKey || lastKey == legacyBaseKey {
+			return lastKey
+		}
 		return positionID + "|" + baseKey
 	}
 	if lastKey != "" {
-		if lastKey == baseKey || strings.HasSuffix(lastKey, "|"+baseKey) {
+		if lastKey == baseKey || lastKey == legacyBaseKey || strings.HasSuffix(lastKey, "|"+baseKey) || strings.HasSuffix(lastKey, "|"+legacyBaseKey) {
 			return lastKey
 		}
 	}

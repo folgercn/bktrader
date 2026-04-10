@@ -686,6 +686,15 @@ func executionSubmissionNumericValuePresent(path string, value float64) bool {
 		return true
 	}
 	switch path {
+	case "rawQuantity",
+		"normalizedQuantity",
+		"rawPriceReference",
+		"normalizedPrice",
+		"normalization.rawQuantity",
+		"normalization.normalizedQuantity",
+		"normalization.rawPriceReference",
+		"normalization.normalizedPrice":
+		return false
 	case "symbolRules.minQty",
 		"symbolRules.stepSize",
 		"symbolRules.tickSize",
