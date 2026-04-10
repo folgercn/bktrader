@@ -968,22 +968,21 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
 
                         if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
-                            if (reason == 'SL-Reentry' and trades_in_bar < MAX_TRADES_PER_BAR) or reason == 'PT-Reentry':
+                            if trades_in_bar < MAX_TRADES_PER_BAR:
                                 current_reentry_size = _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
                                 notional_value = balance * current_reentry_size
                                 entry_price = entry_p_raw * (1 + SLIPPAGE)
                                 reentry_sl = _resolve_stop_price('long', entry_price, sig, stop_mode, stop_loss_atr)
                                 position = {
                                     'side': 'long', 'entry_p': entry_price,
-                                    'sl': reentry_sl, 'protected': (reason == 'PT'),
+                                    'sl': reentry_sl, 'protected': (reason == 'PT-Reentry'),
                                     'notional': notional_value,
                                     'hwm': entry_price,
                                 }
                                 balance -= notional_value * COMMISSION
                                 trade_logs.append({'time': bar_time, 'type': 'BUY', 'price': entry_price,
                                                    'reason': reason, 'notional': notional_value, 'bal': balance})
-                                if reason == 'SL-Reentry':
-                                    trades_in_bar += 1
+                                trades_in_bar += 1
                                 executed = True
                             last_exit_side = None
 
@@ -1019,22 +1018,21 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
 
                         if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
-                            if (reason == 'SL-Reentry' and trades_in_bar < MAX_TRADES_PER_BAR) or reason == 'PT-Reentry':
+                            if trades_in_bar < MAX_TRADES_PER_BAR:
                                 current_reentry_size = _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
                                 notional_value = balance * current_reentry_size
                                 entry_price = entry_p_raw * (1 - SLIPPAGE)
                                 reentry_sl = _resolve_stop_price('short', entry_price, sig, stop_mode, stop_loss_atr)
                                 position = {
                                     'side': 'short', 'entry_p': entry_price,
-                                    'sl': reentry_sl, 'protected': (reason == 'PT'),
+                                    'sl': reentry_sl, 'protected': (reason == 'PT-Reentry'),
                                     'notional': notional_value,
                                     'lwm': entry_price,
                                 }
                                 balance -= notional_value * COMMISSION
                                 trade_logs.append({'time': bar_time, 'type': 'SHORT', 'price': entry_price,
                                                    'reason': reason, 'notional': notional_value, 'bal': balance})
-                                if reason == 'SL-Reentry':
-                                    trades_in_bar += 1
+                                trades_in_bar += 1
                                 executed = True
                             last_exit_side = None
 
@@ -1047,98 +1045,113 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                 reason = ''
 
                 if position['side'] == 'long':
-                    # 更新高水位
-                    position['hwm'] = max(position.get('hwm', position['entry_p']), bar['high'])
+                    prev_hwm = position.get('hwm', position['entry_p'])
+                    protected_before_bar = position.get('protected', False)
 
                     # ===== Trailing Stop =====
                     if trailing_stop_atr is not None:
                         is_active = True
                         if delayed_trailing_activation is not None:
-                            profit_atr = (bar['high'] - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                            profit_atr = (prev_hwm - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
                             if profit_atr < delayed_trailing_activation:
                                 is_active = False
                         
                         if is_active:
-                            trailing_sl = position['hwm'] - trailing_stop_atr * sig['atr']
+                            trailing_sl = prev_hwm - trailing_stop_atr * sig['atr']
                             position['sl'] = max(position['sl'], trailing_sl)
 
-                    # ===== 分层 Protection =====
-                    if tiered_protection:
-                        profit_atr = (bar['high'] - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
-                        if profit_atr >= 3.0:
-                            # 高利润：trailing 模式
-                            tiered_exit = max(sig['prev_low_1'], position['hwm'] - 1.5 * sig['atr'])
-                            if not position['protected']:
-                                position['protected'] = True
+                    # SL check (优先级最高)
+                    if bar['low'] <= position['sl']:
+                        exit_p, reason, exit_triggered = position['sl'], 'SL', True
+                    elif tiered_protection:
+                        profit_atr = (prev_hwm - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                        if protected_before_bar and profit_atr >= 3.0:
+                            tiered_exit = max(sig['prev_low_1'], prev_hwm - 1.5 * sig['atr'])
                             if bar['low'] <= tiered_exit:
                                 exit_p, reason, exit_triggered = tiered_exit, 'PT-T3', True
-                        elif profit_atr >= 2.0:
-                            # 中利润：锁定 0.5 ATR
+                        elif protected_before_bar and profit_atr >= 2.0:
                             tiered_exit = max(sig['prev_low_1'], position['entry_p'] + 0.5 * sig['atr'])
-                            if not position['protected']:
-                                position['protected'] = True
                             if bar['low'] <= tiered_exit:
                                 exit_p, reason, exit_triggered = tiered_exit, 'PT-T2', True
-                        elif profit_atr >= PROFIT_PROTECT:
-                            if not position['protected']:
-                                position['protected'] = True
-                            if position['protected'] and bar['low'] <= sig['prev_low_1']:
-                                exit_p, reason, exit_triggered = sig['prev_low_1'], 'PT', True
+                        elif protected_before_bar and bar['low'] <= sig['prev_low_1']:
+                            exit_p, reason, exit_triggered = sig['prev_low_1'], 'PT', True
                     else:
-                        # 原始 binary protection
-                        if not position['protected'] and bar['high'] >= position['entry_p'] + PROFIT_PROTECT * sig['atr']:
-                            position['protected'] = True
-                        if position['protected'] and bar['low'] <= sig['prev_low_1']:
+                        if protected_before_bar and bar['low'] <= sig['prev_low_1']:
                             exit_p, reason, exit_triggered = sig['prev_low_1'], 'PT', True
 
-                    # SL check (优先级最高)
-                    if not exit_triggered and bar['low'] <= position['sl']:
-                        exit_p, reason, exit_triggered = position['sl'], 'SL', True
+                    if not exit_triggered:
+                        # 当前 bar 结束后再更新水位和保护状态，避免把同 bar 的 high/low 当作已知路径。
+                        position['hwm'] = max(prev_hwm, bar['high'])
+                        if tiered_protection:
+                            profit_atr = (position['hwm'] - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                            if profit_atr >= PROFIT_PROTECT and not position['protected']:
+                                position['protected'] = True
+                        else:
+                            if not position['protected'] and bar['high'] >= position['entry_p'] + PROFIT_PROTECT * sig['atr']:
+                                position['protected'] = True
+                        if trailing_stop_atr is not None:
+                            is_active = True
+                            if delayed_trailing_activation is not None:
+                                profit_atr = (position['hwm'] - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                                if profit_atr < delayed_trailing_activation:
+                                    is_active = False
+                            if is_active:
+                                trailing_sl = position['hwm'] - trailing_stop_atr * sig['atr']
+                                position['sl'] = max(position['sl'], trailing_sl)
 
                 else:  # short
-                    # 更新低水位
-                    position['lwm'] = min(position.get('lwm', position['entry_p']), bar['low'])
+                    prev_lwm = position.get('lwm', position['entry_p'])
+                    protected_before_bar = position.get('protected', False)
 
                     # ===== Trailing Stop =====
                     if trailing_stop_atr is not None:
                         is_active = True
                         if delayed_trailing_activation is not None:
-                            profit_atr = (position['entry_p'] - bar['low']) / sig['atr'] if sig['atr'] > 0 else 0
+                            profit_atr = (position['entry_p'] - prev_lwm) / sig['atr'] if sig['atr'] > 0 else 0
                             if profit_atr < delayed_trailing_activation:
                                 is_active = False
 
                         if is_active:
-                            trailing_sl = position['lwm'] + trailing_stop_atr * sig['atr']
+                            trailing_sl = prev_lwm + trailing_stop_atr * sig['atr']
                             position['sl'] = min(position['sl'], trailing_sl)
 
-                    # ===== 分层 Protection =====
-                    if tiered_protection:
-                        profit_atr = (position['entry_p'] - bar['low']) / sig['atr'] if sig['atr'] > 0 else 0
-                        if profit_atr >= 3.0:
-                            tiered_exit = min(sig['prev_high_1'], position['lwm'] + 1.5 * sig['atr'])
-                            if not position['protected']:
-                                position['protected'] = True
+                    if bar['high'] >= position['sl']:
+                        exit_p, reason, exit_triggered = position['sl'], 'SL', True
+                    elif tiered_protection:
+                        profit_atr = (position['entry_p'] - prev_lwm) / sig['atr'] if sig['atr'] > 0 else 0
+                        if protected_before_bar and profit_atr >= 3.0:
+                            tiered_exit = min(sig['prev_high_1'], prev_lwm + 1.5 * sig['atr'])
                             if bar['high'] >= tiered_exit:
                                 exit_p, reason, exit_triggered = tiered_exit, 'PT-T3', True
-                        elif profit_atr >= 2.0:
+                        elif protected_before_bar and profit_atr >= 2.0:
                             tiered_exit = min(sig['prev_high_1'], position['entry_p'] - 0.5 * sig['atr'])
-                            if not position['protected']:
-                                position['protected'] = True
                             if bar['high'] >= tiered_exit:
                                 exit_p, reason, exit_triggered = tiered_exit, 'PT-T2', True
-                        elif profit_atr >= PROFIT_PROTECT:
-                            if not position['protected']:
-                                position['protected'] = True
-                            if position['protected'] and bar['high'] >= sig['prev_high_1']:
-                                exit_p, reason, exit_triggered = sig['prev_high_1'], 'PT', True
+                        elif protected_before_bar and bar['high'] >= sig['prev_high_1']:
+                            exit_p, reason, exit_triggered = sig['prev_high_1'], 'PT', True
                     else:
-                        if not position['protected'] and bar['low'] <= position['entry_p'] - PROFIT_PROTECT * sig['atr']:
-                            position['protected'] = True
-                        if position['protected'] and bar['high'] >= sig['prev_high_1']:
+                        if protected_before_bar and bar['high'] >= sig['prev_high_1']:
                             exit_p, reason, exit_triggered = sig['prev_high_1'], 'PT', True
 
-                    if not exit_triggered and bar['high'] >= position['sl']:
-                        exit_p, reason, exit_triggered = position['sl'], 'SL', True
+                    if not exit_triggered:
+                        # 当前 bar 结束后再更新水位和保护状态，避免把同 bar 的 high/low 当作已知路径。
+                        position['lwm'] = min(prev_lwm, bar['low'])
+                        if tiered_protection:
+                            profit_atr = (position['entry_p'] - position['lwm']) / sig['atr'] if sig['atr'] > 0 else 0
+                            if profit_atr >= PROFIT_PROTECT and not position['protected']:
+                                position['protected'] = True
+                        else:
+                            if not position['protected'] and bar['low'] <= position['entry_p'] - PROFIT_PROTECT * sig['atr']:
+                                position['protected'] = True
+                        if trailing_stop_atr is not None:
+                            is_active = True
+                            if delayed_trailing_activation is not None:
+                                profit_atr = (position['entry_p'] - position['lwm']) / sig['atr'] if sig['atr'] > 0 else 0
+                                if profit_atr < delayed_trailing_activation:
+                                    is_active = False
+                            if is_active:
+                                trailing_sl = position['lwm'] + trailing_stop_atr * sig['atr']
+                                position['sl'] = min(position['sl'], trailing_sl)
 
                 if exit_triggered:
                     side_mult = 1 if position['side'] == 'long' else -1
