@@ -791,11 +791,26 @@ func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState 
 		return currentKey
 	}
 	if lastKey != "" {
-		if lastKey == baseKey || lastKey == legacyBaseKey || strings.HasSuffix(lastKey, "|"+baseKey) || strings.HasSuffix(lastKey, "|"+legacyBaseKey) {
+		if lastKey == baseKey || lastKey == legacyBaseKey {
 			return lastKey
 		}
 	}
 	return baseKey
+}
+
+func isCompatibleLivePositionWatermarkMigration(lastKey string, currentPosition map[string]any, positionKey string) bool {
+	if lastKey == "" || positionKey == "" {
+		return false
+	}
+	if lastKey == positionKey {
+		return true
+	}
+	baseKey := buildLivePositionWatermarkBaseKey(currentPosition)
+	legacyBaseKey := buildLegacyLivePositionWatermarkKey(currentPosition)
+	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
+		return lastKey == positionID || lastKey == baseKey || lastKey == legacyBaseKey
+	}
+	return lastKey == baseKey || lastKey == legacyBaseKey
 }
 
 func clearLivePositionWatermarks(sessionState map[string]any) {
@@ -829,7 +844,7 @@ func resolveLivePositionWatermarks(currentPosition map[string]any, sessionState 
 		lwm = entryPrice
 	}
 	if lastKey := stringValue(sessionState["watermarkPositionKey"]); lastKey != positionKey {
-		if currentID := strings.TrimSpace(stringValue(currentPosition["id"])); currentID != "" && lastKey == currentID {
+		if isCompatibleLivePositionWatermarkMigration(lastKey, currentPosition, positionKey) {
 			return livePositionWatermarks{
 				PositionKey: positionKey,
 				HWM:         hwm,
