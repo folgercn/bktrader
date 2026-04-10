@@ -806,9 +806,19 @@ func isCompatibleLivePositionWatermarkMigration(lastKey string, currentPosition 
 	baseKey := buildLivePositionWatermarkBaseKey(currentPosition)
 	legacyBaseKey := buildLegacyLivePositionWatermarkKey(currentPosition)
 	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
-		return lastKey == positionID || lastKey == baseKey || lastKey == legacyBaseKey
+		if boolValue(currentPosition["virtual"]) && lastKey == positionID {
+			return true
+		}
+		if lastKey == baseKey || lastKey == legacyBaseKey {
+			return true
+		}
+		return strings.HasPrefix(lastKey, positionID+"|") &&
+			(strings.HasSuffix(lastKey, "|"+baseKey) || strings.HasSuffix(lastKey, "|"+legacyBaseKey))
 	}
-	return lastKey == baseKey || lastKey == legacyBaseKey
+	return lastKey == baseKey ||
+		lastKey == legacyBaseKey ||
+		strings.HasSuffix(lastKey, "|"+baseKey) ||
+		strings.HasSuffix(lastKey, "|"+legacyBaseKey)
 }
 
 func clearLivePositionWatermarks(sessionState map[string]any) {

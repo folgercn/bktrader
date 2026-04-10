@@ -751,9 +751,15 @@ func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds 
 			priceAdjustments = append(priceAdjustments, "tick_size")
 		}
 	}
-	if adjustedQty := normalizeBinanceQuantityForMinNotional(normalized.Quantity, firstPositive(normalized.Price, priceReference), rules); adjustedQty > normalized.Quantity {
-		normalized.Quantity = adjustedQty
-		quantityAdjustments = append(quantityAdjustments, "min_notional")
+	if requiredQty := requiredBinanceQuantityForMinNotional(normalized.Quantity, firstPositive(normalized.Price, priceReference), rules); requiredQty > normalized.Quantity {
+		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf(
+			"normalized order quantity %.12f below minNotional %.12f for %s at price %.12f (requires >= %.12f)",
+			normalized.Quantity,
+			rules.MinNotional,
+			rules.Symbol,
+			firstPositive(normalized.Price, priceReference),
+			requiredQty,
+		)
 	}
 	normalized.Metadata["normalizedQuantity"] = normalized.Quantity
 	if normalized.Price > 0 {
@@ -893,7 +899,7 @@ func normalizeBinancePrice(price float64, rules binanceSymbolRules) float64 {
 	return roundToStep(price, rules.TickSize)
 }
 
-func normalizeBinanceQuantityForMinNotional(quantity, price float64, rules binanceSymbolRules) float64 {
+func requiredBinanceQuantityForMinNotional(quantity, price float64, rules binanceSymbolRules) float64 {
 	if quantity <= 0 || price <= 0 || rules.MinNotional <= 0 {
 		return quantity
 	}

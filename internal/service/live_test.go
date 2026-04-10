@@ -1442,16 +1442,16 @@ func TestFormatBinanceDecimalUsesExchangePrecision(t *testing.T) {
 	}
 }
 
-func TestNormalizeBinanceQuantityForMinNotional(t *testing.T) {
+func TestRequiredBinanceQuantityForMinNotional(t *testing.T) {
 	rules := binanceSymbolRules{
 		StepSize:    0.001,
 		MinQty:      0.001,
 		MinNotional: 100,
 	}
-	if got := normalizeBinanceQuantityForMinNotional(0.001, 68643.6, rules); got != 0.002 {
-		t.Fatalf("expected quantity bumped to 0.002 for min notional, got %v", got)
+	if got := requiredBinanceQuantityForMinNotional(0.001, 68643.6, rules); got != 0.002 {
+		t.Fatalf("expected required quantity 0.002 for min notional, got %v", got)
 	}
-	if got := normalizeBinanceQuantityForMinNotional(0.002, 68643.6, rules); got != 0.002 {
+	if got := requiredBinanceQuantityForMinNotional(0.002, 68643.6, rules); got != 0.002 {
 		t.Fatalf("expected existing quantity to remain unchanged, got %v", got)
 	}
 }
@@ -1487,15 +1487,15 @@ func TestNormalizeRESTOrderRecordsNormalizationTelemetry(t *testing.T) {
 	normalized, _, err := adapter.normalizeRESTOrder(domain.Order{
 		Symbol:   "BTCUSDT",
 		Type:     "LIMIT",
-		Quantity: 0.0019,
+		Quantity: 0.0021,
 		Price:    68643.67,
 	}, creds)
 	if err != nil {
 		t.Fatalf("normalize REST order failed: %v", err)
 	}
 	norm := mapValue(normalized.Metadata["normalization"])
-	if got := parseFloatValue(norm["rawQuantity"]); got != 0.0019 {
-		t.Fatalf("expected raw quantity 0.0019, got %v", got)
+	if got := parseFloatValue(norm["rawQuantity"]); got != 0.0021 {
+		t.Fatalf("expected raw quantity 0.0021, got %v", got)
 	}
 	if got := parseFloatValue(norm["normalizedQuantity"]); got != 0.002 {
 		t.Fatalf("expected normalized quantity 0.002, got %v", got)
@@ -1510,14 +1510,56 @@ func TestNormalizeRESTOrderRecordsNormalizationTelemetry(t *testing.T) {
 		t.Fatalf("expected normalized order price 68643.6, got %v", got)
 	}
 	quantityAdjustmentCount := normalizationItemCount(norm["quantityAdjustments"])
-	if quantityAdjustmentCount != 2 {
-		t.Fatalf("expected 2 quantity adjustments, got %v", norm["quantityAdjustments"])
+	if quantityAdjustmentCount != 1 {
+		t.Fatalf("expected 1 quantity adjustment, got %v", norm["quantityAdjustments"])
 	}
-	if !boolValue(norm["stepSizeAdjusted"]) || !boolValue(norm["minNotionalAdjusted"]) {
-		t.Fatalf("expected step size and min notional adjustments, got %+v", norm)
+	if !boolValue(norm["stepSizeAdjusted"]) || boolValue(norm["minNotionalAdjusted"]) {
+		t.Fatalf("expected only step size adjustment, got %+v", norm)
 	}
 	if !boolValue(norm["tickSizeAdjusted"]) {
 		t.Fatalf("expected tick size adjustment, got %+v", norm)
+	}
+}
+
+func TestNormalizeRESTOrderRejectsBelowMinNotionalAfterRounding(t *testing.T) {
+	adapter := binanceFuturesLiveAdapter{}
+	creds := binanceRESTCredentials{BaseURL: "https://example.test"}
+	cacheKey := creds.BaseURL + "|BTCUSDT"
+	binanceSymbolRulesCacheMu.Lock()
+	previous, existed := binanceSymbolRulesCache[cacheKey]
+	binanceSymbolRulesCacheMu.Unlock()
+	t.Cleanup(func() {
+		binanceSymbolRulesCacheMu.Lock()
+		defer binanceSymbolRulesCacheMu.Unlock()
+		if existed {
+			binanceSymbolRulesCache[cacheKey] = previous
+		} else {
+			delete(binanceSymbolRulesCache, cacheKey)
+		}
+	})
+	binanceSymbolRulesCacheMu.Lock()
+	binanceSymbolRulesCache[cacheKey] = binanceSymbolRules{
+		Symbol:      "BTCUSDT",
+		TickSize:    0.1,
+		StepSize:    0.001,
+		MinQty:      0.001,
+		MaxQty:      1000,
+		MinNotional: 100,
+		UpdatedAt:   time.Now().UTC(),
+	}
+	binanceSymbolRulesCacheMu.Unlock()
+
+	_, _, err := adapter.normalizeRESTOrder(domain.Order{
+		Symbol:   "BTCUSDT",
+		Type:     "LIMIT",
+		Quantity: 0.0019,
+		Price:    68643.67,
+	}, creds)
+	if err == nil {
+		t.Fatal("expected normalize REST order to reject below-min-notional quantity after rounding")
+	}
+	if !strings.Contains(err.Error(), "below minNotional") {
+		t.Fatalf("expected minNotional rejection, got %v", err)
 	}
 }
 
@@ -1708,8 +1750,32 @@ func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testi
 	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
 		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
 	}
-	if got := boolValue(submission["reduceOnly"]); !got {
-		t.Fatal("expected zero-value reduceOnly to fall back to original true")
+	if got := boolValue(submission["reduceOnly"]); got {
+		t.Fatal("expected explicit false reduceOnly to be preserved")
+	}
+}
+
+func TestWithExecutionSubmissionFallbackUsesFallbackForMissingExecutionControlFlags(t *testing.T) {
+	order := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 68643.6,
+			},
+		},
+	}
+	fallback := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"postOnly":      true,
+				"reduceOnly":    true,
+				"closePosition": true,
+			},
+		},
+	}
+	merged := withExecutionSubmissionFallback(order, fallback)
+	submission := mapValue(merged.Metadata["adapterSubmission"])
+	if !boolValue(submission["postOnly"]) || !boolValue(submission["reduceOnly"]) || !boolValue(submission["closePosition"]) {
+		t.Fatalf("expected missing execution-control flags to fall back, got %+v", submission)
 	}
 }
 
@@ -1735,6 +1801,27 @@ func TestApplyLiveVirtualInitialEventUsesFallbackVirtualPositionIDWhenIntentSign
 	}
 	if got := stringValue(virtualPosition["id"]); got == "" || got == "virtual|live-session-main|" {
 		t.Fatalf("expected fallback virtual position id to be populated, got %q", got)
+	}
+}
+
+func TestBuildFallbackLiveIntentSignatureIncludesExecutionFields(t *testing.T) {
+	eventTime := time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC)
+	baseProposalMap := map[string]any{
+		"reason":            "Initial",
+		"side":              "BUY",
+		"symbol":            "BTCUSDT",
+		"type":              "LIMIT",
+		"signalBarStateKey": "bar-1",
+		"quantity":          0.001,
+		"limitPrice":        68000.0,
+		"priceHint":         68000.5,
+	}
+	baseSignature := buildFallbackLiveIntentSignature(baseProposalMap, executionProposalFromMap(baseProposalMap), eventTime)
+	variantProposalMap := cloneMetadata(baseProposalMap)
+	variantProposalMap["quantity"] = 0.002
+	variantSignature := buildFallbackLiveIntentSignature(variantProposalMap, executionProposalFromMap(variantProposalMap), eventTime)
+	if baseSignature == variantSignature {
+		t.Fatalf("expected quantity changes to alter fallback signature, got %q", baseSignature)
 	}
 }
 
@@ -2408,5 +2495,52 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 	}
 	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "protected-open-position" {
 		t.Fatalf("expected protected-open-position, got %s", got)
+	}
+}
+
+func TestRefreshLiveSessionPositionContextPreservesWatermarksForVirtualPosition(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["virtualPosition"] = map[string]any{
+		"id":         "virtual|session-1|signal-1",
+		"virtual":    true,
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+		"quantity":   0.0,
+	}
+	state["watermarkPositionKey"] = "virtual|session-1|signal-1|BTCUSDT|LONG|50000.00000000"
+	state["hwm"] = 52000.0
+	state["lwm"] = 50000.0
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 10, 10, 0, 0, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	if got := stringValue(updated.State["watermarkPositionKey"]); got != "virtual|session-1|signal-1|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected virtual watermark key to be preserved, got %s", got)
+	}
+	if got := parseFloatValue(updated.State["hwm"]); got != 52000.0 {
+		t.Fatalf("expected virtual watermark hwm to be preserved, got %v", got)
+	}
+	if got := parseFloatValue(updated.State["lwm"]); got != 50000.0 {
+		t.Fatalf("expected virtual watermark lwm to be preserved, got %v", got)
+	}
+	if !boolValue(updated.State["hasRecoveredVirtualPosition"]) {
+		t.Fatal("expected virtual recovery flag to remain set")
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "monitoring-virtual-position" {
+		t.Fatalf("expected monitoring-virtual-position, got %s", got)
 	}
 }

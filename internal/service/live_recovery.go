@@ -91,14 +91,19 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	state["recoveredPosition"] = positionSnapshot
 	state["hasRecoveredPosition"] = foundPosition
 	state["hasRecoveredRealPosition"] = foundPosition
-	state["hasRecoveredVirtualPosition"] = boolValue(mapValue(state["virtualPosition"])["virtual"]) && !foundPosition
+	hasVirtualPosition := boolValue(mapValue(state["virtualPosition"])["virtual"]) && !foundPosition
+	state["hasRecoveredVirtualPosition"] = hasVirtualPosition
 	state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = firstNonEmpty(source, "live-position-refresh")
 	if !foundPosition {
-		clearLivePositionWatermarks(state)
+		if !hasVirtualPosition {
+			clearLivePositionWatermarks(state)
+		}
 		delete(state, "livePositionState")
 		state["lastLivePositionState"] = map[string]any{}
-		if !boolValue(mapValue(state["virtualPosition"])["virtual"]) {
+		if hasVirtualPosition {
+			state["positionRecoveryStatus"] = "monitoring-virtual-position"
+		} else {
 			state["positionRecoveryStatus"] = "flat"
 		}
 		return p.store.UpdateLiveSessionState(refreshed.ID, state)

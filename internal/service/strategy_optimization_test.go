@@ -357,6 +357,29 @@ func TestResolveLivePositionWatermarksSupportsLegacyRealPositionKey(t *testing.T
 	}
 }
 
+func TestResolveLivePositionWatermarksResetsForPositionIDOnlyLegacyKey(t *testing.T) {
+	sessionState := map[string]any{
+		"hwm":                  52000.0,
+		"lwm":                  50000.0,
+		"watermarkPositionKey": "position-1",
+	}
+	currentPosition := map[string]any{
+		"id":         "position-1",
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 51000.0,
+		"quantity":   1.0,
+		"found":      true,
+	}
+	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
+	if got := watermarks.PositionKey; got != "position-1|BTCUSDT|LONG|51000.00000000" {
+		t.Fatalf("expected canonical watermark key for reused position id, got %s", got)
+	}
+	if watermarks.HWM != 51000.0 || watermarks.LWM != 51000.0 {
+		t.Fatalf("expected position-id-only legacy key to reset watermarks, got %+v", watermarks)
+	}
+}
+
 func TestEvaluateLiveSignalDecisionPreservesWatermarksWhenPositionInactive(t *testing.T) {
 	engine := bkStrategyEngine{}
 	context := StrategySignalEvaluationContext{

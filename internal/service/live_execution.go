@@ -333,12 +333,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(proposalMap)
 	if strings.TrimSpace(intentSignature) == "" {
-		intentSignature = strings.Join([]string{
-			firstNonEmpty(strings.TrimSpace(stringValue(proposalMap["reason"])), "virtual-initial"),
-			strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["side"]), proposal.Side))),
-			NormalizeSymbol(firstNonEmpty(stringValue(proposalMap["symbol"]), proposal.Symbol)),
-			firstNonEmpty(strings.TrimSpace(stringValue(proposalMap["signalBarStateKey"])), eventTime.UTC().Format(time.RFC3339Nano)),
-		}, "|")
+		intentSignature = buildFallbackLiveIntentSignature(proposalMap, proposal, eventTime)
 	}
 	virtualPositionID := fmt.Sprintf("virtual|%s|%s", session.ID, intentSignature)
 	entryPrice := firstPositive(
@@ -400,6 +395,34 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 		Status:   liveOrderStatusVirtualInitial,
 	}, false))
 	return p.store.UpdateLiveSessionState(session.ID, state)
+}
+
+func buildFallbackLiveIntentSignature(proposalMap map[string]any, proposal ExecutionProposal, eventTime time.Time) string {
+	anchor := firstNonEmpty(
+		strings.TrimSpace(stringValue(proposalMap["signalBarStateKey"])),
+		strings.TrimSpace(stringValue(proposalMap["plannedEventAt"])),
+		eventTime.UTC().Format(time.RFC3339Nano),
+	)
+	return strings.Join([]string{
+		firstNonEmpty(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["action"]), proposal.Action)), "virtual"),
+		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["role"]), proposal.Role)),
+		firstNonEmpty(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["reason"]), proposal.Reason)), "virtual-initial"),
+		strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["side"]), proposal.Side))),
+		NormalizeSymbol(firstNonEmpty(stringValue(proposalMap["symbol"]), proposal.Symbol)),
+		strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["type"]), proposal.Type, "MARKET"))),
+		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["signalKind"]), proposal.SignalKind)),
+		anchor,
+		fmt.Sprintf("%.8f", firstPositive(parseFloatValue(proposalMap["quantity"]), proposal.Quantity)),
+		fmt.Sprintf("%.8f", firstPositive(parseFloatValue(proposalMap["plannedPrice"]), 0)),
+		fmt.Sprintf("%.8f", firstPositive(parseFloatValue(proposalMap["limitPrice"]), proposal.LimitPrice)),
+		fmt.Sprintf("%.8f", firstPositive(parseFloatValue(proposalMap["priceHint"]), proposal.PriceHint)),
+		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["priceSource"]), proposal.PriceSource)),
+		strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["timeInForce"]), proposal.TimeInForce))),
+		normalizeExecutionStrategyKey(firstNonEmpty(stringValue(proposalMap["executionStrategy"]), proposal.ExecutionStrategy)),
+		fmt.Sprintf("%t", boolValue(proposalMap["postOnly"]) || proposal.PostOnly),
+		fmt.Sprintf("%t", boolValue(proposalMap["reduceOnly"]) || proposal.ReduceOnly),
+		fmt.Sprintf("%t", boolValue(proposalMap["closePosition"])),
+	}, "|")
 }
 
 func (p *Platform) applyLiveVirtualExitEvent(session domain.LiveSession, proposalMap map[string]any, eventTime time.Time) (domain.LiveSession, error) {
@@ -686,15 +709,7 @@ func executionSubmissionValuePresent(path string, value any) bool {
 }
 
 func executionSubmissionBooleanValuePresent(path string, value bool) bool {
-	if value {
-		return true
-	}
-	switch path {
-	case "postOnly", "reduceOnly", "closePosition", "slProtectionActive":
-		return false
-	default:
-		return true
-	}
+	return true
 }
 
 func executionSubmissionNumericValuePresent(path string, value float64) bool {
