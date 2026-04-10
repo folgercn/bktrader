@@ -332,7 +332,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	proposal := executionProposalFromMap(proposalMap)
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(proposalMap)
-	virtualPositionID := fmt.Sprintf("virtual|%s|%s|%s", session.ID, eventTime.UTC().Format(time.RFC3339Nano), intentSignature)
+	virtualPositionID := fmt.Sprintf("virtual|%s|%s", session.ID, intentSignature)
 	entryPrice := firstPositive(
 		parseFloatValue(proposalMap["plannedPrice"]),
 		firstPositive(
@@ -623,6 +623,10 @@ func withExecutionSubmissionFallback(order domain.Order, fallback domain.Order) 
 }
 
 func mergeExecutionSubmissionFallback(current map[string]any, fallback map[string]any) map[string]any {
+	return mergeExecutionSubmissionFallbackWithPath(current, fallback, "")
+}
+
+func mergeExecutionSubmissionFallbackWithPath(current map[string]any, fallback map[string]any, path string) map[string]any {
 	if len(current) == 0 {
 		return cloneMetadata(fallback)
 	}
@@ -631,20 +635,24 @@ func mergeExecutionSubmissionFallback(current map[string]any, fallback map[strin
 	}
 	merged := cloneMetadata(fallback)
 	for key, value := range current {
+		childPath := key
+		if path != "" {
+			childPath = path + "." + key
+		}
 		currentMap := mapValue(value)
 		fallbackMap := mapValue(merged[key])
 		if len(currentMap) > 0 && len(fallbackMap) > 0 {
-			merged[key] = mergeExecutionSubmissionFallback(currentMap, fallbackMap)
+			merged[key] = mergeExecutionSubmissionFallbackWithPath(currentMap, fallbackMap, childPath)
 			continue
 		}
-		if executionSubmissionValuePresent(value) {
+		if executionSubmissionValuePresent(childPath, value) {
 			merged[key] = value
 		}
 	}
 	return merged
 }
 
-func executionSubmissionValuePresent(value any) bool {
+func executionSubmissionValuePresent(path string, value any) bool {
 	switch typed := value.(type) {
 	case nil:
 		return false
@@ -653,17 +661,36 @@ func executionSubmissionValuePresent(value any) bool {
 	case bool:
 		return true
 	case int:
-		return true
+		return executionSubmissionNumericValuePresent(path, float64(typed))
 	case int64:
-		return true
+		return executionSubmissionNumericValuePresent(path, float64(typed))
 	case float64:
-		return true
+		return executionSubmissionNumericValuePresent(path, typed)
 	case []any:
 		return len(typed) > 0
 	case []string:
 		return len(typed) > 0
 	case map[string]any:
 		return len(typed) > 0
+	default:
+		return true
+	}
+}
+
+func executionSubmissionNumericValuePresent(path string, value float64) bool {
+	if value != 0 {
+		return true
+	}
+	switch path {
+	case "rawQuantity",
+		"normalizedQuantity",
+		"rawPriceReference",
+		"normalizedPrice",
+		"normalization.rawQuantity",
+		"normalization.normalizedQuantity",
+		"normalization.rawPriceReference",
+		"normalization.normalizedPrice":
+		return false
 	default:
 		return true
 	}

@@ -590,11 +590,9 @@ func resolvePassiveBookPrice(side string, bestBid, bestAsk, fallback float64) fl
 	}
 }
 
-// resolveAggressiveSLProtectionDecision 基于 spread 与 top-of-book 深度估算 SL 保护限价。
-// 当前先使用最靠近成交的 top-of-book 数量作为一阶 depth 代理：
-// - 若顶档覆盖目标数量，则直接用顶档价；
-// - 若顶档不足，则在顶档价与 spread-capped 保护价之间按覆盖率插值；
-// - 若盘口信息不完整，则回退到 spread-capped 保护价。
+// resolveAggressiveSLProtectionDecision 仅为“宽点差 SL 保护”分支计算一个不越过滑点 cap 的保护限价。
+// 当前调用方只会在 spread 已经超过 maxSlippageBps 时进入这里，因此最终价格始终收敛到 spread-capped，
+// top-of-book depth 仅用于记录覆盖率和盘口质量，不再假装把报价改善到 cap 之外。
 func resolveAggressiveSLProtectionDecision(side string, quantity, bestBid, bestAsk, bestBidQty, bestAskQty, fallback, maxSlippageBps float64) slProtectionDecision {
 	decision := slProtectionDecision{
 		Price:     fallback,
@@ -610,47 +608,41 @@ func resolveAggressiveSLProtectionDecision(side string, quantity, bestBid, bestA
 				decision.TopDepthQty = bestBidQty
 				decision.TopDepthNotional = bestBidQty * bestBid
 				spreadCapped := math.Max(bestBid, bestAsk-allowedCross)
+				decision.Price = spreadCapped
 				if quantity > 0 && bestBidQty > 0 {
 					coverage := math.Min(bestBidQty/quantity, 1)
 					decision.ExpectedCoverage = coverage
 					if bestBid < spreadCapped {
-						decision.Price = spreadCapped
 						decision.DepthMode = "top-book-outside-cap"
 						return decision
 					}
 					if coverage >= 1 {
-						decision.Price = bestBid
-						decision.DepthMode = "top-book-cover"
+						decision.DepthMode = "top-book-cover-within-cap"
 						return decision
 					}
-					decision.Price = spreadCapped + (bestBid-spreadCapped)*coverage
-					decision.DepthMode = "coverage-weighted-cap"
+					decision.DepthMode = "top-book-partial-within-cap"
 					return decision
 				}
-				decision.Price = spreadCapped
 				return decision
 			case "BUY":
 				decision.TopDepthQty = bestAskQty
 				decision.TopDepthNotional = bestAskQty * bestAsk
 				spreadCapped := math.Min(bestAsk, bestBid+allowedCross)
+				decision.Price = spreadCapped
 				if quantity > 0 && bestAskQty > 0 {
 					coverage := math.Min(bestAskQty/quantity, 1)
 					decision.ExpectedCoverage = coverage
 					if bestAsk > spreadCapped {
-						decision.Price = spreadCapped
 						decision.DepthMode = "top-book-outside-cap"
 						return decision
 					}
 					if coverage >= 1 {
-						decision.Price = bestAsk
-						decision.DepthMode = "top-book-cover"
+						decision.DepthMode = "top-book-cover-within-cap"
 						return decision
 					}
-					decision.Price = spreadCapped + (bestAsk-spreadCapped)*coverage
-					decision.DepthMode = "coverage-weighted-cap"
+					decision.DepthMode = "top-book-partial-within-cap"
 					return decision
 				}
-				decision.Price = spreadCapped
 				return decision
 			}
 		}

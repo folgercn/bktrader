@@ -695,7 +695,7 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 	}
 }
 
-func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenDepthCoversOrder(t *testing.T) {
+func TestResolveAggressiveSLProtectionDecisionUsesCappedPriceWhenTopBookOutsideCap(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68150, 1.2, 0, 68000, 20)
 	if got := decision.Price; got != 68013.85 {
 		t.Fatalf("expected capped protection price 68013.85, got %v", got)
@@ -711,7 +711,7 @@ func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenDepthCoversOrder(t 
 	}
 }
 
-func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCap(t *testing.T) {
+func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenTopBookOutsideCap(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("SELL", 2.0, 68000, 68150, 1.0, 0, 68000, 20)
 	if got := decision.DepthMode; got != "top-book-outside-cap" {
 		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
@@ -727,7 +727,7 @@ func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCap(t *testing
 	}
 }
 
-func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCapForBuy(t *testing.T) {
+func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenTopBookOutsideCapForBuy(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("BUY", 2.0, 68000, 68150, 0, 1.0, 68150, 20)
 	if got := decision.DepthMode; got != "top-book-outside-cap" {
 		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
@@ -743,23 +743,26 @@ func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCapForBuy(t *t
 	}
 }
 
-func TestResolveAggressiveSLProtectionDecisionUsesCappedPriceWhenTopBookOutsideCap(t *testing.T) {
-	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68150, 1.2, 0, 68000, 20)
-	if got := decision.DepthMode; got != "top-book-outside-cap" {
-		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
-	}
-	if got := decision.Price; got != 68013.85 {
-		t.Fatalf("expected top-book cover to stay capped at 68013.85, got %v", got)
-	}
-}
-
 func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenWithinCap(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68010, 1.2, 0, 68000, 20)
-	if got := decision.DepthMode; got != "top-book-cover" {
-		t.Fatalf("expected top-book-cover mode, got %s", got)
+	if got := decision.DepthMode; got != "top-book-cover-within-cap" {
+		t.Fatalf("expected top-book-cover-within-cap mode, got %s", got)
 	}
 	if got := decision.Price; got != 68000 {
 		t.Fatalf("expected top-book bid price 68000, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenWithinCap(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 2.0, 68000, 68010, 1.0, 0, 68000, 20)
+	if got := decision.DepthMode; got != "top-book-partial-within-cap" {
+		t.Fatalf("expected top-book-partial-within-cap mode, got %s", got)
+	}
+	if got := decision.Price; got != 68000 {
+		t.Fatalf("expected capped price to remain at 68000, got %v", got)
+	}
+	if got := decision.ExpectedCoverage; got != 0.5 {
+		t.Fatalf("expected 50%% coverage, got %v", got)
 	}
 }
 
@@ -1649,7 +1652,7 @@ func TestWithExecutionSubmissionFallbackMergesPartialSubmissionFields(t *testing
 	}
 }
 
-func TestWithExecutionSubmissionFallbackPreservesExplicitScalarOverrides(t *testing.T) {
+func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testing.T) {
 	order := domain.Order{
 		Metadata: map[string]any{
 			"adapterSubmission": map[string]any{
@@ -1670,11 +1673,11 @@ func TestWithExecutionSubmissionFallbackPreservesExplicitScalarOverrides(t *test
 	}
 	merged := withExecutionSubmissionFallback(order, fallback)
 	submission := mapValue(merged.Metadata["adapterSubmission"])
-	if got := parseFloatValue(submission["normalizedPrice"]); got != 0 {
-		t.Fatalf("expected explicit zero normalized price to be preserved, got %v", got)
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected zero normalized price to fall back, got %v", got)
 	}
-	if got := parseFloatValue(submission["rawQuantity"]); got != 0 {
-		t.Fatalf("expected explicit zero raw quantity to be preserved, got %v", got)
+	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
+		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
 	}
 	if got := boolValue(submission["reduceOnly"]); got {
 		t.Fatal("expected explicit false reduceOnly to be preserved")

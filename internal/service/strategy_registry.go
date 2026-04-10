@@ -227,7 +227,10 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	effectivePlannedPrice := context.NextPlannedPrice
 	livePositionState := map[string]any{}
 	if signalBarState != nil {
-		watermarks := refreshLivePositionWatermarks(context.SessionState, currentPosition, marketPrice)
+		var watermarks livePositionWatermarks
+		if hasActiveLivePositionSnapshot(currentPosition) {
+			watermarks = refreshLivePositionWatermarks(context.SessionState, currentPosition, marketPrice)
+		}
 		livePositionState = deriveLivePositionState(context.ExecutionContext.Parameters, currentPosition, signalBarState, marketPrice, watermarks)
 		if strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") {
 			livePositionState = deriveLiveExitState(context.ExecutionContext.Parameters, currentPosition, livePositionState, marketPrice, context.NextPlannedReason)
@@ -744,24 +747,38 @@ type livePositionWatermarks struct {
 	LWM         float64
 }
 
+func hasActiveLivePositionSnapshot(currentPosition map[string]any) bool {
+	return boolValue(currentPosition["found"]) || parseFloatValue(currentPosition["quantity"]) > 0 || boolValue(currentPosition["virtual"])
+}
+
 func buildLivePositionWatermarkKey(currentPosition map[string]any) string {
-	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
-		return positionID
-	}
 	entryPrice := parseFloatValue(currentPosition["entryPrice"])
+	quantity := parseFloatValue(currentPosition["quantity"])
 	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	if entryPrice <= 0 || side == "" {
 		return ""
 	}
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 6)
+	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
+		parts = append(parts, positionID)
+	}
 	if symbol := NormalizeSymbol(stringValue(currentPosition["symbol"])); symbol != "" {
 		parts = append(parts, symbol)
 	}
 	parts = append(parts, side, fmt.Sprintf("%.8f", entryPrice))
+	if quantity > 0 {
+		parts = append(parts, fmt.Sprintf("%.8f", quantity))
+	}
+	if recordedAt := firstNonEmpty(stringValue(currentPosition["recordedAt"]), stringValue(currentPosition["openedAt"])); recordedAt != "" {
+		parts = append(parts, recordedAt)
+	}
 	return strings.Join(parts, "|")
 }
 
 func resolveLivePositionWatermarks(currentPosition map[string]any, sessionState map[string]any) livePositionWatermarks {
+	if !hasActiveLivePositionSnapshot(currentPosition) {
+		return livePositionWatermarks{}
+	}
 	entryPrice := parseFloatValue(currentPosition["entryPrice"])
 	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	if entryPrice <= 0 || side == "" {
@@ -829,7 +846,10 @@ func refreshLivePositionWatermarks(sessionState map[string]any, currentPosition 
 // When sessionState is provided, it also refreshes HWM/LWM watermarks used by
 // trailing-stop logic so callers do not need to duplicate watermark handling.
 func evaluateLivePositionState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, sessionState map[string]any) map[string]any {
-	watermarks := refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
+	var watermarks livePositionWatermarks
+	if hasActiveLivePositionSnapshot(currentPosition) {
+		watermarks = refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
+	}
 	return deriveLivePositionState(parameters, currentPosition, signalBarState, marketPrice, watermarks)
 }
 
