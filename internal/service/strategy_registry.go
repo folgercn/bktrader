@@ -753,12 +753,11 @@ func hasActiveLivePositionSnapshot(currentPosition map[string]any) bool {
 
 func buildLivePositionWatermarkKey(currentPosition map[string]any) string {
 	entryPrice := parseFloatValue(currentPosition["entryPrice"])
-	quantity := parseFloatValue(currentPosition["quantity"])
 	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	if entryPrice <= 0 || side == "" {
 		return ""
 	}
-	parts := make([]string, 0, 6)
+	parts := make([]string, 0, 4)
 	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
 		parts = append(parts, positionID)
 	}
@@ -766,12 +765,6 @@ func buildLivePositionWatermarkKey(currentPosition map[string]any) string {
 		parts = append(parts, symbol)
 	}
 	parts = append(parts, side, fmt.Sprintf("%.8f", entryPrice))
-	if quantity > 0 {
-		parts = append(parts, fmt.Sprintf("%.8f", quantity))
-	}
-	if recordedAt := firstNonEmpty(stringValue(currentPosition["recordedAt"]), stringValue(currentPosition["openedAt"])); recordedAt != "" {
-		parts = append(parts, recordedAt)
-	}
 	return strings.Join(parts, "|")
 }
 

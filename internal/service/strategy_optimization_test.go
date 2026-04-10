@@ -178,7 +178,7 @@ func TestUpdateLivePositionWatermarksResetsWhenPositionChanges(t *testing.T) {
 	if lwm != 47900.0 {
 		t.Fatalf("expected lwm to update from new position context, got %v", lwm)
 	}
-	if got := stringValue(sessionState["watermarkPositionKey"]); got != "position-new|ETHUSDT|SHORT|48000.00000000|1.00000000" {
+	if got := stringValue(sessionState["watermarkPositionKey"]); got != "position-new|ETHUSDT|SHORT|48000.00000000" {
 		t.Fatalf("expected watermark key to reset, got %s", got)
 	}
 }
@@ -187,7 +187,7 @@ func TestResolveAndApplyLivePositionWatermarksAreSeparated(t *testing.T) {
 	sessionState := map[string]any{
 		"hwm":                  52000.0,
 		"lwm":                  50000.0,
-		"watermarkPositionKey": "position-1|BTCUSDT|LONG|50000.00000000|1.00000000",
+		"watermarkPositionKey": "position-1|BTCUSDT|LONG|50000.00000000",
 	}
 	currentPosition := map[string]any{
 		"id":         "position-1",
@@ -197,7 +197,7 @@ func TestResolveAndApplyLivePositionWatermarksAreSeparated(t *testing.T) {
 		"quantity":   1.0,
 		"found":      true,
 	}
-	expectedKey := "position-1|BTCUSDT|LONG|50000.00000000|1.00000000"
+	expectedKey := "position-1|BTCUSDT|LONG|50000.00000000"
 	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
 	if watermarks.HWM != 52000.0 || watermarks.LWM != 50000.0 {
 		t.Fatalf("expected resolved watermarks from session state, got %+v", watermarks)
@@ -231,7 +231,7 @@ func TestResolveLivePositionWatermarksUsesExpandedPositionContextKey(t *testing.
 	sessionState := map[string]any{
 		"hwm":                  52000.0,
 		"lwm":                  50000.0,
-		"watermarkPositionKey": "position-1|BTCUSDT|LONG|50000.00000000|1.00000000",
+		"watermarkPositionKey": "position-1|BTCUSDT|LONG|50000.00000000",
 	}
 	currentPosition := map[string]any{
 		"id":         "position-2",
@@ -242,7 +242,7 @@ func TestResolveLivePositionWatermarksUsesExpandedPositionContextKey(t *testing.
 		"found":      true,
 	}
 	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
-	if got := watermarks.PositionKey; got != "position-2|BTCUSDT|LONG|50000.00000000|1.00000000" {
+	if got := watermarks.PositionKey; got != "position-2|BTCUSDT|LONG|50000.00000000" {
 		t.Fatalf("expected expanded position key, got %s", got)
 	}
 	if watermarks.HWM != 50000.0 || watermarks.LWM != 50000.0 {
@@ -265,7 +265,7 @@ func TestResolveLivePositionWatermarksUsesVirtualPositionID(t *testing.T) {
 		"virtual":    true,
 	}
 	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
-	if got := watermarks.PositionKey; got != "virtual|session-1|signal-2|BTCUSDT|LONG|50000.00000000|1.00000000" {
+	if got := watermarks.PositionKey; got != "virtual|session-1|signal-2|BTCUSDT|LONG|50000.00000000" {
 		t.Fatalf("expected virtual position id to drive watermark key, got %s", got)
 	}
 	if watermarks.HWM != 50000.0 || watermarks.LWM != 50000.0 {
@@ -294,7 +294,7 @@ func TestDeriveLivePositionStateUsesProvidedWatermarks(t *testing.T) {
 		"quantity":   1.0,
 	}
 	watermarks := livePositionWatermarks{
-		PositionKey: "position-1|BTCUSDT|LONG|50000.00000000|1.00000000",
+		PositionKey: "position-1|BTCUSDT|LONG|50000.00000000",
 		HWM:         50600.0,
 		LWM:         50000.0,
 	}
@@ -328,7 +328,7 @@ func TestDeriveLivePositionStateUsesProvidedWatermarksForShort(t *testing.T) {
 		"quantity":   1.0,
 	}
 	watermarks := livePositionWatermarks{
-		PositionKey: "position-2|BTCUSDT|SHORT|50000.00000000|1.00000000",
+		PositionKey: "position-2|BTCUSDT|SHORT|50000.00000000",
 		HWM:         50000.0,
 		LWM:         49400.0,
 	}
@@ -345,7 +345,7 @@ func TestResolveLivePositionWatermarksIgnoresInactiveSnapshot(t *testing.T) {
 	sessionState := map[string]any{
 		"hwm":                  52000.0,
 		"lwm":                  50000.0,
-		"watermarkPositionKey": "position-1|BTCUSDT|LONG|50000.00000000|1.00000000",
+		"watermarkPositionKey": "position-1|BTCUSDT|LONG|50000.00000000",
 	}
 	currentPosition := map[string]any{
 		"symbol":     "BTCUSDT",
@@ -357,5 +357,37 @@ func TestResolveLivePositionWatermarksIgnoresInactiveSnapshot(t *testing.T) {
 	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
 	if watermarks.PositionKey != "" || watermarks.HWM != 0 || watermarks.LWM != 0 {
 		t.Fatalf("expected inactive snapshot to skip watermark refresh, got %+v", watermarks)
+	}
+	if got := stringValue(sessionState["watermarkPositionKey"]); got != "position-1|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected inactive snapshot to preserve persisted watermark key, got %s", got)
+	}
+	if got := parseFloatValue(sessionState["hwm"]); got != 52000.0 {
+		t.Fatalf("expected inactive snapshot to preserve persisted HWM, got %v", got)
+	}
+	if got := parseFloatValue(sessionState["lwm"]); got != 50000.0 {
+		t.Fatalf("expected inactive snapshot to preserve persisted LWM, got %v", got)
+	}
+}
+
+func TestResolveLivePositionWatermarksIgnoresQuantityChangesWithinSamePosition(t *testing.T) {
+	sessionState := map[string]any{
+		"hwm":                  52000.0,
+		"lwm":                  50000.0,
+		"watermarkPositionKey": "position-1|BTCUSDT|LONG|50000.00000000",
+	}
+	currentPosition := map[string]any{
+		"id":         "position-1",
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+		"quantity":   0.6,
+		"found":      true,
+	}
+	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
+	if got := watermarks.PositionKey; got != "position-1|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected quantity changes to keep the same watermark key, got %s", got)
+	}
+	if watermarks.HWM != 52000.0 || watermarks.LWM != 50000.0 {
+		t.Fatalf("expected quantity changes to preserve watermarks, got %+v", watermarks)
 	}
 }
