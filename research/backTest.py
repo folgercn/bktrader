@@ -580,6 +580,23 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                 else:
                     current_idx += 1
 
+    if position and len(df_1min) > 0:
+        last_bar_time = df_1min.index[-1]
+        last_close = float(df_1min.iloc[-1]['close'])
+        exit_p = last_close * (1 - SLIPPAGE) if position['side'] == 'long' else last_close * (1 + SLIPPAGE)
+        side_mult = 1 if position['side'] == 'long' else -1
+        if position['notional'] > 0:
+            pnl = side_mult * (exit_p - position['entry_p']) / position['entry_p'] * position['notional']
+            balance += pnl - (position['notional'] * COMMISSION)
+        trade_logs.append({
+            'time': last_bar_time,
+            'type': 'EXIT',
+            'price': exit_p,
+            'reason': 'FinalMarkToMarket',
+            'notional': position['notional'],
+            'bal': balance,
+        })
+
     return pd.DataFrame(trade_logs)
 
 def find_the_glory_trade(trade_df):
@@ -1204,6 +1221,8 @@ def _compute_backtest_stats(ledger, initial_balance):
     temp = None
     for _, row in ledger_copy.iterrows():
         if row['type'] in ['BUY', 'SHORT']:
+            if row.get('notional', 0) <= 0:
+                continue
             temp = row
         elif row['type'] == 'EXIT' and temp is not None:
             pnl_pct = (row['price'] - temp['price']) / temp['price']
