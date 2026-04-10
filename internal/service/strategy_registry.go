@@ -230,8 +230,6 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		var watermarks livePositionWatermarks
 		if hasActiveLivePositionSnapshot(currentPosition) {
 			watermarks = refreshLivePositionWatermarks(context.SessionState, currentPosition, marketPrice)
-		} else {
-			clearLivePositionWatermarks(context.SessionState)
 		}
 		livePositionState = deriveLivePositionState(context.ExecutionContext.Parameters, currentPosition, signalBarState, marketPrice, watermarks)
 		if strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") {
@@ -791,7 +789,7 @@ func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState 
 		return currentKey
 	}
 	if lastKey != "" {
-		if lastKey == baseKey || lastKey == legacyBaseKey {
+		if lastKey == baseKey || lastKey == legacyBaseKey || strings.HasSuffix(lastKey, "|"+baseKey) || strings.HasSuffix(lastKey, "|"+legacyBaseKey) {
 			return lastKey
 		}
 	}
@@ -906,8 +904,6 @@ func evaluateLivePositionState(parameters map[string]any, currentPosition map[st
 	var watermarks livePositionWatermarks
 	if hasActiveLivePositionSnapshot(currentPosition) {
 		watermarks = refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
-	} else {
-		clearLivePositionWatermarks(sessionState)
 	}
 	return deriveLivePositionState(parameters, currentPosition, signalBarState, marketPrice, watermarks)
 }

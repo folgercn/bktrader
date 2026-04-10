@@ -1702,14 +1702,39 @@ func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testi
 	}
 	merged := withExecutionSubmissionFallback(order, fallback)
 	submission := mapValue(merged.Metadata["adapterSubmission"])
-	if got := parseFloatValue(submission["normalizedPrice"]); got != 0 {
-		t.Fatalf("expected explicit zero normalized price to be preserved, got %v", got)
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected zero normalized price to fall back, got %v", got)
 	}
 	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
 		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
 	}
-	if got := boolValue(submission["reduceOnly"]); got {
-		t.Fatal("expected explicit false reduceOnly to be preserved")
+	if got := boolValue(submission["reduceOnly"]); !got {
+		t.Fatal("expected zero-value reduceOnly to fall back to original true")
+	}
+}
+
+func TestApplyLiveVirtualInitialEventUsesFallbackVirtualPositionIDWhenIntentSignatureEmpty(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	session.State = cloneMetadata(session.State)
+	proposalMap := map[string]any{
+		"side":   "BUY",
+		"symbol": "BTCUSDT",
+		"reason": "Initial",
+	}
+	updated, err := platform.applyLiveVirtualInitialEvent(session, proposalMap, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("apply virtual initial event failed: %v", err)
+	}
+	virtualPosition := mapValue(updated.State["virtualPosition"])
+	if virtualPosition == nil {
+		t.Fatal("expected virtual position to be recorded")
+	}
+	if got := stringValue(virtualPosition["id"]); got == "" || got == "virtual|live-session-main|" {
+		t.Fatalf("expected fallback virtual position id to be populated, got %q", got)
 	}
 }
 

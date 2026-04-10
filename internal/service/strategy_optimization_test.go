@@ -310,11 +310,11 @@ func TestResolveLivePositionWatermarksPreservesPreviousKeyWhenIDTemporarilyMissi
 		"found":      true,
 	}
 	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
-	if got := watermarks.PositionKey; got != "BTCUSDT|LONG|50000.00000000" {
-		t.Fatalf("expected missing id to fall back to base watermark key, got %s", got)
+	if got := watermarks.PositionKey; got != "position-1|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected missing id to preserve previous stable watermark key, got %s", got)
 	}
-	if watermarks.HWM != 50000.0 || watermarks.LWM != 50000.0 {
-		t.Fatalf("expected missing id fallback to reset watermarks, got %+v", watermarks)
+	if watermarks.HWM != 52000.0 || watermarks.LWM != 50000.0 {
+		t.Fatalf("expected missing id to preserve existing watermarks, got %+v", watermarks)
 	}
 }
 
@@ -357,7 +357,7 @@ func TestResolveLivePositionWatermarksSupportsLegacyRealPositionKey(t *testing.T
 	}
 }
 
-func TestEvaluateLiveSignalDecisionClearsWatermarksWhenPositionInactive(t *testing.T) {
+func TestEvaluateLiveSignalDecisionPreservesWatermarksWhenPositionInactive(t *testing.T) {
 	engine := bkStrategyEngine{}
 	context := StrategySignalEvaluationContext{
 		SessionState: map[string]any{
@@ -400,18 +400,18 @@ func TestEvaluateLiveSignalDecisionClearsWatermarksWhenPositionInactive(t *testi
 	if _, err := engine.EvaluateSignal(context); err != nil {
 		t.Fatalf("evaluate signal failed: %v", err)
 	}
-	if _, ok := context.SessionState["watermarkPositionKey"]; ok {
-		t.Fatal("expected inactive strategy evaluation to clear watermarkPositionKey")
+	if got := stringValue(context.SessionState["watermarkPositionKey"]); got != "position-1|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected inactive strategy evaluation to preserve watermarkPositionKey, got %s", got)
 	}
-	if _, ok := context.SessionState["hwm"]; ok {
-		t.Fatal("expected inactive strategy evaluation to clear hwm")
+	if got := parseFloatValue(context.SessionState["hwm"]); got != 52000.0 {
+		t.Fatalf("expected inactive strategy evaluation to preserve hwm, got %v", got)
 	}
-	if _, ok := context.SessionState["lwm"]; ok {
-		t.Fatal("expected inactive strategy evaluation to clear lwm")
+	if got := parseFloatValue(context.SessionState["lwm"]); got != 50000.0 {
+		t.Fatalf("expected inactive strategy evaluation to preserve lwm, got %v", got)
 	}
 }
 
-func TestEvaluateLivePositionStateClearsWatermarksWhenPositionInactive(t *testing.T) {
+func TestEvaluateLivePositionStatePreservesWatermarksWhenPositionInactive(t *testing.T) {
 	sessionState := map[string]any{
 		"hwm":                  52000.0,
 		"lwm":                  50000.0,
@@ -438,14 +438,14 @@ func TestEvaluateLivePositionStateClearsWatermarksWhenPositionInactive(t *testin
 	if len(state) != 0 {
 		t.Fatalf("expected empty live position state for inactive position, got %+v", state)
 	}
-	if _, ok := sessionState["watermarkPositionKey"]; ok {
-		t.Fatal("expected inactive position state evaluation to clear watermarkPositionKey")
+	if got := stringValue(sessionState["watermarkPositionKey"]); got != "position-1|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected inactive position state evaluation to preserve watermarkPositionKey, got %s", got)
 	}
-	if _, ok := sessionState["hwm"]; ok {
-		t.Fatal("expected inactive position state evaluation to clear hwm")
+	if got := parseFloatValue(sessionState["hwm"]); got != 52000.0 {
+		t.Fatalf("expected inactive position state evaluation to preserve hwm, got %v", got)
 	}
-	if _, ok := sessionState["lwm"]; ok {
-		t.Fatal("expected inactive position state evaluation to clear lwm")
+	if got := parseFloatValue(sessionState["lwm"]); got != 50000.0 {
+		t.Fatalf("expected inactive position state evaluation to preserve lwm, got %v", got)
 	}
 }
 

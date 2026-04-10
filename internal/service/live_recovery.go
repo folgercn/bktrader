@@ -95,6 +95,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = firstNonEmpty(source, "live-position-refresh")
 	if !foundPosition {
+		clearLivePositionWatermarks(state)
 		delete(state, "livePositionState")
 		state["lastLivePositionState"] = map[string]any{}
 		if !boolValue(mapValue(state["virtualPosition"])["virtual"]) {

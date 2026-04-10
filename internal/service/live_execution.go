@@ -332,6 +332,14 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	proposal := executionProposalFromMap(proposalMap)
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(proposalMap)
+	if strings.TrimSpace(intentSignature) == "" {
+		intentSignature = strings.Join([]string{
+			firstNonEmpty(strings.TrimSpace(stringValue(proposalMap["reason"])), "virtual-initial"),
+			strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["side"]), proposal.Side))),
+			NormalizeSymbol(firstNonEmpty(stringValue(proposalMap["symbol"]), proposal.Symbol)),
+			firstNonEmpty(strings.TrimSpace(stringValue(proposalMap["signalBarStateKey"])), eventTime.UTC().Format(time.RFC3339Nano)),
+		}, "|")
+	}
 	virtualPositionID := fmt.Sprintf("virtual|%s|%s", session.ID, intentSignature)
 	entryPrice := firstPositive(
 		parseFloatValue(proposalMap["plannedPrice"]),
@@ -678,7 +686,15 @@ func executionSubmissionValuePresent(path string, value any) bool {
 }
 
 func executionSubmissionBooleanValuePresent(path string, value bool) bool {
-	return true
+	if value {
+		return true
+	}
+	switch path {
+	case "postOnly", "reduceOnly", "closePosition", "slProtectionActive":
+		return false
+	default:
+		return true
+	}
 }
 
 func executionSubmissionNumericValuePresent(path string, value float64) bool {
@@ -695,7 +711,7 @@ func executionSubmissionNumericValuePresent(path string, value float64) bool {
 		"normalizedPrice",
 		"normalization.rawPriceReference",
 		"normalization.normalizedPrice":
-		return true
+		return false
 	case "symbolRules.minQty",
 		"symbolRules.stepSize",
 		"symbolRules.tickSize",
