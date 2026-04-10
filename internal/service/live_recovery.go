@@ -126,11 +126,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		return p.store.UpdateLiveSessionState(refreshed.ID, state)
 	}
 	marketPrice := firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(mapValue(signalBarState["current"])["close"]))
-	var watermarks livePositionWatermarks
-	if hasActiveLivePositionSnapshot(positionSnapshot) {
-		watermarks = refreshLivePositionWatermarks(state, positionSnapshot, marketPrice)
-	}
-	livePositionState := deriveLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, watermarks)
+	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, state)
 	if len(livePositionState) == 0 {
 		return p.store.UpdateLiveSessionState(refreshed.ID, state)
 	}

@@ -273,6 +273,34 @@ func TestResolveLivePositionWatermarksUsesVirtualPositionID(t *testing.T) {
 	}
 }
 
+func TestResolveLivePositionWatermarksPreservesPreviousKeyWhenIDTemporarilyMissing(t *testing.T) {
+	sessionState := map[string]any{
+		"hwm":                  52000.0,
+		"lwm":                  50000.0,
+		"watermarkPositionKey": "position-1|BTCUSDT|LONG|50000.00000000",
+	}
+	currentPosition := map[string]any{
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+		"quantity":   1.0,
+		"found":      true,
+	}
+	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
+	if got := watermarks.PositionKey; got != "position-1|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected missing id to preserve previous stable watermark key, got %s", got)
+	}
+	if watermarks.HWM != 52000.0 || watermarks.LWM != 50000.0 {
+		t.Fatalf("expected missing id to preserve existing watermarks, got %+v", watermarks)
+	}
+}
+
+func TestHasActiveLivePositionSnapshotUsesAbsoluteQuantity(t *testing.T) {
+	if !hasActiveLivePositionSnapshot(map[string]any{"quantity": -1.0}) {
+		t.Fatal("expected negative quantity snapshot to count as active")
+	}
+}
+
 func TestDeriveLivePositionStateUsesProvidedWatermarks(t *testing.T) {
 	parameters := map[string]any{
 		"trailing_stop_atr":               0.3,

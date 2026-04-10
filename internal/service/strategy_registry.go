@@ -748,24 +748,39 @@ type livePositionWatermarks struct {
 }
 
 func hasActiveLivePositionSnapshot(currentPosition map[string]any) bool {
-	return boolValue(currentPosition["found"]) || parseFloatValue(currentPosition["quantity"]) > 0 || boolValue(currentPosition["virtual"])
+	return boolValue(currentPosition["found"]) || math.Abs(parseFloatValue(currentPosition["quantity"])) > 0 || boolValue(currentPosition["virtual"])
 }
 
-func buildLivePositionWatermarkKey(currentPosition map[string]any) string {
+func buildLivePositionWatermarkBaseKey(currentPosition map[string]any) string {
 	entryPrice := parseFloatValue(currentPosition["entryPrice"])
 	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	if entryPrice <= 0 || side == "" {
 		return ""
 	}
-	parts := make([]string, 0, 4)
-	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
-		parts = append(parts, positionID)
-	}
+	parts := make([]string, 0, 3)
 	if symbol := NormalizeSymbol(stringValue(currentPosition["symbol"])); symbol != "" {
 		parts = append(parts, symbol)
 	}
 	parts = append(parts, side, fmt.Sprintf("%.8f", entryPrice))
 	return strings.Join(parts, "|")
+}
+
+func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState map[string]any) string {
+	baseKey := buildLivePositionWatermarkBaseKey(currentPosition)
+	if baseKey == "" {
+		return ""
+	}
+	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
+		return positionID + "|" + baseKey
+	}
+	lastKey := stringValue(sessionState["watermarkPositionKey"])
+	if lastKey == "" {
+		return baseKey
+	}
+	if lastKey == baseKey || strings.HasSuffix(lastKey, "|"+baseKey) {
+		return lastKey
+	}
+	return baseKey
 }
 
 func resolveLivePositionWatermarks(currentPosition map[string]any, sessionState map[string]any) livePositionWatermarks {
@@ -777,7 +792,7 @@ func resolveLivePositionWatermarks(currentPosition map[string]any, sessionState 
 	if entryPrice <= 0 || side == "" {
 		return livePositionWatermarks{}
 	}
-	positionKey := buildLivePositionWatermarkKey(currentPosition)
+	positionKey := buildLivePositionWatermarkKey(currentPosition, sessionState)
 	if positionKey == "" {
 		return livePositionWatermarks{}
 	}
