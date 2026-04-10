@@ -613,16 +613,17 @@ func resolveAggressiveSLProtectionDecision(side string, quantity, bestBid, bestA
 				if quantity > 0 && bestBidQty > 0 {
 					coverage := math.Min(bestBidQty/quantity, 1)
 					decision.ExpectedCoverage = coverage
-					if coverage >= 1 {
+					if bestBid < spreadCapped {
 						decision.Price = spreadCapped
-						if spreadCapped == bestBid {
-							decision.DepthMode = "top-book-cover"
-						} else {
-							decision.DepthMode = "top-book-outside-cap"
-						}
+						decision.DepthMode = "top-book-outside-cap"
 						return decision
 					}
-					decision.Price = math.Max(spreadCapped+(bestBid-spreadCapped)*coverage, spreadCapped)
+					if coverage >= 1 {
+						decision.Price = bestBid
+						decision.DepthMode = "top-book-cover"
+						return decision
+					}
+					decision.Price = spreadCapped + (bestBid-spreadCapped)*coverage
 					decision.DepthMode = "coverage-weighted-cap"
 					return decision
 				}
@@ -635,16 +636,17 @@ func resolveAggressiveSLProtectionDecision(side string, quantity, bestBid, bestA
 				if quantity > 0 && bestAskQty > 0 {
 					coverage := math.Min(bestAskQty/quantity, 1)
 					decision.ExpectedCoverage = coverage
-					if coverage >= 1 {
+					if bestAsk > spreadCapped {
 						decision.Price = spreadCapped
-						if spreadCapped == bestAsk {
-							decision.DepthMode = "top-book-cover"
-						} else {
-							decision.DepthMode = "top-book-outside-cap"
-						}
+						decision.DepthMode = "top-book-outside-cap"
 						return decision
 					}
-					decision.Price = math.Min(spreadCapped+(bestAsk-spreadCapped)*coverage, spreadCapped)
+					if coverage >= 1 {
+						decision.Price = bestAsk
+						decision.DepthMode = "top-book-cover"
+						return decision
+					}
+					decision.Price = spreadCapped + (bestAsk-spreadCapped)*coverage
 					decision.DepthMode = "coverage-weighted-cap"
 					return decision
 				}

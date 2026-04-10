@@ -709,8 +709,8 @@ func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenDepthCoversOrder(t 
 
 func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCap(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("SELL", 2.0, 68000, 68150, 1.0, 0, 68000, 20)
-	if got := decision.DepthMode; got != "coverage-weighted-cap" {
-		t.Fatalf("expected coverage-weighted-cap mode, got %s", got)
+	if got := decision.DepthMode; got != "top-book-outside-cap" {
+		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
 	}
 	if got := decision.ExpectedCoverage; got != 0.5 {
 		t.Fatalf("expected 50%% coverage, got %v", got)
@@ -725,8 +725,8 @@ func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCap(t *testing
 
 func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCapForBuy(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("BUY", 2.0, 68000, 68150, 0, 1.0, 68150, 20)
-	if got := decision.DepthMode; got != "coverage-weighted-cap" {
-		t.Fatalf("expected coverage-weighted-cap mode, got %s", got)
+	if got := decision.DepthMode; got != "top-book-outside-cap" {
+		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
 	}
 	if got := decision.ExpectedCoverage; got != 0.5 {
 		t.Fatalf("expected 50%% coverage, got %v", got)
@@ -746,6 +746,16 @@ func TestResolveAggressiveSLProtectionDecisionUsesCappedPriceWhenTopBookOutsideC
 	}
 	if got := decision.Price; got != 68013.85 {
 		t.Fatalf("expected top-book cover to stay capped at 68013.85, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenWithinCap(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68010, 1.2, 0, 68000, 20)
+	if got := decision.DepthMode; got != "top-book-cover" {
+		t.Fatalf("expected top-book-cover mode, got %s", got)
+	}
+	if got := decision.Price; got != 68000 {
+		t.Fatalf("expected top-book bid price 68000, got %v", got)
 	}
 }
 
@@ -1626,6 +1636,37 @@ func TestWithExecutionSubmissionFallbackMergesPartialSubmissionFields(t *testing
 	}
 	if got := parseFloatValue(mapValue(submission["symbolRules"])["stepSize"]); got != 0.001 {
 		t.Fatalf("expected symbol rules fallback, got %v", got)
+	}
+}
+
+func TestWithExecutionSubmissionFallbackIgnoresEmptyScalarOverrides(t *testing.T) {
+	order := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 0.0,
+				"rawQuantity":     0.0,
+				"symbolRules":     map[string]any{},
+			},
+		},
+	}
+	fallback := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 68643.6,
+				"rawQuantity":     0.0019,
+				"symbolRules": map[string]any{
+					"stepSize": 0.001,
+				},
+			},
+		},
+	}
+	merged := withExecutionSubmissionFallback(order, fallback)
+	submission := mapValue(merged.Metadata["adapterSubmission"])
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected fallback normalized price to survive empty override, got %v", got)
+	}
+	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
+		t.Fatalf("expected fallback raw quantity to survive empty override, got %v", got)
 	}
 }
 

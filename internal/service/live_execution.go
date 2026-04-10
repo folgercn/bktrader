@@ -635,9 +635,36 @@ func mergeExecutionSubmissionFallback(current map[string]any, fallback map[strin
 			merged[key] = mergeExecutionSubmissionFallback(currentMap, fallbackMap)
 			continue
 		}
-		merged[key] = value
+		if executionSubmissionValuePresent(value) {
+			merged[key] = value
+		}
 	}
 	return merged
+}
+
+func executionSubmissionValuePresent(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(typed) != ""
+	case bool:
+		return typed
+	case int:
+		return typed != 0
+	case int64:
+		return typed != 0
+	case float64:
+		return typed != 0
+	case []any:
+		return len(typed) > 0
+	case []string:
+		return len(typed) > 0
+	case map[string]any:
+		return len(typed) > 0
+	default:
+		return true
+	}
 }
 
 func executionDispatchSummary(proposalMap map[string]any, order domain.Order, failed bool) map[string]any {

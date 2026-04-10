@@ -745,21 +745,19 @@ type livePositionWatermarks struct {
 }
 
 func buildLivePositionWatermarkKey(currentPosition map[string]any) string {
+	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
+		return positionID
+	}
 	entryPrice := parseFloatValue(currentPosition["entryPrice"])
 	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	if entryPrice <= 0 || side == "" {
 		return ""
 	}
-	parts := make([]string, 0, 5)
+	parts := make([]string, 0, 3)
 	if symbol := NormalizeSymbol(stringValue(currentPosition["symbol"])); symbol != "" {
 		parts = append(parts, symbol)
 	}
 	parts = append(parts, side, fmt.Sprintf("%.8f", entryPrice))
-	if updatedAt := strings.TrimSpace(stringValue(currentPosition["updatedAt"])); updatedAt != "" {
-		parts = append(parts, updatedAt)
-	} else if qty := parseFloatValue(currentPosition["quantity"]); qty > 0 {
-		parts = append(parts, fmt.Sprintf("%.8f", qty))
-	}
 	return strings.Join(parts, "|")
 }
 
@@ -936,11 +934,8 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 	}
 }
 
-func updateLivePositionWatermarks(sessionState map[string]any, side string, entryPrice, marketPrice float64) (float64, float64) {
-	watermarks := refreshLivePositionWatermarks(sessionState, map[string]any{
-		"side":       side,
-		"entryPrice": entryPrice,
-	}, marketPrice)
+func updateLivePositionWatermarks(sessionState map[string]any, currentPosition map[string]any, marketPrice float64) (float64, float64) {
+	watermarks := refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
 	return watermarks.HWM, watermarks.LWM
 }
 
