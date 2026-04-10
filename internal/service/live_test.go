@@ -743,6 +743,16 @@ func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenTopBookO
 	}
 }
 
+func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenWithinCapForBuy(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("BUY", 0.5, 68000, 68010, 0, 1.2, 68010, 20)
+	if got := decision.DepthMode; got != "top-book-cover-within-cap" {
+		t.Fatalf("expected top-book-cover-within-cap mode, got %s", got)
+	}
+	if got := decision.Price; got != 68010 {
+		t.Fatalf("expected top-book ask price 68010, got %v", got)
+	}
+}
+
 func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenWithinCap(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68010, 1.2, 0, 68000, 20)
 	if got := decision.DepthMode; got != "top-book-cover-within-cap" {
@@ -1541,8 +1551,14 @@ func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
 	if got := parseFloatValue(summary["normalizedPrice"]); got != 68643.6 {
 		t.Fatalf("expected normalized price in dispatch summary, got %v", got)
 	}
+	if got := parseFloatValue(summary["rawPriceReference"]); got != 68643.67 {
+		t.Fatalf("expected raw price reference in dispatch summary, got %v", got)
+	}
 	if normalizationItemCount(mapValue(summary["normalization"])["quantityAdjustments"]) != 2 {
 		t.Fatalf("expected quantity adjustment details in dispatch summary, got %+v", summary["normalization"])
+	}
+	if normalizationItemCount(mapValue(summary["normalization"])["priceAdjustments"]) != 1 {
+		t.Fatalf("expected price adjustment details in dispatch summary, got %+v", summary["normalization"])
 	}
 }
 
@@ -1679,8 +1695,35 @@ func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testi
 	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
 		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
 	}
-	if got := boolValue(submission["reduceOnly"]); got {
-		t.Fatal("expected explicit false reduceOnly to be preserved")
+	if got := boolValue(submission["reduceOnly"]); !got {
+		t.Fatal("expected zero-value reduceOnly to fall back to original true")
+	}
+}
+
+func TestWithExecutionSubmissionFallbackPreservesExplicitZeroForUnknownFields(t *testing.T) {
+	order := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"queueIndex": 0.0,
+				"auditFlag":  false,
+			},
+		},
+	}
+	fallback := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"queueIndex": 7.0,
+				"auditFlag":  true,
+			},
+		},
+	}
+	merged := withExecutionSubmissionFallback(order, fallback)
+	submission := mapValue(merged.Metadata["adapterSubmission"])
+	if got := parseFloatValue(submission["queueIndex"]); got != 0 {
+		t.Fatalf("expected explicit zero queueIndex to be preserved, got %v", got)
+	}
+	if got := boolValue(submission["auditFlag"]); got {
+		t.Fatal("expected explicit false auditFlag to be preserved")
 	}
 }
 

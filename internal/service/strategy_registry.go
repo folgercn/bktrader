@@ -770,15 +770,17 @@ func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState 
 	if baseKey == "" {
 		return ""
 	}
+	lastKey := stringValue(sessionState["watermarkPositionKey"])
+	if lastKey != "" {
+		if lastKey == baseKey || strings.HasSuffix(lastKey, "|"+baseKey) {
+			return lastKey
+		}
+		if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" && lastKey == positionID {
+			return lastKey
+		}
+	}
 	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
 		return positionID + "|" + baseKey
-	}
-	lastKey := stringValue(sessionState["watermarkPositionKey"])
-	if lastKey == "" {
-		return baseKey
-	}
-	if lastKey == baseKey || strings.HasSuffix(lastKey, "|"+baseKey) {
-		return lastKey
 	}
 	return baseKey
 }

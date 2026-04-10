@@ -659,7 +659,7 @@ func executionSubmissionValuePresent(path string, value any) bool {
 	case string:
 		return strings.TrimSpace(typed) != ""
 	case bool:
-		return true
+		return executionSubmissionBooleanValuePresent(path, typed)
 	case int:
 		return executionSubmissionNumericValuePresent(path, float64(typed))
 	case int64:
@@ -672,6 +672,18 @@ func executionSubmissionValuePresent(path string, value any) bool {
 		return len(typed) > 0
 	case map[string]any:
 		return len(typed) > 0
+	default:
+		return true
+	}
+}
+
+func executionSubmissionBooleanValuePresent(path string, value bool) bool {
+	if value {
+		return true
+	}
+	switch path {
+	case "postOnly", "reduceOnly", "closePosition", "slProtectionActive":
+		return false
 	default:
 		return true
 	}
@@ -692,6 +704,9 @@ func executionSubmissionNumericValuePresent(path string, value float64) bool {
 		"normalization.normalizedPrice":
 		return false
 	default:
+		if strings.HasPrefix(path, "symbolRules.") {
+			return false
+		}
 		return true
 	}
 }
