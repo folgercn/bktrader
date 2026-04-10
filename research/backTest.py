@@ -278,8 +278,8 @@ def analyze_worst_month(trade_df):
     print(f"  · 月内最大瞬时回撤: {intra_month_dd:.2%}")
     print("!"*40)
 
-def generate_1d_signals(df_1min):
-    print("正在聚合 1Min 数据生成 1D (日线) 信号数据...")
+def generate_1d_signals(df_1min, atr_period=14):
+    print(f"正在聚合 1Min 数据生成 1D (日线) 信号数据... (ATR 周期: {atr_period})")
     df_1d = df_1min.resample('1D').agg({
         'open': 'first',
         'high': 'max',
@@ -295,7 +295,7 @@ def generate_1d_signals(df_1min):
     low_close = np.abs(df_1d['low'] - df_1d['close'].shift())
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = np.max(ranges, axis=1)
-    df_1d['atr'] = true_range.rolling(14).mean()
+    df_1d['atr'] = true_range.rolling(atr_period).mean()
     df_1d['prev_high_1'] = df_1d['high'].shift(1)
     df_1d['prev_high_2'] = df_1d['high'].shift(2)
     df_1d['prev_low_1'] = df_1d['low'].shift(1)
@@ -831,86 +831,653 @@ def run_evaluation_matrix():
     print(df_res.to_string(index=False, formatters={'Return': '{:.2%}'.format, 'Max DD': '{:.2%}'.format}))
     print("="*50)
 
-if __name__ == "__main__":
-    def run_1d_stoploss_matrix():
-        SIGNALS_1Min_PATH = 'BTC_1min_Clean.csv'
-        if not os.path.exists(SIGNALS_1Min_PATH):
-            print("错误：找不到 1min 数据文件！")
-            return
-            
-        df_1min = pd.read_csv(SIGNALS_1Min_PATH, index_col=0, parse_dates=True)
-        global_balance = 100000.0
-        start_date = "2020-01-01"
-        end_date = "2026-02-28"
+def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
+                          dir1_reentry_confirm=False,
+                          dir2_zero_initial=False,
+                          dir3_structural_sl=False,
+                          fixed_slippage=None,
+                          stop_loss_atr=0.2,
+                          max_trades_per_bar=3,
+                          reentry_size_schedule=None,
+                          stop_mode=None,
+                          profit_protect_atr=1.0,
+                          # ===== 新增优化参数 =====
+                          trailing_stop_atr=None,
+                          delayed_trailing_activation=None,
+                          tiered_protection=False,
+                          max_drawdown_pct=None,
+                          cooldown_bars=6,
+                          reentry_mode='default'):
+    """
+    增强版 1min 回测引擎，在原始引擎基础上新增：
 
-        # 切片
-        df_1min_sliced = df_1min.loc[start_date : end_date]
-        
-        # 构建 1D 信号
-        df_1d_sliced = generate_1d_signals(df_1min_sliced)
+    Parameters (新增):
+    - trailing_stop_atr: float 或 None, 启用 ATR Trailing Stop。持仓期间
+      SL 会跟随高水位/低水位动态收紧。例如 1.5 = 最高价 - 1.5*ATR。
+    - tiered_protection: bool, 启用分层利润保护。浮盈越大，退出标准越紧。
+    - max_drawdown_pct: float 或 None, 最大回撤熔断 (0-1)。
+      例如 0.05 = 5% 回撤后暂停交易。
+    - cooldown_bars: int, 熔断冷却期（信号 bar 数量）。
+    - reentry_mode: str, 'default'=原始递增, 'fixed'=固定大小, 'decreasing'=递减。
+    """
+    balance = initial_balance
+    peak_balance = initial_balance
+    position = None
+    trade_logs = []
 
-        print("\n" + "="*50)
-        print("🌟 启动基于方向 2 (Initial=0%) 的 1D 周期多维止损测试")
-        print("="*50)
-        
-        # 测试配置: 因为是 1D, atr 非常大, 所以通过参数控制测试: 0.05 到 0.5 之间
-        test_atrs = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
-        return_rates = []
-        
-        results = []
-        best_ledger = pd.DataFrame()
-        best_return = -999
-        
-        for atr in test_atrs:
-            print(f"\n---> 开始执行场景: [1D 周期] ATR = {atr}")
-            # 固定开启 dir2_zero_initial = True, 其他为 False
-            ledger = run_backtest_1min_granularity(
-                df_1min_sliced, df_1d_sliced, global_balance, 
-                dir1_reentry_confirm=False, 
-                dir2_zero_initial=True, 
-                dir3_structural_sl=False, 
-                fixed_slippage=0.0005,
-                stop_loss_atr=atr
-            )
-            
-            if ledger.empty:
-                final_bal = global_balance
-                total_return = 0.0
-                max_drawdown = 0.0
+    REENTRY_ATR = 0.1
+    COMMISSION = 0.0010
+    MAX_TRADES_PER_BAR = max_trades_per_bar
+    SLIPPAGE = np.random.uniform(0.0005, 0.002) if fixed_slippage is None else fixed_slippage
+    CASH_USAGE_INITIAL = 0.0 if dir2_zero_initial else 0.10
+    REENTRY_SIZE_SCHEDULE = _normalize_reentry_sizes(reentry_size_schedule)
+    PROFIT_PROTECT = profit_protect_atr
+    stop_mode = 'structural' if dir3_structural_sl and stop_mode is None else (stop_mode or 'atr')
+
+    # 根据 reentry_mode 调整 schedule
+    if reentry_mode == 'fixed':
+        base = REENTRY_SIZE_SCHEDULE[0] if REENTRY_SIZE_SCHEDULE else 0.10
+        REENTRY_SIZE_SCHEDULE = [base] * max(len(REENTRY_SIZE_SCHEDULE), 3)
+    elif reentry_mode == 'decreasing':
+        base = REENTRY_SIZE_SCHEDULE[0] if REENTRY_SIZE_SCHEDULE else 0.10
+        REENTRY_SIZE_SCHEDULE = [base * (0.5 ** i) for i in range(max(len(REENTRY_SIZE_SCHEDULE), 3))]
+
+    last_exit_bar_index = -999
+    REENTRY_TIMEOUT = 1
+    last_exit_reason = None
+    last_exit_side = None
+
+    # 熔断状态
+    circuit_breaker_until = -999  # bar index until which trading is paused
+
+    label_parts = []
+    if trailing_stop_atr: label_parts.append(f"Trail:{trailing_stop_atr}")
+    if tiered_protection: label_parts.append("TieredPT")
+    if max_drawdown_pct: label_parts.append(f"CB:{max_drawdown_pct:.0%}")
+    if reentry_mode != 'default': label_parts.append(f"Re:{reentry_mode}")
+    label = " | ".join(label_parts) if label_parts else "Enhanced"
+
+    print(
+        f"🔬 Enhanced回测 [{label}] | Stop:{stop_mode} ATR:{stop_loss_atr} | "
+        f"Slippage:{SLIPPAGE}"
+    )
+
+    for i in range(len(df_4h) - 1):
+        start_t, end_t = df_4h.index[i], df_4h.index[i + 1]
+        window = df_1min.loc[start_t:end_t]
+        if window.empty:
+            continue
+
+        sig = df_4h.iloc[i]
+        if pd.isna(sig['atr']):
+            continue
+        long_regime_ready, short_regime_ready = _resolve_regime_ready(
+            sig, '1d' if 'ma5' in df_4h.columns else '4h'
+        )
+
+        trades_in_bar = 0
+        current_idx = 0
+        total_steps = len(window)
+
+        if i - last_exit_bar_index > REENTRY_TIMEOUT:
+            last_exit_side = None
+
+        while current_idx < total_steps:
+            bar = window.iloc[current_idx]
+            bar_time = window.index[current_idx]
+            prev_bar = window.iloc[current_idx - 1] if current_idx > 0 else None
+
+            if not position:
+                # ===== 熔断检查 =====
+                if max_drawdown_pct is not None and i < circuit_breaker_until:
+                    current_idx += 1
+                    continue
+
+                executed = False
+
+                # 多头逻辑
+                if long_regime_ready:
+                    re_p = sig['prev_low_1'] + (REENTRY_ATR * sig['atr'])
+                    if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
+                        if bar['high'] >= sig['prev_high_2']:
+                            entry_p = max(bar['open'], sig['prev_high_2']) * (1 + SLIPPAGE)
+                            notional_value = balance * CASH_USAGE_INITIAL
+                            initial_sl = _resolve_stop_price('long', entry_p, sig, stop_mode, stop_loss_atr)
+                            position = {
+                                'side': 'long', 'entry_p': entry_p,
+                                'sl': initial_sl, 'protected': False,
+                                'notional': notional_value,
+                                'hwm': entry_p,  # high water mark
+                            }
+                            balance -= notional_value * COMMISSION
+                            trade_logs.append({'time': bar_time, 'type': 'BUY', 'price': entry_p,
+                                               'reason': 'Initial', 'notional': notional_value, 'bal': balance})
+                            trades_in_bar += 1
+                            executed = True
+
+                    elif last_exit_side == 'long' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
+                        is_triggered = False
+                        entry_p_raw = re_p
+                        if dir1_reentry_confirm:
+                            if prev_bar is not None and bar['close'] > re_p and prev_bar['close'] > re_p:
+                                is_triggered = True
+                                entry_p_raw = bar['close']
+                        else:
+                            if bar['high'] >= re_p:
+                                is_triggered = True
+
+                        if is_triggered:
+                            reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
+                            if (reason == 'SL-Reentry' and trades_in_bar < MAX_TRADES_PER_BAR) or reason == 'PT-Reentry':
+                                current_reentry_size = _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
+                                notional_value = balance * current_reentry_size
+                                entry_price = entry_p_raw * (1 + SLIPPAGE)
+                                reentry_sl = _resolve_stop_price('long', entry_price, sig, stop_mode, stop_loss_atr)
+                                position = {
+                                    'side': 'long', 'entry_p': entry_price,
+                                    'sl': reentry_sl, 'protected': (reason == 'PT'),
+                                    'notional': notional_value,
+                                    'hwm': entry_price,
+                                }
+                                balance -= notional_value * COMMISSION
+                                trade_logs.append({'time': bar_time, 'type': 'BUY', 'price': entry_price,
+                                                   'reason': reason, 'notional': notional_value, 'bal': balance})
+                                if reason == 'SL-Reentry':
+                                    trades_in_bar += 1
+                                executed = True
+                            last_exit_side = None
+
+                elif short_regime_ready:
+                    re_p = sig['prev_high_1']
+                    if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
+                        if bar['low'] <= sig['prev_low_2']:
+                            entry_p = min(bar['open'], sig['prev_low_2']) * (1 - SLIPPAGE)
+                            notional_value = balance * CASH_USAGE_INITIAL
+                            initial_sl = _resolve_stop_price('short', entry_p, sig, stop_mode, stop_loss_atr)
+                            position = {
+                                'side': 'short', 'entry_p': entry_p,
+                                'sl': initial_sl, 'protected': False,
+                                'notional': notional_value,
+                                'lwm': entry_p,  # low water mark
+                            }
+                            balance -= notional_value * COMMISSION
+                            trade_logs.append({'time': bar_time, 'type': 'SHORT', 'price': entry_p,
+                                               'reason': 'Initial', 'notional': notional_value, 'bal': balance})
+                            trades_in_bar += 1
+                            executed = True
+
+                    elif last_exit_side == 'short' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
+                        is_triggered = False
+                        entry_p_raw = re_p
+                        if dir1_reentry_confirm:
+                            if prev_bar is not None and bar['close'] < re_p and prev_bar['close'] < re_p:
+                                is_triggered = True
+                                entry_p_raw = bar['close']
+                        else:
+                            if bar['low'] <= re_p:
+                                is_triggered = True
+
+                        if is_triggered:
+                            reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
+                            if (reason == 'SL-Reentry' and trades_in_bar < MAX_TRADES_PER_BAR) or reason == 'PT-Reentry':
+                                current_reentry_size = _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
+                                notional_value = balance * current_reentry_size
+                                entry_price = entry_p_raw * (1 - SLIPPAGE)
+                                reentry_sl = _resolve_stop_price('short', entry_price, sig, stop_mode, stop_loss_atr)
+                                position = {
+                                    'side': 'short', 'entry_p': entry_price,
+                                    'sl': reentry_sl, 'protected': (reason == 'PT'),
+                                    'notional': notional_value,
+                                    'lwm': entry_price,
+                                }
+                                balance -= notional_value * COMMISSION
+                                trade_logs.append({'time': bar_time, 'type': 'SHORT', 'price': entry_price,
+                                                   'reason': reason, 'notional': notional_value, 'bal': balance})
+                                if reason == 'SL-Reentry':
+                                    trades_in_bar += 1
+                                executed = True
+                            last_exit_side = None
+
+                current_idx += 1
+
             else:
-                final_bal = ledger.iloc[-1]['bal']
-                total_return = (final_bal / global_balance - 1)
-                ledger['cum_max'] = ledger['bal'].cummax()
-                ledger['drawdown'] = (ledger['bal'] / ledger['cum_max'] - 1)
-                max_drawdown = ledger['drawdown'].min()
-                
-            print(f"[ATR={atr}] 收益率: {total_return:.2%}, 最大回撤: {max_drawdown:.2%}")
-            results.append((atr, total_return, max_drawdown))
-            return_rates.append(total_return)
-            
-            if total_return > best_return and not ledger.empty:
-                best_return = total_return
-                best_ledger = ledger
+                # ===== 持仓管理 =====
+                exit_triggered = False
+                exit_p = 0.0
+                reason = ''
 
-        if not best_ledger.empty:
-             best_ledger.to_csv('FINAL_1D_LEDGER_BEST_SL.csv', index=False)
+                if position['side'] == 'long':
+                    # 更新高水位
+                    position['hwm'] = max(position.get('hwm', position['entry_p']), bar['high'])
 
-        plt.figure(figsize=(10, 6))
-        plt.title("1D Timeframe Stop-Loss ATR Robustness (Initial=0%)")
-        plt.plot(test_atrs, return_rates, marker='o', linestyle='-', linewidth=2, color='green')
-        plt.xlabel("Stop Loss ATR Multiplier")
-        plt.ylabel("Total Return Rate")
-        plt.grid(True)
-        for i, txt in enumerate(return_rates):
-            plt.annotate(f"{txt:.2%}", (test_atrs[i], return_rates[i]), textcoords="offset points", xytext=(0,10), ha='center')
-        plt.savefig('sl_robustness_1D.png', dpi=300)
-        print("✅ 1D 止损衰减曲线图已生成: sl_robustness_1D.png")
+                    # ===== Trailing Stop =====
+                    if trailing_stop_atr is not None:
+                        is_active = True
+                        if delayed_trailing_activation is not None:
+                            profit_atr = (bar['high'] - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                            if profit_atr < delayed_trailing_activation:
+                                is_active = False
+                        
+                        if is_active:
+                            trailing_sl = position['hwm'] - trailing_stop_atr * sig['atr']
+                            position['sl'] = max(position['sl'], trailing_sl)
 
-        print("\n" + "="*50)
-        print("🏆 1D 止损评估矩阵汇总")
-        print("="*50)
-        df_res = pd.DataFrame(results, columns=["Stop Loss ATR", "Return", "Max DD"])
-        print(df_res.to_string(index=False, formatters={'Return': '{:.2%}'.format, 'Max DD': '{:.2%}'.format}))
-        print("="*50)
+                    # ===== 分层 Protection =====
+                    if tiered_protection:
+                        profit_atr = (bar['high'] - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                        if profit_atr >= 3.0:
+                            # 高利润：trailing 模式
+                            tiered_exit = max(sig['prev_low_1'], position['hwm'] - 1.5 * sig['atr'])
+                            if not position['protected']:
+                                position['protected'] = True
+                            if bar['low'] <= tiered_exit:
+                                exit_p, reason, exit_triggered = tiered_exit, 'PT-T3', True
+                        elif profit_atr >= 2.0:
+                            # 中利润：锁定 0.5 ATR
+                            tiered_exit = max(sig['prev_low_1'], position['entry_p'] + 0.5 * sig['atr'])
+                            if not position['protected']:
+                                position['protected'] = True
+                            if bar['low'] <= tiered_exit:
+                                exit_p, reason, exit_triggered = tiered_exit, 'PT-T2', True
+                        elif profit_atr >= PROFIT_PROTECT:
+                            if not position['protected']:
+                                position['protected'] = True
+                            if position['protected'] and bar['low'] <= sig['prev_low_1']:
+                                exit_p, reason, exit_triggered = sig['prev_low_1'], 'PT', True
+                    else:
+                        # 原始 binary protection
+                        if not position['protected'] and bar['high'] >= position['entry_p'] + PROFIT_PROTECT * sig['atr']:
+                            position['protected'] = True
+                        if position['protected'] and bar['low'] <= sig['prev_low_1']:
+                            exit_p, reason, exit_triggered = sig['prev_low_1'], 'PT', True
 
-    run_1d_stoploss_matrix()
+                    # SL check (优先级最高)
+                    if not exit_triggered and bar['low'] <= position['sl']:
+                        exit_p, reason, exit_triggered = position['sl'], 'SL', True
+
+                else:  # short
+                    # 更新低水位
+                    position['lwm'] = min(position.get('lwm', position['entry_p']), bar['low'])
+
+                    # ===== Trailing Stop =====
+                    if trailing_stop_atr is not None:
+                        is_active = True
+                        if delayed_trailing_activation is not None:
+                            profit_atr = (position['entry_p'] - bar['low']) / sig['atr'] if sig['atr'] > 0 else 0
+                            if profit_atr < delayed_trailing_activation:
+                                is_active = False
+
+                        if is_active:
+                            trailing_sl = position['lwm'] + trailing_stop_atr * sig['atr']
+                            position['sl'] = min(position['sl'], trailing_sl)
+
+                    # ===== 分层 Protection =====
+                    if tiered_protection:
+                        profit_atr = (position['entry_p'] - bar['low']) / sig['atr'] if sig['atr'] > 0 else 0
+                        if profit_atr >= 3.0:
+                            tiered_exit = min(sig['prev_high_1'], position['lwm'] + 1.5 * sig['atr'])
+                            if not position['protected']:
+                                position['protected'] = True
+                            if bar['high'] >= tiered_exit:
+                                exit_p, reason, exit_triggered = tiered_exit, 'PT-T3', True
+                        elif profit_atr >= 2.0:
+                            tiered_exit = min(sig['prev_high_1'], position['entry_p'] - 0.5 * sig['atr'])
+                            if not position['protected']:
+                                position['protected'] = True
+                            if bar['high'] >= tiered_exit:
+                                exit_p, reason, exit_triggered = tiered_exit, 'PT-T2', True
+                        elif profit_atr >= PROFIT_PROTECT:
+                            if not position['protected']:
+                                position['protected'] = True
+                            if position['protected'] and bar['high'] >= sig['prev_high_1']:
+                                exit_p, reason, exit_triggered = sig['prev_high_1'], 'PT', True
+                    else:
+                        if not position['protected'] and bar['low'] <= position['entry_p'] - PROFIT_PROTECT * sig['atr']:
+                            position['protected'] = True
+                        if position['protected'] and bar['high'] >= sig['prev_high_1']:
+                            exit_p, reason, exit_triggered = sig['prev_high_1'], 'PT', True
+
+                    if not exit_triggered and bar['high'] >= position['sl']:
+                        exit_p, reason, exit_triggered = position['sl'], 'SL', True
+
+                if exit_triggered:
+                    side_mult = 1 if position['side'] == 'long' else -1
+                    exit_p = exit_p * (1 - SLIPPAGE) if position['side'] == 'long' else exit_p * (1 + SLIPPAGE)
+                    if position['notional'] > 0:
+                        pnl = side_mult * (exit_p - position['entry_p']) / position['entry_p'] * position['notional']
+                        balance += pnl - (position['notional'] * COMMISSION)
+                    else:
+                        pnl = 0
+                    trade_logs.append({'time': bar_time, 'type': 'EXIT', 'price': exit_p,
+                                       'reason': reason, 'notional': position['notional'], 'bal': balance})
+                    last_exit_reason = reason
+                    last_exit_side = position['side']
+                    last_exit_bar_index = i
+                    position = None
+
+                    # ===== 更新峰值余额 & 熔断检查 =====
+                    if balance > peak_balance:
+                        peak_balance = balance
+                    if max_drawdown_pct is not None and peak_balance > 0:
+                        current_dd = (peak_balance - balance) / peak_balance
+                        if current_dd > max_drawdown_pct:
+                            circuit_breaker_until = i + cooldown_bars
+                            trade_logs.append({'time': bar_time, 'type': 'CIRCUIT_BREAKER',
+                                               'price': 0, 'reason': f'DD:{current_dd:.2%}',
+                                               'notional': 0, 'bal': balance})
+
+                current_idx += 1
+
+    return pd.DataFrame(trade_logs)
+
+
+def _compute_backtest_stats(ledger, initial_balance):
+    """从回测流水中提取关键绩效指标"""
+    if ledger.empty:
+        return {'return': 0.0, 'max_dd': 0.0, 'trades': 0, 'win_rate': 0.0,
+                'avg_pnl_pct': 0.0, 'sharpe': 0.0, 'calmar': 0.0, 'final_bal': initial_balance}
+
+    exits = ledger[ledger['type'] == 'EXIT']
+    final_bal = ledger.iloc[-1]['bal']
+    total_return = final_bal / initial_balance - 1
+
+    ledger_copy = ledger[ledger['type'].isin(['BUY', 'SHORT', 'EXIT'])].copy()
+    ledger_copy['cum_max'] = ledger_copy['bal'].cummax()
+    ledger_copy['drawdown'] = ledger_copy['bal'] / ledger_copy['cum_max'] - 1
+    max_dd = ledger_copy['drawdown'].min()
+
+    # 配对交易统计
+    trades = []
+    temp = None
+    for _, row in ledger_copy.iterrows():
+        if row['type'] in ['BUY', 'SHORT']:
+            temp = row
+        elif row['type'] == 'EXIT' and temp is not None:
+            pnl_pct = (row['price'] - temp['price']) / temp['price']
+            if temp['type'] == 'SHORT':
+                pnl_pct = -pnl_pct
+            trades.append({
+                'pnl_val': row['bal'] - temp['bal'],
+                'pnl_pct': pnl_pct,
+                'side': 'Long' if temp['type'] == 'BUY' else 'Short',
+                'reason': row['reason']
+            })
+            temp = None
+
+    n_trades = len(trades)
+    if n_trades == 0:
+        return {'return': total_return, 'max_dd': max_dd, 'trades': 0,
+                'win_rate': 0.0, 'avg_pnl_pct': 0.0, 'sharpe': 0.0,
+                'calmar': 0.0, 'final_bal': final_bal}
+
+    trade_df = pd.DataFrame(trades)
+    win_rate = (trade_df['pnl_val'] > 0).sum() / n_trades
+    avg_pnl = trade_df['pnl_pct'].mean()
+
+    # 简化 Sharpe (假设无风险利率 = 0)
+    if trade_df['pnl_pct'].std() > 0:
+        sharpe = avg_pnl / trade_df['pnl_pct'].std() * np.sqrt(252)
+    else:
+        sharpe = 0.0
+
+    # Calmar Ratio
+    calmar = total_return / abs(max_dd) if max_dd != 0 else 0.0
+
+    # 按退出原因统计
+    reason_counts = trade_df['reason'].value_counts().to_dict()
+
+    return {
+        'return': total_return,
+        'max_dd': max_dd,
+        'trades': n_trades,
+        'win_rate': win_rate,
+        'avg_pnl_pct': avg_pnl,
+        'sharpe': sharpe,
+        'calmar': calmar,
+        'final_bal': final_bal,
+        'reason_counts': reason_counts,
+    }
+
+
+def run_strategy_optimization_matrix():
+    """运行策略优化对比矩阵：Baseline vs 各优化方案"""
+    SIGNALS_1Min_PATH = 'BTC_1min_Clean.csv'
+    if not os.path.exists(SIGNALS_1Min_PATH):
+        print("错误：找不到 1min 数据文件！")
+        return
+
+    df_1min = pd.read_csv(SIGNALS_1Min_PATH, index_col=0, parse_dates=True)
+    initial_balance = 100000.0
+    start_date = "2020-01-01"
+    end_date = "2026-02-28"
+
+    df_1min_sliced = df_1min.loc[start_date:end_date]
+    df_1d_sliced = generate_1d_signals(df_1min_sliced)
+
+    # 公共基础参数
+    base_kwargs = {
+        'dir2_zero_initial': True,
+        'fixed_slippage': 0.0005,
+        'stop_loss_atr': 0.05,
+        'stop_mode': 'atr',
+        'max_trades_per_bar': 3,
+        'reentry_size_schedule': [0.10, 0.20],
+    }
+
+    scenarios = [
+        # === 对照组 ===
+        ("① Baseline (当前策略)", {**base_kwargs}),
+
+        # === P0-1: Trailing Stop 测试 ===
+        ("② Trail ATR=1.0", {**base_kwargs, 'trailing_stop_atr': 1.0}),
+        ("③ Trail ATR=1.5", {**base_kwargs, 'trailing_stop_atr': 1.5}),
+        ("④ Trail ATR=2.0", {**base_kwargs, 'trailing_stop_atr': 2.0}),
+
+        # === P0-2: 分层 Protection ===
+        ("⑤ Tiered Protection", {**base_kwargs, 'tiered_protection': True}),
+
+        # === P0-3: Trailing + Tiered 组合 ===
+        ("⑥ Trail 1.5 + Tiered", {**base_kwargs, 'trailing_stop_atr': 1.5, 'tiered_protection': True}),
+
+        # === P1-1: 熔断 ===
+        ("⑦ Circuit Breaker 5%", {**base_kwargs, 'max_drawdown_pct': 0.05, 'cooldown_bars': 6}),
+
+        # === P1-2: Reentry Sizing ===
+        ("⑧ Reentry Fixed", {**base_kwargs, 'reentry_mode': 'fixed'}),
+        ("⑨ Reentry Decreasing", {**base_kwargs, 'reentry_mode': 'decreasing'}),
+
+        # === 最优组合 ===
+        ("⑩ Full Enhancement", {
+            **base_kwargs,
+            'trailing_stop_atr': 1.5,
+            'tiered_protection': True,
+            'max_drawdown_pct': 0.05,
+            'cooldown_bars': 6,
+            'reentry_mode': 'fixed',
+        }),
+    ]
+
+    results = []
+    equity_curves = {}
+
+    print("\n" + "=" * 70)
+    print("🔬 策略优化对比矩阵 — Baseline vs 改进方案")
+    print("=" * 70)
+
+    for name, kwargs in scenarios:
+        print(f"\n{'─'*50}")
+        print(f"▶ {name}")
+
+        if name.startswith("①"):
+            # Baseline 使用原始引擎
+            ledger = run_backtest_1min_granularity(
+                df_1min_sliced, df_1d_sliced, initial_balance, **kwargs
+            )
+        else:
+            ledger = run_backtest_enhanced(
+                df_1min_sliced, df_1d_sliced, initial_balance, **kwargs
+            )
+
+        stats = _compute_backtest_stats(ledger, initial_balance)
+        results.append({
+            'Scenario': name,
+            'Return': stats['return'],
+            'Max DD': stats['max_dd'],
+            'Trades': stats['trades'],
+            'Win Rate': stats['win_rate'],
+            'Sharpe': stats['sharpe'],
+            'Calmar': stats['calmar'],
+        })
+
+        # 收集权益曲线
+        if not ledger.empty:
+            exits_only = ledger[ledger['type'].isin(['EXIT', 'BUY', 'SHORT'])].copy()
+            equity_curves[name] = exits_only[['time', 'bal']].copy()
+
+        reason_str = ', '.join(f"{k}:{v}" for k, v in stats.get('reason_counts', {}).items())
+        print(f"  收益: {stats['return']:.2%} | MaxDD: {stats['max_dd']:.2%} | "
+              f"交易: {stats['trades']} | 胜率: {stats['win_rate']:.1%} | "
+              f"Sharpe: {stats['sharpe']:.2f} | Calmar: {stats['calmar']:.2f}")
+        if reason_str:
+            print(f"  退出分布: {reason_str}")
+
+    # ===== 汇总表格 =====
+    print("\n" + "=" * 70)
+    print("🏆 策略优化对比矩阵汇总")
+    print("=" * 70)
+
+    df_res = pd.DataFrame(results)
+    formatters = {
+        'Return': '{:.2%}'.format,
+        'Max DD': '{:.2%}'.format,
+        'Win Rate': '{:.1%}'.format,
+        'Sharpe': '{:.2f}'.format,
+        'Calmar': '{:.2f}'.format,
+    }
+    print(df_res.to_string(index=False, formatters=formatters))
+    print("=" * 70)
+
+    # ===== 权益曲线对比图 =====
+    try:
+        fig, axes = plt.subplots(2, 1, figsize=(16, 12))
+
+        # 上图：权益曲线
+        ax1 = axes[0]
+        for name, curve in equity_curves.items():
+            if curve.empty:
+                continue
+            curve_plot = curve.copy()
+            curve_plot['time'] = pd.to_datetime(curve_plot['time'])
+            label = name.split(' ', 1)[1] if ' ' in name else name
+            linewidth = 2.5 if '①' in name or '⑩' in name else 1.0
+            alpha = 1.0 if '①' in name or '⑩' in name else 0.6
+            ax1.plot(curve_plot['time'], curve_plot['bal'], label=label, linewidth=linewidth, alpha=alpha)
+
+        ax1.set_title('Strategy Optimization: Equity Curves Comparison', fontsize=14)
+        ax1.set_ylabel('Balance (USDT)')
+        ax1.legend(fontsize=8, loc='upper left')
+        ax1.grid(True, alpha=0.3)
+
+        # 下图：收益/风险散点图
+        ax2 = axes[1]
+        returns = [r['Return'] for r in results]
+        max_dds = [abs(r['Max DD']) for r in results]
+        labels = [r['Scenario'].split(' ', 1)[0] for r in results]
+
+        scatter = ax2.scatter(max_dds, returns, s=100, c=range(len(results)), cmap='viridis', zorder=5)
+        for i, label in enumerate(labels):
+            ax2.annotate(label, (max_dds[i], returns[i]), textcoords="offset points",
+                         xytext=(8, 5), fontsize=9)
+
+        ax2.set_title('Risk-Return Tradeoff: Strategy Variants', fontsize=14)
+        ax2.set_xlabel('Max Drawdown (absolute)')
+        ax2.set_ylabel('Total Return')
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig('strategy_optimization_comparison.png', dpi=300)
+        print("\n✅ 对比图已生成: strategy_optimization_comparison.png")
+    except Exception as e:
+        print(f"\n⚠️ 图表生成失败: {e}")
+
+    df_res.to_csv('strategy_optimization_results.csv', index=False)
+    print("✅ 结果已保存: strategy_optimization_results.csv")
+
+    return df_res
+
+
+def run_atr_period_comparison():
+    """比对不同 ATR 周期 (7, 14, 21, 28) 在最优逻辑下的表现"""
+    SIGNALS_1Min_PATH = 'BTC_1min_Clean.csv'
+    if not os.path.exists(SIGNALS_1Min_PATH):
+        print("错误：找不到 1min 数据文件！")
+        return
+
+    df_1min = pd.read_csv(SIGNALS_1Min_PATH, index_col=0, parse_dates=True)
+    initial_balance = 100000.0
+    start_date = "2020-01-01"
+    end_date = "2026-02-28"
+
+    df_1min_sliced = df_1min.loc[start_date:end_date]
+    
+    atr_periods_to_test = [7, 14, 21, 28, 35]
+
+    base_kwargs = {
+        'dir2_zero_initial': True,
+        'fixed_slippage': 0.0005,
+        'stop_loss_atr': 0.05,
+        'stop_mode': 'atr',
+        'max_trades_per_bar': 4,
+        'reentry_size_schedule': [0.10, 0.05, 0.025],
+        'trailing_stop_atr': 0.3,
+        'delayed_trailing_activation': 0.5, # 最优方案
+    }
+
+    print("\n" + "=" * 70)
+    print("🔬 启动 ATR 周期宽度测试 (ATR7 vs 14 vs 21 vs 28 vs 35)")
+    print("=" * 70)
+
+    results = []
+
+    for period in atr_periods_to_test:
+        print(f"\n---> 开始生成 1D 信号和执行回测: ATR({period})")
+        df_1d_sliced = generate_1d_signals(df_1min_sliced, atr_period=period)
+        
+        ledger = run_backtest_enhanced(
+            df_1min_sliced, df_1d_sliced, initial_balance, 
+            **base_kwargs
+        )
+        
+        stats = _compute_backtest_stats(ledger, initial_balance)
+        reason_str = ', '.join(f"{k}:{v}" for k, v in stats.get('reason_counts', {}).items())
+
+        results.append({
+            'ATR Period': f'ATR({period})',
+            'Return': stats['return'],
+            'Max DD': stats['max_dd'],
+            'Trades': stats['trades'],
+            'Win Rate': stats['win_rate'],
+            'Sharpe': stats['sharpe'],
+            'Calmar': stats['calmar']
+        })
+        
+        print(f"  ATR({period}) 收益: {stats['return']:.2%} | MaxDD: {stats['max_dd']:.2%} | "
+              f"交易: {stats['trades']} | Sharpe: {stats['sharpe']:.2f}")
+
+    # ===== 汇总表格 =====
+    print("\n" + "=" * 70)
+    print("🏆 ATR 周期比对结果")
+    print("=" * 70)
+    df_res = pd.DataFrame(results)
+    formatters = {
+        'Return': '{:.2%}'.format,
+        'Max DD': '{:.2%}'.format,
+        'Win Rate': '{:.1%}'.format,
+        'Sharpe': '{:.2f}'.format,
+        'Calmar': '{:.2f}'.format,
+    }
+    print(df_res.to_string(index=False, formatters=formatters))
+    print("=" * 70)
+
+if __name__ == "__main__":
+    run_atr_period_comparison()
