@@ -69,7 +69,7 @@ jobs:
 
       - name: Build frontend
         env:
-          VITE_API_BASE: ""
+          VITE_API_BASE: ${{ vars.VITE_API_BASE || secrets.VITE_API_BASE }}
         run: npm run build
 
       - name: Validate remote frontend directory
