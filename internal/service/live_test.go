@@ -1473,6 +1473,12 @@ func TestNormalizeRESTOrderRecordsNormalizationTelemetry(t *testing.T) {
 	if got := parseFloatValue(norm["normalizedPrice"]); got != 68643.6 {
 		t.Fatalf("expected normalized price 68643.6, got %v", got)
 	}
+	if got := normalized.Quantity; got != 0.002 {
+		t.Fatalf("expected normalized order quantity 0.002, got %v", got)
+	}
+	if got := normalized.Price; got != 68643.6 {
+		t.Fatalf("expected normalized order price 68643.6, got %v", got)
+	}
 	quantityAdjustmentCount := normalizationItemCount(norm["quantityAdjustments"])
 	if quantityAdjustmentCount != 2 {
 		t.Fatalf("expected 2 quantity adjustments, got %v", norm["quantityAdjustments"])
@@ -1639,13 +1645,13 @@ func TestWithExecutionSubmissionFallbackMergesPartialSubmissionFields(t *testing
 	}
 }
 
-func TestWithExecutionSubmissionFallbackIgnoresEmptyScalarOverrides(t *testing.T) {
+func TestWithExecutionSubmissionFallbackPreservesExplicitScalarOverrides(t *testing.T) {
 	order := domain.Order{
 		Metadata: map[string]any{
 			"adapterSubmission": map[string]any{
 				"normalizedPrice": 0.0,
 				"rawQuantity":     0.0,
-				"symbolRules":     map[string]any{},
+				"reduceOnly":      false,
 			},
 		},
 	}
@@ -1654,19 +1660,20 @@ func TestWithExecutionSubmissionFallbackIgnoresEmptyScalarOverrides(t *testing.T
 			"adapterSubmission": map[string]any{
 				"normalizedPrice": 68643.6,
 				"rawQuantity":     0.0019,
-				"symbolRules": map[string]any{
-					"stepSize": 0.001,
-				},
+				"reduceOnly":      true,
 			},
 		},
 	}
 	merged := withExecutionSubmissionFallback(order, fallback)
 	submission := mapValue(merged.Metadata["adapterSubmission"])
-	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
-		t.Fatalf("expected fallback normalized price to survive empty override, got %v", got)
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 0 {
+		t.Fatalf("expected explicit zero normalized price to be preserved, got %v", got)
 	}
-	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
-		t.Fatalf("expected fallback raw quantity to survive empty override, got %v", got)
+	if got := parseFloatValue(submission["rawQuantity"]); got != 0 {
+		t.Fatalf("expected explicit zero raw quantity to be preserved, got %v", got)
+	}
+	if got := boolValue(submission["reduceOnly"]); got {
+		t.Fatal("expected explicit false reduceOnly to be preserved")
 	}
 }
 

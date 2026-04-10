@@ -649,13 +649,13 @@ func executionSubmissionValuePresent(value any) bool {
 	case string:
 		return strings.TrimSpace(typed) != ""
 	case bool:
-		return typed
+		return true
 	case int:
-		return typed != 0
+		return true
 	case int64:
-		return typed != 0
+		return true
 	case float64:
-		return typed != 0
+		return true
 	case []any:
 		return len(typed) > 0
 	case []string:
