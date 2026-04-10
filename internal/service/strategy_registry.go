@@ -744,13 +744,35 @@ type livePositionWatermarks struct {
 	LWM         float64
 }
 
+func buildLivePositionWatermarkKey(currentPosition map[string]any) string {
+	entryPrice := parseFloatValue(currentPosition["entryPrice"])
+	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
+	if entryPrice <= 0 || side == "" {
+		return ""
+	}
+	parts := make([]string, 0, 5)
+	if symbol := NormalizeSymbol(stringValue(currentPosition["symbol"])); symbol != "" {
+		parts = append(parts, symbol)
+	}
+	parts = append(parts, side, fmt.Sprintf("%.8f", entryPrice))
+	if updatedAt := strings.TrimSpace(stringValue(currentPosition["updatedAt"])); updatedAt != "" {
+		parts = append(parts, updatedAt)
+	} else if qty := parseFloatValue(currentPosition["quantity"]); qty > 0 {
+		parts = append(parts, fmt.Sprintf("%.8f", qty))
+	}
+	return strings.Join(parts, "|")
+}
+
 func resolveLivePositionWatermarks(currentPosition map[string]any, sessionState map[string]any) livePositionWatermarks {
 	entryPrice := parseFloatValue(currentPosition["entryPrice"])
 	side := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
 	if entryPrice <= 0 || side == "" {
 		return livePositionWatermarks{}
 	}
-	positionKey := fmt.Sprintf("%s|%.8f", side, entryPrice)
+	positionKey := buildLivePositionWatermarkKey(currentPosition)
+	if positionKey == "" {
+		return livePositionWatermarks{}
+	}
 	hwm := parseFloatValue(sessionState["hwm"])
 	if hwm == 0 {
 		hwm = entryPrice

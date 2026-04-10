@@ -602,11 +602,13 @@ func firstNonEmptyMapValue(values ...any) map[string]any {
 }
 
 func withExecutionSubmissionFallback(order domain.Order, fallback domain.Order) domain.Order {
-	if len(mapValue(order.Metadata["adapterSubmission"])) > 0 {
+	currentSubmission := cloneMetadata(mapValue(order.Metadata["adapterSubmission"]))
+	fallbackSubmission := cloneMetadata(mapValue(fallback.Metadata["adapterSubmission"]))
+	if len(currentSubmission) > 0 && len(fallbackSubmission) == 0 {
 		return order
 	}
-	fallbackSubmission := cloneMetadata(mapValue(fallback.Metadata["adapterSubmission"]))
-	if len(fallbackSubmission) == 0 {
+	mergedSubmission := mergeExecutionSubmissionFallback(currentSubmission, fallbackSubmission)
+	if len(mergedSubmission) == 0 {
 		return order
 	}
 	enriched := order
@@ -614,8 +616,28 @@ func withExecutionSubmissionFallback(order domain.Order, fallback domain.Order) 
 	if enriched.Metadata == nil {
 		enriched.Metadata = map[string]any{}
 	}
-	enriched.Metadata["adapterSubmission"] = fallbackSubmission
+	enriched.Metadata["adapterSubmission"] = mergedSubmission
 	return enriched
+}
+
+func mergeExecutionSubmissionFallback(current map[string]any, fallback map[string]any) map[string]any {
+	if len(current) == 0 {
+		return cloneMetadata(fallback)
+	}
+	if len(fallback) == 0 {
+		return cloneMetadata(current)
+	}
+	merged := cloneMetadata(fallback)
+	for key, value := range current {
+		currentMap := mapValue(value)
+		fallbackMap := mapValue(merged[key])
+		if len(currentMap) > 0 && len(fallbackMap) > 0 {
+			merged[key] = mergeExecutionSubmissionFallback(currentMap, fallbackMap)
+			continue
+		}
+		merged[key] = value
+	}
+	return merged
 }
 
 func executionDispatchSummary(proposalMap map[string]any, order domain.Order, failed bool) map[string]any {

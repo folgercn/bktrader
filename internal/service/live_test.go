@@ -693,11 +693,11 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 
 func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenDepthCoversOrder(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68150, 1.2, 0, 68000, 20)
-	if got := decision.Price; got != 68000 {
-		t.Fatalf("expected top-book bid price, got %v", got)
+	if got := decision.Price; got != 68013.85 {
+		t.Fatalf("expected capped protection price 68013.85, got %v", got)
 	}
-	if got := decision.DepthMode; got != "top-book-cover" {
-		t.Fatalf("expected top-book-cover mode, got %s", got)
+	if got := decision.DepthMode; got != "top-book-outside-cap" {
+		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
 	}
 	if got := decision.TopDepthNotional; got != 81600 {
 		t.Fatalf("expected top depth notional 81600, got %v", got)
@@ -715,8 +715,8 @@ func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCap(t *testing
 	if got := decision.ExpectedCoverage; got != 0.5 {
 		t.Fatalf("expected 50%% coverage, got %v", got)
 	}
-	if got := decision.Price; got != 68006.925 {
-		t.Fatalf("expected weighted protection price 68006.925, got %v", got)
+	if got := decision.Price; got != 68013.85 {
+		t.Fatalf("expected capped protection price 68013.85, got %v", got)
 	}
 	if got := decision.QuoteGapBps; got <= 0 {
 		t.Fatalf("expected positive quote gap bps, got %v", got)
@@ -731,11 +731,21 @@ func TestResolveAggressiveSLProtectionDecisionUsesCoverageWeightedCapForBuy(t *t
 	if got := decision.ExpectedCoverage; got != 0.5 {
 		t.Fatalf("expected 50%% coverage, got %v", got)
 	}
-	if got := decision.Price; got != 68143.075 {
-		t.Fatalf("expected weighted protection price 68143.075, got %v", got)
+	if got := decision.Price; got != 68136.15 {
+		t.Fatalf("expected capped protection price 68136.15, got %v", got)
 	}
 	if got := decision.QuoteGapBps; got <= 0 {
 		t.Fatalf("expected positive quote gap bps, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionUsesCappedPriceWhenTopBookOutsideCap(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68150, 1.2, 0, 68000, 20)
+	if got := decision.DepthMode; got != "top-book-outside-cap" {
+		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
+	}
+	if got := decision.Price; got != 68013.85 {
+		t.Fatalf("expected top-book cover to stay capped at 68013.85, got %v", got)
 	}
 }
 
@@ -1571,6 +1581,51 @@ func TestExecutionTimeoutTimelineMetadataUsesOriginalSubmissionNormalization(t *
 	metadata := executionTimeoutTimelineMetadata(order, withExecutionSubmissionFallback(cancelledOrder, order))
 	if got := parseFloatValue(metadata["normalizedPrice"]); got != 68643.6 {
 		t.Fatalf("expected timeout metadata to preserve normalized price, got %v", got)
+	}
+}
+
+func TestWithExecutionSubmissionFallbackMergesPartialSubmissionFields(t *testing.T) {
+	order := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 68643.6,
+				"normalization": map[string]any{
+					"normalizedPrice": 68643.6,
+				},
+			},
+		},
+	}
+	fallback := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"rawQuantity":        0.0019,
+				"normalizedQuantity": 0.002,
+				"rawPriceReference":  68643.67,
+				"normalization": map[string]any{
+					"normalizedPrice":    68643.6,
+					"normalizedQuantity": 0.002,
+					"rawPriceReference":  68643.67,
+					"rawQuantity":        0.0019,
+				},
+				"symbolRules": map[string]any{
+					"stepSize": 0.001,
+				},
+			},
+		},
+	}
+	merged := withExecutionSubmissionFallback(order, fallback)
+	submission := mapValue(merged.Metadata["adapterSubmission"])
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected existing normalized price to survive merge, got %v", got)
+	}
+	if got := parseFloatValue(submission["normalizedQuantity"]); got != 0.002 {
+		t.Fatalf("expected normalized quantity fallback, got %v", got)
+	}
+	if got := parseFloatValue(mapValue(submission["normalization"])["rawQuantity"]); got != 0.0019 {
+		t.Fatalf("expected nested raw quantity fallback, got %v", got)
+	}
+	if got := parseFloatValue(mapValue(submission["symbolRules"])["stepSize"]); got != 0.001 {
+		t.Fatalf("expected symbol rules fallback, got %v", got)
 	}
 }
 
