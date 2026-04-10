@@ -332,6 +332,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	proposal := executionProposalFromMap(proposalMap)
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(proposalMap)
+	virtualPositionID := fmt.Sprintf("virtual|%s|%s|%s", session.ID, eventTime.UTC().Format(time.RFC3339Nano), intentSignature)
 	entryPrice := firstPositive(
 		parseFloatValue(proposalMap["plannedPrice"]),
 		firstPositive(
@@ -363,6 +364,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	state["lastVirtualSignalAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastVirtualSignalType"] = "initial"
 	state["virtualPosition"] = map[string]any{
+		"id":         virtualPositionID,
 		"found":      true,
 		"virtual":    true,
 		"symbol":     NormalizeSymbol(proposal.Symbol),

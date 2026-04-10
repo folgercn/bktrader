@@ -244,6 +244,28 @@ func TestResolveLivePositionWatermarksUsesExpandedPositionContextKey(t *testing.
 	}
 }
 
+func TestResolveLivePositionWatermarksUsesVirtualPositionID(t *testing.T) {
+	sessionState := map[string]any{
+		"hwm":                  52000.0,
+		"lwm":                  50000.0,
+		"watermarkPositionKey": "virtual|session-1|signal-1",
+	}
+	currentPosition := map[string]any{
+		"id":         "virtual|session-1|signal-2",
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+		"virtual":    true,
+	}
+	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
+	if got := watermarks.PositionKey; got != "virtual|session-1|signal-2" {
+		t.Fatalf("expected virtual position id to drive watermark key, got %s", got)
+	}
+	if watermarks.HWM != 50000.0 || watermarks.LWM != 50000.0 {
+		t.Fatalf("expected watermarks to reset for a new virtual position identity, got %+v", watermarks)
+	}
+}
+
 func TestDeriveLivePositionStateUsesProvidedWatermarks(t *testing.T) {
 	parameters := map[string]any{
 		"trailing_stop_atr":               0.3,

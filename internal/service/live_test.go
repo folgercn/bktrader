@@ -291,6 +291,7 @@ func TestResolveLiveSessionPositionSnapshotUsesVirtualPosition(t *testing.T) {
 		AccountID: "live-main",
 		State: map[string]any{
 			"virtualPosition": map[string]any{
+				"id":         "virtual|session-1|signal-1",
 				"symbol":     "BTCUSDT",
 				"side":       "LONG",
 				"quantity":   0.0,
@@ -311,6 +312,9 @@ func TestResolveLiveSessionPositionSnapshotUsesVirtualPosition(t *testing.T) {
 	}
 	if !boolValue(position["hasVirtualPosition"]) {
 		t.Fatal("expected returned position snapshot to expose virtual position explicitly")
+	}
+	if got := stringValue(position["id"]); got != "virtual|session-1|signal-1" {
+		t.Fatalf("expected virtual position id to be preserved, got %s", got)
 	}
 }
 
@@ -1837,6 +1841,9 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 	}
 	if !boolValue(mapValue(updated.State["virtualPosition"])["virtual"]) {
 		t.Fatal("expected virtualPosition to be recorded in live session state")
+	}
+	if got := stringValue(mapValue(updated.State["virtualPosition"])["id"]); got == "" {
+		t.Fatal("expected virtualPosition to carry a stable id")
 	}
 	if got := maxIntValue(updated.State["planIndex"], -1); got != 1 {
 		t.Fatalf("expected planIndex to advance after virtual initial, got %d", got)
