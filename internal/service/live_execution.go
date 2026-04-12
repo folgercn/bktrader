@@ -333,7 +333,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(proposalMap)
 	if strings.TrimSpace(intentSignature) == "" {
-		intentSignature = buildFallbackLiveIntentSignature(proposalMap, proposal, eventTime)
+		intentSignature = buildFallbackLiveIntentSignature(proposalMap, proposal)
 	}
 	virtualPositionID := fmt.Sprintf("virtual|%s|%s", session.ID, intentSignature)
 	entryPrice := firstPositive(
@@ -397,11 +397,11 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	return p.store.UpdateLiveSessionState(session.ID, state)
 }
 
-func buildFallbackLiveIntentSignature(proposalMap map[string]any, proposal ExecutionProposal, eventTime time.Time) string {
+func buildFallbackLiveIntentSignature(proposalMap map[string]any, proposal ExecutionProposal) string {
 	anchor := firstNonEmpty(
 		strings.TrimSpace(stringValue(proposalMap["signalBarStateKey"])),
 		strings.TrimSpace(stringValue(proposalMap["plannedEventAt"])),
-		eventTime.UTC().Format(time.RFC3339Nano),
+		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["decisionState"]), proposal.DecisionState)),
 	)
 	return strings.Join([]string{
 		firstNonEmpty(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["action"]), proposal.Action)), "virtual"),

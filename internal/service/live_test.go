@@ -1521,48 +1521,6 @@ func TestNormalizeRESTOrderRecordsNormalizationTelemetry(t *testing.T) {
 	}
 }
 
-func TestNormalizeRESTOrderRejectsBelowMinNotionalAfterRounding(t *testing.T) {
-	adapter := binanceFuturesLiveAdapter{}
-	creds := binanceRESTCredentials{BaseURL: "https://example.test"}
-	cacheKey := creds.BaseURL + "|BTCUSDT"
-	binanceSymbolRulesCacheMu.Lock()
-	previous, existed := binanceSymbolRulesCache[cacheKey]
-	binanceSymbolRulesCacheMu.Unlock()
-	t.Cleanup(func() {
-		binanceSymbolRulesCacheMu.Lock()
-		defer binanceSymbolRulesCacheMu.Unlock()
-		if existed {
-			binanceSymbolRulesCache[cacheKey] = previous
-		} else {
-			delete(binanceSymbolRulesCache, cacheKey)
-		}
-	})
-	binanceSymbolRulesCacheMu.Lock()
-	binanceSymbolRulesCache[cacheKey] = binanceSymbolRules{
-		Symbol:      "BTCUSDT",
-		TickSize:    0.1,
-		StepSize:    0.001,
-		MinQty:      0.001,
-		MaxQty:      1000,
-		MinNotional: 100,
-		UpdatedAt:   time.Now().UTC(),
-	}
-	binanceSymbolRulesCacheMu.Unlock()
-
-	_, _, err := adapter.normalizeRESTOrder(domain.Order{
-		Symbol:   "BTCUSDT",
-		Type:     "LIMIT",
-		Quantity: 0.0019,
-		Price:    68643.67,
-	}, creds)
-	if err == nil {
-		t.Fatal("expected normalize REST order to reject below-min-notional quantity after rounding")
-	}
-	if !strings.Contains(err.Error(), "below minNotional") {
-		t.Fatalf("expected minNotional rejection, got %v", err)
-	}
-}
-
 func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
 	summary := executionDispatchSummary(map[string]any{
 		"type":       "LIMIT",
@@ -1805,7 +1763,6 @@ func TestApplyLiveVirtualInitialEventUsesFallbackVirtualPositionIDWhenIntentSign
 }
 
 func TestBuildFallbackLiveIntentSignatureIncludesExecutionFields(t *testing.T) {
-	eventTime := time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC)
 	baseProposalMap := map[string]any{
 		"reason":            "Initial",
 		"side":              "BUY",
@@ -1816,10 +1773,10 @@ func TestBuildFallbackLiveIntentSignatureIncludesExecutionFields(t *testing.T) {
 		"limitPrice":        68000.0,
 		"priceHint":         68000.5,
 	}
-	baseSignature := buildFallbackLiveIntentSignature(baseProposalMap, executionProposalFromMap(baseProposalMap), eventTime)
+	baseSignature := buildFallbackLiveIntentSignature(baseProposalMap, executionProposalFromMap(baseProposalMap))
 	variantProposalMap := cloneMetadata(baseProposalMap)
 	variantProposalMap["quantity"] = 0.002
-	variantSignature := buildFallbackLiveIntentSignature(variantProposalMap, executionProposalFromMap(variantProposalMap), eventTime)
+	variantSignature := buildFallbackLiveIntentSignature(variantProposalMap, executionProposalFromMap(variantProposalMap))
 	if baseSignature == variantSignature {
 		t.Fatalf("expected quantity changes to alter fallback signature, got %q", baseSignature)
 	}
@@ -2498,7 +2455,7 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 	}
 }
 
-func TestRefreshLiveSessionPositionContextPreservesWatermarksForVirtualPosition(t *testing.T) {
+func TestRefreshLiveSessionPositionContextRebuildsVirtualWatermarksFromVirtualPosition(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
@@ -2516,9 +2473,29 @@ func TestRefreshLiveSessionPositionContextPreservesWatermarksForVirtualPosition(
 		"entryPrice": 50000.0,
 		"quantity":   0.0,
 	}
-	state["watermarkPositionKey"] = "virtual|session-1|signal-1|BTCUSDT|LONG|50000.00000000"
-	state["hwm"] = 52000.0
-	state["lwm"] = 50000.0
+	state["watermarkPositionKey"] = encodeLivePositionWatermarkIdentityComponent("position-1") + "|BTCUSDT|LONG|49000.00000000"
+	state["hwm"] = 53000.0
+	state["lwm"] = 49000.0
+	state["lastStrategyEvaluationSignalBarStates"] = map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"atr14":     900.0,
+			"current": map[string]any{
+				"close": 51000.0,
+				"high":  51100.0,
+				"low":   50500.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 50800.0,
+				"low":  49800.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 50700.0,
+				"low":  49700.0,
+			},
+		},
+	}
 	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		t.Fatalf("update live session state failed: %v", err)
@@ -2528,19 +2505,24 @@ func TestRefreshLiveSessionPositionContextPreservesWatermarksForVirtualPosition(
 	if err != nil {
 		t.Fatalf("refresh live session position context failed: %v", err)
 	}
-	if got := stringValue(updated.State["watermarkPositionKey"]); got != "virtual|session-1|signal-1|BTCUSDT|LONG|50000.00000000" {
-		t.Fatalf("expected virtual watermark key to be preserved, got %s", got)
+	expectedKey := encodeLivePositionWatermarkIdentityComponent("virtual|session-1|signal-1") + "|BTCUSDT|LONG|50000.00000000"
+	if got := stringValue(updated.State["watermarkPositionKey"]); got != expectedKey {
+		t.Fatalf("expected virtual watermark key to be rebuilt, got %s", got)
 	}
-	if got := parseFloatValue(updated.State["hwm"]); got != 52000.0 {
-		t.Fatalf("expected virtual watermark hwm to be preserved, got %v", got)
+	if got := parseFloatValue(updated.State["hwm"]); got != 51000.0 {
+		t.Fatalf("expected virtual watermark hwm to be rebuilt from virtual position context, got %v", got)
 	}
 	if got := parseFloatValue(updated.State["lwm"]); got != 50000.0 {
-		t.Fatalf("expected virtual watermark lwm to be preserved, got %v", got)
+		t.Fatalf("expected virtual watermark lwm to be reset to entry/virtual context, got %v", got)
 	}
 	if !boolValue(updated.State["hasRecoveredVirtualPosition"]) {
 		t.Fatal("expected virtual recovery flag to remain set")
 	}
 	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "monitoring-virtual-position" {
 		t.Fatalf("expected monitoring-virtual-position, got %s", got)
+	}
+	liveState := mapValue(updated.State["livePositionState"])
+	if got := stringValue(liveState["watermarkPositionKey"]); got != expectedKey {
+		t.Fatalf("expected rebuilt livePositionState watermark key, got %s", got)
 	}
 }

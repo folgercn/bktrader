@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"fmt"
 	"math"
 	"strings"
@@ -227,10 +228,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	effectivePlannedPrice := context.NextPlannedPrice
 	livePositionState := map[string]any{}
 	if signalBarState != nil {
-		var watermarks livePositionWatermarks
-		if hasActiveLivePositionSnapshot(currentPosition) {
-			watermarks = refreshLivePositionWatermarks(context.SessionState, currentPosition, marketPrice)
-		}
+		watermarks := refreshLivePositionWatermarks(context.SessionState, currentPosition, marketPrice)
 		livePositionState = deriveLivePositionState(context.ExecutionContext.Parameters, currentPosition, signalBarState, marketPrice, watermarks)
 		if strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") {
 			livePositionState = deriveLiveExitState(context.ExecutionContext.Parameters, currentPosition, livePositionState, marketPrice, context.NextPlannedReason)
@@ -774,23 +772,31 @@ func buildLegacyLivePositionWatermarkKey(currentPosition map[string]any) string 
 	return strings.Join([]string{side, fmt.Sprintf("%.8f", entryPrice)}, "|")
 }
 
-func buildLivePositionWatermarkKey(currentPosition map[string]any, sessionState map[string]any) string {
+func encodeLivePositionWatermarkIdentityComponent(positionID string) string {
+	normalized := strings.TrimSpace(positionID)
+	if normalized == "" {
+		return ""
+	}
+	return "id:" + base64.RawURLEncoding.EncodeToString([]byte(normalized))
+}
+
+func buildLegacyPrefixedLivePositionWatermarkKey(currentPosition map[string]any) string {
+	positionID := strings.TrimSpace(stringValue(currentPosition["id"]))
+	baseKey := buildLivePositionWatermarkBaseKey(currentPosition)
+	if positionID == "" || baseKey == "" {
+		return ""
+	}
+	return positionID + "|" + baseKey
+}
+
+func buildLivePositionWatermarkKey(currentPosition map[string]any) string {
 	baseKey := buildLivePositionWatermarkBaseKey(currentPosition)
 	if baseKey == "" {
 		return ""
 	}
-	lastKey := stringValue(sessionState["watermarkPositionKey"])
-	legacyBaseKey := buildLegacyLivePositionWatermarkKey(currentPosition)
 	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
-		currentKey := positionID + "|" + baseKey
-		if lastKey == positionID || strings.HasPrefix(lastKey, positionID+"|") {
-			return currentKey
-		}
-		return currentKey
-	}
-	if lastKey != "" {
-		if lastKey == baseKey || lastKey == legacyBaseKey || strings.HasSuffix(lastKey, "|"+baseKey) || strings.HasSuffix(lastKey, "|"+legacyBaseKey) {
-			return lastKey
+		if identityComponent := encodeLivePositionWatermarkIdentityComponent(positionID); identityComponent != "" {
+			return identityComponent + "|" + baseKey
 		}
 	}
 	return baseKey
@@ -804,21 +810,16 @@ func isCompatibleLivePositionWatermarkMigration(lastKey string, currentPosition 
 		return true
 	}
 	baseKey := buildLivePositionWatermarkBaseKey(currentPosition)
-	legacyBaseKey := buildLegacyLivePositionWatermarkKey(currentPosition)
 	if positionID := strings.TrimSpace(stringValue(currentPosition["id"])); positionID != "" {
 		if boolValue(currentPosition["virtual"]) && lastKey == positionID {
 			return true
 		}
-		if lastKey == baseKey || lastKey == legacyBaseKey {
+		if lastKey == baseKey {
 			return true
 		}
-		return strings.HasPrefix(lastKey, positionID+"|") &&
-			(strings.HasSuffix(lastKey, "|"+baseKey) || strings.HasSuffix(lastKey, "|"+legacyBaseKey))
+		return lastKey == buildLegacyPrefixedLivePositionWatermarkKey(currentPosition)
 	}
-	return lastKey == baseKey ||
-		lastKey == legacyBaseKey ||
-		strings.HasSuffix(lastKey, "|"+baseKey) ||
-		strings.HasSuffix(lastKey, "|"+legacyBaseKey)
+	return lastKey == baseKey
 }
 
 func clearLivePositionWatermarks(sessionState map[string]any) {
@@ -839,7 +840,7 @@ func resolveLivePositionWatermarks(currentPosition map[string]any, sessionState 
 	if entryPrice <= 0 || side == "" {
 		return livePositionWatermarks{}
 	}
-	positionKey := buildLivePositionWatermarkKey(currentPosition, sessionState)
+	positionKey := buildLivePositionWatermarkKey(currentPosition)
 	if positionKey == "" {
 		return livePositionWatermarks{}
 	}
@@ -899,6 +900,7 @@ func applyLivePositionWatermarks(sessionState map[string]any, watermarks livePos
 
 func refreshLivePositionWatermarks(sessionState map[string]any, currentPosition map[string]any, marketPrice float64) livePositionWatermarks {
 	if !hasActiveLivePositionSnapshot(currentPosition) {
+		clearLivePositionWatermarks(sessionState)
 		return livePositionWatermarks{}
 	}
 	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
@@ -911,10 +913,7 @@ func refreshLivePositionWatermarks(sessionState map[string]any, currentPosition 
 // When sessionState is provided, it also refreshes HWM/LWM watermarks used by
 // trailing-stop logic so callers do not need to duplicate watermark handling.
 func evaluateLivePositionState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, sessionState map[string]any) map[string]any {
-	var watermarks livePositionWatermarks
-	if hasActiveLivePositionSnapshot(currentPosition) {
-		watermarks = refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
-	}
+	watermarks := refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
 	return deriveLivePositionState(parameters, currentPosition, signalBarState, marketPrice, watermarks)
 }
 
