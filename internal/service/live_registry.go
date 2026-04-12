@@ -419,8 +419,11 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 			"origType":           stringValue(payload["origType"]),
 			"timeInForce":        stringValue(payload["timeInForce"]),
 			"updateTime":         acceptedAt,
+			"rawQuantity":        order.Quantity,
+			"rawPriceReference":  firstPositive(order.Price, parseFloatValue(order.Metadata["priceHint"])),
 			"normalizedQuantity": normalizedOrder.Quantity,
 			"normalizedPrice":    normalizedOrder.Price,
+			"normalization":      cloneMetadata(mapValue(normalizedOrder.Metadata["normalization"])),
 			"symbolRules": map[string]any{
 				"tickSize":    rules.TickSize,
 				"stepSize":    rules.StepSize,
@@ -720,26 +723,55 @@ func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds 
 		return domain.Order{}, binanceSymbolRules{}, err
 	}
 	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(order.Type, "MARKET")))
-	normalized.Quantity = normalizeBinanceQuantity(order.Quantity, rules)
+	rawQuantity := order.Quantity
+	rawPriceReference := firstPositive(order.Price, parseFloatValue(order.Metadata["priceHint"]))
+	quantityAdjustments := make([]string, 0)
+	baseQuantity := normalizeBinanceQuantity(rawQuantity, rules)
+	if rules.StepSize > 0 && baseQuantity != rawQuantity {
+		quantityAdjustments = append(quantityAdjustments, "step_size")
+	}
+	if rules.MinQty > 0 && rawQuantity > 0 && rawQuantity < rules.MinQty {
+		quantityAdjustments = append(quantityAdjustments, "min_qty")
+	}
+	normalized.Quantity = baseQuantity
 	if normalized.Quantity <= 0 {
 		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order quantity is invalid for %s", rules.Symbol)
 	}
 	if rules.MaxQty > 0 && normalized.Quantity > rules.MaxQty {
 		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order quantity %.12f exceeds maxQty %.12f for %s", normalized.Quantity, rules.MaxQty, rules.Symbol)
 	}
-	priceReference := firstPositive(order.Price, parseFloatValue(order.Metadata["priceHint"]))
+	priceReference := rawPriceReference
+	priceAdjustments := make([]string, 0)
 	if orderType != "MARKET" {
 		normalized.Price = normalizeBinancePrice(priceReference, rules)
 		if normalized.Price <= 0 {
 			return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order price is invalid for %s", rules.Symbol)
 		}
+		if rules.TickSize > 0 && normalized.Price != priceReference {
+			priceAdjustments = append(priceAdjustments, "tick_size")
+		}
 	}
-	if adjustedQty := normalizeBinanceQuantityForMinNotional(normalized.Quantity, firstPositive(normalized.Price, priceReference), rules); adjustedQty > normalized.Quantity {
-		normalized.Quantity = adjustedQty
+	if requiredQty := requiredBinanceQuantityForMinNotional(normalized.Quantity, firstPositive(normalized.Price, priceReference), rules); requiredQty > normalized.Quantity {
+		normalized.Quantity = requiredQty
+		quantityAdjustments = append(quantityAdjustments, "min_notional")
 	}
 	normalized.Metadata["normalizedQuantity"] = normalized.Quantity
 	if normalized.Price > 0 {
 		normalized.Metadata["normalizedPrice"] = normalized.Price
+	}
+	normalized.Metadata["normalization"] = map[string]any{
+		"rawQuantity":              rawQuantity,
+		"rawPriceReference":        rawPriceReference,
+		"normalizedQuantity":       normalized.Quantity,
+		"normalizedPrice":          normalized.Price,
+		"quantityAdjustments":      quantityAdjustments,
+		"priceAdjustments":         priceAdjustments,
+		"normalizationApplied":     rawQuantity != normalized.Quantity || (orderType != "MARKET" && rawPriceReference != normalized.Price),
+		"minNotionalAdjusted":      containsString(quantityAdjustments, "min_notional"),
+		"stepSizeAdjusted":         containsString(quantityAdjustments, "step_size"),
+		"minQtyAdjusted":           containsString(quantityAdjustments, "min_qty"),
+		"tickSizeAdjusted":         containsString(priceAdjustments, "tick_size"),
+		"normalizationReasonCount": len(quantityAdjustments) + len(priceAdjustments),
 	}
 	normalized.Metadata["symbolRules"] = map[string]any{
 		"tickSize":    rules.TickSize,
@@ -749,6 +781,15 @@ func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds 
 		"minNotional": rules.MinNotional,
 	}
 	return normalized, rules, nil
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(target)) {
+			return true
+		}
+	}
+	return false
 }
 
 func fetchBinanceSymbolRules(creds binanceRESTCredentials, symbol string) (binanceSymbolRules, error) {
@@ -852,7 +893,7 @@ func normalizeBinancePrice(price float64, rules binanceSymbolRules) float64 {
 	return roundToStep(price, rules.TickSize)
 }
 
-func normalizeBinanceQuantityForMinNotional(quantity, price float64, rules binanceSymbolRules) float64 {
+func requiredBinanceQuantityForMinNotional(quantity, price float64, rules binanceSymbolRules) float64 {
 	if quantity <= 0 || price <= 0 || rules.MinNotional <= 0 {
 		return quantity
 	}

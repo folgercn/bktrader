@@ -112,6 +112,15 @@ type executionProfile struct {
 	SLMaxSlippageBps      float64
 }
 
+type slProtectionDecision struct {
+	Price            float64
+	TopDepthQty      float64
+	TopDepthNotional float64
+	ExpectedCoverage float64
+	QuoteGapBps      float64
+	DepthMode        string
+}
+
 func (bookAwareExecutionStrategy) Key() string {
 	return "book-aware-v1"
 }
@@ -248,7 +257,8 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	if profile.ReduceOnly && reasonTag == "sl" {
 		slMaxSlippageBps := firstPositive(profile.SLMaxSlippageBps, 50)
 		if spreadBps > 0 && slMaxSlippageBps > 0 && spreadBps > slMaxSlippageBps {
-			cappedPrice := resolveAggressiveSLProtectionPrice(intent.Side, bestBid, bestAsk, priceHint, slMaxSlippageBps)
+			slProtection := resolveAggressiveSLProtectionDecision(intent.Side, proposal.Quantity, bestBid, bestAsk, bestBidQty, bestAskQty, priceHint, slMaxSlippageBps)
+			cappedPrice := slProtection.Price
 			proposal.Type = "LIMIT"
 			proposal.LimitPrice = cappedPrice
 			proposal.TimeInForce = "GTC"
@@ -263,12 +273,21 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 			proposal.Metadata["slCappedPrice"] = cappedPrice
 			proposal.Metadata["slOriginalSpreadBps"] = spreadBps
 			proposal.Metadata["slMaxSlippageBps"] = slMaxSlippageBps
+			proposal.Metadata["topDepthNotional"] = slProtection.TopDepthNotional
+			proposal.Metadata["expectedFillCoverage"] = slProtection.ExpectedCoverage
+			proposal.Metadata["quoteGapBps"] = slProtection.QuoteGapBps
+			proposal.Metadata["slProtectionDepthMode"] = slProtection.DepthMode
 			proposal.Metadata["executionDecision"] = "sl-slippage-protected"
 			proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
 				mapValue(proposal.Metadata["executionDecisionContext"]),
 				map[string]any{
-					"slProtectionBranch": true,
-					"slProtectionMode":   "spread-capped-limit",
+					"slProtectionBranch":    true,
+					"slProtectionMode":      "spread-capped-limit",
+					"slProtectionDepthMode": slProtection.DepthMode,
+					"topDepthQty":           slProtection.TopDepthQty,
+					"topDepthNotional":      slProtection.TopDepthNotional,
+					"expectedFillCoverage":  slProtection.ExpectedCoverage,
+					"quoteGapBps":           slProtection.QuoteGapBps,
 				},
 			)
 			return proposal, nil
@@ -571,31 +590,74 @@ func resolvePassiveBookPrice(side string, bestBid, bestAsk, fallback float64) fl
 	}
 }
 
-// resolveAggressiveSLProtectionPrice 基于整段盘口 spread 计算 SL 保护限价。
-// 当 spread 已经大于容忍阈值时，不再基于单边 quote 继续偏移，而是从盘口两侧推导一个
-// “最多跨越 maxSlippageBps 对应价格宽度”的保护限价。这样触发条件和控制手段都围绕同一段 spread。
-func resolveAggressiveSLProtectionPrice(side string, bestBid, bestAsk, fallback, maxSlippageBps float64) float64 {
+// resolveAggressiveSLProtectionDecision 仅为“宽点差 SL 保护”分支计算一个不越过滑点 cap 的保护限价。
+// 当前调用方只会在 spread 已经超过 maxSlippageBps 时进入这里，因此最终价格始终收敛到 spread-capped，
+// top-of-book depth 仅用于记录覆盖率和盘口质量，不再假装把报价改善到 cap 之外。
+func resolveAggressiveSLProtectionDecision(side string, quantity, bestBid, bestAsk, bestBidQty, bestAskQty, fallback, maxSlippageBps float64) slProtectionDecision {
+	decision := slProtectionDecision{
+		Price:     fallback,
+		DepthMode: "spread-capped-fallback",
+	}
 	if bestBid > 0 && bestAsk > 0 && bestAsk >= bestBid {
 		mid := (bestBid + bestAsk) / 2
 		if mid > 0 {
 			allowedCross := mid * maxSlippageBps / 10000
+			decision.QuoteGapBps = (bestAsk - bestBid) / mid * 10000
 			switch strings.ToUpper(strings.TrimSpace(side)) {
 			case "SELL", "SHORT":
-				return math.Max(bestBid, bestAsk-allowedCross)
+				decision.TopDepthQty = bestBidQty
+				decision.TopDepthNotional = bestBidQty * bestBid
+				spreadCapped := math.Max(bestBid, bestAsk-allowedCross)
+				decision.Price = spreadCapped
+				if quantity > 0 && bestBidQty > 0 {
+					coverage := math.Min(bestBidQty/quantity, 1)
+					decision.ExpectedCoverage = coverage
+					if bestBid < spreadCapped {
+						decision.DepthMode = "top-book-outside-cap"
+						return decision
+					}
+					if coverage >= 1 {
+						decision.DepthMode = "top-book-cover-within-cap"
+						return decision
+					}
+					decision.DepthMode = "top-book-partial-within-cap"
+					return decision
+				}
+				return decision
 			case "BUY":
-				return math.Min(bestAsk, bestBid+allowedCross)
+				decision.TopDepthQty = bestAskQty
+				decision.TopDepthNotional = bestAskQty * bestAsk
+				spreadCapped := math.Min(bestAsk, bestBid+allowedCross)
+				decision.Price = spreadCapped
+				if quantity > 0 && bestAskQty > 0 {
+					coverage := math.Min(bestAskQty/quantity, 1)
+					decision.ExpectedCoverage = coverage
+					if bestAsk > spreadCapped {
+						decision.DepthMode = "top-book-outside-cap"
+						return decision
+					}
+					if coverage >= 1 {
+						decision.DepthMode = "top-book-cover-within-cap"
+						return decision
+					}
+					decision.DepthMode = "top-book-partial-within-cap"
+					return decision
+				}
+				return decision
 			}
 		}
 	}
+	decision.QuoteGapBps = 0
 	tolerance := maxSlippageBps / 10000
 	switch strings.ToUpper(strings.TrimSpace(side)) {
 	case "SELL", "SHORT":
-		return fallback * (1 - tolerance)
+		decision.Price = fallback * (1 - tolerance)
 	case "BUY":
-		return fallback * (1 + tolerance)
+		decision.Price = fallback * (1 + tolerance)
 	default:
-		return fallback
+		decision.Price = fallback
 	}
+	return decision
 }
 
 func signalIntentToMap(intent SignalIntent) map[string]any {

@@ -291,6 +291,7 @@ func TestResolveLiveSessionPositionSnapshotUsesVirtualPosition(t *testing.T) {
 		AccountID: "live-main",
 		State: map[string]any{
 			"virtualPosition": map[string]any{
+				"id":         "virtual|session-1|signal-1",
 				"symbol":     "BTCUSDT",
 				"side":       "LONG",
 				"quantity":   0.0,
@@ -311,6 +312,9 @@ func TestResolveLiveSessionPositionSnapshotUsesVirtualPosition(t *testing.T) {
 	}
 	if !boolValue(position["hasVirtualPosition"]) {
 		t.Fatal("expected returned position snapshot to expose virtual position explicitly")
+	}
+	if got := stringValue(position["id"]); got != "virtual|session-1|signal-1" {
+		t.Fatalf("expected virtual position id to be preserved, got %s", got)
 	}
 }
 
@@ -685,6 +689,103 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 	}
 	if !boolValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionBranch"]) {
 		t.Fatal("expected explicit SL protection branch marker")
+	}
+	if got := stringValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionDepthMode"]); got != "spread-capped-fallback" {
+		t.Fatalf("expected fallback SL depth mode without qty data, got %s", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionUsesCappedPriceWhenTopBookOutsideCap(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68150, 1.2, 0, 68000, 20)
+	if got := decision.Price; got != 68013.85 {
+		t.Fatalf("expected capped protection price 68013.85, got %v", got)
+	}
+	if got := decision.DepthMode; got != "top-book-outside-cap" {
+		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
+	}
+	if got := decision.TopDepthNotional; got != 81600 {
+		t.Fatalf("expected top depth notional 81600, got %v", got)
+	}
+	if got := decision.ExpectedCoverage; got != 1 {
+		t.Fatalf("expected full coverage, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenTopBookOutsideCap(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 2.0, 68000, 68150, 1.0, 0, 68000, 20)
+	if got := decision.DepthMode; got != "top-book-outside-cap" {
+		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
+	}
+	if got := decision.ExpectedCoverage; got != 0.5 {
+		t.Fatalf("expected 50%% coverage, got %v", got)
+	}
+	if got := decision.Price; got != 68013.85 {
+		t.Fatalf("expected capped protection price 68013.85, got %v", got)
+	}
+	if got := decision.QuoteGapBps; got <= 0 {
+		t.Fatalf("expected positive quote gap bps, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenTopBookOutsideCapForBuy(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("BUY", 2.0, 68000, 68150, 0, 1.0, 68150, 20)
+	if got := decision.DepthMode; got != "top-book-outside-cap" {
+		t.Fatalf("expected top-book-outside-cap mode, got %s", got)
+	}
+	if got := decision.ExpectedCoverage; got != 0.5 {
+		t.Fatalf("expected 50%% coverage, got %v", got)
+	}
+	if got := decision.Price; got != 68136.15 {
+		t.Fatalf("expected capped protection price 68136.15, got %v", got)
+	}
+	if got := decision.QuoteGapBps; got <= 0 {
+		t.Fatalf("expected positive quote gap bps, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenWithinCapForBuy(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("BUY", 0.5, 68000, 68010, 0, 1.2, 68010, 20)
+	if got := decision.DepthMode; got != "top-book-cover-within-cap" {
+		t.Fatalf("expected top-book-cover-within-cap mode, got %s", got)
+	}
+	if got := decision.Price; got != 68010 {
+		t.Fatalf("expected top-book ask price 68010, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenWithinCapForBuy(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("BUY", 2.0, 68000, 68010, 0, 1.0, 68010, 20)
+	if got := decision.DepthMode; got != "top-book-partial-within-cap" {
+		t.Fatalf("expected top-book-partial-within-cap mode, got %s", got)
+	}
+	if got := decision.ExpectedCoverage; got != 0.5 {
+		t.Fatalf("expected 50%% coverage, got %v", got)
+	}
+	if got := decision.Price; got != 68010 {
+		t.Fatalf("expected within-cap BUY price to remain at ask 68010, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionUsesTopBookWhenWithinCap(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68010, 1.2, 0, 68000, 20)
+	if got := decision.DepthMode; got != "top-book-cover-within-cap" {
+		t.Fatalf("expected top-book-cover-within-cap mode, got %s", got)
+	}
+	if got := decision.Price; got != 68000 {
+		t.Fatalf("expected top-book bid price 68000, got %v", got)
+	}
+}
+
+func TestResolveAggressiveSLProtectionDecisionRecordsPartialCoverageWhenWithinCap(t *testing.T) {
+	decision := resolveAggressiveSLProtectionDecision("SELL", 2.0, 68000, 68010, 1.0, 0, 68000, 20)
+	if got := decision.DepthMode; got != "top-book-partial-within-cap" {
+		t.Fatalf("expected top-book-partial-within-cap mode, got %s", got)
+	}
+	if got := decision.Price; got != 68000 {
+		t.Fatalf("expected capped price to remain at 68000, got %v", got)
+	}
+	if got := decision.ExpectedCoverage; got != 0.5 {
+		t.Fatalf("expected 50%% coverage, got %v", got)
 	}
 }
 
@@ -1341,17 +1442,406 @@ func TestFormatBinanceDecimalUsesExchangePrecision(t *testing.T) {
 	}
 }
 
-func TestNormalizeBinanceQuantityForMinNotional(t *testing.T) {
+func TestRequiredBinanceQuantityForMinNotional(t *testing.T) {
 	rules := binanceSymbolRules{
 		StepSize:    0.001,
 		MinQty:      0.001,
 		MinNotional: 100,
 	}
-	if got := normalizeBinanceQuantityForMinNotional(0.001, 68643.6, rules); got != 0.002 {
-		t.Fatalf("expected quantity bumped to 0.002 for min notional, got %v", got)
+	if got := requiredBinanceQuantityForMinNotional(0.001, 68643.6, rules); got != 0.002 {
+		t.Fatalf("expected required quantity 0.002 for min notional, got %v", got)
 	}
-	if got := normalizeBinanceQuantityForMinNotional(0.002, 68643.6, rules); got != 0.002 {
+	if got := requiredBinanceQuantityForMinNotional(0.002, 68643.6, rules); got != 0.002 {
 		t.Fatalf("expected existing quantity to remain unchanged, got %v", got)
+	}
+}
+
+func TestNormalizeRESTOrderRecordsNormalizationTelemetry(t *testing.T) {
+	adapter := binanceFuturesLiveAdapter{}
+	creds := binanceRESTCredentials{BaseURL: "https://example.test"}
+	cacheKey := creds.BaseURL + "|BTCUSDT"
+	binanceSymbolRulesCacheMu.Lock()
+	previous, existed := binanceSymbolRulesCache[cacheKey]
+	binanceSymbolRulesCacheMu.Unlock()
+	t.Cleanup(func() {
+		binanceSymbolRulesCacheMu.Lock()
+		defer binanceSymbolRulesCacheMu.Unlock()
+		if existed {
+			binanceSymbolRulesCache[cacheKey] = previous
+		} else {
+			delete(binanceSymbolRulesCache, cacheKey)
+		}
+	})
+	binanceSymbolRulesCacheMu.Lock()
+	binanceSymbolRulesCache[cacheKey] = binanceSymbolRules{
+		Symbol:      "BTCUSDT",
+		TickSize:    0.1,
+		StepSize:    0.001,
+		MinQty:      0.001,
+		MaxQty:      1000,
+		MinNotional: 100,
+		UpdatedAt:   time.Now().UTC(),
+	}
+	binanceSymbolRulesCacheMu.Unlock()
+
+	normalized, _, err := adapter.normalizeRESTOrder(domain.Order{
+		Symbol:   "BTCUSDT",
+		Type:     "LIMIT",
+		Quantity: 0.0021,
+		Price:    68643.67,
+	}, creds)
+	if err != nil {
+		t.Fatalf("normalize REST order failed: %v", err)
+	}
+	norm := mapValue(normalized.Metadata["normalization"])
+	if got := parseFloatValue(norm["rawQuantity"]); got != 0.0021 {
+		t.Fatalf("expected raw quantity 0.0021, got %v", got)
+	}
+	if got := parseFloatValue(norm["normalizedQuantity"]); got != 0.002 {
+		t.Fatalf("expected normalized quantity 0.002, got %v", got)
+	}
+	if got := parseFloatValue(norm["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected normalized price 68643.6, got %v", got)
+	}
+	if got := normalized.Quantity; got != 0.002 {
+		t.Fatalf("expected normalized order quantity 0.002, got %v", got)
+	}
+	if got := normalized.Price; got != 68643.6 {
+		t.Fatalf("expected normalized order price 68643.6, got %v", got)
+	}
+	quantityAdjustmentCount := normalizationItemCount(norm["quantityAdjustments"])
+	if quantityAdjustmentCount != 1 {
+		t.Fatalf("expected 1 quantity adjustment, got %v", norm["quantityAdjustments"])
+	}
+	if !boolValue(norm["stepSizeAdjusted"]) || boolValue(norm["minNotionalAdjusted"]) {
+		t.Fatalf("expected only step size adjustment, got %+v", norm)
+	}
+	if !boolValue(norm["tickSizeAdjusted"]) {
+		t.Fatalf("expected tick size adjustment, got %+v", norm)
+	}
+}
+
+func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
+	summary := executionDispatchSummary(map[string]any{
+		"type":       "LIMIT",
+		"quantity":   0.0021,
+		"limitPrice": 68643.6,
+		"priceHint":  68643.67,
+		"metadata": map[string]any{
+			"executionDecision": "direct-dispatch",
+		},
+	}, domain.Order{
+		Status:   "NEW",
+		Symbol:   "BTCUSDT",
+		Side:     "BUY",
+		Type:     "LIMIT",
+		Quantity: 0.002,
+		Price:    68643.6,
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"rawQuantity":        0.0021,
+				"rawPriceReference":  68643.67,
+				"normalizedQuantity": 0.002,
+				"normalizedPrice":    68643.6,
+				"normalization": map[string]any{
+					"quantityAdjustments": []any{"step_size"},
+					"priceAdjustments":    []any{"tick_size"},
+				},
+				"symbolRules": map[string]any{
+					"stepSize":    0.001,
+					"tickSize":    0.1,
+					"minNotional": 100.0,
+				},
+			},
+		},
+	}, false)
+	if got := parseFloatValue(summary["rawQuantity"]); got != 0.0021 {
+		t.Fatalf("expected raw quantity in dispatch summary, got %v", got)
+	}
+	if got := parseFloatValue(summary["normalizedQuantity"]); got != 0.002 {
+		t.Fatalf("expected normalized quantity in dispatch summary, got %v", got)
+	}
+	if got := parseFloatValue(summary["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected normalized price in dispatch summary, got %v", got)
+	}
+	if got := parseFloatValue(summary["rawPriceReference"]); got != 68643.67 {
+		t.Fatalf("expected raw price reference in dispatch summary, got %v", got)
+	}
+	if normalizationItemCount(mapValue(summary["normalization"])["quantityAdjustments"]) != 1 {
+		t.Fatalf("expected quantity adjustment details in dispatch summary, got %+v", summary["normalization"])
+	}
+	if normalizationItemCount(mapValue(summary["normalization"])["priceAdjustments"]) != 1 {
+		t.Fatalf("expected price adjustment details in dispatch summary, got %+v", summary["normalization"])
+	}
+}
+
+func TestExecutionDispatchSummaryFallsBackToNestedNormalizedPrice(t *testing.T) {
+	summary := executionDispatchSummary(map[string]any{
+		"type":       "LIMIT",
+		"quantity":   0.0019,
+		"limitPrice": 68643.6,
+		"priceHint":  68643.67,
+	}, domain.Order{
+		Status:   "NEW",
+		Symbol:   "BTCUSDT",
+		Side:     "BUY",
+		Type:     "LIMIT",
+		Quantity: 0.002,
+		Price:    68643.6,
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalization": map[string]any{
+					"normalizedPrice":    68643.6,
+					"normalizedQuantity": 0.002,
+					"rawPriceReference":  68643.67,
+					"rawQuantity":        0.0019,
+				},
+			},
+		},
+	}, false)
+	if got := parseFloatValue(summary["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected normalized price fallback from normalization payload, got %v", got)
+	}
+}
+
+func TestExecutionTimeoutTimelineMetadataUsesOriginalSubmissionNormalization(t *testing.T) {
+	order := domain.Order{
+		ID: "order-1",
+		Metadata: map[string]any{
+			"executionExpiresAt": "2026-04-10T01:00:00Z",
+			"executionProposal": map[string]any{
+				"type":       "LIMIT",
+				"quantity":   0.0019,
+				"limitPrice": 68643.6,
+				"priceHint":  68643.67,
+			},
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 68643.6,
+				"normalization": map[string]any{
+					"normalizedPrice":    68643.6,
+					"normalizedQuantity": 0.002,
+					"rawPriceReference":  68643.67,
+					"rawQuantity":        0.0019,
+				},
+			},
+		},
+	}
+	cancelledOrder := domain.Order{
+		ID:     "order-1",
+		Status: "CANCELLED",
+	}
+	metadata := executionTimeoutTimelineMetadata(order, withExecutionSubmissionFallback(cancelledOrder, order))
+	if got := parseFloatValue(metadata["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected timeout metadata to preserve normalized price, got %v", got)
+	}
+}
+
+func TestWithExecutionSubmissionFallbackMergesPartialSubmissionFields(t *testing.T) {
+	order := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 68643.6,
+				"normalization": map[string]any{
+					"normalizedPrice": 68643.6,
+				},
+			},
+		},
+	}
+	fallback := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"rawQuantity":        0.0019,
+				"normalizedQuantity": 0.002,
+				"rawPriceReference":  68643.67,
+				"normalization": map[string]any{
+					"normalizedPrice":    68643.6,
+					"normalizedQuantity": 0.002,
+					"rawPriceReference":  68643.67,
+					"rawQuantity":        0.0019,
+				},
+				"symbolRules": map[string]any{
+					"stepSize": 0.001,
+				},
+			},
+		},
+	}
+	merged := withExecutionSubmissionFallback(order, fallback)
+	submission := mapValue(merged.Metadata["adapterSubmission"])
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected existing normalized price to survive merge, got %v", got)
+	}
+	if got := parseFloatValue(submission["normalizedQuantity"]); got != 0.002 {
+		t.Fatalf("expected normalized quantity fallback, got %v", got)
+	}
+	if got := parseFloatValue(mapValue(submission["normalization"])["rawQuantity"]); got != 0.0019 {
+		t.Fatalf("expected nested raw quantity fallback, got %v", got)
+	}
+	if got := parseFloatValue(mapValue(submission["symbolRules"])["stepSize"]); got != 0.001 {
+		t.Fatalf("expected symbol rules fallback, got %v", got)
+	}
+}
+
+func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testing.T) {
+	order := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 0.0,
+				"rawQuantity":     0.0,
+				"reduceOnly":      false,
+			},
+		},
+	}
+	fallback := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 68643.6,
+				"rawQuantity":     0.0019,
+				"reduceOnly":      true,
+			},
+		},
+	}
+	merged := withExecutionSubmissionFallback(order, fallback)
+	submission := mapValue(merged.Metadata["adapterSubmission"])
+	if got := parseFloatValue(submission["normalizedPrice"]); got != 68643.6 {
+		t.Fatalf("expected zero normalized price to fall back, got %v", got)
+	}
+	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
+		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
+	}
+	if got := boolValue(submission["reduceOnly"]); !got {
+		t.Fatal("expected known execution-control false to fall back to the original reduceOnly=true")
+	}
+}
+
+func TestWithExecutionSubmissionFallbackUsesFallbackForMissingExecutionControlFlags(t *testing.T) {
+	order := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"normalizedPrice": 68643.6,
+			},
+		},
+	}
+	fallback := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"postOnly":      true,
+				"reduceOnly":    true,
+				"closePosition": true,
+			},
+		},
+	}
+	merged := withExecutionSubmissionFallback(order, fallback)
+	submission := mapValue(merged.Metadata["adapterSubmission"])
+	if !boolValue(submission["postOnly"]) || !boolValue(submission["reduceOnly"]) || !boolValue(submission["closePosition"]) {
+		t.Fatalf("expected missing execution-control flags to fall back, got %+v", submission)
+	}
+}
+
+func TestApplyLiveVirtualInitialEventUsesFallbackVirtualPositionIDWhenIntentSignatureEmpty(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	session.State = cloneMetadata(session.State)
+	proposalMap := map[string]any{
+		"side":   "BUY",
+		"symbol": "BTCUSDT",
+		"reason": "Initial",
+	}
+	updated, err := platform.applyLiveVirtualInitialEvent(session, proposalMap, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("apply virtual initial event failed: %v", err)
+	}
+	virtualPosition := mapValue(updated.State["virtualPosition"])
+	if virtualPosition == nil {
+		t.Fatal("expected virtual position to be recorded")
+	}
+	rawSignature := buildLiveIntentSignature(proposalMap)
+	fallbackSignature := buildFallbackLiveIntentSignature(proposalMap, executionProposalFromMap(proposalMap))
+	if got := stringValue(updated.State["lastDispatchedIntentSignature"]); got != fallbackSignature {
+		t.Fatalf("expected sparse proposal to use fallback signature %q, got %q (raw=%q)", fallbackSignature, got, rawSignature)
+	}
+	if got := stringValue(virtualPosition["id"]); got == "" || strings.HasSuffix(got, rawSignature) {
+		t.Fatalf("expected fallback virtual position id to avoid sparse raw signature, got %q", got)
+	}
+}
+
+func TestBuildFallbackLiveIntentSignatureIncludesExecutionFields(t *testing.T) {
+	baseProposalMap := map[string]any{
+		"reason":            "Initial",
+		"side":              "BUY",
+		"symbol":            "BTCUSDT",
+		"type":              "LIMIT",
+		"signalBarStateKey": "bar-1",
+		"quantity":          0.001,
+		"limitPrice":        68000.0,
+		"priceHint":         68000.5,
+	}
+	baseSignature := buildFallbackLiveIntentSignature(baseProposalMap, executionProposalFromMap(baseProposalMap))
+	variantProposalMap := cloneMetadata(baseProposalMap)
+	variantProposalMap["quantity"] = 0.002
+	variantSignature := buildFallbackLiveIntentSignature(variantProposalMap, executionProposalFromMap(variantProposalMap))
+	if baseSignature == variantSignature {
+		t.Fatalf("expected quantity changes to alter fallback signature, got %q", baseSignature)
+	}
+}
+
+func TestBuildFallbackLiveIntentSignaturePreservesExplicitFalseBooleans(t *testing.T) {
+	proposalMap := map[string]any{
+		"reason":            "Initial",
+		"side":              "BUY",
+		"symbol":            "BTCUSDT",
+		"postOnly":          false,
+		"reduceOnly":        false,
+		"closePosition":     false,
+		"signalBarStateKey": "bar-1",
+	}
+	proposal := ExecutionProposal{
+		PostOnly:   true,
+		ReduceOnly: true,
+	}
+	signature := buildFallbackLiveIntentSignature(proposalMap, proposal)
+	if strings.Contains(signature, "|true|true|true") {
+		t.Fatalf("expected explicit false booleans to be preserved in fallback signature, got %q", signature)
+	}
+}
+
+func TestWithExecutionSubmissionFallbackPreservesExplicitZeroForUnknownFields(t *testing.T) {
+	order := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"queueIndex": 0.0,
+				"auditFlag":  false,
+			},
+		},
+	}
+	fallback := domain.Order{
+		Metadata: map[string]any{
+			"adapterSubmission": map[string]any{
+				"queueIndex": 7.0,
+				"auditFlag":  true,
+			},
+		},
+	}
+	merged := withExecutionSubmissionFallback(order, fallback)
+	submission := mapValue(merged.Metadata["adapterSubmission"])
+	if got := parseFloatValue(submission["queueIndex"]); got != 0 {
+		t.Fatalf("expected explicit zero queueIndex to be preserved, got %v", got)
+	}
+	if got := boolValue(submission["auditFlag"]); got {
+		t.Fatal("expected explicit false auditFlag to be preserved")
+	}
+}
+
+func normalizationItemCount(raw any) int {
+	switch value := raw.(type) {
+	case []string:
+		return len(value)
+	case []any:
+		return len(value)
+	default:
+		return 0
 	}
 }
 
@@ -1504,6 +1994,9 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 	}
 	if !boolValue(mapValue(updated.State["virtualPosition"])["virtual"]) {
 		t.Fatal("expected virtualPosition to be recorded in live session state")
+	}
+	if got := stringValue(mapValue(updated.State["virtualPosition"])["id"]); got == "" {
+		t.Fatal("expected virtualPosition to carry a stable id")
 	}
 	if got := maxIntValue(updated.State["planIndex"], -1); got != 1 {
 		t.Fatalf("expected planIndex to advance after virtual initial, got %d", got)
@@ -1984,5 +2477,125 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 	}
 	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "protected-open-position" {
 		t.Fatalf("expected protected-open-position, got %s", got)
+	}
+}
+
+func TestRefreshLiveSessionPositionContextRebuildsVirtualWatermarksFromVirtualPosition(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["virtualPosition"] = map[string]any{
+		"id":         "virtual|session-1|signal-1",
+		"virtual":    true,
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+		"quantity":   0.0,
+	}
+	state["watermarkPositionKey"] = encodeLivePositionWatermarkIdentityComponent("position-1") + "|BTCUSDT|LONG|49000.00000000"
+	state["hwm"] = 53000.0
+	state["lwm"] = 49000.0
+	state["lastStrategyEvaluationSignalBarStates"] = map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"atr14":     900.0,
+			"current": map[string]any{
+				"close": 51000.0,
+				"high":  51100.0,
+				"low":   50500.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 50800.0,
+				"low":  49800.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 50700.0,
+				"low":  49700.0,
+			},
+		},
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 10, 10, 0, 0, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	expectedKey := encodeLivePositionWatermarkIdentityComponent("virtual|session-1|signal-1") + "|BTCUSDT|LONG|50000.00000000"
+	if got := stringValue(updated.State["watermarkPositionKey"]); got != expectedKey {
+		t.Fatalf("expected virtual watermark key to be rebuilt, got %s", got)
+	}
+	if got := parseFloatValue(updated.State["hwm"]); got != 51000.0 {
+		t.Fatalf("expected virtual watermark hwm to be rebuilt from virtual position context, got %v", got)
+	}
+	if got := parseFloatValue(updated.State["lwm"]); got != 50000.0 {
+		t.Fatalf("expected virtual watermark lwm to be reset to entry/virtual context, got %v", got)
+	}
+	if !boolValue(updated.State["hasRecoveredVirtualPosition"]) {
+		t.Fatal("expected virtual recovery flag to remain set")
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "monitoring-virtual-position" {
+		t.Fatalf("expected monitoring-virtual-position, got %s", got)
+	}
+	liveState := mapValue(updated.State["livePositionState"])
+	if got := stringValue(liveState["watermarkPositionKey"]); got != expectedKey {
+		t.Fatalf("expected rebuilt livePositionState watermark key, got %s", got)
+	}
+}
+
+func TestRefreshLiveSessionPositionContextClearsStaleLivePositionStateWithoutRealOrVirtualPosition(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["livePositionState"] = map[string]any{
+		"found":                true,
+		"symbol":               "BTCUSDT",
+		"side":                 "LONG",
+		"entryPrice":           50000.0,
+		"watermarkPositionKey": encodeLivePositionWatermarkIdentityComponent("position-1") + "|BTCUSDT|LONG|50000.00000000",
+		"hwm":                  52000.0,
+		"lwm":                  50000.0,
+	}
+	state["watermarkPositionKey"] = encodeLivePositionWatermarkIdentityComponent("position-1") + "|BTCUSDT|LONG|50000.00000000"
+	state["hwm"] = 52000.0
+	state["lwm"] = 50000.0
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 12, 7, 0, 0, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "flat" {
+		t.Fatalf("expected flat recovery status after stale position cleanup, got %s", got)
+	}
+	if _, ok := updated.State["watermarkPositionKey"]; ok {
+		t.Fatal("expected stale watermarkPositionKey to be cleared")
+	}
+	if _, ok := updated.State["hwm"]; ok {
+		t.Fatal("expected stale hwm to be cleared")
+	}
+	if _, ok := updated.State["lwm"]; ok {
+		t.Fatal("expected stale lwm to be cleared")
+	}
+	if liveState := mapValue(updated.State["livePositionState"]); len(liveState) != 0 {
+		t.Fatalf("expected stale livePositionState to be cleared, got %+v", liveState)
 	}
 }

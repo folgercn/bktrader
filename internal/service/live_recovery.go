@@ -1,6 +1,7 @@
 package service
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -84,23 +85,28 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	if symbol == "" {
 		return refreshed, nil
 	}
-	positionSnapshot, foundPosition, err := p.resolvePaperSessionPositionSnapshot(refreshed.AccountID, symbol)
+	positionSnapshot, foundPosition, err := p.resolveLiveSessionPositionSnapshot(refreshed, symbol)
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
+	hasRealPositionContext := foundPosition || math.Abs(parseFloatValue(positionSnapshot["quantity"])) > 0
 	state["recoveredPosition"] = positionSnapshot
 	state["hasRecoveredPosition"] = foundPosition
 	state["hasRecoveredRealPosition"] = foundPosition
-	state["hasRecoveredVirtualPosition"] = boolValue(mapValue(state["virtualPosition"])["virtual"]) && !foundPosition
+	virtualPosition := cloneMetadata(mapValue(state["virtualPosition"]))
+	hasVirtualPosition := !hasRealPositionContext && hasActiveVirtualPositionSnapshot(virtualPosition)
+	state["hasRecoveredVirtualPosition"] = hasVirtualPosition
 	state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = firstNonEmpty(source, "live-position-refresh")
-	if !foundPosition {
+	if !hasRealPositionContext && !hasVirtualPosition {
+		clearLivePositionWatermarks(state)
 		delete(state, "livePositionState")
 		state["lastLivePositionState"] = map[string]any{}
-		if !boolValue(mapValue(state["virtualPosition"])["virtual"]) {
-			state["positionRecoveryStatus"] = "flat"
-		}
+		state["positionRecoveryStatus"] = "flat"
 		return p.store.UpdateLiveSessionState(refreshed.ID, state)
+	}
+	if hasVirtualPosition {
+		state["positionRecoveryStatus"] = "monitoring-virtual-position"
 	}
 
 	version, err := p.resolveCurrentStrategyVersion(refreshed.StrategyID)
@@ -123,6 +129,14 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	}
 	signalBarState, _ := pickSignalBarState(signalBarStates, symbol, timeframe)
 	if signalBarState == nil {
+		if hasRealPositionContext || hasVirtualPosition {
+			watermarks := resolveLivePositionWatermarks(positionSnapshot, state)
+			if watermarks.PositionKey == "" {
+				clearLivePositionWatermarks(state)
+			} else {
+				applyLivePositionWatermarks(state, watermarks)
+			}
+		}
 		return p.store.UpdateLiveSessionState(refreshed.ID, state)
 	}
 	marketPrice := firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(mapValue(signalBarState["current"])["close"]))

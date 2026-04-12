@@ -332,6 +332,10 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	proposal := executionProposalFromMap(proposalMap)
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(proposalMap)
+	if !hasInformativeLiveIntentSignature(intentSignature) {
+		intentSignature = buildFallbackLiveIntentSignature(proposalMap, proposal)
+	}
+	virtualPositionID := fmt.Sprintf("virtual|%s|%s", session.ID, intentSignature)
 	entryPrice := firstPositive(
 		parseFloatValue(proposalMap["plannedPrice"]),
 		firstPositive(
@@ -363,6 +367,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	state["lastVirtualSignalAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastVirtualSignalType"] = "initial"
 	state["virtualPosition"] = map[string]any{
+		"id":         virtualPositionID,
 		"found":      true,
 		"virtual":    true,
 		"symbol":     NormalizeSymbol(proposal.Symbol),
@@ -390,6 +395,55 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 		Status:   liveOrderStatusVirtualInitial,
 	}, false))
 	return p.store.UpdateLiveSessionState(session.ID, state)
+}
+
+func hasInformativeLiveIntentSignature(signature string) bool {
+	nonEmpty := 0
+	for _, part := range strings.Split(signature, "|") {
+		if strings.TrimSpace(part) != "" {
+			nonEmpty++
+		}
+	}
+	return nonEmpty >= 3
+}
+
+func proposalBooleanValue(proposalMap map[string]any, key string, fallback bool) bool {
+	value, ok := proposalMap[key]
+	if !ok {
+		return fallback
+	}
+	if typed, ok := value.(bool); ok {
+		return typed
+	}
+	return boolValue(value)
+}
+
+func buildFallbackLiveIntentSignature(proposalMap map[string]any, proposal ExecutionProposal) string {
+	anchor := firstNonEmpty(
+		strings.TrimSpace(stringValue(proposalMap["signalBarStateKey"])),
+		strings.TrimSpace(stringValue(proposalMap["plannedEventAt"])),
+		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["decisionState"]), proposal.DecisionState)),
+	)
+	return strings.Join([]string{
+		firstNonEmpty(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["action"]), proposal.Action)), "virtual"),
+		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["role"]), proposal.Role)),
+		firstNonEmpty(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["reason"]), proposal.Reason)), "virtual-initial"),
+		strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["side"]), proposal.Side))),
+		NormalizeSymbol(firstNonEmpty(stringValue(proposalMap["symbol"]), proposal.Symbol)),
+		strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["type"]), proposal.Type, "MARKET"))),
+		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["signalKind"]), proposal.SignalKind)),
+		anchor,
+		fmt.Sprintf("%.8f", firstPositive(parseFloatValue(proposalMap["quantity"]), proposal.Quantity)),
+		fmt.Sprintf("%.8f", firstPositive(parseFloatValue(proposalMap["plannedPrice"]), 0)),
+		fmt.Sprintf("%.8f", firstPositive(parseFloatValue(proposalMap["limitPrice"]), proposal.LimitPrice)),
+		fmt.Sprintf("%.8f", firstPositive(parseFloatValue(proposalMap["priceHint"]), proposal.PriceHint)),
+		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["priceSource"]), proposal.PriceSource)),
+		strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["timeInForce"]), proposal.TimeInForce))),
+		normalizeExecutionStrategyKey(firstNonEmpty(stringValue(proposalMap["executionStrategy"]), proposal.ExecutionStrategy)),
+		fmt.Sprintf("%t", proposalBooleanValue(proposalMap, "postOnly", proposal.PostOnly)),
+		fmt.Sprintf("%t", proposalBooleanValue(proposalMap, "reduceOnly", proposal.ReduceOnly)),
+		fmt.Sprintf("%t", proposalBooleanValue(proposalMap, "closePosition", false)),
+	}, "|")
 }
 
 func (p *Platform) applyLiveVirtualExitEvent(session domain.LiveSession, proposalMap map[string]any, eventTime time.Time) (domain.LiveSession, error) {
@@ -485,7 +539,8 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastSyncedAt"] = eventTime.UTC().Format(time.RFC3339)
 		state["lastExecutionTimeoutAt"] = eventTime.UTC().Format(time.RFC3339)
 		state["lastExecutionTimeoutReason"] = "resting-order-expired"
-		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), cancelledOrder, false)
+		timeoutOrder := withExecutionSubmissionFallback(cancelledOrder, order)
+		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), timeoutOrder, false)
 		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 		timeoutSignature := buildLiveIntentSignature(mapValue(order.Metadata["executionProposal"]))
 		if timeoutSignature == "" {
@@ -494,7 +549,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		if timeoutSignature != "" {
 			state["lastExecutionTimeoutIntentSignature"] = timeoutSignature
 		}
-		appendTimelineEvent(state, "order", eventTime, "live-order-cancelled-timeout", executionTimeoutTimelineMetadata(order, cancelledOrder))
+		appendTimelineEvent(state, "order", eventTime, "live-order-cancelled-timeout", executionTimeoutTimelineMetadata(order, timeoutOrder))
 		return p.store.UpdateLiveSessionState(session.ID, state)
 	}
 	syncedOrder, err := p.SyncLiveOrder(order.ID)
@@ -600,8 +655,120 @@ func firstNonEmptyMapValue(values ...any) map[string]any {
 	return nil
 }
 
+func withExecutionSubmissionFallback(order domain.Order, fallback domain.Order) domain.Order {
+	currentSubmission := cloneMetadata(mapValue(order.Metadata["adapterSubmission"]))
+	fallbackSubmission := cloneMetadata(mapValue(fallback.Metadata["adapterSubmission"]))
+	if len(currentSubmission) > 0 && len(fallbackSubmission) == 0 {
+		return order
+	}
+	mergedSubmission := mergeExecutionSubmissionFallback(currentSubmission, fallbackSubmission)
+	if len(mergedSubmission) == 0 {
+		return order
+	}
+	enriched := order
+	enriched.Metadata = cloneMetadata(order.Metadata)
+	if enriched.Metadata == nil {
+		enriched.Metadata = map[string]any{}
+	}
+	enriched.Metadata["adapterSubmission"] = mergedSubmission
+	return enriched
+}
+
+func mergeExecutionSubmissionFallback(current map[string]any, fallback map[string]any) map[string]any {
+	return mergeExecutionSubmissionFallbackWithPath(current, fallback, "")
+}
+
+func mergeExecutionSubmissionFallbackWithPath(current map[string]any, fallback map[string]any, path string) map[string]any {
+	if len(current) == 0 {
+		return cloneMetadata(fallback)
+	}
+	if len(fallback) == 0 {
+		return cloneMetadata(current)
+	}
+	merged := cloneMetadata(fallback)
+	for key, value := range current {
+		childPath := key
+		if path != "" {
+			childPath = path + "." + key
+		}
+		currentMap := mapValue(value)
+		fallbackMap := mapValue(merged[key])
+		if len(currentMap) > 0 && len(fallbackMap) > 0 {
+			merged[key] = mergeExecutionSubmissionFallbackWithPath(currentMap, fallbackMap, childPath)
+			continue
+		}
+		if executionSubmissionValuePresent(childPath, value) {
+			merged[key] = value
+		}
+	}
+	return merged
+}
+
+func executionSubmissionValuePresent(path string, value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(typed) != ""
+	case bool:
+		return executionSubmissionBooleanValuePresent(path, typed)
+	case int:
+		return executionSubmissionNumericValuePresent(path, float64(typed))
+	case int64:
+		return executionSubmissionNumericValuePresent(path, float64(typed))
+	case float64:
+		return executionSubmissionNumericValuePresent(path, typed)
+	case []any:
+		return len(typed) > 0
+	case []string:
+		return len(typed) > 0
+	case map[string]any:
+		return len(typed) > 0
+	default:
+		return true
+	}
+}
+
+func executionSubmissionBooleanValuePresent(path string, value bool) bool {
+	if value {
+		return true
+	}
+	switch path {
+	case "postOnly", "reduceOnly", "closePosition", "slProtectionActive":
+		return false
+	default:
+		return true
+	}
+}
+
+func executionSubmissionNumericValuePresent(path string, value float64) bool {
+	if value != 0 {
+		return true
+	}
+	switch path {
+	case "rawQuantity",
+		"normalizedQuantity",
+		"normalization.rawQuantity",
+		"normalization.normalizedQuantity":
+		return false
+	case "rawPriceReference",
+		"normalizedPrice",
+		"normalization.rawPriceReference",
+		"normalization.normalizedPrice":
+		return false
+	case "symbolRules.minQty",
+		"symbolRules.stepSize",
+		"symbolRules.tickSize",
+		"symbolRules.minNotional":
+		return false
+	default:
+		return true
+	}
+}
+
 func executionDispatchSummary(proposalMap map[string]any, order domain.Order, failed bool) map[string]any {
 	proposalMeta := cloneMetadata(mapValue(proposalMap["metadata"]))
+	adapterSubmission := cloneMetadata(mapValue(order.Metadata["adapterSubmission"]))
 	expectedPrice := firstPositive(parseFloatValue(proposalMap["limitPrice"]), parseFloatValue(proposalMap["priceHint"]))
 	actualPrice := firstPositive(order.Price, expectedPrice)
 	priceDriftBps := 0.0
@@ -630,7 +797,22 @@ func executionDispatchSummary(proposalMap map[string]any, order domain.Order, fa
 		"priceDriftBps":     priceDriftBps,
 		"decisionContext":   cloneMetadata(mapValue(proposalMeta["executionDecisionContext"])),
 		"book":              cloneMetadata(mapValue(proposalMeta["orderBookSnapshot"])),
-		"failed":            failed,
+		"rawQuantity":       firstPositive(parseFloatValue(adapterSubmission["rawQuantity"]), parseFloatValue(mapValue(adapterSubmission["normalization"])["rawQuantity"])),
+		"normalizedQuantity": firstPositive(
+			parseFloatValue(adapterSubmission["normalizedQuantity"]),
+			parseFloatValue(mapValue(adapterSubmission["normalization"])["normalizedQuantity"]),
+		),
+		"rawPriceReference": firstPositive(
+			parseFloatValue(adapterSubmission["rawPriceReference"]),
+			parseFloatValue(mapValue(adapterSubmission["normalization"])["rawPriceReference"]),
+		),
+		"normalizedPrice": firstPositive(
+			parseFloatValue(adapterSubmission["normalizedPrice"]),
+			parseFloatValue(mapValue(adapterSubmission["normalization"])["normalizedPrice"]),
+		),
+		"normalization": cloneMetadata(mapValue(adapterSubmission["normalization"])),
+		"symbolRules":   cloneMetadata(mapValue(adapterSubmission["symbolRules"])),
+		"failed":        failed,
 	}
 }
 
