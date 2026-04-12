@@ -332,7 +332,7 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	proposal := executionProposalFromMap(proposalMap)
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(proposalMap)
-	if strings.TrimSpace(intentSignature) == "" {
+	if !hasInformativeLiveIntentSignature(intentSignature) {
 		intentSignature = buildFallbackLiveIntentSignature(proposalMap, proposal)
 	}
 	virtualPositionID := fmt.Sprintf("virtual|%s|%s", session.ID, intentSignature)
@@ -397,6 +397,27 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	return p.store.UpdateLiveSessionState(session.ID, state)
 }
 
+func hasInformativeLiveIntentSignature(signature string) bool {
+	nonEmpty := 0
+	for _, part := range strings.Split(signature, "|") {
+		if strings.TrimSpace(part) != "" {
+			nonEmpty++
+		}
+	}
+	return nonEmpty >= 3
+}
+
+func proposalBooleanValue(proposalMap map[string]any, key string, fallback bool) bool {
+	value, ok := proposalMap[key]
+	if !ok {
+		return fallback
+	}
+	if typed, ok := value.(bool); ok {
+		return typed
+	}
+	return boolValue(value)
+}
+
 func buildFallbackLiveIntentSignature(proposalMap map[string]any, proposal ExecutionProposal) string {
 	anchor := firstNonEmpty(
 		strings.TrimSpace(stringValue(proposalMap["signalBarStateKey"])),
@@ -419,9 +440,9 @@ func buildFallbackLiveIntentSignature(proposalMap map[string]any, proposal Execu
 		strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["priceSource"]), proposal.PriceSource)),
 		strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["timeInForce"]), proposal.TimeInForce))),
 		normalizeExecutionStrategyKey(firstNonEmpty(stringValue(proposalMap["executionStrategy"]), proposal.ExecutionStrategy)),
-		fmt.Sprintf("%t", boolValue(proposalMap["postOnly"]) || proposal.PostOnly),
-		fmt.Sprintf("%t", boolValue(proposalMap["reduceOnly"]) || proposal.ReduceOnly),
-		fmt.Sprintf("%t", boolValue(proposalMap["closePosition"])),
+		fmt.Sprintf("%t", proposalBooleanValue(proposalMap, "postOnly", proposal.PostOnly)),
+		fmt.Sprintf("%t", proposalBooleanValue(proposalMap, "reduceOnly", proposal.ReduceOnly)),
+		fmt.Sprintf("%t", proposalBooleanValue(proposalMap, "closePosition", false)),
 	}, "|")
 }
 
@@ -709,7 +730,15 @@ func executionSubmissionValuePresent(path string, value any) bool {
 }
 
 func executionSubmissionBooleanValuePresent(path string, value bool) bool {
-	return true
+	if value {
+		return true
+	}
+	switch path {
+	case "postOnly", "reduceOnly", "closePosition", "slProtectionActive":
+		return false
+	default:
+		return true
+	}
 }
 
 func executionSubmissionNumericValuePresent(path string, value float64) bool {

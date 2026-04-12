@@ -1,6 +1,7 @@
 package service
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -88,15 +89,16 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
-	hasActivePositionContext := hasActiveLivePositionSnapshot(positionSnapshot)
+	hasRealPositionContext := foundPosition || math.Abs(parseFloatValue(positionSnapshot["quantity"])) > 0
 	state["recoveredPosition"] = positionSnapshot
 	state["hasRecoveredPosition"] = foundPosition
 	state["hasRecoveredRealPosition"] = foundPosition
-	hasVirtualPosition := boolValue(positionSnapshot["virtual"]) && !foundPosition
+	virtualPosition := cloneMetadata(mapValue(state["virtualPosition"]))
+	hasVirtualPosition := !hasRealPositionContext && hasActiveVirtualPositionSnapshot(virtualPosition)
 	state["hasRecoveredVirtualPosition"] = hasVirtualPosition
 	state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = firstNonEmpty(source, "live-position-refresh")
-	if !hasActivePositionContext {
+	if !hasRealPositionContext && !hasVirtualPosition {
 		clearLivePositionWatermarks(state)
 		delete(state, "livePositionState")
 		state["lastLivePositionState"] = map[string]any{}
@@ -127,7 +129,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	}
 	signalBarState, _ := pickSignalBarState(signalBarStates, symbol, timeframe)
 	if signalBarState == nil {
-		if hasActivePositionContext {
+		if hasRealPositionContext || hasVirtualPosition {
 			watermarks := resolveLivePositionWatermarks(positionSnapshot, state)
 			if watermarks.PositionKey == "" {
 				clearLivePositionWatermarks(state)

@@ -745,8 +745,29 @@ type livePositionWatermarks struct {
 	LWM         float64
 }
 
+func hasActiveVirtualPositionSnapshot(currentPosition map[string]any) bool {
+	if !boolValue(currentPosition["virtual"]) {
+		return false
+	}
+	if boolValue(currentPosition["trackingActive"]) {
+		return true
+	}
+	if strings.TrimSpace(stringValue(currentPosition["id"])) == "" {
+		return false
+	}
+	if NormalizeSymbol(stringValue(currentPosition["symbol"])) == "" {
+		return false
+	}
+	if strings.TrimSpace(stringValue(currentPosition["side"])) == "" {
+		return false
+	}
+	return parseFloatValue(currentPosition["entryPrice"]) > 0
+}
+
 func hasActiveLivePositionSnapshot(currentPosition map[string]any) bool {
-	return boolValue(currentPosition["found"]) || math.Abs(parseFloatValue(currentPosition["quantity"])) > 0 || boolValue(currentPosition["virtual"])
+	return boolValue(currentPosition["found"]) ||
+		math.Abs(parseFloatValue(currentPosition["quantity"])) > 0 ||
+		hasActiveVirtualPositionSnapshot(currentPosition)
 }
 
 func buildLivePositionWatermarkBaseKey(currentPosition map[string]any) string {

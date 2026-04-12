@@ -485,6 +485,18 @@ func TestHasActiveLivePositionSnapshotUsesAbsoluteQuantity(t *testing.T) {
 	if !hasActiveLivePositionSnapshot(map[string]any{"quantity": -1.0}) {
 		t.Fatal("expected negative quantity snapshot to count as active")
 	}
+	if hasActiveLivePositionSnapshot(map[string]any{"virtual": true}) {
+		t.Fatal("expected bare virtual marker to stay inactive")
+	}
+	if !hasActiveLivePositionSnapshot(map[string]any{
+		"virtual":    true,
+		"id":         "virtual|live-session-main|signal-1",
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+	}) {
+		t.Fatal("expected virtual snapshot with stable identity and entry context to count as active")
+	}
 }
 
 func TestDeriveLivePositionStateUsesProvidedWatermarks(t *testing.T) {

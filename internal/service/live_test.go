@@ -1524,7 +1524,7 @@ func TestNormalizeRESTOrderRecordsNormalizationTelemetry(t *testing.T) {
 func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
 	summary := executionDispatchSummary(map[string]any{
 		"type":       "LIMIT",
-		"quantity":   0.0019,
+		"quantity":   0.0021,
 		"limitPrice": 68643.6,
 		"priceHint":  68643.67,
 		"metadata": map[string]any{
@@ -1539,12 +1539,12 @@ func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
 		Price:    68643.6,
 		Metadata: map[string]any{
 			"adapterSubmission": map[string]any{
-				"rawQuantity":        0.0019,
+				"rawQuantity":        0.0021,
 				"rawPriceReference":  68643.67,
 				"normalizedQuantity": 0.002,
 				"normalizedPrice":    68643.6,
 				"normalization": map[string]any{
-					"quantityAdjustments": []any{"step_size", "min_notional"},
+					"quantityAdjustments": []any{"step_size"},
 					"priceAdjustments":    []any{"tick_size"},
 				},
 				"symbolRules": map[string]any{
@@ -1555,7 +1555,7 @@ func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
 			},
 		},
 	}, false)
-	if got := parseFloatValue(summary["rawQuantity"]); got != 0.0019 {
+	if got := parseFloatValue(summary["rawQuantity"]); got != 0.0021 {
 		t.Fatalf("expected raw quantity in dispatch summary, got %v", got)
 	}
 	if got := parseFloatValue(summary["normalizedQuantity"]); got != 0.002 {
@@ -1567,7 +1567,7 @@ func TestExecutionDispatchSummaryIncludesNormalizationTelemetry(t *testing.T) {
 	if got := parseFloatValue(summary["rawPriceReference"]); got != 68643.67 {
 		t.Fatalf("expected raw price reference in dispatch summary, got %v", got)
 	}
-	if normalizationItemCount(mapValue(summary["normalization"])["quantityAdjustments"]) != 2 {
+	if normalizationItemCount(mapValue(summary["normalization"])["quantityAdjustments"]) != 1 {
 		t.Fatalf("expected quantity adjustment details in dispatch summary, got %+v", summary["normalization"])
 	}
 	if normalizationItemCount(mapValue(summary["normalization"])["priceAdjustments"]) != 1 {
@@ -1708,8 +1708,8 @@ func TestWithExecutionSubmissionFallbackRestoresZeroNormalizationFields(t *testi
 	if got := parseFloatValue(submission["rawQuantity"]); got != 0.0019 {
 		t.Fatalf("expected zero raw quantity to fall back, got %v", got)
 	}
-	if got := boolValue(submission["reduceOnly"]); got {
-		t.Fatal("expected explicit false reduceOnly to be preserved")
+	if got := boolValue(submission["reduceOnly"]); !got {
+		t.Fatal("expected known execution-control false to fall back to the original reduceOnly=true")
 	}
 }
 
@@ -1757,8 +1757,13 @@ func TestApplyLiveVirtualInitialEventUsesFallbackVirtualPositionIDWhenIntentSign
 	if virtualPosition == nil {
 		t.Fatal("expected virtual position to be recorded")
 	}
-	if got := stringValue(virtualPosition["id"]); got == "" || got == "virtual|live-session-main|" {
-		t.Fatalf("expected fallback virtual position id to be populated, got %q", got)
+	rawSignature := buildLiveIntentSignature(proposalMap)
+	fallbackSignature := buildFallbackLiveIntentSignature(proposalMap, executionProposalFromMap(proposalMap))
+	if got := stringValue(updated.State["lastDispatchedIntentSignature"]); got != fallbackSignature {
+		t.Fatalf("expected sparse proposal to use fallback signature %q, got %q (raw=%q)", fallbackSignature, got, rawSignature)
+	}
+	if got := stringValue(virtualPosition["id"]); got == "" || strings.HasSuffix(got, rawSignature) {
+		t.Fatalf("expected fallback virtual position id to avoid sparse raw signature, got %q", got)
 	}
 }
 
@@ -1779,6 +1784,26 @@ func TestBuildFallbackLiveIntentSignatureIncludesExecutionFields(t *testing.T) {
 	variantSignature := buildFallbackLiveIntentSignature(variantProposalMap, executionProposalFromMap(variantProposalMap))
 	if baseSignature == variantSignature {
 		t.Fatalf("expected quantity changes to alter fallback signature, got %q", baseSignature)
+	}
+}
+
+func TestBuildFallbackLiveIntentSignaturePreservesExplicitFalseBooleans(t *testing.T) {
+	proposalMap := map[string]any{
+		"reason":            "Initial",
+		"side":              "BUY",
+		"symbol":            "BTCUSDT",
+		"postOnly":          false,
+		"reduceOnly":        false,
+		"closePosition":     false,
+		"signalBarStateKey": "bar-1",
+	}
+	proposal := ExecutionProposal{
+		PostOnly:   true,
+		ReduceOnly: true,
+	}
+	signature := buildFallbackLiveIntentSignature(proposalMap, proposal)
+	if strings.Contains(signature, "|true|true|true") {
+		t.Fatalf("expected explicit false booleans to be preserved in fallback signature, got %q", signature)
 	}
 }
 
@@ -2524,5 +2549,53 @@ func TestRefreshLiveSessionPositionContextRebuildsVirtualWatermarksFromVirtualPo
 	liveState := mapValue(updated.State["livePositionState"])
 	if got := stringValue(liveState["watermarkPositionKey"]); got != expectedKey {
 		t.Fatalf("expected rebuilt livePositionState watermark key, got %s", got)
+	}
+}
+
+func TestRefreshLiveSessionPositionContextClearsStaleLivePositionStateWithoutRealOrVirtualPosition(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["livePositionState"] = map[string]any{
+		"found":                true,
+		"symbol":               "BTCUSDT",
+		"side":                 "LONG",
+		"entryPrice":           50000.0,
+		"watermarkPositionKey": encodeLivePositionWatermarkIdentityComponent("position-1") + "|BTCUSDT|LONG|50000.00000000",
+		"hwm":                  52000.0,
+		"lwm":                  50000.0,
+	}
+	state["watermarkPositionKey"] = encodeLivePositionWatermarkIdentityComponent("position-1") + "|BTCUSDT|LONG|50000.00000000"
+	state["hwm"] = 52000.0
+	state["lwm"] = 50000.0
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 12, 7, 0, 0, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "flat" {
+		t.Fatalf("expected flat recovery status after stale position cleanup, got %s", got)
+	}
+	if _, ok := updated.State["watermarkPositionKey"]; ok {
+		t.Fatal("expected stale watermarkPositionKey to be cleared")
+	}
+	if _, ok := updated.State["hwm"]; ok {
+		t.Fatal("expected stale hwm to be cleared")
+	}
+	if _, ok := updated.State["lwm"]; ok {
+		t.Fatal("expected stale lwm to be cleared")
+	}
+	if liveState := mapValue(updated.State["livePositionState"]); len(liveState) != 0 {
+		t.Fatalf("expected stale livePositionState to be cleared, got %+v", liveState)
 	}
 }

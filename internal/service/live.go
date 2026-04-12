@@ -1380,8 +1380,9 @@ func (p *Platform) resolveLiveSessionPositionSnapshot(session domain.LiveSession
 	if err != nil {
 		return nil, false, err
 	}
+	hasRealPosition := foundPosition || math.Abs(parseFloatValue(positionSnapshot["quantity"])) > 0
 	livePositionState := cloneMetadata(mapValue(session.State["livePositionState"]))
-	if len(livePositionState) > 0 {
+	if len(livePositionState) > 0 && hasRealPosition {
 		liveSymbol := NormalizeSymbol(firstNonEmpty(stringValue(livePositionState["symbol"]), symbol))
 		if liveSymbol == NormalizeSymbol(symbol) {
 			mergedPosition := cloneMetadata(positionSnapshot)
@@ -1391,7 +1392,7 @@ func (p *Platform) resolveLiveSessionPositionSnapshot(session domain.LiveSession
 			positionSnapshot = mergedPosition
 		}
 	}
-	if foundPosition || parseFloatValue(positionSnapshot["quantity"]) > 0 {
+	if hasRealPosition {
 		return positionSnapshot, foundPosition, nil
 	}
 	virtualPosition := cloneMetadata(mapValue(session.State["virtualPosition"]))
