@@ -217,9 +217,9 @@ a {
 }
 
 .hero h2 {
-  margin: 6px 0 8px;
-  font-size: clamp(1.5rem, 3vw, 2.6rem);
-  line-height: 1;
+  margin: 4px 0 6px;
+  font-size: clamp(1.2rem, 2vw, 1.8rem);
+  line-height: 1.1;
 }
 
 .hero-copy {
@@ -329,15 +329,19 @@ a {
 }
 
 .metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .metric-card {
-  padding: 6px 14px;
-  border-radius: 12px;
-  min-width: 100px;
+  padding: 4px 12px;
+  border-radius: 10px;
+  min-width: 80px;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .metric-card p {
@@ -345,12 +349,12 @@ a {
   color: var(--muted);
   font-size: 0.72rem;
   font-family: inherit;
+  white-space: nowrap;
 }
 
 .metric-card strong {
   display: block;
-  margin-top: 2px;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   line-height: 1.1;
   font-family: inherit;
 }

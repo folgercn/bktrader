@@ -124,6 +124,39 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 	return p.store.UpdateStrategyParameters(strategyID, parameters)
 }
 
+func (p *Platform) UnbindStrategySignalSource(strategyID string, bindingID string) (map[string]any, bool, error) {
+	strategy, err := p.GetStrategy(strategyID)
+	if err != nil {
+		return nil, err
+	}
+	currentVersion, ok := strategy["currentVersion"].(domain.StrategyVersion)
+	if !ok {
+		return nil, fmt.Errorf("strategy %s has no current version", strategyID)
+	}
+	parameters := cloneMetadata(currentVersion.Parameters)
+	if parameters == nil {
+		parameters = map[string]any{}
+	}
+	existing := resolveStrategySignalBindings(parameters)
+	bindings := make([]map[string]any, 0, len(existing))
+	found := false
+	for _, item := range existing {
+		if stringValue(item["id"]) == bindingID {
+			found = true
+			continue
+		}
+		bindings = append(bindings, cloneMetadata(item))
+	}
+	if !found {
+		return strategy, false, nil
+	}
+	parameters["signalBindings"] = bindings
+	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
+	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
+	return updated, true, err
+}
+
+
 func (p *Platform) ListStrategySignalBindings(strategyID string) ([]domain.AccountSignalBinding, error) {
 	strategy, err := p.GetStrategy(strategyID)
 	if err != nil {

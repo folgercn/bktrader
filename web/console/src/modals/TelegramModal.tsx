@@ -1,5 +1,6 @@
 import React from 'react';
 import { ActionButton } from '../components/ui/ActionButton';
+import { StatusPill } from '../components/ui/StatusPill';
 import { TelegramConfig, TelegramForm, ActiveSettingsModal } from '../types/domain';
 
 interface TelegramModalProps {
@@ -36,14 +37,27 @@ export function TelegramModal({
             <p className="panel-kicker">Telegram</p>
             <h3>Telegram 通知配置</h3>
           </div>
-          <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
-            关闭
-          </button>
+          <div className="flex flex-col items-end space-y-1">
+            <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
+              关闭
+            </button>
+            {telegramAction === null && telegramConfig && (
+              <span className="text-[10px] text-emerald-500 font-mono opacity-80 animate-pulse">
+                已同步最新配置
+              </span>
+            )}
+          </div>
         </div>
         <div className="range-box">
-          <span>{telegramConfig?.enabled ? "enabled" : "disabled"}</span>
-          <span>{telegramConfig?.maskedBotToken || "no-token"}</span>
-          <span>{telegramConfig?.chatId || "no-chat"}</span>
+          <div className="flex items-center space-x-2">
+            <StatusPill tone={telegramConfig?.enabled ? "ready" : "neutral"}>
+              {telegramConfig?.enabled ? "active" : "disabled"}
+            </StatusPill>
+            <span className="text-zinc-500 text-xs">·</span>
+            <span className="font-mono text-zinc-400">{telegramConfig?.maskedBotToken || "no-token"}</span>
+            <span className="text-zinc-500 text-xs">·</span>
+            <span className="font-mono text-zinc-400">ID: {telegramConfig?.chatId || "no-chat"}</span>
+          </div>
         </div>
         <div className="backtest-form modal-form">
           <div className="form-grid">
