@@ -324,6 +324,33 @@ func (p *Platform) BindAccountSignalSource(accountID string, payload map[string]
 	return p.store.UpdateAccount(account)
 }
 
+func (p *Platform) UnbindAccountSignalSource(accountID string, bindingID string) (domain.Account, error) {
+	account, err := p.store.GetAccount(accountID)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	existing := resolveSignalBindings(account)
+	bindings := make([]map[string]any, 0, len(existing))
+	found := false
+	for _, item := range existing {
+		if stringValue(item["id"]) == bindingID {
+			found = true
+			continue
+		}
+		bindings = append(bindings, cloneMetadata(item))
+	}
+	if !found {
+		return account, nil
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	if account.Metadata == nil {
+		account.Metadata = map[string]any{}
+	}
+	account.Metadata["signalBindings"] = bindings
+	return p.store.UpdateAccount(account)
+}
+
+
 func (p *Platform) ListAccountSignalBindings(accountID string) ([]domain.AccountSignalBinding, error) {
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {

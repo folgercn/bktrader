@@ -408,6 +408,22 @@ function App() {
       ] as const)
     );
 
+    let runtimePlanData = null;
+    const selectedRuntimeId = useTradingStore.getState().selectedSignalRuntimeId;
+    if (selectedRuntimeId) {
+      const session = signalRuntimeSessionData.find(s => s.id === selectedRuntimeId);
+      if (session) {
+        try {
+          runtimePlanData = await fetchJSON<Record<string, unknown>>(
+            `/api/v1/signal-runtime/plan?accountId=${encodeURIComponent(session.accountId)}&strategyId=${encodeURIComponent(session.strategyId)}`
+          );
+        } catch (e) {
+          console.warn("Failed to fetch runtime plan", e);
+        }
+      }
+    }
+
+
     const anchorDate = resolveChartAnchor(liveSessionData[0] ?? null, ordersData);
     const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
     const from = range.from;
@@ -511,6 +527,7 @@ function App() {
     });
     setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
+    setSignalRuntimePlan(runtimePlanData);
     setSelectedSignalRuntimeId((current) => {
       if (current && normalizedSignalRuntimeSessions.some((item) => item.id === current)) {
         return current;
@@ -714,6 +731,50 @@ function App() {
       setLiveBindingError(err instanceof Error ? err.message : "Failed to bind live account");
     } finally {
       setLiveBindAction(false);
+    }
+  }
+
+  async function stopLiveFlow(accountId: string) {
+    setLiveStopAction(accountId);
+    try {
+      await fetchJSON(`/api/v1/live/accounts/${accountId}/stop`, { method: "POST" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to stop live flow");
+    } finally {
+      setLiveStopAction(null);
+    }
+  }
+
+  async function unbindAccountSignalSource(accountId: string, bindingId: string) {
+    try {
+      await fetchJSON(`/api/v1/accounts/${accountId}/signal-bindings?id=${encodeURIComponent(bindingId)}`, { method: "DELETE" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to unbind account signal source");
+    }
+  }
+
+  async function unbindStrategySignalSource(strategyId: string, bindingId: string) {
+    try {
+      await fetchJSON(`/api/v1/strategies/${strategyId}/signal-bindings?id=${encodeURIComponent(bindingId)}`, { method: "DELETE" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to unbind strategy signal source");
+    }
+  }
+
+  async function deleteSignalRuntimeSession(sessionId: string) {
+    if (!window.confirm("确定要彻底删除该信号运行时会话吗？(将停止运行中的流)")) return;
+    try {
+      await fetchJSON(`/api/v1/signal-runtime/sessions/${sessionId}`, { method: "DELETE" });
+      await loadDashboard();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete signal runtime session");
     }
   }
 
@@ -1501,9 +1562,12 @@ function App() {
             runLiveNextAction={runLiveNextAction}
             selectQuickLiveAccount={selectQuickLiveAccount}
             bindAccountSignalSource={bindAccountSignalSource}
+            unbindAccountSignalSource={unbindAccountSignalSource}
             bindStrategySignalSource={bindStrategySignalSource}
+            unbindStrategySignalSource={unbindStrategySignalSource}
             updateRuntimePolicy={updateRuntimePolicy}
             createSignalRuntimeSession={createSignalRuntimeSession}
+            deleteSignalRuntimeSession={deleteSignalRuntimeSession}
             runSignalRuntimeAction={runSignalRuntimeAction}
           />
         )

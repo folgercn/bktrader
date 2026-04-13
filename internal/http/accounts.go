@@ -156,10 +156,23 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 				return
 			}
 			writeJSON(w, http.StatusOK, item)
+		case http.MethodDelete:
+			bindingID := r.URL.Query().Get("id")
+			if bindingID == "" {
+				writeError(w, http.StatusBadRequest, "binding id is required via ?id=")
+				return
+			}
+			item, err := platform.UnbindAccountSignalSource(accountID, bindingID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
+
 
 	// GET /api/v1/account-summaries — 账户汇总（权益、PnL、费用、敞口）
 	mux.HandleFunc("/api/v1/account-summaries", func(w http.ResponseWriter, r *http.Request) {
