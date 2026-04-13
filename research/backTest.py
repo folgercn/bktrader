@@ -6,6 +6,23 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 
+def _normalize_utc_index(df):
+    normalized = df.copy(deep=False)
+    normalized.index = pd.to_datetime(normalized.index, utc=True)
+    return normalized
+
+
+def _empty_tick_event_stream():
+    return pd.DataFrame(
+        {
+            'price': pd.Series(dtype='float64'),
+            'event': pd.Series(dtype='object'),
+            'minute_ms': pd.Series(dtype='int64'),
+        },
+        index=pd.DatetimeIndex([], tz='UTC', name='timestamp'),
+    )
+
+
 def _summarize_complete_tick_chunk(df_ticks):
     if df_ticks.empty:
         return pd.DataFrame(columns=[
@@ -100,7 +117,7 @@ def _build_tick_event_stream(tick_file, start_ts=None, end_ts=None, chunksize=2_
         summaries.append(_summarize_complete_tick_chunk(pending))
 
     if not summaries:
-        return pd.DataFrame(columns=['price', 'event', 'minute_ms'])
+        return _empty_tick_event_stream()
 
     minute_df = pd.concat(summaries, ignore_index=True)
     events = []
@@ -154,8 +171,8 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
                             max_drawdown_pct=None,
                             cooldown_bars=6,
                             reentry_mode='default'):
-    df_4h = df_4h.copy()
-    df_4h.index = pd.to_datetime(df_4h.index, utc=True)
+    # Keep both signal windows and tick windows on the same UTC-aware contract.
+    df_4h = _normalize_utc_index(df_4h)
 
     replay_start = df_4h.index[0]
     replay_end = df_4h.index[-1]
@@ -165,6 +182,7 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
         start_ts=replay_start,
         end_ts=replay_end,
     )
+    df_tick = _normalize_utc_index(df_tick)
 
     balance = current_bal
     peak_balance = current_bal
@@ -756,6 +774,9 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
     df_1min: 包含 open, high, low, close 的标准化 1min 数据
     df_4h: 包含策略锚点(ma20, atr, prev_high_2 等)的 4H 数据
     """
+    df_1min = _normalize_utc_index(df_1min)
+    df_4h = _normalize_utc_index(df_4h)
+
     balance = initial_balance
     position = None # {'side', 'entry_p', 'sl', 'protected', 'notional'}
     trade_logs = []
@@ -1282,6 +1303,9 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
     - cooldown_bars: int, 熔断冷却期（信号 bar 数量）。
     - reentry_mode: str, 'default'=原始递增, 'fixed'=固定大小, 'decreasing'=递减。
     """
+    df_1min = _normalize_utc_index(df_1min)
+    df_4h = _normalize_utc_index(df_4h)
+
     balance = initial_balance
     peak_balance = initial_balance
     position = None
