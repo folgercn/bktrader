@@ -490,12 +490,18 @@ function App() {
     setAlerts(normalizedAlerts);
     setNotifications(normalizedNotifications);
     setTelegramConfig(telegramConfigData);
-    setTelegramForm({
-      enabled: Boolean(telegramConfigData.enabled),
-      botToken: "",
-      chatId: String(telegramConfigData.chatId ?? ""),
-      sendLevels: (telegramConfigData.sendLevels ?? []).join(",") || "critical,warning",
-    });
+    
+    // Only update telegramForm from backend if user is NOT currently looking at the modal
+    // to avoid wiping out their in-progress typing.
+    const currentActiveModal = useUIStore.getState().activeSettingsModal;
+    if (currentActiveModal !== "telegram") {
+      setTelegramForm({
+        enabled: Boolean(telegramConfigData.enabled),
+        botToken: "",
+        chatId: String(telegramConfigData.chatId ?? ""),
+        sendLevels: (telegramConfigData.sendLevels ?? []).join(",") || "critical,warning",
+      });
+    }
     setRuntimePolicyForm({
       tradeTickFreshnessSeconds: String(runtimePolicyData.tradeTickFreshnessSeconds ?? 15),
       orderBookFreshnessSeconds: String(runtimePolicyData.orderBookFreshnessSeconds ?? 10),
@@ -1249,7 +1255,12 @@ function App() {
         }),
       });
       setTelegramConfig(updated);
-      setTelegramForm((current) => ({ ...current, botToken: "" }));
+      setTelegramForm((current) => ({ 
+        ...current, 
+        enabled: Boolean(updated.enabled),
+        chatId: String(updated.chatId ?? ""),
+        botToken: "" 
+      }));
       await loadDashboard();
       setError(null);
     } catch (err) {
@@ -1420,13 +1431,7 @@ function App() {
         sidebarTab === 'strategy' ? (
           <StrategySidePanel createBacktestRun={createBacktestRun} />
         ) : sidebarTab === 'account' ? (
-          <AccountSidePanel
-            bindAccountSignalSource={bindAccountSignalSource}
-            bindStrategySignalSource={bindStrategySignalSource}
-            updateRuntimePolicy={updateRuntimePolicy}
-            createSignalRuntimeSession={createSignalRuntimeSession}
-            runSignalRuntimeAction={runSignalRuntimeAction}
-          />
+          <AccountSidePanel />
         ) : null
       }
       dockContent={
@@ -1495,6 +1500,11 @@ function App() {
             jumpToSignalRuntimeSession={jumpToSignalRuntimeSession}
             runLiveNextAction={runLiveNextAction}
             selectQuickLiveAccount={selectQuickLiveAccount}
+            bindAccountSignalSource={bindAccountSignalSource}
+            bindStrategySignalSource={bindStrategySignalSource}
+            updateRuntimePolicy={updateRuntimePolicy}
+            createSignalRuntimeSession={createSignalRuntimeSession}
+            runSignalRuntimeAction={runSignalRuntimeAction}
           />
         )
       }
