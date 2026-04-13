@@ -34,7 +34,8 @@ import {
   signalActionTone,
   decisionStateTone,
   boolLabel,
-  liveSessionHealthTone
+  liveSessionHealthTone,
+  getNumber
 } from '../utils/derivation';
 import { AccountRecord, LiveSession, SignalRuntimeSession, LiveNextAction, ActiveSettingsModal } from '../types/domain';
 
@@ -54,9 +55,12 @@ interface AccountStageProps {
   runLiveNextAction: (account: AccountRecord, nextAction: LiveNextAction, runtime: SignalRuntimeSession | null) => void;
   selectQuickLiveAccount: (id: string) => void;
   bindAccountSignalSource: () => void;
+  unbindAccountSignalSource: (accountId: string, bindingId: string) => void;
   bindStrategySignalSource: () => void;
+  unbindStrategySignalSource: (strategyId: string, bindingId: string) => void;
   updateRuntimePolicy: () => void;
   createSignalRuntimeSession: () => void;
+  deleteSignalRuntimeSession: (sessionId: string) => void;
   runSignalRuntimeAction: (id: string, action: "start" | "stop") => void;
 }
 
@@ -76,9 +80,12 @@ export function AccountStage({
   runLiveNextAction,
   selectQuickLiveAccount,
   bindAccountSignalSource,
+  unbindAccountSignalSource,
   bindStrategySignalSource,
+  unbindStrategySignalSource,
   updateRuntimePolicy,
   createSignalRuntimeSession,
+  deleteSignalRuntimeSession,
   runSignalRuntimeAction
 }: AccountStageProps) {
   const loading = useUIStore(s => s.loading);
@@ -962,16 +969,40 @@ export function AccountStage({
             <div className="backtest-breakdown">
               <h5>Account</h5>
               <SimpleTable
-                columns={["Source", "Role", "Symbol", "Exchange", "Status"]}
-                rows={accountSignalBindings.map((item) => [item.sourceName, item.role, item.symbol || "--", item.exchange, item.status])}
+                columns={["Source", "Role", "Symbol", "Exchange", "Status", "Action"]}
+                rows={accountSignalBindings.map((item) => [
+                  item.sourceName,
+                  item.role,
+                  item.symbol || "--",
+                  item.exchange,
+                  item.status,
+                  <ActionButton
+                    key={item.id}
+                    label="Unbind"
+                    variant="ghost"
+                    onClick={() => unbindAccountSignalSource(item.accountId || "", item.id)}
+                  />
+                ])}
                 emptyMessage="No account bindings"
               />
             </div>
             <div className="backtest-breakdown">
               <h5>Strategy</h5>
               <SimpleTable
-                columns={["Source", "Role", "Symbol", "Exchange", "Status"]}
-                rows={strategySignalBindings.map((item) => [item.sourceName, item.role, item.symbol || "--", item.exchange, item.status])}
+                columns={["Source", "Role", "Symbol", "Exchange", "Status", "Action"]}
+                rows={strategySignalBindings.map((item) => [
+                  item.sourceName,
+                  item.role,
+                  item.symbol || "--",
+                  item.exchange,
+                  item.status,
+                  <ActionButton
+                    key={item.id}
+                    label="Unbind"
+                    variant="ghost"
+                    onClick={() => unbindStrategySignalSource(item.strategyId || "", item.id)}
+                  />
+                ])}
                 emptyMessage="No strategy bindings"
               />
             </div>
@@ -1096,11 +1127,20 @@ export function AccountStage({
             </div>
             <div className="backtest-notes">
               <div className="note-item">runtime adapters: {signalRuntimeAdapters.map((item) => item.key).join(", ") || "--"}</div>
-              {((signalRuntimePlan?.missingBindings as unknown[] | undefined) ?? []).slice(0, 4).map((item, index) => (
-                <div key={index} className="note-item">
-                  missing: {JSON.stringify(item)}
-                </div>
-              ))}
+              {signalRuntimePlan?.missingBindings ? (
+                getList(signalRuntimePlan.missingBindings).map((item, index) => (
+                  <div key={index} className="note-item note-item-alert note-item-alert-warning">
+                    Missing: {String(item.sourceKey)} · {String(item.role)} · {String(item.symbol)} · {String(item.timeframe)}
+                  </div>
+                ))
+              ) : null}
+              {signalRuntimePlan?.matchedBindings ? (
+                getList(signalRuntimePlan.matchedBindings).map((item, index) => (
+                  <div key={index} className="note-item">
+                    Matched: {String(item.sourceName)} · {String(item.role)} · {String(item.symbol)}
+                  </div>
+                ))
+              ) : null}
             </div>
           </div>
 
@@ -1144,6 +1184,12 @@ export function AccountStage({
                                 variant="ghost"
                                 disabled={signalRuntimeAction !== null || session.status === "STOPPED"}
                                 onClick={() => runSignalRuntimeAction(session.id, "stop")}
+                              />
+                              <ActionButton
+                                label="Delete"
+                                variant="ghost"
+                                disabled={signalRuntimeAction !== null}
+                                onClick={() => deleteSignalRuntimeSession(session.id)}
                               />
                             </div>
                           </td>

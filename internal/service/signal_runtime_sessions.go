@@ -177,6 +177,22 @@ func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRunt
 	return session, nil
 }
 
+func (p *Platform) DeleteSignalRuntimeSession(sessionID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	cancel, running := p.signalRun[sessionID]
+	if running {
+		delete(p.signalRun, sessionID)
+		cancel()
+	}
+	if _, exists := p.signalSessions[sessionID]; !exists {
+		return fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+	delete(p.signalSessions, sessionID)
+	return nil
+}
+
+
 func (p *Platform) updateSignalRuntimeSessionState(sessionID string, updater func(session *domain.SignalRuntimeSession)) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

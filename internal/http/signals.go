@@ -222,15 +222,27 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/signal-runtime/sessions/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/signal-runtime/sessions/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(parts) == 1 && r.Method == http.MethodGet {
-			item, err := platform.GetSignalRuntimeSession(parts[0])
-			if err != nil {
-				writeError(w, http.StatusNotFound, err.Error())
-				return
+		if len(parts) == 1 {
+			switch r.Method {
+			case http.MethodGet:
+				item, err := platform.GetSignalRuntimeSession(parts[0])
+				if err != nil {
+					writeError(w, http.StatusNotFound, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, item)
+			case http.MethodDelete:
+				if err := platform.DeleteSignalRuntimeSession(parts[0]); err != nil {
+					writeError(w, http.StatusNotFound, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
 			}
-			writeJSON(w, http.StatusOK, item)
 			return
 		}
+
 		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "signal runtime session route not found")
 			return

@@ -87,9 +87,27 @@ func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
 					return
 				}
 				writeJSON(w, http.StatusOK, item)
+			case http.MethodDelete:
+				bindingID := r.URL.Query().Get("id")
+				if bindingID == "" {
+					writeError(w, http.StatusBadRequest, "binding id is required via ?id=")
+					return
+				}
+				item, found, err := platform.UnbindStrategySignalSource(strategyID, bindingID)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				if !found {
+					writeError(w, http.StatusNotFound, "binding not found")
+					return
+				}
+				writeJSON(w, http.StatusOK, item)
 			default:
 				w.WriteHeader(http.StatusMethodNotAllowed)
 			}
+
+
 		case "parameters":
 			if r.Method != http.MethodPost {
 				w.WriteHeader(http.StatusMethodNotAllowed)
