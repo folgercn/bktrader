@@ -802,11 +802,14 @@ func (e *strategyReplayEngine) tryExit(bar executionBar, sig strategySignalBar) 
 	}
 
 	sideMult := 1.0
+	if e.position.Side == "short" {
+		sideMult = -1.0
+		exitPrice *= (1 + e.cfg.FixedSlippage)
+	} else {
+		exitPrice *= (1 - e.cfg.FixedSlippage)
+	}
 	pnl := 0.0
 	if e.position.Notional > 0 {
-		if e.position.Side == "short" {
-			sideMult = -1.0
-		}
 		pnl = sideMult * (exitPrice - e.position.EntryPrice) / e.position.EntryPrice * e.position.Notional
 		e.balance += pnl - e.position.Notional*commission
 	}
@@ -1313,10 +1316,10 @@ func evaluateReplayPositionExit(position *strategyPosition, sig strategySignalBa
 	switch position.Side {
 	case "long":
 		if observedLow <= position.StopLoss {
-			return "SL", position.StopLoss * (1 - cfg.FixedSlippage), true
+			return "SL", position.StopLoss, true
 		}
 		if protectedBefore && observedLow <= sig.PrevLow1 {
-			return "PT", sig.PrevLow1 * (1 - cfg.FixedSlippage), true
+			return "PT", sig.PrevLow1, true
 		}
 		position.HWM = math.Max(prevHWM, observedHigh)
 		if !position.Protected && position.HWM >= position.EntryPrice+cfg.ProfitProtectATR*sig.ATR {
@@ -1327,10 +1330,10 @@ func evaluateReplayPositionExit(position *strategyPosition, sig strategySignalBa
 		}
 	case "short":
 		if observedHigh >= position.StopLoss {
-			return "SL", position.StopLoss * (1 + cfg.FixedSlippage), true
+			return "SL", position.StopLoss, true
 		}
 		if protectedBefore && observedHigh >= sig.PrevHigh1 {
-			return "PT", sig.PrevHigh1 * (1 + cfg.FixedSlippage), true
+			return "PT", sig.PrevHigh1, true
 		}
 		position.LWM = math.Min(prevLWM, observedLow)
 		if !position.Protected && position.LWM <= position.EntryPrice-cfg.ProfitProtectATR*sig.ATR {

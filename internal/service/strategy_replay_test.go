@@ -136,6 +136,65 @@ func TestEvaluateReplayPositionExitAppliesTrailingStopAfterActivation(t *testing
 	}
 }
 
+func TestEvaluateReplayPositionExitReturnsRawExitLevels(t *testing.T) {
+	cfg := strategyReplayConfig{
+		FixedSlippage:    0.01,
+		ProfitProtectATR: 1.0,
+	}
+	sig := strategySignalBar{
+		ATR:      10,
+		PrevLow1: 98,
+	}
+	position := &strategyPosition{
+		Side:       "long",
+		EntryPrice: 100,
+		StopLoss:   95,
+		Notional:   1,
+		HWM:        100,
+		LWM:        100,
+	}
+
+	reason, exitPrice, exited := evaluateReplayPositionExit(position, sig, cfg, 101, 94)
+	if !exited || reason != "SL" {
+		t.Fatalf("expected SL exit, got exited=%v reason=%s", exited, reason)
+	}
+	if math.Abs(exitPrice-95) > 1e-9 {
+		t.Fatalf("expected raw stop price 95, got %v", exitPrice)
+	}
+}
+
+func TestStrategyReplayEngineTryExitAppliesSingleSlippageAdjustment(t *testing.T) {
+	engine := newStrategyReplayEngine(strategyReplayConfig{
+		FixedSlippage:  0.01,
+		TradingFeeRate: 0,
+	})
+	engine.position = &strategyPosition{
+		Side:       "long",
+		EntryPrice: 100,
+		StopLoss:   95,
+		Notional:   1000,
+		HWM:        100,
+		LWM:        100,
+	}
+
+	engine.tryExit(executionBar{
+		Time: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+		High: 101,
+		Low:  94,
+	}, strategySignalBar{ATR: 10, PrevLow1: 98})
+
+	if engine.position != nil {
+		t.Fatal("expected position to be cleared after exit")
+	}
+	if len(engine.trades) != 1 {
+		t.Fatalf("expected one exit trade, got %d", len(engine.trades))
+	}
+	price := parseFloatValue(engine.trades[0]["price"])
+	if math.Abs(price-94.05) > 1e-9 {
+		t.Fatalf("expected single-slippage exit price 94.05, got %v", price)
+	}
+}
+
 func TestResolveLiveSessionParametersNormalizesLegacyStrategyParameters(t *testing.T) {
 	platform := &Platform{}
 	session := domain.LiveSession{ID: "live-session-1", State: map[string]any{}}
