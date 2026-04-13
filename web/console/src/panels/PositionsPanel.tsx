@@ -12,7 +12,7 @@ export function PositionsPanel() {
         columns={["Symbol", "Account", "Side", "Quantity", "Entry Price", "Mark Price", "Updated"]}
         rows={positions.map((p) => [
           p.symbol,
-          p.accountId.substring(0, 8),
+          String(p.accountId ?? "").slice(0, 8) || "--",
           p.side,
           formatMaybeNumber(p.quantity),
           formatMaybeNumber(p.entryPrice),
