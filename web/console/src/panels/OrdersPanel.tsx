@@ -1,5 +1,5 @@
 import { formatTime, formatNumber, formatMoney, formatMaybeNumber } from '../utils/format';
-import { runtimeReadinessTone, summarizeOrderPreflight, buildSignalActionNotes, buildSignalBarStateNotes, buildRuntimeEventNotes } from '../utils/derivation';
+import { runtimeReadinessTone, summarizeOrderPreflight, buildSignalActionNotes, buildSignalBarStateNotes, buildRuntimeEventNotes, technicalStatusLabel } from '../utils/derivation';
 import { AccountRecord, StrategyRecord, Order, LiveOrderForm, LivePreflightSummary, SignalRuntimeSession, RuntimeMarketSnapshot } from '../types/domain';
 import { StatusPill } from '../components/ui/StatusPill';
 import { ActionButton } from '../components/ui/ActionButton';
@@ -42,29 +42,29 @@ export function OrdersPanel({
     <article id="orders" className="panel">
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">Orders</p>
+          <p className="panel-kicker">订单</p>
           <h3>最新订单</h3>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-8 items-start">
         <div className="backtest-form session-form">
-          <h4>Create Live Order</h4>
+          <h4>创建实盘订单</h4>
           <div className="form-grid">
             <label className="form-field">
-              <span>Live Account</span>
+              <span>实盘账户</span>
               <select
                 value={liveOrderForm.accountId}
                 onChange={(event) => setLiveOrderForm((current) => ({ ...current, accountId: event.target.value }))}
               >
                 {liveAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.name} ({account.status})
+                    {account.name} ({technicalStatusLabel(account.status)})
                   </option>
                 ))}
               </select>
             </label>
             <label className="form-field">
-              <span>Strategy Version</span>
+              <span>策略版本</span>
               <select
                 value={liveOrderForm.strategyVersionId}
                 onChange={(event) => setLiveOrderForm((current) => ({ ...current, strategyVersionId: event.target.value }))}
@@ -78,14 +78,14 @@ export function OrdersPanel({
               </select>
             </label>
             <label className="form-field">
-              <span>Symbol</span>
+              <span>代码</span>
               <input
                 value={liveOrderForm.symbol}
                 onChange={(event) => setLiveOrderForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
               />
             </label>
             <label className="form-field">
-              <span>Side</span>
+              <span>方向</span>
               <select
                 value={liveOrderForm.side}
                 onChange={(event) => setLiveOrderForm((current) => ({ ...current, side: event.target.value }))}
@@ -95,7 +95,7 @@ export function OrdersPanel({
               </select>
             </label>
             <label className="form-field">
-              <span>Type</span>
+              <span>类型</span>
               <select
                 value={liveOrderForm.type}
                 onChange={(event) => setLiveOrderForm((current) => ({ ...current, type: event.target.value }))}
@@ -105,18 +105,18 @@ export function OrdersPanel({
               </select>
             </label>
             <label className="form-field">
-              <span>Quantity</span>
+              <span>数量</span>
               <input
                 value={liveOrderForm.quantity}
                 onChange={(event) => setLiveOrderForm((current) => ({ ...current, quantity: event.target.value }))}
               />
             </label>
             <label className="form-field">
-              <span>Price</span>
+              <span>价格</span>
               <input
                 value={liveOrderForm.price}
                 onChange={(event) => setLiveOrderForm((current) => ({ ...current, price: event.target.value }))}
-                placeholder={liveOrderForm.type === "MARKET" ? "optional" : "required for limit"}
+                placeholder={liveOrderForm.type === "MARKET" ? "选填" : "限价单必填"}
               />
             </label>
           </div>
@@ -131,7 +131,7 @@ export function OrdersPanel({
           </div>
           <div className="backtest-actions">
             <ActionButton
-              label={liveOrderAction ? "Submitting..." : "Submit Live Order"}
+              label={liveOrderAction ? "提交中..." : "提交实盘订单"}
               disabled={
                 liveOrderAction ||
                 selectedLiveOrderPreflight.status === "blocked" ||
@@ -146,38 +146,38 @@ export function OrdersPanel({
         </div>
 
         <div className="backtest-list session-form">
-          <h4>Live Execution Context</h4>
+          <h4>实盘执行上下文</h4>
           <div className="detail-grid">
             <div className="detail-item">
-              <span>Runtime</span>
-              <strong>{selectedLiveOrderActiveRuntime ? `${selectedLiveOrderActiveRuntime.status} · ${selectedLiveOrderActiveRuntime.runtimeAdapter}` : "--"}</strong>
+              <span>运行时</span>
+              <strong>{selectedLiveOrderActiveRuntime ? `${technicalStatusLabel(selectedLiveOrderActiveRuntime.status)} · ${selectedLiveOrderActiveRuntime.runtimeAdapter}` : "--"}</strong>
             </div>
             <div className="detail-item">
-              <span>Health</span>
-              <strong>{String(selectedLiveOrderRuntimeState.health ?? "--")}</strong>
+              <span>健康度</span>
+              <strong>{technicalStatusLabel(selectedLiveOrderRuntimeState.health)}</strong>
             </div>
             <div className="detail-item">
-              <span>Signal Bias</span>
-              <strong>{selectedLiveOrderSignalAction.bias}</strong>
+              <span>信号偏向</span>
+              <strong>{technicalStatusLabel(selectedLiveOrderSignalAction.bias)}</strong>
             </div>
             <div className="detail-item">
-              <span>Signal State</span>
-              <strong>{selectedLiveOrderSignalAction.state}</strong>
+              <span>信号状态</span>
+              <strong>{technicalStatusLabel(selectedLiveOrderSignalAction.state)}</strong>
             </div>
             <div className="detail-item">
-              <span>Trade</span>
+              <span>成交价</span>
               <strong>{formatMaybeNumber(selectedLiveOrderMarket.tradePrice)}</strong>
             </div>
             <div className="detail-item">
-              <span>Bid / Ask</span>
+              <span>买 / 卖</span>
               <strong>{formatMaybeNumber(selectedLiveOrderMarket.bestBid)} / {formatMaybeNumber(selectedLiveOrderMarket.bestAsk)}</strong>
             </div>
             <div className="detail-item">
-              <span>Spread</span>
+              <span>价差</span>
               <strong>{formatMaybeNumber(selectedLiveOrderMarket.spreadBps)} bps</strong>
             </div>
             <div className="detail-item">
-              <span>Signal TF</span>
+              <span>信号周期</span>
               <strong>{String(selectedLiveOrderSignalBarState.timeframe ?? "--")}</strong>
             </div>
             <div className="detail-item">
@@ -205,7 +205,7 @@ export function OrdersPanel({
         </div>
       </div>
       <SimpleTable
-        columns={["Time", "Symbol", "Side", "Qty", "Price", "Status", "Mode", "Runtime", "Preflight"]}
+        columns={["时间", "代码", "方向", "数量", "价格", "状态", "模式", "运行时", "预检"]}
         rows={orders
           .slice()
           .reverse()
@@ -216,12 +216,12 @@ export function OrdersPanel({
             order.side,
             formatNumber(order.quantity, 4),
             formatMoney(order.price),
-            order.status,
-            String(order.metadata?.executionMode ?? "--"),
+            technicalStatusLabel(order.status),
+            technicalStatusLabel(order.metadata?.executionMode),
             String(order.metadata?.runtimeSessionId ?? "--"),
             summarizeOrderPreflight(order.metadata?.runtimePreflight),
           ])}
-        emptyMessage="No orders"
+        emptyMessage="暂无订单"
       />
     </article>
   );

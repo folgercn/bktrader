@@ -9,6 +9,7 @@ export interface WorkbenchLayoutProps {
   
   headerMetrics: React.ReactNode;
   headerConnection: React.ReactNode;
+  headerActions?: React.ReactNode;
   
   mainStageContent: React.ReactNode;
   dockContent: React.ReactNode;
@@ -22,6 +23,7 @@ export function WorkbenchLayout({
   onDockTabChange,
   headerMetrics,
   headerConnection,
+  headerActions,
   mainStageContent,
   dockContent,
   sidePanelContent
@@ -53,12 +55,17 @@ export function WorkbenchLayout({
       {/* Main Workspace */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Header (Top) */}
-        <header className="h-12 flex-shrink-0 flex items-center justify-between px-4 border-b border-white/5 bg-zinc-900/20 backdrop-blur-md">
+        <header className="h-12 flex-shrink-0 flex items-center justify-between px-4 border-b border-white/5 bg-zinc-900/40 backdrop-blur-md relative z-30">
           <div className="flex items-center space-x-6 text-sm">
             {headerMetrics}
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center space-x-4">
             {headerConnection}
+            {headerActions && (
+              <div className="flex items-center pl-4 border-l border-white/10 relative">
+                {headerActions}
+              </div>
+            )}
           </div>
         </header>
 

@@ -35,7 +35,8 @@ import {
   decisionStateTone,
   boolLabel,
   liveSessionHealthTone,
-  getNumber
+  getNumber,
+  technicalStatusLabel
 } from '../utils/derivation';
 import { AccountRecord, LiveSession, SignalRuntimeSession, LiveNextAction, ActiveSettingsModal } from '../types/domain';
 
@@ -235,67 +236,7 @@ export function AccountStage({
             当前页面直接消费平台 API，主监控优先展示正在运行的实盘会话；如果当前没有实盘会话，则回退展示模拟盘。大周期 K 线直接来自交易所信号源，执行侧信息则展示实时 tick、盘口、持仓、订单和盈亏。
           </p>
         </div>
-        <div className="hero-side">
-          <div className="hero-pill">{loading ? "加载中..." : `${liveAccounts.length} 个账户`}</div>
-          <div className="hero-pill hero-pill-accent">{monitorMode}</div>
-          <div className="hero-user-card">
-            <div>
-              <strong>{authSession?.username ?? "未登录"}</strong>
-              <p>{authSession?.expiresAt ? `有效至 ${formatTime(authSession.expiresAt)}` : "登录后即可加载账户与监控"}</p>
-            </div>
-            {authSession ? (
-              <button type="button" className="hero-menu-button hero-logout" onClick={logout}>
-                退出
-              </button>
-            ) : null}
-          </div>
-          <div className="hero-menu">
-            <button
-              type="button"
-              className="hero-menu-button"
-              onClick={() => setSettingsMenuOpen((current) => !current)}
-            >
-              设置
-            </button>
-            {settingsMenuOpen ? (
-              <div className="hero-menu-popover">
-                <button
-                  type="button"
-                  className="hero-menu-item"
-                  onClick={() => {
-                    openLiveAccountModal();
-                    setSettingsMenuOpen(false);
-                  }}
-                >
-                  新建账户
-                </button>
-                <button
-                  type="button"
-                  className="hero-menu-item"
-                  onClick={() => {
-                    if (quickLiveAccountId) {
-                      selectQuickLiveAccount(quickLiveAccountId);
-                    }
-                    openLiveBindingModal();
-                    setSettingsMenuOpen(false);
-                  }}
-                >
-                  绑定账户
-                </button>
-                <button
-                  type="button"
-                  className="hero-menu-item"
-                  onClick={() => {
-                    setActiveSettingsModal("telegram");
-                    setSettingsMenuOpen(false);
-                  }}
-                >
-                  Telegram 通知
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </div>
+
       </section>
 
       <section id="live" className="panel panel-session">
@@ -318,26 +259,19 @@ export function AccountStage({
                 </StatusPill>
               </div>
               <div className="live-account-meta">
-                <span>{shrink(highlightedLiveSession.session.id)}</span>
-                <span>{highlightedLiveSession.session.accountId}</span>
-                <span>{highlightedLiveSession.session.strategyId}</span>
-                <span>{String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}</span>
+                <span title="会话 ID">{shrink(highlightedLiveSession.session.id)}</span>
+                <span title="账户 ID">{highlightedLiveSession.session.accountId}</span>
+                <span title="策略 ID">{highlightedLiveSession.session.strategyId}</span>
+                <span title="信号周期">{String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}</span>
               </div>
               <div className="backtest-notes">
-                <div className="note-item">health: {highlightedLiveSession.health.detail}</div>
-                <div className="note-item">
-                  recovery: {String(highlightedLiveSession.session.state?.positionRecoveryStatus ?? "--")} · protection{" "}
-                  {String(highlightedLiveSession.session.state?.protectionRecoveryStatus ?? "--")} · orders{" "}
-                  {String(highlightedLiveSession.session.state?.recoveredProtectionCount ?? "--")}
-                </div>
-                <div className="note-item">
-                  execution: orders {highlightedLiveSession.execution.orderCount} · fills {highlightedLiveSession.execution.fillCount}
-                </div>
-                <div className="note-item">
-                  latest-order: {String(highlightedLiveSession.execution.latestOrder?.status ?? "--")} · {String(highlightedLiveSession.execution.latestOrder?.side ?? "--")} · {formatMaybeNumber(highlightedLiveSession.execution.latestOrder?.price)}
-                </div>
-                <div className="note-item">
-                  position: {String(highlightedLiveSession.execution.position?.side ?? "FLAT")} · {formatMaybeNumber(highlightedLiveSession.execution.position?.quantity)} @ {formatMaybeNumber(highlightedLiveSession.execution.position?.entryPrice)}
+                <div className="note-item">健康状态: {highlightedLiveSession.health.detail}</div>
+                <div className="backtest-grid-notes">
+                   <div className="note-item">恢复状态: {String(highlightedLiveSession.session.state?.positionRecoveryStatus ?? "--")}</div>
+                   <div className="note-item">保护恢复: {String(highlightedLiveSession.session.state?.protectionRecoveryStatus ?? "--")} ({String(highlightedLiveSession.session.state?.recoveredProtectionCount ?? "--")})</div>
+                   <div className="note-item">执行统计: 订单 {highlightedLiveSession.execution.orderCount} · 成交 {highlightedLiveSession.execution.fillCount}</div>
+                   <div className="note-item">最后订单: {String(highlightedLiveSession.execution.latestOrder?.status ?? "--")} · {String(highlightedLiveSession.execution.latestOrder?.side ?? "--")} @ {formatMaybeNumber(highlightedLiveSession.execution.latestOrder?.price)}</div>
+                   <div className="note-item">当前持仓: {String(highlightedLiveSession.execution.position?.side ?? "平仓")} · {formatMaybeNumber(highlightedLiveSession.execution.position?.quantity)} @ {formatMaybeNumber(highlightedLiveSession.execution.position?.entryPrice)}</div>
                 </div>
               </div>
               <div className="flow-row">
@@ -387,7 +321,7 @@ export function AccountStage({
           </div>
 
           <div className="backtest-list">
-            <h4>Live Strategy Sessions</h4>
+            <h4>实盘策略会话</h4>
             <div className="backtest-notes notes-compact">
               <div className="note-item">有效会话：{validLiveSessions.length}</div>
             </div>
@@ -427,26 +361,26 @@ export function AccountStage({
                       </div>
                       <div className="session-row-actions inline-actions">
                         <ActionButton
-                          label="Edit"
+                          label="编辑"
                           variant="ghost"
                           disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
                           onClick={() => openLiveSessionModal(session)}
                         />
                         {String(session.state?.signalRuntimeSessionId ?? "") ? (
                           <ActionButton
-                            label="Open Runtime"
+                            label="打开运行时"
                             variant="ghost"
                             onClick={() => jumpToSignalRuntimeSession(String(session.state?.signalRuntimeSessionId ?? ""))}
                           />
                         ) : null}
                         <ActionButton
-                          label={liveSessionAction === `${session.id}:start` ? "Starting..." : "Start"}
+                          label={liveSessionAction === `${session.id}:start` ? "启动中..." : "启动"}
                           disabled={liveSessionAction !== null || session.status === "RUNNING" || !sessionAccountReady}
                           onClick={() => runLiveSessionAction(session.id, "start")}
                         />
                         {!sessionAccountReady ? (
                           <ActionButton
-                            label="Bind Adapter"
+                            label="绑定适配器"
                             variant="ghost"
                             disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
                             onClick={() => {
@@ -456,7 +390,7 @@ export function AccountStage({
                           />
                         ) : null}
                         <ActionButton
-                          label={liveSessionAction === `${session.id}:dispatch` ? "Dispatching..." : "Dispatch Intent"}
+                          label={liveSessionAction === `${session.id}:dispatch` ? "分发中..." : "分发意图"}
                           disabled={
                             liveSessionAction !== null ||
                             !getRecord(session.state?.lastStrategyIntent).action ||
@@ -466,19 +400,19 @@ export function AccountStage({
                           onClick={() => dispatchLiveSessionIntent(session.id)}
                         />
                         <ActionButton
-                          label={liveSessionAction === `${session.id}:sync` ? "Syncing..." : "Sync Latest Order"}
+                          label={liveSessionAction === `${session.id}:sync` ? "同步中..." : "同步最新订单"}
                           variant="ghost"
                           disabled={liveSessionAction !== null || !String(session.state?.lastDispatchedOrderId ?? "")}
                           onClick={() => syncLiveSession(session.id)}
                         />
                         <ActionButton
-                          label={liveSessionAction === `${session.id}:stop` ? "Stopping..." : "Stop"}
+                          label={liveSessionAction === `${session.id}:stop` ? "停止中..." : "停止"}
                           variant="ghost"
                           disabled={liveSessionAction !== null || session.status === "STOPPED"}
                           onClick={() => runLiveSessionAction(session.id, "stop")}
                         />
                         <ActionButton
-                          label={liveSessionDeleteAction === session.id ? "Deleting..." : "Delete"}
+                          label={liveSessionDeleteAction === session.id ? "删除中..." : "删除"}
                           variant="ghost"
                           disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
                           onClick={() => void deleteLiveSession(session.id)}
@@ -489,95 +423,93 @@ export function AccountStage({
                 })}
               </div>
             ) : (
-              <div className="empty-state empty-state-compact">No valid live sessions yet</div>
+              <div className="empty-state empty-state-compact">暂无有效实盘会话</div>
             )}
             {primaryLiveSession ? (
               <div className="backtest-notes">
                 <div className="note-item">
-                  runtime: {String(primaryLiveSession.state?.signalRuntimeStatus ?? "--")} · {formatTime(String(primaryLiveSession.state?.lastSignalRuntimeEventAt ?? ""))}
+                  运行环境: {String(primaryLiveSession.state?.signalRuntimeStatus ?? "--")} · {formatTime(String(primaryLiveSession.state?.lastSignalRuntimeEventAt ?? ""))}
                 </div>
                 <div className="note-item">
-                  market: {formatMaybeNumber(primaryLiveSessionMarket.tradePrice)} · {formatMaybeNumber(primaryLiveSessionMarket.bestBid)} / {formatMaybeNumber(primaryLiveSessionMarket.bestAsk)}
+                  行情数据: {formatMaybeNumber(primaryLiveSessionMarket.tradePrice)} · {formatMaybeNumber(primaryLiveSessionMarket.bestBid)} / {formatMaybeNumber(primaryLiveSessionMarket.bestAsk)}
                 </div>
                 <div className="note-item">
-                  readiness: {primaryLiveSessionRuntimeReadiness.status} · {primaryLiveSessionRuntimeReadiness.reason}
+                  就续预检: {primaryLiveSessionRuntimeReadiness.status} · {primaryLiveSessionRuntimeReadiness.reason}
                 </div>
                 <div className="note-item">
-                  intent: {String(primaryLiveSessionIntent.action ?? "none")} · {String(primaryLiveSessionIntent.side ?? "--")} · {formatMaybeNumber(primaryLiveSessionIntent.priceHint)}
+                  信号意图: {String(primaryLiveSessionIntent.action ?? "无")} · {String(primaryLiveSessionIntent.side ?? "--")} · {formatMaybeNumber(primaryLiveSessionIntent.priceHint)}
                 </div>
                 <div className="note-item">
-                  intent-preview: qty {formatMaybeNumber(primaryLiveSessionIntent.quantity)} · src {String(primaryLiveSessionIntent.priceSource ?? "--")} · kind {String(primaryLiveSessionIntent.signalKind ?? "--")}
+                  意图预览: 数量 {formatMaybeNumber(primaryLiveSessionIntent.quantity)} · 报价源 {String(primaryLiveSessionIntent.priceSource ?? "--")} · 信号种类 {String(primaryLiveSessionIntent.signalKind ?? "--")}
                 </div>
                 <div className="note-item">
-                  intent-context: spread {formatMaybeNumber(primaryLiveSessionIntent.spreadBps)} bps · bias {String(primaryLiveSessionIntent.liquidityBias ?? "--")} · ma20 {formatMaybeNumber(primaryLiveSessionIntent.ma20)} · atr14 {formatMaybeNumber(primaryLiveSessionIntent.atr14)}
+                  意图上下文: 价差 {formatMaybeNumber(primaryLiveSessionIntent.spreadBps)} bps · 偏置 {String(primaryLiveSessionIntent.liquidityBias ?? "--")} · ma20 {formatMaybeNumber(primaryLiveSessionIntent.ma20)} · atr14 {formatMaybeNumber(primaryLiveSessionIntent.atr14)}
                 </div>
                 <div className="note-item">
-                  signal-filter: tf {String(primaryLiveSessionSignalBarDecision.timeframe ?? "--")} · sma5 {formatMaybeNumber(primaryLiveSessionSignalBarDecision.sma5)} · early-long{" "}
-                  {boolLabel(primaryLiveSessionSignalBarDecision.longEarlyReversalReady)} · early-short {boolLabel(primaryLiveSessionSignalBarDecision.shortEarlyReversalReady)} ·{" "}
+                  信号过滤: 周期 {String(primaryLiveSessionSignalBarDecision.timeframe ?? "--")} · sma5 {formatMaybeNumber(primaryLiveSessionSignalBarDecision.sma5)} · 做多反转触发{" "}
+                  {boolLabel(primaryLiveSessionSignalBarDecision.longEarlyReversalReady)} · 做空反转触发 {boolLabel(primaryLiveSessionSignalBarDecision.shortEarlyReversalReady)} ·{" "}
                   {String(primaryLiveSessionSignalBarDecision.reason ?? "--")}
                 </div>
                 <div className="note-item">
-                  dispatch: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · cooldown {String(primaryLiveSession?.state?.dispatchCooldownSeconds ?? "--")}s · last-order {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
+                  指令分发: {String(primaryLiveSession?.state?.dispatchMode ?? "--")} · 冷却 {String(primaryLiveSession?.state?.dispatchCooldownSeconds ?? "--")}s · 最后订单 {String(primaryLiveSession?.state?.lastDispatchedOrderId ?? "--")}
                 </div>
                 <div className="note-item">
-                  execution-profile: {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).executionProfile ?? "--")} ·{" "}
-                  {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).orderType ?? "--")} · tif{" "}
-                  {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).timeInForce ?? "--")} · postOnly{" "}
-                  {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).postOnly)} · reduceOnly{" "}
+                  执行配置: {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).executionProfile ?? "--")} ·{" "}
+                  {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).orderType ?? "--")} · TIF {" "}
+                  {String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).timeInForce ?? "--")} · 只减仓{" "}
                   {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).reduceOnly)}
                 </div>
                 <div className="note-item">
-                  execution-telemetry: {String(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).decision ?? "--")} · spread{" "}
-                  {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).spreadBps)} bps · imbalance{" "}
+                  执行遥测: {String(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).decision ?? "--")} · 价差{" "}
+                  {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).spreadBps)} bps · 盘口不平衡{" "}
                   {formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).bookImbalance)}
                 </div>
                 <div className="note-item">
-                  execution-dispatch: {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
-                  {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).executionMode ?? "--")} · fallback{" "}
-                  {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallback)} ·{" "}
-                  {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallbackOrderType ?? "--")}
+                  分发状态: {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).status ?? "--")} ·{" "}
+                  {String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).executionMode ?? "--")} · 备选方案{" "}
+                  {boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallback)}
                 </div>
                 <div className="note-item">
-                  execution-fill: expected {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).expectedPrice)} · drift{" "}
+                  成交分析: 预期价格 {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).expectedPrice)} · 滑点偏移{" "}
                   {formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).priceDriftBps)} bps
                 </div>
                 <div className="note-item">
-                  execution-event-stats: proposals {String(getRecord(primaryLiveSession?.state?.executionEventStats).proposalCount ?? "--")} · maker{" "}
-                  {String(getRecord(primaryLiveSession?.state?.executionEventStats).makerRestingDecisionCount ?? "--")} · fallback{" "}
-                  {String(getRecord(primaryLiveSession?.state?.executionEventStats).fallbackDispatchCount ?? "--")} · avg drift{" "}
+                  执行统计: 方案数 {String(getRecord(primaryLiveSession?.state?.executionEventStats).proposalCount ?? "--")} · Maker 决策{" "}
+                  {String(getRecord(primaryLiveSession?.state?.executionEventStats).makerRestingDecisionCount ?? "--")} · 备选分发{" "}
+                  {String(getRecord(primaryLiveSession?.state?.executionEventStats).fallbackDispatchCount ?? "--")} · 平均偏移{" "}
                   {formatMaybeNumber(getRecord(primaryLiveSession?.state?.executionEventStats).avgPriceDriftBps)} bps
                 </div>
                 <div className="note-item">
-                  auto-dispatch: last-at {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · last-error {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}
+                  自动分发: 最后触发 {formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · 最后错误 {String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}
                 </div>
                 <div className="note-item">
-                  sync: {String(primaryLiveSession?.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(primaryLiveSession?.state?.lastSyncedAt ?? ""))} · error {String(primaryLiveSession?.state?.lastSyncError ?? "--")}
+                  数据同步: {String(primaryLiveSession?.state?.lastSyncedOrderStatus ?? "--")} · {formatTime(String(primaryLiveSession?.state?.lastSyncedAt ?? ""))} · 错误 {String(primaryLiveSession?.state?.lastSyncError ?? "--")}
                 </div>
                 <div className="note-item">
-                  recovery: {String(primaryLiveSession?.state?.lastRecoveryStatus ?? "--")} · position {String(primaryLiveSession?.state?.positionRecoveryStatus ?? "--")} · protection{" "}
+                  恢复详情: {String(primaryLiveSession?.state?.lastRecoveryStatus ?? "--")} · 仓位恢复 {String(primaryLiveSession?.state?.positionRecoveryStatus ?? "--")} · 保护恢复{" "}
                   {String(primaryLiveSession?.state?.protectionRecoveryStatus ?? "--")}
                 </div>
                 <div className="note-item">
-                  recovery-detail: last-at {formatTime(String(primaryLiveSession?.state?.lastRecoveryAttemptAt ?? primaryLiveSession?.state?.lastProtectionRecoveryAt ?? ""))} · protection-orders{" "}
-                  {String(primaryLiveSession?.state?.recoveredProtectionCount ?? "--")} · stop {String(primaryLiveSession?.state?.recoveredStopOrderCount ?? "--")} · take-profit{" "}
+                  恢复统计: 最后尝试 {formatTime(String(primaryLiveSession?.state?.lastRecoveryAttemptAt ?? primaryLiveSession?.state?.lastProtectionRecoveryAt ?? ""))} · 保护订单数{" "}
+                  {String(primaryLiveSession?.state?.recoveredProtectionCount ?? "--")} · 止损 {String(primaryLiveSession?.state?.recoveredStopOrderCount ?? "--")} · 止盈{" "}
                   {String(primaryLiveSession?.state?.recoveredTakeProfitOrderCount ?? "--")}
                 </div>
                 <div className="note-item">
-                  execution: orders {primaryLiveExecutionSummary.orderCount} · fills {primaryLiveExecutionSummary.fillCount} · latest-order {String(primaryLiveExecutionSummary.latestOrder?.status ?? "--")}
+                  执行汇总: 订单 {primaryLiveExecutionSummary.orderCount} · 成交 {primaryLiveExecutionSummary.fillCount} · 最新订单状态 {String(primaryLiveExecutionSummary.latestOrder?.status ?? "--")}
                 </div>
                 <div className="note-item">
-                  position: {String(primaryLiveExecutionSummary.position?.side ?? "FLAT")} · {formatMaybeNumber(primaryLiveExecutionSummary.position?.quantity)} @ {formatMaybeNumber(primaryLiveExecutionSummary.position?.entryPrice)} · mark {formatMaybeNumber(primaryLiveExecutionSummary.position?.markPrice)}
+                  策略持仓: {String(primaryLiveExecutionSummary.position?.side ?? "平仓")} · {formatMaybeNumber(primaryLiveExecutionSummary.position?.quantity)} @ {formatMaybeNumber(primaryLiveExecutionSummary.position?.entryPrice)} · 标记价 {formatMaybeNumber(primaryLiveExecutionSummary.position?.markPrice)}
                 </div>
                 <div className="note-item">
-                  recovered-position: {String(getRecord(primaryLiveSession?.state?.recoveredPosition).side ?? "FLAT")} ·{" "}
+                  已恢复持仓: {String(getRecord(primaryLiveSession?.state?.recoveredPosition).side ?? "平仓")} ·{" "}
                   {formatMaybeNumber(getRecord(primaryLiveSession?.state?.recoveredPosition).quantity)} @{" "}
                   {formatMaybeNumber(getRecord(primaryLiveSession?.state?.recoveredPosition).entryPrice)}
                 </div>
                 <div className="note-item">
-                  dispatch-preview: {primaryLiveDispatchPreview.reason} · {primaryLiveDispatchPreview.detail}
+                  分发预览: {primaryLiveDispatchPreview.reason} · {primaryLiveDispatchPreview.detail}
                 </div>
                 <div className="note-item">
-                  final-order: {String(primaryLiveDispatchPreview.payload.side ?? "--")} {formatMaybeNumber(primaryLiveDispatchPreview.payload.quantity)} {String(primaryLiveDispatchPreview.payload.symbol ?? "--")} · {String(primaryLiveDispatchPreview.payload.type ?? "--")} @ {formatMaybeNumber(primaryLiveDispatchPreview.payload.price)}
+                  最终指令: {String(primaryLiveDispatchPreview.payload.side ?? "--")} {formatMaybeNumber(primaryLiveDispatchPreview.payload.quantity)} {String(primaryLiveDispatchPreview.payload.symbol ?? "--")} · {String(primaryLiveDispatchPreview.payload.type ?? "--")} @ {formatMaybeNumber(primaryLiveDispatchPreview.payload.price)}
                 </div>
                 {buildTimelineNotes(primaryLiveSessionTimeline).slice(0, 4).map((line) => (
                   <div key={line} className="note-item">
@@ -591,7 +523,7 @@ export function AccountStage({
 
         <div className="live-grid">
           <div className="backtest-list">
-            <h4>Live Accounts</h4>
+            <h4>实盘账户</h4>
             {liveAccounts.length > 0 ? (
               <div className="live-card-list">
                 {liveAccounts.map((account) => {
@@ -635,35 +567,35 @@ export function AccountStage({
                       <span>{account.name}</span>
                       <strong>{account.status}</strong>
                       <div className="live-account-meta">
-                        <span>{account.exchange}</span>
-                        <span>{String(binding.adapterKey ?? "--")}</span>
-                        <span>{String(binding.positionMode ?? "--")} / {String(binding.marginMode ?? "--")}</span>
+                        <span>交易所: {account.exchange}</span>
+                        <span>适配器: {String(binding.adapterKey ?? "--")}</span>
+                        <span>持仓模式: {String(binding.positionMode ?? "--")} / {String(binding.marginMode ?? "--")}</span>
                       </div>
                       <div className="live-account-meta">
-                        <span>sync {String(syncSnapshot.syncStatus ?? "UNSYNCED")}</span>
-                        <span>{formatTime(String(getRecord(account.metadata).lastLiveSyncAt ?? ""))}</span>
-                        <span>{String(syncSnapshot.source ?? "--")}</span>
+                        <span>同步状态: {String(syncSnapshot.syncStatus ?? "未同步")}</span>
+                        <span>最后同步: {formatTime(String(getRecord(account.metadata).lastLiveSyncAt ?? ""))}</span>
+                        <span>来源: {String(syncSnapshot.source ?? "--")}</span>
                       </div>
                       <div className="live-account-meta">
-                        <span>{bindings.length} signal bindings</span>
-                        <span>{runtimeSessionsForAccount.length} runtime sessions</span>
-                        <span>{activeRuntime ? `${activeRuntime.status} · ${String(activeRuntimeState.health ?? "--")}` : "no runtime"}</span>
+                        <span>{bindings.length} 个信号绑定</span>
+                        <span>{runtimeSessionsForAccount.length} 个运行实例</span>
+                        <span>{activeRuntime ? `${activeRuntime.status} · ${String(activeRuntimeState.health ?? "--")}` : "无运行实例"}</span>
                       </div>
                       <div className="live-account-meta">
-                        <span>{String(activeRuntimeSummary.event ?? "--")}</span>
-                        <span>{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</span>
-                        <span>{formatTime(String(activeRuntimeState.lastEventAt ?? ""))}</span>
+                        <span>最后事件: {String(activeRuntimeSummary.event ?? "--")}</span>
+                        <span>最后心跳: {formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</span>
+                        <span>更新时间: {formatTime(String(activeRuntimeState.lastEventAt ?? ""))}</span>
                       </div>
                       <div className="live-account-meta">
-                        <span>trade {formatMaybeNumber(activeRuntimeMarket.tradePrice)}</span>
-                        <span>bid/ask {formatMaybeNumber(activeRuntimeMarket.bestBid)} / {formatMaybeNumber(activeRuntimeMarket.bestAsk)}</span>
-                        <span>spread {formatMaybeNumber(activeRuntimeMarket.spreadBps)} bps</span>
+                        <span>成交价: {formatMaybeNumber(activeRuntimeMarket.tradePrice)}</span>
+                        <span>买/卖: {formatMaybeNumber(activeRuntimeMarket.bestBid)} / {formatMaybeNumber(activeRuntimeMarket.bestAsk)}</span>
+                        <span>价差: {formatMaybeNumber(activeRuntimeMarket.spreadBps)} bps</span>
                       </div>
                       <div className="live-account-meta">
-                        <span>tick {activeRuntimeSourceSummary.tradeTickCount}</span>
-                        <span>book {activeRuntimeSourceSummary.orderBookCount}</span>
-                        <span>stale {activeRuntimeSourceSummary.staleCount}</span>
-                        <span>{formatTime(String(activeRuntimeSourceSummary.latestEventAt ?? ""))}</span>
+                        <span>成交笔数: {activeRuntimeSourceSummary.tradeTickCount}</span>
+                        <span>盘口笔数: {activeRuntimeSourceSummary.orderBookCount}</span>
+                        <span>陈旧数: {activeRuntimeSourceSummary.staleCount}</span>
+                        <span>最后采集: {formatTime(String(activeRuntimeSourceSummary.latestEventAt ?? ""))}</span>
                       </div>
                       <div className="live-account-meta">
                         <span>
@@ -683,7 +615,7 @@ export function AccountStage({
                         <span>{livePreflight.detail}</span>
                       </div>
                       <div className="live-account-meta">
-                        <span>next action</span>
+                        <span>下一步操作</span>
                         <span>{liveNextAction.label}</span>
                         <span>{liveNextAction.detail}</span>
                         <button
@@ -700,20 +632,20 @@ export function AccountStage({
                           }
                           onClick={() => launchLiveFlow(account)}
                         >
-                          {liveFlowAction === account.id ? "Launching..." : "Launch Live Flow"}
+                          {liveFlowAction === account.id ? "启动中..." : "启动实盘流程"}
                         </button>
                         <button
                           type="button"
                           className="filter-chip"
                           onClick={() => runLiveNextAction(account, liveNextAction, activeRuntime)}
                         >
-                          Open
+                          详情/查看
                         </button>
                       </div>
                       <div className="live-account-meta">
-                        <span>{String(activeSignalBarState.timeframe ?? "--")}</span>
-                        <span>ma20 {formatMaybeNumber(activeSignalBarState.ma20)}</span>
-                        <span>atr14 {formatMaybeNumber(activeSignalBarState.atr14)}</span>
+                        <span>周期: {String(activeSignalBarState.timeframe ?? "--")}</span>
+                        <span>ma20: {formatMaybeNumber(activeSignalBarState.ma20)}</span>
+                        <span>atr14: {formatMaybeNumber(activeSignalBarState.atr14)}</span>
                       </div>
                       <div className="live-account-meta">
                         <span>
@@ -740,13 +672,13 @@ export function AccountStage({
                           </div>
                         ))}
                         <div className="note-item">
-                          live-preflight: {livePreflight.reason} · {livePreflight.detail}
+                          实盘预检: {livePreflight.reason} · {livePreflight.detail}
                         </div>
                         <div className="note-item">
-                          next-action: {liveNextAction.label} · {liveNextAction.detail}
+                          下一步操作: {liveNextAction.label} · {liveNextAction.detail}
                         </div>
                         <div className="note-item">
-                          account-sync: orders {String(syncSnapshot.orderCount ?? "--")} · fills {String(syncSnapshot.fillCount ?? "--")} · positions {String(syncSnapshot.positionCount ?? "--")}
+                          账户同步: 订单 {String(syncSnapshot.orderCount ?? "--")} · 成交 {String(syncSnapshot.fillCount ?? "--")} · 持仓 {String(syncSnapshot.positionCount ?? "--")}
                         </div>
                         {buildSignalBarStateNotes(activeSignalBarState).map((line) => (
                           <div key={line} className="note-item">
@@ -771,14 +703,14 @@ export function AccountStage({
                       </div>
                       <div className="inline-actions">
                         <ActionButton
-                          label={liveAccountSyncAction === account.id ? "Syncing..." : "Sync Account"}
+                          label={liveAccountSyncAction === account.id ? "同步中..." : "同步账户"}
                           variant="ghost"
                           disabled={liveAccountSyncAction !== null}
                           onClick={() => syncLiveAccount(account.id)}
                         />
                         {activeRuntime ? (
                           <ActionButton
-                            label="Open Runtime"
+                            label="打开运行环境"
                             variant="ghost"
                             onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}
                           />
@@ -789,15 +721,15 @@ export function AccountStage({
                 })}
               </div>
             ) : (
-              <div className="empty-state empty-state-compact">No live accounts yet</div>
+              <div className="empty-state empty-state-compact">暂无实盘账户</div>
             )}
           </div>
 
           <div className="backtest-list">
-            <h4>Accepted Live Orders</h4>
+            <h4>已接受的实盘订单</h4>
             {syncableLiveOrders.length > 0 ? (
               <SimpleTable
-                columns={["Order", "Account", "Symbol", "Side", "Qty", "Status", "Action"]}
+                columns={["订单", "账户", "代码", "方向", "数量", "状态", "操作"]}
                 rows={syncableLiveOrders.map((order) => [
                   shrink(order.id),
                   order.accountId,
@@ -812,10 +744,10 @@ export function AccountStage({
                     onClick={() => syncLiveOrder(order.id)}
                   />,
                 ])}
-                emptyMessage="No accepted live orders"
+                emptyMessage="暂无已接受的实盘订单"
               />
             ) : (
-              <div className="empty-state empty-state-compact">No accepted live orders</div>
+              <div className="empty-state empty-state-compact">暂无已接受的实盘订单</div>
             )}
           </div>
         </div>
@@ -828,27 +760,27 @@ export function AccountStage({
             <h3>信号源绑定与市场数据运行时</h3>
           </div>
           <div className="range-box">
-            <span>{signalCatalog?.sources?.length ?? 0} sources</span>
-            <span>{signalRuntimeSessions.length} sessions</span>
+            <span>{signalCatalog?.sources?.length ?? 0} 个源</span>
+            <span>{signalRuntimeSessions.length} 个会话</span>
           </div>
         </div>
 
         <div className="live-grid">
           <div className="backtest-form session-form">
-            <h4>Bind Account Signal Source</h4>
+            <h4>绑定账户信号源</h4>
             <div className="form-grid">
               <label className="form-field">
-                <span>Account</span>
+                <span>账户</span>
                 <select value={accountSignalForm.accountId} onChange={(event) => setAccountSignalForm((current) => ({ ...current, accountId: event.target.value }))}>
                   {liveAccounts.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.name} ({item.mode})
+                      {item.name} ({technicalStatusLabel(item.mode)})
                     </option>
                   ))}
                 </select>
               </label>
               <label className="form-field">
-                <span>Source</span>
+                <span>信号源</span>
                 <select value={accountSignalForm.sourceKey} onChange={(event) => setAccountSignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
                   {(signalCatalog?.sources ?? []).map((source) => (
                     <option key={source.key} value={source.key}>
@@ -858,35 +790,35 @@ export function AccountStage({
                 </select>
               </label>
               <label className="form-field">
-                <span>Role</span>
+                <span>角色</span>
                 <select value={accountSignalForm.role} onChange={(event) => setAccountSignalForm((current) => ({ ...current, role: event.target.value }))}>
-                  <option value="signal">signal</option>
-                  <option value="trigger">trigger</option>
-                  <option value="feature">feature</option>
+                  <option value="signal">信号 (Signal)</option>
+                  <option value="trigger">触发器 (Trigger)</option>
+                  <option value="feature">特征项 (Feature)</option>
                 </select>
               </label>
               <label className="form-field">
-                <span>Timeframe</span>
+                <span>信号周期</span>
                 <select value={accountSignalForm.timeframe} onChange={(event) => setAccountSignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
                   <option value="4h">4h</option>
                   <option value="1d">1d</option>
                 </select>
               </label>
               <label className="form-field">
-                <span>Symbol</span>
+                <span>交易对 (Symbol)</span>
                 <input value={accountSignalForm.symbol} onChange={(event) => setAccountSignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
               </label>
             </div>
             <div className="backtest-actions">
-              <ActionButton label={signalBindingAction === "account" ? "Binding..." : "Bind Account Source"} disabled={signalBindingAction !== null || !accountSignalForm.accountId} onClick={bindAccountSignalSource} />
+              <ActionButton label={signalBindingAction === "account" ? "绑定中..." : "执行账户绑定"} disabled={signalBindingAction !== null || !accountSignalForm.accountId} onClick={bindAccountSignalSource} />
             </div>
           </div>
 
           <div className="backtest-form session-form">
-            <h4>Bind Strategy Signal Source</h4>
+            <h4>绑定策略信号源</h4>
             <div className="form-grid">
               <label className="form-field">
-                <span>Strategy</span>
+                <span>绑定策略</span>
                 <select value={strategySignalForm.strategyId} onChange={(event) => setStrategySignalForm((current) => ({ ...current, strategyId: event.target.value }))}>
                   {strategyOptions.map((strategy) => (
                     <option key={strategy.value} value={strategy.value}>
@@ -896,7 +828,7 @@ export function AccountStage({
                 </select>
               </label>
               <label className="form-field">
-                <span>Source</span>
+                <span>信号源</span>
                 <select value={strategySignalForm.sourceKey} onChange={(event) => setStrategySignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
                   {(signalCatalog?.sources ?? []).map((source) => (
                     <option key={source.key} value={source.key}>
@@ -906,37 +838,37 @@ export function AccountStage({
                 </select>
               </label>
               <label className="form-field">
-                <span>Role</span>
+                <span>角色</span>
                 <select value={strategySignalForm.role} onChange={(event) => setStrategySignalForm((current) => ({ ...current, role: event.target.value }))}>
-                  <option value="signal">signal</option>
-                  <option value="trigger">trigger</option>
-                  <option value="feature">feature</option>
+                  <option value="signal">信号 (Signal)</option>
+                  <option value="trigger">触发器 (Trigger)</option>
+                  <option value="feature">特征项 (Feature)</option>
                 </select>
               </label>
               <label className="form-field">
-                <span>Timeframe</span>
+                <span>信号周期</span>
                 <select value={strategySignalForm.timeframe} onChange={(event) => setStrategySignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
                   <option value="4h">4h</option>
                   <option value="1d">1d</option>
                 </select>
               </label>
               <label className="form-field">
-                <span>Symbol</span>
+                <span>交易对 (Symbol)</span>
                 <input value={strategySignalForm.symbol} onChange={(event) => setStrategySignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
               </label>
             </div>
             <div className="backtest-actions">
-              <ActionButton label={signalBindingAction === "strategy" ? "Binding..." : "Bind Strategy Source"} disabled={signalBindingAction !== null || !strategySignalForm.strategyId} onClick={bindStrategySignalSource} />
+              <ActionButton label={signalBindingAction === "strategy" ? "绑定中..." : "执行策略绑定"} disabled={signalBindingAction !== null || !strategySignalForm.strategyId} onClick={bindStrategySignalSource} />
             </div>
           </div>
         </div>
 
         <div className="live-grid">
           <div className="backtest-list">
-            <h4>Signal Source Catalog</h4>
+            <h4>信号源目录</h4>
             {signalCatalog?.sources?.length ? (
               <SimpleTable
-                columns={["Source", "Exchange", "Type", "Roles", "Env", "Transport"]}
+                columns={["名称", "交易所", "流类型", "角色", "环境", "传输方式"]}
                 rows={signalCatalog.sources.map((source) => [
                   source.name,
                   source.exchange,
@@ -945,10 +877,10 @@ export function AccountStage({
                   source.environments.join(", "),
                   source.transport,
                 ])}
-                emptyMessage="No signal sources"
+                emptyMessage="暂无信号源"
               />
             ) : (
-              <div className="empty-state empty-state-compact">No signal source catalog</div>
+              <div className="empty-state empty-state-compact">信号源目录为空</div>
             )}
             <div className="backtest-notes">
               {(signalCatalog?.notes ?? []).map((note) => (
@@ -965,17 +897,17 @@ export function AccountStage({
           </div>
 
           <div className="backtest-list">
-            <h4>Current Bindings</h4>
+            <h4>当前信号绑定</h4>
             <div className="backtest-breakdown">
-              <h5>Account</h5>
+              <h5>账户级别</h5>
               <SimpleTable
-                columns={["Source", "Role", "Symbol", "Exchange", "Status", "Action"]}
+                columns={["信号源", "角色", "代码 (Symbol)", "交易所", "状态", "操作"]}
                 rows={accountSignalBindings.map((item) => [
                   item.sourceName,
                   item.role,
                   item.symbol || "--",
                   item.exchange,
-                  item.status,
+                  technicalStatusLabel(item.status),
                   <ActionButton
                     key={item.id}
                     label="Unbind"
@@ -983,19 +915,19 @@ export function AccountStage({
                     onClick={() => unbindAccountSignalSource(item.accountId || "", item.id)}
                   />
                 ])}
-                emptyMessage="No account bindings"
+                emptyMessage="暂无账户绑定信息"
               />
             </div>
             <div className="backtest-breakdown">
-              <h5>Strategy</h5>
+              <h5>策略级别</h5>
               <SimpleTable
-                columns={["Source", "Role", "Symbol", "Exchange", "Status", "Action"]}
+                columns={["信号源", "角色", "代码 (Symbol)", "交易所", "状态", "操作"]}
                 rows={strategySignalBindings.map((item) => [
                   item.sourceName,
                   item.role,
                   item.symbol || "--",
                   item.exchange,
-                  item.status,
+                  technicalStatusLabel(item.status),
                   <ActionButton
                     key={item.id}
                     label="Unbind"
@@ -1003,7 +935,7 @@ export function AccountStage({
                     onClick={() => unbindStrategySignalSource(item.strategyId || "", item.id)}
                   />
                 ])}
-                emptyMessage="No strategy bindings"
+                emptyMessage="暂无策略绑定信息"
               />
             </div>
           </div>
@@ -1011,10 +943,10 @@ export function AccountStage({
 
         <div className="live-grid">
           <div className="backtest-form session-form">
-            <h4>Runtime Policy</h4>
+            <h4>运行时策略</h4>
             <div className="form-grid">
               <label className="form-field">
-                <span>Trade Tick Freshness (s)</span>
+                <span>成交价格新鲜度 (秒)</span>
                 <input
                   value={runtimePolicyForm.tradeTickFreshnessSeconds}
                   onChange={(event) =>
@@ -1023,7 +955,7 @@ export function AccountStage({
                 />
               </label>
               <label className="form-field">
-                <span>Order Book Freshness (s)</span>
+                <span>盘口数据新鲜度 (秒)</span>
                 <input
                   value={runtimePolicyForm.orderBookFreshnessSeconds}
                   onChange={(event) =>
@@ -1032,7 +964,7 @@ export function AccountStage({
                 />
               </label>
               <label className="form-field">
-                <span>Signal Bar Freshness (s)</span>
+                <span>信号 K 线新鲜度 (秒)</span>
                 <input
                   value={runtimePolicyForm.signalBarFreshnessSeconds}
                   onChange={(event) =>
@@ -1041,7 +973,7 @@ export function AccountStage({
                 />
               </label>
               <label className="form-field">
-                <span>Runtime Quiet (s)</span>
+                <span>运行时静默期 (秒)</span>
                 <input
                   value={runtimePolicyForm.runtimeQuietSeconds}
                   onChange={(event) =>
@@ -1050,7 +982,7 @@ export function AccountStage({
                 />
               </label>
               <label className="form-field">
-                <span>Paper Start Timeout (s)</span>
+                <span>模拟盘启动超时 (秒)</span>
                 <input
                   value={runtimePolicyForm.paperStartReadinessTimeoutSeconds}
                   onChange={(event) =>
@@ -1064,37 +996,37 @@ export function AccountStage({
             </div>
             <div className="backtest-actions">
               <ActionButton
-                label={runtimePolicyAction ? "Saving..." : "Save Runtime Policy"}
+                label={runtimePolicyAction ? "保存中..." : "保存运行时策略"}
                 disabled={runtimePolicyAction}
                 onClick={updateRuntimePolicy}
               />
             </div>
             <div className="backtest-notes">
               <div className="note-item">
-                active policy: tick {runtimePolicy?.tradeTickFreshnessSeconds ?? "--"}s · book {runtimePolicy?.orderBookFreshnessSeconds ?? "--"}s ·
-                bar {runtimePolicy?.signalBarFreshnessSeconds ?? "--"}s
+                活跃策略: 成交价格 {runtimePolicy?.tradeTickFreshnessSeconds ?? "--"}秒 · 盘口 {runtimePolicy?.orderBookFreshnessSeconds ?? "--"}秒 ·
+                信号 K 线 {runtimePolicy?.signalBarFreshnessSeconds ?? "--"}秒
               </div>
               <div className="note-item">
-                quiet {runtimePolicy?.runtimeQuietSeconds ?? "--"}s · paper preflight {runtimePolicy?.paperStartReadinessTimeoutSeconds ?? "--"}s
+                静默期 {runtimePolicy?.runtimeQuietSeconds ?? "--"}秒 · 模拟盘预检 {runtimePolicy?.paperStartReadinessTimeoutSeconds ?? "--"}秒
               </div>
             </div>
           </div>
 
           <div className="backtest-form session-form">
-            <h4>Create Runtime Session</h4>
+            <h4>创建信号运行时</h4>
             <div className="form-grid">
               <label className="form-field">
-                <span>Account</span>
+                <span>账户</span>
                 <select value={signalRuntimeForm.accountId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, accountId: event.target.value }))}>
                   {liveAccounts.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.name} ({item.mode})
+                      {item.name} ({technicalStatusLabel(item.mode)})
                     </option>
                   ))}
                 </select>
               </label>
               <label className="form-field">
-                <span>Strategy</span>
+                <span>策略</span>
                 <select value={signalRuntimeForm.strategyId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, strategyId: event.target.value }))}>
                   {strategyOptions.map((strategy) => (
                     <option key={strategy.value} value={strategy.value}>
@@ -1105,28 +1037,28 @@ export function AccountStage({
               </label>
             </div>
             <div className="backtest-actions">
-              <ActionButton label={signalRuntimeAction === "create" ? "Creating..." : "Create Runtime Session"} disabled={signalRuntimeAction !== null || !signalRuntimeForm.accountId || !signalRuntimeForm.strategyId} onClick={createSignalRuntimeSession} />
+              <ActionButton label={signalRuntimeAction === "create" ? "创建中..." : "创建运行时会话"} disabled={signalRuntimeAction !== null || !signalRuntimeForm.accountId || !signalRuntimeForm.strategyId} onClick={createSignalRuntimeSession} />
             </div>
             <div className="detail-grid">
               <div className="detail-item">
-                <span>Plan Ready</span>
+                <span>计划就绪</span>
                 <strong>{boolLabel(signalRuntimePlan?.ready)}</strong>
               </div>
               <div className="detail-item">
-                <span>Required</span>
+                <span>所需绑定</span>
                 <strong>{String((signalRuntimePlan?.requiredBindings as unknown[] | undefined)?.length ?? 0)}</strong>
               </div>
               <div className="detail-item">
-                <span>Matched</span>
+                <span>已匹配</span>
                 <strong>{String((signalRuntimePlan?.matchedBindings as unknown[] | undefined)?.length ?? 0)}</strong>
               </div>
               <div className="detail-item">
-                <span>Missing</span>
+                <span>缺失项</span>
                 <strong>{String((signalRuntimePlan?.missingBindings as unknown[] | undefined)?.length ?? 0)}</strong>
               </div>
             </div>
             <div className="backtest-notes">
-              <div className="note-item">runtime adapters: {signalRuntimeAdapters.map((item) => item.key).join(", ") || "--"}</div>
+              <div className="note-item">运行时适配器: {signalRuntimeAdapters.map((item) => item.key).join(", ") || "--"}</div>
               {signalRuntimePlan?.missingBindings ? (
                 getList(signalRuntimePlan.missingBindings).map((item, index) => (
                   <div key={index} className="note-item note-item-alert note-item-alert-warning">
@@ -1137,27 +1069,28 @@ export function AccountStage({
               {signalRuntimePlan?.matchedBindings ? (
                 getList(signalRuntimePlan.matchedBindings).map((item, index) => (
                   <div key={index} className="note-item">
-                    Matched: {String(item.sourceName)} · {String(item.role)} · {String(item.symbol)}
+                  Matched: {String(item.sourceName)} · {String(item.role)} · {String(item.symbol)}
                   </div>
                 ))
               ) : null}
             </div>
           </div>
+        </div>
 
-          <div className="backtest-list">
-            <h4>Runtime Sessions</h4>
+        <div className="backtest-list mt-8 pt-8 border-t border-white/5">
+          <h4 className="text-sm font-medium text-emerald-400 mb-4">运行时会话</h4>
             {signalRuntimeSessions.length > 0 ? (
               <>
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
-                        <th>Session</th>
-                        <th>Status</th>
-                        <th>Adapter</th>
-                        <th>Subs</th>
-                        <th>Heartbeat</th>
-                        <th>Action</th>
+                        <th>会话 ID</th>
+                        <th>状态</th>
+                        <th>适配器</th>
+                        <th>订阅数</th>
+                        <th>心跳</th>
+                        <th>操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1168,25 +1101,25 @@ export function AccountStage({
                           onClick={() => setSelectedSignalRuntimeId(session.id)}
                         >
                           <td>{shrink(session.id)}</td>
-                          <td>{session.status}</td>
+                          <td>{technicalStatusLabel(session.status)}</td>
                           <td>{session.runtimeAdapter || "--"}</td>
                           <td>{String(session.subscriptionCount)}</td>
                           <td>{formatTime(String(session.state?.lastHeartbeatAt ?? ""))}</td>
                           <td>
                             <div className="inline-actions">
                               <ActionButton
-                                label={signalRuntimeAction === `${session.id}:start` ? "Starting..." : "Start"}
+                                label={signalRuntimeAction === `${session.id}:start` ? "启动中..." : "启动"}
                                 disabled={signalRuntimeAction !== null || session.status === "RUNNING"}
                                 onClick={() => runSignalRuntimeAction(session.id, "start")}
                               />
                               <ActionButton
-                                label={signalRuntimeAction === `${session.id}:stop` ? "Stopping..." : "Stop"}
+                                label={signalRuntimeAction === `${session.id}:stop` ? "停止中..." : "停止"}
                                 variant="ghost"
                                 disabled={signalRuntimeAction !== null || session.status === "STOPPED"}
                                 onClick={() => runSignalRuntimeAction(session.id, "stop")}
                               />
                               <ActionButton
-                                label="Delete"
+                                label="删除"
                                 variant="ghost"
                                 disabled={signalRuntimeAction !== null}
                                 onClick={() => deleteSignalRuntimeSession(session.id)}
@@ -1200,169 +1133,159 @@ export function AccountStage({
                 </div>
 
                 <div className="backtest-detail-card">
-                  <div className="panel-header">
-                    <div>
-                      <p className="panel-kicker">Signal Session</p>
-                      <h3>选中 Runtime Session 详情</h3>
-                    </div>
-                    <div className="range-box">
-                      <span>{selectedSignalRuntime?.status ?? "NO SESSION"}</span>
-                      <span>{selectedSignalRuntime?.runtimeAdapter ?? "--"}</span>
+                  <div className="flex items-center justify-between mb-4 mt-8 pt-8 border-t border-white/5">
+                    <h5 className="text-sm font-medium text-emerald-400">选中运行时细节</h5>
+                    <div className="flex items-center space-x-3 text-[10px] text-zinc-500 bg-white/5 px-2 py-1 rounded-md">
+                      <span>状态: {selectedSignalRuntime?.status ?? "未选择"}</span>
+                      <span className="opacity-30">|</span>
+                      <span>适配器: {selectedSignalRuntime?.runtimeAdapter ?? "--"}</span>
                     </div>
                   </div>
                   {selectedSignalRuntime ? (
                     <>
                       <div className="detail-grid">
-                        <div className="detail-item">
-                          <span>Session ID</span>
+                        <div className="detail-item" title={selectedSignalRuntime.id}>
+                          <span>会话 ID</span>
                           <strong>{shrink(selectedSignalRuntime.id)}</strong>
                         </div>
-                        <div className="detail-item">
-                          <span>Account</span>
+                        <div className="detail-item" title={selectedSignalRuntime.accountId}>
+                          <span>关联账户</span>
                           <strong>{shrink(selectedSignalRuntime.accountId)}</strong>
                         </div>
-                        <div className="detail-item">
-                          <span>Strategy</span>
+                        <div className="detail-item" title={selectedSignalRuntime.strategyId}>
+                          <span>执行策略</span>
                           <strong>{shrink(selectedSignalRuntime.strategyId)}</strong>
                         </div>
                         <div className="detail-item">
-                          <span>Transport</span>
+                          <span>传输协议</span>
                           <strong>{selectedSignalRuntime.transport || "--"}</strong>
                         </div>
                         <div className="detail-item">
-                          <span>Health</span>
+                          <span>健康状态</span>
                           <strong>{String(selectedSignalRuntimeState.health ?? "--")}</strong>
                         </div>
                         <div className="detail-item">
-                          <span>Signal Events</span>
+                          <span>信号事件数</span>
                           <strong>{String(Math.trunc(getNumber(selectedSignalRuntimeState.signalEventCount) ?? 0))}</strong>
                         </div>
                         <div className="detail-item">
-                          <span>Heartbeat</span>
+                          <span>最后心跳</span>
                           <strong>{formatTime(String(selectedSignalRuntimeState.lastHeartbeatAt ?? ""))}</strong>
                         </div>
                         <div className="detail-item">
-                          <span>Last Event</span>
+                          <span>最后事件</span>
                           <strong>{formatTime(String(selectedSignalRuntimeState.lastEventAt ?? ""))}</strong>
                         </div>
                         <div className="detail-item">
-                          <span>Source States</span>
+                          <span>资源状态</span>
                           <strong>{String(Object.keys(selectedSignalRuntimeSourceStates).length)}</strong>
                         </div>
                         <div className="detail-item">
-                          <span>Plan Ready</span>
+                          <span>运行计划</span>
                           <strong>{boolLabel(selectedSignalRuntimePlan.ready)}</strong>
                         </div>
                       </div>
 
-                      <div className="backtest-breakdown">
-                        <h4>Subscriptions</h4>
-                        <SimpleTable
-                          columns={["Source", "Role", "Symbol", "Channel", "Adapter"]}
-                          rows={selectedSignalRuntimeSubscriptions.map((item) => [
-                            String(item.sourceKey ?? "--"),
-                            String(item.role ?? "--"),
-                            String(item.symbol ?? "--"),
-                            String(item.channel ?? "--"),
-                            String(item.adapterKey ?? "--"),
-                          ])}
-                          emptyMessage="No subscriptions"
-                        />
-                      </div>
-
-                      <div className="backtest-breakdown">
-                        <h4>Signal Bars</h4>
-                        {selectedSignalRuntimeSignalBars.length > 0 ? (
-                          <div className="chart-shell">
-                            <SignalBarChart candles={selectedSignalRuntimeSignalBars} />
-                          </div>
-                        ) : (
-                          <div className="empty-state empty-state-compact">No 4h/1d signal bars cached yet</div>
-                        )}
-                      </div>
-
-                      <div className="backtest-breakdown">
-                        <h4>Signal States</h4>
-                        <div className="backtest-notes">
-                          {Object.entries(selectedSignalBarStates).length > 0 ? (
-                            Object.entries(selectedSignalBarStates).map(([key, value]) => {
-                              const state = getRecord(value);
-                              const current = getRecord(state.current);
-                              const prevBar1 = getRecord(state.prevBar1);
-                              const prevBar2 = getRecord(state.prevBar2);
-                              return (
-                                <div key={key} className="note-item">
-                                  {[
-                                    key,
-                                    `tf=${String(state.timeframe ?? "--")}`,
-                                    `bars=${String(state.barCount ?? "--")}`,
-                                    `ma20=${formatMaybeNumber(state.ma20)}`,
-                                    `atr14=${formatMaybeNumber(state.atr14)}`,
-                                    `t-1=${formatMaybeNumber(prevBar1.open)}/${formatMaybeNumber(prevBar1.high)}/${formatMaybeNumber(prevBar1.low)}/${formatMaybeNumber(prevBar1.close)}`,
-                                    `t-2=${formatMaybeNumber(prevBar2.open)}/${formatMaybeNumber(prevBar2.high)}/${formatMaybeNumber(prevBar2.low)}/${formatMaybeNumber(prevBar2.close)}`,
-                                    `current=${formatMaybeNumber(current.open)}/${formatMaybeNumber(current.high)}/${formatMaybeNumber(current.low)}/${formatMaybeNumber(current.close)}`,
-                                  ].join(" · ")}
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <div className="empty-state empty-state-compact">No signal states yet</div>
-                          )}
+                      <div className="space-y-6 mt-6">
+                        <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
+                          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">信号源订阅</h4>
+                          <SimpleTable
+                            columns={["来源", "角色", "交易对", "频道", "适配器"]}
+                            rows={selectedSignalRuntimeSubscriptions.map((item) => [
+                              String(item.sourceKey ?? "--"),
+                              String(item.role ?? "--"),
+                              String(item.symbol ?? "--"),
+                              String(item.channel ?? "--"),
+                              String(item.adapterKey ?? "--"),
+                            ])}
+                            emptyMessage="暂无订阅信息"
+                          />
                         </div>
-                      </div>
 
-                      <div className="backtest-breakdown">
-                        <h4>Runtime Timeline</h4>
-                        <div className="backtest-notes">
-                          {buildTimelineNotes(selectedSignalRuntimeTimeline).map((line: string) => (
-                            <div key={line} className="note-item">
-                              {line}
+                        <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
+                          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">信号 K 线 (Signal Bars)</h4>
+                          {selectedSignalRuntimeSignalBars.length > 0 ? (
+                            <div className="chart-shell bg-transparent border-none p-0 min-height-0">
+                              <SignalBarChart candles={selectedSignalRuntimeSignalBars} />
                             </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="backtest-breakdown">
-                        <h4>Last Event Summary</h4>
-                        <div className="backtest-notes">
-                          {Object.entries(selectedSignalRuntimeLastSummary).length > 0 ? (
-                            Object.entries(selectedSignalRuntimeLastSummary).map(([key, value]) => (
-                              <div key={key} className="note-item">
-                                {key}: {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                              </div>
-                            ))
                           ) : (
-                            <div className="empty-state empty-state-compact">No event summary yet</div>
+                            <div className="empty-state empty-state-compact">尚无缓存的 4h/1d 信号 K 线</div>
                           )}
                         </div>
-                      </div>
 
-                      <div className="backtest-breakdown">
-                        <h4>Source States</h4>
-                        <div className="backtest-notes">
-                          {Object.entries(selectedSignalRuntimeSourceStates).length > 0 ? (
-                            Object.entries(selectedSignalRuntimeSourceStates).slice(0, 8).map(([key, value]) => (
-                              <div key={key} className="note-item">
-                                {key}: {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                              </div>
-                            ))
-                          ) : (
-                            <div className="empty-state empty-state-compact">No source states yet</div>
-                          )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
+                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">信号状态 (Signal States)</h4>
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                              {Object.entries(selectedSignalBarStates).length > 0 ? (
+                                Object.entries(selectedSignalBarStates).map(([key, value]) => {
+                                  const state = getRecord(value);
+                                  const current = getRecord(state.current);
+                                  return (
+                                    <div key={key} className="note-item bg-white/5 border border-white/5 text-[10px] leading-relaxed">
+                                      <span className="text-emerald-400 font-bold">{key}</span> · {String(state.timeframe)} · {formatMaybeNumber(state.ma20)} · {formatMaybeNumber(current.close)}
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <div className="empty-state empty-state-compact">暂无信号状态数据</div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
+                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">时间线</h4>
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                              {buildTimelineNotes(selectedSignalRuntimeTimeline).map((line: string) => (
+                                <div key={line} className="note-item bg-white/5 border border-white/5 text-[10px] leading-relaxed">
+                                  {line}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
+                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">最后事件摘要</h4>
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                              {Object.entries(selectedSignalRuntimeLastSummary).length > 0 ? (
+                                Object.entries(selectedSignalRuntimeLastSummary).map(([key, value]) => (
+                                  <div key={key} className="note-item bg-white/5 border border-white/5 text-[10px] leading-relaxed">
+                                    <span className="text-zinc-500">{key}:</span> {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="empty-state empty-state-compact">暂无事件摘要</div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
+                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">源数据状态 (Source States)</h4>
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                              {Object.entries(selectedSignalRuntimeSourceStates).length > 0 ? (
+                                Object.entries(selectedSignalRuntimeSourceStates).slice(0, 12).map(([key, value]) => (
+                                  <div key={key} className="note-item bg-white/5 border border-white/5 text-[10px] leading-relaxed">
+                                    <span className="text-zinc-500">{key}:</span> {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="empty-state empty-state-compact">暂无源数据状态</div>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </>
                   ) : (
-                    <div className="empty-state empty-state-compact">No runtime session selected</div>
+                    <div className="empty-state empty-state-compact">未选择运行时会话</div>
                   )}
                 </div>
               </>
             ) : (
-              <div className="empty-state empty-state-compact">No runtime sessions</div>
+              <div className="empty-state empty-state-compact">暂无运行时会话</div>
             )}
           </div>
-        </div>
-      </section>
-    </div>
-  );
+        </section>
+      </div>
+    );
 }

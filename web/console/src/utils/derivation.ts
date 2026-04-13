@@ -6,18 +6,18 @@ import { createChart } from 'lightweight-charts';
 export function sampleStatus(sample: ReplaySample) {
   const reason = String(sample.reason ?? "").trim().toLowerCase();
   if (reason === "entry_not_hit" || reason === "entry_missed") {
-    return { label: "Entry Missed", tone: "missed" };
+    return { label: "进场错过", tone: "missed" };
   }
   if (reason === "exit_not_hit" || reason === "exit_missed") {
-    return { label: "Exit Missed", tone: "missed" };
+    return { label: "离场错过", tone: "missed" };
   }
   if (reason.includes("invalid")) {
-    return { label: "Invalid", tone: "invalid" };
+    return { label: "无效项", tone: "invalid" };
   }
   if (reason.includes("error")) {
-    return { label: "Error", tone: "error" };
+    return { label: "错误项", tone: "error" };
   }
-  return { label: "Completed", tone: "completed" };
+  return { label: "已完成", tone: "completed" };
 }
 
 export function buildLinePath(values: number[], width: number, height: number) {
@@ -54,7 +54,7 @@ export function summarizeRange(values: number[]) {
 
 export function summarizeTimeRange(values: string[]) {
   if (values.length === 0) {
-    return { label: "No data" };
+    return { label: "暂无数据" };
   }
   const start = new Date(values[0]);
   const end = new Date(values[values.length - 1]);
@@ -331,7 +331,7 @@ export function annotationTone(item: ChartAnnotation) {
   if (item.type.includes("exit-sl")) {
     return "sl";
   }
-  return "neutral";
+  return "中性";
 }
 
 export function paperAccountsFromSummaries(items: AccountSummary[]) {
@@ -357,7 +357,7 @@ export function strategyLabel(strategy: Partial<StrategyRecord> | null | undefin
   if (id) {
     return id;
   }
-  return "Unnamed strategy";
+  return "未命名策略";
 }
 
 export function getNumber(value: unknown) {
@@ -466,21 +466,21 @@ export function deriveRuntimeReadiness(
 ): RuntimeReadiness {
   const health = String(runtimeState.health ?? "").trim().toLowerCase();
   if (!runtimeState || Object.keys(runtimeState).length === 0) {
-    return { ready: false, status: "blocked", reason: "no-runtime" };
+    return { ready: false, status: "blocked", reason: "环境未就绪" };
   }
   if (health !== "" && health !== "healthy") {
-    return { ready: false, status: "blocked", reason: `runtime-${health}` };
+    return { ready: false, status: "blocked", reason: `运行时-${health}` };
   }
   if (requirements.requireTick && sourceSummary.tradeTickCount <= 0) {
-    return { ready: false, status: "blocked", reason: "missing-trade-tick" };
+    return { ready: false, status: "blocked", reason: "缺失成交数据" };
   }
   if (requirements.requireOrderBook && sourceSummary.orderBookCount <= 0) {
-    return { ready: false, status: "blocked", reason: "missing-order-book" };
+    return { ready: false, status: "blocked", reason: "缺失盘口数据" };
   }
   if (sourceSummary.staleCount > 0) {
-    return { ready: false, status: "warning", reason: "stale-source-states" };
+    return { ready: false, status: "warning", reason: "数据源陈旧" };
   }
-  return { ready: true, status: "ready", reason: "runtime-healthy" };
+  return { ready: true, status: "ready", reason: "健康" };
 }
 
 export function deriveSignalBarCandles(sourceStates: Record<string, unknown>): SignalBarCandle[] {
@@ -634,7 +634,7 @@ export function deriveSignalActionSummary(signalBarState: Record<string, unknown
   const prevLow1 = getNumber(prevBar1.low);
   const prevLow2 = getNumber(prevBar2.low);
   if (close == null || prevHigh1 == null || prevHigh2 == null || prevLow1 == null || prevLow2 == null) {
-    return { bias: "neutral", state: "waiting", reason: "insufficient-signal-bars" };
+    return { bias: "中性", state: "等待中", reason: "信号 K 线不足" };
   }
   const longBreakoutShape = prevHigh2 > prevHigh1;
   const shortBreakoutShape = prevLow2 < prevLow1;
@@ -650,38 +650,38 @@ export function deriveSignalActionSummary(signalBarState: Record<string, unknown
     const shortEarly = close <= sma5 + earlyBand && shortBreakoutShape && prevHigh1 <= prevHigh2;
     longReady = longHard || longEarly;
     shortReady = shortHard || shortEarly;
-    longReason = longHard ? "close>sma5" : longEarly ? "early reversal gate" : "1d long filter blocked";
-    shortReason = shortHard ? "close<sma5" : shortEarly ? "early reversal gate" : "1d short filter blocked";
+    longReason = longHard ? "收盘>sma5" : longEarly ? "早期反转触发" : "1d 做多过滤阻断";
+    shortReason = shortHard ? "收盘<sma5" : shortEarly ? "早期反转触发" : "1d 做空过滤阻断";
   } else if (ma20 != null) {
     longReady = close > ma20 && longBreakoutShape;
     shortReady = close < ma20 && shortBreakoutShape;
-    longReason = longReady ? "close>ma20 and high2>high1" : "trend/structure not ready";
-    shortReason = shortReady ? "close<ma20 and low2<low1" : "trend/structure not ready";
+    longReason = longReady ? "收盘>ma20且高点突破" : "趋势/形态未就绪";
+    shortReason = shortReady ? "收盘<ma20且低点突破" : "趋势/形态未就绪";
   } else {
-    return { bias: "neutral", state: "waiting", reason: "insufficient-signal-bars" };
+    return { bias: "中性", state: "等待中", reason: "信号 K 线不足" };
   }
   if (longReady && !shortReady) {
-    return { bias: "long", state: "ready", reason: longReason };
+    return { bias: "看多", state: "就绪", reason: longReason };
   }
   if (shortReady && !longReady) {
-    return { bias: "short", state: "ready", reason: shortReason };
+    return { bias: "看空", state: "就绪", reason: shortReason };
   }
   if (timeframe === "1d" && sma5 != null) {
     if (close > sma5) {
-      return { bias: "long", state: "watch", reason: "above sma5, breakout not ready" };
+      return { bias: "看多", state: "观察中", reason: "位于 sma5 上方，突破未就绪" };
     }
     if (close < sma5) {
-      return { bias: "short", state: "watch", reason: "below sma5, breakout not ready" };
+      return { bias: "看空", state: "观察中", reason: "位于 sma5 下方，突破未就绪" };
     }
-    return { bias: "neutral", state: "watch", reason: "close around sma5" };
+    return { bias: "中性", state: "观察中", reason: "收盘于 sma5 附近" };
   }
   if (ma20 != null && close > ma20) {
-    return { bias: "long", state: "watch", reason: "trend ok, structure not ready" };
+    return { bias: "看多", state: "观察中", reason: "趋势看多，形态未就绪" };
   }
   if (ma20 != null && close < ma20) {
-    return { bias: "short", state: "watch", reason: "trend ok, structure not ready" };
+    return { bias: "看空", state: "观察中", reason: "趋势看空，形态未就绪" };
   }
-  return { bias: "neutral", state: "watch", reason: "close around filter" };
+  return { bias: "中性", state: "观察中", reason: "收盘于均线附近" };
 }
 
 export function deriveLivePreflightSummary(
@@ -694,63 +694,63 @@ export function deriveLivePreflightSummary(
   if (account.status !== "CONFIGURED" && account.status !== "READY") {
     return {
       status: "blocked",
-      reason: "account-not-configured",
-      detail: `account status is ${account.status}`,
+      reason: "账户未配置",
+      detail: `账户状态为 ${account.status}`,
     };
   }
   if (bindings.length === 0) {
     return {
       status: "blocked",
-      reason: "no-signal-bindings",
-      detail: "bind required signal sources before live submission",
+      reason: "缺失信号绑定",
+      detail: "在提交实盘前请先绑定所需的信号源",
     };
   }
   if (runtimeSessionsForAccount.length === 0) {
     return {
       status: "blocked",
-      reason: "no-runtime-session",
-      detail: "create and start a signal runtime session first",
+      reason: "无运行时会话",
+      detail: "请先创建并启动信号运行时会话",
     };
   }
   if (runtimeSessionsForAccount.length > 1) {
     return {
       status: "watch",
-      reason: "strategy-version-required",
-      detail: "multiple runtime sessions linked; live orders should specify strategyVersionId",
+      reason: "需指定策略版本",
+      detail: "检测到多个关联会话；实盘订单应明确指定 strategyVersionId",
     };
   }
   if (!activeRuntime) {
     return {
       status: "blocked",
-      reason: "no-active-runtime",
-      detail: "no runtime session available for this live account",
+      reason: "无活跃运行时",
+      detail: "当前实盘账户暂无可用运行时会话",
     };
   }
   if (activeRuntime.status !== "RUNNING") {
     return {
       status: "blocked",
-      reason: "runtime-not-running",
-      detail: `runtime status is ${activeRuntime.status}`,
+      reason: "运行时未启动",
+      detail: `运行时状态为 ${activeRuntime.status}`,
     };
   }
   if (readiness.status === "blocked") {
     return {
       status: "blocked",
       reason: readiness.reason,
-      detail: "runtime preflight would reject live submission",
+      detail: "运行时预检将拒绝实盘提交",
     };
   }
   if (readiness.status === "warning") {
     return {
       status: "watch",
       reason: readiness.reason,
-      detail: "runtime is degraded; live submission may be blocked soon",
+      detail: "运行时性能下降；实盘指令可能很快会被阻断",
     };
   }
   return {
     status: "ready",
-    reason: "runtime-ready",
-    detail: "live runtime preflight is satisfied",
+    reason: "运行时已就绪",
+    detail: "实盘运行环境预检通过",
   };
 }
 
@@ -777,16 +777,16 @@ export function deriveLiveDispatchPreview(
   if (!session) {
     return {
       status: "blocked",
-      reason: "no-session",
-      detail: "create a live session first",
+      reason: "会话缺失",
+      detail: "请先创建一个实盘会话",
       payload,
     };
   }
   if (!account) {
     return {
       status: "blocked",
-      reason: "no-live-account",
-      detail: "linked live account is missing",
+      reason: "账户缺失",
+      detail: "关联的实盘账户不存在",
       payload,
     };
   }
@@ -802,8 +802,8 @@ export function deriveLiveDispatchPreview(
   if (!intent.action) {
     return {
       status: "watch",
-      reason: "no-intent",
-      detail: "waiting for a ready live intent from strategy evaluation",
+      reason: "无信号意图",
+      detail: "正在等待策略计算产生实盘信号意图",
       payload,
     };
   }
@@ -811,21 +811,21 @@ export function deriveLiveDispatchPreview(
   if (dispatchMode === "auto-dispatch") {
     return {
       status: preflight.status === "watch" ? "watch" : "ready",
-      reason: preflight.status === "watch" ? "preflight-warning" : "auto-dispatch-armed",
+      reason: preflight.status === "watch" ? "预检警告" : "自动分发已就绪",
       detail:
         preflight.status === "watch"
-          ? `auto-dispatch is armed, but runtime still has a warning: ${preflight.reason}`
-          : "auto-dispatch is armed and the next ready intent can submit automatically",
+          ? `自动分发已开启，但运行时仍有警告: ${preflight.reason}`
+          : "自动分发已开启，下一个就绪信号将自动提交",
       payload,
     };
   }
   return {
     status: preflight.status === "watch" ? "watch" : "ready",
-    reason: preflight.status === "watch" ? "preflight-warning" : "dispatch-ready",
+    reason: preflight.status === "watch" ? "预检警告" : "分发就绪",
     detail:
       preflight.status === "watch"
-        ? `dispatch is possible, but runtime still has a warning: ${preflight.reason}`
-        : "intent, runtime, and live preflight are aligned",
+        ? `允许分发，但运行时仍有警告: ${preflight.reason}`
+        : "信号意图、运行时和实盘预检均满足条件",
     payload,
   };
 }
@@ -942,44 +942,44 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
   if (recoveryError) {
     return {
       status: "error",
-      detail: `recovery error: ${recoveryError}`,
+      detail: `恢复失败: ${recoveryError}`,
     };
   }
   const protectionRecoveryStatus = String(session.state?.protectionRecoveryStatus ?? "").trim();
   if (protectionRecoveryStatus === "unprotected-open-position") {
     return {
       status: "error",
-      detail: "recovered open position has no stop-loss or take-profit protection",
+      detail: "恢复的持仓缺失止损或止盈保护",
     };
   }
   const syncError = String(session.state?.lastSyncError ?? "").trim();
   if (syncError) {
     return {
       status: "error",
-      detail: `sync error: ${syncError}`,
+      detail: `同步失败: ${syncError}`,
     };
   }
   if (summary.latestOrder && !["FILLED", "CANCELLED", "REJECTED"].includes(String(summary.latestOrder.status ?? "").toUpperCase())) {
     return {
       status: "waiting-sync",
-      detail: `latest order ${summary.latestOrder.status} is still waiting for terminal sync`,
+      detail: `订单 ${summary.latestOrder.status} 正在等待终端同步`,
     };
   }
   if (summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0) {
     return {
       status: "active",
-      detail: `open ${summary.position.side ?? "position"} ${formatMaybeNumber(summary.position.quantity)} @ ${formatMaybeNumber(summary.position.entryPrice)}`,
+      detail: `持有 ${summary.position.side ?? "仓位"} ${formatMaybeNumber(summary.position.quantity)} @ ${formatMaybeNumber(summary.position.entryPrice)}`,
     };
   }
   if (String(session.state?.lastStrategyEvaluationStatus ?? "") === "intent-ready") {
     return {
       status: "ready",
-      detail: "intent is ready and session can dispatch",
+      detail: "策略意图已就绪，可执行分发",
     };
   }
   return {
     status: "idle",
-    detail: "waiting for the next valid strategy intent",
+    detail: "正在等待下一个有效的策略意图",
   };
 }
 
@@ -1017,19 +1017,19 @@ export function deriveLiveSessionFlow(session: LiveSession, summary: LiveSession
   return [
     {
       key: "runtime",
-      label: "runtime",
+      label: "运行环境",
       status: runtimeStatus === "RUNNING" ? "ready" : runtimeStatus === "" ? "neutral" : "blocked",
-      detail: runtimeStatus || "not-linked",
+      detail: runtimeStatus === "RUNNING" ? "运行中" : runtimeStatus || "未关联",
     },
     {
       key: "intent",
-      label: "intent",
+      label: "信号意图",
       status: hasIntent ? "ready" : "watch",
-      detail: hasIntent ? String(getRecord(session.state?.lastStrategyIntent).signalKind ?? "ready") : "waiting",
+      detail: hasIntent ? String(getRecord(session.state?.lastStrategyIntent).signalKind ?? "就绪") : "等待中",
     },
     {
       key: "dispatch",
-      label: "dispatch",
+      label: "订单分发",
       status:
         summary.latestOrder == null
           ? "watch"
@@ -1038,19 +1038,19 @@ export function deriveLiveSessionFlow(session: LiveSession, summary: LiveSession
             : ["FILLED"].includes(lastOrderStatus)
               ? "ready"
               : "blocked",
-      detail: summary.latestOrder ? lastOrderStatus : "not-sent",
+      detail: summary.latestOrder ? lastOrderStatus : "未发送",
     },
     {
       key: "sync",
-      label: "sync",
+      label: "数据同步",
       status: syncError ? "blocked" : ["FILLED", "CANCELLED", "REJECTED"].includes(lastOrderStatus) ? "ready" : summary.latestOrder ? "watch" : "neutral",
-      detail: syncError || String(session.state?.lastSyncedOrderStatus ?? (summary.latestOrder ? "pending" : "--")),
+      detail: syncError ? "同步错误" : String(session.state?.lastSyncedOrderStatus ?? (summary.latestOrder ? "待同步" : "--")),
     },
     {
       key: "position",
-      label: "position",
+      label: "当前持仓",
       status: hasPosition ? "ready" : "neutral",
-      detail: hasPosition ? `${String(summary.position?.side ?? "OPEN")} ${formatMaybeNumber(summary.position?.quantity)}` : "flat",
+      detail: hasPosition ? `${String(summary.position?.side ?? "OPEN")} ${formatMaybeNumber(summary.position?.quantity)}` : "空仓",
     },
   ];
 }
@@ -1074,66 +1074,66 @@ export function liveSessionHealthPriority(status: string) {
 
 export function deriveLiveNextAction(preflight: LivePreflightSummary): LiveNextAction {
   switch (preflight.reason) {
-    case "account-not-configured":
+    case "账户未配置":
       return {
         key: "bind-live-adapter",
-        label: "bind live adapter",
-        detail: "finish account binding and credentials first",
+        label: "绑定实盘适配器",
+        detail: "请先完成账户绑定与凭证导入",
       };
-    case "no-signal-bindings":
+    case "缺失信号绑定":
       return {
         key: "bind-signals",
-        label: "bind signals",
-        detail: "attach required signal, trigger, and feature sources",
+        label: "绑定信号源",
+        detail: "请挂载所需的信号、触发器及特征源",
       };
-    case "no-runtime-session":
+    case "无运行时会话":
       return {
         key: "create-runtime",
-        label: "create runtime",
-        detail: "create a signal runtime session for this account and strategy",
+        label: "创建运行时",
+        detail: "为此账户和策略创建一个信号运行时会话",
       };
-    case "runtime-not-running":
-    case "no-active-runtime":
+    case "运行时未启动":
+    case "无活跃运行时":
       return {
         key: "start-runtime",
-        label: "start runtime",
-        detail: "start the linked signal runtime session and wait for healthy data flow",
+        label: "启动运行时",
+        detail: "启动关联的信号运行时并等待健康数据流",
       };
-    case "missing-trade-tick":
+    case "缺失成交数据":
       return {
         key: "inspect-runtime",
-        label: "restore tick feed",
-        detail: "ensure trade tick binding is active and source states are flowing",
+        label: "恢复成交数据流",
+        detail: "确保成交数据源绑定活跃且数据正在流入",
       };
-    case "missing-order-book":
+    case "缺失盘口数据":
       return {
         key: "inspect-runtime",
-        label: "restore order book",
-        detail: "ensure order book feature binding is active and fresh",
+        label: "恢复盘口数据流",
+        detail: "确保盘口特征源绑定活跃且数据新鲜",
       };
-    case "stale-source-states":
+    case "数据源陈旧":
       return {
         key: "inspect-runtime",
-        label: "wait for fresh data",
-        detail: "let the runtime refresh source states before submitting live orders",
+        label: "等待数据更新",
+        detail: "提交实盘订单前需等待运行时刷新陈旧的数据源状态",
       };
-    case "strategy-version-required":
+    case "需指定策略版本":
       return {
         key: "pass-strategy-version",
-        label: "pass strategyVersionId",
-        detail: "multiple runtimes are linked, so live submission must choose one strategy version",
+        label: "指定策略版本 ID",
+        detail: "存在多个关联运行时，实盘提交必须明确选择策略版本",
       };
-    case "runtime-ready":
+    case "运行时已就绪":
       return {
         key: "submit-live-order",
-        label: "submit live order",
-        detail: "runtime preflight is satisfied",
+        label: "提交实盘订单",
+        detail: "实盘运行时预检通过",
       };
     default:
       return {
         key: "inspect-runtime",
-        label: "inspect runtime",
-        detail: "open the linked runtime session and review readiness details",
+        label: "检查运行时",
+        detail: "打开关联的运行时会话查看详细的就绪状态",
       };
   }
 }
@@ -1153,12 +1153,12 @@ export function liveSessionHealthTone(status: string): "ready" | "watch" | "bloc
 }
 
 export function buildSignalActionNotes(signalAction: { bias: string; state: string; reason: string }) {
-  return [`signal-action: ${signalAction.bias} · ${signalAction.state} · ${signalAction.reason}`];
+  return [`信号活动: ${signalAction.bias} · ${signalAction.state} · ${signalAction.reason}`];
 }
 
 export function buildTimelineNotes(items: Array<Record<string, unknown>>) {
   if (items.length === 0) {
-    return ["timeline: --"];
+    return ["时间线: --"];
   }
   return items
     .slice(-5)
@@ -1234,27 +1234,27 @@ export function derivePaperAlerts(
   const signalReason = String(signalBarDecision.reason ?? "").trim().toLowerCase();
 
   if (readiness.status === "blocked") {
-    alerts.push({ level: "critical", title: "Runtime blocked", detail: readiness.reason });
+    alerts.push({ level: "critical", title: "环境阻断", detail: readiness.reason });
   } else if (readiness.status === "warning") {
-    alerts.push({ level: "warning", title: "Runtime warning", detail: readiness.reason });
+    alerts.push({ level: "warning", title: "环境警告", detail: readiness.reason });
   }
   if (sourceSummary.staleCount > 0) {
-    alerts.push({ level: "warning", title: "Stale sources", detail: `${sourceSummary.staleCount} source state(s) outdated` });
+    alerts.push({ level: "warning", title: "源数据陈旧", detail: `${sourceSummary.staleCount} 个数据源状态过期` });
   }
   if (evaluationStatus === "decision-error") {
-    alerts.push({ level: "critical", title: "Decision error", detail: "latest strategy evaluation returned an error" });
+    alerts.push({ level: "critical", title: "决策错误", detail: "最新的策略评估返回错误" });
   }
   if (decisionState === "waiting-signal-bars") {
-    alerts.push({ level: "warning", title: "Signal bars missing", detail: "runtime has not collected enough higher-timeframe bars yet" });
+    alerts.push({ level: "warning", title: "缺失 K 线", detail: "运行时尚未采集到足够的周期 K 线" });
   }
   if (signalReason === "insufficient-signal-bars") {
-    alerts.push({ level: "warning", title: "Signal filter blocked", detail: "insufficient closed signal bars for MA20 / t-1 / t-2" });
+    alerts.push({ level: "warning", title: "信号过滤阻断", detail: "MA20 / t-1 / t-2 所需的已收盘 K 线不足" });
   }
   if (Number.isFinite(lastEventAt) && Date.now()-lastEventAt > runtimeQuietMs) {
     alerts.push({
       level: "warning",
-      title: "Runtime quiet",
-      detail: `no runtime events observed in the last ${policy?.runtimeQuietSeconds ?? 30}s`,
+      title: "运行时无响应",
+      detail: `过去 ${policy?.runtimeQuietSeconds ?? 30} 秒内未监测到任何运行时事件`,
     });
   }
   return dedupeAlerts(alerts);
@@ -1274,27 +1274,27 @@ export function deriveLiveAlerts(
   const runtimeQuietMs = (policy?.runtimeQuietSeconds ?? 30) * 1000;
 
   if (account.status !== "CONFIGURED") {
-    alerts.push({ level: "warning", title: "Account not configured", detail: `status=${account.status}` });
+    alerts.push({ level: "warning", title: "账户未配置", detail: `status=${account.status}` });
   }
   if (readiness.status === "blocked") {
-    alerts.push({ level: "critical", title: "Runtime blocked", detail: readiness.reason });
+    alerts.push({ level: "critical", title: "环境阻断", detail: readiness.reason });
   } else if (readiness.status === "warning") {
-    alerts.push({ level: "warning", title: "Runtime warning", detail: readiness.reason });
+    alerts.push({ level: "warning", title: "环境警告", detail: readiness.reason });
   }
   if (health !== "" && health !== "healthy") {
-    alerts.push({ level: "critical", title: "Runtime health", detail: `health=${health}` });
+    alerts.push({ level: "critical", title: "环境健康异常", detail: `health=${health}` });
   }
   if (sourceSummary.staleCount > 0) {
-    alerts.push({ level: "warning", title: "Stale sources", detail: `${sourceSummary.staleCount} source state(s) outdated` });
+    alerts.push({ level: "warning", title: "源数据陈odd", detail: `${sourceSummary.staleCount} 个数据源状态过期` });
   }
   if (signalAction.state === "waiting") {
-    alerts.push({ level: "info", title: "Signal waiting", detail: signalAction.reason });
+    alerts.push({ level: "info", title: "信号等待中", detail: signalAction.reason });
   }
   if (Number.isFinite(lastEventAt) && Date.now()-lastEventAt > runtimeQuietMs) {
     alerts.push({
       level: "warning",
-      title: "Runtime quiet",
-      detail: `no runtime events observed in the last ${policy?.runtimeQuietSeconds ?? 30}s`,
+      title: "运行时无响应",
+      detail: `过去 ${policy?.runtimeQuietSeconds ?? 30} 秒内未监测到任何运行时事件`,
     });
   }
   return dedupeAlerts(alerts);
@@ -1422,11 +1422,49 @@ export function boolTone(value: unknown): "ready" | "watch" | "blocked" | "neutr
 
 export function boolLabel(value: unknown) {
   if (value === true) {
-    return "ready";
+    return "就绪";
   }
   if (value === false) {
-    return "blocked";
+    return "阻断";
   }
   return "--";
+}
+
+export function technicalStatusLabel(value: unknown): string {
+  const s = String(value ?? "").trim().toLowerCase();
+  switch (s) {
+    case "healthy":
+      return "健康";
+    case "degraded":
+      return "降级";
+    case "running":
+      return "运行中";
+    case "stopped":
+      return "已停止";
+    case "neutral":
+      return "中性";
+    case "buying":
+    case "long":
+      return "看多";
+    case "selling":
+    case "short":
+      return "看空";
+    case "waiting":
+      return "等待中";
+    case "watch":
+      return "观察中";
+    case "ready":
+      return "就绪";
+    case "blocked":
+      return "阻断";
+    case "configured":
+      return "已配置";
+    case "active":
+      return "活跃";
+    case "error":
+      return "错误";
+    default:
+      return String(value ?? "--");
+  }
 }
 

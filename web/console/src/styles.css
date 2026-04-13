@@ -1,5 +1,31 @@
 @import "tailwindcss";
 
+/* Global Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
 :root {
   color-scheme: light;
   --bg: #f3f0e7;
@@ -336,17 +362,20 @@ a {
 
 .metric-card {
   padding: 4px 12px;
-  border-radius: 10px;
+  border-radius: 999px;
   min-width: 80px;
   display: flex;
   flex-direction: row;
   align-items: baseline;
   gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
 }
 
 .metric-card p {
   margin: 0;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.5);
   font-size: 0.72rem;
   font-family: inherit;
   white-space: nowrap;
@@ -357,6 +386,9 @@ a {
   font-size: 0.88rem;
   line-height: 1.1;
   font-family: inherit;
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .metric-card-accent {
@@ -951,33 +983,48 @@ a {
 .detail-grid {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(110px, 100%), 1fr));
   gap: 10px;
 }
 
 .detail-grid-compact {
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(90px, 100%), 1fr));
+  gap: 8px;
 }
 
 .detail-item {
-  padding: 10px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(216, 207, 186, 0.78);
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(216, 207, 186, 0.5);
+  transition: all 180ms ease;
+  min-width: 0; /* Prevents long text from pushing out of grid */
+}
+
+.detail-item:hover {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(14, 109, 96, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 .detail-item span {
   display: block;
   color: var(--muted);
-  font-size: 0.72rem;
-  margin-bottom: 4px;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
 }
 
 .detail-item strong {
   display: block;
-  font-size: 0.9rem;
+  font-size: 0.94rem;
   line-height: 1.25;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sample-card {
