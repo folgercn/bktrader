@@ -124,7 +124,7 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 	return p.store.UpdateStrategyParameters(strategyID, parameters)
 }
 
-func (p *Platform) UnbindStrategySignalSource(strategyID string, bindingID string) (map[string]any, error) {
+func (p *Platform) UnbindStrategySignalSource(strategyID string, bindingID string) (map[string]any, bool, error) {
 	strategy, err := p.GetStrategy(strategyID)
 	if err != nil {
 		return nil, err
@@ -148,11 +148,12 @@ func (p *Platform) UnbindStrategySignalSource(strategyID string, bindingID strin
 		bindings = append(bindings, cloneMetadata(item))
 	}
 	if !found {
-		return strategy, nil
+		return strategy, false, nil
 	}
 	parameters["signalBindings"] = bindings
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
-	return p.store.UpdateStrategyParameters(strategyID, parameters)
+	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
+	return updated, true, err
 }
 
 

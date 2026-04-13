@@ -771,6 +771,10 @@ function App() {
     if (!window.confirm("确定要彻底删除该信号运行时会话吗？(将停止运行中的流)")) return;
     try {
       await fetchJSON(`/api/v1/signal-runtime/sessions/${sessionId}`, { method: "DELETE" });
+      if (sessionId === selectedSignalRuntimeId) {
+        setSelectedSignalRuntimeId(null);
+        setSignalRuntimePlan(null);
+      }
       await loadDashboard();
       setError(null);
     } catch (err) {

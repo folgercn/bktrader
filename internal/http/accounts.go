@@ -162,9 +162,13 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 				writeError(w, http.StatusBadRequest, "binding id is required via ?id=")
 				return
 			}
-			item, err := platform.UnbindAccountSignalSource(accountID, bindingID)
+			item, found, err := platform.UnbindAccountSignalSource(accountID, bindingID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if !found {
+				writeError(w, http.StatusNotFound, "binding not found")
 				return
 			}
 			writeJSON(w, http.StatusOK, item)
