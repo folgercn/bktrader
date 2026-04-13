@@ -95,11 +95,6 @@ func (p *Platform) runStrategyReplay(context StrategyExecutionContext) (map[stri
 	}
 
 	engine := newStrategyReplayEngine(cfg)
-	switch cfg.ExecutionDataSource {
-	default:
-		return nil, fmt.Errorf("unsupported execution data source: %s", cfg.ExecutionDataSource)
-	}
-
 	return engine.summary(signals), nil
 }
 

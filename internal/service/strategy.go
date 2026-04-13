@@ -127,11 +127,11 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 func (p *Platform) UnbindStrategySignalSource(strategyID string, bindingID string) (map[string]any, bool, error) {
 	strategy, err := p.GetStrategy(strategyID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	currentVersion, ok := strategy["currentVersion"].(domain.StrategyVersion)
 	if !ok {
-		return nil, fmt.Errorf("strategy %s has no current version", strategyID)
+		return nil, false, fmt.Errorf("strategy %s has no current version", strategyID)
 	}
 	parameters := cloneMetadata(currentVersion.Parameters)
 	if parameters == nil {

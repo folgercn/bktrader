@@ -327,7 +327,7 @@ func (p *Platform) BindAccountSignalSource(accountID string, payload map[string]
 func (p *Platform) UnbindAccountSignalSource(accountID string, bindingID string) (domain.Account, bool, error) {
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {
-		return domain.Account{}, err
+		return domain.Account{}, false, err
 	}
 	existing := resolveSignalBindings(account)
 	bindings := make([]map[string]any, 0, len(existing))
