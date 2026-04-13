@@ -434,6 +434,7 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	if normalized == nil {
 		normalized = map[string]any{}
 	}
+	applyBacktestParameterAliases(normalized)
 
 	signalTimeframe := strings.ToLower(strings.TrimSpace(stringValue(normalized["signalTimeframe"])))
 	if signalTimeframe == "" {
@@ -481,6 +482,26 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["executionDataSource"] = executionDataSource
 	normalized["symbol"] = symbol
 	normalized["strategyEngine"] = normalizeStrategyEngineKey(stringValue(normalized["strategyEngine"]))
+	normalized["max_trades_per_bar"] = maxIntValue(normalized["max_trades_per_bar"], 3)
+	normalized["reentry_size_schedule"] = normalizeBacktestFloatSlice(normalized["reentry_size_schedule"], []float64{0.20, 0.10})
+	stopLossATR := parseFloatValue(normalized["stop_loss_atr"])
+	if stopLossATR <= 0 {
+		stopLossATR = 0.05
+	}
+	normalized["stop_loss_atr"] = stopLossATR
+	profitProtectATR := parseFloatValue(normalized["profit_protect_atr"])
+	if profitProtectATR <= 0 {
+		profitProtectATR = 1.0
+	}
+	normalized["profit_protect_atr"] = profitProtectATR
+	normalized["long_reentry_atr"] = parseFloatValue(firstNonNil(normalized["long_reentry_atr"], 0.1))
+	normalized["short_reentry_atr"] = parseFloatValue(firstNonNil(normalized["short_reentry_atr"], 0.0))
+	if trailingStopATR := parseFloatValue(normalized["trailing_stop_atr"]); trailingStopATR > 0 {
+		normalized["trailing_stop_atr"] = trailingStopATR
+	}
+	if delayedTrailingActivationATR := parseFloatValue(normalized["delayed_trailing_activation_atr"]); delayedTrailingActivationATR > 0 {
+		normalized["delayed_trailing_activation_atr"] = delayedTrailingActivationATR
+	}
 	if feeBps := parseFloatValue(normalized["tradingFeeBps"]); feeBps >= 0 {
 		normalized["tradingFeeBps"] = feeBps
 	} else {
@@ -497,6 +518,72 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["executionTimeframe"] = executionDataSource
 	normalized["backtestMode"] = fmt.Sprintf("%s->%s", signalTimeframe, executionDataSource)
 	return normalized, nil
+}
+
+func applyBacktestParameterAliases(parameters map[string]any) {
+	if parameters == nil {
+		return
+	}
+	aliases := map[string]string{
+		"signal_timeframe":             "signalTimeframe",
+		"execution_data_source":        "executionDataSource",
+		"strategy_engine":              "strategyEngine",
+		"maxTradesPerBar":              "max_trades_per_bar",
+		"reentrySizes":                 "reentry_size_schedule",
+		"stopLossATR":                  "stop_loss_atr",
+		"profitProtectATR":             "profit_protect_atr",
+		"fixedSlippage":                "fixed_slippage",
+		"trailingStopATR":              "trailing_stop_atr",
+		"delayedTrailingActivationATR": "delayed_trailing_activation_atr",
+		"longReentryATR":               "long_reentry_atr",
+		"shortReentryATR":              "short_reentry_atr",
+	}
+	for from, to := range aliases {
+		if _, ok := parameters[to]; ok {
+			continue
+		}
+		if value, ok := parameters[from]; ok {
+			parameters[to] = value
+		}
+	}
+}
+
+func normalizeBacktestFloatSlice(value any, fallback []float64) []float64 {
+	items := []float64{}
+	switch raw := value.(type) {
+	case []float64:
+		items = append(items, raw...)
+	case []any:
+		for _, item := range raw {
+			items = append(items, parseFloatValue(item))
+		}
+	case []string:
+		for _, item := range raw {
+			items = append(items, parseFloatValue(item))
+		}
+	case nil:
+	default:
+		if single := parseFloatValue(raw); single > 0 {
+			items = append(items, single)
+		}
+	}
+	clean := make([]float64, 0, len(items))
+	for _, item := range items {
+		if item > 0 {
+			clean = append(clean, item)
+		}
+	}
+	if len(clean) == 0 {
+		return append([]float64(nil), fallback...)
+	}
+	return clean
+}
+
+func firstNonNil(value any, fallback any) any {
+	if value == nil {
+		return fallback
+	}
+	return value
 }
 
 func extractDatasetSymbols(datasets []executionDatasetDescriptor) []string {
