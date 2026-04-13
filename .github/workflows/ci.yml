@@ -8,6 +8,19 @@ on:
     branches: [main]
 
 jobs:
+  risk-checks:
+    name: High Risk Defenses
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Check high risk defaults
+        run: bash scripts/check_high_risk_defaults.sh
+        
+      - name: Check env safety
+        run: bash scripts/check_env_safety.sh
+
   backend:
     name: Backend (Go)
     runs-on: ubuntu-latest

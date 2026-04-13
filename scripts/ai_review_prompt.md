@@ -9,6 +9,7 @@ Project-specific risk model:
 - GitHub Actions, Docker, deploy scripts, secrets, GHCR auth, SSH/rsync deploy, macOS self-hosted runner behavior, and production env handling must remain non-interactive and non-leaky.
 - Frontend changes must preserve the API contract, auth behavior, live-session safety affordances, and user intent before sending execution/dispatch actions.
 - Python data/research/check scripts should avoid loading very large tick archives into memory unless intentionally bounded.
+- CRITICAL REQUIREMENT: If the modified code touches `internal/service/live*.go`, `db/migrations/*`, `deployments/*`, or `.github/workflows/*`, you must increase strictness. Any suspect change here should immediately trigger a "critical" or "warning" severity notice.
 
 Comment policy:
 - Report only concrete defects, security issues, production/deploy breakages, data corruption risks, trading/资金 risks, or test gaps that can hide those problems.
