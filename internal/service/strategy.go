@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -10,6 +11,17 @@ import (
 )
 
 // --- 策略管理服务方法 ---
+
+func strategyLogger(component string, args ...any) *slog.Logger {
+	logger := slog.Default()
+	if strings.TrimSpace(component) != "" {
+		logger = logger.With("component", component)
+	}
+	if len(args) > 0 {
+		logger = logger.With(args...)
+	}
+	return logger
+}
 
 // ListStrategies 获取所有策略列表。
 func (p *Platform) ListStrategies() ([]map[string]any, error) {
@@ -24,10 +36,10 @@ func (p *Platform) CreateStrategy(name, description string, parameters map[strin
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
 	strategy, err := p.store.CreateStrategy(name, description, parameters)
 	if err != nil {
-		p.logger("service.strategy", "strategy_name", name).Error("create strategy failed", "error", err)
+		strategyLogger("service.strategy", "strategy_name", name).Error("create strategy failed", "error", err)
 		return nil, err
 	}
-	p.logger("service.strategy",
+	strategyLogger("service.strategy",
 		"strategy_id", stringValue(strategy["id"]),
 		"strategy_name", name,
 		"strategy_engine", stringValue(parameters["strategyEngine"]),
@@ -42,10 +54,10 @@ func (p *Platform) UpdateStrategyParameters(strategyID string, parameters map[st
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
 	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
 	if err != nil {
-		p.logger("service.strategy", "strategy_id", strategyID).Error("update strategy parameters failed", "error", err)
+		strategyLogger("service.strategy", "strategy_id", strategyID).Error("update strategy parameters failed", "error", err)
 		return nil, err
 	}
-	p.logger("service.strategy",
+	strategyLogger("service.strategy",
 		"strategy_id", strategyID,
 		"strategy_engine", stringValue(parameters["strategyEngine"]),
 	).Info("strategy parameters updated")
@@ -142,10 +154,10 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
 	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
 	if err != nil {
-		p.logger("service.strategy", "strategy_id", strategyID).Error("bind strategy signal source failed", "error", err)
+		strategyLogger("service.strategy", "strategy_id", strategyID).Error("bind strategy signal source failed", "error", err)
 		return nil, err
 	}
-	p.logger("service.strategy",
+	strategyLogger("service.strategy",
 		"strategy_id", strategyID,
 		"source_key", source.Key,
 		"role", role,
@@ -199,10 +211,10 @@ func (p *Platform) GetAccount(accountID string) (domain.Account, error) {
 func (p *Platform) CreateAccount(name, mode, exchange string) (domain.Account, error) {
 	account, err := p.store.CreateAccount(name, strings.ToUpper(mode), exchange)
 	if err != nil {
-		p.logger("service.account", "account_name", name, "mode", strings.ToUpper(mode)).Error("create account failed", "error", err)
+		strategyLogger("service.account", "account_name", name, "mode", strings.ToUpper(mode)).Error("create account failed", "error", err)
 		return domain.Account{}, err
 	}
-	p.logger("service.account",
+	strategyLogger("service.account",
 		"account_id", account.ID,
 		"account_name", account.Name,
 		"mode", account.Mode,
@@ -380,13 +392,13 @@ func (p *Platform) GetBacktest(backtestID string) (domain.BacktestRun, error) {
 func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error) {
 	normalized, err := NormalizeBacktestParameters(parameters)
 	if err != nil {
-		p.logger("service.backtest", "strategy_version_id", strategyVersionID).Warn("normalize backtest parameters failed", "error", err)
+		strategyLogger("service.backtest", "strategy_version_id", strategyVersionID).Warn("normalize backtest parameters failed", "error", err)
 		return domain.BacktestRun{}, err
 	}
 	executionSource := stringValue(normalized["executionDataSource"])
 	symbol := stringValue(normalized["symbol"])
 	if !p.hasExecutionDataset(executionSource, symbol) {
-		p.logger("service.backtest",
+		strategyLogger("service.backtest",
 			"strategy_version_id", strategyVersionID,
 			"execution_data_source", executionSource,
 			"symbol", symbol,
@@ -395,16 +407,16 @@ func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[strin
 	}
 	backtest, err := p.store.CreateBacktest(strategyVersionID, normalized)
 	if err != nil {
-		p.logger("service.backtest", "strategy_version_id", strategyVersionID).Error("create backtest failed", "error", err)
+		strategyLogger("service.backtest", "strategy_version_id", strategyVersionID).Error("create backtest failed", "error", err)
 		return domain.BacktestRun{}, err
 	}
 	backtest = p.runBacktestSkeleton(backtest)
 	backtest, err = p.store.UpdateBacktest(backtest)
 	if err != nil {
-		p.logger("service.backtest", "backtest_id", backtest.ID).Error("persist backtest skeleton failed", "error", err)
+		strategyLogger("service.backtest", "backtest_id", backtest.ID).Error("persist backtest skeleton failed", "error", err)
 		return domain.BacktestRun{}, err
 	}
-	p.logger("service.backtest",
+	strategyLogger("service.backtest",
 		"backtest_id", backtest.ID,
 		"strategy_version_id", strategyVersionID,
 		"execution_data_source", executionSource,
