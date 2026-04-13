@@ -107,7 +107,6 @@ func registerStrategyRoutes(mux *http.ServeMux, platform *service.Platform) {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 			}
 
-
 		case "parameters":
 			if r.Method != http.MethodPost {
 				w.WriteHeader(http.StatusMethodNotAllowed)
