@@ -1,3 +1,4 @@
+import { User, LogOut, ChevronDown } from 'lucide-react';
 /// <reference types="vite/client" />
 import { SlideOver } from './components/SlideOver';
 import { WorkbenchLayout } from './layouts/WorkbenchLayout';
@@ -29,7 +30,7 @@ import { AlertsPanel } from './panels/AlertsPanel';
 import { PositionsPanel } from './panels/PositionsPanel';
 import { FillsPanel } from './panels/FillsPanel';
 import { StrategySidePanel } from './pages/StrategySidePanel';
-import { AccountSidePanel } from './pages/AccountSidePanel';
+
 import { MonitorStage } from './pages/MonitorStage';
 import { StrategyStage } from './pages/StrategyStage';
 import { AccountStage } from './pages/AccountStage';
@@ -88,6 +89,7 @@ function App() {
   const setNotificationAction = useUIStore(s => s.setNotificationAction);
   const telegramAction = useUIStore(s => s.telegramAction);
   const setTelegramAction = useUIStore(s => s.setTelegramAction);
+
   const backtestAction = useUIStore(s => s.backtestAction);
   const setBacktestAction = useUIStore(s => s.setBacktestAction);
   const runtimePolicyAction = useUIStore(s => s.runtimePolicyAction);
@@ -154,6 +156,18 @@ function App() {
   const setSettingsMenuOpen = useUIStore(s => s.setSettingsMenuOpen);
   const activeSettingsModal = useUIStore(s => s.activeSettingsModal);
   const setActiveSettingsModal = useUIStore(s => s.setActiveSettingsModal);
+
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (settingsMenuOpen && userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setSettingsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [settingsMenuOpen, setSettingsMenuOpen]);
 
   const summaries = useTradingStore(s => s.summaries);
   const setSummaries = useTradingStore(s => s.setSummaries);
@@ -410,16 +424,31 @@ function App() {
 
     let runtimePlanData = null;
     const selectedRuntimeId = useTradingStore.getState().selectedSignalRuntimeId;
+    const signalRuntimeForm = useUIStore.getState().signalRuntimeForm;
+
+    let planAccountId = "";
+    let planStrategyId = "";
+
     if (selectedRuntimeId) {
-      const session = signalRuntimeSessionData.find(s => s.id === selectedRuntimeId);
+      const session = signalRuntimeSessionData.find((s) => s.id === selectedRuntimeId);
       if (session) {
-        try {
-          runtimePlanData = await fetchJSON<Record<string, unknown>>(
-            `/api/v1/signal-runtime/plan?accountId=${encodeURIComponent(session.accountId)}&strategyId=${encodeURIComponent(session.strategyId)}`
-          );
-        } catch (e) {
-          console.warn("Failed to fetch runtime plan", e);
-        }
+        planAccountId = session.accountId;
+        planStrategyId = session.strategyId;
+      }
+    } else if (signalRuntimeForm.accountId && signalRuntimeForm.strategyId) {
+      planAccountId = signalRuntimeForm.accountId;
+      planStrategyId = signalRuntimeForm.strategyId;
+    }
+
+    if (planAccountId && planStrategyId) {
+      try {
+        runtimePlanData = await fetchJSON<Record<string, unknown>>(
+          `/api/v1/signal-runtime/plan?accountId=${encodeURIComponent(planAccountId)}&strategyId=${encodeURIComponent(
+            planStrategyId
+          )}`
+        );
+      } catch (e) {
+        console.warn("Failed to fetch runtime plan", e);
       }
     }
 
@@ -527,6 +556,8 @@ function App() {
     });
     setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
+    setAccountSignalBindings(accountBindingEntries.flatMap((e) => e[1]));
+    setStrategySignalBindings(strategyBindingEntries.flatMap((e) => e[1]));
     setSignalRuntimePlan(runtimePlanData);
     setSelectedSignalRuntimeId((current) => {
       if (current && normalizedSignalRuntimeSessions.some((item) => item.id === current)) {
@@ -1477,6 +1508,9 @@ function App() {
         <div className="flex space-x-2">
           <MetricCard label="账户" value={monitorMode} />
           <MetricCard label="策略" value={String(highlightedLiveSession?.session?.strategyId ?? "--")} />
+          <MetricCard label="实盘会话" value={String(validLiveSessions.length)} />
+          <MetricCard label="运行时会话" value={String(signalRuntimeSessions.length)} />
+          <MetricCard label="可用信号源" value={String(signalCatalog?.sources?.length ?? 0)} />
           <MetricCard label="实盘状态" value={highlightedLiveSession?.health.status ?? "--"} tone={highlightedLiveSession?.health.status === "ready" ? "accent" : undefined} />
         </div>
       }
@@ -1492,11 +1526,77 @@ function App() {
           </span>
         </div>
       }
+      headerActions={
+        authSession ? (
+          <div className="relative" ref={userMenuRef}>
+            <button
+              type="button"
+              className="flex items-center space-x-2 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-colors text-zinc-200"
+              onClick={() => setSettingsMenuOpen((current) => !current)}
+            >
+              <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold uppercase text-[10px]">
+                {authSession.username.slice(0, 2)}
+              </div>
+              <span className="text-sm font-medium">{authSession.username}</span>
+              <ChevronDown size={14} className={`text-zinc-500 transition-transform ${settingsMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {settingsMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-56 p-2 rounded-2xl border border-white/10 bg-zinc-950/80 backdrop-blur-2xl shadow-2xl z-50">
+                  <div className="px-3 py-2 border-b border-white/5 mb-2">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">身份与会话</p>
+                    <p className="text-xs text-zinc-200 font-medium truncate">{authSession.username}</p>
+                    <p className="text-[10px] text-zinc-500 mt-1 italic">
+                      {authSession.expiresAt ? `有效期至 ${formatTime(authSession.expiresAt)}` : "已登录"}
+                    </p>
+                  </div>
+                
+                <div className="space-y-1">
+                  <button
+                    className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 rounded-lg transition-colors"
+                    onClick={() => { openLiveAccountModal(); setSettingsMenuOpen(false); }}
+                  >
+                    新建账户
+                  </button>
+                  <button
+                    className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 rounded-lg transition-colors"
+                    onClick={() => { 
+                      if (quickLiveAccountId) selectQuickLiveAccount(quickLiveAccountId);
+                      openLiveBindingModal(); 
+                      setSettingsMenuOpen(false); 
+                    }}
+                  >
+                    绑定账户
+                  </button>
+                  <button
+                    className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 rounded-lg transition-colors"
+                    onClick={() => { setActiveSettingsModal("telegram"); setSettingsMenuOpen(false); }}
+                  >
+                    Telegram 通知
+                  </button>
+                </div>
+
+                <div className="mt-2 pt-2 border-t border-white/5">
+                  <button
+                    className="w-full flex items-center px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                    onClick={() => { logout(); setSettingsMenuOpen(false); }}
+                  >
+                    <LogOut size={14} className="mr-2" />
+                    退出登录
+                  </button>
+                </div>
+                </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-zinc-500 text-xs">需要登录</div>
+        )
+      }
       sidePanelContent={
         sidebarTab === 'strategy' ? (
           <StrategySidePanel createBacktestRun={createBacktestRun} />
         ) : sidebarTab === 'account' ? (
-          <AccountSidePanel />
+          null
         ) : null
       }
       dockContent={

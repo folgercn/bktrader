@@ -59,8 +59,8 @@ export function LiveSessionModal({
       <div className="modal-panel modal-panel-wide" onClick={(event) => event.stopPropagation()}>
         <div className="panel-header panel-header-tight">
           <div>
-            <p className="panel-kicker">Live Session</p>
-            <h3>创建 Live Session</h3>
+            <p className="panel-kicker">实盘会话</p>
+            <h3>配置实盘会话</h3>
           </div>
           <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
             关闭
@@ -77,7 +77,7 @@ export function LiveSessionModal({
           </div>
           <div className="form-grid">
             <label className="form-field">
-              <span>Live Account</span>
+              <span>实盘账户</span>
               <select
                 value={liveSessionForm.accountId}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, accountId: event.target.value }))}
@@ -90,7 +90,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>Strategy</span>
+              <span>绑定策略</span>
               <select
                 value={liveSessionForm.strategyId}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, strategyId: event.target.value }))}
@@ -103,7 +103,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>Signal TF</span>
+              <span>信号周期</span>
               <select
                 value={liveSessionForm.signalTimeframe}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
@@ -113,7 +113,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>Execution Source</span>
+              <span>执行数据源</span>
               <select
                 value={liveSessionForm.executionDataSource}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionDataSource: event.target.value }))}
@@ -123,21 +123,21 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>Symbol</span>
+              <span>交易对 (Symbol)</span>
               <input
                 value={liveSessionForm.symbol}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
               />
             </label>
             <label className="form-field">
-              <span>Default Qty</span>
+              <span>默认下单量</span>
               <input
                 value={liveSessionForm.defaultOrderQuantity}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
               />
             </label>
             <label className="form-field">
-              <span>Entry Order</span>
+              <span>进场订单类型</span>
               <select
                 value={liveSessionForm.executionEntryOrderType}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryOrderType: event.target.value }))}
@@ -147,14 +147,14 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>Entry Max Spread</span>
+              <span>进场最大价差 (bps)</span>
               <input
                 value={liveSessionForm.executionEntryMaxSpreadBps}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
               />
             </label>
             <label className="form-field">
-              <span>Wide Spread Mode</span>
+              <span>宽价差处理模式</span>
               <select
                 value={liveSessionForm.executionEntryWideSpreadMode}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryWideSpreadMode: event.target.value }))}
@@ -164,7 +164,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>Entry Fallback</span>
+              <span>进场超时备选</span>
               <select
                 value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryTimeoutFallbackOrderType: event.target.value }))}
@@ -175,7 +175,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>PT Exit Order</span>
+              <span>止盈订单类型</span>
               <select
                 value={liveSessionForm.executionPTExitOrderType}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitOrderType: event.target.value }))}
@@ -185,7 +185,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>PT Exit TIF</span>
+              <span>止盈 TIF</span>
               <select
                 value={liveSessionForm.executionPTExitTimeInForce}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeInForce: event.target.value }))}
@@ -196,7 +196,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field checkbox-field">
-              <span>PT Exit Post Only</span>
+              <span>止盈只做 Maker</span>
               <input
                 type="checkbox"
                 checked={liveSessionForm.executionPTExitPostOnly}
@@ -204,7 +204,7 @@ export function LiveSessionModal({
               />
             </label>
             <label className="form-field">
-              <span>PT Exit Fallback</span>
+              <span>止盈超时备选</span>
               <select
                 value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeoutFallbackOrderType: event.target.value }))}
@@ -215,7 +215,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>SL Exit Order</span>
+              <span>止损订单类型</span>
               <select
                 value={liveSessionForm.executionSLExitOrderType}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitOrderType: event.target.value }))}
@@ -225,14 +225,14 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>SL Exit Max Spread</span>
+              <span>止损最大价差 (bps)</span>
               <input
                 value={liveSessionForm.executionSLExitMaxSpreadBps}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
               />
             </label>
             <label className="form-field">
-              <span>Dispatch Mode</span>
+              <span>分发模式</span>
               <select
                 value={liveSessionForm.dispatchMode}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchMode: event.target.value }))}
@@ -242,7 +242,7 @@ export function LiveSessionModal({
               </select>
             </label>
             <label className="form-field">
-              <span>Dispatch Cooldown (s)</span>
+              <span>分发冷却 (秒)</span>
               <input
                 value={liveSessionForm.dispatchCooldownSeconds}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
@@ -251,12 +251,12 @@ export function LiveSessionModal({
           </div>
           <div className="backtest-actions inline-actions">
             <ActionButton
-              label={liveSessionCreateAction ? (editingLiveSessionId ? "Saving..." : "Creating...") : editingLiveSessionId ? "Save Live Session" : "Create Live Session"}
+              label={liveSessionCreateAction ? (editingLiveSessionId ? "保存中..." : "创建中...") : editingLiveSessionId ? "保存实盘会话" : "创建实盘会话"}
               disabled={liveSessionCreateAction || liveSessionLaunchAction || !liveSessionForm.accountId || !liveSessionForm.strategyId}
               onClick={saveLiveSession}
             />
             <ActionButton
-              label={liveSessionLaunchAction ? (editingLiveSessionId ? "Saving..." : "Launching...") : editingLiveSessionId ? "Save & Start" : "Create & Start"}
+              label={liveSessionLaunchAction ? (editingLiveSessionId ? "保存中..." : "启动中...") : editingLiveSessionId ? "保存并启动" : "创建并启动"}
               disabled={
                 liveSessionCreateAction ||
                 liveSessionLaunchAction ||
