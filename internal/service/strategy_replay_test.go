@@ -46,6 +46,22 @@ func TestNormalizeBacktestParametersMapsLegacyBaselineAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeBacktestParametersPreservesExplicitZeroReentrySlots(t *testing.T) {
+	normalized, err := NormalizeBacktestParameters(map[string]any{
+		"reentry_size_schedule": []any{0.20, 0.0},
+	})
+	if err != nil {
+		t.Fatalf("expected normalization to succeed, got %v", err)
+	}
+	schedule := normalizeBacktestFloatSlice(normalized["reentry_size_schedule"], nil)
+	if len(schedule) != 2 {
+		t.Fatalf("expected two schedule slots, got %v", schedule)
+	}
+	if schedule[0] != 0.20 || schedule[1] != 0.0 {
+		t.Fatalf("expected [0.20, 0.0], got %v", schedule)
+	}
+}
+
 func TestBuildStrategyReplayConfigUsesUpdatedBaselineDefaults(t *testing.T) {
 	cfg := buildStrategyReplayConfig(StrategyExecutionContext{
 		SignalTimeframe:     "1d",

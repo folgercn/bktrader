@@ -22,7 +22,17 @@ func (p *Platform) CreateStrategy(name, description string, parameters map[strin
 		parameters = map[string]any{}
 	}
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
-	return p.store.CreateStrategy(name, description, parameters)
+	strategy, err := p.store.CreateStrategy(name, description, parameters)
+	if err != nil {
+		p.logger("service.strategy", "strategy_name", name).Error("create strategy failed", "error", err)
+		return nil, err
+	}
+	p.logger("service.strategy",
+		"strategy_id", stringValue(strategy["id"]),
+		"strategy_name", name,
+		"strategy_engine", stringValue(parameters["strategyEngine"]),
+	).Info("strategy created")
+	return strategy, nil
 }
 
 func (p *Platform) UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error) {
@@ -30,7 +40,16 @@ func (p *Platform) UpdateStrategyParameters(strategyID string, parameters map[st
 		parameters = map[string]any{}
 	}
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
-	return p.store.UpdateStrategyParameters(strategyID, parameters)
+	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
+	if err != nil {
+		p.logger("service.strategy", "strategy_id", strategyID).Error("update strategy parameters failed", "error", err)
+		return nil, err
+	}
+	p.logger("service.strategy",
+		"strategy_id", strategyID,
+		"strategy_engine", stringValue(parameters["strategyEngine"]),
+	).Info("strategy parameters updated")
+	return updated, nil
 }
 
 func (p *Platform) GetStrategy(strategyID string) (map[string]any, error) {
@@ -121,7 +140,18 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 	}
 	parameters["signalBindings"] = bindings
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
-	return p.store.UpdateStrategyParameters(strategyID, parameters)
+	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
+	if err != nil {
+		p.logger("service.strategy", "strategy_id", strategyID).Error("bind strategy signal source failed", "error", err)
+		return nil, err
+	}
+	p.logger("service.strategy",
+		"strategy_id", strategyID,
+		"source_key", source.Key,
+		"role", role,
+		"symbol", symbol,
+	).Info("strategy signal source bound", "replaced_existing", replaced)
+	return updated, nil
 }
 
 func (p *Platform) ListStrategySignalBindings(strategyID string) ([]domain.AccountSignalBinding, error) {
@@ -167,7 +197,18 @@ func (p *Platform) GetAccount(accountID string) (domain.Account, error) {
 
 // CreateAccount 创建新账户，mode 自动转为大写（LIVE / PAPER）。
 func (p *Platform) CreateAccount(name, mode, exchange string) (domain.Account, error) {
-	return p.store.CreateAccount(name, strings.ToUpper(mode), exchange)
+	account, err := p.store.CreateAccount(name, strings.ToUpper(mode), exchange)
+	if err != nil {
+		p.logger("service.account", "account_name", name, "mode", strings.ToUpper(mode)).Error("create account failed", "error", err)
+		return domain.Account{}, err
+	}
+	p.logger("service.account",
+		"account_id", account.ID,
+		"account_name", account.Name,
+		"mode", account.Mode,
+		"exchange", account.Exchange,
+	).Info("account created")
+	return account, nil
 }
 
 // ListAccountSummaries 汇总所有账户的权益、PnL、费用和敞口信息。
@@ -339,19 +380,37 @@ func (p *Platform) GetBacktest(backtestID string) (domain.BacktestRun, error) {
 func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error) {
 	normalized, err := NormalizeBacktestParameters(parameters)
 	if err != nil {
+		p.logger("service.backtest", "strategy_version_id", strategyVersionID).Warn("normalize backtest parameters failed", "error", err)
 		return domain.BacktestRun{}, err
 	}
 	executionSource := stringValue(normalized["executionDataSource"])
 	symbol := stringValue(normalized["symbol"])
 	if !p.hasExecutionDataset(executionSource, symbol) {
+		p.logger("service.backtest",
+			"strategy_version_id", strategyVersionID,
+			"execution_data_source", executionSource,
+			"symbol", symbol,
+		).Warn("backtest dataset missing")
 		return domain.BacktestRun{}, fmt.Errorf("no %s dataset found for symbol %s", executionSource, symbol)
 	}
 	backtest, err := p.store.CreateBacktest(strategyVersionID, normalized)
 	if err != nil {
+		p.logger("service.backtest", "strategy_version_id", strategyVersionID).Error("create backtest failed", "error", err)
 		return domain.BacktestRun{}, err
 	}
 	backtest = p.runBacktestSkeleton(backtest)
-	return p.store.UpdateBacktest(backtest)
+	backtest, err = p.store.UpdateBacktest(backtest)
+	if err != nil {
+		p.logger("service.backtest", "backtest_id", backtest.ID).Error("persist backtest skeleton failed", "error", err)
+		return domain.BacktestRun{}, err
+	}
+	p.logger("service.backtest",
+		"backtest_id", backtest.ID,
+		"strategy_version_id", strategyVersionID,
+		"execution_data_source", executionSource,
+		"symbol", symbol,
+	).Info("backtest created")
+	return backtest, nil
 }
 
 func (p *Platform) BacktestOptions() map[string]any {
@@ -563,13 +622,16 @@ func normalizeBacktestFloatSlice(value any, fallback []float64) []float64 {
 		}
 	case nil:
 	default:
-		if single := parseFloatValue(raw); single > 0 {
+		if single, ok := parseBacktestFloatValue(raw); ok {
 			items = append(items, single)
 		}
 	}
+	if len(items) == 0 {
+		return append([]float64(nil), fallback...)
+	}
 	clean := make([]float64, 0, len(items))
 	for _, item := range items {
-		if item > 0 {
+		if item >= 0 {
 			clean = append(clean, item)
 		}
 	}
@@ -577,6 +639,43 @@ func normalizeBacktestFloatSlice(value any, fallback []float64) []float64 {
 		return append([]float64(nil), fallback...)
 	}
 	return clean
+}
+
+func parseBacktestFloatValue(value any) (float64, bool) {
+	switch raw := value.(type) {
+	case float64:
+		return raw, true
+	case float32:
+		return float64(raw), true
+	case int:
+		return float64(raw), true
+	case int8:
+		return float64(raw), true
+	case int16:
+		return float64(raw), true
+	case int32:
+		return float64(raw), true
+	case int64:
+		return float64(raw), true
+	case uint:
+		return float64(raw), true
+	case uint8:
+		return float64(raw), true
+	case uint16:
+		return float64(raw), true
+	case uint32:
+		return float64(raw), true
+	case uint64:
+		return float64(raw), true
+	case string:
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return 0, false
+		}
+		return parseFloatValue(trimmed), true
+	default:
+		return 0, false
+	}
 }
 
 func firstNonNil(value any, fallback any) any {
