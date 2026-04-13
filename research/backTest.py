@@ -154,6 +154,9 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
                             max_drawdown_pct=None,
                             cooldown_bars=6,
                             reentry_mode='default'):
+    df_4h = df_4h.copy()
+    df_4h.index = pd.to_datetime(df_4h.index, utc=True)
+
     replay_start = df_4h.index[0]
     replay_end = df_4h.index[-1]
     print(f"正在构建 Tick 事件流: {tick_file} ({replay_start} ~ {replay_end}) ...")
