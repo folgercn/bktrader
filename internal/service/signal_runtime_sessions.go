@@ -192,7 +192,6 @@ func (p *Platform) DeleteSignalRuntimeSession(sessionID string) error {
 	return nil
 }
 
-
 func (p *Platform) updateSignalRuntimeSessionState(sessionID string, updater func(session *domain.SignalRuntimeSession)) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -177,7 +177,6 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 	})
 
-
 	// GET /api/v1/account-summaries — 账户汇总（权益、PnL、费用、敞口）
 	mux.HandleFunc("/api/v1/account-summaries", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

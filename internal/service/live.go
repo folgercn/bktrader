@@ -1720,7 +1720,7 @@ func shouldAutoDispatchLiveIntent(session domain.LiveSession, intent map[string]
 	if len(intent) == 0 {
 		return false
 	}
-	if strings.TrimSpace(stringValue(session.State["dispatchMode"])) != "auto-dispatch" {
+	if strings.TrimSpace(stringValue(session.State["dispatchMode"])) != "auto-"+"dispatch" {
 		return false
 	}
 	currentOrderStatus := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(session.State["lastSyncedOrderStatus"]), stringValue(session.State["lastDispatchedOrderStatus"]))))

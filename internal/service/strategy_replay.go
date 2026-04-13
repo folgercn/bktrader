@@ -94,13 +94,7 @@ func (p *Platform) runStrategyReplay(context StrategyExecutionContext) (map[stri
 		return p.runStrategyReplayOnTick(cfg, signals)
 	}
 
-	engine := newStrategyReplayEngine(cfg)
-	switch cfg.ExecutionDataSource {
-	default:
-		return nil, fmt.Errorf("unsupported execution data source: %s", cfg.ExecutionDataSource)
-	}
-
-	return engine.summary(signals), nil
+	return nil, fmt.Errorf("unsupported execution data source: %s", cfg.ExecutionDataSource)
 }
 
 func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []strategySignalBar) (map[string]any, error) {
