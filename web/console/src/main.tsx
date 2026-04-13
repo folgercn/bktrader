@@ -735,7 +735,7 @@ function App() {
   }
 
   async function stopLiveFlow(accountId: string) {
-    setLiveStopAction(accountId);
+    setLiveFlowAction(accountId);
     try {
       await fetchJSON(`/api/v1/live/accounts/${accountId}/stop`, { method: "POST" });
       await loadDashboard();
@@ -743,7 +743,7 @@ function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to stop live flow");
     } finally {
-      setLiveStopAction(null);
+      setLiveFlowAction(null);
     }
   }
 

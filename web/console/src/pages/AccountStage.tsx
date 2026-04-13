@@ -30,7 +30,6 @@ import {
   buildRuntimeEventNotes,
   buildSourceStateNotes,
   buildTimelineNotes,
-  buildTimelineNotes,
   runtimeReadinessTone,
   signalActionTone,
   decisionStateTone,
