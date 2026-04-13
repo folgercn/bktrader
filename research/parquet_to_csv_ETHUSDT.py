@@ -3,7 +3,14 @@ import os
 
 # Load the parquet file
 print("Loading parquet file...")
-df = pd.read_parquet("eth_perp_1m_dataset/ETHUSDT_perp_1m_master.parquet")
+parquet_file = "eth_perp_1m_dataset/ETHUSDT_perp_1m_master.parquet"
+try:
+    df = pd.read_parquet(parquet_file)
+except Exception as e:
+    print(f"pandas.read_parquet unavailable ({e}), falling back to pyarrow")
+    import pyarrow.parquet as pq
+
+    df = pq.read_table(parquet_file).to_pandas()
 
 print(f"Loaded {len(df):,} rows")
 
