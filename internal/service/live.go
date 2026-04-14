@@ -116,22 +116,21 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 			adapterSyncErr = syncErr
 		}
 	}
-	synced, err := p.syncLiveAccountFromLocalState(account, binding)
-	if err == nil {
+	synced, fallbackErr := p.syncLiveAccountFromLocalState(account, binding)
+	if fallbackErr == nil {
 		p.syncLiveSessionsForAccountSnapshot(synced)
 		logger.Debug("live account synced from local state", "status", synced.Status)
-	} else {
-		logger.Warn("local-state live account sync failed", "error", err)
 		return synced, nil
 	}
+	logger.Warn("local-state live account sync failed", "error", fallbackErr)
 	if adapterSyncErr != nil {
-		err = fmt.Errorf("adapter sync failed: %v; local fallback failed: %w", adapterSyncErr, err)
+		fallbackErr = fmt.Errorf("adapter sync failed: %v; local fallback failed: %w", adapterSyncErr, fallbackErr)
 	}
-	updateAccountSyncFailureHealth(&account, attemptedAt, err)
+	updateAccountSyncFailureHealth(&account, attemptedAt, fallbackErr)
 	if updated, updateErr := p.store.UpdateAccount(account); updateErr == nil {
 		account = updated
 	}
-	return synced, err
+	return account, fallbackErr
 }
 
 func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
