@@ -40,6 +40,8 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 		OrderBookFreshnessSeconds:      cfg.OrderBookFreshnessSeconds,
 		SignalBarFreshnessSeconds:      cfg.SignalBarFreshnessSeconds,
 		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
+		StrategyEvaluationQuietSeconds: cfg.StrategyEvaluationQuietSeconds,
+		LiveAccountSyncFreshnessSecs:   cfg.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
 	})
 	platform.SetTelegramConfig(domain.TelegramConfig{

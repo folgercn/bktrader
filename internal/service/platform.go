@@ -56,6 +56,8 @@ type RuntimePolicy struct {
 	OrderBookFreshnessSeconds      int `json:"orderBookFreshnessSeconds"`
 	SignalBarFreshnessSeconds      int `json:"signalBarFreshnessSeconds"`
 	RuntimeQuietSeconds            int `json:"runtimeQuietSeconds"`
+	StrategyEvaluationQuietSeconds int `json:"strategyEvaluationQuietSeconds"`
+	LiveAccountSyncFreshnessSecs   int `json:"liveAccountSyncFreshnessSeconds"`
 	PaperStartReadinessTimeoutSecs int `json:"paperStartReadinessTimeoutSeconds"`
 }
 
@@ -79,6 +81,8 @@ func NewPlatform(store store.Repository) *Platform {
 			OrderBookFreshnessSeconds:      10,
 			SignalBarFreshnessSeconds:      30,
 			RuntimeQuietSeconds:            30,
+			StrategyEvaluationQuietSeconds: 15,
+			LiveAccountSyncFreshnessSecs:   60,
 			PaperStartReadinessTimeoutSecs: 5,
 		},
 	}
@@ -122,6 +126,12 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	if policy.RuntimeQuietSeconds > 0 {
 		p.runtimePolicy.RuntimeQuietSeconds = policy.RuntimeQuietSeconds
 	}
+	if policy.StrategyEvaluationQuietSeconds > 0 {
+		p.runtimePolicy.StrategyEvaluationQuietSeconds = policy.StrategyEvaluationQuietSeconds
+	}
+	if policy.LiveAccountSyncFreshnessSecs > 0 {
+		p.runtimePolicy.LiveAccountSyncFreshnessSecs = policy.LiveAccountSyncFreshnessSecs
+	}
 	if policy.PaperStartReadinessTimeoutSecs > 0 {
 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
 	}
@@ -143,6 +153,8 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		policy.OrderBookFreshnessSeconds < 0 ||
 		policy.SignalBarFreshnessSeconds < 0 ||
 		policy.RuntimeQuietSeconds < 0 ||
+		policy.StrategyEvaluationQuietSeconds < 0 ||
+		policy.LiveAccountSyncFreshnessSecs < 0 ||
 		policy.PaperStartReadinessTimeoutSecs < 0 {
 		p.logger("service.platform").Warn("reject invalid runtime policy",
 			"trade_tick_freshness_seconds", policy.TradeTickFreshnessSeconds,
@@ -159,6 +171,8 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		OrderBookFreshnessSeconds:      p.runtimePolicy.OrderBookFreshnessSeconds,
 		SignalBarFreshnessSeconds:      p.runtimePolicy.SignalBarFreshnessSeconds,
 		RuntimeQuietSeconds:            p.runtimePolicy.RuntimeQuietSeconds,
+		StrategyEvaluationQuietSeconds: p.runtimePolicy.StrategyEvaluationQuietSeconds,
+		LiveAccountSyncFreshnessSecs:   p.runtimePolicy.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: p.runtimePolicy.PaperStartReadinessTimeoutSecs,
 	})
 	if err != nil {
@@ -170,6 +184,8 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		OrderBookFreshnessSeconds:      saved.OrderBookFreshnessSeconds,
 		SignalBarFreshnessSeconds:      saved.SignalBarFreshnessSeconds,
 		RuntimeQuietSeconds:            saved.RuntimeQuietSeconds,
+		StrategyEvaluationQuietSeconds: saved.StrategyEvaluationQuietSeconds,
+		LiveAccountSyncFreshnessSecs:   saved.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: saved.PaperStartReadinessTimeoutSecs,
 	})
 	p.logger("service.platform").Info("runtime policy updated")
@@ -191,6 +207,8 @@ func (p *Platform) LoadPersistedRuntimePolicy() error {
 		OrderBookFreshnessSeconds:      policy.OrderBookFreshnessSeconds,
 		SignalBarFreshnessSeconds:      policy.SignalBarFreshnessSeconds,
 		RuntimeQuietSeconds:            policy.RuntimeQuietSeconds,
+		StrategyEvaluationQuietSeconds: policy.StrategyEvaluationQuietSeconds,
+		LiveAccountSyncFreshnessSecs:   policy.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: policy.PaperStartReadinessTimeoutSecs,
 	})
 	p.logger("service.platform").Info("persisted runtime policy loaded")

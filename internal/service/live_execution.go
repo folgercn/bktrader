@@ -256,6 +256,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	state["lastDispatchedAt"] = dispatchedAt.Format(time.RFC3339)
 	state["lastDispatchedIntent"] = proposalMap
 	state["lastDispatchedIntentSignature"] = intentSignature
+	recordExecutionDispatchHealth(state, created, dispatchedAt, createErr)
 	delete(state, "lastExecutionTimeoutAt")
 	delete(state, "lastExecutionTimeoutReason")
 	delete(state, "lastExecutionTimeoutIntentSignature")
@@ -378,6 +379,12 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	state["lastDispatchedIntentSignature"] = intentSignature
 	state["lastDispatchedOrderStatus"] = liveOrderStatusVirtualInitial
 	state["lastSyncedOrderStatus"] = liveOrderStatusVirtualInitial
+	recordExecutionDispatchHealth(state, domain.Order{
+		Side:   proposal.Side,
+		Symbol: proposal.Symbol,
+		Type:   proposal.Type,
+		Status: liveOrderStatusVirtualInitial,
+	}, eventTime, nil)
 	state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, domain.Order{
 		Side:     proposal.Side,
 		Symbol:   proposal.Symbol,
@@ -478,6 +485,12 @@ func (p *Platform) applyLiveVirtualExitEvent(session domain.LiveSession, proposa
 	state["lastDispatchedIntentSignature"] = intentSignature
 	state["lastDispatchedOrderStatus"] = liveOrderStatusVirtualExit
 	state["lastSyncedOrderStatus"] = liveOrderStatusVirtualExit
+	recordExecutionDispatchHealth(state, domain.Order{
+		Side:   proposal.Side,
+		Symbol: proposal.Symbol,
+		Type:   proposal.Type,
+		Status: liveOrderStatusVirtualExit,
+	}, eventTime, nil)
 	state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, domain.Order{
 		Side:     proposal.Side,
 		Symbol:   proposal.Symbol,
@@ -543,8 +556,10 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	if shouldCancelLiveOrderForExecutionTimeout(order, eventTime) {
 		cancelledOrder, cancelErr := p.CancelLiveOrder(order.ID)
 		state["lastSyncAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
+		recordExecutionSyncAttemptHealth(state, eventTime)
 		if cancelErr != nil {
 			state["lastSyncError"] = cancelErr.Error()
+			recordExecutionSyncResultHealth(state, eventTime, order.Status, cancelErr)
 			appendTimelineEvent(state, "order", eventTime, "live-order-cancel-error", map[string]any{
 				"orderId": order.ID,
 				"error":   cancelErr.Error(),
@@ -560,6 +575,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastSyncedOrderStatus"] = cancelledOrder.Status
 		state["lastDispatchedOrderStatus"] = cancelledOrder.Status
 		state["lastSyncedAt"] = eventTime.UTC().Format(time.RFC3339)
+		recordExecutionSyncResultHealth(state, eventTime, cancelledOrder.Status, nil)
 		state["lastExecutionTimeoutAt"] = eventTime.UTC().Format(time.RFC3339)
 		state["lastExecutionTimeoutReason"] = "resting-order-expired"
 		timeoutOrder := withExecutionSubmissionFallback(cancelledOrder, order)
@@ -577,8 +593,10 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	}
 	syncedOrder, err := p.SyncLiveOrder(order.ID)
 	state["lastSyncAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
+	recordExecutionSyncAttemptHealth(state, eventTime)
 	if err != nil {
 		state["lastSyncError"] = err.Error()
+		recordExecutionSyncResultHealth(state, eventTime, order.Status, err)
 		appendTimelineEvent(state, "order", eventTime, "live-order-sync-error", map[string]any{
 			"orderId": order.ID,
 			"error":   err.Error(),
@@ -595,6 +613,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	state["lastSyncedOrderStatus"] = syncedOrder.Status
 	state["lastDispatchedOrderStatus"] = syncedOrder.Status
 	state["lastSyncedAt"] = time.Now().UTC().Format(time.RFC3339)
+	recordExecutionSyncResultHealth(state, eventTime, syncedOrder.Status, nil)
 	state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), syncedOrder, false)
 	updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 	if strings.EqualFold(syncedOrder.Status, "FILLED") {

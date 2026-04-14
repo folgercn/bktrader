@@ -242,6 +242,8 @@ type RuntimePolicy struct {
 	OrderBookFreshnessSeconds      int       `json:"orderBookFreshnessSeconds"`
 	SignalBarFreshnessSeconds      int       `json:"signalBarFreshnessSeconds"`
 	RuntimeQuietSeconds            int       `json:"runtimeQuietSeconds"`
+	StrategyEvaluationQuietSeconds int       `json:"strategyEvaluationQuietSeconds"`
+	LiveAccountSyncFreshnessSecs   int       `json:"liveAccountSyncFreshnessSeconds"`
 	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
 	UpdatedAt                      time.Time `json:"updatedAt"`
 }
@@ -262,6 +264,70 @@ type PlatformAlert struct {
 	Anchor           string         `json:"anchor,omitempty"`
 	EventTime        time.Time      `json:"eventTime"`
 	Metadata         map[string]any `json:"metadata,omitempty"`
+}
+
+type PlatformHealthAlertCounts struct {
+	Total    int `json:"total"`
+	Critical int `json:"critical"`
+	Warning  int `json:"warning"`
+	Info     int `json:"info"`
+}
+
+type PlatformHealthAccountSnapshot struct {
+	ID                      string         `json:"id"`
+	Name                    string         `json:"name"`
+	Exchange                string         `json:"exchange"`
+	Status                  string         `json:"status"`
+	LastLiveSyncAt          string         `json:"lastLiveSyncAt"`
+	SyncAgeSeconds          int            `json:"syncAgeSeconds"`
+	SyncStale               bool           `json:"syncStale"`
+	RuntimeSessionCount     int            `json:"runtimeSessionCount"`
+	RunningLiveSessionCount int            `json:"runningLiveSessionCount"`
+	AccountSync             map[string]any `json:"accountSync,omitempty"`
+}
+
+type PlatformHealthRuntimeSessionSnapshot struct {
+	ID              string         `json:"id"`
+	AccountID       string         `json:"accountId"`
+	StrategyID      string         `json:"strategyId"`
+	StrategyName    string         `json:"strategyName,omitempty"`
+	Status          string         `json:"status"`
+	Transport       string         `json:"transport"`
+	Health          string         `json:"health"`
+	LastEventAt     string         `json:"lastEventAt,omitempty"`
+	LastHeartbeatAt string         `json:"lastHeartbeatAt,omitempty"`
+	Quiet           bool           `json:"quiet"`
+	TradeTick       map[string]any `json:"tradeTick,omitempty"`
+	OrderBook       map[string]any `json:"orderBook,omitempty"`
+}
+
+type PlatformHealthStrategySessionSnapshot struct {
+	ID                           string         `json:"id"`
+	Mode                         string         `json:"mode"`
+	AccountID                    string         `json:"accountId"`
+	StrategyID                   string         `json:"strategyId"`
+	StrategyName                 string         `json:"strategyName,omitempty"`
+	Status                       string         `json:"status"`
+	RuntimeSessionID             string         `json:"runtimeSessionId,omitempty"`
+	LastSignalRuntimeEventAt     string         `json:"lastSignalRuntimeEventAt,omitempty"`
+	LastStrategyEvaluationAt     string         `json:"lastStrategyEvaluationAt,omitempty"`
+	LastStrategyEvaluationStatus string         `json:"lastStrategyEvaluationStatus,omitempty"`
+	LastSyncedOrderStatus        string         `json:"lastSyncedOrderStatus,omitempty"`
+	EvaluationQuiet              bool           `json:"evaluationQuiet"`
+	StrategyIngress              map[string]any `json:"strategyIngress,omitempty"`
+	Execution                    map[string]any `json:"execution,omitempty"`
+	SourceGate                   map[string]any `json:"sourceGate,omitempty"`
+}
+
+type PlatformHealthSnapshot struct {
+	GeneratedAt     time.Time                               `json:"generatedAt"`
+	Status          string                                  `json:"status"`
+	AlertCounts     PlatformHealthAlertCounts               `json:"alertCounts"`
+	RuntimePolicy   RuntimePolicy                           `json:"runtimePolicy"`
+	LiveAccounts    []PlatformHealthAccountSnapshot         `json:"liveAccounts"`
+	RuntimeSessions []PlatformHealthRuntimeSessionSnapshot  `json:"runtimeSessions"`
+	LiveSessions    []PlatformHealthStrategySessionSnapshot `json:"liveSessions"`
+	PaperSessions   []PlatformHealthStrategySessionSnapshot `json:"paperSessions"`
 }
 
 // NotificationAck 保存用户已确认的通知键。

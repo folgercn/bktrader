@@ -191,6 +191,7 @@ func (p *Platform) triggerPaperSessionFromSignal(sessionID, runtimeSessionID str
 	state["lastSignalRuntimeEventAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastSignalRuntimeEvent"] = cloneMetadata(summary)
 	state["lastSignalRuntimeSessionId"] = runtimeSessionID
+	recordStrategyTriggerHealth(state, summary, eventTime)
 
 	throttleSeconds := maxIntValue(state["signalTriggerThrottleSeconds"], 5)
 	lastTriggeredAt := parseOptionalRFC3339(stringValue(state["lastSignalDrivenTickAt"]))
@@ -288,6 +289,7 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		state["lastStrategyEvaluationRuntimeSummary"] = cloneMetadata(mapValue(runtimeSession.State["lastEventSummary"]))
 		sourceGate = p.evaluateSignalSourceReadiness(session, runtimeSession, eventTime)
 		state["lastStrategyEvaluationSourceGate"] = sourceGate
+		recordStrategySourceGateHealth(state, sourceGate, eventTime)
 	}
 	if !boolValue(sourceGate["ready"]) {
 		state["lastStrategyEvaluationStatus"] = "waiting-source-states"
@@ -311,6 +313,7 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		appendTimelineEvent(state, "strategy", eventTime, "decision-error", map[string]any{
 			"error": err.Error(),
 		})
+		recordStrategyDecisionErrorHealth(state, eventTime, err)
 		updatedSession, updateErr := p.store.UpdatePaperSessionState(session.ID, state)
 		if updateErr != nil {
 			return domain.Order{}, updateErr
@@ -322,6 +325,7 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 		"reason":   signalDecision.Reason,
 		"metadata": cloneMetadata(signalDecision.Metadata),
 	}
+	recordStrategyDecisionHealth(state, signalDecision, eventTime)
 	appendTimelineEvent(state, "strategy", eventTime, "decision", map[string]any{
 		"action":        signalDecision.Action,
 		"reason":        signalDecision.Reason,
@@ -371,6 +375,7 @@ func (p *Platform) evaluatePaperSessionOnSignal(session domain.PaperSession, run
 	}
 	state["lastStrategyEvaluationStatus"] = "order-dispatched"
 	state["lastStrategyEvaluationOrderId"] = order.ID
+	recordExecutionDispatchHealth(state, order, eventTime, nil)
 	appendTimelineEvent(state, "order", eventTime, "order-dispatched", map[string]any{
 		"orderId": order.ID,
 		"symbol":  order.Symbol,

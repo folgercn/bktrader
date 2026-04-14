@@ -171,6 +171,7 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 			}
 		}
 		snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+		accountSyncSummary := cloneMetadata(mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"]))
 		openPositionCount := maxIntValue(snapshot["positionCount"], 0)
 		if openPositionCount > 0 && len(runningLiveSessionsForAccount) == 0 {
 			appendAlert(domain.PlatformAlert{
@@ -183,6 +184,40 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				AccountName: account.Name,
 				Anchor:      "live",
 				EventTime:   parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"])),
+			})
+		}
+		if stale, ageSeconds := p.liveAccountSyncStale(account, time.Now().UTC()); stale {
+			level := "warning"
+			if openPositionCount > 0 || len(runningLiveSessionsForAccount) > 0 {
+				level = "critical"
+			}
+			appendAlert(domain.PlatformAlert{
+				ID:          fmt.Sprintf("live-account-sync-stale-%s", account.ID),
+				Scope:       "live",
+				Level:       level,
+				Title:       "Live account sync stale",
+				Detail:      fmt.Sprintf("last successful account sync was %ds ago", ageSeconds),
+				AccountID:   account.ID,
+				AccountName: account.Name,
+				Anchor:      "live",
+				EventTime:   parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"])),
+			})
+		}
+		if consecutiveErrors := maxIntValue(accountSyncSummary["consecutiveErrorCount"], 0); consecutiveErrors > 0 {
+			level := "warning"
+			if consecutiveErrors >= 3 {
+				level = "critical"
+			}
+			appendAlert(domain.PlatformAlert{
+				ID:          fmt.Sprintf("live-account-sync-error-%s", account.ID),
+				Scope:       "live",
+				Level:       level,
+				Title:       "Live account sync errors",
+				Detail:      fmt.Sprintf("consecutive_errors=%d last_error=%s", consecutiveErrors, firstNonEmpty(stringValue(accountSyncSummary["lastError"]), "unknown")),
+				AccountID:   account.ID,
+				AccountName: account.Name,
+				Anchor:      "live",
+				EventTime:   parseOptionalRFC3339(stringValue(accountSyncSummary["lastErrorAt"])),
 			})
 		}
 		activeRuntime, hasRuntime := pickActiveRuntime(runtimeSessionsForAccount)
@@ -236,6 +271,20 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 
 	for _, session := range liveSessions {
 		state := cloneMetadata(session.State)
+		if strings.EqualFold(session.Status, "RUNNING") && p.strategyEvaluationQuiet(state) {
+			appendAlert(domain.PlatformAlert{
+				ID:           fmt.Sprintf("live-strategy-eval-quiet-%s", session.ID),
+				Scope:        "live",
+				Level:        "warning",
+				Title:        "Strategy evaluation quiet",
+				Detail:       fmt.Sprintf("runtime triggers observed but no strategy evaluation recorded in the last %ds", p.runtimePolicy.StrategyEvaluationQuietSeconds),
+				AccountID:    session.AccountID,
+				StrategyID:   session.StrategyID,
+				StrategyName: strategyNameByID[session.StrategyID],
+				Anchor:       "live",
+				EventTime:    parseOptionalRFC3339(firstNonEmpty(stringValue(mapValue(mapValue(state["healthSummary"])["strategyIngress"])["lastTriggeredAt"]), stringValue(state["lastSignalRuntimeEventAt"]))),
+			})
+		}
 		recoveryStatus := strings.TrimSpace(stringValue(state["protectionRecoveryStatus"]))
 		recoveryError := strings.TrimSpace(stringValue(state["lastRecoveryError"]))
 		eventTime := parseOptionalRFC3339(firstNonEmpty(stringValue(state["lastProtectionRecoveryAt"]), stringValue(state["lastRecoveryAttemptAt"])))
@@ -410,6 +459,48 @@ func (p *Platform) runtimeSessionQuiet(runtimeState map[string]any) bool {
 		return false
 	}
 	return time.Since(lastEventAt) > time.Duration(p.runtimePolicy.RuntimeQuietSeconds)*time.Second
+}
+
+func (p *Platform) strategyEvaluationQuiet(sessionState map[string]any) bool {
+	lastTriggeredAt := parseOptionalRFC3339(firstNonEmpty(
+		stringValue(mapValue(mapValue(sessionState["healthSummary"])["strategyIngress"])["lastTriggeredAt"]),
+		stringValue(sessionState["lastSignalRuntimeEventAt"]),
+	))
+	if lastTriggeredAt.IsZero() {
+		return false
+	}
+	lastEvaluationAt := parseOptionalRFC3339(firstNonEmpty(
+		stringValue(mapValue(mapValue(sessionState["healthSummary"])["strategyIngress"])["lastEvaluationAt"]),
+		stringValue(sessionState["lastStrategyEvaluationAt"]),
+	))
+	if !lastEvaluationAt.IsZero() && !lastTriggeredAt.After(lastEvaluationAt) {
+		return false
+	}
+	threshold := time.Duration(p.runtimePolicy.StrategyEvaluationQuietSeconds) * time.Second
+	if threshold <= 0 {
+		return false
+	}
+	return time.Since(lastTriggeredAt) > threshold
+}
+
+func (p *Platform) liveAccountSyncStale(account domain.Account, referenceTime time.Time) (bool, int) {
+	threshold := time.Duration(p.runtimePolicy.LiveAccountSyncFreshnessSecs) * time.Second
+	if threshold <= 0 {
+		return false, 0
+	}
+	lastSuccessAt := parseOptionalRFC3339(firstNonEmpty(
+		stringValue(mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"])["lastSuccessAt"]),
+		stringValue(account.Metadata["lastLiveSyncAt"]),
+	))
+	if lastSuccessAt.IsZero() {
+		age := 0
+		if !account.CreatedAt.IsZero() {
+			age = int(referenceTime.Sub(account.CreatedAt).Seconds())
+		}
+		return true, age
+	}
+	age := int(referenceTime.Sub(lastSuccessAt).Seconds())
+	return referenceTime.Sub(lastSuccessAt) > threshold, age
 }
 
 func summarizeSourceGate(sourceGate map[string]any) string {
