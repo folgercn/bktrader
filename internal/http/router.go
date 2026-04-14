@@ -1,14 +1,17 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
+	"github.com/wuyaocheng/bktrader/internal/logging"
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
@@ -85,13 +88,25 @@ func corsMiddleware(next http.Handler) http.Handler {
 // statusRecorder 包装 ResponseWriter 以捕获响应状态码，用于请求日志。
 type statusRecorder struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode  int
+	bytesWrite  int
+	wroteHeader bool
 }
 
 // WriteHeader 覆写以记录状态码。
 func (sr *statusRecorder) WriteHeader(code int) {
 	sr.statusCode = code
+	sr.wroteHeader = true
 	sr.ResponseWriter.WriteHeader(code)
+}
+
+func (sr *statusRecorder) Write(payload []byte) (int, error) {
+	if !sr.wroteHeader {
+		sr.WriteHeader(sr.statusCode)
+	}
+	size, err := sr.ResponseWriter.Write(payload)
+	sr.bytesWrite += size
+	return size, err
 }
 
 // requestLogMiddleware 记录每个 HTTP 请求的方法、路径、状态码和耗时。
@@ -99,8 +114,44 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+		logger := slog.Default().With(
+			"component", "http",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"query", r.URL.RawQuery,
+			"remote_addr", r.RemoteAddr,
+			"user_agent", r.UserAgent(),
+		)
+
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				recorder.statusCode = http.StatusInternalServerError
+				if !recorder.wroteHeader {
+					writeError(recorder, http.StatusInternalServerError, "internal server error")
+				}
+				logger.Error("http request panicked",
+					"panic", recovered,
+					"stack", string(debug.Stack()),
+				)
+			}
+
+			message := "http request completed"
+			switch {
+			case recorder.statusCode >= 500:
+				message = "http request failed"
+			case recorder.statusCode >= 400:
+				message = "http request rejected"
+			}
+
+			logger.Log(context.Background(), logging.HTTPLevel(recorder.statusCode), message,
+				"status", recorder.statusCode,
+				"duration_ms", time.Since(start).Milliseconds(),
+				"bytes_written", recorder.bytesWrite,
+				"content_length", r.ContentLength,
+			)
+		}()
+
 		next.ServeHTTP(recorder, r)
-		log.Printf("[HTTP] %s %s %d %s", r.Method, r.URL.Path, recorder.statusCode, time.Since(start))
 	})
 }
 

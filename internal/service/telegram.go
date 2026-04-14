@@ -13,8 +13,10 @@ import (
 )
 
 func (p *Platform) SendNotificationToTelegram(notificationID string) error {
+	logger := p.logger("service.telegram", "notification_id", strings.TrimSpace(notificationID))
 	notifications, err := p.ListNotifications(true)
 	if err != nil {
+		logger.Warn("list notifications failed", "error", err)
 		return err
 	}
 	for _, item := range notifications {
@@ -23,15 +25,19 @@ func (p *Platform) SendNotificationToTelegram(notificationID string) error {
 		}
 		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
 			_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", err.Error())
+			logger.Warn("send telegram notification failed", "error", err)
 			return err
 		}
 		_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", "")
+		logger.Info("telegram notification sent", "level", item.Alert.Level)
 		return nil
 	}
+	logger.Warn("telegram notification not found")
 	return fmt.Errorf("notification not found: %s", notificationID)
 }
 
 func (p *Platform) SendTelegramTestMessage() error {
+	p.logger("service.telegram").Info("sending telegram test message")
 	return p.sendTelegramMessage("bkTrader Telegram channel test\n\nTelegram 通知通道已连通。")
 }
 
@@ -95,15 +101,18 @@ func formatTelegramNotification(item domain.PlatformNotification) string {
 }
 
 func (p *Platform) StartTelegramDispatcher(ctx context.Context) {
+	p.logger("service.telegram").Info("starting telegram dispatcher")
 	go p.runTelegramDispatcher(ctx)
 }
 
 func (p *Platform) runTelegramDispatcher(ctx context.Context) {
+	logger := p.logger("service.telegram")
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			logger.Info("telegram dispatcher stopped")
 			return
 		case <-ticker.C:
 			_ = p.DispatchTelegramNotifications()
@@ -112,16 +121,20 @@ func (p *Platform) runTelegramDispatcher(ctx context.Context) {
 }
 
 func (p *Platform) DispatchTelegramNotifications() error {
+	logger := p.logger("service.telegram")
 	config := p.telegramConfig
 	if !config.Enabled || strings.TrimSpace(config.BotToken) == "" || strings.TrimSpace(config.ChatID) == "" {
+		logger.Debug("telegram dispatcher skipped because channel is not configured")
 		return nil
 	}
 	notifications, err := p.ListNotifications(false)
 	if err != nil {
+		logger.Warn("list notifications failed", "error", err)
 		return err
 	}
 	deliveries, err := p.store.ListNotificationDeliveries()
 	if err != nil {
+		logger.Warn("list notification deliveries failed", "error", err)
 		return err
 	}
 	delivered := make(map[string]struct{}, len(deliveries))
@@ -135,6 +148,7 @@ func (p *Platform) DispatchTelegramNotifications() error {
 		allowedLevels[strings.ToLower(strings.TrimSpace(level))] = struct{}{}
 	}
 	var firstErr error
+	sentCount := 0
 	for _, item := range notifications {
 		level := strings.ToLower(strings.TrimSpace(item.Alert.Level))
 		if _, ok := allowedLevels[level]; !ok {
@@ -148,14 +162,18 @@ func (p *Platform) DispatchTelegramNotifications() error {
 			if firstErr == nil {
 				firstErr = err
 			}
+			p.logger("service.telegram", "notification_id", item.ID).Warn("send telegram notification failed", "error", err)
 			continue
 		}
 		if _, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", ""); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
+			p.logger("service.telegram", "notification_id", item.ID).Warn("record telegram delivery failed", "error", err)
 			continue
 		}
+		sentCount++
 	}
+	logger.Debug("telegram dispatch cycle completed", "sent_count", sentCount, "notification_count", len(notifications))
 	return firstErr
 }

@@ -29,22 +29,34 @@ func (p *Platform) WarmLiveMarketData(ctx context.Context) error {
 	if len(symbols) == 0 {
 		symbols = []string{"BTCUSDT"}
 	}
+	logger := p.logger("service.live_market")
+	logger.Info("warming live market data", "symbol_count", len(symbols), "symbols", symbols)
 	var firstErr error
 	for _, symbol := range symbols {
 		if ctx != nil {
 			select {
 			case <-ctx.Done():
 				if firstErr != nil {
+					logger.Warn("live market warm cancelled after partial failure", "error", firstErr)
 					return firstErr
 				}
+				logger.Warn("live market warm cancelled", "error", ctx.Err())
 				return ctx.Err()
 			default:
 			}
 		}
-		if err := p.refreshLiveMarketSnapshot(symbol); err != nil && firstErr == nil {
-			firstErr = err
+		if err := p.refreshLiveMarketSnapshot(symbol); err != nil {
+			p.logger("service.live_market", "symbol", NormalizeSymbol(symbol)).Warn("refresh live market snapshot failed", "error", err)
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
+	if firstErr != nil {
+		logger.Warn("live market warm completed with errors", "error", firstErr)
+		return firstErr
+	}
+	logger.Info("live market warm completed")
 	return firstErr
 }
 
@@ -82,6 +94,8 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 	if normalizedSymbol == "" {
 		normalizedSymbol = "BTCUSDT"
 	}
+	logger := p.logger("service.live_market", "symbol", normalizedSymbol)
+	logger.Debug("refreshing live market snapshot")
 	end := time.Now().UTC().Truncate(time.Minute)
 	minuteStart := end.Add(-liveMinuteWarmWindow)
 	signalStart := end.Add(-liveSignalWarmWindow)
@@ -111,6 +125,11 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 		UpdatedAt: time.Now().UTC(),
 	}
 	p.liveMarketMu.Unlock()
+	logger.Debug("live market snapshot refreshed",
+		"minute_bar_count", len(minuteBars),
+		"signal_1d_bar_count", len(signal1D),
+		"signal_4h_bar_count", len(signal4H),
+	)
 	return nil
 }
 

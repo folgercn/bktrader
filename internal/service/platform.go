@@ -11,6 +11,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -86,6 +87,13 @@ func NewPlatform(store store.Repository) *Platform {
 	platform.registerBuiltInSignalSources()
 	platform.registerBuiltInSignalRuntimeAdapters()
 	platform.registerBuiltInExecutionStrategies()
+	platform.logger("service.platform").Info("platform initialized",
+		"strategy_engine_count", len(platform.strategyEngines),
+		"live_adapter_count", len(platform.liveAdapters),
+		"signal_source_count", len(platform.signalSources),
+		"signal_adapter_count", len(platform.signalAdapters),
+		"execution_strategy_count", len(platform.executionStrategies),
+	)
 	return platform
 }
 
@@ -95,6 +103,10 @@ func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {
 	p.manifestMu.Lock()
 	p.tickManifest = nil
 	p.manifestMu.Unlock()
+	p.logger("service.platform").Info("backtest data directories configured",
+		"minute_data_dir", minuteDataDir,
+		"tick_data_dir", tickDataDir,
+	)
 }
 
 func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
@@ -113,6 +125,13 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	if policy.PaperStartReadinessTimeoutSecs > 0 {
 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
 	}
+	p.logger("service.platform").Info("runtime policy applied",
+		"trade_tick_freshness_seconds", p.runtimePolicy.TradeTickFreshnessSeconds,
+		"order_book_freshness_seconds", p.runtimePolicy.OrderBookFreshnessSeconds,
+		"signal_bar_freshness_seconds", p.runtimePolicy.SignalBarFreshnessSeconds,
+		"runtime_quiet_seconds", p.runtimePolicy.RuntimeQuietSeconds,
+		"paper_start_readiness_timeout_seconds", p.runtimePolicy.PaperStartReadinessTimeoutSecs,
+	)
 }
 
 func (p *Platform) RuntimePolicy() RuntimePolicy {
@@ -125,6 +144,13 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		policy.SignalBarFreshnessSeconds < 0 ||
 		policy.RuntimeQuietSeconds < 0 ||
 		policy.PaperStartReadinessTimeoutSecs < 0 {
+		p.logger("service.platform").Warn("reject invalid runtime policy",
+			"trade_tick_freshness_seconds", policy.TradeTickFreshnessSeconds,
+			"order_book_freshness_seconds", policy.OrderBookFreshnessSeconds,
+			"signal_bar_freshness_seconds", policy.SignalBarFreshnessSeconds,
+			"runtime_quiet_seconds", policy.RuntimeQuietSeconds,
+			"paper_start_readiness_timeout_seconds", policy.PaperStartReadinessTimeoutSecs,
+		)
 		return p.runtimePolicy, fmt.Errorf("runtime policy values must be non-negative")
 	}
 	p.SetRuntimePolicy(policy)
@@ -136,6 +162,7 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		PaperStartReadinessTimeoutSecs: p.runtimePolicy.PaperStartReadinessTimeoutSecs,
 	})
 	if err != nil {
+		p.logger("service.platform").Error("persist runtime policy failed", "error", err)
 		return p.runtimePolicy, err
 	}
 	p.SetRuntimePolicy(RuntimePolicy{
@@ -145,15 +172,18 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		RuntimeQuietSeconds:            saved.RuntimeQuietSeconds,
 		PaperStartReadinessTimeoutSecs: saved.PaperStartReadinessTimeoutSecs,
 	})
+	p.logger("service.platform").Info("runtime policy updated")
 	return p.runtimePolicy, nil
 }
 
 func (p *Platform) LoadPersistedRuntimePolicy() error {
 	policy, ok, err := p.store.GetRuntimePolicy()
 	if err != nil {
+		p.logger("service.platform").Error("load persisted runtime policy failed", "error", err)
 		return err
 	}
 	if !ok {
+		p.logger("service.platform").Debug("no persisted runtime policy found")
 		return nil
 	}
 	p.SetRuntimePolicy(RuntimePolicy{
@@ -163,6 +193,7 @@ func (p *Platform) LoadPersistedRuntimePolicy() error {
 		RuntimeQuietSeconds:            policy.RuntimeQuietSeconds,
 		PaperStartReadinessTimeoutSecs: policy.PaperStartReadinessTimeoutSecs,
 	})
+	p.logger("service.platform").Info("persisted runtime policy loaded")
 	return nil
 }
 
@@ -180,6 +211,12 @@ func (p *Platform) SetTelegramConfig(config domain.TelegramConfig) {
 	if !config.UpdatedAt.IsZero() {
 		p.telegramConfig.UpdatedAt = config.UpdatedAt
 	}
+	p.logger("service.platform").Info("telegram config applied",
+		"enabled", p.telegramConfig.Enabled,
+		"send_levels", p.telegramConfig.SendLevels,
+		"has_bot_token", strings.TrimSpace(p.telegramConfig.BotToken) != "",
+		"has_chat_id", strings.TrimSpace(p.telegramConfig.ChatID) != "",
+	)
 }
 
 func (p *Platform) TelegramConfigView() map[string]any {
@@ -208,22 +245,48 @@ func (p *Platform) UpdateTelegramConfig(enabled bool, botToken, chatID string, s
 	}
 	saved, err := p.store.UpsertTelegramConfig(config)
 	if err != nil {
+		p.logger("service.platform").Error("persist telegram config failed", "error", err)
 		return nil, err
 	}
 	p.telegramConfig = saved
+	p.logger("service.platform").Info("telegram config updated",
+		"enabled", saved.Enabled,
+		"send_levels", saved.SendLevels,
+		"has_bot_token", strings.TrimSpace(saved.BotToken) != "",
+		"has_chat_id", strings.TrimSpace(saved.ChatID) != "",
+	)
 	return p.TelegramConfigView(), nil
 }
 
 func (p *Platform) LoadPersistedTelegramConfig() error {
 	config, ok, err := p.store.GetTelegramConfig()
 	if err != nil {
+		p.logger("service.platform").Error("load persisted telegram config failed", "error", err)
 		return err
 	}
 	if !ok {
+		p.logger("service.platform").Debug("no persisted telegram config found")
 		return nil
 	}
 	p.telegramConfig = config
+	p.logger("service.platform").Info("persisted telegram config loaded",
+		"enabled", config.Enabled,
+		"send_levels", config.SendLevels,
+		"has_bot_token", strings.TrimSpace(config.BotToken) != "",
+		"has_chat_id", strings.TrimSpace(config.ChatID) != "",
+	)
 	return nil
+}
+
+func (p *Platform) logger(component string, args ...any) *slog.Logger {
+	logger := slog.Default()
+	if strings.TrimSpace(component) != "" {
+		logger = logger.With("component", component)
+	}
+	if len(args) > 0 {
+		logger = logger.With(args...)
+	}
+	return logger
 }
 
 func normalizeTelegramSendLevels(levels []string) []string {

@@ -180,10 +180,13 @@ func evaluateExecutionQuality(state map[string]any) {
 }
 
 func (p *Platform) SyncLiveSession(sessionID string) (domain.LiveSession, error) {
+	logger := p.logger("service.live_execution", "session_id", sessionID)
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
+		logger.Warn("load live session failed", "error", err)
 		return domain.LiveSession{}, err
 	}
+	logger.Debug("syncing latest live session order")
 	return p.syncLatestLiveSessionOrder(session, time.Now().UTC())
 }
 
@@ -205,10 +208,13 @@ func (p *Platform) syncActiveLiveSessions(eventTime time.Time) error {
 }
 
 func (p *Platform) DispatchLiveSessionIntent(sessionID string) (domain.Order, error) {
+	logger := p.logger("service.live_execution", "session_id", sessionID)
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
+		logger.Warn("load live session failed", "error", err)
 		return domain.Order{}, err
 	}
+	logger.Info("dispatching live session intent")
 	return p.dispatchLiveSessionIntent(session)
 }
 
@@ -292,8 +298,25 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 		_, _ = p.syncLatestLiveSessionOrder(updatedSession, time.Now().UTC())
 	}
 	if createErr != nil {
+		p.logger("service.live_execution",
+			"session_id", session.ID,
+			"order_id", created.ID,
+		).Warn("live session intent dispatched with error",
+			"status", created.Status,
+			"error", createErr,
+		)
 		return created, createErr
 	}
+	p.logger("service.live_execution",
+		"session_id", session.ID,
+		"order_id", created.ID,
+	).Info("live session intent dispatched",
+		"status", created.Status,
+		"symbol", created.Symbol,
+		"side", created.Side,
+		"type", created.Type,
+		"quantity", created.Quantity,
+	)
 	return created, nil
 }
 
