@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -10,6 +11,17 @@ import (
 )
 
 // --- 策略管理服务方法 ---
+
+func strategyLogger(component string, args ...any) *slog.Logger {
+	logger := slog.Default()
+	if strings.TrimSpace(component) != "" {
+		logger = logger.With("component", component)
+	}
+	if len(args) > 0 {
+		logger = logger.With(args...)
+	}
+	return logger
+}
 
 // ListStrategies 获取所有策略列表。
 func (p *Platform) ListStrategies() ([]map[string]any, error) {
@@ -22,7 +34,17 @@ func (p *Platform) CreateStrategy(name, description string, parameters map[strin
 		parameters = map[string]any{}
 	}
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
-	return p.store.CreateStrategy(name, description, parameters)
+	strategy, err := p.store.CreateStrategy(name, description, parameters)
+	if err != nil {
+		strategyLogger("service.strategy", "strategy_name", name).Error("create strategy failed", "error", err)
+		return nil, err
+	}
+	strategyLogger("service.strategy",
+		"strategy_id", stringValue(strategy["id"]),
+		"strategy_name", name,
+		"strategy_engine", stringValue(parameters["strategyEngine"]),
+	).Info("strategy created")
+	return strategy, nil
 }
 
 func (p *Platform) UpdateStrategyParameters(strategyID string, parameters map[string]any) (map[string]any, error) {
@@ -30,7 +52,16 @@ func (p *Platform) UpdateStrategyParameters(strategyID string, parameters map[st
 		parameters = map[string]any{}
 	}
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
-	return p.store.UpdateStrategyParameters(strategyID, parameters)
+	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
+	if err != nil {
+		strategyLogger("service.strategy", "strategy_id", strategyID).Error("update strategy parameters failed", "error", err)
+		return nil, err
+	}
+	strategyLogger("service.strategy",
+		"strategy_id", strategyID,
+		"strategy_engine", stringValue(parameters["strategyEngine"]),
+	).Info("strategy parameters updated")
+	return updated, nil
 }
 
 func (p *Platform) GetStrategy(strategyID string) (map[string]any, error) {
@@ -121,7 +152,18 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 	}
 	parameters["signalBindings"] = bindings
 	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
-	return p.store.UpdateStrategyParameters(strategyID, parameters)
+	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
+	if err != nil {
+		strategyLogger("service.strategy", "strategy_id", strategyID).Error("bind strategy signal source failed", "error", err)
+		return nil, err
+	}
+	strategyLogger("service.strategy",
+		"strategy_id", strategyID,
+		"source_key", source.Key,
+		"role", role,
+		"symbol", symbol,
+	).Info("strategy signal source bound", "replaced_existing", replaced)
+	return updated, nil
 }
 
 func (p *Platform) UnbindStrategySignalSource(strategyID string, bindingID string) (map[string]any, bool, error) {
@@ -199,7 +241,18 @@ func (p *Platform) GetAccount(accountID string) (domain.Account, error) {
 
 // CreateAccount 创建新账户，mode 自动转为大写（LIVE / PAPER）。
 func (p *Platform) CreateAccount(name, mode, exchange string) (domain.Account, error) {
-	return p.store.CreateAccount(name, strings.ToUpper(mode), exchange)
+	account, err := p.store.CreateAccount(name, strings.ToUpper(mode), exchange)
+	if err != nil {
+		strategyLogger("service.account", "account_name", name, "mode", strings.ToUpper(mode)).Error("create account failed", "error", err)
+		return domain.Account{}, err
+	}
+	strategyLogger("service.account",
+		"account_id", account.ID,
+		"account_name", account.Name,
+		"mode", account.Mode,
+		"exchange", account.Exchange,
+	).Info("account created")
+	return account, nil
 }
 
 // ListAccountSummaries 汇总所有账户的权益、PnL、费用和敞口信息。
@@ -371,19 +424,37 @@ func (p *Platform) GetBacktest(backtestID string) (domain.BacktestRun, error) {
 func (p *Platform) CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error) {
 	normalized, err := NormalizeBacktestParameters(parameters)
 	if err != nil {
+		strategyLogger("service.backtest", "strategy_version_id", strategyVersionID).Warn("normalize backtest parameters failed", "error", err)
 		return domain.BacktestRun{}, err
 	}
 	executionSource := stringValue(normalized["executionDataSource"])
 	symbol := stringValue(normalized["symbol"])
 	if !p.hasExecutionDataset(executionSource, symbol) {
+		strategyLogger("service.backtest",
+			"strategy_version_id", strategyVersionID,
+			"execution_data_source", executionSource,
+			"symbol", symbol,
+		).Warn("backtest dataset missing")
 		return domain.BacktestRun{}, fmt.Errorf("no %s dataset found for symbol %s", executionSource, symbol)
 	}
 	backtest, err := p.store.CreateBacktest(strategyVersionID, normalized)
 	if err != nil {
+		strategyLogger("service.backtest", "strategy_version_id", strategyVersionID).Error("create backtest failed", "error", err)
 		return domain.BacktestRun{}, err
 	}
 	backtest = p.runBacktestSkeleton(backtest)
-	return p.store.UpdateBacktest(backtest)
+	backtest, err = p.store.UpdateBacktest(backtest)
+	if err != nil {
+		strategyLogger("service.backtest", "backtest_id", backtest.ID).Error("persist backtest skeleton failed", "error", err)
+		return domain.BacktestRun{}, err
+	}
+	strategyLogger("service.backtest",
+		"backtest_id", backtest.ID,
+		"strategy_version_id", strategyVersionID,
+		"execution_data_source", executionSource,
+		"symbol", symbol,
+	).Info("backtest created")
+	return backtest, nil
 }
 
 func (p *Platform) BacktestOptions() map[string]any {
@@ -466,6 +537,7 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	if normalized == nil {
 		normalized = map[string]any{}
 	}
+	applyBacktestParameterAliases(normalized)
 
 	signalTimeframe := strings.ToLower(strings.TrimSpace(stringValue(normalized["signalTimeframe"])))
 	if signalTimeframe == "" {
@@ -513,6 +585,26 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["executionDataSource"] = executionDataSource
 	normalized["symbol"] = symbol
 	normalized["strategyEngine"] = normalizeStrategyEngineKey(stringValue(normalized["strategyEngine"]))
+	normalized["max_trades_per_bar"] = maxIntValue(normalized["max_trades_per_bar"], 3)
+	normalized["reentry_size_schedule"] = normalizeBacktestFloatSlice(normalized["reentry_size_schedule"], []float64{0.20, 0.10})
+	stopLossATR := parseFloatValue(normalized["stop_loss_atr"])
+	if stopLossATR <= 0 {
+		stopLossATR = 0.05
+	}
+	normalized["stop_loss_atr"] = stopLossATR
+	profitProtectATR := parseFloatValue(normalized["profit_protect_atr"])
+	if profitProtectATR <= 0 {
+		profitProtectATR = 1.0
+	}
+	normalized["profit_protect_atr"] = profitProtectATR
+	normalized["long_reentry_atr"] = parseFloatValue(firstNonNil(normalized["long_reentry_atr"], 0.1))
+	normalized["short_reentry_atr"] = parseFloatValue(firstNonNil(normalized["short_reentry_atr"], 0.0))
+	if trailingStopATR := parseFloatValue(normalized["trailing_stop_atr"]); trailingStopATR > 0 {
+		normalized["trailing_stop_atr"] = trailingStopATR
+	}
+	if delayedTrailingActivationATR := parseFloatValue(normalized["delayed_trailing_activation_atr"]); delayedTrailingActivationATR > 0 {
+		normalized["delayed_trailing_activation_atr"] = delayedTrailingActivationATR
+	}
 	if feeBps := parseFloatValue(normalized["tradingFeeBps"]); feeBps >= 0 {
 		normalized["tradingFeeBps"] = feeBps
 	} else {
@@ -529,6 +621,112 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["executionTimeframe"] = executionDataSource
 	normalized["backtestMode"] = fmt.Sprintf("%s->%s", signalTimeframe, executionDataSource)
 	return normalized, nil
+}
+
+func applyBacktestParameterAliases(parameters map[string]any) {
+	if parameters == nil {
+		return
+	}
+	aliases := map[string]string{
+		"signal_timeframe":             "signalTimeframe",
+		"execution_data_source":        "executionDataSource",
+		"strategy_engine":              "strategyEngine",
+		"maxTradesPerBar":              "max_trades_per_bar",
+		"reentrySizes":                 "reentry_size_schedule",
+		"stopLossATR":                  "stop_loss_atr",
+		"profitProtectATR":             "profit_protect_atr",
+		"fixedSlippage":                "fixed_slippage",
+		"trailingStopATR":              "trailing_stop_atr",
+		"delayedTrailingActivationATR": "delayed_trailing_activation_atr",
+		"longReentryATR":               "long_reentry_atr",
+		"shortReentryATR":              "short_reentry_atr",
+	}
+	for from, to := range aliases {
+		if _, ok := parameters[to]; ok {
+			continue
+		}
+		if value, ok := parameters[from]; ok {
+			parameters[to] = value
+		}
+	}
+}
+
+func normalizeBacktestFloatSlice(value any, fallback []float64) []float64 {
+	items := []float64{}
+	switch raw := value.(type) {
+	case []float64:
+		items = append(items, raw...)
+	case []any:
+		for _, item := range raw {
+			items = append(items, parseFloatValue(item))
+		}
+	case []string:
+		for _, item := range raw {
+			items = append(items, parseFloatValue(item))
+		}
+	case nil:
+	default:
+		if single, ok := parseBacktestFloatValue(raw); ok {
+			items = append(items, single)
+		}
+	}
+	if len(items) == 0 {
+		return append([]float64(nil), fallback...)
+	}
+	clean := make([]float64, 0, len(items))
+	for _, item := range items {
+		if item >= 0 {
+			clean = append(clean, item)
+		}
+	}
+	if len(clean) == 0 {
+		return append([]float64(nil), fallback...)
+	}
+	return clean
+}
+
+func parseBacktestFloatValue(value any) (float64, bool) {
+	switch raw := value.(type) {
+	case float64:
+		return raw, true
+	case float32:
+		return float64(raw), true
+	case int:
+		return float64(raw), true
+	case int8:
+		return float64(raw), true
+	case int16:
+		return float64(raw), true
+	case int32:
+		return float64(raw), true
+	case int64:
+		return float64(raw), true
+	case uint:
+		return float64(raw), true
+	case uint8:
+		return float64(raw), true
+	case uint16:
+		return float64(raw), true
+	case uint32:
+		return float64(raw), true
+	case uint64:
+		return float64(raw), true
+	case string:
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return 0, false
+		}
+		return parseFloatValue(trimmed), true
+	default:
+		return 0, false
+	}
+}
+
+func firstNonNil(value any, fallback any) any {
+	if value == nil {
+		return fallback
+	}
+	return value
 }
 
 func extractDatasetSymbols(datasets []executionDatasetDescriptor) []string {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -128,6 +129,106 @@ func TestEvaluateSignalBarGateDoesNotRequireOppositeBreakoutForExit(t *testing.T
 	}, "SELL", "exit")
 	if !boolValue(gate["ready"]) {
 		t.Fatalf("expected exit gate to stay ready, got reason=%s", stringValue(gate["reason"]))
+	}
+}
+
+func TestBuildLiveExecutionPlanFromMarketDataAcceptsTickExecutionSource(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+
+	version, err := platform.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		t.Fatalf("resolve strategy version failed: %v", err)
+	}
+	parameters, err := platform.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		t.Fatalf("resolve live session parameters failed: %v", err)
+	}
+	engine, engineKey, err := platform.resolveStrategyEngine(version.ID, parameters)
+	if err != nil {
+		t.Fatalf("resolve strategy engine failed: %v", err)
+	}
+
+	signalCandles := make([]candleBar, 0, 32)
+	minuteBars := make([]candleBar, 0, 32)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 32; i++ {
+		ts := start.AddDate(0, 0, i)
+		open := 100.0 + float64(i)*2
+		close := open + 1
+		high := close + 2
+		low := open - 2
+		signalCandles = append(signalCandles, candleBar{
+			Time:   ts,
+			Open:   open,
+			High:   high,
+			Low:    low,
+			Close:  close,
+			Volume: 10 + float64(i),
+		})
+		minuteBars = append(minuteBars, candleBar{
+			Time:   ts.Add(30 * time.Minute),
+			Open:   open,
+			High:   high,
+			Low:    low,
+			Close:  close,
+			Volume: 1,
+		})
+	}
+	signalBars, err := buildStrategySignalBarsFromCandles(signalCandles)
+	if err != nil {
+		t.Fatalf("build signal bars failed: %v", err)
+	}
+
+	platform.liveMarketMu.Lock()
+	platform.liveMarketData["BTCUSDT"] = liveMarketSnapshot{
+		Symbol:     "BTCUSDT",
+		MinuteBars: minuteBars,
+		SignalBars: map[string][]strategySignalBar{"1d": signalBars},
+		UpdatedAt:  time.Now().UTC(),
+	}
+	platform.liveMarketMu.Unlock()
+
+	plan, err := platform.buildLiveExecutionPlanFromMarketData(
+		session,
+		version,
+		engine,
+		engineKey,
+		parameters,
+		defaultExecutionSemantics(ExecutionModeLive, parameters),
+	)
+	if err != nil {
+		t.Fatalf("build live execution plan failed: %v", err)
+	}
+	if plan == nil {
+		t.Fatal("expected plan slice, got nil")
+	}
+}
+
+func TestRefreshLiveMarketSnapshotFailsWithoutRESTWarmData(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	originalFetch := fetchLiveCandleRange
+	fetchLiveCandleRange = func(symbol, resolution string, from, to time.Time) ([]candleBar, error) {
+		return nil, fmt.Errorf("upstream unavailable")
+	}
+	t.Cleanup(func() {
+		fetchLiveCandleRange = originalFetch
+	})
+
+	err := platform.refreshLiveMarketSnapshot("BTCUSDT")
+	if err == nil {
+		t.Fatal("expected warm snapshot refresh to fail when REST warm data is unavailable")
+	}
+	if !strings.Contains(err.Error(), "upstream unavailable") {
+		t.Fatalf("expected upstream error to surface, got %v", err)
 	}
 }
 

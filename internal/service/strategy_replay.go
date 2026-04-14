@@ -45,6 +45,8 @@ type strategyPosition struct {
 	Reason     string
 	BarIndex   int
 	EntryTime  time.Time
+	HWM        float64
+	LWM        float64
 }
 
 type strategyReplayConfig struct {
@@ -60,8 +62,12 @@ type strategyReplayConfig struct {
 	StopLossATR          float64
 	MaxTradesPerBar      int
 	ReentrySizeSchedule  []float64
+	LongReentryATR       float64
+	ShortReentryATR      float64
 	StopMode             string
 	ProfitProtectATR     float64
+	TrailingStopATR      float64
+	DelayedTrailingATR   float64
 	TradingFeeRate       float64
 	FundingRate          float64
 	FundingIntervalHours int
@@ -106,7 +112,6 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 	defer iterator.Close()
 
 	engine := newStrategyReplayEngine(cfg)
-	reentryATR := 0.1
 	commission := cfg.TradingFeeRate
 	initialUsage := 0.10
 	if cfg.Dir2ZeroInitial {
@@ -160,7 +165,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 
 				longRegimeReady, shortRegimeReady := strategySignalRegimeReady(sig, engine.cfg.SignalTimeframe)
 				if longRegimeReady {
-					reP := sig.PrevLow1 + reentryATR*sig.ATR
+					reP := sig.PrevLow1 + cfg.LongReentryATR*sig.ATR
 					if tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
 						if current.Price >= sig.PrevHigh2 {
 							entry := math.Max(current.Price, sig.PrevHigh2) * (1 + cfg.FixedSlippage)
@@ -175,6 +180,8 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 								Reason:     "Initial",
 								BarIndex:   i,
 								EntryTime:  current.Time,
+								HWM:        entry,
+								LWM:        entry,
 							}
 							tradingFee := notional * commission
 							engine.balance -= tradingFee
@@ -189,8 +196,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 							if engine.lastExitReason == "SL" {
 								reason = "SL-Reentry"
 							}
-							if (reason == "SL-Reentry" && tradesInBar < cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
-								size := getReentrySize(tradesInBar, cfg.ReentrySizeSchedule)
+							if size, effectiveTradesInBar, ok := resolveReplayReentrySlot(tradesInBar, cfg.MaxTradesPerBar, cfg.ReentrySizeSchedule); ok {
 								notional := engine.balance * size
 								entry := reP * (1 + cfg.FixedSlippage)
 								stopLoss := resolveStopPrice("long", entry, sig, cfg.StopMode, cfg.StopLossATR)
@@ -203,21 +209,21 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 									Reason:     reason,
 									BarIndex:   i,
 									EntryTime:  current.Time,
+									HWM:        entry,
+									LWM:        entry,
 								}
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
 								engine.appendTrade("BUY", current.Time, entry, reason, notional, 0, tradingFee, 0)
-								if reason == "SL-Reentry" {
-									tradesInBar++
-								}
+								tradesInBar = effectiveTradesInBar + 1
 								executed = true
 							}
 							engine.lastExitSide = ""
 						}
 					}
 				} else if shortRegimeReady {
-					reP := sig.PrevHigh1
+					reP := sig.PrevHigh1 + cfg.ShortReentryATR*sig.ATR
 					if tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
 						if current.Price <= sig.PrevLow2 {
 							entry := math.Min(current.Price, sig.PrevLow2) * (1 - cfg.FixedSlippage)
@@ -232,6 +238,8 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 								Reason:     "Initial",
 								BarIndex:   i,
 								EntryTime:  current.Time,
+								HWM:        entry,
+								LWM:        entry,
 							}
 							tradingFee := notional * commission
 							engine.balance -= tradingFee
@@ -246,8 +254,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 							if engine.lastExitReason == "SL" {
 								reason = "SL-Reentry"
 							}
-							if (reason == "SL-Reentry" && tradesInBar < cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
-								size := getReentrySize(tradesInBar, cfg.ReentrySizeSchedule)
+							if size, effectiveTradesInBar, ok := resolveReplayReentrySlot(tradesInBar, cfg.MaxTradesPerBar, cfg.ReentrySizeSchedule); ok {
 								notional := engine.balance * size
 								entry := reP * (1 - cfg.FixedSlippage)
 								stopLoss := resolveStopPrice("short", entry, sig, cfg.StopMode, cfg.StopLossATR)
@@ -260,14 +267,14 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 									Reason:     reason,
 									BarIndex:   i,
 									EntryTime:  current.Time,
+									HWM:        entry,
+									LWM:        entry,
 								}
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
 								engine.appendTrade("SHORT", current.Time, entry, reason, notional, 0, tradingFee, 0)
-								if reason == "SL-Reentry" {
-									tradesInBar++
-								}
+								tradesInBar = effectiveTradesInBar + 1
 								executed = true
 							}
 							engine.lastExitSide = ""
@@ -285,36 +292,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 				continue
 			}
 
-			exitTriggered := false
-			exitPrice := 0.0
-			exitReason := ""
-			if engine.position.Side == "long" {
-				if !engine.position.Protected && current.Price >= engine.position.EntryPrice+cfg.ProfitProtectATR*sig.ATR {
-					engine.position.Protected = true
-				}
-				if current.Price <= engine.position.StopLoss {
-					exitPrice = engine.position.StopLoss
-					exitReason = "SL"
-					exitTriggered = true
-				} else if engine.position.Protected && current.Price <= sig.PrevLow1 {
-					exitPrice = sig.PrevLow1
-					exitReason = "PT"
-					exitTriggered = true
-				}
-			} else {
-				if !engine.position.Protected && current.Price <= engine.position.EntryPrice-cfg.ProfitProtectATR*sig.ATR {
-					engine.position.Protected = true
-				}
-				if current.Price >= engine.position.StopLoss {
-					exitPrice = engine.position.StopLoss
-					exitReason = "SL"
-					exitTriggered = true
-				} else if engine.position.Protected && current.Price >= sig.PrevHigh1 {
-					exitPrice = sig.PrevHigh1
-					exitReason = "PT"
-					exitTriggered = true
-				}
-			}
+			exitReason, exitPrice, exitTriggered := evaluateReplayPositionExit(engine.position, sig, cfg, current.Price, current.Price)
 
 			nextEvent, hasEvent, err = advanceTickIterator(iterator, current.Time)
 			if err != nil {
@@ -382,7 +360,6 @@ func advanceTickIterator(iterator *tickArchiveIterator, currentTime time.Time) (
 func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategySignalBar, minuteBars []candleBar) (map[string]any, error) {
 	engine := newStrategyReplayEngine(cfg)
 	barCursor := 0
-	reentryATR := 0.1
 	commission := cfg.TradingFeeRate
 	initialUsage := 0.10
 	if cfg.Dir2ZeroInitial {
@@ -440,7 +417,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 
 				longRegimeReady, shortRegimeReady := strategySignalRegimeReady(sig, engine.cfg.SignalTimeframe)
 				if longRegimeReady {
-					reP := sig.PrevLow1 + reentryATR*sig.ATR
+					reP := sig.PrevLow1 + cfg.LongReentryATR*sig.ATR
 					if tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
 						if bar.High >= sig.PrevHigh2 {
 							entry := math.Max(bar.Open, sig.PrevHigh2) * (1 + cfg.FixedSlippage)
@@ -455,6 +432,8 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 								Reason:     "Initial",
 								BarIndex:   i,
 								EntryTime:  bar.Time,
+								HWM:        entry,
+								LWM:        entry,
 							}
 							tradingFee := notional * commission
 							engine.balance -= tradingFee
@@ -479,8 +458,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 							if engine.lastExitReason == "SL" {
 								reason = "SL-Reentry"
 							}
-							if (reason == "SL-Reentry" && tradesInBar < cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
-								size := getReentrySize(tradesInBar, cfg.ReentrySizeSchedule)
+							if size, effectiveTradesInBar, ok := resolveReplayReentrySlot(tradesInBar, cfg.MaxTradesPerBar, cfg.ReentrySizeSchedule); ok {
 								notional := engine.balance * size
 								entry := entryRaw * (1 + cfg.FixedSlippage)
 								stopLoss := resolveStopPrice("long", entry, sig, cfg.StopMode, cfg.StopLossATR)
@@ -493,21 +471,21 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 									Reason:     reason,
 									BarIndex:   i,
 									EntryTime:  bar.Time,
+									HWM:        entry,
+									LWM:        entry,
 								}
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
 								engine.appendTrade("BUY", bar.Time, entry, reason, notional, 0, tradingFee, 0)
-								if reason == "SL-Reentry" {
-									tradesInBar++
-								}
+								tradesInBar = effectiveTradesInBar + 1
 								executed = true
 							}
 							engine.lastExitSide = ""
 						}
 					}
 				} else if shortRegimeReady {
-					reP := sig.PrevHigh1
+					reP := sig.PrevHigh1 + cfg.ShortReentryATR*sig.ATR
 					if tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
 						if bar.Low <= sig.PrevLow2 {
 							entry := math.Min(bar.Open, sig.PrevLow2) * (1 - cfg.FixedSlippage)
@@ -522,6 +500,8 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 								Reason:     "Initial",
 								BarIndex:   i,
 								EntryTime:  bar.Time,
+								HWM:        entry,
+								LWM:        entry,
 							}
 							tradingFee := notional * commission
 							engine.balance -= tradingFee
@@ -546,8 +526,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 							if engine.lastExitReason == "SL" {
 								reason = "SL-Reentry"
 							}
-							if (reason == "SL-Reentry" && tradesInBar < cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
-								size := getReentrySize(tradesInBar, cfg.ReentrySizeSchedule)
+							if size, effectiveTradesInBar, ok := resolveReplayReentrySlot(tradesInBar, cfg.MaxTradesPerBar, cfg.ReentrySizeSchedule); ok {
 								notional := engine.balance * size
 								entry := entryRaw * (1 - cfg.FixedSlippage)
 								stopLoss := resolveStopPrice("short", entry, sig, cfg.StopMode, cfg.StopLossATR)
@@ -560,14 +539,14 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 									Reason:     reason,
 									BarIndex:   i,
 									EntryTime:  bar.Time,
+									HWM:        entry,
+									LWM:        entry,
 								}
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
 								engine.appendTrade("SHORT", bar.Time, entry, reason, notional, 0, tradingFee, 0)
-								if reason == "SL-Reentry" {
-									tradesInBar++
-								}
+								tradesInBar = effectiveTradesInBar + 1
 								executed = true
 							}
 							engine.lastExitSide = ""
@@ -582,36 +561,7 @@ func runStrategyReplayOnMinuteBars(cfg strategyReplayConfig, signals []strategyS
 				continue
 			}
 
-			exitTriggered := false
-			exitPrice := 0.0
-			exitReason := ""
-			if engine.position.Side == "long" {
-				if !engine.position.Protected && bar.High >= engine.position.EntryPrice+cfg.ProfitProtectATR*sig.ATR {
-					engine.position.Protected = true
-				}
-				if bar.Low <= engine.position.StopLoss {
-					exitPrice = engine.position.StopLoss
-					exitReason = "SL"
-					exitTriggered = true
-				} else if engine.position.Protected && bar.Low <= sig.PrevLow1 {
-					exitPrice = sig.PrevLow1
-					exitReason = "PT"
-					exitTriggered = true
-				}
-			} else {
-				if !engine.position.Protected && bar.Low <= engine.position.EntryPrice-cfg.ProfitProtectATR*sig.ATR {
-					engine.position.Protected = true
-				}
-				if bar.High >= engine.position.StopLoss {
-					exitPrice = engine.position.StopLoss
-					exitReason = "SL"
-					exitTriggered = true
-				} else if engine.position.Protected && bar.High >= sig.PrevHigh1 {
-					exitPrice = sig.PrevHigh1
-					exitReason = "PT"
-					exitTriggered = true
-				}
-			}
+			exitReason, exitPrice, exitTriggered := evaluateReplayPositionExit(engine.position, sig, cfg, bar.High, bar.Low)
 
 			if exitTriggered {
 				sideMult := 1.0
@@ -700,8 +650,7 @@ func (e *strategyReplayEngine) process(bar executionBar, signals []strategySigna
 }
 
 func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar) {
-	reentryATR := 0.1
-	commission := 0.001
+	commission := e.cfg.TradingFeeRate
 	initialUsage := 0.10
 	if e.cfg.Dir2ZeroInitial {
 		initialUsage = 0.0
@@ -709,7 +658,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 
 	longRegimeReady, shortRegimeReady := strategySignalRegimeReady(sig, e.cfg.SignalTimeframe)
 	if longRegimeReady {
-		reP := sig.PrevLow1 + reentryATR*sig.ATR
+		reP := sig.PrevLow1 + e.cfg.LongReentryATR*sig.ATR
 		if e.tradesInBar == 0 && sig.PrevHigh2 > sig.PrevHigh1 {
 			if bar.High >= sig.PrevHigh2 {
 				entry := math.Max(bar.Open, sig.PrevHigh2) * (1 + e.cfg.FixedSlippage)
@@ -723,6 +672,8 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 					Notional:   notional,
 					Reason:     "Initial",
 					BarIndex:   e.currentBarIndex,
+					HWM:        entry,
+					LWM:        entry,
 				}
 				e.balance -= notional * commission
 				e.tradesInBar++
@@ -745,8 +696,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 				if e.lastExitReason == "SL" {
 					reason = "SL-Reentry"
 				}
-				if (reason == "SL-Reentry" && e.tradesInBar < e.cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
-					size := getReentrySize(e.tradesInBar, e.cfg.ReentrySizeSchedule)
+				if size, effectiveTradesInBar, ok := resolveReplayReentrySlot(e.tradesInBar, e.cfg.MaxTradesPerBar, e.cfg.ReentrySizeSchedule); ok {
 					notional := e.balance * size
 					entry := entryRaw * (1 + e.cfg.FixedSlippage)
 					stopLoss := resolveStopPrice("long", entry, sig, e.cfg.StopMode, e.cfg.StopLossATR)
@@ -758,11 +708,11 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 						Notional:   notional,
 						Reason:     reason,
 						BarIndex:   e.currentBarIndex,
+						HWM:        entry,
+						LWM:        entry,
 					}
 					e.balance -= notional * commission
-					if reason == "SL-Reentry" {
-						e.tradesInBar++
-					}
+					e.tradesInBar = effectiveTradesInBar + 1
 					e.appendTrade("BUY", bar.Time, entry, reason, notional, 0, notional*commission, 0)
 				}
 				e.lastExitSide = ""
@@ -772,7 +722,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 	}
 
 	if shortRegimeReady {
-		reP := sig.PrevHigh1
+		reP := sig.PrevHigh1 + e.cfg.ShortReentryATR*sig.ATR
 		if e.tradesInBar == 0 && sig.PrevLow2 < sig.PrevLow1 {
 			if bar.Low <= sig.PrevLow2 {
 				entry := math.Min(bar.Open, sig.PrevLow2) * (1 - e.cfg.FixedSlippage)
@@ -786,6 +736,8 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 					Notional:   notional,
 					Reason:     "Initial",
 					BarIndex:   e.currentBarIndex,
+					HWM:        entry,
+					LWM:        entry,
 				}
 				e.balance -= notional * commission
 				e.tradesInBar++
@@ -808,8 +760,7 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 				if e.lastExitReason == "SL" {
 					reason = "SL-Reentry"
 				}
-				if (reason == "SL-Reentry" && e.tradesInBar < e.cfg.MaxTradesPerBar) || reason == "PT-Reentry" {
-					size := getReentrySize(e.tradesInBar, e.cfg.ReentrySizeSchedule)
+				if size, effectiveTradesInBar, ok := resolveReplayReentrySlot(e.tradesInBar, e.cfg.MaxTradesPerBar, e.cfg.ReentrySizeSchedule); ok {
 					notional := e.balance * size
 					entry := entryRaw * (1 - e.cfg.FixedSlippage)
 					stopLoss := resolveStopPrice("short", entry, sig, e.cfg.StopMode, e.cfg.StopLossATR)
@@ -821,11 +772,11 @@ func (e *strategyReplayEngine) tryEntry(bar executionBar, sig strategySignalBar)
 						Notional:   notional,
 						Reason:     reason,
 						BarIndex:   e.currentBarIndex,
+						HWM:        entry,
+						LWM:        entry,
 					}
 					e.balance -= notional * commission
-					if reason == "SL-Reentry" {
-						e.tradesInBar++
-					}
+					e.tradesInBar = effectiveTradesInBar + 1
 					e.appendTrade("SHORT", bar.Time, entry, reason, notional, 0, notional*commission, 0)
 				}
 				e.lastExitSide = ""
@@ -838,40 +789,19 @@ func (e *strategyReplayEngine) tryExit(bar executionBar, sig strategySignalBar) 
 	if e.position == nil {
 		return
 	}
-	sideMult := 1.0
-	reason := ""
-	exitPrice := 0.0
-	commission := 0.001
-
-	if e.position.Side == "long" {
-		if !e.position.Protected && bar.High >= e.position.EntryPrice+e.cfg.ProfitProtectATR*sig.ATR {
-			e.position.Protected = true
-		}
-		if bar.Low <= e.position.StopLoss {
-			reason = "SL"
-			exitPrice = e.position.StopLoss * (1 - e.cfg.FixedSlippage)
-		} else if e.position.Protected && bar.Low <= sig.PrevLow1 {
-			reason = "PT"
-			exitPrice = sig.PrevLow1 * (1 - e.cfg.FixedSlippage)
-		}
-	} else {
-		sideMult = -1.0
-		if !e.position.Protected && bar.Low <= e.position.EntryPrice-e.cfg.ProfitProtectATR*sig.ATR {
-			e.position.Protected = true
-		}
-		if bar.High >= e.position.StopLoss {
-			reason = "SL"
-			exitPrice = e.position.StopLoss * (1 + e.cfg.FixedSlippage)
-		} else if e.position.Protected && bar.High >= sig.PrevHigh1 {
-			reason = "PT"
-			exitPrice = sig.PrevHigh1 * (1 + e.cfg.FixedSlippage)
-		}
-	}
-
-	if reason == "" {
+	commission := e.cfg.TradingFeeRate
+	reason, exitPrice, exitTriggered := evaluateReplayPositionExit(e.position, sig, e.cfg, bar.High, bar.Low)
+	if !exitTriggered {
 		return
 	}
 
+	sideMult := 1.0
+	if e.position.Side == "short" {
+		sideMult = -1.0
+		exitPrice *= (1 + e.cfg.FixedSlippage)
+	} else {
+		exitPrice *= (1 - e.cfg.FixedSlippage)
+	}
 	pnl := 0.0
 	if e.position.Notional > 0 {
 		pnl = sideMult * (exitPrice - e.position.EntryPrice) / e.position.EntryPrice * e.position.Notional
@@ -938,19 +868,7 @@ func (e *strategyReplayEngine) summary(signals []strategySignalBar) map[string]a
 
 func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayConfig {
 	parameters := context.Parameters
-	reentrySizes := []float64{0.10, 0.20}
-	if raw, ok := parameters["reentry_size_schedule"]; ok {
-		switch items := raw.(type) {
-		case []any:
-			reentrySizes = make([]float64, 0, len(items))
-			for _, item := range items {
-				reentrySizes = append(reentrySizes, parseFloatValue(item))
-			}
-		}
-	}
-	if len(reentrySizes) == 0 {
-		reentrySizes = []float64{0.10, 0.20}
-	}
+	reentrySizes := normalizeBacktestFloatSlice(parameters["reentry_size_schedule"], []float64{0.20, 0.10})
 	stopMode := stringValue(parameters["stop_mode"])
 	if stopMode == "" {
 		stopMode = "atr"
@@ -972,8 +890,12 @@ func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayC
 		StopLossATR:          stopLossATR,
 		MaxTradesPerBar:      maxIntValue(parameters["max_trades_per_bar"], 3),
 		ReentrySizeSchedule:  reentrySizes,
+		LongReentryATR:       parseFloatValue(firstNonNil(parameters["long_reentry_atr"], 0.1)),
+		ShortReentryATR:      parseFloatValue(firstNonNil(parameters["short_reentry_atr"], 0.0)),
 		StopMode:             stopMode,
 		ProfitProtectATR:     firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0),
+		TrailingStopATR:      parseFloatValue(parameters["trailing_stop_atr"]),
+		DelayedTrailingATR:   parseFloatValue(parameters["delayed_trailing_activation_atr"]),
 		TradingFeeRate:       context.Semantics.TradingFeeBps / 10000.0,
 		FundingRate:          context.Semantics.FundingRateBps / 10000.0,
 		FundingIntervalHours: maxIntValue(context.Semantics.FundingIntervalHours, 8),
@@ -1332,6 +1254,21 @@ func resolveStopPrice(side string, entry float64, sig strategySignalBar, stopMod
 	}
 }
 
+func resolveReplayReentrySlot(tradesInBar, maxTradesPerBar int, schedule []float64) (float64, int, bool) {
+	effectiveTradesInBar := tradesInBar
+	if effectiveTradesInBar <= 0 {
+		effectiveTradesInBar = 1
+	}
+	if effectiveTradesInBar >= maxTradesPerBar {
+		return 0, tradesInBar, false
+	}
+	size := getReentrySize(effectiveTradesInBar, schedule)
+	if size <= 0 {
+		return 0, effectiveTradesInBar, false
+	}
+	return size, effectiveTradesInBar, true
+}
+
 func getReentrySize(tradesInBar int, schedule []float64) float64 {
 	if tradesInBar <= 0 {
 		return 0
@@ -1344,6 +1281,80 @@ func getReentrySize(tradesInBar int, schedule []float64) float64 {
 		return 0
 	}
 	return schedule[idx]
+}
+
+func evaluateReplayPositionExit(position *strategyPosition, sig strategySignalBar, cfg strategyReplayConfig, observedHigh, observedLow float64) (string, float64, bool) {
+	if position == nil {
+		return "", 0, false
+	}
+	if observedHigh < observedLow {
+		observedHigh, observedLow = observedLow, observedHigh
+	}
+	prevHWM := firstPositive(position.HWM, position.EntryPrice)
+	prevLWM := firstPositive(position.LWM, position.EntryPrice)
+	protectedBefore := position.Protected
+
+	if cfg.TrailingStopATR > 0 && sig.ATR > 0 {
+		switch position.Side {
+		case "long":
+			if replayTrailingActive("long", position.EntryPrice, prevHWM, prevLWM, sig.ATR, cfg.DelayedTrailingATR) {
+				position.StopLoss = math.Max(position.StopLoss, prevHWM-cfg.TrailingStopATR*sig.ATR)
+			}
+		case "short":
+			if replayTrailingActive("short", position.EntryPrice, prevHWM, prevLWM, sig.ATR, cfg.DelayedTrailingATR) {
+				position.StopLoss = math.Min(position.StopLoss, prevLWM+cfg.TrailingStopATR*sig.ATR)
+			}
+		}
+	}
+
+	switch position.Side {
+	case "long":
+		if observedLow <= position.StopLoss {
+			return "SL", position.StopLoss, true
+		}
+		if protectedBefore && observedLow <= sig.PrevLow1 {
+			return "PT", sig.PrevLow1, true
+		}
+		position.HWM = math.Max(prevHWM, observedHigh)
+		if !position.Protected && position.HWM >= position.EntryPrice+cfg.ProfitProtectATR*sig.ATR {
+			position.Protected = true
+		}
+		if cfg.TrailingStopATR > 0 && sig.ATR > 0 && replayTrailingActive("long", position.EntryPrice, position.HWM, prevLWM, sig.ATR, cfg.DelayedTrailingATR) {
+			position.StopLoss = math.Max(position.StopLoss, position.HWM-cfg.TrailingStopATR*sig.ATR)
+		}
+	case "short":
+		if observedHigh >= position.StopLoss {
+			return "SL", position.StopLoss, true
+		}
+		if protectedBefore && observedHigh >= sig.PrevHigh1 {
+			return "PT", sig.PrevHigh1, true
+		}
+		position.LWM = math.Min(prevLWM, observedLow)
+		if !position.Protected && position.LWM <= position.EntryPrice-cfg.ProfitProtectATR*sig.ATR {
+			position.Protected = true
+		}
+		if cfg.TrailingStopATR > 0 && sig.ATR > 0 && replayTrailingActive("short", position.EntryPrice, prevHWM, position.LWM, sig.ATR, cfg.DelayedTrailingATR) {
+			position.StopLoss = math.Min(position.StopLoss, position.LWM+cfg.TrailingStopATR*sig.ATR)
+		}
+	}
+	return "", 0, false
+}
+
+func replayTrailingActive(side string, entryPrice, hwm, lwm, atr, delayedActivationATR float64) bool {
+	if atr <= 0 {
+		return false
+	}
+	if delayedActivationATR <= 0 {
+		return true
+	}
+	profitATR := 0.0
+	switch side {
+	case "long":
+		profitATR = (hwm - entryPrice) / atr
+	case "short":
+		profitATR = (entryPrice - lwm) / atr
+	}
+	return profitATR >= delayedActivationATR
 }
 
 func rollingMean(values []float64, end, window int) float64 {

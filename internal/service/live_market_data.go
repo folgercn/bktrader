@@ -15,6 +15,8 @@ import (
 const liveSignalWarmWindow = 400 * 24 * time.Hour
 const liveMinuteWarmWindow = 30 * 24 * time.Hour
 
+var fetchLiveCandleRange = fetchBinanceFuturesCandleRange
+
 type liveMarketSnapshot struct {
 	Symbol     string
 	MinuteBars []candleBar
@@ -83,7 +85,7 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 	end := time.Now().UTC().Truncate(time.Minute)
 	minuteStart := end.Add(-liveMinuteWarmWindow)
 	signalStart := end.Add(-liveSignalWarmWindow)
-	minuteBars, err := fetchBinanceFuturesCandleRange(normalizedSymbol, "1", minuteStart, end)
+	minuteBars, err := fetchLiveCandleRange(normalizedSymbol, "1", minuteStart, end)
 	if err != nil {
 		return err
 	}
@@ -140,24 +142,17 @@ func (p *Platform) syncStoredSignalBars(symbol, timeframe string, start, end tim
 	if resolution == "" {
 		return nil, fmt.Errorf("unsupported signal timeframe: %s", timeframe)
 	}
-	fetchedBars, err := fetchBinanceFuturesCandleRange(symbol, resolution, start, end)
+	fetchedBars, err := fetchLiveCandleRange(symbol, resolution, start, end)
 	if err != nil {
 		return nil, err
 	}
 	if len(fetchedBars) == 0 {
-		return nil, fmt.Errorf("no live market %s bars returned for %s", timeframe, symbol)
+		return nil, fmt.Errorf("no live market %s bars returned for %s", timeframe, NormalizeSymbol(symbol))
 	}
 	if err := p.store.UpsertMarketBars(candleBarsToMarketBars("BINANCE", symbol, timeframe, fetchedBars, "binance-rest-warm")); err != nil {
 		return nil, err
 	}
-	storedBars, err := p.store.ListMarketBars("BINANCE", symbol, timeframe, start.Unix(), end.Unix(), 0)
-	if err != nil {
-		return nil, err
-	}
-	if len(storedBars) == 0 {
-		return nil, fmt.Errorf("no stored %s bars cached for %s", timeframe, symbol)
-	}
-	return buildStrategySignalBarsFromCandles(marketBarsToCandles(storedBars))
+	return buildStrategySignalBarsFromCandles(fetchedBars)
 }
 
 func (p *Platform) liveSignalBarStates(symbol, timeframe string) (map[string]any, error) {
@@ -445,9 +440,17 @@ func (p *Platform) buildLiveExecutionPlanFromMarketData(
 		Semantics:           semantics,
 	}
 	cfg := buildStrategyReplayConfig(context)
-	if cfg.ExecutionDataSource != "1min" {
+	replayExecutionSource := cfg.ExecutionDataSource
+	if replayExecutionSource == "tick" {
+		// Live sessions still evaluate and trigger on real-time tick events, but the
+		// precomputed execution plan is built from the warmed minute cache because we
+		// do not keep a live tick archive in memory.
+		replayExecutionSource = "1min"
+	}
+	if replayExecutionSource != "1min" {
 		return nil, fmt.Errorf("live market execution source not supported yet: %s", cfg.ExecutionDataSource)
 	}
+	cfg.ExecutionDataSource = replayExecutionSource
 
 	snapshot, err := p.liveMarketSnapshot(cfg.Symbol)
 	if err != nil {
