@@ -2784,6 +2784,81 @@ func TestSyncLiveAccountReturnsFailureWhenLocalFallbackFails(t *testing.T) {
 	}
 }
 
+func TestSyncLiveAccountRecordsAdapterResolutionFailuresInHealthSummary(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey": "missing-adapter",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	if _, err := platform.SyncLiveAccount("live-main"); err == nil {
+		t.Fatal("expected adapter resolution failure to be returned")
+	} else if !strings.Contains(err.Error(), "live adapter not registered") {
+		t.Fatalf("expected adapter resolution failure in returned error, got %v", err)
+	}
+
+	updated, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	accountSync := mapValue(mapValue(updated.Metadata["healthSummary"])["accountSync"])
+	if got := maxIntValue(accountSync["consecutiveErrorCount"], 0); got != 1 {
+		t.Fatalf("expected one recorded adapter resolution failure, got %d", got)
+	}
+	if stringValue(accountSync["lastAttemptAt"]) == "" {
+		t.Fatal("expected adapter resolution failure to record lastAttemptAt")
+	}
+	if !strings.Contains(stringValue(accountSync["lastError"]), "live adapter not registered") {
+		t.Fatalf("expected recorded adapter resolution failure, got %s", stringValue(accountSync["lastError"]))
+	}
+}
+
+func TestSyncActiveLiveAccountsReturnsPerAccountSyncErrors(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey": "missing-adapter",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+
+	err = platform.syncActiveLiveAccounts(time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected active live account sync failure to be surfaced")
+	}
+	if !strings.Contains(err.Error(), "live-main") {
+		t.Fatalf("expected returned error to include account id, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "live adapter not registered") {
+		t.Fatalf("expected returned error to include sync failure reason, got %v", err)
+	}
+}
+
 type testLiveAccountSyncAdapter struct {
 	key     string
 	syncErr error

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -103,7 +104,9 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	}
 	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
 	if err != nil {
-		return domain.Account{}, err
+		logger.Warn("resolve live adapter for account sync failed", "error", err)
+		account = p.persistLiveAccountSyncFailure(account, attemptedAt, err)
+		return account, err
 	}
 	var adapterSyncErr error
 	if syncCapable, ok := adapter.(LiveAccountSyncAdapter); ok {
@@ -126,11 +129,21 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	if adapterSyncErr != nil {
 		fallbackErr = fmt.Errorf("adapter sync failed: %v; local fallback failed: %w", adapterSyncErr, fallbackErr)
 	}
-	updateAccountSyncFailureHealth(&account, attemptedAt, fallbackErr)
-	if updated, updateErr := p.store.UpdateAccount(account); updateErr == nil {
-		account = updated
-	}
+	account = p.persistLiveAccountSyncFailure(account, attemptedAt, fallbackErr)
 	return account, fallbackErr
+}
+
+func (p *Platform) persistLiveAccountSyncFailure(account domain.Account, attemptedAt time.Time, err error) domain.Account {
+	if err == nil {
+		return account
+	}
+	updateAccountSyncFailureHealth(&account, attemptedAt, err)
+	updated, updateErr := p.store.UpdateAccount(account)
+	if updateErr != nil {
+		p.logger("service.live", "account_id", account.ID).Warn("persist live account sync failure health failed", "error", updateErr)
+		return account
+	}
+	return updated
 }
 
 func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
@@ -730,6 +743,7 @@ func (p *Platform) syncActiveLiveAccounts(eventTime time.Time) error {
 		return err
 	}
 	seen := make(map[string]struct{})
+	var syncErrs []error
 	for _, session := range sessions {
 		if !strings.EqualFold(session.Status, "RUNNING") {
 			continue
@@ -745,9 +759,11 @@ func (p *Platform) syncActiveLiveAccounts(eventTime time.Time) error {
 		if !p.shouldRefreshLiveAccountSync(account, eventTime) {
 			continue
 		}
-		_, _ = p.SyncLiveAccount(account.ID)
+		if _, syncErr := p.SyncLiveAccount(account.ID); syncErr != nil {
+			syncErrs = append(syncErrs, fmt.Errorf("live account %s sync failed: %w", account.ID, syncErr))
+		}
 	}
-	return nil
+	return errors.Join(syncErrs...)
 }
 
 func (p *Platform) shouldRefreshLiveAccountSync(account domain.Account, eventTime time.Time) bool {
