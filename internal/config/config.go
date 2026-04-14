@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config 存储平台运行所需的全部配置项。
 type Config struct {
 	AppName                        string // 应用名称
 	Environment                    string // 运行环境（development / production）
+	LogLevel                       string // 日志级别（debug / info / warn / error）
+	LogFormat                      string // 日志格式（text / json）
+	LogAddSource                   bool   // 是否在日志中附带源码位置信息
 	HTTPAddr                       string // HTTP 监听地址
 	StoreBackend                   string // 存储后端类型（memory / postgres）
 	AutoMigrate                    bool   // 是否在启动时自动执行数据库迁移
@@ -59,16 +63,19 @@ func Load() Config {
 	return Config{
 		AppName:                        getenv("APP_NAME", "bkTrader-platform"),
 		Environment:                    getenv("APP_ENV", "development"),
+		LogLevel:                       getenv("LOG_LEVEL", "info"),
+		LogFormat:                      getenv("LOG_FORMAT", "text"),
+		LogAddSource:                   boolFromEnv("LOG_ADD_SOURCE", false),
 		HTTPAddr:                       getenv("HTTP_ADDR", ":8080"),
 		StoreBackend:                   getenv("STORE_BACKEND", "memory"),
-		AutoMigrate:                    getenv("AUTO_MIGRATE", "false") == "true",
+		AutoMigrate:                    boolFromEnv("AUTO_MIGRATE", false),
 		PostgresDSN:                    getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
 		RedisAddr:                      getenv("REDIS_ADDR", "localhost:6379"),
 		NATSURL:                        getenv("NATS_URL", "nats://localhost:4222"),
 		PaperTickInterval:              tickInterval,
 		MinuteDataDir:                  getenv("MINUTE_DATA_DIR", "."),
 		TickDataDir:                    getenv("TICK_DATA_DIR", "./dataset/archive"),
-		AuthEnabled:                    getenv("AUTH_ENABLED", "false") == "true",
+		AuthEnabled:                    boolFromEnv("AUTH_ENABLED", false),
 		AuthUsername:                   getenv("AUTH_USERNAME", "admin"),
 		AuthPassword:                   os.Getenv("AUTH_PASSWORD"),
 		AuthSecret:                     os.Getenv("AUTH_SECRET"),
@@ -78,7 +85,7 @@ func Load() Config {
 		SignalBarFreshnessSeconds:      signalBarFreshness,
 		RuntimeQuietSeconds:            runtimeQuiet,
 		PaperStartReadinessTimeoutSecs: paperReadinessTimeout,
-		TelegramEnabled:                getenv("TELEGRAM_ENABLED", "false") == "true",
+		TelegramEnabled:                boolFromEnv("TELEGRAM_ENABLED", false),
 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
@@ -87,6 +94,16 @@ func Load() Config {
 
 // Validate 校验配置项的合法性，启动前快速失败。
 func (c Config) Validate() error {
+	switch strings.ToLower(strings.TrimSpace(c.LogLevel)) {
+	case "", "debug", "info", "warn", "warning", "error":
+	default:
+		return fmt.Errorf("不支持的 LOG_LEVEL: %s（可选: debug, info, warn, error）", c.LogLevel)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.LogFormat)) {
+	case "", "text", "json":
+	default:
+		return fmt.Errorf("不支持的 LOG_FORMAT: %s（可选: text, json）", c.LogFormat)
+	}
 	if c.HTTPAddr == "" {
 		return fmt.Errorf("HTTP_ADDR 不能为空")
 	}
@@ -130,4 +147,18 @@ func intFromEnv(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+func boolFromEnv(key string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	switch value {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }

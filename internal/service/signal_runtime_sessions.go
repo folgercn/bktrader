@@ -46,8 +46,10 @@ func (p *Platform) GetSignalRuntimeSession(sessionID string) (domain.SignalRunti
 }
 
 func (p *Platform) CreateSignalRuntimeSession(accountID, strategyID string) (domain.SignalRuntimeSession, error) {
+	logger := p.logger("service.signal_runtime", "account_id", accountID, "strategy_id", strategyID)
 	plan, err := p.BuildSignalRuntimePlan(accountID, strategyID)
 	if err != nil {
+		logger.Warn("build signal runtime plan failed", "error", err)
 		return domain.SignalRuntimeSession{}, err
 	}
 	now := time.Now().UTC()
@@ -83,23 +85,35 @@ func (p *Platform) CreateSignalRuntimeSession(accountID, strategyID string) (dom
 	p.mu.Lock()
 	p.signalSessions[session.ID] = session
 	p.mu.Unlock()
+	p.logger("service.signal_runtime",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("signal runtime session created",
+		"subscription_count", len(subscriptions),
+		"runtime_adapter", adapterKey,
+	)
 	return session, nil
 }
 
 func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	logger := p.logger("service.signal_runtime", "session_id", sessionID)
 	p.mu.Lock()
 	session, ok := p.signalSessions[sessionID]
 	if !ok {
 		p.mu.Unlock()
+		logger.Warn("signal runtime session not found")
 		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
 	}
 	if _, exists := p.signalRun[sessionID]; exists {
 		p.mu.Unlock()
+		logger.Debug("signal runtime session already running")
 		return session, nil
 	}
 	p.mu.Unlock()
 	plan, err := p.BuildSignalRuntimePlan(session.AccountID, session.StrategyID)
 	if err != nil {
+		logger.Warn("build signal runtime plan failed", "error", err)
 		return domain.SignalRuntimeSession{}, err
 	}
 	subscriptions := metadataList(plan["subscriptions"])
@@ -142,14 +156,24 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 	p.signalSessions[session.ID] = session
 	p.mu.Unlock()
 	go p.runSignalRuntimeLoop(ctx, sessionID)
+	p.logger("service.signal_runtime",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("signal runtime session started",
+		"subscription_count", len(subscriptions),
+		"runtime_adapter", adapterKey,
+	)
 	return session, nil
 }
 
 func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	logger := p.logger("service.signal_runtime", "session_id", sessionID)
 	p.mu.Lock()
 	session, ok := p.signalSessions[sessionID]
 	if !ok {
 		p.mu.Unlock()
+		logger.Warn("signal runtime session not found")
 		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
 	}
 	cancel, running := p.signalRun[sessionID]
@@ -174,6 +198,11 @@ func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRunt
 	if running {
 		cancel()
 	}
+	p.logger("service.signal_runtime",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("signal runtime session stopped")
 	return session, nil
 }
 

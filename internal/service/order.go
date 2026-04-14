@@ -31,17 +31,29 @@ func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
 // CreateOrder 创建订单。对于 PAPER 模式账户，订单会被立即执行（模拟成交），
 // 生成 fill 记录、更新持仓、捕获净值快照。
 func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
+	logger := p.logger("service.order",
+		"account_id", order.AccountID,
+		"strategy_version_id", order.StrategyVersionID,
+		"symbol", NormalizeSymbol(order.Symbol),
+		"side", order.Side,
+		"type", order.Type,
+	)
+	logger.Debug("creating order", "quantity", order.Quantity, "price", order.Price)
 	account, err := p.prepareOrderAccount(order)
 	if err != nil {
+		logger.Warn("prepare order account failed", "error", err)
 		return domain.Order{}, err
 	}
 	if err := p.preflightOrderExecution(account, order); err != nil {
+		logger.Warn("order preflight failed", "error", err, "account_mode", account.Mode)
 		return domain.Order{}, err
 	}
 	createdOrder, err := p.store.CreateOrder(order)
 	if err != nil {
+		logger.Error("persist order failed", "error", err)
 		return domain.Order{}, err
 	}
+	logger.Debug("order persisted", "order_id", createdOrder.ID, "account_mode", account.Mode)
 	return p.executeCreatedOrder(account, createdOrder)
 }
 
@@ -139,6 +151,13 @@ func (p *Platform) applyLiveSubmissionResult(
 	submission LiveOrderSubmission,
 	submitErr error,
 ) (domain.Order, error) {
+	logger := p.logger("service.order",
+		"order_id", order.ID,
+		"account_id", order.AccountID,
+		"symbol", NormalizeSymbol(order.Symbol),
+		"side", order.Side,
+		"type", order.Type,
+	)
 	order.Metadata = cloneMetadata(order.Metadata)
 	applyExecutionMetadata(order.Metadata, map[string]any{
 		"executionMode":    "live",
@@ -163,6 +182,7 @@ func (p *Platform) applyLiveSubmissionResult(
 		if updateErr != nil {
 			return domain.Order{}, updateErr
 		}
+		logger.Warn("live order submission failed", "error", submitErr)
 		return updatedOrder, submitErr
 	}
 	delete(order.Metadata, "liveSubmitError")
@@ -176,6 +196,10 @@ func (p *Platform) applyLiveSubmissionResult(
 	if strings.EqualFold(order.Status, "FILLED") {
 		markOrderLifecycle(order.Metadata, "filled", true)
 	}
+	logger.Info("live order submitted",
+		"status", order.Status,
+		"exchange_order_id", submission.ExchangeOrderID,
+	)
 	return p.store.UpdateOrder(order)
 }
 
@@ -292,26 +316,34 @@ func (p *Platform) resolveStrategyIDFromVersionID(strategyVersionID string) (str
 }
 
 func (p *Platform) SyncLiveOrder(orderID string) (domain.Order, error) {
+	logger := p.logger("service.order", "order_id", orderID)
 	order, account, adapter, binding, err := p.resolveLiveOrderContext(orderID)
 	if err != nil {
+		logger.Warn("resolve live order context failed", "error", err)
 		return domain.Order{}, err
 	}
 	syncResult, err := adapter.SyncOrder(account, order, binding)
 	if err != nil {
+		logger.Warn("sync live order failed", "error", err)
 		return domain.Order{}, err
 	}
+	logger.Debug("live order sync received", "status", syncResult.Status, "fill_count", len(syncResult.Fills))
 	return p.applyLiveSyncResult(account, order, syncResult)
 }
 
 func (p *Platform) CancelLiveOrder(orderID string) (domain.Order, error) {
+	logger := p.logger("service.order", "order_id", orderID)
 	order, account, adapter, binding, err := p.resolveLiveOrderContext(orderID)
 	if err != nil {
+		logger.Warn("resolve live order context failed", "error", err)
 		return domain.Order{}, err
 	}
 	syncResult, err := adapter.CancelOrder(account, order, binding)
 	if err != nil {
+		logger.Warn("cancel live order failed", "error", err)
 		return domain.Order{}, err
 	}
+	logger.Info("live order cancellation acknowledged", "status", syncResult.Status)
 	return p.applyLiveSyncResult(account, order, syncResult)
 }
 
@@ -335,6 +367,11 @@ func (p *Platform) resolveLiveOrderContext(orderID string) (domain.Order, domain
 }
 
 func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Order, syncResult LiveOrderSync) (domain.Order, error) {
+	logger := p.logger("service.order",
+		"order_id", order.ID,
+		"account_id", order.AccountID,
+		"symbol", NormalizeSymbol(order.Symbol),
+	)
 	order.Metadata = cloneMetadata(order.Metadata)
 	applyExecutionMetadata(order.Metadata, map[string]any{
 		"lastSyncAt":           syncResult.SyncedAt,
@@ -357,8 +394,15 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 		order.Metadata["fillCount"] = len(fills)
 		order.Metadata["lastFillAt"] = firstNonEmpty(syncResult.SyncedAt, time.Now().UTC().Format(time.RFC3339))
 		markOrderLifecycle(order.Metadata, "filled", true)
+		logger.Info("live order synced with fills",
+			"status", order.Status,
+			"fill_count", len(fills),
+			"last_price", lastPrice,
+			"funding_pnl", lastFundingPnL,
+		)
 		return p.finalizeExecutedOrder(account, order, fills)
 	}
+	logger.Debug("live order sync applied", "status", order.Status)
 	return p.store.UpdateOrder(order)
 }
 
@@ -417,6 +461,16 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	}
 	if err := p.captureAccountSnapshot(account.ID); err != nil {
 		return domain.Order{}, err
+	}
+	levelLogger := p.logger("service.order",
+		"order_id", updatedOrder.ID,
+		"account_id", updatedOrder.AccountID,
+		"symbol", NormalizeSymbol(updatedOrder.Symbol),
+	)
+	if strings.EqualFold(account.Mode, "LIVE") {
+		levelLogger.Info("order filled", "fill_count", len(fills), "price", updatedOrder.Price)
+	} else {
+		levelLogger.Debug("paper order filled", "fill_count", len(fills), "price", updatedOrder.Price)
 	}
 	return updatedOrder, nil
 }

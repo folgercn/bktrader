@@ -47,8 +47,10 @@ func (p *Platform) ListPaperSessions() ([]domain.PaperSession, error) {
 
 // CreatePaperSession 创建新的模拟交易会话，并捕获初始净值快照。
 func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity float64, overrides map[string]any) (domain.PaperSession, error) {
+	logger := p.logger("service.paper", "account_id", accountID, "strategy_id", strategyID)
 	session, err := p.store.CreatePaperSession(accountID, strategyID, startEquity)
 	if err != nil {
+		logger.Error("create paper session failed", "error", err)
 		return domain.PaperSession{}, err
 	}
 	if len(overrides) > 0 {
@@ -58,23 +60,36 @@ func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity 
 		}
 		session, err = p.store.UpdatePaperSessionState(session.ID, state)
 		if err != nil {
+			p.logger("service.paper", "session_id", session.ID).Error("apply paper session overrides failed", "error", err)
 			return domain.PaperSession{}, err
 		}
 	}
 	session, err = p.syncPaperSessionRuntime(session)
 	if err != nil {
+		p.logger("service.paper", "session_id", session.ID).Warn("sync paper session runtime failed", "error", err)
 		return domain.PaperSession{}, err
 	}
 	if err := p.captureAccountSnapshot(accountID); err != nil {
+		p.logger("service.paper", "session_id", session.ID).Warn("capture paper account snapshot failed", "error", err)
 		return domain.PaperSession{}, err
 	}
+	p.logger("service.paper",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("paper session created",
+		"start_equity", session.StartEquity,
+		"override_count", len(overrides),
+	)
 	return session, nil
 }
 
 // StartPaperSession 启动模拟交易会话的后台执行循环。
 func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, error) {
+	logger := p.logger("service.paper", "session_id", sessionID)
 	session, err := p.store.GetPaperSession(sessionID)
 	if err != nil {
+		logger.Warn("load paper session failed", "error", err)
 		return domain.PaperSession{}, err
 	}
 	session, err = p.syncPaperSessionRuntime(session)
@@ -92,6 +107,7 @@ func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, err
 	p.mu.Lock()
 	if _, exists := p.run[sessionID]; exists {
 		p.mu.Unlock()
+		logger.Debug("paper session runner already active")
 		return p.store.UpdatePaperSessionStatus(sessionID, "RUNNING")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -108,13 +124,20 @@ func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, err
 	}
 
 	go p.runPaperSessionLoop(ctx, session)
+	p.logger("service.paper",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("paper session started", "tick_interval_seconds", p.tickInterval)
 	return session, nil
 }
 
 // StopPaperSession 停止模拟交易会话，取消后台执行循环。
 func (p *Platform) StopPaperSession(sessionID string) (domain.PaperSession, error) {
+	logger := p.logger("service.paper", "session_id", sessionID)
 	session, err := p.store.UpdatePaperSessionStatus(sessionID, "STOPPED")
 	if err != nil {
+		logger.Error("stop paper session failed", "error", err)
 		return domain.PaperSession{}, err
 	}
 
@@ -130,19 +153,28 @@ func (p *Platform) StopPaperSession(sessionID string) (domain.PaperSession, erro
 		cancel()
 	}
 	_, _ = p.stopLinkedSignalRuntime(session)
+	p.logger("service.paper",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("paper session stopped")
 	return session, nil
 }
 
 // TickPaperSession 手动触发会话前进一步（处理下一笔策略计划订单）。
 func (p *Platform) TickPaperSession(sessionID string) (domain.Order, error) {
+	logger := p.logger("service.paper", "session_id", sessionID)
 	session, err := p.store.GetPaperSession(sessionID)
 	if err != nil {
+		logger.Warn("load paper session for manual tick failed", "error", err)
 		return domain.Order{}, err
 	}
 	session, err = p.syncPaperSessionRuntime(session)
 	if err != nil {
+		logger.Warn("sync paper session runtime before tick failed", "error", err)
 		return domain.Order{}, err
 	}
+	logger.Debug("ticking paper session manually")
 	return p.placePaperSessionOrder(session)
 }
 

@@ -42,12 +42,15 @@ func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 }
 
 func (p *Platform) DeleteLiveSession(sessionID string) error {
+	p.logger("service.live", "session_id", sessionID).Info("deleting live session")
 	return p.store.DeleteLiveSession(sessionID)
 }
 
 func (p *Platform) UpdateLiveSession(sessionID, accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
+	logger := p.logger("service.live", "session_id", sessionID)
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
+		logger.Warn("load live session failed", "error", err)
 		return domain.LiveSession{}, err
 	}
 	if strings.TrimSpace(accountID) != "" {
@@ -70,14 +73,28 @@ func (p *Platform) UpdateLiveSession(sessionID, accountID, strategyID string, ov
 	session.State = state
 	session, err = p.store.UpdateLiveSession(session)
 	if err != nil {
+		logger.Error("update live session failed", "error", err)
 		return domain.LiveSession{}, err
 	}
-	return p.syncLiveSessionRuntime(session)
+	updated, err := p.syncLiveSessionRuntime(session)
+	if err != nil {
+		logger.Warn("sync live session runtime failed after update", "error", err)
+		return domain.LiveSession{}, err
+	}
+	p.logger("service.live",
+		"session_id", updated.ID,
+		"account_id", updated.AccountID,
+		"strategy_id", updated.StrategyID,
+	).Info("live session updated", "override_count", len(overrides))
+	return updated, nil
 }
 
 func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
+	logger := p.logger("service.live", "account_id", accountID)
+	logger.Debug("syncing live account")
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {
+		logger.Warn("load live account failed", "error", err)
 		return domain.Account{}, err
 	}
 	if !strings.EqualFold(account.Mode, "LIVE") {
@@ -90,12 +107,18 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	if syncCapable, ok := adapter.(LiveAccountSyncAdapter); ok {
 		if synced, syncErr := syncCapable.SyncAccountSnapshot(p, account, binding); syncErr == nil {
 			p.syncLiveSessionsForAccountSnapshot(synced)
+			logger.Info("live account synced via adapter", "exchange", synced.Exchange, "status", synced.Status)
 			return synced, nil
+		} else {
+			logger.Warn("adapter live account sync failed, falling back to local state", "error", syncErr)
 		}
 	}
 	synced, err := p.syncLiveAccountFromLocalState(account, binding)
 	if err == nil {
 		p.syncLiveSessionsForAccountSnapshot(synced)
+		logger.Debug("live account synced from local state", "status", synced.Status)
+	} else {
+		logger.Warn("local-state live account sync failed", "error", err)
 	}
 	return synced, err
 }
@@ -114,14 +137,19 @@ func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
 }
 
 func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
+	logger := p.logger("service.live")
+	logger.Info("starting live trading recovery")
 	accounts, err := p.ListAccounts()
 	if err != nil {
+		logger.Warn("list accounts failed during live recovery", "error", err)
 		return
 	}
+	syncedAccounts := 0
 	for _, account := range accounts {
 		if ctx != nil {
 			select {
 			case <-ctx.Done():
+				logger.Info("live trading recovery cancelled", "synced_account_count", syncedAccounts)
 				return
 			default:
 			}
@@ -132,17 +160,26 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 		syncedAccount, syncErr := p.SyncLiveAccount(account.ID)
 		if syncErr == nil {
 			account = syncedAccount
+			syncedAccounts++
+		} else {
+			p.logger("service.live", "account_id", account.ID).Warn("live account sync failed during recovery", "error", syncErr)
 		}
 	}
 
 	sessions, err := p.ListLiveSessions()
 	if err != nil {
+		logger.Warn("list live sessions failed during recovery", "error", err)
 		return
 	}
+	recoveredSessions := 0
 	for _, session := range sessions {
 		if ctx != nil {
 			select {
 			case <-ctx.Done():
+				logger.Info("live trading recovery cancelled",
+					"synced_account_count", syncedAccounts,
+					"recovered_session_count", recoveredSessions,
+				)
 				return
 			default:
 			}
@@ -152,18 +189,24 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 		}
 		recovered, recoverErr := p.recoverRunningLiveSession(session)
 		if recoverErr != nil {
+			p.logger("service.live", "session_id", session.ID).Warn("recover running live session failed", "error", recoverErr)
 			state := cloneMetadata(session.State)
 			state["lastRecoveryError"] = recoverErr.Error()
 			state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
 			_, _ = p.store.UpdateLiveSessionState(session.ID, state)
 			continue
 		}
+		recoveredSessions++
 		state := cloneMetadata(recovered.State)
 		delete(state, "lastRecoveryError")
 		state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
 		state["lastRecoveryStatus"] = "recovered"
 		_, _ = p.store.UpdateLiveSessionState(recovered.ID, state)
 	}
+	logger.Info("live trading recovery completed",
+		"synced_account_count", syncedAccounts,
+		"recovered_session_count", recoveredSessions,
+	)
 }
 
 func (p *Platform) syncLiveAccountFromLocalState(account domain.Account, binding map[string]any) (domain.Account, error) {
@@ -389,8 +432,10 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 }
 
 func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
+	logger := p.logger("service.live", "account_id", accountID, "strategy_id", strategyID)
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {
+		logger.Warn("load account for live session failed", "error", err)
 		return domain.LiveSession{}, err
 	}
 	if !strings.EqualFold(account.Mode, "LIVE") {
@@ -399,6 +444,7 @@ func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map
 
 	session, err := p.store.CreateLiveSession(accountID, strategyID)
 	if err != nil {
+		logger.Error("create live session failed", "error", err)
 		return domain.LiveSession{}, err
 	}
 	if len(overrides) > 0 {
@@ -408,15 +454,28 @@ func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map
 		}
 		session, err = p.store.UpdateLiveSessionState(session.ID, state)
 		if err != nil {
+			p.logger("service.live", "session_id", session.ID).Error("apply live session overrides failed", "error", err)
 			return domain.LiveSession{}, err
 		}
 	}
-	return p.syncLiveSessionRuntime(session)
+	session, err = p.syncLiveSessionRuntime(session)
+	if err != nil {
+		p.logger("service.live", "session_id", session.ID).Warn("sync live session runtime failed", "error", err)
+		return domain.LiveSession{}, err
+	}
+	p.logger("service.live",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("live session created", "override_count", len(overrides))
+	return session, nil
 }
 
 func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (LiveLaunchResult, error) {
+	logger := p.logger("service.live", "account_id", accountID)
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {
+		logger.Warn("load account for live launch failed", "error", err)
 		return LiveLaunchResult{}, err
 	}
 	if !strings.EqualFold(account.Mode, "LIVE") {
@@ -435,6 +494,14 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	if !options.StartSession {
 		options.StartSession = true
 	}
+	logger.Info("launching live flow",
+		"strategy_id", strings.TrimSpace(options.StrategyID),
+		"mirror_strategy_signals", options.MirrorStrategySignals,
+		"start_runtime", options.StartRuntime,
+		"start_session", options.StartSession,
+		"has_binding", len(options.Binding) > 0,
+		"has_overrides", len(options.LiveSessionOverrides) > 0,
+	)
 
 	result := LiveLaunchResult{Account: account}
 
@@ -522,6 +589,15 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	if err == nil {
 		result.Account = account
 	}
+	logger.Info("live flow launched",
+		"strategy_id", strategyID,
+		"mirrored_binding_count", result.MirroredBindingCount,
+		"account_binding_applied", result.AccountBindingApplied,
+		"runtime_session_created", result.RuntimeSessionCreated,
+		"runtime_session_started", result.RuntimeSessionStarted,
+		"live_session_created", result.LiveSessionCreated,
+		"live_session_started", result.LiveSessionStarted,
+	)
 	return result, nil
 }
 
@@ -563,8 +639,10 @@ func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrid
 }
 
 func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error) {
+	logger := p.logger("service.live", "session_id", sessionID)
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
+		logger.Warn("load live session failed", "error", err)
 		return domain.LiveSession{}, err
 	}
 	account, err := p.store.GetAccount(session.AccountID)
@@ -578,33 +656,51 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 		return domain.LiveSession{}, fmt.Errorf("live account %s is not configured", account.ID)
 	}
 	if _, _, err := p.resolveLiveAdapterForAccount(account); err != nil {
+		logger.Warn("resolve live adapter failed", "error", err)
 		return domain.LiveSession{}, err
 	}
 
 	session, err = p.syncLiveSessionRuntime(session)
 	if err != nil {
+		logger.Warn("sync live session runtime failed", "error", err)
 		return domain.LiveSession{}, err
 	}
 	session, err = p.ensureLiveSessionSignalRuntimeStarted(session)
 	if err != nil {
+		logger.Warn("ensure live signal runtime failed", "error", err)
 		return domain.LiveSession{}, err
 	}
-	return p.store.UpdateLiveSessionStatus(sessionID, "RUNNING")
+	session, err = p.store.UpdateLiveSessionStatus(sessionID, "RUNNING")
+	if err != nil {
+		logger.Error("mark live session running failed", "error", err)
+		return domain.LiveSession{}, err
+	}
+	p.logger("service.live",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("live session started")
+	return session, nil
 }
 
 func (p *Platform) StartLiveSyncDispatcher(ctx context.Context) {
 	if ctx == nil {
 		return
 	}
+	logger := p.logger("service.live_sync_dispatcher")
+	logger.Info("live sync dispatcher started")
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			logger.Info("live sync dispatcher stopped")
 			return
 		case <-ticker.C:
-			_ = p.syncActiveLiveSessions(time.Now().UTC())
+			if err := p.syncActiveLiveSessions(time.Now().UTC()); err != nil {
+				logger.Warn("sync active live sessions failed", "error", err)
+			}
 		}
 	}
 }
@@ -709,11 +805,18 @@ func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string
 }
 
 func (p *Platform) StopLiveSession(sessionID string) (domain.LiveSession, error) {
+	logger := p.logger("service.live", "session_id", sessionID)
 	session, err := p.store.UpdateLiveSessionStatus(sessionID, "STOPPED")
 	if err != nil {
+		logger.Error("stop live session failed", "error", err)
 		return domain.LiveSession{}, err
 	}
 	_, _ = p.stopLinkedLiveSignalRuntime(session)
+	p.logger("service.live",
+		"session_id", session.ID,
+		"account_id", session.AccountID,
+		"strategy_id", session.StrategyID,
+	).Info("live session stopped")
 	return session, nil
 }
 
