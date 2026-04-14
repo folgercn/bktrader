@@ -144,6 +144,16 @@ func TestStrategyEvaluationQuietUsesLatestTrigger(t *testing.T) {
 	if platform.strategyEvaluationQuiet(state) {
 		t.Fatal("expected strategy evaluation quiet to clear once evaluation catches up")
 	}
+	state["healthSummary"] = map[string]any{
+		"strategyIngress": map[string]any{
+			"lastTriggeredAt":  now.Add(-20 * time.Second).Format(time.RFC3339),
+			"lastEvaluationAt": now.Add(-40 * time.Second).Format(time.RFC3339),
+		},
+	}
+	state["lastStrategyEvaluationAt"] = now.Add(-5 * time.Second).Format(time.RFC3339)
+	if platform.strategyEvaluationQuiet(state) {
+		t.Fatal("expected newer lastStrategyEvaluationAt to suppress quiet alert even when healthSummary lags")
+	}
 }
 
 func TestLiveAccountSyncStaleAndRefreshThreshold(t *testing.T) {

@@ -469,10 +469,10 @@ func (p *Platform) strategyEvaluationQuiet(sessionState map[string]any) bool {
 	if lastTriggeredAt.IsZero() {
 		return false
 	}
-	lastEvaluationAt := parseOptionalRFC3339(firstNonEmpty(
-		stringValue(mapValue(mapValue(sessionState["healthSummary"])["strategyIngress"])["lastEvaluationAt"]),
-		stringValue(sessionState["lastStrategyEvaluationAt"]),
-	))
+	lastEvaluationAt := parseOptionalRFC3339(stringValue(mapValue(mapValue(sessionState["healthSummary"])["strategyIngress"])["lastEvaluationAt"]))
+	if stateEvaluationAt := parseOptionalRFC3339(stringValue(sessionState["lastStrategyEvaluationAt"])); stateEvaluationAt.After(lastEvaluationAt) {
+		lastEvaluationAt = stateEvaluationAt
+	}
 	if !lastEvaluationAt.IsZero() && !lastTriggeredAt.After(lastEvaluationAt) {
 		return false
 	}
