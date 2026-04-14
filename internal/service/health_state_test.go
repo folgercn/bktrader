@@ -189,6 +189,29 @@ func TestLiveAccountSyncStaleAndRefreshThreshold(t *testing.T) {
 	}
 }
 
+func TestUpdateRuntimePolicyAllowsDisablingHealthThresholds(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	updated, err := platform.UpdateRuntimePolicy(RuntimePolicy{
+		TradeTickFreshnessSeconds:      15,
+		OrderBookFreshnessSeconds:      10,
+		SignalBarFreshnessSeconds:      30,
+		RuntimeQuietSeconds:            30,
+		StrategyEvaluationQuietSeconds: 0,
+		LiveAccountSyncFreshnessSecs:   0,
+		PaperStartReadinessTimeoutSecs: 5,
+	})
+	if err != nil {
+		t.Fatalf("update runtime policy failed: %v", err)
+	}
+	if updated.StrategyEvaluationQuietSeconds != 0 {
+		t.Fatalf("expected strategy evaluation quiet threshold to allow zero, got %d", updated.StrategyEvaluationQuietSeconds)
+	}
+	if updated.LiveAccountSyncFreshnessSecs != 0 {
+		t.Fatalf("expected live account sync freshness threshold to allow zero, got %d", updated.LiveAccountSyncFreshnessSecs)
+	}
+}
+
 func TestHealthSnapshotAggregatesBackendHealthState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	now := time.Now().UTC()
