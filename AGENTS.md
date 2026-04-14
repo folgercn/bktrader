@@ -18,8 +18,12 @@ This project has a graphify knowledge graph at `graphify-out/`.
 
 - Before answering architecture or codebase questions, read `graphify-out/GRAPH_REPORT.md` for god nodes and community structure.
 - If `graphify-out/wiki/index.md` exists, navigate it instead of reading raw files.
-- After modifying code files in this session, run `/usr/local/opt/python@3.12/bin/python3.12 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current.
-- **Automated Workflow**: A `pre-push` git hook has been installed to automatically rebuild the graph before every `git push`.
+- After modifying code files in this session, use the repo helper to locate a `graphify`-capable interpreter and rebuild the graph:
+  ```bash
+  GRAPHIFY_PYTHON="$(bash scripts/find_graphify_python.sh)"
+  "$GRAPHIFY_PYTHON" -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"
+  ```
+- **Automated Workflow**: 仓库内已提供版本化 `pre-push` hook：`.githooks/pre-push`。首次 clone 后请执行 `bash scripts/install_git_hooks.sh`，这样每次 `git push` 前会自动重建 graphify 图谱并执行范围感知自查。
 
 ### 面向 Gemini 的技能组 (Skills)
 
@@ -69,9 +73,15 @@ Smoke Test 主要为部署验证预留。如遇重构，请人工执行：
 bash scripts/testnet_live_session_smoke.sh
 ```
 
+**范围感知自查**：
+```bash
+bash scripts/run_changed_scope_checks.sh --staged
+```
+
 ## 6. PR 与提交约束
 
 你协助提交的改动或是撰写的 PR 必须：
 - 严格使用 `.github/pull_request_template.md`，并在描述中声明你的参与。
+- 对照 `docs/pr-checklist.md` 补齐验证证据和剩余风险说明。
 - 不能隐式破坏 `testnet` 到 `mainnet` 的沙盒设定。
 - 不能破坏 `mock` 模式或制造未授权的 `real` 数据分发。

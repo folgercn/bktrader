@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+echo "Running bktrader pre-push harness checks..."
+
+if [ "${BKTRADER_SKIP_GRAPHIFY:-0}" != "1" ] && [ -d "graphify-out" ]; then
+  if python_bin="$(bash scripts/find_graphify_python.sh 2>/dev/null)"; then
+    "$python_bin" -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"
+  else
+    echo "Warning: graphify module is unavailable; skipping graph rebuild before push." >&2
+  fi
+fi
+
+if upstream_ref="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+  bash scripts/run_changed_scope_checks.sh --base "$upstream_ref"
+else
+  bash scripts/run_changed_scope_checks.sh --working-tree
+fi

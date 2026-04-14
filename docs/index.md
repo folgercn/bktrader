@@ -8,6 +8,7 @@
 - [agent-risk-model.md](agent-risk-model.md) - Agent 及人工改动风险分级表 (L0~L3)。
 - [live-safety-invariants.md](live-safety-invariants.md) - 实盘关键不变量定性和边界约束。
 - [test-matrix.md](test-matrix.md) - 各相关组件所需的最低自测/回归验证矩阵。
+- [pr-checklist.md](pr-checklist.md) - PR 提交前的范围感知自查清单。
 - [harness-engineering-部署方案.md](harness-engineering-部署方案.md) - 早期 Harness 设计思路。
 
 ## 2. 架构与工程设计

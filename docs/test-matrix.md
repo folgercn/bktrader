@@ -4,6 +4,12 @@
 
 ## 基于范围的验证要求
 
+建议先运行：
+```sh
+bash scripts/run_changed_scope_checks.sh --staged
+```
+用它先识别这次改动落在哪些风险范围，再补齐下面的验证。
+
 ### 后端纯逻辑变更 (`internal/domain/`, `internal/store/`)
 - **Go Unit Test**: `go test ./...`
 - 若有新的接口存取，相关 package 的 coverage 不应出现大滑坡。
@@ -19,6 +25,7 @@
 
 ### 数据库结构与部署脚本 (`db/migrations/`, `deployments/`)
 - 必须确保 `go build ./cmd/db-migrate` 无误。
+- 如果改动了 migration，额外执行 `python3 scripts/check_migration_safety.py`。
 - 在本地能顺利起一组 docker-compose 检查连接串没有写死成“线上环境的静态地址”。
 
 ## 回归部署：Smoke Test

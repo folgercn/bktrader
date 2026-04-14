@@ -1,0 +1,29 @@
+# Default ownership follows the role split in CONTRIBUTING.md.
+* @folgercn
+
+/AGENTS.md @folgercn @wuyaocheng
+/README.md @folgercn @wuyaocheng
+/docs/ @folgercn
+/scripts/ @folgercn
+/configs/ @folgercn
+/.github/ @folgercn
+/deployments/ @folgercn
+
+/cmd/ @wuyaocheng
+/internal/domain/ @wuyaocheng
+/internal/http/ @wuyaocheng
+/internal/service/ @wuyaocheng
+/internal/store/ @wuyaocheng
+/research/ @wuyaocheng
+/web/console/ @wuyaocheng
+/db/migrations/ @wuyaocheng
+
+# High-risk paths require both owners to review.
+/internal/service/live*.go @wuyaocheng @folgercn
+/internal/service/execution_strategy.go @wuyaocheng @folgercn
+/db/migrations/ @wuyaocheng @folgercn
+/.github/workflows/ @folgercn @wuyaocheng
+/deployments/ @folgercn @wuyaocheng
+/web/console/src/store/useTradingStore.ts @wuyaocheng @folgercn
+/web/console/src/hooks/useTradingActions.ts @wuyaocheng @folgercn
+/web/console/src/modals/LiveSessionModal.tsx @wuyaocheng @folgercn
