@@ -190,7 +190,7 @@ if index is not None:
 else:
     print("⚠️  No index price data available")
 
-# Step 4: Funding Rates
+# Step 4: Funding Rates (fixed schema handling)
 print("\n")
 print("STEP 4: Fetching Funding Rate Data")
 
@@ -215,7 +215,7 @@ with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 for inner in z.namelist():
                     with z.open(inner) as f:
                         fd = pd.read_csv(f)
-                        fd["fundingTime"] = pd.to_datetime(fd["fundingTime"], unit="ms", utc=True)
+                        fd["calc_time"] = pd.to_datetime(fd["calc_time"], unit="ms", utc=True)
                         fund_dfs.append(fd)
             except Exception as e:
                 print(f"Error processing {url}: {e}")
@@ -223,9 +223,13 @@ with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
 funding = pd.concat(fund_dfs, ignore_index=True) if fund_dfs else None
 
 if funding is not None:
-    funding = funding[["fundingTime","fundingRate"]].rename(columns={"fundingTime":"timestamp_utc"})
+    funding = funding[["calc_time", "last_funding_rate"]].rename(
+        columns={"calc_time": "timestamp_utc", "last_funding_rate": "fundingRate"}
+    )
     funding["fundingRate"] = funding["fundingRate"].astype(float)
     print(f"  ✅ Funding rates: {len(funding)} rows")
+else:
+    print("⚠️  No funding rate data available")
 
 # Step 5: Recent Open Interest
 print("\n")
@@ -242,6 +246,9 @@ with tqdm(desc="Open Interest") as pbar:
             data = r.json()
             if not data:
                 break
+            if isinstance(data, dict) and 'code' in data:
+                print(f"API Error: {data}")
+                break
             oi_data.extend(data)
             pbar.update(len(data))
             
@@ -255,10 +262,15 @@ with tqdm(desc="Open Interest") as pbar:
 df_oi = None
 if oi_data:
     df_oi = pd.DataFrame(oi_data)
-    df_oi["timestamp_utc"] = pd.to_datetime(df_oi["timestamp"], unit="ms", utc=True)
-    df_oi["open_interest"] = df_oi["sumOpenInterest"].astype(float)
-    df_oi = df_oi[["timestamp_utc", "open_interest"]]
-    print(f"  ✅ Open Interest: {len(df_oi)} rows")
+    if "timestamp" in df_oi.columns:
+        df_oi["timestamp_utc"] = pd.to_datetime(df_oi["timestamp"], unit="ms", utc=True)
+        df_oi["open_interest"] = df_oi["sumOpenInterest"].astype(float)
+        df_oi = df_oi[["timestamp_utc", "open_interest"]]
+        print(f"  ✅ Open Interest: {len(df_oi)} rows")
+    else:
+        print(f"  ⚠️  OI data missing 'timestamp' column. Available columns: {list(df_oi.columns)}")
+else:
+    print("  ⚠️  No Open Interest data fetched")
 
 # Step 6: Merge All Data
 print("\n")
@@ -306,7 +318,15 @@ if invalid_ohlc.any():
     print(f"  ⚠️  {invalid_ohlc.sum()} rows with invalid OHLC relationships")
 
 # Save
-full.to_parquet(OUTPUT_FILE, index=False, compression='snappy')
+try:
+    full.to_parquet(OUTPUT_FILE, index=False, compression='snappy')
+except Exception as e:
+    print(f"  ⚠️  pandas.to_parquet unavailable ({e}), falling back to pyarrow")
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    table = pa.Table.from_pandas(full, preserve_index=False)
+    pq.write_table(table, OUTPUT_FILE, compression="snappy")
 
 # Final report
 print(f"\n")

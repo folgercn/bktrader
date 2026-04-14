@@ -6,40 +6,240 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 
-def run_tick_full_scan_dual(df_4h, tick_file,current_bal):
-    # ... (加载数据部分保持不变) ...
-    print(f"正在加载原始 Tick 数据: {tick_file} ...")
-    df_tick = pd.read_csv(
-        tick_file, engine='python', header=None, 
-        usecols=[1, 4], names=['price', 'timestamp'],
-        on_bad_lines='skip', dtype={'price': 'float32', 'timestamp': 'int64'}
+def _normalize_utc_index(df):
+    normalized = df.copy(deep=False)
+    normalized.index = pd.to_datetime(normalized.index, utc=True)
+    return normalized
+
+
+def _empty_tick_event_stream():
+    return pd.DataFrame(
+        {
+            'price': pd.Series(dtype='float64'),
+            'event': pd.Series(dtype='object'),
+            'minute_ms': pd.Series(dtype='int64'),
+        },
+        index=pd.DatetimeIndex([], tz='UTC', name='timestamp'),
     )
-    df_tick['timestamp'] = pd.to_datetime(df_tick['timestamp'], unit='ms')
-    df_tick.set_index('timestamp', inplace=True)
-    
-    # 策略常量
-    COMMISSION = 0.0010
-    STOP_LOSS_ATR_LONG = 0.1    # 多头止损
-    STOP_LOSS_ATR_SHORT = 0.1  # 空头止损：较宽，防止在空头趋势中被反抽洗掉
-    REENTRY_ATR = 0.1
-    MAX_TRADES_PER_BAR = 2
-    CASH_USAGE_RATE=0.2
-    SLIPPAGE = 0.0005 
+
+
+def _summarize_complete_tick_chunk(df_ticks):
+    if df_ticks.empty:
+        return pd.DataFrame(columns=[
+            'minute_ms', 'open', 'high', 'low', 'close',
+            'first_ts', 'last_ts', 'high_ts', 'low_ts'
+        ])
+
+    grouped = df_ticks.groupby('minute_ms', sort=False)
+    summary = grouped.agg(
+        open=('price', 'first'),
+        high=('price', 'max'),
+        low=('price', 'min'),
+        close=('price', 'last'),
+        first_ts=('timestamp', 'first'),
+        last_ts=('timestamp', 'last'),
+    )
+
+    high_idx = grouped['price'].idxmax()
+    low_idx = grouped['price'].idxmin()
+
+    high_ts = df_ticks.loc[high_idx, ['minute_ms', 'timestamp']].set_index('minute_ms')['timestamp']
+    low_ts = df_ticks.loc[low_idx, ['minute_ms', 'timestamp']].set_index('minute_ms')['timestamp']
+
+    summary['high_ts'] = high_ts
+    summary['low_ts'] = low_ts
+    summary = summary.reset_index()
+    return summary
+
+
+def _build_tick_event_stream(tick_file, start_ts=None, end_ts=None, chunksize=2_000_000):
+    start_ms = int(pd.Timestamp(start_ts).timestamp() * 1000) if start_ts is not None else None
+    end_ms = int(pd.Timestamp(end_ts).timestamp() * 1000) if end_ts is not None else None
+
+    summaries = []
+    pending = None
+    with open(tick_file, 'r', encoding='utf-8') as fh:
+        first_line = fh.readline().strip().lower()
+
+    if first_line.startswith('id,price,qty,quote_qty,time'):
+        reader = pd.read_csv(
+            tick_file,
+            header=0,
+            usecols=['price', 'time'],
+            dtype={'price': 'float32', 'time': 'int64'},
+            chunksize=chunksize,
+        )
+    else:
+        reader = pd.read_csv(
+            tick_file,
+            header=None,
+            usecols=[1, 4],
+            names=['price', 'timestamp'],
+            dtype={'price': 'float32', 'timestamp': 'int64'},
+            chunksize=chunksize,
+        )
+
+    for chunk in reader:
+        if 'time' in chunk.columns:
+            chunk = chunk.rename(columns={'time': 'timestamp'})
+        if end_ms is not None and not chunk.empty and chunk['timestamp'].iloc[0] > end_ms:
+            break
+        if start_ms is not None and not chunk.empty and chunk['timestamp'].iloc[-1] < start_ms:
+            continue
+
+        reached_end = False
+        if end_ms is not None and not chunk.empty and chunk['timestamp'].iloc[-1] > end_ms:
+            chunk = chunk[chunk['timestamp'] <= end_ms]
+            reached_end = True
+        if start_ms is not None:
+            chunk = chunk[chunk['timestamp'] >= start_ms]
+        if chunk.empty:
+            if reached_end:
+                break
+            continue
+
+        if pending is not None and not pending.empty:
+            chunk = pd.concat([pending, chunk], ignore_index=True)
+            pending = None
+
+        chunk['minute_ms'] = (chunk['timestamp'] // 60000) * 60000
+        last_minute = chunk['minute_ms'].iloc[-1]
+        pending = chunk[chunk['minute_ms'] == last_minute].copy()
+        complete = chunk[chunk['minute_ms'] != last_minute]
+
+        if not complete.empty:
+            summaries.append(_summarize_complete_tick_chunk(complete))
+
+        if reached_end:
+            break
+
+    if pending is not None and not pending.empty:
+        summaries.append(_summarize_complete_tick_chunk(pending))
+
+    if not summaries:
+        return _empty_tick_event_stream()
+
+    minute_df = pd.concat(summaries, ignore_index=True)
+    events = []
+    for row in minute_df.itertuples(index=False):
+        if row.high_ts <= row.low_ts:
+            ordered = [
+                ('open', row.first_ts, float(row.open)),
+                ('high', row.high_ts, float(row.high)),
+                ('low', row.low_ts, float(row.low)),
+                ('close', row.last_ts, float(row.close)),
+            ]
+        else:
+            ordered = [
+                ('open', row.first_ts, float(row.open)),
+                ('low', row.low_ts, float(row.low)),
+                ('high', row.high_ts, float(row.high)),
+                ('close', row.last_ts, float(row.close)),
+            ]
+
+        deduped = []
+        for label, ts_ms, price in ordered:
+            if deduped and deduped[-1][0] == ts_ms and deduped[-1][1] == price:
+                continue
+            deduped.append((ts_ms, price, label))
+
+        for seq, (ts_ms, price, label) in enumerate(deduped):
+            events.append((ts_ms, seq, price, label, row.minute_ms))
+
+    event_df = pd.DataFrame(events, columns=['timestamp_ms', 'seq', 'price', 'event', 'minute_ms'])
+    event_df.sort_values(['timestamp_ms', 'seq'], inplace=True)
+    event_df['timestamp'] = pd.to_datetime(event_df['timestamp_ms'], unit='ms', utc=True)
+    event_df.set_index('timestamp', inplace=True)
+    return event_df[['price', 'event', 'minute_ms']]
+
+
+def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
+                            dir1_reentry_confirm=False,
+                            dir2_zero_initial=False,
+                            dir3_structural_sl=False,
+                            fixed_slippage=None,
+                            stop_loss_atr=0.05,
+                            max_trades_per_bar=4,
+                            reentry_size_schedule=None,
+                            long_reentry_atr=0.1,
+                            short_reentry_atr=0.0,
+                            stop_mode=None,
+                            profit_protect_atr=1.0,
+                            trailing_stop_atr=0.3,
+                            delayed_trailing_activation=0.5,
+                            tiered_protection=False,
+                            max_drawdown_pct=None,
+                            cooldown_bars=6,
+                            reentry_mode='default'):
+    # Keep both signal windows and tick windows on the same UTC-aware contract.
+    df_4h = _normalize_utc_index(df_4h)
+
+    replay_start = df_4h.index[0]
+    replay_end = df_4h.index[-1]
+    print(f"正在构建 Tick 事件流: {tick_file} ({replay_start} ~ {replay_end}) ...")
+    df_tick = _build_tick_event_stream(
+        tick_file,
+        start_ts=replay_start,
+        end_ts=replay_end,
+    )
+    df_tick = _normalize_utc_index(df_tick)
 
     balance = current_bal
-    position = None 
+    peak_balance = current_bal
+    position = None
     trade_logs = []
-    last_exit_reason, last_exit_side = None, None
+
+    COMMISSION = 0.0010
+    MAX_TRADES_PER_BAR = max_trades_per_bar
+    SLIPPAGE = np.random.uniform(0.0005, 0.002) if fixed_slippage is None else fixed_slippage
+    CASH_USAGE_INITIAL = 0.0 if dir2_zero_initial else 0.10
+    REENTRY_SIZE_SCHEDULE = _normalize_reentry_sizes(reentry_size_schedule)
+    PROFIT_PROTECT = profit_protect_atr
+    stop_mode = 'structural' if dir3_structural_sl and stop_mode is None else (stop_mode or 'atr')
+
+    if reentry_mode == 'fixed':
+        base = REENTRY_SIZE_SCHEDULE[0] if REENTRY_SIZE_SCHEDULE else 0.10
+        REENTRY_SIZE_SCHEDULE = [base] * max(len(REENTRY_SIZE_SCHEDULE), 3)
+    elif reentry_mode == 'decreasing':
+        base = REENTRY_SIZE_SCHEDULE[0] if REENTRY_SIZE_SCHEDULE else 0.10
+        REENTRY_SIZE_SCHEDULE = [base * (0.5 ** i) for i in range(max(len(REENTRY_SIZE_SCHEDULE), 3))]
+
     last_exit_bar_index = -999
     REENTRY_TIMEOUT = 1
+    last_exit_reason = None
+    last_exit_side = None
+    circuit_breaker_until = -999
 
-    # 4H 信号迭代
-    for i in range(len(df_4h)-1):
-        start_t, end_t = df_4h.index[i], df_4h.index[i+1]
+    label_parts = []
+    if trailing_stop_atr:
+        label_parts.append(f"Trail:{trailing_stop_atr}")
+    if tiered_protection:
+        label_parts.append("TieredPT")
+    if max_drawdown_pct:
+        label_parts.append(f"CB:{max_drawdown_pct:.0%}")
+    if reentry_mode != 'default':
+        label_parts.append(f"Re:{reentry_mode}")
+    label_parts.append(f"ReATR:{long_reentry_atr}/{short_reentry_atr}")
+    label = " | ".join(label_parts) if label_parts else "TickEnhanced"
+
+    print(
+        f"🎯 Tick回放 [{label}] | Stop:{stop_mode} ATR:{stop_loss_atr} | "
+        f"Slippage:{SLIPPAGE}"
+    )
+
+    for i in range(len(df_4h) - 1):
+        start_t, end_t = df_4h.index[i], df_4h.index[i + 1]
         window_ticks = df_tick.loc[start_t:end_t]
-        if window_ticks.empty: continue
-        
+        if window_ticks.empty:
+            continue
+
         sig = df_4h.iloc[i]
+        if pd.isna(sig['atr']):
+            continue
+        long_regime_ready, short_regime_ready = _resolve_regime_ready(
+            sig, '1d' if 'ma5' in df_4h.columns else '4h'
+        )
+
         trades_in_bar = 0
         idx = 0
         total_ticks = len(window_ticks)
@@ -47,112 +247,314 @@ def run_tick_full_scan_dual(df_4h, tick_file,current_bal):
         if i - last_exit_bar_index > REENTRY_TIMEOUT:
             last_exit_side = None
 
-        
-        
         while idx < total_ticks:
-            # 1. 获取当前 Tick 价格和时间
             current_tick = window_ticks.iloc[idx]
-            current_p = current_tick['price']
+            current_p = float(current_tick['price'])
             current_time = window_ticks.index[idx]
-            
+            prev_p = float(window_ticks.iloc[idx - 1]['price']) if idx > 0 else np.nan
+
             if not position:
-                # --- [A. 寻找进场/重入] ---
+                if max_drawdown_pct is not None and i < circuit_breaker_until:
+                    idx += 1
+                    continue
+
                 executed = False
-                
-                # 多头逻辑
-                if sig['close'] > sig['ma20']:
-                    re_p = sig['prev_low_1'] + (REENTRY_ATR * sig['atr'])
-                    # 初始进场
+
+                if long_regime_ready:
+                    re_p = sig['prev_low_1'] + (long_reentry_atr * sig['atr'])
                     if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
                         if current_p >= sig['prev_high_2']:
-                            entry_p = max(current_p, sig['prev_high_2'])
-                            entry_p *= (1 + SLIPPAGE)
-                            notional_value = balance * CASH_USAGE_RATE
-                            position = {'side': 'long', 'entry_p': entry_p, 'sl': entry_p - (STOP_LOSS_ATR_LONG * sig['atr']), 'protected': False,'notional': notional_value}
+                            entry_raw = max(current_p, sig['prev_high_2'])
+                            entry_p = entry_raw * (1 + SLIPPAGE)
+                            notional_value = balance * CASH_USAGE_INITIAL
+                            initial_sl = _resolve_stop_price('long', entry_p, sig, stop_mode, stop_loss_atr)
+                            position = {
+                                'side': 'long',
+                                'entry_p': entry_p,
+                                'sl': initial_sl,
+                                'protected': False,
+                                'notional': notional_value,
+                                'hwm': entry_p,
+                            }
                             balance -= notional_value * COMMISSION
-                            trade_logs.append({'time': current_time, 'type': 'BUY', 'price': entry_p, 'reason': 'Initial', 'notional': notional_value,'bal': balance})
-                            trades_in_bar += 1; executed = True
-                    
-                    # 重入逻辑 (增加状态清除)
-                    elif last_exit_side == 'long':
-                        if current_p >= re_p and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
+                            trade_logs.append({
+                                'time': current_time,
+                                'type': 'BUY',
+                                'price': entry_p,
+                                'reason': 'Initial',
+                                'notional': notional_value,
+                                'bal': balance,
+                            })
+                            trades_in_bar += 1
+                            executed = True
+                    elif last_exit_side == 'long' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
+                        is_triggered = False
+                        entry_p_raw = re_p
+                        if dir1_reentry_confirm:
+                            if not pd.isna(prev_p) and current_p > re_p and prev_p > re_p:
+                                is_triggered = True
+                                entry_p_raw = current_p
+                        else:
+                            if current_p >= re_p:
+                                is_triggered = True
+                        if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
-                            if (reason == 'SL-Reentry' and trades_in_bar < MAX_TRADES_PER_BAR) or reason == 'PT-Reentry':
-                                notional_value = balance * CASH_USAGE_RATE
-                                entry_price = re_p * (1 + SLIPPAGE)
-                                position = {'side': 'long', 'entry_p': entry_price, 'sl': sig['prev_low_1'], 'protected': reason.startswith('PT'),'notional': notional_value}
+                            if trades_in_bar < MAX_TRADES_PER_BAR:
+                                current_reentry_size = _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
+                                notional_value = balance * current_reentry_size
+                                entry_price = entry_p_raw * (1 + SLIPPAGE)
+                                reentry_sl = _resolve_stop_price('long', entry_price, sig, stop_mode, stop_loss_atr)
+                                position = {
+                                    'side': 'long',
+                                    'entry_p': entry_price,
+                                    'sl': reentry_sl,
+                                    'protected': (reason == 'PT-Reentry'),
+                                    'notional': notional_value,
+                                    'hwm': entry_price,
+                                }
                                 balance -= notional_value * COMMISSION
-                                trade_logs.append({'time': current_time, 'type': 'BUY', 'price': entry_price, 'reason': reason, 'bal': balance,'notional': notional_value})
-                                if reason == 'SL-Reentry': trades_in_bar += 1
-                                executed = True
-                            # 无论是否重入成功，只要触碰了触发线或逻辑已过期，就清除状态，防止在同一位置反复刷单
-                            last_exit_side = None 
-
-                # 空头逻辑 (同样增加状态清除)
-                elif sig['close'] < sig['ma20']:
-                    re_p = sig['prev_high_1']
-                    if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
-                        if current_p <= sig['prev_low_2']:
-                            entry_p = min(current_p, sig['prev_low_2'])
-                            entry_p *= (1 - SLIPPAGE)
-                            notional_value = balance * CASH_USAGE_RATE
-                            position = {'side': 'short', 'entry_p': entry_p, 'sl': entry_p + (STOP_LOSS_ATR_SHORT * sig['atr']), 'protected': False,'notional': notional_value}
-                            balance -= notional_value * COMMISSION
-                            trade_logs.append({'time': current_time, 'type': 'SHORT', 'price': entry_p, 'reason': 'Initial','notional': notional_value, 'bal': balance})
-                            trades_in_bar += 1; executed = True
-                    elif last_exit_side == 'short':
-                        if current_p <= re_p and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
-                            reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
-                            if (reason == 'SL-Reentry' and trades_in_bar < MAX_TRADES_PER_BAR) or reason == 'PT-Reentry':
-                                notional_value = balance * CASH_USAGE_RATE
-                                entry_price=re_p*(1 - SLIPPAGE)
-                                position = {'side': 'short', 'entry_p': entry_price, 'sl': sig['prev_high_1'], 'protected': reason.startswith('PT'),'notional': notional_value}
-                                balance -= notional_value * COMMISSION
-                                trade_logs.append({'time': current_time, 'type': 'SHORT', 'price': entry_price, 'reason': reason,'notional': notional_value, 'bal': balance})
-                                if reason == 'SL-Reentry': trades_in_bar += 1
+                                trade_logs.append({
+                                    'time': current_time,
+                                    'type': 'BUY',
+                                    'price': entry_price,
+                                    'reason': reason,
+                                    'notional': notional_value,
+                                    'bal': balance,
+                                })
+                                trades_in_bar += 1
                                 executed = True
                             last_exit_side = None
 
-                # 步进逻辑：如果成交了，跳过当前秒的所有 Tick；没成交则看下一个 Tick
+                elif short_regime_ready:
+                    re_p = sig['prev_high_1'] - (short_reentry_atr * sig['atr'])
+                    if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
+                        if current_p <= sig['prev_low_2']:
+                            entry_raw = min(current_p, sig['prev_low_2'])
+                            entry_p = entry_raw * (1 - SLIPPAGE)
+                            notional_value = balance * CASH_USAGE_INITIAL
+                            initial_sl = _resolve_stop_price('short', entry_p, sig, stop_mode, stop_loss_atr)
+                            position = {
+                                'side': 'short',
+                                'entry_p': entry_p,
+                                'sl': initial_sl,
+                                'protected': False,
+                                'notional': notional_value,
+                                'lwm': entry_p,
+                            }
+                            balance -= notional_value * COMMISSION
+                            trade_logs.append({
+                                'time': current_time,
+                                'type': 'SHORT',
+                                'price': entry_p,
+                                'reason': 'Initial',
+                                'notional': notional_value,
+                                'bal': balance,
+                            })
+                            trades_in_bar += 1
+                            executed = True
+                    elif last_exit_side == 'short' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
+                        is_triggered = False
+                        entry_p_raw = re_p
+                        if dir1_reentry_confirm:
+                            if not pd.isna(prev_p) and current_p < re_p and prev_p < re_p:
+                                is_triggered = True
+                                entry_p_raw = current_p
+                        else:
+                            if current_p <= re_p:
+                                is_triggered = True
+                        if is_triggered:
+                            reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
+                            if trades_in_bar < MAX_TRADES_PER_BAR:
+                                current_reentry_size = _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
+                                notional_value = balance * current_reentry_size
+                                entry_price = entry_p_raw * (1 - SLIPPAGE)
+                                reentry_sl = _resolve_stop_price('short', entry_price, sig, stop_mode, stop_loss_atr)
+                                position = {
+                                    'side': 'short',
+                                    'entry_p': entry_price,
+                                    'sl': reentry_sl,
+                                    'protected': (reason == 'PT-Reentry'),
+                                    'notional': notional_value,
+                                    'lwm': entry_price,
+                                }
+                                balance -= notional_value * COMMISSION
+                                trade_logs.append({
+                                    'time': current_time,
+                                    'type': 'SHORT',
+                                    'price': entry_price,
+                                    'reason': reason,
+                                    'notional': notional_value,
+                                    'bal': balance,
+                                })
+                                trades_in_bar += 1
+                                executed = True
+                            last_exit_side = None
+
                 if executed:
                     idx = window_ticks.index.searchsorted(current_time, side='right')
                 else:
                     idx += 1
-
             else:
-                # --- [B. 监控持仓退出] ---
                 exit_triggered = False
+                exit_p = 0.0
+                reason = ''
+
                 if position['side'] == 'long':
-                    # 激活保护
-                    if not position['protected'] and current_p >= position['entry_p'] + sig['atr']:
-                        position['protected'] = True
-                    
-                    # 检查止损或止盈
+                    prev_hwm = position.get('hwm', position['entry_p'])
+                    protected_before_tick = position.get('protected', False)
+
+                    if trailing_stop_atr is not None:
+                        is_active = True
+                        if delayed_trailing_activation is not None:
+                            profit_atr = (prev_hwm - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                            if profit_atr < delayed_trailing_activation:
+                                is_active = False
+                        if is_active:
+                            trailing_sl = prev_hwm - trailing_stop_atr * sig['atr']
+                            position['sl'] = max(position['sl'], trailing_sl)
+
                     if current_p <= position['sl']:
                         exit_p, reason, exit_triggered = position['sl'], 'SL', True
-                    elif position['protected'] and current_p <= sig['prev_low_1']:
-                        exit_p, reason, exit_triggered = sig['prev_low_1'], 'PT', True
-                
-                else: # 空头持仓
-                    if not position['protected'] and current_p <= position['entry_p'] - sig['atr']:
-                        position['protected'] = True
+                    elif tiered_protection:
+                        profit_atr = (prev_hwm - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                        if protected_before_tick and profit_atr >= 3.0:
+                            tiered_exit = max(sig['prev_low_1'], prev_hwm - 1.5 * sig['atr'])
+                            if current_p <= tiered_exit:
+                                exit_p, reason, exit_triggered = tiered_exit, 'PT-T3', True
+                        elif protected_before_tick and profit_atr >= 2.0:
+                            tiered_exit = max(sig['prev_low_1'], position['entry_p'] + 0.5 * sig['atr'])
+                            if current_p <= tiered_exit:
+                                exit_p, reason, exit_triggered = tiered_exit, 'PT-T2', True
+                        elif protected_before_tick and current_p <= sig['prev_low_1']:
+                            exit_p, reason, exit_triggered = sig['prev_low_1'], 'PT', True
+                    else:
+                        if protected_before_tick and current_p <= sig['prev_low_1']:
+                            exit_p, reason, exit_triggered = sig['prev_low_1'], 'PT', True
+
+                    if not exit_triggered:
+                        position['hwm'] = max(prev_hwm, current_p)
+                        if tiered_protection:
+                            profit_atr = (position['hwm'] - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                            if profit_atr >= PROFIT_PROTECT and not position['protected']:
+                                position['protected'] = True
+                        else:
+                            if not position['protected'] and current_p >= position['entry_p'] + PROFIT_PROTECT * sig['atr']:
+                                position['protected'] = True
+                        if trailing_stop_atr is not None:
+                            is_active = True
+                            if delayed_trailing_activation is not None:
+                                profit_atr = (position['hwm'] - position['entry_p']) / sig['atr'] if sig['atr'] > 0 else 0
+                                if profit_atr < delayed_trailing_activation:
+                                    is_active = False
+                            if is_active:
+                                trailing_sl = position['hwm'] - trailing_stop_atr * sig['atr']
+                                position['sl'] = max(position['sl'], trailing_sl)
+
+                else:
+                    prev_lwm = position.get('lwm', position['entry_p'])
+                    protected_before_tick = position.get('protected', False)
+
+                    if trailing_stop_atr is not None:
+                        is_active = True
+                        if delayed_trailing_activation is not None:
+                            profit_atr = (position['entry_p'] - prev_lwm) / sig['atr'] if sig['atr'] > 0 else 0
+                            if profit_atr < delayed_trailing_activation:
+                                is_active = False
+                        if is_active:
+                            trailing_sl = prev_lwm + trailing_stop_atr * sig['atr']
+                            position['sl'] = min(position['sl'], trailing_sl)
+
                     if current_p >= position['sl']:
                         exit_p, reason, exit_triggered = position['sl'], 'SL', True
-                    elif position['protected'] and current_p >= sig['prev_high_1']:
-                        exit_p, reason, exit_triggered = sig['prev_high_1'], 'PT', True
+                    elif tiered_protection:
+                        profit_atr = (position['entry_p'] - prev_lwm) / sig['atr'] if sig['atr'] > 0 else 0
+                        if protected_before_tick and profit_atr >= 3.0:
+                            tiered_exit = min(sig['prev_high_1'], prev_lwm + 1.5 * sig['atr'])
+                            if current_p >= tiered_exit:
+                                exit_p, reason, exit_triggered = tiered_exit, 'PT-T3', True
+                        elif protected_before_tick and profit_atr >= 2.0:
+                            tiered_exit = min(sig['prev_high_1'], position['entry_p'] - 0.5 * sig['atr'])
+                            if current_p >= tiered_exit:
+                                exit_p, reason, exit_triggered = tiered_exit, 'PT-T2', True
+                        elif protected_before_tick and current_p >= sig['prev_high_1']:
+                            exit_p, reason, exit_triggered = sig['prev_high_1'], 'PT', True
+                    else:
+                        if protected_before_tick and current_p >= sig['prev_high_1']:
+                            exit_p, reason, exit_triggered = sig['prev_high_1'], 'PT', True
+
+                    if not exit_triggered:
+                        position['lwm'] = min(prev_lwm, current_p)
+                        if tiered_protection:
+                            profit_atr = (position['entry_p'] - position['lwm']) / sig['atr'] if sig['atr'] > 0 else 0
+                            if profit_atr >= PROFIT_PROTECT and not position['protected']:
+                                position['protected'] = True
+                        else:
+                            if not position['protected'] and current_p <= position['entry_p'] - PROFIT_PROTECT * sig['atr']:
+                                position['protected'] = True
+                        if trailing_stop_atr is not None:
+                            is_active = True
+                            if delayed_trailing_activation is not None:
+                                profit_atr = (position['entry_p'] - position['lwm']) / sig['atr'] if sig['atr'] > 0 else 0
+                                if profit_atr < delayed_trailing_activation:
+                                    is_active = False
+                            if is_active:
+                                trailing_sl = position['lwm'] + trailing_stop_atr * sig['atr']
+                                position['sl'] = min(position['sl'], trailing_sl)
 
                 if exit_triggered:
                     side_mult = 1 if position['side'] == 'long' else -1
-                    exit_p= exit_p * (1 - SLIPPAGE) if position['side'] == 'long' else exit_p* (1 + SLIPPAGE)
-                    pnl = side_mult * (exit_p - position['entry_p']) / position['entry_p'] * position['notional']
-                    balance += pnl - (position['notional'] * COMMISSION)
-                    trade_logs.append({'time': current_time, 'type': 'EXIT', 'price': exit_p, 'reason': reason,'notional': position['notional'], 'bal': balance})
-                    last_exit_reason, last_exit_side, position = reason, position['side'], None
-                    idx = window_ticks.index.searchsorted(current_time, side='right')
+                    exit_p = exit_p * (1 - SLIPPAGE) if position['side'] == 'long' else exit_p * (1 + SLIPPAGE)
+                    if position['notional'] > 0:
+                        pnl = side_mult * (exit_p - position['entry_p']) / position['entry_p'] * position['notional']
+                        balance += pnl - (position['notional'] * COMMISSION)
+                    trade_logs.append({
+                        'time': current_time,
+                        'type': 'EXIT',
+                        'price': exit_p,
+                        'reason': reason,
+                        'notional': position['notional'],
+                        'bal': balance,
+                    })
+                    last_exit_reason = reason
+                    last_exit_side = position['side']
                     last_exit_bar_index = i
+                    position = None
 
+                    if balance > peak_balance:
+                        peak_balance = balance
+                    if max_drawdown_pct is not None and peak_balance > 0:
+                        current_dd = (peak_balance - balance) / peak_balance
+                        if current_dd > max_drawdown_pct:
+                            circuit_breaker_until = i + cooldown_bars
+                            trade_logs.append({
+                                'time': current_time,
+                                'type': 'CIRCUIT_BREAKER',
+                                'price': 0,
+                                'reason': f'DD:{current_dd:.2%}',
+                                'notional': 0,
+                                'bal': balance,
+                            })
+                    idx = window_ticks.index.searchsorted(current_time, side='right')
                 else:
                     idx += 1
+
+    if position is not None and not df_tick.empty:
+        last_tick_time = df_tick.index[-1]
+        last_price = float(df_tick.iloc[-1]['price'])
+        side_mult = 1 if position['side'] == 'long' else -1
+        final_exit_p = last_price * (1 - SLIPPAGE) if position['side'] == 'long' else last_price * (1 + SLIPPAGE)
+        if position['notional'] > 0:
+            pnl = side_mult * (final_exit_p - position['entry_p']) / position['entry_p'] * position['notional']
+            balance += pnl - (position['notional'] * COMMISSION)
+        trade_logs.append({
+            'time': last_tick_time,
+            'type': 'EXIT',
+            'price': final_exit_p,
+            'reason': 'FinalMarkToMarket',
+            'notional': position['notional'],
+            'bal': balance,
+        })
+
     return pd.DataFrame(trade_logs), balance
 
 def analyze_long_short_performance(trade_df):
@@ -363,6 +765,8 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                                   stop_loss_atr=0.2,
                                   max_trades_per_bar=3,
                                   reentry_size_schedule=None,
+                                  long_reentry_atr=0.1,
+                                  short_reentry_atr=0.0,
                                   stop_mode=None,
                                   profit_protect_atr=1.0):
     """
@@ -370,11 +774,13 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
     df_1min: 包含 open, high, low, close 的标准化 1min 数据
     df_4h: 包含策略锚点(ma20, atr, prev_high_2 等)的 4H 数据
     """
+    df_1min = _normalize_utc_index(df_1min)
+    df_4h = _normalize_utc_index(df_4h)
+
     balance = initial_balance
     position = None # {'side', 'entry_p', 'sl', 'protected', 'notional'}
     trade_logs = []
     # 策略参数
-    REENTRY_ATR = 0.1
     COMMISSION = 0.0010 # 千分之一手续费
     MAX_TRADES_PER_BAR = max_trades_per_bar
     
@@ -397,6 +803,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
         f"🚀 1min回测 | InitialSize:{CASH_USAGE_INITIAL:.0%} | "
         f"Stop:{stop_mode} | Reentry:{'Confirm' if dir1_reentry_confirm else 'Touch'} | "
         f"MaxTrades:{MAX_TRADES_PER_BAR} | ReentrySizes:{REENTRY_SIZE_SCHEDULE} | "
+        f"ReentryATR(L/S):{long_reentry_atr}/{short_reentry_atr} | "
         f"Slippage:{SLIPPAGE}"
     )
 
@@ -432,7 +839,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                 
                 # 1. 多头逻辑 (MA20 之上)
                 if long_regime_ready:
-                    re_p = sig['prev_low_1'] + (REENTRY_ATR * sig['atr'])
+                    re_p = sig['prev_low_1'] + (long_reentry_atr * sig['atr'])
                     # 初始进场
                     if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
                         if bar['high'] >= sig['prev_high_2']:
@@ -485,7 +892,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
 
                 # 2. 空头逻辑 (MA20 之下)
                 elif short_regime_ready:
-                    re_p = sig['prev_high_1']
+                    re_p = sig['prev_high_1'] - (short_reentry_atr * sig['atr'])
                     # 初始进场
                     if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
                         if bar['low'] <= sig['prev_low_2']:
@@ -873,6 +1280,8 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                           stop_loss_atr=0.2,
                           max_trades_per_bar=3,
                           reentry_size_schedule=None,
+                          long_reentry_atr=0.1,
+                          short_reentry_atr=0.0,
                           stop_mode=None,
                           profit_protect_atr=1.0,
                           # ===== 新增优化参数 =====
@@ -894,12 +1303,14 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
     - cooldown_bars: int, 熔断冷却期（信号 bar 数量）。
     - reentry_mode: str, 'default'=原始递增, 'fixed'=固定大小, 'decreasing'=递减。
     """
+    df_1min = _normalize_utc_index(df_1min)
+    df_4h = _normalize_utc_index(df_4h)
+
     balance = initial_balance
     peak_balance = initial_balance
     position = None
     trade_logs = []
 
-    REENTRY_ATR = 0.1
     COMMISSION = 0.0010
     MAX_TRADES_PER_BAR = max_trades_per_bar
     SLIPPAGE = np.random.uniform(0.0005, 0.002) if fixed_slippage is None else fixed_slippage
@@ -929,6 +1340,7 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
     if tiered_protection: label_parts.append("TieredPT")
     if max_drawdown_pct: label_parts.append(f"CB:{max_drawdown_pct:.0%}")
     if reentry_mode != 'default': label_parts.append(f"Re:{reentry_mode}")
+    label_parts.append(f"ReATR:{long_reentry_atr}/{short_reentry_atr}")
     label = " | ".join(label_parts) if label_parts else "Enhanced"
 
     print(
@@ -971,7 +1383,7 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
 
                 # 多头逻辑
                 if long_regime_ready:
-                    re_p = sig['prev_low_1'] + (REENTRY_ATR * sig['atr'])
+                    re_p = sig['prev_low_1'] + (long_reentry_atr * sig['atr'])
                     if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
                         if bar['high'] >= sig['prev_high_2']:
                             entry_p = max(bar['open'], sig['prev_high_2']) * (1 + SLIPPAGE)
@@ -1021,7 +1433,7 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                             last_exit_side = None
 
                 elif short_regime_ready:
-                    re_p = sig['prev_high_1']
+                    re_p = sig['prev_high_1'] - (short_reentry_atr * sig['atr'])
                     if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
                         if bar['low'] <= sig['prev_low_2']:
                             entry_p = min(bar['open'], sig['prev_low_2']) * (1 - SLIPPAGE)
