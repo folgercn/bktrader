@@ -344,6 +344,7 @@ func buildLiveOrderFromExecutionProposal(session domain.LiveSession, strategyVer
 			"timeInForce":        proposal.TimeInForce,
 			"postOnly":           proposal.PostOnly,
 			"reduceOnly":         proposal.ReduceOnly,
+			"decisionEventId":    stringValue(proposalMap["decisionEventId"]),
 			"executionStrategy":  proposal.ExecutionStrategy,
 			"executionExpiresAt": stringValue(proposal.Metadata["executionExpiresAt"]),
 			"executionProposal":  cloneMetadata(proposalMap),

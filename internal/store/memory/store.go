@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -23,6 +24,9 @@ type Store struct {
 	paperSessions    map[string]domain.PaperSession
 	liveSessions     map[string]domain.LiveSession
 	equitySnapshots  map[string][]domain.AccountEquitySnapshot
+	decisionEvents   []domain.StrategyDecisionEvent
+	executionEvents  []domain.OrderExecutionEvent
+	liveSnapshots    []domain.PositionAccountSnapshot
 	marketBars       map[string]domain.MarketBar
 	signalSources    []map[string]any
 	annotations      []domain.ChartAnnotation
@@ -729,6 +733,114 @@ func (s *Store) CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapsho
 	return snapshot, nil
 }
 
+func (s *Store) ListStrategyDecisionEvents(liveSessionID string) ([]domain.StrategyDecisionEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.StrategyDecisionEvent, 0, len(s.decisionEvents))
+	for _, item := range s.decisionEvents {
+		if liveSessionID != "" && item.LiveSessionID != liveSessionID {
+			continue
+		}
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].EventTime.Equal(items[j].EventTime) {
+			return items[i].RecordedAt.Before(items[j].RecordedAt)
+		}
+		return items[i].EventTime.Before(items[j].EventTime)
+	})
+	return items, nil
+}
+
+func (s *Store) CreateStrategyDecisionEvent(event domain.StrategyDecisionEvent) (domain.StrategyDecisionEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if event.ID == "" {
+		event.ID = s.nextID("strategy-decision-event")
+	}
+	if event.EventTime.IsZero() {
+		event.EventTime = time.Now().UTC()
+	}
+	if event.RecordedAt.IsZero() {
+		event.RecordedAt = time.Now().UTC()
+	}
+	event = cloneJSONValue(event)
+	s.decisionEvents = append(s.decisionEvents, event)
+	return cloneJSONValue(event), nil
+}
+
+func (s *Store) ListOrderExecutionEvents(orderID string) ([]domain.OrderExecutionEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.OrderExecutionEvent, 0, len(s.executionEvents))
+	for _, item := range s.executionEvents {
+		if orderID != "" && item.OrderID != orderID {
+			continue
+		}
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].EventTime.Equal(items[j].EventTime) {
+			return items[i].RecordedAt.Before(items[j].RecordedAt)
+		}
+		return items[i].EventTime.Before(items[j].EventTime)
+	})
+	return items, nil
+}
+
+func (s *Store) CreateOrderExecutionEvent(event domain.OrderExecutionEvent) (domain.OrderExecutionEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if event.ID == "" {
+		event.ID = s.nextID("order-execution-event")
+	}
+	if event.EventTime.IsZero() {
+		event.EventTime = time.Now().UTC()
+	}
+	if event.RecordedAt.IsZero() {
+		event.RecordedAt = time.Now().UTC()
+	}
+	event = cloneJSONValue(event)
+	s.executionEvents = append(s.executionEvents, event)
+	return cloneJSONValue(event), nil
+}
+
+func (s *Store) ListPositionAccountSnapshots(accountID string) ([]domain.PositionAccountSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.PositionAccountSnapshot, 0, len(s.liveSnapshots))
+	for _, item := range s.liveSnapshots {
+		if accountID != "" && item.AccountID != accountID {
+			continue
+		}
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].EventTime.Equal(items[j].EventTime) {
+			return items[i].RecordedAt.Before(items[j].RecordedAt)
+		}
+		return items[i].EventTime.Before(items[j].EventTime)
+	})
+	return items, nil
+}
+
+func (s *Store) CreatePositionAccountSnapshot(snapshot domain.PositionAccountSnapshot) (domain.PositionAccountSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if snapshot.ID == "" {
+		snapshot.ID = s.nextID("position-account-snapshot")
+	}
+	if snapshot.EventTime.IsZero() {
+		snapshot.EventTime = time.Now().UTC()
+	}
+	if snapshot.RecordedAt.IsZero() {
+		snapshot.RecordedAt = time.Now().UTC()
+	}
+	snapshot = cloneJSONValue(snapshot)
+	s.liveSnapshots = append(s.liveSnapshots, snapshot)
+	return cloneJSONValue(snapshot), nil
+}
+
 func (s *Store) ListMarketBars(exchange, symbol, timeframe string, from, to int64, limit int) ([]domain.MarketBar, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -793,6 +905,18 @@ func marketBarMemoryKey(exchange, symbol, timeframe string, openTime time.Time) 
 		strings.ToUpper(strings.TrimSpace(symbol)) + "|" +
 		strings.ToLower(strings.TrimSpace(timeframe)) + "|" +
 		openTime.UTC().Format(time.RFC3339)
+}
+
+func cloneJSONValue[T any](value T) T {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var cloned T
+	if err := json.Unmarshal(raw, &cloned); err != nil {
+		return value
+	}
+	return cloned
 }
 
 func accountStatusForMode(mode string) string {

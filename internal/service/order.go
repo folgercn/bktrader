@@ -182,6 +182,9 @@ func (p *Platform) applyLiveSubmissionResult(
 		if updateErr != nil {
 			return domain.Order{}, updateErr
 		}
+		if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "submitted", time.Now().UTC(), true, submitErr); telemetryErr != nil {
+			logger.Warn("record live order submission event failed", "error", telemetryErr)
+		}
 		logger.Warn("live order submission failed", "error", submitErr)
 		return updatedOrder, submitErr
 	}
@@ -200,7 +203,14 @@ func (p *Platform) applyLiveSubmissionResult(
 		"status", order.Status,
 		"exchange_order_id", submission.ExchangeOrderID,
 	)
-	return p.store.UpdateOrder(order)
+	updatedOrder, err := p.store.UpdateOrder(order)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "submitted", time.Now().UTC(), false, nil); telemetryErr != nil {
+		logger.Warn("record live order submission event failed", "error", telemetryErr)
+	}
+	return updatedOrder, nil
 }
 
 func (p *Platform) ensureLiveRuntimeReady(account domain.Account, order domain.Order) (domain.SignalRuntimeSession, map[string]any, error) {
@@ -400,10 +410,20 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 			"last_price", lastPrice,
 			"funding_pnl", lastFundingPnL,
 		)
+		if telemetryErr := p.recordLiveOrderExecutionEvent(order, "synced", parseOptionalRFC3339(firstNonEmpty(syncResult.SyncedAt, stringValue(order.Metadata["lastSyncAt"]))), false, nil); telemetryErr != nil {
+			logger.Warn("record live order sync event failed", "error", telemetryErr)
+		}
 		return p.finalizeExecutedOrder(account, order, fills)
 	}
 	logger.Debug("live order sync applied", "status", order.Status)
-	return p.store.UpdateOrder(order)
+	updatedOrder, err := p.store.UpdateOrder(order)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "synced", parseOptionalRFC3339(firstNonEmpty(syncResult.SyncedAt, stringValue(updatedOrder.Metadata["lastSyncAt"]))), false, nil); telemetryErr != nil {
+		logger.Warn("record live order sync event failed", "error", telemetryErr)
+	}
+	return updatedOrder, nil
 }
 
 func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]domain.Fill, float64, float64) {
@@ -458,6 +478,11 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	updatedOrder, err := p.store.UpdateOrder(order)
 	if err != nil {
 		return domain.Order{}, err
+	}
+	if strings.EqualFold(account.Mode, "LIVE") {
+		if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "filled", parseOptionalRFC3339(stringValue(updatedOrder.Metadata["lastFilledAt"])), false, nil); telemetryErr != nil {
+			p.logger("service.order", "order_id", updatedOrder.ID).Warn("record live order fill event failed", "error", telemetryErr)
+		}
 	}
 	if err := p.captureAccountSnapshot(account.ID); err != nil {
 		return domain.Order{}, err

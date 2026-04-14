@@ -76,6 +76,15 @@ func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession)
 }
 
 func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession, eventTime time.Time, source string) (domain.LiveSession, error) {
+	persistSnapshot := func(updated domain.LiveSession) (domain.LiveSession, error) {
+		if updated.ID == "" {
+			return updated, nil
+		}
+		if err := p.recordLivePositionAccountSnapshot(updated, eventTime, source, ""); err != nil {
+			p.logger("service.live_recovery", "session_id", updated.ID).Warn("record live position/account snapshot failed", "error", err)
+		}
+		return updated, nil
+	}
 	refreshed, err := p.refreshLiveSessionProtectionState(session)
 	if err != nil {
 		return domain.LiveSession{}, err
@@ -103,7 +112,11 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		delete(state, "livePositionState")
 		state["lastLivePositionState"] = map[string]any{}
 		state["positionRecoveryStatus"] = "flat"
-		return p.store.UpdateLiveSessionState(refreshed.ID, state)
+		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
+		if updateErr != nil {
+			return domain.LiveSession{}, updateErr
+		}
+		return persistSnapshot(updated)
 	}
 	if hasVirtualPosition {
 		state["positionRecoveryStatus"] = "monitoring-virtual-position"
@@ -137,12 +150,20 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 				applyLivePositionWatermarks(state, watermarks)
 			}
 		}
-		return p.store.UpdateLiveSessionState(refreshed.ID, state)
+		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
+		if updateErr != nil {
+			return domain.LiveSession{}, updateErr
+		}
+		return persistSnapshot(updated)
 	}
 	marketPrice := firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(mapValue(signalBarState["current"])["close"]))
 	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, state)
 	if len(livePositionState) == 0 {
-		return p.store.UpdateLiveSessionState(refreshed.ID, state)
+		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
+		if updateErr != nil {
+			return domain.LiveSession{}, updateErr
+		}
+		return persistSnapshot(updated)
 	}
 	state["livePositionState"] = livePositionState
 	state["lastLivePositionState"] = livePositionState
@@ -151,7 +172,11 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	if boolValue(livePositionState["protected"]) && len(metadataList(state["recoveredProtectionOrders"])) > 0 {
 		state["positionRecoveryStatus"] = "protected-open-position"
 	}
-	return p.store.UpdateLiveSessionState(refreshed.ID, state)
+	updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
+	if updateErr != nil {
+		return domain.LiveSession{}, updateErr
+	}
+	return persistSnapshot(updated)
 }
 
 func isProtectionOrder(order map[string]any) bool {

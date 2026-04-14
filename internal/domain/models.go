@@ -248,6 +248,116 @@ type RuntimePolicy struct {
 	UpdatedAt                      time.Time `json:"updatedAt"`
 }
 
+// StrategyDecisionEvent 记录 live 运行时的策略评估输入、决策和执行意图。
+type StrategyDecisionEvent struct {
+	ID                string         `json:"id"`
+	LiveSessionID     string         `json:"liveSessionId"`
+	RuntimeSessionID  string         `json:"runtimeSessionId,omitempty"`
+	AccountID         string         `json:"accountId"`
+	StrategyID        string         `json:"strategyId"`
+	StrategyVersionID string         `json:"strategyVersionId,omitempty"`
+	Symbol            string         `json:"symbol"`
+	TriggerType       string         `json:"triggerType,omitempty"`
+	Action            string         `json:"action"`
+	Reason            string         `json:"reason"`
+	SignalKind        string         `json:"signalKind,omitempty"`
+	DecisionState     string         `json:"decisionState,omitempty"`
+	IntentSignature   string         `json:"intentSignature,omitempty"`
+	SourceGateReady   bool           `json:"sourceGateReady"`
+	MissingCount      int            `json:"missingCount"`
+	StaleCount        int            `json:"staleCount"`
+	EventTime         time.Time      `json:"eventTime"`
+	RecordedAt        time.Time      `json:"recordedAt"`
+	TriggerSummary    map[string]any `json:"triggerSummary,omitempty"`
+	SourceGate        map[string]any `json:"sourceGate,omitempty"`
+	SourceStates      map[string]any `json:"sourceStates,omitempty"`
+	SignalBarStates   map[string]any `json:"signalBarStates,omitempty"`
+	PositionSnapshot  map[string]any `json:"positionSnapshot,omitempty"`
+	DecisionMetadata  map[string]any `json:"decisionMetadata,omitempty"`
+	SignalIntent      map[string]any `json:"signalIntent,omitempty"`
+	ExecutionProposal map[string]any `json:"executionProposal,omitempty"`
+	EvaluationContext map[string]any `json:"evaluationContext,omitempty"`
+}
+
+// OrderExecutionEvent 记录 live 订单在提交、同步、成交等生命周期中的结构化执行数据。
+type OrderExecutionEvent struct {
+	ID                string         `json:"id"`
+	OrderID           string         `json:"orderId"`
+	ExchangeOrderID   string         `json:"exchangeOrderId,omitempty"`
+	LiveSessionID     string         `json:"liveSessionId,omitempty"`
+	DecisionEventID   string         `json:"decisionEventId,omitempty"`
+	RuntimeSessionID  string         `json:"runtimeSessionId,omitempty"`
+	AccountID         string         `json:"accountId"`
+	StrategyVersionID string         `json:"strategyVersionId,omitempty"`
+	Symbol            string         `json:"symbol"`
+	Side              string         `json:"side"`
+	OrderType         string         `json:"orderType"`
+	EventType         string         `json:"eventType"`
+	Status            string         `json:"status"`
+	ExecutionStrategy string         `json:"executionStrategy,omitempty"`
+	ExecutionDecision string         `json:"executionDecision,omitempty"`
+	ExecutionMode     string         `json:"executionMode,omitempty"`
+	Quantity          float64        `json:"quantity"`
+	Price             float64        `json:"price"`
+	ExpectedPrice     float64        `json:"expectedPrice"`
+	PriceDriftBps     float64        `json:"priceDriftBps"`
+	RawQuantity       float64        `json:"rawQuantity"`
+	NormalizedQty     float64        `json:"normalizedQuantity"`
+	RawPriceReference float64        `json:"rawPriceReference"`
+	NormalizedPrice   float64        `json:"normalizedPrice"`
+	SpreadBps         float64        `json:"spreadBps"`
+	BookImbalance     float64        `json:"bookImbalance"`
+	SubmitLatencyMs   int            `json:"submitLatencyMs"`
+	SyncLatencyMs     int            `json:"syncLatencyMs"`
+	FillLatencyMs     int            `json:"fillLatencyMs"`
+	EventTime         time.Time      `json:"eventTime"`
+	RecordedAt        time.Time      `json:"recordedAt"`
+	Fallback          bool           `json:"fallback"`
+	PostOnly          bool           `json:"postOnly"`
+	ReduceOnly        bool           `json:"reduceOnly"`
+	Failed            bool           `json:"failed"`
+	Error             string         `json:"error,omitempty"`
+	RuntimePreflight  map[string]any `json:"runtimePreflight,omitempty"`
+	DispatchSummary   map[string]any `json:"dispatchSummary,omitempty"`
+	AdapterSubmission map[string]any `json:"adapterSubmission,omitempty"`
+	AdapterSync       map[string]any `json:"adapterSync,omitempty"`
+	Normalization     map[string]any `json:"normalization,omitempty"`
+	SymbolRules       map[string]any `json:"symbolRules,omitempty"`
+	Metadata          map[string]any `json:"metadata,omitempty"`
+}
+
+// PositionAccountSnapshot 记录 live session 在关键事件后的仓位和账户状态快照。
+type PositionAccountSnapshot struct {
+	ID                string         `json:"id"`
+	LiveSessionID     string         `json:"liveSessionId"`
+	DecisionEventID   string         `json:"decisionEventId,omitempty"`
+	OrderID           string         `json:"orderId,omitempty"`
+	AccountID         string         `json:"accountId"`
+	StrategyID        string         `json:"strategyId"`
+	Symbol            string         `json:"symbol"`
+	Trigger           string         `json:"trigger"`
+	IntentSignature   string         `json:"intentSignature,omitempty"`
+	PositionFound     bool           `json:"positionFound"`
+	PositionSide      string         `json:"positionSide,omitempty"`
+	PositionQuantity  float64        `json:"positionQuantity"`
+	EntryPrice        float64        `json:"entryPrice"`
+	MarkPrice         float64        `json:"markPrice"`
+	NetEquity         float64        `json:"netEquity"`
+	AvailableBalance  float64        `json:"availableBalance"`
+	MarginBalance     float64        `json:"marginBalance"`
+	WalletBalance     float64        `json:"walletBalance"`
+	ExposureNotional  float64        `json:"exposureNotional"`
+	OpenPositionCount int            `json:"openPositionCount"`
+	SyncStatus        string         `json:"syncStatus,omitempty"`
+	EventTime         time.Time      `json:"eventTime"`
+	RecordedAt        time.Time      `json:"recordedAt"`
+	PositionSnapshot  map[string]any `json:"positionSnapshot,omitempty"`
+	LivePositionState map[string]any `json:"livePositionState,omitempty"`
+	AccountSnapshot   map[string]any `json:"accountSnapshot,omitempty"`
+	AccountSummary    map[string]any `json:"accountSummary,omitempty"`
+	Metadata          map[string]any `json:"metadata,omitempty"`
+}
+
 // PlatformAlert 是统一告警中心消费的聚合告警记录。
 type PlatformAlert struct {
 	ID               string         `json:"id"`
