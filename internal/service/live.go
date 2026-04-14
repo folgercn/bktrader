@@ -771,11 +771,15 @@ func (p *Platform) shouldRefreshLiveAccountSync(account domain.Account, eventTim
 	if threshold <= 0 {
 		return false
 	}
-	lastSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
-	if lastSuccessAt.IsZero() {
+	lastSyncActivityAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+	accountSync := mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"])
+	if attemptedAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"])); attemptedAt.After(lastSyncActivityAt) {
+		lastSyncActivityAt = attemptedAt
+	}
+	if lastSyncActivityAt.IsZero() {
 		return true
 	}
-	return eventTime.Sub(lastSuccessAt) >= threshold
+	return eventTime.Sub(lastSyncActivityAt) >= threshold
 }
 
 func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain.LiveSession, error) {

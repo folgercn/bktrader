@@ -2859,6 +2859,56 @@ func TestSyncActiveLiveAccountsReturnsPerAccountSyncErrors(t *testing.T) {
 	}
 }
 
+func TestSyncActiveLiveAccountsThrottlesFailedRetriesUntilFreshnessWindow(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey": "missing-adapter",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+
+	firstTick := time.Now().UTC()
+	if err := platform.syncActiveLiveAccounts(firstTick); err == nil {
+		t.Fatal("expected first active live account sync attempt to fail")
+	}
+
+	updated, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	accountSync := mapValue(mapValue(updated.Metadata["healthSummary"])["accountSync"])
+	lastAttemptAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"]))
+	if lastAttemptAt.IsZero() {
+		t.Fatal("expected failed sync attempt to record lastAttemptAt")
+	}
+
+	if err := platform.syncActiveLiveAccounts(lastAttemptAt.Add(10 * time.Second)); err != nil {
+		t.Fatalf("expected retry within freshness window to be throttled, got %v", err)
+	}
+	if err := platform.syncActiveLiveAccounts(lastAttemptAt.Add(61 * time.Second)); err == nil {
+		t.Fatal("expected retry after freshness window to attempt sync again")
+	}
+}
+
 type testLiveAccountSyncAdapter struct {
 	key     string
 	syncErr error
