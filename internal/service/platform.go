@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store"
@@ -52,13 +53,14 @@ type Platform struct {
 }
 
 type RuntimePolicy struct {
-	TradeTickFreshnessSeconds      int `json:"tradeTickFreshnessSeconds"`
-	OrderBookFreshnessSeconds      int `json:"orderBookFreshnessSeconds"`
-	SignalBarFreshnessSeconds      int `json:"signalBarFreshnessSeconds"`
-	RuntimeQuietSeconds            int `json:"runtimeQuietSeconds"`
-	StrategyEvaluationQuietSeconds int `json:"strategyEvaluationQuietSeconds"`
-	LiveAccountSyncFreshnessSecs   int `json:"liveAccountSyncFreshnessSeconds"`
-	PaperStartReadinessTimeoutSecs int `json:"paperStartReadinessTimeoutSeconds"`
+	TradeTickFreshnessSeconds      int       `json:"tradeTickFreshnessSeconds"`
+	OrderBookFreshnessSeconds      int       `json:"orderBookFreshnessSeconds"`
+	SignalBarFreshnessSeconds      int       `json:"signalBarFreshnessSeconds"`
+	RuntimeQuietSeconds            int       `json:"runtimeQuietSeconds"`
+	StrategyEvaluationQuietSeconds int       `json:"strategyEvaluationQuietSeconds"`
+	LiveAccountSyncFreshnessSecs   int       `json:"liveAccountSyncFreshnessSeconds"`
+	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
+	UpdatedAt                      time.Time `json:"updatedAt"`
 }
 
 // NewPlatform 创建并初始化平台服务实例。
@@ -84,6 +86,7 @@ func NewPlatform(store store.Repository) *Platform {
 			StrategyEvaluationQuietSeconds: 15,
 			LiveAccountSyncFreshnessSecs:   60,
 			PaperStartReadinessTimeoutSecs: 5,
+			UpdatedAt:                      time.Now().UTC(),
 		},
 	}
 	platform.registerBuiltInStrategyEngines()
@@ -135,12 +138,16 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	if policy.PaperStartReadinessTimeoutSecs > 0 {
 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
 	}
+	if !policy.UpdatedAt.IsZero() {
+		p.runtimePolicy.UpdatedAt = policy.UpdatedAt
+	}
 	p.logger("service.platform").Info("runtime policy applied",
 		"trade_tick_freshness_seconds", p.runtimePolicy.TradeTickFreshnessSeconds,
 		"order_book_freshness_seconds", p.runtimePolicy.OrderBookFreshnessSeconds,
 		"signal_bar_freshness_seconds", p.runtimePolicy.SignalBarFreshnessSeconds,
 		"runtime_quiet_seconds", p.runtimePolicy.RuntimeQuietSeconds,
 		"paper_start_readiness_timeout_seconds", p.runtimePolicy.PaperStartReadinessTimeoutSecs,
+		"updated_at", p.runtimePolicy.UpdatedAt,
 	)
 }
 
@@ -187,6 +194,7 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		StrategyEvaluationQuietSeconds: saved.StrategyEvaluationQuietSeconds,
 		LiveAccountSyncFreshnessSecs:   saved.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: saved.PaperStartReadinessTimeoutSecs,
+		UpdatedAt:                      saved.UpdatedAt,
 	})
 	p.logger("service.platform").Info("runtime policy updated")
 	return p.runtimePolicy, nil
@@ -210,6 +218,7 @@ func (p *Platform) LoadPersistedRuntimePolicy() error {
 		StrategyEvaluationQuietSeconds: policy.StrategyEvaluationQuietSeconds,
 		LiveAccountSyncFreshnessSecs:   policy.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: policy.PaperStartReadinessTimeoutSecs,
+		UpdatedAt:                      policy.UpdatedAt,
 	})
 	p.logger("service.platform").Info("persisted runtime policy loaded")
 	return nil

@@ -192,6 +192,9 @@ func TestLiveAccountSyncStaleAndRefreshThreshold(t *testing.T) {
 func TestHealthSnapshotAggregatesBackendHealthState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	now := time.Now().UTC()
+	policy := platform.RuntimePolicy()
+	policy.UpdatedAt = now
+	platform.SetRuntimePolicy(policy)
 
 	account, err := platform.store.GetAccount("live-main")
 	if err != nil {
@@ -234,6 +237,26 @@ func TestHealthSnapshotAggregatesBackendHealthState(t *testing.T) {
 	}
 	if _, err := platform.store.UpdateLiveSessionState("live-session-main", liveState); err != nil {
 		t.Fatalf("update live session state failed: %v", err)
+	}
+	stoppedSession, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create stopped live session failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(stoppedSession.ID, "STOPPED"); err != nil {
+		t.Fatalf("update stopped live session status failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionState(stoppedSession.ID, map[string]any{
+		"lastSignalRuntimeEventAt": now.Add(-1 * time.Minute).Format(time.RFC3339),
+		"healthSummary": map[string]any{
+			"strategyIngress": map[string]any{
+				"lastTriggeredAt": now.Add(-1 * time.Minute).Format(time.RFC3339),
+			},
+		},
+	}); err != nil {
+		t.Fatalf("update stopped live session state failed: %v", err)
 	}
 
 	paperAccount, err := platform.CreateAccount("Paper", "PAPER", "binance-futures")
@@ -291,11 +314,14 @@ func TestHealthSnapshotAggregatesBackendHealthState(t *testing.T) {
 	if len(snapshot.RuntimeSessions) != 1 {
 		t.Fatalf("expected 1 runtime snapshot, got %d", len(snapshot.RuntimeSessions))
 	}
-	if len(snapshot.LiveSessions) != 1 {
-		t.Fatalf("expected 1 live session snapshot, got %d", len(snapshot.LiveSessions))
+	if len(snapshot.LiveSessions) != 2 {
+		t.Fatalf("expected 2 live session snapshots, got %d", len(snapshot.LiveSessions))
 	}
 	if len(snapshot.PaperSessions) != 1 {
 		t.Fatalf("expected 1 paper session snapshot, got %d", len(snapshot.PaperSessions))
+	}
+	if snapshot.RuntimePolicy.UpdatedAt.IsZero() {
+		t.Fatal("expected runtime policy updatedAt to be populated")
 	}
 	if got := snapshot.LiveAccounts[0].RuntimeSessionCount; got != 1 {
 		t.Fatalf("expected runtime session count 1, got %d", got)
@@ -306,8 +332,15 @@ func TestHealthSnapshotAggregatesBackendHealthState(t *testing.T) {
 	if got := parseFloatValue(snapshot.RuntimeSessions[0].TradeTick["lastPrice"]); got != 68000.0 {
 		t.Fatalf("expected trade tick last price 68000, got %v", got)
 	}
-	if got := snapshot.LiveSessions[0].RuntimeSessionID; got != "runtime-1" {
+	liveSnapshotsByID := make(map[string]domain.PlatformHealthStrategySessionSnapshot, len(snapshot.LiveSessions))
+	for _, item := range snapshot.LiveSessions {
+		liveSnapshotsByID[item.ID] = item
+	}
+	if got := liveSnapshotsByID["live-session-main"].RuntimeSessionID; got != "runtime-1" {
 		t.Fatalf("expected live session runtime id runtime-1, got %s", got)
+	}
+	if liveSnapshotsByID[stoppedSession.ID].EvaluationQuiet {
+		t.Fatal("expected stopped live session to suppress evaluationQuiet")
 	}
 	if got := snapshot.PaperSessions[0].Mode; got != "PAPER" {
 		t.Fatalf("expected paper session mode PAPER, got %s", got)

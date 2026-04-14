@@ -159,6 +159,7 @@ func currentRuntimePolicyDomain(policy RuntimePolicy) domain.RuntimePolicy {
 		StrategyEvaluationQuietSeconds: policy.StrategyEvaluationQuietSeconds,
 		LiveAccountSyncFreshnessSecs:   policy.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: policy.PaperStartReadinessTimeoutSecs,
+		UpdatedAt:                      policy.UpdatedAt,
 	}
 }
 
@@ -204,7 +205,7 @@ func (p *Platform) platformHealthStrategySessionSnapshot(mode, sessionID, accoun
 		LastStrategyEvaluationAt:     stringValue(state["lastStrategyEvaluationAt"]),
 		LastStrategyEvaluationStatus: stringValue(state["lastStrategyEvaluationStatus"]),
 		LastSyncedOrderStatus:        firstNonEmpty(stringValue(state["lastSyncedOrderStatus"]), stringValue(state["lastDispatchedOrderStatus"])),
-		EvaluationQuiet:              strings.EqualFold(mode, "LIVE") && p.strategyEvaluationQuiet(state),
+		EvaluationQuiet:              strings.EqualFold(mode, "LIVE") && strings.EqualFold(status, "RUNNING") && p.strategyEvaluationQuiet(state),
 		StrategyIngress:              cloneMetadata(mapValue(sectionRoot["strategyIngress"])),
 		Execution:                    cloneMetadata(mapValue(sectionRoot["execution"])),
 		SourceGate:                   cloneMetadata(mapValue(state["lastStrategyEvaluationSourceGate"])),
