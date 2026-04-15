@@ -13,12 +13,15 @@ import (
 )
 
 type LiveLaunchOptions struct {
-	StrategyID            string         `json:"strategyId"`
-	Binding               map[string]any `json:"binding,omitempty"`
-	LiveSessionOverrides  map[string]any `json:"liveSessionOverrides,omitempty"`
-	MirrorStrategySignals bool           `json:"mirrorStrategySignals"`
-	StartRuntime          bool           `json:"startRuntime"`
-	StartSession          bool           `json:"startSession"`
+	StrategyID           string         `json:"strategyId"`
+	Binding              map[string]any `json:"binding,omitempty"`
+	LiveSessionOverrides map[string]any `json:"liveSessionOverrides,omitempty"`
+	// MirrorStrategySignals is retained for backward-compatible launch payloads.
+	// It no longer mirrors strategy signal bindings onto account metadata; when true,
+	// LaunchLiveFlow only validates that strategy bindings already exist before startup.
+	MirrorStrategySignals bool `json:"mirrorStrategySignals"`
+	StartRuntime          bool `json:"startRuntime"`
+	StartSession          bool `json:"startSession"`
 }
 
 type LiveLaunchResult struct {
@@ -587,6 +590,8 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	}
 
 	if options.MirrorStrategySignals {
+		// Compatibility gate only: strategy bindings are now the runtime source of truth.
+		// We no longer mirror them onto account signal bindings during launch.
 		strategyBindings, err := p.ListStrategySignalBindings(strategyID)
 		if err != nil {
 			return LiveLaunchResult{}, err

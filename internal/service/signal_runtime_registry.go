@@ -193,6 +193,8 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 	required := make([]map[string]any, 0, len(strategyBindings))
 	matched := make([]map[string]any, 0, len(strategyBindings))
 	missing := make([]map[string]any, 0)
+	blockingMissing := make([]map[string]any, 0)
+	optionalMissing := make([]map[string]any, 0)
 	subscriptions := make([]map[string]any, 0, len(strategyBindings))
 	for _, binding := range strategyBindings {
 		item := bindingToMap(binding)
@@ -202,6 +204,11 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 			item["error"] = "signal source not registered"
 			required = append(required, item)
 			missing = append(missing, item)
+			if signalBindingBlocksRuntimeReady(binding) {
+				blockingMissing = append(blockingMissing, item)
+			} else {
+				optionalMissing = append(optionalMissing, item)
+			}
 			continue
 		}
 		source := provider.Describe()
@@ -211,6 +218,11 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 			item["error"] = fmt.Sprintf("signal source %s does not support %s accounts", source.Key, account.Mode)
 			required = append(required, item)
 			missing = append(missing, item)
+			if signalBindingBlocksRuntimeReady(binding) {
+				blockingMissing = append(blockingMissing, item)
+			} else {
+				optionalMissing = append(optionalMissing, item)
+			}
 			continue
 		}
 
@@ -224,6 +236,11 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 			item["status"] = "MISSING_ADAPTER"
 			item["error"] = err.Error()
 			missing = append(missing, item)
+			if signalBindingBlocksRuntimeReady(binding) {
+				blockingMissing = append(blockingMissing, item)
+			} else {
+				optionalMissing = append(optionalMissing, item)
+			}
 			continue
 		}
 
@@ -252,25 +269,32 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		}
 	}
 
-	ready := len(subscriptions) > 0 && len(missing) == 0 && triggerReady
+	ready := len(subscriptions) > 0 && len(blockingMissing) == 0 && triggerReady
 
 	return map[string]any{
-		"accountId":            accountID,
-		"strategyId":           strategyID,
-		"accountMode":          account.Mode,
-		"accountExchange":      account.Exchange,
-		"requiredBindings":     required,
-		"matchedBindings":      matched,
-		"missingBindings":      missing,
-		"extraAccountBindings": []map[string]any{},
-		"subscriptions":        subscriptions,
-		"ready":                ready,
+		"accountId":               accountID,
+		"strategyId":              strategyID,
+		"accountMode":             account.Mode,
+		"accountExchange":         account.Exchange,
+		"requiredBindings":        required,
+		"matchedBindings":         matched,
+		"missingBindings":         missing,
+		"blockingMissingBindings": blockingMissing,
+		"optionalMissingBindings": optionalMissing,
+		"extraAccountBindings":    []map[string]any{},
+		"subscriptions":           subscriptions,
+		"ready":                   ready,
 		"notes": []string{
 			"策略绑定直接定义 runtime 所需输入源，账户级信号绑定仅保留兼容接口，不再参与订阅规划。",
-			"missingBindings 列出当前不可用的策略绑定；paper/live 会据此阻断需要实时信号的会话启动。",
+			"signal / trigger 缺失会进入 blockingMissingBindings 并阻断启动；feature 缺失会进入 optionalMissingBindings，但不会单独阻断最小运行路径。",
+			"missingBindings 仍保留全部缺失项，便于前端统一展示阻断项与 advisory 项。",
 			"matchedBindings 与 subscriptions 已按 sourceKey + role + symbol + timeframe 区分多 symbol / 多周期输入。",
 		},
 	}, nil
+}
+
+func signalBindingBlocksRuntimeReady(binding domain.AccountSignalBinding) bool {
+	return normalizeSignalSourceRole(binding.Role) != "feature"
 }
 
 func bindingReady(binding domain.AccountSignalBinding, matched []map[string]any) bool {

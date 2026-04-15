@@ -213,6 +213,12 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 - `steps`
 - `notes`
 
+其中 `launchPayload.mirrorStrategySignals` 目前只是兼容字段：
+
+- 前端无需把它理解成“把策略绑定复制到账户信号源”
+- 当前后端已经不会再做账户 signal binding 镜像
+- 它保留的唯一意义，是在 launch 时继续要求“策略绑定必须已经存在”
+
 ### 每个模板实际固定了什么
 
 #### 1. 账户绑定
