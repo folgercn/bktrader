@@ -499,7 +499,7 @@ func resolveRuntimeSourceStateEntry(sourceStates map[string]any, binding domain.
 	if entry := mapValue(sourceStates[signalBindingKey(binding)]); entry != nil {
 		return entry
 	}
-	bindingTimeframe := signalBindingTimeframe(binding.Options)
+	bindingTimeframe := signalBindingTimeframe(binding.SourceKey, binding.Options)
 	for _, raw := range sourceStates {
 		entry := mapValue(raw)
 		if entry == nil {

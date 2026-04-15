@@ -180,7 +180,8 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 
 - 账户绑定固定为 Binance Futures testnet REST
 - 策略绑定固定为 `signal + trigger + feature` 三件套
-- live session 固定为 `tick` 执行、默认执行策略、`auto-dispatch`
+- live session 固定为 `tick` 执行、默认执行策略
+- 只有 `dispatchMode` 允许前端在模板区顶部单独选择
 - symbol / timeframe 直接收敛成 4 个常用组合
 
 这 4 个模板分别是：
@@ -201,6 +202,8 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 - `description`
 - `symbol`
 - `signalTimeframe`
+- `defaultDispatchMode`
+- `dispatchModeOptions`
 - `strategyId`
 - `strategyName`
 - `accountRequirements`
@@ -246,7 +249,7 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 
 #### 3. live session 覆盖参数
 
-模板里的 `launchPayload.liveSessionOverrides` 至少已经固定了：
+模板里的 `launchPayload.liveSessionOverrides` 至少已经固定了这些字段：
 
 - `symbol`
 - `signalTimeframe`
@@ -267,8 +270,15 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 - `executionSLExitOrderType = MARKET`
 - `executionSLExitMaxSpreadBps = 999`
 - `executionSLExitTimeoutFallbackOrderType = MARKET`
-- `dispatchMode = auto-dispatch`
 - `dispatchCooldownSeconds = 30`
+
+注意：
+
+- `dispatchMode` 不再写死在模板 payload 里
+- 模板会单独返回：
+  - `defaultDispatchMode = manual-review`
+  - `dispatchModeOptions = [manual-review, auto-dispatch]`
+- 前端需要把用户在模板区顶部选中的 `dispatchMode` 注入到最终提交的 `launchPayload.liveSessionOverrides.dispatchMode`
 
 数量目前后端模板固定为：
 
@@ -282,9 +292,10 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 不要把这个功能理解成“只是在 UI 上帮用户填表”。更稳妥的接法是：
 
 1. 先 `GET /api/v1/live/launch-templates`
-2. 在 UI 上展示 4 张模板卡片或 4 个明确按钮
-3. 用户先选一个 live account，再点模板
-4. 点击后，前端按模板里的 `steps` 顺序串行执行
+2. 在 4 张模板卡片上方放一个全局 `dispatchMode` 选择器
+3. 在 UI 上展示 4 张模板卡片或 4 个明确按钮
+4. 用户先选一个 live account，再点模板
+5. 点击后，前端按模板里的 `steps` 顺序串行执行
 
 推荐执行顺序：
 
@@ -293,13 +304,29 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 2. 对模板里的每一条 `strategySignalBindings`
    - 分别 `POST /api/v1/strategies/:strategyId/signal-bindings`
 3. `POST /api/v1/live/accounts/:accountId/launch`
-   - body 直接用模板里的 `launchPayload`
+   - body 基于模板里的 `launchPayload`
+   - 仅在发请求前额外注入：
+     - `liveSessionOverrides.dispatchMode = 当前选择器选中的值`
 
-这里建议前端不要自己重新拼 payload，而是尽量直接复用模板响应里的对象。这样最不容易在命名和默认值上跑偏。
+这里建议前端不要自己重新拼大对象，而是：
+
+- 直接复用模板响应里的 `accountBinding`
+- 直接复用模板响应里的 `strategySignalBindings`
+- 直接复用模板响应里的 `launchPayload`
+- 只覆写一个字段：`launchPayload.liveSessionOverrides.dispatchMode`
+
+这样最不容易在命名和默认值上跑偏。
 
 ### UI 建议
 
 建议把这一块放在 live account 区域，作为“Quick Launch Templates”或“联调一键启动”区域，而不是塞进策略绑定表单里。
+
+推荐 UI 结构：
+
+1. 顶部一行 `dispatchMode` 选择器
+   - `manual-review`
+   - `auto-dispatch`
+2. 下方 4 张模板卡片
 
 每张卡片至少展示：
 
@@ -310,12 +337,12 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 - `feature source = binance-order-book`
 - `strategyName`
 - `defaultOrderQuantity`
-- `dispatchMode`
+- 当前顶部选择的 `dispatchMode`
 
 建议再补两行提示：
 
 - `这会先确保账户绑定和策略绑定，再启动 runtime/live session`
-- `这是 testnet 联调专用模板，启动后会自动派单，不经过 manual-review`
+- `这是 testnet 联调专用模板；是否自动派单由上方 dispatchMode 控制`
 
 ### 前端状态与错误处理建议
 
@@ -336,7 +363,7 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 3. launch 失败
    - 常见原因：live account 未配置、runtime/source readiness 不满足
 
-同时建议在按钮附近放一个很明确的风险文案：
+同时建议在按钮附近放一个很明确的风险文案，且只在选择了 `auto-dispatch` 时高亮：
 
 - `仅限 Binance testnet 联调`
 - `点击后若策略触发，将自动向 testnet 发送真实 REST 订单`
@@ -361,11 +388,13 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 - 用户只需要先选账户，再点一个模板，就能完成联调启动
 - 前端实际执行的是模板里的固定 payload，而不是重新手工拼字段
 - 同一个模板重复点击不会制造同一条策略绑定的重复脏数据
-- 模板卡片或按钮会明确标注 `auto-dispatch / testnet only`
+- 模板区顶部会有唯一可编辑项 `dispatchMode`
+- 模板卡片或按钮会明确标注 `testnet only`
 - 模板启动后能正确创建或复用：
   - `account + strategy` 级 runtime session
   - `account + strategy + symbol + timeframe` 级 live session
-- UI 上能明确告诉用户当前启动的是 `Binance testnet REST + auto-dispatch`，不是 mock
+- UI 上能明确告诉用户当前启动的是 `Binance testnet REST`，不是 mock
+- 当选择 `auto-dispatch` 时，UI 要明确告诉用户这是自动派单模式
 
 ### 联调建议
 
@@ -382,7 +411,8 @@ runtime plan 里的 binding map 现在额外带出顶层字段：
 - 策略绑定列表里是否出现 `signal / trigger / feature` 三条
 - runtime plan 是否直接来自策略绑定
 - live session 是否按 `symbol + timeframe` 分开
-- live session state 里的 `dispatchMode` 是否为 `auto-dispatch`
+- 顶部切到 `manual-review` 时，live session state 里的 `dispatchMode` 是否为 `manual-review`
+- 顶部切到 `auto-dispatch` 时，live session state 里的 `dispatchMode` 是否为 `auto-dispatch`
 
 ## Task D: PR #40 Live Data Collection Telemetry
 

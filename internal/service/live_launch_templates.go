@@ -21,6 +21,8 @@ type LiveLaunchTemplate struct {
 	Description            string                   `json:"description"`
 	Symbol                 string                   `json:"symbol"`
 	SignalTimeframe        string                   `json:"signalTimeframe"`
+	DefaultDispatchMode    string                   `json:"defaultDispatchMode"`
+	DispatchModeOptions    []string                 `json:"dispatchModeOptions"`
 	TriggerSourceKey       string                   `json:"triggerSourceKey"`
 	FeatureSourceKey       string                   `json:"featureSourceKey"`
 	StrategyID             string                   `json:"strategyId"`
@@ -117,22 +119,23 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			"executionSLExitOrderType":                "MARKET",
 			"executionSLExitMaxSpreadBps":             999,
 			"executionSLExitTimeoutFallbackOrderType": "MARKET",
-			"dispatchMode":                            "auto-dispatch",
 			"dispatchCooldownSeconds":                 30,
 		}
 		key := fmt.Sprintf("binance-testnet-%s-%s", strings.ToLower(symbol[:3]), strings.ToLower(timeframe))
 		quantityNote := fmt.Sprintf("默认下单量 %.3f 用于尽量避免 Binance testnet 最小名义价值拦截。", quantity)
 		return LiveLaunchTemplate{
-			Key:               key,
-			Name:              fmt.Sprintf("Binance Testnet %s %s", symbol, timeframe),
-			Description:       fmt.Sprintf("%s %s 策略信号 + trade tick 触发 + order book feature 的一键启动模板。", symbol, timeframe),
-			Symbol:            symbol,
-			SignalTimeframe:   timeframe,
-			TriggerSourceKey:  "binance-trade-tick",
-			FeatureSourceKey:  "binance-order-book",
-			StrategyID:        strategyID,
-			StrategyName:      strategyName,
-			StrategyVersionID: strategyVersionID,
+			Key:                 key,
+			Name:                fmt.Sprintf("Binance Testnet %s %s", symbol, timeframe),
+			Description:         fmt.Sprintf("%s %s 策略信号 + trade tick 触发 + order book feature 的一键启动模板。", symbol, timeframe),
+			Symbol:              symbol,
+			SignalTimeframe:     timeframe,
+			DefaultDispatchMode: "manual-review",
+			DispatchModeOptions: []string{"manual-review", "auto-dispatch"},
+			TriggerSourceKey:    "binance-trade-tick",
+			FeatureSourceKey:    "binance-order-book",
+			StrategyID:          strategyID,
+			StrategyName:        strategyName,
+			StrategyVersionID:   strategyVersionID,
 			AccountRequirements: map[string]any{
 				"mode":     "LIVE",
 				"exchange": "binance-futures",
@@ -154,7 +157,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 				"signal 绑定使用 Binance 原生 kline；trigger 绑定使用 Binance trade tick；feature 绑定使用 Binance order book。",
 				"策略绑定是策略级配置，前端执行模板时应把这 3 个绑定视为幂等 upsert，可重复点击。",
 				quantityNote,
-				"该模板用于 testnet 联调闭环，live session 会显式以 auto-dispatch 启动，而不是走 manual-review。",
+				"模板里只有 dispatchMode 需要前端在提交前注入；其余 launch 参数保持固定。",
 				"launch 结果会复用 account + strategy 级 runtime，但 live session 会按 symbol + signalTimeframe 分开创建。",
 			},
 		}

@@ -281,10 +281,7 @@ func (p *Platform) BindAccountSignalSource(accountID string, payload map[string]
 	}
 
 	symbol := NormalizeSymbol(stringValue(payload["symbol"]))
-	options := cloneMetadata(metadataValue(payload["options"]))
-	if options == nil {
-		options = map[string]any{}
-	}
+	options := canonicalizeSignalBindingOptions(source.Key, cloneMetadata(metadataValue(payload["options"])))
 
 	binding := domain.AccountSignalBinding{
 		ID:         fmt.Sprintf("signal-binding-%d", time.Now().UnixNano()),
@@ -367,7 +364,7 @@ func (p *Platform) ListAccountSignalBindings(accountID string) ([]domain.Account
 			StreamType: stringValue(binding["streamType"]),
 			Symbol:     NormalizeSymbol(stringValue(binding["symbol"])),
 			Status:     firstNonEmpty(stringValue(binding["status"]), "ACTIVE"),
-			Options:    cloneMetadata(metadataValue(binding["options"])),
+			Options:    canonicalizeSignalBindingOptions(stringValue(binding["sourceKey"]), cloneMetadata(metadataValue(binding["options"]))),
 			CreatedAt:  timeValue(binding["createdAt"]),
 		})
 	}
@@ -381,7 +378,7 @@ func (p *Platform) ListAccountSignalBindings(accountID string) ([]domain.Account
 		if cmp := strings.Compare(a.Symbol, b.Symbol); cmp != 0 {
 			return cmp
 		}
-		return strings.Compare(signalBindingTimeframe(a.Options), signalBindingTimeframe(b.Options))
+		return strings.Compare(signalBindingTimeframe(a.SourceKey, a.Options), signalBindingTimeframe(b.SourceKey, b.Options))
 	})
 	return items, nil
 }
@@ -442,17 +439,34 @@ func resolveStrategySignalBindings(parameters map[string]any) []map[string]any {
 	}
 }
 
-func signalBindingTimeframe(options map[string]any) string {
-	if options == nil {
+func signalBindingTimeframe(sourceKey string, options map[string]any) string {
+	timeframe := normalizeSignalBarInterval(strings.TrimSpace(stringValue(options["timeframe"])))
+	if timeframe != "" {
+		return timeframe
+	}
+	switch normalizeSignalSourceKey(sourceKey) {
+	case "binance-kline":
+		return "1d"
+	default:
 		return ""
 	}
-	return normalizeSignalBarInterval(strings.TrimSpace(stringValue(options["timeframe"])))
+}
+
+func canonicalizeSignalBindingOptions(sourceKey string, options map[string]any) map[string]any {
+	options = cloneMetadata(options)
+	if options == nil {
+		options = map[string]any{}
+	}
+	if timeframe := signalBindingTimeframe(sourceKey, options); timeframe != "" {
+		options["timeframe"] = timeframe
+	}
+	return options
 }
 
 func signalBindingMatchKey(sourceKey, role, symbol string, options ...map[string]any) string {
 	key := normalizeSignalSourceKey(sourceKey) + "|" + normalizeSignalSourceRole(role) + "|" + NormalizeSymbol(symbol)
 	if len(options) > 0 {
-		if timeframe := signalBindingTimeframe(options[0]); timeframe != "" {
+		if timeframe := signalBindingTimeframe(sourceKey, options[0]); timeframe != "" {
 			key += "|" + timeframe
 		}
 	}
@@ -483,9 +497,9 @@ func bindingToMap(binding domain.AccountSignalBinding) map[string]any {
 		"role":       binding.Role,
 		"streamType": binding.StreamType,
 		"symbol":     binding.Symbol,
-		"timeframe":  signalBindingTimeframe(binding.Options),
+		"timeframe":  signalBindingTimeframe(binding.SourceKey, binding.Options),
 		"status":     binding.Status,
-		"options":    cloneMetadata(binding.Options),
+		"options":    canonicalizeSignalBindingOptions(binding.SourceKey, binding.Options),
 		"createdAt":  binding.CreatedAt,
 	}
 }

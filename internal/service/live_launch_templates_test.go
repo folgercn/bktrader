@@ -42,6 +42,12 @@ func TestLiveLaunchTemplatesExposeFourBinanceTestnetVariants(t *testing.T) {
 		if item.SignalTimeframe != want.timeframe {
 			t.Fatalf("expected timeframe %s for %s, got %s", want.timeframe, item.Key, item.SignalTimeframe)
 		}
+		if item.DefaultDispatchMode != "manual-review" {
+			t.Fatalf("expected default dispatchMode manual-review, got %s", item.DefaultDispatchMode)
+		}
+		if len(item.DispatchModeOptions) != 2 || item.DispatchModeOptions[0] != "manual-review" || item.DispatchModeOptions[1] != "auto-dispatch" {
+			t.Fatalf("expected dispatch mode options [manual-review auto-dispatch], got %#v", item.DispatchModeOptions)
+		}
 		if stringValue(item.AccountBinding["adapterKey"]) != "binance-futures" {
 			t.Fatalf("expected binance-futures account binding, got %#v", item.AccountBinding)
 		}
@@ -75,8 +81,8 @@ func TestLiveLaunchTemplatesExposeFourBinanceTestnetVariants(t *testing.T) {
 		if got := stringValue(item.LaunchPayload.LiveSessionOverrides["executionStrategy"]); got != "book-aware-v1" {
 			t.Fatalf("expected executionStrategy=book-aware-v1, got %s", got)
 		}
-		if got := stringValue(item.LaunchPayload.LiveSessionOverrides["dispatchMode"]); got != "auto-dispatch" {
-			t.Fatalf("expected dispatchMode=auto-dispatch, got %s", got)
+		if _, ok := item.LaunchPayload.LiveSessionOverrides["dispatchMode"]; ok {
+			t.Fatalf("expected dispatchMode to stay configurable and not be hardcoded in launch payload: %#v", item.LaunchPayload.LiveSessionOverrides)
 		}
 		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["defaultOrderQuantity"]); got != want.quantity {
 			t.Fatalf("expected defaultOrderQuantity=%v, got %v", want.quantity, got)

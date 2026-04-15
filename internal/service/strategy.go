@@ -111,10 +111,7 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 	}
 
 	symbol := NormalizeSymbol(stringValue(payload["symbol"]))
-	options := cloneMetadata(metadataValue(payload["options"]))
-	if options == nil {
-		options = map[string]any{}
-	}
+	options := canonicalizeSignalBindingOptions(source.Key, cloneMetadata(metadataValue(payload["options"])))
 
 	parameters := cloneMetadata(currentVersion.Parameters)
 	if parameters == nil {
@@ -218,7 +215,7 @@ func (p *Platform) ListStrategySignalBindings(strategyID string) ([]domain.Accou
 			StreamType: stringValue(binding["streamType"]),
 			Symbol:     NormalizeSymbol(stringValue(binding["symbol"])),
 			Status:     firstNonEmpty(stringValue(binding["status"]), "ACTIVE"),
-			Options:    cloneMetadata(metadataValue(binding["options"])),
+			Options:    canonicalizeSignalBindingOptions(stringValue(binding["sourceKey"]), cloneMetadata(metadataValue(binding["options"]))),
 			CreatedAt:  timeValue(binding["createdAt"]),
 		})
 	}
@@ -232,7 +229,7 @@ func (p *Platform) ListStrategySignalBindings(strategyID string) ([]domain.Accou
 		if cmp := strings.Compare(a.Symbol, b.Symbol); cmp != 0 {
 			return cmp
 		}
-		return strings.Compare(signalBindingTimeframe(a.Options), signalBindingTimeframe(b.Options))
+		return strings.Compare(signalBindingTimeframe(a.SourceKey, a.Options), signalBindingTimeframe(b.SourceKey, b.Options))
 	})
 	return items, nil
 }
