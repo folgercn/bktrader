@@ -2909,6 +2909,59 @@ func TestSyncActiveLiveAccountsThrottlesFailedRetriesUntilFreshnessWindow(t *tes
 	}
 }
 
+func TestSyncLiveAccountNormalizesAdapterSuccessHealthState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-success",
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-success",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	account.Metadata["healthSummary"] = map[string]any{
+		"accountSync": map[string]any{
+			"consecutiveErrorCount": 2,
+			"lastError":             "stale failure",
+			"lastErrorAt":           time.Date(2026, 4, 14, 23, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	synced, err := platform.SyncLiveAccount("live-main")
+	if err != nil {
+		t.Fatalf("expected adapter sync success, got %v", err)
+	}
+	if stringValue(synced.Metadata["lastLiveSyncAt"]) == "" {
+		t.Fatal("expected adapter sync success to persist lastLiveSyncAt")
+	}
+	accountSync := mapValue(mapValue(synced.Metadata["healthSummary"])["accountSync"])
+	if got := parseFloatValue(accountSync["consecutiveErrorCount"]); got != 0 {
+		t.Fatalf("expected adapter sync success to clear consecutiveErrorCount, got %v", got)
+	}
+	if got := stringValue(accountSync["lastError"]); got != "" {
+		t.Fatalf("expected adapter sync success to clear lastError, got %s", got)
+	}
+	if stringValue(accountSync["lastSuccessAt"]) == "" {
+		t.Fatal("expected adapter sync success to record lastSuccessAt")
+	}
+	if got := stringValue(accountSync["lastSource"]); got != "live-account-adapter" && got != "test-sync-success" {
+		t.Fatalf("expected adapter sync success to set a normalized lastSource, got %s", got)
+	}
+	if platform.shouldRefreshLiveAccountSync(synced, time.Now().UTC().Add(10*time.Second)) {
+		t.Fatal("expected freshly normalized adapter sync to stay within freshness window")
+	}
+}
+
 type testLiveAccountSyncAdapter struct {
 	key     string
 	syncErr error
@@ -2938,8 +2991,11 @@ func (a testLiveAccountSyncAdapter) CancelOrder(domain.Account, domain.Order, ma
 	return LiveOrderSync{}, nil
 }
 
-func (a testLiveAccountSyncAdapter) SyncAccountSnapshot(*Platform, domain.Account, map[string]any) (domain.Account, error) {
-	return domain.Account{}, a.syncErr
+func (a testLiveAccountSyncAdapter) SyncAccountSnapshot(_ *Platform, account domain.Account, _ map[string]any) (domain.Account, error) {
+	if a.syncErr != nil {
+		return domain.Account{}, a.syncErr
+	}
+	return account, nil
 }
 
 type testFailingListOrdersStore struct {

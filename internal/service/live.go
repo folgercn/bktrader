@@ -102,6 +102,7 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	if !strings.EqualFold(account.Mode, "LIVE") {
 		return domain.Account{}, fmt.Errorf("account %s is not a LIVE account", accountID)
 	}
+	previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
 	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
 	if err != nil {
 		logger.Warn("resolve live adapter for account sync failed", "error", err)
@@ -111,6 +112,11 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	var adapterSyncErr error
 	if syncCapable, ok := adapter.(LiveAccountSyncAdapter); ok {
 		if synced, syncErr := syncCapable.SyncAccountSnapshot(p, account, binding); syncErr == nil {
+			synced, syncErr = p.persistLiveAccountSyncSuccess(synced, binding, previousSuccessAt)
+			if syncErr != nil {
+				logger.Warn("persist adapter live account sync success failed", "error", syncErr)
+				return synced, syncErr
+			}
 			p.syncLiveSessionsForAccountSnapshot(synced)
 			logger.Info("live account synced via adapter", "exchange", synced.Exchange, "status", synced.Status)
 			return synced, nil
@@ -144,6 +150,39 @@ func (p *Platform) persistLiveAccountSyncFailure(account domain.Account, attempt
 		return account
 	}
 	return updated
+}
+
+func (p *Platform) persistLiveAccountSyncSuccess(account domain.Account, binding map[string]any, previousSuccessAt time.Time) (domain.Account, error) {
+	account.Metadata = cloneMetadata(account.Metadata)
+	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+	syncedAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+	if syncedAt.IsZero() {
+		syncedAt = parseOptionalRFC3339(stringValue(snapshot["syncedAt"]))
+	}
+	if syncedAt.IsZero() {
+		syncedAt = time.Now().UTC()
+	}
+
+	snapshot["source"] = firstNonEmpty(stringValue(snapshot["source"]), "live-account-adapter")
+	snapshot["adapterKey"] = firstNonEmpty(
+		normalizeLiveAdapterKey(stringValue(snapshot["adapterKey"])),
+		normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+	)
+	snapshot["syncedAt"] = syncedAt.Format(time.RFC3339)
+	snapshot["syncStatus"] = firstNonEmpty(stringValue(snapshot["syncStatus"]), "SYNCED")
+	snapshot["accountExchange"] = firstNonEmpty(stringValue(snapshot["accountExchange"]), account.Exchange)
+	snapshot["bindingMode"] = firstNonEmpty(stringValue(snapshot["bindingMode"]), stringValue(binding["connectionMode"]))
+	snapshot["executionMode"] = firstNonEmpty(
+		stringValue(snapshot["executionMode"]),
+		normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])),
+	)
+	snapshot["feeSource"] = firstNonEmpty(stringValue(snapshot["feeSource"]), "exchange")
+	snapshot["fundingSource"] = firstNonEmpty(stringValue(snapshot["fundingSource"]), "exchange")
+
+	account.Metadata["liveSyncSnapshot"] = snapshot
+	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+	updateAccountSyncSuccessHealth(&account, syncedAt, previousSuccessAt)
+	return p.store.UpdateAccount(account)
 }
 
 func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
