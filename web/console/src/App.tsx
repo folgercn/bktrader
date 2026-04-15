@@ -1,49 +1,49 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { LogOut, ChevronDown } from 'lucide-react';
+/**
+ * 注意：这里是全局路由与容器编排层 (Root Orchestrator)。
+ * 请勿在此实现具体的 UI 片段或复杂的业务功能逻辑。
+ * 具体的 UI 功能应拆分到 src/components/layout/ 或 src/pages/ 中实现。
+ **/
+
+import React, { useMemo } from 'react';
 import { WorkbenchLayout } from './layouts/WorkbenchLayout';
 import { useUIStore } from './store/useUIStore';
 import { useTradingStore } from './store/useTradingStore';
 import { useDashboard } from './hooks/useDashboard';
 import { useTradingActions } from './hooks/useTradingActions';
 import { fetchJSON } from './utils/api';
-import { useClickOutside } from './hooks/useClickOutside';
 
-import { MetricCard } from './components/ui/MetricCard';
-import { ActionButton } from './components/ui/ActionButton';
-import { SimpleTable } from './components/ui/SimpleTable';
-import { StatusPill } from './components/ui/StatusPill';
+// Layout Components
+import { HeaderMetrics } from './components/layout/HeaderMetrics';
+import { SystemStatusMenu } from './components/layout/SystemStatusMenu';
+import { UserMenu } from './components/layout/UserMenu';
+import { DockContent } from './components/layout/DockContent';
+import { MainContent } from './components/layout/MainContent';
+
+// Modals
 import { LoginModal } from './modals/LoginModal';
 import { LiveAccountModal } from './modals/LiveAccountModal';
 import { LiveBindingModal } from './modals/LiveBindingModal';
 import { LiveSessionModal } from './modals/LiveSessionModal';
 import { TelegramModal } from './modals/TelegramModal';
+
+// Pages
 import { StrategySidePanel } from './pages/StrategySidePanel';
-import { MonitorStage } from './pages/MonitorStage';
-import { StrategyStage } from './pages/StrategyStage';
-import { AccountStage } from './pages/AccountStage';
-import { formatTime, formatMaybeNumber, shrink } from './utils/format';
-import { 
-  deriveHighlightedLiveSession, technicalStatusLabel 
-} from './utils/derivation';
 
 export default function App() {
   const { loadDashboard } = useDashboard();
   const actions = useTradingActions(loadDashboard);
 
-  // UI State
+  // UI State from Store
   const sidebarTab = useUIStore(s => s.sidebarTab);
   const setSidebarTab = useUIStore(s => s.setSidebarTab);
   const dockTab = useUIStore(s => s.dockTab);
   const setDockTab = useUIStore(s => s.setDockTab);
   const error = useUIStore(s => s.error);
-  const systemLogs = useUIStore(s => s.systemLogs);
-  const clearSystemLogs = useUIStore(s => s.clearSystemLogs);
   const authSession = useUIStore(s => s.authSession);
-  const settingsMenuOpen = useUIStore(s => s.settingsMenuOpen);
-  const setSettingsMenuOpen = useUIStore(s => s.setSettingsMenuOpen);
   const activeSettingsModal = useUIStore(s => s.activeSettingsModal);
   const setActiveSettingsModal = useUIStore(s => s.setActiveSettingsModal);
   
+  // Form States & Actions from Store
   const loginForm = useUIStore(s => s.loginForm);
   const loginAction = useUIStore(s => s.loginAction);
   const liveAccountForm = useUIStore(s => s.liveAccountForm);
@@ -64,166 +64,29 @@ export default function App() {
   const liveSessionLaunchAction = useUIStore(s => s.liveSessionLaunchAction);
   const liveSessionAction = useUIStore(s => s.liveSessionAction);
   const telegramAction = useUIStore(s => s.telegramAction);
-  const [systemLogOpen, setSystemLogOpen] = useState(false);
 
-  // Trading State
+  // Trading State from Store
   const accounts = useTradingStore(s => s.accounts);
   const liveSessions = useTradingStore(s => s.liveSessions);
-  const orders = useTradingStore(s => s.orders);
-  const fills = useTradingStore(s => s.fills);
-  const positions = useTradingStore(s => s.positions);
   const strategies = useTradingStore(s => s.strategies);
-  const signalRuntimeSessions = useTradingStore(s => s.signalRuntimeSessions);
-  const signalCatalog = useTradingStore(s => s.signalCatalog);
   const liveAdapters = useTradingStore(s => s.liveAdapters);
   const telegramConfig = useTradingStore(s => s.telegramConfig);
-  const alerts = useTradingStore(s => s.alerts);
   const editingLiveSessionId = useTradingStore(s => s.editingLiveSessionId);
 
-  const userMenuRef = useRef<HTMLDivElement>(null);
-  const systemLogRef = useRef<HTMLDivElement>(null);
-
-  // Close menus when clicking outside
-  useClickOutside(systemLogRef, () => {
-    if (systemLogOpen) setSystemLogOpen(false);
-  });
-  
-  useClickOutside(userMenuRef, () => {
-    if (settingsMenuOpen) setSettingsMenuOpen(false);
-  });
-
-  // Derived State
-  const highlightedLiveSession = useMemo(
-    () => deriveHighlightedLiveSession(liveSessions, orders, fills, positions),
-    [liveSessions, orders, fills, positions]
-  );
-  
-  const monitorMode = highlightedLiveSession?.session ? "LIVE" : "--";
+  // Quick Account Resolution
   const liveAccounts = accounts;
   const quickLiveAccountId = liveSessionForm.accountId || liveBindingForm.accountId || liveAccounts[0]?.id || "";
   const quickLiveAccount = useMemo(() => liveAccounts.find(a => a.id === quickLiveAccountId) || null, [liveAccounts, quickLiveAccountId]);
-
-  const strategyIds = useMemo(() => new Set(strategies.map((item) => item.id)), [strategies]);
+  const strategyIds = useMemo(() => new Set(strategies.map(s => s.id)), [strategies]);
   const validLiveSessions = useMemo(
-    () => liveSessions.filter((item) => strategyIds.has(item.strategyId)),
+    () => liveSessions.filter(s => strategyIds.has(s.strategyId)),
     [liveSessions, strategyIds]
   );
-
   const strategyOptions = useMemo(() => strategies.map(s => ({ value: s.id, label: s.name })), [strategies]);
-  const recentAlerts = useMemo(
-    () => [...alerts].sort((left, right) => Date.parse(right.eventTime ?? "") - Date.parse(left.eventTime ?? "")).slice(0, 6),
-    [alerts]
-  );
 
-  const dockContent = (
-    <div className="h-full relative overflow-hidden">
-      {dockTab === 'orders' && (
-        <SimpleTable
-          columns={["ID", "策略版本", "Symbol", "Side", "Type", "数量", "价格", "状态", "创建时间", "操作"]}
-          rows={orders.map((order) => [
-            shrink(order.id),
-            shrink(String(order.metadata?.strategyVersionId ?? order.metadata?.source ?? "--")),
-            order.symbol,
-            <StatusPill key={`${order.id}-side`} tone={order.side === "buy" ? "ready" : "neutral"}>{order.side}</StatusPill>,
-            order.type,
-            formatMaybeNumber(order.quantity),
-            formatMaybeNumber(order.price),
-            technicalStatusLabel(order.status),
-            formatTime(order.createdAt),
-            <div key={`${order.id}-actions`} className="inline-actions">
-              <ActionButton label="Sync" variant="ghost" onClick={() => actions.syncLiveOrder(order.id)} />
-            </div>,
-          ])}
-          emptyMessage="暂无订单"
-        />
-      )}
-      {dockTab === 'positions' && (
-        <SimpleTable
-          columns={["ID", "账户", "Symbol", "Side", "仓位大小", "开仓价", "标记价", "更新时间"]}
-          rows={positions.map((pos) => [
-            shrink(pos.id),
-            shrink(pos.accountId),
-            pos.symbol,
-            <StatusPill key={`${pos.id}-side`} tone={pos.side === "long" ? "ready" : "neutral"}>{pos.side}</StatusPill>,
-            formatMaybeNumber(pos.quantity),
-            formatMaybeNumber(pos.entryPrice),
-            formatMaybeNumber(pos.markPrice),
-            formatTime(pos.updatedAt),
-          ])}
-          emptyMessage="暂无持仓"
-        />
-      )}
-      {dockTab === 'fills' && (
-        <SimpleTable
-          columns={["ID", "订单ID", "成交量", "成交价", "费用", "时间"]}
-          rows={fills.map((fill) => [
-            shrink(fill.id),
-            shrink(fill.orderId),
-            formatMaybeNumber(fill.quantity),
-            formatMaybeNumber(fill.price),
-            formatMaybeNumber(fill.fee),
-            formatTime(fill.createdAt),
-          ])}
-          emptyMessage="暂无成交记录"
-        />
-      )}
-      {dockTab === 'alerts' && (
-        <SimpleTable
-          columns={["时间", "级别", "模块", "消息"]}
-          rows={alerts.map((alert) => [
-            formatTime(alert.eventTime ?? ""),
-            <StatusPill key={`${alert.id}-level`} tone={alert.level === "critical" ? "blocked" : alert.level === "warning" ? "watch" : "neutral"}>
-              {alert.level}
-            </StatusPill>,
-            alert.title,
-            alert.detail,
-          ])}
-          emptyMessage="暂无告警信息"
-        />
-      )}
-    </div>
-  );
-
-  const mainStageContent = (
-    <div className="h-full relative overflow-hidden">
-      {sidebarTab === 'monitor' && (
-        <MonitorStage
-          syncLiveOrder={actions.syncLiveOrder}
-          dockTab={dockTab}
-          onDockTabChange={setDockTab}
-          dockContent={dockContent}
-        />
-      )}
-      {sidebarTab === 'strategy' && <StrategyStage createStrategy={actions.createStrategy} saveStrategyParameters={actions.saveStrategyParameters} />}
-      {sidebarTab === 'account' && (
-        <AccountStage 
-          logout={actions.logout}
-          openLiveAccountModal={actions.openLiveAccountModal}
-          openLiveBindingModal={() => actions.openLiveBindingModal(quickLiveAccountId)}
-          openLiveSessionModal={(s) => actions.openLiveSessionModal(s ?? null, quickLiveAccountId, strategies)}
-          openMonitorStage={() => setSidebarTab('monitor')}
-          launchLiveFlow={actions.launchLiveFlow}
-          stopLiveFlow={actions.stopLiveFlow}
-          runLiveSessionAction={actions.runLiveSessionAction}
-          dispatchLiveSessionIntent={actions.dispatchLiveSessionIntent}
-          syncLiveSession={actions.syncLiveSession}
-          deleteLiveSession={actions.deleteLiveSession}
-          syncLiveAccount={actions.syncLiveAccount}
-          jumpToSignalRuntimeSession={actions.jumpToSignalRuntimeSession}
-          runLiveNextAction={actions.runLiveNextAction}
-          selectQuickLiveAccount={actions.selectQuickLiveAccount}
-          bindAccountSignalSource={actions.bindAccountSignalSource}
-          unbindAccountSignalSource={actions.unbindAccountSignalSource}
-          bindStrategySignalSource={actions.bindStrategySignalSource}
-          unbindStrategySignalSource={actions.unbindStrategySignalSource}
-          updateRuntimePolicy={actions.updateRuntimePolicy}
-          createSignalRuntimeSession={actions.createSignalRuntimeSession}
-          deleteSignalRuntimeSession={(id) => actions.deleteSignalRuntimeSession(id, null)}
-          runSignalRuntimeAction={actions.runSignalRuntimeAction}
-        />
-      )}
-    </div>
-  );
+  // Compose dynamic content
+  const dockContent = <DockContent dockTab={dockTab} actions={actions} />;
+  const mainStageContent = <MainContent actions={actions} dockContent={dockContent} strategies={strategies} quickLiveAccountId={quickLiveAccountId} />;
 
   return (
     <>
@@ -232,185 +95,15 @@ export default function App() {
         onSidebarTabChange={setSidebarTab}
         dockTab={dockTab}
         onDockTabChange={setDockTab}
-        headerMetrics={
-          <div className="flex space-x-2">
-            <MetricCard label="账户" value={monitorMode} />
-            <MetricCard label="策略" value={String(highlightedLiveSession?.session?.strategyId ?? "--")} />
-            <MetricCard label="实盘会话" value={String(validLiveSessions.length)} />
-            <MetricCard label="运行时会话" value={String(signalRuntimeSessions.length)} />
-            <MetricCard label="可用信号源" value={String(signalCatalog?.sources?.length ?? 0)} />
-            <MetricCard label="实盘状态" value={highlightedLiveSession?.health.status ?? "--"} tone={highlightedLiveSession?.health.status === "ready" ? "accent" : undefined} />
-          </div>
-        }
-        headerConnection={
-          <div className="relative" ref={systemLogRef}>
-            <button
-              type="button"
-              className="flex items-center space-x-2 px-2 py-1 rounded transition-colors hover:bg-white/5"
-              onClick={() => setSystemLogOpen((current) => !current)}
-              title={error || "打开最近日志"}
-            >
-              <span className={!authSession?.token || error ? "w-2 h-2 rounded-full bg-rose-500" : "w-2 h-2 rounded-full bg-emerald-500"} />
-              <span className="text-zinc-400 text-xs truncate max-w-[220px]">
-                {!authSession?.token ? "需要登录" : error ? `连接异常` : "运行正常"}
-              </span>
-            </button>
-
-            {systemLogOpen && (
-              <div className="absolute right-0 top-full mt-2 w-[420px] max-w-[80vw] p-3 rounded-2xl border border-white/10 bg-zinc-950/90 backdrop-blur-2xl shadow-2xl z-50">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div>
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">System Logs</p>
-                    <p className="text-sm text-zinc-100 font-medium">最近状态与告警</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {error ? (
-                      <button
-                        type="button"
-                        className="px-2 py-1 text-[11px] rounded-lg text-rose-300 hover:bg-rose-500/10 transition-colors"
-                        onClick={() => actions.setError(null)}
-                      >
-                        清除当前错误
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="px-2 py-1 text-[11px] rounded-lg text-zinc-400 hover:bg-white/5 transition-colors"
-                      onClick={clearSystemLogs}
-                    >
-                      清空记录
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
-                  {error ? (
-                    <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2">
-                      <div className="text-[11px] text-rose-300 font-semibold">当前错误</div>
-                      <div className="text-xs text-zinc-200 mt-1">{error}</div>
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
-                      <div className="text-[11px] text-emerald-300 font-semibold">当前状态</div>
-                      <div className="text-xs text-zinc-200 mt-1">运行正常</div>
-                    </div>
-                  )}
-
-                  {systemLogs.length > 0 ? (
-                    <div className="rounded-xl border border-white/5 bg-white/5 p-2">
-                      <div className="text-[11px] text-zinc-400 font-semibold px-1 pb-2">最近状态记录</div>
-                      <div className="space-y-2">
-                        {systemLogs.map((item) => (
-                          <div key={item.id} className="px-2 py-2 rounded-lg bg-black/10 border border-white/5">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className={`text-[11px] font-semibold ${item.level === 'error' ? 'text-rose-300' : 'text-emerald-300'}`}>
-                                {item.level === 'error' ? '异常' : '恢复'}
-                              </span>
-                              <span className="text-[11px] text-zinc-500">{formatTime(item.createdAt)}</span>
-                            </div>
-                            <div className="text-xs text-zinc-200 mt-1">{item.message}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="rounded-xl border border-white/5 bg-white/5 p-2">
-                    <div className="text-[11px] text-zinc-400 font-semibold px-1 pb-2">最近告警</div>
-                    {recentAlerts.length > 0 ? (
-                      <div className="space-y-2">
-                        {recentAlerts.map((alert) => (
-                          <div key={alert.id} className="px-2 py-2 rounded-lg bg-black/10 border border-white/5">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className={`text-[11px] font-semibold ${alert.level === 'critical' ? 'text-rose-300' : alert.level === 'warning' ? 'text-amber-300' : 'text-zinc-300'}`}>
-                                {alert.level === 'critical' ? '严重' : alert.level === 'warning' ? '警告' : '信息'}
-                              </span>
-                              <span className="text-[11px] text-zinc-500">{formatTime(alert.eventTime ?? "")}</span>
-                            </div>
-                            <div className="text-xs text-zinc-100 mt-1">{alert.title}</div>
-                            <div className="text-xs text-zinc-400 mt-1">{alert.detail}</div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="px-2 py-3 text-xs text-zinc-500">最近没有告警</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        }
+        headerMetrics={<HeaderMetrics />}
+        headerConnection={<SystemStatusMenu setError={actions.setError} />}
         headerActions={
-          authSession ? (
-            <div className="relative" ref={userMenuRef}>
-              <button
-                type="button"
-                className="flex items-center space-x-2 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-colors text-zinc-200"
-                onClick={() => setSettingsMenuOpen((current) => !current)}
-              >
-                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold uppercase text-[10px]">
-                  {authSession.username.slice(0, 2)}
-                </div>
-                <span className="text-sm font-medium">{authSession.username}</span>
-                <ChevronDown size={14} className={`text-zinc-500 transition-transform ${settingsMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {settingsMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 w-56 p-2 rounded-2xl border border-white/10 bg-zinc-950/80 backdrop-blur-2xl shadow-2xl z-50">
-                    <div className="px-3 py-2 border-b border-white/5 mb-2">
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">身份与会话</p>
-                      <p className="text-xs text-zinc-200 font-medium truncate">{authSession.username}</p>
-                      <p className="text-[10px] text-zinc-500 mt-1 italic">
-                        {authSession.expiresAt ? `有效期至 ${formatTime(authSession.expiresAt)}` : "已登录"}
-                      </p>
-                    </div>
-                  
-                  <div className="space-y-1">
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                      onClick={() => { setSidebarTab('monitor'); setSettingsMenuOpen(false); }}
-                    >
-                      打开监控台
-                    </button>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 rounded-lg transition-colors"
-                      onClick={() => { actions.openLiveAccountModal(); setSettingsMenuOpen(false); }}
-                    >
-                      新建账户
-                    </button>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 rounded-lg transition-colors"
-                      onClick={() => { 
-                        actions.openLiveBindingModal(quickLiveAccountId); 
-                        setSettingsMenuOpen(false); 
-                      }}
-                    >
-                      绑定账户
-                    </button>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 rounded-lg transition-colors"
-                      onClick={() => { setActiveSettingsModal("telegram"); setSettingsMenuOpen(false); }}
-                    >
-                      Telegram 通知
-                    </button>
-                  </div>
-
-                  <div className="mt-2 pt-2 border-t border-white/5">
-                    <button
-                      className="w-full flex items-center px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                      onClick={() => { actions.logout(); setSettingsMenuOpen(false); }}
-                    >
-                      <LogOut size={14} className="mr-2" />
-                      退出登录
-                    </button>
-                  </div>
-                  </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-zinc-500 text-xs">需要登录</div>
-          )
+          <UserMenu 
+            actions={actions} 
+            setSidebarTab={setSidebarTab} 
+            setActiveSettingsModal={setActiveSettingsModal} 
+            quickLiveAccountId={quickLiveAccountId} 
+          />
         }
         sidePanelContent={
           sidebarTab === 'strategy' ? (
