@@ -1234,7 +1234,7 @@ func TestCreateLiveSessionAppliesExecutionOverrides(t *testing.T) {
 	}
 }
 
-func TestStartSignalRuntimeSessionRefreshesPlanFromLatestBindings(t *testing.T) {
+func TestStartSignalRuntimeSessionIncludesAllBoundTimeframes(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
 		"sourceKey": "binance-kline",
@@ -1243,14 +1243,6 @@ func TestStartSignalRuntimeSessionRefreshesPlanFromLatestBindings(t *testing.T) 
 		"options":   map[string]any{"timeframe": "1d"},
 	}); err != nil {
 		t.Fatalf("bind strategy 1d failed: %v", err)
-	}
-	if _, err := platform.BindAccountSignalSource("live-main", map[string]any{
-		"sourceKey": "binance-kline",
-		"role":      "signal",
-		"symbol":    "BTCUSDT",
-		"options":   map[string]any{"timeframe": "1d"},
-	}); err != nil {
-		t.Fatalf("bind account 1d failed: %v", err)
 	}
 	session, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
 	if err != nil {
@@ -1264,14 +1256,6 @@ func TestStartSignalRuntimeSessionRefreshesPlanFromLatestBindings(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("rebind strategy 4h failed: %v", err)
 	}
-	if _, err := platform.BindAccountSignalSource("live-main", map[string]any{
-		"sourceKey": "binance-kline",
-		"role":      "signal",
-		"symbol":    "BTCUSDT",
-		"options":   map[string]any{"timeframe": "4h"},
-	}); err != nil {
-		t.Fatalf("rebind account 4h failed: %v", err)
-	}
 	started, err := platform.StartSignalRuntimeSession(session.ID)
 	if err != nil {
 		t.Fatalf("start runtime session failed: %v", err)
@@ -1283,8 +1267,94 @@ func TestStartSignalRuntimeSessionRefreshesPlanFromLatestBindings(t *testing.T) 
 	if len(subscriptions) == 0 {
 		t.Fatal("expected subscriptions after runtime start")
 	}
+	channels := map[string]struct{}{}
+	for _, subscription := range subscriptions {
+		channels[stringValue(subscription["channel"])] = struct{}{}
+	}
+	for _, expected := range []string{"btcusdt@kline_1d", "btcusdt@kline_4h"} {
+		if _, ok := channels[expected]; !ok {
+			t.Fatalf("expected subscription %s, got %#v", expected, subscriptions)
+		}
+	}
+}
+
+func TestBuildSignalRuntimePlanUsesStrategyBindingsWithoutAccountBindings(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "4h"},
+	}); err != nil {
+		t.Fatalf("bind strategy 4h failed: %v", err)
+	}
+	plan, err := platform.BuildSignalRuntimePlan("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("build runtime plan failed: %v", err)
+	}
+	if !boolValue(plan["ready"]) {
+		t.Fatalf("expected runtime plan to be ready from strategy bindings only: %#v", plan)
+	}
+	missing := metadataList(plan["missingBindings"])
+	if len(missing) != 0 {
+		t.Fatalf("expected no missing bindings, got %#v", missing)
+	}
+	subscriptions := metadataList(plan["subscriptions"])
+	if len(subscriptions) != 1 {
+		t.Fatalf("expected one subscription, got %#v", subscriptions)
+	}
 	if got := stringValue(subscriptions[0]["channel"]); got != "btcusdt@kline_4h" {
-		t.Fatalf("expected refreshed 4h subscription, got %s", got)
+		t.Fatalf("expected 4h strategy binding subscription, got %s", got)
+	}
+	matched := metadataList(plan["matchedBindings"])
+	if len(matched) != 1 {
+		t.Fatalf("expected one matched binding, got %#v", matched)
+	}
+	if accountBinding := mapValue(matched[0]["accountBinding"]); accountBinding != nil {
+		t.Fatalf("expected account binding to be nil after account-signal removal, got %#v", accountBinding)
+	}
+}
+
+func TestEnsureLaunchLiveSessionCreatesDistinctSessionPerSymbolAndTimeframe(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	first, created, err := platform.ensureLaunchLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("ensure first live session failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected first launch live session to be created")
+	}
+
+	second, created, err := platform.ensureLaunchLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "ETHUSDT",
+		"signalTimeframe": "4h",
+	})
+	if err != nil {
+		t.Fatalf("ensure second live session failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected second launch live session to be created")
+	}
+	if first.ID == second.ID {
+		t.Fatalf("expected distinct live sessions for different launch scopes, got %s", first.ID)
+	}
+
+	reused, created, err := platform.ensureLaunchLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("ensure reused live session failed: %v", err)
+	}
+	if created {
+		t.Fatal("expected matching launch scope to reuse existing live session")
+	}
+	if reused.ID != first.ID {
+		t.Fatalf("expected reused live session %s, got %s", first.ID, reused.ID)
 	}
 }
 

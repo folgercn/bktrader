@@ -128,10 +128,6 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		if !strings.EqualFold(account.Mode, "LIVE") {
 			continue
 		}
-		bindings, err := p.ListAccountSignalBindings(account.ID)
-		if err != nil {
-			continue
-		}
 		if account.Status != "CONFIGURED" && account.Status != "READY" {
 			appendAlert(domain.PlatformAlert{
 				ID:          fmt.Sprintf("live-config-%s", account.ID),
@@ -139,19 +135,6 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				Level:       "warning",
 				Title:       "Account not configured",
 				Detail:      fmt.Sprintf("status=%s", account.Status),
-				AccountID:   account.ID,
-				AccountName: account.Name,
-				Anchor:      "live",
-				EventTime:   account.CreatedAt,
-			})
-		}
-		if len(bindings) == 0 {
-			appendAlert(domain.PlatformAlert{
-				ID:          fmt.Sprintf("live-bindings-%s", account.ID),
-				Scope:       "live",
-				Level:       "warning",
-				Title:       "No signal bindings",
-				Detail:      "live account has no signal bindings",
 				AccountID:   account.ID,
 				AccountName: account.Name,
 				Anchor:      "live",
@@ -235,7 +218,11 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 			})
 			continue
 		}
-		readiness := p.evaluateLiveAccountRuntimeReadiness(account, bindings, activeRuntime)
+		strategyBindings, err := p.ListStrategySignalBindings(activeRuntime.StrategyID)
+		if err != nil {
+			continue
+		}
+		readiness := p.evaluateLiveRuntimeReadiness(strategyBindings, activeRuntime)
 		if readiness.status == "blocked" {
 			appendAlert(domain.PlatformAlert{
 				ID:               fmt.Sprintf("live-preflight-%s", account.ID),
@@ -363,7 +350,7 @@ type liveRuntimeReadiness struct {
 	reason string
 }
 
-func (p *Platform) evaluateLiveAccountRuntimeReadiness(account domain.Account, bindings []domain.AccountSignalBinding, runtimeSession domain.SignalRuntimeSession) liveRuntimeReadiness {
+func (p *Platform) evaluateLiveRuntimeReadiness(bindings []domain.AccountSignalBinding, runtimeSession domain.SignalRuntimeSession) liveRuntimeReadiness {
 	if runtimeSession.ID == "" {
 		return liveRuntimeReadiness{status: "blocked", reason: "no-runtime-session"}
 	}

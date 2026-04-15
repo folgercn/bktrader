@@ -13,12 +13,15 @@ import (
 )
 
 type LiveLaunchOptions struct {
-	StrategyID            string         `json:"strategyId"`
-	Binding               map[string]any `json:"binding,omitempty"`
-	LiveSessionOverrides  map[string]any `json:"liveSessionOverrides,omitempty"`
-	MirrorStrategySignals bool           `json:"mirrorStrategySignals"`
-	StartRuntime          bool           `json:"startRuntime"`
-	StartSession          bool           `json:"startSession"`
+	StrategyID           string         `json:"strategyId"`
+	Binding              map[string]any `json:"binding,omitempty"`
+	LiveSessionOverrides map[string]any `json:"liveSessionOverrides,omitempty"`
+	// MirrorStrategySignals is retained for backward-compatible launch payloads.
+	// It no longer mirrors strategy signal bindings onto account metadata; when true,
+	// LaunchLiveFlow only validates that strategy bindings already exist before startup.
+	MirrorStrategySignals bool `json:"mirrorStrategySignals"`
+	StartRuntime          bool `json:"startRuntime"`
+	StartSession          bool `json:"startSession"`
 }
 
 type LiveLaunchResult struct {
@@ -587,40 +590,14 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	}
 
 	if options.MirrorStrategySignals {
+		// Compatibility gate only: strategy bindings are now the runtime source of truth.
+		// We no longer mirror them onto account signal bindings during launch.
 		strategyBindings, err := p.ListStrategySignalBindings(strategyID)
 		if err != nil {
 			return LiveLaunchResult{}, err
 		}
-		accountBindings, err := p.ListAccountSignalBindings(account.ID)
-		if err != nil {
-			return LiveLaunchResult{}, err
-		}
-		if len(strategyBindings) == 0 && len(accountBindings) == 0 {
-			return LiveLaunchResult{}, fmt.Errorf("strategy %s has no signal bindings to mirror", strategyID)
-		}
-		for _, binding := range strategyBindings {
-			exists := false
-			for _, item := range accountBindings {
-				if item.SourceKey == binding.SourceKey && item.Role == binding.Role && item.Symbol == binding.Symbol {
-					exists = true
-					break
-				}
-			}
-			if exists {
-				continue
-			}
-			account, err = p.BindAccountSignalSource(account.ID, map[string]any{
-				"sourceKey": binding.SourceKey,
-				"role":      binding.Role,
-				"symbol":    binding.Symbol,
-				"options":   binding.Options,
-			})
-			if err != nil {
-				return LiveLaunchResult{}, err
-			}
-			result.Account = account
-			result.MirroredBindingCount++
-			accountBindings = append(accountBindings, binding)
+		if len(strategyBindings) == 0 {
+			return LiveLaunchResult{}, fmt.Errorf("strategy %s has no signal bindings", strategyID)
 		}
 	}
 
@@ -681,6 +658,9 @@ func (p *Platform) ensureLaunchRuntimeSession(accountID, strategyID string) (dom
 }
 
 func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrides map[string]any) (domain.LiveSession, bool, error) {
+	normalizedOverrides := normalizeLiveSessionOverrides(overrides)
+	targetSymbol := NormalizeSymbol(stringValue(normalizedOverrides["symbol"]))
+	targetTimeframe := normalizeSignalBarInterval(stringValue(normalizedOverrides["signalTimeframe"]))
 	sessions, err := p.ListLiveSessions()
 	if err != nil {
 		return domain.LiveSession{}, false, err
@@ -689,11 +669,17 @@ func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrid
 		if session.AccountID != accountID || session.StrategyID != strategyID {
 			continue
 		}
-		if len(overrides) == 0 {
+		if targetSymbol != "" && NormalizeSymbol(stringValue(session.State["symbol"])) != targetSymbol {
+			continue
+		}
+		if targetTimeframe != "" && normalizeSignalBarInterval(stringValue(session.State["signalTimeframe"])) != targetTimeframe {
+			continue
+		}
+		if len(normalizedOverrides) == 0 {
 			return session, false, nil
 		}
 		state := cloneMetadata(session.State)
-		for key, value := range normalizeLiveSessionOverrides(overrides) {
+		for key, value := range normalizedOverrides {
 			state[key] = value
 		}
 		updated, err := p.store.UpdateLiveSessionState(session.ID, state)
@@ -703,7 +689,7 @@ func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrid
 		synced, err := p.syncLiveSessionRuntime(updated)
 		return synced, false, err
 	}
-	session, err := p.CreateLiveSession(accountID, strategyID, overrides)
+	session, err := p.CreateLiveSession(accountID, strategyID, normalizedOverrides)
 	return session, true, err
 }
 
