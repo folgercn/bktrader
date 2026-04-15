@@ -18,8 +18,9 @@ This project has a graphify knowledge graph at `graphify-out/`.
 
 - Before answering architecture or codebase questions, read `graphify-out/GRAPH_REPORT.md` for god nodes and community structure.
 - If `graphify-out/wiki/index.md` exists, navigate it instead of reading raw files.
-- After modifying code files in this session, run `/usr/local/opt/python@3.12/bin/python3.12 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current.
-- **Automated Workflow**: A `pre-push` git hook has been installed to automatically rebuild the graph before every `git push`.
+- Do not rebuild graphify after every code change in a session.
+- Rebuild graphify immediately before `git push` by running `/usr/local/opt/python@3.12/bin/python3.12 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` if needed.
+- **Automated Workflow**: A `pre-push` git hook is installed and should be the default path for rebuilding the graph before every `git push`.
 
 ### 面向 Gemini 的技能组 (Skills)
 
