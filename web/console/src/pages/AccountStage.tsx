@@ -12,7 +12,6 @@ import {
   strategyLabel, 
   deriveLiveSessionExecutionSummary, 
   deriveLiveSessionHealth, 
-  deriveLiveSessionFlow,
   deriveLiveNextAction,
   deriveHighlightedLiveSession,
   deriveRuntimeMarketSnapshot,
@@ -45,13 +44,14 @@ interface AccountStageProps {
   openLiveAccountModal: () => void;
   openLiveBindingModal: () => void;
   openLiveSessionModal: (session?: LiveSession | null) => void;
+  openMonitorStage: () => void;
   launchLiveFlow: (account: AccountRecord) => void;
+  stopLiveFlow: (accountId: string) => void;
   runLiveSessionAction: (id: string, action: "start" | "stop") => void;
   dispatchLiveSessionIntent: (id: string) => void;
   syncLiveSession: (id: string) => void;
   deleteLiveSession: (id: string) => Promise<void>;
   syncLiveAccount: (id: string) => void;
-  syncLiveOrder: (id: string) => void;
   jumpToSignalRuntimeSession: (id: string) => void;
   runLiveNextAction: (account: AccountRecord, nextAction: LiveNextAction, runtime: SignalRuntimeSession | null) => void;
   selectQuickLiveAccount: (id: string) => void;
@@ -65,18 +65,42 @@ interface AccountStageProps {
   runSignalRuntimeAction: (id: string, action: "start" | "stop") => void;
 }
 
+function statusLabelZh(status: string): string {
+  switch (String(status).trim().toLowerCase()) {
+    case "ready":
+      return "就绪";
+    case "watch":
+      return "关注";
+    case "warning":
+      return "预警";
+    case "blocked":
+      return "阻塞";
+    case "neutral":
+      return "未激活";
+    case "active":
+      return "运行中";
+    case "error":
+      return "异常";
+    case "idle":
+      return "空闲";
+    default:
+      return status || "--";
+  }
+}
+
 export function AccountStage({
   logout,
   openLiveAccountModal,
   openLiveBindingModal,
   openLiveSessionModal,
+  openMonitorStage,
   launchLiveFlow,
+  stopLiveFlow,
   runLiveSessionAction,
   dispatchLiveSessionIntent,
   syncLiveSession,
   deleteLiveSession,
   syncLiveAccount,
-  syncLiveOrder,
   jumpToSignalRuntimeSession,
   runLiveNextAction,
   selectQuickLiveAccount,
@@ -106,7 +130,6 @@ export function AccountStage({
   const liveSessionAction = useUIStore(s => s.liveSessionAction);
   const liveSessionDeleteAction = useUIStore(s => s.liveSessionDeleteAction);
   const liveAccountSyncAction = useUIStore(s => s.liveAccountSyncAction);
-  const liveSyncAction = useUIStore(s => s.liveSyncAction);
   const liveFlowAction = useUIStore(s => s.liveFlowAction);
   const liveBindAction = useUIStore(s => s.liveBindAction);
   const signalBindingAction = useUIStore(s => s.signalBindingAction);
@@ -140,26 +163,6 @@ export function AccountStage({
     [liveSessions, orders, fills, positions]
   );
 
-  const highlightedLiveRuntime =
-    highlightedLiveSession?.session
-      ? signalRuntimeSessions.find((item) => item.id === String(highlightedLiveSession.session.state?.signalRuntimeSessionId ?? "")) ??
-        signalRuntimeSessions.find(
-          (item) =>
-            item.accountId === highlightedLiveSession.session.accountId &&
-            item.strategyId === highlightedLiveSession.session.strategyId
-        ) ??
-        null
-      : null;
-
-  const highlightedLiveSessionFlow = useMemo(
-    () =>
-      highlightedLiveSession
-        ? deriveLiveSessionFlow(highlightedLiveSession.session, highlightedLiveSession.execution)
-        : [],
-    [highlightedLiveSession]
-  );
-
-  const monitorMode = highlightedLiveSession?.session ? "LIVE" : "--";
   const strategyIds = useMemo(() => new Set(strategies.map((item) => item.id)), [strategies]);
   const validLiveSessions = useMemo(
     () => liveSessions.filter((item) => strategyIds.has(item.strategyId)),
@@ -167,12 +170,21 @@ export function AccountStage({
   );
 
   const primaryLiveSession = highlightedLiveSession?.session ?? null;
-  const primaryLiveRuntimeState = getRecord(highlightedLiveRuntime?.state);
-  const primaryLiveRuntimeSummary = getRecord(primaryLiveRuntimeState.lastEventSummary);
-  const primaryLiveSessionMarket = deriveRuntimeMarketSnapshot(
-    getRecord(primaryLiveRuntimeState.sourceStates),
-    primaryLiveRuntimeSummary
-  );
+  const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
+  const primaryLiveAccount = primaryLiveSession ? liveAccounts.find(a => a.id === primaryLiveSession.accountId) || null : null;
+  const primaryLiveBindings = primaryLiveSession ? accountSignalBindingMap[primaryLiveSession.accountId] || [] : [];
+  const primaryLiveRuntimeSessions = primaryLiveSession ? signalRuntimeSessions.filter(s => s.accountId === primaryLiveSession.accountId) : [];
+  const primaryLiveRuntime =
+    primaryLiveSession
+      ? signalRuntimeSessions.find((item) => item.id === String(primaryLiveSession.state?.signalRuntimeSessionId ?? "")) ??
+        signalRuntimeSessions.find(
+          (item) =>
+            item.accountId === primaryLiveSession.accountId &&
+            item.strategyId === primaryLiveSession.strategyId
+        ) ??
+        null
+      : null;
+  const primaryLiveRuntimeState = getRecord(primaryLiveRuntime?.state);
   const primaryLiveSessionRuntimeReadiness = deriveRuntimeReadiness(
     primaryLiveRuntimeState,
     deriveRuntimeSourceSummary(getRecord(primaryLiveRuntimeState.sourceStates), runtimePolicy),
@@ -181,21 +193,12 @@ export function AccountStage({
       requireOrderBook: false
     }
   );
-  const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
-  const primaryLiveSessionSignalBarDecision = getRecord(primaryLiveSession?.state?.lastStrategyEvaluationSignalBarDecision);
-  const primaryLiveExecutionSummary = highlightedLiveSession?.execution ?? deriveLiveSessionExecutionSummary(null, orders, fills, positions);
-  const primaryLiveSessionTimeline = getList(primaryLiveSession?.state?.timeline);
-  
-  const primaryLiveAccount = primaryLiveSession ? liveAccounts.find(a => a.id === primaryLiveSession.accountId) || null : null;
-  const primaryLiveBindings = primaryLiveSession ? accountSignalBindingMap[primaryLiveSession.accountId] || [] : [];
-  const primaryLiveRuntimeSessions = primaryLiveSession ? signalRuntimeSessions.filter(s => s.accountId === primaryLiveSession.accountId) : [];
-  
   const primaryLiveDispatchPreview = deriveLiveDispatchPreview(
     primaryLiveSession,
     primaryLiveAccount,
     primaryLiveBindings,
     primaryLiveRuntimeSessions,
-    highlightedLiveRuntime,
+    primaryLiveRuntime,
     primaryLiveSessionRuntimeReadiness,
     primaryLiveSessionIntent
   );
@@ -219,59 +222,7 @@ export function AccountStage({
   const selectedSignalRuntimeSubscriptions = Array.isArray(selectedSignalRuntimeState.subscriptions)
     ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
     : [];
-  const [expandedLiveSection, setExpandedLiveSection] = useState<string>("执行与分发");
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
-
-  const primaryLiveSummaryItems = primaryLiveSession ? [
-    { label: "运行环境", value: `${String(primaryLiveSession.state?.signalRuntimeStatus ?? "--")} · ${formatTime(String(primaryLiveSession.state?.lastSignalRuntimeEventAt ?? ""))}` },
-    { label: "就绪预检", value: `${primaryLiveSessionRuntimeReadiness.status} · ${primaryLiveSessionRuntimeReadiness.reason}` },
-    { label: "信号意图", value: `${String(primaryLiveSessionIntent.action ?? "无")} · ${String(primaryLiveSessionIntent.side ?? "--")} · ${formatMaybeNumber(primaryLiveSessionIntent.priceHint)}` },
-    { label: "指令分发", value: `${String(primaryLiveSession?.state?.dispatchMode ?? "--")} · 冷却 ${String(primaryLiveSession?.state?.dispatchCooldownSeconds ?? "--")}s` },
-    { label: "恢复状态", value: `${String(primaryLiveSession?.state?.positionRecoveryStatus ?? "--")} / ${String(primaryLiveSession?.state?.protectionRecoveryStatus ?? "--")}` },
-    { label: "执行汇总", value: `订单 ${primaryLiveExecutionSummary.orderCount} · 成交 ${primaryLiveExecutionSummary.fillCount} · ${String(primaryLiveExecutionSummary.latestOrder?.status ?? "--")}` },
-  ] : [];
-
-  const primaryLiveSections = primaryLiveSession ? [
-    {
-      title: "运行与行情",
-      items: [
-        { label: "行情数据", value: `${formatMaybeNumber(primaryLiveSessionMarket.tradePrice)} · ${formatMaybeNumber(primaryLiveSessionMarket.bestBid)} / ${formatMaybeNumber(primaryLiveSessionMarket.bestAsk)}` },
-        { label: "数据同步", value: `${String(primaryLiveSession?.state?.lastSyncedOrderStatus ?? "--")} · ${formatTime(String(primaryLiveSession?.state?.lastSyncedAt ?? ""))} · 错误 ${String(primaryLiveSession?.state?.lastSyncError ?? "--")}` },
-        { label: "自动分发", value: `最后触发 ${formatTime(String(primaryLiveSession?.state?.lastDispatchedAt ?? ""))} · 最后错误 ${String(primaryLiveSession?.state?.lastAutoDispatchError ?? "--")}` },
-        { label: "时间线", value: buildTimelineNotes(primaryLiveSessionTimeline).slice(0, 2).join(" · ") || "--" },
-      ],
-    },
-    {
-      title: "信号与意图",
-      items: [
-        { label: "意图预览", value: `数量 ${formatMaybeNumber(primaryLiveSessionIntent.quantity)} · 报价源 ${String(primaryLiveSessionIntent.priceSource ?? "--")} · 信号种类 ${String(primaryLiveSessionIntent.signalKind ?? "--")}` },
-        { label: "意图上下文", value: `价差 ${formatMaybeNumber(primaryLiveSessionIntent.spreadBps)} bps · 偏置 ${String(primaryLiveSessionIntent.liquidityBias ?? "--")} · ma20 ${formatMaybeNumber(primaryLiveSessionIntent.ma20)} · atr14 ${formatMaybeNumber(primaryLiveSessionIntent.atr14)}` },
-        { label: "信号过滤", value: `周期 ${String(primaryLiveSessionSignalBarDecision.timeframe ?? "--")} · sma5 ${formatMaybeNumber(primaryLiveSessionSignalBarDecision.sma5)} · 多头 ${boolLabel(primaryLiveSessionSignalBarDecision.longEarlyReversalReady)} · 空头 ${boolLabel(primaryLiveSessionSignalBarDecision.shortEarlyReversalReady)}` },
-        { label: "信号备注", value: String(primaryLiveSessionSignalBarDecision.reason ?? "--") },
-      ],
-    },
-    {
-      title: "执行与分发",
-      items: [
-        { label: "执行配置", value: `${String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).executionProfile ?? "--")} · ${String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).orderType ?? "--")} · TIF ${String(getRecord(primaryLiveSession?.state?.lastExecutionProfile).timeInForce ?? "--")} · 只减仓 ${boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionProfile).reduceOnly)}` },
-        { label: "执行遥测", value: `${String(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).decision ?? "--")} · 价差 ${formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).spreadBps)} bps · 盘口不平衡 ${formatMaybeNumber(getRecord(getRecord(primaryLiveSession?.state?.lastExecutionTelemetry).book).bookImbalance)}` },
-        { label: "分发状态", value: `${String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).status ?? "--")} · ${String(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).executionMode ?? "--")} · 备选方案 ${boolLabel(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).fallback)}` },
-        { label: "成交分析", value: `预期价格 ${formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).expectedPrice)} · 滑点偏移 ${formatMaybeNumber(getRecord(primaryLiveSession?.state?.lastExecutionDispatch).priceDriftBps)} bps` },
-        { label: "执行统计", value: `方案数 ${String(getRecord(primaryLiveSession?.state?.executionEventStats).proposalCount ?? "--")} · Maker ${String(getRecord(primaryLiveSession?.state?.executionEventStats).makerRestingDecisionCount ?? "--")} · 备选 ${String(getRecord(primaryLiveSession?.state?.executionEventStats).fallbackDispatchCount ?? "--")} · 平均偏移 ${formatMaybeNumber(getRecord(primaryLiveSession?.state?.executionEventStats).avgPriceDriftBps)} bps` },
-        { label: "分发预览", value: `${primaryLiveDispatchPreview.reason} · ${primaryLiveDispatchPreview.detail}` },
-        { label: "最终指令", value: `${String(primaryLiveDispatchPreview.payload.side ?? "--")} ${formatMaybeNumber(primaryLiveDispatchPreview.payload.quantity)} ${String(primaryLiveDispatchPreview.payload.symbol ?? "--")} · ${String(primaryLiveDispatchPreview.payload.type ?? "--")} @ ${formatMaybeNumber(primaryLiveDispatchPreview.payload.price)}` },
-      ],
-    },
-    {
-      title: "恢复与仓位",
-      items: [
-        { label: "恢复详情", value: `${String(primaryLiveSession?.state?.lastRecoveryStatus ?? "--")} · 仓位恢复 ${String(primaryLiveSession?.state?.positionRecoveryStatus ?? "--")} · 保护恢复 ${String(primaryLiveSession?.state?.protectionRecoveryStatus ?? "--")}` },
-        { label: "恢复统计", value: `最后尝试 ${formatTime(String(primaryLiveSession?.state?.lastRecoveryAttemptAt ?? primaryLiveSession?.state?.lastProtectionRecoveryAt ?? ""))} · 保护订单 ${String(primaryLiveSession?.state?.recoveredProtectionCount ?? "--")} · 止损 ${String(primaryLiveSession?.state?.recoveredStopOrderCount ?? "--")} · 止盈 ${String(primaryLiveSession?.state?.recoveredTakeProfitOrderCount ?? "--")}` },
-        { label: "策略持仓", value: `${String(primaryLiveExecutionSummary.position?.side ?? "平仓")} · ${formatMaybeNumber(primaryLiveExecutionSummary.position?.quantity)} @ ${formatMaybeNumber(primaryLiveExecutionSummary.position?.entryPrice)} · 标记价 ${formatMaybeNumber(primaryLiveExecutionSummary.position?.markPrice)}` },
-        { label: "已恢复持仓", value: `${String(getRecord(primaryLiveSession?.state?.recoveredPosition).side ?? "平仓")} · ${formatMaybeNumber(getRecord(primaryLiveSession?.state?.recoveredPosition).quantity)} @ ${formatMaybeNumber(getRecord(primaryLiveSession?.state?.recoveredPosition).entryPrice)}` },
-      ],
-    },
-  ] : [];
 
   const hasConfiguredAccount = liveAccounts.some((account) => account.status === "CONFIGURED" || account.status === "READY");
   const hasSignalBinding = liveAccounts.some((account) => (accountSignalBindingMap[account.id] ?? []).length > 0);
@@ -301,18 +252,14 @@ export function AccountStage({
     {
       key: "session",
       title: "创建会话",
-      detail: hasLiveSession ? "已有实盘策略会话" : "选择账户 + 策略 + 交易对创建会话",
-      status: !hasRunningRuntime ? "pending" : hasLiveSession ? "done" : "current",
-    },
-    {
-      key: "monitor",
-      title: "启动监控",
-      detail: hasRunningLiveSession ? "已有运行中的会话" : "启动会话并开始监控 / 干预",
-      status: !hasLiveSession ? "pending" : hasRunningLiveSession ? "done" : "current",
+      detail: hasRunningLiveSession
+        ? "已有运行中的实盘会话，可转到监控台盯盘"
+        : hasLiveSession
+          ? "已有实盘策略会话，启动后进入监控台"
+          : "选择账户 + 策略 + 交易对创建会话",
+      status: !hasRunningRuntime ? "pending" : hasRunningLiveSession ? "done" : "current",
     },
   ];
-
-  const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
 
   function setActiveSettingsModal(modal: ActiveSettingsModal) {
     useUIStore.getState().setActiveSettingsModal(modal);
@@ -325,7 +272,7 @@ export function AccountStage({
           <p className="eyebrow">交易主控</p>
           <h2>先准备账户，再接通信号，然后创建并启动实盘会话</h2>
           <p className="hero-copy">
-            这页不是给你同时看所有对象的。按顺序完成账户、信号源、运行时、实盘会话四步后，再进入监控和人工干预。
+            这页只负责把链路搭起来。按顺序完成账户准备、信号接通和实盘会话创建后，再进入监控台处理运行状态与人工干预。
           </p>
         </div>
         <div className="hero-side hero-account-toolbar">
@@ -394,7 +341,7 @@ export function AccountStage({
           </div>
         </div>
         <div className="live-grid">
-          <div className="backtest-list live-grid-span-2">
+          <div className="live-grid-span-2">
             {liveAccounts.length > 0 ? (
               <div className="live-card-list">
                 {liveAccounts.map((account) => {
@@ -417,6 +364,11 @@ export function AccountStage({
                     requireTick: bindings.some((item) => item.streamType === "trade_tick"),
                     requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
                   });
+                  const hasRunningRuntime = runtimeSessionsForAccount.some((item) => item.status === "RUNNING");
+                  const hasRunningLiveSession = validLiveSessions.some(
+                    (item) => item.accountId === account.id && item.status === "RUNNING"
+                  );
+                  const isLiveFlowRunning = hasRunningRuntime || hasRunningLiveSession;
                   const livePreflight = deriveLivePreflightSummary(
                     account,
                     bindings,
@@ -443,10 +395,10 @@ export function AccountStage({
                         </div>
                         <div className="live-account-status">
                           <StatusPill tone={runtimeReadinessTone(activeRuntimeReadiness.status)}>
-                            {activeRuntimeReadiness.status}
+                            {`环境：${statusLabelZh(activeRuntimeReadiness.status)}`}
                           </StatusPill>
                           <StatusPill tone={runtimeReadinessTone(livePreflight.status)}>
-                            {livePreflight.status}
+                            {`预检：${statusLabelZh(livePreflight.status)}`}
                           </StatusPill>
                         </div>
                       </div>
@@ -492,7 +444,12 @@ export function AccountStage({
                       </div>
                       <div className="inline-actions live-account-actions">
                         <ActionButton
-                          label={liveFlowAction === account.id ? "启动中..." : "启动实盘流程"}
+                          label={
+                            liveFlowAction === account.id
+                              ? isLiveFlowRunning ? "停止中..." : "启动中..."
+                              : isLiveFlowRunning ? "停止实盘流程" : "启动实盘流程"
+                          }
+                          variant={isLiveFlowRunning ? "danger" : undefined}
                           disabled={
                             liveFlowAction !== null ||
                             liveBindAction ||
@@ -502,7 +459,13 @@ export function AccountStage({
                             liveSessionCreateAction ||
                             liveSessionLaunchAction
                           }
-                          onClick={() => launchLiveFlow(account)}
+                          onClick={() => {
+                            if (isLiveFlowRunning) {
+                              stopLiveFlow(account.id);
+                              return;
+                            }
+                            launchLiveFlow(account);
+                          }}
                         />
                         <ActionButton
                           label={accountDetailOpen ? "收起详情" : "查看详情"}
@@ -1234,129 +1197,22 @@ export function AccountStage({
             ) : (
               <div className="empty-state empty-state-compact">暂无有效实盘会话</div>
             )}
-          </div>
-        </div>
-      </section>
-
-      <section id="monitoring" className="panel panel-session">
-        <div className="panel-header">
-          <div>
-            <p className="panel-kicker">Monitoring</p>
-            <h3>第四步：监控与人工干预</h3>
-          </div>
-        </div>
-        <div className="live-grid">
-          {highlightedLiveSession ? (
-            <div className="session-card session-card-primary">
-              <div className="session-card-header">
-                <div>
-                  <p className="panel-kicker">Primary Session</p>
-                  <h4>当前优先处理会话</h4>
-                </div>
-                <StatusPill tone={liveSessionHealthTone(highlightedLiveSession.health.status)}>
-                  {highlightedLiveSession.health.status}
-                </StatusPill>
-              </div>
-              <div className="live-account-meta">
-                <span title="会话 ID">{shrink(highlightedLiveSession.session.id)}</span>
-                <span title="账户 ID">{highlightedLiveSession.session.accountId}</span>
-                <span title="策略 ID">{highlightedLiveSession.session.strategyId}</span>
-                <span title="信号周期">{String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}</span>
-              </div>
-              <div className="backtest-notes">
-                <div className="note-item">健康状态: {highlightedLiveSession.health.detail}</div>
-                <div className="backtest-grid-notes">
-                   <div className="note-item">恢复状态: {String(highlightedLiveSession.session.state?.positionRecoveryStatus ?? "--")}</div>
-                   <div className="note-item">保护恢复: {String(highlightedLiveSession.session.state?.protectionRecoveryStatus ?? "--")} ({String(highlightedLiveSession.session.state?.recoveredProtectionCount ?? "--")})</div>
-                   <div className="note-item">执行统计: 订单 {highlightedLiveSession.execution.orderCount} · 成交 {highlightedLiveSession.execution.fillCount}</div>
-                   <div className="note-item">最后订单: {String(highlightedLiveSession.execution.latestOrder?.status ?? "--")} · {String(highlightedLiveSession.execution.latestOrder?.side ?? "--")} @ {formatMaybeNumber(highlightedLiveSession.execution.latestOrder?.price)}</div>
-                   <div className="note-item">当前持仓: {String(highlightedLiveSession.execution.position?.side ?? "平仓")} · {formatMaybeNumber(highlightedLiveSession.execution.position?.quantity)} @ {formatMaybeNumber(highlightedLiveSession.execution.position?.entryPrice)}</div>
-                </div>
-              </div>
-              <div className="flow-row">
-                {highlightedLiveSessionFlow.map((step) => (
-                  <div key={step.key} className="flow-step">
-                    <StatusPill tone={step.status}>{step.label}</StatusPill>
-                    <span>{step.detail}</span>
+            <div className="panel-compact bg-white/5 rounded-2xl p-5 border border-white/5 mt-6">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-500">Next</p>
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-100">运行中状态已经移到监控台</h4>
+                    <p className="text-xs text-zinc-400">
+                      完成账户、信号源和实盘会话配置后，到监控台查看当前优先处理会话、执行状态和人工干预入口。
+                    </p>
                   </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="backtest-list">
-              <div className="empty-state empty-state-compact">当前没有可优先处理的运行中实盘会话</div>
-            </div>
-          )}
-          <div className="backtest-list">
-            <h4>当前会话监控细节</h4>
-            {primaryLiveSession ? (
-              <div className="live-detail-layout">
-                <div className="live-summary-grid">
-                  {primaryLiveSummaryItems.map((item) => (
-                    <div key={item.label} className="detail-item">
-                      <span>{item.label}</span>
-                      <strong>{item.value}</strong>
-                    </div>
-                  ))}
                 </div>
-                <div className="live-section-grid">
-                  {primaryLiveSections.map((section) => (
-                    <section key={section.title} className="live-section-card">
-                      <button
-                        type="button"
-                        className="live-section-toggle"
-                        onClick={() => setExpandedLiveSection((current) => current === section.title ? "" : section.title)}
-                      >
-                        <div>
-                          <h5>{section.title}</h5>
-                          <span>{expandedLiveSection === section.title ? "收起详情" : "点击查看详情"}</span>
-                        </div>
-                        <strong>{expandedLiveSection === section.title ? "−" : "+"}</strong>
-                      </button>
-                      {expandedLiveSection === section.title ? (
-                        <div className="live-section-items">
-                          {section.items.map((item) => (
-                            <div key={`${section.title}-${item.label}`} className="detail-item detail-item-compact">
-                              <span>{item.label}</span>
-                              <strong>{item.value}</strong>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </section>
-                  ))}
+                <div className="session-actions">
+                  <ActionButton label="打开监控台" onClick={openMonitorStage} />
                 </div>
               </div>
-            ) : (
-              <div className="empty-state empty-state-compact">启动并选中一个实盘会话后，这里会显示监控细节</div>
-            )}
-          </div>
-        </div>
-        <div className="live-grid">
-          <div className="backtest-list live-grid-span-2">
-            <h4>待同步的实盘订单</h4>
-            {syncableLiveOrders.length > 0 ? (
-              <SimpleTable
-                columns={["订单", "账户", "代码", "方向", "数量", "状态", "操作"]}
-                rows={syncableLiveOrders.map((order) => [
-                  shrink(order.id),
-                  order.accountId,
-                  order.symbol,
-                  order.side,
-                  formatMaybeNumber(order.quantity),
-                  order.status,
-                  <ActionButton
-                    key={order.id}
-                    label={liveSyncAction === order.id ? "Syncing..." : "Sync"}
-                    disabled={liveSyncAction !== null}
-                    onClick={() => syncLiveOrder(order.id)}
-                  />,
-                ])}
-                emptyMessage="暂无已接受的实盘订单"
-              />
-            ) : (
-              <div className="empty-state empty-state-compact">暂无已接受的实盘订单</div>
-            )}
+            </div>
           </div>
         </div>
       </section>

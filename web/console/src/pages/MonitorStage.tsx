@@ -1,19 +1,37 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
+import { ActionButton } from '../components/ui/ActionButton';
+import { SimpleTable } from '../components/ui/SimpleTable';
+import { StatusPill } from '../components/ui/StatusPill';
 import { SignalMonitorChart } from '../components/charts/SignalMonitorChart';
 import { formatMoney, formatSigned, formatMaybeNumber, formatTime, shrink } from '../utils/format';
 import { 
   getRecord, 
+  getList,
   mapChartCandlesToSignalBarCandles, 
   derivePrimarySignalBarState, 
   deriveRuntimeMarketSnapshot, 
   deriveSessionMarkers, 
   derivePaperSessionExecutionSummary,
-  deriveHighlightedLiveSession
+  deriveHighlightedLiveSession,
+  deriveLiveDispatchPreview,
+  deriveLiveSessionFlow,
+  deriveRuntimeReadiness,
+  deriveRuntimeSourceSummary,
+  buildTimelineNotes,
+  boolLabel,
+  liveSessionHealthTone
 } from '../utils/derivation';
 
-export function MonitorStage() {
+type MonitorStageProps = {
+  syncLiveOrder: (id: string) => void;
+  dockTab: 'orders' | 'positions' | 'fills' | 'alerts';
+  onDockTabChange: (tab: 'orders' | 'positions' | 'fills' | 'alerts') => void;
+  dockContent: React.ReactNode;
+};
+
+export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockContent }: MonitorStageProps) {
   const liveSessions = useTradingStore(s => s.liveSessions);
   const orders = useTradingStore(s => s.orders);
   const fills = useTradingStore(s => s.fills);
@@ -22,6 +40,9 @@ export function MonitorStage() {
   const monitorCandles = useTradingStore(s => s.monitorCandles);
   const summaries = useTradingStore(s => s.summaries);
   const runtimePolicy = useTradingStore(s => s.runtimePolicy);
+  const accounts = useTradingStore(s => s.accounts);
+  const accountSignalBindingMap = useTradingStore(s => s.accountSignalBindingMap);
+  const liveSyncAction = useUIStore(s => s.liveSyncAction);
 
   // Re-calculating derived state locally to keep App clean
   const highlightedLiveSession = useMemo(
@@ -61,9 +82,94 @@ export function MonitorStage() {
   const monitorSummary =
     monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
   const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
+  const monitorFlow = useMemo(
+    () =>
+      highlightedLiveSession
+        ? deriveLiveSessionFlow(highlightedLiveSession.session, highlightedLiveSession.execution)
+        : [],
+    [highlightedLiveSession]
+  );
+  const primaryLiveAccount = monitorSession ? accounts.find((item) => item.id === monitorSession.accountId) ?? null : null;
+  const primaryLiveBindings = monitorSession ? accountSignalBindingMap[monitorSession.accountId] ?? [] : [];
+  const primaryLiveRuntimeSessions = monitorSession
+    ? signalRuntimeSessions.filter((item) => item.accountId === monitorSession.accountId)
+    : [];
+  const monitorRuntimeReadiness = deriveRuntimeReadiness(
+    highlightedLiveRuntimeState,
+    deriveRuntimeSourceSummary(getRecord(highlightedLiveRuntimeState.sourceStates), runtimePolicy),
+    {
+      requireTick: true,
+      requireOrderBook: false,
+    }
+  );
+  const monitorIntent = getRecord(monitorSession?.state?.lastStrategyIntent);
+  const monitorSignalBarDecision = getRecord(monitorSession?.state?.lastStrategyEvaluationSignalBarDecision);
+  const monitorTimeline = getList(monitorSession?.state?.timeline);
+  const monitorDispatchPreview = deriveLiveDispatchPreview(
+    monitorSession,
+    primaryLiveAccount,
+    primaryLiveBindings,
+    primaryLiveRuntimeSessions,
+    highlightedLiveRuntime,
+    monitorRuntimeReadiness,
+    monitorIntent
+  );
+  const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
+  const [expandedLiveSection, setExpandedLiveSection] = useState<string>("执行与分发");
+
+  const monitorSummaryItems = monitorSession ? [
+    { label: "运行环境", value: `${String(monitorSession.state?.signalRuntimeStatus ?? "--")} · ${formatTime(String(monitorSession.state?.lastSignalRuntimeEventAt ?? ""))}` },
+    { label: "就绪预检", value: `${monitorRuntimeReadiness.status} · ${monitorRuntimeReadiness.reason}` },
+    { label: "信号意图", value: `${String(monitorIntent.action ?? "无")} · ${String(monitorIntent.side ?? "--")} · ${formatMaybeNumber(monitorIntent.priceHint)}` },
+    { label: "指令分发", value: `${String(monitorSession.state?.dispatchMode ?? "--")} · 冷却 ${String(monitorSession.state?.dispatchCooldownSeconds ?? "--")}s` },
+    { label: "恢复状态", value: `${String(monitorSession.state?.positionRecoveryStatus ?? "--")} / ${String(monitorSession.state?.protectionRecoveryStatus ?? "--")}` },
+    { label: "执行汇总", value: `订单 ${monitorExecutionSummary.orderCount} · 成交 ${monitorExecutionSummary.fillCount} · ${String(monitorExecutionSummary.latestOrder?.status ?? "--")}` },
+  ] : [];
+
+  const monitorSections = monitorSession ? [
+    {
+      title: "运行与行情",
+      items: [
+        { label: "行情数据", value: `${formatMaybeNumber(monitorMarket.tradePrice)} · ${formatMaybeNumber(monitorMarket.bestBid)} / ${formatMaybeNumber(monitorMarket.bestAsk)}` },
+        { label: "数据同步", value: `${String(monitorSession.state?.lastSyncedOrderStatus ?? "--")} · ${formatTime(String(monitorSession.state?.lastSyncedAt ?? ""))} · 错误 ${String(monitorSession.state?.lastSyncError ?? "--")}` },
+        { label: "自动分发", value: `最后触发 ${formatTime(String(monitorSession.state?.lastDispatchedAt ?? ""))} · 最后错误 ${String(monitorSession.state?.lastAutoDispatchError ?? "--")}` },
+        { label: "时间线", value: buildTimelineNotes(monitorTimeline).slice(0, 2).join(" · ") || "--" },
+      ],
+    },
+    {
+      title: "信号与意图",
+      items: [
+        { label: "意图预览", value: `数量 ${formatMaybeNumber(monitorIntent.quantity)} · 报价源 ${String(monitorIntent.priceSource ?? "--")} · 信号种类 ${String(monitorIntent.signalKind ?? "--")}` },
+        { label: "意图上下文", value: `价差 ${formatMaybeNumber(monitorIntent.spreadBps)} bps · 偏置 ${String(monitorIntent.liquidityBias ?? "--")} · ma20 ${formatMaybeNumber(monitorIntent.ma20)} · atr14 ${formatMaybeNumber(monitorIntent.atr14)}` },
+        { label: "信号过滤", value: `周期 ${String(monitorSignalBarDecision.timeframe ?? "--")} · sma5 ${formatMaybeNumber(monitorSignalBarDecision.sma5)} · 多头 ${boolLabel(monitorSignalBarDecision.longEarlyReversalReady)} · 空头 ${boolLabel(monitorSignalBarDecision.shortEarlyReversalReady)}` },
+        { label: "信号备注", value: String(monitorSignalBarDecision.reason ?? "--") },
+      ],
+    },
+    {
+      title: "执行与分发",
+      items: [
+        { label: "执行配置", value: `${String(getRecord(monitorSession.state?.lastExecutionProfile).executionProfile ?? "--")} · ${String(getRecord(monitorSession.state?.lastExecutionProfile).orderType ?? "--")} · TIF ${String(getRecord(monitorSession.state?.lastExecutionProfile).timeInForce ?? "--")} · 只减仓 ${boolLabel(getRecord(monitorSession.state?.lastExecutionProfile).reduceOnly)}` },
+        { label: "执行遥测", value: `${String(getRecord(monitorSession.state?.lastExecutionTelemetry).decision ?? "--")} · 价差 ${formatMaybeNumber(getRecord(getRecord(monitorSession.state?.lastExecutionTelemetry).book).spreadBps)} bps · 盘口不平衡 ${formatMaybeNumber(getRecord(getRecord(monitorSession.state?.lastExecutionTelemetry).book).bookImbalance)}` },
+        { label: "分发状态", value: `${String(getRecord(monitorSession.state?.lastExecutionDispatch).status ?? "--")} · ${String(getRecord(monitorSession.state?.lastExecutionDispatch).executionMode ?? "--")} · 备选方案 ${boolLabel(getRecord(monitorSession.state?.lastExecutionDispatch).fallback)}` },
+        { label: "成交分析", value: `预期价格 ${formatMaybeNumber(getRecord(monitorSession.state?.lastExecutionDispatch).expectedPrice)} · 滑点偏移 ${formatMaybeNumber(getRecord(monitorSession.state?.lastExecutionDispatch).priceDriftBps)} bps` },
+        { label: "执行统计", value: `方案数 ${String(getRecord(monitorSession.state?.executionEventStats).proposalCount ?? "--")} · Maker ${String(getRecord(monitorSession.state?.executionEventStats).makerRestingDecisionCount ?? "--")} · 备选 ${String(getRecord(monitorSession.state?.executionEventStats).fallbackDispatchCount ?? "--")} · 平均偏移 ${formatMaybeNumber(getRecord(monitorSession.state?.executionEventStats).avgPriceDriftBps)} bps` },
+        { label: "分发预览", value: `${monitorDispatchPreview.reason} · ${monitorDispatchPreview.detail}` },
+        { label: "最终指令", value: `${String(monitorDispatchPreview.payload.side ?? "--")} ${formatMaybeNumber(monitorDispatchPreview.payload.quantity)} ${String(monitorDispatchPreview.payload.symbol ?? "--")} · ${String(monitorDispatchPreview.payload.type ?? "--")} @ ${formatMaybeNumber(monitorDispatchPreview.payload.price)}` },
+      ],
+    },
+    {
+      title: "恢复与仓位",
+      items: [
+        { label: "恢复详情", value: `${String(monitorSession.state?.lastRecoveryStatus ?? "--")} · 仓位恢复 ${String(monitorSession.state?.positionRecoveryStatus ?? "--")} · 保护恢复 ${String(monitorSession.state?.protectionRecoveryStatus ?? "--")}` },
+        { label: "恢复统计", value: `最后尝试 ${formatTime(String(monitorSession.state?.lastRecoveryAttemptAt ?? monitorSession.state?.lastProtectionRecoveryAt ?? ""))} · 保护订单 ${String(monitorSession.state?.recoveredProtectionCount ?? "--")} · 止损 ${String(monitorSession.state?.recoveredStopOrderCount ?? "--")} · 止盈 ${String(monitorSession.state?.recoveredTakeProfitOrderCount ?? "--")}` },
+        { label: "策略持仓", value: `${String(monitorExecutionSummary.position?.side ?? "平仓")} · ${formatMaybeNumber(monitorExecutionSummary.position?.quantity)} @ ${formatMaybeNumber(monitorExecutionSummary.position?.entryPrice)} · 标记价 ${formatMaybeNumber(monitorExecutionSummary.position?.markPrice)}` },
+        { label: "已恢复持仓", value: `${String(getRecord(monitorSession.state?.recoveredPosition).side ?? "平仓")} · ${formatMaybeNumber(getRecord(monitorSession.state?.recoveredPosition).quantity)} @ ${formatMaybeNumber(getRecord(monitorSession.state?.recoveredPosition).entryPrice)}` },
+      ],
+    },
+  ] : [];
 
   return (
-    <div className="flex flex-col p-4 bg-zinc-950/20">
+    <div className="h-full overflow-y-auto p-4 space-y-4 bg-zinc-950/20">
       <section id="monitor" className="panel panel-market panel-compact monitor-panel-main w-full">
         <div className="panel-header">
           <div>
@@ -128,6 +234,162 @@ export function MonitorStage() {
           <div className="note-item">
             最新成交：{formatMaybeNumber(monitorExecutionSummary.latestFill?.price)} · 手续费 {formatMaybeNumber(monitorExecutionSummary.latestFill?.fee)} · {formatTime(String(monitorExecutionSummary.latestFill?.createdAt ?? ""))}
           </div>
+        </div>
+      </section>
+
+      <section id="monitoring-detail" className="panel panel-session">
+        <div className="panel-header">
+          <div>
+            <p className="panel-kicker">Monitoring</p>
+            <h3>运行监控与人工干预</h3>
+          </div>
+        </div>
+        <div className="live-grid">
+          {highlightedLiveSession ? (
+            <div className="session-card session-card-primary">
+              <div className="session-card-header">
+                <div>
+                  <p className="panel-kicker">Primary Session</p>
+                  <h4>当前优先处理会话</h4>
+                </div>
+                <StatusPill tone={liveSessionHealthTone(highlightedLiveSession.health.status)}>
+                  {highlightedLiveSession.health.status}
+                </StatusPill>
+              </div>
+              <div className="live-account-meta">
+                <span title="会话 ID">{shrink(highlightedLiveSession.session.id)}</span>
+                <span title="账户 ID">{highlightedLiveSession.session.accountId}</span>
+                <span title="策略 ID">{highlightedLiveSession.session.strategyId}</span>
+                <span title="信号周期">{String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}</span>
+              </div>
+              <div className="backtest-notes">
+                <div className="note-item">健康状态: {highlightedLiveSession.health.detail}</div>
+                <div className="backtest-grid-notes">
+                  <div className="note-item">恢复状态: {String(highlightedLiveSession.session.state?.positionRecoveryStatus ?? "--")}</div>
+                  <div className="note-item">保护恢复: {String(highlightedLiveSession.session.state?.protectionRecoveryStatus ?? "--")} ({String(highlightedLiveSession.session.state?.recoveredProtectionCount ?? "--")})</div>
+                  <div className="note-item">执行统计: 订单 {highlightedLiveSession.execution.orderCount} · 成交 {highlightedLiveSession.execution.fillCount}</div>
+                  <div className="note-item">最后订单: {String(highlightedLiveSession.execution.latestOrder?.status ?? "--")} · {String(highlightedLiveSession.execution.latestOrder?.side ?? "--")} @ {formatMaybeNumber(highlightedLiveSession.execution.latestOrder?.price)}</div>
+                  <div className="note-item">当前持仓: {String(highlightedLiveSession.execution.position?.side ?? "平仓")} · {formatMaybeNumber(highlightedLiveSession.execution.position?.quantity)} @ {formatMaybeNumber(highlightedLiveSession.execution.position?.entryPrice)}</div>
+                </div>
+              </div>
+              <div className="flow-row">
+                {monitorFlow.map((step) => (
+                  <div key={step.key} className="flow-step">
+                    <StatusPill tone={step.status}>{step.label}</StatusPill>
+                    <span>{step.detail}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="backtest-list">
+              <div className="empty-state empty-state-compact">当前没有可优先处理的运行中实盘会话</div>
+            </div>
+          )}
+          <div className="backtest-list">
+            <h4>当前会话监控细节</h4>
+            {monitorSession ? (
+              <div className="live-detail-layout">
+                <div className="live-summary-grid">
+                  {monitorSummaryItems.map((item) => (
+                    <div key={item.label} className="detail-item">
+                      <span>{item.label}</span>
+                      <strong>{item.value}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="live-section-grid">
+                  {monitorSections.map((section) => (
+                    <section key={section.title} className="live-section-card">
+                      <button
+                        type="button"
+                        className="live-section-toggle"
+                        onClick={() => setExpandedLiveSection((current) => current === section.title ? "" : section.title)}
+                      >
+                        <div>
+                          <h5>{section.title}</h5>
+                          <span>{expandedLiveSection === section.title ? "收起详情" : "点击查看详情"}</span>
+                        </div>
+                        <strong>{expandedLiveSection === section.title ? "−" : "+"}</strong>
+                      </button>
+                      {expandedLiveSection === section.title ? (
+                        <div className="live-section-items">
+                          {section.items.map((item) => (
+                            <div key={`${section.title}-${item.label}`} className="detail-item detail-item-compact">
+                              <span>{item.label}</span>
+                              <strong>{item.value}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state empty-state-compact">启动并选中一个实盘会话后，这里会显示监控细节</div>
+            )}
+          </div>
+        </div>
+        <div className="live-grid">
+          <div className="backtest-list live-grid-span-2">
+            <h4>待同步的实盘订单</h4>
+            {syncableLiveOrders.length > 0 ? (
+              <SimpleTable
+                columns={["订单", "账户", "代码", "方向", "数量", "状态", "操作"]}
+                rows={syncableLiveOrders.map((order) => [
+                  shrink(order.id),
+                  order.accountId,
+                  order.symbol,
+                  order.side,
+                  formatMaybeNumber(order.quantity),
+                  order.status,
+                  <ActionButton
+                    key={order.id}
+                    label={liveSyncAction === order.id ? "Syncing..." : "Sync"}
+                    disabled={liveSyncAction !== null}
+                    onClick={() => syncLiveOrder(order.id)}
+                  />,
+                ])}
+                emptyMessage="暂无已接受的实盘订单"
+              />
+            ) : (
+              <div className="empty-state empty-state-compact">暂无已接受的实盘订单</div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section id="runtime-records" className="panel panel-session">
+        <div className="panel-header">
+          <div>
+            <p className="panel-kicker">Records</p>
+            <h3>订单、持仓、成交与告警</h3>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {[
+            { key: 'orders', label: '全部订单' },
+            { key: 'positions', label: '持仓' },
+            { key: 'fills', label: '成交明细' },
+            { key: 'alerts', label: '异常告警' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`px-3 py-2 rounded-xl text-xs border transition-colors ${
+                dockTab === tab.key
+                  ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300'
+                  : 'border-white/5 bg-white/5 text-zinc-400 hover:text-zinc-200 hover:bg-white/10'
+              }`}
+              onClick={() => onDockTabChange(tab.key as 'orders' | 'positions' | 'fills' | 'alerts')}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="panel-compact bg-white/5 rounded-2xl p-3 border border-white/5 overflow-x-auto">
+          {dockContent}
         </div>
       </section>
     </div>
