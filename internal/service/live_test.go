@@ -2736,6 +2736,9 @@ func TestSyncLiveAccountReturnsFallbackSnapshotWithoutReportingAdapterFailure(t 
 	if stringValue(accountSync["lastSuccessAt"]) == "" {
 		t.Fatal("expected accountSync health to retain successful fallback state")
 	}
+	if got := parseFloatValue(mapValue(accountSync["today"])["syncCount"]); got != 1 {
+		t.Fatalf("expected fallback sync to record one syncCount, got %v", got)
+	}
 	if got := stringValue(accountSync["lastError"]); got != "" {
 		t.Fatalf("expected no accountSync error after successful fallback, got %s", got)
 	}

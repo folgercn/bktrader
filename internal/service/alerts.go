@@ -271,7 +271,7 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 
 	for _, session := range liveSessions {
 		state := cloneMetadata(session.State)
-		if strings.EqualFold(session.Status, "RUNNING") && p.strategyEvaluationQuiet(state) {
+		if p.liveSessionEvaluationQuiet("LIVE", session.Status, state) {
 			appendAlert(domain.PlatformAlert{
 				ID:           fmt.Sprintf("live-strategy-eval-quiet-%s", session.ID),
 				Scope:        "live",
@@ -481,6 +481,12 @@ func (p *Platform) strategyEvaluationQuiet(sessionState map[string]any) bool {
 		return false
 	}
 	return time.Since(lastTriggeredAt) > threshold
+}
+
+func (p *Platform) liveSessionEvaluationQuiet(mode, status string, sessionState map[string]any) bool {
+	return strings.EqualFold(mode, "LIVE") &&
+		strings.EqualFold(status, "RUNNING") &&
+		p.strategyEvaluationQuiet(sessionState)
 }
 
 func (p *Platform) liveAccountSyncStale(account domain.Account, referenceTime time.Time) (bool, int) {

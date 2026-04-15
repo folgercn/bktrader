@@ -222,6 +222,81 @@ func TestUpdateRuntimePolicyAllowsDisablingHealthThresholds(t *testing.T) {
 	}
 }
 
+func TestLoadPersistedRuntimePolicyKeepsDisabledHealthThresholds(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	updated, err := platform.UpdateRuntimePolicy(RuntimePolicy{
+		TradeTickFreshnessSeconds:      15,
+		OrderBookFreshnessSeconds:      10,
+		SignalBarFreshnessSeconds:      30,
+		RuntimeQuietSeconds:            30,
+		StrategyEvaluationQuietSeconds: 0,
+		LiveAccountSyncFreshnessSecs:   0,
+		PaperStartReadinessTimeoutSecs: 5,
+	})
+	if err != nil {
+		t.Fatalf("update runtime policy failed: %v", err)
+	}
+
+	reloaded := NewPlatform(store)
+	if err := reloaded.LoadPersistedRuntimePolicy(); err != nil {
+		t.Fatalf("load persisted runtime policy failed: %v", err)
+	}
+	current := reloaded.RuntimePolicy()
+	if current.StrategyEvaluationQuietSeconds != 0 {
+		t.Fatalf("expected persisted strategy evaluation quiet threshold 0, got %d", current.StrategyEvaluationQuietSeconds)
+	}
+	if current.LiveAccountSyncFreshnessSecs != 0 {
+		t.Fatalf("expected persisted live account sync freshness threshold 0, got %d", current.LiveAccountSyncFreshnessSecs)
+	}
+	if current.UpdatedAt.IsZero() {
+		t.Fatal("expected persisted runtime policy updatedAt to be populated")
+	}
+
+	snapshot, err := reloaded.HealthSnapshot()
+	if err != nil {
+		t.Fatalf("build health snapshot failed: %v", err)
+	}
+	if snapshot.RuntimePolicy.StrategyEvaluationQuietSeconds != 0 {
+		t.Fatalf("expected health snapshot strategy evaluation quiet threshold 0, got %d", snapshot.RuntimePolicy.StrategyEvaluationQuietSeconds)
+	}
+	if snapshot.RuntimePolicy.LiveAccountSyncFreshnessSecs != 0 {
+		t.Fatalf("expected health snapshot live account sync freshness threshold 0, got %d", snapshot.RuntimePolicy.LiveAccountSyncFreshnessSecs)
+	}
+	if snapshot.RuntimePolicy.UpdatedAt != updated.UpdatedAt {
+		t.Fatalf("expected health snapshot updatedAt %s, got %s", updated.UpdatedAt.Format(time.RFC3339), snapshot.RuntimePolicy.UpdatedAt.Format(time.RFC3339))
+	}
+
+	staleState := map[string]any{
+		"healthSummary": map[string]any{
+			"strategyIngress": map[string]any{
+				"lastTriggeredAt": time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339),
+			},
+		},
+	}
+	if reloaded.strategyEvaluationQuiet(staleState) {
+		t.Fatal("expected strategy evaluation quiet to stay disabled when threshold is 0")
+	}
+
+	account := domain.Account{
+		CreatedAt: time.Now().UTC().Add(-10 * time.Minute),
+		Metadata: map[string]any{
+			"lastLiveSyncAt": time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339),
+			"healthSummary": map[string]any{
+				"accountSync": map[string]any{
+					"lastSuccessAt": time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339),
+				},
+			},
+		},
+	}
+	if stale, _ := reloaded.liveAccountSyncStale(account, time.Now().UTC()); stale {
+		t.Fatal("expected live account sync stale to stay disabled when threshold is 0")
+	}
+	if reloaded.shouldRefreshLiveAccountSync(account, time.Now().UTC()) {
+		t.Fatal("expected live account refresh to stay disabled when threshold is 0")
+	}
+}
+
 func TestHealthSnapshotAggregatesBackendHealthState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	now := time.Now().UTC()
@@ -377,5 +452,81 @@ func TestHealthSnapshotAggregatesBackendHealthState(t *testing.T) {
 	}
 	if got := snapshot.PaperSessions[0].Mode; got != "PAPER" {
 		t.Fatalf("expected paper session mode PAPER, got %s", got)
+	}
+}
+
+func TestLiveSessionEvaluationQuietMatchesAlertsAndSnapshot(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	now := time.Now().UTC()
+
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["healthSummary"] = map[string]any{
+		"strategyIngress": map[string]any{
+			"lastTriggeredAt": now.Add(-30 * time.Second).Format(time.RFC3339),
+		},
+	}
+	state["lastSignalRuntimeEventAt"] = now.Add(-30 * time.Second).Format(time.RFC3339)
+	session.State = state
+	session.Status = "RUNNING"
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session failed: %v", err)
+	}
+
+	alerts, err := platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list alerts failed: %v", err)
+	}
+	foundQuietAlert := false
+	for _, alert := range alerts {
+		if alert.ID == "live-strategy-eval-quiet-"+session.ID {
+			foundQuietAlert = true
+			break
+		}
+	}
+	if !foundQuietAlert {
+		t.Fatal("expected running live session quiet alert to be present")
+	}
+
+	snapshot, err := platform.HealthSnapshot()
+	if err != nil {
+		t.Fatalf("build health snapshot failed: %v", err)
+	}
+	liveSnapshotsByID := make(map[string]domain.PlatformHealthStrategySessionSnapshot, len(snapshot.LiveSessions))
+	for _, item := range snapshot.LiveSessions {
+		liveSnapshotsByID[item.ID] = item
+	}
+	if !liveSnapshotsByID[session.ID].EvaluationQuiet {
+		t.Fatal("expected running live session snapshot to report evaluationQuiet")
+	}
+
+	session.Status = "STOPPED"
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("stop live session failed: %v", err)
+	}
+
+	alerts, err = platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list alerts after stop failed: %v", err)
+	}
+	for _, alert := range alerts {
+		if alert.ID == "live-strategy-eval-quiet-"+session.ID {
+			t.Fatal("expected stopped live session quiet alert to be suppressed")
+		}
+	}
+
+	snapshot, err = platform.HealthSnapshot()
+	if err != nil {
+		t.Fatalf("build health snapshot after stop failed: %v", err)
+	}
+	liveSnapshotsByID = make(map[string]domain.PlatformHealthStrategySessionSnapshot, len(snapshot.LiveSessions))
+	for _, item := range snapshot.LiveSessions {
+		liveSnapshotsByID[item.ID] = item
+	}
+	if liveSnapshotsByID[session.ID].EvaluationQuiet {
+		t.Fatal("expected stopped live session snapshot to suppress evaluationQuiet")
 	}
 }

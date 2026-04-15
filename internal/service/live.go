@@ -342,9 +342,7 @@ func (p *Platform) syncLiveAccountFromLocalState(account domain.Account, binding
 		"syncStatus":      "SYNCED",
 		"accountExchange": account.Exchange,
 	}
-	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
-	updateAccountSyncSuccessHealth(&account, syncedAt, previousSuccessAt)
-	return p.store.UpdateAccount(account)
+	return p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
 }
 
 func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding map[string]any) (domain.Account, error) {
@@ -486,9 +484,7 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 		"apiKeyRef":             resolved.APIKeyRef,
 		"restBaseUrl":           resolved.BaseURL,
 	}
-	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
-	updateAccountSyncSuccessHealth(&account, syncedAt, previousSuccessAt)
-	account, err = p.store.UpdateAccount(account)
+	account, err = p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
 	if err != nil {
 		return domain.Account{}, err
 	}
