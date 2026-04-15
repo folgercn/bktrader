@@ -100,6 +100,21 @@ type Repository interface {
 	// CreateAccountEquitySnapshot 创建新的净值快照。
 	CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error)
 
+	// --- Live 决策 / 执行 / 快照采集 ---
+
+	// ListStrategyDecisionEvents 获取指定 live session 的策略决策事件；sessionID 为空时返回全部。
+	ListStrategyDecisionEvents(liveSessionID string) ([]domain.StrategyDecisionEvent, error)
+	// CreateStrategyDecisionEvent 创建新的策略决策事件。
+	CreateStrategyDecisionEvent(event domain.StrategyDecisionEvent) (domain.StrategyDecisionEvent, error)
+	// ListOrderExecutionEvents 获取指定订单的执行事件；orderID 为空时返回全部。
+	ListOrderExecutionEvents(orderID string) ([]domain.OrderExecutionEvent, error)
+	// CreateOrderExecutionEvent 创建新的订单执行事件。
+	CreateOrderExecutionEvent(event domain.OrderExecutionEvent) (domain.OrderExecutionEvent, error)
+	// ListPositionAccountSnapshots 获取指定账户的仓位/账户快照；accountID 为空时返回全部。
+	ListPositionAccountSnapshots(accountID string) ([]domain.PositionAccountSnapshot, error)
+	// CreatePositionAccountSnapshot 创建新的仓位/账户快照。
+	CreatePositionAccountSnapshot(snapshot domain.PositionAccountSnapshot) (domain.PositionAccountSnapshot, error)
+
 	// --- 市场 Bar 缓存 ---
 
 	// ListMarketBars 获取指定交易所/交易对/周期的缓存 K 线。

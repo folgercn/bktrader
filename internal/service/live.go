@@ -1148,6 +1148,34 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		delete(state, "lastStrategyIntent")
 		delete(state, "lastStrategyIntentSignature")
 	}
+	decisionEvent, decisionEventErr := p.recordStrategyDecisionEvent(
+		session,
+		firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])),
+		eventTime,
+		summary,
+		sourceStates,
+		signalBarStates,
+		sourceGate,
+		executionContext,
+		decision,
+		cloneMetadata(mapValue(state["lastSignalIntent"])),
+		executionProposal,
+	)
+	if decisionEventErr != nil {
+		state["lastStrategyDecisionEventError"] = decisionEventErr.Error()
+	} else {
+		delete(state, "lastStrategyDecisionEventError")
+		state["lastStrategyDecisionEventId"] = decisionEvent.ID
+		if len(executionProposal) > 0 {
+			executionProposal["decisionEventId"] = decisionEvent.ID
+			proposalMetadata := cloneMetadata(mapValue(executionProposal["metadata"]))
+			proposalMetadata["decisionEventId"] = decisionEvent.ID
+			executionProposal["metadata"] = proposalMetadata
+			intent = executionProposal
+			state["lastExecutionProposal"] = executionProposal
+			state["lastStrategyIntent"] = executionProposal
+		}
+	}
 	appendTimelineEvent(state, "strategy", eventTime, "decision", map[string]any{
 		"action":            decision.Action,
 		"reason":            decision.Reason,

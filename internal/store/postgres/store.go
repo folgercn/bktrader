@@ -977,6 +977,279 @@ func (s *Store) CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapsho
 	return snapshot, err
 }
 
+func (s *Store) ListStrategyDecisionEvents(liveSessionID string) ([]domain.StrategyDecisionEvent, error) {
+	rows, err := s.db.Query(`
+		select
+			id, live_session_id, runtime_session_id, account_id, strategy_id, strategy_version_id, symbol,
+			trigger_type, action, reason, signal_kind, decision_state, intent_signature,
+			source_gate_ready, missing_count, stale_count, event_time, recorded_at,
+			trigger_summary, source_gate, source_states, signal_bar_states, position_snapshot,
+			decision_metadata, signal_intent, execution_proposal, evaluation_context
+		from strategy_decision_events
+		where ($1 = '' or live_session_id = $1)
+		order by event_time asc, recorded_at asc
+	`, liveSessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.StrategyDecisionEvent, 0)
+	for rows.Next() {
+		var item domain.StrategyDecisionEvent
+		var runtimeSessionID sql.NullString
+		var strategyVersionID sql.NullString
+		var triggerType sql.NullString
+		var signalKind sql.NullString
+		var decisionState sql.NullString
+		var intentSignature sql.NullString
+		var triggerSummaryRaw, sourceGateRaw, sourceStatesRaw, signalBarStatesRaw []byte
+		var positionSnapshotRaw, decisionMetadataRaw, signalIntentRaw, executionProposalRaw, evaluationContextRaw []byte
+		if err := rows.Scan(
+			&item.ID, &item.LiveSessionID, &runtimeSessionID, &item.AccountID, &item.StrategyID, &strategyVersionID, &item.Symbol,
+			&triggerType, &item.Action, &item.Reason, &signalKind, &decisionState, &intentSignature,
+			&item.SourceGateReady, &item.MissingCount, &item.StaleCount, &item.EventTime, &item.RecordedAt,
+			&triggerSummaryRaw, &sourceGateRaw, &sourceStatesRaw, &signalBarStatesRaw, &positionSnapshotRaw,
+			&decisionMetadataRaw, &signalIntentRaw, &executionProposalRaw, &evaluationContextRaw,
+		); err != nil {
+			return nil, err
+		}
+		item.RuntimeSessionID = runtimeSessionID.String
+		item.StrategyVersionID = strategyVersionID.String
+		item.TriggerType = triggerType.String
+		item.SignalKind = signalKind.String
+		item.DecisionState = decisionState.String
+		item.IntentSignature = intentSignature.String
+		item.TriggerSummary = unmarshalJSONMap(triggerSummaryRaw)
+		item.SourceGate = unmarshalJSONMap(sourceGateRaw)
+		item.SourceStates = unmarshalJSONMap(sourceStatesRaw)
+		item.SignalBarStates = unmarshalJSONMap(signalBarStatesRaw)
+		item.PositionSnapshot = unmarshalJSONMap(positionSnapshotRaw)
+		item.DecisionMetadata = unmarshalJSONMap(decisionMetadataRaw)
+		item.SignalIntent = unmarshalJSONMap(signalIntentRaw)
+		item.ExecutionProposal = unmarshalJSONMap(executionProposalRaw)
+		item.EvaluationContext = unmarshalJSONMap(evaluationContextRaw)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) CreateStrategyDecisionEvent(event domain.StrategyDecisionEvent) (domain.StrategyDecisionEvent, error) {
+	if event.ID == "" {
+		event.ID = fmt.Sprintf("strategy-decision-event-%d", time.Now().UTC().UnixNano())
+	}
+	if event.EventTime.IsZero() {
+		event.EventTime = time.Now().UTC()
+	}
+	if event.RecordedAt.IsZero() {
+		event.RecordedAt = time.Now().UTC()
+	}
+	_, err := s.db.Exec(`
+		insert into strategy_decision_events (
+			id, live_session_id, runtime_session_id, account_id, strategy_id, strategy_version_id, symbol,
+			trigger_type, action, reason, signal_kind, decision_state, intent_signature,
+			source_gate_ready, missing_count, stale_count, event_time, recorded_at,
+			trigger_summary, source_gate, source_states, signal_bar_states, position_snapshot,
+			decision_metadata, signal_intent, execution_proposal, evaluation_context
+		) values (
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11, $12, $13,
+			$14, $15, $16, $17, $18,
+			$19, $20, $21, $22, $23,
+			$24, $25, $26, $27
+		)
+	`,
+		event.ID, event.LiveSessionID, nullIfEmpty(event.RuntimeSessionID), event.AccountID, event.StrategyID, nullIfEmpty(event.StrategyVersionID), event.Symbol,
+		nullIfEmpty(event.TriggerType), event.Action, event.Reason, nullIfEmpty(event.SignalKind), nullIfEmpty(event.DecisionState), nullIfEmpty(event.IntentSignature),
+		event.SourceGateReady, event.MissingCount, event.StaleCount, event.EventTime, event.RecordedAt,
+		marshalJSONValue(event.TriggerSummary), marshalJSONValue(event.SourceGate), marshalJSONValue(event.SourceStates), marshalJSONValue(event.SignalBarStates), marshalJSONValue(event.PositionSnapshot),
+		marshalJSONValue(event.DecisionMetadata), marshalJSONValue(event.SignalIntent), marshalJSONValue(event.ExecutionProposal), marshalJSONValue(event.EvaluationContext),
+	)
+	return event, err
+}
+
+func (s *Store) ListOrderExecutionEvents(orderID string) ([]domain.OrderExecutionEvent, error) {
+	rows, err := s.db.Query(`
+		select
+			id, order_id, exchange_order_id, live_session_id, decision_event_id, runtime_session_id, account_id,
+			strategy_version_id, symbol, side, order_type, event_type, status,
+			execution_strategy, execution_decision, execution_mode,
+			quantity, price, expected_price, price_drift_bps, raw_quantity, normalized_quantity,
+			raw_price_reference, normalized_price, spread_bps, book_imbalance,
+			submit_latency_ms, sync_latency_ms, fill_latency_ms, event_time, recorded_at,
+			fallback, post_only, reduce_only, failed, error,
+			runtime_preflight, dispatch_summary, adapter_submission, adapter_sync, normalization, symbol_rules, metadata
+		from order_execution_events
+		where ($1 = '' or order_id = $1)
+		order by event_time asc, recorded_at asc
+	`, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.OrderExecutionEvent, 0)
+	for rows.Next() {
+		var item domain.OrderExecutionEvent
+		var exchangeOrderID, liveSessionID, decisionEventID, runtimeSessionID, strategyVersionID sql.NullString
+		var executionStrategy, executionDecision, executionMode, errText sql.NullString
+		var runtimePreflightRaw, dispatchSummaryRaw, adapterSubmissionRaw, adapterSyncRaw, normalizationRaw, symbolRulesRaw, metadataRaw []byte
+		if err := rows.Scan(
+			&item.ID, &item.OrderID, &exchangeOrderID, &liveSessionID, &decisionEventID, &runtimeSessionID, &item.AccountID,
+			&strategyVersionID, &item.Symbol, &item.Side, &item.OrderType, &item.EventType, &item.Status,
+			&executionStrategy, &executionDecision, &executionMode,
+			&item.Quantity, &item.Price, &item.ExpectedPrice, &item.PriceDriftBps, &item.RawQuantity, &item.NormalizedQty,
+			&item.RawPriceReference, &item.NormalizedPrice, &item.SpreadBps, &item.BookImbalance,
+			&item.SubmitLatencyMs, &item.SyncLatencyMs, &item.FillLatencyMs, &item.EventTime, &item.RecordedAt,
+			&item.Fallback, &item.PostOnly, &item.ReduceOnly, &item.Failed, &errText,
+			&runtimePreflightRaw, &dispatchSummaryRaw, &adapterSubmissionRaw, &adapterSyncRaw, &normalizationRaw, &symbolRulesRaw, &metadataRaw,
+		); err != nil {
+			return nil, err
+		}
+		item.ExchangeOrderID = exchangeOrderID.String
+		item.LiveSessionID = liveSessionID.String
+		item.DecisionEventID = decisionEventID.String
+		item.RuntimeSessionID = runtimeSessionID.String
+		item.StrategyVersionID = strategyVersionID.String
+		item.ExecutionStrategy = executionStrategy.String
+		item.ExecutionDecision = executionDecision.String
+		item.ExecutionMode = executionMode.String
+		item.Error = errText.String
+		item.RuntimePreflight = unmarshalJSONMap(runtimePreflightRaw)
+		item.DispatchSummary = unmarshalJSONMap(dispatchSummaryRaw)
+		item.AdapterSubmission = unmarshalJSONMap(adapterSubmissionRaw)
+		item.AdapterSync = unmarshalJSONMap(adapterSyncRaw)
+		item.Normalization = unmarshalJSONMap(normalizationRaw)
+		item.SymbolRules = unmarshalJSONMap(symbolRulesRaw)
+		item.Metadata = unmarshalJSONMap(metadataRaw)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) CreateOrderExecutionEvent(event domain.OrderExecutionEvent) (domain.OrderExecutionEvent, error) {
+	if event.ID == "" {
+		event.ID = fmt.Sprintf("order-execution-event-%d", time.Now().UTC().UnixNano())
+	}
+	if event.EventTime.IsZero() {
+		event.EventTime = time.Now().UTC()
+	}
+	if event.RecordedAt.IsZero() {
+		event.RecordedAt = time.Now().UTC()
+	}
+	_, err := s.db.Exec(`
+		insert into order_execution_events (
+			id, order_id, exchange_order_id, live_session_id, decision_event_id, runtime_session_id, account_id,
+			strategy_version_id, symbol, side, order_type, event_type, status,
+			execution_strategy, execution_decision, execution_mode,
+			quantity, price, expected_price, price_drift_bps, raw_quantity, normalized_quantity,
+			raw_price_reference, normalized_price, spread_bps, book_imbalance,
+			submit_latency_ms, sync_latency_ms, fill_latency_ms, event_time, recorded_at,
+			fallback, post_only, reduce_only, failed, error,
+			runtime_preflight, dispatch_summary, adapter_submission, adapter_sync, normalization, symbol_rules, metadata
+		) values (
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11, $12, $13,
+			$14, $15, $16,
+			$17, $18, $19, $20, $21, $22,
+			$23, $24, $25, $26,
+			$27, $28, $29, $30, $31,
+			$32, $33, $34, $35, $36,
+			$37, $38, $39, $40, $41, $42, $43
+		)
+	`,
+		event.ID, event.OrderID, nullIfEmpty(event.ExchangeOrderID), nullIfEmpty(event.LiveSessionID), nullIfEmpty(event.DecisionEventID), nullIfEmpty(event.RuntimeSessionID), event.AccountID,
+		nullIfEmpty(event.StrategyVersionID), event.Symbol, event.Side, event.OrderType, event.EventType, event.Status,
+		nullIfEmpty(event.ExecutionStrategy), nullIfEmpty(event.ExecutionDecision), nullIfEmpty(event.ExecutionMode),
+		event.Quantity, event.Price, event.ExpectedPrice, event.PriceDriftBps, event.RawQuantity, event.NormalizedQty,
+		event.RawPriceReference, event.NormalizedPrice, event.SpreadBps, event.BookImbalance,
+		event.SubmitLatencyMs, event.SyncLatencyMs, event.FillLatencyMs, event.EventTime, event.RecordedAt,
+		event.Fallback, event.PostOnly, event.ReduceOnly, event.Failed, nullIfEmpty(event.Error),
+		marshalJSONValue(event.RuntimePreflight), marshalJSONValue(event.DispatchSummary), marshalJSONValue(event.AdapterSubmission), marshalJSONValue(event.AdapterSync), marshalJSONValue(event.Normalization), marshalJSONValue(event.SymbolRules), marshalJSONValue(event.Metadata),
+	)
+	return event, err
+}
+
+func (s *Store) ListPositionAccountSnapshots(accountID string) ([]domain.PositionAccountSnapshot, error) {
+	rows, err := s.db.Query(`
+		select
+			id, live_session_id, decision_event_id, order_id, account_id, strategy_id, symbol, trigger, intent_signature,
+			position_found, position_side, position_quantity, entry_price, mark_price,
+			net_equity, available_balance, margin_balance, wallet_balance, exposure_notional, open_position_count,
+			sync_status, event_time, recorded_at,
+			position_snapshot, live_position_state, account_snapshot, account_summary, metadata
+		from position_account_snapshots
+		where ($1 = '' or account_id = $1)
+		order by event_time asc, recorded_at asc
+	`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.PositionAccountSnapshot, 0)
+	for rows.Next() {
+		var item domain.PositionAccountSnapshot
+		var decisionEventID, orderID, intentSignature, positionSide, syncStatus sql.NullString
+		var positionSnapshotRaw, livePositionStateRaw, accountSnapshotRaw, accountSummaryRaw, metadataRaw []byte
+		if err := rows.Scan(
+			&item.ID, &item.LiveSessionID, &decisionEventID, &orderID, &item.AccountID, &item.StrategyID, &item.Symbol, &item.Trigger, &intentSignature,
+			&item.PositionFound, &positionSide, &item.PositionQuantity, &item.EntryPrice, &item.MarkPrice,
+			&item.NetEquity, &item.AvailableBalance, &item.MarginBalance, &item.WalletBalance, &item.ExposureNotional, &item.OpenPositionCount,
+			&syncStatus, &item.EventTime, &item.RecordedAt,
+			&positionSnapshotRaw, &livePositionStateRaw, &accountSnapshotRaw, &accountSummaryRaw, &metadataRaw,
+		); err != nil {
+			return nil, err
+		}
+		item.DecisionEventID = decisionEventID.String
+		item.OrderID = orderID.String
+		item.IntentSignature = intentSignature.String
+		item.PositionSide = positionSide.String
+		item.SyncStatus = syncStatus.String
+		item.PositionSnapshot = unmarshalJSONMap(positionSnapshotRaw)
+		item.LivePositionState = unmarshalJSONMap(livePositionStateRaw)
+		item.AccountSnapshot = unmarshalJSONMap(accountSnapshotRaw)
+		item.AccountSummary = unmarshalJSONMap(accountSummaryRaw)
+		item.Metadata = unmarshalJSONMap(metadataRaw)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) CreatePositionAccountSnapshot(snapshot domain.PositionAccountSnapshot) (domain.PositionAccountSnapshot, error) {
+	if snapshot.ID == "" {
+		snapshot.ID = fmt.Sprintf("position-account-snapshot-%d", time.Now().UTC().UnixNano())
+	}
+	if snapshot.EventTime.IsZero() {
+		snapshot.EventTime = time.Now().UTC()
+	}
+	if snapshot.RecordedAt.IsZero() {
+		snapshot.RecordedAt = time.Now().UTC()
+	}
+	_, err := s.db.Exec(`
+		insert into position_account_snapshots (
+			id, live_session_id, decision_event_id, order_id, account_id, strategy_id, symbol, trigger, intent_signature,
+			position_found, position_side, position_quantity, entry_price, mark_price,
+			net_equity, available_balance, margin_balance, wallet_balance, exposure_notional, open_position_count,
+			sync_status, event_time, recorded_at,
+			position_snapshot, live_position_state, account_snapshot, account_summary, metadata
+		) values (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9,
+			$10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19, $20,
+			$21, $22, $23,
+			$24, $25, $26, $27, $28
+		)
+	`,
+		snapshot.ID, snapshot.LiveSessionID, nullIfEmpty(snapshot.DecisionEventID), nullIfEmpty(snapshot.OrderID), snapshot.AccountID, snapshot.StrategyID, snapshot.Symbol, snapshot.Trigger, nullIfEmpty(snapshot.IntentSignature),
+		snapshot.PositionFound, nullIfEmpty(snapshot.PositionSide), snapshot.PositionQuantity, snapshot.EntryPrice, snapshot.MarkPrice,
+		snapshot.NetEquity, snapshot.AvailableBalance, snapshot.MarginBalance, snapshot.WalletBalance, snapshot.ExposureNotional, snapshot.OpenPositionCount,
+		nullIfEmpty(snapshot.SyncStatus), snapshot.EventTime, snapshot.RecordedAt,
+		marshalJSONValue(snapshot.PositionSnapshot), marshalJSONValue(snapshot.LivePositionState), marshalJSONValue(snapshot.AccountSnapshot), marshalJSONValue(snapshot.AccountSummary), marshalJSONValue(snapshot.Metadata),
+	)
+	return snapshot, err
+}
+
 func (s *Store) ListMarketBars(exchange, symbol, timeframe string, from, to int64, limit int) ([]domain.MarketBar, error) {
 	query := `
 		select id, exchange, symbol, timeframe, open_time, close_time, open, high, low, close, volume, is_closed, source, updated_at
@@ -1085,6 +1358,28 @@ func nullIfEmpty(v string) any {
 		return nil
 	}
 	return v
+}
+
+func marshalJSONValue(value any) []byte {
+	if value == nil {
+		return []byte(`{}`)
+	}
+	raw, _ := json.Marshal(value)
+	if len(raw) == 0 || string(raw) == "null" {
+		return []byte(`{}`)
+	}
+	return raw
+}
+
+func unmarshalJSONMap(raw []byte) map[string]any {
+	if len(raw) == 0 {
+		return map[string]any{}
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return map[string]any{}
+	}
+	return out
 }
 
 func accountStatusForMode(mode string) string {
