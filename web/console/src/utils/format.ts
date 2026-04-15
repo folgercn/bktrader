@@ -77,7 +77,6 @@ export function formatFullLogTime(value: number | string | Date) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: "Asia/Shanghai",
   });
 
   const parts = formatter.formatToParts(parsed);

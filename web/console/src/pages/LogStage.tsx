@@ -44,8 +44,7 @@ export function LogStage() {
   const signalRuntimeSessions = useTradingStore(s => s.signalRuntimeSessions);
   const systemLogs = useUIStore(s => s.systemLogs);
 
-  // Snapshot logic for autoRefresh
-  const [snapshot, setSnapshot] = useState<ConsoleLogEvent[]>([]);
+
 
   const processedEvents = useMemo(() => {
     const events: ConsoleLogEvent[] = [];
@@ -122,6 +121,9 @@ export function LogStage() {
 
     return events.sort((a, b) => b.eventTime - a.eventTime);
   }, [alerts, notifications, systemLogs, liveSessions, signalRuntimeSessions]);
+
+  // Snapshot logic for autoRefresh
+  const [snapshot, setSnapshot] = useState<ConsoleLogEvent[]>(() => processedEvents);
 
   useEffect(() => {
     if (autoRefresh) {
