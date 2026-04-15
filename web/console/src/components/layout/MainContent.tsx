@@ -50,8 +50,6 @@ export function MainContent({ actions, dockContent, strategies, quickLiveAccount
           jumpToSignalRuntimeSession={actions.jumpToSignalRuntimeSession}
           runLiveNextAction={actions.runLiveNextAction}
           selectQuickLiveAccount={actions.selectQuickLiveAccount}
-          bindAccountSignalSource={actions.bindAccountSignalSource}
-          unbindAccountSignalSource={actions.unbindAccountSignalSource}
           bindStrategySignalSource={actions.bindStrategySignalSource}
           unbindStrategySignalSource={actions.unbindStrategySignalSource}
           updateRuntimePolicy={actions.updateRuntimePolicy}

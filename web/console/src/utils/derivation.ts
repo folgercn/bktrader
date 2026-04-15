@@ -1468,3 +1468,30 @@ export function technicalStatusLabel(value: unknown): string {
   }
 }
 
+export function resolveSignalBindingTimeframe(binding: SignalBinding | Record<string, unknown> | null | undefined): string {
+  const record = getRecord(binding);
+  const topLevel = String(record.timeframe ?? "").trim().toLowerCase();
+  if (topLevel) {
+    return topLevel;
+  }
+  const fallback = String(getRecord(record.options).timeframe ?? "").trim().toLowerCase();
+  if (fallback) {
+    return fallback;
+  }
+  return "";
+}
+
+export function displaySignalBindingTimeframe(binding: SignalBinding | Record<string, unknown> | null | undefined): string {
+  return resolveSignalBindingTimeframe(binding) || "--";
+}
+
+export function runtimePolicyValueLabel(value: unknown): string {
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return "--";
+  }
+  if (num === 0) {
+    return "0 秒 (disabled)";
+  }
+  return `${Math.trunc(num)} 秒`;
+}

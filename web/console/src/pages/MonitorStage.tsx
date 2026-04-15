@@ -21,7 +21,9 @@ import {
   deriveRuntimeSourceSummary,
   buildTimelineNotes,
   boolLabel,
-  liveSessionHealthTone
+  liveSessionHealthTone,
+  runtimePolicyValueLabel,
+  technicalStatusLabel
 } from '../utils/derivation';
 
 type MonitorStageProps = {
@@ -40,8 +42,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorCandles = useTradingStore(s => s.monitorCandles);
   const summaries = useTradingStore(s => s.summaries);
   const runtimePolicy = useTradingStore(s => s.runtimePolicy);
+  const monitorHealth = useTradingStore(s => s.monitorHealth);
   const accounts = useTradingStore(s => s.accounts);
-  const accountSignalBindingMap = useTradingStore(s => s.accountSignalBindingMap);
+  const strategySignalBindingMap = useTradingStore(s => s.strategySignalBindingMap);
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
 
   // Re-calculating derived state locally to keep App clean
@@ -90,7 +93,6 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     [highlightedLiveSession]
   );
   const primaryLiveAccount = monitorSession ? accounts.find((item) => item.id === monitorSession.accountId) ?? null : null;
-  const primaryLiveBindings = monitorSession ? accountSignalBindingMap[monitorSession.accountId] ?? [] : [];
   const primaryLiveRuntimeSessions = monitorSession
     ? signalRuntimeSessions.filter((item) => item.accountId === monitorSession.accountId)
     : [];
@@ -108,7 +110,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorDispatchPreview = deriveLiveDispatchPreview(
     monitorSession,
     primaryLiveAccount,
-    primaryLiveBindings,
+    monitorSession ? strategySignalBindingMap[monitorSession.strategyId] ?? [] : [],
     primaryLiveRuntimeSessions,
     highlightedLiveRuntime,
     monitorRuntimeReadiness,
@@ -116,6 +118,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   );
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const [expandedLiveSection, setExpandedLiveSection] = useState<string>("执行与分发");
+  const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
 
   const monitorSummaryItems = monitorSession ? [
     { label: "运行环境", value: `${String(monitorSession.state?.signalRuntimeStatus ?? "--")} · ${formatTime(String(monitorSession.state?.lastSignalRuntimeEventAt ?? ""))}` },
@@ -358,6 +361,114 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
             )}
           </div>
         </div>
+      </section>
+
+      <section id="platform-health" className="panel panel-session">
+        <div className="panel-header">
+          <div>
+            <p className="panel-kicker">Platform Health</p>
+            <h3>平台健康总览</h3>
+          </div>
+          <div className="range-box">
+            <span>{technicalStatusLabel(monitorHealth?.status ?? "--")}</span>
+            <span>{formatTime(String(monitorHealth?.generatedAt ?? ""))}</span>
+          </div>
+        </div>
+        {monitorHealth ? (
+          <>
+            <div className="detail-grid detail-grid-compact">
+              <div className="detail-item">
+                <span>平台状态</span>
+                <strong>{technicalStatusLabel(monitorHealth.status)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>告警总数</span>
+                <strong>{String(monitorHealth.alertCounts.total ?? 0)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Critical / Warning</span>
+                <strong>{String(monitorHealth.alertCounts.critical ?? 0)} / {String(monitorHealth.alertCounts.warning ?? 0)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>运行时静默阈值</span>
+                <strong>{runtimePolicyValueLabel(platformRuntimePolicy?.runtimeQuietSeconds)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>策略评估静默阈值</span>
+                <strong>{runtimePolicyValueLabel(platformRuntimePolicy?.strategyEvaluationQuietSeconds)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>账户同步阈值</span>
+                <strong>{runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds)}</strong>
+              </div>
+            </div>
+            <div className="live-grid mt-4">
+              <div className="backtest-list">
+                <h4>Live Accounts</h4>
+                <SimpleTable
+                  columns={["账户", "状态", "同步年龄", "是否 stale", "运行时", "运行中实盘"]}
+                  rows={monitorHealth.liveAccounts.map((item) => [
+                    item.name,
+                    technicalStatusLabel(item.status),
+                    `${String(item.syncAgeSeconds ?? 0)}s`,
+                    item.syncStale ? "是" : "否",
+                    String(item.runtimeSessionCount ?? 0),
+                    String(item.runningLiveSessionCount ?? 0),
+                  ])}
+                  emptyMessage="暂无 live account 健康数据"
+                />
+              </div>
+              <div className="backtest-list">
+                <h4>Runtime Sessions</h4>
+                <SimpleTable
+                  columns={["策略", "状态", "健康", "静默", "最后事件", "最后心跳"]}
+                  rows={monitorHealth.runtimeSessions.map((item) => [
+                    item.strategyName || shrink(item.strategyId),
+                    technicalStatusLabel(item.status),
+                    technicalStatusLabel(item.health),
+                    item.quiet ? "是" : "否",
+                    formatTime(String(item.lastEventAt ?? "")),
+                    formatTime(String(item.lastHeartbeatAt ?? "")),
+                  ])}
+                  emptyMessage="暂无 runtime 健康数据"
+                />
+              </div>
+            </div>
+            <div className="live-grid mt-4">
+              <div className="backtest-list">
+                <h4>Live Sessions</h4>
+                <SimpleTable
+                  columns={["策略", "状态", "评估静默", "最后评估", "最后运行时事件", "同步状态"]}
+                  rows={monitorHealth.liveSessions.map((item) => [
+                    item.strategyName || shrink(item.strategyId),
+                    technicalStatusLabel(item.status),
+                    item.evaluationQuiet ? "是" : "否",
+                    formatTime(String(item.lastStrategyEvaluationAt ?? "")),
+                    formatTime(String(item.lastSignalRuntimeEventAt ?? "")),
+                    String(item.lastSyncedOrderStatus ?? "--"),
+                  ])}
+                  emptyMessage="暂无 live session 健康数据"
+                />
+              </div>
+              <div className="backtest-list">
+                <h4>健康备注</h4>
+                <div className="backtest-notes">
+                  <div className="note-item">
+                    `/api/v1/monitor/health` 现在作为平台级主摘要，alerts 列表继续保留做事件明细，不再和这里重复堆相同字段。
+                  </div>
+                  <div className="note-item">
+                    `syncStale` 和 `evaluationQuiet` 都已经直接展示，方便区分是账户同步老化还是策略评估静默。
+                  </div>
+                  <div className="note-item">
+                    阈值显示支持 `0 秒 (disabled)`，可以直观看出哪些健康门槛已被显式关闭。
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="empty-state empty-state-compact">平台健康快照尚未加载</div>
+        )}
       </section>
 
       <section id="runtime-records" className="panel panel-session">

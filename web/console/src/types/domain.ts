@@ -208,9 +208,74 @@ export type SignalBinding = {
   role: string;
   streamType: string;
   symbol: string;
+  timeframe?: string;
   status: string;
   options?: Record<string, unknown>;
   createdAt: string;
+};
+
+export type PlatformHealthAlertCounts = {
+  total: number;
+  critical: number;
+  warning: number;
+  info: number;
+};
+
+export type PlatformHealthAccountSnapshot = {
+  id: string;
+  name: string;
+  exchange: string;
+  status: string;
+  lastLiveSyncAt?: string;
+  syncAgeSeconds: number;
+  syncStale: boolean;
+  runtimeSessionCount: number;
+  runningLiveSessionCount: number;
+  accountSync?: Record<string, unknown>;
+};
+
+export type PlatformHealthRuntimeSessionSnapshot = {
+  id: string;
+  accountId: string;
+  strategyId: string;
+  strategyName?: string;
+  status: string;
+  transport: string;
+  health: string;
+  lastEventAt?: string;
+  lastHeartbeatAt?: string;
+  quiet: boolean;
+  tradeTick?: Record<string, unknown>;
+  orderBook?: Record<string, unknown>;
+};
+
+export type PlatformHealthStrategySessionSnapshot = {
+  id: string;
+  mode: string;
+  accountId: string;
+  strategyId: string;
+  strategyName?: string;
+  status: string;
+  runtimeSessionId?: string;
+  lastSignalRuntimeEventAt?: string;
+  lastStrategyEvaluationAt?: string;
+  lastStrategyEvaluationStatus?: string;
+  lastSyncedOrderStatus?: string;
+  evaluationQuiet: boolean;
+  strategyIngress?: Record<string, unknown>;
+  execution?: Record<string, unknown>;
+  sourceGate?: Record<string, unknown>;
+};
+
+export type PlatformHealthSnapshot = {
+  generatedAt: string;
+  status: string;
+  alertCounts: PlatformHealthAlertCounts;
+  runtimePolicy: RuntimePolicy;
+  liveAccounts: PlatformHealthAccountSnapshot[];
+  runtimeSessions: PlatformHealthRuntimeSessionSnapshot[];
+  liveSessions: PlatformHealthStrategySessionSnapshot[];
+  paperSessions: PlatformHealthStrategySessionSnapshot[];
 };
 
 export type SignalRuntimeAdapter = {
@@ -355,6 +420,8 @@ export type RuntimePolicy = {
   orderBookFreshnessSeconds: number;
   signalBarFreshnessSeconds: number;
   runtimeQuietSeconds: number;
+  strategyEvaluationQuietSeconds: number;
+  liveAccountSyncFreshnessSeconds: number;
   paperStartReadinessTimeoutSeconds: number;
 };
 
@@ -532,6 +599,8 @@ export interface RuntimePolicyForm {
   orderBookFreshnessSeconds: string;
   signalBarFreshnessSeconds: string;
   runtimeQuietSeconds: string;
+  strategyEvaluationQuietSeconds: string;
+  liveAccountSyncFreshnessSeconds: string;
   paperStartReadinessTimeoutSeconds: string;
 }
 
@@ -541,4 +610,3 @@ export interface TelegramForm {
   chatId: string;
   sendLevels: string;
 }
-

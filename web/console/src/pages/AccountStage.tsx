@@ -35,7 +35,9 @@ import {
   boolLabel,
   liveSessionHealthTone,
   getNumber,
-  technicalStatusLabel
+  technicalStatusLabel,
+  displaySignalBindingTimeframe,
+  runtimePolicyValueLabel
 } from '../utils/derivation';
 import { AccountRecord, LiveSession, SignalRuntimeSession, LiveNextAction, ActiveSettingsModal } from '../types/domain';
 
@@ -55,8 +57,6 @@ interface AccountStageProps {
   jumpToSignalRuntimeSession: (id: string) => void;
   runLiveNextAction: (account: AccountRecord, nextAction: LiveNextAction, runtime: SignalRuntimeSession | null) => void;
   selectQuickLiveAccount: (id: string) => void;
-  bindAccountSignalSource: () => void;
-  unbindAccountSignalSource: (accountId: string, bindingId: string) => void;
   bindStrategySignalSource: () => void;
   unbindStrategySignalSource: (strategyId: string, bindingId: string) => void;
   updateRuntimePolicy: () => void;
@@ -104,8 +104,6 @@ export function AccountStage({
   jumpToSignalRuntimeSession,
   runLiveNextAction,
   selectQuickLiveAccount,
-  bindAccountSignalSource,
-  unbindAccountSignalSource,
   bindStrategySignalSource,
   unbindStrategySignalSource,
   updateRuntimePolicy,
@@ -137,16 +135,14 @@ export function AccountStage({
   const liveSessionCreateAction = useUIStore(s => s.liveSessionCreateAction);
   const liveSessionLaunchAction = useUIStore(s => s.liveSessionLaunchAction);
   const signalRuntimeSessions = useTradingStore(s => s.signalRuntimeSessions);
-  const accountSignalBindingMap = useTradingStore(s => s.accountSignalBindingMap);
   const runtimePolicy = useTradingStore(s => s.runtimePolicy);
   const signalCatalog = useTradingStore(s => s.signalCatalog);
-  const accountSignalForm = useUIStore(s => s.accountSignalForm);
-  const setAccountSignalForm = useUIStore(s => s.setAccountSignalForm);
+  const strategySignalBindingMap = useTradingStore(s => s.strategySignalBindingMap);
   const strategySignalForm = useUIStore(s => s.strategySignalForm);
   const setStrategySignalForm = useUIStore(s => s.setStrategySignalForm);
   const signalSourceTypes = useTradingStore(s => s.signalSourceTypes);
-  const accountSignalBindings = useTradingStore(s => s.accountSignalBindings);
   const strategySignalBindings = useTradingStore(s => s.strategySignalBindings);
+  const monitorHealth = useTradingStore(s => s.monitorHealth);
   const runtimePolicyForm = useUIStore(s => s.runtimePolicyForm);
   const setRuntimePolicyForm = useUIStore(s => s.setRuntimePolicyForm);
   const runtimePolicyAction = useUIStore(s => s.runtimePolicyAction);
@@ -172,7 +168,7 @@ export function AccountStage({
   const primaryLiveSession = highlightedLiveSession?.session ?? null;
   const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
   const primaryLiveAccount = primaryLiveSession ? liveAccounts.find(a => a.id === primaryLiveSession.accountId) || null : null;
-  const primaryLiveBindings = primaryLiveSession ? accountSignalBindingMap[primaryLiveSession.accountId] || [] : [];
+  const primaryStrategyBindings = primaryLiveSession ? strategySignalBindingMap[primaryLiveSession.strategyId] ?? [] : [];
   const primaryLiveRuntimeSessions = primaryLiveSession ? signalRuntimeSessions.filter(s => s.accountId === primaryLiveSession.accountId) : [];
   const primaryLiveRuntime =
     primaryLiveSession
@@ -196,7 +192,7 @@ export function AccountStage({
   const primaryLiveDispatchPreview = deriveLiveDispatchPreview(
     primaryLiveSession,
     primaryLiveAccount,
-    primaryLiveBindings,
+    primaryStrategyBindings,
     primaryLiveRuntimeSessions,
     primaryLiveRuntime,
     primaryLiveSessionRuntimeReadiness,
@@ -225,10 +221,11 @@ export function AccountStage({
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
 
   const hasConfiguredAccount = liveAccounts.some((account) => account.status === "CONFIGURED" || account.status === "READY");
-  const hasSignalBinding = liveAccounts.some((account) => (accountSignalBindingMap[account.id] ?? []).length > 0);
+  const hasSignalBinding = strategySignalBindings.length > 0;
   const hasRunningRuntime = signalRuntimeSessions.some((session) => session.status === "RUNNING");
   const hasLiveSession = validLiveSessions.length > 0;
   const hasRunningLiveSession = validLiveSessions.some((session) => session.status === "RUNNING");
+  const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
 
   const onboardingSteps = [
     {
@@ -240,7 +237,7 @@ export function AccountStage({
     {
       key: "signal",
       title: "接通信号",
-      detail: hasSignalBinding ? "已绑定信号源" : "为账户或策略绑定 signal source",
+      detail: hasSignalBinding ? "已配置策略级 signal bindings" : "先配置策略级 signal bindings",
       status: !hasConfiguredAccount ? "pending" : hasSignalBinding ? "done" : "current",
     },
     {
@@ -347,12 +344,17 @@ export function AccountStage({
                 {liveAccounts.map((account) => {
                   const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
                   const syncSnapshot = getRecord(getRecord(account.metadata).liveSyncSnapshot);
-                  const bindings = accountSignalBindingMap[account.id] ?? [];
                   const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
                   const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
                   const activeRuntimeState = getRecord(activeRuntime?.state);
                   const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
                   const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
+                  const strategyBindings =
+                    (activeRuntime?.strategyId ? strategySignalBindingMap[activeRuntime.strategyId] : undefined) ??
+                    strategySignalBindingMap[
+                      validLiveSessions.find((item) => item.accountId === account.id)?.strategyId ?? ""
+                    ] ??
+                    [];
                   const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(
                     getRecord(activeRuntimeState.sourceStates),
                     runtimePolicy
@@ -361,8 +363,8 @@ export function AccountStage({
                   const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
                   const activeRuntimeTimeline = getList(activeRuntimeState.timeline);
                   const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
-                    requireTick: bindings.some((item) => item.streamType === "trade_tick"),
-                    requireOrderBook: bindings.some((item) => item.streamType === "order_book"),
+                    requireTick: strategyBindings.some((item) => item.streamType === "trade_tick"),
+                    requireOrderBook: strategyBindings.some((item) => item.streamType === "order_book"),
                   });
                   const hasRunningRuntime = runtimeSessionsForAccount.some((item) => item.status === "RUNNING");
                   const hasRunningLiveSession = validLiveSessions.some(
@@ -371,7 +373,7 @@ export function AccountStage({
                   const isLiveFlowRunning = hasRunningRuntime || hasRunningLiveSession;
                   const livePreflight = deriveLivePreflightSummary(
                     account,
-                    bindings,
+                    strategyBindings,
                     runtimeSessionsForAccount,
                     activeRuntime,
                     activeRuntimeReadiness
@@ -495,7 +497,7 @@ export function AccountStage({
                             </div>
                             <div className="detail-item detail-item-compact">
                               <span>来源与实例</span>
-                              <strong>{String(syncSnapshot.source ?? "--")} · {bindings.length} 绑定 · {runtimeSessionsForAccount.length} 实例</strong>
+                              <strong>{String(syncSnapshot.source ?? "--")} · {strategyBindings.length} 策略绑定 · {runtimeSessionsForAccount.length} 实例</strong>
                             </div>
                             <div className="detail-item detail-item-compact">
                               <span>指标</span>
@@ -565,55 +567,7 @@ export function AccountStage({
 
         <div className="live-grid">
           <div className="backtest-form session-form">
-            <h4>2.1 绑定账户信号源</h4>
-            <div className="form-grid">
-              <label className="form-field">
-                <span>账户</span>
-                <select value={accountSignalForm.accountId} onChange={(event) => setAccountSignalForm((current) => ({ ...current, accountId: event.target.value }))}>
-                  {liveAccounts.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({technicalStatusLabel(item.mode)})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>信号源</span>
-                <select value={accountSignalForm.sourceKey} onChange={(event) => setAccountSignalForm((current) => ({ ...current, sourceKey: event.target.value }))}>
-                  {(signalCatalog?.sources ?? []).map((source) => (
-                    <option key={source.key} value={source.key}>
-                      {source.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>角色</span>
-                <select value={accountSignalForm.role} onChange={(event) => setAccountSignalForm((current) => ({ ...current, role: event.target.value }))}>
-                  <option value="signal">信号 (Signal)</option>
-                  <option value="trigger">触发器 (Trigger)</option>
-                  <option value="feature">特征项 (Feature)</option>
-                </select>
-              </label>
-              <label className="form-field">
-                <span>信号周期</span>
-                <select value={accountSignalForm.timeframe} onChange={(event) => setAccountSignalForm((current) => ({ ...current, timeframe: event.target.value }))}>
-                  <option value="4h">4h</option>
-                  <option value="1d">1d</option>
-                </select>
-              </label>
-              <label className="form-field">
-                <span>交易对 (Symbol)</span>
-                <input value={accountSignalForm.symbol} onChange={(event) => setAccountSignalForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
-              </label>
-            </div>
-            <div className="backtest-actions">
-              <ActionButton label={signalBindingAction === "account" ? "绑定中..." : "执行账户绑定"} disabled={signalBindingAction !== null || !accountSignalForm.accountId} onClick={bindAccountSignalSource} />
-            </div>
-          </div>
-
-          <div className="backtest-form session-form">
-            <h4>2.2 绑定策略信号源</h4>
+            <h4>2.1 绑定策略信号源</h4>
             <div className="form-grid">
               <label className="form-field">
                 <span>绑定策略</span>
@@ -659,10 +613,35 @@ export function AccountStage({
               <ActionButton label={signalBindingAction === "strategy" ? "绑定中..." : "执行策略绑定"} disabled={signalBindingAction !== null || !strategySignalForm.strategyId} onClick={bindStrategySignalSource} />
             </div>
           </div>
+
+          <div className="backtest-list">
+            <h4>当前信号绑定结果</h4>
+            <div className="backtest-breakdown">
+              <h5>策略级别</h5>
+              <SimpleTable
+                columns={["信号源", "角色", "代码 (Symbol)", "周期", "交易所", "状态", "操作"]}
+                rows={strategySignalBindings.map((item) => [
+                  item.sourceName,
+                  item.role,
+                  item.symbol || "--",
+                  displaySignalBindingTimeframe(item),
+                  item.exchange,
+                  technicalStatusLabel(item.status),
+                  <ActionButton
+                    key={item.id}
+                    label="Unbind"
+                    variant="ghost"
+                    onClick={() => unbindStrategySignalSource(item.strategyId || "", item.id)}
+                  />
+                ])}
+                emptyMessage="暂无策略绑定信息"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="live-grid">
-          <div className="backtest-list">
+          <div className="backtest-list live-grid-span-2">
             <h4>信号源目录与说明</h4>
             {signalCatalog?.sources?.length ? (
               <SimpleTable
@@ -693,55 +672,11 @@ export function AccountStage({
               ))}
             </div>
           </div>
-
-          <div className="backtest-list">
-            <h4>当前信号绑定结果</h4>
-            <div className="backtest-breakdown">
-              <h5>账户级别</h5>
-              <SimpleTable
-                columns={["信号源", "角色", "代码 (Symbol)", "交易所", "状态", "操作"]}
-                rows={accountSignalBindings.map((item) => [
-                  item.sourceName,
-                  item.role,
-                  item.symbol || "--",
-                  item.exchange,
-                  technicalStatusLabel(item.status),
-                  <ActionButton
-                    key={item.id}
-                    label="Unbind"
-                    variant="ghost"
-                    onClick={() => unbindAccountSignalSource(item.accountId || "", item.id)}
-                  />
-                ])}
-                emptyMessage="暂无账户绑定信息"
-              />
-            </div>
-            <div className="backtest-breakdown">
-              <h5>策略级别</h5>
-              <SimpleTable
-                columns={["信号源", "角色", "代码 (Symbol)", "交易所", "状态", "操作"]}
-                rows={strategySignalBindings.map((item) => [
-                  item.sourceName,
-                  item.role,
-                  item.symbol || "--",
-                  item.exchange,
-                  technicalStatusLabel(item.status),
-                  <ActionButton
-                    key={item.id}
-                    label="Unbind"
-                    variant="ghost"
-                    onClick={() => unbindStrategySignalSource(item.strategyId || "", item.id)}
-                  />
-                ])}
-                emptyMessage="暂无策略绑定信息"
-              />
-            </div>
-          </div>
         </div>
 
         <div className="live-grid">
           <div className="backtest-form session-form">
-            <h4>2.3 运行时策略</h4>
+            <h4>2.2 运行时策略</h4>
             <div className="form-grid">
               <label className="form-field">
                 <span>成交价格新鲜度 (秒)</span>
@@ -780,6 +715,30 @@ export function AccountStage({
                 />
               </label>
               <label className="form-field">
+                <span>策略评估静默期 (秒)</span>
+                <input
+                  value={runtimePolicyForm.strategyEvaluationQuietSeconds}
+                  onChange={(event) =>
+                    setRuntimePolicyForm((current) => ({
+                      ...current,
+                      strategyEvaluationQuietSeconds: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="form-field">
+                <span>账户同步新鲜度 (秒)</span>
+                <input
+                  value={runtimePolicyForm.liveAccountSyncFreshnessSeconds}
+                  onChange={(event) =>
+                    setRuntimePolicyForm((current) => ({
+                      ...current,
+                      liveAccountSyncFreshnessSeconds: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="form-field">
                 <span>模拟盘启动超时 (秒)</span>
                 <input
                   value={runtimePolicyForm.paperStartReadinessTimeoutSeconds}
@@ -801,17 +760,23 @@ export function AccountStage({
             </div>
             <div className="backtest-notes">
               <div className="note-item">
-                活跃策略: 成交价格 {runtimePolicy?.tradeTickFreshnessSeconds ?? "--"}秒 · 盘口 {runtimePolicy?.orderBookFreshnessSeconds ?? "--"}秒 ·
-                信号 K 线 {runtimePolicy?.signalBarFreshnessSeconds ?? "--"}秒
+                活跃策略: 成交价格 {runtimePolicyValueLabel(platformRuntimePolicy?.tradeTickFreshnessSeconds)} · 盘口 {runtimePolicyValueLabel(platformRuntimePolicy?.orderBookFreshnessSeconds)} ·
+                信号 K 线 {runtimePolicyValueLabel(platformRuntimePolicy?.signalBarFreshnessSeconds)}
               </div>
               <div className="note-item">
-                静默期 {runtimePolicy?.runtimeQuietSeconds ?? "--"}秒 · 模拟盘预检 {runtimePolicy?.paperStartReadinessTimeoutSeconds ?? "--"}秒
+                运行时静默 {runtimePolicyValueLabel(platformRuntimePolicy?.runtimeQuietSeconds)} · 策略评估静默 {runtimePolicyValueLabel(platformRuntimePolicy?.strategyEvaluationQuietSeconds)}
+              </div>
+              <div className="note-item">
+                账户同步新鲜度 {runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds)} · 模拟盘预检 {runtimePolicyValueLabel(platformRuntimePolicy?.paperStartReadinessTimeoutSeconds)}
+              </div>
+              <div className="note-item">
+                表单支持显式保存 `0`，表示关闭对应阈值，而不是丢失该字段。
               </div>
             </div>
           </div>
 
           <div className="backtest-form session-form">
-            <h4>2.4 创建信号运行时</h4>
+            <h4>2.3 创建信号运行时</h4>
             <div className="form-grid">
               <label className="form-field">
                 <span>账户</span>
@@ -860,14 +825,14 @@ export function AccountStage({
               {signalRuntimePlan?.missingBindings ? (
                 getList(signalRuntimePlan.missingBindings).map((item, index) => (
                   <div key={index} className="note-item note-item-alert note-item-alert-warning">
-                    Missing: {String(item.sourceKey)} · {String(item.role)} · {String(item.symbol)} · {String(item.timeframe)}
+                    Missing: {String(item.sourceKey)} · {String(item.role)} · {String(item.symbol)} · {displaySignalBindingTimeframe(item)}
                   </div>
                 ))
               ) : null}
               {signalRuntimePlan?.matchedBindings ? (
                 getList(signalRuntimePlan.matchedBindings).map((item, index) => (
                   <div key={index} className="note-item">
-                  Matched: {String(item.sourceName)} · {String(item.role)} · {String(item.symbol)}
+                  Matched: {String(item.sourceName ?? item.sourceKey ?? "--")} · {String(item.role)} · {String(item.symbol)} · {displaySignalBindingTimeframe(item)}
                   </div>
                 ))
               ) : null}
@@ -876,7 +841,7 @@ export function AccountStage({
         </div>
 
         <div className="backtest-list mt-8 pt-8 border-t border-white/5">
-          <h4 className="text-sm font-medium text-emerald-400 mb-4">2.5 运行时会话与结果</h4>
+          <h4 className="text-sm font-medium text-emerald-400 mb-4">2.4 运行时会话与结果</h4>
             {signalRuntimeSessions.length > 0 ? (
               <>
                 <div className="table-wrap">
