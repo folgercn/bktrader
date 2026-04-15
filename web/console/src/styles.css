@@ -236,24 +236,27 @@ a {
 .eyebrow,
 .panel-kicker {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--accent);
 }
 
 .hero h2 {
-  margin: 4px 0 6px;
-  font-size: clamp(1.2rem, 2vw, 1.8rem);
-  line-height: 1.1;
+  margin: 6px 0 8px;
+  font-size: clamp(0.98rem, 1.4vw, 1.16rem);
+  line-height: 1.3;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .hero-copy {
   margin: 0;
   max-width: 720px;
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.4;
+  color: color-mix(in srgb, var(--ink) 72%, var(--muted) 28%);
+  font-size: 0.82rem;
+  line-height: 1.55;
 }
 
 .hero-side {
@@ -262,6 +265,37 @@ a {
   gap: 10px;
   justify-content: flex-end;
   align-items: flex-start;
+}
+
+.hero-account-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: min(100%, 520px);
+}
+
+.hero-account-card {
+  width: 100%;
+  min-width: 0;
+}
+
+.hero-actions {
+  width: 100%;
+}
+
+.hero-actions .action-button {
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.hero-actions .action-button-ghost {
+  background: rgba(255, 255, 255, 0.82);
+  color: color-mix(in srgb, var(--ink) 92%, var(--muted) 8%);
 }
 
 .hero-menu {
@@ -314,10 +348,10 @@ a {
 
 .hero-user-card {
   min-width: 220px;
-  padding: 12px 14px;
-  border-radius: 18px;
+  padding: 9px 12px;
+  border-radius: 14px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.78);
   display: flex;
   gap: 12px;
   align-items: center;
@@ -326,12 +360,17 @@ a {
 
 .hero-user-card strong {
   display: block;
+  color: color-mix(in srgb, var(--ink) 64%, white 36%);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .hero-user-card p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 0.84rem;
+  margin: 3px 0 0;
+  color: var(--ink);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .hero-logout {
@@ -439,6 +478,10 @@ a {
   margin-bottom: 12px;
 }
 
+.live-grid-span-2 {
+  grid-column: 1 / -1;
+}
+
 .monitor-top-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.8fr);
@@ -469,6 +512,65 @@ a {
 .panel-header h3 {
   margin: 4px 0 0;
   font-size: 1.08rem;
+}
+
+.workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.workflow-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.workflow-card-current {
+  background: rgba(255, 251, 242, 0.9);
+  border-color: rgba(240, 180, 41, 0.32);
+}
+
+.workflow-card-done {
+  background: rgba(217, 238, 232, 0.62);
+  border-color: rgba(14, 109, 96, 0.22);
+}
+
+.workflow-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workflow-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.workflow-card h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.workflow-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .panel-header-tight {
@@ -783,6 +885,58 @@ a {
   font-size: 0.82rem;
 }
 
+.live-account-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.live-account-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.live-account-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.live-account-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.live-account-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.live-account-actions {
+  flex-wrap: wrap;
+}
+
+.live-account-detail {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(216, 207, 186, 0.8);
+}
+
+.live-account-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .inline-actions {
   display: flex;
   align-items: center;
@@ -803,6 +957,79 @@ a {
   margin-top: 16px;
   display: grid;
   gap: 14px;
+}
+
+.live-detail-layout {
+  margin-top: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+.live-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.live-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.live-section-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.live-section-card h5 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.live-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.live-section-toggle span {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.live-section-toggle strong {
+  color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.live-section-items {
+  display: grid;
+  gap: 8px;
+}
+
+.detail-item-compact strong {
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .backtest-breakdown h4,
@@ -862,16 +1089,25 @@ a {
   border-color: rgba(90, 104, 114, 0.14);
 }
 
-.status-pill {
+.status-pill,
+.action-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 20.48px;
   border-radius: 999px;
   padding: 3px 10px;
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.01em;
+  line-height: 1;
   border: 1px solid transparent;
   vertical-align: middle;
+  white-space: nowrap;
+}
+
+.status-pill {
   margin-right: 6px;
 }
 
@@ -900,16 +1136,15 @@ a {
 }
 
 .action-button {
-  border: none;
-  border-radius: 14px;
-  padding: 12px 16px;
+  appearance: none;
+  -webkit-appearance: none;
   background: linear-gradient(135deg, rgba(14, 109, 96, 0.95), rgba(7, 87, 74, 1));
   color: white;
-  font: inherit;
+  font-family: inherit;
   cursor: pointer;
-  min-width: 88px;
+  min-width: 0;
   transition: 140ms ease;
-  box-shadow: 0 10px 24px rgba(14, 109, 96, 0.18);
+  box-shadow: 0 6px 16px rgba(14, 109, 96, 0.14);
 }
 
 .action-button:hover:not(:disabled) {
@@ -1384,6 +1619,15 @@ tbody tr:last-child td {
     grid-template-columns: 1fr;
   }
 
+  .hero-account-toolbar {
+    min-width: 0;
+    align-items: flex-start;
+  }
+
+  .hero-actions {
+    justify-content: flex-start;
+  }
+
   .session-layout {
     grid-template-columns: 1fr;
   }
@@ -1397,8 +1641,16 @@ tbody tr:last-child td {
   }
 
   .detail-grid-compact,
-  .notes-compact {
+  .notes-compact,
+  .live-summary-grid,
+  .live-section-grid,
+  .live-account-detail-grid,
+  .workflow-grid {
     grid-template-columns: 1fr;
+  }
+
+  .live-account-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .form-grid {
@@ -1418,6 +1670,6 @@ tbody tr:last-child td {
   }
 
   .hero h2 {
-    font-size: 1.45rem;
+    font-size: 1rem;
   }
 }
