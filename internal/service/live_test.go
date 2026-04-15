@@ -2954,6 +2954,9 @@ func TestSyncLiveAccountNormalizesAdapterSuccessHealthState(t *testing.T) {
 	if stringValue(accountSync["lastSuccessAt"]) == "" {
 		t.Fatal("expected adapter sync success to record lastSuccessAt")
 	}
+	if got := parseFloatValue(mapValue(accountSync["today"])["syncCount"]); got != 1 {
+		t.Fatalf("expected adapter sync success to record one syncCount, got %v", got)
+	}
 	if got := stringValue(accountSync["lastSource"]); got != "live-account-adapter" && got != "test-sync-success" {
 		t.Fatalf("expected adapter sync success to set a normalized lastSource, got %s", got)
 	}
@@ -2962,9 +2965,65 @@ func TestSyncLiveAccountNormalizesAdapterSuccessHealthState(t *testing.T) {
 	}
 }
 
+func TestSyncLiveAccountDoesNotDoubleCountPersistedAdapterSuccessHealth(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	syncedAt := time.Date(2026, 4, 15, 2, 20, 0, 0, time.UTC)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key:                 "test-sync-persisted-success",
+		persistsSyncSuccess: true,
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":          "persisted-adapter",
+				"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+				"syncedAt":        syncedAt.Format(time.RFC3339),
+				"bindingMode":     stringValue(binding["connectionMode"]),
+				"executionMode":   stringValue(binding["executionMode"]),
+				"syncStatus":      "SYNCED",
+				"accountExchange": account.Exchange,
+			}
+			account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+			updateAccountSyncSuccessHealth(&account, syncedAt, time.Time{})
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-persisted-success",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	synced, err := platform.SyncLiveAccount("live-main")
+	if err != nil {
+		t.Fatalf("expected persisted adapter sync success, got %v", err)
+	}
+	accountSync := mapValue(mapValue(synced.Metadata["healthSummary"])["accountSync"])
+	if got := parseFloatValue(mapValue(accountSync["today"])["syncCount"]); got != 1 {
+		t.Fatalf("expected persisted adapter sync success to keep syncCount at one, got %v", got)
+	}
+	if got := stringValue(accountSync["lastSuccessAt"]); got != syncedAt.Format(time.RFC3339) {
+		t.Fatalf("expected persisted adapter sync success to keep lastSuccessAt, got %s", got)
+	}
+	if platform.shouldRefreshLiveAccountSync(synced, syncedAt.Add(10*time.Second)) {
+		t.Fatal("expected persisted adapter sync success to stay within freshness window")
+	}
+}
+
 type testLiveAccountSyncAdapter struct {
-	key     string
-	syncErr error
+	key                 string
+	syncErr             error
+	persistsSyncSuccess bool
+	syncSnapshotFunc    func(*Platform, domain.Account, map[string]any) (domain.Account, error)
 }
 
 func (a testLiveAccountSyncAdapter) Key() string {
@@ -2973,6 +3032,10 @@ func (a testLiveAccountSyncAdapter) Key() string {
 
 func (a testLiveAccountSyncAdapter) Describe() map[string]any {
 	return map[string]any{"key": a.key}
+}
+
+func (a testLiveAccountSyncAdapter) PersistsLiveAccountSyncSuccess() bool {
+	return a.persistsSyncSuccess
 }
 
 func (a testLiveAccountSyncAdapter) ValidateAccountConfig(map[string]any) error {
@@ -2991,9 +3054,12 @@ func (a testLiveAccountSyncAdapter) CancelOrder(domain.Account, domain.Order, ma
 	return LiveOrderSync{}, nil
 }
 
-func (a testLiveAccountSyncAdapter) SyncAccountSnapshot(_ *Platform, account domain.Account, _ map[string]any) (domain.Account, error) {
+func (a testLiveAccountSyncAdapter) SyncAccountSnapshot(platform *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
 	if a.syncErr != nil {
 		return domain.Account{}, a.syncErr
+	}
+	if a.syncSnapshotFunc != nil {
+		return a.syncSnapshotFunc(platform, account, binding)
 	}
 	return account, nil
 }

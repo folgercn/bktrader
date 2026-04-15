@@ -33,6 +33,10 @@ type LiveLaunchResult struct {
 	LiveSessionStarted    bool                        `json:"liveSessionStarted"`
 }
 
+type liveAccountSyncSuccessOwner interface {
+	PersistsLiveAccountSyncSuccess() bool
+}
+
 const (
 	liveOrderStatusVirtualInitial = "VIRTUAL_INITIAL"
 	liveOrderStatusVirtualExit    = "VIRTUAL_EXIT"
@@ -112,10 +116,12 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	var adapterSyncErr error
 	if syncCapable, ok := adapter.(LiveAccountSyncAdapter); ok {
 		if synced, syncErr := syncCapable.SyncAccountSnapshot(p, account, binding); syncErr == nil {
-			synced, syncErr = p.persistLiveAccountSyncSuccess(synced, binding, previousSuccessAt)
-			if syncErr != nil {
-				logger.Warn("persist adapter live account sync success failed", "error", syncErr)
-				return synced, syncErr
+			if healthOwner, ok := adapter.(liveAccountSyncSuccessOwner); !ok || !healthOwner.PersistsLiveAccountSyncSuccess() {
+				synced, syncErr = p.persistLiveAccountSyncSuccess(synced, binding, previousSuccessAt)
+				if syncErr != nil {
+					logger.Warn("persist adapter live account sync success failed", "error", syncErr)
+					return synced, syncErr
+				}
 			}
 			p.syncLiveSessionsForAccountSnapshot(synced)
 			logger.Info("live account synced via adapter", "exchange", synced.Exchange, "status", synced.Status)
