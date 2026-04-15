@@ -9,6 +9,13 @@ import { resolveUpdater } from './helpers';
 type SidebarTab = "monitor" | "strategy" | "account";
 type DockTab = "orders" | "positions" | "fills" | "alerts";
 
+export type SystemLogEntry = {
+  id: string;
+  level: "error" | "info";
+  message: string;
+  createdAt: string;
+};
+
 const CONSOLE_NAV_STORAGE_KEY = "bktrader-console-nav";
 const DEFAULT_SIDEBAR_TAB: SidebarTab = "monitor";
 const DEFAULT_DOCK_TAB: DockTab = "orders";
@@ -61,6 +68,8 @@ export interface useUIStoreState {
   setLoading: (valOrUpdater: boolean | ((prev: boolean) => boolean)) => void;
   error: string | null;
   setError: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
+  systemLogs: SystemLogEntry[];
+  clearSystemLogs: () => void;
   authSession: AuthSession | null;
   setAuthSession: (valOrUpdater: AuthSession | null | ((prev: AuthSession | null) => AuthSession | null)) => void;
   loginForm: LoginForm;
@@ -183,7 +192,36 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   loading: true,
   setLoading: (valOrUpdater) => set((state) => ({ loading: resolveUpdater(valOrUpdater, state.loading) })),
   error: null,
-  setError: (valOrUpdater) => set((state) => ({ error: resolveUpdater(valOrUpdater, state.error) })),
+  setError: (valOrUpdater) => set((state) => {
+    const nextError = resolveUpdater(valOrUpdater, state.error);
+    if (nextError === state.error) {
+      return { error: nextError };
+    }
+
+    const nextLogs = [...state.systemLogs];
+    if (nextError) {
+      nextLogs.unshift({
+        id: `error:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+        level: "error",
+        message: nextError,
+        createdAt: new Date().toISOString(),
+      });
+    } else if (state.error) {
+      nextLogs.unshift({
+        id: `info:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+        level: "info",
+        message: "连接已恢复正常",
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    return {
+      error: nextError,
+      systemLogs: nextLogs.slice(0, 40),
+    };
+  }),
+  systemLogs: [],
+  clearSystemLogs: () => set({ systemLogs: [] }),
   authSession: readStoredAuthSession(),
   setAuthSession: (valOrUpdater) => set((state) => ({ authSession: resolveUpdater(valOrUpdater, state.authSession) })),
   loginForm: { username: "admin", password: "" },

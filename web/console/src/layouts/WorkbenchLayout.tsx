@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Briefcase, Settings, Bell, ListOrdered, Wallet, CreditCard } from 'lucide-react';
+import { Activity, Briefcase, Settings } from 'lucide-react';
 
 export interface WorkbenchLayoutProps {
   sidebarTab: 'monitor' | 'strategy' | 'account';
@@ -70,9 +70,9 @@ export function WorkbenchLayout({
         </header>
 
         {/* Middle Area: Main Stage + Right Side Panel */}
-        <div className={`flex flex-row w-full min-h-0 relative ${sidebarTab !== 'monitor' ? 'flex-1' : ''}`}>
+        <div className="flex flex-row w-full min-h-0 relative flex-1">
           {/* Main Stage (Charts, etc.) */}
-          <main className="flex-1 relative overflow-hidden bg-zinc-950/50">
+          <main className="flex-1 min-h-0 relative overflow-hidden bg-zinc-950/50">
             {mainStageContent}
           </main>
           
@@ -84,40 +84,6 @@ export function WorkbenchLayout({
           )}
         </div>
 
-        {/* Bottom Dock (Tabs + Content) */}
-        {sidebarTab === 'monitor' && (
-          <section className="flex-1 border-t border-white/5 bg-zinc-900/60 backdrop-blur-xl flex flex-col min-h-0">
-            <div className="h-10 flex items-center px-4 border-b border-white/5 space-x-6 text-xs text-zinc-500">
-              <DockTab 
-                icon={<ListOrdered size={14} />} 
-                label="全部订单" 
-                active={dockTab === 'orders'} 
-                onClick={() => onDockTabChange('orders')} 
-              />
-              <DockTab 
-                icon={<Wallet size={14} />} 
-                label="持仓" 
-                active={dockTab === 'positions'} 
-                onClick={() => onDockTabChange('positions')} 
-              />
-              <DockTab 
-                icon={<CreditCard size={14} />} 
-                label="成交明细" 
-                active={dockTab === 'fills'} 
-                onClick={() => onDockTabChange('fills')} 
-              />
-              <DockTab 
-                icon={<Bell size={14} />} 
-                label="异常告警" 
-                active={dockTab === 'alerts'} 
-                onClick={() => onDockTabChange('alerts')} 
-              />
-            </div>
-            <div className="flex-1 overflow-y-auto p-2">
-              {dockContent}
-            </div>
-          </section>
-        )}
       </div>
     </div>
   );
@@ -138,22 +104,6 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, 
       <div className="absolute left-14 px-3 py-1.5 bg-zinc-800 text-zinc-200 text-xs rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 border border-white/10">
         {label}
       </div>
-    </button>
-  );
-}
-
-function DockTab({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) {
-  return (
-    <button 
-      className={`flex items-center space-x-1.5 h-full border-b-2 transition-colors ${
-        active 
-          ? 'border-emerald-400 text-zinc-200' 
-          : 'border-transparent hover:text-zinc-300'
-      }`}
-      onClick={onClick}
-    >
-      {icon}
-      <span>{label}</span>
     </button>
   );
 }
