@@ -67,6 +67,7 @@ jobs:
         with:
           name: ai-review
           path: pr/.ai-review/
+          retention-days: 1
 
       - name: Publish inline comments
         if: github.event_name == 'pull_request'
