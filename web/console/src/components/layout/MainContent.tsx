@@ -2,6 +2,7 @@ import React from 'react';
 import { MonitorStage } from '../../pages/MonitorStage';
 import { StrategyStage } from '../../pages/StrategyStage';
 import { AccountStage } from '../../pages/AccountStage';
+import { LogStage } from '../../pages/LogStage';
 import { useUIStore } from '../../store/useUIStore';
 
 interface MainContentProps {
@@ -57,6 +58,9 @@ export function MainContent({ actions, dockContent, strategies, quickLiveAccount
           deleteSignalRuntimeSession={(id) => actions.deleteSignalRuntimeSession(id, null)}
           runSignalRuntimeAction={actions.runSignalRuntimeAction}
         />
+      )}
+      {sidebarTab === 'log' && (
+        <LogStage />
       )}
     </div>
   );

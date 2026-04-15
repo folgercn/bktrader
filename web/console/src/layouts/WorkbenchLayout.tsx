@@ -1,9 +1,9 @@
 import React from 'react';
-import { Activity, Briefcase, Settings } from 'lucide-react';
+import { Activity, Briefcase, Settings, FileText } from 'lucide-react';
 
 export interface WorkbenchLayoutProps {
-  sidebarTab: 'monitor' | 'strategy' | 'account';
-  onSidebarTabChange: (tab: 'monitor' | 'strategy' | 'account') => void;
+  sidebarTab: 'monitor' | 'strategy' | 'account' | 'log';
+  onSidebarTabChange: (tab: 'monitor' | 'strategy' | 'account' | 'log') => void;
   dockTab: 'orders' | 'positions' | 'fills' | 'alerts';
   onDockTabChange: (tab: 'orders' | 'positions' | 'fills' | 'alerts') => void;
   
@@ -49,6 +49,12 @@ export function WorkbenchLayout({
           label="账户配置" 
           active={sidebarTab === 'account'} 
           onClick={() => onSidebarTabChange('account')} 
+        />
+        <SidebarItem 
+          icon={<FileText size={22} />} 
+          label="日志查看台" 
+          active={sidebarTab === 'log'} 
+          onClick={() => onSidebarTabChange('log')} 
         />
       </aside>
 
