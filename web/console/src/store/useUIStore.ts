@@ -6,12 +6,57 @@ import {
 import { readStoredAuthSession } from '../utils/auth';
 import { resolveUpdater } from './helpers';
 
+type SidebarTab = "monitor" | "strategy" | "account";
+type DockTab = "orders" | "positions" | "fills" | "alerts";
+
+const CONSOLE_NAV_STORAGE_KEY = "bktrader-console-nav";
+const DEFAULT_SIDEBAR_TAB: SidebarTab = "monitor";
+const DEFAULT_DOCK_TAB: DockTab = "orders";
+
+function readStoredConsoleNav(): { sidebarTab: SidebarTab; dockTab: DockTab } {
+  if (typeof window === "undefined") {
+    return { sidebarTab: DEFAULT_SIDEBAR_TAB, dockTab: DEFAULT_DOCK_TAB };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(CONSOLE_NAV_STORAGE_KEY);
+    if (!raw) {
+      return { sidebarTab: DEFAULT_SIDEBAR_TAB, dockTab: DEFAULT_DOCK_TAB };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<{ sidebarTab: SidebarTab; dockTab: DockTab }>;
+    const sidebarTab = parsed.sidebarTab === "strategy" || parsed.sidebarTab === "account" || parsed.sidebarTab === "monitor"
+      ? parsed.sidebarTab
+      : DEFAULT_SIDEBAR_TAB;
+    const dockTab = parsed.dockTab === "positions" || parsed.dockTab === "fills" || parsed.dockTab === "alerts" || parsed.dockTab === "orders"
+      ? parsed.dockTab
+      : DEFAULT_DOCK_TAB;
+
+    return { sidebarTab, dockTab };
+  } catch {
+    return { sidebarTab: DEFAULT_SIDEBAR_TAB, dockTab: DEFAULT_DOCK_TAB };
+  }
+}
+
+function writeStoredConsoleNav(partial: Partial<{ sidebarTab: SidebarTab; dockTab: DockTab }>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const current = readStoredConsoleNav();
+  window.localStorage.setItem(CONSOLE_NAV_STORAGE_KEY, JSON.stringify({
+    ...current,
+    ...partial,
+  }));
+}
+
+const initialConsoleNav = readStoredConsoleNav();
 
 export interface useUIStoreState {
-  sidebarTab: "monitor" | "strategy" | "account";
-  setSidebarTab: (val: "monitor" | "strategy" | "account") => void;
-  dockTab: "orders" | "positions" | "fills" | "alerts";
-  setDockTab: (val: "orders" | "positions" | "fills" | "alerts") => void;
+  sidebarTab: SidebarTab;
+  setSidebarTab: (val: SidebarTab) => void;
+  dockTab: DockTab;
+  setDockTab: (val: DockTab) => void;
   loading: boolean;
   setLoading: (valOrUpdater: boolean | ((prev: boolean) => boolean)) => void;
   error: string | null;
@@ -125,10 +170,16 @@ export interface useUIStoreState {
 }
 
 export const useUIStore = create<useUIStoreState>((set) => ({
-  sidebarTab: "monitor",
-  setSidebarTab: (val) => set({ sidebarTab: val }),
-  dockTab: "orders",
-  setDockTab: (val) => set({ dockTab: val }),
+  sidebarTab: initialConsoleNav.sidebarTab,
+  setSidebarTab: (val) => {
+    writeStoredConsoleNav({ sidebarTab: val });
+    set({ sidebarTab: val });
+  },
+  dockTab: initialConsoleNav.dockTab,
+  setDockTab: (val) => {
+    writeStoredConsoleNav({ dockTab: val });
+    set({ dockTab: val });
+  },
   loading: true,
   setLoading: (valOrUpdater) => set((state) => ({ loading: resolveUpdater(valOrUpdater, state.loading) })),
   error: null,
