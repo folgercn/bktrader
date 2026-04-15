@@ -252,6 +252,8 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		}
 	}
 
+	ready := len(subscriptions) > 0 && len(missing) == 0 && triggerReady
+
 	return map[string]any{
 		"accountId":            accountID,
 		"strategyId":           strategyID,
@@ -262,7 +264,7 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		"missingBindings":      missing,
 		"extraAccountBindings": []map[string]any{},
 		"subscriptions":        subscriptions,
-		"ready":                len(missing) == 0 && triggerReady,
+		"ready":                ready,
 		"notes": []string{
 			"策略绑定直接定义 runtime 所需输入源，账户级信号绑定仅保留兼容接口，不再参与订阅规划。",
 			"missingBindings 列出当前不可用的策略绑定；paper/live 会据此阻断需要实时信号的会话启动。",

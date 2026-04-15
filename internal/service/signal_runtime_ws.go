@@ -311,10 +311,7 @@ func enrichSignalRuntimeSummary(session domain.SignalRuntimeSession, summary map
 	event := strings.ToLower(strings.TrimSpace(stringValue(out["event"])))
 	streamType := inferStreamTypeFromEvent(event)
 	for _, subscription := range subscriptions {
-		if NormalizeSymbol(stringValue(subscription["symbol"])) != symbol {
-			continue
-		}
-		if streamType != "" && strings.TrimSpace(stringValue(subscription["streamType"])) != streamType {
+		if !signalRuntimeSubscriptionMatchesSummary(subscription, out, symbol, streamType) {
 			continue
 		}
 		attachSubscriptionContext(out, subscription)
@@ -323,16 +320,32 @@ func enrichSignalRuntimeSummary(session domain.SignalRuntimeSession, summary map
 	return out
 }
 
+func signalRuntimeSubscriptionMatchesSummary(subscription, summary map[string]any, symbol, streamType string) bool {
+	if NormalizeSymbol(stringValue(subscription["symbol"])) != symbol {
+		return false
+	}
+	if streamType != "" && strings.TrimSpace(stringValue(subscription["streamType"])) != streamType {
+		return false
+	}
+	if !strings.EqualFold(streamType, "signal_bar") {
+		return true
+	}
+	eventTimeframe := normalizeSignalBarInterval(strings.TrimSpace(stringValue(summary["timeframe"])))
+	if eventTimeframe == "" {
+		return true
+	}
+	subscriptionTimeframe := signalBindingTimeframe(stringValue(subscription["sourceKey"]), metadataValue(subscription["options"]))
+	return strings.EqualFold(subscriptionTimeframe, eventTimeframe)
+}
+
 func attachSubscriptionContext(summary map[string]any, subscription map[string]any) {
 	summary["sourceKey"] = stringValue(subscription["sourceKey"])
 	summary["role"] = stringValue(subscription["role"])
 	summary["streamType"] = stringValue(subscription["streamType"])
 	summary["channel"] = stringValue(subscription["channel"])
 	summary["subscriptionSymbol"] = stringValue(subscription["symbol"])
-	if options := metadataValue(subscription["options"]); options != nil {
-		if timeframe := strings.TrimSpace(stringValue(options["timeframe"])); timeframe != "" {
-			summary["timeframe"] = timeframe
-		}
+	if timeframe := signalBindingTimeframe(stringValue(subscription["sourceKey"]), metadataValue(subscription["options"])); timeframe != "" {
+		summary["timeframe"] = timeframe
 	}
 }
 
@@ -354,11 +367,14 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 	if current := mapValue(existing); current != nil {
 		stateMap = cloneMetadata(current)
 	}
+	timeframe := signalBindingTimeframe(stringValue(summary["sourceKey"]), map[string]any{
+		"timeframe": stringValue(summary["timeframe"]),
+	})
 	key := signalBindingMatchKey(
 		stringValue(summary["sourceKey"]),
 		stringValue(summary["role"]),
 		firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"])),
-		map[string]any{"timeframe": stringValue(summary["timeframe"])},
+		map[string]any{"timeframe": timeframe},
 	)
 	if strings.Trim(key, "|") == "" {
 		key = "unknown"
@@ -368,7 +384,7 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 		"role":        stringValue(summary["role"]),
 		"streamType":  stringValue(summary["streamType"]),
 		"symbol":      NormalizeSymbol(firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"]))),
-		"timeframe":   strings.ToLower(strings.TrimSpace(stringValue(summary["timeframe"]))),
+		"timeframe":   timeframe,
 		"event":       stringValue(summary["event"]),
 		"lastEventAt": eventTime.UTC().Format(time.RFC3339),
 		"summary":     cloneMetadata(summary),
@@ -397,7 +413,9 @@ func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.
 	}
 
 	bar := map[string]any{
-		"timeframe": strings.ToLower(strings.TrimSpace(stringValue(summary["timeframe"]))),
+		"timeframe": signalBindingTimeframe(stringValue(summary["sourceKey"]), map[string]any{
+			"timeframe": stringValue(summary["timeframe"]),
+		}),
 		"symbol":    NormalizeSymbol(firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"]))),
 		"barStart":  stringValue(summary["barStart"]),
 		"barEnd":    stringValue(summary["barEnd"]),
