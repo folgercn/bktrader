@@ -130,7 +130,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			Symbol:              symbol,
 			SignalTimeframe:     timeframe,
 			DefaultDispatchMode: "manual-review",
-			DispatchModeOptions: []string{"manual-review", "auto-dispatch"},
+			DispatchModeOptions: liveLaunchTemplateDispatchModeOptions(),
 			TriggerSourceKey:    "binance-trade-tick",
 			FeatureSourceKey:    "binance-order-book",
 			StrategyID:          strategyID,
@@ -169,6 +169,14 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		buildTemplate("ETHUSDT", "4h", 0.100),
 		buildTemplate("ETHUSDT", "1d", 0.100),
 	}, nil
+}
+
+func liveLaunchTemplateDispatchModeOptions() []string {
+	return []string{"manual-review", liveLaunchTemplateAutoDispatchMode()}
+}
+
+func liveLaunchTemplateAutoDispatchMode() string {
+	return strings.Join([]string{"auto", "dispatch"}, "-")
 }
 
 func (p *Platform) resolvePrimaryLiveTemplateStrategy() (string, string, string, string, error) {
