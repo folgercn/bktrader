@@ -64,6 +64,32 @@ export function formatShortTime(value: Date) {
   });
 }
 
+export function formatFullLogTime(value: number | string | Date) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "--";
+  }
+
+  const formatter = new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Shanghai",
+  });
+
+  const parts = formatter.formatToParts(parsed);
+  const find = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  
+  // Format as: MM-DD HH:mm:ss
+  const dateStr = `${find("month")}-${find("day")} ${find("hour")}:${find("minute")}:${find("second")}`;
+  const ms = String(parsed.getMilliseconds()).padStart(3, "0");
+
+  return `${dateStr}.${ms}`;
+}
+
 export function shrink(value: unknown) {
   const text = String(value ?? "").trim();
   if (text === "") {
