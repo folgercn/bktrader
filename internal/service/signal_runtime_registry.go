@@ -185,18 +185,9 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		return nil, err
 	}
 
-	accountBindings, err := p.ListAccountSignalBindings(accountID)
-	if err != nil {
-		return nil, err
-	}
 	strategyBindings, err := p.ListStrategySignalBindings(strategyID)
 	if err != nil {
 		return nil, err
-	}
-
-	accountIndex := map[string]domain.AccountSignalBinding{}
-	for _, binding := range accountBindings {
-		accountIndex[signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)] = binding
 	}
 
 	required := make([]map[string]any, 0, len(strategyBindings))
@@ -205,75 +196,49 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 	subscriptions := make([]map[string]any, 0, len(strategyBindings))
 	for _, binding := range strategyBindings {
 		item := bindingToMap(binding)
-		if adapter, err := p.resolveSignalRuntimeAdapterForSource(binding.SourceKey); err == nil {
-			item["runtimeAdapterKey"] = stringValue(adapter.Describe()["key"])
-		}
-		required = append(required, item)
-
-		key := signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)
-		accountBinding, ok := accountIndex[key]
+		provider, ok := p.signalSources[normalizeSignalSourceKey(binding.SourceKey)]
 		if !ok {
+			item["status"] = "SOURCE_NOT_REGISTERED"
+			item["error"] = "signal source not registered"
+			required = append(required, item)
+			missing = append(missing, item)
+			continue
+		}
+		source := provider.Describe()
+		environment := normalizeEnvironmentFromAccountMode(account.Mode)
+		if !slices.Contains(source.Environments, environment) {
+			item["status"] = "UNSUPPORTED_ENVIRONMENT"
+			item["error"] = fmt.Sprintf("signal source %s does not support %s accounts", source.Key, account.Mode)
+			required = append(required, item)
 			missing = append(missing, item)
 			continue
 		}
 
 		runtimeAdapter, err := p.resolveSignalRuntimeAdapterForSource(binding.SourceKey)
-		matchedItem := map[string]any{
-			"strategyBinding": bindingToMap(binding),
-			"accountBinding":  bindingToMap(accountBinding),
+		if err == nil {
+			item["runtimeAdapterKey"] = stringValue(runtimeAdapter.Describe()["key"])
 		}
-		if err != nil {
-			matchedItem["status"] = "MISSING_ADAPTER"
-			matchedItem["error"] = err.Error()
-		} else {
-			matchedItem["status"] = "READY"
-			matchedItem["runtimeAdapter"] = runtimeAdapter.Describe()
-			source := p.signalSources[normalizeSignalSourceKey(binding.SourceKey)].Describe()
-			subscription := runtimeAdapter.BuildSubscription(source, accountBinding)
-			subscription["environment"] = normalizeEnvironmentFromAccountMode(account.Mode)
-			subscription["accountMode"] = account.Mode
-			matchedItem["subscription"] = subscription
-			subscriptions = append(subscriptions, subscription)
-		}
-		matched = append(matched, matchedItem)
-	}
+		required = append(required, item)
 
-	extra := make([]map[string]any, 0)
-	requiredKeys := map[string]struct{}{}
-	for _, binding := range strategyBindings {
-		requiredKeys[signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)] = struct{}{}
-	}
-	for _, binding := range accountBindings {
-		key := signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)
-		if _, ok := requiredKeys[key]; ok {
+		if err != nil {
+			item["status"] = "MISSING_ADAPTER"
+			item["error"] = err.Error()
+			missing = append(missing, item)
 			continue
 		}
-		item := bindingToMap(binding)
-		if adapter, err := p.resolveSignalRuntimeAdapterForSource(binding.SourceKey); err == nil {
-			item["runtimeAdapterKey"] = stringValue(adapter.Describe()["key"])
-		}
-		extra = append(extra, item)
-	}
 
-	if len(strategyBindings) == 0 {
-		for _, binding := range accountBindings {
-			runtimeAdapter, err := p.resolveSignalRuntimeAdapterForSource(binding.SourceKey)
-			if err != nil {
-				continue
-			}
-			source := p.signalSources[normalizeSignalSourceKey(binding.SourceKey)].Describe()
-			subscription := runtimeAdapter.BuildSubscription(source, binding)
-			subscription["environment"] = normalizeEnvironmentFromAccountMode(account.Mode)
-			subscription["accountMode"] = account.Mode
-			subscriptions = append(subscriptions, subscription)
-			matched = append(matched, map[string]any{
-				"strategyBinding": nil,
-				"accountBinding":  bindingToMap(binding),
-				"status":          "READY",
-				"runtimeAdapter":  runtimeAdapter.Describe(),
-				"subscription":    subscription,
-			})
+		matchedItem := map[string]any{
+			"strategyBinding": bindingToMap(binding),
+			"accountBinding":  nil,
 		}
+		matchedItem["status"] = "READY"
+		matchedItem["runtimeAdapter"] = runtimeAdapter.Describe()
+		subscription := runtimeAdapter.BuildSubscription(source, binding)
+		subscription["environment"] = environment
+		subscription["accountMode"] = account.Mode
+		matchedItem["subscription"] = subscription
+		subscriptions = append(subscriptions, subscription)
+		matched = append(matched, matchedItem)
 	}
 
 	triggerReady := true
@@ -281,13 +246,10 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		if binding.Role != "trigger" {
 			continue
 		}
-		if _, ok := accountIndex[signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)]; !ok {
+		if !bindingReady(binding, matched) {
 			triggerReady = false
 			break
 		}
-	}
-	if len(strategyBindings) == 0 {
-		triggerReady = len(subscriptions) > 0
 	}
 
 	return map[string]any{
@@ -298,15 +260,34 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		"requiredBindings":     required,
 		"matchedBindings":      matched,
 		"missingBindings":      missing,
-		"extraAccountBindings": extra,
+		"extraAccountBindings": []map[string]any{},
 		"subscriptions":        subscriptions,
 		"ready":                len(missing) == 0 && triggerReady,
 		"notes": []string{
-			"策略绑定定义所需输入源，账户绑定定义实际订阅的市场流。",
-			"trigger 源缺失会直接阻断 paper/live 的实时触发。",
-			"feature 源缺失不会阻断最小运行，但会让依赖盘口特征的策略不可用。",
+			"策略绑定直接定义 runtime 所需输入源，账户级信号绑定仅保留兼容接口，不再参与订阅规划。",
+			"missingBindings 列出当前不可用的策略绑定；paper/live 会据此阻断需要实时信号的会话启动。",
+			"matchedBindings 与 subscriptions 已按 sourceKey + role + symbol + timeframe 区分多 symbol / 多周期输入。",
 		},
 	}, nil
+}
+
+func bindingReady(binding domain.AccountSignalBinding, matched []map[string]any) bool {
+	key := signalBindingKey(binding)
+	for _, item := range matched {
+		strategyBinding := mapValue(item["strategyBinding"])
+		if strategyBinding == nil {
+			continue
+		}
+		if signalBindingMatchKey(
+			stringValue(strategyBinding["sourceKey"]),
+			stringValue(strategyBinding["role"]),
+			stringValue(strategyBinding["symbol"]),
+			metadataValue(strategyBinding["options"]),
+		) == key && strings.EqualFold(stringValue(item["status"]), "READY") {
+			return true
+		}
+	}
+	return false
 }
 
 func firstString(values []string) string {
@@ -314,8 +295,4 @@ func firstString(values []string) string {
 		return ""
 	}
 	return values[0]
-}
-
-func signalBindingMatchKey(sourceKey, role, symbol string) string {
-	return normalizeSignalSourceKey(sourceKey) + "|" + normalizeSignalSourceRole(role) + "|" + NormalizeSymbol(symbol)
 }

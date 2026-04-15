@@ -308,9 +308,7 @@ func (p *Platform) BindAccountSignalSource(accountID string, payload map[string]
 	bindings := make([]map[string]any, 0, len(existing)+1)
 	replaced := false
 	for _, item := range existing {
-		if normalizeSignalSourceKey(stringValue(item["sourceKey"])) == source.Key &&
-			normalizeSignalSourceRole(stringValue(item["role"])) == role &&
-			NormalizeSymbol(stringValue(item["symbol"])) == symbol {
+		if signalBindingMatches(source.Key, role, symbol, options, item) {
 			bindings = append(bindings, bindingToMap(binding))
 			replaced = true
 			continue
@@ -380,7 +378,10 @@ func (p *Platform) ListAccountSignalBindings(accountID string) ([]domain.Account
 		if cmp := strings.Compare(a.Exchange, b.Exchange); cmp != 0 {
 			return cmp
 		}
-		return strings.Compare(a.Symbol, b.Symbol)
+		if cmp := strings.Compare(a.Symbol, b.Symbol); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(signalBindingTimeframe(a.Options), signalBindingTimeframe(b.Options))
 	})
 	return items, nil
 }
@@ -441,6 +442,37 @@ func resolveStrategySignalBindings(parameters map[string]any) []map[string]any {
 	}
 }
 
+func signalBindingTimeframe(options map[string]any) string {
+	if options == nil {
+		return ""
+	}
+	return normalizeSignalBarInterval(strings.TrimSpace(stringValue(options["timeframe"])))
+}
+
+func signalBindingMatchKey(sourceKey, role, symbol string, options ...map[string]any) string {
+	key := normalizeSignalSourceKey(sourceKey) + "|" + normalizeSignalSourceRole(role) + "|" + NormalizeSymbol(symbol)
+	if len(options) > 0 {
+		if timeframe := signalBindingTimeframe(options[0]); timeframe != "" {
+			key += "|" + timeframe
+		}
+	}
+	return key
+}
+
+func signalBindingMatches(sourceKey, role, symbol string, options map[string]any, binding map[string]any) bool {
+	return signalBindingMatchKey(sourceKey, role, symbol, options) ==
+		signalBindingMatchKey(
+			stringValue(binding["sourceKey"]),
+			stringValue(binding["role"]),
+			stringValue(binding["symbol"]),
+			metadataValue(binding["options"]),
+		)
+}
+
+func signalBindingKey(binding domain.AccountSignalBinding) string {
+	return signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol, binding.Options)
+}
+
 func bindingToMap(binding domain.AccountSignalBinding) map[string]any {
 	return map[string]any{
 		"id":         binding.ID,
@@ -451,6 +483,7 @@ func bindingToMap(binding domain.AccountSignalBinding) map[string]any {
 		"role":       binding.Role,
 		"streamType": binding.StreamType,
 		"symbol":     binding.Symbol,
+		"timeframe":  signalBindingTimeframe(binding.Options),
 		"status":     binding.Status,
 		"options":    cloneMetadata(binding.Options),
 		"createdAt":  binding.CreatedAt,

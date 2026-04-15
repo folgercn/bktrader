@@ -138,9 +138,7 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 	bindings := make([]map[string]any, 0, len(existing)+1)
 	replaced := false
 	for _, item := range existing {
-		if normalizeSignalSourceKey(stringValue(item["sourceKey"])) == source.Key &&
-			normalizeSignalSourceRole(stringValue(item["role"])) == role &&
-			NormalizeSymbol(stringValue(item["symbol"])) == symbol {
+		if signalBindingMatches(source.Key, role, symbol, options, item) {
 			bindings = append(bindings, bindingToMap(binding))
 			replaced = true
 			continue
@@ -224,6 +222,18 @@ func (p *Platform) ListStrategySignalBindings(strategyID string) ([]domain.Accou
 			CreatedAt:  timeValue(binding["createdAt"]),
 		})
 	}
+	slices.SortFunc(items, func(a, b domain.AccountSignalBinding) int {
+		if cmp := strings.Compare(a.Role, b.Role); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.Exchange, b.Exchange); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.Symbol, b.Symbol); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(signalBindingTimeframe(a.Options), signalBindingTimeframe(b.Options))
+	})
 	return items, nil
 }
 

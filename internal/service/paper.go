@@ -496,9 +496,10 @@ func resolveRuntimeSourceStateEntry(sourceStates map[string]any, binding domain.
 	if sourceStates == nil {
 		return nil
 	}
-	if entry := mapValue(sourceStates[signalBindingMatchKey(binding.SourceKey, binding.Role, binding.Symbol)]); entry != nil {
+	if entry := mapValue(sourceStates[signalBindingKey(binding)]); entry != nil {
 		return entry
 	}
+	bindingTimeframe := signalBindingTimeframe(binding.Options)
 	for _, raw := range sourceStates {
 		entry := mapValue(raw)
 		if entry == nil {
@@ -512,6 +513,15 @@ func resolveRuntimeSourceStateEntry(sourceStates map[string]any, binding domain.
 		}
 		if NormalizeSymbol(stringValue(entry["symbol"])) != NormalizeSymbol(binding.Symbol) {
 			continue
+		}
+		if bindingTimeframe != "" {
+			entryTimeframe := normalizeSignalBarInterval(firstNonEmpty(
+				stringValue(entry["timeframe"]),
+				stringValue(mapValue(entry["summary"])["timeframe"]),
+			))
+			if entryTimeframe != "" && entryTimeframe != bindingTimeframe {
+				continue
+			}
 		}
 		return entry
 	}
@@ -976,15 +986,11 @@ func (p *Platform) syncPaperSessionRuntime(session domain.PaperSession) (domain.
 func (p *Platform) syncPaperSignalRuntimeState(session domain.PaperSession, parameters map[string]any, state map[string]any) (map[string]any, error) {
 	state = cloneMetadata(state)
 	executionDataSource := stringValue(parameters["executionDataSource"])
-	accountBindings, err := p.ListAccountSignalBindings(session.AccountID)
-	if err != nil {
-		return nil, err
-	}
 	strategyBindings, err := p.ListStrategySignalBindings(session.StrategyID)
 	if err != nil {
 		return nil, err
 	}
-	hasBindings := len(accountBindings) > 0 || len(strategyBindings) > 0
+	hasBindings := len(strategyBindings) > 0
 	state["signalRuntimeMode"] = "detached"
 	state["signalRuntimeRequired"] = false
 	if !hasBindings {
