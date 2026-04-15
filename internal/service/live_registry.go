@@ -249,6 +249,10 @@ func (a binanceFuturesLiveAdapter) SyncAccountSnapshot(platform *Platform, accou
 	return platform.syncLiveAccountFromBinance(account, binding)
 }
 
+func (a binanceFuturesLiveAdapter) PersistsLiveAccountSyncSuccess() bool {
+	return true
+}
+
 func (a binanceFuturesLiveAdapter) CancelOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
 	switch normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) {
 	case "rest":

@@ -32,6 +32,8 @@ type Config struct {
 	OrderBookFreshnessSeconds      int    // order book 新鲜度阈值
 	SignalBarFreshnessSeconds      int    // signal bar 新鲜度阈值
 	RuntimeQuietSeconds            int    // runtime quiet 告警阈值
+	StrategyEvaluationQuietSeconds int    // 策略触发进入评估的静默阈值
+	LiveAccountSyncFreshnessSecs   int    // live account 同步陈旧阈值
 	PaperStartReadinessTimeoutSecs int    // paper 启动前 runtime readiness 等待阈值
 	TelegramEnabled                bool   // Telegram 通知是否启用
 	TelegramBotToken               string // Telegram Bot Token
@@ -51,6 +53,8 @@ func Load() Config {
 	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", 10)
 	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", 30)
 	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", 30)
+	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", 15)
+	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", 60)
 	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", 5)
 
 	authTokenTTL := 720
@@ -84,6 +88,8 @@ func Load() Config {
 		OrderBookFreshnessSeconds:      orderBookFreshness,
 		SignalBarFreshnessSeconds:      signalBarFreshness,
 		RuntimeQuietSeconds:            runtimeQuiet,
+		StrategyEvaluationQuietSeconds: strategyEvaluationQuiet,
+		LiveAccountSyncFreshnessSecs:   liveAccountSyncFreshness,
 		PaperStartReadinessTimeoutSecs: paperReadinessTimeout,
 		TelegramEnabled:                boolFromEnv("TELEGRAM_ENABLED", false),
 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),

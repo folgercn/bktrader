@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -30,6 +31,10 @@ type LiveLaunchResult struct {
 	RuntimeSessionStarted bool                        `json:"runtimeSessionStarted"`
 	LiveSessionCreated    bool                        `json:"liveSessionCreated"`
 	LiveSessionStarted    bool                        `json:"liveSessionStarted"`
+}
+
+type liveAccountSyncSuccessOwner interface {
+	PersistsLiveAccountSyncSuccess() bool
 }
 
 const (
@@ -92,6 +97,7 @@ func (p *Platform) UpdateLiveSession(sessionID, accountID, strategyID string, ov
 func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	logger := p.logger("service.live", "account_id", accountID)
 	logger.Debug("syncing live account")
+	attemptedAt := time.Now().UTC()
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {
 		logger.Warn("load live account failed", "error", err)
@@ -100,27 +106,89 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	if !strings.EqualFold(account.Mode, "LIVE") {
 		return domain.Account{}, fmt.Errorf("account %s is not a LIVE account", accountID)
 	}
+	previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
 	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
 	if err != nil {
-		return domain.Account{}, err
+		logger.Warn("resolve live adapter for account sync failed", "error", err)
+		account = p.persistLiveAccountSyncFailure(account, attemptedAt, err)
+		return account, err
 	}
+	var adapterSyncErr error
 	if syncCapable, ok := adapter.(LiveAccountSyncAdapter); ok {
 		if synced, syncErr := syncCapable.SyncAccountSnapshot(p, account, binding); syncErr == nil {
+			if healthOwner, ok := adapter.(liveAccountSyncSuccessOwner); !ok || !healthOwner.PersistsLiveAccountSyncSuccess() {
+				synced, syncErr = p.persistLiveAccountSyncSuccess(synced, binding, previousSuccessAt)
+				if syncErr != nil {
+					logger.Warn("persist adapter live account sync success failed", "error", syncErr)
+					return synced, syncErr
+				}
+			}
 			p.syncLiveSessionsForAccountSnapshot(synced)
 			logger.Info("live account synced via adapter", "exchange", synced.Exchange, "status", synced.Status)
 			return synced, nil
 		} else {
 			logger.Warn("adapter live account sync failed, falling back to local state", "error", syncErr)
+			adapterSyncErr = syncErr
 		}
 	}
-	synced, err := p.syncLiveAccountFromLocalState(account, binding)
-	if err == nil {
+	synced, fallbackErr := p.syncLiveAccountFromLocalState(account, binding)
+	if fallbackErr == nil {
 		p.syncLiveSessionsForAccountSnapshot(synced)
 		logger.Debug("live account synced from local state", "status", synced.Status)
-	} else {
-		logger.Warn("local-state live account sync failed", "error", err)
+		return synced, nil
 	}
-	return synced, err
+	logger.Warn("local-state live account sync failed", "error", fallbackErr)
+	if adapterSyncErr != nil {
+		fallbackErr = fmt.Errorf("adapter sync failed: %v; local fallback failed: %w", adapterSyncErr, fallbackErr)
+	}
+	account = p.persistLiveAccountSyncFailure(account, attemptedAt, fallbackErr)
+	return account, fallbackErr
+}
+
+func (p *Platform) persistLiveAccountSyncFailure(account domain.Account, attemptedAt time.Time, err error) domain.Account {
+	if err == nil {
+		return account
+	}
+	updateAccountSyncFailureHealth(&account, attemptedAt, err)
+	updated, updateErr := p.store.UpdateAccount(account)
+	if updateErr != nil {
+		p.logger("service.live", "account_id", account.ID).Warn("persist live account sync failure health failed", "error", updateErr)
+		return account
+	}
+	return updated
+}
+
+func (p *Platform) persistLiveAccountSyncSuccess(account domain.Account, binding map[string]any, previousSuccessAt time.Time) (domain.Account, error) {
+	account.Metadata = cloneMetadata(account.Metadata)
+	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+	syncedAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+	if syncedAt.IsZero() {
+		syncedAt = parseOptionalRFC3339(stringValue(snapshot["syncedAt"]))
+	}
+	if syncedAt.IsZero() {
+		syncedAt = time.Now().UTC()
+	}
+
+	snapshot["source"] = firstNonEmpty(stringValue(snapshot["source"]), "live-account-adapter")
+	snapshot["adapterKey"] = firstNonEmpty(
+		normalizeLiveAdapterKey(stringValue(snapshot["adapterKey"])),
+		normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+	)
+	snapshot["syncedAt"] = syncedAt.Format(time.RFC3339)
+	snapshot["syncStatus"] = firstNonEmpty(stringValue(snapshot["syncStatus"]), "SYNCED")
+	snapshot["accountExchange"] = firstNonEmpty(stringValue(snapshot["accountExchange"]), account.Exchange)
+	snapshot["bindingMode"] = firstNonEmpty(stringValue(snapshot["bindingMode"]), stringValue(binding["connectionMode"]))
+	snapshot["executionMode"] = firstNonEmpty(
+		stringValue(snapshot["executionMode"]),
+		normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])),
+	)
+	snapshot["feeSource"] = firstNonEmpty(stringValue(snapshot["feeSource"]), "exchange")
+	snapshot["fundingSource"] = firstNonEmpty(stringValue(snapshot["fundingSource"]), "exchange")
+
+	account.Metadata["liveSyncSnapshot"] = snapshot
+	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+	updateAccountSyncSuccessHealth(&account, syncedAt, previousSuccessAt)
+	return p.store.UpdateAccount(account)
 }
 
 func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
@@ -210,6 +278,7 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 }
 
 func (p *Platform) syncLiveAccountFromLocalState(account domain.Account, binding map[string]any) (domain.Account, error) {
+	previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
 	orders, err := p.store.ListOrders()
 	if err != nil {
 		return domain.Account{}, err
@@ -273,11 +342,11 @@ func (p *Platform) syncLiveAccountFromLocalState(account domain.Account, binding
 		"syncStatus":      "SYNCED",
 		"accountExchange": account.Exchange,
 	}
-	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
-	return p.store.UpdateAccount(account)
+	return p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
 }
 
 func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding map[string]any) (domain.Account, error) {
+	previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
 	resolved, err := resolveBinanceRESTCredentials(binding)
 	if err != nil {
 		return domain.Account{}, err
@@ -386,11 +455,12 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 			"updateTime":    parseBinanceMillisToRFC3339(item["updateTime"]),
 		})
 	}
+	syncedAt := time.Now().UTC()
 	account.Metadata = cloneMetadata(account.Metadata)
 	account.Metadata["liveSyncSnapshot"] = map[string]any{
 		"source":                "binance-rest-account-v3",
 		"adapterKey":            normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
-		"syncedAt":              time.Now().UTC().Format(time.RFC3339),
+		"syncedAt":              syncedAt.Format(time.RFC3339),
 		"bindingMode":           stringValue(binding["connectionMode"]),
 		"executionMode":         "rest",
 		"accountExchange":       account.Exchange,
@@ -414,8 +484,7 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 		"apiKeyRef":             resolved.APIKeyRef,
 		"restBaseUrl":           resolved.BaseURL,
 	}
-	account.Metadata["lastLiveSyncAt"] = time.Now().UTC().Format(time.RFC3339)
-	account, err = p.store.UpdateAccount(account)
+	account, err = p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
 	if err != nil {
 		return domain.Account{}, err
 	}
@@ -698,11 +767,60 @@ func (p *Platform) StartLiveSyncDispatcher(ctx context.Context) {
 			logger.Info("live sync dispatcher stopped")
 			return
 		case <-ticker.C:
-			if err := p.syncActiveLiveSessions(time.Now().UTC()); err != nil {
+			now := time.Now().UTC()
+			if err := p.syncActiveLiveSessions(now); err != nil {
 				logger.Warn("sync active live sessions failed", "error", err)
+			}
+			if err := p.syncActiveLiveAccounts(now); err != nil {
+				logger.Warn("sync active live accounts failed", "error", err)
 			}
 		}
 	}
+}
+
+func (p *Platform) syncActiveLiveAccounts(eventTime time.Time) error {
+	sessions, err := p.ListLiveSessions()
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{})
+	var syncErrs []error
+	for _, session := range sessions {
+		if !strings.EqualFold(session.Status, "RUNNING") {
+			continue
+		}
+		if _, ok := seen[session.AccountID]; ok {
+			continue
+		}
+		seen[session.AccountID] = struct{}{}
+		account, accountErr := p.store.GetAccount(session.AccountID)
+		if accountErr != nil {
+			continue
+		}
+		if !p.shouldRefreshLiveAccountSync(account, eventTime) {
+			continue
+		}
+		if _, syncErr := p.SyncLiveAccount(account.ID); syncErr != nil {
+			syncErrs = append(syncErrs, fmt.Errorf("live account %s sync failed: %w", account.ID, syncErr))
+		}
+	}
+	return errors.Join(syncErrs...)
+}
+
+func (p *Platform) shouldRefreshLiveAccountSync(account domain.Account, eventTime time.Time) bool {
+	threshold := time.Duration(p.runtimePolicy.LiveAccountSyncFreshnessSecs) * time.Second
+	if threshold <= 0 {
+		return false
+	}
+	lastSyncActivityAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+	accountSync := mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"])
+	if attemptedAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"])); attemptedAt.After(lastSyncActivityAt) {
+		lastSyncActivityAt = attemptedAt
+	}
+	if lastSyncActivityAt.IsZero() {
+		return true
+	}
+	return eventTime.Sub(lastSyncActivityAt) >= threshold
 }
 
 func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain.LiveSession, error) {
@@ -833,6 +951,7 @@ func (p *Platform) triggerLiveSessionFromSignal(sessionID, runtimeSessionID stri
 	state["lastSignalRuntimeEventAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastSignalRuntimeEvent"] = cloneMetadata(summary)
 	state["lastSignalRuntimeSessionId"] = runtimeSessionID
+	recordStrategyTriggerHealth(state, summary, eventTime)
 	updatedSession, err := p.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		return err
@@ -919,6 +1038,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		state["lastStrategyEvaluationRuntimeSummary"] = cloneMetadata(mapValue(runtimeSession.State["lastEventSummary"]))
 		sourceGate = p.evaluateRuntimeSignalSourceReadiness(session.StrategyID, runtimeSession, eventTime)
 		state["lastStrategyEvaluationSourceGate"] = sourceGate
+		recordStrategySourceGateHealth(state, sourceGate, eventTime)
 	}
 	if len(signalBarStates) == 0 {
 		bootstrapStates, bootstrapErr := p.liveSignalBarStates(stringValue(state["symbol"]), stringValue(state["signalTimeframe"]))
@@ -947,6 +1067,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			"reason": err.Error(),
 		}
 		appendTimelineEvent(state, "strategy", eventTime, "decision-error", map[string]any{"error": err.Error()})
+		recordStrategyDecisionErrorHealth(state, eventTime, err)
 		_, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
 		if updateErr != nil {
 			return updateErr
@@ -962,6 +1083,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		"reason":   decision.Reason,
 		"metadata": cloneMetadata(decision.Metadata),
 	}
+	recordStrategyDecisionHealth(state, decision, eventTime)
 	if livePositionState := cloneMetadata(mapValue(decision.Metadata["livePositionState"])); len(livePositionState) > 0 {
 		state["lastLivePositionState"] = livePositionState
 		symbol := NormalizeSymbol(firstNonEmpty(stringValue(livePositionState["symbol"]), stringValue(state["symbol"])))
@@ -995,6 +1117,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		if proposalErr != nil {
 			state["lastStrategyEvaluationStatus"] = "execution-planning-error"
 			state["lastExecutionProposalError"] = proposalErr.Error()
+			recordExecutionPlanningErrorHealth(state, eventTime, proposalErr)
 			appendTimelineEvent(state, "strategy", eventTime, "execution-planning-error", map[string]any{"error": proposalErr.Error()})
 			_, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
 			if updateErr != nil {
@@ -1006,6 +1129,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		executionProposal = executionProposalToMap(proposal)
 		state["lastExecutionProposal"] = executionProposal
 		state["lastExecutionProfile"] = executionProposalSummary(executionProposal)
+		recordExecutionPlanningHealth(state, executionProposal, eventTime)
 		state["lastExecutionTelemetry"] = map[string]any{
 			"evaluatedAt":     stringValue(mapValue(executionProposal["metadata"])["executionEvaluatedAt"]),
 			"decision":        stringValue(mapValue(executionProposal["metadata"])["executionDecision"]),

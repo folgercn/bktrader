@@ -7,6 +7,16 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
+type runtimePolicyPatch struct {
+	TradeTickFreshnessSeconds      *int `json:"tradeTickFreshnessSeconds"`
+	OrderBookFreshnessSeconds      *int `json:"orderBookFreshnessSeconds"`
+	SignalBarFreshnessSeconds      *int `json:"signalBarFreshnessSeconds"`
+	RuntimeQuietSeconds            *int `json:"runtimeQuietSeconds"`
+	StrategyEvaluationQuietSeconds *int `json:"strategyEvaluationQuietSeconds"`
+	LiveAccountSyncFreshnessSecs   *int `json:"liveAccountSyncFreshnessSeconds"`
+	PaperStartReadinessTimeoutSecs *int `json:"paperStartReadinessTimeoutSeconds"`
+}
+
 // registerSignalRoutes 注册信号源相关路由。
 func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 	// GET /api/v1/signal-sources — 获取信号源列表
@@ -41,6 +51,19 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 			return
 		}
 		writeJSON(w, http.StatusOK, items)
+	})
+
+	mux.HandleFunc("/api/v1/monitor/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		snapshot, err := platform.HealthSnapshot()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, snapshot)
 	})
 
 	mux.HandleFunc("/api/v1/notifications", func(w http.ResponseWriter, r *http.Request) {
@@ -143,12 +166,34 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 		case http.MethodGet:
 			writeJSON(w, http.StatusOK, platform.RuntimePolicy())
 		case http.MethodPost:
-			var payload service.RuntimePolicy
+			var payload runtimePolicyPatch
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			policy, err := platform.UpdateRuntimePolicy(payload)
+			current := platform.RuntimePolicy()
+			if payload.TradeTickFreshnessSeconds != nil {
+				current.TradeTickFreshnessSeconds = *payload.TradeTickFreshnessSeconds
+			}
+			if payload.OrderBookFreshnessSeconds != nil {
+				current.OrderBookFreshnessSeconds = *payload.OrderBookFreshnessSeconds
+			}
+			if payload.SignalBarFreshnessSeconds != nil {
+				current.SignalBarFreshnessSeconds = *payload.SignalBarFreshnessSeconds
+			}
+			if payload.RuntimeQuietSeconds != nil {
+				current.RuntimeQuietSeconds = *payload.RuntimeQuietSeconds
+			}
+			if payload.StrategyEvaluationQuietSeconds != nil {
+				current.StrategyEvaluationQuietSeconds = *payload.StrategyEvaluationQuietSeconds
+			}
+			if payload.LiveAccountSyncFreshnessSecs != nil {
+				current.LiveAccountSyncFreshnessSecs = *payload.LiveAccountSyncFreshnessSecs
+			}
+			if payload.PaperStartReadinessTimeoutSecs != nil {
+				current.PaperStartReadinessTimeoutSecs = *payload.PaperStartReadinessTimeoutSecs
+			}
+			policy, err := platform.UpdateRuntimePolicy(current)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, "invalid runtime policy payload")
 				return

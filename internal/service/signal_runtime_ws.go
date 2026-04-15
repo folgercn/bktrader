@@ -211,6 +211,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 				state["signalEventCount"] = maxIntValue(state["signalEventCount"], 0) + 1
 				state["sourceStates"] = mergeSignalSourceState(state["sourceStates"], summary, now)
 				state["signalBarStates"] = deriveSignalBarStates(mapValue(state["sourceStates"]))
+				updateRuntimeHealthSummary(state, summary, now)
 				appendSignalRuntimeTimeline(state, now, "market", firstNonEmpty(stringValue(summary["event"]), "message"), map[string]any{
 					"symbol":    stringValue(summary["symbol"]),
 					"timeframe": stringValue(summary["timeframe"]),

@@ -40,7 +40,7 @@ func (s *Store) Close() error {
 func (s *Store) GetRuntimePolicy() (domain.RuntimePolicy, bool, error) {
 	var item domain.RuntimePolicy
 	err := s.db.QueryRow(`
-		select trade_tick_freshness_seconds, order_book_freshness_seconds, signal_bar_freshness_seconds, runtime_quiet_seconds, paper_start_readiness_timeout_seconds, updated_at
+		select trade_tick_freshness_seconds, order_book_freshness_seconds, signal_bar_freshness_seconds, runtime_quiet_seconds, strategy_evaluation_quiet_seconds, live_account_sync_freshness_seconds, paper_start_readiness_timeout_seconds, updated_at
 		from runtime_policies
 		where id = 1
 	`).Scan(
@@ -48,6 +48,8 @@ func (s *Store) GetRuntimePolicy() (domain.RuntimePolicy, bool, error) {
 		&item.OrderBookFreshnessSeconds,
 		&item.SignalBarFreshnessSeconds,
 		&item.RuntimeQuietSeconds,
+		&item.StrategyEvaluationQuietSeconds,
+		&item.LiveAccountSyncFreshnessSecs,
 		&item.PaperStartReadinessTimeoutSecs,
 		&item.UpdatedAt,
 	)
@@ -63,28 +65,34 @@ func (s *Store) GetRuntimePolicy() (domain.RuntimePolicy, bool, error) {
 func (s *Store) UpsertRuntimePolicy(policy domain.RuntimePolicy) (domain.RuntimePolicy, error) {
 	policy.UpdatedAt = time.Now().UTC()
 	_, err := s.db.Exec(`
-		insert into runtime_policies (
-			id,
-			trade_tick_freshness_seconds,
-			order_book_freshness_seconds,
-			signal_bar_freshness_seconds,
-			runtime_quiet_seconds,
-			paper_start_readiness_timeout_seconds,
-			updated_at
-		)
-		values (1, $1, $2, $3, $4, $5, $6)
-		on conflict (id) do update set
-			trade_tick_freshness_seconds = excluded.trade_tick_freshness_seconds,
-			order_book_freshness_seconds = excluded.order_book_freshness_seconds,
-			signal_bar_freshness_seconds = excluded.signal_bar_freshness_seconds,
-			runtime_quiet_seconds = excluded.runtime_quiet_seconds,
-			paper_start_readiness_timeout_seconds = excluded.paper_start_readiness_timeout_seconds,
-			updated_at = excluded.updated_at
-	`,
+			insert into runtime_policies (
+				id,
+				trade_tick_freshness_seconds,
+				order_book_freshness_seconds,
+				signal_bar_freshness_seconds,
+				runtime_quiet_seconds,
+				strategy_evaluation_quiet_seconds,
+				live_account_sync_freshness_seconds,
+				paper_start_readiness_timeout_seconds,
+				updated_at
+			)
+			values (1, $1, $2, $3, $4, $5, $6, $7, $8)
+			on conflict (id) do update set
+				trade_tick_freshness_seconds = excluded.trade_tick_freshness_seconds,
+				order_book_freshness_seconds = excluded.order_book_freshness_seconds,
+				signal_bar_freshness_seconds = excluded.signal_bar_freshness_seconds,
+				runtime_quiet_seconds = excluded.runtime_quiet_seconds,
+				strategy_evaluation_quiet_seconds = excluded.strategy_evaluation_quiet_seconds,
+				live_account_sync_freshness_seconds = excluded.live_account_sync_freshness_seconds,
+				paper_start_readiness_timeout_seconds = excluded.paper_start_readiness_timeout_seconds,
+				updated_at = excluded.updated_at
+		`,
 		policy.TradeTickFreshnessSeconds,
 		policy.OrderBookFreshnessSeconds,
 		policy.SignalBarFreshnessSeconds,
 		policy.RuntimeQuietSeconds,
+		policy.StrategyEvaluationQuietSeconds,
+		policy.LiveAccountSyncFreshnessSecs,
 		policy.PaperStartReadinessTimeoutSecs,
 		policy.UpdatedAt,
 	)

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -2699,4 +2700,378 @@ func TestRefreshLiveSessionPositionContextClearsStaleLivePositionStateWithoutRea
 	if liveState := mapValue(updated.State["livePositionState"]); len(liveState) != 0 {
 		t.Fatalf("expected stale livePositionState to be cleared, got %+v", liveState)
 	}
+}
+
+func TestSyncLiveAccountReturnsFallbackSnapshotWithoutReportingAdapterFailure(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key:     "test-sync-fallback",
+		syncErr: errors.New("adapter sync failed"),
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-fallback",
+		"connectionMode": "disabled",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	synced, err := platform.SyncLiveAccount("live-main")
+	if err != nil {
+		t.Fatalf("expected fallback sync to succeed, got %v", err)
+	}
+	if stringValue(synced.Metadata["lastLiveSyncAt"]) == "" {
+		t.Fatal("expected fallback sync to persist lastLiveSyncAt")
+	}
+	if mapValue(synced.Metadata["liveSyncSnapshot"]) == nil {
+		t.Fatal("expected fallback sync snapshot to be persisted")
+	}
+	accountSync := mapValue(mapValue(synced.Metadata["healthSummary"])["accountSync"])
+	if stringValue(accountSync["lastSuccessAt"]) == "" {
+		t.Fatal("expected accountSync health to retain successful fallback state")
+	}
+	if got := parseFloatValue(mapValue(accountSync["today"])["syncCount"]); got != 1 {
+		t.Fatalf("expected fallback sync to record one syncCount, got %v", got)
+	}
+	if got := stringValue(accountSync["lastError"]); got != "" {
+		t.Fatalf("expected no accountSync error after successful fallback, got %s", got)
+	}
+}
+
+func TestSyncLiveAccountReturnsFailureWhenLocalFallbackFails(t *testing.T) {
+	baseStore := memory.NewStore()
+	platform := NewPlatform(&testFailingListOrdersStore{
+		Store:     baseStore,
+		listError: errors.New("orders unavailable"),
+	})
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key:     "test-sync-failing",
+		syncErr: errors.New("adapter sync failed"),
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-failing",
+		"connectionMode": "disabled",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	if _, err := platform.SyncLiveAccount("live-main"); err == nil {
+		t.Fatal("expected local fallback failure to be returned")
+	} else if !strings.Contains(err.Error(), "orders unavailable") {
+		t.Fatalf("expected local fallback error in returned message, got %v", err)
+	}
+
+	updated, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	accountSync := mapValue(mapValue(updated.Metadata["healthSummary"])["accountSync"])
+	if got := maxIntValue(accountSync["consecutiveErrorCount"], 0); got != 1 {
+		t.Fatalf("expected one recorded sync failure, got %d", got)
+	}
+	if !strings.Contains(stringValue(accountSync["lastError"]), "orders unavailable") {
+		t.Fatalf("expected recorded sync failure to mention local fallback error, got %s", stringValue(accountSync["lastError"]))
+	}
+}
+
+func TestSyncLiveAccountRecordsAdapterResolutionFailuresInHealthSummary(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey": "missing-adapter",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	if _, err := platform.SyncLiveAccount("live-main"); err == nil {
+		t.Fatal("expected adapter resolution failure to be returned")
+	} else if !strings.Contains(err.Error(), "live adapter not registered") {
+		t.Fatalf("expected adapter resolution failure in returned error, got %v", err)
+	}
+
+	updated, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	accountSync := mapValue(mapValue(updated.Metadata["healthSummary"])["accountSync"])
+	if got := maxIntValue(accountSync["consecutiveErrorCount"], 0); got != 1 {
+		t.Fatalf("expected one recorded adapter resolution failure, got %d", got)
+	}
+	if stringValue(accountSync["lastAttemptAt"]) == "" {
+		t.Fatal("expected adapter resolution failure to record lastAttemptAt")
+	}
+	if !strings.Contains(stringValue(accountSync["lastError"]), "live adapter not registered") {
+		t.Fatalf("expected recorded adapter resolution failure, got %s", stringValue(accountSync["lastError"]))
+	}
+}
+
+func TestSyncActiveLiveAccountsReturnsPerAccountSyncErrors(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey": "missing-adapter",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+
+	err = platform.syncActiveLiveAccounts(time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected active live account sync failure to be surfaced")
+	}
+	if !strings.Contains(err.Error(), "live-main") {
+		t.Fatalf("expected returned error to include account id, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "live adapter not registered") {
+		t.Fatalf("expected returned error to include sync failure reason, got %v", err)
+	}
+}
+
+func TestSyncActiveLiveAccountsThrottlesFailedRetriesUntilFreshnessWindow(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey": "missing-adapter",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+
+	firstTick := time.Now().UTC()
+	if err := platform.syncActiveLiveAccounts(firstTick); err == nil {
+		t.Fatal("expected first active live account sync attempt to fail")
+	}
+
+	updated, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	accountSync := mapValue(mapValue(updated.Metadata["healthSummary"])["accountSync"])
+	lastAttemptAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"]))
+	if lastAttemptAt.IsZero() {
+		t.Fatal("expected failed sync attempt to record lastAttemptAt")
+	}
+
+	if err := platform.syncActiveLiveAccounts(lastAttemptAt.Add(10 * time.Second)); err != nil {
+		t.Fatalf("expected retry within freshness window to be throttled, got %v", err)
+	}
+	if err := platform.syncActiveLiveAccounts(lastAttemptAt.Add(61 * time.Second)); err == nil {
+		t.Fatal("expected retry after freshness window to attempt sync again")
+	}
+}
+
+func TestSyncLiveAccountNormalizesAdapterSuccessHealthState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-success",
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-success",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	account.Metadata["healthSummary"] = map[string]any{
+		"accountSync": map[string]any{
+			"consecutiveErrorCount": 2,
+			"lastError":             "stale failure",
+			"lastErrorAt":           time.Date(2026, 4, 14, 23, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	synced, err := platform.SyncLiveAccount("live-main")
+	if err != nil {
+		t.Fatalf("expected adapter sync success, got %v", err)
+	}
+	if stringValue(synced.Metadata["lastLiveSyncAt"]) == "" {
+		t.Fatal("expected adapter sync success to persist lastLiveSyncAt")
+	}
+	accountSync := mapValue(mapValue(synced.Metadata["healthSummary"])["accountSync"])
+	if got := parseFloatValue(accountSync["consecutiveErrorCount"]); got != 0 {
+		t.Fatalf("expected adapter sync success to clear consecutiveErrorCount, got %v", got)
+	}
+	if got := stringValue(accountSync["lastError"]); got != "" {
+		t.Fatalf("expected adapter sync success to clear lastError, got %s", got)
+	}
+	if stringValue(accountSync["lastSuccessAt"]) == "" {
+		t.Fatal("expected adapter sync success to record lastSuccessAt")
+	}
+	if got := parseFloatValue(mapValue(accountSync["today"])["syncCount"]); got != 1 {
+		t.Fatalf("expected adapter sync success to record one syncCount, got %v", got)
+	}
+	if got := stringValue(accountSync["lastSource"]); got != "live-account-adapter" && got != "test-sync-success" {
+		t.Fatalf("expected adapter sync success to set a normalized lastSource, got %s", got)
+	}
+	if platform.shouldRefreshLiveAccountSync(synced, time.Now().UTC().Add(10*time.Second)) {
+		t.Fatal("expected freshly normalized adapter sync to stay within freshness window")
+	}
+}
+
+func TestSyncLiveAccountDoesNotDoubleCountPersistedAdapterSuccessHealth(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	syncedAt := time.Date(2026, 4, 15, 2, 20, 0, 0, time.UTC)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key:                 "test-sync-persisted-success",
+		persistsSyncSuccess: true,
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":          "persisted-adapter",
+				"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+				"syncedAt":        syncedAt.Format(time.RFC3339),
+				"bindingMode":     stringValue(binding["connectionMode"]),
+				"executionMode":   stringValue(binding["executionMode"]),
+				"syncStatus":      "SYNCED",
+				"accountExchange": account.Exchange,
+			}
+			account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+			updateAccountSyncSuccessHealth(&account, syncedAt, time.Time{})
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-persisted-success",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	synced, err := platform.SyncLiveAccount("live-main")
+	if err != nil {
+		t.Fatalf("expected persisted adapter sync success, got %v", err)
+	}
+	accountSync := mapValue(mapValue(synced.Metadata["healthSummary"])["accountSync"])
+	if got := parseFloatValue(mapValue(accountSync["today"])["syncCount"]); got != 1 {
+		t.Fatalf("expected persisted adapter sync success to keep syncCount at one, got %v", got)
+	}
+	if got := stringValue(accountSync["lastSuccessAt"]); got != syncedAt.Format(time.RFC3339) {
+		t.Fatalf("expected persisted adapter sync success to keep lastSuccessAt, got %s", got)
+	}
+	if platform.shouldRefreshLiveAccountSync(synced, syncedAt.Add(10*time.Second)) {
+		t.Fatal("expected persisted adapter sync success to stay within freshness window")
+	}
+}
+
+type testLiveAccountSyncAdapter struct {
+	key                 string
+	syncErr             error
+	persistsSyncSuccess bool
+	syncSnapshotFunc    func(*Platform, domain.Account, map[string]any) (domain.Account, error)
+}
+
+func (a testLiveAccountSyncAdapter) Key() string {
+	return a.key
+}
+
+func (a testLiveAccountSyncAdapter) Describe() map[string]any {
+	return map[string]any{"key": a.key}
+}
+
+func (a testLiveAccountSyncAdapter) PersistsLiveAccountSyncSuccess() bool {
+	return a.persistsSyncSuccess
+}
+
+func (a testLiveAccountSyncAdapter) ValidateAccountConfig(map[string]any) error {
+	return nil
+}
+
+func (a testLiveAccountSyncAdapter) SubmitOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSubmission, error) {
+	return LiveOrderSubmission{}, nil
+}
+
+func (a testLiveAccountSyncAdapter) SyncOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+	return LiveOrderSync{}, nil
+}
+
+func (a testLiveAccountSyncAdapter) CancelOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+	return LiveOrderSync{}, nil
+}
+
+func (a testLiveAccountSyncAdapter) SyncAccountSnapshot(platform *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+	if a.syncErr != nil {
+		return domain.Account{}, a.syncErr
+	}
+	if a.syncSnapshotFunc != nil {
+		return a.syncSnapshotFunc(platform, account, binding)
+	}
+	return account, nil
+}
+
+type testFailingListOrdersStore struct {
+	*memory.Store
+	listError error
+}
+
+func (s *testFailingListOrdersStore) ListOrders() ([]domain.Order, error) {
+	return nil, s.listError
 }
