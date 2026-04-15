@@ -7,7 +7,7 @@ import {
   AccountSummary, AccountRecord, Order, Fill, Position, PaperSession, LiveSession, 
   StrategyRecord, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceCatalog, 
   SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, 
-  PlatformAlert, PlatformNotification, TelegramConfig, AccountEquitySnapshot, 
+  PlatformAlert, PlatformNotification, TelegramConfig, AccountEquitySnapshot, PlatformHealthSnapshot,
   ChartCandle, ChartAnnotation, SignalBinding 
 } from '../types/domain';
 import { 
@@ -50,12 +50,11 @@ export function useDashboard() {
   const setSignalRuntimeAdapters = useTradingStore(s => s.setSignalRuntimeAdapters);
   const setSignalRuntimeSessions = useTradingStore(s => s.setSignalRuntimeSessions);
   const setRuntimePolicy = useTradingStore(s => s.setRuntimePolicy);
+  const setMonitorHealth = useTradingStore(s => s.setMonitorHealth);
   const setAlerts = useTradingStore(s => s.setAlerts);
   const setNotifications = useTradingStore(s => s.setNotifications);
   const setTelegramConfig = useTradingStore(s => s.setTelegramConfig);
-  const setAccountSignalBindingMap = useTradingStore(s => s.setAccountSignalBindingMap);
   const setStrategySignalBindingMap = useTradingStore(s => s.setStrategySignalBindingMap);
-  const setAccountSignalBindings = useTradingStore(s => s.setAccountSignalBindings);
   const setStrategySignalBindings = useTradingStore(s => s.setStrategySignalBindings);
   const setSignalRuntimePlan = useTradingStore(s => s.setSignalRuntimePlan);
   const setSelectedSignalRuntimeId = useTradingStore(s => s.setSelectedSignalRuntimeId);
@@ -80,6 +79,7 @@ export function useDashboard() {
       signalRuntimeAdapterData,
       signalRuntimeSessionData,
       runtimePolicyData,
+      monitorHealthData,
       alertData,
       notificationData,
       telegramConfigData,
@@ -100,17 +100,12 @@ export function useDashboard() {
       fetchJSON<SignalRuntimeAdapter[]>("/api/v1/signal-runtime/adapters"),
       fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions"),
       fetchJSON<RuntimePolicy>("/api/v1/runtime-policy"),
+      fetchJSON<PlatformHealthSnapshot>("/api/v1/monitor/health"),
       fetchJSON<PlatformAlert[]>("/api/v1/alerts"),
       fetchJSON<PlatformNotification[]>("/api/v1/notifications?includeAcked=true"),
       fetchJSON<TelegramConfig>("/api/v1/telegram/config"),
     ]);
 
-    const accountBindingEntries = await Promise.all(
-      accountData.map(async (account) => [
-        account.id,
-        await fetchJSON<SignalBinding[]>(`/api/v1/accounts/${account.id}/signal-bindings`),
-      ] as const)
-    );
     const strategyBindingEntries = await Promise.all(
       strategyData.map(async (strategy) => [
         strategy.id,
@@ -226,6 +221,7 @@ export function useDashboard() {
     setSignalRuntimeAdapters(normalizedSignalRuntimeAdapters);
     setSignalRuntimeSessions(normalizedSignalRuntimeSessions);
     setRuntimePolicy(runtimePolicyData);
+    setMonitorHealth(monitorHealthData);
     setAlerts(normalizedAlerts);
     setNotifications(normalizedNotifications);
     setTelegramConfig(telegramConfigData);
@@ -243,11 +239,11 @@ export function useDashboard() {
       orderBookFreshnessSeconds: String(runtimePolicyData.orderBookFreshnessSeconds ?? 10),
       signalBarFreshnessSeconds: String(runtimePolicyData.signalBarFreshnessSeconds ?? 30),
       runtimeQuietSeconds: String(runtimePolicyData.runtimeQuietSeconds ?? 30),
+      strategyEvaluationQuietSeconds: String(runtimePolicyData.strategyEvaluationQuietSeconds ?? 0),
+      liveAccountSyncFreshnessSeconds: String(runtimePolicyData.liveAccountSyncFreshnessSeconds ?? 0),
       paperStartReadinessTimeoutSeconds: String(runtimePolicyData.paperStartReadinessTimeoutSeconds ?? 5),
     });
-    setAccountSignalBindingMap(Object.fromEntries(accountBindingEntries));
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
-    setAccountSignalBindings(accountBindingEntries.flatMap((e) => e[1]));
     setStrategySignalBindings(strategyBindingEntries.flatMap((e) => e[1]));
     setSignalRuntimePlan(runtimePlanData);
     setSelectedSignalRuntimeId((current: string | null) => {

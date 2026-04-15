@@ -47,7 +47,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   const setRuntimePolicyForm = useUIStore(s => s.setRuntimePolicyForm);
   const setLiveAccountNotice = useUIStore(s => s.setLiveAccountNotice);
   const setLiveBindingNotice = useUIStore(s => s.setLiveBindingNotice);
-  const setAccountSignalForm = useUIStore(s => s.setAccountSignalForm);
   const setStrategySignalForm = useUIStore(s => s.setStrategySignalForm);
   const setSignalRuntimeForm = useUIStore(s => s.setSignalRuntimeForm);
   const setLiveAccountForm = useUIStore(s => s.setLiveAccountForm);
@@ -61,7 +60,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   const liveBindingForm = useUIStore(s => s.liveBindingForm);
   const liveOrderForm = useUIStore(s => s.liveOrderForm);
   const liveSessionForm = useUIStore(s => s.liveSessionForm);
-  const accountSignalForm = useUIStore(s => s.accountSignalForm);
   const strategySignalForm = useUIStore(s => s.strategySignalForm);
   const signalRuntimeForm = useUIStore(s => s.signalRuntimeForm);
   const runtimePolicyForm = useUIStore(s => s.runtimePolicyForm);
@@ -86,7 +84,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   const setRuntimePolicy = useTradingStore(s => s.setRuntimePolicy);
   const setTelegramConfig = useTradingStore(s => s.setTelegramConfig);
   const strategySignalBindingMap = useTradingStore(s => s.strategySignalBindingMap);
-  const accountSignalBindingMap = useTradingStore(s => s.accountSignalBindingMap);
   const signalRuntimeSessions = useTradingStore(s => s.signalRuntimeSessions);
 
   const strategyIds = useMemo(() => new Set(strategies.map((s: StrategyRecord) => s.id)), [strategies]);
@@ -104,7 +101,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     setLiveBindingForm((current: any) => ({ ...current, accountId }));
     setLiveSessionForm((current: any) => ({ ...current, accountId }));
     useUIStore.getState().setLiveOrderForm((current: any) => ({ ...current, accountId }));
-    setAccountSignalForm((current: any) => ({ ...current, accountId }));
     setSignalRuntimeForm((current: any) => ({ ...current, accountId }));
   }
 
@@ -249,16 +245,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
       setError(err instanceof Error ? err.message : "Failed to stop live flow");
     } finally {
       setLiveFlowAction(null);
-    }
-  }
-
-  async function unbindAccountSignalSource(accountId: string, bindingId: string) {
-    try {
-      await fetchJSON(`/api/v1/accounts/${accountId}/signal-bindings?id=${encodeURIComponent(bindingId)}`, { method: "DELETE" });
-      await loadDashboard();
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to unbind account signal source");
     }
   }
 
@@ -493,7 +479,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     
     try {
       const strategyBindings = strategySignalBindingMap[strategyId] ?? [];
-      if ((accountSignalBindingMap[account.id] ?? []).length === 0 && strategyBindings.length === 0) {
+      if (strategyBindings.length === 0) {
         window.location.hash = "signals";
         throw new Error("Launch live flow needs strategy signal bindings before it can continue");
       }
@@ -583,32 +569,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     }
   }
 
-  async function bindAccountSignalSource() {
-    if (!accountSignalForm.accountId || !accountSignalForm.sourceKey) {
-      setError("Account signal binding needs an account and source");
-      return;
-    }
-    setSignalBindingAction("account");
-    try {
-      await fetchJSON(`/api/v1/accounts/${accountSignalForm.accountId}/signal-bindings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceKey: accountSignalForm.sourceKey,
-          role: accountSignalForm.role,
-          symbol: accountSignalForm.symbol,
-          options: accountSignalForm.role === "signal" ? { timeframe: accountSignalForm.timeframe } : undefined,
-        }),
-      });
-      await loadDashboard();
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to bind account signal source");
-    } finally {
-      setSignalBindingAction(null);
-    }
-  }
-
   async function bindStrategySignalSource() {
     if (!strategySignalForm.strategyId || !strategySignalForm.sourceKey) {
       setError("Strategy signal binding needs a strategy and source");
@@ -667,6 +627,8 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         orderBookFreshnessSeconds: Math.max(0, Number(runtimePolicyForm.orderBookFreshnessSeconds) || 0),
         signalBarFreshnessSeconds: Math.max(0, Number(runtimePolicyForm.signalBarFreshnessSeconds) || 0),
         runtimeQuietSeconds: Math.max(0, Number(runtimePolicyForm.runtimeQuietSeconds) || 0),
+        strategyEvaluationQuietSeconds: Math.max(0, Number(runtimePolicyForm.strategyEvaluationQuietSeconds) || 0),
+        liveAccountSyncFreshnessSeconds: Math.max(0, Number(runtimePolicyForm.liveAccountSyncFreshnessSeconds) || 0),
         paperStartReadinessTimeoutSeconds: Math.max(0, Number(runtimePolicyForm.paperStartReadinessTimeoutSeconds) || 0),
       };
       const updated = await fetchJSON<RuntimePolicy>("/api/v1/runtime-policy", {
@@ -680,6 +642,12 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         orderBookFreshnessSeconds: String(updated.orderBookFreshnessSeconds ?? payload.orderBookFreshnessSeconds),
         signalBarFreshnessSeconds: String(updated.signalBarFreshnessSeconds ?? payload.signalBarFreshnessSeconds),
         runtimeQuietSeconds: String(updated.runtimeQuietSeconds ?? payload.runtimeQuietSeconds),
+        strategyEvaluationQuietSeconds: String(
+          updated.strategyEvaluationQuietSeconds ?? payload.strategyEvaluationQuietSeconds
+        ),
+        liveAccountSyncFreshnessSeconds: String(
+          updated.liveAccountSyncFreshnessSeconds ?? payload.liveAccountSyncFreshnessSeconds
+        ),
         paperStartReadinessTimeoutSeconds: String(
           updated.paperStartReadinessTimeoutSeconds ?? payload.paperStartReadinessTimeoutSeconds
         ),
@@ -936,7 +904,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         window.location.hash = "live";
         break;
       case "bind-signals":
-        useUIStore.getState().setAccountSignalForm((current) => ({ ...current, accountId: account.id }));
         useUIStore.getState().setSignalRuntimeForm((current) => ({ ...current, accountId: account.id }));
         window.location.hash = "signals";
         break;
@@ -972,11 +939,11 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
 
   return {
     createStrategy, saveStrategyParameters, createLiveAccount, bindLiveAccount,
-    stopLiveFlow, unbindAccountSignalSource, unbindStrategySignalSource,
+    stopLiveFlow, unbindStrategySignalSource,
     deleteSignalRuntimeSession, syncLiveOrder, syncLiveAccount, createLiveOrder,
     createLiveSession, saveLiveSession, createAndStartLiveSession, deleteLiveSession,
     launchLiveFlow, runLiveSessionAction, dispatchLiveSessionIntent, syncLiveSession,
-    bindAccountSignalSource, bindStrategySignalSource, createSignalRuntimeSession,
+    bindStrategySignalSource, createSignalRuntimeSession,
     updateRuntimePolicy, runSignalRuntimeAction, acknowledgeNotification,
     sendNotificationToTelegram, saveTelegramConfig, sendTelegramTest, createBacktestRun,
     selectQuickLiveAccount,
@@ -984,7 +951,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     openLiveAccountModal, openLiveBindingModal, openLiveSessionModal,
     runLiveNextAction, jumpToSignalRuntimeSession,
     setLoginForm, setLiveAccountForm, setLiveBindingForm, setLiveSessionForm, 
-    setAccountSignalForm, setStrategySignalForm, setSignalRuntimeForm,
+    setStrategySignalForm, setSignalRuntimeForm,
     setTelegramForm,
     setLiveSessionLaunchAction, setLiveSessionAction, setLiveSessionError, setError
   };

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { 
   AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession,
-  LoginForm, BacktestForm, PaperForm, LiveAccountForm, LiveBindingForm, LiveOrderForm, LiveSessionForm, AccountSignalForm, StrategySignalForm, StrategyCreateForm, StrategyEditorForm, SignalRuntimeForm, RuntimePolicyForm, TelegramForm
+  LoginForm, BacktestForm, PaperForm, LiveAccountForm, LiveBindingForm, LiveOrderForm, LiveSessionForm, StrategySignalForm, StrategyCreateForm, StrategyEditorForm, SignalRuntimeForm, RuntimePolicyForm, TelegramForm
 } from '../types/domain';
 import { readStoredAuthSession } from '../utils/auth';
 import { resolveUpdater } from './helpers';
@@ -146,8 +146,6 @@ export interface useUIStoreState {
   setLiveOrderForm: (valOrUpdater: LiveOrderForm | ((prev: LiveOrderForm) => LiveOrderForm)) => void;
   liveSessionForm: LiveSessionForm;
   setLiveSessionForm: (valOrUpdater: LiveSessionForm | ((prev: LiveSessionForm) => LiveSessionForm)) => void;
-  accountSignalForm: AccountSignalForm;
-  setAccountSignalForm: (valOrUpdater: AccountSignalForm | ((prev: AccountSignalForm) => AccountSignalForm)) => void;
   strategySignalForm: StrategySignalForm;
   setStrategySignalForm: (valOrUpdater: StrategySignalForm | ((prev: StrategySignalForm) => StrategySignalForm)) => void;
   strategyCreateForm: StrategyCreateForm;
@@ -298,8 +296,6 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   setLiveOrderForm: (valOrUpdater) => set((state) => ({ liveOrderForm: resolveUpdater(valOrUpdater, state.liveOrderForm) })),
   liveSessionForm: { accountId: "", strategyId: "", signalTimeframe: "1d", executionDataSource: "tick", symbol: "BTCUSDT", defaultOrderQuantity: "0.001", executionEntryOrderType: "MARKET", executionEntryMaxSpreadBps: "8", executionEntryWideSpreadMode: "limit-maker", executionEntryTimeoutFallbackOrderType: "MARKET", executionPTExitOrderType: "LIMIT", executionPTExitTimeInForce: "GTX", executionPTExitPostOnly: true, executionPTExitTimeoutFallbackOrderType: "MARKET", executionSLExitOrderType: "MARKET", executionSLExitMaxSpreadBps: "999", dispatchMode: "manual-review", dispatchCooldownSeconds: "30", },
   setLiveSessionForm: (valOrUpdater) => set((state) => ({ liveSessionForm: resolveUpdater(valOrUpdater, state.liveSessionForm) })),
-  accountSignalForm: { accountId: "", sourceKey: "", role: "trigger", symbol: "BTCUSDT", timeframe: "1d", },
-  setAccountSignalForm: (valOrUpdater) => set((state) => ({ accountSignalForm: resolveUpdater(valOrUpdater, state.accountSignalForm) })),
   strategySignalForm: { strategyId: "", sourceKey: "", role: "trigger", symbol: "BTCUSDT", timeframe: "1d", },
   setStrategySignalForm: (valOrUpdater) => set((state) => ({ strategySignalForm: resolveUpdater(valOrUpdater, state.strategySignalForm) })),
   strategyCreateForm: { name: "", description: "", },
@@ -308,7 +304,15 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   setStrategyEditorForm: (valOrUpdater) => set((state) => ({ strategyEditorForm: resolveUpdater(valOrUpdater, state.strategyEditorForm) })),
   signalRuntimeForm: { accountId: "", strategyId: "", },
   setSignalRuntimeForm: (valOrUpdater) => set((state) => ({ signalRuntimeForm: resolveUpdater(valOrUpdater, state.signalRuntimeForm) })),
-  runtimePolicyForm: { tradeTickFreshnessSeconds: "15", orderBookFreshnessSeconds: "10", signalBarFreshnessSeconds: "30", runtimeQuietSeconds: "30", paperStartReadinessTimeoutSeconds: "5", },
+  runtimePolicyForm: {
+    tradeTickFreshnessSeconds: "15",
+    orderBookFreshnessSeconds: "10",
+    signalBarFreshnessSeconds: "30",
+    runtimeQuietSeconds: "30",
+    strategyEvaluationQuietSeconds: "0",
+    liveAccountSyncFreshnessSeconds: "0",
+    paperStartReadinessTimeoutSeconds: "5",
+  },
   setRuntimePolicyForm: (valOrUpdater) => set((state) => ({ runtimePolicyForm: resolveUpdater(valOrUpdater, state.runtimePolicyForm) })),
   telegramForm: { enabled: false, botToken: "", chatId: "", sendLevels: "critical,warning", },
   setTelegramForm: (valOrUpdater) => set((state) => ({ telegramForm: resolveUpdater(valOrUpdater, state.telegramForm) })),
