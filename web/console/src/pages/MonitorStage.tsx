@@ -16,6 +16,8 @@ import {
   deriveLiveSessionFlow,
   deriveRuntimeReadiness,
   deriveRuntimeSourceSummary,
+  deriveLiveSessionExecutionSummary,
+  deriveLiveSessionHealth,
   buildTimelineNotes,
   liveSessionHealthTone,
   getNumber,
@@ -28,7 +30,8 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '.
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { Button } from '../components/ui/button';
-import { Activity, Layout, ShieldCheck, Zap, BarChart3, Clock, ArrowRightLeft, HeartPulse, LineChart } from 'lucide-react';
+import { Activity, Layout, ShieldCheck, Zap, BarChart3, Clock, ArrowRightLeft, HeartPulse, LineChart, CandlestickChart, Compass, ShieldAlert, FileText, Layers, ChevronDown } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 
 type MonitorStageProps = {
   syncLiveOrder: (id: string) => void;
@@ -53,23 +56,53 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const setMonitorResolution = useUIStore(s => s.setMonitorResolution);
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
   const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
+  const setSelectedSignalRuntimeId = useTradingStore(s => s.setSelectedSignalRuntimeId);
+
+  // 1. 高亮会话选择逻辑
   const highlightedLiveSession = useMemo(
     () => {
-      // 优先展示手动选中的运行时会话对应的实盘会话
       if (selectedSignalRuntimeId) {
         const sessionWithRuntime = liveSessions.find(s => 
-          s.id === selectedSignalRuntimeId || // 直接 ID 匹配
-          String(s.state?.signalRuntimeSessionId) === selectedSignalRuntimeId // 关联 ID 匹配
+          s.id === selectedSignalRuntimeId || 
+          String(s.state?.signalRuntimeSessionId) === selectedSignalRuntimeId
         );
         if (sessionWithRuntime) {
           return deriveHighlightedLiveSession([sessionWithRuntime], orders, fills, positions);
         }
       }
-      // 回退到原有的自动高亮逻辑
       return deriveHighlightedLiveSession(liveSessions, orders, fills, positions);
     },
     [liveSessions, orders, fills, positions, selectedSignalRuntimeId]
   );
+
+  // 2. 派生所有会话的全量状态（用于列表）
+  const allSessionItems = useMemo(() => {
+    return liveSessions.map(session => {
+      const execution = deriveLiveSessionExecutionSummary(session, orders, fills, positions);
+      const health = deriveLiveSessionHealth(session, execution);
+      const summary = summaries.find(s => s.accountId === session.accountId) ?? null;
+      return {
+        session,
+        execution,
+        health,
+        summary,
+        isHighlighted: session.id === highlightedLiveSession?.session.id
+      };
+    }).sort((a, b) => {
+      // 保持固定顺序：统一按创建时间倒序排列，不再随选中状态跳动
+      return Date.parse(b.session.createdAt) - Date.parse(a.session.createdAt);
+    });
+  }, [liveSessions, highlightedLiveSession, orders, fills, positions, summaries]);
+
+  const otherSessionItems = allSessionItems.filter(item => !item.isHighlighted);
+
+  const handleSelectSession = (sid: string) => {
+    const session = liveSessions.find(s => s.id === sid);
+    const runtimeId = String(session?.state?.signalRuntimeSessionId ?? "");
+    if (runtimeId) {
+      setSelectedSignalRuntimeId(runtimeId);
+    }
+  };
 
   const highlightedLiveRuntime =
     highlightedLiveSession?.session
@@ -133,11 +166,12 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   );
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
+  const timelineLogs = buildTimelineNotes(monitorTimeline).slice(0, 50);
 
   const monitorSummaryItems = monitorSession ? [
     { label: "就绪预检", value: `${monitorRuntimeReadiness.status} · ${monitorRuntimeReadiness.reason}` },
     { label: "信号意图", value: `${String(monitorIntent.action ?? "无")} · ${String(monitorIntent.side ?? "--")}` },
-    { label: "指令分发", value: `${String(monitorSession.state?.dispatchMode ?? "--")} · 冷却 ${String(monitorSession.state?.dispatchCooldownSeconds ?? "--")}s` },
+    { label: "指令分发", value: `${String((monitorSession.state as any)?.dispatchMode ?? "--")} · 冷却 ${String((monitorSession.state as any)?.dispatchCooldownSeconds ?? "--")}s` },
     { label: "执行汇总", value: `订单 ${monitorExecutionSummary.orderCount} · 成交 ${monitorExecutionSummary.fillCount}` },
   ] : [];
 
@@ -146,7 +180,6 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
       title: "运行与行情",
       items: [
         { label: "行情数据", value: `${formatMaybeNumber(monitorMarket.tradePrice)} · ${formatMaybeNumber(monitorMarket.bestBid)} / ${formatMaybeNumber(monitorMarket.bestAsk)}` },
-        { label: "时间线", value: buildTimelineNotes(monitorTimeline).slice(0, 2).join(" · ") || "--" },
       ],
     },
     {
@@ -160,10 +193,12 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
       title: "恢复与仓位",
       items: [
         { label: "策略持仓", value: `${String(monitorExecutionSummary.position?.side ?? "平仓")} · ${formatMaybeNumber(monitorExecutionSummary.position?.quantity)} @ ${formatMaybeNumber(monitorExecutionSummary.position?.entryPrice)}` },
-        { label: "恢复统计", value: `止损 ${String(monitorSession.state?.recoveredStopOrderCount ?? "--")} · 止盈 ${String(monitorSession.state?.recoveredTakeProfitOrderCount ?? "--")}` },
+        { label: "恢复统计", value: `止损 ${String((monitorSession.state as any)?.recoveredStopOrderCount ?? "--")} · 止盈 ${String((monitorSession.state as any)?.recoveredTakeProfitOrderCount ?? "--")}` },
       ],
     },
   ] : [];
+
+ 
 
   return (
     <div className="h-full overflow-y-auto p-6 space-y-8 animate-in fade-in duration-500">
@@ -253,7 +288,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* 左侧：优先会话详情 */}
               {highlightedLiveSession ? (
-                <div className="bg-[#fff8ea] rounded-[24px] p-6 border-2 border-[#d8cfba] shadow-lg relative overflow-hidden group">
+                <div className="bg-[#fff8ea] rounded-[24px] p-6 border-2 border-[#d8cfba] shadow-lg relative overflow-hidden group flex flex-col h-full">
                   
 
                   <div className="flex items-start justify-between mb-8">
@@ -269,7 +304,55 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                   </div>
                   
                   <div className="flex flex-wrap gap-2 text-[10px] mb-6">
-                    <span className="bg-white px-2 py-1 rounded-lg border border-[#d8cfba] font-mono font-bold shadow-sm">{shrink(highlightedLiveSession.session.id)}</span>
+                    {/* 会话 ID 磁贴选择器 */}
+                    <Popover>
+                      <PopoverTrigger>
+                        <button 
+                          className={`flex items-center gap-2 w-fit max-w-[240px] bg-white px-3 py-1.5 rounded-lg border border-[#d8cfba] font-mono font-bold shadow-sm transition-all active:scale-95 ${allSessionItems.length > 1 ? 'hover:bg-[#f0ece0] cursor-pointer' : 'cursor-default'}`}
+                          disabled={allSessionItems.length <= 1}
+                        >
+                          <span className="truncate">{highlightedLiveSession.session.id.length > 20 ? `${highlightedLiveSession.session.id.slice(0, 14)}...${highlightedLiveSession.session.id.slice(-6)}` : highlightedLiveSession.session.id}</span>
+                          {allSessionItems.length > 1 && <ChevronDown className="size-3 text-[#687177] opacity-60 flex-shrink-0" />}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-[320px] p-2 bg-[#fffbf2] border-2 border-[#d8cfba] shadow-xl rounded-[20px] isolate z-[60]">
+                         <div className="space-y-1.5">
+                            <div className="px-2 py-1.5 mb-1 border-b border-[#d8cfba]/40">
+                               <span className="text-[9px] font-black text-[#687177] uppercase tracking-widest">Switch Active Session</span>
+                            </div>
+                            {allSessionItems.map((item) => (
+                              <div 
+                                key={item.session.id} 
+                                onClick={() => {
+                                  handleSelectSession(item.session.id);
+                                }}
+                                className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer group animate-in fade-in duration-200 ${
+                                  item.isHighlighted 
+                                    ? 'bg-[#d9eee8] border-[#0e6d60] ring-2 ring-[#0e6d60]/10' 
+                                    : 'bg-white/60 border-[#d8cfba]/40 hover:bg-white hover:border-[#0e6d60]/50'
+                                }`}
+                              >
+                                 <div className="flex items-center gap-3">
+                                    <div className={`size-2 rounded-full ${item.health.status === 'ready' ? 'bg-[#0e6d60]' : 'bg-rose-500'} ${item.isHighlighted ? 'ring-4 ring-[#0e6d60]/20' : 'animate-pulse'}`} />
+                                    <div className="flex flex-col">
+                                       <span className={`text-[10px] font-black ${item.isHighlighted ? 'text-[#0e6d60]' : 'text-[#1f2328]'}`}>{item.session.id.length > 20 ? `${item.session.id.slice(0, 14)}...${item.session.id.slice(-6)}` : item.session.id}</span>
+                                       <span className={`text-[8px] font-mono ${item.isHighlighted ? 'text-[#064e44]/70' : 'text-[#687177]'}`}>{String(item.session.state?.symbol ?? "--")} · {String(item.session.state?.signalTimeframe ?? "--")}</span>
+                                    </div>
+                                 </div>
+                                 <div className="text-right">
+                                    <span className={`text-[10px] font-black block tabular-nums ${
+                                      (getNumber(item.summary?.unrealizedPnl) ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600'
+                                    }`}>
+                                       {formatSigned(item.summary?.unrealizedPnl ?? 0)}
+                                    </span>
+                                    <span className={`text-[8px] uppercase font-bold opacity-50 block mt-0.5 ${item.isHighlighted ? 'text-[#064e44]/60' : 'text-[#687177]'}`}>{String(item.execution.position?.side ?? "FLAT")}</span>
+                                 </div>
+                              </div>
+                            ))}
+                         </div>
+                      </PopoverContent>
+                    </Popover>
+
                     <span className="bg-white px-2 py-1 rounded-lg border border-[#d8cfba] font-mono shadow-sm">{highlightedLiveSession.session.accountId}</span>
                     <Badge variant="secondary" className="bg-[#d9eee8] text-[#0e6d60] border-[#0e6d60]/20 font-black">
                       {String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}
@@ -293,17 +376,38 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                     </div>
                   </div>
 
-                  <div className="mt-8 flex flex-wrap gap-2">
-                    {monitorFlow.map((step) => (
-                      <Badge 
-                        key={step.key}
-                        variant="secondary"
-                        className="text-[9px] bg-white text-[#687177] border-[#d8cfba] font-black shadow-sm"
-                      >
-                        {step.label}
-                      </Badge>
-                    ))}
+                  {/* 新增：从右侧搬迁过来的辅助信息，用于平衡高度 */}
+                  <div className="mt-auto grid grid-cols-2 gap-4 pt-8 border-t-2 border-[#d8cfba]/30">
+                      <div className="bg-white/60 p-6 rounded-[28px] border-2 border-[#d8cfba]/60 shadow-sm flex flex-col justify-between hover:bg-white transition-all group">
+                         <div className="flex items-center gap-2 mb-4">
+                            <div className="p-1.5 bg-[#ebe5d5] rounded-lg">
+                               <ShieldAlert className="size-4 text-[#1f2328]" />
+                            </div>
+                            <span className="text-[11px] text-[#687177] font-black uppercase tracking-widest">状态恢复</span>
+                         </div>
+                         <div className="flex items-center justify-between text-[11px] font-black">
+                            <div className="flex flex-col space-y-1">
+                              <span className="text-rose-600">SL: {String((monitorSession?.state as any)?.recoveredStopOrderCount ?? "0")}</span>
+                              <span className="text-[#0e6d60]">PT: {String((monitorSession?.state as any)?.recoveredTakeProfitOrderCount ?? "0")}</span>
+                            </div>
+                            <div className="text-[9px] text-[#687177] font-black opacity-40">RECOVERY</div>
+                         </div>
+                      </div>
+
+                      <div className="bg-white/60 p-6 rounded-[28px] border-2 border-[#d8cfba]/60 shadow-sm flex flex-col justify-between hover:bg-white transition-all group">
+                         <div className="flex items-center gap-2 mb-4">
+                            <div className="p-1.5 bg-[#fff8ea] rounded-lg border border-[#d8cfba]/40">
+                               <FileText className="size-4 text-[#1f2328]" />
+                            </div>
+                            <span className="text-[11px] text-[#687177] font-black uppercase tracking-widest">执行备注</span>
+                         </div>
+                         <p className="text-[11px] font-bold text-[#1f2328] leading-tight line-clamp-3">
+                           {String(monitorSignalBarDecision.reason ?? "暂无执行信号排队或阻断说明")}
+                         </p>
+                      </div>
                   </div>
+
+ 
                 </div>
               ) : (
                 <div className="p-20 text-center text-[#687177] text-sm font-bold italic bg-[#fff8ea]/50 rounded-[24px] border-2 border-dashed border-[#d8cfba] flex flex-col items-center justify-center space-y-4">
@@ -324,7 +428,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                 </div>
                 
                 {monitorSession ? (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="grid grid-cols-2 gap-3">
                       {monitorSummaryItems.map((item) => (
                         <div key={item.label} className="bg-white/60 p-3 rounded-2xl border border-[#d8cfba]/60 shadow-sm transition-all hover:shadow-md hover:bg-white/80">
@@ -333,26 +437,69 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                         </div>
                       ))}
                     </div>
-                    
-                    <Accordion className="w-full space-y-2">
-                      {monitorSections.map((section) => (
-                        <AccordionItem key={section.title} value={section.title} className="border-2 border-[#d8cfba]/30 rounded-2xl px-4 bg-white/30">
-                          <AccordionTrigger className="hover:no-underline py-4 text-[12px] font-black text-[#1f2328] uppercase tracking-wide">
-                            {section.title}
-                          </AccordionTrigger>
-                          <AccordionContent className="pb-4">
-                            <div className="space-y-2">
-                              {section.items.map((item) => (
-                                <div key={item.label} className="flex justify-between items-center text-[11px] p-2.5 rounded-xl bg-[#fff8ea]/60 border border-[#d8cfba]/40 hover:bg-white transition-colors">
-                                  <span className="text-[#687177] font-medium">{item.label}</span>
-                                  <strong className="text-[#1f2328] font-mono text-[10px]">{item.value}</strong>
-                                </div>
-                              ))}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* 行 1: 核心行情 - 全宽 */}
+                      <div className="col-span-2 bg-gradient-to-br from-white to-[#fff8ea] p-6 rounded-[28px] border-2 border-[#d8cfba] shadow-sm hover:shadow-md transition-all group">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                             <div className="p-1.5 bg-[#ebe5d5] rounded-lg">
+                               <CandlestickChart className="size-4 text-[#1f2328]" />
+                             </div>
+                             <span className="text-[11px] text-[#687177] font-black uppercase tracking-widest">行情核心分析</span>
+                          </div>
+                          <Badge variant="outline" className="text-[10px] font-mono border-[#d8cfba] text-[#0e6d60] bg-white">LATEST</Badge>
+                        </div>
+                        <div className="flex items-end justify-between">
+                          <div className="space-y-2">
+                            <span className="text-[10px] text-[#687177] font-bold block opacity-60">PRICE / SPREAD</span>
+                            <strong className="text-3xl font-black text-[#1f2328] tracking-tighter tabular-nums leading-none">
+                              {formatMaybeNumber(monitorMarket.tradePrice)}
+                            </strong>
+                          </div>
+                          <div className="text-right">
+                             <span className="text-[16px] font-mono font-bold text-[#0e6d60] block leading-none antialiased">
+                               {formatMaybeNumber(monitorMarket.bestBid)} / {formatMaybeNumber(monitorMarket.bestAsk)}
+                             </span>
+                             <span className="text-[10px] text-[#687177] font-black uppercase mt-1.5 block">Depth liquidity</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 行 2: 策略状态 - 双列并列 */}
+                      <div className="bg-white/60 p-6 rounded-[28px] border-2 border-[#d8cfba]/60 shadow-sm hover:bg-white transition-all group">
+                         <div className="flex items-center gap-2 mb-4">
+                            <div className="p-1.5 bg-[#d9eee8] rounded-lg">
+                               <Activity className="size-4 text-[#0e6d60]" />
                             </div>
-                          </AccordionContent>
-                        </AccordionItem>
-                      ))}
-                    </Accordion>
+                            <span className="text-[11px] text-[#687177] font-black uppercase tracking-widest">策略持仓</span>
+                         </div>
+                         <div className="space-y-2">
+                            <strong className={`text-xl font-black block leading-tight ${String(monitorExecutionSummary.position?.side).includes('LONG') ? 'text-[#0e6d60]' : String(monitorExecutionSummary.position?.side).includes('SHORT') ? 'text-rose-600' : 'text-[#1f2328]'}`}>
+                              {String(monitorExecutionSummary.position?.side ?? "FLAT")}
+                            </strong>
+                            <span className="text-[11px] font-mono text-[#687177] font-bold block">
+                              {formatMaybeNumber(monitorExecutionSummary.position?.quantity)} @ {formatMaybeNumber(monitorExecutionSummary.position?.entryPrice)}
+                            </span>
+                         </div>
+                      </div>
+
+                      <div className="bg-white/60 p-6 rounded-[28px] border-2 border-[#d8cfba]/60 shadow-sm hover:bg-white transition-all group">
+                         <div className="flex items-center gap-2 mb-4">
+                            <div className="p-1.5 bg-[#ebe5d5] rounded-lg">
+                               <Compass className="size-4 text-[#1f2328]" />
+                            </div>
+                            <span className="text-[11px] text-[#687177] font-black uppercase tracking-widest">信号分析</span>
+                         </div>
+                         <div className="space-y-2">
+                            <strong className="text-xl font-black text-[#1f2328] block leading-tight tabular-nums">
+                              {formatMaybeNumber(monitorSignalBarDecision.sma5)}
+                            </strong>
+                            <span className="text-[11px] font-mono text-[#687177] font-bold block">
+                              PERIOD: {String(monitorSignalBarDecision.timeframe ?? "--")}
+                            </span>
+                         </div>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <div className="h-64 flex flex-col items-center justify-center space-y-3 bg-white/20 rounded-[24px] border-2 border-dashed border-[#d8cfba]/50 opacity-40">
@@ -361,6 +508,31 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* 底部：常驻终端时间线 - 奶油风格 */}
+            <div className="mt-8 pt-8 border-t-2 border-[#d8cfba]/50">
+               <div className="flex items-center justify-between mb-4">
+                 <div className="flex items-center gap-2">
+                   <div className="size-2 rounded-full bg-[#0e6d60] animate-pulse" />
+                   <h5 className="text-[11px] font-black text-[#1f2328] uppercase tracking-widest">Execution Timeline Terminal</h5>
+                 </div>
+                 <Badge variant="outline" className="text-[9px] font-mono border-[#d8cfba] text-[#687177] bg-[#fffbf2]">
+                   AUTO_SCROLL ENABLED
+                 </Badge>
+               </div>
+               <div className="h-[280px] overflow-y-auto p-5 bg-[#fffcfe] rounded-[24px] border-2 border-[#d8cfba] shadow-inner custom-scrollbar">
+                  {timelineLogs.length > 0 ? timelineLogs.map((line: string, idx: number) => (
+                    <div key={idx} className="text-[10px] font-mono text-[#1f2328] mb-1.5 leading-normal border-l-2 border-[#ebe5d5] pl-3 py-0.5 hover:bg-[#fff8ea] hover:border-[#0e6d60] transition-all">
+                      <span className="text-[#687177] mr-3 opacity-40 font-bold tabular-nums">[{idx.toString().padStart(2, '0')}]</span>
+                      <span className="opacity-90">{line}</span>
+                    </div>
+                  )) : (
+                    <div className="h-full flex items-center justify-center text-[10px] font-mono text-[#687177] italic opacity-40">
+                      SYSTEM: Waiting for runtime events to populate timeline...
+                    </div>
+                  )}
+               </div>
             </div>
           </CardContent>
         </Card>
