@@ -40,6 +40,17 @@ import {
   displaySignalBindingTimeframe,
   runtimePolicyValueLabel
 } from '../utils/derivation';
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle 
+} from "../components/ui/alert-dialog";
+import { toast } from "sonner";
 import { AccountRecord, LiveSession, SignalRuntimeSession, LiveNextAction, ActiveSettingsModal } from '../types/domain';
 
 interface AccountStageProps {
@@ -156,6 +167,17 @@ export function AccountStage({
   const [showRuntimeHelp, setShowRuntimeHelp] = useState(false);
   const launchTemplates = useTradingStore(s => s.launchTemplates);
   const launchingTemplate = useUIStore(s => s.launchingTemplate);
+
+  const [confirmConfig, setConfirmConfig] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({ open: false, title: "", description: "", onConfirm: () => {} });
+
+  const openConfirm = (title: string, description: string, onConfirm: () => void) => {
+    setConfirmConfig({ open: true, title, description, onConfirm });
+  };
 
   // Derived states
   const highlightedLiveSession = useMemo(
@@ -511,7 +533,11 @@ export function AccountStage({
                             label={liveBindAction ? "解绑中..." : "解绑适配器"}
                             variant="ghost"
                             disabled={liveBindAction || isLiveFlowRunning}
-                            onClick={() => unbindLiveAccount(account.id)}
+                            onClick={() => openConfirm(
+                              "确认解绑适配器？",
+                              "解除该账户的交易所适配器绑定将清除 API 凭证引用，且该账户的所有实盘会话将无法继续运行。",
+                              () => unbindLiveAccount(account.id)
+                            )}
                           />
                         )}
                         <ActionButton
@@ -975,7 +1001,11 @@ export function AccountStage({
                                 label="删除"
                                 variant="ghost"
                                 disabled={signalRuntimeAction !== null}
-                                onClick={() => deleteSignalRuntimeSession(session.id)}
+                                onClick={() => openConfirm(
+                                  "确认删除信号运行时？",
+                                  "确定要彻底删除该信号运行时会话吗？(将停止运行中的流，此操作不可撤销)",
+                                  () => deleteSignalRuntimeSession(session.id)
+                                )}
                               />
                             </div>
                           </td>
@@ -1242,7 +1272,11 @@ export function AccountStage({
                           label={liveSessionDeleteAction === session.id ? "删除中..." : "删除"}
                           variant="ghost"
                           disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
-                          onClick={() => void deleteLiveSession(session.id)}
+                          onClick={() => openConfirm(
+                            "确认删除实盘策略会话？",
+                            "确定要彻底删除该实盘会话吗？删除后相关的监控快照将消失，且无法恢复。",
+                            () => void deleteLiveSession(session.id)
+                          )}
                         />
                       </div>
                     </div>
@@ -1271,6 +1305,25 @@ export function AccountStage({
           </div>
         </div>
       </section>
-      </div>
-    );
+
+      {/* Confirmation Dialog */}
+      <AlertDialog open={confirmConfig.open} onOpenChange={(open) => setConfirmConfig(c => ({ ...c, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmConfig.title}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmConfig.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="outline" size="default">取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              confirmConfig.onConfirm();
+              setConfirmConfig(c => ({ ...c, open: false }));
+            }}>确定</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
 }

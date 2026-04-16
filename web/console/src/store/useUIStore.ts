@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { 
   AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession,
   LoginForm, BacktestForm, PaperForm, LiveAccountForm, LiveBindingForm, LiveOrderForm, LiveSessionForm, StrategySignalForm, StrategyCreateForm, StrategyEditorForm, SignalRuntimeForm, RuntimePolicyForm, TelegramForm
@@ -372,5 +373,13 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   monitorResolution: null,
   setMonitorResolution: (valOrUpdater) => set((state) => ({ monitorResolution: resolveUpdater(valOrUpdater, state.monitorResolution) })),
   notification: null,
-  setNotification: (valOrUpdater) => set((state) => ({ notification: resolveUpdater(valOrUpdater, state.notification) })),
+  setNotification: (valOrUpdater) => set((state) => {
+    const next = resolveUpdater(valOrUpdater, state.notification);
+    if (next) {
+      if (next.type === 'success') toast.success(next.message);
+      else if (next.type === 'error') toast.error(next.message);
+      else toast.info(next.message);
+    }
+    return { notification: next };
+  }),
 }));

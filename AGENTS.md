@@ -11,6 +11,7 @@
 ## 2. 核心记忆与工具 (Core Memory)
 
 - **图谱** == **graphify** (本项目的知识图谱工具)
+- **UI 规范** == **shadcn** (本项目的基础 UI 组件库与规范指南，见 [.skills/shadcn/SKILL.md](.skills/shadcn/SKILL.md))
 
 ### graphify 规则
 
@@ -21,12 +22,6 @@ This project has a graphify knowledge graph at `graphify-out/`.
 - Do not rebuild graphify after every code change in a session.
 - Rebuild graphify immediately before `git push` by running `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` if needed.
 - **Automated Workflow**: A `pre-push` git hook is installed and should be the default path for rebuilding the graph before every `git push`.
-
-### 面向 Gemini 的技能组 (Skills)
-
-本项目现已对接部分 `.agents/skills`。遇到相关场景时，请务必先查阅 Skill：
-- **前端 UI 修改**：必须先参考 `Frontend-Design-System-Skill`。
-- **React 动效控制**：必须先参考 `React-Polanyi-Interaction-Skill`。
 
 ## 3. 修改禁区与高风险目录
 
