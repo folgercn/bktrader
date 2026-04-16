@@ -5,8 +5,10 @@
 *.swp
 *.csv
 *.png
-.env
+.env*
 .env.local
+web/console/dist/
+web/console/.env*
 bin/
 dist/
 node_modules/

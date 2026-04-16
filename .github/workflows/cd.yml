@@ -74,11 +74,11 @@ jobs:
 
       - name: Validate remote frontend directory
         run: |
-          ssh root@1.95.71.247 'mkdir -p /var/www/bktrader'
+          ssh root@${{ vars.DEPLOY_HOST || '1.95.71.247' }} 'mkdir -p /var/www/bktrader'
 
       - name: Deploy frontend assets
         run: |
-          rsync -av --delete dist/ root@1.95.71.247:/var/www/bktrader/
+          rsync -av --delete dist/ root@${{ vars.DEPLOY_HOST || '1.95.71.247' }}:/var/www/bktrader/
 
   deploy:
     name: Deploy on Macmini runner
