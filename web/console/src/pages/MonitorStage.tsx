@@ -241,10 +241,8 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               {/* 左侧：优先会话详情 */}
               {highlightedLiveSession ? (
                 <div className="bg-[#fff8ea] rounded-[24px] p-6 border-2 border-[#d8cfba] shadow-lg relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <BarChart3 className="size-20" />
-                  </div>
                   
+
                   <div className="flex items-start justify-between mb-8">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
