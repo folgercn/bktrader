@@ -1384,6 +1384,17 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 	}
 
 	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
+	if runtimeSessionID != "" {
+		runtimeSession, getErr := p.GetSignalRuntimeSession(runtimeSessionID)
+		if getErr == nil {
+			state["signalRuntimeStatus"] = runtimeSession.Status
+		} else {
+			runtimeSessionID = ""
+			delete(state, "signalRuntimeSessionId")
+			delete(state, "signalRuntimeStatus")
+		}
+	}
+
 	if runtimeSessionID == "" && required {
 		runtimeSession, resolveErr := p.resolveLiveRuntimeSession(session.AccountID, session.StrategyID)
 		if resolveErr != nil {
@@ -1402,11 +1413,6 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 		runtimeSessionID = runtimeSession.ID
 		state["signalRuntimeSessionId"] = runtimeSession.ID
 		state["signalRuntimeStatus"] = runtimeSession.Status
-	} else if runtimeSessionID != "" {
-		runtimeSession, getErr := p.GetSignalRuntimeSession(runtimeSessionID)
-		if getErr == nil {
-			state["signalRuntimeStatus"] = runtimeSession.Status
-		}
 	}
 
 	updated, err := p.store.UpdateLiveSessionState(session.ID, state)
