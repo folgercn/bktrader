@@ -379,6 +379,7 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 	if strings.Trim(key, "|") == "" {
 		key = "unknown"
 	}
+	existingEntry := cloneMetadata(mapValue(stateMap[key]))
 	stateMap[key] = map[string]any{
 		"sourceKey":   stringValue(summary["sourceKey"]),
 		"role":        stringValue(summary["role"]),
@@ -391,7 +392,7 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 	}
 	if strings.EqualFold(stringValue(summary["streamType"]), "signal_bar") {
 		entry := cloneMetadata(mapValue(stateMap[key]))
-		entry["bars"] = mergeSignalBarHistory(entry["bars"], summary, eventTime, 200)
+		entry["bars"] = mergeSignalBarHistory(existingEntry["bars"], summary, eventTime, 200)
 		stateMap[key] = entry
 	}
 	return stateMap
