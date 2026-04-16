@@ -145,6 +145,7 @@ export function AccountStage({
   const orders = useTradingStore(s => s.orders);
   const fills = useTradingStore(s => s.fills);
   const positions = useTradingStore(s => s.positions);
+  const summaries = useTradingStore(s => s.summaries);
   const liveSessionForm = useUIStore(s => s.liveSessionForm);
   const liveBindingForm = useUIStore(s => s.liveBindingForm);
   const quickLiveAccountId = liveSessionForm.accountId || liveBindingForm.accountId || liveAccounts[0]?.id || "";
@@ -441,6 +442,7 @@ export function AccountStage({
               {liveAccounts.map((account) => {
                 const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
                 const syncSnapshot = getRecord(getRecord(account.metadata).liveSyncSnapshot);
+                const summary = summaries.find(s => s.accountId === account.id);
                 const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
                 const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
                 const activeRuntimeState = getRecord(activeRuntime?.state);
@@ -492,24 +494,21 @@ export function AccountStage({
                           </div>
                        </div>
 
-                       {/* 中间：高密集指标矩阵 (Metrics Matrix) */}
                        <div className="flex-1 bg-white/40 p-6 flex flex-col justify-center border-r border-[#d8cfba]/30">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                              <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
-                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Latest Price</span>
+                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Net Equity</span>
+                                <p className="text-xl font-mono font-black text-[#0e6d60] tracking-tighter tabular-nums">{summary ? formatMaybeNumber(summary.netEquity) : "--"}</p>
+                             </div>
+                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
+                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Unrealized PnL</span>
+                                <p className={`text-xl font-mono font-black tracking-tighter tabular-nums ${summary && summary.unrealizedPnl >= 0 ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                                  {summary ? (summary.unrealizedPnl > 0 ? "+" : "") + formatMaybeNumber(summary.unrealizedPnl) : "--"}
+                                </p>
+                             </div>
+                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
+                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Market Price</span>
                                 <p className="text-xl font-mono font-black text-[#1f2328] tracking-tighter tabular-nums">{formatMaybeNumber(activeRuntimeMarket.tradePrice)}</p>
-                             </div>
-                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
-                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Heartbeat</span>
-                                <p className="text-[11px] font-mono text-[#1f2328] font-bold uppercase">{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</p>
-                             </div>
-                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
-                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Signal Bias</span>
-                                <div className="mt-1">
-                                  <Badge className={`h-5.5 px-2 text-[10px] font-black tracking-widest uppercase ${signalActionTone(activeSignalAction.bias, activeSignalAction.state) === 'ready' ? 'bg-[#0e6d60]' : 'bg-rose-600'}`}>
-                                    {String(activeSignalAction.bias || "--")}
-                                  </Badge>
-                                </div>
                              </div>
                              <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
                                 <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Next Advice</span>
@@ -558,9 +557,26 @@ export function AccountStage({
 
                     {accountDetailOpen && (
                       <div className="px-5 pb-5 pt-4 border-t border-[#d8cfba]/50 bg-white/50 animate-in slide-in-from-top-2 duration-300">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
                            <div className="space-y-4">
-                              <h5 className="text-[10px] font-black text-[#687177] uppercase tracking-widest border-l-2 border-[#d8cfba] pl-2">资产快照与同步 / SNAPSHOT</h5>
+                              <h5 className="text-[10px] font-black text-[#687177] uppercase tracking-widest border-l-2 border-[#d8cfba] pl-2">资产分布与保证金 / ASSETS</h5>
+                              <div className="grid grid-cols-3 gap-3">
+                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
+                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Wallet</span>
+                                    <strong className="text-sm text-[#1f2328] tabular-nums">{summary ? formatMaybeNumber(summary.walletBalance) : "--"}</strong>
+                                 </div>
+                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
+                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Margin</span>
+                                    <strong className="text-sm text-[#1f2328] tabular-nums">{summary ? formatMaybeNumber(summary.marginBalance) : "--"}</strong>
+                                 </div>
+                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
+                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Available</span>
+                                    <strong className="text-sm text-[#1f2328] tabular-nums">{summary ? formatMaybeNumber(summary.availableBalance) : "--"}</strong>
+                                 </div>
+                              </div>
+                           </div>
+                           <div className="space-y-4">
+                              <h5 className="text-[10px] font-black text-[#687177] uppercase tracking-widest border-l-2 border-[#d8cfba] pl-2">账户同步状态 / SNAPSHOT</h5>
                               <div className="grid grid-cols-3 gap-3">
                                  <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
                                     <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Orders</span>

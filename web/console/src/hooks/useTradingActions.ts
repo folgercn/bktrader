@@ -1036,6 +1036,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
 
   function jumpToSignalRuntimeSession(sessionId: string) {
     setSelectedSignalRuntimeId(sessionId);
+    useUIStore.getState().setSidebarTab("monitor");
     window.location.hash = "signals";
   }
 

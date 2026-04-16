@@ -9,6 +9,9 @@ export type AccountSummary = {
   unrealizedPnl: number;
   fees: number;
   netEquity: number;
+  walletBalance: number;
+  marginBalance: number;
+  availableBalance: number;
   exposureNotional: number;
   openPositionCount: number;
   updatedAt: string;
