@@ -602,6 +602,7 @@ export interface RuntimePolicyForm {
   strategyEvaluationQuietSeconds: string;
   liveAccountSyncFreshnessSeconds: string;
   paperStartReadinessTimeoutSeconds: string;
+  dispatchMode: string;
 }
 
 export interface TelegramForm {

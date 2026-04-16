@@ -752,6 +752,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         paperStartReadinessTimeoutSeconds: String(
           updated.paperStartReadinessTimeoutSeconds ?? payload.paperStartReadinessTimeoutSeconds
         ),
+        dispatchMode: String(updated.dispatchMode ?? runtimePolicyForm.dispatchMode),
       });
       await loadDashboard();
       setError(null);

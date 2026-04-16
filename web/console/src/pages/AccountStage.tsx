@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { HelpCircle, Zap } from 'lucide-react';
+import { HelpCircle, Zap, Edit3, Square, Trash2, Play, ArrowRight, ShieldCheck, Activity, RotateCw, AlertTriangle } from 'lucide-react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { ActionButton } from '../components/ui/ActionButton';
@@ -52,6 +52,19 @@ import {
 } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
 import { AccountRecord, LiveSession, SignalRuntimeSession, LiveNextAction, ActiveSettingsModal } from '../types/domain';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "../components/ui/select";
+import { Input } from "../components/ui/input";
+import { Separator } from "../components/ui/separator";
 
 interface AccountStageProps {
   logout: () => void;
@@ -289,1041 +302,636 @@ export function AccountStage({
   }
 
   return (
-    <div className="absolute inset-0 overflow-y-auto p-6 space-y-6 bg-zinc-950/50">
-      <section id="overview" className="hero">
-        <div>
-          <p className="eyebrow">交易主控</p>
-          <h2>先准备账户，再接通信号，然后创建并启动实盘会话</h2>
-          <p className="hero-copy">
-            这页只负责把链路搭起来。按顺序完成账户准备、信号接通和实盘会话创建后，再进入监控台处理运行状态与人工干预。
-          </p>
-        </div>
-        <div className="hero-side hero-account-toolbar">
-          <div className="hero-user-card hero-account-card">
-            <div>
-              <strong>当前选中账户</strong>
-              <p>{quickLiveAccount?.name ?? "--"} · {quickLiveAccount?.status ?? "--"} · {quickLiveAccount?.exchange ?? "--"}</p>
-            </div>
-          </div>
-          <div className="session-actions hero-actions">
-            <ActionButton label="新建账户" variant="ghost" onClick={openLiveAccountModal} />
-            <ActionButton
-              label="绑定适配器"
-              variant="ghost"
-              disabled={!quickLiveAccountId}
-              onClick={() => {
-                if (quickLiveAccountId) {
-                  selectQuickLiveAccount(quickLiveAccountId);
-                }
-                openLiveBindingModal();
-              }}
-            />
-            <ActionButton
-              label="创建会话"
-              variant="ghost"
-              disabled={!quickLiveAccountId}
-              onClick={() => {
-                if (quickLiveAccountId) {
-                  selectQuickLiveAccount(quickLiveAccountId);
-                }
-                openLiveSessionModal();
-              }}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="panel panel-session">
-        <div className="panel-header">
-          <div>
-            <p className="panel-kicker">Workflow</p>
-            <h3>创建一条可运行的实盘链路</h3>
-          </div>
-        </div>
-        <div className="workflow-grid">
-          {onboardingSteps.map((step, index) => (
-            <div key={step.key} className={`workflow-card workflow-card-${step.status}`}>
-              <div className="workflow-card-head">
-                <span className="workflow-step-index">{index + 1}</span>
-                <StatusPill tone={step.status === "done" ? "ready" : step.status === "current" ? "watch" : "neutral"}>
-                  {step.status === "done" ? "已就绪" : step.status === "current" ? "当前步骤" : "待完成"}
-                </StatusPill>
-              </div>
-              <h4>{step.title}</h4>
-              <p>{step.detail}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section id="accounts" className="panel panel-session">
-        <div className="panel-header">
-          <div className="flex items-center space-x-2">
-            <div className="flex flex-col">
-              <p className="panel-kicker">Accounts</p>
-              <h3 className="m-0">第一步：准备账户</h3>
-            </div>
-            <div 
-              className="relative cursor-help text-zinc-400 hover:text-emerald-600 transition-colors mt-4"
-              onMouseEnter={() => setShowAccountHelp(true)}
-              onMouseLeave={() => setShowAccountHelp(false)}
-            >
-              <HelpCircle size={16} />
-              {showAccountHelp && (
-                <div className="absolute left-full top-0 ml-3 w-80 p-4 rounded-2xl border border-[#d8cfba] bg-[#fffbf2]/95 backdrop-blur-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-left-2 duration-200">
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-[10px] text-emerald-700 uppercase tracking-wider mb-2 font-bold">账户准备指南 Guide</p>
-                      <div className="space-y-2">
-                        <div className="text-xs text-zinc-600 leading-relaxed pl-2 border-l-2 border-emerald-500/30">
-                          <strong>适配器绑定</strong>：账户需绑定具体的交易所适配器（如 Binance-Live）才能与实盘环境交互。
-                        </div>
-                        <div className="text-xs text-zinc-600 leading-relaxed pl-2 border-l-2 border-emerald-500/30">
-                          <strong>数据同步</strong>：实盘账户需定期点击同步，以刷新订单、成交和资产快照。
-                        </div>
-                        <div className="text-xs text-zinc-600 leading-relaxed pl-2 border-l-2 border-emerald-500/30">
-                          <strong>环境预检</strong>：系统会自动检查网络延迟、API 权限和资产充足度。
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+    <div className="absolute inset-0 overflow-y-auto p-8 space-y-8 bg-[#f3f0e7]">
+      {/* 顶部总控 - 现代 Card 重构 */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[32px] overflow-hidden">
+        <div className="flex flex-col md:flex-row">
+           <div className="flex-1 p-6 space-y-3">
+             <div>
+               <p className="text-[#0e6d60] text-[9px] font-black uppercase tracking-widest mb-1.5 font-mono">交易中心 / CONTROL CENTER</p>
+               <h2 className="text-xl font-black text-[#1f2328] tracking-tight">准备账户，接通信号，启动实盘</h2>
+             </div>
+             <p className="text-xs text-[#687177] leading-relaxed max-w-2xl font-medium">
+               按顺序完成账户准备、信号接通和实盘会话创建后，再进入监控台处理运行状态与人工干预。
+             </p>
+           </div>
+           
+           <div className="md:w-96 bg-[#fff8ea] border-l border-[#d8cfba] p-8 flex flex-col justify-center gap-6">
+              <div className="space-y-1">
+                <strong className="text-[11px] text-[#687177] uppercase font-bold">当前选中账户</strong>
+                <div className="flex items-center gap-2">
+                   <span className="text-sm font-bold text-[#1f2328]">{quickLiveAccount?.name ?? "--"}</span>
+                   <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] text-[#0e6d60]">{quickLiveAccount?.status ?? "--"}</Badge>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="live-grid">
-          <div className="live-grid-span-2">
-            {liveAccounts.length > 0 ? (
-              <div className="live-card-list">
-                {liveAccounts.map((account) => {
-                  const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
-                  const syncSnapshot = getRecord(getRecord(account.metadata).liveSyncSnapshot);
-                  const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
-                  const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
-                  const activeRuntimeState = getRecord(activeRuntime?.state);
-                  const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
-                  const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
-                  const strategyBindings =
-                    (activeRuntime?.strategyId ? strategySignalBindingMap[activeRuntime.strategyId] : undefined) ??
-                    strategySignalBindingMap[
-                      validLiveSessions.find((item) => item.accountId === account.id)?.strategyId ?? ""
-                    ] ??
-                    [];
-                  const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(
-                    getRecord(activeRuntimeState.sourceStates),
-                    runtimePolicy
-                  );
-                  const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
-                  const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
-                  const activeRuntimeTimeline = getList(activeRuntimeState.timeline);
-                  const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
-                    requireTick: strategyBindings.some((item) => item.streamType === "trade_tick"),
-                    requireOrderBook: strategyBindings.some((item) => item.streamType === "order_book"),
-                  });
-                  const hasRunningRuntime = runtimeSessionsForAccount.some((item) => item.status === "RUNNING");
-                  const hasRunningLiveSession = validLiveSessions.some(
-                    (item) => item.accountId === account.id && item.status === "RUNNING"
-                  );
-                  const isLiveFlowRunning = hasRunningRuntime || hasRunningLiveSession;
-                  const livePreflight = deriveLivePreflightSummary(
-                    account,
-                    strategyBindings,
-                    runtimeSessionsForAccount,
-                    activeRuntime,
-                    activeRuntimeReadiness
-                  );
-                  const liveNextAction = deriveLiveNextAction(livePreflight);
-                  const liveAlerts = deriveLiveAlerts(
-                    account,
-                    activeRuntimeState,
-                    activeRuntimeSourceSummary,
-                    activeRuntimeReadiness,
-                    activeSignalAction,
-                    runtimePolicy
-                  );
-                  const accountDetailOpen = expandedAccountId === account.id;
-                  return (
-                    <div key={account.id} className="live-account-card">
-                      <div className="live-account-card-header">
-                        <div className="session-stat">
-                          <span>{account.name}</span>
-                          <strong>{account.status}</strong>
-                        </div>
-                        <div className="live-account-status">
-                          <StatusPill tone={runtimeReadinessTone(activeRuntimeReadiness.status)}>
-                            {`环境：${statusLabelZh(activeRuntimeReadiness.status)}`}
-                          </StatusPill>
-                          <StatusPill tone={runtimeReadinessTone(livePreflight.status)}>
-                            {`预检：${statusLabelZh(livePreflight.status)}`}
-                          </StatusPill>
-                        </div>
-                      </div>
-                      <div className="live-account-meta">
-                        <span>交易所: {account.exchange}</span>
-                        <span>适配器: {String(binding.adapterKey ?? "--")}</span>
-                        <span>{activeRuntime ? `${activeRuntime.status} · ${String(activeRuntimeState.health ?? "--")}` : "无运行实例"}</span>
-                      </div>
-                      <div className="live-account-metrics">
-                        <div className="detail-item detail-item-compact">
-                          <span>最新价</span>
-                          <strong>{formatMaybeNumber(activeRuntimeMarket.tradePrice)}</strong>
-                        </div>
-                        <div className="detail-item detail-item-compact">
-                          <span>买/卖</span>
-                          <strong>{formatMaybeNumber(activeRuntimeMarket.bestBid)} / {formatMaybeNumber(activeRuntimeMarket.bestAsk)}</strong>
-                        </div>
-                        <div className="detail-item detail-item-compact">
-                          <span>价差</span>
-                          <strong>{formatMaybeNumber(activeRuntimeMarket.spreadBps)} bps</strong>
-                        </div>
-                        <div className="detail-item detail-item-compact">
-                          <span>最后心跳</span>
-                          <strong>{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</strong>
-                        </div>
-                      </div>
-                      <div className="live-account-meta">
-                        <span>
-                          <StatusPill tone={signalActionTone(activeSignalAction.bias, activeSignalAction.state)}>
-                            {activeSignalAction.bias}
-                          </StatusPill>
-                        </span>
-                        <span>
-                          <StatusPill tone={decisionStateTone(activeSignalAction.state)}>
-                            {activeSignalAction.state}
-                          </StatusPill>
-                        </span>
-                        <span>{activeSignalAction.reason}</span>
-                      </div>
-                      <div className="live-account-summary">
-                        <div className="note-item">实盘预检: {livePreflight.reason} · {livePreflight.detail}</div>
-                        <div className="note-item">下一步操作: {liveNextAction.label} · {liveNextAction.detail}</div>
-                      </div>
-                      <div className="inline-actions live-account-actions">
-                        <ActionButton
-                          label={
-                            liveFlowAction === account.id
-                              ? isLiveFlowRunning ? "停止中..." : "启动中..."
-                              : isLiveFlowRunning ? "停止实盘流程" : "启动实盘流程"
-                          }
-                          variant={isLiveFlowRunning ? "danger" : undefined}
-                          disabled={
-                            liveFlowAction !== null ||
-                            liveBindAction ||
-                            signalRuntimeAction !== null ||
-                            liveSessionAction !== null ||
-                            liveSessionCreateAction ||
-                            liveSessionLaunchAction
-                          }
-                          onClick={() => {
-                            if (isLiveFlowRunning) {
-                              stopLiveFlow(account.id);
-                              return;
-                            }
-                            launchLiveFlow(account);
-                          }}
-                        />
-                        <ActionButton
-                          label={accountDetailOpen ? "收起详情" : "查看详情"}
-                          variant="ghost"
-                          onClick={() => setExpandedAccountId((current) => current === account.id ? null : account.id)}
-                        />
-                        {account.status !== "IDLE" && (
-                          <ActionButton
-                            label={liveBindAction ? "解绑中..." : "解绑适配器"}
-                            variant="ghost"
-                            disabled={liveBindAction || isLiveFlowRunning}
-                            onClick={() => openConfirm(
-                              "确认解绑适配器？",
-                              "解除该账户的交易所适配器绑定将清除 API 凭证引用，且该账户的所有实盘会话将无法继续运行。",
-                              () => unbindLiveAccount(account.id)
-                            )}
-                          />
-                        )}
-                        <ActionButton
-                          label={liveAccountSyncAction === account.id ? "同步中..." : "同步账户"}
-                          variant="ghost"
-                          disabled={liveAccountSyncAction !== null}
-                          onClick={() => syncLiveAccount(account.id)}
-                        />
-                        {activeRuntime ? (
-                          <ActionButton
-                            label="打开运行环境"
-                            variant="ghost"
-                            onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}
-                          />
-                        ) : null}
-                      </div>
-                      {accountDetailOpen ? (
-                        <div className="live-account-detail">
-                          <div className="live-account-detail-grid">
-                            <div className="detail-item detail-item-compact">
-                              <span>同步状态</span>
-                              <strong>{String(syncSnapshot.syncStatus ?? "未同步")} · {formatTime(String(getRecord(account.metadata).lastLiveSyncAt ?? ""))}</strong>
-                            </div>
-                            <div className="detail-item detail-item-compact">
-                              <span>来源与实例</span>
-                              <strong>{String(syncSnapshot.source ?? "--")} · {strategyBindings.length} 策略绑定 · {runtimeSessionsForAccount.length} 实例</strong>
-                            </div>
-                            <div className="detail-item detail-item-compact">
-                              <span>指标</span>
-                              <strong>周期 {String(activeSignalBarState.timeframe ?? "--")} · ma20 {formatMaybeNumber(activeSignalBarState.ma20)} · atr14 {formatMaybeNumber(activeSignalBarState.atr14)}</strong>
-                            </div>
-                            <div className="detail-item detail-item-compact">
-                              <span>账户同步</span>
-                              <strong>订单 {String(syncSnapshot.orderCount ?? "--")} · 成交 {String(syncSnapshot.fillCount ?? "--")} · 持仓 {String(syncSnapshot.positionCount ?? "--")}</strong>
-                            </div>
-                          </div>
-                          <div className="backtest-notes">
-                            {buildAlertNotes(liveAlerts).map((item) => (
-                              <div key={`${account.id}-${item.title}-${item.detail}`} className={`note-item note-item-alert note-item-alert-${item.level}`}>
-                                <strong>{item.title}</strong> {item.detail}
-                              </div>
-                            ))}
-                            {buildSignalActionNotes(activeSignalAction).map((line) => (
-                              <div key={line} className="note-item">
-                                {line}
-                              </div>
-                            ))}
-                            {buildSignalBarStateNotes(activeSignalBarState).map((line) => (
-                              <div key={line} className="note-item">
-                                {line}
-                              </div>
-                            ))}
-                            {buildRuntimeEventNotes(activeRuntimeSummary).map((line) => (
-                              <div key={line} className="note-item">
-                                {line}
-                              </div>
-                            ))}
-                            {buildSourceStateNotes(getRecord(activeRuntimeState.sourceStates)).map((line) => (
-                              <div key={line} className="note-item">
-                                {line}
-                              </div>
-                            ))}
-                            {buildTimelineNotes(activeRuntimeTimeline).slice(0, 3).map((line) => (
-                              <div key={line} className="note-item">
-                                {line}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
+                <p className="text-[10px] text-[#687177]">{quickLiveAccount?.exchange ?? "未解析交易所"}</p>
               </div>
-            ) : (
-              <div className="empty-state empty-state-compact">暂无实盘账户</div>
-            )}
-          </div>
-        </div>
-      </section>
 
-      <section id="signals" className="panel panel-session">
-        <div className="panel-header">
-          <div>
-            <p className="panel-kicker">Signal Pipeline</p>
-            <h3>第二步：接通信号源并启动运行时</h3>
-          </div>
-          <div className="range-box">
-            <span>{signalCatalog?.sources?.length ?? 0} 个源</span>
-            <span>{signalRuntimeSessions.length} 个会话</span>
-          </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" className="h-9 border-[#d8cfba] bg-white text-[11px] font-bold text-[#1f2328]" onClick={openLiveAccountModal}>
+                  新建账户
+                </Button>
+                <Button 
+                   variant="outline" 
+                   size="sm" 
+                   className="h-9 border-[#d8cfba] bg-white text-[11px] font-bold text-[#1f2328]"
+                   disabled={!quickLiveAccountId}
+                   onClick={() => {
+                     if (quickLiveAccountId) {
+                       selectQuickLiveAccount(quickLiveAccountId);
+                     }
+                     openLiveBindingModal();
+                   }}
+                >
+                  绑定适配器
+                </Button>
+                <Button 
+                   size="sm" 
+                   className="h-9 bg-[#0e6d60] hover:bg-[#0a5a4f] text-white text-[11px] font-bold shadow-md"
+                   disabled={!quickLiveAccountId}
+                   onClick={() => {
+                     if (quickLiveAccountId) {
+                       selectQuickLiveAccount(quickLiveAccountId);
+                     }
+                     openLiveSessionModal();
+                   }}
+                >
+                  创建会话
+                </Button>
+              </div>
+           </div>
         </div>
+      </Card>
 
-        <div className="live-grid">
-          <div className="backtest-form session-form">
-            <div className="flex items-center space-x-2 mb-4">
-              <h4 className="m-0">2.1 推荐启动模板</h4>
-              <Zap size={16} className="text-amber-500 animate-pulse" />
+      {/* Workflow 引导区域 */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Step by Step</p>
+              <CardTitle className="text-lg font-black text-[#1f2328]">建立一条可运行的实盘链路</CardTitle>
             </div>
-            
-            {launchTemplates.length > 0 ? (
-              <div className="template-gallery">
-                {launchTemplates.map((tpl) => (
-                  <div key={tpl.key} className="launch-template-card">
-                    <div className="tpl-header">
-                      <div>
-                        <div className="tpl-title">
-                          <span className="tpl-dot" />
-                          {tpl.name}
-                        </div>
-                        <p className="tpl-desc">{tpl.description}</p>
-                      </div>
-                      <div className="tpl-symbol-tag">
-                        {tpl.symbol} · {tpl.signalTimeframe}
-                      </div>
-                    </div>
-                    
-                    <div className="tpl-footer">
-                      <div className="tpl-badge-list">
-                        {tpl.strategySignalBindings?.slice(0, 3).map((b: any, idx: number) => (
-                          <span key={idx} className="tpl-badge">
-                            {b.role}
-                          </span>
-                        ))}
-                      </div>
-                      <ActionButton 
-                        label={launchingTemplate === tpl.key ? "启动中..." : "一键应用并启动"} 
-                        disabled={launchingTemplate !== null}
-                        onClick={() => executeLaunchTemplate(tpl, quickLiveAccountId)}
-                      />
+            <Activity size={20} className="text-[#d8cfba] opacity-50" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {onboardingSteps.map((step, index) => (
+              <div 
+                key={step.key} 
+                className={`relative p-4 rounded-[20px] border transition-all ${
+                  step.status === "done" 
+                    ? "bg-[#d9eee8] border-[#0e6d60]/20" 
+                    : step.status === "current" 
+                      ? "bg-[#fff8ea] border-[#d8cfba] shadow-sm" 
+                      : "bg-[#f8f6f0] border-transparent opacity-60"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                   <div className={`flex items-center justify-center w-6 h-6 rounded-lg text-[10px] font-bold border ${
+                     step.status === "done" ? "bg-[#0e6d60] text-white border-transparent" : "bg-white border-[#d8cfba] text-[#1f2328]"
+                   }`}>
+                     {index + 1}
+                   </div>
+                   <Badge variant="outline" className={`text-[9px] h-4 border-inherit font-bold ${
+                     step.status === "done" ? "text-[#0e6d60]" : step.status === "current" ? "text-amber-700 font-black" : "text-[#687177]"
+                   }`}>
+                     {step.status === "done" ? "已完成" : step.status === "current" ? "进行中" : "待处理"}
+                   </Badge>
+                </div>
+                <h4 className={`text-sm font-black mb-1.5 ${step.status === "pending" ? "text-[#687177]" : "text-[#1f2328]"}`}>{step.title}</h4>
+                <p className="text-xs leading-relaxed text-[#687177] font-medium">{step.detail}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <CardHeader className="pb-4 flex flex-row items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div>
+              <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Step 1 / Accounts</p>
+              <CardTitle className="text-lg font-black text-[#1f2328]">第一步：准备账户</CardTitle>
+            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <HelpCircle size={14} className="text-[#687177] cursor-help hover:text-[#0e6d60] transition-colors" />
+                </TooltipTrigger>
+                <TooltipContent className="w-80 p-4 border-[#d8cfba] bg-[#fffbf2] shadow-xl rounded-xl">
+                  <div className="space-y-3">
+                    <p className="text-[10px] text-[#0e6d60] uppercase font-bold">账户准备指南</p>
+                    <div className="space-y-2 text-[11px] text-[#1f2328] leading-relaxed">
+                      <p>• <strong>适配器绑定</strong>：账户需绑定具体的交易所适配器（如 Binance-Live）才能与实盘环境交互。</p>
+                      <p>• <strong>数据同步</strong>：实盘账户需定期点击同步，以刷新订单、成交和资产快照。</p>
+                      <p>• <strong>环境预检</strong>：系统会自动检查网络延迟、API 权限和资产充足度。</p>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-8 text-center border-2 border-dashed border-zinc-100 rounded-2xl">
-                <p className="text-xs text-zinc-400">正在获取推荐模板...</p>
-              </div>
-            )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
+          <Button variant="ghost" size="sm" className="text-[#0e6d60] font-bold h-8" onClick={openLiveAccountModal}>
+            + 新建账户
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {liveAccounts.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4">
+              {liveAccounts.map((account) => {
+                const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
+                const syncSnapshot = getRecord(getRecord(account.metadata).liveSyncSnapshot);
+                const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
+                const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
+                const activeRuntimeState = getRecord(activeRuntime?.state);
+                const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
+                const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
+                const strategyBindings = (activeRuntime?.strategyId ? strategySignalBindingMap[activeRuntime.strategyId] : undefined) ?? strategySignalBindingMap[validLiveSessions.find((item) => item.accountId === account.id)?.strategyId ?? ""] ?? [];
+                const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates), runtimePolicy);
+                const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
+                const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
+                const activeRuntimeTimeline = getList(activeRuntimeState.timeline);
+                const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
+                  requireTick: strategyBindings.some((item) => item.streamType === "trade_tick"),
+                  requireOrderBook: strategyBindings.some((item) => item.streamType === "order_book"),
+                });
+                const hasRunningRuntime = runtimeSessionsForAccount.some((item) => item.status === "RUNNING");
+                const hasRunningLiveSession = validLiveSessions.some((item) => item.accountId === account.id && item.status === "RUNNING");
+                const isLiveFlowRunning = hasRunningRuntime || hasRunningLiveSession;
+                const livePreflight = deriveLivePreflightSummary(account, strategyBindings, runtimeSessionsForAccount, activeRuntime, activeRuntimeReadiness);
+                const liveNextAction = deriveLiveNextAction(livePreflight);
+                const liveAlerts = deriveLiveAlerts(account, activeRuntimeState, activeRuntimeSourceSummary, activeRuntimeReadiness, activeSignalAction, runtimePolicy);
+                const accountDetailOpen = expandedAccountId === account.id;
 
-          <div className="backtest-list">
-            <h4>当前信号绑定结果</h4>
-            <div className="backtest-breakdown">
-              <h5>策略级别</h5>
-              <SimpleTable
-                columns={["信号源", "角色", "代码 (Symbol)", "周期", "交易所", "状态"]}
-                rows={strategySignalBindings.map((item) => [
-                  item.sourceName,
-                  item.role,
-                  item.symbol || "--",
-                  displaySignalBindingTimeframe(item),
-                  item.exchange,
-                  technicalStatusLabel(item.status),
-                ])}
-                emptyMessage="暂无策略绑定信息"
-              />
+                return (
+                  <div key={account.id} className="group border border-[#d8cfba] bg-[#fff8ea] rounded-[20px] overflow-hidden shadow-sm hover:shadow-md transition-all">
+                    <div className="p-5 flex flex-col md:flex-row gap-6">
+                       {/* 账户核心信息 */}
+                       <div className="flex-1 space-y-4">
+                          <div className="flex items-center justify-between">
+                             <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white border border-[#d8cfba] flex items-center justify-center font-black text-[#0e6d60]">
+                                  {account.exchange?.charAt(0) || "A"}
+                                </div>
+                                <div>
+                                  <h4 className="text-base font-black text-[#1f2328]">{account.name}</h4>
+                                  <div className="flex items-center gap-2">
+                                     <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white text-[#1f2328]">{account.exchange}</Badge>
+                                     <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white text-[#1f2328]">{String(binding.adapterKey ?? "未适配")}</Badge>
+                                  </div>
+                                </div>
+                             </div>
+                             <div className="flex items-center gap-2">
+                                <Badge className={`text-[10px] h-5 ${activeRuntimeReadiness.status === 'ready' ? 'bg-[#0e6d60]' : 'bg-amber-600'}`}>
+                                  环境：{statusLabelZh(activeRuntimeReadiness.status)}
+                                </Badge>
+                                <Badge variant="secondary" className="text-[10px] h-5 bg-white border-[#d8cfba]">
+                                  预检：{statusLabelZh(livePreflight.status)}
+                                </Badge>
+                             </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2">
+                             <div className="space-y-1">
+                                <span className="text-[11px] text-[#687177] uppercase font-black tracking-tighter block">最新价</span>
+                                <p className="text-base font-mono font-black text-[#1f2328] tracking-tighter">{formatMaybeNumber(activeRuntimeMarket.tradePrice)}</p>
+                             </div>
+                             <div className="space-y-1">
+                                <span className="text-[11px] text-[#687177] uppercase font-black tracking-tighter block">心跳</span>
+                                <p className="text-[10px] font-mono text-[#687177] font-bold">{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</p>
+                             </div>
+                             <div className="space-y-1">
+                                <span className="text-[11px] text-[#687177] uppercase font-black tracking-tighter block">信号偏差</span>
+                                <div className="h-6 flex items-center">
+                                  <Badge className={`h-4.5 px-1.5 text-[9px] font-black tracking-widest ${signalActionTone(activeSignalAction.bias, activeSignalAction.state) === 'ready' ? 'bg-[#0e6d60]' : 'bg-rose-600'}`}>
+                                    {String(activeSignalAction.bias || "--").toUpperCase()}
+                                  </Badge>
+                                </div>
+                             </div>
+                             <div className="space-y-1">
+                                <span className="text-[11px] text-[#687177] uppercase font-black tracking-tighter block">操作建议</span>
+                                <p className="text-[10px] text-[#1f2328] font-bold truncate">{liveNextAction.label}</p>
+                             </div>
+                          </div>
+
+                          <div className="p-3 rounded-xl bg-white/50 border border-[#d8cfba]/50 text-[10px] text-[#687177] leading-relaxed">
+                             <strong>预检反馈:</strong> {livePreflight.reason} · {shrink(livePreflight.detail)}
+                          </div>
+                       </div>
+
+                       {/* 账户操作区 */}
+                       <div className="md:w-48 flex flex-col gap-2">
+                          <Button 
+                            className={`w-full h-9 font-black text-[11px] shadow-sm rounded-xl ${isLiveFlowRunning ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#0e6d60] hover:bg-[#0a5a4f]'}`}
+                            disabled={liveFlowAction !== null || liveBindAction || signalRuntimeAction !== null}
+                            onClick={() => isLiveFlowRunning ? stopLiveFlow(account.id) : launchLiveFlow(account)}
+                          >
+                            {isLiveFlowRunning ? "停止实盘流程" : "启动实盘流程"}
+                          </Button>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button variant="outline" className="h-9 text-[10px] border-[#d8cfba] bg-white" onClick={() => syncLiveAccount(account.id)}>
+                              同步账户
+                            </Button>
+                            <Button variant="outline" className="h-9 text-[10px] border-[#d8cfba] bg-white" onClick={() => setExpandedAccountId((current) => current === account.id ? null : account.id)}>
+                              {accountDetailOpen ? "收起" : "详情"}
+                            </Button>
+                          </div>
+                          {activeRuntime && (
+                            <Button variant="ghost" className="h-8 text-[10px] text-[#0e6d60] font-bold" onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}>
+                              打开运行环境
+                            </Button>
+                          )}
+                       </div>
+                    </div>
+
+                    {accountDetailOpen && (
+                      <div className="px-5 pb-5 pt-2 border-t border-[#d8cfba]/50 bg-white/30">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                           <div className="space-y-3">
+                              <h5 className="text-[10px] font-black text-[#1f2328] uppercase">同步与资产快照</h5>
+                              <div className="grid grid-cols-3 gap-2">
+                                 <div className="p-3 rounded-xl bg-[#fff8ea] border border-[#d8cfba] text-center">
+                                    <span className="block text-[8px] text-[#687177]">订单</span>
+                                    <strong className="text-xs text-[#1f2328]">{String(syncSnapshot.orderCount ?? "0")}</strong>
+                                 </div>
+                                 <div className="p-3 rounded-xl bg-[#fff8ea] border border-[#d8cfba] text-center">
+                                    <span className="block text-[8px] text-[#687177]">成交</span>
+                                    <strong className="text-xs text-[#1f2328]">{String(syncSnapshot.fillCount ?? "0")}</strong>
+                                 </div>
+                                 <div className="p-3 rounded-xl bg-[#fff8ea] border border-[#d8cfba] text-center">
+                                    <span className="block text-[8px] text-[#687177]">持仓</span>
+                                    <strong className="text-xs text-[#1f2328]">{String(syncSnapshot.positionCount ?? "0")}</strong>
+                                 </div>
+                              </div>
+                           </div>
+                           <div className="space-y-2">
+                              <h5 className="text-[10px] font-black text-[#1f2328] uppercase">实时诊断数据</h5>
+                              <div className="space-y-1">
+                                {buildAlertNotes(liveAlerts).map((item) => (
+                                  <div key={`${account.id}-${item.title}`} className={`text-[10px] p-2 rounded-lg border ${item.level === 'critical' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                                    <strong>{item.title}:</strong> {item.detail}
+                                  </div>
+                                ))}
+                                {buildSignalActionNotes(activeSignalAction).slice(0, 2).map((line) => (
+                                  <div key={line} className="text-[10px] text-[#687177] pl-2 border-l-2 border-[#d8cfba]">{line}</div>
+                                ))}
+                              </div>
+                           </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-[#d8cfba] rounded-[24px] text-[#687177] opacity-40">
+              <p className="text-sm font-bold">暂无实盘账户</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Step 2 / Signal Pipeline</p>
+              <CardTitle className="text-lg font-black text-[#1f2328]">第二步：接通信号源并启动运行时</CardTitle>
+            </div>
+            <div className="flex items-center gap-2 bg-[#fff8ea] px-3 py-1 rounded-full border border-[#d8cfba] text-[10px] font-bold text-[#687177]">
+               <span>{signalCatalog?.sources?.length ?? 0} 个源</span>
+               <Separator orientation="vertical" className="h-3 bg-[#d8cfba]" />
+               <span>{signalRuntimeSessions.length} 个会话</span>
             </div>
           </div>
-        </div>
-
-        <div className="live-grid">
-          <div className="backtest-list live-grid-span-2">
-            <div className="flex items-center space-x-2 mb-4">
-              <h4 className="m-0">信号源目录与说明</h4>
-              <div 
-                className="relative cursor-help text-zinc-500 hover:text-emerald-400 transition-colors"
-                onMouseEnter={() => setShowSignalNotes(true)}
-                onMouseLeave={() => setShowSignalNotes(false)}
-              >
-                <HelpCircle size={16} />
-                {showSignalNotes && (
-                  <div className="absolute left-full top-0 ml-3 w-80 p-4 rounded-2xl border border-[#d8cfba] bg-[#fffbf2]/95 backdrop-blur-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-left-2 duration-200">
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-[10px] text-emerald-700 uppercase tracking-wider mb-2 font-bold">操作建议 Guidance</p>
-                        <div className="space-y-1.5">
-                          {(signalCatalog?.notes ?? []).map((note) => (
-                            <div key={note} className="text-xs text-zinc-700 leading-relaxed pl-2 border-l-2 border-emerald-500/30">
-                              {note}
+        </CardHeader>
+        <CardContent className="space-y-8">
+          {/* 启动模板区域 */}
+          <div className="space-y-4">
+             <div className="flex items-center gap-2">
+               <Zap size={16} className="text-amber-500" />
+               <h4 className="text-xs font-black text-[#1f2328] uppercase tracking-wider">2.1 推荐启动模板</h4>
+             </div>
+             
+             {launchTemplates.length > 0 ? (
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                 {launchTemplates.map((tpl) => (
+                   <div key={tpl.key} className="group p-5 rounded-[20px] border border-[#d8cfba] bg-[#fff8ea] hover:bg-white hover:shadow-lg transition-all space-y-4">
+                      <div className="flex justify-between items-start">
+                         <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                               <div className="w-2 h-2 rounded-full bg-[#0e6d60]" />
+                               <span className="text-sm font-black text-[#1f2328]">{tpl.name}</span>
                             </div>
-                          ))}
-                        </div>
+                            <p className="text-[10px] text-[#687177] leading-relaxed line-clamp-2">{tpl.description}</p>
+                         </div>
+                         <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white text-[#1f2328]">
+                           {tpl.symbol} · {tpl.signalTimeframe}
+                         </Badge>
                       </div>
                       
-                      <div>
-                        <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-bold">类型参考 Reference</p>
-                        <div className="grid grid-cols-1 gap-2">
-                          {(signalSourceTypes ?? []).map((item) => (
-                            <div key={item.streamType} className="bg-emerald-500/5 p-2 rounded-lg border border-emerald-500/10">
-                              <span className="text-[10px] text-emerald-700 font-mono font-bold block mb-0.5">{item.streamType}</span>
-                              <p className="text-[11px] text-zinc-600 leading-normal">{item.description}</p>
-                            </div>
+                      <div className="space-y-3 pt-2">
+                        <div className="flex flex-wrap gap-1">
+                          {tpl.strategySignalBindings?.slice(0, 3).map((b: any, idx: number) => (
+                            <Badge key={idx} variant="secondary" className="text-[8px] h-3.5 bg-white border-[#d8cfba]/50 text-[#687177]">
+                              {b.role}
+                            </Badge>
                           ))}
                         </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            {signalCatalog?.sources?.length ? (
-              <SimpleTable
-                columns={["名称", "交易所", "流类型", "角色", "环境", "传输方式"]}
-                rows={signalCatalog.sources.map((source) => [
-                  source.name,
-                  source.exchange,
-                  source.streamType,
-                  source.roles.join(", "),
-                  source.environments.join(", "),
-                  source.transport,
-                ])}
-                emptyMessage="暂无信号源"
-              />
-            ) : (
-              <div className="empty-state empty-state-compact">信号源目录为空</div>
-            )}
-          </div>
-        </div>
-
-        <div className="live-grid">
-          <div className="backtest-form session-form">
-            <div className="flex items-center space-x-2 mb-4">
-              <h4 className="m-0">2.2 运行时策略</h4>
-              <div 
-                className="relative cursor-help text-zinc-400 hover:text-emerald-600 transition-colors"
-                onMouseEnter={() => setShowPolicyHelp(true)}
-                onMouseLeave={() => setShowPolicyHelp(false)}
-              >
-                <HelpCircle size={16} />
-                {showPolicyHelp && (
-                  <div className="absolute left-full top-0 ml-3 w-80 p-4 rounded-2xl border border-[#d8cfba] bg-[#fffbf2]/95 backdrop-blur-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-left-2 duration-200">
-                    <div className="space-y-3">
-                      <p className="text-[10px] text-emerald-700 uppercase tracking-wider font-bold">策略状态说明 Policy</p>
-                      <div className="text-xs text-zinc-700 leading-relaxed space-y-2">
-                        <div className="p-2 bg-emerald-500/5 rounded-lg border border-emerald-500/10">
-                          活跃策略: 成交价格 {runtimePolicyValueLabel(platformRuntimePolicy?.tradeTickFreshnessSeconds)} · 盘口 {runtimePolicyValueLabel(platformRuntimePolicy?.orderBookFreshnessSeconds)} ·
-                          信号 K 线 {runtimePolicyValueLabel(platformRuntimePolicy?.signalBarFreshnessSeconds)}
-                        </div>
-                        <div className="p-2 bg-zinc-500/5 rounded-lg border border-zinc-500/10">
-                          运行时静默 {runtimePolicyValueLabel(platformRuntimePolicy?.runtimeQuietSeconds)} · 策略评估静默 {runtimePolicyValueLabel(platformRuntimePolicy?.strategyEvaluationQuietSeconds)}
-                        </div>
-                        <div className="p-2 bg-zinc-500/5 rounded-lg border border-zinc-500/10 text-[11px]">
-                          账户同步新鲜度 {runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds)} · 模拟盘预检 {runtimePolicyValueLabel(platformRuntimePolicy?.paperStartReadinessTimeoutSeconds)}
-                        </div>
-                        <div className="text-[10px] text-zinc-500 italic pl-1">
-                          * 表单支持显式保存 `0`，表示关闭对应阈值。
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="form-grid">
-              <label className="form-field">
-                <span>成交价格新鲜度 (秒)</span>
-                <input
-                  value={runtimePolicyForm.tradeTickFreshnessSeconds}
-                  onChange={(event) =>
-                    setRuntimePolicyForm((current) => ({ ...current, tradeTickFreshnessSeconds: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>盘口数据新鲜度 (秒)</span>
-                <input
-                  value={runtimePolicyForm.orderBookFreshnessSeconds}
-                  onChange={(event) =>
-                    setRuntimePolicyForm((current) => ({ ...current, orderBookFreshnessSeconds: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>信号 K 线新鲜度 (秒)</span>
-                <input
-                  value={runtimePolicyForm.signalBarFreshnessSeconds}
-                  onChange={(event) =>
-                    setRuntimePolicyForm((current) => ({ ...current, signalBarFreshnessSeconds: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>运行时静默期 (秒)</span>
-                <input
-                  value={runtimePolicyForm.runtimeQuietSeconds}
-                  onChange={(event) =>
-                    setRuntimePolicyForm((current) => ({ ...current, runtimeQuietSeconds: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>策略评估静默期 (秒)</span>
-                <input
-                  value={runtimePolicyForm.strategyEvaluationQuietSeconds}
-                  onChange={(event) =>
-                    setRuntimePolicyForm((current) => ({
-                      ...current,
-                      strategyEvaluationQuietSeconds: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>账户同步新鲜度 (秒)</span>
-                <input
-                  value={runtimePolicyForm.liveAccountSyncFreshnessSeconds}
-                  onChange={(event) =>
-                    setRuntimePolicyForm((current) => ({
-                      ...current,
-                      liveAccountSyncFreshnessSeconds: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>模拟盘启动超时 (秒)</span>
-                <input
-                  value={runtimePolicyForm.paperStartReadinessTimeoutSeconds}
-                  onChange={(event) =>
-                    setRuntimePolicyForm((current) => ({
-                      ...current,
-                      paperStartReadinessTimeoutSeconds: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="backtest-actions">
-              <ActionButton
-                label={runtimePolicyAction ? "保存中..." : "保存运行时策略"}
-                disabled={runtimePolicyAction}
-                onClick={updateRuntimePolicy}
-              />
-            </div>
-          </div>
-
-          <div className="backtest-form session-form">
-            <div className="flex items-center space-x-2 mb-4">
-              <h4 className="m-0">2.3 创建信号运行时</h4>
-              <div 
-                className="relative cursor-help text-zinc-400 hover:text-emerald-600 transition-colors"
-                onMouseEnter={() => setShowRuntimeHelp(true)}
-                onMouseLeave={() => setShowRuntimeHelp(false)}
-              >
-                <HelpCircle size={16} />
-                {showRuntimeHelp && (
-                  <div className="absolute left-full top-0 ml-3 w-80 p-4 rounded-2xl border border-[#d8cfba] bg-[#fffbf2]/95 backdrop-blur-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-left-2 duration-200">
-                    <div className="space-y-3">
-                      <p className="text-[10px] text-emerald-700 uppercase tracking-wider font-bold">匹配状态 Runtime Plan</p>
-                      <div className="space-y-2">
-                        <div className="text-xs text-zinc-700 p-2 bg-emerald-500/5 rounded-lg border border-emerald-500/10">
-                          运行时适配器: {signalRuntimeAdapters.map((item) => item.key).join(", ") || "--"}
-                        </div>
-                        {signalRuntimePlan?.missingBindings ? (
-                          getList(signalRuntimePlan.missingBindings).map((item, index) => (
-                            <div key={index} className="text-[11px] text-rose-700 p-2 bg-rose-500/5 rounded-lg border border-rose-500/10">
-                              Missing: {String(item.sourceKey)} · {String(item.role)} · {displaySignalBindingTimeframe(item)}
-                            </div>
-                          ))
-                        ) : null}
-                        {signalRuntimePlan?.matchedBindings ? (
-                          <div className="text-[10px] text-zinc-500 pl-1">
-                            已成功匹配 {getList(signalRuntimePlan.matchedBindings).length} 个信号绑定。
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="form-grid">
-              <label className="form-field">
-                <span>账户</span>
-                <select value={signalRuntimeForm.accountId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, accountId: event.target.value }))}>
-                  {liveAccounts.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({technicalStatusLabel(item.mode)})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>策略</span>
-                <select value={signalRuntimeForm.strategyId} onChange={(event) => setSignalRuntimeForm((current) => ({ ...current, strategyId: event.target.value }))}>
-                  {strategyOptions.map((strategy) => (
-                    <option key={strategy.value} value={strategy.value}>
-                      {strategy.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="backtest-actions">
-              <ActionButton label={signalRuntimeAction === "create" ? "创建中..." : "创建运行时会话"} disabled={signalRuntimeAction !== null || !signalRuntimeForm.accountId || !signalRuntimeForm.strategyId} onClick={createSignalRuntimeSession} />
-            </div>
-            <div className="detail-grid">
-              <div className="detail-item">
-                <span>计划就绪</span>
-                <strong>{boolLabel(signalRuntimePlan?.ready)}</strong>
-              </div>
-              <div className="detail-item">
-                <span>所需绑定</span>
-                <strong>{String((signalRuntimePlan?.requiredBindings as unknown[] | undefined)?.length ?? 0)}</strong>
-              </div>
-              <div className="detail-item">
-                <span>已匹配</span>
-                <strong>{String((signalRuntimePlan?.matchedBindings as unknown[] | undefined)?.length ?? 0)}</strong>
-              </div>
-              <div className="detail-item">
-                <span>缺失项</span>
-                <strong>{String((signalRuntimePlan?.missingBindings as unknown[] | undefined)?.length ?? 0)}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="backtest-list mt-8 pt-8 border-t border-white/5">
-          <h4 className="text-sm font-medium text-emerald-400 mb-4">2.4 运行时会话与结果</h4>
-            {signalRuntimeSessions.length > 0 ? (
-              <>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>会话 ID</th>
-                        <th>状态</th>
-                        <th>适配器</th>
-                        <th>订阅数</th>
-                        <th>心跳</th>
-                        <th>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {signalRuntimeSessions.map((session) => (
-                        <tr
-                          key={session.id}
-                          className={session.id === selectedSignalRuntime?.id ? "table-row-active" : ""}
-                          onClick={() => setSelectedSignalRuntimeId(session.id)}
+                        <Button 
+                          className="w-full h-8 bg-white border border-[#d8cfba] text-[#1f2328] hover:bg-[#0e6d60] hover:text-white hover:border-transparent text-[10px] font-bold transition-all"
+                          disabled={launchingTemplate !== null}
+                          onClick={() => executeLaunchTemplate(tpl, quickLiveAccountId)}
                         >
-                          <td>{shrink(session.id)}</td>
-                          <td>{technicalStatusLabel(session.status)}</td>
-                          <td>{session.runtimeAdapter || "--"}</td>
-                          <td>{String(session.subscriptionCount)}</td>
-                          <td>{formatTime(String(session.state?.lastHeartbeatAt ?? ""))}</td>
-                          <td>
-                            <div className="inline-actions">
-                              <ActionButton
-                                label={signalRuntimeAction === `${session.id}:start` ? "启动中..." : "启动"}
-                                disabled={signalRuntimeAction !== null || session.status === "RUNNING"}
-                                onClick={() => runSignalRuntimeAction(session.id, "start")}
-                              />
-                              <ActionButton
-                                label={signalRuntimeAction === `${session.id}:stop` ? "停止中..." : "停止"}
-                                variant="ghost"
-                                disabled={signalRuntimeAction !== null || session.status === "STOPPED"}
-                                onClick={() => runSignalRuntimeAction(session.id, "stop")}
-                              />
-                              <ActionButton
-                                label="删除"
-                                variant="ghost"
-                                disabled={signalRuntimeAction !== null}
-                                onClick={() => openConfirm(
-                                  "确认删除信号运行时？",
-                                  "确定要彻底删除该信号运行时会话吗？(将停止运行中的流，此操作不可撤销)",
-                                  () => deleteSignalRuntimeSession(session.id)
-                                )}
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="backtest-detail-card">
-                  <div className="flex items-center justify-between mb-4 mt-8 pt-8 border-t border-white/5">
-                    <h5 className="text-sm font-medium text-emerald-400">运行时详情</h5>
-                    <div className="flex items-center space-x-3 text-[10px] text-zinc-500 bg-white/5 px-2 py-1 rounded-md">
-                      <span>状态: {selectedSignalRuntime?.status ?? "未选择"}</span>
-                      <span className="opacity-30">|</span>
-                      <span>适配器: {selectedSignalRuntime?.runtimeAdapter ?? "--"}</span>
-                    </div>
-                  </div>
-                  {selectedSignalRuntime ? (
-                    <>
-                      <div className="detail-grid">
-                        <div className="detail-item" title={selectedSignalRuntime.id}>
-                          <span>会话 ID</span>
-                          <strong>{shrink(selectedSignalRuntime.id)}</strong>
-                        </div>
-                        <div className="detail-item" title={selectedSignalRuntime.accountId}>
-                          <span>关联账户</span>
-                          <strong>{shrink(selectedSignalRuntime.accountId)}</strong>
-                        </div>
-                        <div className="detail-item" title={selectedSignalRuntime.strategyId}>
-                          <span>执行策略</span>
-                          <strong>{shrink(selectedSignalRuntime.strategyId)}</strong>
-                        </div>
-                        <div className="detail-item">
-                          <span>传输协议</span>
-                          <strong>{selectedSignalRuntime.transport || "--"}</strong>
-                        </div>
-                        <div className="detail-item">
-                          <span>健康状态</span>
-                          <strong>{String(selectedSignalRuntimeState.health ?? "--")}</strong>
-                        </div>
-                        <div className="detail-item">
-                          <span>信号事件数</span>
-                          <strong>{String(Math.trunc(getNumber(selectedSignalRuntimeState.signalEventCount) ?? 0))}</strong>
-                        </div>
-                        <div className="detail-item">
-                          <span>最后心跳</span>
-                          <strong>{formatTime(String(selectedSignalRuntimeState.lastHeartbeatAt ?? ""))}</strong>
-                        </div>
-                        <div className="detail-item">
-                          <span>最后事件</span>
-                          <strong>{formatTime(String(selectedSignalRuntimeState.lastEventAt ?? ""))}</strong>
-                        </div>
-                        <div className="detail-item">
-                          <span>资源状态</span>
-                          <strong>{String(Object.keys(selectedSignalRuntimeSourceStates).length)}</strong>
-                        </div>
-                        <div className="detail-item">
-                          <span>运行计划</span>
-                          <strong>{boolLabel(selectedSignalRuntimePlan.ready)}</strong>
-                        </div>
+                          {launchingTemplate === tpl.key ? "启动中..." : "一键应用并启动"}
+                        </Button>
                       </div>
+                   </div>
+                 ))}
+               </div>
+             ) : (
+               <div className="p-12 text-center border-2 border-dashed border-[#d8cfba] rounded-[24px]">
+                 <p className="text-xs text-[#687177] font-bold italic">正在获取推荐模板...</p>
+               </div>
+             )}
+          </div>
 
-                      <div className="space-y-6 mt-6">
-                        <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
-                          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">信号源订阅</h4>
-                          <SimpleTable
-                            columns={["来源", "角色", "交易对", "频道", "适配器"]}
-                            rows={selectedSignalRuntimeSubscriptions.map((item) => [
-                              String(item.sourceKey ?? "--"),
-                              String(item.role ?? "--"),
-                              String(item.symbol ?? "--"),
-                              String(item.channel ?? "--"),
-                              String(item.adapterKey ?? "--"),
-                            ])}
-                            emptyMessage="暂无订阅信息"
-                          />
-                        </div>
+          <Separator className="bg-[#d8cfba]/30" />
 
-                        <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
-                          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">信号 K 线 (Signal Bars)</h4>
-                          {selectedSignalRuntimeSignalBars.length > 0 ? (
-                            <div className="chart-shell bg-transparent border-none p-0 min-height-0">
-                              <SignalBarChart candles={selectedSignalRuntimeSignalBars} />
-                            </div>
-                          ) : (
-                            <div className="empty-state empty-state-compact">尚无缓存的 4h/1d 信号 K 线</div>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
-                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">信号状态 (Signal States)</h4>
-                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                              {Object.entries(selectedSignalBarStates).length > 0 ? (
-                                Object.entries(selectedSignalBarStates).map(([key, value]) => {
-                                  const state = getRecord(value);
-                                  const current = getRecord(state.current);
-                                  return (
-                                    <div key={key} className="note-item bg-white/5 border border-white/5 text-[10px] leading-relaxed">
-                                      <span className="text-emerald-400 font-bold">{key}</span> · {String(state.timeframe)} · {formatMaybeNumber(state.ma20)} · {formatMaybeNumber(current.close)}
-                                    </div>
-                                  );
-                                })
-                              ) : (
-                                <div className="empty-state empty-state-compact">暂无信号状态数据</div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
-                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">时间线</h4>
-                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                              {buildTimelineNotes(selectedSignalRuntimeTimeline).map((line: string) => (
-                                <div key={line} className="note-item bg-white/5 border border-white/5 text-[10px] leading-relaxed">
-                                  {line}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
-                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">最后事件摘要</h4>
-                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                              {Object.entries(selectedSignalRuntimeLastSummary).length > 0 ? (
-                                Object.entries(selectedSignalRuntimeLastSummary).map(([key, value]) => (
-                                  <div key={key} className="note-item bg-white/5 border border-white/5 text-[10px] leading-relaxed">
-                                    <span className="text-zinc-500">{key}:</span> {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                                  </div>
-                                ))
-                              ) : (
-                                <div className="empty-state empty-state-compact">暂无事件摘要</div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="panel-compact bg-white/5 rounded-2xl p-4 border border-white/5">
-                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">源数据状态 (Source States)</h4>
-                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                              {Object.entries(selectedSignalRuntimeSourceStates).length > 0 ? (
-                                Object.entries(selectedSignalRuntimeSourceStates).slice(0, 12).map(([key, value]) => (
-                                  <div key={key} className="note-item bg-white/5 border border-white/5 text-[10px] leading-relaxed">
-                                    <span className="text-zinc-500">{key}:</span> {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                                  </div>
-                                ))
-                              ) : (
-                                <div className="empty-state empty-state-compact">暂无源数据状态</div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </>
+          {/* 信号绑定结果表格 */}
+          <div className="space-y-4">
+            <h4 className="text-xs font-black text-[#1f2328] uppercase tracking-wider">当前信号绑定结果</h4>
+            <div className="rounded-[18px] border border-[#d8cfba] bg-[#fff8ea] overflow-hidden overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#f8f6f0] border-b border-[#d8cfba]">
+                    {["信号源", "角色", "代码 (Symbol)", "周期", "交易所", "状态"].map((h) => (
+                      <th key={h} className="p-3 text-[10px] font-black text-[#687177] uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#d8cfba]/50">
+                  {strategySignalBindings.length > 0 ? (
+                    strategySignalBindings.map((item, idx) => (
+<tr key={idx} className="hover:bg-white/50 transition-colors">
+                        <td className="p-3 text-[11px] font-bold text-[#1f2328]">{item.sourceName}</td>
+                        <td className="p-3">
+                          <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white text-[#1f2328]">{item.role}</Badge>
+                        </td>
+                        <td className="p-3 text-[11px] font-mono font-bold text-[#0e6d60]">{item.symbol || "--"}</td>
+                        <td className="p-3 text-[11px] text-[#687177]">{displaySignalBindingTimeframe(item)}</td>
+                        <td className="p-3 text-[11px] text-[#687177]">{item.exchange}</td>
+                        <td className="p-3">
+                          <Badge className={`text-[9px] h-4 bg-white border border-inherit ${item.status === 'READY' ? 'text-[#0e6d60] border-[#0e6d60]/20' : 'text-amber-700'}`}>
+                            {technicalStatusLabel(item.status)}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))
                   ) : (
-                    <div className="empty-state empty-state-compact">未选择运行时会话</div>
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-xs text-[#687177] italic">暂无策略绑定信息</td>
+                    </tr>
                   )}
-                </div>
-              </>
-            ) : (
-              <div className="empty-state empty-state-compact">暂无运行时会话</div>
-            )}
-          </div>
-        </section>
-
-      <section id="sessions" className="panel panel-session">
-        <div className="panel-header">
-          <div>
-            <p className="panel-kicker">Sessions</p>
-            <h3>第三步：创建实盘策略会话</h3>
-          </div>
-        </div>
-        <div className="live-grid">
-          <div className="backtest-list live-grid-span-2">
-            <div className="backtest-notes notes-compact">
-              <div className="note-item">有效会话：{validLiveSessions.length}</div>
+                </tbody>
+              </table>
             </div>
-            {validLiveSessions.length > 0 ? (
-              <div className="live-card-list">
-                {validLiveSessions.map((session) => {
-                  const intent = getRecord(session.state?.lastStrategyIntent);
-                  const executionSummary = deriveLiveSessionExecutionSummary(session, orders, fills, positions);
-                  const sessionHealth = deriveLiveSessionHealth(session, executionSummary);
-                  const sessionAccount = liveAccounts.find((account) => account.id === session.accountId) ?? null;
-                  const sessionBinding = getRecord(sessionAccount?.metadata?.liveBinding);
-                  const sessionAccountReady =
-                    sessionAccount?.status === "CONFIGURED" ||
-                    sessionAccount?.status === "READY" ||
-                    (String(sessionBinding.connectionMode ?? "") !== "" && String(sessionBinding.connectionMode ?? "") !== "disabled");
-                  return (
-                    <div key={session.id} className="session-row">
-                      <div className="session-row-main">
-                        <div className="session-row-title">
-                          <strong>{shrink(session.id)}</strong>
-                          <StatusPill tone={liveSessionHealthTone(sessionHealth.status)}>{sessionHealth.status}</StatusPill>
-                          <StatusPill tone={session.status === "RUNNING" ? "ready" : session.status === "STOPPED" ? "watch" : "neutral"}>
-                            {session.status}
-                          </StatusPill>
-                        </div>
-                        <div className="live-account-meta session-row-meta">
-                          <span>{session.accountId}</span>
-                          <span>{strategyLabel(strategies.find((strategy) => strategy.id === session.strategyId))}</span>
-                          <span>{String(session.state?.signalTimeframe ?? "--")}</span>
-                          <span>{sessionAccount?.status ?? "--"}</span>
-                          <span>{String(intent.action ?? "no-intent")}</span>
-                          <span>{String(executionSummary.position?.side ?? "FLAT")}</span>
-                          <span>{formatMaybeNumber(executionSummary.position?.quantity)}</span>
-                          <span>{executionSummary.orderCount}/{executionSummary.fillCount}</span>
-                          {!sessionAccountReady ? <span>先绑定适配器</span> : null}
-                        </div>
-                      </div>
-                      <div className="session-row-actions inline-actions">
-                        <ActionButton
-                          label="编辑"
-                          variant="ghost"
-                          disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
-                          onClick={() => openLiveSessionModal(session)}
-                        />
-                        {String(session.state?.signalRuntimeSessionId ?? "") ? (
-                          <ActionButton
-                            label="打开运行时"
-                            variant="ghost"
-                            onClick={() => jumpToSignalRuntimeSession(String(session.state?.signalRuntimeSessionId ?? ""))}
-                          />
-                        ) : null}
-                        <ActionButton
-                          label={liveSessionAction === `${session.id}:start` ? "启动中..." : "启动"}
-                          disabled={liveSessionAction !== null || session.status === "RUNNING" || !sessionAccountReady}
-                          onClick={() => runLiveSessionAction(session.id, "start")}
-                        />
-                        {!sessionAccountReady ? (
-                          <ActionButton
-                            label="绑定适配器"
-                            variant="ghost"
-                            disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
-                            onClick={() => {
-                              selectQuickLiveAccount(session.accountId);
-                              openLiveBindingModal();
-                            }}
-                          />
-                        ) : null}
-                        <ActionButton
-                          label={liveSessionAction === `${session.id}:dispatch` ? "分发中..." : "分发意图"}
-                          disabled={
-                            liveSessionAction !== null ||
-                            !getRecord(session.state?.lastStrategyIntent).action ||
-                            String(session.state?.dispatchMode ?? "") !== "manual-review" ||
-                            (primaryLiveSession?.id === session.id && primaryLiveDispatchPreview.status === "blocked")
-                          }
-                          onClick={() => dispatchLiveSessionIntent(session.id)}
-                        />
-                        <ActionButton
-                          label={liveSessionAction === `${session.id}:sync` ? "同步中..." : "同步最新订单"}
-                          variant="ghost"
-                          disabled={liveSessionAction !== null || !String(session.state?.lastDispatchedOrderId ?? "")}
-                          onClick={() => syncLiveSession(session.id)}
-                        />
-                        <ActionButton
-                          label={liveSessionAction === `${session.id}:stop` ? "停止中..." : "停止"}
-                          variant="ghost"
-                          disabled={liveSessionAction !== null || session.status === "STOPPED"}
-                          onClick={() => runLiveSessionAction(session.id, "stop")}
-                        />
-                        <ActionButton
-                          label={liveSessionDeleteAction === session.id ? "删除中..." : "删除"}
-                          variant="ghost"
-                          disabled={liveSessionAction !== null || liveSessionDeleteAction !== null}
-                          onClick={() => openConfirm(
-                            "确认删除实盘策略会话？",
-                            "确定要彻底删除该实盘会话吗？删除后相关的监控快照将消失，且无法恢复。",
-                            () => void deleteLiveSession(session.id)
-                          )}
-                        />
+          </div>
+        </CardContent>
+      </Card>
+      {/* 信号源目录 - 降噪处理 */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <CardHeader className="pb-4 flex flex-row items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-xs font-black text-[#1f2328] uppercase tracking-wider">信号源目录与诊断说明</CardTitle>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <HelpCircle size={14} className="text-[#687177] cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent className="w-80 p-4 border-[#d8cfba] bg-[#fffbf2]">
+                  <div className="space-y-3 text-[11px] text-[#1f2328]">
+                    <p className="font-bold text-[#0e6d60]">操作建议</p>
+                    {(signalCatalog?.notes ?? []).map((note, idx) => (
+                      <p key={idx}>• {note}</p>
+                    ))}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-[18px] border border-[#d8cfba] bg-[#fff8ea] overflow-hidden overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#f8f6f0] border-b border-[#d8cfba]">
+                  {["名称", "交易所", "流类型", "角色", "环境", "传输方式"].map((h) => (
+                    <th key={h} className="p-3 text-[10px] font-black text-[#687177] uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#d8cfba]/50">
+                {signalCatalog?.sources?.length ? (
+                  signalCatalog.sources.map((source, idx) => (
+                    <tr key={idx} className="hover:bg-white/50 transition-colors text-[11px]">
+                      <td className="p-3 font-bold text-[#1f2328]">{source.name}</td>
+                      <td className="p-3 text-[#687177]">{source.exchange}</td>
+                      <td className="p-3 text-[#687177]">{source.streamType}</td>
+                      <td className="p-3">
+                         <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white">{source.roles.join(", ")}</Badge>
+                      </td>
+                      <td className="p-3 text-[#687177]">{source.environments.join(", ")}</td>
+                      <td className="p-3 text-[#687177]">{source.transport}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-xs text-[#687177] italic">信号源目录为空</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* 运行时策略设置 */}
+        <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+          <CardHeader className="pb-4 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div>
+                <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Step 3 / Policy</p>
+                <CardTitle className="text-lg font-black text-[#1f2328]">第三步：执行策略设置</CardTitle>
+              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <HelpCircle size={14} className="text-[#687177] cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent className="w-80 p-4 border-[#d8cfba] bg-[#fffbf2]">
+                    <div className="space-y-3 text-[11px] text-[#1f2328]">
+                      <p className="font-bold text-[#0e6d60]">当前生效阈值</p>
+                      <div className="space-y-1">
+                        <p>• 账户同步：{runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds)}</p>
+                        <p>• 运行时静默：{runtimePolicyValueLabel(platformRuntimePolicy?.runtimeQuietSeconds)}</p>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="empty-state empty-state-compact">暂无有效实盘会话</div>
-            )}
-            <div className="panel-compact bg-white/5 rounded-2xl p-5 border border-white/5 mt-6">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-500">Next</p>
-                  <div>
-                    <h4 className="text-sm font-semibold text-zinc-100">运行中状态已经移到监控台</h4>
-                    <p className="text-xs text-zinc-400">
-                      完成账户、信号源和实盘会话配置后，到监控台查看当前优先处理会话、执行状态和人工干预入口。
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+             <div className="space-y-5 p-6 rounded-[24px] bg-[#fff8ea] border border-[#d8cfba]">
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-[#687177] uppercase">成交价格新鲜度 (秒)</label>
+                    <Input 
+                      className="bg-white border-[#d8cfba] h-10 text-xs font-bold"
+                      value={runtimePolicyForm.tradeTickFreshnessSeconds}
+                      onChange={(e) => setRuntimePolicyForm(c => ({ ...c, tradeTickFreshnessSeconds: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-[#687177] uppercase">账户同步间隔 (秒)</label>
+                    <Input 
+                      className="bg-white border-[#d8cfba] h-10 text-xs font-bold"
+                      value={runtimePolicyForm.liveAccountSyncFreshnessSeconds}
+                      onChange={(e) => setRuntimePolicyForm(c => ({ ...c, liveAccountSyncFreshnessSeconds: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-[#687177] uppercase">派发模式</label>
+                    <Select 
+                       value={runtimePolicyForm.dispatchMode}
+                       onValueChange={(val: any) => setRuntimePolicyForm(c => ({ ...c, dispatchMode: val }))}
+                    >
+                       <SelectTrigger className="bg-white border-[#d8cfba] h-10 text-xs font-bold">
+                         <SelectValue />
+                       </SelectTrigger>
+                       <SelectContent className="bg-white border-[#d8cfba]">
+                          <SelectItem value="manual-review" className="text-xs">人工审核 (Manual)</SelectItem>
+                          <SelectItem value="auto-dispatch" className="text-xs">自动派发 (Auto)</SelectItem>
+                       </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button 
+                   className="w-full bg-[#0e6d60] hover:bg-[#0a5a4f] text-white font-bold text-xs h-10 shadow-sm"
+                   disabled={runtimePolicyAction !== null}
+                   onClick={updateRuntimePolicy}
+                >
+                   {runtimePolicyAction ? "保存中..." : "保存运行时策略"}
+                </Button>
+             </div>
+          </CardContent>
+        </Card>
+
+        {/* 实盘会话管理区 */}
+        <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+          <CardHeader className="pb-4 flex flex-row items-center justify-between">
+            <div>
+              <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Operations</p>
+              <CardTitle className="text-lg font-black text-[#1f2328]">实盘会话控制</CardTitle>
+            </div>
+            <Button variant="outline" size="sm" className="h-8 border-[#d8cfba] text-[#1f2328] font-bold text-[10px]" onClick={openMonitorStage}>
+              打开监控台
+            </Button>
+          </CardHeader>
+          <CardContent>
+             <div className="space-y-3">
+               {validLiveSessions.length > 0 ? (
+                 validLiveSessions.map((session) => {
+                   const isRunning = session.status === "RUNNING";
+                   return (
+                     <div key={session.id} className="p-4 rounded-[20px] bg-[#fff8ea] border border-[#d8cfba] flex items-center justify-between hover:bg-white transition-all group">
+                        <div className="space-y-1">
+                           <div className="flex items-center gap-2">
+                              <span className="text-sm font-black text-[#1f2328]">{shrink(session.id)}</span>
+                              <Badge className={`h-4 text-[8px] ${isRunning ? 'bg-[#0e6d60]' : 'bg-zinc-400'}`}>
+                                {session.status}
+                              </Badge>
+                           </div>
+                           <p className="text-[10px] text-[#687177] font-mono">{String(getRecord(session.state).symbol || "--")} · {session.strategyId}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                           <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className={`h-8 w-8 ${isRunning ? 'text-rose-600' : 'text-[#0e6d60]'}`}
+                              disabled={liveSessionAction !== null}
+                              onClick={() => runLiveSessionAction(session.id, isRunning ? "stop" : "start")}
+                            >
+                              {isRunning ? <Square size={14} /> : <Play size={14} fill="currentColor" />}
+                           </Button>
+                           <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-[#687177]"
+                              onClick={() => openLiveSessionModal(session)}
+                            >
+                              <Edit3 size={14} />
+                           </Button>
+                           <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                              disabled={liveSessionDeleteAction !== null}
+                              onClick={() => openConfirm("删除会话？", "确定要彻底删除该实盘会话吗？删除后相关监控快照将无法恢复。", () => deleteLiveSession(session.id))}
+                            >
+                             <Trash2 size={14} />
+                           </Button>
+                        </div>
+                     </div>
+                   );
+                 })
+               ) : (
+                 <div className="p-12 text-center border-2 border-dashed border-[#d8cfba] rounded-[24px] opacity-40">
+                    <p className="text-xs text-[#687177] font-bold italic">暂无实盘会话</p>
+                 </div>
+               )}
+             </div>
+
+             <div className="mt-8 p-5 rounded-[24px] bg-[#d9eee8] border border-[#0e6d60]/10">
+                <div className="flex flex-col gap-4">
+                  <div className="space-y-1">
+                    <h5 className="text-xs font-black text-[#1f2328]">运行状态已集成</h5>
+                    <p className="text-[10px] text-[#0e6d60]/80 leading-relaxed">
+                      配置完成后，请转至监控台查看详细的 K 线信号、活跃订单与资产对账详情。
                     </p>
                   </div>
+                  <Button className="w-full bg-[#0e6d60] hover:bg-[#0a5a4f] text-white font-bold h-9 text-[11px]" onClick={openMonitorStage}>
+                    立即体验监控台
+                  </Button>
                 </div>
-                <div className="session-actions">
-                  <ActionButton label="打开监控台" onClick={openMonitorStage} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+             </div>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Confirmation Dialog */}
-      <AlertDialog open={confirmConfig.open} onOpenChange={(open) => setConfirmConfig(c => ({ ...c, open }))}>
-        <AlertDialogContent>
+      <AlertDialog open={confirmConfig.open} onOpenChange={(open) => !open && setConfirmConfig(c => ({ ...c, open: false }))}>
+        <AlertDialogContent className="bg-[#fffbf2] border-[#d8cfba] rounded-[32px] p-8 shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>{confirmConfig.title}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-xl font-black text-[#1f2328]">{confirmConfig.title}</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm text-[#687177] leading-relaxed py-2">
               {confirmConfig.description}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel variant="outline" size="default">取消</AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              confirmConfig.onConfirm();
-              setConfirmConfig(c => ({ ...c, open: false }));
-            }}>确定</AlertDialogAction>
+          <AlertDialogFooter className="gap-2 mt-4">
+            <AlertDialogCancel variant="outline" size="default" className="h-11 px-6 rounded-xl border-[#d8cfba] font-bold text-[#1f2328]">取消</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmConfig.onConfirm}
+              className="h-11 px-6 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold"
+            >
+              确 认 执 行
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
+

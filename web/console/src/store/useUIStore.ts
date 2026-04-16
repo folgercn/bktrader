@@ -348,6 +348,7 @@ export const useUIStore = create<useUIStoreState>((set) => ({
     strategyEvaluationQuietSeconds: "0",
     liveAccountSyncFreshnessSeconds: "0",
     paperStartReadinessTimeoutSeconds: "5",
+    dispatchMode: "manual-review",
   },
   setRuntimePolicyForm: (valOrUpdater) => set((state) => ({ runtimePolicyForm: resolveUpdater(valOrUpdater, state.runtimePolicyForm) })),
   telegramForm: { enabled: false, botToken: "", chatId: "", sendLevels: "critical,warning", },

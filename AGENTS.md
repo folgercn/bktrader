@@ -13,6 +13,12 @@
 - **图谱** == **graphify** (本项目的知识图谱工具)
 - **UI 规范** == **shadcn** (本项目的基础 UI 组件库与规范指南，见 [.skills/shadcn/SKILL.md](.skills/shadcn/SKILL.md))
 
+### 环境路径规约 (Environment Paths)
+
+由于部分 Shell 会话环境受限，请在涉及以下工具的操作中优先使用绝对路径，或参考 [docs/AGENT_PATHS.md](docs/AGENT_PATHS.md)：
+- **GitHub CLI (gh)**: `/opt/homebrew/bin/gh`
+- **Git**: `/usr/bin/git`
+
 ### graphify 规则
 
 This project has a graphify knowledge graph at `graphify-out/`.
