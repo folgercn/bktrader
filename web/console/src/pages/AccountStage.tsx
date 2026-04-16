@@ -864,7 +864,9 @@ export function AccountStage({
                      <div key={session.id} className="p-4 rounded-[20px] bg-[#fff8ea] border border-[#d8cfba] flex items-center justify-between hover:bg-white transition-all group">
                         <div className="space-y-1">
                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-black text-[#1f2328]">{shrink(session.id)}</span>
+                              <span className="text-sm font-black text-[#1f2328]">
+                                {session.id.length > 28 ? session.id.slice(0, 18) + '...' + session.id.slice(-6) : session.id}
+                              </span>
                               <Badge className={`h-4 text-[8px] ${isRunning ? 'bg-[#0e6d60]' : 'bg-zinc-400'}`}>
                                 {session.status}
                               </Badge>
