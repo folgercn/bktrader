@@ -937,8 +937,11 @@ export function AccountStage({
             </AlertDialogCancel>
             <Button 
               loading={liveSessionDeleteAction !== null}
-              onClick={confirmConfig.onConfirm}
-              className="h-11 px-6 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold"
+              onClick={async () => {
+                await confirmConfig.onConfirm();
+                setConfirmConfig(c => ({ ...c, open: false }));
+              }}
+              className="h-11 px-6 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md"
             >
               确 认 执 行
             </Button>
