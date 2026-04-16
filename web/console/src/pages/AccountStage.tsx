@@ -909,19 +909,7 @@ export function AccountStage({
                )}
              </div>
 
-             <div className="mt-8 p-5 rounded-[24px] bg-[#d9eee8] border border-[#0e6d60]/10">
-                <div className="flex flex-col gap-4">
-                  <div className="space-y-1">
-                    <h5 className="text-xs font-black text-[#1f2328]">运行状态已集成</h5>
-                    <p className="text-[10px] text-[#0e6d60]/80 leading-relaxed">
-                      配置完成后，请转至监控台查看详细的 K 线信号、活跃订单与资产对账详情。
-                    </p>
-                  </div>
-                  <Button className="w-full bg-[#0e6d60] hover:bg-[#0a5a4f] text-white font-bold h-9 text-[11px]" onClick={openMonitorStage}>
-                    立即体验监控台
-                  </Button>
-                </div>
-             </div>
+
           </CardContent>
         </Card>
       </div>
