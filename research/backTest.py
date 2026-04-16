@@ -12,6 +12,94 @@ def _normalize_utc_index(df):
     return normalized
 
 
+def attach_body_extrema_levels(df_signal):
+    prepared = df_signal.copy()
+    body_high = prepared[['open', 'close']].astype(float).max(axis=1)
+    body_low = prepared[['open', 'close']].astype(float).min(axis=1)
+    prepared['body_high'] = body_high
+    prepared['body_low'] = body_low
+    prepared['prev_body_high_1'] = body_high.shift(1)
+    prepared['prev_body_high_2'] = body_high.shift(2)
+    prepared['prev_body_low_1'] = body_low.shift(1)
+    prepared['prev_body_low_2'] = body_low.shift(2)
+    return prepared
+
+
+def apply_wick_breakout_levels(df_signal):
+    prepared = attach_body_extrema_levels(df_signal)
+    prepared['prev_high_1'] = prepared['high'].shift(1)
+    prepared['prev_high_2'] = prepared['high'].shift(2)
+    prepared['prev_low_1'] = prepared['low'].shift(1)
+    prepared['prev_low_2'] = prepared['low'].shift(2)
+    return prepared
+
+
+def apply_body_breakout_levels(df_signal):
+    prepared = attach_body_extrema_levels(df_signal)
+    prepared['prev_high_1'] = prepared['prev_body_high_1']
+    prepared['prev_high_2'] = prepared['prev_body_high_2']
+    prepared['prev_low_1'] = prepared['prev_body_low_1']
+    prepared['prev_low_2'] = prepared['prev_body_low_2']
+    return prepared
+
+
+def apply_breakout_levels(df_signal, breakout_levels='wick'):
+    normalized = str(breakout_levels).lower().strip()
+    if normalized == 'wick':
+        return apply_wick_breakout_levels(df_signal)
+    if normalized == 'body':
+        return apply_body_breakout_levels(df_signal)
+    raise ValueError(f"未知突破形态口径: {breakout_levels}")
+
+
+def apply_reentry_anchor_levels(df_signal, reentry_anchor_levels='wick'):
+    normalized = str(reentry_anchor_levels).lower().strip()
+    if normalized == 'wick':
+        return df_signal
+    if normalized == 'body':
+        return attach_body_extrema_levels(df_signal)
+    raise ValueError(f"未知重入口径: {reentry_anchor_levels}")
+
+
+def _resolve_reentry_price(sig, side, reentry_anchor_levels, reentry_atr):
+    normalized = str(reentry_anchor_levels).lower().strip()
+    if normalized == 'body':
+        anchor_key = 'prev_body_low_1' if side == 'long' else 'prev_body_high_1'
+    elif normalized == 'wick':
+        anchor_key = 'prev_low_1' if side == 'long' else 'prev_high_1'
+    else:
+        raise ValueError(f"未知重入口径: {reentry_anchor_levels}")
+
+    anchor = sig[anchor_key]
+    if side == 'long':
+        return anchor + (reentry_atr * sig['atr'])
+    return anchor - (reentry_atr * sig['atr'])
+
+
+def _normalize_reentry_trigger_mode(reentry_trigger_mode):
+    normalized = str(reentry_trigger_mode).lower().strip()
+    if normalized in ('reclaim', 'pullback'):
+        return normalized
+    raise ValueError(f"未知重入触发模式: {reentry_trigger_mode}")
+
+
+def _reentry_triggered(side, trigger_mode, high_value, low_value, close_value, prev_close_value, re_p, confirm=False):
+    mode = _normalize_reentry_trigger_mode(trigger_mode)
+    if mode == 'pullback':
+        if side == 'long':
+            return low_value <= re_p, re_p
+        return high_value >= re_p, re_p
+
+    if side == 'long':
+        if confirm:
+            return (prev_close_value is not None and not pd.isna(prev_close_value) and close_value > re_p and prev_close_value > re_p), close_value
+        return high_value >= re_p, re_p
+
+    if confirm:
+        return (prev_close_value is not None and not pd.isna(prev_close_value) and close_value < re_p and prev_close_value < re_p), close_value
+    return low_value <= re_p, re_p
+
+
 def _empty_tick_event_stream():
     return pd.DataFrame(
         {
@@ -170,8 +258,11 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
                             tiered_protection=False,
                             max_drawdown_pct=None,
                             cooldown_bars=6,
-                            reentry_mode='default'):
+                            reentry_mode='default',
+                            reentry_anchor_levels='wick',
+                            reentry_trigger_mode='reclaim'):
     # Keep both signal windows and tick windows on the same UTC-aware contract.
+    df_4h = apply_reentry_anchor_levels(df_4h, reentry_anchor_levels)
     df_4h = _normalize_utc_index(df_4h)
 
     replay_start = df_4h.index[0]
@@ -219,6 +310,10 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
         label_parts.append(f"CB:{max_drawdown_pct:.0%}")
     if reentry_mode != 'default':
         label_parts.append(f"Re:{reentry_mode}")
+    if reentry_anchor_levels != 'wick':
+        label_parts.append(f"ReAnchor:{reentry_anchor_levels}")
+    if reentry_trigger_mode != 'reclaim':
+        label_parts.append(f"ReTrigger:{reentry_trigger_mode}")
     label_parts.append(f"ReATR:{long_reentry_atr}/{short_reentry_atr}")
     label = " | ".join(label_parts) if label_parts else "TickEnhanced"
 
@@ -261,7 +356,7 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
                 executed = False
 
                 if long_regime_ready:
-                    re_p = sig['prev_low_1'] + (long_reentry_atr * sig['atr'])
+                    re_p = _resolve_reentry_price(sig, 'long', reentry_anchor_levels, long_reentry_atr)
                     if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
                         if current_p >= sig['prev_high_2']:
                             entry_raw = max(current_p, sig['prev_high_2'])
@@ -288,15 +383,16 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
                             trades_in_bar += 1
                             executed = True
                     elif last_exit_side == 'long' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
-                        is_triggered = False
-                        entry_p_raw = re_p
-                        if dir1_reentry_confirm:
-                            if not pd.isna(prev_p) and current_p > re_p and prev_p > re_p:
-                                is_triggered = True
-                                entry_p_raw = current_p
-                        else:
-                            if current_p >= re_p:
-                                is_triggered = True
+                        is_triggered, entry_p_raw = _reentry_triggered(
+                            'long',
+                            reentry_trigger_mode,
+                            current_p,
+                            current_p,
+                            current_p,
+                            prev_p,
+                            re_p,
+                            dir1_reentry_confirm,
+                        )
                         if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
                             if trades_in_bar < MAX_TRADES_PER_BAR:
@@ -326,7 +422,7 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
                             last_exit_side = None
 
                 elif short_regime_ready:
-                    re_p = sig['prev_high_1'] - (short_reentry_atr * sig['atr'])
+                    re_p = _resolve_reentry_price(sig, 'short', reentry_anchor_levels, short_reentry_atr)
                     if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
                         if current_p <= sig['prev_low_2']:
                             entry_raw = min(current_p, sig['prev_low_2'])
@@ -353,15 +449,16 @@ def run_tick_full_scan_dual(df_4h, tick_file, current_bal,
                             trades_in_bar += 1
                             executed = True
                     elif last_exit_side == 'short' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
-                        is_triggered = False
-                        entry_p_raw = re_p
-                        if dir1_reentry_confirm:
-                            if not pd.isna(prev_p) and current_p < re_p and prev_p < re_p:
-                                is_triggered = True
-                                entry_p_raw = current_p
-                        else:
-                            if current_p <= re_p:
-                                is_triggered = True
+                        is_triggered, entry_p_raw = _reentry_triggered(
+                            'short',
+                            reentry_trigger_mode,
+                            current_p,
+                            current_p,
+                            current_p,
+                            prev_p,
+                            re_p,
+                            dir1_reentry_confirm,
+                        )
                         if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
                             if trades_in_bar < MAX_TRADES_PER_BAR:
@@ -680,8 +777,8 @@ def analyze_worst_month(trade_df):
     print(f"  · 月内最大瞬时回撤: {intra_month_dd:.2%}")
     print("!"*40)
 
-def generate_1d_signals(df_1min, atr_period=14):
-    print(f"正在聚合 1Min 数据生成 1D (日线) 信号数据... (ATR 周期: {atr_period})")
+def generate_1d_signals(df_1min, atr_period=14, breakout_levels='wick'):
+    print(f"正在聚合 1Min 数据生成 1D (日线) 信号数据... (ATR 周期: {atr_period}, 突破口径: {breakout_levels})")
     df_1d = df_1min.resample('1D').agg({
         'open': 'first',
         'high': 'max',
@@ -698,10 +795,7 @@ def generate_1d_signals(df_1min, atr_period=14):
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = np.max(ranges, axis=1)
     df_1d['atr'] = true_range.rolling(atr_period).mean()
-    df_1d['prev_high_1'] = df_1d['high'].shift(1)
-    df_1d['prev_high_2'] = df_1d['high'].shift(2)
-    df_1d['prev_low_1'] = df_1d['low'].shift(1)
-    df_1d['prev_low_2'] = df_1d['low'].shift(2)
+    df_1d = apply_breakout_levels(df_1d, breakout_levels)
     print("1D 信号生成完成，总行数: ", len(df_1d))
     return df_1d
 
@@ -768,13 +862,16 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                                   long_reentry_atr=0.1,
                                   short_reentry_atr=0.0,
                                   stop_mode=None,
-                                  profit_protect_atr=1.0):
+                                  profit_protect_atr=1.0,
+                                  reentry_anchor_levels='wick',
+                                  reentry_trigger_mode='reclaim'):
     """
     1min 颗粒度双向回测引擎
     df_1min: 包含 open, high, low, close 的标准化 1min 数据
     df_4h: 包含策略锚点(ma20, atr, prev_high_2 等)的 4H 数据
     """
     df_1min = _normalize_utc_index(df_1min)
+    df_4h = apply_reentry_anchor_levels(df_4h, reentry_anchor_levels)
     df_4h = _normalize_utc_index(df_4h)
 
     balance = initial_balance
@@ -803,6 +900,8 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
         f"🚀 1min回测 | InitialSize:{CASH_USAGE_INITIAL:.0%} | "
         f"Stop:{stop_mode} | Reentry:{'Confirm' if dir1_reentry_confirm else 'Touch'} | "
         f"MaxTrades:{MAX_TRADES_PER_BAR} | ReentrySizes:{REENTRY_SIZE_SCHEDULE} | "
+        f"ReentryAnchor:{reentry_anchor_levels} | "
+        f"ReentryTrigger:{reentry_trigger_mode} | "
         f"ReentryATR(L/S):{long_reentry_atr}/{short_reentry_atr} | "
         f"Slippage:{SLIPPAGE}"
     )
@@ -839,7 +938,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                 
                 # 1. 多头逻辑 (MA20 之上)
                 if long_regime_ready:
-                    re_p = sig['prev_low_1'] + (long_reentry_atr * sig['atr'])
+                    re_p = _resolve_reentry_price(sig, 'long', reentry_anchor_levels, long_reentry_atr)
                     # 初始进场
                     if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
                         if bar['high'] >= sig['prev_high_2']:
@@ -860,16 +959,17 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                     # 重入逻辑
                     elif last_exit_side == 'long' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
                         # 改变点1：结构确认控制
-                        is_triggered = False
-                        entry_p_raw = re_p # default
-                        if dir1_reentry_confirm:
-                            if prev_bar is not None and bar['close'] > re_p and prev_bar['close'] > re_p:
-                                is_triggered = True
-                                entry_p_raw = bar['close']
-                        else:
-                            if bar['high'] >= re_p:
-                                is_triggered = True
-                                entry_p_raw = re_p
+                        prev_close = prev_bar['close'] if prev_bar is not None else None
+                        is_triggered, entry_p_raw = _reentry_triggered(
+                            'long',
+                            reentry_trigger_mode,
+                            bar['high'],
+                            bar['low'],
+                            bar['close'],
+                            prev_close,
+                            re_p,
+                            dir1_reentry_confirm,
+                        )
 
                         if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
@@ -892,7 +992,7 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
 
                 # 2. 空头逻辑 (MA20 之下)
                 elif short_regime_ready:
-                    re_p = sig['prev_high_1'] - (short_reentry_atr * sig['atr'])
+                    re_p = _resolve_reentry_price(sig, 'short', reentry_anchor_levels, short_reentry_atr)
                     # 初始进场
                     if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
                         if bar['low'] <= sig['prev_low_2']:
@@ -913,16 +1013,17 @@ def run_backtest_1min_granularity(df_1min, df_4h, initial_balance=100000.0,
                     
                     # 空头重入
                     elif last_exit_side == 'short' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
-                        is_triggered = False
-                        entry_p_raw = re_p
-                        if dir1_reentry_confirm:
-                            if prev_bar is not None and bar['close'] < re_p and prev_bar['close'] < re_p:
-                                is_triggered = True
-                                entry_p_raw = bar['close']
-                        else:
-                            if bar['low'] <= re_p:
-                                is_triggered = True
-                                entry_p_raw = re_p
+                        prev_close = prev_bar['close'] if prev_bar is not None else None
+                        is_triggered, entry_p_raw = _reentry_triggered(
+                            'short',
+                            reentry_trigger_mode,
+                            bar['high'],
+                            bar['low'],
+                            bar['close'],
+                            prev_close,
+                            re_p,
+                            dir1_reentry_confirm,
+                        )
 
                         if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
@@ -1290,7 +1391,9 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                           tiered_protection=False,
                           max_drawdown_pct=None,
                           cooldown_bars=6,
-                          reentry_mode='default'):
+                          reentry_mode='default',
+                          reentry_anchor_levels='wick',
+                          reentry_trigger_mode='reclaim'):
     """
     增强版 1min 回测引擎，在原始引擎基础上新增：
 
@@ -1304,6 +1407,7 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
     - reentry_mode: str, 'default'=原始递增, 'fixed'=固定大小, 'decreasing'=递减。
     """
     df_1min = _normalize_utc_index(df_1min)
+    df_4h = apply_reentry_anchor_levels(df_4h, reentry_anchor_levels)
     df_4h = _normalize_utc_index(df_4h)
 
     balance = initial_balance
@@ -1340,6 +1444,8 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
     if tiered_protection: label_parts.append("TieredPT")
     if max_drawdown_pct: label_parts.append(f"CB:{max_drawdown_pct:.0%}")
     if reentry_mode != 'default': label_parts.append(f"Re:{reentry_mode}")
+    if reentry_anchor_levels != 'wick': label_parts.append(f"ReAnchor:{reentry_anchor_levels}")
+    if reentry_trigger_mode != 'reclaim': label_parts.append(f"ReTrigger:{reentry_trigger_mode}")
     label_parts.append(f"ReATR:{long_reentry_atr}/{short_reentry_atr}")
     label = " | ".join(label_parts) if label_parts else "Enhanced"
 
@@ -1383,7 +1489,7 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
 
                 # 多头逻辑
                 if long_regime_ready:
-                    re_p = sig['prev_low_1'] + (long_reentry_atr * sig['atr'])
+                    re_p = _resolve_reentry_price(sig, 'long', reentry_anchor_levels, long_reentry_atr)
                     if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
                         if bar['high'] >= sig['prev_high_2']:
                             entry_p = max(bar['open'], sig['prev_high_2']) * (1 + SLIPPAGE)
@@ -1402,15 +1508,17 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                             executed = True
 
                     elif last_exit_side == 'long' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
-                        is_triggered = False
-                        entry_p_raw = re_p
-                        if dir1_reentry_confirm:
-                            if prev_bar is not None and bar['close'] > re_p and prev_bar['close'] > re_p:
-                                is_triggered = True
-                                entry_p_raw = bar['close']
-                        else:
-                            if bar['high'] >= re_p:
-                                is_triggered = True
+                        prev_close = prev_bar['close'] if prev_bar is not None else None
+                        is_triggered, entry_p_raw = _reentry_triggered(
+                            'long',
+                            reentry_trigger_mode,
+                            bar['high'],
+                            bar['low'],
+                            bar['close'],
+                            prev_close,
+                            re_p,
+                            dir1_reentry_confirm,
+                        )
 
                         if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
@@ -1433,7 +1541,7 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                             last_exit_side = None
 
                 elif short_regime_ready:
-                    re_p = sig['prev_high_1'] - (short_reentry_atr * sig['atr'])
+                    re_p = _resolve_reentry_price(sig, 'short', reentry_anchor_levels, short_reentry_atr)
                     if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
                         if bar['low'] <= sig['prev_low_2']:
                             entry_p = min(bar['open'], sig['prev_low_2']) * (1 - SLIPPAGE)
@@ -1452,15 +1560,17 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                             executed = True
 
                     elif last_exit_side == 'short' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
-                        is_triggered = False
-                        entry_p_raw = re_p
-                        if dir1_reentry_confirm:
-                            if prev_bar is not None and bar['close'] < re_p and prev_bar['close'] < re_p:
-                                is_triggered = True
-                                entry_p_raw = bar['close']
-                        else:
-                            if bar['low'] <= re_p:
-                                is_triggered = True
+                        prev_close = prev_bar['close'] if prev_bar is not None else None
+                        is_triggered, entry_p_raw = _reentry_triggered(
+                            'short',
+                            reentry_trigger_mode,
+                            bar['high'],
+                            bar['low'],
+                            bar['close'],
+                            prev_close,
+                            re_p,
+                            dir1_reentry_confirm,
+                        )
 
                         if is_triggered:
                             reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'

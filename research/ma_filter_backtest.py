@@ -6,7 +6,11 @@ import pandas as pd
 
 from backTest import (
     _normalize_reentry_sizes,
+    _reentry_triggered,
+    _resolve_reentry_price,
     _resolve_stop_price,
+    apply_breakout_levels,
+    apply_reentry_anchor_levels,
     generate_1d_signals,
 )
 
@@ -99,7 +103,10 @@ def run_ma_filter_backtest(
     adx_threshold: float = 20.0,
     enable_early_reversal_gate: bool = False,
     early_reversal_band_atr: float = 0.15,
+    reentry_anchor_levels: str = "wick",
+    reentry_trigger_mode: str = "reclaim",
 ) -> pd.DataFrame:
+    df_signal = apply_reentry_anchor_levels(df_signal, reentry_anchor_levels)
     balance = initial_balance
     position = None
     trade_logs = []
@@ -128,7 +135,9 @@ def run_ma_filter_backtest(
         f"ADXEnabled:{enable_adx_filter} | "
         f"ADXThreshold:{adx_threshold} | "
         f"EarlyReversalEnabled:{enable_early_reversal_gate} | "
-        f"EarlyReversalBandATR:{early_reversal_band_atr}"
+        f"EarlyReversalBandATR:{early_reversal_band_atr} | "
+        f"ReentryAnchor:{reentry_anchor_levels} | "
+        f"ReentryTrigger:{reentry_trigger_mode}"
     )
 
     for i in range(len(df_signal) - 1):
@@ -149,6 +158,7 @@ def run_ma_filter_backtest(
         while current_idx < len(window):
             bar = window.iloc[current_idx]
             bar_time = window.index[current_idx]
+            prev_bar = window.iloc[current_idx - 1] if current_idx > 0 else None
 
             if not position:
                 long_allowed = True
@@ -191,7 +201,7 @@ def run_ma_filter_backtest(
                 )
 
                 if long_allowed or long_early_reversal:
-                    re_p = sig["prev_low_1"] + reentry_atr * sig["atr"]
+                    re_p = _resolve_reentry_price(sig, "long", reentry_anchor_levels, reentry_atr)
                     if trades_in_bar == 0 and sig["prev_high_2"] > sig["prev_high_1"] and bar["high"] >= sig["prev_high_2"]:
                         entry = max(bar["open"], sig["prev_high_2"]) * (1 + fixed_slippage)
                         notional = balance * cash_usage_initial
@@ -210,13 +220,23 @@ def run_ma_filter_backtest(
                         current_idx += 1
                         continue
 
-                    if last_exit_side == "long" and bar["high"] >= re_p and (i - last_exit_bar_index <= reentry_timeout):
+                    prev_close = prev_bar["close"] if prev_bar is not None else None
+                    is_reentry_triggered, entry_p_raw = _reentry_triggered(
+                        "long",
+                        reentry_trigger_mode,
+                        bar["high"],
+                        bar["low"],
+                        bar["close"],
+                        prev_close,
+                        re_p,
+                    )
+                    if last_exit_side == "long" and is_reentry_triggered and (i - last_exit_bar_index <= reentry_timeout):
                         reason = "SL-Reentry" if last_exit_reason == "SL" else "PT-Reentry"
                         if (reason == "SL-Reentry" and trades_in_bar < max_trades_per_bar) or reason == "PT-Reentry":
                             size_index = trades_in_bar
                             reentry_size = reentry_sizes[min(size_index, len(reentry_sizes) - 1)]
                             notional = balance * reentry_size
-                            entry = re_p * (1 + fixed_slippage)
+                            entry = entry_p_raw * (1 + fixed_slippage)
                             position = {
                                 "side": "long",
                                 "entry_p": entry,
@@ -235,7 +255,7 @@ def run_ma_filter_backtest(
                         continue
 
                 if short_allowed or short_early_reversal:
-                    re_p = sig["prev_high_1"]
+                    re_p = _resolve_reentry_price(sig, "short", reentry_anchor_levels, 0.0)
                     if trades_in_bar == 0 and sig["prev_low_2"] < sig["prev_low_1"] and bar["low"] <= sig["prev_low_2"]:
                         entry = min(bar["open"], sig["prev_low_2"]) * (1 - fixed_slippage)
                         notional = balance * cash_usage_initial
@@ -254,13 +274,23 @@ def run_ma_filter_backtest(
                         current_idx += 1
                         continue
 
-                    if last_exit_side == "short" and bar["low"] <= re_p and (i - last_exit_bar_index <= reentry_timeout):
+                    prev_close = prev_bar["close"] if prev_bar is not None else None
+                    is_reentry_triggered, entry_p_raw = _reentry_triggered(
+                        "short",
+                        reentry_trigger_mode,
+                        bar["high"],
+                        bar["low"],
+                        bar["close"],
+                        prev_close,
+                        re_p,
+                    )
+                    if last_exit_side == "short" and is_reentry_triggered and (i - last_exit_bar_index <= reentry_timeout):
                         reason = "SL-Reentry" if last_exit_reason == "SL" else "PT-Reentry"
                         if (reason == "SL-Reentry" and trades_in_bar < max_trades_per_bar) or reason == "PT-Reentry":
                             size_index = trades_in_bar
                             reentry_size = reentry_sizes[min(size_index, len(reentry_sizes) - 1)]
                             notional = balance * reentry_size
-                            entry = re_p * (1 - fixed_slippage)
+                            entry = entry_p_raw * (1 - fixed_slippage)
                             position = {
                                 "side": "short",
                                 "entry_p": entry,
@@ -333,13 +363,15 @@ def summarize_ledger(ledger: pd.DataFrame, initial_balance: float) -> dict:
     }
 
 
-def load_signal_frame(df_1min: pd.DataFrame, timeframe: str, signal_csv: Optional[str]) -> pd.DataFrame:
+def load_signal_frame(df_1min: pd.DataFrame, timeframe: str, signal_csv: Optional[str], breakout_levels: str) -> pd.DataFrame:
     timeframe = timeframe.lower().strip()
     if timeframe == "1d":
-        return generate_1d_signals(df_1min)
+        return generate_1d_signals(df_1min, breakout_levels=breakout_levels)
     if signal_csv:
-        return pd.read_csv(signal_csv, index_col=0, parse_dates=True)
-    return pd.read_csv("BTC_4H_Signals.csv", index_col=0, parse_dates=True)
+        df_signal = pd.read_csv(signal_csv, index_col=0, parse_dates=True)
+    else:
+        df_signal = pd.read_csv("BTC_4H_Signals.csv", index_col=0, parse_dates=True)
+    return df_signal if breakout_levels == "wick" else apply_breakout_levels(df_signal, breakout_levels)
 
 
 def parse_args() -> argparse.Namespace:
@@ -347,6 +379,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--one-min-csv", default="BTC_1min_Clean.csv")
     parser.add_argument("--signal-csv", default="")
     parser.add_argument("--timeframe", choices=["4h", "1d"], default="1d")
+    parser.add_argument("--breakout-levels", choices=["wick", "body"], default="wick")
     parser.add_argument("--start", default="2023-01-01")
     parser.add_argument("--end", default="2026-02-28")
     parser.add_argument("--initial-balance", type=float, default=100000.0)
@@ -355,6 +388,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stop-mode", default="atr")
     parser.add_argument("--max-trades-per-bar", type=int, default=3)
     parser.add_argument("--reentry-size-schedule", default="0.10,0.20")
+    parser.add_argument("--reentry-anchor-levels", choices=["wick", "body"], default="wick")
+    parser.add_argument("--reentry-trigger-mode", choices=["reclaim", "pullback"], default="reclaim")
     parser.add_argument("--profit-protect-atr", type=float, default=1.0)
     parser.add_argument("--disable-zero-initial", action="store_true")
     parser.add_argument("--filter-kind", choices=["sma", "ema"], default="ema")
@@ -375,7 +410,7 @@ def main() -> None:
     reentry_sizes = [float(item) for item in args.reentry_size_schedule.split(",") if item.strip()]
 
     df_1min = pd.read_csv(args.one_min_csv, index_col=0, parse_dates=True).loc[args.start : args.end]
-    df_signal = load_signal_frame(df_1min, args.timeframe, args.signal_csv or None).loc[args.start : args.end]
+    df_signal = load_signal_frame(df_1min, args.timeframe, args.signal_csv or None, args.breakout_levels).loc[args.start : args.end]
     df_signal = ensure_filter_indicator(df_signal, args.filter_kind, args.filter_period, args.adx_period)
 
     ledger = run_ma_filter_backtest(
@@ -396,10 +431,15 @@ def main() -> None:
         adx_threshold=args.adx_threshold,
         enable_early_reversal_gate=args.enable_early_reversal_gate,
         early_reversal_band_atr=args.early_reversal_band_atr,
+        reentry_anchor_levels=args.reentry_anchor_levels,
+        reentry_trigger_mode=args.reentry_trigger_mode,
     )
 
     result = {
         "timeframe": args.timeframe,
+        "breakout_levels": args.breakout_levels,
+        "reentry_anchor_levels": args.reentry_anchor_levels,
+        "reentry_trigger_mode": args.reentry_trigger_mode,
         "window": {"start": args.start, "end": args.end},
         "filter_kind": args.filter_kind,
         "filter_period": args.filter_period,
