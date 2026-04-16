@@ -1384,6 +1384,19 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 	}
 
 	runtimeSessionID := stringValue(state["signalRuntimeSessionId"])
+	if runtimeSessionID != "" {
+		runtimeSession, getErr := p.GetSignalRuntimeSession(runtimeSessionID)
+		if getErr == nil {
+			state["signalRuntimeStatus"] = runtimeSession.Status
+		} else {
+			// 如果在内存中找不到该 signalRuntimeSession（例如系统发生重启后内存缓存被清空），
+			// 则立刻抹除这个失效的 state ID，阻止崩溃向后传播，并在下方的必须条件分支中触发重新创建。
+			runtimeSessionID = ""
+			delete(state, "signalRuntimeSessionId")
+			delete(state, "signalRuntimeStatus")
+		}
+	}
+
 	if runtimeSessionID == "" && required {
 		runtimeSession, resolveErr := p.resolveLiveRuntimeSession(session.AccountID, session.StrategyID)
 		if resolveErr != nil {
@@ -1402,11 +1415,6 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 		runtimeSessionID = runtimeSession.ID
 		state["signalRuntimeSessionId"] = runtimeSession.ID
 		state["signalRuntimeStatus"] = runtimeSession.Status
-	} else if runtimeSessionID != "" {
-		runtimeSession, getErr := p.GetSignalRuntimeSession(runtimeSessionID)
-		if getErr == nil {
-			state["signalRuntimeStatus"] = runtimeSession.Status
-		}
 	}
 
 	updated, err := p.store.UpdateLiveSessionState(session.ID, state)
