@@ -1358,6 +1358,16 @@ func TestEnsureLaunchLiveSessionCreatesDistinctSessionPerSymbolAndTimeframe(t *t
 	}
 }
 
+func TestIsLivePlanStepStaleUsesFiveMinuteTimeframe(t *testing.T) {
+	nextPlannedEvent := time.Date(2026, 4, 16, 12, 0, 0, 0, time.UTC)
+	if isLivePlanStepStale(nextPlannedEvent, "5m", nextPlannedEvent.Add(4*time.Minute+59*time.Second)) {
+		t.Fatal("expected 5m plan step to remain fresh before the next 5m boundary")
+	}
+	if !isLivePlanStepStale(nextPlannedEvent, "5m", nextPlannedEvent.Add(5*time.Minute+time.Second)) {
+		t.Fatal("expected 5m plan step to be stale after the next 5m boundary")
+	}
+}
+
 func TestShouldCancelLiveOrderForExecutionTimeout(t *testing.T) {
 	now := time.Date(2026, 4, 7, 8, 30, 0, 0, time.UTC)
 	order := domain.Order{

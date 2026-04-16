@@ -10,7 +10,7 @@ import (
 func TestEnrichSignalRuntimeSummaryKeepsKlineEventsScopedByTimeframe(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
-	for _, timeframe := range []string{"1d", "4h"} {
+	for _, timeframe := range []string{"5m", "1d", "4h"} {
 		if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
 			"sourceKey": "binance-kline",
 			"role":      "signal",
@@ -49,14 +49,28 @@ func TestEnrichSignalRuntimeSummaryKeepsKlineEventsScopedByTimeframe(t *testing.
 		t.Fatalf("expected 1d event to match 1d subscription, got %#v", event1d)
 	}
 
+	event5m := enrichSignalRuntimeSummary(session, map[string]any{
+		"event":     "kline",
+		"symbol":    "BTCUSDT",
+		"timeframe": "5m",
+		"barStart":  "1713074400000",
+	})
+	if got := stringValue(event5m["channel"]); got != "btcusdt@kline_5m" {
+		t.Fatalf("expected 5m event to match 5m subscription, got %#v", event5m)
+	}
+	if got := stringValue(event5m["timeframe"]); got != "5m" {
+		t.Fatalf("expected 5m event timeframe to remain 5m, got %#v", event5m)
+	}
+
 	sourceStates := map[string]any{}
 	sourceStates = mergeSignalSourceState(sourceStates, event1d, time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC))
 	sourceStates = mergeSignalSourceState(sourceStates, event4h, time.Date(2026, 4, 15, 0, 0, 1, 0, time.UTC))
-	if len(sourceStates) != 2 {
+	sourceStates = mergeSignalSourceState(sourceStates, event5m, time.Date(2026, 4, 15, 0, 0, 2, 0, time.UTC))
+	if len(sourceStates) != 3 {
 		t.Fatalf("expected distinct source-state entries per timeframe, got %#v", sourceStates)
 	}
 
-	for _, timeframe := range []string{"1d", "4h"} {
+	for _, timeframe := range []string{"5m", "1d", "4h"} {
 		key := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": timeframe})
 		entry := mapValue(sourceStates[key])
 		if entry == nil {

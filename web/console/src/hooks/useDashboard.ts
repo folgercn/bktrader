@@ -155,7 +155,12 @@ export function useDashboard() {
     let selectedResolution = monitorResolution;
     if (!selectedResolution) {
       const monitorSignalTimeframe = String(monitorSessionForChart?.state?.signalTimeframe ?? "1d");
-      selectedResolution = monitorSignalTimeframe.toLowerCase() === "4h" ? "240" : "1D";
+      const normalizedMonitorSignalTimeframe = monitorSignalTimeframe.toLowerCase();
+      selectedResolution = normalizedMonitorSignalTimeframe === "5m" || normalizedMonitorSignalTimeframe === "5min" || normalizedMonitorSignalTimeframe === "5"
+        ? "5"
+        : normalizedMonitorSignalTimeframe === "4h"
+          ? "240"
+          : "1D";
     }
     
     const monitorResolutionParam = selectedResolution;

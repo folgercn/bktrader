@@ -164,8 +164,10 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 	}
 
 	return []LiveLaunchTemplate{
+		buildTemplate("BTCUSDT", "5m", 0.002),
 		buildTemplate("BTCUSDT", "4h", 0.002),
 		buildTemplate("BTCUSDT", "1d", 0.002),
+		buildTemplate("ETHUSDT", "5m", 0.100),
 		buildTemplate("ETHUSDT", "4h", 0.100),
 		buildTemplate("ETHUSDT", "1d", 0.100),
 	}, nil

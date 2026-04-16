@@ -6,15 +6,15 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
 
-func TestLiveLaunchTemplatesExposeFourBinanceTestnetVariants(t *testing.T) {
+func TestLiveLaunchTemplatesExposeSixBinanceTestnetVariants(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
 	templates, err := platform.LiveLaunchTemplates()
 	if err != nil {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
-	if len(templates) != 4 {
-		t.Fatalf("expected 4 launch templates, got %d", len(templates))
+	if len(templates) != 6 {
+		t.Fatalf("expected 6 launch templates, got %d", len(templates))
 	}
 
 	expected := map[string]struct {
@@ -22,8 +22,10 @@ func TestLiveLaunchTemplatesExposeFourBinanceTestnetVariants(t *testing.T) {
 		timeframe string
 		quantity  float64
 	}{
+		"binance-testnet-btc-5m": {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
 		"binance-testnet-btc-4h": {symbol: "BTCUSDT", timeframe: "4h", quantity: 0.002},
 		"binance-testnet-btc-1d": {symbol: "BTCUSDT", timeframe: "1d", quantity: 0.002},
+		"binance-testnet-eth-5m": {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
 		"binance-testnet-eth-4h": {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
 		"binance-testnet-eth-1d": {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
 	}
