@@ -1,3 +1,4 @@
+// Shared domain types consumed across console pages and panels.
 export type AccountSummary = {
   accountId: string;
   accountName: string;
