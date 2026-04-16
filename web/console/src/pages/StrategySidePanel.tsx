@@ -130,7 +130,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                     <SelectValue placeholder="周期" />
                   </SelectTrigger>
                   <SelectContent className="bg-white border-[#d8cfba] rounded-xl">
-                    {(backtestOptions?.signalTimeframes ?? ["4h", "1d"]).map((item) => (
+                    {(backtestOptions?.signalTimeframes ?? ["5m", "4h", "1d"]).map((item) => (
                       <SelectItem key={item} value={item}>{item}</SelectItem>
                     ))}
                   </SelectContent>

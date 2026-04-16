@@ -215,7 +215,7 @@ type BacktestRun struct {
 }
 
 // BacktestConfig 是平台级标准化回测配置。
-// signalTimeframe 表示策略信号周期，例如 4h / 1d。
+// signalTimeframe 表示策略信号周期，例如 5m / 4h / 1d。
 // executionDataSource 表示执行层数据源，例如 tick / 1min。
 type BacktestConfig struct {
 	SignalTimeframe     string         `json:"signalTimeframe"`

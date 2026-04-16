@@ -108,6 +108,7 @@ export function LiveSessionModal({
                 value={liveSessionForm.signalTimeframe}
                 onChange={(event) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
               >
+                <option value="5m">5m</option>
                 <option value="4h">4h</option>
                 <option value="1d">1d</option>
               </select>

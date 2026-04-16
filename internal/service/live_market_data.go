@@ -13,6 +13,7 @@ import (
 )
 
 const liveSignalWarmWindow = 400 * 24 * time.Hour
+const liveFastSignalWarmWindow = 7 * 24 * time.Hour
 const liveMinuteWarmWindow = 30 * 24 * time.Hour
 
 var fetchLiveCandleRange = fetchBinanceFuturesCandleRange
@@ -99,12 +100,17 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 	end := time.Now().UTC().Truncate(time.Minute)
 	minuteStart := end.Add(-liveMinuteWarmWindow)
 	signalStart := end.Add(-liveSignalWarmWindow)
+	fastSignalStart := end.Add(-liveFastSignalWarmWindow)
 	minuteBars, err := fetchLiveCandleRange(normalizedSymbol, "1", minuteStart, end)
 	if err != nil {
 		return err
 	}
 	if len(minuteBars) == 0 {
 		return fmt.Errorf("no live market minute bars returned for %s", normalizedSymbol)
+	}
+	signal5M, err := p.syncStoredSignalBars(normalizedSymbol, "5m", fastSignalStart, end)
+	if err != nil {
+		return err
 	}
 	signal1D, err := p.syncStoredSignalBars(normalizedSymbol, "1d", signalStart, end)
 	if err != nil {
@@ -119,6 +125,7 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 		Symbol:     normalizedSymbol,
 		MinuteBars: minuteBars,
 		SignalBars: map[string][]strategySignalBar{
+			"5m": signal5M,
 			"1d": signal1D,
 			"4h": signal4H,
 		},
@@ -127,6 +134,7 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 	p.liveMarketMu.Unlock()
 	logger.Debug("live market snapshot refreshed",
 		"minute_bar_count", len(minuteBars),
+		"signal_5m_bar_count", len(signal5M),
 		"signal_1d_bar_count", len(signal1D),
 		"signal_4h_bar_count", len(signal4H),
 	)
@@ -209,8 +217,8 @@ func (p *Platform) ingestLiveSignalBarSummary(summary map[string]any, eventTime 
 	if !strings.EqualFold(stringValue(summary["streamType"]), "signal_bar") {
 		return nil
 	}
-	timeframe := strings.ToLower(strings.TrimSpace(stringValue(summary["timeframe"])))
-	if timeframe != "1d" && timeframe != "4h" {
+	timeframe := normalizeSignalBarInterval(stringValue(summary["timeframe"]))
+	if timeframe != "5m" && timeframe != "1d" && timeframe != "4h" {
 		return nil
 	}
 	symbol := NormalizeSymbol(stringValue(summary["symbol"]))
@@ -278,7 +286,9 @@ func strategySignalBarToStateEntry(bar strategySignalBar, symbol, timeframe stri
 }
 
 func liveSignalResolution(timeframe string) string {
-	switch strings.ToLower(strings.TrimSpace(timeframe)) {
+	switch normalizeSignalBarInterval(timeframe) {
+	case "5m":
+		return "5"
 	case "1d":
 		return "1D"
 	case "4h":

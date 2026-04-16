@@ -1347,10 +1347,7 @@ func isLivePlanStepStale(nextPlannedEvent time.Time, signalTimeframe string, now
 	if nextPlannedEvent.IsZero() {
 		return true
 	}
-	resolution := "240"
-	if strings.EqualFold(strings.TrimSpace(signalTimeframe), "1d") {
-		resolution = "1D"
-	}
+	resolution := liveSignalResolution(signalTimeframe)
 	step := resolutionToDuration(resolution)
 	if step <= 0 {
 		step = 4 * time.Hour

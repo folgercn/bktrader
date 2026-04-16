@@ -62,6 +62,52 @@ func TestNormalizeBacktestParametersPreservesExplicitZeroReentrySlots(t *testing
 	}
 }
 
+func TestNormalizeBacktestParametersCanonicalizesFiveMinuteSignalTimeframe(t *testing.T) {
+	normalized, err := NormalizeBacktestParameters(map[string]any{
+		"signalTimeframe":     "5min",
+		"executionDataSource": "1min",
+	})
+	if err != nil {
+		t.Fatalf("expected 5min signal timeframe to be supported, got %v", err)
+	}
+	if got := stringValue(normalized["signalTimeframe"]); got != "5m" {
+		t.Fatalf("expected canonicalized signalTimeframe 5m, got %s", got)
+	}
+}
+
+func TestBuildSignalBarsSupportsFiveMinuteAggregation(t *testing.T) {
+	minuteBars := make([]candleBar, 0, 12)
+	start := time.Date(2026, 4, 16, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 12; i++ {
+		price := 100.0 + float64(i)
+		minuteBars = append(minuteBars, candleBar{
+			Time:   start.Add(time.Duration(i) * time.Minute),
+			Open:   price,
+			High:   price + 1,
+			Low:    price - 1,
+			Close:  price + 0.5,
+			Volume: 10,
+		})
+	}
+
+	signals, err := buildSignalBars(minuteBars, "5m")
+	if err != nil {
+		t.Fatalf("build 5m signal bars failed: %v", err)
+	}
+	if len(signals) != 3 {
+		t.Fatalf("expected 3 aggregated 5m bars, got %d", len(signals))
+	}
+	if !signals[0].Time.Equal(start) {
+		t.Fatalf("expected first 5m bucket at %s, got %s", start, signals[0].Time)
+	}
+	if signals[0].Open != 100 || signals[0].Close != 104.5 || signals[0].Volume != 50 {
+		t.Fatalf("unexpected first 5m bar: %#v", signals[0])
+	}
+	if !signals[1].Time.Equal(start.Add(5 * time.Minute)) {
+		t.Fatalf("expected second 5m bucket at %s, got %s", start.Add(5*time.Minute), signals[1].Time)
+	}
+}
+
 func TestBuildStrategyReplayConfigUsesUpdatedBaselineDefaults(t *testing.T) {
 	cfg := buildStrategyReplayConfig(StrategyExecutionContext{
 		SignalTimeframe:     "1d",

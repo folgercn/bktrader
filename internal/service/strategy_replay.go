@@ -878,7 +878,7 @@ func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayC
 		stopLossATR = 0.05
 	}
 	return strategyReplayConfig{
-		SignalTimeframe:      strings.ToLower(context.SignalTimeframe),
+		SignalTimeframe:      normalizeSignalBarInterval(context.SignalTimeframe),
 		ExecutionDataSource:  strings.ToLower(context.ExecutionDataSource),
 		Symbol:               normalizeBacktestSymbol(context.Symbol),
 		From:                 context.From,
@@ -938,10 +938,7 @@ func countFundingIntervals(entryTime, exitTime time.Time, intervalHours int) int
 }
 
 func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignalBar, error) {
-	resolution := "240"
-	if timeframe == "1d" {
-		resolution = "1D"
-	}
+	resolution := liveSignalResolution(timeframe)
 	step := resolutionToDuration(resolution)
 	if step <= 0 {
 		return nil, fmt.Errorf("unsupported signal timeframe: %s", timeframe)
@@ -997,7 +994,7 @@ func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignal
 }
 
 func strategySignalRegimeReady(sig strategySignalBar, timeframe string) (bool, bool) {
-	tf := strings.ToLower(strings.TrimSpace(timeframe))
+	tf := normalizeSignalBarInterval(timeframe)
 	if tf == "1d" {
 		if math.IsNaN(sig.ATR) || sig.ATR <= 0 {
 			return false, false
@@ -1022,7 +1019,13 @@ func strategySignalRegimeReady(sig strategySignalBar, timeframe string) (bool, b
 }
 
 func (p *Platform) loadStrategySignalBars(timeframe string) ([]strategySignalBar, error) {
-	switch strings.ToLower(timeframe) {
+	switch normalizeSignalBarInterval(timeframe) {
+	case "5m":
+		minuteBars, err := p.loadCandleBars()
+		if err != nil {
+			return nil, err
+		}
+		return buildSignalBars(minuteBars, "5m")
 	case "4h":
 		return readSignalBarsCSV("BTC_4H_Signals.csv")
 	case "1d":

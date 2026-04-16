@@ -308,6 +308,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                     <SelectValue placeholder="周期" />
                   </SelectTrigger>
                   <SelectContent className="bg-white border-[#d8cfba] rounded-xl">
+                    <SelectItem value="5m">5m</SelectItem>
                     <SelectItem value="4h">4h</SelectItem>
                     <SelectItem value="1d">1d</SelectItem>
                   </SelectContent>

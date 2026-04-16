@@ -157,6 +157,8 @@ func (p *Platform) SignalRuntimeAdapters() []map[string]any {
 func normalizeSignalBarInterval(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {
+	case "5m", "5", "5min", "5minute":
+		return "5m"
 	case "1d", "d", "1day":
 		return "1d"
 	case "4h", "240", "4hour":
