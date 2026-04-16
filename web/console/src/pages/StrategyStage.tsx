@@ -286,7 +286,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                 <Label className="text-sm font-black text-[#1f2328]">运行引擎</Label>
                 <Select 
                   value={strategyEditorForm.strategyEngine}
-                  onValueChange={(val) => setStrategyEditorForm(prev => ({ ...prev, strategyEngine: val }))}
+                  onValueChange={(val: any) => setStrategyEditorForm(prev => ({ ...prev, strategyEngine: val }))}
                 >
                   <SelectTrigger className="h-11 rounded-xl border-[#d8cfba] bg-white/50">
                     <SelectValue placeholder="选择引擎" />
@@ -302,7 +302,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters }: Strate
                 <Label className="text-sm font-black text-[#1f2328]">信号周期</Label>
                 <Select 
                   value={strategyEditorForm.signalTimeframe}
-                  onValueChange={(val) => setStrategyEditorForm(prev => ({ ...prev, signalTimeframe: val }))}
+                  onValueChange={(val: any) => setStrategyEditorForm(prev => ({ ...prev, signalTimeframe: val }))}
                 >
                   <SelectTrigger className="h-11 rounded-xl border-[#d8cfba] bg-white/50">
                     <SelectValue placeholder="周期" />
