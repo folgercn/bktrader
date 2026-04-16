@@ -22,12 +22,6 @@ This project has a graphify knowledge graph at `graphify-out/`.
 - Rebuild graphify immediately before `git push` by running `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` if needed.
 - **Automated Workflow**: A `pre-push` git hook is installed and should be the default path for rebuilding the graph before every `git push`.
 
-### 面向 Gemini 的技能组 (Skills)
-
-本项目现已对接部分 `.agents/skills`。遇到相关场景时，请务必先查阅 Skill：
-- **前端 UI 修改**：必须先参考 `Frontend-Design-System-Skill`。
-- **React 动效控制**：必须先参考 `React-Polanyi-Interaction-Skill`。
-
 ## 3. 修改禁区与高风险目录
 
 **不要在没有与人类明确沟通（显式 approval）的情况下擅自修改以下高风险区域**：
