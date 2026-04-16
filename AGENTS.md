@@ -60,8 +60,14 @@ go build ./cmd/db-migrate
 ```
 
 **前端**：
+在结束任何前端代码编辑前，**必须**运行以下指令进行静态类型校验（路径见 `docs/AGENT_PATHS.md`）：
 ```bash
-cd web/console && npm ci && npm run build
+# 示例：使用绝对路径 node 执行本地 tsc
+cd web/console
+/Users/fujun/.nvm/versions/node/v22.18.0/bin/node ./node_modules/.bin/tsc --noEmit src/pages/AccountStage.tsx --jsx react-jsx --esModuleInterop --skipLibCheck --target esnext --moduleResolution node --allowSyntheticDefaultImports
+
+# 全量构建验证 (如必要)
+npm run build
 ```
 
 **Smoke Test (实盘会话可用性回归测试)**：

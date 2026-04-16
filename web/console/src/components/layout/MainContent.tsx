@@ -51,12 +51,11 @@ export function MainContent({ actions, dockContent, strategies, quickLiveAccount
           jumpToSignalRuntimeSession={actions.jumpToSignalRuntimeSession}
           runLiveNextAction={actions.runLiveNextAction}
           selectQuickLiveAccount={actions.selectQuickLiveAccount}
-          bindStrategySignalSource={actions.bindStrategySignalSource}
-          unbindStrategySignalSource={actions.unbindStrategySignalSource}
           updateRuntimePolicy={actions.updateRuntimePolicy}
           createSignalRuntimeSession={actions.createSignalRuntimeSession}
           deleteSignalRuntimeSession={(id) => actions.deleteSignalRuntimeSession(id, null)}
           runSignalRuntimeAction={actions.runSignalRuntimeAction}
+          executeLaunchTemplate={actions.executeLaunchTemplate}
         />
       )}
       {sidebarTab === 'log' && (

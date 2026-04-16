@@ -939,7 +939,8 @@ export function deriveSessionMarkers(session: LiveSession | PaperSession | null,
 
 export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessionExecutionSummary): LiveSessionHealth {
   const recoveryError = String(session.state?.lastRecoveryError ?? "").trim();
-  if (recoveryError) {
+  const isRunning = String(session.status).toUpperCase() === "RUNNING";
+  if (recoveryError && !isRunning) {
     return {
       status: "error",
       detail: `恢复失败: ${recoveryError}`,
@@ -953,7 +954,7 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
     };
   }
   const syncError = String(session.state?.lastSyncError ?? "").trim();
-  if (syncError) {
+  if (syncError && !isRunning) {
     return {
       status: "error",
       detail: `同步失败: ${syncError}`,

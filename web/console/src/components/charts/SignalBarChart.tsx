@@ -40,15 +40,26 @@ export function SignalBarChart(props: { candles: SignalBarCandle[] }) {
       priceLineVisible: true,
     });
 
-    series.setData(
-      props.candles.map((item) => ({
-        time: Math.floor(new Date(item.time).getTime() / 1000) as Time,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-      }))
+    const mappedData = props.candles.map((item) => ({
+      time: Math.floor(new Date(item.time).getTime() / 1000) as Time,
+      open: item.open,
+      high: item.high,
+      low: item.low,
+      close: item.close,
+    }));
+
+    // 1. 去重：如果有重复时间戳，保留最后出现的（通常是最新更新的）
+    const uniqueMap = new Map<number, typeof mappedData[0]>();
+    mappedData.forEach((item) => {
+      uniqueMap.set(item.time as number, item);
+    });
+
+    // 2. 排序：确保严格按时间升序
+    const sortedData = Array.from(uniqueMap.values()).sort(
+      (a, b) => (a.time as number) - (b.time as number)
     );
+
+    series.setData(sortedData);
 
     applyDefaultChartWindow(chart, props.candles.length, 90);
     return () => chart.remove();

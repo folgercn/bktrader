@@ -191,10 +191,16 @@ export interface useUIStoreState {
   setLiveBindingNotice: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
   liveSessionNotice: string | null;
   setLiveSessionNotice: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
+  launchingTemplate: string | null;
+  setLaunchingTemplate: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
   settingsMenuOpen: boolean;
   setSettingsMenuOpen: (valOrUpdater: boolean | ((prev: boolean) => boolean)) => void;
   activeSettingsModal: "telegram" | "live-account" | "live-binding" | "live-session" | null;
   setActiveSettingsModal: (valOrUpdater: "telegram" | "live-account" | "live-binding" | "live-session" | null | ((prev: "telegram" | "live-account" | "live-binding" | "live-session" | null) => "telegram" | "live-account" | "live-binding" | "live-session" | null)) => void;
+  monitorResolution: string | null;
+  setMonitorResolution: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
+  notification: { type: 'success' | 'error' | 'info'; message: string } | null;
+  setNotification: (valOrUpdater: { type: 'success' | 'error' | 'info'; message: string } | null | ((prev: { type: 'success' | 'error' | 'info'; message: string } | null) => { type: 'success' | 'error' | 'info'; message: string } | null)) => void;
 }
 
 export const useUIStore = create<useUIStoreState>((set) => ({
@@ -357,8 +363,14 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   setLiveBindingNotice: (valOrUpdater) => set((state) => ({ liveBindingNotice: resolveUpdater(valOrUpdater, state.liveBindingNotice) })),
   liveSessionNotice: null,
   setLiveSessionNotice: (valOrUpdater) => set((state) => ({ liveSessionNotice: resolveUpdater(valOrUpdater, state.liveSessionNotice) })),
+  launchingTemplate: null,
+  setLaunchingTemplate: (valOrUpdater) => set((state) => ({ launchingTemplate: resolveUpdater(valOrUpdater, state.launchingTemplate) })),
   settingsMenuOpen: false,
   setSettingsMenuOpen: (valOrUpdater) => set((state) => ({ settingsMenuOpen: resolveUpdater(valOrUpdater, state.settingsMenuOpen) })),
   activeSettingsModal: null,
   setActiveSettingsModal: (valOrUpdater) => set((state) => ({ activeSettingsModal: resolveUpdater(valOrUpdater, state.activeSettingsModal) })),
+  monitorResolution: null,
+  setMonitorResolution: (valOrUpdater) => set((state) => ({ monitorResolution: resolveUpdater(valOrUpdater, state.monitorResolution) })),
+  notification: null,
+  setNotification: (valOrUpdater) => set((state) => ({ notification: resolveUpdater(valOrUpdater, state.notification) })),
 }));

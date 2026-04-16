@@ -52,6 +52,9 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   const setLiveAccountForm = useUIStore(s => s.setLiveAccountForm);
   const setLiveBindingForm = useUIStore(s => s.setLiveBindingForm);
   const setLiveSessionForm = useUIStore(s => s.setLiveSessionForm);
+  const setLaunchingTemplate = useUIStore(s => s.setLaunchingTemplate);
+  const setNotification = useUIStore(s => s.setNotification);
+  const launchingTemplate = useUIStore(s => s.launchingTemplate);
   
   const loginForm = useUIStore(s => s.loginForm);
   const strategyCreateForm = useUIStore(s => s.strategyCreateForm);
@@ -525,11 +528,17 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     try {
       setLiveSessionAction(`${sessionId}:${action}`);
       setError(null);
+      setLiveSessionError(null);
       await fetchJSON(`/api/v1/live/sessions/${sessionId}/${action}`, { method: "POST" });
       await loadDashboard();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to execute live session action";
       setError(message);
+      setLiveSessionError(message);
+      
+      // Use the new standard Notification Toast instead of native alert
+      setNotification({ type: 'error', message: `实盘操作失败: ${message}` });
+
       if (action === "start" && message.includes("is not configured")) {
         const session = liveSessions.find((item) => item.id === sessionId);
         if (session?.accountId) {
@@ -547,10 +556,14 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     try {
       setLiveSessionAction(`${sessionId}:dispatch`);
       setError(null);
+      setLiveSessionError(null);
       await fetchJSON(`/api/v1/live/sessions/${sessionId}/dispatch`, { method: "POST" });
       await loadDashboard();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to dispatch live session intent");
+      const message = err instanceof Error ? err.message : "Failed to dispatch live session intent";
+      setError(message);
+      setLiveSessionError(message);
+      setNotification({ type: 'error', message: `分发意图失败: ${message}` });
     } finally {
       setLiveSessionAction(null);
     }
@@ -566,6 +579,48 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
       setError(err instanceof Error ? err.message : "Failed to sync live session");
     } finally {
       setLiveSessionAction(null);
+    }
+  }
+
+  async function executeLaunchTemplate(template: any, accountId: string) {
+    if (!accountId) {
+      setError("请先选择或创建一个实盘账户");
+      return;
+    }
+    setLaunchingTemplate(template.key);
+    setError(null);
+    try {
+      for (const step of template.steps) {
+        let path = step.pathTemplate
+          .replace(":accountId", encodeURIComponent(accountId))
+          .replace(":strategyId", encodeURIComponent(template.strategyId));
+        
+        const payloadRef = step.payloadRef;
+        if (payloadRef.endsWith("[]")) {
+          const key = payloadRef.replace("[]", "");
+          const items = template[key] || [];
+          for (const item of items) {
+            await fetchJSON(path, {
+              method: step.method,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(item),
+            });
+          }
+        } else {
+          const payload = template[payloadRef] || {};
+          await fetchJSON(path, {
+            method: step.method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+        }
+      }
+      await loadDashboard();
+      window.location.hash = "monitor";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "模板执行失败");
+    } finally {
+      setLaunchingTemplate(null);
     }
   }
 
@@ -946,6 +1001,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     bindStrategySignalSource, createSignalRuntimeSession,
     updateRuntimePolicy, runSignalRuntimeAction, acknowledgeNotification,
     sendNotificationToTelegram, saveTelegramConfig, sendTelegramTest, createBacktestRun,
+    executeLaunchTemplate,
     selectQuickLiveAccount,
     login, logout,
     openLiveAccountModal, openLiveBindingModal, openLiveSessionModal,

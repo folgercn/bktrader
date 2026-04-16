@@ -5,11 +5,13 @@ import { applyDefaultChartWindow } from '../../utils/derivation';
 
 export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: SessionMarker[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+  const seriesRef = useRef<ReturnType<any> | null>(null);
+  const markersRef = useRef<ReturnType<any> | null>(null);
+  const isInitialRender = useRef(true);
 
   useEffect(() => {
-    if (!containerRef.current || props.candles.length === 0) {
-      return;
-    }
+    if (!containerRef.current) return;
 
     const chart = createChart(containerRef.current, {
       autoSize: true,
@@ -43,6 +45,24 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
       priceLineVisible: true,
     });
 
+    chartRef.current = chart;
+    seriesRef.current = series;
+    markersRef.current = createSeriesMarkers(series, []);
+
+    return () => {
+      chart.remove();
+      chartRef.current = null;
+      seriesRef.current = null;
+      markersRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const markers = markersRef.current;
+    if (!chart || !series || !markers || props.candles.length === 0) return;
+
     series.setData(
       props.candles.map((item) => ({
         time: Math.floor(new Date(item.time).getTime() / 1000) as Time,
@@ -53,16 +73,6 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
       }))
     );
 
-    const markers = createSeriesMarkers(
-      series,
-      props.markers.map((item) => ({
-        time: Math.floor(new Date(item.time).getTime() / 1000) as Time,
-        position: item.position,
-        color: item.color,
-        shape: item.shape,
-        text: item.text,
-      }))
-    );
     markers.setMarkers(
       props.markers.map((item) => ({
         time: Math.floor(new Date(item.time).getTime() / 1000) as Time,
@@ -73,8 +83,10 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
       }))
     );
 
-    applyDefaultChartWindow(chart, props.candles.length, 90);
-    return () => chart.remove();
+    if (isInitialRender.current) {
+      applyDefaultChartWindow(chart, props.candles.length, 90);
+      isInitialRender.current = false;
+    }
   }, [props.candles, props.markers]);
 
   return <div ref={containerRef} className="tv-chart" />;
