@@ -211,7 +211,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                 {[
                   { label: "模式", value: monitorMode, icon: Zap },
                   { label: "净值", value: formatMoney(monitorSummary?.netEquity), color: 'text-[#1f2328]' },
-                  { label: "盈亏", value: formatSigned(monitorSummary?.unrealizedPnl), color: getNumber(monitorSummary?.unrealizedPnl) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
+                  { label: "盈亏", value: formatSigned(monitorSummary?.unrealizedPnl ?? 0), color: (getNumber(monitorSummary?.unrealizedPnl) ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
                   { label: "方向", value: String(monitorExecutionSummary.position?.side ?? "FLAT"), color: 'font-black' },
                   { label: "数量", value: formatMaybeNumber(monitorExecutionSummary.position?.quantity) },
                   { label: "标记价", value: formatMaybeNumber(monitorExecutionSummary.position?.markPrice) },
@@ -241,18 +241,18 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               {/* 左侧：优先会话详情 */}
               {highlightedLiveSession ? (
                 <div className="bg-[#fff8ea] rounded-[24px] p-6 border-2 border-[#d8cfba] shadow-lg relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <BarChart3 className="size-20" />
-                  </div>
                   
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <span className="text-[10px] text-[#687177] font-black uppercase tracking-widest">Primary Session</span>
-                      <h4 className="text-lg font-black text-[#1f2328] mt-1">当前由于焦点会话</h4>
+
+                  <div className="flex items-start justify-between mb-8">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-[#687177] font-black uppercase tracking-widest opacity-70">Primary Session</span>
+                        <Badge className="bg-[#1f2328] text-white border-0 font-black text-[9px] h-4 px-1.5 rounded-md">
+                          {highlightedLiveSession.health.status}
+                        </Badge>
+                      </div>
+                      <h4 className="text-xl font-black text-[#1f2328] tracking-tight">活跃监控焦点会话</h4>
                     </div>
-                    <Badge className="bg-[#1f2328] text-white border-0 font-black text-[10px] px-3 py-1 rounded-lg">
-                      {highlightedLiveSession.health.status}
-                    </Badge>
                   </div>
                   
                   <div className="flex flex-wrap gap-2 text-[10px] mb-6">
@@ -321,7 +321,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                       ))}
                     </div>
                     
-                    <Accordion type="multiple" className="w-full space-y-2">
+                    <Accordion className="w-full space-y-2">
                       {monitorSections.map((section) => (
                         <AccordionItem key={section.title} value={section.title} className="border-2 border-[#d8cfba]/30 rounded-2xl px-4 bg-white/30">
                           <AccordionTrigger className="hover:no-underline py-4 text-[12px] font-black text-[#1f2328] uppercase tracking-wide">

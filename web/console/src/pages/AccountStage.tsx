@@ -303,55 +303,55 @@ export function AccountStage({
 
   return (
     <div className="absolute inset-0 overflow-y-auto p-8 space-y-8 bg-[#f3f0e7]">
-      {/* 顶部总控 - 现代 Card 重构 */}
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[32px] overflow-hidden">
-        <div className="flex flex-col md:flex-row">
-           <div className="flex-1 p-6 space-y-3">
-             <div>
-               <p className="text-[#0e6d60] text-[9px] font-black uppercase tracking-widest mb-1.5 font-mono">交易中心 / CONTROL CENTER</p>
-               <h2 className="text-xl font-black text-[#1f2328] tracking-tight">准备账户，接通信号，启动实盘</h2>
-             </div>
-             <p className="text-xs text-[#687177] leading-relaxed max-w-2xl font-medium">
-               按顺序完成账户准备、信号接通和实盘会话创建后，再进入监控台处理运行状态与人工干预。
-             </p>
+      {/* 顶部总控 - 扁平化重构 */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-sm rounded-[24px] overflow-hidden">
+        <div className="py-3 px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+           <div className="flex items-center gap-6 overflow-hidden">
+              <div className="shrink-0">
+                <p className="text-[#0e6d60] text-[9px] font-black uppercase tracking-widest font-mono mb-0.5">Control Center</p>
+                <h2 className="text-lg font-black text-[#1f2328] tracking-tight whitespace-nowrap">账户与信号实盘总控</h2>
+              </div>
+              
+              <Separator orientation="vertical" className="h-8 bg-[#d8cfba]/40 hidden lg:block" />
+              
+              <div className="hidden lg:flex items-center gap-2 h-8 px-3 rounded-xl bg-[#fffbf2] border border-[#d8cfba]/50 transition-all">
+                <span className="text-[9px] font-black text-[#687177] uppercase opacity-40">Live:</span>
+                <span className="text-[10px] font-black text-[#1f2328]">{quickLiveAccount?.name ?? "--"}</span>
+                <Badge variant="outline" className="text-[8px] h-3.5 border-[#d8cfba] text-[#0e6d60] font-black lowercase">{quickLiveAccount?.status ?? "no_state"}</Badge>
+              </div>
            </div>
            
-           <div className="md:w-96 bg-[#fff8ea] border-l border-[#d8cfba] p-8 flex flex-col justify-center gap-6">
-              <div className="space-y-1">
-                <strong className="text-[11px] text-[#687177] uppercase font-bold">当前选中账户</strong>
-                <div className="flex items-center gap-2">
-                   <span className="text-sm font-bold text-[#1f2328]">{quickLiveAccount?.name ?? "--"}</span>
-                   <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] text-[#0e6d60]">{quickLiveAccount?.status ?? "--"}</Badge>
-                </div>
-                <p className="text-[10px] text-[#687177]">{quickLiveAccount?.exchange ?? "未解析交易所"}</p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" className="h-9 border-[#d8cfba] bg-white text-[11px] font-bold text-[#1f2328]" onClick={openLiveAccountModal}>
+           <div className="flex items-center gap-2">
+              <div className="flex items-center p-1 rounded-xl bg-white/40 border border-[#d8cfba]/20">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none" 
+                  onClick={openLiveAccountModal}
+                >
                   新建账户
                 </Button>
+                <Separator orientation="vertical" className="h-4 bg-[#d8cfba]/30 mx-1" />
                 <Button 
-                   variant="outline" 
+                   variant="ghost" 
                    size="sm" 
-                   className="h-9 border-[#d8cfba] bg-white text-[11px] font-bold text-[#1f2328]"
+                   className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none"
                    disabled={!quickLiveAccountId}
                    onClick={() => {
-                     if (quickLiveAccountId) {
-                       selectQuickLiveAccount(quickLiveAccountId);
-                     }
+                     if (quickLiveAccountId) selectQuickLiveAccount(quickLiveAccountId);
                      openLiveBindingModal();
                    }}
                 >
                   绑定适配器
                 </Button>
+                <Separator orientation="vertical" className="h-4 bg-[#d8cfba]/30 mx-1" />
                 <Button 
+                   variant="ghost" 
                    size="sm" 
-                   className="h-9 bg-[#0e6d60] hover:bg-[#0a5a4f] text-white text-[11px] font-bold shadow-md"
+                   className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none"
                    disabled={!quickLiveAccountId}
                    onClick={() => {
-                     if (quickLiveAccountId) {
-                       selectQuickLiveAccount(quickLiveAccountId);
-                     }
+                     if (quickLiveAccountId) selectQuickLiveAccount(quickLiveAccountId);
                      openLiveSessionModal();
                    }}
                 >
@@ -464,116 +464,128 @@ export function AccountStage({
                 const accountDetailOpen = expandedAccountId === account.id;
 
                 return (
-                  <div key={account.id} className="group border border-[#d8cfba] bg-[#fff8ea] rounded-[20px] overflow-hidden shadow-sm hover:shadow-md transition-all">
-                    <div className="p-5 flex flex-col md:flex-row gap-6">
-                       {/* 账户核心信息 */}
-                       <div className="flex-1 space-y-4">
-                          <div className="flex items-center justify-between">
-                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-white border border-[#d8cfba] flex items-center justify-center font-black text-[#0e6d60]">
-                                  {account.exchange?.charAt(0) || "A"}
-                                </div>
-                                <div>
-                                  <h4 className="text-base font-black text-[#1f2328]">{account.name}</h4>
-                                  <div className="flex items-center gap-2">
-                                     <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white text-[#1f2328]">{account.exchange}</Badge>
-                                     <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white text-[#1f2328]">{String(binding.adapterKey ?? "未适配")}</Badge>
-                                  </div>
-                                </div>
+                  <div key={account.id} className="group border border-[#d8cfba] bg-[#fff8ea] rounded-[24px] overflow-hidden shadow-sm hover:shadow-xl hover:translate-y-[-2px] transition-all duration-300">
+                    <div className="flex flex-col lg:flex-row items-stretch">
+                       {/* 左侧：身份与环境状态 (Identity & Context) */}
+                       <div className="p-6 lg:w-1/3 xl:w-1/4 space-y-4 border-r border-[#d8cfba]/30">
+                          <div className="flex items-center gap-4">
+                             <div className="w-12 h-12 rounded-2xl bg-white border-2 border-[#d8cfba] group-hover:border-[#1f2328] flex items-center justify-center font-black text-xl text-[#0e6d60] transition-colors shadow-sm shrink-0">
+                               {account.exchange?.charAt(0) || "A"}
                              </div>
-                             <div className="flex items-center gap-2">
-                                <Badge className={`text-[10px] h-5 ${activeRuntimeReadiness.status === 'ready' ? 'bg-[#0e6d60]' : 'bg-amber-600'}`}>
-                                  环境：{statusLabelZh(activeRuntimeReadiness.status)}
-                                </Badge>
-                                <Badge variant="secondary" className="text-[10px] h-5 bg-white border-[#d8cfba]">
-                                  预检：{statusLabelZh(livePreflight.status)}
-                                </Badge>
+                             <div className="space-y-1 min-w-0">
+                                <h4 className="text-lg font-black text-[#1f2328] tracking-tight truncate">{account.name}</h4>
+                                <div className="flex flex-wrap gap-1.5">
+                                   <Badge variant="outline" className="text-[10px] h-4.5 border-[#d8cfba] bg-white text-[#687177] font-bold">{account.exchange}</Badge>
+                                   <Badge variant="outline" className="text-[10px] h-4.5 border-[#d8cfba] bg-white text-[#687177] font-bold uppercase">{String(binding.adapterKey ?? "NO_ADAPTER")}</Badge>
+                                </div>
                              </div>
                           </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2">
-                             <div className="space-y-1">
-                                <span className="text-[11px] text-[#687177] uppercase font-black tracking-tighter block">最新价</span>
-                                <p className="text-base font-mono font-black text-[#1f2328] tracking-tighter">{formatMaybeNumber(activeRuntimeMarket.tradePrice)}</p>
+                          
+                          <div className="flex items-center gap-2 pt-1">
+                             <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm ${activeRuntimeReadiness.status === 'ready' ? 'bg-[#d9eee8] text-[#0e6d60]' : 'bg-amber-100 text-amber-700'}`}>
+                                <div className={`size-1.5 rounded-full ${activeRuntimeReadiness.status === 'ready' ? 'bg-[#0e6d60] animate-pulse' : 'bg-amber-600'}`} />
+                                环境：{statusLabelZh(activeRuntimeReadiness.status)}
                              </div>
-                             <div className="space-y-1">
-                                <span className="text-[11px] text-[#687177] uppercase font-black tracking-tighter block">心跳</span>
-                                <p className="text-[10px] font-mono text-[#687177] font-bold">{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</p>
+                             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#d8cfba] text-[10px] font-black uppercase text-[#687177] shadow-sm">
+                                预检：{statusLabelZh(livePreflight.status)}
                              </div>
-                             <div className="space-y-1">
-                                <span className="text-[11px] text-[#687177] uppercase font-black tracking-tighter block">信号偏差</span>
-                                <div className="h-6 flex items-center">
-                                  <Badge className={`h-4.5 px-1.5 text-[9px] font-black tracking-widest ${signalActionTone(activeSignalAction.bias, activeSignalAction.state) === 'ready' ? 'bg-[#0e6d60]' : 'bg-rose-600'}`}>
-                                    {String(activeSignalAction.bias || "--").toUpperCase()}
-                                  </Badge>
-                                </div>
-                             </div>
-                             <div className="space-y-1">
-                                <span className="text-[11px] text-[#687177] uppercase font-black tracking-tighter block">操作建议</span>
-                                <p className="text-[10px] text-[#1f2328] font-bold truncate">{liveNextAction.label}</p>
-                             </div>
-                          </div>
-
-                          <div className="p-3 rounded-xl bg-white/50 border border-[#d8cfba]/50 text-[10px] text-[#687177] leading-relaxed">
-                             <strong>预检反馈:</strong> {livePreflight.reason} · {shrink(livePreflight.detail)}
                           </div>
                        </div>
 
-                       {/* 账户操作区 */}
-                       <div className="md:w-48 flex flex-col gap-2">
+                       {/* 中间：高密集指标矩阵 (Metrics Matrix) */}
+                       <div className="flex-1 bg-white/40 p-6 flex flex-col justify-center border-r border-[#d8cfba]/30">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
+                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Latest Price</span>
+                                <p className="text-xl font-mono font-black text-[#1f2328] tracking-tighter tabular-nums">{formatMaybeNumber(activeRuntimeMarket.tradePrice)}</p>
+                             </div>
+                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
+                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Heartbeat</span>
+                                <p className="text-[11px] font-mono text-[#1f2328] font-bold uppercase">{formatTime(String(activeRuntimeState.lastHeartbeatAt ?? ""))}</p>
+                             </div>
+                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
+                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Signal Bias</span>
+                                <div className="mt-1">
+                                  <Badge className={`h-5.5 px-2 text-[10px] font-black tracking-widest uppercase ${signalActionTone(activeSignalAction.bias, activeSignalAction.state) === 'ready' ? 'bg-[#0e6d60]' : 'bg-rose-600'}`}>
+                                    {String(activeSignalAction.bias || "--")}
+                                  </Badge>
+                                </div>
+                             </div>
+                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
+                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Next Advice</span>
+                                <p className="text-[11px] text-[#1f2328] font-black leading-tight uppercase line-clamp-2">{liveNextAction.label}</p>
+                             </div>
+                          </div>
+                          
+                          <div className="mt-4 flex items-start gap-3 text-[10px] text-[#687177] bg-white/80 p-3 rounded-xl border border-[#d8cfba]/40 shadow-inner">
+                             <div className="size-5 rounded-lg bg-[#fff8ea] border border-[#d8cfba] flex items-center justify-center shrink-0">
+                               <HelpCircle size={10} className="opacity-50" />
+                             </div>
+                             <p className="font-medium leading-relaxed">
+                               <strong className="text-[#1f2328] uppercase text-[9px]">Preflight Feedback:</strong> {livePreflight.reason} · <span className="opacity-70">{shrink(livePreflight.detail)}</span>
+                             </p>
+                          </div>
+                       </div>
+
+                       {/* 右侧：操作指挥塔 (Control Tower) */}
+                       <div className="p-6 lg:w-56 bg-white/5 flex flex-col justify-center gap-3">
                           <Button 
-                            className={`w-full h-9 font-black text-[11px] shadow-sm rounded-xl ${isLiveFlowRunning ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#0e6d60] hover:bg-[#0a5a4f]'}`}
+                            className={`w-full h-11 font-black text-xs shadow-md rounded-xl transition-transform active:scale-95 ${isLiveFlowRunning ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#0e6d60] hover:bg-[#0a5a4f]'}`}
                             disabled={liveFlowAction !== null || liveBindAction || signalRuntimeAction !== null}
                             onClick={() => isLiveFlowRunning ? stopLiveFlow(account.id) : launchLiveFlow(account)}
                           >
-                            {isLiveFlowRunning ? "停止实盘流程" : "启动实盘流程"}
+                             {isLiveFlowRunning ? (
+                               <div className="flex items-center gap-2"><Square size={14} fill="currentColor" /> 停止实盘流程</div>
+                             ) : (
+                               <div className="flex items-center gap-2"><Play size={14} fill="currentColor" /> 启动实盘流程</div>
+                             )}
                           </Button>
                           <div className="grid grid-cols-2 gap-2">
-                            <Button variant="outline" className="h-9 text-[10px] border-[#d8cfba] bg-white" onClick={() => syncLiveAccount(account.id)}>
+                            <Button variant="outline" className="h-9 text-[10px] border-[#d8cfba] bg-white text-[#1f2328] font-black rounded-lg hover:border-[#1f2328] shadow-sm" onClick={() => syncLiveAccount(account.id)}>
                               同步账户
                             </Button>
-                            <Button variant="outline" className="h-9 text-[10px] border-[#d8cfba] bg-white" onClick={() => setExpandedAccountId((current) => current === account.id ? null : account.id)}>
-                              {accountDetailOpen ? "收起" : "详情"}
+                            <Button variant="outline" className="h-9 text-[10px] border-[#d8cfba] bg-white text-[#1f2328] font-black rounded-lg hover:border-[#1f2328] shadow-sm" onClick={() => setExpandedAccountId((current) => current === account.id ? null : account.id)}>
+                              {accountDetailOpen ? "隐藏详情" : "账户详情"}
                             </Button>
                           </div>
                           {activeRuntime && (
-                            <Button variant="ghost" className="h-8 text-[10px] text-[#0e6d60] font-bold" onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}>
-                              打开运行环境
+                            <Button variant="ghost" className="h-8 text-[10px] text-[#0e6d60]/90 hover:text-[#0e6d60] font-black group-hover:underline" onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}>
+                              打开运行环境 <ArrowRight size={12} className="ml-1" />
                             </Button>
                           )}
                        </div>
                     </div>
 
                     {accountDetailOpen && (
-                      <div className="px-5 pb-5 pt-2 border-t border-[#d8cfba]/50 bg-white/30">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                           <div className="space-y-3">
-                              <h5 className="text-[10px] font-black text-[#1f2328] uppercase">同步与资产快照</h5>
-                              <div className="grid grid-cols-3 gap-2">
-                                 <div className="p-3 rounded-xl bg-[#fff8ea] border border-[#d8cfba] text-center">
-                                    <span className="block text-[8px] text-[#687177]">订单</span>
-                                    <strong className="text-xs text-[#1f2328]">{String(syncSnapshot.orderCount ?? "0")}</strong>
+                      <div className="px-5 pb-5 pt-4 border-t border-[#d8cfba]/50 bg-white/50 animate-in slide-in-from-top-2 duration-300">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                           <div className="space-y-4">
+                              <h5 className="text-[10px] font-black text-[#687177] uppercase tracking-widest border-l-2 border-[#d8cfba] pl-2">资产快照与同步 / SNAPSHOT</h5>
+                              <div className="grid grid-cols-3 gap-3">
+                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
+                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Orders</span>
+                                    <strong className="text-sm text-[#1f2328] tabular-nums">{String(syncSnapshot.orderCount ?? "0")}</strong>
                                  </div>
-                                 <div className="p-3 rounded-xl bg-[#fff8ea] border border-[#d8cfba] text-center">
-                                    <span className="block text-[8px] text-[#687177]">成交</span>
-                                    <strong className="text-xs text-[#1f2328]">{String(syncSnapshot.fillCount ?? "0")}</strong>
+                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
+                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Fills</span>
+                                    <strong className="text-sm text-[#1f2328] tabular-nums">{String(syncSnapshot.fillCount ?? "0")}</strong>
                                  </div>
-                                 <div className="p-3 rounded-xl bg-[#fff8ea] border border-[#d8cfba] text-center">
-                                    <span className="block text-[8px] text-[#687177]">持仓</span>
-                                    <strong className="text-xs text-[#1f2328]">{String(syncSnapshot.positionCount ?? "0")}</strong>
+                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
+                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Positions</span>
+                                    <strong className="text-sm text-[#1f2328] tabular-nums">{String(syncSnapshot.positionCount ?? "0")}</strong>
                                  </div>
                               </div>
                            </div>
-                           <div className="space-y-2">
-                              <h5 className="text-[10px] font-black text-[#1f2328] uppercase">实时诊断数据</h5>
-                              <div className="space-y-1">
+                           <div className="space-y-4">
+                              <h5 className="text-[10px] font-black text-[#687177] uppercase tracking-widest border-l-2 border-[#d8cfba] pl-2">诊断与事件流 / DIAGNOSTICS</h5>
+                              <div className="space-y-2">
                                 {buildAlertNotes(liveAlerts).map((item) => (
-                                  <div key={`${account.id}-${item.title}`} className={`text-[10px] p-2 rounded-lg border ${item.level === 'critical' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
-                                    <strong>{item.title}:</strong> {item.detail}
+                                  <div key={`${account.id}-${item.title}`} className={`text-[10px] p-3 rounded-xl border-l-4 shadow-sm ${item.level === 'critical' ? 'bg-rose-50 border-rose-500 text-rose-800' : 'bg-amber-50 border-amber-500 text-amber-800'}`}>
+                                    <strong className="uppercase">{item.title}:</strong> {item.detail}
                                   </div>
                                 ))}
                                 {buildSignalActionNotes(activeSignalAction).slice(0, 2).map((line) => (
-                                  <div key={line} className="text-[10px] text-[#687177] pl-2 border-l-2 border-[#d8cfba]">{line}</div>
+                                  <div key={line} className="text-[10px] text-[#687177] pl-3 border-l border-[#d8cfba] py-0.5 italic">{line}</div>
                                 ))}
                               </div>
                            </div>
@@ -585,8 +597,10 @@ export function AccountStage({
               })}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-[#d8cfba] rounded-[24px] text-[#687177] opacity-40">
-              <p className="text-sm font-bold">暂无实盘账户</p>
+            <div className="flex flex-col items-center justify-center p-16 border-2 border-dashed border-[#d8cfba] rounded-[32px] text-[#687177] opacity-60">
+              <Activity size={32} className="mb-4 opacity-20" />
+              <p className="text-sm font-black uppercase tracking-widest">暂无活跃实盘账户</p>
+              <p className="text-[11px] font-medium mt-1">需先新建账户并绑定交易所适配器</p>
             </div>
           )}
         </CardContent>
@@ -615,32 +629,32 @@ export function AccountStage({
              </div>
              
              {launchTemplates.length > 0 ? (
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                  {launchTemplates.map((tpl) => (
-                   <div key={tpl.key} className="group p-5 rounded-[20px] border border-[#d8cfba] bg-[#fff8ea] hover:bg-white hover:shadow-lg transition-all space-y-4">
-                      <div className="flex justify-between items-start">
-                         <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                               <div className="w-2 h-2 rounded-full bg-[#0e6d60]" />
-                               <span className="text-sm font-black text-[#1f2328]">{tpl.name}</span>
-                            </div>
-                            <p className="text-[10px] text-[#687177] leading-relaxed line-clamp-2">{tpl.description}</p>
+                   <div key={tpl.key} className="group p-4 rounded-[20px] border border-[#d8cfba] bg-[#fff8ea] hover:bg-white hover:shadow-lg hover:translate-y-[-2px] transition-all duration-300 flex flex-col justify-between min-h-[160px]">
+                      <div className="space-y-3">
+                         <div className="flex justify-between items-start pt-1">
+                             <div className="flex items-center gap-1.5 min-w-0">
+                                <div className="w-1.5 h-1.5 rounded-full bg-[#0e6d60] shrink-0" />
+                                <span className="text-[13px] font-black text-[#1f2328] truncate leading-tight">{tpl.name}</span>
+                             </div>
+                             <Badge variant="outline" className="text-[8px] h-3.5 border-[#d8cfba] bg-white text-[#1f2328] shrink-0 ml-1">
+                               {tpl.symbol}
+                             </Badge>
                          </div>
-                         <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white text-[#1f2328]">
-                           {tpl.symbol} · {tpl.signalTimeframe}
-                         </Badge>
+                         <p className="text-[10px] text-[#687177] leading-relaxed line-clamp-2 font-medium h-9 overflow-hidden">{tpl.description}</p>
                       </div>
                       
                       <div className="space-y-3 pt-2">
                         <div className="flex flex-wrap gap-1">
                           {tpl.strategySignalBindings?.slice(0, 3).map((b: any, idx: number) => (
-                            <Badge key={idx} variant="secondary" className="text-[8px] h-3.5 bg-white border-[#d8cfba]/50 text-[#687177]">
+                            <Badge key={idx} variant="secondary" className="text-[7px] h-3 px-1 bg-white border-[#d8cfba]/50 text-[#687177] uppercase font-bold tracking-tighter">
                               {b.role}
                             </Badge>
                           ))}
                         </div>
                         <Button 
-                          className="w-full h-8 bg-white border border-[#d8cfba] text-[#1f2328] hover:bg-[#0e6d60] hover:text-white hover:border-transparent text-[10px] font-bold transition-all"
+                          className="w-full h-8 bg-white border border-[#d8cfba] text-[#1f2328] hover:bg-[#1f2328] hover:text-white hover:border-transparent text-[10px] font-black transition-all rounded-lg"
                           disabled={launchingTemplate !== null}
                           onClick={() => executeLaunchTemplate(tpl, quickLiveAccountId)}
                         >
@@ -652,7 +666,7 @@ export function AccountStage({
                </div>
              ) : (
                <div className="p-12 text-center border-2 border-dashed border-[#d8cfba] rounded-[24px]">
-                 <p className="text-xs text-[#687177] font-bold italic">正在获取推荐模板...</p>
+                 <p className="text-xs text-[#687177] font-bold italic opacity-40">正在获取推荐模板...</p>
                </div>
              )}
           </div>
@@ -786,35 +800,35 @@ export function AccountStage({
           </CardHeader>
           <CardContent className="space-y-6">
              <div className="space-y-5 p-6 rounded-[24px] bg-[#fff8ea] border border-[#d8cfba]">
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#687177] uppercase">成交价格新鲜度 (秒)</label>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">价格新鲜度(秒)</label>
                     <Input 
-                      className="bg-white border-[#d8cfba] h-10 text-xs font-bold"
+                      className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm"
                       value={runtimePolicyForm.tradeTickFreshnessSeconds}
                       onChange={(e) => setRuntimePolicyForm(c => ({ ...c, tradeTickFreshnessSeconds: e.target.value }))}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#687177] uppercase">账户同步间隔 (秒)</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">同步间隔(秒)</label>
                     <Input 
-                      className="bg-white border-[#d8cfba] h-10 text-xs font-bold"
+                      className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm"
                       value={runtimePolicyForm.liveAccountSyncFreshnessSeconds}
                       onChange={(e) => setRuntimePolicyForm(c => ({ ...c, liveAccountSyncFreshnessSeconds: e.target.value }))}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#687177] uppercase">派发模式</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">派发模式</label>
                     <Select 
                        value={runtimePolicyForm.dispatchMode}
                        onValueChange={(val: any) => setRuntimePolicyForm(c => ({ ...c, dispatchMode: val }))}
                     >
-                       <SelectTrigger className="bg-white border-[#d8cfba] h-10 text-xs font-bold">
+                       <SelectTrigger className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm px-2">
                          <SelectValue />
                        </SelectTrigger>
                        <SelectContent className="bg-white border-[#d8cfba]">
-                          <SelectItem value="manual-review" className="text-xs">人工审核 (Manual)</SelectItem>
-                          <SelectItem value="auto-dispatch" className="text-xs">自动派发 (Auto)</SelectItem>
+                          <SelectItem value="manual-review" className="text-xs font-bold">人工审核</SelectItem>
+                          <SelectItem value="auto-dispatch" className="text-xs font-bold">自动派发</SelectItem>
                        </SelectContent>
                     </Select>
                   </div>
@@ -850,7 +864,9 @@ export function AccountStage({
                      <div key={session.id} className="p-4 rounded-[20px] bg-[#fff8ea] border border-[#d8cfba] flex items-center justify-between hover:bg-white transition-all group">
                         <div className="space-y-1">
                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-black text-[#1f2328]">{shrink(session.id)}</span>
+                              <span className="text-sm font-black text-[#1f2328]">
+                                {session.id.length > 28 ? session.id.slice(0, 18) + '...' + session.id.slice(-6) : session.id}
+                              </span>
                               <Badge className={`h-4 text-[8px] ${isRunning ? 'bg-[#0e6d60]' : 'bg-zinc-400'}`}>
                                 {session.status}
                               </Badge>
@@ -895,24 +911,18 @@ export function AccountStage({
                )}
              </div>
 
-             <div className="mt-8 p-5 rounded-[24px] bg-[#d9eee8] border border-[#0e6d60]/10">
-                <div className="flex flex-col gap-4">
-                  <div className="space-y-1">
-                    <h5 className="text-xs font-black text-[#1f2328]">运行状态已集成</h5>
-                    <p className="text-[10px] text-[#0e6d60]/80 leading-relaxed">
-                      配置完成后，请转至监控台查看详细的 K 线信号、活跃订单与资产对账详情。
-                    </p>
-                  </div>
-                  <Button className="w-full bg-[#0e6d60] hover:bg-[#0a5a4f] text-white font-bold h-9 text-[11px]" onClick={openMonitorStage}>
-                    立即体验监控台
-                  </Button>
-                </div>
-             </div>
+
           </CardContent>
         </Card>
       </div>
 
-      <AlertDialog open={confirmConfig.open} onOpenChange={(open) => !open && setConfirmConfig(c => ({ ...c, open: false }))}>
+      <AlertDialog 
+        open={confirmConfig.open} 
+        onOpenChange={(open) => {
+          if (!open && liveSessionDeleteAction !== null) return;
+          if (!open) setConfirmConfig(c => ({ ...c, open: false }));
+        }}
+      >
         <AlertDialogContent className="bg-[#fffbf2] border-[#d8cfba] rounded-[32px] p-8 shadow-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-xl font-black text-[#1f2328]">{confirmConfig.title}</AlertDialogTitle>
@@ -920,14 +930,23 @@ export function AccountStage({
               {confirmConfig.description}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 mt-4">
-            <AlertDialogCancel variant="outline" size="default" className="h-11 px-6 rounded-xl border-[#d8cfba] font-bold text-[#1f2328]">取消</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmConfig.onConfirm}
-              className="h-11 px-6 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold"
+          <AlertDialogFooter className="pt-6">
+            <AlertDialogCancel 
+              disabled={liveSessionDeleteAction !== null}
+              className="h-11 px-6 rounded-xl border-[#d8cfba] font-bold text-[#1f2328]"
+            >
+              取消
+            </AlertDialogCancel>
+            <Button 
+              loading={liveSessionDeleteAction !== null}
+              onClick={async () => {
+                await confirmConfig.onConfirm();
+                setConfirmConfig(c => ({ ...c, open: false }));
+              }}
+              className="h-11 px-6 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md"
             >
               确 认 执 行
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
