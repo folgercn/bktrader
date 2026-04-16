@@ -358,10 +358,6 @@ export function AccountStage({
                   创建会话
                 </Button>
               </div>
-              <Separator orientation="vertical" className="h-6 bg-[#d8cfba]/50 hidden md:block mx-1" />
-              <Button variant="ghost" size="sm" className="h-8 text-rose-600 font-black hover:bg-rose-50 px-3 rounded-lg" onClick={logout}>
-                QUIT
-              </Button>
            </div>
         </div>
       </Card>
