@@ -245,14 +245,16 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                     <BarChart3 className="size-20" />
                   </div>
                   
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <span className="text-[10px] text-[#687177] font-black uppercase tracking-widest">Primary Session</span>
-                      <h4 className="text-lg font-black text-[#1f2328] mt-1">当前由于焦点会话</h4>
+                  <div className="flex items-start justify-between mb-8">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-[#687177] font-black uppercase tracking-widest opacity-70">Primary Session</span>
+                        <Badge className="bg-[#1f2328] text-white border-0 font-black text-[9px] h-4 px-1.5 rounded-md">
+                          {highlightedLiveSession.health.status}
+                        </Badge>
+                      </div>
+                      <h4 className="text-xl font-black text-[#1f2328] tracking-tight">活跃监控焦点会话</h4>
                     </div>
-                    <Badge className="bg-[#1f2328] text-white border-0 font-black text-[10px] px-3 py-1 rounded-lg">
-                      {highlightedLiveSession.health.status}
-                    </Badge>
                   </div>
                   
                   <div className="flex flex-wrap gap-2 text-[10px] mb-6">
