@@ -90,37 +90,39 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				EventTime:        session.UpdatedAt,
 			})
 		}
-		if sourceSummary.staleCount > 0 {
-			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("runtime-stale-%s", session.ID),
-				Scope:            "runtime",
-				Level:            "warning",
-				Title:            "Stale sources",
-				Detail:           fmt.Sprintf("%d source state(s) outdated", sourceSummary.staleCount),
-				AccountID:        session.AccountID,
-				AccountName:      account.Name,
-				StrategyID:       session.StrategyID,
-				StrategyName:     strategyNameByID[session.StrategyID],
-				RuntimeSessionID: session.ID,
-				Anchor:           "signals",
-				EventTime:        sourceSummary.latestEventAt,
-			})
-		}
-		if p.runtimeSessionQuiet(state) {
-			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("runtime-quiet-%s", session.ID),
-				Scope:            "runtime",
-				Level:            "warning",
-				Title:            "Runtime quiet",
-				Detail:           fmt.Sprintf("no runtime events observed in the last %ds", p.runtimePolicy.RuntimeQuietSeconds),
-				AccountID:        session.AccountID,
-				AccountName:      account.Name,
-				StrategyID:       session.StrategyID,
-				StrategyName:     strategyNameByID[session.StrategyID],
-				RuntimeSessionID: session.ID,
-				Anchor:           "signals",
-				EventTime:        parseOptionalRFC3339(stringValue(state["lastEventAt"])),
-			})
+		if !strings.EqualFold(session.Status, "ERROR") && !strings.EqualFold(session.Status, "STOPPED") && health != "stopped" {
+			if sourceSummary.staleCount > 0 {
+				appendAlert(domain.PlatformAlert{
+					ID:               fmt.Sprintf("runtime-stale-%s", session.ID),
+					Scope:            "runtime",
+					Level:            "warning",
+					Title:            "Stale sources",
+					Detail:           fmt.Sprintf("%d source state(s) outdated", sourceSummary.staleCount),
+					AccountID:        session.AccountID,
+					AccountName:      account.Name,
+					StrategyID:       session.StrategyID,
+					StrategyName:     strategyNameByID[session.StrategyID],
+					RuntimeSessionID: session.ID,
+					Anchor:           "signals",
+					EventTime:        sourceSummary.latestEventAt,
+				})
+			}
+			if p.runtimeSessionQuiet(state) {
+				appendAlert(domain.PlatformAlert{
+					ID:               fmt.Sprintf("runtime-quiet-%s", session.ID),
+					Scope:            "runtime",
+					Level:            "warning",
+					Title:            "Runtime quiet",
+					Detail:           fmt.Sprintf("no runtime events observed in the last %ds", p.runtimePolicy.RuntimeQuietSeconds),
+					AccountID:        session.AccountID,
+					AccountName:      account.Name,
+					StrategyID:       session.StrategyID,
+					StrategyName:     strategyNameByID[session.StrategyID],
+					RuntimeSessionID: session.ID,
+					Anchor:           "signals",
+					EventTime:        parseOptionalRFC3339(stringValue(state["lastEventAt"])),
+				})
+			}
 		}
 	}
 
