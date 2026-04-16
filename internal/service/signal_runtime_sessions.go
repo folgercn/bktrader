@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -137,6 +139,12 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 	state := cloneMetadata(session.State)
 	state["plan"] = plan
 	state["subscriptions"] = subscriptions
+	sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+	if len(sourceStates) == 0 {
+		sourceStates = p.bootstrapSignalRuntimeSourceStates(subscriptions)
+	}
+	state["sourceStates"] = sourceStates
+	state["signalBarStates"] = deriveSignalBarStates(sourceStates)
 	session.RuntimeAdapter = adapterKey
 	session.Transport = inferSignalRuntimeTransport(subscriptions)
 	session.SubscriptionCnt = len(subscriptions)
@@ -204,6 +212,83 @@ func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRunt
 		"strategy_id", session.StrategyID,
 	).Info("signal runtime session stopped")
 	return session, nil
+}
+
+func (p *Platform) bootstrapSignalRuntimeSourceStates(subscriptions []map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, subscription := range subscriptions {
+		if !strings.EqualFold(stringValue(subscription["streamType"]), "signal_bar") {
+			continue
+		}
+		symbol := NormalizeSymbol(stringValue(subscription["symbol"]))
+		timeframe := signalBindingTimeframe(stringValue(subscription["sourceKey"]), metadataValue(subscription["options"]))
+		if symbol == "" || timeframe == "" {
+			continue
+		}
+		snapshot, err := p.liveMarketSnapshot(symbol)
+		if err != nil {
+			continue
+		}
+		bars := snapshot.SignalBars[strings.ToLower(strings.TrimSpace(timeframe))]
+		if len(bars) == 0 {
+			continue
+		}
+		key := signalBindingMatchKey(
+			stringValue(subscription["sourceKey"]),
+			stringValue(subscription["role"]),
+			symbol,
+			map[string]any{"timeframe": timeframe},
+		)
+		out[key] = map[string]any{
+			"sourceKey":   stringValue(subscription["sourceKey"]),
+			"role":        stringValue(subscription["role"]),
+			"streamType":  stringValue(subscription["streamType"]),
+			"symbol":      symbol,
+			"timeframe":   timeframe,
+			"event":       "bootstrap",
+			"lastEventAt": "",
+			"summary": map[string]any{
+				"event":      "bootstrap",
+				"source":     "market-cache",
+				"symbol":     symbol,
+				"timeframe":  timeframe,
+				"streamType": stringValue(subscription["streamType"]),
+			},
+			"bars": strategySignalBarsToRuntimeHistory(bars, symbol, timeframe, 200),
+		}
+	}
+	return out
+}
+
+func strategySignalBarsToRuntimeHistory(bars []strategySignalBar, symbol, timeframe string, limit int) []any {
+	if len(bars) == 0 {
+		return nil
+	}
+	if limit > 0 && len(bars) > limit {
+		bars = bars[len(bars)-limit:]
+	}
+	step := resolutionToDuration(liveSignalResolution(timeframe))
+	if step <= 0 {
+		return nil
+	}
+	out := make([]any, 0, len(bars))
+	for _, bar := range bars {
+		start := bar.Time.UTC()
+		out = append(out, map[string]any{
+			"timeframe": strings.ToLower(strings.TrimSpace(timeframe)),
+			"symbol":    NormalizeSymbol(symbol),
+			"barStart":  strconv.FormatInt(start.UnixMilli(), 10),
+			"barEnd":    strconv.FormatInt(start.Add(step).UnixMilli(), 10),
+			"open":      bar.Open,
+			"high":      bar.High,
+			"low":       bar.Low,
+			"close":     bar.Close,
+			"volume":    bar.Volume,
+			"isClosed":  true,
+			"updatedAt": start.Format(time.RFC3339),
+		})
+	}
+	return out
 }
 
 func (p *Platform) DeleteSignalRuntimeSession(sessionID string) error {
