@@ -4,10 +4,76 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/cd.yml'
+      - '.dockerignore'
+      - 'Dockerfile'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'db/**'
+      - 'deployments/**'
+      - 'scripts/deploy.sh'
+      - 'web/console/**'
 
 jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      frontend_changed: ${{ steps.filter.outputs.frontend_changed }}
+      backend_changed: ${{ steps.filter.outputs.backend_changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
+            echo "backend_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            changed_files="$(git ls-tree -r --name-only "$CURRENT_SHA")"
+          else
+            changed_files="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")"
+          fi
+
+          frontend_changed=false
+          backend_changed=false
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              web/console/*)
+                frontend_changed=true
+                ;;
+            esac
+
+            case "$file" in
+              cmd/*|internal/*|db/*|deployments/*|scripts/deploy.sh|Dockerfile|.dockerignore)
+                backend_changed=true
+                ;;
+            esac
+          done <<EOF
+          $changed_files
+          EOF
+
+          echo "frontend_changed=$frontend_changed" >> "$GITHUB_OUTPUT"
+          echo "backend_changed=$backend_changed" >> "$GITHUB_OUTPUT"
+
   docker:
     name: Build and publish image
+    needs: changes
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -49,8 +115,8 @@ jobs:
 
   frontend:
     name: Build and deploy frontend
-    needs: deploy
-    if: github.ref == 'refs/heads/main'
+    needs: changes
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.frontend_changed == 'true'
     runs-on: [self-hosted, macOS, ARM64]
     defaults:
       run:
@@ -82,8 +148,8 @@ jobs:
 
   deploy:
     name: Deploy on Macmini runner
-    needs: docker
-    if: github.ref == 'refs/heads/main'
+    needs: [changes, docker]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend_changed == 'true' && needs.docker.result == 'success'
     runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
