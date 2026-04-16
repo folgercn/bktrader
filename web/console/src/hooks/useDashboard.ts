@@ -151,21 +151,7 @@ export function useDashboard() {
     const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
     const { from, to } = range;
 
-    const monitorSessionForChart = liveSessionData[0] ?? null;
-    let selectedResolution = monitorResolution;
-    if (!selectedResolution) {
-      const monitorSignalTimeframe = String(monitorSessionForChart?.state?.signalTimeframe ?? "1d");
-      const normalizedMonitorSignalTimeframe = monitorSignalTimeframe.toLowerCase();
-      selectedResolution = normalizedMonitorSignalTimeframe === "5m" || normalizedMonitorSignalTimeframe === "5min" || normalizedMonitorSignalTimeframe === "5"
-        ? "5"
-        : normalizedMonitorSignalTimeframe === "4h"
-          ? "240"
-          : "1D";
-    }
-    
-    const monitorResolutionParam = selectedResolution;
-
-    const [snapshotData, candleData, monitorCandleData, annotationData] = await Promise.all([
+    const [snapshotData, candleData, annotationData] = await Promise.all([
       summaryData[0]?.accountId
         ? fetchJSON<AccountEquitySnapshot[]>(
             `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(summaryData[0].accountId)}`
@@ -173,9 +159,6 @@ export function useDashboard() {
         : Promise.resolve([]),
       fetchJSON<{ candles: ChartCandle[] }>(
         `/api/v1/chart/candles?symbol=BTCUSDT&resolution=1&from=${from}&to=${to}&limit=840`
-      ),
-      fetchJSON<{ candles: ChartCandle[] }>(
-        `/api/v1/chart/candles?symbol=BTCUSDT&resolution=${encodeURIComponent(monitorResolutionParam)}&limit=400`
       ),
       fetchJSON<ChartAnnotation[]>(
         `/api/v1/chart/annotations?symbol=BTCUSDT&from=${from}&to=${to}&limit=300`
@@ -200,7 +183,6 @@ export function useDashboard() {
     const normalizedSnapshots = Array.isArray(snapshotData) ? snapshotData : [];
     const normalizedAnnotations = Array.isArray(annotationData) ? annotationData : [];
     const normalizedCandles = Array.isArray(candleData?.candles) ? candleData.candles : [];
-    const normalizedMonitorCandles = Array.isArray(monitorCandleData?.candles) ? monitorCandleData.candles : [];
     const normalizedSignalCatalog = signalCatalogData && typeof signalCatalogData === "object" ? signalCatalogData : { sources: [], notes: [] };
     const normalizedBacktestOptions =
       backtestOptionsData && typeof backtestOptionsData === "object" ? backtestOptionsData : ({} as BacktestOptions);
@@ -212,7 +194,6 @@ export function useDashboard() {
     setFills(normalizedFills);
     setPositions(normalizedPositions);
     setSnapshots(normalizedSnapshots);
-    setMonitorCandles(normalizedMonitorCandles);
     setStrategies(normalizedStrategies);
     setSelectedStrategyId((current) => {
       if (current && normalizedStrategies.some((item) => item.id === current)) {

@@ -6,7 +6,7 @@ import { formatMoney, formatSigned, formatMaybeNumber, formatTime, shrink } from
 import { 
   getRecord, 
   getList,
-  mapChartCandlesToSignalBarCandles, 
+  deriveSignalBarCandles,
   derivePrimarySignalBarState, 
   deriveRuntimeMarketSnapshot, 
   deriveSessionMarkers, 
@@ -46,14 +46,11 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const fills = useTradingStore(s => s.fills);
   const positions = useTradingStore(s => s.positions);
   const signalRuntimeSessions = useTradingStore(s => s.signalRuntimeSessions);
-  const monitorCandles = useTradingStore(s => s.monitorCandles);
   const summaries = useTradingStore(s => s.summaries);
   const runtimePolicy = useTradingStore(s => s.runtimePolicy);
   const monitorHealth = useTradingStore(s => s.monitorHealth);
   const accounts = useTradingStore(s => s.accounts);
   const strategySignalBindingMap = useTradingStore(s => s.strategySignalBindingMap);
-  const monitorResolution = useUIStore(s => s.monitorResolution);
-  const setMonitorResolution = useUIStore(s => s.setMonitorResolution);
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
   const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
   const setSelectedSignalRuntimeId = useTradingStore(s => s.setSelectedSignalRuntimeId);
@@ -121,12 +118,12 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorExecutionSummary = highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(null, orders, fills, positions);
   const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : {};
   const monitorSessionState = getRecord(monitorSession?.state);
-  const monitorBars = mapChartCandlesToSignalBarCandles(
-    monitorCandles,
-    String(monitorSessionState.signalTimeframe ?? "1d")
-  );
+  const monitorBars = useMemo(() => {
+    return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates));
+  }, [highlightedLiveRuntimeState.sourceStates]);
+
   const monitorSignalState = derivePrimarySignalBarState(
-    getRecord(monitorRuntimeState.signalBarStates),
+    getRecord(highlightedLiveRuntimeState.signalBarStates),
     getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates)
   );
   const monitorMarket = deriveRuntimeMarketSnapshot(
@@ -203,6 +200,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   return (
     <div className="h-full overflow-y-auto p-6 space-y-8 animate-in fade-in duration-500">
       {/* 1. 主监控区 - 彻底迁移至 Card 现代化体系 */}
+      {monitorSession ? (
       <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-2xl rounded-[32px] overflow-hidden border-2">
          <CardHeader className="bg-white/40 border-b border-[#d8cfba]/50 px-8 py-5">
            <div className="flex items-center justify-between">
@@ -216,27 +214,6 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                </div>
              </div>
              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-[#ebe5d5]/50 border border-[#d8cfba] rounded-2xl shadow-sm">
-                  {[
-                    { label: '5m', value: '5' },
-                    { label: '15m', value: '15' },
-                    { label: '1h', value: '60' },
-                    { label: '4h', value: '240' },
-                    { label: '1d', value: '1D' },
-                  ].map((tf) => (
-                    <button
-                      key={tf.label}
-                      onClick={() => setMonitorResolution(tf.value)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] uppercase font-black transition-all ${
-                        monitorResolution === tf.value
-                          ? 'bg-[#1f2328] text-white shadow-md scale-105'
-                          : 'text-[#687177] hover:bg-white/60 hover:text-[#1f2328]'
-                      }`}
-                    >
-                      {tf.label}
-                    </button>
-                  ))}
-                </div>
                 <Badge variant="outline" className="h-7 px-3 border-[#d8cfba] font-mono text-[10px] bg-white text-[#1f2328]">
                   {monitorMode}
                 </Badge>
@@ -273,7 +250,12 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                 ))}
             </div>
          </CardContent>
-      </Card>
+      </Card>) : (
+        <div className="bg-[#fff8ea]/30 border-2 border-dashed border-[#d8cfba] rounded-[32px] p-20 flex flex-col items-center justify-center space-y-4 opacity-40">
+           <CandlestickChart className="size-12 text-[#687177]" />
+           <p className="text-sm font-black text-[#687177] uppercase tracking-wider italic">需选择活跃焦点会话以同步实时 K 线数据</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* 2. 交互与干预区 */}
