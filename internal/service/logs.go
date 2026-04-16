@@ -231,13 +231,13 @@ func (p *Platform) queryStrategyDecisionEvents(query domain.StrategyDecisionEven
 		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
 			continue
 		}
-		if query.Before != nil && !eventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+		if query.Before != nil && !domain.EventBeforeCursor(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
 			continue
 		}
 		filtered = append(filtered, item)
 	}
 	sort.SliceStable(filtered, func(i, j int) bool {
-		return eventPairLess(filtered[i].EventTime, filtered[i].RecordedAt, filtered[i].ID, filtered[j].EventTime, filtered[j].RecordedAt, filtered[j].ID)
+		return domain.EventLessDesc(filtered[i].EventTime, filtered[i].RecordedAt, filtered[i].ID, filtered[j].EventTime, filtered[j].RecordedAt, filtered[j].ID)
 	})
 	return limitStrategyDecisionEvents(filtered, query.Limit), nil
 }
@@ -276,13 +276,13 @@ func (p *Platform) queryOrderExecutionEvents(query domain.OrderExecutionEventQue
 		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
 			continue
 		}
-		if query.Before != nil && !eventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+		if query.Before != nil && !domain.EventBeforeCursor(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
 			continue
 		}
 		filtered = append(filtered, item)
 	}
 	sort.SliceStable(filtered, func(i, j int) bool {
-		return eventPairLess(filtered[i].EventTime, filtered[i].RecordedAt, filtered[i].ID, filtered[j].EventTime, filtered[j].RecordedAt, filtered[j].ID)
+		return domain.EventLessDesc(filtered[i].EventTime, filtered[i].RecordedAt, filtered[i].ID, filtered[j].EventTime, filtered[j].RecordedAt, filtered[j].ID)
 	})
 	return limitOrderExecutionEvents(filtered, query.Limit), nil
 }
@@ -318,13 +318,13 @@ func (p *Platform) queryPositionAccountSnapshots(query domain.PositionAccountSna
 		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
 			continue
 		}
-		if query.Before != nil && !eventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+		if query.Before != nil && !domain.EventBeforeCursor(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
 			continue
 		}
 		filtered = append(filtered, item)
 	}
 	sort.SliceStable(filtered, func(i, j int) bool {
-		return eventPairLess(filtered[i].EventTime, filtered[i].RecordedAt, filtered[i].ID, filtered[j].EventTime, filtered[j].RecordedAt, filtered[j].ID)
+		return domain.EventLessDesc(filtered[i].EventTime, filtered[i].RecordedAt, filtered[i].ID, filtered[j].EventTime, filtered[j].RecordedAt, filtered[j].ID)
 	})
 	return limitPositionSnapshots(filtered, query.Limit), nil
 }
@@ -345,7 +345,7 @@ func strategyDecisionToUnifiedLogEvent(item domain.StrategyDecisionEvent) Unifie
 		Title:            firstNonEmpty(strings.TrimSpace(item.Action), "strategy decision"),
 		Message:          firstNonEmpty(strings.TrimSpace(item.Reason), "strategy evaluation completed"),
 		EventTime:        item.EventTime.UTC(),
-		RecordedAt:       normalizeRecordedAt(item.RecordedAt, item.EventTime),
+		RecordedAt:       domain.NormalizeEventRecordedAt(item.RecordedAt, item.EventTime),
 		AccountID:        item.AccountID,
 		StrategyID:       item.StrategyID,
 		RuntimeSessionID: item.RuntimeSessionID,
@@ -381,7 +381,7 @@ func orderExecutionToUnifiedLogEvent(item domain.OrderExecutionEvent) UnifiedLog
 		Title:            firstNonEmpty(strings.TrimSpace(item.EventType), "order execution"),
 		Message:          firstNonEmpty(strings.TrimSpace(item.Status), strings.TrimSpace(item.Error), "order execution updated"),
 		EventTime:        item.EventTime.UTC(),
-		RecordedAt:       normalizeRecordedAt(item.RecordedAt, item.EventTime),
+		RecordedAt:       domain.NormalizeEventRecordedAt(item.RecordedAt, item.EventTime),
 		AccountID:        item.AccountID,
 		StrategyID:       strategyID,
 		RuntimeSessionID: item.RuntimeSessionID,
@@ -415,7 +415,7 @@ func positionSnapshotToUnifiedLogEvent(item domain.PositionAccountSnapshot) Unif
 		Title:           firstNonEmpty(strings.TrimSpace(item.Trigger), "position/account snapshot"),
 		Message:         firstNonEmpty(strings.TrimSpace(item.SyncStatus), "snapshot recorded"),
 		EventTime:       item.EventTime.UTC(),
-		RecordedAt:      normalizeRecordedAt(item.RecordedAt, item.EventTime),
+		RecordedAt:      domain.NormalizeEventRecordedAt(item.RecordedAt, item.EventTime),
 		AccountID:       item.AccountID,
 		StrategyID:      item.StrategyID,
 		LiveSessionID:   item.LiveSessionID,
@@ -516,55 +516,7 @@ func normalizeUnifiedLogLimit(limit int) int {
 }
 
 func unifiedLogEventLess(left, right UnifiedLogEvent) bool {
-	return eventPairLess(left.EventTime, left.RecordedAt, left.ID, right.EventTime, right.RecordedAt, right.ID)
-}
-
-func eventPairLess(leftTime, leftRecordedAt time.Time, leftID string, rightTime, rightRecordedAt time.Time, rightID string) bool {
-	leftTime = leftTime.UTC()
-	rightTime = rightTime.UTC()
-	switch {
-	case leftTime.After(rightTime):
-		return true
-	case leftTime.Before(rightTime):
-		return false
-	}
-	leftRecordedAt = normalizeRecordedAt(leftRecordedAt, leftTime)
-	rightRecordedAt = normalizeRecordedAt(rightRecordedAt, rightTime)
-	switch {
-	case leftRecordedAt.After(rightRecordedAt):
-		return true
-	case leftRecordedAt.Before(rightRecordedAt):
-		return false
-	default:
-		return leftID > rightID
-	}
-}
-
-func eventComesBefore(eventTime, recordedAt time.Time, id string, cursor domain.EventCursor) bool {
-	eventTime = eventTime.UTC()
-	recordedAt = normalizeRecordedAt(recordedAt, eventTime)
-	cursorRecordedAt := normalizeRecordedAt(cursor.RecordedAt, cursor.EventTime)
-	switch {
-	case eventTime.Before(cursor.EventTime.UTC()):
-		return true
-	case eventTime.After(cursor.EventTime.UTC()):
-		return false
-	}
-	switch {
-	case recordedAt.Before(cursorRecordedAt):
-		return true
-	case recordedAt.After(cursorRecordedAt):
-		return false
-	default:
-		return id < cursor.ID
-	}
-}
-
-func normalizeRecordedAt(recordedAt, eventTime time.Time) time.Time {
-	if recordedAt.IsZero() {
-		return eventTime.UTC()
-	}
-	return recordedAt.UTC()
+	return domain.EventLessDesc(left.EventTime, left.RecordedAt, left.ID, right.EventTime, right.RecordedAt, right.ID)
 }
 
 func limitStrategyDecisionEvents(items []domain.StrategyDecisionEvent, limit int) []domain.StrategyDecisionEvent {

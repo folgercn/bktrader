@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ const (
 	defaultHTTPRequestCapacity = 2048
 	defaultQueryLimit          = 100
 	maxQueryLimit              = 200
+	redactedText               = "[redacted]"
 )
 
 // SystemLogEntry 表示可供前端回看的系统日志记录。
@@ -258,7 +260,7 @@ func RecordHTTPRequest(entry HTTPRequestLogEntry) HTTPRequestLogEntry {
 		Level:      recorded.Level,
 		EventTime:  recorded.CreatedAt,
 		RecordedAt: recorded.CreatedAt,
-		Payload:    recorded,
+		Payload:    sanitizeHTTPRequestLogEntry(recorded),
 	})
 	return recorded
 }
@@ -277,6 +279,10 @@ func ListHTTPRequestLogs(query HTTPRequestLogQuery) (HTTPRequestLogPage, error) 
 		return HTTPRequestLogPage{}, err
 	}
 	return defaultHTTPRequestStore.query(query, cursor), nil
+}
+
+func GetHTTPRequestLog(id string) (HTTPRequestLogEntry, bool) {
+	return defaultHTTPRequestStore.get(strings.TrimSpace(id))
 }
 
 // ResetForTests 清理全局日志缓冲，仅供测试使用。
@@ -447,7 +453,7 @@ func (s *httpRequestLogStore) query(query HTTPRequestLogQuery, cursor *timeCurso
 		if !query.To.IsZero() && item.CreatedAt.After(query.To.UTC()) {
 			continue
 		}
-		out = append(out, item)
+		out = append(out, sanitizeHTTPRequestLogEntry(item))
 		if len(out) >= limit+1 {
 			break
 		}
@@ -463,6 +469,19 @@ func (s *httpRequestLogStore) query(query HTTPRequestLogQuery, cursor *timeCurso
 func (s *httpRequestLogStore) reset() {
 	s.sequence.Store(0)
 	s.buffer.reset()
+}
+
+func (s *httpRequestLogStore) get(id string) (HTTPRequestLogEntry, bool) {
+	if id == "" {
+		return HTTPRequestLogEntry{}, false
+	}
+	items := s.buffer.snapshot()
+	for i := len(items) - 1; i >= 0; i-- {
+		if items[i].ID == id {
+			return items[i], true
+		}
+	}
+	return HTTPRequestLogEntry{}, false
 }
 
 func normalizeLimit(limit int) int {
@@ -549,6 +568,76 @@ func normalizeTime(value time.Time) time.Time {
 		return time.Now().UTC()
 	}
 	return value.UTC()
+}
+
+func sanitizeHTTPRequestLogEntry(entry HTTPRequestLogEntry) HTTPRequestLogEntry {
+	entry.Query = redactQuery(entry.Query)
+	entry.RemoteAddr = maskRemoteAddr(entry.RemoteAddr)
+	entry.PanicMessage = redactSensitiveText(entry.PanicMessage)
+	entry.Stack = redactSensitiveText(entry.Stack)
+	return entry
+}
+
+func redactQuery(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parts := strings.Split(raw, "&")
+	for i, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key := part
+		if index := strings.Index(part, "="); index >= 0 {
+			key = part[:index]
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			parts[i] = redactedText
+			continue
+		}
+		parts[i] = key + "=REDACTED"
+	}
+	return strings.Join(parts, "&")
+}
+
+func maskRemoteAddr(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	host := raw
+	if parsedHost, _, err := net.SplitHostPort(raw); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(host, "[]")
+	if ip := net.ParseIP(host); ip != nil {
+		if ipv4 := ip.To4(); ipv4 != nil {
+			return fmt.Sprintf("%d.%d.x.x", ipv4[0], ipv4[1])
+		}
+		parts := strings.Split(ip.String(), ":")
+		for len(parts) < 2 {
+			parts = append(parts, "*")
+		}
+		return parts[0] + ":" + parts[1] + ":*:*:*:*:*:*"
+	}
+	labels := strings.Split(host, ".")
+	if len(labels) > 1 && strings.TrimSpace(labels[0]) != "" {
+		return labels[0] + ".***"
+	}
+	if len(host) <= 2 {
+		return "*"
+	}
+	return host[:1] + "***"
+}
+
+func redactSensitiveText(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	return redactedText
 }
 
 func appendSlogAttr(target map[string]any, groups []string, attr slog.Attr) {

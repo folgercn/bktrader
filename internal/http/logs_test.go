@@ -37,14 +37,18 @@ func TestLogRoutesExposeSystemAndHTTPRequestLogs(t *testing.T) {
 		Message:   "bootstrap recovered",
 		CreatedAt: base.Add(time.Minute),
 	})
-	logging.RecordHTTPRequest(logging.HTTPRequestLogEntry{
-		Level:      "error",
-		Message:    "http request failed",
-		Method:     http.MethodGet,
-		Path:       "/api/v1/live/sessions",
-		Status:     http.StatusServiceUnavailable,
-		DurationMs: 420,
-		CreatedAt:  base.Add(2 * time.Minute),
+	sensitiveRequestLog := logging.RecordHTTPRequest(logging.HTTPRequestLogEntry{
+		Level:        "error",
+		Message:      "http request failed",
+		Method:       http.MethodGet,
+		Path:         "/api/v1/live/sessions",
+		Query:        "token=abc123&mode=read",
+		RemoteAddr:   "10.1.2.3:443",
+		Status:       http.StatusServiceUnavailable,
+		DurationMs:   420,
+		PanicMessage: "panic: sensitive downstream error",
+		Stack:        "top-secret stack trace",
+		CreatedAt:    base.Add(2 * time.Minute),
 	})
 	logging.RecordHTTPRequest(logging.HTTPRequestLogEntry{
 		Level:      "info",
@@ -84,6 +88,33 @@ func TestLogRoutesExposeSystemAndHTTPRequestLogs(t *testing.T) {
 	}
 	if len(httpPage.Items) != 1 || httpPage.Items[0].Path != "/api/v1/live/sessions" {
 		t.Fatalf("unexpected http log page: %#v", httpPage.Items)
+	}
+	if httpPage.Items[0].Query != "token=REDACTED&mode=REDACTED" {
+		t.Fatalf("expected redacted query in list response, got %#v", httpPage.Items[0].Query)
+	}
+	if httpPage.Items[0].RemoteAddr != "10.1.x.x" {
+		t.Fatalf("expected masked remote addr in list response, got %#v", httpPage.Items[0].RemoteAddr)
+	}
+	if httpPage.Items[0].PanicMessage != "[redacted]" || httpPage.Items[0].Stack != "[redacted]" {
+		t.Fatalf("expected sensitive fields to be redacted in list response, got %#v", httpPage.Items[0])
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/logs/http/"+sensitiveRequestLog.ID, nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for http log detail, got %d", rec.Code)
+	}
+	var detail logging.HTTPRequestLogEntry
+	if err := json.NewDecoder(rec.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode http log detail response: %v", err)
+	}
+	if detail.Query != "token=abc123&mode=read" || detail.RemoteAddr != "10.1.2.3:443" {
+		t.Fatalf("expected raw detail fields, got %#v", detail)
+	}
+	if detail.PanicMessage != "panic: sensitive downstream error" || detail.Stack != "top-secret stack trace" {
+		t.Fatalf("expected raw sensitive detail fields, got %#v", detail)
 	}
 }
 
@@ -186,6 +217,60 @@ func TestLogStreamEndpointWritesSSE(t *testing.T) {
 	}
 	if !strings.Contains(body, "watcher tripped") {
 		t.Fatalf("expected streamed payload in SSE output, got %q", body)
+	}
+}
+
+func TestLogStreamEndpointSanitizesHTTPRequestPayload(t *testing.T) {
+	logging.ResetForTests()
+	t.Cleanup(logging.ResetForTests)
+
+	platform := service.NewPlatform(memory.NewStore())
+	mux := http.NewServeMux()
+	registerLogRoutes(mux, platform)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream?source=http", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		mux.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+	logging.RecordHTTPRequest(logging.HTTPRequestLogEntry{
+		Level:        "error",
+		Message:      "http request failed",
+		Method:       http.MethodPost,
+		Path:         "/api/v1/orders",
+		Query:        "token=abc123&account=live-main",
+		RemoteAddr:   "10.1.2.3:443",
+		Status:       http.StatusInternalServerError,
+		DurationMs:   88,
+		PanicMessage: "panic: exchange timeout",
+		Stack:        "top-secret stack trace",
+		CreatedAt:    time.Now().UTC(),
+	})
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for http stream handler to exit")
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: http-request") {
+		t.Fatalf("expected http-request event in SSE output, got %q", body)
+	}
+	if strings.Contains(body, "abc123") || strings.Contains(body, "10.1.2.3:443") || strings.Contains(body, "top-secret stack trace") {
+		t.Fatalf("expected http SSE payload to stay redacted, got %q", body)
+	}
+	if !strings.Contains(body, "token=REDACTED\\u0026account=REDACTED") || !strings.Contains(body, "10.1.x.x") || !strings.Contains(body, "[redacted]") {
+		t.Fatalf("expected sanitized http SSE payload, got %q", body)
 	}
 }
 

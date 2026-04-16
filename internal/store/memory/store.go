@@ -744,10 +744,7 @@ func (s *Store) ListStrategyDecisionEvents(liveSessionID string) ([]domain.Strat
 		items = append(items, cloneJSONValue(item))
 	}
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].EventTime.Equal(items[j].EventTime) {
-			return items[i].RecordedAt.Before(items[j].RecordedAt)
-		}
-		return items[i].EventTime.Before(items[j].EventTime)
+		return domain.EventLessAsc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
 	})
 	return items, nil
 }
@@ -780,10 +777,7 @@ func (s *Store) ListOrderExecutionEvents(orderID string) ([]domain.OrderExecutio
 		items = append(items, cloneJSONValue(item))
 	}
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].EventTime.Equal(items[j].EventTime) {
-			return items[i].RecordedAt.Before(items[j].RecordedAt)
-		}
-		return items[i].EventTime.Before(items[j].EventTime)
+		return domain.EventLessAsc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
 	})
 	return items, nil
 }
@@ -816,10 +810,7 @@ func (s *Store) ListPositionAccountSnapshots(accountID string) ([]domain.Positio
 		items = append(items, cloneJSONValue(item))
 	}
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].EventTime.Equal(items[j].EventTime) {
-			return items[i].RecordedAt.Before(items[j].RecordedAt)
-		}
-		return items[i].EventTime.Before(items[j].EventTime)
+		return domain.EventLessAsc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
 	})
 	return items, nil
 }
@@ -867,13 +858,13 @@ func (s *Store) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQu
 		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
 			continue
 		}
-		if query.Before != nil && !memoryEventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+		if query.Before != nil && !domain.EventBeforeCursor(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
 			continue
 		}
 		items = append(items, cloneJSONValue(item))
 	}
 	sort.SliceStable(items, func(i, j int) bool {
-		return memoryEventLess(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+		return domain.EventLessDesc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
 	})
 	if query.Limit > 0 && len(items) > query.Limit {
 		items = items[:query.Limit]
@@ -910,13 +901,13 @@ func (s *Store) QueryOrderExecutionEvents(query domain.OrderExecutionEventQuery)
 		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
 			continue
 		}
-		if query.Before != nil && !memoryEventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+		if query.Before != nil && !domain.EventBeforeCursor(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
 			continue
 		}
 		items = append(items, cloneJSONValue(item))
 	}
 	sort.SliceStable(items, func(i, j int) bool {
-		return memoryEventLess(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+		return domain.EventLessDesc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
 	})
 	if query.Limit > 0 && len(items) > query.Limit {
 		items = items[:query.Limit]
@@ -950,66 +941,18 @@ func (s *Store) QueryPositionAccountSnapshots(query domain.PositionAccountSnapsh
 		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
 			continue
 		}
-		if query.Before != nil && !memoryEventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+		if query.Before != nil && !domain.EventBeforeCursor(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
 			continue
 		}
 		items = append(items, cloneJSONValue(item))
 	}
 	sort.SliceStable(items, func(i, j int) bool {
-		return memoryEventLess(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+		return domain.EventLessDesc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
 	})
 	if query.Limit > 0 && len(items) > query.Limit {
 		items = items[:query.Limit]
 	}
 	return items, nil
-}
-
-func memoryEventComesBefore(eventTime, recordedAt time.Time, id string, cursor domain.EventCursor) bool {
-	eventTime = eventTime.UTC()
-	recordedAt = normalizeMemoryRecordedAt(recordedAt, eventTime)
-	cursorRecordedAt := normalizeMemoryRecordedAt(cursor.RecordedAt, cursor.EventTime)
-	switch {
-	case eventTime.Before(cursor.EventTime.UTC()):
-		return true
-	case eventTime.After(cursor.EventTime.UTC()):
-		return false
-	}
-	switch {
-	case recordedAt.Before(cursorRecordedAt):
-		return true
-	case recordedAt.After(cursorRecordedAt):
-		return false
-	default:
-		return id < cursor.ID
-	}
-}
-
-func memoryEventLess(leftTime, leftRecordedAt time.Time, leftID string, rightTime, rightRecordedAt time.Time, rightID string) bool {
-	leftTime = leftTime.UTC()
-	rightTime = rightTime.UTC()
-	switch {
-	case leftTime.After(rightTime):
-		return true
-	case leftTime.Before(rightTime):
-		return false
-	}
-	leftRecordedAt = normalizeMemoryRecordedAt(leftRecordedAt, leftTime)
-	rightRecordedAt = normalizeMemoryRecordedAt(rightRecordedAt, rightTime)
-	switch {
-	case leftRecordedAt.After(rightRecordedAt):
-		return true
-	case leftRecordedAt.Before(rightRecordedAt):
-		return false
-	default:
-		return leftID > rightID
-	}
-}
-
-func normalizeMemoryRecordedAt(recordedAt, eventTime time.Time) time.Time {
-	if recordedAt.IsZero() {
-		return eventTime.UTC()
-	}
-	return recordedAt.UTC()
 }
 
 func stringValue(value any) string {

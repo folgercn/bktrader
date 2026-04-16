@@ -146,6 +146,24 @@ func registerLogRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, page)
 	})
 
+	mux.HandleFunc("/api/v1/logs/http/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/logs/http/"))
+		if id == "" || strings.Contains(id, "/") {
+			writeError(w, http.StatusNotFound, "http log not found")
+			return
+		}
+		entry, ok := logging.GetHTTPRequestLog(id)
+		if !ok {
+			writeError(w, http.StatusNotFound, "http log not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, entry)
+	})
+
 	mux.HandleFunc("/api/v1/logs/stream", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

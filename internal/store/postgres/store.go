@@ -1441,7 +1441,7 @@ func appendEventCursorCondition(builder *strings.Builder, args *[]any, cursor *d
 	if cursor == nil {
 		return
 	}
-	*args = append(*args, cursor.EventTime.UTC(), normalizeCursorRecordedAt(cursor.RecordedAt, cursor.EventTime), cursor.ID)
+	*args = append(*args, cursor.EventTime.UTC(), domain.NormalizeEventRecordedAt(cursor.RecordedAt, cursor.EventTime), cursor.ID)
 	eventIdx := len(*args) - 2
 	recordedIdx := len(*args) - 1
 	idIdx := len(*args)
@@ -1457,13 +1457,6 @@ func appendLimitCondition(builder *strings.Builder, args *[]any, limit int) {
 	}
 	*args = append(*args, limit)
 	builder.WriteString(fmt.Sprintf(" limit $%d", len(*args)))
-}
-
-func normalizeCursorRecordedAt(recordedAt, eventTime time.Time) time.Time {
-	if recordedAt.IsZero() {
-		return eventTime.UTC()
-	}
-	return recordedAt.UTC()
 }
 
 func (s *Store) CreatePositionAccountSnapshot(snapshot domain.PositionAccountSnapshot) (domain.PositionAccountSnapshot, error) {
