@@ -108,11 +108,7 @@ export default function App() {
             quickLiveAccountId={quickLiveAccountId} 
           />
         }
-        sidePanelContent={
-          sidebarTab === 'strategy' ? (
-            <StrategySidePanel createBacktestRun={actions.createBacktestRun} />
-          ) : null
-        }
+        sidePanelContent={null}
         mainStageContent={mainStageContent}
         dockContent={dockContent}
       />

@@ -52,10 +52,23 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorResolution = useUIStore(s => s.monitorResolution);
   const setMonitorResolution = useUIStore(s => s.setMonitorResolution);
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
-
+  const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
   const highlightedLiveSession = useMemo(
-    () => deriveHighlightedLiveSession(liveSessions, orders, fills, positions),
-    [liveSessions, orders, fills, positions]
+    () => {
+      // 优先展示手动选中的运行时会话对应的实盘会话
+      if (selectedSignalRuntimeId) {
+        const sessionWithRuntime = liveSessions.find(s => 
+          s.id === selectedSignalRuntimeId || // 直接 ID 匹配
+          String(s.state?.signalRuntimeSessionId) === selectedSignalRuntimeId // 关联 ID 匹配
+        );
+        if (sessionWithRuntime) {
+          return deriveHighlightedLiveSession([sessionWithRuntime], orders, fills, positions);
+        }
+      }
+      // 回退到原有的自动高亮逻辑
+      return deriveHighlightedLiveSession(liveSessions, orders, fills, positions);
+    },
+    [liveSessions, orders, fills, positions, selectedSignalRuntimeId]
   );
 
   const highlightedLiveRuntime =
