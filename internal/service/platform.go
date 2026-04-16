@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
+	"github.com/wuyaocheng/bktrader/internal/logging"
 	"github.com/wuyaocheng/bktrader/internal/store"
 )
 
@@ -50,6 +51,7 @@ type Platform struct {
 	tickManifest        []tradeArchiveManifestEntry
 	runtimePolicy       RuntimePolicy
 	telegramConfig      domain.TelegramConfig
+	logBroker           *logging.Broker
 }
 
 type RuntimePolicy struct {
@@ -78,6 +80,7 @@ func NewPlatform(store store.Repository) *Platform {
 		executionStrategies: make(map[string]ExecutionStrategy),
 		signalSessions:      make(map[string]domain.SignalRuntimeSession),
 		liveMarketData:      make(map[string]liveMarketSnapshot),
+		logBroker:           logging.NewBroker(),
 		runtimePolicy: RuntimePolicy{
 			TradeTickFreshnessSeconds:      15,
 			OrderBookFreshnessSeconds:      10,

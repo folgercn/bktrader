@@ -1216,6 +1216,256 @@ func (s *Store) ListPositionAccountSnapshots(accountID string) ([]domain.Positio
 	return items, rows.Err()
 }
 
+func (s *Store) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQuery) ([]domain.StrategyDecisionEvent, error) {
+	var builder strings.Builder
+	args := make([]any, 0, 12)
+	builder.WriteString(`
+		select
+			id, live_session_id, runtime_session_id, account_id, strategy_id, strategy_version_id, symbol,
+			trigger_type, action, reason, signal_kind, decision_state, intent_signature,
+			source_gate_ready, missing_count, stale_count, event_time, recorded_at,
+			trigger_summary, source_gate, source_states, signal_bar_states, position_snapshot,
+			decision_metadata, signal_intent, execution_proposal, evaluation_context
+		from strategy_decision_events
+		where 1 = 1
+	`)
+	appendQueryCondition(&builder, &args, "live_session_id = %s", strings.TrimSpace(query.LiveSessionID))
+	appendQueryCondition(&builder, &args, "account_id = %s", strings.TrimSpace(query.AccountID))
+	appendQueryCondition(&builder, &args, "strategy_id = %s", strings.TrimSpace(query.StrategyID))
+	appendQueryCondition(&builder, &args, "runtime_session_id = %s", strings.TrimSpace(query.RuntimeSessionID))
+	appendQueryCondition(&builder, &args, "id = %s", strings.TrimSpace(query.DecisionEventID))
+	appendQueryTimeCondition(&builder, &args, "event_time >= %s", query.From)
+	appendQueryTimeCondition(&builder, &args, "event_time <= %s", query.To)
+	appendEventCursorCondition(&builder, &args, query.Before)
+	builder.WriteString(" order by event_time desc, recorded_at desc, id desc")
+	appendLimitCondition(&builder, &args, query.Limit)
+
+	rows, err := s.db.Query(builder.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.StrategyDecisionEvent, 0)
+	for rows.Next() {
+		var item domain.StrategyDecisionEvent
+		var runtimeSessionID sql.NullString
+		var strategyVersionID sql.NullString
+		var triggerType sql.NullString
+		var signalKind sql.NullString
+		var decisionState sql.NullString
+		var intentSignature sql.NullString
+		var triggerSummaryRaw, sourceGateRaw, sourceStatesRaw, signalBarStatesRaw []byte
+		var positionSnapshotRaw, decisionMetadataRaw, signalIntentRaw, executionProposalRaw, evaluationContextRaw []byte
+		if err := rows.Scan(
+			&item.ID, &item.LiveSessionID, &runtimeSessionID, &item.AccountID, &item.StrategyID, &strategyVersionID, &item.Symbol,
+			&triggerType, &item.Action, &item.Reason, &signalKind, &decisionState, &intentSignature,
+			&item.SourceGateReady, &item.MissingCount, &item.StaleCount, &item.EventTime, &item.RecordedAt,
+			&triggerSummaryRaw, &sourceGateRaw, &sourceStatesRaw, &signalBarStatesRaw, &positionSnapshotRaw,
+			&decisionMetadataRaw, &signalIntentRaw, &executionProposalRaw, &evaluationContextRaw,
+		); err != nil {
+			return nil, err
+		}
+		item.RuntimeSessionID = runtimeSessionID.String
+		item.StrategyVersionID = strategyVersionID.String
+		item.TriggerType = triggerType.String
+		item.SignalKind = signalKind.String
+		item.DecisionState = decisionState.String
+		item.IntentSignature = intentSignature.String
+		item.TriggerSummary = unmarshalJSONMap(triggerSummaryRaw)
+		item.SourceGate = unmarshalJSONMap(sourceGateRaw)
+		item.SourceStates = unmarshalJSONMap(sourceStatesRaw)
+		item.SignalBarStates = unmarshalJSONMap(signalBarStatesRaw)
+		item.PositionSnapshot = unmarshalJSONMap(positionSnapshotRaw)
+		item.DecisionMetadata = unmarshalJSONMap(decisionMetadataRaw)
+		item.SignalIntent = unmarshalJSONMap(signalIntentRaw)
+		item.ExecutionProposal = unmarshalJSONMap(executionProposalRaw)
+		item.EvaluationContext = unmarshalJSONMap(evaluationContextRaw)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) QueryOrderExecutionEvents(query domain.OrderExecutionEventQuery) ([]domain.OrderExecutionEvent, error) {
+	var builder strings.Builder
+	args := make([]any, 0, 14)
+	builder.WriteString(`
+		select
+			id, order_id, exchange_order_id, live_session_id, decision_event_id, runtime_session_id, account_id,
+			strategy_version_id, symbol, side, order_type, event_type, status,
+			execution_strategy, execution_decision, execution_mode,
+			quantity, price, expected_price, price_drift_bps, raw_quantity, normalized_quantity,
+			raw_price_reference, normalized_price, spread_bps, book_imbalance,
+			submit_latency_ms, sync_latency_ms, fill_latency_ms, event_time, recorded_at,
+			fallback, post_only, reduce_only, failed, error,
+			runtime_preflight, dispatch_summary, adapter_submission, adapter_sync, normalization, symbol_rules, metadata
+		from order_execution_events
+		where 1 = 1
+	`)
+	appendQueryCondition(&builder, &args, "account_id = %s", strings.TrimSpace(query.AccountID))
+	appendQueryCondition(&builder, &args, "live_session_id = %s", strings.TrimSpace(query.LiveSessionID))
+	appendQueryCondition(&builder, &args, "runtime_session_id = %s", strings.TrimSpace(query.RuntimeSessionID))
+	appendQueryCondition(&builder, &args, "order_id = %s", strings.TrimSpace(query.OrderID))
+	appendQueryCondition(&builder, &args, "decision_event_id = %s", strings.TrimSpace(query.DecisionEventID))
+	appendQueryTimeCondition(&builder, &args, "event_time >= %s", query.From)
+	appendQueryTimeCondition(&builder, &args, "event_time <= %s", query.To)
+	appendEventCursorCondition(&builder, &args, query.Before)
+	if strings.TrimSpace(query.StrategyID) != "" {
+		args = append(args, strings.TrimSpace(query.StrategyID))
+		builder.WriteString(fmt.Sprintf(" and coalesce(metadata->>'strategyId', '') = $%d", len(args)))
+	}
+	builder.WriteString(" order by event_time desc, recorded_at desc, id desc")
+	appendLimitCondition(&builder, &args, query.Limit)
+
+	rows, err := s.db.Query(builder.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.OrderExecutionEvent, 0)
+	for rows.Next() {
+		var item domain.OrderExecutionEvent
+		var exchangeOrderID, liveSessionID, decisionEventID, runtimeSessionID, strategyVersionID sql.NullString
+		var executionStrategy, executionDecision, executionMode, errText sql.NullString
+		var runtimePreflightRaw, dispatchSummaryRaw, adapterSubmissionRaw, adapterSyncRaw, normalizationRaw, symbolRulesRaw, metadataRaw []byte
+		if err := rows.Scan(
+			&item.ID, &item.OrderID, &exchangeOrderID, &liveSessionID, &decisionEventID, &runtimeSessionID, &item.AccountID,
+			&strategyVersionID, &item.Symbol, &item.Side, &item.OrderType, &item.EventType, &item.Status,
+			&executionStrategy, &executionDecision, &executionMode,
+			&item.Quantity, &item.Price, &item.ExpectedPrice, &item.PriceDriftBps, &item.RawQuantity, &item.NormalizedQty,
+			&item.RawPriceReference, &item.NormalizedPrice, &item.SpreadBps, &item.BookImbalance,
+			&item.SubmitLatencyMs, &item.SyncLatencyMs, &item.FillLatencyMs, &item.EventTime, &item.RecordedAt,
+			&item.Fallback, &item.PostOnly, &item.ReduceOnly, &item.Failed, &errText,
+			&runtimePreflightRaw, &dispatchSummaryRaw, &adapterSubmissionRaw, &adapterSyncRaw, &normalizationRaw, &symbolRulesRaw, &metadataRaw,
+		); err != nil {
+			return nil, err
+		}
+		item.ExchangeOrderID = exchangeOrderID.String
+		item.LiveSessionID = liveSessionID.String
+		item.DecisionEventID = decisionEventID.String
+		item.RuntimeSessionID = runtimeSessionID.String
+		item.StrategyVersionID = strategyVersionID.String
+		item.ExecutionStrategy = executionStrategy.String
+		item.ExecutionDecision = executionDecision.String
+		item.ExecutionMode = executionMode.String
+		item.Error = errText.String
+		item.RuntimePreflight = unmarshalJSONMap(runtimePreflightRaw)
+		item.DispatchSummary = unmarshalJSONMap(dispatchSummaryRaw)
+		item.AdapterSubmission = unmarshalJSONMap(adapterSubmissionRaw)
+		item.AdapterSync = unmarshalJSONMap(adapterSyncRaw)
+		item.Normalization = unmarshalJSONMap(normalizationRaw)
+		item.SymbolRules = unmarshalJSONMap(symbolRulesRaw)
+		item.Metadata = unmarshalJSONMap(metadataRaw)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) QueryPositionAccountSnapshots(query domain.PositionAccountSnapshotQuery) ([]domain.PositionAccountSnapshot, error) {
+	var builder strings.Builder
+	args := make([]any, 0, 12)
+	builder.WriteString(`
+		select
+			id, live_session_id, decision_event_id, order_id, account_id, strategy_id, symbol, trigger, intent_signature,
+			position_found, position_side, position_quantity, entry_price, mark_price,
+			net_equity, available_balance, margin_balance, wallet_balance, exposure_notional, open_position_count,
+			sync_status, event_time, recorded_at,
+			position_snapshot, live_position_state, account_snapshot, account_summary, metadata
+		from position_account_snapshots
+		where 1 = 1
+	`)
+	appendQueryCondition(&builder, &args, "account_id = %s", strings.TrimSpace(query.AccountID))
+	appendQueryCondition(&builder, &args, "strategy_id = %s", strings.TrimSpace(query.StrategyID))
+	appendQueryCondition(&builder, &args, "live_session_id = %s", strings.TrimSpace(query.LiveSessionID))
+	appendQueryCondition(&builder, &args, "order_id = %s", strings.TrimSpace(query.OrderID))
+	appendQueryCondition(&builder, &args, "decision_event_id = %s", strings.TrimSpace(query.DecisionEventID))
+	appendQueryTimeCondition(&builder, &args, "event_time >= %s", query.From)
+	appendQueryTimeCondition(&builder, &args, "event_time <= %s", query.To)
+	appendEventCursorCondition(&builder, &args, query.Before)
+	builder.WriteString(" order by event_time desc, recorded_at desc, id desc")
+	appendLimitCondition(&builder, &args, query.Limit)
+
+	rows, err := s.db.Query(builder.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.PositionAccountSnapshot, 0)
+	for rows.Next() {
+		var item domain.PositionAccountSnapshot
+		var decisionEventID, orderID, intentSignature, positionSide, syncStatus sql.NullString
+		var positionSnapshotRaw, livePositionStateRaw, accountSnapshotRaw, accountSummaryRaw, metadataRaw []byte
+		if err := rows.Scan(
+			&item.ID, &item.LiveSessionID, &decisionEventID, &orderID, &item.AccountID, &item.StrategyID, &item.Symbol, &item.Trigger, &intentSignature,
+			&item.PositionFound, &positionSide, &item.PositionQuantity, &item.EntryPrice, &item.MarkPrice,
+			&item.NetEquity, &item.AvailableBalance, &item.MarginBalance, &item.WalletBalance, &item.ExposureNotional, &item.OpenPositionCount,
+			&syncStatus, &item.EventTime, &item.RecordedAt,
+			&positionSnapshotRaw, &livePositionStateRaw, &accountSnapshotRaw, &accountSummaryRaw, &metadataRaw,
+		); err != nil {
+			return nil, err
+		}
+		item.DecisionEventID = decisionEventID.String
+		item.OrderID = orderID.String
+		item.IntentSignature = intentSignature.String
+		item.PositionSide = positionSide.String
+		item.SyncStatus = syncStatus.String
+		item.PositionSnapshot = unmarshalJSONMap(positionSnapshotRaw)
+		item.LivePositionState = unmarshalJSONMap(livePositionStateRaw)
+		item.AccountSnapshot = unmarshalJSONMap(accountSnapshotRaw)
+		item.AccountSummary = unmarshalJSONMap(accountSummaryRaw)
+		item.Metadata = unmarshalJSONMap(metadataRaw)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func appendQueryCondition(builder *strings.Builder, args *[]any, clause, value string) {
+	if value == "" {
+		return
+	}
+	*args = append(*args, value)
+	builder.WriteString(fmt.Sprintf(" and "+clause, fmt.Sprintf("$%d", len(*args))))
+}
+
+func appendQueryTimeCondition(builder *strings.Builder, args *[]any, clause string, value time.Time) {
+	if value.IsZero() {
+		return
+	}
+	*args = append(*args, value.UTC())
+	builder.WriteString(fmt.Sprintf(" and "+clause, fmt.Sprintf("$%d", len(*args))))
+}
+
+func appendEventCursorCondition(builder *strings.Builder, args *[]any, cursor *domain.EventCursor) {
+	if cursor == nil {
+		return
+	}
+	*args = append(*args, cursor.EventTime.UTC(), normalizeCursorRecordedAt(cursor.RecordedAt, cursor.EventTime), cursor.ID)
+	eventIdx := len(*args) - 2
+	recordedIdx := len(*args) - 1
+	idIdx := len(*args)
+	builder.WriteString(fmt.Sprintf(
+		" and (event_time < $%d or (event_time = $%d and recorded_at < $%d) or (event_time = $%d and recorded_at = $%d and id < $%d))",
+		eventIdx, eventIdx, recordedIdx, eventIdx, recordedIdx, idIdx,
+	))
+}
+
+func appendLimitCondition(builder *strings.Builder, args *[]any, limit int) {
+	if limit <= 0 {
+		return
+	}
+	*args = append(*args, limit)
+	builder.WriteString(fmt.Sprintf(" limit $%d", len(*args)))
+}
+
+func normalizeCursorRecordedAt(recordedAt, eventTime time.Time) time.Time {
+	if recordedAt.IsZero() {
+		return eventTime.UTC()
+	}
+	return recordedAt.UTC()
+}
+
 func (s *Store) CreatePositionAccountSnapshot(snapshot domain.PositionAccountSnapshot) (domain.PositionAccountSnapshot, error) {
 	if snapshot.ID == "" {
 		snapshot.ID = fmt.Sprintf("position-account-snapshot-%d", time.Now().UTC().UnixNano())

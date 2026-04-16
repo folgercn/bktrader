@@ -841,6 +841,184 @@ func (s *Store) CreatePositionAccountSnapshot(snapshot domain.PositionAccountSna
 	return cloneJSONValue(snapshot), nil
 }
 
+func (s *Store) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQuery) ([]domain.StrategyDecisionEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.StrategyDecisionEvent, 0, len(s.decisionEvents))
+	for _, item := range s.decisionEvents {
+		if strings.TrimSpace(query.LiveSessionID) != "" && item.LiveSessionID != strings.TrimSpace(query.LiveSessionID) {
+			continue
+		}
+		if strings.TrimSpace(query.AccountID) != "" && item.AccountID != strings.TrimSpace(query.AccountID) {
+			continue
+		}
+		if strings.TrimSpace(query.StrategyID) != "" && item.StrategyID != strings.TrimSpace(query.StrategyID) {
+			continue
+		}
+		if strings.TrimSpace(query.RuntimeSessionID) != "" && item.RuntimeSessionID != strings.TrimSpace(query.RuntimeSessionID) {
+			continue
+		}
+		if strings.TrimSpace(query.DecisionEventID) != "" && item.ID != strings.TrimSpace(query.DecisionEventID) {
+			continue
+		}
+		if !query.From.IsZero() && item.EventTime.Before(query.From.UTC()) {
+			continue
+		}
+		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
+			continue
+		}
+		if query.Before != nil && !memoryEventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+			continue
+		}
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return memoryEventLess(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+	})
+	if query.Limit > 0 && len(items) > query.Limit {
+		items = items[:query.Limit]
+	}
+	return items, nil
+}
+
+func (s *Store) QueryOrderExecutionEvents(query domain.OrderExecutionEventQuery) ([]domain.OrderExecutionEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.OrderExecutionEvent, 0, len(s.executionEvents))
+	for _, item := range s.executionEvents {
+		if strings.TrimSpace(query.AccountID) != "" && item.AccountID != strings.TrimSpace(query.AccountID) {
+			continue
+		}
+		if strings.TrimSpace(query.StrategyID) != "" && stringValue(item.Metadata["strategyId"]) != strings.TrimSpace(query.StrategyID) {
+			continue
+		}
+		if strings.TrimSpace(query.RuntimeSessionID) != "" && item.RuntimeSessionID != strings.TrimSpace(query.RuntimeSessionID) {
+			continue
+		}
+		if strings.TrimSpace(query.LiveSessionID) != "" && item.LiveSessionID != strings.TrimSpace(query.LiveSessionID) {
+			continue
+		}
+		if strings.TrimSpace(query.OrderID) != "" && item.OrderID != strings.TrimSpace(query.OrderID) {
+			continue
+		}
+		if strings.TrimSpace(query.DecisionEventID) != "" && item.DecisionEventID != strings.TrimSpace(query.DecisionEventID) {
+			continue
+		}
+		if !query.From.IsZero() && item.EventTime.Before(query.From.UTC()) {
+			continue
+		}
+		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
+			continue
+		}
+		if query.Before != nil && !memoryEventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+			continue
+		}
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return memoryEventLess(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+	})
+	if query.Limit > 0 && len(items) > query.Limit {
+		items = items[:query.Limit]
+	}
+	return items, nil
+}
+
+func (s *Store) QueryPositionAccountSnapshots(query domain.PositionAccountSnapshotQuery) ([]domain.PositionAccountSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.PositionAccountSnapshot, 0, len(s.liveSnapshots))
+	for _, item := range s.liveSnapshots {
+		if strings.TrimSpace(query.AccountID) != "" && item.AccountID != strings.TrimSpace(query.AccountID) {
+			continue
+		}
+		if strings.TrimSpace(query.StrategyID) != "" && item.StrategyID != strings.TrimSpace(query.StrategyID) {
+			continue
+		}
+		if strings.TrimSpace(query.LiveSessionID) != "" && item.LiveSessionID != strings.TrimSpace(query.LiveSessionID) {
+			continue
+		}
+		if strings.TrimSpace(query.OrderID) != "" && item.OrderID != strings.TrimSpace(query.OrderID) {
+			continue
+		}
+		if strings.TrimSpace(query.DecisionEventID) != "" && item.DecisionEventID != strings.TrimSpace(query.DecisionEventID) {
+			continue
+		}
+		if !query.From.IsZero() && item.EventTime.Before(query.From.UTC()) {
+			continue
+		}
+		if !query.To.IsZero() && item.EventTime.After(query.To.UTC()) {
+			continue
+		}
+		if query.Before != nil && !memoryEventComesBefore(item.EventTime, item.RecordedAt, item.ID, *query.Before) {
+			continue
+		}
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return memoryEventLess(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+	})
+	if query.Limit > 0 && len(items) > query.Limit {
+		items = items[:query.Limit]
+	}
+	return items, nil
+}
+
+func memoryEventComesBefore(eventTime, recordedAt time.Time, id string, cursor domain.EventCursor) bool {
+	eventTime = eventTime.UTC()
+	recordedAt = normalizeMemoryRecordedAt(recordedAt, eventTime)
+	cursorRecordedAt := normalizeMemoryRecordedAt(cursor.RecordedAt, cursor.EventTime)
+	switch {
+	case eventTime.Before(cursor.EventTime.UTC()):
+		return true
+	case eventTime.After(cursor.EventTime.UTC()):
+		return false
+	}
+	switch {
+	case recordedAt.Before(cursorRecordedAt):
+		return true
+	case recordedAt.After(cursorRecordedAt):
+		return false
+	default:
+		return id < cursor.ID
+	}
+}
+
+func memoryEventLess(leftTime, leftRecordedAt time.Time, leftID string, rightTime, rightRecordedAt time.Time, rightID string) bool {
+	leftTime = leftTime.UTC()
+	rightTime = rightTime.UTC()
+	switch {
+	case leftTime.After(rightTime):
+		return true
+	case leftTime.Before(rightTime):
+		return false
+	}
+	leftRecordedAt = normalizeMemoryRecordedAt(leftRecordedAt, leftTime)
+	rightRecordedAt = normalizeMemoryRecordedAt(rightRecordedAt, rightTime)
+	switch {
+	case leftRecordedAt.After(rightRecordedAt):
+		return true
+	case leftRecordedAt.Before(rightRecordedAt):
+		return false
+	default:
+		return leftID > rightID
+	}
+}
+
+func normalizeMemoryRecordedAt(recordedAt, eventTime time.Time) time.Time {
+	if recordedAt.IsZero() {
+		return eventTime.UTC()
+	}
+	return recordedAt.UTC()
+}
+
+func stringValue(value any) string {
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return ""
+}
+
 func (s *Store) ListMarketBars(exchange, symbol, timeframe string, from, to int64, limit int) ([]domain.MarketBar, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
