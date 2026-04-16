@@ -15,7 +15,7 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
-// NewRouter 创建并注册所有 HTTP 路由，包裹 CORS 和请求日志中间件。
+// NewRouter 创建并注册所有 HTTP 路由，统一包裹鉴权、CORS 和请求日志中间件。
 func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 	mux := http.NewServeMux()
 
