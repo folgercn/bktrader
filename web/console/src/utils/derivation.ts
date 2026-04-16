@@ -1175,7 +1175,7 @@ export function buildTimelineNotes(items: Array<Record<string, unknown>>) {
     return ["时间线: --"];
   }
   return items
-    .slice(-5)
+    .slice(-50)
     .reverse()
     .map((item) => {
       const metadata = getRecord(item.metadata);
