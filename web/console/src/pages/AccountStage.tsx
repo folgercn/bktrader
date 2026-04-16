@@ -642,7 +642,7 @@ export function AccountStage({
                                {tpl.symbol}
                              </Badge>
                          </div>
-                         <p className="text-[10px] text-[#687177] leading-relaxed line-clamp-2 font-medium h-7 overflow-hidden">{tpl.description}</p>
+                         <p className="text-[10px] text-[#687177] leading-relaxed line-clamp-2 font-medium h-9 overflow-hidden">{tpl.description}</p>
                       </div>
                       
                       <div className="space-y-3 pt-2">
