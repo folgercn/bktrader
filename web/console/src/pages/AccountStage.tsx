@@ -912,7 +912,13 @@ export function AccountStage({
         </Card>
       </div>
 
-      <AlertDialog open={confirmConfig.open} onOpenChange={(open) => !open && setConfirmConfig(c => ({ ...c, open: false }))}>
+      <AlertDialog 
+        open={confirmConfig.open} 
+        onOpenChange={(open) => {
+          if (!open && liveSessionDeleteAction !== null) return;
+          if (!open) setConfirmConfig(c => ({ ...c, open: false }));
+        }}
+      >
         <AlertDialogContent className="bg-[#fffbf2] border-[#d8cfba] rounded-[32px] p-8 shadow-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-xl font-black text-[#1f2328]">{confirmConfig.title}</AlertDialogTitle>
@@ -920,14 +926,20 @@ export function AccountStage({
               {confirmConfig.description}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 mt-4">
-            <AlertDialogCancel variant="outline" size="default" className="h-11 px-6 rounded-xl border-[#d8cfba] font-bold text-[#1f2328]">取消</AlertDialogCancel>
-            <AlertDialogAction 
+          <AlertDialogFooter className="pt-6">
+            <AlertDialogCancel 
+              disabled={liveSessionDeleteAction !== null}
+              className="h-11 px-6 rounded-xl border-[#d8cfba] font-bold text-[#1f2328]"
+            >
+              取消
+            </AlertDialogCancel>
+            <Button 
+              loading={liveSessionDeleteAction !== null}
               onClick={confirmConfig.onConfirm}
               className="h-11 px-6 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold"
             >
               确 认 执 行
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
