@@ -1,11 +1,36 @@
 package service
 
 import (
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
+
+func safeFloat(value any) float64 {
+	var val float64
+	switch v := value.(type) {
+	case float64:
+		val = v
+	case float32:
+		val = float64(v)
+	case int:
+		val = float64(v)
+	case int64:
+		val = float64(v)
+	case string:
+		parsed, _ := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		val = parsed
+	default:
+		return 0
+	}
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return 0
+	}
+	return val
+}
 
 func healthDayKey(ts time.Time) string {
 	if ts.IsZero() {
@@ -45,11 +70,11 @@ func accumulateHealthTodayAverage(section map[string]any, eventTime time.Time, s
 		return
 	}
 	today := ensureHealthToday(section, eventTime)
-	today[sumKey] = parseFloatValue(today[sumKey]) + value
+	today[sumKey] = safeFloat(today[sumKey]) + value
 	today[countKey] = maxIntValue(today[countKey], 0) + 1
 	count := maxIntValue(today[countKey], 0)
 	if count > 0 {
-		today[avgKey] = parseFloatValue(today[sumKey]) / float64(count)
+		today[avgKey] = safeFloat(today[sumKey]) / float64(count)
 	}
 }
 
@@ -89,14 +114,14 @@ func updateRuntimeHealthSummary(state map[string]any, summary map[string]any, ev
 
 	switch streamType {
 	case "trade_tick":
-		if price := parseFloatValue(summary["price"]); price > 0 {
+		if price := safeFloat(summary["price"]); price > 0 {
 			section["lastPrice"] = price
 		}
 	case "order_book":
-		bestBid := parseFloatValue(summary["bestBid"])
-		bestAsk := parseFloatValue(summary["bestAsk"])
-		bestBidQty := parseFloatValue(summary["bestBidQty"])
-		bestAskQty := parseFloatValue(summary["bestAskQty"])
+		bestBid := safeFloat(summary["bestBid"])
+		bestAsk := safeFloat(summary["bestAsk"])
+		bestBidQty := safeFloat(summary["bestBidQty"])
+		bestAskQty := safeFloat(summary["bestAskQty"])
 		if bestBid > 0 {
 			section["lastBestBid"] = bestBid
 		}
@@ -109,10 +134,10 @@ func updateRuntimeHealthSummary(state map[string]any, summary map[string]any, ev
 		if bestAskQty > 0 {
 			section["lastBestAskQty"] = bestAskQty
 		}
-		if spreadBps := parseFloatValue(summary["spreadBps"]); spreadBps > 0 {
+		if spreadBps := safeFloat(summary["spreadBps"]); spreadBps > 0 {
 			section["lastSpreadBps"] = spreadBps
 		}
-		if imbalance := parseFloatValue(summary["imbalance"]); imbalance != 0 {
+		if imbalance := safeFloat(summary["imbalance"]); imbalance != 0 {
 			section["lastBookImbalance"] = imbalance
 		}
 	}
@@ -181,14 +206,14 @@ func recordStrategyDecisionHealth(state map[string]any, decision StrategySignalD
 	section["lastDecisionReason"] = decision.Reason
 	section["lastDecisionState"] = stringValue(decision.Metadata["decisionState"])
 	section["lastSignalKind"] = stringValue(decision.Metadata["signalKind"])
-	if marketPrice := parseFloatValue(decision.Metadata["marketPrice"]); marketPrice > 0 {
+	if marketPrice := safeFloat(decision.Metadata["marketPrice"]); marketPrice > 0 {
 		section["lastMarketPrice"] = marketPrice
 	}
 
-	bestBid := parseFloatValue(decision.Metadata["bestBid"])
-	bestAsk := parseFloatValue(decision.Metadata["bestAsk"])
-	spreadBps := parseFloatValue(decision.Metadata["spreadBps"])
-	imbalance := parseFloatValue(decision.Metadata["bookImbalance"])
+	bestBid := safeFloat(decision.Metadata["bestBid"])
+	bestAsk := safeFloat(decision.Metadata["bestAsk"])
+	spreadBps := safeFloat(decision.Metadata["spreadBps"])
+	imbalance := safeFloat(decision.Metadata["bookImbalance"])
 	hasOrderBookContext := bestBid > 0 || bestAsk > 0 || spreadBps > 0 || strings.TrimSpace(stringValue(decision.Metadata["liquidityBias"])) != ""
 	if !hasOrderBookContext {
 		return

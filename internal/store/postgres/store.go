@@ -814,8 +814,11 @@ func (s *Store) UpdatePaperSessionStatus(sessionID, status string) (domain.Paper
 }
 
 func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) (domain.PaperSession, error) {
-	stateRaw, _ := json.Marshal(state)
-	_, err := s.db.Exec(`update paper_sessions set state = $2 where id = $1`, sessionID, stateRaw)
+	stateRaw, err := json.Marshal(state)
+	if err != nil {
+		return domain.PaperSession{}, fmt.Errorf("failed to marshal state: %w", err)
+	}
+	_, err = s.db.Exec(`update paper_sessions set state = $2 where id = $1`, sessionID, stateRaw)
 	if err != nil {
 		return domain.PaperSession{}, err
 	}
@@ -892,7 +895,10 @@ func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSess
 }
 
 func (s *Store) UpdateLiveSession(item domain.LiveSession) (domain.LiveSession, error) {
-	stateRaw, _ := json.Marshal(item.State)
+	stateRaw, err := json.Marshal(item.State)
+	if err != nil {
+		return domain.LiveSession{}, fmt.Errorf("failed to marshal state: %w", err)
+	}
 	result, err := s.db.Exec(`
 		update live_sessions
 		set account_id = $2, strategy_id = $3, status = $4, state = $5
@@ -935,8 +941,11 @@ func (s *Store) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSe
 }
 
 func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (domain.LiveSession, error) {
-	stateRaw, _ := json.Marshal(state)
-	_, err := s.db.Exec(`update live_sessions set state = $2 where id = $1`, sessionID, stateRaw)
+	stateRaw, err := json.Marshal(state)
+	if err != nil {
+		return domain.LiveSession{}, fmt.Errorf("failed to marshal state: %w", err)
+	}
+	_, err = s.db.Exec(`update live_sessions set state = $2 where id = $1`, sessionID, stateRaw)
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
