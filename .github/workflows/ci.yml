@@ -10,7 +10,7 @@ on:
 jobs:
   risk-checks:
     name: High Risk Defenses
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
 
   backend:
     name: Backend (Go)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
 
   frontend:
     name: Frontend (Vite)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64]
     defaults:
       run:
         working-directory: web/console
@@ -77,7 +77,7 @@ jobs:
 
   docker:
     name: Docker build validation
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

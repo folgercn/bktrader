@@ -8,7 +8,7 @@ on:
 jobs:
   docker:
     name: Build and publish image
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64]
     permissions:
       contents: read
       packages: write
