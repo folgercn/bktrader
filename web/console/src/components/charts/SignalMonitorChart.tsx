@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Time, CandlestickSeries, ColorType, CrosshairMode, LineStyle, createChart, createSeriesMarkers } from 'lightweight-charts';
 import { SignalBarCandle, SessionMarker } from '../../types/domain';
 import { applyDefaultChartWindow } from '../../utils/derivation';
+import { normalizeChartData } from '../../utils/chart';
 
 export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: SessionMarker[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -63,15 +64,7 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
     const markers = markersRef.current;
     if (!chart || !series || !markers || props.candles.length === 0) return;
 
-    series.setData(
-      props.candles.map((item) => ({
-        time: Math.floor(new Date(item.time).getTime() / 1000) as Time,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-      }))
-    );
+    series.setData(normalizeChartData(props.candles));
 
     markers.setMarkers(
       props.markers.map((item) => ({

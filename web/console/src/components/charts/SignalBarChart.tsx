@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Time, CandlestickSeries, ColorType, CrosshairMode, LineStyle, createChart } from 'lightweight-charts';
 import { SignalBarCandle } from '../../types/domain';
 import { applyDefaultChartWindow } from '../../utils/derivation';
+import { normalizeChartData } from '../../utils/chart';
 
 export function SignalBarChart(props: { candles: SignalBarCandle[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -40,25 +41,7 @@ export function SignalBarChart(props: { candles: SignalBarCandle[] }) {
       priceLineVisible: true,
     });
 
-    const mappedData = props.candles.map((item) => ({
-      time: Math.floor(new Date(item.time).getTime() / 1000) as Time,
-      open: item.open,
-      high: item.high,
-      low: item.low,
-      close: item.close,
-    }));
-
-    // 1. 去重：如果有重复时间戳，保留最后出现的（通常是最新更新的）
-    const uniqueMap = new Map<number, typeof mappedData[0]>();
-    mappedData.forEach((item) => {
-      uniqueMap.set(item.time as number, item);
-    });
-
-    // 2. 排序：确保严格按时间升序
-    const sortedData = Array.from(uniqueMap.values()).sort(
-      (a, b) => (a.time as number) - (b.time as number)
-    );
-
+    const sortedData = normalizeChartData(props.candles);
     series.setData(sortedData);
 
     applyDefaultChartWindow(chart, props.candles.length, 90);

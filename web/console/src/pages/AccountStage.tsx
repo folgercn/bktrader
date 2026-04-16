@@ -63,6 +63,7 @@ interface AccountStageProps {
   deleteSignalRuntimeSession: (sessionId: string) => void;
   runSignalRuntimeAction: (id: string, action: "start" | "stop") => void;
   executeLaunchTemplate: (template: any, accountId: string) => void;
+  unbindLiveAccount: (accountId: string) => void;
 }
 
 function statusLabelZh(status: string): string {
@@ -108,7 +109,8 @@ export function AccountStage({
   createSignalRuntimeSession,
   deleteSignalRuntimeSession,
   runSignalRuntimeAction,
-  executeLaunchTemplate
+  executeLaunchTemplate,
+  unbindLiveAccount
 }: AccountStageProps) {
   const loading = useUIStore(s => s.loading);
   const liveAccounts = useTradingStore(s => s.accounts);
@@ -504,6 +506,14 @@ export function AccountStage({
                           variant="ghost"
                           onClick={() => setExpandedAccountId((current) => current === account.id ? null : account.id)}
                         />
+                        {account.status !== "IDLE" && (
+                          <ActionButton
+                            label={liveBindAction ? "解绑中..." : "解绑适配器"}
+                            variant="ghost"
+                            disabled={liveBindAction || isLiveFlowRunning}
+                            onClick={() => unbindLiveAccount(account.id)}
+                          />
+                        )}
                         <ActionButton
                           label={liveAccountSyncAction === account.id ? "同步中..." : "同步账户"}
                           variant="ghost"
