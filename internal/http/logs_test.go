@@ -247,3 +247,54 @@ func TestCollectPolledStreamMessagesDetectsAlertAndTimelineDeltas(t *testing.T) 
 		t.Fatalf("expected no duplicate messages on identical snapshot, got %#v", repeatMessages)
 	}
 }
+
+func TestCollectPolledStreamMessagesSkipsInvalidTimelineTimestamp(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+
+	previous := captureStreamSnapshot(platform)
+
+	account, err := store.CreateAccount("paper account", "PAPER", "BINANCE")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	session, err := store.CreateLiveSession(account.ID, "strategy-1")
+	if err != nil {
+		t.Fatalf("create live session: %v", err)
+	}
+	_, err = store.UpdateLiveSessionState(session.ID, map[string]any{
+		"runner":       "strategy-engine",
+		"dispatchMode": "manual-review",
+		"timeline": []any{
+			map[string]any{
+				"time":     "not-a-timestamp",
+				"category": "strategy",
+				"title":    "decision",
+				"metadata": map[string]any{"symbol": "BTCUSDT"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("update live session state: %v", err)
+	}
+
+	next, messages, err := collectPolledStreamMessages(platform, previous)
+	if err != nil {
+		t.Fatalf("collect messages with invalid timestamp: %v", err)
+	}
+	for _, message := range messages {
+		if message.Source == "timeline" {
+			t.Fatalf("expected invalid timeline entries to be skipped, got %#v", message)
+		}
+	}
+
+	_, repeatMessages, err := collectPolledStreamMessages(platform, next)
+	if err != nil {
+		t.Fatalf("collect repeated messages with invalid timestamp: %v", err)
+	}
+	for _, message := range repeatMessages {
+		if message.Source == "timeline" {
+			t.Fatalf("expected invalid timeline entries to stay skipped, got %#v", message)
+		}
+	}
+}

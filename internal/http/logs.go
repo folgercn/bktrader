@@ -184,21 +184,33 @@ func registerLogRoutes(mux *http.ServeMux, platform *service.Platform) {
 			select {
 			case <-r.Context().Done():
 				return
-			case message := <-systemCh:
+			case message, ok := <-systemCh:
+				if !ok {
+					systemCh = nil
+					continue
+				}
 				if !matchesStreamSource(sourceFilter, message.Source) {
 					continue
 				}
 				if err := writeSSEMessage(w, flusher, message); err != nil {
 					return
 				}
-			case message := <-httpCh:
+			case message, ok := <-httpCh:
+				if !ok {
+					httpCh = nil
+					continue
+				}
 				if !matchesStreamSource(sourceFilter, message.Source) {
 					continue
 				}
 				if err := writeSSEMessage(w, flusher, message); err != nil {
 					return
 				}
-			case message := <-eventCh:
+			case message, ok := <-eventCh:
+				if !ok {
+					eventCh = nil
+					continue
+				}
 				if !matchesStreamSource(sourceFilter, message.Source) {
 					continue
 				}
@@ -457,7 +469,10 @@ func timelineEventsFromState(sessionType, sessionID, accountID, strategyID strin
 		if !ok {
 			continue
 		}
-		eventTime := parseTimelineTime(entry["time"])
+		eventTime, ok := parseTimelineTime(entry["time"])
+		if !ok {
+			continue
+		}
 		metadata := httpLogMapValue(entry["metadata"])
 		item := timelineStreamEvent{
 			SessionType: sessionType,
@@ -506,20 +521,20 @@ func hasTimelineKey(index map[string]map[string]struct{}, sessionType, sessionID
 	return exists
 }
 
-func parseTimelineTime(value any) time.Time {
+func parseTimelineTime(value any) (time.Time, bool) {
 	text := strings.TrimSpace(httpLogStringValue(value))
 	if text == "" {
-		return time.Now().UTC()
+		return time.Time{}, false
 	}
 	parsed, err := time.Parse(time.RFC3339, text)
 	if err == nil {
-		return parsed.UTC()
+		return parsed.UTC(), true
 	}
 	parsed, err = time.Parse(time.RFC3339Nano, text)
 	if err == nil {
-		return parsed.UTC()
+		return parsed.UTC(), true
 	}
-	return time.Now().UTC()
+	return time.Time{}, false
 }
 
 func timelineLevel(category, title string) string {
