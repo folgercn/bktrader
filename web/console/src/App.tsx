@@ -30,6 +30,8 @@ import { TelegramModal } from './modals/TelegramModal';
 import { StrategySidePanel } from './pages/StrategySidePanel';
 import { Toaster } from "./components/ui/sonner";
 
+import { TooltipProvider } from "./components/ui/tooltip";
+
 export default function App() {
   const { loadDashboard } = useDashboard();
   const actions = useTradingActions(loadDashboard);
@@ -90,7 +92,7 @@ export default function App() {
   const mainStageContent = <MainContent actions={actions} dockContent={dockContent} strategies={strategies} quickLiveAccountId={quickLiveAccountId} />;
 
   return (
-    <>
+    <TooltipProvider>
       <WorkbenchLayout
         sidebarTab={sidebarTab}
         onSidebarTabChange={setSidebarTab}
@@ -187,6 +189,6 @@ export default function App() {
         sendTelegramTest={actions.sendTelegramTest}
       />
       <Toaster richColors closeButton position="top-right" />
-    </>
+    </TooltipProvider>
   );
 }

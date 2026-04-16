@@ -253,6 +253,7 @@ export function useDashboard() {
       strategyEvaluationQuietSeconds: String(runtimePolicyData.strategyEvaluationQuietSeconds ?? 0),
       liveAccountSyncFreshnessSeconds: String(runtimePolicyData.liveAccountSyncFreshnessSeconds ?? 0),
       paperStartReadinessTimeoutSeconds: String(runtimePolicyData.paperStartReadinessTimeoutSeconds ?? 5),
+      dispatchMode: String(runtimePolicyData.dispatchMode ?? "manual-review"),
     });
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
     setStrategySignalBindings(strategyBindingEntries.flatMap((e) => e[1]));

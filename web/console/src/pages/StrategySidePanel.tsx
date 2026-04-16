@@ -1,13 +1,42 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
-import { ActionButton } from '../components/ui/ActionButton';
-import { SimpleTable } from '../components/ui/SimpleTable';
 import { SampleCard } from '../components/ui/SampleCard';
 import { API_BASE } from '../utils/api';
 import { formatTime, formatPercent, formatSigned, formatMaybeNumber } from '../utils/format';
 import { strategyLabel, getNumber, buildSampleKey, buildSampleRange } from '../utils/derivation';
 import { ReplayReasonStats, ExecutionTrade, ReplaySample } from '../types/domain';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '../components/ui/select';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '../components/ui/table';
+import { Badge } from '../components/ui/badge';
+import { 
+  Play, 
+  History, 
+  FileDown, 
+  Maximize2, 
+  Database, 
+  FlaskConical, 
+  Clock, 
+  BarChart4, 
+  ExternalLink 
+} from 'lucide-react';
 
 interface StrategySidePanelProps {
   createBacktestRun: () => Promise<void>;
@@ -32,9 +61,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
 
   // Derived states
   const selectedExecutionAvailability = backtestOptions?.availability?.[backtestForm.executionDataSource] ?? "unknown";
-  const selectedExecutionDatasets = backtestOptions?.datasets?.[backtestForm.executionDataSource] ?? [];
   const selectedExecutionSymbols = backtestOptions?.supportedSymbols?.[backtestForm.executionDataSource] ?? [];
-  const selectedExecutionSchema = backtestOptions?.schema?.[backtestForm.executionDataSource];
   const selectedSymbolAvailable =
     selectedExecutionSymbols.length === 0 || selectedExecutionSymbols.includes(backtestForm.symbol.trim().toUpperCase());
   const backtestItems = backtests.slice().reverse().slice(0, 8);
@@ -43,13 +70,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
     (backtests.length > 0 ? backtests[backtests.length - 1] : null);
   const latestBacktestSummary = (selectedBacktest?.resultSummary ?? {}) as Record<string, unknown>;
   const latestExecutionSource = String(latestBacktestSummary.executionDataSource ?? selectedBacktest?.parameters?.executionDataSource ?? "");
-  const previewCountLabel = latestExecutionSource === "tick" ? "Preview Ticks" : "Preview Bars";
-  const processedCountLabel = latestExecutionSource === "tick" ? "Processed Ticks" : "Processed Bars";
-  const processedCountValue =
-    latestExecutionSource === "tick"
-      ? String(latestBacktestSummary.processedTicks ?? "--")
-      : String(latestBacktestSummary.processedBars ?? "--");
-  const latestReplayByReason = (latestBacktestSummary.replayLedgerByReason ?? {}) as ReplayReasonStats;
+  
   const latestExecutionTrades = Array.isArray(latestBacktestSummary.executionTrades)
     ? (latestBacktestSummary.executionTrades as ExecutionTrade[])
     : [];
@@ -61,361 +82,320 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
     : [];
 
   return (
-    <div className="p-4 space-y-6">
-      <section id="backtests" className="panel panel-backtests">
-        <div className="panel-header">
-          <div>
-            <p className="panel-kicker">Backtests</p>
-            <h3>回测配置与运行记录</h3>
-          </div>
-          <div className="range-box">
-            <span>{backtests.length} runs</span>
-            <span>{strategies.length} strategies</span>
-          </div>
-        </div>
-        <div className="backtest-layout">
-          <div className="backtest-form">
-            <div className="form-grid">
-              <label className="form-field">
-                <span>Strategy Version</span>
-                <select
-                  value={backtestForm.strategyVersionId}
-                  onChange={(event) => setBacktestForm((current) => ({ ...current, strategyVersionId: event.target.value }))}
-                >
-                  {strategies.map((strategy) => (
-                    <option key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
-                      {strategyLabel(strategy)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Signal Timeframe</span>
-                <select
-                  value={backtestForm.signalTimeframe}
-                  onChange={(event) => setBacktestForm((current) => ({ ...current, signalTimeframe: event.target.value }))}
-                >
-                  {(backtestOptions?.signalTimeframes ?? ["4h", "1d"]).map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Execution Source</span>
-                <select
-                  value={backtestForm.executionDataSource}
-                  onChange={(event) => setBacktestForm((current) => ({ ...current, executionDataSource: event.target.value }))}
-                >
-                  {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Symbol</span>
-                <input
-                  value={backtestForm.symbol}
-                  onChange={(event) => setBacktestForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
-                  placeholder="BTCUSDT"
-                />
-              </label>
-              <label className="form-field">
-                <span>From (RFC3339)</span>
-                <input
-                  value={backtestForm.from}
-                  onChange={(event) => setBacktestForm((current) => ({ ...current, from: event.target.value }))}
-                  placeholder="2020-01-01T00:00:00Z"
-                />
-              </label>
-              <label className="form-field">
-                <span>To (RFC3339)</span>
-                <input
-                  value={backtestForm.to}
-                  onChange={(event) => setBacktestForm((current) => ({ ...current, to: event.target.value }))}
-                  placeholder="2020-01-31T23:59:59Z"
-                />
-              </label>
+    <div className="p-4 space-y-6 animate-in slide-in-from-right duration-500">
+      {/* 1. 回测配置面板 */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-lg rounded-[24px] overflow-hidden">
+        <CardHeader className="bg-white/30 border-b border-[#d8cfba]/50 py-4 px-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-[#ebe5d5] rounded-lg">
+                <FlaskConical className="size-4 text-[#1f2328]" />
+              </div>
+              <CardTitle className="text-base font-bold text-[#1f2328]">回测配置</CardTitle>
             </div>
-            <div className="backtest-actions">
-              <ActionButton
-                label={backtestAction ? "Submitting..." : "Create Backtest"}
-                disabled={
-                  backtestAction ||
-                  backtestForm.strategyVersionId.trim() === "" ||
-                  backtestForm.symbol.trim() === "" ||
-                  selectedExecutionAvailability === "missing" ||
-                  !selectedSymbolAvailable
-                }
-                onClick={createBacktestRun}
+            <Badge variant="outline" className="text-[9px] border-[#d8cfba] font-mono tracking-tight">
+              {backtests.length} RUNS
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-5 space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase tracking-wide">Strategy</Label>
+              <Select 
+                value={backtestForm.strategyVersionId}
+                onValueChange={(val) => setBacktestForm(curr => ({ ...curr, strategyVersionId: val }))}
+              >
+                <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px] font-medium">
+                  <SelectValue placeholder="选择策略版本" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-[#d8cfba] rounded-xl shadow-xl">
+                  {strategies.map((strategy) => (
+                    <SelectItem key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
+                      {strategyLabel(strategy)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">Timeframe</Label>
+                <Select 
+                  value={backtestForm.signalTimeframe}
+                  onValueChange={(val) => setBacktestForm(curr => ({ ...curr, signalTimeframe: val }))}
+                >
+                  <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px]">
+                    <SelectValue placeholder="周期" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-[#d8cfba] rounded-xl">
+                    {(backtestOptions?.signalTimeframes ?? ["4h", "1d"]).map((item) => (
+                      <SelectItem key={item} value={item}>{item}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">Source</Label>
+                <Select 
+                  value={backtestForm.executionDataSource}
+                  onValueChange={(val) => setBacktestForm(curr => ({ ...curr, executionDataSource: val }))}
+                >
+                  <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px]">
+                    <SelectValue placeholder="数据源" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-[#d8cfba] rounded-xl">
+                    {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
+                      <SelectItem key={item} value={item}>{item}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">Symbol</Label>
+              <Input 
+                value={backtestForm.symbol}
+                onChange={(e) => setBacktestForm(curr => ({ ...curr, symbol: e.target.value.toUpperCase() }))}
+                placeholder="例如：BTCUSDT"
+                className={`h-9 rounded-xl text-[12px] font-mono font-bold border-[#d8cfba] bg-white/50 focus:bg-white ${!selectedSymbolAvailable ? 'border-rose-300 ring-rose-100 ring-2' : ''}`}
               />
             </div>
-            {backtestOptions ? (
-              <div className="backtest-notes">
-                <div className="note-item">
-                  tick: {String(backtestOptions.availability?.tick ?? "unknown")} · dir: {String(backtestOptions.dataDirectories?.tick ?? "--")}
-                </div>
-                <div className="note-item">
-                  1min: {String(backtestOptions.availability?.["1min"] ?? "unknown")} · dir: {String(backtestOptions.dataDirectories?.["1min"] ?? "--")}
-                </div>
-                <div className="note-item">
-                  selected source: {backtestForm.executionDataSource} · {selectedExecutionDatasets.length} dataset file(s)
-                </div>
-                <div className="note-item">
-                  symbols: {selectedExecutionSymbols.length > 0 ? selectedExecutionSymbols.join(", ") : "--"}
-                </div>
-                <div className="note-item">
-                  required columns: {selectedExecutionSchema?.requiredColumns?.join(", ") ?? "--"}
-                </div>
-                <div className="note-item">
-                  file examples: {selectedExecutionSchema?.filenameExamples?.join(", ") ?? "--"}
-                </div>
-                {!selectedSymbolAvailable ? (
-                  <div className="note-item">
-                    symbol {backtestForm.symbol.trim().toUpperCase()} is not available for {backtestForm.executionDataSource}
-                  </div>
-                ) : null}
-                {selectedExecutionDatasets.slice(0, 3).map((dataset) => (
-                  <div key={dataset.path} className="note-item">
-                    {dataset.name} · {dataset.symbol}
-                    {dataset.format ? ` · ${dataset.format}` : ""}
-                    {dataset.fileCount ? ` · files ${dataset.fileCount}` : ""}
-                  </div>
-                ))}
-                {(backtestOptions.notes ?? []).map((note) => (
-                  <div key={note} className="note-item">
-                    {note}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="backtest-list">
-            {backtestItems.length > 0 ? (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Mode</th>
-                      <th>Symbol</th>
-                      <th>Status</th>
-                      <th>Return</th>
-                      <th>DD</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {backtestItems.map((item) => (
-                      <tr
-                        key={item.id}
-                        className={item.id === selectedBacktest?.id ? "table-row-active" : ""}
-                        onClick={() => setSelectedBacktestId(item.id)}
-                      >
-                        <td>{formatTime(item.createdAt)}</td>
-                        <td>{String(item.parameters?.backtestMode ?? "--")}</td>
-                        <td>{String(item.parameters?.symbol ?? "--")}</td>
-                        <td>{item.status}</td>
-                        <td>{formatPercent(item.resultSummary?.return)}</td>
-                        <td>{formatPercent(item.resultSummary?.maxDrawdown)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="empty-state">No backtests yet</div>
-            )}
-            <div className="backtest-detail-card">
-              <div className="panel-header">
-                <div>
-                  <p className="panel-kicker">Strategy Replay</p>
-                  <h3>选中回测详情</h3>
-                </div>
-                <div className="range-box range-box-wrap">
-                  <span>{selectedBacktest?.status ?? "NO RUN"}</span>
-                  <span>{String(selectedBacktest?.parameters?.backtestMode ?? "--")}</span>
-                  <button
-                    type="button"
-                    className="filter-chip"
-                    disabled={!selectedBacktest?.parameters?.from || !selectedBacktest?.parameters?.to}
-                    onClick={() => {
-                      const from = Date.parse(String(selectedBacktest?.parameters?.from ?? ""));
-                      const to = Date.parse(String(selectedBacktest?.parameters?.to ?? ""));
-                      if (!Number.isFinite(from) || !Number.isFinite(to)) {
-                        return;
-                      }
-                      setChartOverrideRange({
-                        from: Math.floor(from / 1000),
-                        to: Math.floor(to / 1000),
-                        label: "Backtest Window",
-                      });
-                      setFocusNonce((value) => value + 1);
-                    }}
-                  >
-                    Use Backtest Window
-                  </button>
-                  <button
-                    type="button"
-                    className="filter-chip"
-                    disabled={!chartOverrideRange}
-                    onClick={() => setChartOverrideRange(null)}
-                  >
-                    Back To Live Window
-                  </button>
-                  <a
-                    className={`filter-chip ${selectedBacktest ? "" : "filter-chip-disabled"}`}
-                    href={selectedBacktest ? `${API_BASE}/api/v1/backtests/${selectedBacktest.id}/execution-trades.csv` : undefined}
-                  >
-                    Export Trades CSV
-                  </a>
-                </div>
-              </div>
-              {selectedBacktest ? (
-                <>
-                  <div className="detail-grid">
-                    <div className="detail-item">
-                      <span>Execution Source</span>
-                      <strong>{latestExecutionSource || "--"}</strong>
-                    </div>
-                    <div className="detail-item">
-                      <span>Matched Files</span>
-                      <strong>{String(latestBacktestSummary.matchedArchiveFiles ?? "--")}</strong>
-                    </div>
-                    <div className="detail-item">
-                      <span>{previewCountLabel}</span>
-                      <strong>{String(latestBacktestSummary.streamPreviewTicks ?? "--")}</strong>
-                    </div>
-                    <div className="detail-item">
-                      <span>{processedCountLabel}</span>
-                      <strong>{processedCountValue}</strong>
-                    </div>
-                    <div className="detail-item">
-                      <span>Trade Count</span>
-                      <strong>{String(latestBacktestSummary.executionTradeCount ?? "--")}</strong>
-                    </div>
-                    <div className="detail-item">
-                      <span>Closed Trades</span>
-                      <strong>{String(latestBacktestSummary.executionClosedCount ?? "--")}</strong>
-                    </div>
-                    <div className="detail-item">
-                      <span>Win Rate</span>
-                      <strong>{formatPercent(latestBacktestSummary.executionWinRate)}</strong>
-                    </div>
-                    <div className="detail-item">
-                      <span>Total PnL</span>
-                      <strong>{formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL))}</strong>
-                    </div>
-                  </div>
 
-                  <div className="backtest-breakdown">
-                    <h4>Execution Trades</h4>
-                    {latestExecutionTrades.length > 0 ? (
-                      <SimpleTable
-                        columns={["Status", "Source", "Side", "Qty", "Entry", "Exit", "Exit Type", "PnL"]}
-                        rows={latestExecutionTrades.map((trade) => [
-                          String(trade.status ?? "--"),
-                          String(trade.source ?? "--"),
-                          String(trade.side ?? "--"),
-                          formatMaybeNumber(trade.quantity),
-                          `${formatMaybeNumber(trade.entryPrice)} @ ${formatTime(String(trade.entryTime ?? ""))}`,
-                          `${formatMaybeNumber(trade.exitPrice)} @ ${formatTime(String(trade.exitTime ?? ""))}`,
-                          String(trade.exitType ?? "--"),
-                          formatSigned(getNumber(trade.realizedPnL)),
-                        ])}
-                        emptyMessage="No execution trades"
-                      />
-                    ) : (
-                      <div className="empty-state empty-state-compact">No execution trades yet</div>
-                    )}
-                  </div>
-
-                  {Boolean(latestBacktestSummary.replayLedgerTrades) ? (
-                    <>
-                      <div className="backtest-breakdown">
-                        <h4>Optional Ledger Audit</h4>
-                        {Object.keys(latestReplayByReason).length > 0 ? (
-                          <SimpleTable
-                            columns={["Reason", "Trades", "Completed", "Skipped", "Entry", "Exit"]}
-                            rows={Object.entries(latestReplayByReason).map(([reason, stats]) => [
-                              reason,
-                              String(stats.trades ?? 0),
-                              String(stats.completed ?? 0),
-                              String(stats.skipped ?? 0),
-                              String(stats.skippedEntry ?? 0),
-                              String(stats.skippedExit ?? 0),
-                            ])}
-                            emptyMessage="No grouped replay stats"
-                          />
-                        ) : (
-                          <div className="empty-state empty-state-compact">No optional ledger audit data</div>
-                        )}
-                      </div>
-
-                      <div className="backtest-samples-grid">
-                        <div className="backtest-sample-panel">
-                          <h4>Completed Samples</h4>
-                          {latestReplayCompletedSamples.length > 0 ? (
-                            latestReplayCompletedSamples.map((sample, index) => (
-                              <SampleCard
-                                key={`completed-${index}`}
-                                sample={sample}
-                                selected={selectedSample?.key === buildSampleKey("completed", index, sample)}
-                                onSelect={() => {
-                                  const range = buildSampleRange(sample);
-                                  if (!range) {
-                                    return;
-                                  }
-                                  setSelectedSample({ key: buildSampleKey("completed", index, sample), sample });
-                                  setChartOverrideRange(range);
-                                  setSourceFilter("backtest");
-                                  setEventFilter("all");
-                                  setFocusNonce((value) => value + 1);
-                                }}
-                              />
-                            ))
-                          ) : (
-                            <div className="empty-state empty-state-compact">No completed samples</div>
-                          )}
-                        </div>
-                        <div className="backtest-sample-panel">
-                          <h4>Skipped Samples</h4>
-                          {latestReplaySkippedSamples.length > 0 ? (
-                            latestReplaySkippedSamples.map((sample, index) => (
-                              <SampleCard
-                                key={`skipped-${index}`}
-                                sample={sample}
-                                selected={selectedSample?.key === buildSampleKey("skipped", index, sample)}
-                                onSelect={() => {
-                                  const range = buildSampleRange(sample);
-                                  if (!range) {
-                                    return;
-                                  }
-                                  setSelectedSample({ key: buildSampleKey("skipped", index, sample), sample });
-                                  setChartOverrideRange(range);
-                                  setSourceFilter("backtest");
-                                  setEventFilter("all");
-                                  setFocusNonce((value) => value + 1);
-                                }}
-                              />
-                            ))
-                          ) : (
-                            <div className="empty-state empty-state-compact">No skipped samples</div>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  ) : null}
-                </>
-              ) : (
-                <div className="empty-state empty-state-compact">No backtest detail yet</div>
-              )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">From</Label>
+                <Input 
+                  value={backtestForm.from}
+                  onChange={(e) => setBacktestForm(curr => ({ ...curr, from: e.target.value }))}
+                  placeholder="2024-01-01..."
+                  className="h-9 rounded-xl text-[10px] font-mono border-[#d8cfba] bg-white/50"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">To</Label>
+                <Input 
+                  value={backtestForm.to}
+                  onChange={(e) => setBacktestForm(curr => ({ ...curr, to: e.target.value }))}
+                  placeholder="2024-01-31..."
+                  className="h-9 rounded-xl text-[10px] font-mono border-[#d8cfba] bg-white/50"
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+
+          <Button 
+            className="w-full h-11 rounded-2xl bg-[#1f2328] hover:bg-[#2f353c] text-white font-black text-sm transition-all shadow-md active:scale-95 disabled:opacity-50"
+            disabled={
+              backtestAction ||
+              backtestForm.strategyVersionId.trim() === "" ||
+              backtestForm.symbol.trim() === "" ||
+              selectedExecutionAvailability === "missing" ||
+              !selectedSymbolAvailable
+            }
+            onClick={createBacktestRun}
+          >
+            <Play className="size-4 mr-2 border-none" />
+            {backtestAction ? "正在计算路径..." : "启动压力测试"}
+          </Button>
+
+          {backtestOptions && (
+            <div className="p-3 rounded-xl bg-[#fff8ea] border border-[#d8cfba]/40 space-y-2">
+              <div className="flex items-center gap-2 text-[10px] text-[#687177] font-bold">
+                 <Database className="size-3" />
+                 <span>数据就绪检查</span>
+              </div>
+              <div className="grid grid-cols-1 gap-1">
+                 <div className="flex justify-between text-[9px]">
+                   <span className="text-[#687177]">Tick Availability</span>
+                   <span className={`font-mono font-bold ${backtestOptions.availability?.tick === 'ready' ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                     {String(backtestOptions.availability?.tick ?? "unknown")}
+                   </span>
+                 </div>
+                 <div className="flex justify-between text-[9px]">
+                   <span className="text-[#687177]">1min Availability</span>
+                   <span className={`font-mono font-bold ${backtestOptions.availability?.['1min'] === 'ready' ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                     {String(backtestOptions.availability?.['1min'] ?? "unknown")}
+                   </span>
+                 </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 2. 回测历史 Tab 式概览 (简化版) */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-lg rounded-[24px] overflow-hidden">
+        <CardHeader className="bg-white/30 border-b border-[#d8cfba]/50 py-3 px-5">
+          <div className="flex items-center gap-2">
+            <History className="size-4 text-[#1f2328]/40" />
+            <CardTitle className="text-xs font-bold text-[#1f2328]/60 uppercase tracking-widest">历史队列</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader className="bg-[#ebe5d5]/20">
+              <TableRow className="border-[#d8cfba]/40 hover:bg-transparent">
+                <TableHead className="h-8 py-0 px-5 text-[9px] uppercase font-black text-[#687177]">Time</TableHead>
+                <TableHead className="h-8 py-0 text-[9px] uppercase font-black text-[#687177]">Symbol</TableHead>
+                <TableHead className="h-8 py-0 text-right pr-5 text-[9px] uppercase font-black text-[#687177]">PnL</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {backtestItems.length > 0 ? (
+                backtestItems.map((item) => {
+                  const isSelected = item.id === selectedBacktest?.id;
+                  const pnl = getNumber(item.resultSummary?.return);
+                  return (
+                    <TableRow 
+                      key={item.id} 
+                      className={`cursor-pointer transition-colors border-[#d8cfba]/20 ${isSelected ? 'bg-white shadow-inner' : 'hover:bg-white/50'}`}
+                      onClick={() => setSelectedBacktestId(item.id)}
+                    >
+                      <TableCell className="px-5 py-2 text-[10px] font-mono text-[#687177]">
+                        {formatTime(item.createdAt).split(' ')[1]}
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <span className="text-[10px] font-bold text-[#1f2328]">{String(item.parameters?.symbol ?? "--")}</span>
+                      </TableCell>
+                      <TableCell className={`py-2 pr-5 text-right font-mono text-[10px] font-black ${pnl >= 0 ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                        {formatPercent(pnl)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="h-20 text-center text-[10px] italic text-[#687177]">暂无执行记录</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* 3. 详细统计与采样 */}
+      {selectedBacktest && (
+        <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-xl rounded-[24px] overflow-hidden">
+          <CardHeader className="bg-white/30 border-b border-[#d8cfba]/50 py-4 px-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart4 className="size-4 text-[#1f2328]" />
+                <CardTitle className="text-base font-bold text-[#1f2328]">回放审计</CardTitle>
+              </div>
+              <Badge className={`text-[9px] font-black ${selectedBacktest.status === 'COMPLETED' ? 'bg-[#1f2328]' : 'bg-rose-500'}`}>
+                {selectedBacktest.status}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-5 space-y-6">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: "Trade Count", value: String(latestBacktestSummary.executionTradeCount ?? "--"), icon: Clock },
+                { label: "Win Rate", value: formatPercent(latestBacktestSummary.executionWinRate), icon: Play },
+                { label: "Total PnL", value: formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL)), color: getNumber(latestBacktestSummary.executionRealizedPnL) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
+                { label: "Max DD", value: formatPercent(latestBacktestSummary.maxDrawdown), color: 'text-amber-700' },
+              ].map((stat, i) => (
+                <div key={i} className="bg-white/60 border border-[#d8cfba]/50 rounded-xl p-2.5 shadow-sm">
+                  <span className="block text-[9px] font-black text-[#687177] uppercase mb-1">{stat.label}</span>
+                  <strong className={`text-[12px] font-black block tracking-tight ${stat.color || 'text-[#1f2328]'}`}>{stat.value}</strong>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex-1 h-8 text-[10px] font-bold border-[#d8cfba] bg-white hover:bg-[#fff8ea] rounded-xl"
+                disabled={!selectedBacktest?.parameters?.from || !selectedBacktest?.parameters?.to}
+                onClick={() => {
+                  const from = Date.parse(String(selectedBacktest?.parameters?.from ?? ""));
+                  const to = Date.parse(String(selectedBacktest?.parameters?.to ?? ""));
+                  if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+                  setChartOverrideRange({ from: Math.floor(from / 1000), to: Math.floor(to / 1000), label: "Bktr Window" });
+                  setFocusNonce((v) => v + 1);
+                }}
+              >
+                <Maximize2 className="size-3 mr-1.5 opacity-40" />
+                复现窗口
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-8 text-[10px] font-bold border-[#d8cfba] bg-white hover:bg-[#fff8ea] rounded-xl"
+                asChild
+              >
+                <a href={`${API_BASE}/api/v1/backtests/${selectedBacktest.id}/execution-trades.csv`}>
+                  <FileDown className="size-3" />
+                </a>
+              </Button>
+            </div>
+
+            {/* 采样区 */}
+            {latestReplayCompletedSamples.length > 0 || latestReplaySkippedSamples.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#d8cfba] pb-2">
+                  <Database className="size-3 text-[#687177]" />
+                  <span className="text-[10px] font-black text-[#687177] uppercase tracking-widest">成交/观测样本点</span>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-3 max-h-[400px] overflow-y-auto pr-1">
+                  {latestReplayCompletedSamples.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[9px] font-black text-[#0e6d60] ml-1 uppercase">✓ 成交样本</p>
+                      {latestReplayCompletedSamples.map((sample, index) => (
+                        <SampleCard
+                          key={`completed-${index}`}
+                          sample={sample}
+                          selected={selectedSample?.key === buildSampleKey("completed", index, sample)}
+                          onSelect={() => {
+                            const range = buildSampleRange(sample);
+                            if (!range) return;
+                            setSelectedSample({ key: buildSampleKey("completed", index, sample), sample });
+                            setChartOverrideRange(range);
+                            setSourceFilter("backtest");
+                            setEventFilter("all");
+                            setFocusNonce((v) => v + 1);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {latestReplaySkippedSamples.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[9px] font-black text-rose-600 ml-1 uppercase">⚠ 跳过/异常样本</p>
+                      {latestReplaySkippedSamples.map((sample, index) => (
+                        <SampleCard
+                          key={`skipped-${index}`}
+                          sample={sample}
+                          selected={selectedSample?.key === buildSampleKey("skipped", index, sample)}
+                          onSelect={() => {
+                            const range = buildSampleRange(sample);
+                            if (!range) return;
+                            setSelectedSample({ key: buildSampleKey("skipped", index, sample), sample });
+                            setChartOverrideRange(range);
+                            setSourceFilter("backtest");
+                            setEventFilter("all");
+                            setFocusNonce((v) => v + 1);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="p-8 text-center text-[10px] text-[#687177] italic bg-[#fff8ea]/40 rounded-2xl border border-dashed border-[#d8cfba]">
+                该回测轮次未产生观测样本
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
