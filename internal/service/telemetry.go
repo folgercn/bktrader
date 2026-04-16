@@ -71,7 +71,11 @@ func (p *Platform) recordStrategyDecisionEvent(
 			"fundingIntervalHours": executionContext.Semantics.FundingIntervalHours,
 		},
 	}
-	return p.store.CreateStrategyDecisionEvent(event)
+	recorded, err := p.store.CreateStrategyDecisionEvent(event)
+	if err == nil {
+		p.publishLogEvent(strategyDecisionToUnifiedLogEvent(recorded))
+	}
+	return recorded, err
 }
 
 func (p *Platform) recordLiveOrderExecutionEvent(order domain.Order, eventType string, eventTime time.Time, failed bool, eventErr error) error {
@@ -134,7 +138,10 @@ func (p *Platform) recordLiveOrderExecutionEvent(order domain.Order, eventType s
 		SymbolRules:       cloneMetadata(mapValue(dispatchSummary["symbolRules"])),
 		Metadata:          cloneMetadata(order.Metadata),
 	}
-	_, err := p.store.CreateOrderExecutionEvent(event)
+	recorded, err := p.store.CreateOrderExecutionEvent(event)
+	if err == nil {
+		p.publishLogEvent(orderExecutionToUnifiedLogEvent(recorded))
+	}
 	return err
 }
 
@@ -208,7 +215,10 @@ func (p *Platform) recordLivePositionAccountSnapshot(session domain.LiveSession,
 			"recoveredProtectionCount":    maxIntValue(state["recoveredProtectionCount"], 0),
 		},
 	}
-	_, err = p.store.CreatePositionAccountSnapshot(snapshot)
+	recorded, err := p.store.CreatePositionAccountSnapshot(snapshot)
+	if err == nil {
+		p.publishLogEvent(positionSnapshotToUnifiedLogEvent(recorded))
+	}
 	return err
 }
 

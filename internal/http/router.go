@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -30,6 +31,7 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 	})
 
 	registerAuthRoutes(mux, cfg)
+	registerLogRoutes(mux, platform)
 
 	// 系统概览端点
 	mux.HandleFunc("/api/v1/overview", func(w http.ResponseWriter, _ *http.Request) {
@@ -124,14 +126,18 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		)
 
 		defer func() {
+			panicMessage := ""
+			stackTrace := ""
 			if recovered := recover(); recovered != nil {
 				recorder.statusCode = http.StatusInternalServerError
 				if !recorder.wroteHeader {
 					writeError(recorder, http.StatusInternalServerError, "internal server error")
 				}
+				panicMessage = fmt.Sprint(recovered)
+				stackTrace = string(debug.Stack())
 				logger.Error("http request panicked",
 					"panic", recovered,
-					"stack", string(debug.Stack()),
+					"stack", stackTrace,
 				)
 			}
 
@@ -149,6 +155,25 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 				"bytes_written", recorder.bytesWrite,
 				"content_length", r.ContentLength,
 			)
+			logging.RecordHTTPRequest(logging.HTTPRequestLogEntry{
+				Level:         logging.HTTPLevel(recorder.statusCode).String(),
+				Message:       message,
+				Method:        r.Method,
+				Path:          r.URL.Path,
+				Query:         r.URL.RawQuery,
+				RemoteAddr:    r.RemoteAddr,
+				UserAgent:     r.UserAgent(),
+				Status:        recorder.statusCode,
+				DurationMs:    time.Since(start).Milliseconds(),
+				BytesWritten:  recorder.bytesWrite,
+				ContentLength: r.ContentLength,
+				PanicMessage:  panicMessage,
+				Stack:         stackTrace,
+				CreatedAt:     time.Now().UTC(),
+				Attributes: map[string]any{
+					"component": "http",
+				},
+			})
 		}()
 
 		next.ServeHTTP(recorder, r)
