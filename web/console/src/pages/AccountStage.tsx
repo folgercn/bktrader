@@ -303,61 +303,65 @@ export function AccountStage({
 
   return (
     <div className="absolute inset-0 overflow-y-auto p-8 space-y-8 bg-[#f3f0e7]">
-      {/* 顶部总控 - 现代 Card 重构 */}
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[32px] overflow-hidden">
-        <div className="flex flex-col md:flex-row">
-           <div className="flex-1 p-6 space-y-3">
-             <div>
-               <p className="text-[#0e6d60] text-[9px] font-black uppercase tracking-widest mb-1.5 font-mono">交易中心 / CONTROL CENTER</p>
-               <h2 className="text-xl font-black text-[#1f2328] tracking-tight">准备账户，接通信号，启动实盘</h2>
-             </div>
-             <p className="text-xs text-[#687177] leading-relaxed max-w-2xl font-medium">
-               按顺序完成账户准备、信号接通和实盘会话创建后，再进入监控台处理运行状态与人工干预。
-             </p>
+      {/* 顶部总控 - 扁平化重构 */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-sm rounded-[24px] overflow-hidden">
+        <div className="py-3 px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+           <div className="flex items-center gap-6 overflow-hidden">
+              <div className="shrink-0">
+                <p className="text-[#0e6d60] text-[9px] font-black uppercase tracking-widest font-mono mb-0.5">Control Center</p>
+                <h2 className="text-lg font-black text-[#1f2328] tracking-tight whitespace-nowrap">账户与信号实盘总控</h2>
+              </div>
+              
+              <Separator orientation="vertical" className="h-8 bg-[#d8cfba]/40 hidden lg:block" />
+              
+              <div className="hidden lg:flex items-center gap-2 h-8 px-3 rounded-xl bg-[#fffbf2] border border-[#d8cfba]/50 transition-all">
+                <span className="text-[9px] font-black text-[#687177] uppercase opacity-40">Live:</span>
+                <span className="text-[10px] font-black text-[#1f2328]">{quickLiveAccount?.name ?? "--"}</span>
+                <Badge variant="outline" className="text-[8px] h-3.5 border-[#d8cfba] text-[#0e6d60] font-black lowercase">{quickLiveAccount?.status ?? "no_state"}</Badge>
+              </div>
            </div>
            
-           <div className="md:w-96 bg-[#fff8ea] border-l border-[#d8cfba] p-8 flex flex-col justify-center gap-6">
-              <div className="space-y-1">
-                <strong className="text-[11px] text-[#687177] uppercase font-bold">当前选中账户</strong>
-                <div className="flex items-center gap-2">
-                   <span className="text-sm font-bold text-[#1f2328]">{quickLiveAccount?.name ?? "--"}</span>
-                   <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] text-[#0e6d60]">{quickLiveAccount?.status ?? "--"}</Badge>
-                </div>
-                <p className="text-[10px] text-[#687177]">{quickLiveAccount?.exchange ?? "未解析交易所"}</p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" className="h-9 border-[#d8cfba] bg-white text-[11px] font-bold text-[#1f2328]" onClick={openLiveAccountModal}>
+           <div className="flex items-center gap-2">
+              <div className="flex items-center p-1 rounded-xl bg-white/40 border border-[#d8cfba]/20">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none" 
+                  onClick={openLiveAccountModal}
+                >
                   新建账户
                 </Button>
+                <Separator orientation="vertical" className="h-4 bg-[#d8cfba]/30 mx-1" />
                 <Button 
-                   variant="outline" 
+                   variant="ghost" 
                    size="sm" 
-                   className="h-9 border-[#d8cfba] bg-white text-[11px] font-bold text-[#1f2328]"
+                   className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none"
                    disabled={!quickLiveAccountId}
                    onClick={() => {
-                     if (quickLiveAccountId) {
-                       selectQuickLiveAccount(quickLiveAccountId);
-                     }
+                     if (quickLiveAccountId) selectQuickLiveAccount(quickLiveAccountId);
                      openLiveBindingModal();
                    }}
                 >
                   绑定适配器
                 </Button>
+                <Separator orientation="vertical" className="h-4 bg-[#d8cfba]/30 mx-1" />
                 <Button 
+                   variant="ghost" 
                    size="sm" 
-                   className="h-9 bg-[#0e6d60] hover:bg-[#0a5a4f] text-white text-[11px] font-bold shadow-md"
+                   className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none"
                    disabled={!quickLiveAccountId}
                    onClick={() => {
-                     if (quickLiveAccountId) {
-                       selectQuickLiveAccount(quickLiveAccountId);
-                     }
+                     if (quickLiveAccountId) selectQuickLiveAccount(quickLiveAccountId);
                      openLiveSessionModal();
                    }}
                 >
                   创建会话
                 </Button>
               </div>
+              <Separator orientation="vertical" className="h-6 bg-[#d8cfba]/50 hidden md:block mx-1" />
+              <Button variant="ghost" size="sm" className="h-8 text-rose-600 font-black hover:bg-rose-50 px-3 rounded-lg" onClick={logout}>
+                QUIT
+              </Button>
            </div>
         </div>
       </Card>
