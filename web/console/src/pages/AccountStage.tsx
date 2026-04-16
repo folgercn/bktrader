@@ -800,35 +800,35 @@ export function AccountStage({
           </CardHeader>
           <CardContent className="space-y-6">
              <div className="space-y-5 p-6 rounded-[24px] bg-[#fff8ea] border border-[#d8cfba]">
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#687177] uppercase">成交价格新鲜度 (秒)</label>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">价格新鲜度(秒)</label>
                     <Input 
-                      className="bg-white border-[#d8cfba] h-10 text-xs font-bold"
+                      className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm"
                       value={runtimePolicyForm.tradeTickFreshnessSeconds}
                       onChange={(e) => setRuntimePolicyForm(c => ({ ...c, tradeTickFreshnessSeconds: e.target.value }))}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#687177] uppercase">账户同步间隔 (秒)</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">同步间隔(秒)</label>
                     <Input 
-                      className="bg-white border-[#d8cfba] h-10 text-xs font-bold"
+                      className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm"
                       value={runtimePolicyForm.liveAccountSyncFreshnessSeconds}
                       onChange={(e) => setRuntimePolicyForm(c => ({ ...c, liveAccountSyncFreshnessSeconds: e.target.value }))}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#687177] uppercase">派发模式</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">派发模式</label>
                     <Select 
                        value={runtimePolicyForm.dispatchMode}
                        onValueChange={(val: any) => setRuntimePolicyForm(c => ({ ...c, dispatchMode: val }))}
                     >
-                       <SelectTrigger className="bg-white border-[#d8cfba] h-10 text-xs font-bold">
+                       <SelectTrigger className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm px-2">
                          <SelectValue />
                        </SelectTrigger>
                        <SelectContent className="bg-white border-[#d8cfba]">
-                          <SelectItem value="manual-review" className="text-xs">人工审核 (Manual)</SelectItem>
-                          <SelectItem value="auto-dispatch" className="text-xs">自动派发 (Auto)</SelectItem>
+                          <SelectItem value="manual-review" className="text-xs font-bold">人工审核</SelectItem>
+                          <SelectItem value="auto-dispatch" className="text-xs font-bold">自动派发</SelectItem>
                        </SelectContent>
                     </Select>
                   </div>
