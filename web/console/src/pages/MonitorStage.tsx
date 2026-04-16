@@ -211,7 +211,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                 {[
                   { label: "模式", value: monitorMode, icon: Zap },
                   { label: "净值", value: formatMoney(monitorSummary?.netEquity), color: 'text-[#1f2328]' },
-                  { label: "盈亏", value: formatSigned(monitorSummary?.unrealizedPnl ?? 0), color: getNumber(monitorSummary?.unrealizedPnl ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
+                  { label: "盈亏", value: formatSigned(monitorSummary?.unrealizedPnl ?? 0), color: (getNumber(monitorSummary?.unrealizedPnl) ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
                   { label: "方向", value: String(monitorExecutionSummary.position?.side ?? "FLAT"), color: 'font-black' },
                   { label: "数量", value: formatMaybeNumber(monitorExecutionSummary.position?.quantity) },
                   { label: "标记价", value: formatMaybeNumber(monitorExecutionSummary.position?.markPrice) },

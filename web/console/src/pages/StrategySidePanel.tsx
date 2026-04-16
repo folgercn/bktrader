@@ -104,7 +104,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
               <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase tracking-wide">Strategy</Label>
               <Select 
                 value={backtestForm.strategyVersionId}
-                onValueChange={(val) => setBacktestForm(curr => ({ ...curr, strategyVersionId: val }))}
+                onValueChange={(val: any) => setBacktestForm(curr => ({ ...curr, strategyVersionId: val }))}
               >
                 <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px] font-medium">
                   <SelectValue placeholder="选择策略版本" />
@@ -124,7 +124,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">Timeframe</Label>
                 <Select 
                   value={backtestForm.signalTimeframe}
-                  onValueChange={(val) => setBacktestForm(curr => ({ ...curr, signalTimeframe: val }))}
+                  onValueChange={(val: any) => setBacktestForm(curr => ({ ...curr, signalTimeframe: val }))}
                 >
                   <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px]">
                     <SelectValue placeholder="周期" />
@@ -140,7 +140,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">Source</Label>
                 <Select 
                   value={backtestForm.executionDataSource}
-                  onValueChange={(val) => setBacktestForm(curr => ({ ...curr, executionDataSource: val }))}
+                  onValueChange={(val: any) => setBacktestForm(curr => ({ ...curr, executionDataSource: val }))}
                 >
                   <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px]">
                     <SelectValue placeholder="数据源" />
@@ -260,7 +260,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                       <TableCell className="py-2">
                         <span className="text-[10px] font-bold text-[#1f2328]">{String(item.parameters?.symbol ?? "--")}</span>
                       </TableCell>
-                      <TableCell className={`py-2 pr-5 text-right font-mono text-[10px] font-black ${pnl >= 0 ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                      <TableCell className={`py-2 pr-5 text-right font-mono text-[10px] font-black ${(pnl ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
                         {formatPercent(pnl)}
                       </TableCell>
                     </TableRow>
@@ -295,7 +295,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
               {[
                 { label: "Trade Count", value: String(latestBacktestSummary.executionTradeCount ?? "--"), icon: Clock },
                 { label: "Win Rate", value: formatPercent(latestBacktestSummary.executionWinRate), icon: Play },
-                { label: "Total PnL", value: formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL)), color: getNumber(latestBacktestSummary.executionRealizedPnL) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
+                { label: "Total PnL", value: formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0), color: (getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
                 { label: "Max DD", value: formatPercent(latestBacktestSummary.maxDrawdown), color: 'text-amber-700' },
               ].map((stat, i) => (
                 <div key={i} className="bg-white/60 border border-[#d8cfba]/50 rounded-xl p-2.5 shadow-sm">
@@ -326,11 +326,9 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 variant="outline" 
                 size="sm" 
                 className="h-8 text-[10px] font-bold border-[#d8cfba] bg-white hover:bg-[#fff8ea] rounded-xl"
-                asChild
+                onClick={() => window.open(`${API_BASE}/api/v1/backtests/${selectedBacktest.id}/execution-trades.csv`)}
               >
-                <a href={`${API_BASE}/api/v1/backtests/${selectedBacktest.id}/execution-trades.csv`}>
-                  <FileDown className="size-3" />
-                </a>
+                <FileDown className="size-3" />
               </Button>
             </div>
 
