@@ -239,7 +239,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   }
 
   async function unbindLiveAccount(accountId: string) {
-    if (!window.confirm("确定要解除该账户的交易所适配器绑定吗？(将清除 API 凭证引用)")) return;
     setLiveBindAction(true);
     try {
       await fetchJSON(`/api/v1/live/accounts/${accountId}/binding`, { method: "DELETE" });
@@ -279,7 +278,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   }
 
   async function deleteSignalRuntimeSession(sessionId: string, selectedSignalRuntimeId: string | null) {
-    if (!window.confirm("确定要彻底删除该信号运行时会话吗？(将停止运行中的流)")) return;
     try {
       await fetchJSON(`/api/v1/signal-runtime/sessions/${sessionId}`, { method: "DELETE" });
       if (sessionId === selectedSignalRuntimeId) {

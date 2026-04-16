@@ -55,6 +55,7 @@ export function MainContent({ actions, dockContent, strategies, quickLiveAccount
           createSignalRuntimeSession={actions.createSignalRuntimeSession}
           deleteSignalRuntimeSession={(id) => actions.deleteSignalRuntimeSession(id, null)}
           runSignalRuntimeAction={actions.runSignalRuntimeAction}
+          unbindLiveAccount={actions.unbindLiveAccount}
           executeLaunchTemplate={actions.executeLaunchTemplate}
         />
       )}

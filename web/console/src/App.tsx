@@ -28,7 +28,7 @@ import { TelegramModal } from './modals/TelegramModal';
 
 // Pages
 import { StrategySidePanel } from './pages/StrategySidePanel';
-import { NotificationToast } from './components/ui/NotificationToast';
+import { Toaster } from "./components/ui/sonner";
 
 export default function App() {
   const { loadDashboard } = useDashboard();
@@ -186,7 +186,7 @@ export default function App() {
         saveTelegramConfig={actions.saveTelegramConfig}
         sendTelegramTest={actions.sendTelegramTest}
       />
-      <NotificationToast />
+      <Toaster richColors closeButton position="top-right" />
     </>
   );
 }

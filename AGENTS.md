@@ -11,6 +11,7 @@
 ## 2. 核心记忆与工具 (Core Memory)
 
 - **图谱** == **graphify** (本项目的知识图谱工具)
+- **UI 规范** == **shadcn** (本项目的基础 UI 组件库与规范指南，见 [.skills/shadcn/SKILL.md](.skills/shadcn/SKILL.md))
 
 ### graphify 规则
 
