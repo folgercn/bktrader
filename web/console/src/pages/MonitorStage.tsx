@@ -321,7 +321,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                       ))}
                     </div>
                     
-                    <Accordion type="multiple" className="w-full space-y-2">
+                    <Accordion className="w-full space-y-2">
                       {monitorSections.map((section) => (
                         <AccordionItem key={section.title} value={section.title} className="border-2 border-[#d8cfba]/30 rounded-2xl px-4 bg-white/30">
                           <AccordionTrigger className="hover:no-underline py-4 text-[12px] font-black text-[#1f2328] uppercase tracking-wide">
