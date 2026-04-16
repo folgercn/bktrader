@@ -180,15 +180,15 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
-      {/* 1. 主监控区 - 保持原有肤色逻辑 */}
+      {/* 1. 主监控区 - 严格保留原生 .panel 样式 */}
       <section className="panel panel-market panel-compact monitor-panel-main w-full">
          <div className="panel-header">
            <div>
              <p className="panel-kicker">主监控</p>
              <h3>运行中会话的大周期 K 线与执行状态</h3>
            </div>
-           <div className="range-box text-xs">
-             <div className="flex items-center gap-1.5 mr-2 pr-2 border-r border-black/10">
+           <div className="range-box">
+             <div className="flex items-center gap-1.5 mr-2 pr-2 border-r border-[#d8cfba]">
                {[
                  { label: '5m', value: '5' },
                  { label: '15m', value: '15' },
@@ -201,8 +201,8 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                    onClick={() => setMonitorResolution(tf.value)}
                    className={`px-2 py-0.5 rounded-md text-[10px] uppercase font-medium transition-all ${
                      monitorResolution === tf.value
-                       ? 'bg-zinc-800 text-white'
-                       : 'text-zinc-500 hover:text-zinc-800'
+                       ? 'bg-[#1f2328] text-white'
+                       : 'text-[#687177] hover:text-[#1f2328]'
                    }`}
                  >
                    {tf.label}
@@ -219,7 +219,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               <div className="empty-state">当前运行会话还没有交易所大周期 K 线缓存</div>
             )}
          </div>
-         <div className="grid grid-cols-4 md:grid-cols-8 gap-4 mt-6">
+         <div className="grid grid-cols-4 md:grid-cols-8 gap-1.5 mt-4">
             {[
               { label: "模式", value: monitorMode },
               { label: "账户净值", value: formatMoney(monitorSummary?.netEquity) },
@@ -227,7 +227,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               { label: "方向", value: String(monitorExecutionSummary.position?.side ?? "FLAT") },
               { label: "数量", value: formatMaybeNumber(monitorExecutionSummary.position?.quantity) },
               { label: "标记价", value: formatMaybeNumber(monitorExecutionSummary.position?.markPrice) },
-              { label: "盘口", value: `${formatMaybeNumber(monitorMarket.bestBid)}` },
+              { label: "盘口", value: `${formatMaybeNumber(monitorMarket.tradePrice)}` },
               { label: "SMA5", value: formatMaybeNumber(monitorSignalState.sma5) },
             ].map((item) => (
               <div key={item.label} className="detail-item">
@@ -238,52 +238,54 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
          </div>
       </section>
 
-      {/* 2. 使用 shadcn Card 但不强制换色 */}
-      <Card className="shadow-sm border-zinc-200 bg-white/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-xl font-bold text-zinc-800">运行监控与人工干预</CardTitle>
+      {/* 2. 重构区 - 使用 shadcn 组件但强制映射原生配色 (Cream/Panel-style) */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <CardHeader className="pb-3 px-4">
+          <CardTitle className="text-xl font-bold text-[#1f2328]">运行监控与人工干预</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 px-4">
           <div className="live-grid">
+            {/* 左侧：优先会话面板 */}
             {highlightedLiveSession ? (
-              <div className="bg-zinc-100/50 rounded-xl p-4 border border-zinc-200">
+              <div className="bg-[#fff8ea] rounded-[18px] p-4 border border-[#d8cfba] shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <span className="text-[10px] text-zinc-500 font-mono uppercase">Primary Session</span>
-                    <h4 className="text-sm font-bold text-zinc-800">当前优先处理会话</h4>
+                    <span className="text-[10px] text-[#687177] font-mono uppercase tracking-wider">Primary Session</span>
+                    <h4 className="text-sm font-bold text-[#1f2328]">当前优先处理会话</h4>
                   </div>
-                  <Badge variant="secondary" className="bg-zinc-200 text-zinc-700">
+                  <Badge className="bg-[#ebe5d5] text-[#1f2328] border-[#d8cfba] font-mono text-[9px] px-1.5 py-0">
                     {highlightedLiveSession.health.status}
                   </Badge>
                 </div>
                 
-                <div className="flex flex-wrap gap-2 text-[10px] text-zinc-600 font-mono mb-4">
-                  <span className="bg-white/80 px-1.5 py-0.5 rounded border border-zinc-200">{shrink(highlightedLiveSession.session.id)}</span>
-                  <span className="bg-white/80 px-1.5 py-0.5 rounded border border-zinc-200">{highlightedLiveSession.session.accountId}</span>
+                <div className="flex flex-wrap gap-1.5 text-[10px] text-[#687177] font-mono mb-4">
+                  <span className="bg-white/60 px-1.5 py-0.5 rounded border border-[#d8cfba]/50 font-bold">{shrink(highlightedLiveSession.session.id)}</span>
+                  <span className="bg-white/60 px-1.5 py-0.5 rounded border border-[#d8cfba]/50">{highlightedLiveSession.session.accountId}</span>
+                  <span className="bg-[#d9eee8] text-[#0e6d60] px-1.5 py-0.5 rounded border border-[#0e6d60]/20">{String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}</span>
                 </div>
 
-                <div className="space-y-3 bg-white/40 p-3 rounded-lg border border-zinc-100">
-                  <p className="text-[11px] text-zinc-700">
-                    <span className="text-zinc-500">健康:</span> {highlightedLiveSession.health.detail}
+                <div className="space-y-3 bg-white/40 p-3 rounded-xl border border-[#d8cfba]/30">
+                  <p className="text-[11px] text-[#1f2328] leading-relaxed">
+                    <span className="text-[#687177] font-medium">健康摘要:</span> {highlightedLiveSession.health.detail}
                   </p>
-                  <div className="grid grid-cols-2 gap-4 text-[10px]">
-                    <div>
-                      <span className="text-zinc-500 block">执行统计</span>
-                      <strong className="text-zinc-800">订单 {highlightedLiveSession.execution.orderCount} · 成交 {highlightedLiveSession.execution.fillCount}</strong>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[10px]">
+                    <div className="detail-item !bg-transparent !border-0 !p-0">
+                      <span>执行统计</span>
+                      <strong className="!text-[11px] !mt-0.5">订单 {highlightedLiveSession.execution.orderCount} · 成交 {highlightedLiveSession.execution.fillCount}</strong>
                     </div>
-                    <div>
-                      <span className="text-zinc-500 block">持仓</span>
-                      <strong className="text-zinc-800">{String(monitorExecutionSummary.position?.side ?? "FLAT")}</strong>
+                    <div className="detail-item !bg-transparent !border-0 !p-0">
+                      <span>持仓方向</span>
+                      <strong className="!text-[11px] !mt-0.5">{String(monitorExecutionSummary.position?.side ?? "FLAT")}</strong>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-5 flex flex-wrap gap-2">
                   {monitorFlow.map((step) => (
                     <Badge 
                       key={step.key}
                       variant="outline"
-                      className="text-[9px] bg-white/80 text-zinc-600 border-zinc-200"
+                      className="text-[9px] bg-white/80 text-[#687177] border-[#d8cfba] font-medium"
                     >
                       {step.label}
                     </Badge>
@@ -291,34 +293,43 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                 </div>
               </div>
             ) : (
-              <div className="empty-state">当前没有活跃实盘会话</div>
+              <div className="p-12 text-center text-[#687177] text-xs italic bg-[#fff8ea]/50 rounded-[18px] border border-dashed border-[#d8cfba]">
+                当前没有活跃实盘会话
+              </div>
             )}
 
+            {/* 右侧：监控明细折叠面板 */}
             <div className="space-y-4">
-              <h4 className="text-sm font-bold text-zinc-800 border-b border-zinc-200 pb-2">当前会话监控细节</h4>
+              <div className="flex items-center justify-between border-b border-[#d8cfba] pb-2">
+                <h4 className="text-sm font-bold text-[#1f2328]">当前会话监控细节</h4>
+                <Badge variant="outline" className="text-[9px] border-[#d8cfba] text-[#687177] font-mono tracking-tighter">
+                  {monitorSession ? "CONNECTED" : "IDLE"}
+                </Badge>
+              </div>
+              
               {monitorSession ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-2">
                     {monitorSummaryItems.map((item) => (
-                      <div key={item.label} className="p-2 rounded-lg bg-white/60 border border-zinc-200">
-                        <span className="text-[9px] text-zinc-500 uppercase font-mono block">{item.label}</span>
-                        <strong className="text-[11px] text-zinc-800 truncate block">{item.value}</strong>
+                      <div key={item.label} className="session-stat !bg-white/50 !p-2 !rounded-xl !border-[#d8cfba]/40">
+                        <span className="!text-[9px] !mb-1 uppercase tracking-tight font-bold">{item.label}</span>
+                        <strong className="!text-[10px] !text-[#1f2328] truncate">{item.value}</strong>
                       </div>
                     ))}
                   </div>
                   
                   <Accordion multiple className="w-full">
                     {monitorSections.map((section) => (
-                      <AccordionItem key={section.title} value={section.title} className="border-zinc-200">
-                        <AccordionTrigger className="hover:no-underline py-2 text-xs font-bold text-zinc-700">
+                      <AccordionItem key={section.title} value={section.title} className="border-[#d8cfba]">
+                        <AccordionTrigger className="hover:no-underline py-2 text-xs font-bold text-[#1f2328] opacity-80">
                           {section.title}
                         </AccordionTrigger>
                         <AccordionContent>
                           <div className="grid grid-cols-1 gap-1 pt-1 pb-3">
                             {section.items.map((item) => (
-                              <div key={`${section.title}-${item.label}`} className="flex justify-between items-center text-[10px] px-2 py-1.5 rounded bg-zinc-50 border border-zinc-100">
-                                <span className="text-zinc-500">{item.label}</span>
-                                <strong className="text-zinc-800 font-mono">{item.value}</strong>
+                              <div key={`${section.title}-${item.label}`} className="flex justify-between items-center text-[10px] px-2 py-1.5 rounded bg-[#fff8ea]/40 border border-[#d8cfba]/20 hover:bg-[#fff8ea]/60 transition-colors">
+                                <span className="text-[#687177]">{item.label}</span>
+                                <strong className="text-[#1f2328] font-mono">{item.value}</strong>
                               </div>
                             ))}
                           </div>
@@ -328,7 +339,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                   </Accordion>
                 </div>
               ) : (
-                <div className="p-8 text-center text-zinc-400 text-xs italic bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+                <div className="p-20 text-center text-[#687177] text-xs italic bg-white/30 rounded-[18px] border border-dashed border-[#d8cfba]">
                   选中会话后显示明细
                 </div>
               )}
@@ -337,42 +348,46 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
         </CardContent>
       </Card>
 
-      {/* 3. 待同步订单 - 浅色卡片 */}
-      <Card className="shadow-sm border-zinc-200 bg-zinc-100/30">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-bold text-zinc-800">待同步的实盘订单</CardTitle>
+      {/* 3. 待同步订单 - 严格映射原生配色表 */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px] overflow-hidden">
+        <CardHeader className="pb-3 px-4">
+          <CardTitle className="text-sm font-bold text-[#1f2328]">待同步的实盘订单</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-md border border-zinc-200 bg-white/50 overflow-hidden">
+        <CardContent className="px-4">
+          <div className="rounded-xl border border-[#d8cfba] bg-white/40 overflow-hidden">
             <Table>
-              <TableHeader className="bg-zinc-50">
-                <TableRow className="hover:bg-transparent border-zinc-200">
-                  <TableHead className="h-9 text-[10px] uppercase font-bold text-zinc-600">订单</TableHead>
-                  <TableHead className="h-9 text-[10px] uppercase font-bold text-zinc-600">账户</TableHead>
-                  <TableHead className="h-9 text-[10px] uppercase font-bold text-zinc-600">代码</TableHead>
-                  <TableHead className="h-9 text-[10px] uppercase font-bold text-zinc-600">方向</TableHead>
-                  <TableHead className="h-9 text-[10px] uppercase font-bold text-zinc-600">数量</TableHead>
-                  <TableHead className="h-9 text-[10px] uppercase font-bold text-zinc-600">状态</TableHead>
-                  <TableHead className="h-9 text-right text-[10px] uppercase font-bold text-zinc-600">操作</TableHead>
+              <TableHeader className="bg-[#ebe5d5]/40">
+                <TableRow className="hover:bg-transparent border-[#d8cfba]">
+                  <TableHead className="h-9 text-[10px] uppercase font-bold text-[#687177]">订单</TableHead>
+                  <TableHead className="h-9 text-[10px] uppercase font-bold text-[#687177]">账户</TableHead>
+                  <TableHead className="h-9 text-[10px] uppercase font-bold text-[#687177]">代码</TableHead>
+                  <TableHead className="h-9 text-[10px] uppercase font-bold text-[#687177]">方向</TableHead>
+                  <TableHead className="h-9 text-[10px] uppercase font-bold text-[#687177]">数量</TableHead>
+                  <TableHead className="h-9 text-[10px] uppercase font-bold text-[#687177]">状态</TableHead>
+                  <TableHead className="h-9 text-right text-[10px] uppercase font-bold text-[#687177]">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {syncableLiveOrders.length > 0 ? (
                   syncableLiveOrders.map((order) => (
-                    <TableRow key={order.id} className="hover:bg-zinc-50 border-zinc-100 transition-colors">
-                      <TableCell className="font-mono text-xs text-zinc-700">{shrink(order.id)}</TableCell>
-                      <TableCell className="text-xs text-zinc-600">{order.accountId}</TableCell>
-                      <TableCell className="text-xs font-bold text-emerald-700">{order.symbol}</TableCell>
-                      <TableCell className="text-xs font-bold">
+                    <TableRow key={order.id} className="hover:bg-[#fff8ea]/50 border-[#d8cfba]/30 transition-colors">
+                      <TableCell className="font-mono text-xs text-[#1f2328]/80">{shrink(order.id)}</TableCell>
+                      <TableCell className="text-xs text-[#687177]">{order.accountId}</TableCell>
+                      <TableCell className="text-xs font-bold text-[#0e6d60]">{order.symbol}</TableCell>
+                      <TableCell className="text-xs font-bold text-[#1f2328]">
                         {order.side}
                       </TableCell>
-                      <TableCell className="text-xs text-zinc-700 font-mono">{formatMaybeNumber(order.quantity)}</TableCell>
-                      <TableCell className="text-xs text-zinc-600">{order.status}</TableCell>
+                      <TableCell className="text-xs text-[#1f2328] font-mono">{formatMaybeNumber(order.quantity)}</TableCell>
+                      <TableCell className="text-xs">
+                        <Badge variant="secondary" className="bg-[#ebe5d5] text-[#687177] font-mono text-[9px] h-4">
+                          {order.status}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-right">
                         <Button 
                           size="sm" 
                           variant="outline" 
-                          className="h-7 px-3 text-[10px] border-zinc-300 hover:bg-zinc-100"
+                          className="h-7 px-3 text-[10px] border-[#d8cfba] bg-white hover:bg-[#fff8ea] text-[#1f2328] font-bold"
                           disabled={liveSyncAction !== null}
                           onClick={() => syncLiveOrder(order.id)}
                         >
@@ -383,7 +398,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-xs text-zinc-400 italic">
+                    <TableCell colSpan={7} className="h-24 text-center text-xs text-[#687177] italic">
                       暂无待同步订单
                     </TableCell>
                   </TableRow>
@@ -394,48 +409,52 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
         </CardContent>
       </Card>
 
-      {/* 4. 底层健康状态 */}
-      <Card className="shadow-sm border-zinc-200 bg-white/50">
-        <CardHeader className="flex flex-row items-center justify-between pb-4 space-y-0">
-          <CardTitle className="text-xl font-bold text-zinc-800">平台健康总览</CardTitle>
-          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
+      {/* 4. 底层健康面板 */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <CardHeader className="flex flex-row items-center justify-between pb-4 space-y-0 px-4 pt-4">
+          <CardTitle className="text-xl font-bold text-[#1f2328]">平台健康总览</CardTitle>
+          <Badge className="bg-[#d9eee8] text-[#0e6d60] border-[#0e6d60]/20 font-bold">
              {technicalStatusLabel(monitorHealth?.status ?? "--")}
           </Badge>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 pb-4">
           {monitorHealth ? (
             <div className="grid grid-cols-6 gap-2">
               {[
                 { label: "告警", value: monitorHealth.alertCounts.total },
-                { label: "Critical", value: monitorHealth.alertCounts.critical },
-                { label: "Warning", value: monitorHealth.alertCounts.warning },
+                { label: "Critical", value: monitorHealth.alertCounts.critical, color: 'text-[#b04a37]' },
+                { label: "Warning", value: monitorHealth.alertCounts.warning, color: 'text-amber-700' },
                 { label: "静默", value: runtimePolicyValueLabel(platformRuntimePolicy?.runtimeQuietSeconds) },
                 { label: "评估", value: runtimePolicyValueLabel(platformRuntimePolicy?.strategyEvaluationQuietSeconds) },
                 { label: "刷新", value: runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds) },
               ].map((item) => (
-                <div key={item.label} className="p-2 rounded-lg bg-zinc-50 border border-zinc-200">
-                  <span className="text-[9px] text-zinc-500 uppercase font-mono block">{item.label}</span>
-                  <strong className="text-sm text-zinc-800">{String(item.value ?? 0)}</strong>
+                <div key={item.label} className="p-2 rounded-xl bg-white/60 border border-[#d8cfba]">
+                  <span className="text-[9px] text-[#687177] uppercase font-bold block mb-1">{item.label}</span>
+                  <strong className={`text-sm tracking-tight ${item.color || 'text-[#1f2328]'}`}>
+                    {String(item.value ?? 0)}
+                  </strong>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="p-8 text-center text-zinc-400 text-xs italic">健康监控未就绪</div>
+            <div className="p-10 text-center text-[#687177] text-xs italic bg-[#fff8ea]/30 rounded-[18px] border border-[#d8cfba]">
+              健康监控未就绪
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {/* 5. 记录 Tabs */}
-      <Card className="shadow-sm border-zinc-200 bg-white/50">
-        <CardContent className="pt-6">
+      {/* 5. 记录中心 Tabs */}
+      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <CardContent className="pt-6 px-4">
           <Tabs defaultValue="orders" value={dockTab} onValueChange={(val) => onDockTabChange(val as any)}>
-            <TabsList className="bg-zinc-100 p-1 mb-4 h-9">
-              <TabsTrigger value="orders" className="text-xs">订单</TabsTrigger>
-              <TabsTrigger value="positions" className="text-xs">持仓</TabsTrigger>
-              <TabsTrigger value="fills" className="text-xs">成交</TabsTrigger>
-              <TabsTrigger value="alerts" className="text-xs">告警</TabsTrigger>
+            <TabsList className="bg-[#ebe5d5] p-1 mb-4 h-9 rounded-xl">
+              <TabsTrigger value="orders" className="text-xs data-[state=active]:bg-white data-[state=active]:text-[#1f2328]">订单</TabsTrigger>
+              <TabsTrigger value="positions" className="text-xs data-[state=active]:bg-white data-[state=active]:text-[#1f2328]">持仓</TabsTrigger>
+              <TabsTrigger value="fills" className="text-xs data-[state=active]:bg-white data-[state=active]:text-[#1f2328]">成交</TabsTrigger>
+              <TabsTrigger value="alerts" className="text-xs data-[state=active]:bg-white data-[state=active]:text-[#1f2328]">告警</TabsTrigger>
             </TabsList>
-            <div className="rounded-xl border border-zinc-200 bg-white/40 overflow-hidden">
+            <div className="rounded-2xl border border-[#d8cfba] bg-white/40 overflow-hidden shadow-inner">
                {dockContent}
             </div>
           </Tabs>
