@@ -23,3 +23,5 @@
 - [20260407-ma-filter-research.md](20260407-ma-filter-research.md) / [20260407-testnet-最小闭环进度.md](20260407-testnet-最小闭环进度.md) - 相关投研实验备忘。
 
 > `Smoke Test`: 若需要部署回测，请手动执行 `scripts/testnet_live_session_smoke.sh`。对于本项目的自动化防御，依靠 `ci.yml` 中的风险拦截脚本。
+
+> 说明：本文档索引主要服务于日常协作导航，变更通常不应触发生产 CD 发布链路。
