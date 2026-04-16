@@ -1679,3 +1679,125 @@ tbody tr:last-child td {
     font-size: 1rem;
   }
 }
+
+/* Floating Notes Card Animations */
+@keyframes fadeInSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.animate-in {
+  animation: fadeInSlideIn 0.2s ease-out forwards;
+}
+
+/* Custom Scrollbar for the floating card if content overflows */
+.floating-notes-card::-webkit-scrollbar {
+  width: 4px;
+}
+
+.floating-notes-card::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+/* Launch Template Cards */
+.template-gallery {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.launch-template-card {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(14, 109, 96, 0.1);
+  background: rgba(14, 109, 96, 0.05);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.launch-template-card:hover {
+  background: rgba(14, 109, 96, 0.08);
+  border-color: rgba(14, 109, 96, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04);
+}
+
+.launch-template-card .tpl-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.launch-template-card .tpl-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0e6d60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.launch-template-card .tpl-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.launch-template-card .tpl-symbol-tag {
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(14, 109, 96, 0.15);
+  color: #0c5a4f;
+}
+
+.launch-template-card .tpl-desc {
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.launch-template-card .tpl-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.launch-template-card .tpl-badge-list {
+  display: flex;
+  gap: 6px;
+}
+
+.launch-template-card .tpl-badge {
+  font-size: 9px;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.04);
+  color: #71717a;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+/* Global Notification Animations */
+@keyframes progress-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+.animate-progress-shrink {
+  animation: progress-shrink linear forwards;
+}

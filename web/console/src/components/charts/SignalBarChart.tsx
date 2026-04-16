@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Time, CandlestickSeries, ColorType, CrosshairMode, LineStyle, createChart } from 'lightweight-charts';
 import { SignalBarCandle } from '../../types/domain';
 import { applyDefaultChartWindow } from '../../utils/derivation';
+import { normalizeChartData } from '../../utils/chart';
 
 export function SignalBarChart(props: { candles: SignalBarCandle[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -40,15 +41,8 @@ export function SignalBarChart(props: { candles: SignalBarCandle[] }) {
       priceLineVisible: true,
     });
 
-    series.setData(
-      props.candles.map((item) => ({
-        time: Math.floor(new Date(item.time).getTime() / 1000) as Time,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-      }))
-    );
+    const sortedData = normalizeChartData(props.candles);
+    series.setData(sortedData);
 
     applyDefaultChartWindow(chart, props.candles.length, 90);
     return () => chart.remove();

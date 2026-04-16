@@ -65,6 +65,8 @@ export interface useTradingStoreState {
   setAnnotations: (valOrUpdater: ChartAnnotation[] | ((prev: ChartAnnotation[]) => ChartAnnotation[])) => void;
   editingLiveSessionId: string | null;
   setEditingLiveSessionId: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
+  launchTemplates: any[];
+  setLaunchTemplates: (valOrUpdater: any[] | ((prev: any[]) => any[])) => void;
 }
 
 export const useTradingStore = create<useTradingStoreState>((set) => ({
@@ -128,4 +130,6 @@ export const useTradingStore = create<useTradingStoreState>((set) => ({
   setAnnotations: (valOrUpdater) => set((state) => ({ annotations: resolveUpdater(valOrUpdater, state.annotations) })),
   editingLiveSessionId: null,
   setEditingLiveSessionId: (valOrUpdater) => set((state) => ({ editingLiveSessionId: resolveUpdater(valOrUpdater, state.editingLiveSessionId) })),
+  launchTemplates: [],
+  setLaunchTemplates: (valOrUpdater) => set((state) => ({ launchTemplates: resolveUpdater(valOrUpdater, state.launchTemplates) })),
 }));

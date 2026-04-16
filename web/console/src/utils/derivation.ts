@@ -939,47 +939,61 @@ export function deriveSessionMarkers(session: LiveSession | PaperSession | null,
 
 export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessionExecutionSummary): LiveSessionHealth {
   const recoveryError = String(session.state?.lastRecoveryError ?? "").trim();
+  const syncError = String(session.state?.lastSyncError ?? "").trim();
+  const protectionRecoveryStatus = String(session.state?.protectionRecoveryStatus ?? "").trim();
+  const isRunning = String(session.status).toUpperCase() === "RUNNING";
+
+  // 1. 恢复错误（具备最高健康度权重）
   if (recoveryError) {
     return {
       status: "error",
-      detail: `恢复失败: ${recoveryError}`,
+      detail: `恢复异常: ${recoveryError}`,
     };
   }
-  const protectionRecoveryStatus = String(session.state?.protectionRecoveryStatus ?? "").trim();
+
+  // 2. 保护状态错误
   if (protectionRecoveryStatus === "unprotected-open-position") {
     return {
       status: "error",
-      detail: "恢复的持仓缺失止损或止盈保护",
+      detail: "风险: 恢复的持仓缺失止损/止盈保护",
     };
   }
-  const syncError = String(session.state?.lastSyncError ?? "").trim();
+
+  // 3. 数据同步错误
   if (syncError) {
     return {
       status: "error",
-      detail: `同步失败: ${syncError}`,
+      detail: `同步异常: ${syncError}`,
     };
   }
+
+  // 4. 流程阻塞状态
   if (summary.latestOrder && !["FILLED", "CANCELLED", "REJECTED"].includes(String(summary.latestOrder.status ?? "").toUpperCase())) {
     return {
       status: "waiting-sync",
       detail: `订单 ${summary.latestOrder.status} 正在等待终端同步`,
     };
   }
+  
+  // 5. 活跃持仓状态
   if (summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0) {
     return {
       status: "active",
       detail: `持有 ${summary.position.side ?? "仓位"} ${formatMaybeNumber(summary.position.quantity)} @ ${formatMaybeNumber(summary.position.entryPrice)}`,
     };
   }
+
+  // 6. 正常就绪/等待
   if (String(session.state?.lastStrategyEvaluationStatus ?? "") === "intent-ready") {
     return {
       status: "ready",
       detail: "策略意图已就绪，可执行分发",
     };
   }
+
   return {
-    status: "idle",
-    detail: "正在等待下一个有效的策略意图",
+    status: isRunning ? "idle" : "neutral",
+    detail: isRunning ? "正在等待下一个有效的策略意图" : "会话已停止",
   };
 }
 

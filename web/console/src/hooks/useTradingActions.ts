@@ -52,6 +52,9 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   const setLiveAccountForm = useUIStore(s => s.setLiveAccountForm);
   const setLiveBindingForm = useUIStore(s => s.setLiveBindingForm);
   const setLiveSessionForm = useUIStore(s => s.setLiveSessionForm);
+  const setLaunchingTemplate = useUIStore(s => s.setLaunchingTemplate);
+  const setNotification = useUIStore(s => s.setNotification);
+  const launchingTemplate = useUIStore(s => s.launchingTemplate);
   
   const loginForm = useUIStore(s => s.loginForm);
   const strategyCreateForm = useUIStore(s => s.strategyCreateForm);
@@ -230,6 +233,23 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     } catch (err) {
       setLiveBindingNotice(null);
       setLiveBindingError(err instanceof Error ? err.message : "Failed to bind live account");
+    } finally {
+      setLiveBindAction(false);
+    }
+  }
+
+  async function unbindLiveAccount(accountId: string) {
+    if (!window.confirm("确定要解除该账户的交易所适配器绑定吗？(将清除 API 凭证引用)")) return;
+    setLiveBindAction(true);
+    try {
+      await fetchJSON(`/api/v1/live/accounts/${accountId}/binding`, { method: "DELETE" });
+      await loadDashboard();
+      setNotification({ type: 'success', message: "已成功解除账户适配器绑定" });
+      setError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "解绑失败";
+      setError(message);
+      setNotification({ type: 'error', message: `解绑失败: ${message}` });
     } finally {
       setLiveBindAction(false);
     }
@@ -525,11 +545,17 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     try {
       setLiveSessionAction(`${sessionId}:${action}`);
       setError(null);
+      setLiveSessionError(null);
       await fetchJSON(`/api/v1/live/sessions/${sessionId}/${action}`, { method: "POST" });
       await loadDashboard();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to execute live session action";
       setError(message);
+      setLiveSessionError(message);
+      
+      // Use the new standard Notification Toast instead of native alert
+      setNotification({ type: 'error', message: `实盘操作失败: ${message}` });
+
       if (action === "start" && message.includes("is not configured")) {
         const session = liveSessions.find((item) => item.id === sessionId);
         if (session?.accountId) {
@@ -547,10 +573,14 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     try {
       setLiveSessionAction(`${sessionId}:dispatch`);
       setError(null);
+      setLiveSessionError(null);
       await fetchJSON(`/api/v1/live/sessions/${sessionId}/dispatch`, { method: "POST" });
       await loadDashboard();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to dispatch live session intent");
+      const message = err instanceof Error ? err.message : "Failed to dispatch live session intent";
+      setError(message);
+      setLiveSessionError(message);
+      setNotification({ type: 'error', message: `分发意图失败: ${message}` });
     } finally {
       setLiveSessionAction(null);
     }
@@ -566,6 +596,79 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
       setError(err instanceof Error ? err.message : "Failed to sync live session");
     } finally {
       setLiveSessionAction(null);
+    }
+  }
+
+  async function executeLaunchTemplate(template: any, accountId: string) {
+    if (!accountId) {
+      setError("请先选择或创建一个实盘账户");
+      return;
+    }
+
+    // 基础防御：校验模板结构
+    if (!template || !Array.isArray(template.steps)) {
+      setNotification({ type: 'error', message: "应用失败：模板结构非法或缺少执行步骤" });
+      return;
+    }
+
+    setLaunchingTemplate(template.key);
+    setError(null);
+    
+    let completedSteps = 0;
+    const totalSteps = template.steps.length;
+
+    try {
+      for (const step of template.steps) {
+        // 步骤属性防御
+        if (!step.pathTemplate || !step.payloadRef || !step.method) {
+          throw new Error(`第 ${completedSteps + 1} 步配置不完整 (path/payload/method 缺失)`);
+        }
+
+        // 分步进度反馈
+        setNotification({ 
+          type: 'info', 
+          message: `正在执行 (${completedSteps + 1}/${totalSteps}): ${step.label || '正在处理...'}` 
+        });
+
+        const path = step.pathTemplate
+          .replace(":accountId", encodeURIComponent(accountId))
+          .replace(":strategyId", encodeURIComponent(template.strategyId));
+        
+        const payloadRef = step.payloadRef;
+        if (payloadRef.endsWith("[]")) {
+          const key = payloadRef.replace("[]", "");
+          const items = template[key] || [];
+          for (const item of items) {
+            await fetchJSON(path, {
+              method: step.method,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(item),
+            });
+          }
+        } else {
+          const payload = template[payloadRef] || {};
+          await fetchJSON(path, {
+            method: step.method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+        }
+        completedSteps++;
+      }
+
+      await loadDashboard();
+      setNotification({ type: 'success', message: "一键配置应用成功，环境已就绪" });
+      window.location.hash = "monitor";
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "模板执行失败";
+      setError(message);
+      // 错误闭环反馈
+      setNotification({ 
+        type: 'error', 
+        message: `配置中断 (第 ${completedSteps + 1}/${totalSteps} 步失败): ${message}${completedSteps > 0 ? ` (前 ${completedSteps} 步操作已生效)` : ''}` 
+      });
+    } finally {
+      setLaunchingTemplate(null);
     }
   }
 
@@ -946,6 +1049,8 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     bindStrategySignalSource, createSignalRuntimeSession,
     updateRuntimePolicy, runSignalRuntimeAction, acknowledgeNotification,
     sendNotificationToTelegram, saveTelegramConfig, sendTelegramTest, createBacktestRun,
+    executeLaunchTemplate,
+    unbindLiveAccount,
     selectQuickLiveAccount,
     login, logout,
     openLiveAccountModal, openLiveBindingModal, openLiveSessionModal,

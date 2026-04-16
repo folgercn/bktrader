@@ -45,6 +45,8 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorHealth = useTradingStore(s => s.monitorHealth);
   const accounts = useTradingStore(s => s.accounts);
   const strategySignalBindingMap = useTradingStore(s => s.strategySignalBindingMap);
+  const monitorResolution = useUIStore(s => s.monitorResolution);
+  const setMonitorResolution = useUIStore(s => s.setMonitorResolution);
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
 
   // Re-calculating derived state locally to keep App clean
@@ -117,7 +119,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     monitorIntent
   );
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
-  const [expandedLiveSection, setExpandedLiveSection] = useState<string>("执行与分发");
+  const [expandedLiveSections, setExpandedLiveSections] = useState<Record<string, boolean>>({});
   const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
 
   const monitorSummaryItems = monitorSession ? [
@@ -180,10 +182,36 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
             <h3>运行中会话的大周期 K 线与执行状态</h3>
           </div>
           <div className="range-box">
+            <div className="flex items-center gap-1.5 mr-2 pr-2 border-r border-white/10">
+              {[
+                { label: 'Auto', value: null },
+                { label: '5m', value: '5' },
+                { label: '15m', value: '15' },
+                { label: '1h', value: '60' },
+                { label: '4h', value: '240' },
+                { label: '1d', value: '1D' },
+              ].map((tf) => (
+                <button
+                  key={tf.label}
+                  onClick={() => setMonitorResolution(tf.value)}
+                  className={`px-2 py-0.5 rounded-md text-[10px] uppercase font-medium transition-all ${
+                    monitorResolution === tf.value
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
             <span>{monitorMode}</span>
             <span>{monitorBars.length} 根 K 线</span>
             <span>{monitorMarkers.length} 个标记</span>
-            <span>{String(monitorSignalState.timeframe ?? "--")}</span>
+            <span className={monitorResolution ? "text-emerald-400 font-bold" : ""}>
+              {monitorResolution ? 
+                [ {l:'5m',v:'5'},{l:'15m',v:'15'},{l:'1h',v:'60'},{l:'4h',v:'240'},{l:'1d',v:'1D'} ].find(x=>x.v===monitorResolution)?.l 
+                : String(monitorSignalState.timeframe ?? "--")}
+            </span>
           </div>
         </div>
         <div className="chart-shell chart-shell-market h-[320px] min-h-[260px]">
@@ -193,7 +221,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
             <div className="empty-state">当前运行会话还没有交易所大周期 K 线缓存</div>
           )}
         </div>
-        <div className="detail-grid detail-grid-compact">
+        <div className="grid grid-cols-8 gap-2 mt-4">
           <div className="detail-item">
             <span>会话模式</span>
             <strong>{monitorMode}</strong>
@@ -307,15 +335,15 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                       <button
                         type="button"
                         className="live-section-toggle"
-                        onClick={() => setExpandedLiveSection((current) => current === section.title ? "" : section.title)}
+                        onClick={() => setExpandedLiveSections(prev => ({ ...prev, [section.title]: !prev[section.title] }))}
                       >
                         <div>
                           <h5>{section.title}</h5>
-                          <span>{expandedLiveSection === section.title ? "收起详情" : "点击查看详情"}</span>
+                          <span>{expandedLiveSections[section.title] ? "收起详情" : "点击查看详情"}</span>
                         </div>
-                        <strong>{expandedLiveSection === section.title ? "−" : "+"}</strong>
+                        <strong>{expandedLiveSections[section.title] ? "−" : "+"}</strong>
                       </button>
-                      {expandedLiveSection === section.title ? (
+                      {expandedLiveSections[section.title] ? (
                         <div className="live-section-items">
                           {section.items.map((item) => (
                             <div key={`${section.title}-${item.label}`} className="detail-item detail-item-compact">

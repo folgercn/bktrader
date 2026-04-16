@@ -26,6 +26,7 @@ export function useDashboard() {
   const authSession = useUIStore(s => s.authSession);
   const timeWindow = useUIStore(s => s.timeWindow);
   const chartOverrideRange = useUIStore(s => s.chartOverrideRange);
+  const monitorResolution = useUIStore(s => s.monitorResolution);
   const liveOrderForm = useUIStore(s => s.liveOrderForm);
   const setSelectedBacktestId = useUIStore(s => s.setSelectedBacktestId);
   const setBacktestForm = useUIStore(s => s.setBacktestForm);
@@ -60,6 +61,7 @@ export function useDashboard() {
   const setSelectedSignalRuntimeId = useTradingStore(s => s.setSelectedSignalRuntimeId);
   const setCandles = useTradingStore(s => s.setCandles);
   const setAnnotations = useTradingStore(s => s.setAnnotations);
+  const setLaunchTemplates = useTradingStore(s => s.setLaunchTemplates);
 
   async function loadDashboard() {
     const [
@@ -83,6 +85,7 @@ export function useDashboard() {
       alertData,
       notificationData,
       telegramConfigData,
+      launchTemplateData,
     ] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<AccountRecord[]>("/api/v1/accounts"),
@@ -104,6 +107,7 @@ export function useDashboard() {
       fetchJSON<PlatformAlert[]>("/api/v1/alerts"),
       fetchJSON<PlatformNotification[]>("/api/v1/notifications?includeAcked=true"),
       fetchJSON<TelegramConfig>("/api/v1/telegram/config"),
+      fetchJSON<any[]>("/api/v1/live/launch-templates").catch(() => []),
     ]);
 
     const strategyBindingEntries = await Promise.all(
@@ -148,8 +152,13 @@ export function useDashboard() {
     const { from, to } = range;
 
     const monitorSessionForChart = liveSessionData[0] ?? null;
-    const monitorSignalTimeframe = String(monitorSessionForChart?.state?.signalTimeframe ?? "1d");
-    const monitorResolution = monitorSignalTimeframe.toLowerCase() === "4h" ? "240" : "1D";
+    let selectedResolution = monitorResolution;
+    if (!selectedResolution) {
+      const monitorSignalTimeframe = String(monitorSessionForChart?.state?.signalTimeframe ?? "1d");
+      selectedResolution = monitorSignalTimeframe.toLowerCase() === "4h" ? "240" : "1D";
+    }
+    
+    const monitorResolutionParam = selectedResolution;
 
     const [snapshotData, candleData, monitorCandleData, annotationData] = await Promise.all([
       summaryData[0]?.accountId
@@ -161,7 +170,7 @@ export function useDashboard() {
         `/api/v1/chart/candles?symbol=BTCUSDT&resolution=1&from=${from}&to=${to}&limit=840`
       ),
       fetchJSON<{ candles: ChartCandle[] }>(
-        `/api/v1/chart/candles?symbol=BTCUSDT&resolution=${encodeURIComponent(monitorResolution)}&limit=400`
+        `/api/v1/chart/candles?symbol=BTCUSDT&resolution=${encodeURIComponent(monitorResolutionParam)}&limit=400`
       ),
       fetchJSON<ChartAnnotation[]>(
         `/api/v1/chart/annotations?symbol=BTCUSDT&from=${from}&to=${to}&limit=300`
@@ -190,6 +199,7 @@ export function useDashboard() {
     const normalizedSignalCatalog = signalCatalogData && typeof signalCatalogData === "object" ? signalCatalogData : { sources: [], notes: [] };
     const normalizedBacktestOptions =
       backtestOptionsData && typeof backtestOptionsData === "object" ? backtestOptionsData : ({} as BacktestOptions);
+    const normalizedLaunchTemplates = Array.isArray(launchTemplateData) ? launchTemplateData : [];
 
     setSummaries(normalizedSummaries);
     setAccounts(normalizedAccounts);
@@ -225,6 +235,7 @@ export function useDashboard() {
     setAlerts(normalizedAlerts);
     setNotifications(normalizedNotifications);
     setTelegramConfig(telegramConfigData);
+    setLaunchTemplates(normalizedLaunchTemplates);
     
     if (activeSettingsModal !== "telegram") {
       setTelegramForm({
@@ -302,7 +313,7 @@ export function useDashboard() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [authSession?.token, timeWindow, chartOverrideRange]);
+  }, [authSession?.token, timeWindow, chartOverrideRange, monitorResolution]);
 
   return { loadDashboard };
 }

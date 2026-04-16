@@ -7,6 +7,7 @@
 
 - **Node.js**: `/Users/fujun/.nvm/versions/node/v22.18.0/bin/node`
 - **NPM**: `/Users/fujun/.nvm/versions/node/v22.18.0/bin/npm`
+- **NPX**: `/Users/fujun/.nvm/versions/node/v22.18.0/bin/npx`
 - **Go**: `/opt/homebrew/bin/go`
 - **Python 3**: `/usr/bin/python3`
 

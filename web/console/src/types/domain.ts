@@ -453,7 +453,7 @@ export type LiveSessionExecutionSummary = {
 };
 
 export type LiveSessionHealth = {
-  status: "ready" | "active" | "waiting-sync" | "error" | "idle";
+  status: "ready" | "active" | "waiting-sync" | "error" | "idle" | "neutral";
   detail: string;
 };
 

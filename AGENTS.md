@@ -19,7 +19,7 @@ This project has a graphify knowledge graph at `graphify-out/`.
 - Before answering architecture or codebase questions, read `graphify-out/GRAPH_REPORT.md` for god nodes and community structure.
 - If `graphify-out/wiki/index.md` exists, navigate it instead of reading raw files.
 - Do not rebuild graphify after every code change in a session.
-- Rebuild graphify immediately before `git push` by running `/usr/local/opt/python@3.12/bin/python3.12 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` if needed.
+- Rebuild graphify immediately before `git push` by running `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` if needed.
 - **Automated Workflow**: A `pre-push` git hook is installed and should be the default path for rebuilding the graph before every `git push`.
 
 ### 面向 Gemini 的技能组 (Skills)
@@ -60,8 +60,14 @@ go build ./cmd/db-migrate
 ```
 
 **前端**：
+在结束任何前端代码编辑前，**必须**运行以下指令进行静态类型校验（路径见 `docs/AGENT_PATHS.md`）：
 ```bash
-cd web/console && npm ci && npm run build
+# 示例：使用本地 tsc 执行校验
+cd web/console
+./node_modules/.bin/tsc --noEmit src/pages/AccountStage.tsx --jsx react-jsx --esModuleInterop --skipLibCheck --target esnext --moduleResolution node --allowSyntheticDefaultImports
+
+# 全量构建验证 (如必要)
+npm run build
 ```
 
 **Smoke Test (实盘会话可用性回归测试)**：
