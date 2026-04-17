@@ -15,8 +15,9 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 127
 fi
 
-mkdir -p "$DEPLOY_PATH/deployments" "$DEPLOY_PATH/scripts"
+mkdir -p "$DEPLOY_PATH/deployments" "$DEPLOY_PATH/scripts" "$DEPLOY_PATH/logs"
 mkdir -p "$DOCKER_CONFIG_DIR"
+chmod 755 "$DEPLOY_PATH/logs"
 chmod 700 "$DOCKER_CONFIG_DIR"
 
 if [[ -n "${APP_ENV_FILE_CONTENT:-}" ]]; then

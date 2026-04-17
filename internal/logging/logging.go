@@ -13,6 +13,10 @@ import (
 
 // Configure 初始化全局默认日志器，统一接管结构化日志输出。
 func Configure(cfg config.Config) error {
+	if err := configureDiskMirror(cfg); err != nil {
+		return err
+	}
+
 	level, err := parseLevel(cfg.LogLevel)
 	if err != nil {
 		return err

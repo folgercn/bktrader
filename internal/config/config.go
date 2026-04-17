@@ -14,6 +14,9 @@ type Config struct {
 	LogLevel                       string // 日志级别（debug / info / warn / error）
 	LogFormat                      string // 日志格式（text / json）
 	LogAddSource                   bool   // 是否在日志中附带源码位置信息
+	LogDir                         string // 日志镜像落盘目录；为空时禁用日志持久化
+	LogRetentionDays               int    // 日志保留天数
+	LogMaxSizeMB                   int    // 单个日志文件滚动前的最大体积（MB）
 	HTTPAddr                       string // HTTP 监听地址
 	StoreBackend                   string // 存储后端类型（memory / postgres）
 	AutoMigrate                    bool   // 是否在启动时自动执行数据库迁移
@@ -70,6 +73,9 @@ func Load() Config {
 		LogLevel:                       getenv("LOG_LEVEL", "info"),
 		LogFormat:                      getenv("LOG_FORMAT", "text"),
 		LogAddSource:                   boolFromEnv("LOG_ADD_SOURCE", false),
+		LogDir:                         strings.TrimSpace(os.Getenv("LOG_DIR")),
+		LogRetentionDays:               intFromEnv("LOG_RETENTION_DAYS", 7),
+		LogMaxSizeMB:                   intFromEnv("LOG_MAX_SIZE_MB", 100),
 		HTTPAddr:                       getenv("HTTP_ADDR", ":8080"),
 		StoreBackend:                   getenv("STORE_BACKEND", "memory"),
 		AutoMigrate:                    boolFromEnv("AUTO_MIGRATE", false),
@@ -109,6 +115,12 @@ func (c Config) Validate() error {
 	case "", "text", "json":
 	default:
 		return fmt.Errorf("不支持的 LOG_FORMAT: %s（可选: text, json）", c.LogFormat)
+	}
+	if c.LogRetentionDays <= 0 {
+		return fmt.Errorf("LOG_RETENTION_DAYS 必须大于 0")
+	}
+	if c.LogMaxSizeMB <= 0 {
+		return fmt.Errorf("LOG_MAX_SIZE_MB 必须大于 0")
 	}
 	if c.HTTPAddr == "" {
 		return fmt.Errorf("HTTP_ADDR 不能为空")

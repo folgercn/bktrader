@@ -27,6 +27,17 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "日志配置失败: %v\n", err)
 		os.Exit(1)
 	}
+	bootstrapResult, err := logging.BootstrapFromDisk(cfg.LogDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "日志预热失败: %v\n", err)
+	} else if bootstrapResult.SystemRecovered > 0 || bootstrapResult.HTTPRecovered > 0 || bootstrapResult.SkippedLines > 0 {
+		slog.Info("log buffers preloaded from disk",
+			"log_dir", cfg.LogDir,
+			"system_logs", bootstrapResult.SystemRecovered,
+			"http_logs", bootstrapResult.HTTPRecovered,
+			"skipped_lines", bootstrapResult.SkippedLines,
+		)
+	}
 
 	slog.Info("platform-api starting",
 		"http_addr", cfg.HTTPAddr,

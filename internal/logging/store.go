@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -239,6 +240,7 @@ func HTTPBroker() *Broker {
 
 func RecordSystemLog(entry SystemLogEntry) SystemLogEntry {
 	recorded := defaultSystemLogStore.add(entry)
+	_ = defaultDiskMirror.writeSystem(recorded)
 	defaultSystemBroker.Publish(StreamMessage{
 		ID:         recorded.ID,
 		Source:     "system",
@@ -253,6 +255,7 @@ func RecordSystemLog(entry SystemLogEntry) SystemLogEntry {
 
 func RecordHTTPRequest(entry HTTPRequestLogEntry) HTTPRequestLogEntry {
 	recorded := defaultHTTPRequestStore.add(entry)
+	_ = defaultDiskMirror.writeHTTPRequest(recorded)
 	defaultHTTPBroker.Publish(StreamMessage{
 		ID:         recorded.ID,
 		Source:     "http",
@@ -291,6 +294,7 @@ func ResetForTests() {
 	defaultHTTPRequestStore.reset()
 	defaultSystemBroker.reset()
 	defaultHTTPBroker.reset()
+	defaultDiskMirror.reset()
 }
 
 func newSystemCaptureHandler() slog.Handler {
@@ -349,6 +353,8 @@ func (s *systemLogStore) add(entry SystemLogEntry) SystemLogEntry {
 	entry.CreatedAt = normalizeTime(entry.CreatedAt)
 	if entry.ID == "" {
 		entry.ID = fmt.Sprintf("system-log-%d", s.sequence.Add(1))
+	} else {
+		bumpAtomicSequence(&s.sequence, entry.ID, "system-log-")
 	}
 	if len(entry.Attributes) == 0 {
 		entry.Attributes = nil
@@ -409,6 +415,8 @@ func (s *httpRequestLogStore) add(entry HTTPRequestLogEntry) HTTPRequestLogEntry
 	entry.Message = strings.TrimSpace(entry.Message)
 	if entry.ID == "" {
 		entry.ID = fmt.Sprintf("http-log-%d", s.sequence.Add(1))
+	} else {
+		bumpAtomicSequence(&s.sequence, entry.ID, "http-log-")
 	}
 	if len(entry.Attributes) == 0 {
 		entry.Attributes = nil
@@ -709,4 +717,24 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func bumpAtomicSequence(sequence *atomic.Int64, id, prefix string) {
+	raw := strings.TrimSpace(strings.TrimPrefix(id, prefix))
+	if raw == "" {
+		return
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return
+	}
+	for {
+		current := sequence.Load()
+		if current >= value {
+			return
+		}
+		if sequence.CompareAndSwap(current, value) {
+			return
+		}
+	}
 }

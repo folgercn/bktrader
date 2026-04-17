@@ -5,8 +5,14 @@ services:
     restart: unless-stopped
     env_file:
       - ${APP_ENV_FILE:-/opt/bktrader/.env}
+    environment:
+      LOG_DIR: ${LOG_DIR:-/app/logs}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
+      LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-100}
     ports:
       - "8080:8080"
+    volumes:
+      - ../logs:/app/logs
     depends_on:
       - postgres
       - redis
