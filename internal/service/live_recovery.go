@@ -207,13 +207,11 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 				existingProposal := mapValue(state["lastExecutionProposal"])
 				existingReason := stringValue(existingProposal["reason"])
 
-				if existingReason != "sl-breached-fallback" && existingReason != "pt-breached-fallback" {
-					reason := "sl-breached-fallback"
-
+				if existingReason != "sl-breached-fallback" {
 					proposal := ExecutionProposal{
 						Action:            "risk-exit-fallback",
 						Role:              "exit",
-						Reason:            reason,
+						Reason:            "sl-breached-fallback",
 						Side:              exitSide,
 						Symbol:            stringValue(livePositionState["symbol"]),
 						Type:              "MARKET",
@@ -240,7 +238,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 					state["lastExecutionProposal"] = executionProposalMap
 					state["lastStrategyIntent"] = executionProposalMap
 					state["lastStrategyEvaluationStatus"] = "intent-ready"
-					markLiveWatchdogExitState(state, eventTime.UTC().Format(time.RFC3339), reason, "", "", "intent-ready")
+					markLiveWatchdogExitState(state, eventTime.UTC().Format(time.RFC3339), "sl-breached-fallback", "", "", "intent-ready")
 					state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
 				}
 			}
@@ -384,7 +382,7 @@ func isLiveWatchdogFallbackProposal(proposal map[string]any) bool {
 		return false
 	}
 	reason := strings.ToLower(strings.TrimSpace(stringValue(proposal["reason"])))
-	if reason != "sl-breached-fallback" && reason != "pt-breached-fallback" {
+	if reason != "sl-breached-fallback" {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(stringValue(proposal["signalKind"])), "recovery-watchdog")
