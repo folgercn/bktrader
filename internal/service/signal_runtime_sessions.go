@@ -163,7 +163,7 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 	session.UpdatedAt = now
 	p.signalSessions[session.ID] = session
 	p.mu.Unlock()
-	go p.runSignalRuntimeLoop(ctx, sessionID)
+	go p.runSignalRuntimeWithRecovery(ctx, sessionID)
 	p.logger("service.signal_runtime",
 		"session_id", session.ID,
 		"account_id", session.AccountID,

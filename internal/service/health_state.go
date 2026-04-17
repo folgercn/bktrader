@@ -366,3 +366,19 @@ func updateAccountSyncFailureHealth(account *domain.Account, attemptedAt time.Ti
 	section["lastError"] = err.Error()
 	section["consecutiveErrorCount"] = maxIntValue(section["consecutiveErrorCount"], 0) + 1
 }
+
+// recordSignalSymbolMismatch records a cross-symbol contamination detection event.
+// This is called when a signal's symbol doesn't match the live session's expected symbol.
+func recordSignalSymbolMismatch(state map[string]any, triggerSymbol, sessionSymbol string, eventTime time.Time) {
+	if state == nil {
+		return
+	}
+	health := cloneMetadata(mapValue(state["healthSummary"]))
+	section := cloneMetadata(mapValue(health["signalIsolation"]))
+	section["lastMismatchAt"] = eventTime.UTC().Format(time.RFC3339)
+	section["lastTriggerSymbol"] = triggerSymbol
+	section["lastSessionSymbol"] = sessionSymbol
+	section["mismatchCount"] = maxIntValue(section["mismatchCount"], 0) + 1
+	health["signalIsolation"] = section
+	state["healthSummary"] = health
+}
