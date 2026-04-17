@@ -585,7 +585,6 @@ func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]do
 	fills := make([]domain.Fill, 0, len(syncResult.Fills))
 	lastFundingPnL := 0.0
 	lastPrice := order.Price
-	singleFillReport := len(syncResult.Fills) == 1
 	for _, report := range syncResult.Fills {
 		price := report.Price
 		if price <= 0 {
@@ -594,11 +593,12 @@ func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]do
 		lastPrice = price
 		lastFundingPnL = report.FundingPnL
 		fills = append(fills, domain.Fill{
-			OrderID:         order.ID,
-			ExchangeTradeID: resolveLiveFillTradeID(order, report, singleFillReport),
-			Price:           price,
-			Quantity:        report.Quantity,
-			Fee:             report.Fee - report.FundingPnL,
+			OrderID:           order.ID,
+			ExchangeTradeID:   resolveLiveFillTradeID(report),
+			ExchangeTradeTime: resolveLiveFillTradeTime(report),
+			Price:             price,
+			Quantity:          report.Quantity,
+			Fee:               report.Fee - report.FundingPnL,
 		})
 	}
 	return fills, lastFundingPnL, lastPrice
@@ -636,7 +636,11 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		order.Metadata["acceptedAt"] = time.Now().UTC().Format(time.RFC3339)
 	}
 	if len(newFills) > 0 || strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "" {
-		order.Metadata["lastFilledAt"] = time.Now().UTC().Format(time.RFC3339)
+		filledAt := time.Now().UTC()
+		if latestTradeTime := latestFillExchangeTradeTime(newFills); !latestTradeTime.IsZero() {
+			filledAt = latestTradeTime
+		}
+		order.Metadata["lastFilledAt"] = filledAt.Format(time.RFC3339)
 	}
 	updatedOrder, err := p.store.UpdateOrder(order)
 	if err != nil {
@@ -673,18 +677,26 @@ func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.F
 	}
 	seen := make(map[string]struct{}, len(existing)+len(fills))
 	for _, item := range existing {
-		if item.OrderID != orderID || strings.TrimSpace(item.ExchangeTradeID) == "" {
+		if item.OrderID != orderID {
 			continue
 		}
-		seen[buildFillDedupKey(item.OrderID, item.ExchangeTradeID)] = struct{}{}
+		key := buildFillDedupKey(item)
+		if key == "" {
+			continue
+		}
+		seen[key] = struct{}{}
 	}
 	filtered := make([]domain.Fill, 0, len(fills))
 	for _, fill := range fills {
-		if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+		fill.OrderID = orderID
+		if strings.TrimSpace(fill.ExchangeTradeID) == "" && strings.TrimSpace(fill.DedupFingerprint) == "" {
+			fill.DedupFingerprint = fill.FallbackFingerprint()
+		}
+		key := buildFillDedupKey(fill)
+		if key == "" {
 			filtered = append(filtered, fill)
 			continue
 		}
-		key := buildFillDedupKey(orderID, fill.ExchangeTradeID)
 		if _, exists := seen[key]; exists {
 			continue
 		}
@@ -694,26 +706,50 @@ func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.F
 	return filtered, nil
 }
 
-func buildFillDedupKey(orderID, exchangeTradeID string) string {
-	return strings.TrimSpace(orderID) + "|" + strings.TrimSpace(exchangeTradeID)
+func buildFillDedupKey(fill domain.Fill) string {
+	orderID := strings.TrimSpace(fill.OrderID)
+	if orderID == "" {
+		return ""
+	}
+	if exchangeTradeID := strings.TrimSpace(fill.ExchangeTradeID); exchangeTradeID != "" {
+		return orderID + "|trade|" + exchangeTradeID
+	}
+	fingerprint := strings.TrimSpace(fill.DedupFingerprint)
+	if fingerprint == "" {
+		fingerprint = fill.FallbackFingerprint()
+	}
+	return orderID + "|fallback|" + fingerprint
 }
 
-func resolveLiveFillTradeID(order domain.Order, report LiveFillReport, singleFillReport bool) string {
+func resolveLiveFillTradeID(report LiveFillReport) string {
 	metadata := mapValue(report.Metadata)
-	tradeID := strings.TrimSpace(firstNonEmpty(
-		stringValue(metadata["tradeId"]),
-		stringValue(metadata["exchangeTradeId"]),
+	return strings.TrimSpace(firstNonEmpty(
+		stringifyBinanceID(metadata["tradeId"]),
+		stringifyBinanceID(metadata["exchangeTradeId"]),
 	))
-	if tradeID != "" {
-		return tradeID
+}
+
+func resolveLiveFillTradeTime(report LiveFillReport) *time.Time {
+	metadata := mapValue(report.Metadata)
+	tradeTime := parseOptionalRFC3339(stringValue(metadata["tradeTime"]))
+	if tradeTime.IsZero() {
+		return nil
 	}
-	if singleFillReport {
-		return strings.TrimSpace(firstNonEmpty(
-			stringValue(metadata["exchangeOrderId"]),
-			stringValue(order.Metadata["exchangeOrderId"]),
-		))
+	resolved := tradeTime.UTC()
+	return &resolved
+}
+
+func latestFillExchangeTradeTime(fills []domain.Fill) time.Time {
+	var latest time.Time
+	for _, fill := range fills {
+		if fill.ExchangeTradeTime == nil || fill.ExchangeTradeTime.IsZero() {
+			continue
+		}
+		if fill.ExchangeTradeTime.After(latest) {
+			latest = fill.ExchangeTradeTime.UTC()
+		}
 	}
-	return ""
+	return latest
 }
 
 func (p *Platform) resolveLiveAdapterForAccount(account domain.Account) (LiveExecutionAdapter, map[string]any, error) {

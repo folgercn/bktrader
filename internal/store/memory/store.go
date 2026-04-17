@@ -491,9 +491,23 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 				return item, nil
 			}
 		}
+	} else {
+		fill.DedupFingerprint = strings.TrimSpace(fill.DedupFingerprint)
+		if fill.DedupFingerprint == "" {
+			fill.DedupFingerprint = fill.FallbackFingerprint()
+		}
+		for _, item := range s.fills {
+			if item.OrderID == fill.OrderID && item.DedupFingerprint != "" && item.DedupFingerprint == fill.DedupFingerprint {
+				return item, nil
+			}
+		}
 	}
 	fill.ID = s.nextID("fill")
 	fill.CreatedAt = time.Now().UTC()
+	if fill.ExchangeTradeTime != nil {
+		resolved := fill.ExchangeTradeTime.UTC()
+		fill.ExchangeTradeTime = &resolved
+	}
 	s.fills[fill.ID] = fill
 	return fill, nil
 }

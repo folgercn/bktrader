@@ -2,7 +2,11 @@
 // 所有数据结构与具体存储层无关，可在内存和数据库间通用。
 package domain
 
-import "time"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 // Strategy 策略定义，包含名称、状态和描述信息。
 type Strategy struct {
@@ -185,13 +189,28 @@ type Order struct {
 
 // Fill 成交记录，每笔成交关联一个订单。
 type Fill struct {
-	ID              string    `json:"id"`
-	OrderID         string    `json:"orderId"`
-	ExchangeTradeID string    `json:"exchangeTradeId,omitempty"`
-	Price           float64   `json:"price"`
-	Quantity        float64   `json:"quantity"`
-	Fee             float64   `json:"fee"` // 手续费
-	CreatedAt       time.Time `json:"createdAt"`
+	ID                string     `json:"id"`
+	OrderID           string     `json:"orderId"`
+	ExchangeTradeID   string     `json:"exchangeTradeId,omitempty"`
+	ExchangeTradeTime *time.Time `json:"exchangeTradeTime,omitempty"`
+	DedupFingerprint  string     `json:"-"`
+	Price             float64    `json:"price"`
+	Quantity          float64    `json:"quantity"`
+	Fee               float64    `json:"fee"` // 手续费
+	CreatedAt         time.Time  `json:"createdAt"`
+}
+
+func (f Fill) FallbackFingerprint() string {
+	tradeTime := ""
+	if f.ExchangeTradeTime != nil && !f.ExchangeTradeTime.IsZero() {
+		tradeTime = f.ExchangeTradeTime.UTC().Format(time.RFC3339Nano)
+	}
+	return strings.Join([]string{
+		strconv.FormatFloat(f.Price, 'f', -1, 64),
+		strconv.FormatFloat(f.Quantity, 'f', -1, 64),
+		strconv.FormatFloat(f.Fee, 'f', -1, 64),
+		tradeTime,
+	}, "|")
 }
 
 // Position 当前持仓，由成交记录聚合得出。
