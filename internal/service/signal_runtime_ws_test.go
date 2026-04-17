@@ -1,12 +1,125 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
+
+func TestClassifyDisconnectSeverityTreatsContextErrorsAsTransient(t *testing.T) {
+	for _, err := range []error{
+		context.Canceled,
+		context.DeadlineExceeded,
+		errors.New("read failed: context canceled"),
+		errors.New("dial failed: context deadline exceeded"),
+	} {
+		if got := classifyDisconnectSeverity(err); got != disconnectTransient {
+			t.Fatalf("expected %q to be transient, got %s", err, got.String())
+		}
+	}
+}
+
+func TestRunSignalRuntimeWithRecoveryResetsAttemptsAfterRecoveredRun(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "runtime-recovery"
+	now := time.Now().UTC()
+	platform.signalSessions[sessionID] = domain.SignalRuntimeSession{
+		ID:        sessionID,
+		Status:    "RUNNING",
+		State:     map[string]any{},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	outcomes := []struct {
+		connected bool
+		err       error
+	}{
+		{connected: true, err: errors.New("read tcp: EOF")},
+		{connected: true, err: errors.New("read tcp: EOF")},
+		{connected: false, err: errors.New("dial failed: 403 forbidden")},
+	}
+	callCount := 0
+	waits := make([]time.Duration, 0, 2)
+
+	platform.runSignalRuntimeWithRecoveryUsing(
+		context.Background(),
+		sessionID,
+		func(context.Context, string) (bool, error) {
+			if callCount >= len(outcomes) {
+				t.Fatalf("unexpected extra recovery loop call: %d", callCount)
+			}
+			outcome := outcomes[callCount]
+			callCount++
+			return outcome.connected, outcome.err
+		},
+		func(_ context.Context, backoff time.Duration) bool {
+			waits = append(waits, backoff)
+			return true
+		},
+	)
+
+	session, err := platform.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		t.Fatalf("get runtime session failed: %v", err)
+	}
+	if session.Status != "ERROR" {
+		t.Fatalf("expected terminal ERROR after fatal retry, got %s", session.Status)
+	}
+	if callCount != len(outcomes) {
+		t.Fatalf("expected %d recovery loop calls, got %d", len(outcomes), callCount)
+	}
+	if len(waits) != 2 {
+		t.Fatalf("expected two recovery waits across two disconnect cycles, got %#v", waits)
+	}
+	if waits[0] != 10*time.Second || waits[1] != 10*time.Second {
+		t.Fatalf("expected retry budget to reset after recovered run, got wait sequence %#v", waits)
+	}
+}
+
+func TestFilterStatesBySymbolKeepsBlankEntriesForBackwardCompatibility(t *testing.T) {
+	sourceStates := map[string]any{
+		"btc":    map[string]any{"symbol": "BTCUSDT"},
+		"legacy": map[string]any{"lastPrice": 68000.0},
+		"eth":    map[string]any{"symbol": "ETHUSDT"},
+	}
+	filteredSourceStates := filterSourceStatesBySymbol(sourceStates, "BTCUSDT")
+	if len(filteredSourceStates) != 2 {
+		t.Fatalf("expected BTC + legacy source states, got %#v", filteredSourceStates)
+	}
+	if _, ok := filteredSourceStates["btc"]; !ok {
+		t.Fatalf("expected BTC source state to remain, got %#v", filteredSourceStates)
+	}
+	if _, ok := filteredSourceStates["legacy"]; !ok {
+		t.Fatalf("expected blank-symbol source state to remain for compatibility, got %#v", filteredSourceStates)
+	}
+	if _, ok := filteredSourceStates["eth"]; ok {
+		t.Fatalf("expected ETH source state to be filtered out, got %#v", filteredSourceStates)
+	}
+
+	signalBarStates := map[string]any{
+		"btc":    map[string]any{"symbol": "BTCUSDT"},
+		"legacy": map[string]any{"current": map[string]any{"close": 68000.0}},
+		"eth":    map[string]any{"symbol": "ETHUSDT"},
+	}
+	filteredSignalBarStates := filterSignalBarStatesBySymbol(signalBarStates, "BTCUSDT")
+	if len(filteredSignalBarStates) != 2 {
+		t.Fatalf("expected BTC + legacy signal bar states, got %#v", filteredSignalBarStates)
+	}
+	if _, ok := filteredSignalBarStates["btc"]; !ok {
+		t.Fatalf("expected BTC signal bar state to remain, got %#v", filteredSignalBarStates)
+	}
+	if _, ok := filteredSignalBarStates["legacy"]; !ok {
+		t.Fatalf("expected blank-symbol signal bar state to remain for compatibility, got %#v", filteredSignalBarStates)
+	}
+	if _, ok := filteredSignalBarStates["eth"]; ok {
+		t.Fatalf("expected ETH signal bar state to be filtered out, got %#v", filteredSignalBarStates)
+	}
+}
 
 func TestEnrichSignalRuntimeSummaryKeepsKlineEventsScopedByTimeframe(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
