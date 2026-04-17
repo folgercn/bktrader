@@ -1998,10 +1998,35 @@ func (p *Platform) finalizeLiveSessionPlanExhausted(session domain.LiveSession, 
 		}
 		return err
 	}
-	_, err = p.StopLiveSessionWithForce(updatedSession.ID, false)
-	if err != nil && !errors.Is(err, ErrActivePositionsOrOrders) {
+	if err := p.rolloverLiveSessionPlan(updatedSession, eventTime); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (p *Platform) rolloverLiveSessionPlan(session domain.LiveSession, eventTime time.Time) error {
+	state := cloneMetadata(session.State)
+	state["planIndex"] = 0
+	state["planLength"] = 0
+	state["lastPlanRolloverAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastPlanRolloverReason"] = "plan-exhausted"
+	delete(state, "planReadyAt")
+	delete(state, "planIndexRecoveredFromPosition")
+	delete(state, "recoveredPlanIndex")
+	delete(state, "lastStrategyEvaluationNextPlannedEventAt")
+	delete(state, "lastStrategyEvaluationNextPlannedPrice")
+	delete(state, "lastStrategyEvaluationNextPlannedSide")
+	delete(state, "lastStrategyEvaluationNextPlannedRole")
+	delete(state, "lastStrategyEvaluationNextPlannedReason")
+	appendTimelineEvent(state, "strategy", eventTime, "plan-rollover-scheduled", map[string]any{
+		"reason": "plan-exhausted",
+	})
+	if _, err := p.store.UpdateLiveSessionState(session.ID, state); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	delete(p.livePlans, session.ID)
+	p.mu.Unlock()
 	return nil
 }
 

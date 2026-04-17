@@ -55,9 +55,12 @@
 - `positionRecoveryStatus = flat`
 - `hasRecoveredPosition = false`
 - `hasRecoveredVirtualPosition = false`
-- 但 session 仍然是 `RUNNING`
+- session 仍然是 `RUNNING`
 
-则说明这条 session 已经失去继续运行的业务意义，应收口为完成或停止态。
+则需要继续区分两种情况：
+
+- 若同时还持续停留在旧的 `planIndex >= lastStrategyEvaluationPlanLength`，说明 exhausted plan 没有被正确收口或 rollover。
+- 若 `planIndex = 0` 且 `planLength = 0`，说明系统已经把旧 plan 清空，正在等待同一条 `RUNNING` session 进入下一轮 plan 周期。
 
 ## 3. `planLength` 与 `lastStrategyEvaluationPlanLength` 不一致意味着什么
 
@@ -79,17 +82,34 @@
 
 针对 `flat + no virtual position + no active orders + plan-exhausted`，系统现在会：
 
-1. 把 `planIndex` 收敛到当前 `len(plan)`
-2. 刷新 `planLength`
-3. 记录 `completedAt`
-4. 自动把 `live session` 收口为 `STOPPED`
-5. 清掉进程内的 live plan 缓存
+1. 把 `planIndex` 先收敛到当前 `len(plan)`
+2. 记录 `completedAt`
+3. 清掉进程内的 live plan 缓存
+4. 把当前 session 的 plan 状态重置为待下一轮构建
+5. 保持同一条 `live session` 继续 `RUNNING`
 
-因此修复后如果旧 session 已经耗尽，不会再无限期保持 `RUNNING` 并重复打印 exhausted 日志。
+下一次 runtime heartbeat 到来时，系统会基于当前市场重新构建一份新的 live plan，并继续做策略判断。
+
+### 修复后 rollover 前后的典型状态
+
+- 刚命中 exhausted：
+  - `lastStrategyEvaluationStatus = plan-exhausted`
+  - `completedAt` 已写入
+  - `lastPlanRolloverAt` 已写入
+- rollover 已调度、等待下一轮 plan：
+  - `planIndex = 0`
+  - `planLength = 0`
+  - `livePlans` 缓存已清空
+- 下一轮 plan 已生成：
+  - `planLength > 0`
+  - `completedAt` 被清除
+  - session 继续按新 plan 参与判断与开仓
+
+因此修复后如果旧 plan 已经耗尽，不需要人工手动 stop / restart / 新建 session 才能进入下一轮。
 
 ## 5. 仍然不开仓时怎么继续排查
 
-如果 session 已不再 `plan-exhausted`，但仍未开仓，下一步请看：
+如果 session 已不再长期卡在 `plan-exhausted`，但仍未开仓，下一步请看：
 
 - `lastStrategyDecision`
 - `lastExecutionProposal.status`
@@ -112,4 +132,4 @@
 
 适合在群里同步的简版结论：
 
-`这不是单纯“5m 没机会”，而是 live session 的当前 plan 已经耗尽；如果同时已经 flat 且无 virtual position，那它应被视为已完成并收口，而不是继续 RUNNING。`
+`这不是单纯“5m 没机会”，而是 live session 的当前 plan 已经耗尽；如果同时已经 flat 且无 virtual position，系统应自动 rollover 到下一轮 plan，而不是长期卡在同一份 exhausted plan 上。`

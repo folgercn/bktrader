@@ -1706,7 +1706,7 @@ func TestEnsureLiveExecutionPlanReconcilesExhaustedCachedPlanIndexToCompletionWh
 	}
 }
 
-func TestEvaluateLiveSessionOnSignalStopsFlatSessionWhenPlanExhausted(t *testing.T) {
+func TestEvaluateLiveSessionOnSignalRollsOverFlatSessionWhenPlanExhausted(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
@@ -1746,26 +1746,60 @@ func TestEvaluateLiveSessionOnSignalStopsFlatSessionWhenPlanExhausted(t *testing
 	if err != nil {
 		t.Fatalf("reload live session failed: %v", err)
 	}
-	if got := stopped.Status; got != "STOPPED" {
-		t.Fatalf("expected flat exhausted live session to auto-stop, got %s", got)
+	if got := stopped.Status; got != "RUNNING" {
+		t.Fatalf("expected flat exhausted live session to remain running for rollover, got %s", got)
 	}
 	if got := stringValue(stopped.State["lastStrategyEvaluationStatus"]); got != "plan-exhausted" {
 		t.Fatalf("expected lastStrategyEvaluationStatus=plan-exhausted, got %s", got)
 	}
-	if got := maxIntValue(stopped.State["planIndex"], -1); got != 2 {
-		t.Fatalf("expected completed plan index to be recorded before stop, got %d", got)
+	gotIndex, ok := toFloat64(stopped.State["planIndex"])
+	if !ok || int(gotIndex) != 0 {
+		t.Fatalf("expected rollover to reset planIndex, got %v", stopped.State["planIndex"])
 	}
-	if got := maxIntValue(stopped.State["planLength"], -1); got != 2 {
-		t.Fatalf("expected stopped session to persist current plan length, got %d", got)
+	gotLength, ok := toFloat64(stopped.State["planLength"])
+	if !ok || int(gotLength) != 0 {
+		t.Fatalf("expected rollover to clear current planLength, got %v", stopped.State["planLength"])
 	}
 	if got := stringValue(stopped.State["completedAt"]); got != eventTime.UTC().Format(time.RFC3339) {
 		t.Fatalf("expected completedAt to be recorded at exhaustion time, got %s", got)
+	}
+	if got := stringValue(stopped.State["lastPlanRolloverAt"]); got != eventTime.UTC().Format(time.RFC3339) {
+		t.Fatalf("expected lastPlanRolloverAt to be recorded, got %s", got)
+	}
+	if got := stringValue(stopped.State["lastPlanRolloverReason"]); got != "plan-exhausted" {
+		t.Fatalf("expected lastPlanRolloverReason=plan-exhausted, got %s", got)
 	}
 	platform.mu.Lock()
 	_, cached := platform.livePlans[session.ID]
 	platform.mu.Unlock()
 	if cached {
-		t.Fatal("expected cached live execution plan to be cleared when session auto-stops")
+		t.Fatal("expected cached live execution plan to be cleared when rollover is scheduled")
+	}
+
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}
+	platform.mu.Unlock()
+
+	rolledForward, plan, err := platform.ensureLiveExecutionPlan(stopped)
+	if err != nil {
+		t.Fatalf("ensure live execution plan after rollover failed: %v", err)
+	}
+	if len(plan) != 2 {
+		t.Fatalf("expected rollover to accept the fresh cached plan, got %d steps", len(plan))
+	}
+	gotIndex, ok = toFloat64(rolledForward.State["planIndex"])
+	if !ok || int(gotIndex) != 0 {
+		t.Fatalf("expected fresh cycle to start at planIndex 0, got %v", rolledForward.State["planIndex"])
+	}
+	gotLength, ok = toFloat64(rolledForward.State["planLength"])
+	if !ok || int(gotLength) != 2 {
+		t.Fatalf("expected fresh cycle to refresh planLength, got %v", rolledForward.State["planLength"])
+	}
+	if _, ok := rolledForward.State["completedAt"]; ok {
+		t.Fatal("expected completedAt to be cleared after fresh plan is available")
 	}
 }
 
