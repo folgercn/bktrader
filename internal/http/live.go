@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -427,7 +428,11 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				writeError(w, http.StatusNotFound, "live session route not found")
 				return
 			}
-			if err := platform.DeleteLiveSession(parts[0]); err != nil {
+			if err := platform.DeleteLiveSessionWithForce(parts[0], queryFlagEnabled(r, "force")); err != nil {
+				if errors.Is(err, service.ErrActivePositionsOrOrders) {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -454,8 +459,12 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			writeJSON(w, http.StatusOK, item)
 		case "stop":
-			item, err := platform.StopLiveSession(sessionID)
+			item, err := platform.StopLiveSessionWithForce(sessionID, queryFlagEnabled(r, "force"))
 			if err != nil {
+				if errors.Is(err, service.ErrActivePositionsOrOrders) {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}

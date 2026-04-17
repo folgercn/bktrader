@@ -28,6 +28,43 @@ func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
 	return domain.Order{}, fmt.Errorf("order not found: %s", orderID)
 }
 
+func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return domain.Order{}, err
+	}
+	for _, item := range positions {
+		if item.ID != positionID {
+			continue
+		}
+		if item.Quantity <= 0 {
+			return domain.Order{}, fmt.Errorf("position has no quantity to close: %s", positionID)
+		}
+		closeSide := "SELL"
+		if strings.EqualFold(strings.TrimSpace(item.Side), "SHORT") {
+			closeSide = "BUY"
+		}
+		order := domain.Order{
+			AccountID:         item.AccountID,
+			StrategyVersionID: item.StrategyVersionID,
+			Symbol:            NormalizeSymbol(item.Symbol),
+			Side:              closeSide,
+			Type:              "MARKET",
+			Quantity:          item.Quantity,
+			Price:             item.MarkPrice,
+			Metadata: map[string]any{
+				"reduceOnly":   true,
+				"source":       "manual-position-close",
+				"positionId":   item.ID,
+				"markPrice":    item.MarkPrice,
+				"manualAction": "close-position",
+			},
+		}
+		return p.CreateOrder(order)
+	}
+	return domain.Order{}, fmt.Errorf("position not found: %s", positionID)
+}
+
 // CreateOrder 创建订单。对于 PAPER 模式账户，订单会被立即执行（模拟成交），
 // 生成 fill 记录、更新持仓、捕获净值快照。
 func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {

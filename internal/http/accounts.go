@@ -237,4 +237,23 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, items)
 	})
 
+	mux.HandleFunc("/api/v1/positions/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/positions/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) != 2 || parts[1] != "close" {
+			writeError(w, http.StatusNotFound, "position route not found")
+			return
+		}
+		item, err := platform.ClosePosition(parts[0])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+	})
+
 }

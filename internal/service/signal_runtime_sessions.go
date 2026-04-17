@@ -176,7 +176,22 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 }
 
 func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	return p.StopSignalRuntimeSessionWithForce(sessionID, false)
+}
+
+func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force bool) (domain.SignalRuntimeSession, error) {
 	logger := p.logger("service.signal_runtime", "session_id", sessionID)
+	existing, err := p.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		logger.Warn("signal runtime session not found")
+		return domain.SignalRuntimeSession{}, err
+	}
+	if !force {
+		if err := p.ensureNoActivePositionsOrOrders(existing.AccountID, existing.StrategyID); err != nil {
+			logger.Warn("stop signal runtime session blocked by active positions or orders", "error", err)
+			return domain.SignalRuntimeSession{}, err
+		}
+	}
 	p.mu.Lock()
 	session, ok := p.signalSessions[sessionID]
 	if !ok {
@@ -292,6 +307,19 @@ func strategySignalBarsToRuntimeHistory(bars []strategySignalBar, symbol, timefr
 }
 
 func (p *Platform) DeleteSignalRuntimeSession(sessionID string) error {
+	return p.DeleteSignalRuntimeSessionWithForce(sessionID, false)
+}
+
+func (p *Platform) DeleteSignalRuntimeSessionWithForce(sessionID string, force bool) error {
+	existing, err := p.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		return err
+	}
+	if !force {
+		if err := p.ensureNoActivePositionsOrOrders(existing.AccountID, existing.StrategyID); err != nil {
+			return err
+		}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	cancel, running := p.signalRun[sessionID]

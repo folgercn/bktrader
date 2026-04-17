@@ -50,7 +50,20 @@ func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 }
 
 func (p *Platform) DeleteLiveSession(sessionID string) error {
+	return p.DeleteLiveSessionWithForce(sessionID, false)
+}
+
+func (p *Platform) DeleteLiveSessionWithForce(sessionID string, force bool) error {
 	p.logger("service.live", "session_id", sessionID).Info("deleting live session")
+	session, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		return err
+	}
+	if !force {
+		if err := p.ensureNoActivePositionsOrOrders(session.AccountID, session.StrategyID); err != nil {
+			return err
+		}
+	}
 	return p.store.DeleteLiveSession(sessionID)
 }
 
@@ -909,7 +922,22 @@ func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string
 }
 
 func (p *Platform) StopLiveSession(sessionID string) (domain.LiveSession, error) {
+	return p.StopLiveSessionWithForce(sessionID, false)
+}
+
+func (p *Platform) StopLiveSessionWithForce(sessionID string, force bool) (domain.LiveSession, error) {
 	logger := p.logger("service.live", "session_id", sessionID)
+	existing, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		logger.Error("load live session before stop failed", "error", err)
+		return domain.LiveSession{}, err
+	}
+	if !force {
+		if err := p.ensureNoActivePositionsOrOrders(existing.AccountID, existing.StrategyID); err != nil {
+			logger.Warn("stop live session blocked by active positions or orders", "error", err)
+			return domain.LiveSession{}, err
+		}
+	}
 	session, err := p.store.UpdateLiveSessionStatus(sessionID, "STOPPED")
 	if err != nil {
 		logger.Error("stop live session failed", "error", err)
