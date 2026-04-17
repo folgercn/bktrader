@@ -28,6 +28,42 @@ func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
 	return domain.Order{}, fmt.Errorf("order not found: %s", orderID)
 }
 
+// ClosePosition 手动强制平仓指定持仓。
+func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
+	// 1. 获取持仓详情
+	pos, err := p.store.GetPosition(positionID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if pos.Quantity <= 0 {
+		return domain.Order{}, fmt.Errorf("position already closed or empty: %s", positionID)
+	}
+
+	// 2. 构造反向市价单
+	side := "SELL"
+	if strings.EqualFold(pos.Side, "SHORT") || strings.EqualFold(pos.Side, "SELL") {
+		side = "BUY"
+	}
+
+	order := domain.Order{
+		AccountID:         pos.AccountID,
+		StrategyVersionID: pos.StrategyVersionID,
+		Symbol:            pos.Symbol,
+		Side:              side,
+		Type:              "MARKET",
+		Quantity:          pos.Quantity,
+		Metadata: map[string]any{
+			"repro":      "manual-close",
+			"positionID": positionID,
+			"reduceOnly": true,
+		},
+	}
+
+	// 3. 执行下单
+	p.logger("service.order", "position_id", positionID).Info("manual closing position", "account_id", pos.AccountID, "symbol", pos.Symbol, "quantity", pos.Quantity)
+	return p.CreateOrder(order)
+}
+
 // CreateOrder 创建订单。对于 PAPER 模式账户，订单会被立即执行（模拟成交），
 // 生成 fill 记录、更新持仓、捕获净值快照。
 func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {

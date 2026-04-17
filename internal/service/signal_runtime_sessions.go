@@ -175,13 +175,27 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 	return session, nil
 }
 
-func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+func (p *Platform) StopSignalRuntimeSession(sessionID string, force bool) (domain.SignalRuntimeSession, error) {
 	logger := p.logger("service.signal_runtime", "session_id", sessionID)
 	p.mu.Lock()
 	session, ok := p.signalSessions[sessionID]
+	p.mu.Unlock()
+	if !ok {
+		logger.Warn("signal runtime session not found")
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+
+	if !force {
+		// 检查属于该 Runtime 的所有账户和策略
+		if active, reason := p.HasActivePositionsOrOrders(session.AccountID, session.StrategyID); active {
+			return domain.SignalRuntimeSession{}, fmt.Errorf("无法停用策略运行会话: %s (请尝试使用 force=true 强制停用)", reason)
+		}
+	}
+
+	p.mu.Lock()
+	session, ok = p.signalSessions[sessionID]
 	if !ok {
 		p.mu.Unlock()
-		logger.Warn("signal runtime session not found")
 		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
 	}
 	cancel, running := p.signalRun[sessionID]
@@ -291,16 +305,26 @@ func strategySignalBarsToRuntimeHistory(bars []strategySignalBar, symbol, timefr
 	return out
 }
 
-func (p *Platform) DeleteSignalRuntimeSession(sessionID string) error {
+func (p *Platform) DeleteSignalRuntimeSession(sessionID string, force bool) error {
+	p.mu.Lock()
+	session, sessionExists := p.signalSessions[sessionID]
+	p.mu.Unlock()
+
+	if !sessionExists {
+		return fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+
+	if !force {
+		if active, reason := p.HasActivePositionsOrOrders(session.AccountID, session.StrategyID); active {
+			return fmt.Errorf("无法删除策略运行会话: %s (请尝试使用 force=true 强制删除)", reason)
+		}
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	cancel, running := p.signalRun[sessionID]
-	if running {
+	if cancel, running := p.signalRun[sessionID]; running {
 		delete(p.signalRun, sessionID)
 		cancel()
-	}
-	if _, exists := p.signalSessions[sessionID]; !exists {
-		return fmt.Errorf("signal runtime session not found: %s", sessionID)
 	}
 	delete(p.signalSessions, sessionID)
 	return nil

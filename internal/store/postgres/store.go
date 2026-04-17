@@ -609,6 +609,24 @@ func (s *Store) ListPositions() ([]domain.Position, error) {
 	return items, rows.Err()
 }
 
+func (s *Store) GetPosition(positionID string) (domain.Position, error) {
+	var item domain.Position
+	var strategyVersionID sql.NullString
+	err := s.db.QueryRow(`
+		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
+		from positions
+		where id = $1
+	`, positionID).Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Quantity, &item.EntryPrice, &item.MarkPrice, &item.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.Position{}, fmt.Errorf("position not found: %s", positionID)
+		}
+		return domain.Position{}, err
+	}
+	item.StrategyVersionID = strategyVersionID.String
+	return item, nil
+}
+
 func (s *Store) FindPosition(accountID, symbol string) (domain.Position, bool, error) {
 	var item domain.Position
 	var strategyVersionID sql.NullString

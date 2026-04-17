@@ -277,7 +277,8 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 				}
 				writeJSON(w, http.StatusOK, item)
 			case http.MethodDelete:
-				if err := platform.DeleteSignalRuntimeSession(parts[0]); err != nil {
+				force := r.URL.Query().Get("force") == "true"
+				if err := platform.DeleteSignalRuntimeSession(parts[0], force); err != nil {
 					writeError(w, http.StatusNotFound, err.Error())
 					return
 				}
@@ -306,7 +307,8 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			writeJSON(w, http.StatusOK, item)
 		case "stop":
-			item, err := platform.StopSignalRuntimeSession(sessionID)
+			force := r.URL.Query().Get("force") == "true"
+			item, err := platform.StopSignalRuntimeSession(sessionID, force)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return

@@ -1111,7 +1111,7 @@ func (p *Platform) stopLinkedSignalRuntime(session domain.PaperSession) (domain.
 	if runtimeSessionID == "" {
 		return domain.SignalRuntimeSession{}, fmt.Errorf("paper session %s has no linked signal runtime session", session.ID)
 	}
-	runtimeSession, err := p.StopSignalRuntimeSession(runtimeSessionID)
+	runtimeSession, err := p.StopSignalRuntimeSession(runtimeSessionID, true)
 	if err != nil {
 		return domain.SignalRuntimeSession{}, err
 	}

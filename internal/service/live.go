@@ -49,8 +49,16 @@ func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 	return p.store.ListLiveSessions()
 }
 
-func (p *Platform) DeleteLiveSession(sessionID string) error {
-	p.logger("service.live", "session_id", sessionID).Info("deleting live session")
+func (p *Platform) DeleteLiveSession(sessionID string, force bool) error {
+	p.logger("service.live", "session_id", sessionID).Info("deleting live session", "force", force)
+	if !force {
+		session, err := p.store.GetLiveSession(sessionID)
+		if err == nil {
+			if active, reason := p.HasActivePositionsOrOrders(session.AccountID, session.StrategyID); active {
+				return fmt.Errorf("无法删除会话: %s (请尝试使用 force=true 强制删除)", reason)
+			}
+		}
+	}
 	return p.store.DeleteLiveSession(sessionID)
 }
 
@@ -908,9 +916,20 @@ func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string
 	return ""
 }
 
-func (p *Platform) StopLiveSession(sessionID string) (domain.LiveSession, error) {
+func (p *Platform) StopLiveSession(sessionID string, force bool) (domain.LiveSession, error) {
 	logger := p.logger("service.live", "session_id", sessionID)
-	session, err := p.store.UpdateLiveSessionStatus(sessionID, "STOPPED")
+	session, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+
+	if !force {
+		if active, reason := p.HasActivePositionsOrOrders(session.AccountID, session.StrategyID); active {
+			return domain.LiveSession{}, fmt.Errorf("无法停用会话: %s (请尝试使用 force=true 强制停用)", reason)
+		}
+	}
+
+	session, err = p.store.UpdateLiveSessionStatus(sessionID, "STOPPED")
 	if err != nil {
 		logger.Error("stop live session failed", "error", err)
 		return domain.LiveSession{}, err
@@ -920,7 +939,7 @@ func (p *Platform) StopLiveSession(sessionID string) (domain.LiveSession, error)
 		"session_id", session.ID,
 		"account_id", session.AccountID,
 		"strategy_id", session.StrategyID,
-	).Info("live session stopped")
+	).Info("live session stopped", "force", force)
 	return session, nil
 }
 
@@ -1479,7 +1498,7 @@ func (p *Platform) stopLinkedLiveSignalRuntime(session domain.LiveSession) (doma
 	if runtimeSessionID == "" {
 		return domain.SignalRuntimeSession{}, fmt.Errorf("live session %s has no linked signal runtime session", session.ID)
 	}
-	runtimeSession, err := p.StopSignalRuntimeSession(runtimeSessionID)
+	runtimeSession, err := p.StopSignalRuntimeSession(runtimeSessionID, true)
 	if err != nil {
 		return domain.SignalRuntimeSession{}, err
 	}

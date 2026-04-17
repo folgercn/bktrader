@@ -47,6 +47,8 @@ type Repository interface {
 
 	// ListPositions 获取所有持仓。
 	ListPositions() ([]domain.Position, error)
+	// GetPosition 根据 ID 获取单个持仓。
+	GetPosition(positionID string) (domain.Position, error)
 	// FindPosition 查找指定账户和交易对的持仓。
 	FindPosition(accountID, symbol string) (domain.Position, bool, error)
 	// SavePosition 创建或更新持仓。

@@ -66,12 +66,28 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 	})
 
 	mux.HandleFunc("/api/v1/orders/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/orders/")
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+
+		// GET /api/v1/orders/{id}
+		if r.Method == http.MethodGet {
+			if len(parts) != 1 || parts[0] == "" {
+				writeError(w, http.StatusNotFound, "order route not found")
+				return
+			}
+			item, err := platform.GetOrder(parts[0])
+			if err != nil {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+			return
+		}
+
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		path := strings.TrimPrefix(r.URL.Path, "/api/v1/orders/")
-		parts := strings.Split(strings.Trim(path, "/"), "/")
 		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "order route not found")
 			return

@@ -499,6 +499,16 @@ func (s *Store) ListPositions() ([]domain.Position, error) {
 	return items, nil
 }
 
+func (s *Store) GetPosition(positionID string) (domain.Position, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.positions[positionID]
+	if !ok {
+		return domain.Position{}, fmt.Errorf("position not found: %s", positionID)
+	}
+	return item, nil
+}
+
 func (s *Store) FindPosition(accountID, symbol string) (domain.Position, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
