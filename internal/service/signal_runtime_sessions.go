@@ -98,6 +98,49 @@ func (p *Platform) CreateSignalRuntimeSession(accountID, strategyID string) (dom
 	return session, nil
 }
 
+func (p *Platform) syncSignalRuntimeSessionPlan(sessionID string) (domain.SignalRuntimeSession, error) {
+	session, err := p.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	plan, err := p.BuildSignalRuntimePlan(session.AccountID, session.StrategyID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	subscriptions := metadataList(plan["subscriptions"])
+	adapterKey := ""
+	if len(subscriptions) > 0 {
+		adapterKey = stringValue(subscriptions[0]["adapterKey"])
+	}
+	now := time.Now().UTC()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	current, ok := p.signalSessions[sessionID]
+	if !ok {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session not found: %s", sessionID)
+	}
+	state := cloneMetadata(current.State)
+	state["plan"] = plan
+	state["subscriptions"] = subscriptions
+	state["sourceStates"] = p.bootstrapSignalRuntimeSourceStates(subscriptions)
+	state["signalBarStates"] = deriveSignalBarStates(mapValue(state["sourceStates"]))
+	state["lastEventAt"] = now.Format(time.RFC3339)
+	state["lastEventSummary"] = map[string]any{
+		"type":              "runtime_plan_refreshed",
+		"message":           "signal runtime plan refreshed",
+		"subscriptionCount": len(subscriptions),
+		"subscriptions":     summarizeSubscriptions(subscriptions),
+	}
+	current.RuntimeAdapter = adapterKey
+	current.Transport = inferSignalRuntimeTransport(subscriptions)
+	current.SubscriptionCnt = len(subscriptions)
+	current.State = state
+	current.UpdatedAt = now
+	p.signalSessions[sessionID] = current
+	return current, nil
+}
+
 func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
 	logger := p.logger("service.signal_runtime", "session_id", sessionID)
 	p.mu.Lock()

@@ -14,9 +14,12 @@ import (
 )
 
 type LiveLaunchOptions struct {
-	StrategyID           string         `json:"strategyId"`
-	Binding              map[string]any `json:"binding,omitempty"`
-	LiveSessionOverrides map[string]any `json:"liveSessionOverrides,omitempty"`
+	StrategyID             string           `json:"strategyId"`
+	Binding                map[string]any   `json:"binding,omitempty"`
+	StrategySignalBindings []map[string]any `json:"strategySignalBindings,omitempty"`
+	LiveSessionOverrides   map[string]any   `json:"liveSessionOverrides,omitempty"`
+	LaunchTemplateKey      string           `json:"launchTemplateKey,omitempty"`
+	LaunchTemplateName     string           `json:"launchTemplateName,omitempty"`
 	// MirrorStrategySignals is retained for backward-compatible launch payloads.
 	// It no longer mirrors strategy signal bindings onto account metadata; when true,
 	// LaunchLiveFlow only validates that strategy bindings already exist before startup.
@@ -31,6 +34,10 @@ type LiveLaunchResult struct {
 	LiveSession           domain.LiveSession          `json:"liveSession"`
 	MirroredBindingCount  int                         `json:"mirroredBindingCount"`
 	AccountBindingApplied bool                        `json:"accountBindingApplied"`
+	TemplateApplied       bool                        `json:"templateApplied"`
+	TemplateBindingCount  int                         `json:"templateBindingCount"`
+	RuntimePlanRefreshed  bool                        `json:"runtimePlanRefreshed"`
+	StoppedLiveSessions   int                         `json:"stoppedLiveSessions"`
 	RuntimeSessionCreated bool                        `json:"runtimeSessionCreated"`
 	RuntimeSessionStarted bool                        `json:"runtimeSessionStarted"`
 	LiveSessionCreated    bool                        `json:"liveSessionCreated"`
@@ -1047,12 +1054,14 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	if !options.StartSession {
 		options.StartSession = true
 	}
+	templateContext := liveLaunchTemplateContextFromLaunchOptions(options)
 	logger.Info("launching live flow",
 		"strategy_id", strings.TrimSpace(options.StrategyID),
 		"mirror_strategy_signals", options.MirrorStrategySignals,
 		"start_runtime", options.StartRuntime,
 		"start_session", options.StartSession,
 		"has_binding", len(options.Binding) > 0,
+		"has_template_bindings", len(options.StrategySignalBindings) > 0,
 		"has_overrides", len(options.LiveSessionOverrides) > 0,
 	)
 
@@ -1068,6 +1077,37 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 		}
 		result.Account = account
 		result.AccountBindingApplied = true
+	}
+
+	if len(options.StrategySignalBindings) > 0 {
+		if err := p.ensureNoActivePositionsOrOrders(account.ID, strategyID); err != nil {
+			return LiveLaunchResult{}, fmt.Errorf("launch template switch blocked by active positions or orders: %w", err)
+		}
+		if runtimeSession, found := p.findLiveRuntimeSession(account.ID, strategyID); found {
+			if strings.EqualFold(runtimeSession.Status, "RUNNING") {
+				if _, err := p.StopSignalRuntimeSession(runtimeSession.ID); err != nil {
+					return LiveLaunchResult{}, fmt.Errorf("stop existing signal runtime before template switch failed: %w", err)
+				}
+			}
+		}
+		stoppedLiveSessions, err := p.stopConflictingLaunchLiveSessions(account.ID, strategyID, templateContext.Symbol, templateContext.SignalTimeframe)
+		if err != nil {
+			return LiveLaunchResult{}, fmt.Errorf("stop conflicting live sessions before template switch failed: %w", err)
+		}
+		if _, err := p.replaceStrategySignalSources(strategyID, options.StrategySignalBindings); err != nil {
+			return LiveLaunchResult{}, fmt.Errorf("apply launch template bindings failed: %w", err)
+		}
+		result.TemplateApplied = true
+		result.TemplateBindingCount = len(options.StrategySignalBindings)
+		result.StoppedLiveSessions = stoppedLiveSessions
+		if runtimeSession, found := p.findLiveRuntimeSession(account.ID, strategyID); found {
+			runtimeSession, err = p.syncSignalRuntimeSessionPlan(runtimeSession.ID)
+			if err != nil {
+				return LiveLaunchResult{}, fmt.Errorf("refresh signal runtime plan after template switch failed: %w", err)
+			}
+			result.RuntimeSession = runtimeSession
+			result.RuntimePlanRefreshed = true
+		}
 	}
 
 	if options.MirrorStrategySignals {
@@ -1111,6 +1151,14 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 		result.LiveSession = liveSession
 		result.LiveSessionStarted = true
 	}
+	if templateContext.hasMetadata() {
+		if updatedRuntime, updateErr := p.updateSignalRuntimeLaunchTemplateContext(result.RuntimeSession.ID, templateContext); updateErr == nil && updatedRuntime.ID != "" {
+			result.RuntimeSession = updatedRuntime
+		}
+		if updatedLive, updateErr := p.updateLiveSessionLaunchTemplateContext(result.LiveSession.ID, templateContext); updateErr == nil && updatedLive.ID != "" {
+			result.LiveSession = updatedLive
+		}
+	}
 
 	account, err = p.store.GetAccount(account.ID)
 	if err == nil {
@@ -1120,12 +1168,169 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 		"strategy_id", strategyID,
 		"mirrored_binding_count", result.MirroredBindingCount,
 		"account_binding_applied", result.AccountBindingApplied,
+		"template_applied", result.TemplateApplied,
+		"template_binding_count", result.TemplateBindingCount,
+		"runtime_plan_refreshed", result.RuntimePlanRefreshed,
+		"stopped_live_sessions", result.StoppedLiveSessions,
 		"runtime_session_created", result.RuntimeSessionCreated,
 		"runtime_session_started", result.RuntimeSessionStarted,
 		"live_session_created", result.LiveSessionCreated,
 		"live_session_started", result.LiveSessionStarted,
 	)
 	return result, nil
+}
+
+type liveLaunchTemplateContext struct {
+	Key             string
+	Name            string
+	Symbol          string
+	SignalTimeframe string
+}
+
+func liveLaunchTemplateContextFromLaunchOptions(options LiveLaunchOptions) liveLaunchTemplateContext {
+	context := liveLaunchTemplateContext{
+		Key:             strings.TrimSpace(options.LaunchTemplateKey),
+		Name:            strings.TrimSpace(options.LaunchTemplateName),
+		Symbol:          NormalizeSymbol(stringValue(options.LiveSessionOverrides["symbol"])),
+		SignalTimeframe: normalizeSignalBarInterval(stringValue(options.LiveSessionOverrides["signalTimeframe"])),
+	}
+	if context.Symbol != "" && context.SignalTimeframe != "" {
+		return context
+	}
+	for _, binding := range options.StrategySignalBindings {
+		symbol := NormalizeSymbol(stringValue(binding["symbol"]))
+		timeframe := signalBindingTimeframe(stringValue(binding["sourceKey"]), metadataValue(binding["options"]))
+		if context.Symbol == "" && symbol != "" {
+			context.Symbol = symbol
+		}
+		if context.SignalTimeframe == "" && timeframe != "" {
+			context.SignalTimeframe = timeframe
+		}
+		if context.Symbol != "" && context.SignalTimeframe != "" {
+			break
+		}
+	}
+	return context
+}
+
+func (c liveLaunchTemplateContext) hasMetadata() bool {
+	return strings.TrimSpace(c.Key) != "" || strings.TrimSpace(c.Name) != "" || c.Symbol != "" || c.SignalTimeframe != ""
+}
+
+func (p *Platform) findLiveRuntimeSession(accountID, strategyID string) (domain.SignalRuntimeSession, bool) {
+	var fallback domain.SignalRuntimeSession
+	found := false
+	for _, session := range p.ListSignalRuntimeSessions() {
+		if session.AccountID != accountID || session.StrategyID != strategyID {
+			continue
+		}
+		if !found {
+			fallback = session
+			found = true
+		}
+		if strings.EqualFold(session.Status, "RUNNING") {
+			return session, true
+		}
+	}
+	if found {
+		return fallback, true
+	}
+	return domain.SignalRuntimeSession{}, false
+}
+
+func (p *Platform) stopConflictingLaunchLiveSessions(accountID, strategyID, targetSymbol, targetTimeframe string) (int, error) {
+	sessions, err := p.ListLiveSessions()
+	if err != nil {
+		return 0, err
+	}
+	stopped := 0
+	now := time.Now().UTC()
+	for _, session := range sessions {
+		if session.AccountID != accountID || session.StrategyID != strategyID || !strings.EqualFold(session.Status, "RUNNING") {
+			continue
+		}
+		if liveSessionMatchesLaunchScope(session, targetSymbol, targetTimeframe) {
+			continue
+		}
+		updated, err := p.store.UpdateLiveSessionStatus(session.ID, "STOPPED")
+		if err != nil {
+			return stopped, err
+		}
+		state := cloneMetadata(updated.State)
+		state["signalRuntimeStatus"] = "STOPPED"
+		state["lastTemplateSwitchAt"] = now.Format(time.RFC3339)
+		state["lastTemplateSwitchReason"] = "launch-template-switch"
+		if _, err := p.store.UpdateLiveSessionState(updated.ID, state); err != nil {
+			return stopped, err
+		}
+		p.mu.Lock()
+		delete(p.livePlans, updated.ID)
+		p.mu.Unlock()
+		stopped++
+	}
+	return stopped, nil
+}
+
+func liveSessionMatchesLaunchScope(session domain.LiveSession, targetSymbol, targetTimeframe string) bool {
+	if targetSymbol == "" && targetTimeframe == "" {
+		return false
+	}
+	sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+	if targetSymbol != "" && sessionSymbol != targetSymbol {
+		return false
+	}
+	sessionTimeframe := normalizeSignalBarInterval(firstNonEmpty(stringValue(session.State["signalTimeframe"]), stringValue(session.State["timeframe"])))
+	if targetTimeframe != "" && sessionTimeframe != targetTimeframe {
+		return false
+	}
+	return true
+}
+
+func applyLaunchTemplateContext(state map[string]any, context liveLaunchTemplateContext) {
+	if !context.hasMetadata() {
+		return
+	}
+	if strings.TrimSpace(context.Key) != "" {
+		state["launchTemplateKey"] = context.Key
+	}
+	if strings.TrimSpace(context.Name) != "" {
+		state["launchTemplateName"] = context.Name
+	}
+	if context.Symbol != "" {
+		state["launchTemplateSymbol"] = context.Symbol
+	}
+	if context.SignalTimeframe != "" {
+		state["launchTemplateTimeframe"] = context.SignalTimeframe
+	}
+	state["launchTemplateAppliedAt"] = time.Now().UTC().Format(time.RFC3339)
+}
+
+func (p *Platform) updateSignalRuntimeLaunchTemplateContext(sessionID string, context liveLaunchTemplateContext) (domain.SignalRuntimeSession, error) {
+	if strings.TrimSpace(sessionID) == "" || !context.hasMetadata() {
+		return domain.SignalRuntimeSession{}, nil
+	}
+	if err := p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
+		state := cloneMetadata(session.State)
+		applyLaunchTemplateContext(state, context)
+		session.State = state
+		session.UpdatedAt = time.Now().UTC()
+	}); err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	return p.GetSignalRuntimeSession(sessionID)
+}
+
+func (p *Platform) updateLiveSessionLaunchTemplateContext(sessionID string, context liveLaunchTemplateContext) (domain.LiveSession, error) {
+	if strings.TrimSpace(sessionID) == "" || !context.hasMetadata() {
+		return domain.LiveSession{}, nil
+	}
+	session, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	state := cloneMetadata(session.State)
+	applyLaunchTemplateContext(state, context)
+	return p.store.UpdateLiveSessionState(sessionID, state)
 }
 
 func (p *Platform) ensureLaunchRuntimeSession(accountID, strategyID string) (domain.SignalRuntimeSession, bool, error) {

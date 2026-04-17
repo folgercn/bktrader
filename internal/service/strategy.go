@@ -95,47 +95,20 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 		return nil, fmt.Errorf("strategy %s has no current version", strategyID)
 	}
 
-	sourceKey := normalizeSignalSourceKey(stringValue(payload["sourceKey"]))
-	if sourceKey == "" {
-		return nil, fmt.Errorf("sourceKey is required")
-	}
-	provider, ok := p.signalSources[sourceKey]
-	if !ok {
-		return nil, fmt.Errorf("signal source not registered: %s", sourceKey)
-	}
-	source := provider.Describe()
-
-	role := normalizeSignalSourceRole(stringValue(payload["role"]))
-	if !slices.Contains(source.Roles, role) {
-		return nil, fmt.Errorf("signal source %s does not support role %s", source.Key, role)
-	}
-
-	symbol := NormalizeSymbol(stringValue(payload["symbol"]))
-	options := canonicalizeSignalBindingOptions(source.Key, cloneMetadata(metadataValue(payload["options"])))
-
 	parameters := cloneMetadata(currentVersion.Parameters)
 	if parameters == nil {
 		parameters = map[string]any{}
 	}
 	existing := resolveStrategySignalBindings(parameters)
-	binding := domain.AccountSignalBinding{
-		ID:         fmt.Sprintf("strategy-signal-binding-%d", time.Now().UnixNano()),
-		AccountID:  strategyID,
-		SourceKey:  source.Key,
-		SourceName: source.Name,
-		Exchange:   source.Exchange,
-		Role:       role,
-		StreamType: source.StreamType,
-		Symbol:     symbol,
-		Status:     "ACTIVE",
-		Options:    options,
-		CreatedAt:  time.Now().UTC(),
+	binding, err := p.strategySignalBindingFromPayload(strategyID, payload)
+	if err != nil {
+		return nil, err
 	}
 
 	bindings := make([]map[string]any, 0, len(existing)+1)
 	replaced := false
 	for _, item := range existing {
-		if signalBindingMatches(source.Key, role, symbol, options, item) {
+		if signalBindingMatches(binding.SourceKey, binding.Role, binding.Symbol, binding.Options, item) {
 			bindings = append(bindings, bindingToMap(binding))
 			replaced = true
 			continue
@@ -154,11 +127,93 @@ func (p *Platform) BindStrategySignalSource(strategyID string, payload map[strin
 	}
 	strategyLogger("service.strategy",
 		"strategy_id", strategyID,
-		"source_key", source.Key,
-		"role", role,
-		"symbol", symbol,
+		"source_key", binding.SourceKey,
+		"role", binding.Role,
+		"symbol", binding.Symbol,
 	).Info("strategy signal source bound", "replaced_existing", replaced)
 	return updated, nil
+}
+
+func (p *Platform) replaceStrategySignalSources(strategyID string, payloads []map[string]any) (map[string]any, error) {
+	strategy, err := p.GetStrategy(strategyID)
+	if err != nil {
+		return nil, err
+	}
+	currentVersion, ok := strategy["currentVersion"].(domain.StrategyVersion)
+	if !ok {
+		return nil, fmt.Errorf("strategy %s has no current version", strategyID)
+	}
+	if len(payloads) == 0 {
+		return nil, fmt.Errorf("strategy %s requires at least one signal binding", strategyID)
+	}
+
+	parameters := cloneMetadata(currentVersion.Parameters)
+	if parameters == nil {
+		parameters = map[string]any{}
+	}
+	bindings := make([]map[string]any, 0, len(payloads))
+	seen := make(map[string]struct{}, len(payloads))
+	for _, payload := range payloads {
+		binding, err := p.strategySignalBindingFromPayload(strategyID, payload)
+		if err != nil {
+			return nil, err
+		}
+		key := signalBindingKey(binding)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		bindings = append(bindings, bindingToMap(binding))
+	}
+	if len(bindings) == 0 {
+		return nil, fmt.Errorf("strategy %s requires at least one valid signal binding", strategyID)
+	}
+	parameters["signalBindings"] = bindings
+	parameters["strategyEngine"] = normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
+	updated, err := p.store.UpdateStrategyParameters(strategyID, parameters)
+	if err != nil {
+		strategyLogger("service.strategy", "strategy_id", strategyID).Error("replace strategy signal sources failed", "error", err)
+		return nil, err
+	}
+	strategyLogger("service.strategy",
+		"strategy_id", strategyID,
+		"binding_count", len(bindings),
+	).Info("strategy signal sources replaced")
+	return updated, nil
+}
+
+func (p *Platform) strategySignalBindingFromPayload(strategyID string, payload map[string]any) (domain.AccountSignalBinding, error) {
+	sourceKey := normalizeSignalSourceKey(stringValue(payload["sourceKey"]))
+	if sourceKey == "" {
+		return domain.AccountSignalBinding{}, fmt.Errorf("sourceKey is required")
+	}
+	provider, ok := p.signalSources[sourceKey]
+	if !ok {
+		return domain.AccountSignalBinding{}, fmt.Errorf("signal source not registered: %s", sourceKey)
+	}
+	source := provider.Describe()
+
+	role := normalizeSignalSourceRole(stringValue(payload["role"]))
+	if !slices.Contains(source.Roles, role) {
+		return domain.AccountSignalBinding{}, fmt.Errorf("signal source %s does not support role %s", source.Key, role)
+	}
+
+	symbol := NormalizeSymbol(stringValue(payload["symbol"]))
+	options := canonicalizeSignalBindingOptions(source.Key, cloneMetadata(metadataValue(payload["options"])))
+
+	return domain.AccountSignalBinding{
+		ID:         fmt.Sprintf("strategy-signal-binding-%d", time.Now().UnixNano()),
+		AccountID:  strategyID,
+		SourceKey:  source.Key,
+		SourceName: source.Name,
+		Exchange:   source.Exchange,
+		Role:       role,
+		StreamType: source.StreamType,
+		Symbol:     symbol,
+		Status:     "ACTIVE",
+		Options:    options,
+		CreatedAt:  time.Now().UTC(),
+	}, nil
 }
 
 func (p *Platform) UnbindStrategySignalSource(strategyID string, bindingID string) (map[string]any, bool, error) {
