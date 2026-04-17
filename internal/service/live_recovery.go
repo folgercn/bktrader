@@ -172,6 +172,88 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	if boolValue(livePositionState["protected"]) && len(metadataList(state["recoveredProtectionOrders"])) > 0 {
 		state["positionRecoveryStatus"] = "protected-open-position"
 	}
+
+	if stringValue(state["positionRecoveryStatus"]) == "unprotected-open-position" {
+		stopLoss := parseFloatValue(livePositionState["stopLoss"])
+		entryPrice := parseFloatValue(livePositionState["entryPrice"])
+		quantity := math.Abs(parseFloatValue(positionSnapshot["quantity"]))
+		side := strings.ToUpper(strings.TrimSpace(stringValue(livePositionState["side"])))
+
+		if quantity > 0 && stopLoss > 0 && entryPrice > 0 && side != "" {
+			var exitSide string
+			if side == "LONG" {
+				exitSide = "SELL"
+			} else {
+				exitSide = "BUY"
+			}
+
+			activeTrigger := stopLoss
+			if boolValue(livePositionState["protected"]) {
+				if side == "LONG" {
+					prevLow1 := parseFloatValue(livePositionState["prevLow1"])
+					if prevLow1 > activeTrigger {
+						activeTrigger = prevLow1
+					}
+				} else if side == "SHORT" {
+					prevHigh1 := parseFloatValue(livePositionState["prevHigh1"])
+					if prevHigh1 > 0 && prevHigh1 < activeTrigger {
+						activeTrigger = prevHigh1
+					}
+				}
+			}
+
+			breached := false
+			if side == "LONG" && marketPrice > 0 && marketPrice <= activeTrigger {
+				breached = true
+			} else if side == "SHORT" && marketPrice > 0 && marketPrice >= activeTrigger {
+				breached = true
+			}
+
+			if breached {
+				existingProposal := mapValue(state["lastExecutionProposal"])
+				existingReason := stringValue(existingProposal["reason"])
+				
+				if existingReason != "sl-breached-fallback" && existingReason != "pt-breached-fallback" {
+					reason := "sl-breached-fallback"
+					if activeTrigger != stopLoss {
+						reason = "pt-breached-fallback"
+					}
+
+					proposal := ExecutionProposal{
+						Action:            "risk-exit-fallback",
+						Role:              "exit",
+						Reason:            reason,
+						Side:              exitSide,
+						Symbol:            stringValue(livePositionState["symbol"]),
+						Type:              "MARKET",
+						Quantity:          quantity,
+						PriceHint:         marketPrice,
+						PriceSource:       "fallback-watchdog",
+						TimeInForce:       "GTC",
+						PostOnly:          false,
+						ReduceOnly:        true,
+						SignalKind:        "recovery-watchdog",
+						DecisionState:     "unprotected",
+						SignalBarStateKey: "",
+						SpreadBps:         0,
+						BestBid:           0,
+						BestAsk:           0,
+						ExecutionStrategy: "book-aware-v1",
+						Status:            "dispatchable",
+						Metadata: map[string]any{
+							"executionDecision": "direct-dispatch",
+							"livePositionState": cloneMetadata(livePositionState),
+						},
+					}
+					executionProposalMap := executionProposalToMap(proposal)
+					state["lastExecutionProposal"] = executionProposalMap
+					state["lastStrategyIntent"] = executionProposalMap
+					state["lastStrategyEvaluationStatus"] = "intent-ready"
+				}
+			}
+		}
+	}
+
 	updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 	if updateErr != nil {
 		return domain.LiveSession{}, updateErr
