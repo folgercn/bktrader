@@ -1521,7 +1521,11 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 	p.mu.Lock()
 	if plan, ok := p.livePlans[session.ID]; ok {
 		p.mu.Unlock()
-		return session, plan, nil
+		reconciled, err := p.reconcileLiveSessionPlanIndex(session, plan, time.Now().UTC(), "live-plan-cache-reconcile")
+		if err != nil {
+			return domain.LiveSession{}, nil, err
+		}
+		return reconciled, plan, nil
 	}
 	p.mu.Unlock()
 
@@ -1608,6 +1612,40 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 		return domain.LiveSession{}, nil, err
 	}
 	return updatedSession, plan, nil
+}
+
+func (p *Platform) reconcileLiveSessionPlanIndex(session domain.LiveSession, plan []paperPlannedOrder, recoveredAt time.Time, source string) (domain.LiveSession, error) {
+	if len(plan) == 0 || strings.TrimSpace(session.ID) == "" {
+		return session, nil
+	}
+
+	state := cloneMetadata(session.State)
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(state["symbol"]), stringValue(state["lastSymbol"])))
+	if symbol == "" {
+		return session, nil
+	}
+
+	positionSnapshot, foundPosition, err := p.resolveLiveSessionPositionSnapshot(session, symbol)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+
+	nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, resolveLivePlanIndex(state), positionSnapshot, foundPosition)
+	if !adjusted {
+		return session, nil
+	}
+
+	state["recoveredPosition"] = positionSnapshot
+	state["hasRecoveredPosition"] = foundPosition
+	state["hasRecoveredRealPosition"] = foundPosition
+	state["hasRecoveredVirtualPosition"] = boolValue(positionSnapshot["virtual"])
+	state["lastRecoveredPositionAt"] = recoveredAt.UTC().Format(time.RFC3339)
+	state["positionRecoverySource"] = firstNonEmpty(source, "live-plan-cache-reconcile")
+	state["planIndex"] = nextIndex
+	state["planIndexRecoveredFromPosition"] = true
+	state["recoveredPlanIndex"] = nextIndex
+
+	return p.store.UpdateLiveSessionState(session.ID, state)
 }
 
 func reconcileLivePlanIndexWithPosition(plan []paperPlannedOrder, currentIndex int, position map[string]any, found bool) (int, bool) {
