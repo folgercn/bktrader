@@ -485,6 +485,13 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if strings.TrimSpace(fill.ExchangeTradeID) != "" {
+		for _, item := range s.fills {
+			if item.OrderID == fill.OrderID && strings.EqualFold(strings.TrimSpace(item.ExchangeTradeID), strings.TrimSpace(fill.ExchangeTradeID)) {
+				return item, nil
+			}
+		}
+	}
 	fill.ID = s.nextID("fill")
 	fill.CreatedAt = time.Now().UTC()
 	s.fills[fill.ID] = fill

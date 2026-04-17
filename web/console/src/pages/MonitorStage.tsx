@@ -168,15 +168,16 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
   const timelineLogs = buildTimelineNotes(monitorTimeline).slice(0, 50);
-  const orphanOrders = orders.filter(o => !!o.metadata?.isOrphan);
-  const orphanCount = orphanOrders.length;
+  const reconciledOrders = orders.filter(o => !!(o.metadata?.orderLifecycle as any)?.synced);
+  const orphanedOrders = orders.filter(o => (o.metadata?.orderLifecycle as any)?.reconciliationState === 'orphaned');
+  const reconAuditLabel = orphanedOrders.length > 0 ? `${orphanedOrders.length} 异常` : (reconciledOrders.length > 0 ? "已审计" : "平衡");
 
   const monitorSummaryItems = monitorSession ? [
     { label: "就绪预检", value: `${monitorRuntimeReadiness.status} · ${monitorRuntimeReadiness.reason}` },
     { label: "信号意图", value: `${String(monitorIntent.action ?? "无")} · ${String(monitorIntent.side ?? "--")}` },
     { label: "指令分发", value: `${String((monitorSession.state as any)?.dispatchMode ?? "--")} · 冷却 ${String((monitorSession.state as any)?.dispatchCooldownSeconds ?? "--")}s` },
     { label: "执行汇总", value: `订单 ${monitorExecutionSummary.orderCount} · 成交 ${monitorExecutionSummary.fillCount}` },
-    { label: "对账审计", value: orphanCount > 0 ? `${orphanCount} 孤儿订单` : "平衡", color: orphanCount > 0 ? 'text-[var(--bk-status-danger)]' : '' },
+    { label: "对账审计", value: reconAuditLabel },
   ] : [];
 
   const monitorSections = monitorSession ? [
@@ -439,9 +440,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                 { label: "Account Sync", value: runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds) },
                 { 
                   label: "Orphaned Orders", 
-                  value: orphanCount > 0 ? `${orphanCount} ERR` : "None", 
-                  color: orphanCount > 0 ? 'text-[var(--bk-status-danger)]' : 'text-[var(--bk-status-success)]',
-                  icon: orphanCount > 0 ? ShieldAlert : ShieldCheck 
+                  value: orphanedOrders.length > 0 ? `${orphanedOrders.length} ERR` : "None", 
+                  color: orphanedOrders.length > 0 ? 'text-[var(--bk-status-danger)]' : 'text-[var(--bk-status-success)]',
+                  icon: orphanedOrders.length > 0 ? ShieldAlert : ShieldCheck 
                 }
               ].map((item, idx) => (
                 <div key={idx} className="rounded-xl border-2 border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-muted)] p-4 flex flex-col justify-center transition-all hover:bg-[var(--bk-surface-soft)] shadow-sm">

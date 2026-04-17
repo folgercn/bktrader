@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,6 +35,29 @@ type LiveLaunchResult struct {
 	RuntimeSessionStarted bool                        `json:"runtimeSessionStarted"`
 	LiveSessionCreated    bool                        `json:"liveSessionCreated"`
 	LiveSessionStarted    bool                        `json:"liveSessionStarted"`
+}
+
+type LiveAccountReconcileOptions struct {
+	LookbackHours int `json:"lookbackHours"`
+}
+
+type LiveAccountReconcileResult struct {
+	Account           domain.Account `json:"account"`
+	AdapterKey        string         `json:"adapterKey"`
+	ExecutionMode     string         `json:"executionMode"`
+	LookbackHours     int            `json:"lookbackHours"`
+	SymbolCount       int            `json:"symbolCount"`
+	Symbols           []string       `json:"symbols"`
+	OrderCount        int            `json:"orderCount"`
+	CreatedOrderCount int            `json:"createdOrderCount"`
+	UpdatedOrderCount int            `json:"updatedOrderCount"`
+	Notes             []string       `json:"notes,omitempty"`
+}
+
+type liveOrderReconcileIndex struct {
+	byID              map[string]domain.Order
+	byExchangeOrderID map[string]domain.Order
+	byClientOrderID   map[string]domain.Order
 }
 
 type liveAccountSyncSuccessOwner interface {
@@ -161,6 +185,99 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	return account, fallbackErr
 }
 
+func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountReconcileOptions) (LiveAccountReconcileResult, error) {
+	options = normalizeLiveAccountReconcileOptions(options)
+	result := LiveAccountReconcileResult{
+		LookbackHours: options.LookbackHours,
+	}
+
+	account, err := p.SyncLiveAccount(accountID)
+	if err != nil {
+		return result, err
+	}
+	adapter, binding, err := p.resolveLiveAdapterForAccount(account)
+	if err != nil {
+		return result, err
+	}
+	reconcileAdapter, ok := adapter.(LiveAccountReconcileAdapter)
+	if !ok {
+		return result, fmt.Errorf("live adapter %s does not support account reconcile", normalizeLiveAdapterKey(stringValue(binding["adapterKey"])))
+	}
+
+	result.AdapterKey = normalizeLiveAdapterKey(stringValue(binding["adapterKey"]))
+	result.ExecutionMode = normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"]))
+	if !strings.EqualFold(result.ExecutionMode, "rest") {
+		return result, fmt.Errorf("live account reconcile requires executionMode=rest, got %s", firstNonEmpty(result.ExecutionMode, "unknown"))
+	}
+
+	symbols, err := p.collectLiveAccountReconcileSymbols(account, options.LookbackHours)
+	if err != nil {
+		return result, err
+	}
+	result.Symbols = symbols
+	result.SymbolCount = len(symbols)
+	if len(symbols) == 0 {
+		result.Notes = []string{"no candidate symbols available for reconcile"}
+		account, err = p.persistLiveAccountReconcileSummary(account, result)
+		if err != nil {
+			return result, err
+		}
+		result.Account = account
+		return result, nil
+	}
+
+	orders, err := p.store.ListOrders()
+	if err != nil {
+		return result, err
+	}
+	index := buildLiveOrderReconcileIndex(orders, account.ID)
+
+	for _, symbol := range symbols {
+		exchangeOrders, err := reconcileAdapter.FetchRecentOrders(account, binding, symbol, options.LookbackHours)
+		if err != nil {
+			return result, fmt.Errorf("reconcile fetch recent orders for %s failed: %w", symbol, err)
+		}
+		tradeReports, err := reconcileAdapter.FetchRecentTrades(account, binding, symbol, options.LookbackHours)
+		if err != nil {
+			return result, fmt.Errorf("reconcile fetch recent trades for %s failed: %w", symbol, err)
+		}
+		tradesByExchangeOrderID := groupTradeReportsByExchangeOrderID(tradeReports)
+		sort.Slice(exchangeOrders, func(i, j int) bool {
+			return parseFloatValue(exchangeOrders[i]["updateTime"]) < parseFloatValue(exchangeOrders[j]["updateTime"])
+		})
+		for _, payload := range exchangeOrders {
+			exchangeOrderID := normalizeBinanceOrderID(payload["orderId"], payload["clientOrderId"])
+			if exchangeOrderID == "" {
+				continue
+			}
+			reconciledOrder, created, err := p.reconcileLiveAccountExchangeOrder(account, binding, payload, tradesByExchangeOrderID[exchangeOrderID], &index)
+			if err != nil {
+				return result, err
+			}
+			if reconciledOrder.ID == "" {
+				continue
+			}
+			result.OrderCount++
+			if created {
+				result.CreatedOrderCount++
+			} else {
+				result.UpdatedOrderCount++
+			}
+		}
+	}
+
+	account, err = p.store.GetAccount(accountID)
+	if err != nil {
+		return result, err
+	}
+	account, err = p.persistLiveAccountReconcileSummary(account, result)
+	if err != nil {
+		return result, err
+	}
+	result.Account = account
+	return result, nil
+}
+
 func (p *Platform) persistLiveAccountSyncFailure(account domain.Account, attemptedAt time.Time, err error) domain.Account {
 	if err == nil {
 		return account
@@ -204,6 +321,357 @@ func (p *Platform) persistLiveAccountSyncSuccess(account domain.Account, binding
 	account.Metadata["liveSyncSnapshot"] = snapshot
 	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
 	updateAccountSyncSuccessHealth(&account, syncedAt, previousSuccessAt)
+	return p.store.UpdateAccount(account)
+}
+
+func normalizeLiveAccountReconcileOptions(options LiveAccountReconcileOptions) LiveAccountReconcileOptions {
+	if options.LookbackHours <= 0 {
+		options.LookbackHours = 24
+	}
+	if options.LookbackHours > 24*7 {
+		options.LookbackHours = 24 * 7
+	}
+	return options
+}
+
+func (p *Platform) collectLiveAccountReconcileSymbols(account domain.Account, lookbackHours int) ([]string, error) {
+	symbolSet := make(map[string]struct{})
+	cutoff := time.Now().UTC().Add(-time.Duration(maxInt(lookbackHours, 1)) * time.Hour)
+
+	orders, err := p.store.ListOrders()
+	if err != nil {
+		return nil, err
+	}
+	for _, order := range orders {
+		if order.AccountID != account.ID {
+			continue
+		}
+		status := strings.ToUpper(strings.TrimSpace(order.Status))
+		if order.CreatedAt.After(cutoff) || !isTerminalOrderStatus(status) {
+			addLiveAccountReconcileSymbol(symbolSet, order.Symbol)
+		}
+	}
+
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return nil, err
+	}
+	for _, position := range positions {
+		if position.AccountID != account.ID || position.Quantity <= 0 {
+			continue
+		}
+		addLiveAccountReconcileSymbol(symbolSet, position.Symbol)
+	}
+
+	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+	for _, item := range metadataList(snapshot["positions"]) {
+		addLiveAccountReconcileSymbol(symbolSet, stringValue(item["symbol"]))
+	}
+	for _, item := range metadataList(snapshot["openOrders"]) {
+		addLiveAccountReconcileSymbol(symbolSet, stringValue(item["symbol"]))
+	}
+
+	sessions, err := p.store.ListLiveSessions()
+	if err != nil {
+		return nil, err
+	}
+	for _, session := range sessions {
+		if session.AccountID != account.ID {
+			continue
+		}
+		addLiveAccountReconcileSymbol(symbolSet, stringValue(session.State["symbol"]))
+	}
+
+	symbols := make([]string, 0, len(symbolSet))
+	for symbol := range symbolSet {
+		symbols = append(symbols, symbol)
+	}
+	sort.Strings(symbols)
+	return symbols, nil
+}
+
+func addLiveAccountReconcileSymbol(symbols map[string]struct{}, raw string) {
+	symbol := NormalizeSymbol(raw)
+	if symbol == "" {
+		return
+	}
+	symbols[symbol] = struct{}{}
+}
+
+func buildLiveOrderReconcileIndex(orders []domain.Order, accountID string) liveOrderReconcileIndex {
+	index := liveOrderReconcileIndex{
+		byID:              make(map[string]domain.Order),
+		byExchangeOrderID: make(map[string]domain.Order),
+		byClientOrderID:   make(map[string]domain.Order),
+	}
+	for _, order := range orders {
+		if order.AccountID != accountID {
+			continue
+		}
+		index.put(order)
+	}
+	return index
+}
+
+func (i *liveOrderReconcileIndex) put(order domain.Order) {
+	if order.ID == "" {
+		return
+	}
+	i.byID[order.ID] = order
+	i.byClientOrderID[order.ID] = order
+	if exchangeOrderID := strings.TrimSpace(stringValue(order.Metadata["exchangeOrderId"])); exchangeOrderID != "" {
+		i.byExchangeOrderID[exchangeOrderID] = order
+	}
+	if clientOrderID := strings.TrimSpace(stringValue(mapValue(order.Metadata["adapterSubmission"])["clientOrderId"])); clientOrderID != "" {
+		i.byClientOrderID[clientOrderID] = order
+	}
+	if clientOrderID := strings.TrimSpace(stringValue(order.Metadata["exchangeClientOrderId"])); clientOrderID != "" {
+		i.byClientOrderID[clientOrderID] = order
+	}
+}
+
+func (i *liveOrderReconcileIndex) match(exchangeOrderID, clientOrderID string) (domain.Order, bool) {
+	if exchangeOrderID != "" {
+		if order, ok := i.byExchangeOrderID[exchangeOrderID]; ok {
+			return order, true
+		}
+	}
+	if clientOrderID != "" {
+		if order, ok := i.byClientOrderID[clientOrderID]; ok {
+			return order, true
+		}
+		if order, ok := i.byID[clientOrderID]; ok {
+			return order, true
+		}
+	}
+	return domain.Order{}, false
+}
+
+func groupTradeReportsByExchangeOrderID(reports []LiveFillReport) map[string][]LiveFillReport {
+	grouped := make(map[string][]LiveFillReport)
+	for _, report := range reports {
+		exchangeOrderID := strings.TrimSpace(stringValue(mapValue(report.Metadata)["exchangeOrderId"]))
+		if exchangeOrderID == "" {
+			continue
+		}
+		grouped[exchangeOrderID] = append(grouped[exchangeOrderID], report)
+	}
+	return grouped
+}
+
+func (p *Platform) reconcileLiveAccountExchangeOrder(account domain.Account, binding map[string]any, payload map[string]any, tradeReports []LiveFillReport, index *liveOrderReconcileIndex) (domain.Order, bool, error) {
+	exchangeOrderID := normalizeBinanceOrderID(payload["orderId"], payload["clientOrderId"])
+	clientOrderID := strings.TrimSpace(stringValue(payload["clientOrderId"]))
+	if exchangeOrderID == "" {
+		return domain.Order{}, false, nil
+	}
+	order, found := index.match(exchangeOrderID, clientOrderID)
+	created := false
+	var err error
+	if !found {
+		order, err = p.createRecoveredLiveOrderFromExchange(account, binding, payload)
+		if err != nil {
+			return domain.Order{}, false, err
+		}
+		created = true
+	}
+	order, err = p.enrichLiveOrderFromExchangePayload(account.ID, order, binding, payload, created)
+	if err != nil {
+		return domain.Order{}, false, err
+	}
+	syncResult := buildLiveReconcileSyncResult(order, payload, tradeReports)
+	if isTerminalOrderStatus(order.Status) && !isTerminalOrderStatus(syncResult.Status) {
+		syncResult.Status = order.Status
+	}
+	updated, err := p.applyLiveSyncResult(account, order, syncResult)
+	if err != nil {
+		return domain.Order{}, false, err
+	}
+	index.put(updated)
+	return updated, created, nil
+}
+
+func (p *Platform) createRecoveredLiveOrderFromExchange(account domain.Account, binding map[string]any, payload map[string]any) (domain.Order, error) {
+	symbol := NormalizeSymbol(stringValue(payload["symbol"]))
+	quantity := firstPositive(parseFloatValue(payload["origQty"]), parseFloatValue(payload["executedQty"]))
+	price := firstPositive(parseFloatValue(payload["avgPrice"]), parseFloatValue(payload["price"]))
+	base := domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: p.inferReconcileStrategyVersionID(account.ID, symbol),
+		Symbol:            symbol,
+		Side:              strings.ToUpper(strings.TrimSpace(stringValue(payload["side"]))),
+		Type:              strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(payload["origType"]), stringValue(payload["type"]), "MARKET"))),
+		Quantity:          quantity,
+		Price:             price,
+		ReduceOnly:        boolValue(payload["reduceOnly"]),
+		ClosePosition:     boolValue(payload["closePosition"]),
+		Metadata: map[string]any{
+			"source":             "live-account-reconcile",
+			"reconcileRecovered": true,
+			"executionMode":      "live",
+			"adapterKey":         normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+			"feeSource":          "exchange",
+			"fundingSource":      "exchange",
+			"orderLifecycle": map[string]any{
+				"submitted": true,
+				"accepted":  true,
+				"synced":    false,
+				"filled":    false,
+			},
+		},
+	}
+	return p.store.CreateOrder(base)
+}
+
+func (p *Platform) enrichLiveOrderFromExchangePayload(accountID string, order domain.Order, binding map[string]any, payload map[string]any, recovered bool) (domain.Order, error) {
+	status := firstNonEmpty(mapBinanceOrderStatus(stringValue(payload["status"])), order.Status, "ACCEPTED")
+	exchangeOrderID := normalizeBinanceOrderID(payload["orderId"], payload["clientOrderId"])
+	clientOrderID := strings.TrimSpace(stringValue(payload["clientOrderId"]))
+	syncedAt := firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), parseBinanceMillisToRFC3339(payload["time"]), time.Now().UTC().Format(time.RFC3339))
+	acceptedAt := firstNonEmpty(parseBinanceMillisToRFC3339(payload["time"]), syncedAt)
+
+	order.Metadata = cloneMetadata(order.Metadata)
+	applyExecutionMetadata(order.Metadata, map[string]any{
+		"executionMode": "live",
+		"adapterKey":    normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+		"feeSource":     "exchange",
+		"fundingSource": "exchange",
+	})
+	if recovered {
+		order.Metadata["source"] = "live-account-reconcile"
+		order.Metadata["reconcileRecovered"] = true
+	}
+	order.Symbol = NormalizeSymbol(firstNonEmpty(stringValue(payload["symbol"]), order.Symbol))
+	order.Side = strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(payload["side"]), order.Side)))
+	order.Type = strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(payload["origType"]), stringValue(payload["type"]), order.Type)))
+	order.Quantity = firstPositive(parseFloatValue(payload["origQty"]), firstPositive(parseFloatValue(payload["executedQty"]), order.Quantity))
+	order.Price = firstPositive(parseFloatValue(payload["avgPrice"]), firstPositive(parseFloatValue(payload["price"]), order.Price))
+	order.ReduceOnly = order.ReduceOnly || boolValue(payload["reduceOnly"])
+	order.ClosePosition = order.ClosePosition || boolValue(payload["closePosition"])
+	if strings.TrimSpace(order.StrategyVersionID) == "" {
+		order.StrategyVersionID = p.inferReconcileStrategyVersionID(accountID, order.Symbol)
+	}
+	order.Metadata["exchangeOrderId"] = exchangeOrderID
+	if clientOrderID != "" {
+		order.Metadata["exchangeClientOrderId"] = clientOrderID
+	}
+	if strings.TrimSpace(stringValue(order.Metadata["acceptedAt"])) == "" && acceptedAt != "" {
+		order.Metadata["acceptedAt"] = acceptedAt
+	}
+	order.Metadata["lastExchangeStatus"] = status
+	order.Metadata["lastExchangeUpdateAt"] = syncedAt
+	submission := cloneMetadata(mapValue(order.Metadata["adapterSubmission"]))
+	if submission == nil {
+		submission = map[string]any{}
+	}
+	submission["adapterMode"] = "rest-reconcile"
+	submission["executionMode"] = normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"]))
+	submission["exchangeOrderId"] = exchangeOrderID
+	submission["clientOrderId"] = clientOrderID
+	submission["binanceStatus"] = stringValue(payload["status"])
+	submission["origQty"] = parseFloatValue(payload["origQty"])
+	submission["executedQty"] = parseFloatValue(payload["executedQty"])
+	submission["price"] = parseFloatValue(payload["price"])
+	submission["avgPrice"] = parseFloatValue(payload["avgPrice"])
+	submission["timeInForce"] = stringValue(payload["timeInForce"])
+	submission["updateTime"] = syncedAt
+	order.Metadata["adapterSubmission"] = submission
+	markOrderLifecycle(order.Metadata, "submitted", true)
+	markOrderLifecycle(order.Metadata, "accepted", !strings.EqualFold(status, "REJECTED"))
+	return order, nil
+}
+
+func buildLiveReconcileSyncResult(order domain.Order, payload map[string]any, tradeReports []LiveFillReport) LiveOrderSync {
+	status := firstNonEmpty(mapBinanceOrderStatus(stringValue(payload["status"])), order.Status, "ACCEPTED")
+	syncedAt := firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), parseBinanceMillisToRFC3339(payload["time"]), time.Now().UTC().Format(time.RFC3339))
+	exchangeOrderID := normalizeBinanceOrderID(payload["orderId"], payload["clientOrderId"])
+	clientOrderID := strings.TrimSpace(stringValue(payload["clientOrderId"]))
+	terminal := isTerminalOrderStatus(status)
+	filledQty := parseFloatValue(payload["executedQty"])
+	avgPrice := firstPositive(parseFloatValue(payload["avgPrice"]), parseFloatValue(payload["price"]))
+	fills := make([]LiveFillReport, 0, len(tradeReports))
+	if terminal && len(tradeReports) > 0 {
+		fills = append(fills, tradeReports...)
+	} else if terminal && filledQty > 0 && strings.EqualFold(status, "FILLED") {
+		fills = append(fills, LiveFillReport{
+			Price:    avgPrice,
+			Quantity: filledQty,
+			Fee:      0,
+			Metadata: map[string]any{
+				"source":          "binance-all-orders",
+				"exchangeOrderId": exchangeOrderID,
+				"clientOrderId":   clientOrderID,
+				"executionMode":   "rest",
+			},
+		})
+	}
+	return LiveOrderSync{
+		Status:   status,
+		SyncedAt: syncedAt,
+		Fills:    fills,
+		Metadata: map[string]any{
+			"adapterMode":     "rest-reconcile",
+			"executionMode":   "rest",
+			"exchangeOrderId": exchangeOrderID,
+			"clientOrderId":   clientOrderID,
+			"binanceStatus":   stringValue(payload["status"]),
+			"origQty":         parseFloatValue(payload["origQty"]),
+			"executedQty":     filledQty,
+			"avgPrice":        avgPrice,
+			"price":           parseFloatValue(payload["price"]),
+			"updateTime":      syncedAt,
+		},
+		Terminal:   terminal,
+		FeeSource:  "exchange",
+		FundingSrc: "exchange",
+	}
+}
+
+func (p *Platform) inferReconcileStrategyVersionID(accountID, symbol string) string {
+	if strings.TrimSpace(symbol) == "" {
+		return ""
+	}
+	sessions, err := p.store.ListLiveSessions()
+	if err != nil {
+		return ""
+	}
+	var strategyID string
+	for _, session := range sessions {
+		if session.AccountID != accountID {
+			continue
+		}
+		if NormalizeSymbol(stringValue(session.State["symbol"])) != NormalizeSymbol(symbol) {
+			continue
+		}
+		if strategyID != "" && strategyID != session.StrategyID {
+			return ""
+		}
+		strategyID = session.StrategyID
+	}
+	if strategyID == "" {
+		return ""
+	}
+	version, err := p.resolveCurrentStrategyVersion(strategyID)
+	if err != nil {
+		return ""
+	}
+	return version.ID
+}
+
+func (p *Platform) persistLiveAccountReconcileSummary(account domain.Account, result LiveAccountReconcileResult) (domain.Account, error) {
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["lastLiveReconcileAt"] = time.Now().UTC().Format(time.RFC3339)
+	account.Metadata["lastLiveReconcile"] = map[string]any{
+		"adapterKey":        result.AdapterKey,
+		"executionMode":     result.ExecutionMode,
+		"lookbackHours":     result.LookbackHours,
+		"symbolCount":       result.SymbolCount,
+		"symbols":           result.Symbols,
+		"orderCount":        result.OrderCount,
+		"createdOrderCount": result.CreatedOrderCount,
+		"updatedOrderCount": result.UpdatedOrderCount,
+		"notes":             result.Notes,
+	}
 	return p.store.UpdateAccount(account)
 }
 

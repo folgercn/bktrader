@@ -41,6 +41,7 @@
 ### 📚 文档与智能体资产
 - **`docs/`**: 人类可读的系统设计文档、更新计划、数据规范。
 - **`docs/AGENT_PATHS.md`**: **重要！** 后端 Go 与前端 Node 环境工具的绝对路径导览，防止 Agent 在命令行环境找不到工具。
+- **`docs/frontend-live-reconcile-collab.md`**: Live 账户全量对账接口的前端协作说明，约定入口、展示条件与返回摘要。
 - **`.agents/skills/`**: 注入给 Gemini/LLM 的特定技能库（如前端设计规范、特定交互理论）。
 
 ## 3. 最近的重大重构记录
