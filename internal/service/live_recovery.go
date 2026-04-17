@@ -212,7 +212,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 			if breached {
 				existingProposal := mapValue(state["lastExecutionProposal"])
 				existingReason := stringValue(existingProposal["reason"])
-				
+
 				if existingReason != "sl-breached-fallback" && existingReason != "pt-breached-fallback" {
 					reason := "sl-breached-fallback"
 					if activeTrigger != stopLoss {
