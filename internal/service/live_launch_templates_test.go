@@ -62,6 +62,9 @@ func TestLiveLaunchTemplatesExposeSixBinanceTestnetVariants(t *testing.T) {
 		if len(item.StrategySignalBindings) != 3 {
 			t.Fatalf("expected 3 strategy bindings for %s, got %#v", item.Key, item.StrategySignalBindings)
 		}
+		if len(item.LaunchPayload.StrategySignalBindings) != 3 {
+			t.Fatalf("expected launch payload strategy bindings for %s, got %#v", item.Key, item.LaunchPayload.StrategySignalBindings)
+		}
 		if item.TriggerSourceKey != "binance-trade-tick" {
 			t.Fatalf("expected trade tick trigger source, got %s", item.TriggerSourceKey)
 		}
@@ -89,6 +92,9 @@ func TestLiveLaunchTemplatesExposeSixBinanceTestnetVariants(t *testing.T) {
 		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["defaultOrderQuantity"]); got != want.quantity {
 			t.Fatalf("expected defaultOrderQuantity=%v, got %v", want.quantity, got)
 		}
+		if item.LaunchPayload.LaunchTemplateKey != item.Key {
+			t.Fatalf("expected launch template key %s, got %s", item.Key, item.LaunchPayload.LaunchTemplateKey)
+		}
 	}
 }
 
@@ -104,16 +110,13 @@ func TestLiveLaunchTemplatesIncludeIdempotentFrontendWorkflow(t *testing.T) {
 	}
 
 	steps := templates[0].Steps
-	if len(steps) != 3 {
-		t.Fatalf("expected 3 workflow steps, got %#v", steps)
+	if len(steps) != 2 {
+		t.Fatalf("expected 2 workflow steps, got %#v", steps)
 	}
 	if steps[0].PathTemplate != "/api/v1/live/accounts/:accountId/binding" {
 		t.Fatalf("unexpected step 1 path: %#v", steps[0])
 	}
-	if steps[1].PathTemplate != "/api/v1/strategies/:strategyId/signal-bindings" {
+	if steps[1].PathTemplate != "/api/v1/live/accounts/:accountId/launch" {
 		t.Fatalf("unexpected step 2 path: %#v", steps[1])
-	}
-	if steps[2].PathTemplate != "/api/v1/live/accounts/:accountId/launch" {
-		t.Fatalf("unexpected step 3 path: %#v", steps[2])
 	}
 }

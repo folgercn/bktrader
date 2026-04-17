@@ -6,7 +6,7 @@ import { writeStoredAuthSession } from '../utils/auth';
 import { 
   AccountRecord, LiveSession, StrategyRecord, BacktestRun, RuntimePolicy, 
   PlatformAlert, PlatformNotification, TelegramConfig, AuthSession,
-  SignalBinding, SignalRuntimeSession, LiveNextAction
+  SignalBinding, SignalRuntimeSession, LiveNextAction, LaunchTemplate, LiveLaunchResult
 } from '../types/domain';
 import { strategyLabel, getRecord } from '../utils/derivation';
 
@@ -652,15 +652,9 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     }
   }
 
-  async function executeLaunchTemplate(template: any, accountId: string) {
+  async function executeLaunchTemplate(template: LaunchTemplate, accountId: string) {
     if (!accountId) {
       setError("请先选择或创建一个实盘账户");
-      return;
-    }
-
-    // 基础防御：校验模板结构
-    if (!template || !Array.isArray(template.steps)) {
-      setNotification({ type: 'error', message: "应用失败：模板结构非法或缺少执行步骤" });
       return;
     }
 
@@ -671,13 +665,8 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     const totalSteps = template.steps.length;
 
     try {
+      let lastLaunchResult: LiveLaunchResult | null = null;
       for (const step of template.steps) {
-        // 步骤属性防御
-        if (!step.pathTemplate || !step.payloadRef || !step.method) {
-          throw new Error(`第 ${completedSteps + 1} 步配置不完整 (path/payload/method 缺失)`);
-        }
-
-        // 分步进度反馈
         setNotification({ 
           type: 'info', 
           message: `正在执行 (${completedSteps + 1}/${totalSteps}): ${step.label || '正在处理...'}` 
@@ -687,38 +676,50 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
           .replace(":accountId", encodeURIComponent(accountId))
           .replace(":strategyId", encodeURIComponent(template.strategyId));
         
-        const payloadRef = step.payloadRef;
-        if (payloadRef.endsWith("[]")) {
-          const key = payloadRef.replace("[]", "");
-          const items = template[key] || [];
-          for (const item of items) {
-            await fetchJSON(path, {
-              method: step.method,
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(item),
-            });
-          }
+        // 独占切换核心：对于 launch 步，直接应用模板内的完整 payload
+        let body = {};
+        if (path.endsWith("/launch") && template.launchPayload) {
+          body = {
+            ...template.launchPayload,
+            liveSessionOverrides: {
+              ...(template.launchPayload.liveSessionOverrides || {}),
+              dispatchMode: "manual-review" // 强制手动审核，确保隔离安全
+            }
+          };
         } else {
-          const payload = template[payloadRef] || {};
-          await fetchJSON(path, {
-            method: step.method,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+          const payloadRef = step.payloadRef;
+          body = template[payloadRef] || {};
         }
+
+        const result = await fetchJSON<any>(path, {
+          method: step.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        // 如果是最后一步启动，捕获审计信息
+        if (path.endsWith("/launch") && result) {
+          lastLaunchResult = result as LiveLaunchResult;
+        }
+
         completedSteps++;
       }
 
       await loadDashboard();
-      setNotification({ type: 'success', message: "一键配置应用成功，环境已就绪" });
+      
+      let successMsg = `模板 "${template.name}" 应用成功：已刷新订阅。`;
+      if (lastLaunchResult?.stoppedLiveSessions && lastLaunchResult.stoppedLiveSessions > 0) {
+        successMsg += ` 并由于独占切换关停了 ${lastLaunchResult.stoppedLiveSessions} 个旧会话。`;
+      }
+
+      setNotification({ type: 'success', message: successMsg });
       window.location.hash = "monitor";
     } catch (err) {
-      const message = err instanceof Error ? err.message : "模板执行失败";
+      const message = err instanceof Error ? err.message : "模板应用失败";
       setError(message);
-      // 错误闭环反馈
       setNotification({ 
         type: 'error', 
-        message: `配置中断 (第 ${completedSteps + 1}/${totalSteps} 步失败): ${message}${completedSteps > 0 ? ` (前 ${completedSteps} 步操作已生效)` : ''}` 
+        message: `配置中断 (第 ${completedSteps + 1}/${totalSteps} 步): ${message}` 
       });
     } finally {
       setLaunchingTemplate(null);

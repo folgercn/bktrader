@@ -114,6 +114,7 @@ export type LiveSession = {
   strategyId: string;
   status: string;
   state?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -138,6 +139,24 @@ export type ChartAnnotation = {
   label: string;
   metadata?: Record<string, unknown>;
   bindings?: any;
+};
+
+export type LaunchTemplateStep = {
+  label: string;
+  pathTemplate: string;
+  method: string;
+  payloadRef: string;
+};
+
+export type LaunchTemplate = {
+  key: string;
+  name: string;
+  description: string;
+  strategyId: string;
+  symbol: string;
+  signalTimeframe: string;
+  steps: LaunchTemplateStep[];
+  [key: string]: any; // 支持 payloadRef 引用的动态属性
 };
 
 export type MarkerLegendItem = {
@@ -618,4 +637,13 @@ export interface TelegramForm {
   botToken: string;
   chatId: string;
   sendLevels: string;
+}
+
+export interface LiveLaunchResult {
+  liveSessionId: string;
+  runtimeSessionId: string | null;
+  templateApplied?: boolean;
+  templateBindingCount?: number;
+  runtimePlanRefreshed?: boolean;
+  stoppedLiveSessions?: number;
 }

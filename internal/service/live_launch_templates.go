@@ -63,18 +63,11 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			Description:  "确保账户被绑定为 Binance Futures testnet REST 账户。",
 		},
 		{
-			Key:          "bind-strategy-sources",
-			Method:       "POST",
-			PathTemplate: "/api/v1/strategies/:strategyId/signal-bindings",
-			PayloadRef:   "strategySignalBindings[]",
-			Description:  "幂等写入 signal / trigger / feature 三类策略绑定。",
-		},
-		{
 			Key:          "launch-live-flow",
 			Method:       "POST",
 			PathTemplate: "/api/v1/live/accounts/:accountId/launch",
 			PayloadRef:   "launchPayload",
-			Description:  "创建或复用 runtime session，并按 symbol + timeframe 创建 live session 后直接启动。",
+			Description:  "独占替换当前模板绑定，刷新 runtime 订阅，并按 symbol + timeframe 创建或复用 live session。",
 		},
 	}
 
@@ -144,21 +137,24 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			AccountBinding:         cloneMetadata(baseBinding),
 			StrategySignalBindings: cloneMetadataList(signalBindings),
 			LaunchPayload: LiveLaunchOptions{
-				StrategyID:            strategyID,
-				Binding:               cloneMetadata(baseBinding),
-				LiveSessionOverrides:  cloneMetadata(liveOverrides),
-				MirrorStrategySignals: true,
-				StartRuntime:          true,
-				StartSession:          true,
+				StrategyID:             strategyID,
+				Binding:                cloneMetadata(baseBinding),
+				StrategySignalBindings: cloneMetadataList(signalBindings),
+				LiveSessionOverrides:   cloneMetadata(liveOverrides),
+				LaunchTemplateKey:      key,
+				LaunchTemplateName:     fmt.Sprintf("Binance Testnet %s %s", symbol, timeframe),
+				MirrorStrategySignals:  true,
+				StartRuntime:           true,
+				StartSession:           true,
 			},
 			Steps: cloneLiveLaunchTemplateSteps(steps),
 			Notes: []string{
 				fmt.Sprintf("当前主策略使用 %s（strategyEngine=%s）。", strategyName, firstNonEmpty(strategyEngine, "bk-default")),
 				"signal 绑定使用 Binance 原生 kline；trigger 绑定使用 Binance trade tick；feature 绑定使用 Binance order book。",
-				"策略绑定是策略级配置，前端执行模板时应把这 3 个绑定视为幂等 upsert，可重复点击。",
+				"点击模板会独占替换该策略当前模板绑定，不再在旧模板之上继续叠加 symbol / timeframe。",
 				quantityNote,
 				"模板里只有 dispatchMode 需要前端在提交前注入；其余 launch 参数保持固定。",
-				"launch 结果会复用 account + strategy 级 runtime，但 live session 会按 symbol + signalTimeframe 分开创建。",
+				"launch 会在安全前提下刷新 account + strategy 级 runtime 订阅，live session 仍按 symbol + signalTimeframe 分开创建或复用。",
 			},
 		}
 	}
