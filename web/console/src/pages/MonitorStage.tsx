@@ -32,6 +32,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Button } from '../components/ui/button';
 import { Activity, Layout, ShieldCheck, Zap, BarChart3, Clock, ArrowRightLeft, HeartPulse, LineChart, CandlestickChart, Compass, ShieldAlert, FileText, Layers, ChevronDown } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { cn } from '../lib/utils';
 
 type MonitorStageProps = {
   syncLiveOrder: (id: string) => void;
@@ -167,12 +168,15 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
   const timelineLogs = buildTimelineNotes(monitorTimeline).slice(0, 50);
+  const orphanOrders = orders.filter(o => !!o.metadata?.isOrphan);
+  const orphanCount = orphanOrders.length;
 
   const monitorSummaryItems = monitorSession ? [
     { label: "就绪预检", value: `${monitorRuntimeReadiness.status} · ${monitorRuntimeReadiness.reason}` },
     { label: "信号意图", value: `${String(monitorIntent.action ?? "无")} · ${String(monitorIntent.side ?? "--")}` },
     { label: "指令分发", value: `${String((monitorSession.state as any)?.dispatchMode ?? "--")} · 冷却 ${String((monitorSession.state as any)?.dispatchCooldownSeconds ?? "--")}s` },
     { label: "执行汇总", value: `订单 ${monitorExecutionSummary.orderCount} · 成交 ${monitorExecutionSummary.fillCount}` },
+    { label: "对账审计", value: orphanCount > 0 ? `${orphanCount} 孤儿订单` : "平衡", color: orphanCount > 0 ? 'text-[var(--bk-status-danger)]' : '' },
   ] : [];
 
   const monitorSections = monitorSession ? [
@@ -217,9 +221,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                </div>
              </div>
              <div className="flex items-center gap-4">
-                <Badge variant="neutral" className="h-7 bg-[var(--bk-surface)] px-3 font-mono text-[10px]">
-                  {monitorMode}
-                </Badge>
+                 <Badge variant="metal">
+                   {monitorMode}
+                 </Badge>
              </div>
            </div>
          </CardHeader>
@@ -260,374 +264,241 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* 2. 交互与干预区 */}
-        <Card tone="bento" className="lg:col-span-8 rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl">
-          <CardHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-ghost)] px-8 py-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* 2. 实时执行与指标监控 (三柱式 Bento 架构) */}
+        
+        {/* 柱 1: 活跃会话控制 */}
+        <Card tone="bento" className="lg:col-span-4 rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-ghost)] px-8 py-3.5">
             <div className="flex items-center gap-3">
               <ShieldCheck className="size-5 text-[var(--bk-text-primary)]" />
-              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">运行监控与人工干预</CardTitle>
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">会话控制</CardTitle>
             </div>
+            {highlightedLiveSession && (
+              <Badge variant="metal">
+                {highlightedLiveSession.health.status}
+              </Badge>
+            )}
           </CardHeader>
-          <CardContent className="p-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* 左侧：优先会话详情 */}
-              {highlightedLiveSession ? (
-                <div className="group relative flex h-full flex-col overflow-hidden rounded-[24px] border-2 border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-6 shadow-lg">
-                  
-
-                  <div className="flex items-start justify-between mb-8">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-70">Primary Session</span>
-                        <Badge className="h-4 rounded-md border-0 bg-[var(--bk-surface-inverse)] px-1.5 text-[9px] font-black text-[var(--bk-text-contrast)]">
-                          {highlightedLiveSession.health.status}
-                        </Badge>
-                      </div>
-                      <h4 className="text-xl font-black tracking-tight text-[var(--bk-text-primary)]">活跃监控焦点会话</h4>
+          <CardContent className="p-5 flex-1 flex flex-col">
+            {highlightedLiveSession ? (
+              <div className="flex-1 flex flex-col space-y-5">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                       <span className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-70">Focus Session</span>
+                       <Badge className="h-4 rounded-md border-0 bg-[var(--bk-surface-inverse)] px-1.5 text-[9px] font-black text-[var(--bk-text-contrast)]">
+                         {highlightedLiveSession.health.status}
+                       </Badge>
                     </div>
                   </div>
-                  
-                  <div className="flex flex-wrap gap-2 text-[10px] mb-6">
-                    {/* 会话 ID 磁贴选择器 */}
+
+                  <div className="flex items-center gap-2 overflow-hidden">
                     <Popover>
                       <PopoverTrigger>
                         <button 
-                          className={`flex w-fit max-w-[240px] items-center gap-2 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-3 py-1.5 font-mono font-bold shadow-sm transition-all active:scale-95 ${allSessionItems.length > 1 ? 'cursor-pointer hover:bg-[var(--bk-surface-muted)]' : 'cursor-default'}`}
+                          className={`flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 font-mono text-[10px] font-bold shadow-sm transition-all active:scale-95 ${allSessionItems.length > 1 ? 'cursor-pointer hover:bg-[var(--bk-surface-muted)]' : 'cursor-default'}`}
                           disabled={allSessionItems.length <= 1}
                         >
-                          <span className="truncate">{highlightedLiveSession.session.id.length > 20 ? `${highlightedLiveSession.session.id.slice(0, 14)}...${highlightedLiveSession.session.id.slice(-6)}` : highlightedLiveSession.session.id}</span>
-                          {allSessionItems.length > 1 && <ChevronDown className="size-3 shrink-0 text-[var(--bk-text-muted)] opacity-60" />}
+                          <span className="truncate max-w-[120px]">{highlightedLiveSession.session.id}</span>
+                          {allSessionItems.length > 1 && <ChevronDown className="size-2.5 shrink-0 text-[var(--bk-text-muted)] opacity-60" />}
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" className="isolate z-[60] w-[320px] rounded-[20px] border-2 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-2 shadow-xl">
                          <div className="space-y-1.5">
-                            <div className="mb-1 border-b border-[var(--bk-border-soft)] px-2 py-1.5">
-                               <span className="text-[9px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">Switch Active Session</span>
-                            </div>
                             {allSessionItems.map((item) => (
                               <div 
                                 key={item.session.id} 
-                                onClick={() => {
-                                  handleSelectSession(item.session.id);
-                                }}
-                                className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer group animate-in fade-in duration-200 ${
+                                onClick={() => handleSelectSession(item.session.id)}
+                                className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                                   item.isHighlighted 
-                                    ? 'bg-[var(--bk-status-success-soft)] border-[var(--bk-status-success)] ring-2 ring-[color-mix(in_srgb,var(--bk-status-success)_10%,transparent)]' 
-                                    : 'bg-[var(--bk-surface-overlay)] border-[var(--bk-border-soft)] hover:border-[color-mix(in_srgb,var(--bk-status-success)_50%,transparent)] hover:bg-[var(--bk-surface)]'
+                                    ? 'bg-[var(--bk-status-success-soft)] border-[var(--bk-status-success)]' 
+                                    : 'bg-[var(--bk-surface-overlay)] border-[var(--bk-border-soft)] hover:bg-[var(--bk-surface)]'
                                 }`}
                               >
                                  <div className="flex items-center gap-3">
-                                    <div className={`size-2 rounded-full ${item.health.status === "ready" ? "bg-[var(--bk-status-success)]" : String(item.session.state?.health).toLowerCase() === "recovering" ? "bg-[var(--bk-status-warning)] animate-pulse" : String(item.session.state?.health).toLowerCase() === "stale-after-reconnect" ? "bg-[var(--bk-status-danger)]" : "bg-rose-500"} ${item.isHighlighted ? "ring-4 ring-[color-mix(in_srgb,var(--bk-status-success)_20%,transparent)]" : ""}`} />
-                                    <div className="flex flex-col">
-                                       <span className={`text-[10px] font-black ${item.isHighlighted ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-text-primary)]'}`}>{item.session.id.length > 20 ? `${item.session.id.slice(0, 14)}...${item.session.id.slice(-6)}` : item.session.id}</span>
-                                       <span className={`text-[8px] font-mono ${item.isHighlighted ? 'text-[color-mix(in_srgb,var(--bk-status-success)_70%,black)]' : 'text-[var(--bk-text-muted)]'}`}>{String(item.session.state?.symbol ?? "--")} · {String(item.session.state?.signalTimeframe ?? "--")}</span>
-                                    </div>
+                                    <div className={`size-2 rounded-full ${item.health.status === "ready" ? "bg-[var(--bk-status-success)]" : "bg-rose-500"}`} />
+                                    <span className="text-[10px] font-black">{shrink(item.session.id)}</span>
                                  </div>
-                                 <div className="text-right">
-                                    <span className={`text-[10px] font-black block tabular-nums ${
-                                      (getNumber(item.summary?.unrealizedPnl) ?? 0) >= 0 ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]'
-                                    }`}>
-                                       {formatSigned(item.summary?.unrealizedPnl ?? 0)}
-                                    </span>
-                                    <span className={`mt-0.5 block text-[8px] font-bold uppercase opacity-50 ${item.isHighlighted ? 'text-[color-mix(in_srgb,var(--bk-status-success)_60%,black)]' : 'text-[var(--bk-text-muted)]'}`}>{String(item.execution.position?.side ?? "FLAT")}</span>
-                                 </div>
+                                 <span className="text-[10px] font-black tabular-nums">
+                                   {formatSigned(item.summary?.unrealizedPnl ?? 0)}
+                                 </span>
                               </div>
                             ))}
                          </div>
                       </PopoverContent>
                     </Popover>
-
-                    <span className="rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-1 font-mono shadow-sm">{highlightedLiveSession.session.accountId}</span>
-                    <Badge variant="success" className="font-black">
-                      {String(highlightedLiveSession.session.state?.signalTimeframe ?? "--")}
+                    <Badge variant="metal" className="shrink-0 text-[var(--bk-text-muted)] py-1 px-2.5">
+                      {highlightedLiveSession.session.accountId}
                     </Badge>
                   </div>
 
-                  <div className="space-y-4 rounded-2xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)] p-5 shadow-inner">
-                    <p className="text-[12px] font-medium leading-relaxed text-[var(--bk-text-primary)]">
-                      <span className="mr-2 font-black text-[var(--bk-text-muted)] opacity-50">HEALTH_LOG:</span> 
-                      {highlightedLiveSession.health.detail}
+                  <div className="rounded-2xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)] p-5 shadow-inner">
+                    <p className="text-[13px] font-bold leading-relaxed text-[var(--bk-text-primary)]">
+                       {highlightedLiveSession.health.detail}
                     </p>
-                    <div className="grid grid-cols-2 gap-4 pt-2">
-                      <div className="space-y-1">
-                        <span className="text-[9px] font-black uppercase text-[var(--bk-text-muted)]">执行统计</span>
-                        <strong className="text-[11px] block font-black">Orders {highlightedLiveSession.execution.orderCount} · Fills {highlightedLiveSession.execution.fillCount}</strong>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[9px] font-black uppercase text-[var(--bk-text-muted)]">持仓方向</span>
-                        <strong className="block text-[11px] font-black text-[var(--bk-status-success)]">{String(monitorExecutionSummary.position?.side ?? "FLAT")}</strong>
-                      </div>
-                    </div>
                   </div>
-
-                  {/* 新增：从右侧搬迁过来的辅助信息，用于平衡高度 */}
-                  <div className="mt-auto grid grid-cols-2 gap-4 border-t-2 border-[color-mix(in_srgb,var(--bk-border)_30%,transparent)] pt-8">
-                      <div className="group flex flex-col justify-between rounded-[28px] border-2 border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface-muted)] p-6 shadow-sm transition-all hover:bg-[var(--bk-surface)]">
-                         <div className="flex items-center gap-2 mb-4">
-                            <div className="rounded-lg bg-[var(--bk-canvas-strong)] p-1.5">
-                               <ShieldAlert className="size-4 text-[var(--bk-text-primary)]" />
-                            </div>
-                            <span className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">状态恢复</span>
-                         </div>
-                         <div className="flex items-center justify-between text-[11px] font-black">
-                            <div className="flex flex-col space-y-1">
-                              <span className="text-[var(--bk-status-danger)]">SL: {String((monitorSession?.state as any)?.recoveredStopOrderCount ?? "0")}</span>
-                              <span className="text-[var(--bk-status-success)]">PT: {String((monitorSession?.state as any)?.recoveredTakeProfitOrderCount ?? "0")}</span>
-                            </div>
-                            <div className="text-[9px] font-black text-[var(--bk-text-muted)] opacity-40">RECOVERY</div>
-                         </div>
-                      </div>
-
-                      <div className="group flex flex-col justify-between rounded-[28px] border-2 border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface-muted)] p-6 shadow-sm transition-all hover:bg-[var(--bk-surface)]">
-                         <div className="flex items-center gap-2 mb-4">
-                            <div className="rounded-lg border border-[var(--bk-border-soft)] bg-[var(--bk-surface-strong)] p-1.5">
-                               <FileText className="size-4 text-[var(--bk-text-primary)]" />
-                            </div>
-                            <span className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">执行备注</span>
-                         </div>
-                         <p className="line-clamp-3 text-[11px] font-bold leading-tight text-[var(--bk-text-primary)]">
-                           {String(monitorSignalBarDecision.reason ?? "暂无执行信号排队或阻断说明")}
-                         </p>
-                      </div>
-                  </div>
-
- 
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center space-y-4 rounded-[24px] border-2 border-dashed border-[var(--bk-border)] bg-[color-mix(in_srgb,var(--bk-surface-strong)_50%,transparent)] p-20 text-center text-sm font-bold italic text-[var(--bk-text-muted)]">
-                  <div className="rounded-full bg-[var(--bk-surface-faint)] p-4">
-                    <Activity className="size-8 opacity-20" />
-                  </div>
-                  <span>当前没有活跃实盘会话</span>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border-2 border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface-muted)] p-4 shadow-sm">
+                       <div className="flex items-center gap-2 mb-2">
+                          <ShieldAlert className="size-3 text-[var(--bk-text-primary)]" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">状态恢复</span>
+                       </div>
+                       <div className="flex flex-col text-[12px] font-black tracking-tight">
+                         <span className="text-[var(--bk-status-danger)]">SL: {String((monitorSession?.state as any)?.recoveredStopOrderCount ?? "0")}</span>
+                         <span className="text-[var(--bk-status-success)]">PT: {String((monitorSession?.state as any)?.recoveredTakeProfitOrderCount ?? "0")}</span>
+                       </div>
+                    </div>
+                    <div className="rounded-xl border-2 border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface-muted)] p-4 shadow-sm">
+                       <div className="flex items-center gap-2 mb-2">
+                          <Compass className="size-3 text-[var(--bk-text-primary)]" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">持仓方向</span>
+                       </div>
+                       <strong className="block text-[15px] font-black text-[var(--bk-status-success)]">{String(monitorExecutionSummary.position?.side ?? "FLAT")}</strong>
+                    </div>
                 </div>
-              )}
-
-              {/* 右侧：折叠详情 */}
-              <div className="space-y-6">
-                <div className="flex items-center justify-between border-b-2 border-[var(--bk-border)] pb-3">
-                  <h4 className="text-sm font-black uppercase tracking-wider text-[var(--bk-text-primary)]">监控遥测明细</h4>
-                  <Badge variant={monitorSession ? "success" : "neutral"} className={`text-[10px] font-black ${monitorSession ? '' : 'bg-[var(--bk-surface-muted)] text-[var(--bk-text-muted)] border-[var(--bk-border-soft)]'}`}>
-                    {monitorSession ? "CONNECTED" : "IDLE"}
-                  </Badge>
-                </div>
-                
-                {monitorSession ? (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-2 gap-3">
-                      {monitorSummaryItems.map((item) => (
-                        <div key={item.label} className="rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface-muted)] p-3 shadow-sm transition-all hover:bg-[var(--bk-surface-soft)] hover:shadow-md">
-                          <span className="mb-1 block text-[9px] font-black uppercase tracking-tighter text-[var(--bk-text-muted)] opacity-70">{item.label}</span>
-                          <strong className="block truncate text-[11px] font-bold text-[var(--bk-text-primary)]">{item.value}</strong>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* 行 1: 核心行情 - 全宽 */}
-                      <div className="group col-span-2 rounded-[28px] border-2 border-[var(--bk-border)] bg-gradient-to-br from-white to-[var(--bk-surface-strong)] p-6 shadow-sm transition-all hover:shadow-md">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                             <div className="rounded-lg bg-[var(--bk-canvas-strong)] p-1.5">
-                               <CandlestickChart className="size-4 text-[var(--bk-text-primary)]" />
-                             </div>
-                             <span className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">行情核心分析</span>
-                          </div>
-                          <Badge variant="neutral" className="bg-[var(--bk-surface)] text-[10px] font-mono text-[var(--bk-status-success)]">LATEST</Badge>
-                        </div>
-                        <div className="flex items-end justify-between">
-                          <div className="space-y-2">
-                            <span className="block text-[10px] font-bold text-[var(--bk-text-muted)] opacity-60">PRICE / SPREAD</span>
-                            <strong className="text-3xl font-black leading-none tracking-tighter tabular-nums text-[var(--bk-text-primary)]">
-                              {formatMaybeNumber(monitorMarket.tradePrice)}
-                            </strong>
-                          </div>
-                          <div className="text-right">
-                             <span className="block text-[16px] font-mono font-bold leading-none text-[var(--bk-status-success)] antialiased">
-                               {formatMaybeNumber(monitorMarket.bestBid)} / {formatMaybeNumber(monitorMarket.bestAsk)}
-                             </span>
-                             <span className="mt-1.5 block text-[10px] font-black uppercase text-[var(--bk-text-muted)]">Depth liquidity</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 行 2: 策略状态 - 双列并列 */}
-                      <div className="group rounded-[28px] border-2 border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface-muted)] p-6 shadow-sm transition-all hover:bg-[var(--bk-surface)]">
-                         <div className="flex items-center gap-2 mb-4">
-                            <div className="rounded-lg bg-[var(--bk-status-success-soft)] p-1.5">
-                               <Activity className="size-4 text-[var(--bk-status-success)]" />
-                            </div>
-                            <span className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">策略持仓</span>
-                         </div>
-                         <div className="space-y-2">
-                            <strong className={`block text-xl font-black leading-tight ${String(monitorExecutionSummary.position?.side).includes('LONG') ? 'text-[var(--bk-status-success)]' : String(monitorExecutionSummary.position?.side).includes('SHORT') ? 'text-[var(--bk-status-danger)]' : 'text-[var(--bk-text-primary)]'}`}>
-                              {String(monitorExecutionSummary.position?.side ?? "FLAT")}
-                            </strong>
-                            <span className="block text-[11px] font-mono font-bold text-[var(--bk-text-muted)]">
-                              {formatMaybeNumber(monitorExecutionSummary.position?.quantity)} @ {formatMaybeNumber(monitorExecutionSummary.position?.entryPrice)}
-                            </span>
-                         </div>
-                      </div>
-
-                      <div className="group rounded-[28px] border-2 border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface-muted)] p-6 shadow-sm transition-all hover:bg-[var(--bk-surface)]">
-                         <div className="flex items-center gap-2 mb-4">
-                            <div className="rounded-lg bg-[var(--bk-canvas-strong)] p-1.5">
-                               <Compass className="size-4 text-[var(--bk-text-primary)]" />
-                            </div>
-                            <span className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">信号分析</span>
-                         </div>
-                         <div className="space-y-2">
-                            <strong className="block text-xl font-black leading-tight tabular-nums text-[var(--bk-text-primary)]">
-                              {formatMaybeNumber(monitorSignalBarDecision.sma5)}
-                            </strong>
-                            <span className="block text-[11px] font-mono font-bold text-[var(--bk-text-muted)]">
-                              PERIOD: {String(monitorSignalBarDecision.timeframe ?? "--")}
-                            </span>
-                         </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex h-64 flex-col items-center justify-center space-y-3 rounded-[24px] border-2 border-dashed border-[var(--bk-border-soft)] bg-[var(--bk-surface-ghost)] opacity-40">
-                    <Layout className="size-8" />
-                    <p className="text-xs font-bold italic">请在 Dock 中选中活跃会话</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 底部：常驻终端时间线 - 奶油风格 */}
-            <div className="mt-8 border-t-2 border-[var(--bk-border-soft)] pt-8">
-               <div className="flex items-center justify-between mb-4">
-                 <div className="flex items-center gap-2">
-                   <div className="size-2 animate-pulse rounded-full bg-[var(--bk-status-success)]" />
-                   <h5 className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-primary)]">Execution Timeline Terminal</h5>
-                 </div>
-                 <Badge variant="neutral" className="bg-[var(--bk-surface-strong)] text-[9px] font-mono text-[var(--bk-text-muted)]">
-                   AUTO_SCROLL ENABLED
-                 </Badge>
-               </div>
-               <div className="custom-scrollbar h-[280px] overflow-y-auto rounded-[24px] border-2 border-[var(--bk-border)] bg-[var(--bk-surface-soft)] p-5 shadow-inner">
-                  {timelineLogs.length > 0 ? timelineLogs.map((line: string, idx: number) => (
-                    <div key={idx} className="mb-1.5 border-l-2 border-[var(--bk-canvas-strong)] py-0.5 pl-3 font-mono text-[10px] leading-normal text-[var(--bk-text-primary)] transition-all hover:border-[var(--bk-status-success)] hover:bg-[var(--bk-surface-strong)]">
-                      <span className="mr-3 font-bold tabular-nums text-[var(--bk-text-muted)] opacity-40">[{idx.toString().padStart(2, '0')}]</span>
-                      <span className="opacity-90">{line}</span>
-                    </div>
-                  )) : (
-                    <div className="flex h-full items-center justify-center font-mono text-[10px] italic text-[var(--bk-text-muted)] opacity-40">
-                      SYSTEM: Waiting for runtime events to populate timeline...
-                    </div>
-                  )}
-               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 3. 待处理订单 - 订单同步表格 */}
-        <Card tone="bento" className="lg:col-span-4 flex flex-col rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl">
-          <CardHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-ghost)] px-6 py-5">
-            <div className="flex items-center gap-3">
-              <ArrowRightLeft className="size-5 text-[var(--bk-text-primary)]" />
-              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">待同步订单</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6 flex-1 overflow-hidden">
-             <div className="flex h-full flex-col overflow-hidden rounded-[24px] border-2 border-[var(--bk-border)] bg-[var(--bk-surface-faint)] shadow-inner">
-               <Table tone="bento">
-                 <TableHeader className="border-b-2 border-[var(--bk-border)] bg-[color-mix(in_srgb,var(--bk-canvas-strong)_60%,transparent)]">
-                   <TableRow className="hover:bg-transparent">
-                     <TableHead className="h-10 px-5 text-[10px] font-black uppercase">Symbol/Order</TableHead>
-                     <TableHead className="h-10 px-5 text-right text-[10px] font-black uppercase">Action</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody className="overflow-y-auto">
-                   {syncableLiveOrders.length > 0 ? (
-                     syncableLiveOrders.map((order) => (
-                       <TableRow key={order.id} className="border-b border-[color-mix(in_srgb,var(--bk-border)_30%,transparent)] transition-colors hover:bg-[color-mix(in_srgb,var(--bk-surface-strong)_80%,transparent)]">
-                         <TableCell className="px-5 py-4">
-                            <div className="flex flex-col">
-                              <span className="text-xs font-black text-[var(--bk-status-success)]">{order.symbol}</span>
-                              <span className="mt-1 text-[9px] font-mono text-[var(--bk-text-muted)]">{shrink(order.id)} · {order.side}</span>
-                            </div>
-                         </TableCell>
-                         <TableCell className="px-5 text-right">
-                            <Button 
-                              size="sm" 
-                              variant="bento-outline" 
-                              className="h-8 rounded-xl border-2 bg-[var(--bk-surface)] px-4 text-[10px] font-black shadow-sm active:scale-95"
-                              disabled={liveSyncAction !== null}
-                              onClick={() => syncLiveOrder(order.id)}
-                            >
-                              Sync
-                            </Button>
-                         </TableCell>
-                       </TableRow>
-                     ))
-                   ) : (
-                     <TableRow>
-                       <TableCell colSpan={2} className="h-40 text-center text-xs font-medium italic text-[var(--bk-text-muted)]">
-                         当前网络环境无孤立订单
-                       </TableCell>
-                     </TableRow>
-                   )}
-                 </TableBody>
-               </Table>
-             </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* 4. 平台健康诊断 */}
-        <Card tone="bento" className="rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-ghost)] px-8 pb-4 pt-6">
-            <div className="flex items-center gap-3">
-              <HeartPulse className="size-5 text-[var(--bk-text-primary)]" />
-              <CardTitle className="text-xl font-black text-[var(--bk-text-primary)]">平台健康总览</CardTitle>
-            </div>
-            <Badge variant="success" className="rounded-xl border-2 px-3 py-1 text-[11px] font-black shadow-sm">
-               {technicalStatusLabel(monitorHealth?.status ?? "--")}
-            </Badge>
-          </CardHeader>
-          <CardContent className="px-8 py-8">
-            {monitorHealth ? (
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
-                {[
-                  { label: "Alerts", value: monitorHealth.alertCounts.total, icon: 'total' },
-                  { label: "Critical", value: monitorHealth.alertCounts.critical, color: 'text-[var(--bk-status-danger)]', bg: 'bg-[color:color-mix(in_srgb,var(--bk-status-danger)_8%,transparent)]' },
-                  { label: "Warning", value: monitorHealth.alertCounts.warning, color: 'text-[var(--bk-status-warning)]', bg: 'bg-[color:color-mix(in_srgb,var(--bk-status-warning)_10%,transparent)]' },
-                  { label: "Quiet", value: runtimePolicyValueLabel(platformRuntimePolicy?.runtimeQuietSeconds) },
-                  { label: "Eval", value: runtimePolicyValueLabel(platformRuntimePolicy?.strategyEvaluationQuietSeconds) },
-                  { label: "Sync", value: runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds) },
-                ].map((item) => (
-                  <div key={item.label} className={`rounded-[20px] border-2 border-[var(--bk-border)] p-4 shadow-sm transition-all hover:scale-105 ${item.bg || 'bg-[var(--bk-surface)]'}`}>
-                    <span className="mb-2 block text-[10px] font-black uppercase tracking-tighter text-[var(--bk-text-muted)] opacity-60">{item.label}</span>
-                    <strong className={`block text-xl font-black tracking-tighter ${item.color || 'text-[var(--bk-text-primary)]'}`}>
-                      {String(item.value ?? 0)}
-                    </strong>
-                  </div>
-                ))}
               </div>
             ) : (
-              <div className="rounded-[24px] border-2 border-dashed border-[var(--bk-border)] bg-[color-mix(in_srgb,var(--bk-surface-strong)_40%,transparent)] p-12 text-center text-sm font-bold italic text-[var(--bk-text-muted)]">
-                健康诊断模块正在预热中...
+              <div className="flex-1 flex flex-col items-center justify-center text-center opacity-40 italic text-sm">
+                载入会话...
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* 5. 记录中心与人工干预 */}
-        <Card tone="bento" className="rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl">
+        {/* 柱 2: 实时行情遥测 */}
+        <Card tone="bento" className="lg:col-span-4 rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-ghost)] px-8 py-3.5">
+            <div className="flex items-center gap-3">
+              <Zap className="size-5 text-[var(--bk-text-primary)]" />
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">行情遥测</CardTitle>
+            </div>
+            <Badge variant="metal" className="text-[var(--bk-text-muted)]">
+              {sessionSymbol || "NO SIGNAL"}
+            </Badge>
+          </CardHeader>
+          <CardContent className="p-5 flex-1 flex flex-col justify-center">
+            <div className="space-y-6">
+              <div className="text-center space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">Current Market Price</span>
+                <div className="text-5xl font-black tracking-tighter tabular-nums text-[var(--bk-text-primary)]">
+                  {formatMaybeNumber(monitorMarket.tradePrice)}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-[var(--bk-border)] bg-[var(--bk-surface-primary-faint)] p-3 text-center shadow-sm">
+                  <span className="block text-[9px] font-black uppercase text-[var(--bk-text-muted)] mb-1">Spread Bid/Ask</span>
+                  <strong className="text-[12px] font-mono font-black text-[var(--bk-status-success)]">
+                    {formatMaybeNumber(monitorMarket.bestBid)} / {formatMaybeNumber(monitorMarket.bestAsk)}
+                  </strong>
+                </div>
+                <div className="rounded-xl border border-[var(--bk-border)] bg-[var(--bk-surface-primary-faint)] p-3 text-center shadow-sm">
+                   <span className="block text-[9px] font-black uppercase text-[var(--bk-text-muted)] mb-1">Technical SMA5</span>
+                   <strong className="text-[12px] font-mono font-black text-[var(--bk-text-primary)]">
+                     {formatMaybeNumber(monitorSignalState.sma5)}
+                   </strong>
+                </div>
+              </div>
+
+              <p className="text-center text-[11px] font-bold leading-tight text-[var(--bk-text-muted)] italic opacity-70">
+                {String(monitorSignalBarDecision.reason ?? "当前无执行信号或正在等待波动...")}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 柱 3: 平台健康与安全 (集成原底部卡片) */}
+        <Card tone="bento" className="lg:col-span-4 rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-ghost)] px-8 py-3.5">
+            <div className="flex items-center gap-3">
+              <HeartPulse className="size-5 text-[var(--bk-text-primary)]" />
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">系统健康概览</CardTitle>
+            </div>
+            <Badge 
+              variant="metal"
+              className={cn(
+                "px-2 py-0.5",
+                monitorHealth?.status === "healthy" 
+                  ? "border-[var(--bk-status-success-soft)] text-[var(--bk-status-success)]" 
+                  : "border-[var(--bk-status-danger-soft)] text-[var(--bk-status-danger)]"
+              )}
+            >
+               {technicalStatusLabel(monitorHealth?.status ?? "--")}
+            </Badge>
+          </CardHeader>
+          <CardContent className="p-5 flex-1">
+            <div className="grid grid-cols-2 gap-3 h-full">
+              {[
+                { label: "Active Alerts", value: monitorHealth?.alertCounts.total ?? 0, icon: ShieldAlert },
+                { label: "Critical Issues", value: monitorHealth?.alertCounts.critical ?? 0, color: 'text-[var(--bk-status-danger)]' },
+                { label: "Runtime Quiet", value: runtimePolicyValueLabel(platformRuntimePolicy?.runtimeQuietSeconds) },
+                { label: "Eval Cooldown", value: runtimePolicyValueLabel(platformRuntimePolicy?.strategyEvaluationQuietSeconds) },
+                { label: "Account Sync", value: runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds) },
+                { 
+                  label: "Orphaned Orders", 
+                  value: orphanCount > 0 ? `${orphanCount} ERR` : "None", 
+                  color: orphanCount > 0 ? 'text-[var(--bk-status-danger)]' : 'text-[var(--bk-status-success)]',
+                  icon: orphanCount > 0 ? ShieldAlert : ShieldCheck 
+                }
+              ].map((item, idx) => (
+                <div key={idx} className="rounded-xl border-2 border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-muted)] p-4 flex flex-col justify-center transition-all hover:bg-[var(--bk-surface-soft)] shadow-sm">
+                  <span className="text-[10px] font-black uppercase tracking-tighter text-[var(--bk-text-muted)] mb-1">{item.label}</span>
+                  <strong className={`text-[15px] font-black tabular-nums tracking-tight ${item.color || 'text-[var(--bk-text-primary)]'}`}>
+                    {String(item.value ?? "--")}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 下沉底座: 执行时间线终端 (全宽) */}
+        <Card tone="bento" className="lg:col-span-12 rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl bg-[var(--bk-surface-faint)]">
+          <CardHeader className="border-b border-[var(--bk-border-soft)] bg-[color-mix(in_srgb,var(--bk-surface-ghost)_60%,transparent)] px-8 py-4">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="size-2 animate-pulse rounded-full bg-[var(--bk-status-success)]" />
+                  <h5 className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-primary)]">Execution Timeline Terminal</h5>
+                </div>
+                <div className="rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-0.5 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-muted)]">
+                  AUTO_SCROLL_MONITOR
+                </div>
+             </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="custom-scrollbar h-[260px] overflow-y-auto px-8 py-5 font-mono text-[10px] leading-relaxed">
+               {timelineLogs.length > 0 ? timelineLogs.map((line: string, idx: number) => (
+                 <div key={idx} className="mb-1 border-l-2 border-[var(--bk-canvas-strong)] pl-4 hover:bg-[color-mix(in_srgb,var(--bk-surface-strong)_40%,transparent)] transition-colors">
+                   <span className="mr-4 font-bold tabular-nums text-[var(--bk-text-muted)] opacity-30">[{idx.toString().padStart(2, '0')}]</span>
+                   <span className="text-[var(--bk-text-primary)] tracking-tight">{line}</span>
+                 </div>
+               )) : (
+                 <div className="flex h-full items-center justify-center italic text-[var(--bk-text-muted)] opacity-40">
+                   Waiting for execution events...
+                 </div>
+               )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-8">
+        {/* 3. 事务审计与管理控制 (下部 Dock) */}
+        <Card tone="bento" className="rounded-[32px] overflow-hidden border-2 border-[var(--bk-border-strong)] shadow-xl bg-[var(--bk-surface)]">
           <Tabs defaultValue="orders" value={dockTab} onValueChange={(val) => onDockTabChange(val as any)}>
             <CardHeader className="flex flex-row items-center justify-between border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-ghost)] px-8 pb-3 pt-6">
               <div className="flex items-center gap-3">
-                <ShieldCheck className="size-5 text-[var(--bk-text-primary)]" />
-                <CardTitle className="text-xl font-black text-[var(--bk-text-primary)]">运行监控与人工干预</CardTitle>
+                <Layers className="size-5 text-[var(--bk-text-primary)]" />
+                <CardTitle className="text-xl font-black text-[var(--bk-text-primary)]">事务审计与管理控制</CardTitle>
               </div>
-              <TabsList variant="bento" className="flex h-10 gap-1 rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--bk-canvas-strong)_50%,transparent)] p-1 shadow-inner">
-                <TabsTrigger value="orders" className="rounded-xl px-4 text-[10px] font-black uppercase data-[state=active]:bg-[var(--bk-surface)] data-[state=active]:text-[var(--bk-text-primary)] data-[state=active]:shadow-sm">订单</TabsTrigger>
-                <TabsTrigger value="positions" className="rounded-xl px-4 text-[10px] font-black uppercase data-[state=active]:bg-[var(--bk-surface)] data-[state=active]:text-[var(--bk-text-primary)] data-[state=active]:shadow-sm">持仓</TabsTrigger>
-                <TabsTrigger value="fills" className="rounded-xl px-4 text-[10px] font-black uppercase data-[state=active]:bg-[var(--bk-surface)] data-[state=active]:text-[var(--bk-text-primary)] data-[state=active]:shadow-sm">成交</TabsTrigger>
-                <TabsTrigger value="alerts" className="rounded-xl px-4 text-[10px] font-black uppercase data-[state=active]:bg-[var(--bk-surface)] data-[state=active]:text-[var(--bk-text-primary)] data-[state=active]:shadow-sm">告警</TabsTrigger>
+              <TabsList variant="bento" className="flex h-10 gap-1 rounded-2xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-strong)] p-1 shadow-inner">
+                <TabsTrigger value="orders" className="rounded-xl px-4 text-[10px] font-black uppercase">订单</TabsTrigger>
+                <TabsTrigger value="positions" className="rounded-xl px-4 text-[10px] font-black uppercase">持仓</TabsTrigger>
+                <TabsTrigger value="fills" className="rounded-xl px-4 text-[10px] font-black uppercase">成交</TabsTrigger>
+                <TabsTrigger value="alerts" className="rounded-xl px-4 text-[10px] font-black uppercase">告警</TabsTrigger>
               </TabsList>
             </CardHeader>
             <CardContent className="p-0">

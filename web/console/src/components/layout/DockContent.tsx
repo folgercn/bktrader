@@ -14,19 +14,22 @@ import { formatTime, formatMaybeNumber, shrink } from '../../utils/format';
 import { technicalStatusLabel } from '../../utils/derivation';
 import { useTradingStore } from '../../store/useTradingStore';
 import { useUIStore } from '../../store/useUIStore';
+import { ShieldCheck, Loader2 } from 'lucide-react';
+
+import { cn } from '../../lib/utils';
 
 interface DockContentProps {
   dockTab: 'orders' | 'positions' | 'fills' | 'alerts';
   actions: any;
 }
 
-function TruncatedValue({ value, display }: { value: string; display?: string }) {
+function TruncatedValue({ value, display, noShrink }: { value: string; display?: string; noShrink?: boolean }) {
   const fullValue = String(value ?? "").trim() || "--";
-  const shownValue = display ?? shrink(fullValue);
+  const shownValue = display ?? (noShrink ? fullValue : shrink(fullValue));
 
   return (
     <Tooltip>
-      <TooltipTrigger className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-left">
+      <TooltipTrigger className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-left hover:text-[var(--bk-text-primary)] transition-colors">
         {shownValue}
       </TooltipTrigger>
       <TooltipContent className="max-w-sm rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] px-3 py-2 text-[11px] text-[var(--bk-text-primary)] shadow-xl">
@@ -116,7 +119,13 @@ function DockTable({
             {columns.map((column) => (
               <TableHead
                 key={column}
-                className="h-9 px-4 text-[10px] font-black uppercase tracking-wide text-[var(--bk-text-secondary)]"
+                className={cn(
+                  "h-9 px-4 text-[10px] font-black uppercase tracking-wide text-[var(--bk-text-secondary)]",
+                  column === "ID" && "min-w-[150px]",
+                  column === "策略版本" && "min-w-[280px]",
+                  column === "创建时间" && "min-w-[160px]",
+                  column === "操作" && "text-right"
+                )}
               >
                 {column}
               </TableHead>
@@ -126,14 +135,23 @@ function DockTable({
         <TableBody>
           {rows.map((row, index) => (
             <TableRow key={`row-${index}`} className="border-[var(--bk-border-soft)]">
-              {row.map((cell, cellIndex) => (
-                <TableCell
-                  key={`cell-${index}-${cellIndex}`}
-                  className="px-4 py-3 text-[12px] text-[var(--bk-text-primary)]"
-                >
-                  {cell}
-                </TableCell>
-              ))}
+              {row.map((cell, cellIndex) => {
+                const columnName = columns[cellIndex];
+                return (
+                  <TableCell
+                    key={`cell-${index}-${cellIndex}`}
+                    className={cn(
+                      "px-4 py-3 text-[12px] text-[var(--bk-text-primary)]",
+                      columnName === "ID" && "min-w-[150px] font-mono",
+                      columnName === "策略版本" && "min-w-[280px] font-mono",
+                      columnName === "创建时间" && "min-w-[160px] font-mono",
+                      columnName === "操作" && "text-right"
+                    )}
+                  >
+                    {cell}
+                  </TableCell>
+                );
+              })}
             </TableRow>
           ))}
         </TableBody>
@@ -148,27 +166,54 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
   const positions = useTradingStore(s => s.positions);
   const alerts = useTradingStore(s => s.alerts);
   const positionCloseAction = useUIStore(s => s.positionCloseAction);
+  const liveSyncAction = useUIStore(s => s.liveSyncAction);
   const openConfirmDialog = useUIStore(s => s.openConfirmDialog);
 
   return (
     <div className="h-full relative overflow-hidden">
       {dockTab === 'orders' && (
         <DockTable
-          columns={["ID", "策略版本", "Symbol", "Side", "Type", "数量", "价格", "状态", "创建时间", "操作"]}
-          rows={orders.map((order) => [
-            <TruncatedValue key={`${order.id}-id`} value={order.id} display={shrink(order.id).replace('order-', '')} />,
-            <TruncatedValue key={`${order.id}-strategy`} value={String(order.metadata?.strategyVersionId ?? order.metadata?.source ?? "--")} />,
-            order.symbol,
-            <DockBadge key={`${order.id}-side`} tone={order.side === "buy" ? "ready" : "neutral"}>{order.side}</DockBadge>,
-            order.type,
-            formatMaybeNumber(order.quantity),
-            formatMaybeNumber(order.price),
-            technicalStatusLabel(order.status),
-            formatTime(order.createdAt),
-            <div key={`${order.id}-actions`} className="inline-actions">
-              <DockActionButton label="Sync" variant="ghost" onClick={() => actions.syncLiveOrder(order.id)} />
-            </div>,
-          ])}
+          columns={["ID", "策略版本", "Symbol", "Side", "Type", "数量", "价格", "交易所ID", "状态", "创建时间", "操作"]}
+          rows={orders.map((order) => {
+            const exchangeId = String(order.metadata?.exchangeTradeId ?? "--");
+            const isReconciled = exchangeId !== "--";
+            const isOrphan = !!order.metadata?.isOrphan;
+
+            return [
+              <TruncatedValue key={`${order.id}-id`} value={order.id} display={order.id.replace('order-', '')} />,
+              <TruncatedValue key={`${order.id}-strategy`} value={String(order.metadata?.strategyVersionId ?? order.metadata?.source ?? "--")} noShrink />,
+              order.symbol,
+              <DockBadge key={`${order.id}-side`} tone={order.side === "buy" ? "ready" : "neutral"}>{order.side}</DockBadge>,
+              order.type,
+              formatMaybeNumber(order.quantity),
+              formatMaybeNumber(order.price),
+              <div key={`${order.id}-exid`} className="flex items-center gap-1.5 min-w-[120px]">
+                <TruncatedValue value={exchangeId} />
+                {isReconciled && (
+                   <div className="flex size-3.5 items-center justify-center rounded-full bg-[var(--bk-status-success-soft)] text-[var(--bk-status-success)]">
+                      <ShieldCheck className="size-2.5" />
+                   </div>
+                )}
+              </div>,
+              <div key={`${order.id}-status`} className="flex items-center gap-2">
+                <DockBadge tone={isOrphan ? "blocked" : (isReconciled ? "ready" : "watch")}>
+                  {technicalStatusLabel(order.status)}
+                </DockBadge>
+              </div>,
+              formatTime(order.createdAt),
+              <div key={`${order.id}-actions`} className="inline-actions relative">
+                <DockActionButton 
+                  label={liveSyncAction === order.id ? "Syncing..." : "Sync"} 
+                  disabled={liveSyncAction !== null}
+                  variant="ghost" 
+                  onClick={() => actions.syncLiveOrder(order.id)} 
+                />
+                {liveSyncAction === order.id && (
+                  <Loader2 className="absolute -right-2 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--bk-text-muted)]" />
+                )}
+              </div>,
+            ];
+          })}
           emptyMessage="暂无订单"
         />
       )}
@@ -176,8 +221,8 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
         <DockTable
           columns={["ID", "账户", "Symbol", "Side", "仓位大小", "开仓价", "标记价", "更新时间", "操作"]}
           rows={positions.map((pos) => [
-            <TruncatedValue key={`${pos.id}-id`} value={pos.id} display={shrink(pos.id).replace('position-', 'pos-')} />,
-            <TruncatedValue key={`${pos.id}-account`} value={pos.accountId} display={shrink(pos.accountId).replace('account-', 'acc-')} />,
+            <TruncatedValue key={`${pos.id}-id`} value={pos.id} display={pos.id.replace('position-', 'pos-')} />,
+            <TruncatedValue key={`${pos.id}-account`} value={pos.accountId} display={pos.accountId.replace('account-', 'acc-')} />,
             pos.symbol,
             <DockBadge key={`${pos.id}-side`} tone={pos.side === "long" ? "ready" : "neutral"}>{pos.side}</DockBadge>,
             formatMaybeNumber(pos.quantity),
@@ -206,8 +251,8 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
         <DockTable
           columns={["ID", "订单ID", "成交量", "成交价", "费用", "时间"]}
           rows={fills.map((fill) => [
-            <TruncatedValue key={`${fill.id}-id`} value={fill.id} display={shrink(fill.id).replace('fill-', '')} />,
-            <TruncatedValue key={`${fill.id}-order`} value={fill.orderId} display={shrink(fill.orderId).replace('order-', '')} />,
+            <TruncatedValue key={`${fill.id}-id`} value={fill.id} display={fill.id.replace('fill-', '')} />,
+            <TruncatedValue key={`${fill.id}-order`} value={fill.orderId} display={fill.orderId.replace('order-', '')} />,
             formatMaybeNumber(fill.quantity),
             formatMaybeNumber(fill.price),
             formatMaybeNumber(fill.fee),
