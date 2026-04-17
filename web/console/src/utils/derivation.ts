@@ -385,9 +385,22 @@ export function getList(value: unknown): Array<Record<string, unknown>> {
   return value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item));
 }
 
-export function deriveRuntimeMarketSnapshot(sourceStates: Record<string, unknown>, summary: Record<string, unknown>): RuntimeMarketSnapshot {
+export function deriveRuntimeMarketSnapshot(
+  sourceStates: Record<string, unknown>,
+  summary: Record<string, unknown>,
+  targetSymbol?: string
+): RuntimeMarketSnapshot {
   const snapshot: RuntimeMarketSnapshot = {};
-  const states = Object.values(sourceStates).map((value) => getRecord(value));
+  const normalizedTarget = (targetSymbol ?? "").trim().toUpperCase();
+  const states = Object.values(sourceStates)
+    .map((value) => getRecord(value))
+    .filter((state) => {
+      if (!normalizedTarget) return true;
+      const stateSymbol = String(state.symbol ?? "").trim().toUpperCase();
+      // If state doesn't have a symbol, we might still want to include it if it's a global source,
+      // but usually signal sources have symbols.
+      return stateSymbol === "" || stateSymbol === normalizedTarget;
+    });
 
   for (const state of states) {
     if (snapshot.tradePrice == null) {
@@ -415,8 +428,19 @@ export function deriveRuntimeMarketSnapshot(sourceStates: Record<string, unknown
   return snapshot;
 }
 
-export function deriveRuntimeSourceSummary(sourceStates: Record<string, unknown>, policy: RuntimePolicy | null): RuntimeSourceSummary {
-  const states = Object.values(sourceStates).map((value) => getRecord(value));
+export function deriveRuntimeSourceSummary(
+  sourceStates: Record<string, unknown>,
+  policy: RuntimePolicy | null,
+  targetSymbol?: string
+): RuntimeSourceSummary {
+  const normalizedTarget = (targetSymbol ?? "").trim().toUpperCase();
+  const states = Object.values(sourceStates)
+    .map((value) => getRecord(value))
+    .filter((state) => {
+      if (!normalizedTarget) return true;
+      const stateSymbol = String(state.symbol ?? "").trim().toUpperCase();
+      return stateSymbol === "" || stateSymbol === normalizedTarget;
+    });
   const now = Date.now();
   let tradeTickCount = 0;
   let orderBookCount = 0;
@@ -483,8 +507,10 @@ export function deriveRuntimeReadiness(
   return { ready: true, status: "ready", reason: "健康" };
 }
 
-export function deriveSignalBarCandles(sourceStates: Record<string, unknown>): SignalBarCandle[] {
+export function deriveSignalBarCandles(sourceStates: Record<string, unknown>, targetSymbol?: string): SignalBarCandle[] {
   const candles: SignalBarCandle[] = [];
+  const normalizedTarget = (targetSymbol ?? "").trim().toUpperCase();
+
   for (const value of Object.values(sourceStates)) {
     const state = getRecord(value);
     if (String(state.streamType ?? "") !== "signal_bar") {
@@ -492,6 +518,10 @@ export function deriveSignalBarCandles(sourceStates: Record<string, unknown>): S
     }
     const bars = Array.isArray(state.bars) ? (state.bars as Array<Record<string, unknown>>) : [];
     for (const bar of bars) {
+      const barSymbol = String(bar.symbol ?? "").trim().toUpperCase();
+      if (normalizedTarget && barSymbol && barSymbol !== normalizedTarget) {
+        continue;
+      }
       const barStart = String(bar.barStart ?? "");
       const parsed = Number(barStart);
       const time = Number.isFinite(parsed) && parsed > 0 ? new Date(parsed).toISOString() : "";
@@ -1370,13 +1400,17 @@ export function telegramDeliveryTone(status: unknown): "ready" | "watch" | "bloc
 }
 
 export function runtimeReadinessTone(status: string): "ready" | "watch" | "blocked" | "neutral" {
-  switch (status) {
+  switch (status.trim().toLowerCase()) {
     case "ready":
       return "ready";
     case "warning":
       return "watch";
     case "blocked":
       return "blocked";
+    case "recovering":
+      return "watch"; // Yellow status
+    case "stale-after-reconnect":
+      return "blocked"; // Red status
     default:
       return "neutral";
   }

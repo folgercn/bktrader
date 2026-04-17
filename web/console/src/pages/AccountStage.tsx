@@ -259,7 +259,8 @@ export function AccountStage({
   const selectedSignalRuntimeSourceStates = getRecord(selectedSignalRuntimeState.sourceStates);
   const selectedSignalBarStates = getRecord(selectedSignalRuntimeState.signalBarStates);
   const selectedSignalRuntimeTimeline = getList(selectedSignalRuntimeState.timeline);
-  const selectedSignalRuntimeSignalBars = deriveSignalBarCandles(selectedSignalRuntimeSourceStates);
+  const selectedRuntimeSymbol = String(selectedSignalRuntimeState.symbol ?? "").trim().toUpperCase();
+  const selectedSignalRuntimeSignalBars = deriveSignalBarCandles(selectedSignalRuntimeSourceStates, selectedRuntimeSymbol);
   const selectedSignalRuntimeSubscriptions = Array.isArray(selectedSignalRuntimeState.subscriptions)
     ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
     : [];
@@ -452,9 +453,11 @@ export function AccountStage({
                 const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
                 const activeRuntimeState = getRecord(activeRuntime?.state);
                 const activeRuntimeSummary = getRecord(activeRuntimeState.lastEventSummary);
-                const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary);
+                const accountSession = validLiveSessions.find((item) => item.accountId === account.id);
+                 const accountSymbol = String(accountSession?.state?.symbol ?? activeRuntime?.state?.symbol ?? "").trim().toUpperCase();
+                 const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary, accountSymbol);
                 const strategyBindings = (activeRuntime?.strategyId ? strategySignalBindingMap[activeRuntime.strategyId] : undefined) ?? strategySignalBindingMap[validLiveSessions.find((item) => item.accountId === account.id)?.strategyId ?? ""] ?? [];
-                const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates), runtimePolicy);
+                const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates), runtimePolicy, accountSymbol);
                 const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
                 const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
                 const activeRuntimeTimeline = getList(activeRuntimeState.timeline);
@@ -489,8 +492,8 @@ export function AccountStage({
                           </div>
                           
                           <div className="flex items-center gap-2 pt-1">
-                             <div className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm ${activeRuntimeReadiness.status === 'ready' ? 'bg-[var(--bk-status-success-soft)] text-[var(--bk-status-success)]' : 'bg-[var(--bk-status-warning-soft)] text-[var(--bk-status-warning)]'}`}>
-                                <div className={`size-1.5 rounded-full ${activeRuntimeReadiness.status === 'ready' ? 'bg-[var(--bk-status-success)] animate-pulse' : 'bg-amber-600'}`} />
+                             <div className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm ${activeRuntimeReadiness.status === "ready" ? "bg-[var(--bk-status-success-soft)] text-[var(--bk-status-success)]" : String(activeRuntimeState.health).toLowerCase() === "recovering" ? "bg-[var(--bk-status-warning-soft)] text-[var(--bk-status-warning)]" : "bg-[var(--bk-status-warning-soft)] text-[var(--bk-status-warning)]"}`}>
+                                <div className={`size-1.5 rounded-full ${activeRuntimeReadiness.status === "ready" ? "bg-[var(--bk-status-success)] animate-pulse" : String(activeRuntimeState.health).toLowerCase() === "recovering" ? "bg-[var(--bk-status-warning)] animate-pulse" : String(activeRuntimeState.health).toLowerCase() === "stale-after-reconnect" ? "bg-[var(--bk-status-danger)]" : "bg-amber-600"}`} />
                                 环境：{statusLabelZh(activeRuntimeReadiness.status)}
                              </div>
                              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--bk-text-muted)] shadow-sm">

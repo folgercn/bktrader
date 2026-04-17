@@ -74,13 +74,48 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		sourceSummary := p.summarizeRuntimeSources(session)
 		state := cloneMetadata(session.State)
 		health := strings.ToLower(strings.TrimSpace(stringValue(state["health"])))
-		if strings.EqualFold(session.Status, "ERROR") || (health != "" && health != "healthy" && health != "idle" && health != "stopped") {
+		if strings.EqualFold(session.Status, "ERROR") || (health != "" && health != "healthy" && health != "idle" && health != "stopped" && health != "recovering" && health != "stale-after-reconnect") {
 			appendAlert(domain.PlatformAlert{
 				ID:               fmt.Sprintf("runtime-health-%s", session.ID),
 				Scope:            "runtime",
 				Level:            "critical",
 				Title:            "Runtime health",
 				Detail:           fmt.Sprintf("session=%s health=%s", session.Status, firstNonEmpty(health, "unknown")),
+				AccountID:        session.AccountID,
+				AccountName:      account.Name,
+				StrategyID:       session.StrategyID,
+				StrategyName:     strategyNameByID[session.StrategyID],
+				RuntimeSessionID: session.ID,
+				Anchor:           "signals",
+				EventTime:        session.UpdatedAt,
+			})
+		}
+		if health == "recovering" {
+			appendAlert(domain.PlatformAlert{
+				ID:    fmt.Sprintf("runtime-recovering-%s", session.ID),
+				Scope: "runtime",
+				Level: "warning",
+				Title: "Runtime recovering",
+				Detail: fmt.Sprintf("attempt %d/%d: %s",
+					maxIntValue(state["reconnectAttempt"], 0),
+					maxIntValue(state["reconnectMaxAttempts"], 0),
+					firstNonEmpty(stringValue(state["lastDisconnectError"]), "unknown")),
+				AccountID:        session.AccountID,
+				AccountName:      account.Name,
+				StrategyID:       session.StrategyID,
+				StrategyName:     strategyNameByID[session.StrategyID],
+				RuntimeSessionID: session.ID,
+				Anchor:           "signals",
+				EventTime:        session.UpdatedAt,
+			})
+		}
+		if health == "stale-after-reconnect" {
+			appendAlert(domain.PlatformAlert{
+				ID:               fmt.Sprintf("runtime-stale-reconnect-%s", session.ID),
+				Scope:            "runtime",
+				Level:            "critical",
+				Title:            "Signal bar may be stale after reconnect",
+				Detail:           "WS disconnect may have missed a K-line close, please verify data and manually restart if needed",
 				AccountID:        session.AccountID,
 				AccountName:      account.Name,
 				StrategyID:       session.StrategyID,

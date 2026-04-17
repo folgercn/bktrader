@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -14,37 +15,324 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
+// --- Tiered Disconnect Recovery ---
+
+type disconnectSeverity int
+
+const (
+	disconnectTransient disconnectSeverity = iota // L0: safe to reconnect (timeout, EOF, reset)
+	disconnectKicked                              // L1: cautious reconnect (close 1006/1008)
+	disconnectFatal                               // L2: never reconnect (banned, invalid key)
+)
+
+func (s disconnectSeverity) String() string {
+	switch s {
+	case disconnectTransient:
+		return "transient"
+	case disconnectKicked:
+		return "kicked"
+	case disconnectFatal:
+		return "fatal"
+	default:
+		return "unknown"
+	}
+}
+
+type reconnectPolicy struct {
+	maxAttempts int
+	backoffs    []time.Duration
+}
+
+var (
+	transientReconnectPolicy = reconnectPolicy{
+		maxAttempts: 3,
+		backoffs:    []time.Duration{10 * time.Second, 30 * time.Second, 60 * time.Second},
+	}
+	kickedReconnectPolicy = reconnectPolicy{
+		maxAttempts: 2,
+		backoffs:    []time.Duration{30 * time.Second, 120 * time.Second},
+	}
+)
+
+func classifyDisconnectSeverity(err error) disconnectSeverity {
+	if err == nil {
+		return disconnectFatal
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return disconnectTransient
+	}
+	msg := strings.ToLower(err.Error())
+
+	// L2 fatal — never reconnect
+	fatalPatterns := []string{
+		"invalid api", "banned", "forbidden", "unauthorized",
+		"403", "401",
+	}
+	for _, pattern := range fatalPatterns {
+		if strings.Contains(msg, pattern) {
+			return disconnectFatal
+		}
+	}
+
+	// L1 kicked — cautious reconnect
+	kickedPatterns := []string{
+		"close 1006", "close 1008", "close 1001",
+		"too many requests", "rate limit",
+	}
+	for _, pattern := range kickedPatterns {
+		if strings.Contains(msg, pattern) {
+			return disconnectKicked
+		}
+	}
+
+	// L0 default — safe transient error
+	return disconnectTransient
+}
+
 const (
 	defaultBinanceFuturesWSURL = "wss://fstream.binance.com/ws"
 	defaultOKXPublicWSURL      = "wss://ws.okx.com:8443/ws/v5/public"
 )
 
+type signalRuntimeLoopRunner func(context.Context, string) (bool, error)
+type signalRuntimeBackoffWaiter func(context.Context, time.Duration) bool
+
 func (p *Platform) runSignalRuntimeLoop(ctx context.Context, sessionID string) {
-	session, err := p.GetSignalRuntimeSession(sessionID)
-	if err != nil {
+	_, loopErr := p.runSignalRuntimeLoopOnce(ctx, sessionID)
+	if loopErr == nil || signalRuntimeStopRequested(ctx, loopErr) {
+		p.setSessionStopped(sessionID)
 		return
 	}
+	p.setSessionTerminalError(sessionID, loopErr)
+}
 
-	switch session.RuntimeAdapter {
-	case "binance-market-ws":
-		p.runExchangeWebsocketLoop(ctx, session, configuredBinanceFuturesWSURL(), buildBinanceSubscribePayload)
-	case "okx-market-ws":
-		p.runExchangeWebsocketLoop(ctx, session, configuredOKXPublicWSURL(), buildOKXSubscribePayload)
-	default:
-		_ = p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
-			session.Status = "ERROR"
-			state := cloneMetadata(session.State)
-			state["health"] = "error"
-			state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
-			state["lastEventSummary"] = map[string]any{
-				"type":    "runtime_error",
-				"message": "unsupported runtime adapter: " + session.RuntimeAdapter,
+// runSignalRuntimeWithRecovery wraps runSignalRuntimeLoop with tiered disconnect recovery.
+// L0 transient errors (timeout, EOF): up to 3 retries with 10s/30s/60s backoff.
+// L1 kicked errors (close 1006/1008): up to 2 retries with 30s/120s backoff.
+// L2 fatal errors (banned, invalid API key): NO retry, immediate ERROR.
+// After reconnect, validates signal bar continuity and marks stale if bars were missed.
+func (p *Platform) runSignalRuntimeWithRecovery(ctx context.Context, sessionID string) {
+	p.runSignalRuntimeWithRecoveryUsing(ctx, sessionID, p.runSignalRuntimeLoopOnce, waitSignalRuntimeBackoff)
+}
+
+func (p *Platform) runSignalRuntimeWithRecoveryUsing(
+	ctx context.Context,
+	sessionID string,
+	runLoop signalRuntimeLoopRunner,
+	waitBackoff signalRuntimeBackoffWaiter,
+) {
+	defer p.removeSignalRuntimeRunner(sessionID)
+
+	disconnectErr := error(nil)
+	for {
+		if disconnectErr == nil {
+			_, loopErr := runLoop(ctx, sessionID)
+			if loopErr == nil || signalRuntimeStopRequested(ctx, loopErr) {
+				p.setSessionStopped(sessionID)
+				return
 			}
-			appendSignalRuntimeError(state, fmt.Sprintf("unsupported runtime adapter: %s", session.RuntimeAdapter))
-			session.State = state
-			session.UpdatedAt = time.Now().UTC()
-		})
+			severity := classifyDisconnectSeverity(loopErr)
+			if severity == disconnectFatal {
+				p.setSessionTerminalError(sessionID, loopErr)
+				return
+			}
+			disconnectErr = loopErr
+		}
+
+		severity := classifyDisconnectSeverity(disconnectErr)
+		policy := reconnectPolicyForSeverity(severity)
+		p.logger("service.signal_runtime", "session_id", sessionID).Warn(
+			"signal runtime disconnected, attempting recovery",
+			"severity", severity.String(),
+			"max_attempts", policy.maxAttempts,
+			"error", disconnectErr.Error(),
+		)
+		recovered := false
+		for attempt := 1; attempt <= policy.maxAttempts; attempt++ {
+			backoff := recoveryBackoff(policy, attempt)
+			p.setSessionRecovering(sessionID, disconnectErr, attempt, policy.maxAttempts, backoff)
+
+			if !waitBackoff(ctx, backoff) {
+				p.setSessionStopped(sessionID)
+				return
+			}
+
+			connected, retryErr := runLoop(ctx, sessionID)
+			if retryErr == nil || signalRuntimeStopRequested(ctx, retryErr) {
+				p.setSessionStopped(sessionID)
+				return
+			}
+
+			retrySeverity := classifyDisconnectSeverity(retryErr)
+			if retrySeverity == disconnectFatal {
+				p.setSessionTerminalError(sessionID, retryErr)
+				return
+			}
+
+			if connected {
+				// The reconnect succeeded and the runtime ran again before dropping later.
+				// Start a fresh recovery cycle so the next disconnect gets a full retry budget.
+				disconnectErr = retryErr
+				recovered = true
+				break
+			}
+
+			disconnectErr = retryErr
+			severity = retrySeverity
+			policy = reconnectPolicyForSeverity(severity)
+		}
+
+		if recovered {
+			continue
+		}
+
+		p.setSessionTerminalError(sessionID, fmt.Errorf(
+			"reconnect exhausted after %d attempts (severity=%s): %w",
+			policy.maxAttempts, severity.String(), disconnectErr))
+		return
 	}
+}
+
+func reconnectPolicyForSeverity(severity disconnectSeverity) reconnectPolicy {
+	switch severity {
+	case disconnectKicked:
+		return kickedReconnectPolicy
+	default:
+		return transientReconnectPolicy
+	}
+}
+
+func recoveryBackoff(policy reconnectPolicy, attempt int) time.Duration {
+	if len(policy.backoffs) == 0 {
+		return 0
+	}
+	index := attempt - 1
+	if index < 0 {
+		index = 0
+	}
+	return policy.backoffs[minInt(index, len(policy.backoffs)-1)]
+}
+
+func waitSignalRuntimeBackoff(ctx context.Context, backoff time.Duration) bool {
+	if backoff <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(backoff)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func signalRuntimeStopRequested(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func (p *Platform) runSignalRuntimeLoopOnce(ctx context.Context, sessionID string) (bool, error) {
+	session, err := p.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		return false, err
+	}
+
+	wsURL, subscribeBuilder, err := signalRuntimeWebsocketConfig(session.RuntimeAdapter)
+	if err != nil {
+		return false, err
+	}
+
+	return p.runExchangeWebsocketLoop(ctx, session, wsURL, subscribeBuilder)
+}
+
+func signalRuntimeWebsocketConfig(runtimeAdapter string) (string, func([]map[string]any) (map[string]any, error), error) {
+	switch runtimeAdapter {
+	case "binance-market-ws":
+		return configuredBinanceFuturesWSURL(), buildBinanceSubscribePayload, nil
+	case "okx-market-ws":
+		return configuredOKXPublicWSURL(), buildOKXSubscribePayload, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported runtime adapter: %s", runtimeAdapter)
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (p *Platform) setSessionRecovering(sessionID string, lastErr error, attempt, maxAttempts int, nextBackoff time.Duration) {
+	_ = p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
+		now := time.Now().UTC()
+		state := cloneMetadata(session.State)
+		state["health"] = "recovering"
+		state["lastDisconnectError"] = lastErr.Error()
+		if stringValue(state["lastDisconnectAt"]) == "" {
+			state["lastDisconnectAt"] = now.Format(time.RFC3339)
+		}
+		state["reconnectAttempt"] = attempt
+		state["reconnectMaxAttempts"] = maxAttempts
+		state["reconnectNextBackoff"] = nextBackoff.String()
+		state["reconnectSeverity"] = classifyDisconnectSeverity(lastErr).String()
+		appendSignalRuntimeTimeline(state, now, "runtime", "recovering", map[string]any{
+			"attempt":  attempt,
+			"backoff":  nextBackoff.String(),
+			"error":    lastErr.Error(),
+			"severity": classifyDisconnectSeverity(lastErr).String(),
+		})
+		session.State = state
+		session.UpdatedAt = now
+	})
+}
+
+func (p *Platform) setSessionTerminalError(sessionID string, err error) {
+	_ = p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
+		session.Status = "ERROR"
+		state := cloneMetadata(session.State)
+		state["health"] = "error"
+		state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
+		state["lastEventSummary"] = map[string]any{
+			"type":    "runtime_error",
+			"message": err.Error(),
+		}
+		delete(state, "reconnectAttempt")
+		delete(state, "reconnectMaxAttempts")
+		delete(state, "reconnectNextBackoff")
+		delete(state, "reconnectSeverity")
+		appendSignalRuntimeError(state, err.Error())
+		appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "error", map[string]any{
+			"message": err.Error(),
+		})
+		session.State = state
+		session.UpdatedAt = time.Now().UTC()
+	})
+}
+
+func (p *Platform) setSessionStopped(sessionID string) {
+	_ = p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
+		session.Status = "STOPPED"
+		state := cloneMetadata(session.State)
+		state["health"] = "stopped"
+		state["stoppedAt"] = time.Now().UTC().Format(time.RFC3339)
+		state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
+		state["lastEventSummary"] = map[string]any{
+			"type":    "runtime_stopped",
+			"message": "signal runtime stopped",
+		}
+		delete(state, "reconnectAttempt")
+		delete(state, "reconnectMaxAttempts")
+		delete(state, "reconnectNextBackoff")
+		delete(state, "reconnectSeverity")
+		appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "stopped", nil)
+		session.State = state
+		session.UpdatedAt = time.Now().UTC()
+	})
 }
 
 func configuredBinanceFuturesWSURL() string {
@@ -63,46 +351,23 @@ func configuredOKXPublicWSURL() string {
 	return url
 }
 
+// runExchangeWebsocketLoop runs a single WebSocket connection lifecycle.
+// The boolean reports whether the websocket reached RUNNING/subscribed before exiting.
+// The error reports a disconnect/failure; nil means the loop stopped cleanly.
 func (p *Platform) runExchangeWebsocketLoop(
 	ctx context.Context,
 	session domain.SignalRuntimeSession,
 	wsURL string,
 	subscribeBuilder func([]map[string]any) (map[string]any, error),
-) {
+) (bool, error) {
 	subscriptions := metadataList(session.State["subscriptions"])
 	if len(subscriptions) == 0 {
-		_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
-			session.Status = "ERROR"
-			state := cloneMetadata(session.State)
-			state["health"] = "error"
-			state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
-			state["lastEventSummary"] = map[string]any{
-				"type":    "runtime_error",
-				"message": "no subscriptions to start",
-			}
-			appendSignalRuntimeError(state, "no subscriptions to start")
-			session.State = state
-			session.UpdatedAt = time.Now().UTC()
-		})
-		return
+		return false, fmt.Errorf("no subscriptions to start")
 	}
 
 	payload, err := subscribeBuilder(subscriptions)
 	if err != nil {
-		_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
-			session.Status = "ERROR"
-			state := cloneMetadata(session.State)
-			state["health"] = "error"
-			state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
-			state["lastEventSummary"] = map[string]any{
-				"type":    "runtime_error",
-				"message": err.Error(),
-			}
-			appendSignalRuntimeError(state, err.Error())
-			session.State = state
-			session.UpdatedAt = time.Now().UTC()
-		})
-		return
+		return false, fmt.Errorf("subscribe payload build failed: %w", err)
 	}
 
 	dialer := websocket.Dialer{
@@ -111,21 +376,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 	}
 	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
-		_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
-			session.Status = "ERROR"
-			state := cloneMetadata(session.State)
-			state["health"] = "error"
-			state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
-			state["lastEventSummary"] = map[string]any{
-				"type":    "dial_error",
-				"message": err.Error(),
-				"url":     wsURL,
-			}
-			appendSignalRuntimeError(state, err.Error())
-			session.State = state
-			session.UpdatedAt = time.Now().UTC()
-		})
-		return
+		return false, fmt.Errorf("dial %s failed: %w", wsURL, err)
 	}
 	defer conn.Close()
 
@@ -144,20 +395,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 	})
 
 	if err := conn.WriteJSON(payload); err != nil {
-		_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
-			session.Status = "ERROR"
-			state := cloneMetadata(session.State)
-			state["health"] = "error"
-			state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
-			state["lastEventSummary"] = map[string]any{
-				"type":    "subscribe_error",
-				"message": err.Error(),
-			}
-			appendSignalRuntimeError(state, err.Error())
-			session.State = state
-			session.UpdatedAt = time.Now().UTC()
-		})
-		return
+		return false, fmt.Errorf("subscribe write failed: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -175,6 +413,10 @@ func (p *Platform) runExchangeWebsocketLoop(
 			"subscriptionCount": len(subscriptions),
 			"url":               wsURL,
 		}
+		delete(state, "reconnectAttempt")
+		delete(state, "reconnectMaxAttempts")
+		delete(state, "reconnectNextBackoff")
+		delete(state, "reconnectSeverity")
 		appendSignalRuntimeTimeline(state, now, "runtime", "subscribed", map[string]any{
 			"subscriptionCount": len(subscriptions),
 			"url":               wsURL,
@@ -182,6 +424,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 		session.State = state
 		session.UpdatedAt = now
 	})
+	connected := true
 
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
@@ -217,6 +460,10 @@ func (p *Platform) runExchangeWebsocketLoop(
 					"timeframe": stringValue(summary["timeframe"]),
 					"price":     stringValue(summary["price"]),
 				})
+				// Validate signal bar continuity after reconnect
+				if stringValue(state["lastDisconnectAt"]) != "" {
+					p.validateSignalBarContinuityAfterReconnect(state, summary)
+				}
 				session.State = state
 				session.UpdatedAt = now
 			})
@@ -228,41 +475,9 @@ func (p *Platform) runExchangeWebsocketLoop(
 		select {
 		case <-ctx.Done():
 			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(2*time.Second))
-			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
-				session.Status = "STOPPED"
-				state := cloneMetadata(session.State)
-				state["health"] = "stopped"
-				state["stoppedAt"] = time.Now().UTC().Format(time.RFC3339)
-				state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
-				state["lastEventSummary"] = map[string]any{
-					"type":    "runtime_stopped",
-					"message": "signal runtime stopped",
-				}
-				appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "stopped", nil)
-				session.State = state
-				session.UpdatedAt = time.Now().UTC()
-			})
-			p.removeSignalRuntimeRunner(session.ID)
-			return
+			return connected, nil
 		case err := <-done:
-			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
-				session.Status = "ERROR"
-				state := cloneMetadata(session.State)
-				state["health"] = "error"
-				state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
-				state["lastEventSummary"] = map[string]any{
-					"type":    "runtime_error",
-					"message": err.Error(),
-				}
-				appendSignalRuntimeError(state, err.Error())
-				appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "error", map[string]any{
-					"message": err.Error(),
-				})
-				session.State = state
-				session.UpdatedAt = time.Now().UTC()
-			})
-			p.removeSignalRuntimeRunner(session.ID)
-			return
+			return connected, err
 		case <-ticker.C:
 			_ = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
 			now := time.Now().UTC()
@@ -276,11 +491,66 @@ func (p *Platform) runExchangeWebsocketLoop(
 	}
 }
 
+// validateSignalBarContinuityAfterReconnect checks if a signal bar close was missed
+// during the disconnect period. If so, marks health as stale-after-reconnect.
+func (p *Platform) validateSignalBarContinuityAfterReconnect(state map[string]any, summary map[string]any) {
+	lastDisconnectAt := parseOptionalRFC3339(stringValue(state["lastDisconnectAt"]))
+	if lastDisconnectAt.IsZero() {
+		return
+	}
+
+	timeframe := stringValue(summary["timeframe"])
+	if timeframe == "" {
+		// Not a signal bar message — just clear recovery state
+		delete(state, "lastDisconnectAt")
+		delete(state, "lastDisconnectError")
+		delete(state, "reconnectAttempt")
+		delete(state, "reconnectMaxAttempts")
+		delete(state, "reconnectNextBackoff")
+		delete(state, "reconnectSeverity")
+		return
+	}
+
+	barDuration := resolutionToDuration(liveSignalResolution(timeframe))
+	disconnectDuration := time.Since(lastDisconnectAt)
+
+	if barDuration > 0 && disconnectDuration > barDuration {
+		// Disconnect spanned a full bar period — may have missed a close
+		state["signalBarContinuityWarning"] = map[string]any{
+			"disconnectDuration": disconnectDuration.String(),
+			"barDuration":        barDuration.String(),
+			"timeframe":          timeframe,
+			"possibleMissedBars": int(disconnectDuration / barDuration),
+			"detectedAt":         time.Now().UTC().Format(time.RFC3339),
+		}
+		state["health"] = "stale-after-reconnect"
+		appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "stale-after-reconnect", map[string]any{
+			"disconnectDuration": disconnectDuration.String(),
+			"possibleMissedBars": int(disconnectDuration / barDuration),
+		})
+	} else {
+		// Short disconnect — safe recovery
+		delete(state, "signalBarContinuityWarning")
+	}
+
+	// Clear recovery tracking state
+	delete(state, "lastDisconnectAt")
+	delete(state, "lastDisconnectError")
+	delete(state, "reconnectAttempt")
+	delete(state, "reconnectMaxAttempts")
+	delete(state, "reconnectNextBackoff")
+	delete(state, "reconnectSeverity")
+}
+
 func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
 	if !signalRuntimeSummaryShouldTriggerLiveEvaluation(summary) {
 		return nil
 	}
 	targetSymbol := signalRuntimeSummarySymbol(summary)
+	// Reject messages with unknown symbol — never broadcast to all sessions
+	if targetSymbol == "" {
+		return nil
+	}
 	liveSessions, err := p.store.ListLiveSessions()
 	if err != nil {
 		return err
@@ -295,11 +565,12 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 		if !boolValue(session.State["signalRuntimeRequired"]) {
 			continue
 		}
-		if targetSymbol != "" {
-			sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
-			if sessionSymbol != "" && sessionSymbol != targetSymbol {
-				continue
-			}
+		sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+		if sessionSymbol == "" {
+			continue // session has no symbol — skip
+		}
+		if sessionSymbol != targetSymbol {
+			continue
 		}
 		_ = p.triggerLiveSessionFromSignal(session.ID, runtimeSessionID, summary, eventTime)
 	}
@@ -327,7 +598,13 @@ func enrichSignalRuntimeSummary(session domain.SignalRuntimeSession, summary map
 		return out
 	}
 	if len(subscriptions) == 1 {
-		attachSubscriptionContext(out, subscriptions[0])
+		sub := subscriptions[0]
+		subSymbol := NormalizeSymbol(stringValue(sub["symbol"]))
+		msgSymbol := NormalizeSymbol(stringValue(out["symbol"]))
+		// Only attach if message symbol is missing or matches subscription symbol
+		if msgSymbol == "" || subSymbol == "" || msgSymbol == subSymbol {
+			attachSubscriptionContext(out, sub)
+		}
 		return out
 	}
 
@@ -750,4 +1027,47 @@ func appendSignalRuntimeTimeline(state map[string]any, ts time.Time, category, t
 		items = items[len(items)-60:]
 	}
 	state["timeline"] = items
+}
+
+// --- Symbol Isolation Helpers ---
+
+// filterSourceStatesBySymbol returns only source state entries matching the target symbol.
+// Entries without a symbol tag are kept for backward compatibility with pre-isolation
+// state snapshots. Once we have telemetry on blank-symbol entries, this fallback can tighten.
+func filterSourceStatesBySymbol(sourceStates map[string]any, targetSymbol string) map[string]any {
+	if targetSymbol == "" || len(sourceStates) == 0 {
+		return sourceStates
+	}
+	filtered := make(map[string]any, len(sourceStates))
+	for key, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		entrySymbol := NormalizeSymbol(stringValue(entry["symbol"]))
+		if entrySymbol == "" || entrySymbol == targetSymbol {
+			filtered[key] = raw
+		}
+	}
+	return filtered
+}
+
+// filterSignalBarStatesBySymbol returns only signal bar state entries matching the target symbol.
+// Blank-symbol entries are preserved only for backward compatibility with older state data.
+func filterSignalBarStatesBySymbol(signalBarStates map[string]any, targetSymbol string) map[string]any {
+	if targetSymbol == "" || len(signalBarStates) == 0 {
+		return signalBarStates
+	}
+	filtered := make(map[string]any, len(signalBarStates))
+	for key, raw := range signalBarStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		entrySymbol := NormalizeSymbol(stringValue(entry["symbol"]))
+		if entrySymbol == "" || entrySymbol == targetSymbol {
+			filtered[key] = raw
+		}
+	}
+	return filtered
 }

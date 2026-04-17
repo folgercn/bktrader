@@ -961,6 +961,22 @@ func (p *Platform) triggerLiveSessionFromSignal(sessionID, runtimeSessionID stri
 		return nil
 	}
 
+	// Symbol mismatch guard — secondary defense against cross-symbol contamination
+	triggerSymbol := signalRuntimeSummarySymbol(summary)
+	sessionSymbol := NormalizeSymbol(firstNonEmpty(
+		stringValue(session.State["symbol"]),
+		stringValue(session.State["lastSymbol"]),
+	))
+	if triggerSymbol != "" && sessionSymbol != "" && triggerSymbol != sessionSymbol {
+		p.logger("service.live",
+			"session_id", sessionID,
+			"trigger_symbol", triggerSymbol,
+			"session_symbol", sessionSymbol,
+		).Warn("signal symbol mismatch in triggerLiveSessionFromSignal, skipping")
+		recordSignalSymbolMismatch(session.State, triggerSymbol, sessionSymbol, eventTime)
+		return nil
+	}
+
 	state := cloneMetadata(session.State)
 	state["lastSignalRuntimeEventAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["lastSignalRuntimeEvent"] = cloneMetadata(summary)
@@ -1035,6 +1051,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	}
 	sourceStates := map[string]any{}
 	signalBarStates := map[string]any{}
+	evalSymbol := NormalizeSymbol(firstNonEmpty(stringValue(state["symbol"]), stringValue(state["lastSymbol"])))
 	if runtimeSession, runtimeErr := p.GetSignalRuntimeSession(firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"]))); runtimeErr == nil {
 		state["lastSignalRuntimeStatus"] = runtimeSession.Status
 		sourceStates = cloneMetadata(mapValue(runtimeSession.State["sourceStates"]))
@@ -1045,6 +1062,9 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		if signalBarStates == nil {
 			signalBarStates = map[string]any{}
 		}
+		// Per-session symbol scoping: filter out data from other symbols
+		sourceStates = filterSourceStatesBySymbol(sourceStates, evalSymbol)
+		signalBarStates = filterSignalBarStatesBySymbol(signalBarStates, evalSymbol)
 		state["lastStrategyEvaluationSourceStates"] = sourceStates
 		state["lastStrategyEvaluationSignalBarStates"] = signalBarStates
 		state["lastStrategyEvaluationSignalBarStateCount"] = len(signalBarStates)

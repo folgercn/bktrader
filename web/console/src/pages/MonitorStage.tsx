@@ -118,9 +118,11 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorExecutionSummary = highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(null, orders, fills, positions);
   const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : {};
   const monitorSessionState = getRecord(monitorSession?.state);
+  const sessionSymbol = String(monitorSession?.state?.symbol ?? "").trim().toUpperCase();
+
   const monitorBars = useMemo(() => {
-    return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates));
-  }, [highlightedLiveRuntimeState.sourceStates]);
+    return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), sessionSymbol);
+  }, [highlightedLiveRuntimeState.sourceStates, sessionSymbol]);
 
   const monitorSignalState = derivePrimarySignalBarState(
     getRecord(highlightedLiveRuntimeState.signalBarStates),
@@ -128,7 +130,8 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   );
   const monitorMarket = deriveRuntimeMarketSnapshot(
     getRecord(monitorRuntimeState.sourceStates),
-    getRecord(monitorRuntimeState.lastEventSummary)
+    getRecord(monitorRuntimeState.lastEventSummary),
+    sessionSymbol
   );
   const monitorSummary =
     monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
@@ -146,7 +149,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     : [];
   const monitorRuntimeReadiness = deriveRuntimeReadiness(
     highlightedLiveRuntimeState,
-    deriveRuntimeSourceSummary(getRecord(highlightedLiveRuntimeState.sourceStates), runtimePolicy),
+    deriveRuntimeSourceSummary(getRecord(highlightedLiveRuntimeState.sourceStates), runtimePolicy, sessionSymbol),
     { requireTick: true, requireOrderBook: false }
   );
   const monitorIntent = getRecord(monitorSession?.state?.lastStrategyIntent);
@@ -315,7 +318,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                                 }`}
                               >
                                  <div className="flex items-center gap-3">
-                                    <div className={`size-2 rounded-full ${item.health.status === 'ready' ? 'bg-[var(--bk-status-success)]' : 'bg-rose-500'} ${item.isHighlighted ? 'ring-4 ring-[color-mix(in_srgb,var(--bk-status-success)_20%,transparent)]' : 'animate-pulse'}`} />
+                                    <div className={`size-2 rounded-full ${item.health.status === "ready" ? "bg-[var(--bk-status-success)]" : String(item.session.state?.health).toLowerCase() === "recovering" ? "bg-[var(--bk-status-warning)] animate-pulse" : String(item.session.state?.health).toLowerCase() === "stale-after-reconnect" ? "bg-[var(--bk-status-danger)]" : "bg-rose-500"} ${item.isHighlighted ? "ring-4 ring-[color-mix(in_srgb,var(--bk-status-success)_20%,transparent)]" : ""}`} />
                                     <div className="flex flex-col">
                                        <span className={`text-[10px] font-black ${item.isHighlighted ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-text-primary)]'}`}>{item.session.id.length > 20 ? `${item.session.id.slice(0, 14)}...${item.session.id.slice(-6)}` : item.session.id}</span>
                                        <span className={`text-[8px] font-mono ${item.isHighlighted ? 'text-[color-mix(in_srgb,var(--bk-status-success)_70%,black)]' : 'text-[var(--bk-text-muted)]'}`}>{String(item.session.state?.symbol ?? "--")} · {String(item.session.state?.signalTimeframe ?? "--")}</span>
