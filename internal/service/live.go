@@ -1633,6 +1633,9 @@ func (p *Platform) StopLiveSessionWithForce(sessionID string, force bool) (domai
 		logger.Error("stop live session failed", "error", err)
 		return domain.LiveSession{}, err
 	}
+	p.mu.Lock()
+	delete(p.livePlans, session.ID)
+	p.mu.Unlock()
 	_, _ = p.stopLinkedLiveSignalRuntime(session)
 	p.logger("service.live",
 		"session_id", session.ID,
@@ -1730,8 +1733,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		appendTimelineEvent(state, "strategy", eventTime, "plan-exhausted", map[string]any{
 			"planLength": len(plan),
 		})
-		_, err := p.store.UpdateLiveSessionState(session.ID, state)
-		return err
+		return p.finalizeLiveSessionPlanExhausted(session, state, plan, eventTime)
 	}
 
 	sourceGate := map[string]any{
@@ -1967,6 +1969,37 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			"error": err.Error(),
 		})
 		_, _ = p.store.UpdateLiveSessionState(updatedSession.ID, state)
+		return err
+	}
+	return nil
+}
+
+func (p *Platform) finalizeLiveSessionPlanExhausted(session domain.LiveSession, state map[string]any, plan []paperPlannedOrder, eventTime time.Time) error {
+	if state == nil {
+		state = cloneMetadata(session.State)
+	}
+	state["planIndex"] = len(plan)
+	state["planLength"] = len(plan)
+	state["completedAt"] = eventTime.UTC().Format(time.RFC3339)
+
+	updatedSession, err := p.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(updatedSession.Status, "RUNNING") {
+		return nil
+	}
+	if boolValue(updatedSession.State["hasRecoveredPosition"]) || boolValue(updatedSession.State["hasRecoveredVirtualPosition"]) {
+		return nil
+	}
+	if err := p.ensureNoActivePositionsOrOrders(updatedSession.AccountID, updatedSession.StrategyID); err != nil {
+		if errors.Is(err, ErrActivePositionsOrOrders) {
+			return nil
+		}
+		return err
+	}
+	_, err = p.StopLiveSessionWithForce(updatedSession.ID, false)
+	if err != nil && !errors.Is(err, ErrActivePositionsOrOrders) {
 		return err
 	}
 	return nil
@@ -2291,6 +2324,7 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 	state["fundingIntervalHours"] = semantics.FundingIntervalHours
 	state["planLength"] = len(plan)
 	state["planReadyAt"] = time.Now().UTC().Format(time.RFC3339)
+	delete(state, "completedAt")
 	if _, ok := state["planIndex"]; !ok {
 		state["planIndex"] = 0
 	}
@@ -2330,8 +2364,13 @@ func (p *Platform) reconcileLiveSessionPlanIndex(session domain.LiveSession, pla
 	}
 
 	state := cloneMetadata(session.State)
+	currentIndex := resolveLivePlanIndex(state)
 	symbol := NormalizeSymbol(firstNonEmpty(stringValue(state["symbol"]), stringValue(state["lastSymbol"])))
 	if symbol == "" {
+		if maxIntValue(state["planLength"], -1) != len(plan) {
+			state["planLength"] = len(plan)
+			return p.store.UpdateLiveSessionState(session.ID, state)
+		}
 		return session, nil
 	}
 
@@ -2340,11 +2379,19 @@ func (p *Platform) reconcileLiveSessionPlanIndex(session domain.LiveSession, pla
 		return domain.LiveSession{}, err
 	}
 
-	nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, resolveLivePlanIndex(state), positionSnapshot, foundPosition)
-	if !adjusted {
+	nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, currentIndex, positionSnapshot, foundPosition)
+	planLengthAdjusted := maxIntValue(state["planLength"], -1) != len(plan)
+	if !adjusted && !planLengthAdjusted {
 		return session, nil
 	}
 
+	state["planLength"] = len(plan)
+	if nextIndex < len(plan) {
+		delete(state, "completedAt")
+	}
+	if !adjusted {
+		return p.store.UpdateLiveSessionState(session.ID, state)
+	}
 	state["recoveredPosition"] = positionSnapshot
 	state["hasRecoveredPosition"] = foundPosition
 	state["hasRecoveredRealPosition"] = foundPosition
@@ -2362,11 +2409,24 @@ func reconcileLivePlanIndexWithPosition(plan []paperPlannedOrder, currentIndex i
 	if len(plan) == 0 || currentIndex < 0 {
 		return currentIndex, false
 	}
-	if currentIndex >= len(plan) {
-		currentIndex = len(plan) - 1
-	}
 	virtualFound := boolValue(position["virtual"])
-	if (!found && !virtualFound) || (parseFloatValue(position["quantity"]) <= 0 && !virtualFound) {
+	flatPosition := (!found && !virtualFound) || (parseFloatValue(position["quantity"]) <= 0 && !virtualFound)
+	normalizedIndex := false
+	if currentIndex > len(plan) {
+		if flatPosition {
+			return len(plan), true
+		}
+		currentIndex = len(plan) - 1
+		normalizedIndex = true
+	}
+	if currentIndex >= len(plan) {
+		if flatPosition {
+			return currentIndex, false
+		}
+		currentIndex = len(plan) - 1
+		normalizedIndex = true
+	}
+	if flatPosition {
 		if strings.EqualFold(plan[currentIndex].Role, "exit") {
 			for i := currentIndex; i >= 0; i-- {
 				if strings.EqualFold(plan[i].Role, "entry") {
@@ -2374,7 +2434,7 @@ func reconcileLivePlanIndexWithPosition(plan []paperPlannedOrder, currentIndex i
 				}
 			}
 		}
-		return currentIndex, false
+		return currentIndex, normalizedIndex
 	}
 	if strings.EqualFold(plan[currentIndex].Role, "entry") {
 		for i := currentIndex; i < len(plan); i++ {
@@ -2383,7 +2443,7 @@ func reconcileLivePlanIndexWithPosition(plan []paperPlannedOrder, currentIndex i
 			}
 		}
 	}
-	return currentIndex, false
+	return currentIndex, normalizedIndex
 }
 
 func resolveLivePlanIndex(state map[string]any) int {
