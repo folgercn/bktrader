@@ -426,6 +426,7 @@ export type RuntimePolicy = {
   strategyEvaluationQuietSeconds: number;
   liveAccountSyncFreshnessSeconds: number;
   paperStartReadinessTimeoutSeconds: number;
+  dispatchMode?: string;
 };
 
 export type LivePreflightSummary = {

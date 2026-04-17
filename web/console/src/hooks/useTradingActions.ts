@@ -54,6 +54,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   const setLiveSessionForm = useUIStore(s => s.setLiveSessionForm);
   const setLaunchingTemplate = useUIStore(s => s.setLaunchingTemplate);
   const setNotification = useUIStore(s => s.setNotification);
+  const setPositionCloseAction = useUIStore(s => s.setPositionCloseAction);
   const launchingTemplate = useUIStore(s => s.launchingTemplate);
   
   const loginForm = useUIStore(s => s.loginForm);
@@ -277,17 +278,47 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     }
   }
 
-  async function deleteSignalRuntimeSession(sessionId: string, selectedSignalRuntimeId: string | null) {
+  async function deleteSignalRuntimeSession(sessionId: string, selectedSignalRuntimeId: string | null, force = false) {
+    setSignalRuntimeAction(sessionId);
     try {
-      await fetchJSON(`/api/v1/signal-runtime/sessions/${sessionId}`, { method: "DELETE" });
+      await fetchJSON(`/api/v1/signal-runtime/sessions/${sessionId}${force ? '?force=true' : ''}`, { method: "DELETE" });
       if (sessionId === selectedSignalRuntimeId) {
         setSelectedSignalRuntimeId(null);
         setSignalRuntimePlan(null);
       }
       await loadDashboard();
+      setNotification({ type: 'success', message: "已成功删除运行时会话" });
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete signal runtime session");
+      const message = err instanceof Error ? err.message : "Failed to delete signal runtime session";
+      if (!force && (message.includes("订单") || message.includes("未平仓") || message.includes("活动的"))) {
+        useUIStore.getState().openConfirmDialog(
+          "运行时删除阻断",
+          `操作失败：${message}。强制删除将停止一切托管逻辑，是否确认强制删除？`,
+          () => deleteSignalRuntimeSession(sessionId, selectedSignalRuntimeId, true)
+        );
+      } else {
+        setError(message);
+        setNotification({ type: 'error', message: `删除运行时会话失败: ${message}` });
+      }
+    } finally {
+      setSignalRuntimeAction(null);
+    }
+  }
+
+  async function closePosition(positionId: string) {
+    setPositionCloseAction(positionId);
+    try {
+      await fetchJSON(`/api/v1/positions/${encodeURIComponent(positionId)}/close`, { method: "POST" });
+      await loadDashboard();
+      setNotification({ type: 'success', message: "已成功下发市价平仓委托" });
+      setError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to close position";
+      setError(message);
+      setNotification({ type: 'error', message: `平仓请求失败: ${message}` });
+    } finally {
+      setPositionCloseAction(null);
     }
   }
 
@@ -467,17 +498,28 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     }
   }
 
-  async function deleteLiveSession(sessionId: string) {
+  async function deleteLiveSession(sessionId: string, force = false) {
     setLiveSessionDeleteAction(sessionId);
     try {
-      await fetchJSON(`/api/v1/live/sessions/${sessionId}`, { method: "DELETE" });
+      await fetchJSON(`/api/v1/live/sessions/${sessionId}${force ? '?force=true' : ''}`, { method: "DELETE" });
       await loadDashboard();
       if (activeSettingsModal === "live-session") {
         setLiveSessionNotice(`已删除会话：${sessionId}`);
       }
+      setNotification({ type: 'success', message: `已成功删除实盘会话: ${sessionId}` });
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete live session");
+      const message = err instanceof Error ? err.message : "Failed to delete live session";
+      if (!force && (message.includes("订单") || message.includes("未平仓") || message.includes("活动的"))) {
+        useUIStore.getState().openConfirmDialog(
+          "会话删除被阻断",
+          `操作失败：${message}。强制删除可能导致幽灵仓单不受托管，是否确认强制跳过安全检查？`,
+          () => deleteLiveSession(sessionId, true)
+        );
+      } else {
+        setError(message);
+        setNotification({ type: 'error', message: `会话删除失败: ${message}` });
+      }
     } finally {
       setLiveSessionDeleteAction(null);
     }
@@ -539,19 +581,32 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     }
   }
 
-  async function runLiveSessionAction(sessionId: string, action: "start" | "stop") {
+  async function runLiveSessionAction(sessionId: string, action: "start" | "stop", force = false) {
     try {
       setLiveSessionAction(`${sessionId}:${action}`);
       setError(null);
       setLiveSessionError(null);
-      await fetchJSON(`/api/v1/live/sessions/${sessionId}/${action}`, { method: "POST" });
+      await fetchJSON(`/api/v1/live/sessions/${sessionId}/${action}${force ? '?force=true' : ''}`, { method: "POST" });
       await loadDashboard();
+      if (action === "stop") {
+        setNotification({ type: 'success', message: `已停用会话: ${sessionId}` });
+      } else {
+        setNotification({ type: 'success', message: `已启动会话: ${sessionId}` });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to execute live session action";
+      
+      if (!force && action === "stop" && (message.includes("订单") || message.includes("未平仓") || message.includes("活动的"))) {
+        useUIStore.getState().openConfirmDialog(
+          "会话停用被阻断",
+          `操作失败：${message}。强制停用可能导致存活的仓单无法按照预定逻辑平出，是否确认强制停用？`,
+          () => runLiveSessionAction(sessionId, action, true)
+        );
+        return;
+      }
+
       setError(message);
       setLiveSessionError(message);
-      
-      // Use the new standard Notification Toast instead of native alert
       setNotification({ type: 'error', message: `实盘操作失败: ${message}` });
 
       if (action === "start" && message.includes("is not configured")) {
@@ -763,14 +818,27 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     }
   }
 
-  async function runSignalRuntimeAction(sessionId: string, action: "start" | "stop") {
+  async function runSignalRuntimeAction(sessionId: string, action: "start" | "stop", force = false) {
     setSignalRuntimeAction(`${sessionId}:${action}`);
     try {
-      await fetchJSON(`/api/v1/signal-runtime/sessions/${sessionId}/${action}`, { method: "POST" });
+      await fetchJSON(`/api/v1/signal-runtime/sessions/${sessionId}/${action}${force ? '?force=true' : ''}`, { method: "POST" });
       await loadDashboard();
       setError(null);
+      if (action === "stop") {
+        setNotification({ type: 'success', message: "已停用运行时会话" });
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to execute signal runtime action");
+      const message = err instanceof Error ? err.message : "Failed to execute signal runtime action";
+      if (!force && action === "stop" && (message.includes("订单") || message.includes("未平仓") || message.includes("活动的"))) {
+        useUIStore.getState().openConfirmDialog(
+          "运行时停用阻断",
+          `操作失败：${message}。强制停用将中断所有信号与处理流程，是否确认强制停用？`,
+          () => runSignalRuntimeAction(sessionId, action, true)
+        );
+      } else {
+        setError(message);
+        setNotification({ type: 'error', message: `操作失败: ${message}` });
+      }
     } finally {
       setSignalRuntimeAction(null);
     }
@@ -1045,6 +1113,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     stopLiveFlow, unbindStrategySignalSource,
     deleteSignalRuntimeSession, syncLiveOrder, syncLiveAccount, createLiveOrder,
     createLiveSession, saveLiveSession, createAndStartLiveSession, deleteLiveSession,
+    closePosition,
     launchLiveFlow, runLiveSessionAction, dispatchLiveSessionIntent, syncLiveSession,
     bindStrategySignalSource, createSignalRuntimeSession,
     updateRuntimePolicy, runSignalRuntimeAction, acknowledgeNotification,

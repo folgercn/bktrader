@@ -17,6 +17,13 @@ export type SystemLogEntry = {
   createdAt: string;
 };
 
+export type ConfirmDialogConfig = {
+  isOpen: boolean;
+  title: string;
+  description: string;
+  onConfirm: () => Promise<void> | void;
+};
+
 const CONSOLE_NAV_STORAGE_KEY = "bktrader-console-nav";
 const SYSTEM_LOGS_STORAGE_KEY = "bktrader-system-logs";
 const DEFAULT_SIDEBAR_TAB: SidebarTab = "monitor";
@@ -202,6 +209,12 @@ export interface useUIStoreState {
   setMonitorResolution: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
   notification: { type: 'success' | 'error' | 'info'; message: string } | null;
   setNotification: (valOrUpdater: { type: 'success' | 'error' | 'info'; message: string } | null | ((prev: { type: 'success' | 'error' | 'info'; message: string } | null) => { type: 'success' | 'error' | 'info'; message: string } | null)) => void;
+  positionCloseAction: string | null;
+  setPositionCloseAction: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
+  confirmDialogConfig: ConfirmDialogConfig;
+  setConfirmDialogConfig: (valOrUpdater: ConfirmDialogConfig | ((prev: ConfirmDialogConfig) => ConfirmDialogConfig)) => void;
+  openConfirmDialog: (title: string, description: string, onConfirm: () => Promise<void> | void) => void;
+  closeConfirmDialog: () => void;
 }
 
 export const useUIStore = create<useUIStoreState>((set) => ({
@@ -383,4 +396,10 @@ export const useUIStore = create<useUIStoreState>((set) => ({
     }
     return { notification: next };
   }),
+  positionCloseAction: null,
+  setPositionCloseAction: (valOrUpdater) => set((state) => ({ positionCloseAction: resolveUpdater(valOrUpdater, state.positionCloseAction) })),
+  confirmDialogConfig: { isOpen: false, title: '', description: '', onConfirm: () => {} },
+  setConfirmDialogConfig: (valOrUpdater) => set((state) => ({ confirmDialogConfig: resolveUpdater(valOrUpdater, state.confirmDialogConfig) })),
+  openConfirmDialog: (title, description, onConfirm) => set(() => ({ confirmDialogConfig: { isOpen: true, title, description, onConfirm } })),
+  closeConfirmDialog: () => set((state) => ({ confirmDialogConfig: { ...state.confirmDialogConfig, isOpen: false } })),
 }));
