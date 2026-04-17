@@ -277,6 +277,10 @@ func (p *Platform) runExchangeWebsocketLoop(
 }
 
 func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
+	if !signalRuntimeSummaryShouldTriggerLiveEvaluation(summary) {
+		return nil
+	}
+	targetSymbol := signalRuntimeSummarySymbol(summary)
 	liveSessions, err := p.store.ListLiveSessions()
 	if err != nil {
 		return err
@@ -291,9 +295,29 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 		if !boolValue(session.State["signalRuntimeRequired"]) {
 			continue
 		}
+		if targetSymbol != "" {
+			sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+			if sessionSymbol != "" && sessionSymbol != targetSymbol {
+				continue
+			}
+		}
 		_ = p.triggerLiveSessionFromSignal(session.ID, runtimeSessionID, summary, eventTime)
 	}
 	return nil
+}
+
+func signalRuntimeSummaryShouldTriggerLiveEvaluation(summary map[string]any) bool {
+	role := strings.TrimSpace(stringValue(summary["role"]))
+	streamType := inferSignalRuntimeStreamType(summary)
+	if role != "" {
+		return strings.EqualFold(normalizeSignalSourceRole(role), "trigger") &&
+			(streamType == "" || streamType == "trade_tick" || streamType == "replay_tick")
+	}
+	return streamType == "trade_tick" || streamType == "replay_tick"
+}
+
+func signalRuntimeSummarySymbol(summary map[string]any) string {
+	return NormalizeSymbol(firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"])))
 }
 
 func enrichSignalRuntimeSummary(session domain.SignalRuntimeSession, summary map[string]any) map[string]any {
@@ -308,8 +332,7 @@ func enrichSignalRuntimeSummary(session domain.SignalRuntimeSession, summary map
 	}
 
 	symbol := NormalizeSymbol(stringValue(out["symbol"]))
-	event := strings.ToLower(strings.TrimSpace(stringValue(out["event"])))
-	streamType := inferStreamTypeFromEvent(event)
+	streamType := inferSignalRuntimeStreamType(out)
 	for _, subscription := range subscriptions {
 		if !signalRuntimeSubscriptionMatchesSummary(subscription, out, symbol, streamType) {
 			continue
@@ -356,6 +379,29 @@ func inferStreamTypeFromEvent(event string) string {
 	case "depthupdate":
 		return "order_book"
 	case "kline":
+		return "signal_bar"
+	default:
+		return ""
+	}
+}
+
+func inferSignalRuntimeStreamType(summary map[string]any) string {
+	streamType := strings.ToLower(strings.TrimSpace(stringValue(summary["streamType"])))
+	if streamType != "" {
+		return streamType
+	}
+	if inferred := inferStreamTypeFromEvent(strings.ToLower(strings.TrimSpace(stringValue(summary["event"])))); inferred != "" {
+		return inferred
+	}
+	channel := strings.ToLower(strings.TrimSpace(stringValue(summary["channel"])))
+	switch {
+	case channel == "", channel == "message":
+		return ""
+	case strings.HasPrefix(channel, "trades"):
+		return "trade_tick"
+	case strings.HasPrefix(channel, "books"), strings.HasPrefix(channel, "book"):
+		return "order_book"
+	case strings.HasPrefix(channel, "candle"), strings.HasPrefix(channel, "kline"):
 		return "signal_bar"
 	default:
 		return ""
@@ -462,18 +508,27 @@ func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
 			continue
 		}
 		bars := normalizeSignalBarEntries(state["bars"])
+		if len(bars) == 0 {
+			continue
+		}
+		current := bars[len(bars)-1]
+		currentClosed := boolValue(current["isClosed"])
 		closed := make([]map[string]any, 0, len(bars))
 		for _, bar := range bars {
 			if boolValue(bar["isClosed"]) {
 				closed = append(closed, bar)
 			}
 		}
-		if len(closed) == 0 {
+		indicatorBars := closed
+		if !currentClosed {
+			indicatorBars = append(indicatorBars, current)
+		}
+		if len(indicatorBars) == 0 {
 			continue
 		}
-		closes := make([]float64, 0, len(closed))
-		trueRanges := make([]float64, 0, len(closed))
-		for i, bar := range closed {
+		closes := make([]float64, 0, len(indicatorBars))
+		trueRanges := make([]float64, 0, len(indicatorBars))
+		for i, bar := range indicatorBars {
 			closePrice := parseFloatValue(bar["close"])
 			high := parseFloatValue(bar["high"])
 			low := parseFloatValue(bar["low"])
@@ -482,28 +537,33 @@ func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
 				trueRanges = append(trueRanges, high-low)
 				continue
 			}
-			prevClose := parseFloatValue(closed[i-1]["close"])
+			prevClose := parseFloatValue(indicatorBars[i-1]["close"])
 			highLow := high - low
 			highClose := math.Abs(high - prevClose)
 			lowClose := math.Abs(low - prevClose)
 			trueRanges = append(trueRanges, math.Max(highLow, math.Max(highClose, lowClose)))
 		}
 
-		last := closed[len(closed)-1]
+		previousClosed := closed
+		if currentClosed && len(previousClosed) > 0 {
+			previousClosed = previousClosed[:len(previousClosed)-1]
+		}
 		entry := map[string]any{
-			"symbol":    stringValue(last["symbol"]),
-			"timeframe": stringValue(last["timeframe"]),
-			"barCount":  len(closed),
-			"sma5":      rollingMean(closes, len(closed)-1, 5),
-			"ma20":      rollingMean(closes, len(closed)-1, 20),
-			"atr14":     rollingMean(trueRanges, len(closed)-1, 14),
-			"current":   cloneMetadata(last),
+			"symbol":         stringValue(current["symbol"]),
+			"timeframe":      stringValue(current["timeframe"]),
+			"barCount":       len(indicatorBars),
+			"closedBarCount": len(closed),
+			"currentClosed":  currentClosed,
+			"sma5":           rollingMean(closes, len(indicatorBars)-1, 5),
+			"ma20":           rollingMean(closes, len(indicatorBars)-1, 20),
+			"atr14":          rollingMean(trueRanges, len(indicatorBars)-1, 14),
+			"current":        cloneMetadata(current),
 		}
-		if len(closed) >= 2 {
-			entry["prevBar1"] = cloneMetadata(closed[len(closed)-2])
+		if len(previousClosed) >= 1 {
+			entry["prevBar1"] = cloneMetadata(previousClosed[len(previousClosed)-1])
 		}
-		if len(closed) >= 3 {
-			entry["prevBar2"] = cloneMetadata(closed[len(closed)-3])
+		if len(previousClosed) >= 2 {
+			entry["prevBar2"] = cloneMetadata(previousClosed[len(previousClosed)-2])
 		}
 		out[key] = entry
 	}

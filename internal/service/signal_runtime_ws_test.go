@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
 
@@ -82,6 +83,45 @@ func TestEnrichSignalRuntimeSummaryKeepsKlineEventsScopedByTimeframe(t *testing.
 	}
 }
 
+func TestEnrichSignalRuntimeSummaryInfersOKXTradesChannelAsTrigger(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "okx-order-book",
+		"role":      "feature",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind okx order book failed: %v", err)
+	}
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "okx-trade-tick",
+		"role":      "trigger",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind okx trigger failed: %v", err)
+	}
+
+	session, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("create runtime session failed: %v", err)
+	}
+
+	summary := enrichSignalRuntimeSummary(session, map[string]any{
+		"event":   "message",
+		"channel": "trades",
+		"symbol":  "BTCUSDT",
+		"price":   "68000",
+	})
+	if got := stringValue(summary["streamType"]); got != "trade_tick" {
+		t.Fatalf("expected okx trades message to infer trade_tick, got %#v", summary)
+	}
+	if got := stringValue(summary["role"]); got != "trigger" {
+		t.Fatalf("expected okx trades message to attach trigger role, got %#v", summary)
+	}
+	if !signalRuntimeSummaryShouldTriggerLiveEvaluation(summary) {
+		t.Fatalf("expected okx trades message to remain trigger-actionable, got %#v", summary)
+	}
+}
+
 func TestMergeSignalSourceStatePreservesSignalBarHistory(t *testing.T) {
 	sourceStates := map[string]any{}
 	first := map[string]any{
@@ -137,6 +177,71 @@ func TestMergeSignalSourceStatePreservesSignalBarHistory(t *testing.T) {
 	}
 }
 
+func TestDeriveSignalBarStatesUsesOpenCurrentBarWithClosedHistory(t *testing.T) {
+	key := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "5m"})
+	base := time.Date(2026, 4, 16, 10, 0, 0, 0, time.UTC)
+	bars := make([]any, 0, 21)
+	for i := 0; i < 20; i++ {
+		bars = append(bars, map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "5m",
+			"barStart":  base.Add(time.Duration(i) * 5 * time.Minute).Format(time.RFC3339),
+			"open":      100 + float64(i),
+			"high":      101 + float64(i),
+			"low":       95 + float64(i),
+			"close":     100 + float64(i),
+			"volume":    1000 + float64(i),
+			"isClosed":  true,
+		})
+	}
+	currentStart := base.Add(20 * 5 * time.Minute).Format(time.RFC3339)
+	bars = append(bars, map[string]any{
+		"symbol":    "BTCUSDT",
+		"timeframe": "5m",
+		"barStart":  currentStart,
+		"open":      119.0,
+		"high":      130.0,
+		"low":       118.0,
+		"close":     125.0,
+		"volume":    1500.0,
+		"isClosed":  false,
+	})
+
+	states := deriveSignalBarStates(map[string]any{
+		key: map[string]any{
+			"sourceKey":  "binance-kline",
+			"role":       "signal",
+			"streamType": "signal_bar",
+			"symbol":     "BTCUSDT",
+			"timeframe":  "5m",
+			"bars":       bars,
+		},
+	})
+	state := mapValue(states[key])
+	if state == nil {
+		t.Fatalf("expected signal state from open current bar, got %#v", states)
+	}
+	if boolValue(state["currentClosed"]) {
+		t.Fatalf("expected current bar to remain marked open, got %#v", state)
+	}
+	current := mapValue(state["current"])
+	if stringValue(current["barStart"]) != currentStart {
+		t.Fatalf("expected open bar to be current, got %#v", current)
+	}
+	prevBar1 := mapValue(state["prevBar1"])
+	prevBar2 := mapValue(state["prevBar2"])
+	if stringValue(prevBar1["barStart"]) != base.Add(19*5*time.Minute).Format(time.RFC3339) {
+		t.Fatalf("expected prevBar1 to be latest closed bar, got %#v", prevBar1)
+	}
+	if stringValue(prevBar2["barStart"]) != base.Add(18*5*time.Minute).Format(time.RFC3339) {
+		t.Fatalf("expected prevBar2 to be second latest closed bar, got %#v", prevBar2)
+	}
+	gate := evaluateSignalBarGate(state, "BUY", "entry")
+	if !boolValue(gate["ready"]) || !boolValue(gate["longReady"]) {
+		t.Fatalf("expected open current bar breakout to be actionable, got %#v", gate)
+	}
+}
+
 func TestBootstrapSignalRuntimeSourceStatesUsesWarmMarketCache(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	signalBars := make([]strategySignalBar, 0, 4)
@@ -189,5 +294,101 @@ func TestBootstrapSignalRuntimeSourceStatesUsesWarmMarketCache(t *testing.T) {
 	}
 	if mapValue(signalState["prevBar2"]) == nil {
 		t.Fatalf("expected bootstrap state to include previous bars, got %#v", signalState)
+	}
+}
+
+func TestHandleSignalRuntimeMessageScopesTriggerByLiveSessionSymbol(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	for _, symbol := range []string{"BTCUSDT", "ETHUSDT"} {
+		if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+			"sourceKey": "binance-trade-tick",
+			"role":      "trigger",
+			"symbol":    symbol,
+		}); err != nil {
+			t.Fatalf("bind %s trigger failed: %v", symbol, err)
+		}
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create BTC live session failed: %v", err)
+	}
+	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		t.Fatal("expected linked runtime session id")
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+	eventTime := time.Date(2026, 4, 16, 12, 0, 0, 0, time.UTC)
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		runtimeSession.Status = "RUNNING"
+		state := cloneMetadata(runtimeSession.State)
+		state["sourceStates"] = map[string]any{}
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = eventTime
+	}); err != nil {
+		t.Fatalf("update runtime state failed: %v", err)
+	}
+
+	if err := platform.handleSignalRuntimeMessage(runtimeSessionID, map[string]any{
+		"role":               "signal",
+		"streamType":         "signal_bar",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"timeframe":          "1d",
+		"event":              "kline",
+	}, eventTime); err != nil {
+		t.Fatalf("handle BTC signal bar failed: %v", err)
+	}
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session after signal bar failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSignalRuntimeEventAt"]); got != "" {
+		t.Fatalf("expected signal bar to skip live evaluation, got last event at %s", got)
+	}
+
+	if err := platform.handleSignalRuntimeMessage(runtimeSessionID, map[string]any{
+		"role":               "trigger",
+		"streamType":         "trade_tick",
+		"symbol":             "ETHUSDT",
+		"subscriptionSymbol": "ETHUSDT",
+		"event":              "trade",
+		"price":              "3000",
+	}, eventTime); err != nil {
+		t.Fatalf("handle ETH trigger failed: %v", err)
+	}
+	updated, err = platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSignalRuntimeEventAt"]); got != "" {
+		t.Fatalf("expected ETH trigger to skip BTC session, got last event at %s", got)
+	}
+	if timeline := metadataList(updated.State["timeline"]); len(timeline) != 0 {
+		t.Fatalf("expected ETH trigger to append no BTC timeline entries, got %#v", timeline)
+	}
+
+	if err := platform.handleSignalRuntimeMessage(runtimeSessionID, map[string]any{
+		"role":               "trigger",
+		"streamType":         "trade_tick",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"event":              "trade",
+		"price":              "69000",
+	}, eventTime.Add(time.Second)); err != nil {
+		t.Fatalf("handle BTC trigger failed: %v", err)
+	}
+	updated, err = platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session after BTC trigger failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSignalRuntimeEventAt"]); got == "" {
+		t.Fatalf("expected BTC trigger to reach BTC session, got empty last event state")
 	}
 }
