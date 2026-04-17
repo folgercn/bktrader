@@ -189,6 +189,9 @@ func TestClosePositionCreatesReduceOnlyMarketOrder(t *testing.T) {
 	if got := stringValue(order.Metadata["positionId"]); got != position.ID {
 		t.Fatalf("expected close order to reference position %s, got %s", position.ID, got)
 	}
+	if got := parseFloatValue(order.Metadata["priceHint"]); got != 68100 {
+		t.Fatalf("expected close order to preserve priceHint 68100, got %v", got)
+	}
 	if got := stringValue(order.Status); got != "FILLED" {
 		t.Fatalf("expected paper close order to be FILLED, got %s", got)
 	}
@@ -196,6 +199,31 @@ func TestClosePositionCreatesReduceOnlyMarketOrder(t *testing.T) {
 		t.Fatalf("find position failed: %v", err)
 	} else if exists {
 		t.Fatal("expected close order to flatten the paper position")
+	}
+}
+
+func TestBuildClosePositionOrderUsesMetadataPriceHintForMarketClose(t *testing.T) {
+	order := buildClosePositionOrder(domain.Position{
+		ID:                "position-test-close",
+		AccountID:         "account-test-close",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		MarkPrice:         68100,
+	})
+
+	if order.Type != "MARKET" {
+		t.Fatalf("expected MARKET close order, got %s", order.Type)
+	}
+	if order.Price != 0 {
+		t.Fatalf("expected close MARKET order to leave explicit price empty, got %v", order.Price)
+	}
+	if got := parseFloatValue(order.Metadata["priceHint"]); got != 68100 {
+		t.Fatalf("expected close MARKET order priceHint 68100, got %v", got)
+	}
+	if got := parseFloatValue(order.Metadata["markPrice"]); got != 68100 {
+		t.Fatalf("expected close MARKET order markPrice metadata 68100, got %v", got)
 	}
 }
 
@@ -350,6 +378,98 @@ func TestCreateOrderReduceOnlyFormalFieldPreventsReverseOpen(t *testing.T) {
 	}
 	if position.Side != "LONG" || position.Quantity != 0.15 {
 		t.Fatalf("expected remaining LONG 0.15 after partial reduce-only close, got side=%s qty=%v", position.Side, position.Quantity)
+	}
+}
+
+func TestResolveReduceOnlyTargetPositionScopesSharedSymbolByStrategyVersionOrPositionID(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.CreateAccount("Paper Shared Symbol", "PAPER", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account failed: %v", err)
+	}
+	fourHour, err := platform.store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-4h-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.05,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	})
+	if err != nil {
+		t.Fatalf("save 4h position failed: %v", err)
+	}
+	oneDay, err := platform.store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		EntryPrice:        68200,
+		MarkPrice:         68300,
+	})
+	if err != nil {
+		t.Fatalf("save 1d position failed: %v", err)
+	}
+
+	position, found, err := platform.resolveReduceOnlyTargetPosition(account.ID, domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: oneDay.StrategyVersionID,
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		ReduceOnly:        true,
+	})
+	if err != nil {
+		t.Fatalf("resolveReduceOnlyTargetPosition by strategyVersionID failed: %v", err)
+	}
+	if !found || position.ID != oneDay.ID {
+		t.Fatalf("expected strategy-scoped reduce-only target %s, got found=%t id=%s", oneDay.ID, found, position.ID)
+	}
+
+	position, found, err = platform.resolveReduceOnlyTargetPosition(account.ID, domain.Order{
+		AccountID:  account.ID,
+		Symbol:     "BTCUSDT",
+		Side:       "SELL",
+		ReduceOnly: true,
+		Metadata: map[string]any{
+			"positionId": fourHour.ID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveReduceOnlyTargetPosition by positionId failed: %v", err)
+	}
+	if !found || position.ID != fourHour.ID {
+		t.Fatalf("expected position-scoped reduce-only target %s, got found=%t id=%s", fourHour.ID, found, position.ID)
+	}
+}
+
+func TestResolveReduceOnlyTargetPositionRejectsAmbiguousSharedSymbolWithoutIdentity(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.CreateAccount("Paper Shared Symbol Ambiguous", "PAPER", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account failed: %v", err)
+	}
+	for _, strategyVersionID := range []string{"strategy-version-bk-4h-v010", "strategy-version-bk-1d-v010"} {
+		if _, err := platform.store.SavePosition(domain.Position{
+			AccountID:         account.ID,
+			StrategyVersionID: strategyVersionID,
+			Symbol:            "BTCUSDT",
+			Side:              "LONG",
+			Quantity:          0.1,
+			EntryPrice:        68000,
+			MarkPrice:         68100,
+		}); err != nil {
+			t.Fatalf("seed position for %s failed: %v", strategyVersionID, err)
+		}
+	}
+
+	if _, _, err := platform.resolveReduceOnlyTargetPosition(account.ID, domain.Order{
+		AccountID:  account.ID,
+		Symbol:     "BTCUSDT",
+		Side:       "SELL",
+		ReduceOnly: true,
+	}); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("expected ambiguous shared-symbol reduce-only lookup to be rejected, got %v", err)
 	}
 }
 
