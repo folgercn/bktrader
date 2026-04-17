@@ -557,7 +557,7 @@ func (s *Store) UpdateOrder(order domain.Order) (domain.Order, error) {
 
 func (s *Store) ListFills() ([]domain.Fill, error) {
 	rows, err := s.db.Query(`
-		select id, order_id, price, quantity, fee, created_at
+		select id, order_id, exchange_trade_id, price, quantity, fee, created_at
 		from fills order by created_at asc
 	`)
 	if err != nil {
@@ -568,22 +568,46 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 	items := []domain.Fill{}
 	for rows.Next() {
 		var item domain.Fill
-		if err := rows.Scan(&item.ID, &item.OrderID, &item.Price, &item.Quantity, &item.Fee, &item.CreatedAt); err != nil {
+		var exchangeTradeID sql.NullString
+		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &item.Price, &item.Quantity, &item.Fee, &item.CreatedAt); err != nil {
 			return nil, err
 		}
+		item.ExchangeTradeID = exchangeTradeID.String
 		items = append(items, item)
 	}
 	return items, rows.Err()
 }
 
 func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
-	fill.ID = fmt.Sprintf("fill-%d", time.Now().UTC().UnixNano())
-	fill.CreatedAt = time.Now().UTC()
+	now := time.Now().UTC()
+	fill.ID = fmt.Sprintf("fill-%d", now.UnixNano())
+	fill.CreatedAt = now
 
-	_, err := s.db.Exec(`
-		insert into fills (id, order_id, price, quantity, fee, created_at)
-		values ($1, $2, $3, $4, $5, $6)
-	`, fill.ID, fill.OrderID, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+	if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+		_, err := s.db.Exec(`
+			insert into fills (id, order_id, exchange_trade_id, price, quantity, fee, created_at)
+			values ($1, $2, $3, $4, $5, $6, $7)
+		`, fill.ID, fill.OrderID, nullIfEmpty(fill.ExchangeTradeID), fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+		return fill, err
+	}
+
+	err := s.db.QueryRow(`
+		insert into fills (id, order_id, exchange_trade_id, price, quantity, fee, created_at)
+		values ($1, $2, $3, $4, $5, $6, $7)
+		on conflict (order_id, exchange_trade_id) do update set
+			price = fills.price,
+			quantity = fills.quantity,
+			fee = fills.fee
+		returning id, order_id, exchange_trade_id, price, quantity, fee, created_at
+	`, fill.ID, fill.OrderID, fill.ExchangeTradeID, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt).Scan(
+		&fill.ID,
+		&fill.OrderID,
+		&fill.ExchangeTradeID,
+		&fill.Price,
+		&fill.Quantity,
+		&fill.Fee,
+		&fill.CreatedAt,
+	)
 	return fill, err
 }
 

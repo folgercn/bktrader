@@ -185,12 +185,13 @@ type Order struct {
 
 // Fill 成交记录，每笔成交关联一个订单。
 type Fill struct {
-	ID        string    `json:"id"`
-	OrderID   string    `json:"orderId"`
-	Price     float64   `json:"price"`
-	Quantity  float64   `json:"quantity"`
-	Fee       float64   `json:"fee"` // 手续费
-	CreatedAt time.Time `json:"createdAt"`
+	ID              string    `json:"id"`
+	OrderID         string    `json:"orderId"`
+	ExchangeTradeID string    `json:"exchangeTradeId,omitempty"`
+	Price           float64   `json:"price"`
+	Quantity        float64   `json:"quantity"`
+	Fee             float64   `json:"fee"` // 手续费
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 // Position 当前持仓，由成交记录聚合得出。

@@ -16,6 +16,7 @@
 - [20260403改进计划_plan.md](20260403改进计划_plan.md) - 记录了平台重构与组件拆解的核心思考。
 - [部署与网络架构.md](部署与网络架构.md) - 包含有关容器/负载路由的信息。
 - [cicd-maintenance.md](cicd-maintenance.md) - GitHub Actions 维保说明。
+- [frontend-live-reconcile-collab.md](frontend-live-reconcile-collab.md) - Live 账户全量对账的前端协作文档与 API 接入约定。
 
 ## 3. 金融与投研文档
 - [STRATEGY_ANALYSIS.md](STRATEGY_ANALYSIS.md) - BK体系策略逻辑分析。

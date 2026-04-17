@@ -585,6 +585,7 @@ func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]do
 	fills := make([]domain.Fill, 0, len(syncResult.Fills))
 	lastFundingPnL := 0.0
 	lastPrice := order.Price
+	singleFillReport := len(syncResult.Fills) == 1
 	for _, report := range syncResult.Fills {
 		price := report.Price
 		if price <= 0 {
@@ -593,10 +594,11 @@ func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]do
 		lastPrice = price
 		lastFundingPnL = report.FundingPnL
 		fills = append(fills, domain.Fill{
-			OrderID:  order.ID,
-			Price:    price,
-			Quantity: report.Quantity,
-			Fee:      report.Fee - report.FundingPnL,
+			OrderID:         order.ID,
+			ExchangeTradeID: resolveLiveFillTradeID(order, report, singleFillReport),
+			Price:           price,
+			Quantity:        report.Quantity,
+			Fee:             report.Fee - report.FundingPnL,
 		})
 	}
 	return fills, lastFundingPnL, lastPrice
@@ -606,8 +608,12 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	if len(fills) == 0 {
 		return p.store.UpdateOrder(order)
 	}
+	newFills, err := p.filterExistingExecutionFills(order.ID, fills)
+	if err != nil {
+		return domain.Order{}, err
+	}
 	lastPrice := order.Price
-	for _, fill := range fills {
+	for _, fill := range newFills {
 		createdFill, err := p.store.CreateFill(fill)
 		if err != nil {
 			return domain.Order{}, err
@@ -629,7 +635,9 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	if order.Metadata["acceptedAt"] == nil {
 		order.Metadata["acceptedAt"] = time.Now().UTC().Format(time.RFC3339)
 	}
-	order.Metadata["lastFilledAt"] = time.Now().UTC().Format(time.RFC3339)
+	if len(newFills) > 0 || strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "" {
+		order.Metadata["lastFilledAt"] = time.Now().UTC().Format(time.RFC3339)
+	}
 	updatedOrder, err := p.store.UpdateOrder(order)
 	if err != nil {
 		return domain.Order{}, err
@@ -648,11 +656,64 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		"symbol", NormalizeSymbol(updatedOrder.Symbol),
 	)
 	if strings.EqualFold(account.Mode, "LIVE") {
-		levelLogger.Info("order filled", "fill_count", len(fills), "price", updatedOrder.Price)
+		levelLogger.Info("order filled", "fill_count", len(newFills), "price", updatedOrder.Price)
 	} else {
-		levelLogger.Debug("paper order filled", "fill_count", len(fills), "price", updatedOrder.Price)
+		levelLogger.Debug("paper order filled", "fill_count", len(newFills), "price", updatedOrder.Price)
 	}
 	return updatedOrder, nil
+}
+
+func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.Fill) ([]domain.Fill, error) {
+	if len(fills) == 0 {
+		return nil, nil
+	}
+	existing, err := p.store.ListFills()
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(existing)+len(fills))
+	for _, item := range existing {
+		if item.OrderID != orderID || strings.TrimSpace(item.ExchangeTradeID) == "" {
+			continue
+		}
+		seen[buildFillDedupKey(item.OrderID, item.ExchangeTradeID)] = struct{}{}
+	}
+	filtered := make([]domain.Fill, 0, len(fills))
+	for _, fill := range fills {
+		if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+			filtered = append(filtered, fill)
+			continue
+		}
+		key := buildFillDedupKey(orderID, fill.ExchangeTradeID)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		filtered = append(filtered, fill)
+	}
+	return filtered, nil
+}
+
+func buildFillDedupKey(orderID, exchangeTradeID string) string {
+	return strings.TrimSpace(orderID) + "|" + strings.TrimSpace(exchangeTradeID)
+}
+
+func resolveLiveFillTradeID(order domain.Order, report LiveFillReport, singleFillReport bool) string {
+	metadata := mapValue(report.Metadata)
+	tradeID := strings.TrimSpace(firstNonEmpty(
+		stringValue(metadata["tradeId"]),
+		stringValue(metadata["exchangeTradeId"]),
+	))
+	if tradeID != "" {
+		return tradeID
+	}
+	if singleFillReport {
+		return strings.TrimSpace(firstNonEmpty(
+			stringValue(metadata["exchangeOrderId"]),
+			stringValue(order.Metadata["exchangeOrderId"]),
+		))
+	}
+	return ""
 }
 
 func (p *Platform) resolveLiveAdapterForAccount(account domain.Account) (LiveExecutionAdapter, map[string]any, error) {

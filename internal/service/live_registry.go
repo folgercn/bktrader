@@ -33,6 +33,11 @@ type LiveAccountSyncAdapter interface {
 	SyncAccountSnapshot(platform *Platform, account domain.Account, binding map[string]any) (domain.Account, error)
 }
 
+type LiveAccountReconcileAdapter interface {
+	FetchRecentOrders(account domain.Account, binding map[string]any, symbol string, lookbackHours int) ([]map[string]any, error)
+	FetchRecentTrades(account domain.Account, binding map[string]any, symbol string, lookbackHours int) ([]LiveFillReport, error)
+}
+
 type LiveOrderSubmission struct {
 	Status          string         `json:"status"`
 	ExchangeOrderID string         `json:"exchangeOrderId"`
@@ -249,6 +254,41 @@ func (a binanceFuturesLiveAdapter) SyncAccountSnapshot(platform *Platform, accou
 	return platform.syncLiveAccountFromBinance(account, binding)
 }
 
+func (a binanceFuturesLiveAdapter) FetchRecentOrders(account domain.Account, binding map[string]any, symbol string, lookbackHours int) ([]map[string]any, error) {
+	resolved, err := resolveBinanceRESTCredentials(binding)
+	if err != nil {
+		return nil, err
+	}
+	endTime := time.Now().UTC()
+	startTime := endTime.Add(-time.Duration(maxInt(lookbackHours, 1)) * time.Hour)
+	params := map[string]string{
+		"symbol":     NormalizeSymbol(symbol),
+		"timestamp":  fmt.Sprintf("%d", endTime.UnixMilli()),
+		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+		"startTime":  fmt.Sprintf("%d", startTime.UnixMilli()),
+		"endTime":    fmt.Sprintf("%d", endTime.UnixMilli()),
+		"limit":      "1000",
+	}
+	params["signature"] = signBinanceQuery(params, resolved.APISecret)
+	payload, err := doBinanceSignedRequest(http.MethodGet, resolved, "/fapi/v1/allOrders", params)
+	if err != nil {
+		return nil, err
+	}
+	var orders []map[string]any
+	if err := json.Unmarshal(payload, &orders); err != nil {
+		return nil, err
+	}
+	return orders, nil
+}
+
+func (a binanceFuturesLiveAdapter) FetchRecentTrades(account domain.Account, binding map[string]any, symbol string, lookbackHours int) ([]LiveFillReport, error) {
+	resolved, err := resolveBinanceRESTCredentials(binding)
+	if err != nil {
+		return nil, err
+	}
+	return a.fetchRESTTradeReportsForSymbol(account, binding, resolved, symbol, lookbackHours)
+}
+
 func (a binanceFuturesLiveAdapter) PersistsLiveAccountSyncSuccess() bool {
 	return true
 }
@@ -298,6 +338,7 @@ func (a binanceFuturesLiveAdapter) syncMockOrder(account domain.Account, order d
 	if stringValue(order.Metadata["exchangeOrderId"]) == "" {
 		return LiveOrderSync{}, fmt.Errorf("live order has no exchangeOrderId")
 	}
+	exchangeOrderID := stringValue(order.Metadata["exchangeOrderId"])
 	syncedAt := time.Now().UTC()
 	executionPrice := order.Price
 	if executionPrice <= 0 {
@@ -315,7 +356,8 @@ func (a binanceFuturesLiveAdapter) syncMockOrder(account domain.Account, order d
 				"source":          "exchange-sync",
 				"exchange":        account.Exchange,
 				"adapterKey":      a.Key(),
-				"exchangeOrderId": stringValue(order.Metadata["exchangeOrderId"]),
+				"exchangeOrderId": exchangeOrderID,
+				"tradeId":         exchangeOrderID,
 				"executionMode":   "mock",
 			},
 		}},
@@ -471,7 +513,8 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 	avgPrice := firstPositive(parseFloatValue(payload["avgPrice"]), parseFloatValue(payload["price"]))
 	fills := []LiveFillReport{}
 	tradeReports, tradeErr := a.fetchRESTTradeReports(account, order, binding, resolved)
-	if tradeErr == nil && len(tradeReports) > 0 {
+	terminal := status == "FILLED" || status == "CANCELLED" || status == "REJECTED"
+	if tradeErr == nil && len(tradeReports) > 0 && terminal {
 		fills = tradeReports
 	} else if filledQty > 0 && strings.EqualFold(status, "FILLED") {
 		fills = append(fills, LiveFillReport{
@@ -488,7 +531,6 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 			},
 		})
 	}
-	terminal := status == "FILLED" || status == "CANCELLED" || status == "REJECTED"
 	resolvedSyncAt := firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339))
 	totalFee := 0.0
 	totalRealizedPnL := 0.0
@@ -579,8 +621,12 @@ func (a binanceFuturesLiveAdapter) cancelRESTOrder(account domain.Account, order
 }
 
 func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account, order domain.Order, binding map[string]any, resolved binanceRESTCredentials) ([]LiveFillReport, error) {
+	symbol := NormalizeSymbol(order.Symbol)
+	if symbol == "" {
+		return nil, fmt.Errorf("live order has no symbol")
+	}
 	params := map[string]string{
-		"symbol":     NormalizeSymbol(order.Symbol),
+		"symbol":     symbol,
 		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
 		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
 	}
@@ -595,6 +641,32 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 	if err := json.Unmarshal(payload, &trades); err != nil {
 		return nil, err
 	}
+	return a.tradeReportsFromBinanceTrades(account, trades, order.Metadata["exchangeOrderId"]), nil
+}
+
+func (a binanceFuturesLiveAdapter) fetchRESTTradeReportsForSymbol(account domain.Account, binding map[string]any, resolved binanceRESTCredentials, symbol string, lookbackHours int) ([]LiveFillReport, error) {
+	endTime := time.Now().UTC()
+	startTime := endTime.Add(-time.Duration(maxInt(lookbackHours, 1)) * time.Hour)
+	params := map[string]string{
+		"symbol":     NormalizeSymbol(symbol),
+		"timestamp":  fmt.Sprintf("%d", endTime.UnixMilli()),
+		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
+		"startTime":  fmt.Sprintf("%d", startTime.UnixMilli()),
+		"endTime":    fmt.Sprintf("%d", endTime.UnixMilli()),
+		"limit":      "1000",
+	}
+	payload, err := binanceSignedGET(resolved, "/fapi/v1/userTrades", params)
+	if err != nil {
+		return nil, err
+	}
+	var trades []map[string]any
+	if err := json.Unmarshal(payload, &trades); err != nil {
+		return nil, err
+	}
+	return a.tradeReportsFromBinanceTrades(account, trades, nil), nil
+}
+
+func (a binanceFuturesLiveAdapter) tradeReportsFromBinanceTrades(account domain.Account, trades []map[string]any, fallbackOrderID any) []LiveFillReport {
 	reports := make([]LiveFillReport, 0, len(trades))
 	for _, trade := range trades {
 		qty := parseFloatValue(trade["qty"])
@@ -610,7 +682,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 				"source":          "binance-user-trades",
 				"exchange":        account.Exchange,
 				"adapterKey":      a.Key(),
-				"exchangeOrderId": normalizeBinanceOrderID(trade["orderId"], order.Metadata["exchangeOrderId"]),
+				"exchangeOrderId": normalizeBinanceOrderID(trade["orderId"], fallbackOrderID),
 				"tradeId":         stringValue(trade["id"]),
 				"commissionAsset": stringValue(trade["commissionAsset"]),
 				"realizedPnl":     parseFloatValue(trade["realizedPnl"]),
@@ -621,7 +693,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 			},
 		})
 	}
-	return reports, nil
+	return reports
 }
 
 func normalizeCredentialRefs(value any) map[string]any {
