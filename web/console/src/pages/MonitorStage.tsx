@@ -612,23 +612,29 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
           </CardContent>
         </Card>
 
-        {/* 5. 记录中心 Tabs */}
+        {/* 5. 记录中心与人工干预 */}
         <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-xl rounded-[32px] overflow-hidden border-2">
-          <CardContent className="pt-8 px-8">
-            <Tabs defaultValue="orders" value={dockTab} onValueChange={(val) => onDockTabChange(val as any)}>
-              <TabsList className="bg-[#ebe5d5] p-1.5 mb-6 h-12 rounded-[20px] shadow-inner grid grid-cols-4 gap-2">
-                <TabsTrigger value="orders" className="rounded-xl text-[11px] font-black uppercase data-[state=active]:bg-white data-[state=active]:text-[#1f2328] data-[state=active]:shadow-md">订单</TabsTrigger>
-                <TabsTrigger value="positions" className="rounded-xl text-[11px] font-black uppercase data-[state=active]:bg-white data-[state=active]:text-[#1f2328] data-[state=active]:shadow-md">持仓</TabsTrigger>
-                <TabsTrigger value="fills" className="rounded-xl text-[11px] font-black uppercase data-[state=active]:bg-white data-[state=active]:text-[#1f2328] data-[state=active]:shadow-md">成交</TabsTrigger>
-                <TabsTrigger value="alerts" className="rounded-xl text-[11px] font-black uppercase data-[state=active]:bg-white data-[state=active]:text-[#1f2328] data-[state=active]:shadow-md">告警</TabsTrigger>
+          <Tabs defaultValue="orders" value={dockTab} onValueChange={(val) => onDockTabChange(val as any)}>
+            <CardHeader className="bg-white/30 flex flex-row items-center justify-between pb-3 px-8 pt-6 border-b border-[#d8cfba]/50">
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="size-5 text-[#1f2328]" />
+                <CardTitle className="text-xl font-black text-[#1f2328]">运行监控与人工干预</CardTitle>
+              </div>
+              <TabsList className="bg-[#ebe5d5]/50 p-1 h-10 rounded-2xl shadow-inner flex gap-1 border border-[#d8cfba]/30">
+                <TabsTrigger value="orders" className="rounded-xl text-[10px] px-4 font-black uppercase data-[state=active]:bg-white data-[state=active]:text-[#1f2328] data-[state=active]:shadow-sm">订单</TabsTrigger>
+                <TabsTrigger value="positions" className="rounded-xl text-[10px] px-4 font-black uppercase data-[state=active]:bg-white data-[state=active]:text-[#1f2328] data-[state=active]:shadow-sm">持仓</TabsTrigger>
+                <TabsTrigger value="fills" className="rounded-xl text-[10px] px-4 font-black uppercase data-[state=active]:bg-white data-[state=active]:text-[#1f2328] data-[state=active]:shadow-sm">成交</TabsTrigger>
+                <TabsTrigger value="alerts" className="rounded-xl text-[10px] px-4 font-black uppercase data-[state=active]:bg-white data-[state=active]:text-[#1f2328] data-[state=active]:shadow-sm">告警</TabsTrigger>
               </TabsList>
-              <TabsContent value={dockTab} className="mt-0 animate-in slide-in-from-bottom-2 duration-300">
-                <div className="rounded-[24px] border-2 border-[#d8cfba] bg-[#fffbf2]/60 overflow-hidden shadow-2xl min-h-[300px]">
+            </CardHeader>
+            <CardContent className="p-0">
+              <TabsContent value={dockTab} className="mt-0 animate-in slide-in-from-bottom-1 duration-300">
+                <div className="min-h-[280px]">
                    {dockContent}
                 </div>
               </TabsContent>
-            </Tabs>
-          </CardContent>
+            </CardContent>
+          </Tabs>
         </Card>
       </div>
     </div>

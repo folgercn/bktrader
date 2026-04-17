@@ -5,6 +5,7 @@ import { ActionButton } from '../ui/ActionButton';
 import { formatTime, formatMaybeNumber, shrink } from '../../utils/format';
 import { technicalStatusLabel } from '../../utils/derivation';
 import { useTradingStore } from '../../store/useTradingStore';
+import { useUIStore } from '../../store/useUIStore';
 
 interface DockContentProps {
   dockTab: 'orders' | 'positions' | 'fills' | 'alerts';
@@ -16,6 +17,8 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
   const fills = useTradingStore(s => s.fills);
   const positions = useTradingStore(s => s.positions);
   const alerts = useTradingStore(s => s.alerts);
+  const positionCloseAction = useUIStore(s => s.positionCloseAction);
+  const openConfirmDialog = useUIStore(s => s.openConfirmDialog);
 
   return (
     <div className="h-full relative overflow-hidden">
@@ -23,7 +26,7 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
         <SimpleTable
           columns={["ID", "策略版本", "Symbol", "Side", "Type", "数量", "价格", "状态", "创建时间", "操作"]}
           rows={orders.map((order) => [
-            shrink(order.id),
+            shrink(order.id).replace('order-', ''),
             shrink(String(order.metadata?.strategyVersionId ?? order.metadata?.source ?? "--")),
             order.symbol,
             <StatusPill key={`${order.id}-side`} tone={order.side === "buy" ? "ready" : "neutral"}>{order.side}</StatusPill>,
@@ -41,16 +44,30 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
       )}
       {dockTab === 'positions' && (
         <SimpleTable
-          columns={["ID", "账户", "Symbol", "Side", "仓位大小", "开仓价", "标记价", "更新时间"]}
+          columns={["ID", "账户", "Symbol", "Side", "仓位大小", "开仓价", "标记价", "更新时间", "操作"]}
           rows={positions.map((pos) => [
-            shrink(pos.id),
-            shrink(pos.accountId),
+            shrink(pos.id).replace('position-', 'pos-'),
+            shrink(pos.accountId).replace('account-', 'acc-'),
             pos.symbol,
             <StatusPill key={`${pos.id}-side`} tone={pos.side === "long" ? "ready" : "neutral"}>{pos.side}</StatusPill>,
             formatMaybeNumber(pos.quantity),
             formatMaybeNumber(pos.entryPrice),
             formatMaybeNumber(pos.markPrice),
             formatTime(pos.updatedAt),
+            <div key={`${pos.id}-actions`} className="inline-actions">
+              <ActionButton 
+                label={positionCloseAction === pos.id ? "平仓中..." : "强平"} 
+                variant="danger" 
+                disabled={positionCloseAction !== null}
+                onClick={() => {
+                  openConfirmDialog(
+                    "强制市价平仓风险确认",
+                    "您即将放弃策略托管，使用系统市价单直接平仓。注意：此接管动作可能产生额外滑点，是否确认强平？",
+                    () => actions.closePosition(pos.id)
+                  );
+                }} 
+              />
+            </div>,
           ])}
           emptyMessage="暂无持仓"
         />
@@ -59,8 +76,8 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
         <SimpleTable
           columns={["ID", "订单ID", "成交量", "成交价", "费用", "时间"]}
           rows={fills.map((fill) => [
-            shrink(fill.id),
-            shrink(fill.orderId),
+            shrink(fill.id).replace('fill-', ''),
+            shrink(fill.orderId).replace('order-', ''),
             formatMaybeNumber(fill.quantity),
             formatMaybeNumber(fill.price),
             formatMaybeNumber(fill.fee),

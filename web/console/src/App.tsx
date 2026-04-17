@@ -25,6 +25,7 @@ import { LiveAccountModal } from './modals/LiveAccountModal';
 import { LiveBindingModal } from './modals/LiveBindingModal';
 import { LiveSessionModal } from './modals/LiveSessionModal';
 import { TelegramModal } from './modals/TelegramModal';
+import { ConfirmModal } from './modals/ConfirmModal';
 
 // Pages
 import { StrategySidePanel } from './pages/StrategySidePanel';
@@ -114,6 +115,7 @@ export default function App() {
       />
 
       {/* Global Modals */}
+      <ConfirmModal />
       <LoginModal 
         authSession={authSession} 
         error={error}
