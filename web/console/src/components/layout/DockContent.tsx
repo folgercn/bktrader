@@ -176,8 +176,8 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
           columns={["ID", "策略版本", "Symbol", "Side", "Type", "数量", "价格", "交易所ID", "状态", "创建时间", "操作"]}
           rows={orders.map((order) => {
             const exchangeId = String(order.metadata?.exchangeTradeId ?? "--");
-            const isReconciled = exchangeId !== "--";
-            const isOrphan = !!order.metadata?.isOrphan;
+            const isReconciled = !!(order.metadata?.orderLifecycle as any)?.synced;
+            const isOrphan = order.status === "ACCEPTED" && (order.metadata?.orderLifecycle as any)?.reconciliationState === "orphaned";
 
             return [
               <TruncatedValue key={`${order.id}-id`} value={order.id} display={order.id.replace('order-', '')} />,
@@ -249,13 +249,15 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
       )}
       {dockTab === 'fills' && (
         <DockTable
-          columns={["ID", "订单ID", "成交量", "成交价", "费用", "时间"]}
+          columns={["ID", "策略版本", "Symbol", "价格", "数量", "侧向", "交易所成交ID", "成交时间"]}
           rows={fills.map((fill) => [
             <TruncatedValue key={`${fill.id}-id`} value={fill.id} display={fill.id.replace('fill-', '')} />,
-            <TruncatedValue key={`${fill.id}-order`} value={fill.orderId} display={fill.orderId.replace('order-', '')} />,
-            formatMaybeNumber(fill.quantity),
+            fill.strategyVersion,
+            fill.symbol,
             formatMaybeNumber(fill.price),
-            formatMaybeNumber(fill.fee),
+            formatMaybeNumber(fill.quantity),
+            fill.side,
+            <TruncatedValue key={`${fill.id}-exid`} value={fill.exchangeTradeId ?? "--"} />,
             formatTime(fill.createdAt),
           ])}
           emptyMessage="暂无成交记录"

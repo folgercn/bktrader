@@ -77,9 +77,13 @@ export type Order = {
 export type Fill = {
   id: string;
   orderId: string;
+  strategyVersion: string;
+  symbol: string;
+  side: string;
   price: number;
   quantity: number;
   fee: number;
+  exchangeTradeId?: string;
   createdAt: string;
 };
 
