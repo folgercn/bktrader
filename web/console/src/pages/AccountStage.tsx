@@ -70,6 +70,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
+import { cn } from "../lib/utils";
 
 interface AccountStageProps {
   logout: () => void;
@@ -324,7 +325,14 @@ export function AccountStage({
               <div className="hidden h-8 items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--bk-border)_50%,transparent)] bg-[var(--bk-surface-strong)] px-3 transition-all lg:flex">
                 <span className="text-[9px] font-black uppercase text-[var(--bk-text-muted)] opacity-40">Live:</span>
                 <span className="text-[10px] font-black text-[var(--bk-text-primary)]">{quickLiveAccount?.name ?? "--"}</span>
-                <Badge variant="success" className="h-3.5 text-[8px] font-black lowercase">{quickLiveAccount?.status ?? "no_state"}</Badge>
+                <div className={cn(
+                  "rounded-lg border px-1.5 py-0.5 font-mono text-[8px] font-black uppercase shadow-sm",
+                  quickLiveAccount?.status === "READY" || quickLiveAccount?.status === "CONFIGURED"
+                    ? "border-[var(--bk-status-success-soft)] text-[var(--bk-status-success)] bg-[var(--bk-surface)]"
+                    : "border-[var(--bk-border)] text-[var(--bk-text-muted)] bg-[var(--bk-surface)]"
+                )}>
+                  {quickLiveAccount?.status ?? "no_state"}
+                </div>
               </div>
            </div>
            
@@ -399,11 +407,12 @@ export function AccountStage({
                    }`}>
                      {index + 1}
                    </div>
-                   <Badge variant="outline" className={`text-[9px] h-4 border-inherit font-bold ${
-                     step.status === "done" ? "text-[var(--bk-status-success)]" : step.status === "current" ? "text-[var(--bk-status-warning)] font-black" : "text-[var(--bk-text-muted)]"
-                   }`}>
+                   <div className={cn(
+                     "rounded-lg border px-2 py-0.5 font-mono text-[9px] font-black uppercase shadow-sm border-inherit",
+                     step.status === "done" ? "text-[var(--bk-status-success)] bg-[var(--bk-surface)]" : step.status === "current" ? "text-[var(--bk-status-warning)] bg-[var(--bk-surface)]" : "text-[var(--bk-text-muted)] bg-[var(--bk-surface)]"
+                   )}>
                      {step.status === "done" ? "已完成" : step.status === "current" ? "进行中" : "待处理"}
-                   </Badge>
+                   </div>
                 </div>
                 <h4 className={`mb-1.5 text-sm font-black ${step.status === "pending" ? "text-[var(--bk-text-muted)]" : "text-[var(--bk-text-primary)]"}`}>{step.title}</h4>
                 <p className="text-xs font-medium leading-relaxed text-[var(--bk-text-muted)]">{step.detail}</p>
@@ -492,8 +501,16 @@ export function AccountStage({
                           </div>
                           
                           <div className="flex items-center gap-2 pt-1">
-                             <div className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm ${activeRuntimeReadiness.status === "ready" ? "bg-[var(--bk-status-success-soft)] text-[var(--bk-status-success)]" : String(activeRuntimeState.health).toLowerCase() === "recovering" ? "bg-[var(--bk-status-warning-soft)] text-[var(--bk-status-warning)]" : "bg-[var(--bk-status-warning-soft)] text-[var(--bk-status-warning)]"}`}>
-                                <div className={`size-1.5 rounded-full ${activeRuntimeReadiness.status === "ready" ? "bg-[var(--bk-status-success)] animate-pulse" : String(activeRuntimeState.health).toLowerCase() === "recovering" ? "bg-[var(--bk-status-warning)] animate-pulse" : String(activeRuntimeState.health).toLowerCase() === "stale-after-reconnect" ? "bg-[var(--bk-status-danger)]" : "bg-amber-600"}`} />
+                             <div className={cn(
+                               "flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm",
+                               activeRuntimeReadiness.status === "ready" 
+                                 ? "border-[var(--bk-status-success-soft)] bg-[var(--bk-surface)] text-[var(--bk-status-success)]" 
+                                 : "border-[var(--bk-status-warning-soft)] bg-[var(--bk-surface)] text-[var(--bk-status-warning)]"
+                             )}>
+                                <div className={cn(
+                                  "size-1.5 rounded-full",
+                                  activeRuntimeReadiness.status === "ready" ? "bg-[var(--bk-status-success)] animate-pulse" : (String(activeRuntimeState.health).toLowerCase() === "recovering" ? "bg-[var(--bk-status-warning)] animate-pulse" : "bg-amber-600")
+                                )} />
                                 环境：{statusLabelZh(activeRuntimeReadiness.status)}
                              </div>
                              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--bk-text-muted)] shadow-sm">
@@ -673,9 +690,9 @@ export function AccountStage({
                       <div className="space-y-3 pt-2">
                         <div className="flex flex-wrap gap-1">
                           {tpl.strategySignalBindings?.slice(0, 3).map((b: any, idx: number) => (
-                            <Badge key={idx} variant="neutral" className="h-3 border-[color-mix(in_srgb,var(--bk-border)_50%,transparent)] bg-[var(--bk-surface)] px-1 text-[7px] font-bold uppercase tracking-tighter text-[var(--bk-text-muted)]">
+                            <div key={idx} className="rounded border border-[var(--bk-border-soft)] bg-[var(--bk-surface)] px-1.5 py-0.25 font-mono text-[7px] font-black uppercase tracking-tighter text-[var(--bk-text-muted)] shadow-xs">
                               {b.role}
-                            </Badge>
+                            </div>
                           ))}
                         </div>
                         <Button 
@@ -719,15 +736,20 @@ export function AccountStage({
                       <TableRow key={idx} className="transition-colors hover:bg-[var(--bk-surface-faint)]">
                         <TableCell className="p-3 text-[11px] font-bold text-[var(--bk-text-primary)]">{item.sourceName}</TableCell>
                         <TableCell className="p-3">
-                          <Badge variant="neutral" className="h-4 bg-[var(--bk-surface)] text-[9px] text-[var(--bk-text-primary)]">{item.role}</Badge>
+                          <div className="rounded border border-[var(--bk-border-soft)] bg-[var(--bk-surface)] px-2 py-0.5 font-mono text-[9px] font-black uppercase text-[var(--bk-text-primary)] shadow-sm">{item.role}</div>
                         </TableCell>
                         <TableCell className="p-3 font-mono text-[11px] font-bold text-[var(--bk-status-success)]">{item.symbol || "--"}</TableCell>
                         <TableCell className="p-3 text-[11px] text-[var(--bk-text-muted)]">{displaySignalBindingTimeframe(item)}</TableCell>
                         <TableCell className="p-3 text-[11px] text-[var(--bk-text-muted)]">{item.exchange}</TableCell>
                         <TableCell className="p-3">
-                          <Badge variant={item.status === 'READY' ? "success" : "neutral"} className={`h-4 bg-[var(--bk-surface)] text-[9px] border ${item.status === 'READY' ? '' : 'text-[var(--bk-status-warning)]'}`}>
+                          <div className={cn(
+                            "rounded border px-2 py-0.5 font-mono text-[9px] font-black uppercase shadow-sm",
+                            item.status === 'READY' 
+                              ? "border-[var(--bk-status-success-soft)] text-[var(--bk-status-success)] bg-[var(--bk-surface)]" 
+                              : "border-[var(--bk-status-warning-soft)] text-[var(--bk-status-warning)] bg-[var(--bk-surface)]"
+                          )}>
                             {technicalStatusLabel(item.status)}
-                          </Badge>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -784,7 +806,9 @@ export function AccountStage({
                       <TableCell className="p-3 text-[var(--bk-text-muted)]">{source.exchange}</TableCell>
                       <TableCell className="p-3 text-[var(--bk-text-muted)]">{source.streamType}</TableCell>
                       <TableCell className="p-3">
-                        <Badge variant="neutral" className="h-4 bg-[var(--bk-surface)] text-[9px]">{source.roles.join(", ")}</Badge>
+                        <div className="rounded border border-[var(--bk-border-soft)] bg-[var(--bk-surface)] px-2 py-0.5 font-mono text-[9px] font-black uppercase text-[var(--bk-text-primary)] shadow-sm">
+                          {source.roles.join(", ")}
+                        </div>
                       </TableCell>
                       <TableCell className="p-3 text-[var(--bk-text-muted)]">{source.environments.join(", ")}</TableCell>
                       <TableCell className="p-3 text-[var(--bk-text-muted)]">{source.transport}</TableCell>
