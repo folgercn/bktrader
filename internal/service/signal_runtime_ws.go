@@ -308,14 +308,12 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 
 func signalRuntimeSummaryShouldTriggerLiveEvaluation(summary map[string]any) bool {
 	role := strings.TrimSpace(stringValue(summary["role"]))
-	if role == "" || !strings.EqualFold(normalizeSignalSourceRole(role), "trigger") {
-		return false
+	streamType := inferSignalRuntimeStreamType(summary)
+	if role != "" {
+		return strings.EqualFold(normalizeSignalSourceRole(role), "trigger") &&
+			(streamType == "" || streamType == "trade_tick" || streamType == "replay_tick")
 	}
-	streamType := strings.ToLower(strings.TrimSpace(stringValue(summary["streamType"])))
-	if streamType == "" {
-		streamType = inferStreamTypeFromEvent(strings.ToLower(strings.TrimSpace(stringValue(summary["event"]))))
-	}
-	return streamType == "" || streamType == "trade_tick" || streamType == "replay_tick"
+	return streamType == "trade_tick" || streamType == "replay_tick"
 }
 
 func signalRuntimeSummarySymbol(summary map[string]any) string {
@@ -334,8 +332,7 @@ func enrichSignalRuntimeSummary(session domain.SignalRuntimeSession, summary map
 	}
 
 	symbol := NormalizeSymbol(stringValue(out["symbol"]))
-	event := strings.ToLower(strings.TrimSpace(stringValue(out["event"])))
-	streamType := inferStreamTypeFromEvent(event)
+	streamType := inferSignalRuntimeStreamType(out)
 	for _, subscription := range subscriptions {
 		if !signalRuntimeSubscriptionMatchesSummary(subscription, out, symbol, streamType) {
 			continue
@@ -382,6 +379,29 @@ func inferStreamTypeFromEvent(event string) string {
 	case "depthupdate":
 		return "order_book"
 	case "kline":
+		return "signal_bar"
+	default:
+		return ""
+	}
+}
+
+func inferSignalRuntimeStreamType(summary map[string]any) string {
+	streamType := strings.ToLower(strings.TrimSpace(stringValue(summary["streamType"])))
+	if streamType != "" {
+		return streamType
+	}
+	if inferred := inferStreamTypeFromEvent(strings.ToLower(strings.TrimSpace(stringValue(summary["event"])))); inferred != "" {
+		return inferred
+	}
+	channel := strings.ToLower(strings.TrimSpace(stringValue(summary["channel"])))
+	switch {
+	case channel == "", channel == "message":
+		return ""
+	case strings.HasPrefix(channel, "trades"):
+		return "trade_tick"
+	case strings.HasPrefix(channel, "books"), strings.HasPrefix(channel, "book"):
+		return "order_book"
+	case strings.HasPrefix(channel, "candle"), strings.HasPrefix(channel, "kline"):
 		return "signal_bar"
 	default:
 		return ""

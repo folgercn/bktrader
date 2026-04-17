@@ -83,6 +83,45 @@ func TestEnrichSignalRuntimeSummaryKeepsKlineEventsScopedByTimeframe(t *testing.
 	}
 }
 
+func TestEnrichSignalRuntimeSummaryInfersOKXTradesChannelAsTrigger(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "okx-order-book",
+		"role":      "feature",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind okx order book failed: %v", err)
+	}
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "okx-trade-tick",
+		"role":      "trigger",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind okx trigger failed: %v", err)
+	}
+
+	session, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("create runtime session failed: %v", err)
+	}
+
+	summary := enrichSignalRuntimeSummary(session, map[string]any{
+		"event":   "message",
+		"channel": "trades",
+		"symbol":  "BTCUSDT",
+		"price":   "68000",
+	})
+	if got := stringValue(summary["streamType"]); got != "trade_tick" {
+		t.Fatalf("expected okx trades message to infer trade_tick, got %#v", summary)
+	}
+	if got := stringValue(summary["role"]); got != "trigger" {
+		t.Fatalf("expected okx trades message to attach trigger role, got %#v", summary)
+	}
+	if !signalRuntimeSummaryShouldTriggerLiveEvaluation(summary) {
+		t.Fatalf("expected okx trades message to remain trigger-actionable, got %#v", summary)
+	}
+}
+
 func TestMergeSignalSourceStatePreservesSignalBarHistory(t *testing.T) {
 	sourceStates := map[string]any{}
 	first := map[string]any{
