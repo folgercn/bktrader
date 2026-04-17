@@ -196,25 +196,10 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 				exitSide = "BUY"
 			}
 
-			activeTrigger := stopLoss
-			if boolValue(livePositionState["protected"]) {
-				if side == "LONG" {
-					prevLow1 := parseFloatValue(livePositionState["prevLow1"])
-					if prevLow1 > activeTrigger {
-						activeTrigger = prevLow1
-					}
-				} else if side == "SHORT" {
-					prevHigh1 := parseFloatValue(livePositionState["prevHigh1"])
-					if prevHigh1 > 0 && prevHigh1 < activeTrigger {
-						activeTrigger = prevHigh1
-					}
-				}
-			}
-
 			breached := false
-			if side == "LONG" && marketPrice > 0 && marketPrice <= activeTrigger {
+			if side == "LONG" && marketPrice > 0 && marketPrice <= stopLoss {
 				breached = true
-			} else if side == "SHORT" && marketPrice > 0 && marketPrice >= activeTrigger {
+			} else if side == "SHORT" && marketPrice > 0 && marketPrice >= stopLoss {
 				breached = true
 			}
 
@@ -224,9 +209,6 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 
 				if existingReason != "sl-breached-fallback" && existingReason != "pt-breached-fallback" {
 					reason := "sl-breached-fallback"
-					if activeTrigger != stopLoss {
-						reason = "pt-breached-fallback"
-					}
 
 					proposal := ExecutionProposal{
 						Action:            "risk-exit-fallback",
