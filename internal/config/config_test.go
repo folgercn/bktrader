@@ -20,6 +20,7 @@ func TestConfigValidateAcceptsSupportedLoggingValues(t *testing.T) {
 		StoreBackend:     "memory",
 		LogLevel:         "debug",
 		LogFormat:        "json",
+		LogDir:           "/tmp/bktrader-logs",
 		LogRetentionDays: 7,
 		LogMaxSizeMB:     100,
 	}
@@ -28,10 +29,23 @@ func TestConfigValidateAcceptsSupportedLoggingValues(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAllowsZeroPersistenceLimitsWhenLogDirDisabled(t *testing.T) {
+	cfg := Config{
+		HTTPAddr:         ":8080",
+		StoreBackend:     "memory",
+		LogRetentionDays: 0,
+		LogMaxSizeMB:     0,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected disabled log persistence to skip retention validation, got %v", err)
+	}
+}
+
 func TestConfigValidateRejectsInvalidLogPersistenceLimits(t *testing.T) {
 	cfg := Config{
 		HTTPAddr:         ":8080",
 		StoreBackend:     "memory",
+		LogDir:           "/tmp/bktrader-logs",
 		LogRetentionDays: 0,
 		LogMaxSizeMB:     100,
 	}
@@ -42,6 +56,7 @@ func TestConfigValidateRejectsInvalidLogPersistenceLimits(t *testing.T) {
 	cfg = Config{
 		HTTPAddr:         ":8080",
 		StoreBackend:     "memory",
+		LogDir:           "/tmp/bktrader-logs",
 		LogRetentionDays: 7,
 		LogMaxSizeMB:     0,
 	}

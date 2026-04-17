@@ -170,6 +170,78 @@ func TestBootstrapFromDiskRestoresBuffersAndSequences(t *testing.T) {
 	}
 }
 
+func TestBootstrapFromDiskDoesNotRewritePersistedLogs(t *testing.T) {
+	ResetForTests()
+	t.Cleanup(ResetForTests)
+
+	dir := t.TempDir()
+	writeJSONLines(t, filepath.Join(dir, systemLogMirrorFilename), []SystemLogEntry{
+		{
+			ID:        "system-log-1",
+			Level:     "info",
+			Message:   "persisted system log",
+			CreatedAt: time.Date(2026, time.April, 17, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	writeJSONLines(t, filepath.Join(dir, httpRequestLogMirrorFilename), []HTTPRequestLogEntry{
+		{
+			ID:         "http-log-1",
+			Level:      "info",
+			Message:    "persisted http log",
+			Method:     "GET",
+			Path:       "/readyz",
+			Status:     200,
+			DurationMs: 3,
+			CreatedAt:  time.Date(2026, time.April, 17, 10, 0, 1, 0, time.UTC),
+		},
+	})
+
+	cfg := config.Config{
+		AppName:          "bkTrader-test",
+		Environment:      "test",
+		LogLevel:         "info",
+		LogFormat:        "json",
+		LogDir:           dir,
+		LogRetentionDays: 7,
+		LogMaxSizeMB:     1,
+	}
+	if err := Configure(cfg); err != nil {
+		t.Fatalf("configure logger: %v", err)
+	}
+
+	systemBefore, err := os.ReadFile(filepath.Join(dir, systemLogMirrorFilename))
+	if err != nil {
+		t.Fatalf("read persisted system log before bootstrap: %v", err)
+	}
+	httpBefore, err := os.ReadFile(filepath.Join(dir, httpRequestLogMirrorFilename))
+	if err != nil {
+		t.Fatalf("read persisted http log before bootstrap: %v", err)
+	}
+
+	if _, err := BootstrapFromDisk(dir); err != nil {
+		t.Fatalf("first bootstrap from disk: %v", err)
+	}
+	if _, err := BootstrapFromDisk(dir); err != nil {
+		t.Fatalf("second bootstrap from disk: %v", err)
+	}
+
+	systemAfter, err := os.ReadFile(filepath.Join(dir, systemLogMirrorFilename))
+	if err != nil {
+		t.Fatalf("read persisted system log after bootstrap: %v", err)
+	}
+	httpAfter, err := os.ReadFile(filepath.Join(dir, httpRequestLogMirrorFilename))
+	if err != nil {
+		t.Fatalf("read persisted http log after bootstrap: %v", err)
+	}
+
+	if !bytes.Equal(systemBefore, systemAfter) {
+		t.Fatalf("expected bootstrap to avoid rewriting persisted system logs")
+	}
+	if !bytes.Equal(httpBefore, httpAfter) {
+		t.Fatalf("expected bootstrap to avoid rewriting persisted http logs")
+	}
+}
+
 func writeJSONLines[T any](t *testing.T, path string, entries []T) {
 	t.Helper()
 	var buffer bytes.Buffer

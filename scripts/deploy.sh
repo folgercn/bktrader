@@ -17,7 +17,7 @@ fi
 
 mkdir -p "$DEPLOY_PATH/deployments" "$DEPLOY_PATH/scripts" "$DEPLOY_PATH/logs"
 mkdir -p "$DOCKER_CONFIG_DIR"
-chmod 755 "$DEPLOY_PATH/logs"
+chmod 750 "$DEPLOY_PATH/logs"
 chmod 700 "$DOCKER_CONFIG_DIR"
 
 if [[ -n "${APP_ENV_FILE_CONTENT:-}" ]]; then

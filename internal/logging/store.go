@@ -288,6 +288,14 @@ func GetHTTPRequestLog(id string) (HTTPRequestLogEntry, bool) {
 	return defaultHTTPRequestStore.get(strings.TrimSpace(id))
 }
 
+func restoreSystemLog(entry SystemLogEntry) SystemLogEntry {
+	return defaultSystemLogStore.add(entry)
+}
+
+func restoreHTTPRequest(entry HTTPRequestLogEntry) HTTPRequestLogEntry {
+	return defaultHTTPRequestStore.add(entry)
+}
+
 // ResetForTests 清理全局日志缓冲，仅供测试使用。
 func ResetForTests() {
 	defaultSystemLogStore.reset()

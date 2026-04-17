@@ -116,11 +116,13 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("不支持的 LOG_FORMAT: %s（可选: text, json）", c.LogFormat)
 	}
-	if c.LogRetentionDays <= 0 {
-		return fmt.Errorf("LOG_RETENTION_DAYS 必须大于 0")
-	}
-	if c.LogMaxSizeMB <= 0 {
-		return fmt.Errorf("LOG_MAX_SIZE_MB 必须大于 0")
+	if strings.TrimSpace(c.LogDir) != "" {
+		if c.LogRetentionDays <= 0 {
+			return fmt.Errorf("LOG_RETENTION_DAYS 必须大于 0")
+		}
+		if c.LogMaxSizeMB <= 0 {
+			return fmt.Errorf("LOG_MAX_SIZE_MB 必须大于 0")
+		}
 	}
 	if c.HTTPAddr == "" {
 		return fmt.Errorf("HTTP_ADDR 不能为空")

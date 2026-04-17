@@ -48,7 +48,7 @@ func (m *diskMirror) configure(logDir string, maxSizeMB, retentionDays int) erro
 	if strings.TrimSpace(logDir) == "" {
 		return nil
 	}
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
+	if err := os.MkdirAll(logDir, 0o750); err != nil {
 		return fmt.Errorf("create log dir: %w", err)
 	}
 
@@ -126,11 +126,13 @@ func BootstrapFromDisk(logDir string) (BootstrapResult, error) {
 	if err != nil {
 		return BootstrapResult{}, err
 	}
+	// Bootstrap intentionally restores via store-only helpers so historical lines
+	// are not re-published to brokers or appended back into the mirror files.
 	for _, entry := range systemEntries {
-		defaultSystemLogStore.add(entry)
+		restoreSystemLog(entry)
 	}
 	for _, entry := range httpEntries {
-		defaultHTTPRequestStore.add(entry)
+		restoreHTTPRequest(entry)
 	}
 	return BootstrapResult{
 		SystemRecovered: len(systemEntries),
@@ -201,6 +203,8 @@ func readTailLines(path string, maxLines int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Bootstrap only needs enough tail data to repopulate the in-memory buffers after restart.
+	// This 4MB window is a best-effort bound so startup stays predictable even for large log files.
 	offset := info.Size() - bootstrapTailReadBytes
 	if offset < 0 {
 		offset = 0
