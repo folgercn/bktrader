@@ -8,6 +8,8 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
+const livePositionRecoveryStatusClosingPending = "closing-pending"
+
 func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession) (domain.LiveSession, error) {
 	account, err := p.store.GetAccount(session.AccountID)
 	if err != nil {
@@ -108,6 +110,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = firstNonEmpty(source, "live-position-refresh")
 	if !hasRealPositionContext && !hasVirtualPosition {
+		clearLiveWatchdogExitState(state)
 		clearLivePositionWatermarks(state)
 		delete(state, "livePositionState")
 		state["lastLivePositionState"] = map[string]any{}
@@ -119,6 +122,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		return persistSnapshot(updated)
 	}
 	if hasVirtualPosition {
+		clearLiveWatchdogExitState(state)
 		state["positionRecoveryStatus"] = "monitoring-virtual-position"
 	}
 
@@ -172,6 +176,75 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	if boolValue(livePositionState["protected"]) && len(metadataList(state["recoveredProtectionOrders"])) > 0 {
 		state["positionRecoveryStatus"] = "protected-open-position"
 	}
+
+	watchdogExitPending := false
+	if hasRealPositionContext {
+		watchdogExitPending = syncLiveWatchdogExitState(state, eventTime)
+	}
+
+	if !watchdogExitPending && stringValue(state["positionRecoveryStatus"]) == "unprotected-open-position" {
+		stopLoss := parseFloatValue(livePositionState["stopLoss"])
+		entryPrice := parseFloatValue(livePositionState["entryPrice"])
+		quantity := math.Abs(parseFloatValue(positionSnapshot["quantity"]))
+		side := strings.ToUpper(strings.TrimSpace(stringValue(livePositionState["side"])))
+
+		if quantity > 0 && stopLoss > 0 && entryPrice > 0 && side != "" {
+			var exitSide string
+			if side == "LONG" {
+				exitSide = "SELL"
+			} else {
+				exitSide = "BUY"
+			}
+
+			breached := false
+			if side == "LONG" && marketPrice > 0 && marketPrice <= stopLoss {
+				breached = true
+			} else if side == "SHORT" && marketPrice > 0 && marketPrice >= stopLoss {
+				breached = true
+			}
+
+			if breached {
+				existingProposal := mapValue(state["lastExecutionProposal"])
+				existingReason := stringValue(existingProposal["reason"])
+
+				if existingReason != "sl-breached-fallback" {
+					proposal := ExecutionProposal{
+						Action:            "risk-exit-fallback",
+						Role:              "exit",
+						Reason:            "sl-breached-fallback",
+						Side:              exitSide,
+						Symbol:            stringValue(livePositionState["symbol"]),
+						Type:              "MARKET",
+						Quantity:          quantity,
+						PriceHint:         marketPrice,
+						PriceSource:       "fallback-watchdog",
+						TimeInForce:       "GTC",
+						PostOnly:          false,
+						ReduceOnly:        true,
+						SignalKind:        "recovery-watchdog",
+						DecisionState:     "unprotected",
+						SignalBarStateKey: "",
+						SpreadBps:         0,
+						BestBid:           0,
+						BestAsk:           0,
+						ExecutionStrategy: "book-aware-v1",
+						Status:            "dispatchable",
+						Metadata: map[string]any{
+							"executionDecision": "direct-dispatch",
+							"livePositionState": cloneMetadata(livePositionState),
+						},
+					}
+					executionProposalMap := executionProposalToMap(proposal)
+					state["lastExecutionProposal"] = executionProposalMap
+					state["lastStrategyIntent"] = executionProposalMap
+					state["lastStrategyEvaluationStatus"] = "intent-ready"
+					markLiveWatchdogExitState(state, eventTime.UTC().Format(time.RFC3339), "sl-breached-fallback", "", "", "intent-ready")
+					state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
+				}
+			}
+		}
+	}
+
 	updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 	if updateErr != nil {
 		return domain.LiveSession{}, updateErr
@@ -202,4 +275,144 @@ func firstMetadataOrEmpty(items []map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return cloneMetadata(items[0])
+}
+
+func syncLiveWatchdogExitState(state map[string]any, eventTime time.Time) bool {
+	if state == nil {
+		return false
+	}
+
+	pendingProposal := firstNonEmptyMapValue(state["lastExecutionProposal"], state["lastStrategyIntent"])
+	if isLiveWatchdogFallbackProposal(pendingProposal) {
+		markLiveWatchdogExitState(
+			state,
+			firstNonEmpty(stringValue(state["watchdogExitTriggeredAt"]), eventTime.UTC().Format(time.RFC3339)),
+			stringValue(pendingProposal["reason"]),
+			"",
+			"",
+			"intent-ready",
+		)
+		state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
+		return true
+	}
+
+	dispatchedIntent := cloneMetadata(mapValue(state["lastDispatchedIntent"]))
+	if isLiveWatchdogFallbackProposal(dispatchedIntent) {
+		orderID := stringValue(state["lastDispatchedOrderId"])
+		orderStatus := strings.ToUpper(strings.TrimSpace(firstNonEmpty(
+			stringValue(state["lastSyncedOrderStatus"]),
+			stringValue(state["lastDispatchedOrderStatus"]),
+		)))
+		if orderStatus == "" || !isTerminalOrderStatus(orderStatus) {
+			status := "dispatch-pending"
+			if orderID != "" {
+				status = "order-working"
+			}
+			markLiveWatchdogExitState(
+				state,
+				firstNonEmpty(stringValue(state["watchdogExitTriggeredAt"]), stringValue(state["lastDispatchedAt"]), eventTime.UTC().Format(time.RFC3339)),
+				stringValue(dispatchedIntent["reason"]),
+				orderID,
+				orderStatus,
+				status,
+			)
+			state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
+			return true
+		}
+		markLiveWatchdogExitState(
+			state,
+			firstNonEmpty(stringValue(state["watchdogExitTriggeredAt"]), stringValue(state["lastDispatchedAt"]), eventTime.UTC().Format(time.RFC3339)),
+			stringValue(dispatchedIntent["reason"]),
+			orderID,
+			orderStatus,
+			"retry-eligible",
+		)
+	}
+
+	if activeOrder, ok := activeLiveWatchdogExitOrder(metadataList(state["recoveredProtectionOrders"])); ok {
+		markLiveWatchdogExitState(
+			state,
+			firstNonEmpty(stringValue(state["watchdogExitTriggeredAt"]), stringValue(state["lastProtectionRecoveryAt"]), eventTime.UTC().Format(time.RFC3339)),
+			firstNonEmpty(stringValue(state["watchdogExitReason"]), "reduce-only-exit-order"),
+			liveWatchdogExitOrderID(activeOrder),
+			liveWatchdogExitOrderStatus(activeOrder),
+			"order-working",
+		)
+		state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
+		return true
+	}
+
+	return false
+}
+
+func markLiveWatchdogExitState(state map[string]any, triggeredAt, reason, orderID, orderStatus, status string) {
+	if state == nil {
+		return
+	}
+	if triggeredAt != "" {
+		state["watchdogExitTriggeredAt"] = triggeredAt
+	}
+	if reason != "" {
+		state["watchdogExitReason"] = reason
+	}
+	if orderID != "" {
+		state["watchdogExitOrderId"] = orderID
+	}
+	if orderStatus != "" {
+		state["watchdogExitOrderStatus"] = orderStatus
+	}
+	if status != "" {
+		state["watchdogExitStatus"] = status
+	}
+}
+
+func clearLiveWatchdogExitState(state map[string]any) {
+	if state == nil {
+		return
+	}
+	delete(state, "watchdogExitTriggeredAt")
+	delete(state, "watchdogExitReason")
+	delete(state, "watchdogExitOrderId")
+	delete(state, "watchdogExitOrderStatus")
+	delete(state, "watchdogExitStatus")
+}
+
+func isLiveWatchdogFallbackProposal(proposal map[string]any) bool {
+	if len(proposal) == 0 {
+		return false
+	}
+	reason := strings.ToLower(strings.TrimSpace(stringValue(proposal["reason"])))
+	if reason != "sl-breached-fallback" {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(stringValue(proposal["signalKind"])), "recovery-watchdog")
+}
+
+func activeLiveWatchdogExitOrder(orders []map[string]any) (map[string]any, bool) {
+	for _, item := range orders {
+		order := cloneMetadata(item)
+		if len(order) == 0 {
+			continue
+		}
+		if !boolValue(order["reduceOnly"]) && !boolValue(order["closePosition"]) {
+			continue
+		}
+		if isStopProtectionOrder(order) || isTakeProfitProtectionOrder(order) {
+			continue
+		}
+		status := liveWatchdogExitOrderStatus(order)
+		if status != "" && isTerminalOrderStatus(status) {
+			continue
+		}
+		return order, true
+	}
+	return nil, false
+}
+
+func liveWatchdogExitOrderID(order map[string]any) string {
+	return firstNonEmpty(stringValue(order["orderId"]), stringValue(order["id"]), stringValue(order["clientOrderId"]))
+}
+
+func liveWatchdogExitOrderStatus(order map[string]any) string {
+	return strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(order["status"]), stringValue(order["orderStatus"]))))
 }
