@@ -192,10 +192,13 @@ export function AccountStage({
     open: boolean;
     title: string;
     description: string;
-    onConfirm: () => void;
+    onConfirm: () => Promise<void> | void;
   }>({ open: false, title: "", description: "", onConfirm: () => {} });
 
-  const openConfirm = (title: string, description: string, onConfirm: () => void) => {
+  const activeLiveSession = liveSessions.find(s => s.accountId === quickLiveAccountId);
+  const activeTemplateKey = (activeLiveSession?.metadata as any)?.launchTemplateKey;
+
+  const openConfirm = (title: string, description: string, onConfirm: () => Promise<void> | void) => {
     setConfirmConfig({ open: true, title, description, onConfirm });
   };
 
@@ -683,9 +686,16 @@ export function AccountStage({
                                 <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bk-status-success)]" />
                                 <span className="truncate text-[13px] font-black leading-tight text-[var(--bk-text-primary)]">{tpl.name}</span>
                              </div>
-                             <Badge variant="neutral" className="ml-1 h-3.5 shrink-0 bg-[var(--bk-surface)] text-[8px] text-[var(--bk-text-primary)]">
-                               {tpl.symbol}
-                             </Badge>
+                             <div className="flex items-center gap-1 select-none">
+                               {activeTemplateKey === tpl.key && (
+                                 <Badge variant="metal" className="h-3.5 bg-[var(--bk-status-success-soft)] text-[8px] text-[var(--bk-status-success)] border-[var(--bk-status-success-soft)]">
+                                   RUNNING
+                                 </Badge>
+                               )}
+                               <Badge variant="neutral" className="h-3.5 shrink-0 bg-[var(--bk-surface)] text-[8px] text-[var(--bk-text-primary)]">
+                                 {tpl.symbol}
+                               </Badge>
+                             </div>
                          </div>
                          <p className="h-9 overflow-hidden text-[10px] font-medium leading-relaxed text-[var(--bk-text-muted)] line-clamp-2">{tpl.description}</p>
                       </div>
@@ -702,9 +712,19 @@ export function AccountStage({
                           variant="bento-outline"
                           className="h-8 w-full rounded-lg bg-[var(--bk-surface)] text-[10px] font-black transition-all hover:border-transparent hover:bg-[var(--bk-surface-inverse)] hover:text-[var(--bk-text-contrast)]"
                           disabled={launchingTemplate !== null}
-                          onClick={() => executeLaunchTemplate(tpl, quickLiveAccountId)}
+                          onClick={() => {
+                            const isSwitching = activeLiveSession && activeTemplateKey !== tpl.key;
+                            setConfirmConfig({
+                              open: true,
+                              title: isSwitching ? "确认切换发射模板？" : "确认应用发射模板？",
+                              description: isSwitching 
+                                ? `警告：你正在从 ${activeTemplateKey || "当前模板"} 切换到 ${tpl.name}。这将会清空策略下不属于新模板的所有绑定，并强制重启运行时以刷新计划（非热切换）。`
+                                : `这将会为策略 "${tpl.strategyId}" 配置 ${tpl.symbol} 信号源。注意：此流程会触发运行时重启以应用新订阅（非热切换），请确认。`,
+                              onConfirm: () => executeLaunchTemplate(tpl, quickLiveAccountId)
+                            });
+                          }}
                         >
-                          {launchingTemplate === tpl.key ? "启动中..." : "一键应用并启动"}
+                          {launchingTemplate === tpl.key ? "启动中..." : "一键切换并启动"}
                         </Button>
                       </div>
                    </div>
