@@ -2,7 +2,6 @@ package service
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -690,6 +689,9 @@ func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.F
 	filtered := make([]domain.Fill, 0, len(fills))
 	for _, fill := range fills {
 		fill.OrderID = orderID
+		if strings.TrimSpace(fill.ExchangeTradeID) == "" && strings.TrimSpace(fill.DedupFingerprint) == "" {
+			fill.DedupFingerprint = fill.FallbackFingerprint()
+		}
 		key := buildFillDedupKey(fill)
 		if key == "" {
 			filtered = append(filtered, fill)
@@ -712,24 +714,11 @@ func buildFillDedupKey(fill domain.Fill) string {
 	if exchangeTradeID := strings.TrimSpace(fill.ExchangeTradeID); exchangeTradeID != "" {
 		return orderID + "|trade|" + exchangeTradeID
 	}
-	return orderID + "|fallback|" + buildFallbackFillFingerprint(fill)
-}
-
-func buildFallbackFillFingerprint(fill domain.Fill) string {
-	tradeTime := ""
-	if fill.ExchangeTradeTime != nil && !fill.ExchangeTradeTime.IsZero() {
-		tradeTime = fill.ExchangeTradeTime.UTC().Format(time.RFC3339Nano)
+	fingerprint := strings.TrimSpace(fill.DedupFingerprint)
+	if fingerprint == "" {
+		fingerprint = fill.FallbackFingerprint()
 	}
-	return strings.Join([]string{
-		formatFillKeyFloat(fill.Price),
-		formatFillKeyFloat(fill.Quantity),
-		formatFillKeyFloat(fill.Fee),
-		tradeTime,
-	}, "|")
-}
-
-func formatFillKeyFloat(value float64) string {
-	return strconv.FormatFloat(value, 'f', -1, 64)
+	return orderID + "|fallback|" + fingerprint
 }
 
 func resolveLiveFillTradeID(report LiveFillReport) string {

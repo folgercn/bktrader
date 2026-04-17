@@ -162,3 +162,115 @@ func TestFinalizeExecutedOrderSkipsDuplicateFallbackFillsWithoutExchangeTradeID(
 		t.Fatalf("expected duplicate fallback sync to keep one fill, got %d", orderFillCount)
 	}
 }
+
+func TestFinalizeExecutedOrderUsesExchangeTradeTimeForLastFilledAt(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, _ := store.GetAccount("live-main")
+	order, err := store.CreateOrder(domain.Order{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  0.1,
+		Price:     68000,
+		Metadata:  map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	tradeTime := time.Date(2026, 4, 17, 12, 36, 0, 0, time.UTC)
+	filledOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{{
+		OrderID:           order.ID,
+		Price:             68000,
+		Quantity:          0.1,
+		Fee:               1.23,
+		ExchangeTradeTime: &tradeTime,
+	}})
+	if err != nil {
+		t.Fatalf("finalize failed: %v", err)
+	}
+
+	if got := stringValue(filledOrder.Metadata["lastFilledAt"]); got != tradeTime.Format(time.RFC3339) {
+		t.Fatalf("expected lastFilledAt to use exchange trade time, got %q", got)
+	}
+}
+
+func TestFinalizeExecutedOrderFallsBackToNowWhenExchangeTradeTimeMissing(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, _ := store.GetAccount("live-main")
+	order, err := store.CreateOrder(domain.Order{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  0.1,
+		Price:     68000,
+		Metadata:  map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	before := time.Now().UTC().Add(-time.Second)
+	filledOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{{
+		OrderID:  order.ID,
+		Price:    68000,
+		Quantity: 0.1,
+		Fee:      1.23,
+	}})
+	after := time.Now().UTC().Add(time.Second)
+	if err != nil {
+		t.Fatalf("finalize failed: %v", err)
+	}
+
+	got := parseOptionalRFC3339(stringValue(filledOrder.Metadata["lastFilledAt"]))
+	if got.IsZero() || got.Before(before) || got.After(after) {
+		t.Fatalf("expected lastFilledAt to fall back to now, got %v", got)
+	}
+}
+
+func TestFinalizeExecutedOrderKeepsLastFilledAtOnDuplicateSync(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, _ := store.GetAccount("live-main")
+	order, err := store.CreateOrder(domain.Order{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  0.1,
+		Price:     68000,
+		Metadata:  map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	firstTradeTime := time.Date(2026, 4, 17, 12, 36, 0, 0, time.UTC)
+	fill := domain.Fill{
+		OrderID:           order.ID,
+		Price:             68000,
+		Quantity:          0.1,
+		Fee:               1.23,
+		ExchangeTradeTime: &firstTradeTime,
+	}
+	filledOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{fill})
+	if err != nil {
+		t.Fatalf("first finalize failed: %v", err)
+	}
+
+	filledOrder, err = platform.finalizeExecutedOrder(account, filledOrder, []domain.Fill{fill})
+	if err != nil {
+		t.Fatalf("second finalize failed: %v", err)
+	}
+
+	if got := stringValue(filledOrder.Metadata["lastFilledAt"]); got != firstTradeTime.Format(time.RFC3339) {
+		t.Fatalf("expected duplicate sync to keep original lastFilledAt, got %q", got)
+	}
+}
