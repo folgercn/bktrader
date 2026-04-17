@@ -221,9 +221,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                </div>
              </div>
              <div className="flex items-center gap-4">
-                <div className="rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-0.5 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-primary)]">
-                  {monitorMode}
-                </div>
+                 <Badge variant="metal">
+                   {monitorMode}
+                 </Badge>
              </div>
            </div>
          </CardHeader>
@@ -275,9 +275,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">会话控制</CardTitle>
             </div>
             {highlightedLiveSession && (
-              <div className="rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-0.5 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-primary)]">
+              <Badge variant="metal">
                 {highlightedLiveSession.health.status}
-              </div>
+              </Badge>
             )}
           </CardHeader>
           <CardContent className="p-5 flex-1 flex flex-col">
@@ -328,7 +328,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                          </div>
                       </PopoverContent>
                     </Popover>
-                    <span className="shrink-0 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 font-mono text-[10px] font-bold shadow-sm text-[var(--bk-text-muted)]">{highlightedLiveSession.session.accountId}</span>
+                    <Badge variant="metal" className="shrink-0 text-[var(--bk-text-muted)] py-1 px-2.5">
+                      {highlightedLiveSession.session.accountId}
+                    </Badge>
                   </div>
 
                   <div className="rounded-2xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)] p-5 shadow-inner">
@@ -373,9 +375,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               <Zap className="size-5 text-[var(--bk-text-primary)]" />
               <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">行情遥测</CardTitle>
             </div>
-            <div className="rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-0.5 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-muted)]">
+            <Badge variant="metal" className="text-[var(--bk-text-muted)]">
               {sessionSymbol || "NO SIGNAL"}
-            </div>
+            </Badge>
           </CardHeader>
           <CardContent className="p-5 flex-1 flex flex-col justify-center">
             <div className="space-y-6">
@@ -415,14 +417,17 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               <HeartPulse className="size-5 text-[var(--bk-text-primary)]" />
               <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">系统健康概览</CardTitle>
             </div>
-            <div className={cn(
-              "rounded-lg border px-2 py-0.5 font-mono text-[9px] font-black uppercase shadow-sm",
-              monitorHealth?.status === "healthy" 
-                ? "border-[var(--bk-status-success-soft)] bg-[var(--bk-surface)] text-[var(--bk-status-success)]" 
-                : "border-[var(--bk-status-danger-soft)] bg-[var(--bk-surface)] text-[var(--bk-status-danger)]"
-            )}>
+            <Badge 
+              variant="metal"
+              className={cn(
+                "px-2 py-0.5",
+                monitorHealth?.status === "healthy" 
+                  ? "border-[var(--bk-status-success-soft)] text-[var(--bk-status-success)]" 
+                  : "border-[var(--bk-status-danger-soft)] text-[var(--bk-status-danger)]"
+              )}
+            >
                {technicalStatusLabel(monitorHealth?.status ?? "--")}
-            </div>
+            </Badge>
           </CardHeader>
           <CardContent className="p-5 flex-1">
             <div className="grid grid-cols-2 gap-3 h-full">

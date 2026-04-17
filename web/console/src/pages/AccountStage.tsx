@@ -501,21 +501,24 @@ export function AccountStage({
                           </div>
                           
                           <div className="flex items-center gap-2 pt-1">
-                             <div className={cn(
-                               "flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm",
-                               activeRuntimeReadiness.status === "ready" 
-                                 ? "border-[var(--bk-status-success-soft)] bg-[var(--bk-surface)] text-[var(--bk-status-success)]" 
-                                 : "border-[var(--bk-status-warning-soft)] bg-[var(--bk-surface)] text-[var(--bk-status-warning)]"
-                             )}>
+                             <Badge 
+                               variant="metal" 
+                               className={cn(
+                                 "gap-1.5 px-2.5 py-1",
+                                 activeRuntimeReadiness.status === "ready" 
+                                   ? "border-[var(--bk-status-success-soft)] text-[var(--bk-status-success)]" 
+                                   : "border-[var(--bk-status-warning-soft)] text-[var(--bk-status-warning)]"
+                               )}
+                             >
                                 <div className={cn(
                                   "size-1.5 rounded-full",
                                   activeRuntimeReadiness.status === "ready" ? "bg-[var(--bk-status-success)] animate-pulse" : (String(activeRuntimeState.health).toLowerCase() === "recovering" ? "bg-[var(--bk-status-warning)] animate-pulse" : "bg-amber-600")
                                 )} />
                                 环境：{statusLabelZh(activeRuntimeReadiness.status)}
-                             </div>
-                             <div className="flex items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--bk-text-muted)] shadow-sm">
+                             </Badge>
+                             <Badge variant="metal" className="text-[var(--bk-text-muted)] px-2.5 py-1">
                                 预检：{statusLabelZh(livePreflight.status)}
-                             </div>
+                             </Badge>
                           </div>
                        </div>
 
