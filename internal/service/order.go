@@ -28,9 +28,41 @@ func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
 	return domain.Order{}, fmt.Errorf("order not found: %s", orderID)
 }
 
+func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
+	position, _, err := p.resolveClosePositionTarget(positionID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	return p.CreateOrder(buildClosePositionOrder(position))
+}
+
+func buildClosePositionOrder(position domain.Position) domain.Order {
+	closeSide := "SELL"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		closeSide = "BUY"
+	}
+	return domain.Order{
+		AccountID:         position.AccountID,
+		StrategyVersionID: position.StrategyVersionID,
+		Symbol:            NormalizeSymbol(position.Symbol),
+		Side:              closeSide,
+		Type:              "MARKET",
+		Quantity:          position.Quantity,
+		ReduceOnly:        true,
+		Metadata: map[string]any{
+			"source":       "manual-position-close",
+			"positionId":   position.ID,
+			"markPrice":    position.MarkPrice,
+			"priceHint":    position.MarkPrice,
+			"manualAction": "close-position",
+		},
+	}
+}
+
 // CreateOrder 创建订单。对于 PAPER 模式账户，订单会被立即执行（模拟成交），
 // 生成 fill 记录、更新持仓、捕获净值快照。
 func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
+	order.NormalizeExecutionFlags()
 	logger := p.logger("service.order",
 		"account_id", order.AccountID,
 		"strategy_version_id", order.StrategyVersionID,
@@ -62,6 +94,9 @@ func (p *Platform) prepareOrderAccount(order domain.Order) (domain.Account, erro
 }
 
 func (p *Platform) preflightOrderExecution(account domain.Account, order domain.Order) error {
+	if err := p.validateReduceOnlyOrder(account, order); err != nil {
+		return err
+	}
 	if account.Mode != "LIVE" {
 		return nil
 	}
@@ -78,6 +113,126 @@ func (p *Platform) preflightOrderExecution(account domain.Account, order domain.
 		return err
 	}
 	return nil
+}
+
+func (p *Platform) resolveClosePositionTarget(positionID string) (domain.Position, domain.Account, error) {
+	position, found, err := p.findPositionByID(positionID)
+	if err != nil {
+		return domain.Position{}, domain.Account{}, err
+	}
+	if !found {
+		return domain.Position{}, domain.Account{}, fmt.Errorf("position not found: %s", positionID)
+	}
+	account, err := p.store.GetAccount(position.AccountID)
+	if err != nil {
+		return domain.Position{}, domain.Account{}, err
+	}
+	if strings.EqualFold(strings.TrimSpace(account.Mode), "LIVE") {
+		if _, err := p.SyncLiveAccount(account.ID); err != nil {
+			return domain.Position{}, domain.Account{}, err
+		}
+		position, found, err = p.findPositionByID(positionID)
+		if err != nil {
+			return domain.Position{}, domain.Account{}, err
+		}
+		if !found {
+			return domain.Position{}, domain.Account{}, fmt.Errorf("position not found: %s", positionID)
+		}
+	}
+	if position.Quantity <= 0 {
+		return domain.Position{}, domain.Account{}, fmt.Errorf("position has no quantity to close: %s", positionID)
+	}
+	return position, account, nil
+}
+
+func (p *Platform) findPositionByID(positionID string) (domain.Position, bool, error) {
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return domain.Position{}, false, err
+	}
+	for _, item := range positions {
+		if item.ID == positionID {
+			return item, true, nil
+		}
+	}
+	return domain.Position{}, false, nil
+}
+
+func (p *Platform) validateReduceOnlyOrder(account domain.Account, order domain.Order) error {
+	if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+		return nil
+	}
+	symbol := NormalizeSymbol(order.Symbol)
+	position, found, err := p.resolveReduceOnlyTargetPosition(account.ID, order)
+	if err != nil {
+		return err
+	}
+	if !found || position.Quantity <= 0 {
+		return fmt.Errorf("reduce-only order requires an open position for %s", symbol)
+	}
+	expectedSide := "SELL"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		expectedSide = "BUY"
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.Side), expectedSide) {
+		return fmt.Errorf("reduce-only order side %s does not reduce %s position on %s", order.Side, position.Side, symbol)
+	}
+	if order.Quantity <= 0 {
+		return fmt.Errorf("reduce-only order quantity must be positive for %s", symbol)
+	}
+	if order.Quantity-position.Quantity > 1e-9 {
+		return fmt.Errorf("reduce-only order quantity %.12f exceeds open position quantity %.12f for %s", order.Quantity, position.Quantity, symbol)
+	}
+	return nil
+}
+
+func (p *Platform) resolveReduceOnlyTargetPosition(accountID string, order domain.Order) (domain.Position, bool, error) {
+	symbol := NormalizeSymbol(order.Symbol)
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return domain.Position{}, false, err
+	}
+	candidates := make([]domain.Position, 0)
+	for _, item := range positions {
+		if strings.TrimSpace(item.AccountID) != strings.TrimSpace(accountID) {
+			continue
+		}
+		if NormalizeSymbol(item.Symbol) != symbol || item.Quantity <= 0 {
+			continue
+		}
+		candidates = append(candidates, item)
+	}
+	if len(candidates) == 0 {
+		return domain.Position{}, false, nil
+	}
+	if positionID := strings.TrimSpace(stringValue(mapValue(order.Metadata)["positionId"])); positionID != "" {
+		for _, item := range candidates {
+			if item.ID == positionID {
+				return item, true, nil
+			}
+		}
+		return domain.Position{}, false, fmt.Errorf("reduce-only order target position %s is not open for %s", positionID, symbol)
+	}
+	if strategyVersionID := strings.TrimSpace(order.StrategyVersionID); strategyVersionID != "" {
+		versionMatches := make([]domain.Position, 0, len(candidates))
+		for _, item := range candidates {
+			if strings.EqualFold(strings.TrimSpace(item.StrategyVersionID), strategyVersionID) {
+				versionMatches = append(versionMatches, item)
+			}
+		}
+		switch len(versionMatches) {
+		case 0:
+			return domain.Position{}, false, fmt.Errorf("reduce-only order requires an open %s position for strategy version %s", symbol, strategyVersionID)
+		case 1:
+			return versionMatches[0], true, nil
+		default:
+			return domain.Position{}, false, fmt.Errorf("reduce-only order for %s is ambiguous across %d open positions for strategy version %s; specify positionId", symbol, len(versionMatches), strategyVersionID)
+		}
+	}
+	if len(candidates) == 1 {
+		return candidates[0], true, nil
+	}
+	return domain.Position{}, false, fmt.Errorf("reduce-only order for %s is ambiguous across %d open positions; specify strategyVersionId or positionId", symbol, len(candidates))
 }
 
 func (p *Platform) executeCreatedOrder(account domain.Account, order domain.Order) (domain.Order, error) {

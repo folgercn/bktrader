@@ -50,7 +50,20 @@ func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 }
 
 func (p *Platform) DeleteLiveSession(sessionID string) error {
+	return p.DeleteLiveSessionWithForce(sessionID, false)
+}
+
+func (p *Platform) DeleteLiveSessionWithForce(sessionID string, force bool) error {
 	p.logger("service.live", "session_id", sessionID).Info("deleting live session")
+	session, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		return err
+	}
+	if !force {
+		if err := p.ensureNoActivePositionsOrOrders(session.AccountID, session.StrategyID); err != nil {
+			return err
+		}
+	}
 	return p.store.DeleteLiveSession(sessionID)
 }
 
@@ -909,7 +922,22 @@ func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string
 }
 
 func (p *Platform) StopLiveSession(sessionID string) (domain.LiveSession, error) {
+	return p.StopLiveSessionWithForce(sessionID, false)
+}
+
+func (p *Platform) StopLiveSessionWithForce(sessionID string, force bool) (domain.LiveSession, error) {
 	logger := p.logger("service.live", "session_id", sessionID)
+	existing, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		logger.Error("load live session before stop failed", "error", err)
+		return domain.LiveSession{}, err
+	}
+	if !force {
+		if err := p.ensureNoActivePositionsOrOrders(existing.AccountID, existing.StrategyID); err != nil {
+			logger.Warn("stop live session blocked by active positions or orders", "error", err)
+			return domain.LiveSession{}, err
+		}
+	}
 	session, err := p.store.UpdateLiveSessionStatus(sessionID, "STOPPED")
 	if err != nil {
 		logger.Error("stop live session failed", "error", err)
@@ -1493,7 +1521,11 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 	p.mu.Lock()
 	if plan, ok := p.livePlans[session.ID]; ok {
 		p.mu.Unlock()
-		return session, plan, nil
+		reconciled, err := p.reconcileLiveSessionPlanIndex(session, plan, time.Now().UTC(), "live-plan-cache-reconcile")
+		if err != nil {
+			return domain.LiveSession{}, nil, err
+		}
+		return reconciled, plan, nil
 	}
 	p.mu.Unlock()
 
@@ -1580,6 +1612,40 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 		return domain.LiveSession{}, nil, err
 	}
 	return updatedSession, plan, nil
+}
+
+func (p *Platform) reconcileLiveSessionPlanIndex(session domain.LiveSession, plan []paperPlannedOrder, recoveredAt time.Time, source string) (domain.LiveSession, error) {
+	if len(plan) == 0 || strings.TrimSpace(session.ID) == "" {
+		return session, nil
+	}
+
+	state := cloneMetadata(session.State)
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(state["symbol"]), stringValue(state["lastSymbol"])))
+	if symbol == "" {
+		return session, nil
+	}
+
+	positionSnapshot, foundPosition, err := p.resolveLiveSessionPositionSnapshot(session, symbol)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+
+	nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, resolveLivePlanIndex(state), positionSnapshot, foundPosition)
+	if !adjusted {
+		return session, nil
+	}
+
+	state["recoveredPosition"] = positionSnapshot
+	state["hasRecoveredPosition"] = foundPosition
+	state["hasRecoveredRealPosition"] = foundPosition
+	state["hasRecoveredVirtualPosition"] = boolValue(positionSnapshot["virtual"])
+	state["lastRecoveredPositionAt"] = recoveredAt.UTC().Format(time.RFC3339)
+	state["positionRecoverySource"] = firstNonEmpty(source, "live-plan-cache-reconcile")
+	state["planIndex"] = nextIndex
+	state["planIndexRecoveredFromPosition"] = true
+	state["recoveredPlanIndex"] = nextIndex
+
+	return p.store.UpdateLiveSessionState(session.ID, state)
 }
 
 func reconcileLivePlanIndexWithPosition(plan []paperPlannedOrder, currentIndex int, position map[string]any, found bool) (int, bool) {

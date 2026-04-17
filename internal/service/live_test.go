@@ -1019,6 +1019,9 @@ func TestBuildLiveOrderFromExecutionProposalUsesExecutionFields(t *testing.T) {
 	if !boolValue(order.Metadata["reduceOnly"]) {
 		t.Fatal("expected reduceOnly metadata")
 	}
+	if !order.ReduceOnly {
+		t.Fatal("expected reduceOnly formal field")
+	}
 }
 
 func TestBuildLiveOrderUsesProposalQuantityOverSessionDefault(t *testing.T) {
@@ -1561,6 +1564,99 @@ func TestShouldAdvanceLivePlanForOrderStatus(t *testing.T) {
 	}
 	if !shouldAdvanceLivePlanForOrderStatus("FILLED") {
 		t.Fatal("expected filled live order to advance the plan")
+	}
+}
+
+func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexBackToEntryWhenPositionFlat(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"dispatchMode":        "manual-review",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+
+	updatedState := cloneMetadata(session.State)
+	updatedState["planIndex"] = 1
+	session, err = platform.store.UpdateLiveSessionState(session.ID, updatedState)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}
+	platform.mu.Unlock()
+
+	reconciled, plan, err := platform.ensureLiveExecutionPlan(session)
+	if err != nil {
+		t.Fatalf("ensure live execution plan failed: %v", err)
+	}
+	if len(plan) != 2 {
+		t.Fatalf("expected cached live plan to be preserved, got %d steps", len(plan))
+	}
+	gotIndex, ok := toFloat64(reconciled.State["planIndex"])
+	if !ok || int(gotIndex) != 0 {
+		t.Fatalf("expected cached plan index to roll back to entry when position is flat, got %v", reconciled.State["planIndex"])
+	}
+	if !boolValue(reconciled.State["planIndexRecoveredFromPosition"]) {
+		t.Fatal("expected cached plan reconciliation to be recorded in session state")
+	}
+}
+
+func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexToExitWhenPositionExists(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"dispatchMode":        "manual-review",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	updatedState := cloneMetadata(session.State)
+	updatedState["planIndex"] = 0
+	session, err = platform.store.UpdateLiveSessionState(session.ID, updatedState)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}
+	platform.mu.Unlock()
+
+	reconciled, _, err := platform.ensureLiveExecutionPlan(session)
+	if err != nil {
+		t.Fatalf("ensure live execution plan failed: %v", err)
+	}
+	gotIndex, ok := toFloat64(reconciled.State["planIndex"])
+	if !ok || int(gotIndex) != 1 {
+		t.Fatalf("expected cached plan index to advance to exit when position exists, got %v", reconciled.State["planIndex"])
+	}
+	if !boolValue(reconciled.State["hasRecoveredPosition"]) {
+		t.Fatal("expected recovered position to be captured during cached plan reconciliation")
 	}
 }
 

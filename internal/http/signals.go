@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -277,7 +278,11 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 				}
 				writeJSON(w, http.StatusOK, item)
 			case http.MethodDelete:
-				if err := platform.DeleteSignalRuntimeSession(parts[0]); err != nil {
+				if err := platform.DeleteSignalRuntimeSessionWithForce(parts[0], queryFlagEnabled(r, "force")); err != nil {
+					if errors.Is(err, service.ErrActivePositionsOrOrders) {
+						writeError(w, http.StatusBadRequest, err.Error())
+						return
+					}
 					writeError(w, http.StatusNotFound, err.Error())
 					return
 				}
@@ -306,7 +311,7 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			writeJSON(w, http.StatusOK, item)
 		case "stop":
-			item, err := platform.StopSignalRuntimeSession(sessionID)
+			item, err := platform.StopSignalRuntimeSessionWithForce(sessionID, queryFlagEnabled(r, "force"))
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return

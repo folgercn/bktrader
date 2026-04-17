@@ -29,6 +29,8 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				Type              string         `json:"type"`
 				Quantity          float64        `json:"quantity"`
 				Price             float64        `json:"price"`
+				ReduceOnly        bool           `json:"reduceOnly"`
+				ClosePosition     bool           `json:"closePosition"`
 				Metadata          map[string]any `json:"metadata"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
@@ -52,6 +54,8 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				Type:              payload.Type,
 				Quantity:          payload.Quantity,
 				Price:             payload.Price,
+				ReduceOnly:        payload.ReduceOnly,
+				ClosePosition:     payload.ClosePosition,
 				Metadata:          payload.Metadata,
 			}
 			item, err := platform.CreateOrder(order)
@@ -66,13 +70,26 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 	})
 
 	mux.HandleFunc("/api/v1/orders/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/orders/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(parts) != 2 {
+		if len(parts) == 1 {
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			item, err := platform.GetOrder(parts[0])
+			if err != nil {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+			return
+		}
+		if r.Method != http.MethodPost || len(parts) != 2 {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
 			writeError(w, http.StatusNotFound, "order route not found")
 			return
 		}
