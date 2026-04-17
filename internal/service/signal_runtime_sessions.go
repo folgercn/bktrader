@@ -98,6 +98,11 @@ func (p *Platform) CreateSignalRuntimeSession(accountID, strategyID string) (dom
 	return session, nil
 }
 
+// syncSignalRuntimeSessionPlan rebuilds the stored runtime plan/subscription
+// state from the current strategy bindings. It does not open or hot-swap live
+// transport subscriptions by itself; callers that need actual rebinding must
+// restart the runtime afterwards so StartSignalRuntimeSession can prepare the
+// new subscriptions from this refreshed plan.
 func (p *Platform) syncSignalRuntimeSessionPlan(sessionID string) (domain.SignalRuntimeSession, error) {
 	session, err := p.GetSignalRuntimeSession(sessionID)
 	if err != nil {
@@ -128,7 +133,7 @@ func (p *Platform) syncSignalRuntimeSessionPlan(sessionID string) (domain.Signal
 	state["lastEventAt"] = now.Format(time.RFC3339)
 	state["lastEventSummary"] = map[string]any{
 		"type":              "runtime_plan_refreshed",
-		"message":           "signal runtime plan refreshed",
+		"message":           "signal runtime plan refreshed; new subscriptions apply on next runtime start",
 		"subscriptionCount": len(subscriptions),
 		"subscriptions":     summarizeSubscriptions(subscriptions),
 	}

@@ -36,12 +36,19 @@ type LiveLaunchResult struct {
 	AccountBindingApplied bool                        `json:"accountBindingApplied"`
 	TemplateApplied       bool                        `json:"templateApplied"`
 	TemplateBindingCount  int                         `json:"templateBindingCount"`
-	RuntimePlanRefreshed  bool                        `json:"runtimePlanRefreshed"`
-	StoppedLiveSessions   int                         `json:"stoppedLiveSessions"`
-	RuntimeSessionCreated bool                        `json:"runtimeSessionCreated"`
-	RuntimeSessionStarted bool                        `json:"runtimeSessionStarted"`
-	LiveSessionCreated    bool                        `json:"liveSessionCreated"`
-	LiveSessionStarted    bool                        `json:"liveSessionStarted"`
+	// RuntimePlanRefreshed means the stored runtime plan/subscription state was
+	// rebuilt from the replacement template bindings after any running runtime
+	// for the same account+strategy was stopped. Actual transport subscription
+	// preparation still happens on the next StartSignalRuntimeSession call.
+	RuntimePlanRefreshed bool `json:"runtimePlanRefreshed"`
+	// StoppedLiveSessions counts RUNNING live sessions in the same
+	// account+strategy scope whose symbol/timeframe no longer matches the target
+	// launch template. Sessions from other accounts or strategies are left alone.
+	StoppedLiveSessions   int  `json:"stoppedLiveSessions"`
+	RuntimeSessionCreated bool `json:"runtimeSessionCreated"`
+	RuntimeSessionStarted bool `json:"runtimeSessionStarted"`
+	LiveSessionCreated    bool `json:"liveSessionCreated"`
+	LiveSessionStarted    bool `json:"liveSessionStarted"`
 }
 
 type LiveAccountReconcileOptions struct {
@@ -1080,6 +1087,10 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	}
 
 	if len(options.StrategySignalBindings) > 0 {
+		// Launch templates are exclusive within the current account+strategy:
+		// we quiesce the runtime, stop non-target RUNNING live sessions in that
+		// same scope, replace bindings, then rebuild runtime state from the new
+		// template. We do not hot-swap subscriptions under a still-running runtime.
 		if err := p.ensureNoActivePositionsOrOrders(account.ID, strategyID); err != nil {
 			return LiveLaunchResult{}, fmt.Errorf("launch template switch blocked by active positions or orders: %w", err)
 		}
@@ -1238,6 +1249,11 @@ func (p *Platform) findLiveRuntimeSession(accountID, strategyID string) (domain.
 	return domain.SignalRuntimeSession{}, false
 }
 
+// stopConflictingLaunchLiveSessions enforces the current "template exclusive"
+// boundary: within the same account+strategy, any RUNNING live session whose
+// symbol/timeframe does not match the target template scope is stopped before
+// bindings are replaced. Other accounts and strategies are intentionally
+// untouched so the blast radius stays inside the launch target.
 func (p *Platform) stopConflictingLaunchLiveSessions(accountID, strategyID, targetSymbol, targetTimeframe string) (int, error) {
 	sessions, err := p.ListLiveSessions()
 	if err != nil {

@@ -20,8 +20,8 @@
 
 - 若 `launchPayload.strategySignalBindings` 存在，后端会把它视为本次模板的**唯一 bindings 集合**
 - 启动前会替换当前策略下旧的模板 bindings
-- 若同一 `account + strategy` 已有 runtime，会先刷新 runtime plan / subscriptions
-- 若同一 `account + strategy` 下存在其它正在运行、但不属于本次模板 scope 的 live session，会先停掉它们
+- 若同一 `account + strategy` 已有 runtime，会先停掉运行中的 runtime，再刷新该 runtime session 的 plan / subscriptions 状态；真正的数据源重绑发生在后续 runtime restart
+- 若同一 `account + strategy` 下存在其它正在运行、但不属于本次模板 scope 的 live session，会先停掉它们；其它 account 或 strategy 的 session 不受影响
 
 ### 2. 模板返回结构变化
 
@@ -61,7 +61,11 @@
 - `runtimePlanRefreshed`
 - `stoppedLiveSessions`
 
-可用于前端展示“本次是否发生模板切换 / 是否刷新了 runtime / 是否停掉了旧 session”。
+其中需要注意：
+
+- `runtimePlanRefreshed = true` 表示 runtime session 的 plan / subscriptions 内存态已经按新模板重建，不等价于“运行中的连接被无中断热切换”
+- 模板切换路径会先停掉已有 runtime，再按新 plan 重新启动（如果本次 launch 选择启动 runtime）
+- `stoppedLiveSessions` 只统计同一 `account + strategy` 下、不属于目标 `symbol + timeframe` scope 的运行中 live session
 
 ### 4. runtime / live session state 新增模板上下文
 
