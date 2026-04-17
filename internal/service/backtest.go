@@ -3,6 +3,7 @@ package service
 import (
 	"bufio"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -1685,6 +1686,9 @@ func parseFloatValue(value any) float64 {
 		return float64(v)
 	case int64:
 		return float64(v)
+	case json.Number:
+		parsed, _ := v.Float64()
+		return parsed
 	case string:
 		parsed, _ := strconv.ParseFloat(strings.TrimSpace(v), 64)
 		return parsed

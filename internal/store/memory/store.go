@@ -494,6 +494,10 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	}
 	fill.ID = s.nextID("fill")
 	fill.CreatedAt = time.Now().UTC()
+	if fill.ExchangeTradeTime != nil {
+		resolved := fill.ExchangeTradeTime.UTC()
+		fill.ExchangeTradeTime = &resolved
+	}
 	s.fills[fill.ID] = fill
 	return fill, nil
 }

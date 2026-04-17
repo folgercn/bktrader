@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -357,7 +358,7 @@ func (a binanceFuturesLiveAdapter) syncMockOrder(account domain.Account, order d
 				"exchange":        account.Exchange,
 				"adapterKey":      a.Key(),
 				"exchangeOrderId": exchangeOrderID,
-				"tradeId":         exchangeOrderID,
+				"tradeTime":       syncedAt.Format(time.RFC3339),
 				"executionMode":   "mock",
 			},
 		}},
@@ -527,6 +528,7 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 				"adapterKey":      a.Key(),
 				"exchangeOrderId": normalizeBinanceOrderID(payload["orderId"], order.Metadata["exchangeOrderId"]),
 				"clientOrderId":   stringValue(payload["clientOrderId"]),
+				"tradeTime":       firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339)),
 				"executionMode":   "rest",
 			},
 		})
@@ -638,7 +640,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 		return nil, err
 	}
 	var trades []map[string]any
-	if err := json.Unmarshal(payload, &trades); err != nil {
+	if err := unmarshalJSONUseNumber(payload, &trades); err != nil {
 		return nil, err
 	}
 	return a.tradeReportsFromBinanceTrades(account, trades, order.Metadata["exchangeOrderId"]), nil
@@ -660,7 +662,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReportsForSymbol(account domain
 		return nil, err
 	}
 	var trades []map[string]any
-	if err := json.Unmarshal(payload, &trades); err != nil {
+	if err := unmarshalJSONUseNumber(payload, &trades); err != nil {
 		return nil, err
 	}
 	return a.tradeReportsFromBinanceTrades(account, trades, nil), nil
@@ -683,7 +685,7 @@ func (a binanceFuturesLiveAdapter) tradeReportsFromBinanceTrades(account domain.
 				"exchange":        account.Exchange,
 				"adapterKey":      a.Key(),
 				"exchangeOrderId": normalizeBinanceOrderID(trade["orderId"], fallbackOrderID),
-				"tradeId":         stringValue(trade["id"]),
+				"tradeId":         stringifyBinanceID(trade["id"]),
 				"commissionAsset": stringValue(trade["commissionAsset"]),
 				"realizedPnl":     parseFloatValue(trade["realizedPnl"]),
 				"maker":           trade["maker"],
@@ -1176,6 +1178,12 @@ func parseBinanceMillisToRFC3339(value any) string {
 		return ""
 	}
 	return time.UnixMilli(millis).UTC().Format(time.RFC3339)
+}
+
+func unmarshalJSONUseNumber(payload []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	return decoder.Decode(target)
 }
 
 func normalizeLiveExecutionMode(value any, sandbox bool) string {

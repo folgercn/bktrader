@@ -168,14 +168,28 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
   const positionCloseAction = useUIStore(s => s.positionCloseAction);
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
   const openConfirmDialog = useUIStore(s => s.openConfirmDialog);
+  const orderById = new Map(orders.map((order) => [order.id, order] as const));
+  const duplicateFallbackFillCounts = fills
+    .filter((fill) => !(fill.exchangeTradeId ?? "").trim())
+    .reduce((counts, fill) => {
+      const key = [
+        fill.orderId,
+        String(fill.price),
+        String(fill.quantity),
+        String(fill.fee),
+        fill.exchangeTradeTime ?? "",
+      ].join("|");
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>());
 
   return (
     <div className="h-full relative overflow-hidden">
       {dockTab === 'orders' && (
         <DockTable
-          columns={["ID", "策略版本", "Symbol", "Side", "Type", "数量", "价格", "交易所ID", "状态", "创建时间", "操作"]}
+          columns={["ID", "策略版本", "Symbol", "Side", "Type", "数量", "价格", "交易所订单ID", "状态", "创建时间", "操作"]}
           rows={orders.map((order) => {
-            const exchangeId = String(order.metadata?.exchangeTradeId ?? "--");
+            const exchangeId = String(order.metadata?.exchangeOrderId ?? "--");
             const isReconciled = !!(order.metadata?.orderLifecycle as any)?.synced;
             const isOrphan = order.status === "ACCEPTED" && (order.metadata?.orderLifecycle as any)?.reconciliationState === "orphaned";
 
@@ -249,17 +263,38 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
       )}
       {dockTab === 'fills' && (
         <DockTable
-          columns={["ID", "策略版本", "Symbol", "价格", "数量", "侧向", "交易所成交ID", "成交时间"]}
-          rows={fills.map((fill) => [
-            <TruncatedValue key={`${fill.id}-id`} value={fill.id} display={fill.id.replace('fill-', '')} />,
-            fill.strategyVersion,
-            fill.symbol,
-            formatMaybeNumber(fill.price),
-            formatMaybeNumber(fill.quantity),
-            fill.side,
-            <TruncatedValue key={`${fill.id}-exid`} value={fill.exchangeTradeId ?? "--"} />,
-            formatTime(fill.createdAt),
-          ])}
+          columns={["ID", "策略版本", "Symbol", "侧向", "价格", "数量", "手续费", "交易所成交ID", "交易所成交时间", "本地入库时间", "同步提示"]}
+          rows={fills.map((fill) => {
+            const order = orderById.get(fill.orderId);
+            const duplicateKey = [
+              fill.orderId,
+              String(fill.price),
+              String(fill.quantity),
+              String(fill.fee),
+              fill.exchangeTradeTime ?? "",
+            ].join("|");
+            const suspiciousDuplicate = !(fill.exchangeTradeId ?? "").trim() && (duplicateFallbackFillCounts.get(duplicateKey) ?? 0) > 1;
+
+            return [
+              <TruncatedValue key={`${fill.id}-id`} value={fill.id} display={fill.id.replace('fill-', '')} />,
+              String(order?.metadata?.strategyVersionId ?? fill.strategyVersion ?? "--"),
+              order?.symbol ?? fill.symbol ?? "--",
+              order?.side ?? fill.side ?? "--",
+              formatMaybeNumber(fill.price),
+              formatMaybeNumber(fill.quantity),
+              formatMaybeNumber(fill.fee),
+              <TruncatedValue key={`${fill.id}-exid`} value={fill.exchangeTradeId ?? "--"} />,
+              formatTime(fill.exchangeTradeTime ?? ""),
+              formatTime(fill.createdAt),
+              suspiciousDuplicate ? (
+                <DockBadge key={`${fill.id}-dup`} tone="watch">疑似重复同步</DockBadge>
+              ) : (
+                <span key={`${fill.id}-ok`} className="text-[11px] text-[var(--bk-text-muted)]">
+                  --
+                </span>
+              ),
+            ];
+          })}
           emptyMessage="暂无成交记录"
         />
       )}

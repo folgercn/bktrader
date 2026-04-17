@@ -615,6 +615,7 @@ func buildLiveReconcileSyncResult(order domain.Order, payload map[string]any, tr
 				"source":          "binance-all-orders",
 				"exchangeOrderId": exchangeOrderID,
 				"clientOrderId":   clientOrderID,
+				"tradeTime":       syncedAt,
 				"executionMode":   "rest",
 			},
 		})
