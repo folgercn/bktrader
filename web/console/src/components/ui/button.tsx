@@ -17,6 +17,14 @@ const buttonVariants = cva(
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+        bento:
+          "border-[var(--bk-border-strong)] bg-[var(--bk-surface-inverse)] text-[var(--bk-text-contrast)] shadow-sm hover:opacity-92",
+        "bento-outline":
+          "border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] text-[var(--bk-text-primary)] hover:bg-[var(--bk-surface-strong)]",
+        "bento-ghost":
+          "text-[var(--bk-text-muted)] hover:bg-[var(--bk-surface-muted)] hover:text-[var(--bk-text-primary)]",
+        "bento-danger":
+          "border-[var(--bk-status-danger)] bg-[var(--bk-status-danger)] text-white shadow-sm hover:brightness-95 focus-visible:border-[var(--bk-status-danger)] focus-visible:ring-[color-mix(in_srgb,var(--bk-status-danger)_20%,transparent)]",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

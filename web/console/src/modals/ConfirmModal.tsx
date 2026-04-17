@@ -17,22 +17,24 @@ export function ConfirmModal() {
 
   return (
     <AlertDialog open={confirmDialogConfig.isOpen} onOpenChange={(open) => !open && closeConfirmDialog()}>
-      <AlertDialogContent className="border-2 border-[#d8cfba] rounded-[32px] bg-[#fffbf2]">
+      <AlertDialogContent tone="bento" className="rounded-[32px] border-2 border-[var(--bk-border-strong)] p-8">
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-xl font-black text-[#1f2328]">{confirmDialogConfig.title}</AlertDialogTitle>
-          <AlertDialogDescription className="text-[#687177] font-medium leading-relaxed">
+          <AlertDialogTitle className="text-xl font-black text-[var(--bk-text-primary)]">{confirmDialogConfig.title}</AlertDialogTitle>
+          <AlertDialogDescription className="font-medium leading-relaxed text-[var(--bk-text-muted)]">
             {confirmDialogConfig.description}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="gap-3">
           <AlertDialogCancel 
             onClick={closeConfirmDialog}
-            className="rounded-xl border-2 border-[#d8cfba] font-bold text-[#687177] hover:bg-[#ebe5d5] transition-all"
+            variant="bento-outline"
+            className="rounded-xl border-2 font-bold transition-all"
           >
             取消
           </AlertDialogCancel>
           <AlertDialogAction
-            className="bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl px-6 py-2 shadow-lg transition-all active:scale-95"
+            variant="bento-danger"
+            className="rounded-xl px-6 py-2 font-black shadow-lg transition-all active:scale-95"
             onClick={() => {
               confirmDialogConfig.onConfirm();
               closeConfirmDialog();

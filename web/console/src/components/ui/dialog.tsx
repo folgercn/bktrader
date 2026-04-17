@@ -43,17 +43,22 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  tone = "default",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  tone?: "default" | "bento"
 }) {
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        data-tone={tone}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl p-4 text-sm duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "data-[tone=default]:bg-popover data-[tone=default]:text-popover-foreground data-[tone=default]:ring-1 data-[tone=default]:ring-foreground/10",
+          "data-[tone=bento]:bg-[var(--bk-surface-strong)] data-[tone=bento]:text-[var(--bk-text-primary)] data-[tone=bento]:shadow-[var(--bk-shadow-card)] data-[tone=bento]:ring-1 data-[tone=bento]:ring-[var(--bk-border-strong)]",
           className
         )}
         {...props}
@@ -102,7 +107,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end group-data-[tone=bento]/dialog-content:border-[var(--bk-border)] group-data-[tone=bento]/dialog-content:bg-[var(--bk-surface-muted)]",
         className
       )}
       {...props}

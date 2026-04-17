@@ -1,7 +1,18 @@
-import React from 'react';
-import { ActionButton } from '../components/ui/ActionButton';
-import { StatusPill } from '../components/ui/StatusPill';
-import { TelegramConfig, TelegramForm, ActiveSettingsModal } from '../types/domain';
+import React from "react";
+
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { ActiveSettingsModal, TelegramConfig, TelegramForm } from "../types/domain";
+import {
+  ModalActions,
+  ModalCheckboxField,
+  ModalField,
+  ModalFormGrid,
+  ModalMetaItem,
+  ModalMetaStrip,
+  SettingsModalFrame,
+} from "./modal-frame";
 
 interface TelegramModalProps {
   activeSettingsModal: ActiveSettingsModal;
@@ -22,93 +33,84 @@ export function TelegramModal({
   setTelegramForm,
   telegramAction,
   saveTelegramConfig,
-  sendTelegramTest
+  sendTelegramTest,
 }: TelegramModalProps) {
-  if (activeSettingsModal !== "telegram") return null;
+  const open = activeSettingsModal === "telegram";
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={() => setActiveSettingsModal(null)}
+    <SettingsModalFrame
+      open={open}
+      onOpenChange={(nextOpen) => !nextOpen && setActiveSettingsModal(null)}
+      kicker="Telegram"
+      title="Telegram 通知配置"
+      description="机器人令牌、聊天目标和发送等级都统一收在这里，保留现有通知行为。"
+      className="max-w-[min(720px,calc(100vw-2rem))]"
     >
-      <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
-        <div className="panel-header">
-          <div>
-            <p className="panel-kicker">Telegram</p>
-            <h3>Telegram 通知配置</h3>
-          </div>
-          <div className="flex flex-col items-end space-y-1">
-            <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
-              关闭
-            </button>
-            {telegramAction === null && telegramConfig && (
-              <span className="text-[10px] text-emerald-500 font-mono opacity-80 animate-pulse">
-                已同步最新配置
-              </span>
-            )}
-          </div>
+      <ModalMetaStrip>
+        <Badge variant={telegramConfig?.enabled ? "success" : "neutral"}>
+          {telegramConfig?.enabled ? "active" : "disabled"}
+        </Badge>
+        <ModalMetaItem label="Token" value={telegramConfig?.maskedBotToken || "no-token"} />
+        <ModalMetaItem label="Chat" value={telegramConfig?.chatId || "no-chat"} />
+        {telegramAction === null && telegramConfig ? (
+          <span className="text-[10px] font-mono text-[var(--bk-status-success)] animate-pulse">
+            已同步最新配置
+          </span>
+        ) : null}
+      </ModalMetaStrip>
+
+      <ModalFormGrid>
+        <div className="md:col-span-2">
+          <ModalCheckboxField
+            label="Enabled"
+            checked={telegramForm.enabled}
+            onChange={(checked) => setTelegramForm((current) => ({ ...current, enabled: checked }))}
+          />
         </div>
-        <div className="range-box">
-          <div className="flex items-center space-x-2">
-            <StatusPill tone={telegramConfig?.enabled ? "ready" : "neutral"}>
-              {telegramConfig?.enabled ? "active" : "disabled"}
-            </StatusPill>
-            <span className="text-zinc-500 text-xs">·</span>
-            <span className="font-mono text-zinc-400">{telegramConfig?.maskedBotToken || "no-token"}</span>
-            <span className="text-zinc-500 text-xs">·</span>
-            <span className="font-mono text-zinc-400">ID: {telegramConfig?.chatId || "no-chat"}</span>
-          </div>
-        </div>
-        <div className="backtest-form modal-form">
-          <div className="form-grid">
-            <label className="form-field form-field-checkbox">
-              <span>Enabled</span>
-              <input
-                type="checkbox"
-                checked={telegramForm.enabled}
-                onChange={(event) => setTelegramForm((current) => ({ ...current, enabled: event.target.checked }))}
-              />
-            </label>
-            <label className="form-field">
-              <span>Chat ID</span>
-              <input
-                value={telegramForm.chatId}
-                onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value }))}
-                placeholder="123456789"
-              />
-            </label>
-            <label className="form-field form-field-wide">
-              <span>Bot Token</span>
-              <input
-                value={telegramForm.botToken}
-                onChange={(event) => setTelegramForm((current) => ({ ...current, botToken: event.target.value }))}
-                placeholder={telegramConfig?.hasBotToken ? "leave blank to keep current token" : "123456:ABCDEF..."}
-              />
-            </label>
-            <label className="form-field form-field-wide">
-              <span>Send Levels</span>
-              <input
-                value={telegramForm.sendLevels}
-                onChange={(event) => setTelegramForm((current) => ({ ...current, sendLevels: event.target.value }))}
-                placeholder="critical,warning"
-              />
-            </label>
-          </div>
-          <div className="backtest-actions inline-actions">
-            <ActionButton
-              label={telegramAction === "save-config" ? "Saving..." : "Save Telegram Config"}
-              disabled={telegramAction !== null}
-              onClick={saveTelegramConfig}
-            />
-            <ActionButton
-              label={telegramAction === "test" ? "Sending..." : "Send Test Message"}
-              variant="ghost"
-              disabled={telegramAction !== null || !telegramConfig?.enabled || !telegramConfig?.hasBotToken || !telegramConfig?.chatId}
-              onClick={sendTelegramTest}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+        <ModalField label="Chat ID">
+          <Input
+            value={telegramForm.chatId}
+            onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value }))}
+            placeholder="123456789"
+            className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
+          />
+        </ModalField>
+        <ModalField label="Bot Token">
+          <Input
+            value={telegramForm.botToken}
+            onChange={(event) => setTelegramForm((current) => ({ ...current, botToken: event.target.value }))}
+            placeholder={telegramConfig?.hasBotToken ? "leave blank to keep current token" : "123456:ABCDEF..."}
+            className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
+          />
+        </ModalField>
+        <ModalField label="Send Levels" wide>
+          <Input
+            value={telegramForm.sendLevels}
+            onChange={(event) => setTelegramForm((current) => ({ ...current, sendLevels: event.target.value }))}
+            placeholder="critical,warning"
+            className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
+          />
+        </ModalField>
+      </ModalFormGrid>
+
+      <ModalActions>
+        <Button
+          variant="bento-outline"
+          className="h-10 rounded-xl px-4 font-bold"
+          disabled={telegramAction !== null || !telegramConfig?.enabled || !telegramConfig?.hasBotToken || !telegramConfig?.chatId}
+          onClick={sendTelegramTest}
+        >
+          {telegramAction === "test" ? "Sending..." : "Send Test Message"}
+        </Button>
+        <Button
+          variant="bento"
+          className="h-10 rounded-xl px-5 font-black"
+          disabled={telegramAction !== null}
+          onClick={saveTelegramConfig}
+        >
+          {telegramAction === "save-config" ? "Saving..." : "Save Telegram Config"}
+        </Button>
+      </ModalActions>
+    </SettingsModalFrame>
   );
 }

@@ -33,6 +33,7 @@
 
 :root {
   color-scheme: light;
+  /* BKTrader visual primitives */
   --bg: #f3f0e7;
   --bg-strong: #ebe5d5;
   --panel: rgba(255, 251, 242, 0.86);
@@ -44,6 +45,47 @@
   --accent-soft: #d9eee8;
   --danger: #b04a37;
   --shadow: 0 20px 50px rgba(57, 48, 27, 0.08);
+
+  /* BKTrader semantic surface tokens */
+  --bk-canvas: var(--bg);
+  --bk-canvas-strong: var(--bg-strong);
+  --bk-surface: var(--panel);
+  --bk-surface-strong: var(--panel-strong);
+  --bk-surface-soft: rgba(255, 255, 255, 0.88);
+  --bk-surface-muted: rgba(255, 255, 255, 0.72);
+  --bk-surface-faint: rgba(255, 255, 255, 0.42);
+  --bk-surface-ghost: rgba(255, 255, 255, 0.12);
+  --bk-surface-overlay: rgba(255, 255, 255, 0.78);
+  --bk-surface-overlay-strong: rgba(255, 251, 242, 0.98);
+  --bk-surface-inverse: #1f2328;
+
+  /* BKTrader semantic text tokens */
+  --bk-text-primary: var(--ink);
+  --bk-text-secondary: color-mix(in srgb, var(--ink) 72%, var(--muted) 28%);
+  --bk-text-muted: var(--muted);
+  --bk-text-contrast: #ffffff;
+
+  /* BKTrader semantic border tokens */
+  --bk-border: var(--line);
+  --bk-border-soft: rgba(216, 207, 186, 0.5);
+  --bk-border-strong: rgba(216, 207, 186, 0.9);
+  --bk-border-accent: rgba(14, 109, 96, 0.25);
+  --bk-border-danger: rgba(176, 74, 55, 0.2);
+
+  /* BKTrader semantic status tokens */
+  --bk-status-success: var(--accent);
+  --bk-status-success-soft: var(--accent-soft);
+  --bk-status-warning: #a56a13;
+  --bk-status-warning-soft: rgba(235, 197, 110, 0.2);
+  --bk-status-danger: var(--danger);
+  --bk-status-danger-soft: rgba(176, 74, 55, 0.08);
+
+  /* BKTrader shadow + effects */
+  --bk-shadow-card: var(--shadow);
+  --bk-shadow-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  --bk-selection: var(--accent);
+
+  /* shadcn theme bridge */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -85,7 +127,7 @@ html {
 }
 
 ::selection {
-  background-color: var(--accent);
+  background-color: var(--bk-selection);
   color: #ffffff;
 }
 
@@ -93,11 +135,11 @@ body {
   margin: 0;
   min-width: 320px;
   font-family: "Iowan Old Style", "Palatino Linotype", serif;
-  color: var(--ink);
+  color: var(--bk-text-primary);
   background:
     radial-gradient(circle at 0% 0%, rgba(14, 109, 96, 0.08), transparent 28%),
     radial-gradient(circle at 100% 20%, rgba(203, 147, 71, 0.12), transparent 22%),
-    linear-gradient(180deg, #f9f5ea 0%, var(--bg) 100%);
+    linear-gradient(180deg, #f9f5ea 0%, var(--bk-canvas) 100%);
 }
 
 input,
@@ -132,10 +174,10 @@ a {
 .login-panel {
   width: min(460px, 100%);
   padding: 28px;
-  border: 1px solid rgba(216, 207, 186, 0.9);
+  border: 1px solid var(--bk-border-strong);
   border-radius: 24px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
+  background: var(--bk-surface);
+  box-shadow: var(--bk-shadow-card);
 }
 
 .login-panel h1 {
@@ -146,7 +188,7 @@ a {
 
 .login-copy {
   margin: 0 0 20px;
-  color: var(--muted);
+  color: var(--bk-text-muted);
   line-height: 1.5;
 }
 
@@ -158,9 +200,9 @@ a {
 .login-error {
   padding: 12px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(176, 74, 55, 0.2);
-  background: rgba(176, 74, 55, 0.08);
-  color: var(--danger);
+  border: 1px solid var(--bk-border-danger);
+  background: var(--bk-status-danger-soft);
+  color: var(--bk-status-danger);
 }
 
 .login-button {
@@ -176,8 +218,8 @@ a {
   display: flex;
   flex-direction: column;
   gap: 28px;
-  border-right: 1px solid rgba(216, 207, 186, 0.9);
-  background: rgba(255, 248, 234, 0.9);
+  border-right: 1px solid var(--bk-border-strong);
+  background: color-mix(in srgb, var(--bk-surface-strong) 90%, transparent);
   backdrop-filter: blur(18px);
 }
 
@@ -186,7 +228,7 @@ a {
   font-size: 0.82rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--bk-status-success);
 }
 
 .sidebar h1 {
@@ -204,13 +246,13 @@ a {
   padding: 10px 12px;
   border: 1px solid transparent;
   border-radius: 14px;
-  color: var(--muted);
+  color: var(--bk-text-muted);
   transition: 140ms ease;
 }
 
 .sidebar nav a:hover {
-  color: var(--ink);
-  border-color: var(--line);
+  color: var(--bk-text-primary);
+  border-color: var(--bk-border);
   background: rgba(255, 255, 255, 0.5);
 }
 
@@ -221,13 +263,13 @@ a {
   align-items: flex-start;
   padding: 16px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--line);
+  background: var(--bk-surface-muted);
+  border: 1px solid var(--bk-border);
 }
 
 .status-panel p {
   margin: 4px 0 0;
-  color: var(--muted);
+  color: var(--bk-text-muted);
   font-size: 0.9rem;
   line-height: 1.35;
 }
@@ -241,12 +283,12 @@ a {
 }
 
 .status-good {
-  background: var(--accent);
+  background: var(--bk-status-success);
   box-shadow: 0 0 0 6px rgba(14, 109, 96, 0.15);
 }
 
 .status-bad {
-  background: var(--danger);
+  background: var(--bk-status-danger);
   box-shadow: 0 0 0 6px rgba(176, 74, 55, 0.15);
 }
 
@@ -259,10 +301,10 @@ a {
 .hero,
 .panel,
 .metric-card {
-  border: 1px solid rgba(216, 207, 186, 0.9);
+  border: 1px solid var(--bk-border-strong);
   border-radius: 24px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
+  background: var(--bk-surface);
+  box-shadow: var(--bk-shadow-card);
 }
 
 .hero {
@@ -280,7 +322,7 @@ a {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--bk-status-success);
 }
 
 .hero h2 {
@@ -288,13 +330,13 @@ a {
   font-size: clamp(0.98rem, 1.4vw, 1.16rem);
   line-height: 1.3;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--bk-text-primary);
 }
 
 .hero-copy {
   margin: 0;
   max-width: 720px;
-  color: color-mix(in srgb, var(--ink) 72%, var(--muted) 28%);
+  color: var(--bk-text-secondary);
   font-size: 0.82rem;
   line-height: 1.55;
 }
@@ -335,7 +377,7 @@ a {
 
 .hero-actions .action-button-ghost {
   background: rgba(255, 255, 255, 0.82);
-  color: color-mix(in srgb, var(--ink) 92%, var(--muted) 8%);
+  color: color-mix(in srgb, var(--bk-text-primary) 92%, var(--bk-text-muted) 8%);
 }
 
 .hero-menu {
@@ -343,9 +385,9 @@ a {
 }
 
 .hero-menu-button {
-  border: 1px solid var(--line);
+  border: 1px solid var(--bk-border);
   background: rgba(255, 255, 255, 0.78);
-  color: var(--ink);
+  color: var(--bk-text-primary);
   border-radius: 999px;
   padding: 10px 14px;
   font: inherit;
@@ -359,9 +401,9 @@ a {
   min-width: 180px;
   padding: 8px;
   border-radius: 16px;
-  border: 1px solid var(--line);
-  background: rgba(255, 251, 242, 0.98);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--bk-border);
+  background: var(--bk-surface-overlay-strong);
+  box-shadow: var(--bk-shadow-card);
   display: grid;
   gap: 6px;
   z-index: 20;
@@ -371,7 +413,7 @@ a {
   border: 0;
   background: transparent;
   text-align: left;
-  color: var(--ink);
+  color: var(--bk-text-primary);
   padding: 10px 12px;
   border-radius: 12px;
   font: inherit;
@@ -379,7 +421,7 @@ a {
 }
 
 .hero-menu-item:hover {
-  background: rgba(217, 238, 232, 0.52);
+  background: color-mix(in srgb, var(--bk-status-success-soft) 52%, transparent);
 }
 
 .hero-side-stack {
@@ -390,8 +432,8 @@ a {
   min-width: 220px;
   padding: 9px 12px;
   border-radius: 14px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--bk-border);
+  background: var(--bk-surface-overlay);
   display: flex;
   gap: 12px;
   align-items: center;
@@ -400,7 +442,7 @@ a {
 
 .hero-user-card strong {
   display: block;
-  color: color-mix(in srgb, var(--ink) 64%, white 36%);
+  color: color-mix(in srgb, var(--bk-text-primary) 64%, white 36%);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -408,7 +450,7 @@ a {
 
 .hero-user-card p {
   margin: 3px 0 0;
-  color: var(--ink);
+  color: var(--bk-text-primary);
   font-size: 0.72rem;
   line-height: 1.35;
 }
@@ -421,16 +463,16 @@ a {
 .hero-pill {
   padding: 8px 12px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--bk-border);
   background: rgba(255, 255, 255, 0.7);
   font-size: 0.84rem;
   white-space: nowrap;
 }
 
 .hero-pill-accent {
-  border-color: rgba(14, 109, 96, 0.25);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--bk-border-accent);
+  background: var(--bk-status-success-soft);
+  color: var(--bk-status-success);
 }
 
 .metrics-grid {
@@ -1886,6 +1928,49 @@ tbody tr:last-child td {
 }
 
 .dark {
+  color-scheme: dark;
+  --bg: #171818;
+  --bg-strong: #202222;
+  --panel: rgba(28, 31, 31, 0.88);
+  --panel-strong: #242828;
+  --ink: #f3efe4;
+  --muted: #a9afa8;
+  --line: rgba(216, 207, 186, 0.16);
+  --accent: #5aa793;
+  --accent-soft: rgba(90, 167, 147, 0.18);
+  --danger: #d47966;
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+
+  --bk-canvas: var(--bg);
+  --bk-canvas-strong: var(--bg-strong);
+  --bk-surface: var(--panel);
+  --bk-surface-strong: var(--panel-strong);
+  --bk-surface-soft: rgba(46, 50, 50, 0.94);
+  --bk-surface-muted: rgba(255, 255, 255, 0.06);
+  --bk-surface-faint: rgba(255, 255, 255, 0.04);
+  --bk-surface-ghost: rgba(255, 255, 255, 0.03);
+  --bk-surface-overlay: rgba(35, 39, 39, 0.88);
+  --bk-surface-overlay-strong: rgba(31, 35, 35, 0.96);
+  --bk-surface-inverse: #f3efe4;
+  --bk-text-primary: var(--ink);
+  --bk-text-secondary: color-mix(in srgb, var(--ink) 74%, var(--muted) 26%);
+  --bk-text-muted: var(--muted);
+  --bk-text-contrast: #101111;
+  --bk-border: var(--line);
+  --bk-border-soft: rgba(216, 207, 186, 0.12);
+  --bk-border-strong: rgba(216, 207, 186, 0.18);
+  --bk-border-accent: rgba(90, 167, 147, 0.3);
+  --bk-border-danger: rgba(212, 121, 102, 0.28);
+  --bk-status-success: var(--accent);
+  --bk-status-success-soft: var(--accent-soft);
+  --bk-status-warning: #d9ae54;
+  --bk-status-warning-soft: rgba(217, 174, 84, 0.16);
+  --bk-status-danger: var(--danger);
+  --bk-status-danger-soft: rgba(212, 121, 102, 0.14);
+  --bk-shadow-card: var(--shadow);
+  --bk-shadow-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+  --bk-selection: var(--accent);
+
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);

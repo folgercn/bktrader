@@ -112,46 +112,46 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
     selectedExecutionSymbols.length === 0 || selectedExecutionSymbols.includes(backtestForm.symbol.trim().toUpperCase());
 
   return (
-    <div className="absolute inset-0 overflow-y-auto p-8 space-y-8 bg-[#f3f0e7]">
+    <div className="absolute inset-0 overflow-y-auto space-y-8 bg-[var(--bk-canvas)] p-8">
       {/* 顶部总控 - 参照 AccountStage 范式 */}
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-sm rounded-[24px] overflow-hidden">
+      <Card tone="bento" className="overflow-hidden rounded-[24px] border border-[var(--bk-border-strong)] shadow-sm">
         <div className="py-3 px-6 flex flex-col md:flex-row items-center justify-between gap-4">
            <div className="flex items-center gap-6 overflow-hidden">
               <div className="shrink-0">
-                <p className="text-[#0e6d60] text-[9px] font-black uppercase tracking-widest font-mono mb-0.5">Strategy Control Center</p>
-                <h2 className="text-lg font-black text-[#1f2328] tracking-tight whitespace-nowrap">策略库与开发实验室</h2>
+                <p className="mb-0.5 font-mono text-[9px] font-black uppercase tracking-widest text-[var(--bk-status-success)]">Strategy Control Center</p>
+                <h2 className="whitespace-nowrap text-lg font-black tracking-tight text-[var(--bk-text-primary)]">策略库与开发实验室</h2>
               </div>
               
-              <Separator orientation="vertical" className="h-8 bg-[#d8cfba]/40 hidden lg:block" />
+              <Separator orientation="vertical" className="hidden h-8 bg-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] lg:block" />
               
-              <div className="hidden lg:flex items-center gap-4 h-8 px-3 rounded-xl bg-[#fffbf2]/50 border border-[#d8cfba]/50">
+              <div className="hidden h-8 items-center gap-4 rounded-xl border border-[color-mix(in_srgb,var(--bk-border)_50%,transparent)] bg-[color-mix(in_srgb,var(--bk-surface-strong)_50%,transparent)] px-3 lg:flex">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-black text-[#687177] uppercase opacity-40">Active:</span>
-                  <span className="text-[10px] font-black text-[#1f2328]">{strategies.length} 策略</span>
+                  <span className="text-[9px] font-black uppercase text-[var(--bk-text-muted)] opacity-40">Active:</span>
+                  <span className="text-[10px] font-black text-[var(--bk-text-primary)]">{strategies.length} 策略</span>
                 </div>
-                <Separator orientation="vertical" className="h-3 bg-[#d8cfba]/40" />
+                <Separator orientation="vertical" className="h-3 bg-[color-mix(in_srgb,var(--bk-border)_40%,transparent)]" />
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-black text-[#687177] uppercase opacity-40">Engines:</span>
-                  <span className="text-[10px] font-black text-[#1f2328]">{signalRuntimeAdapters.length} 适配器</span>
+                  <span className="text-[9px] font-black uppercase text-[var(--bk-text-muted)] opacity-40">Engines:</span>
+                  <span className="text-[10px] font-black text-[var(--bk-text-primary)]">{signalRuntimeAdapters.length} 适配器</span>
                 </div>
               </div>
            </div>
            
            <div className="flex items-center gap-2">
-              <div className="flex items-center p-1 rounded-xl bg-white/40 border border-[#d8cfba]/20">
+              <div className="flex items-center rounded-xl border border-[color-mix(in_srgb,var(--bk-border)_20%,transparent)] bg-[var(--bk-surface-faint)] p-1">
                 <Button 
-                   variant="ghost" 
+                   variant="bento-ghost" 
                    size="sm" 
-                   className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none"
+                   className="h-8 rounded-lg px-4 text-[10px] font-black shadow-none hover:bg-[var(--bk-surface)]"
                    onClick={() => document.getElementById('new-strategy-section')?.scrollIntoView({ behavior: 'smooth' })}
                 >
                   创建新策略
                 </Button>
-                <Separator orientation="vertical" className="h-4 bg-[#d8cfba]/30 mx-1" />
+                <Separator orientation="vertical" className="mx-1 h-4 bg-[color-mix(in_srgb,var(--bk-border)_30%,transparent)]" />
                 <Button 
-                   variant="ghost" 
+                   variant="bento-ghost" 
                    size="sm" 
-                   className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none"
+                   className="h-8 rounded-lg px-4 text-[10px] font-black shadow-none hover:bg-[var(--bk-surface)]"
                    onClick={() => document.getElementById('backtest-lab-section')?.scrollIntoView({ behavior: 'smooth' })}
                 >
                   进入实验室
@@ -163,27 +163,27 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* 左侧：策略字典 (Archive) */}
-        <Card className="lg:col-span-8 border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px] overflow-hidden">
+        <Card tone="bento" className="lg:col-span-8 overflow-hidden rounded-[24px] shadow-[var(--bk-shadow-card)]">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-2">
               <div>
-                <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Strategy Portfolio</p>
-                <CardTitle className="text-lg font-black text-[#1f2328]">策略目录</CardTitle>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--bk-status-success)]">Strategy Portfolio</p>
+                <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">策略目录</CardTitle>
               </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <Table>
-                <TableHeader className="bg-[#f8f6f0] border-y border-[#d8cfba]">
+              <Table tone="bento">
+                <TableHeader className="border-y border-[var(--bk-border)] bg-[var(--bk-surface-muted)]/45">
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="px-6 h-10 text-[10px] uppercase font-black text-[#687177]">策略名称 / ID</TableHead>
-                    <TableHead className="h-10 text-[10px] uppercase font-black text-[#687177]">版本</TableHead>
-                    <TableHead className="h-10 text-[10px] uppercase font-black text-[#687177]">信号周期</TableHead>
-                    <TableHead className="h-10 text-[10px] uppercase font-black text-[#687177]">运行引擎</TableHead>
+                    <TableHead className="h-10 px-6 text-[10px] font-black uppercase">策略名称 / ID</TableHead>
+                    <TableHead className="h-10 text-[10px] font-black uppercase">版本</TableHead>
+                    <TableHead className="h-10 text-[10px] font-black uppercase">信号周期</TableHead>
+                    <TableHead className="h-10 text-[10px] font-black uppercase">运行引擎</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody className="divide-y divide-[#d8cfba]/50">
+                <TableBody className="divide-y divide-[color-mix(in_srgb,var(--bk-border)_50%,transparent)]">
                   {strategies.length > 0 ? (
                     strategies.map((strategy) => {
                       const params = getRecord(strategy.currentVersion?.parameters);
@@ -191,30 +191,30 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                       return (
                         <TableRow 
                           key={strategy.id} 
-                          className={`group cursor-pointer transition-all duration-200 ${isSelected ? 'bg-white shadow-inner relative z-10' : 'bg-[#fff8ea] hover:bg-white'}`}
+                          className={`group relative z-10 cursor-pointer transition-all duration-200 ${isSelected ? 'bg-[var(--bk-surface)] shadow-inner' : 'bg-[var(--bk-surface-strong)] hover:bg-[var(--bk-surface)]'}`}
                           onClick={() => setSelectedStrategyId(strategy.id)}
                         >
                           <TableCell className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                               <div className={`w-1 h-8 rounded-full transition-all ${isSelected ? 'bg-[#0e6d60]' : 'bg-transparent group-hover:bg-[#d8cfba]'}`} />
+                               <div className={`h-8 w-1 rounded-full transition-all ${isSelected ? 'bg-[var(--bk-status-success)]' : 'bg-transparent group-hover:bg-[var(--bk-border)]'}`} />
                                <div className="flex flex-col min-w-0">
-                                 <span className="font-black text-[#1f2328] text-sm tabular-nums tracking-tight truncate">{strategy.name}</span>
-                                 <span className="text-[9px] text-[#687177] font-mono opacity-60 uppercase truncate">{strategy.id}</span>
+                                 <span className="truncate text-sm font-black tracking-tight text-[var(--bk-text-primary)] tabular-nums">{strategy.name}</span>
+                                 <span className="truncate font-mono text-[9px] uppercase text-[var(--bk-text-muted)] opacity-60">{strategy.id}</span>
                                </div>
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className={`text-[10px] h-4.5 border-[#d8cfba] font-bold ${isSelected ? 'bg-[#1f2328] text-white border-transparent' : 'bg-white text-[#687177]'}`}>
+                            <Badge variant="neutral" className={`h-4.5 text-[10px] font-bold ${isSelected ? 'border-transparent bg-[var(--bk-surface-inverse)] text-[var(--bk-text-contrast)]' : 'bg-[var(--bk-surface)] text-[var(--bk-text-muted)]'}`}>
                               v{strategy.currentVersion?.version ?? "1"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs font-black text-[#1f2328]/70 font-mono">
+                          <TableCell className="font-mono text-xs font-black text-[color-mix(in_srgb,var(--bk-text-primary)_70%,transparent)]">
                             {String(params.signalTimeframe ?? strategy.currentVersion?.signalTimeframe ?? "--")}
                           </TableCell>
                           <TableCell>
-                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white border border-[#d8cfba]/50 w-fit">
-                               <div className="size-1 rounded-full bg-[#0e6d60]" />
-                               <span className="text-[10px] font-black text-[#1f2328] uppercase">{String(params.strategyEngine ?? "bk-default")}</span>
+                             <div className="flex w-fit items-center gap-1.5 rounded-md border border-[color-mix(in_srgb,var(--bk-border)_50%,transparent)] bg-[var(--bk-surface)] px-2 py-0.5">
+                               <div className="size-1 rounded-full bg-[var(--bk-status-success)]" />
+                               <span className="text-[10px] font-black uppercase text-[var(--bk-text-primary)]">{String(params.strategyEngine ?? "bk-default")}</span>
                              </div>
                           </TableCell>
                         </TableRow>
@@ -222,7 +222,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                     })
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={4} className="h-40 text-center text-[11px] font-medium text-[#687177] italic">暂无策略数据</TableCell>
+                      <TableCell colSpan={4} className="h-40 text-center text-[11px] font-medium italic text-[var(--bk-text-muted)]">暂无策略数据</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -232,12 +232,12 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
         </Card>
  
         {/* 右侧：版本摘要 (Details) - 参照 AccountStage 细节卡片 */}
-        <Card className="lg:col-span-4 border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px] overflow-hidden flex flex-col">
+        <Card tone="bento" className="lg:col-span-4 flex flex-col overflow-hidden rounded-[24px] shadow-[var(--bk-shadow-card)]">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-2">
               <div>
-                <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Summary</p>
-                <CardTitle className="text-lg font-black text-[#1f2328]">当前版本摘要</CardTitle>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--bk-status-success)]">Summary</p>
+                <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">当前版本摘要</CardTitle>
               </div>
             </div>
           </CardHeader>
@@ -246,53 +246,53 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
               <>
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
-                     <div className="p-3.5 bg-white border border-[#d8cfba]/60 rounded-2xl shadow-sm">
-                        <span className="block text-[8px] font-black text-[#687177] uppercase tracking-widest mb-1.5 opacity-60">Signal Source</span>
-                        <p className="text-xs font-black text-[#1f2328] truncate">{String(selectedStrategyParameters.executionDataSource ?? "--")}</p>
+                     <div className="rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface)] p-3.5 shadow-sm">
+                        <span className="mb-1.5 block text-[8px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-60">Signal Source</span>
+                        <p className="truncate text-xs font-black text-[var(--bk-text-primary)]">{String(selectedStrategyParameters.executionDataSource ?? "--")}</p>
                      </div>
-                     <div className="p-3.5 bg-white border border-[#d8cfba]/60 rounded-2xl shadow-sm">
-                        <span className="block text-[8px] font-black text-[#687177] uppercase tracking-widest mb-1.5 opacity-60">Engine Type</span>
-                        <p className="text-xs font-black text-[#1f2328] uppercase">{String(selectedStrategyParameters.strategyEngine ?? "bk-default")}</p>
+                     <div className="rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] bg-[var(--bk-surface)] p-3.5 shadow-sm">
+                        <span className="mb-1.5 block text-[8px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-60">Engine Type</span>
+                        <p className="text-xs font-black uppercase text-[var(--bk-text-primary)]">{String(selectedStrategyParameters.strategyEngine ?? "bk-default")}</p>
                      </div>
                   </div>
  
-                  <div className="bg-[#fff8ea] border border-[#d8cfba] p-4 rounded-2xl shadow-inner space-y-3">
-                     <div className="flex items-center gap-2 pb-2 border-b border-[#d8cfba]/40">
-                       <Info size={14} className="text-[#0e6d60]" />
-                       <span className="text-[9px] font-black text-[#0e6d60] uppercase tracking-widest">Metadata</span>
+                  <div className="space-y-3 rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-4 shadow-inner">
+                     <div className="flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] pb-2">
+                       <Info size={14} className="text-[var(--bk-status-success)]" />
+                       <span className="text-[9px] font-black uppercase tracking-widest text-[var(--bk-status-success)]">Metadata</span>
                      </div>
                      <div className="grid grid-cols-1 gap-2.5">
                        <div className="flex justify-between items-center text-[11px]">
-                         <span className="text-[#687177] font-medium">创建时间</span>
-                         <span className="font-mono font-bold text-[#1f2328]">{formatTime(selectedStrategy.createdAt).split(' ')[0]}</span>
+                         <span className="font-medium text-[var(--bk-text-muted)]">创建时间</span>
+                         <span className="font-mono font-bold text-[var(--bk-text-primary)]">{formatTime(selectedStrategy.createdAt).split(' ')[0]}</span>
                        </div>
                        <div className="flex justify-between items-center text-[11px]">
-                         <span className="text-[#687177] font-medium">最后编译版本</span>
-                         <Badge variant="outline" className="h-4 text-[9px] font-black border-[#d8cfba]">v{selectedStrategyVersion?.version ?? "1"}</Badge>
+                         <span className="font-medium text-[var(--bk-text-muted)]">最后编译版本</span>
+                         <Badge variant="neutral" className="h-4 text-[9px] font-black">v{selectedStrategyVersion?.version ?? "1"}</Badge>
                        </div>
                      </div>
                   </div>
                 </div>
  
-                <div className="flex-1 min-h-[80px] p-4 bg-white/40 border border-[#d8cfba] rounded-2xl border-dashed">
-                   <p className="text-[10px] font-black text-[#687177] uppercase tracking-widest mb-2 opacity-60">Description</p>
-                   <p className="text-xs text-[#1f2328] leading-relaxed font-medium">
+                <div className="min-h-[80px] flex-1 rounded-2xl border border-dashed border-[var(--bk-border)] bg-[var(--bk-surface-faint)] p-4">
+                   <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-60">Description</p>
+                   <p className="text-xs font-medium leading-relaxed text-[var(--bk-text-primary)]">
                      {selectedStrategy.description || "暂无描述内容"}
                    </p>
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center space-y-3 text-[#d8cfba]">
+              <div className="flex flex-1 flex-col items-center justify-center space-y-3 text-[var(--bk-border)]">
                 <RotateCcw className="size-10 animate-spin-slow opacity-20" />
                 <p className="text-xs font-black uppercase tracking-widest">请选择策略</p>
               </div>
             )}
           </CardContent>
           {selectedStrategy && (
-            <div className="p-4 bg-amber-50 mx-6 mb-6 rounded-xl border border-amber-200">
+            <div className="mx-6 mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
                <div className="flex gap-2">
-                 <AlertTriangle size={12} className="text-amber-600 shrink-0 mt-0.5" />
-                 <p className="text-[9px] text-amber-800 leading-normal font-medium italic">
+                 <AlertTriangle size={12} className="shrink-0 mt-0.5 text-[var(--bk-status-warning)]" />
+                 <p className="text-[9px] leading-normal font-medium italic text-[var(--bk-status-warning)]">
                     警告：热更新模式已启用。编辑参数将立即波及所有运行中的反射引擎。
                  </p>
                </div>
@@ -303,38 +303,39 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
 
       <div id="new-strategy-section" className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* 开发区左侧：建立新策略 - 风格对齐 AccountStage 的 Modal 样式 */}
-        <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px] overflow-hidden">
+        <Card tone="bento" className="overflow-hidden rounded-[24px] shadow-[var(--bk-shadow-card)]">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-[#ebe5d5] rounded-lg">
-                <Plus className="size-4 text-[#1f2328]" />
+              <div className="rounded-lg bg-[var(--bk-canvas-strong)] p-1.5">
+                <Plus className="size-4 text-[var(--bk-text-primary)]" />
               </div>
-              <CardTitle className="text-lg font-black text-[#1f2328]">建立新策略</CardTitle>
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">建立新策略</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="p-6 space-y-5">
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-black text-[#687177] ml-1 uppercase tracking-wider">Strategy Name</Label>
+                <Label className="ml-1 text-[11px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">Strategy Name</Label>
                 <Input 
                   value={strategyCreateForm.name}
                   onChange={(e) => setStrategyCreateForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="例如：BK-TREND-01"
-                  className="h-10 rounded-xl border-[#d8cfba] bg-white text-xs font-bold focus:ring-2 focus:ring-[#0e6d60]/10 transition-all shadow-sm"
+                  className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm transition-all"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-black text-[#687177] ml-1 uppercase tracking-wider">Internal Description</Label>
+                <Label className="ml-1 text-[11px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">Internal Description</Label>
                 <Input 
                   value={strategyCreateForm.description}
                   onChange={(e) => setStrategyCreateForm(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="描述逻辑边界或执行目的"
-                  className="h-10 rounded-xl border-[#d8cfba] bg-white text-xs font-medium focus:ring-2 focus:ring-[#0e6d60]/10 transition-all shadow-sm"
+                  className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-medium shadow-sm transition-all"
                 />
               </div>
             </div>
             <Button 
-              className="w-full h-11 bg-[#1f2328] hover:bg-[#2f353c] text-white font-black text-xs rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50"
+              variant="bento"
+              className="h-11 w-full rounded-xl text-xs font-black shadow-md transition-all active:scale-95 disabled:opacity-50"
               disabled={strategyCreateAction || !strategyCreateForm.name.trim()}
               onClick={createStrategy}
             >
@@ -344,22 +345,22 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
         </Card>
  
         {/* 开发区右侧：参数反射编辑器 (Refl Editor) */}
-        <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px] overflow-hidden flex flex-col">
+        <Card tone="bento" className="flex flex-col overflow-hidden rounded-[24px] shadow-[var(--bk-shadow-card)]">
           <CardHeader className="pb-4 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-[#ebe5d5] rounded-lg">
-                <FileJson className="size-4 text-[#1f2328]" />
+              <div className="rounded-lg bg-[var(--bk-canvas-strong)] p-1.5">
+                <FileJson className="size-4 text-[var(--bk-text-primary)]" />
               </div>
-              <CardTitle className="text-lg font-black text-[#1f2328]">参数反射编辑器</CardTitle>
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">参数反射编辑器</CardTitle>
             </div>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white/50">
-                    <HelpCircle className="size-4 text-[#687177]" />
+                  <Button variant="bento-ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-[var(--bk-surface-faint)]">
+                    <HelpCircle className="size-4 text-[var(--bk-text-muted)]" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent className="bg-[#1f2328] text-white p-3 text-[10px] rounded-xl border-0 shadow-2xl w-64">
+                <TooltipContent className="w-64 rounded-xl border-0 bg-[var(--bk-surface-inverse)] p-3 text-[10px] text-[var(--bk-text-contrast)] shadow-2xl">
                    热更新模式下，保存参数将通过反射引擎立即更新至对应的运行实例，建议在生产运行前进行参数校验。
                 </TooltipContent>
               </Tooltip>
@@ -368,15 +369,15 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
           <CardContent className="p-6 space-y-5 flex-1 flex flex-col">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-black text-[#687177] ml-1 uppercase tracking-wider">Engine</Label>
+                <Label className="ml-1 text-[11px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">Engine</Label>
                 <Select 
                   value={strategyEditorForm.strategyEngine}
                   onValueChange={(val: any) => setStrategyEditorForm(prev => ({ ...prev, strategyEngine: val }))}
                 >
-                  <SelectTrigger className="h-10 rounded-xl border-[#d8cfba] bg-white text-xs font-black">
+                  <SelectTrigger tone="bento" className="h-10 rounded-xl bg-[var(--bk-surface)] text-xs font-black">
                     <SelectValue placeholder="选择引擎" />
                   </SelectTrigger>
-                  <SelectContent className="bg-white border-[#d8cfba] rounded-xl shadow-2xl">
+                  <SelectContent tone="bento" className="rounded-xl bg-[var(--bk-surface)] shadow-2xl">
                     {[...new Set(["bk-default", ...strategies.map((item) => String(getRecord(item.currentVersion?.parameters).strategyEngine || "bk-default"))])].map((engineKey) => (
                       <SelectItem key={engineKey} value={engineKey}>{engineKey}</SelectItem>
                     ))}
@@ -384,15 +385,15 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-black text-[#687177] ml-1 uppercase tracking-wider">Timeframe</Label>
+                <Label className="ml-1 text-[11px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">Timeframe</Label>
                 <Select 
                   value={strategyEditorForm.signalTimeframe}
                   onValueChange={(val: any) => setStrategyEditorForm(prev => ({ ...prev, signalTimeframe: val }))}
                 >
-                  <SelectTrigger className="h-10 rounded-xl border-[#d8cfba] bg-white text-xs font-black">
+                  <SelectTrigger tone="bento" className="h-10 rounded-xl bg-[var(--bk-surface)] text-xs font-black">
                     <SelectValue placeholder="周期" />
                   </SelectTrigger>
-                  <SelectContent className="bg-white border-[#d8cfba] rounded-xl shadow-2xl">
+                  <SelectContent tone="bento" className="rounded-xl bg-[var(--bk-surface)] shadow-2xl">
                     <SelectItem value="5m">5m</SelectItem>
                     <SelectItem value="1h">1h</SelectItem>
                     <SelectItem value="4h">4h</SelectItem>
@@ -404,11 +405,11 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
  
             <div className="space-y-2 flex-1 flex flex-col">
               <div className="flex items-center justify-between">
-                 <Label className="text-[11px] font-black text-[#687177] ml-1 uppercase tracking-wider">Parameters Schema</Label>
+                 <Label className="ml-1 text-[11px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">Parameters Schema</Label>
                  <Button 
                    variant="ghost" 
                    size="sm" 
-                   className="h-6 px-2 text-[9px] font-black text-[#0e6d60]"
+                   className="h-6 px-2 text-[9px] font-black text-[var(--bk-status-success)]"
                    onClick={() => {
                      try { setStrategyEditorForm(prev => ({ ...prev, parametersJson: JSON.stringify(JSON.parse(prev.parametersJson), null, 2) })) } catch (e) {}
                    }}
@@ -417,13 +418,13 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                  </Button>
               </div>
               <div className="relative flex-1 group">
-                 <div className="absolute left-0 top-0 bottom-0 w-8 bg-[#f3f0e7]/30 border-r border-[#d8cfba]/40 rounded-l-2xl flex flex-col items-center pt-3 pointer-events-none opacity-40">
+                 <div className="pointer-events-none absolute bottom-0 left-0 top-0 flex w-8 flex-col items-center rounded-l-2xl border-r border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[color-mix(in_srgb,var(--bk-canvas)_30%,transparent)] pt-3 opacity-40">
                     {[1,2,3,4,5,6,7].map(n => <span key={n} className="text-[8px] font-mono leading-relaxed">{n}</span>)}
                  </div>
                  <Textarea 
                    value={strategyEditorForm.parametersJson}
                    onChange={(e) => setStrategyEditorForm(prev => ({ ...prev, parametersJson: e.target.value }))}
-                   className="w-full h-full min-h-[160px] pl-10 pr-4 py-3 font-mono text-[11px] rounded-2xl border-[#d8cfba] bg-[#fffbf2]/40 focus:bg-white focus:ring-2 focus:ring-[#d8cfba]/40 transition-all shadow-inner leading-relaxed resize-none"
+                   className="h-full min-h-[160px] w-full resize-none rounded-2xl border-[var(--bk-border)] bg-[color-mix(in_srgb,var(--bk-surface-strong)_40%,transparent)] py-3 pl-10 pr-4 font-mono text-[11px] leading-relaxed shadow-inner transition-all focus:bg-[var(--bk-surface)]"
                    placeholder='{"key": "value"}'
                  />
               </div>
@@ -431,7 +432,8 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
  
             <div className="flex gap-3 pt-2">
                <Button 
-                 className="flex-1 h-11 bg-[#0e6d60] hover:bg-[#0a5a4f] text-white font-black text-xs rounded-xl shadow-md transition-transform active:scale-95"
+                 variant="bento"
+                 className="h-11 flex-1 rounded-xl text-xs font-black shadow-md transition-transform active:scale-95"
                  disabled={strategySaveAction || !strategyEditorForm.strategyId}
                  onClick={saveStrategyParameters}
                >
@@ -439,9 +441,9 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                  {strategySaveAction ? "正在提交同步..." : "保存反射参数"}
                </Button>
                <Button 
-                 variant="outline" 
+                 variant="bento-outline" 
                  size="icon" 
-                 className="h-11 w-11 rounded-xl border-[#d8cfba] bg-white hover:bg-[#fff8ea]"
+                 className="h-11 w-11 rounded-xl bg-[var(--bk-surface)] hover:bg-[var(--bk-surface-strong)]"
                  onClick={() => {
                     if (!selectedStrategy) return;
                     const params = getRecord(selectedStrategy.currentVersion?.parameters);
@@ -462,54 +464,54 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
       </div>
  
       {/* 底部：回测实验室 (Backtest Research Lab) - 全新整合版 */}
-      <Card id="backtest-lab-section" className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px] overflow-hidden">
+      <Card id="backtest-lab-section" tone="bento" className="overflow-hidden rounded-[24px] shadow-[var(--bk-shadow-card)]">
         <CardHeader className="pb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="p-2 bg-[#ebe5d5] rounded-xl">
-                 <FlaskConical size={20} className="text-[#1f2328]" />
+              <div className="rounded-xl bg-[var(--bk-canvas-strong)] p-2">
+                 <FlaskConical size={20} className="text-[var(--bk-text-primary)]" />
               </div>
               <div>
-                <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Research Lab</p>
-                <CardTitle className="text-xl font-black text-[#1f2328]">回测控制台与回放审计</CardTitle>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--bk-status-success)]">Research Lab</p>
+                <CardTitle className="text-xl font-black text-[var(--bk-text-primary)]">回测控制台与回放审计</CardTitle>
               </div>
             </div>
             <div className="flex items-center gap-4">
-               <Badge variant="outline" className="h-6 border-[#d8cfba] bg-white text-[#1f2328] font-black tabular-nums">
+               <Badge variant="neutral" className="h-6 bg-[var(--bk-surface)] font-black tabular-nums text-[var(--bk-text-primary)]">
                  {backtests.length} RUNS RECORDED
                </Badge>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0 border-t border-[#d8cfba]/40 bg-[#fffbf2]/30">
+        <CardContent className="border-t border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[color-mix(in_srgb,var(--bk-surface-strong)_30%,transparent)] p-0">
           <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[520px]">
             {/* 左侧：参数配置 (Lab Config) */}
-            <div className="lg:col-span-3 p-6 space-y-6 border-r border-[#d8cfba]/40 bg-white/40">
+            <div className="space-y-6 border-r border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-faint)] p-6 lg:col-span-3">
                <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label className="text-[10px] font-black text-[#687177] uppercase tracking-widest ml-1">Symbol</Label>
+                    <Label className="ml-1 text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">Symbol</Label>
                     <Input 
                        value={backtestForm.symbol}
                        onChange={(e) => setBacktestForm(curr => ({ ...curr, symbol: e.target.value.toUpperCase() }))}
                        placeholder="BTCUSDT"
-                       className={`h-10 rounded-xl font-mono font-black text-xs border-[#d8cfba] ${!selectedSymbolAvailable ? 'ring-2 ring-rose-500/20 border-rose-300' : ''}`}
+                       className={`h-10 rounded-xl border-[var(--bk-border)] font-mono text-xs font-black ${!selectedSymbolAvailable ? 'border-rose-300 ring-2 ring-rose-500/20' : ''}`}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] font-black text-[#687177] uppercase ml-1">Period</Label>
+                      <Label className="ml-1 text-[10px] font-black uppercase text-[var(--bk-text-muted)]">Period</Label>
                       <Select value={backtestForm.signalTimeframe} onValueChange={(val: any) => setBacktestForm(curr => ({ ...curr, signalTimeframe: val }))}>
-                        <SelectTrigger className="h-10 rounded-xl border-[#d8cfba] text-xs font-black"><SelectValue /></SelectTrigger>
-                        <SelectContent className="bg-white border-[#d8cfba] rounded-xl">
+                        <SelectTrigger tone="bento" className="h-10 rounded-xl bg-[var(--bk-surface)] text-xs font-black"><SelectValue /></SelectTrigger>
+                        <SelectContent tone="bento" className="rounded-xl bg-[var(--bk-surface)]">
                           {(backtestOptions?.signalTimeframes ?? ["5m", "4h", "1d"]).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] font-black text-[#687177] uppercase ml-1">Source</Label>
+                      <Label className="ml-1 text-[10px] font-black uppercase text-[var(--bk-text-muted)]">Source</Label>
                       <Select value={backtestForm.executionDataSource} onValueChange={(val: any) => setBacktestForm(curr => ({ ...curr, executionDataSource: val }))}>
-                        <SelectTrigger className="h-10 rounded-xl border-[#d8cfba] text-xs font-black"><SelectValue /></SelectTrigger>
-                        <SelectContent className="bg-white border-[#d8cfba] rounded-xl">
+                        <SelectTrigger tone="bento" className="h-10 rounded-xl bg-[var(--bk-surface)] text-xs font-black"><SelectValue /></SelectTrigger>
+                        <SelectContent tone="bento" className="rounded-xl bg-[var(--bk-surface)]">
                           {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                         </SelectContent>
                       </Select>
@@ -517,18 +519,19 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                   </div>
                   <div className="grid grid-cols-1 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] font-black text-[#687177] uppercase ml-1">Range From</Label>
-                      <Input value={backtestForm.from} onChange={(e) => setBacktestForm(curr => ({ ...curr, from: e.target.value }))} className="h-10 rounded-xl font-mono text-xs border-[#d8cfba]" />
+                      <Label className="ml-1 text-[10px] font-black uppercase text-[var(--bk-text-muted)]">Range From</Label>
+                      <Input value={backtestForm.from} onChange={(e) => setBacktestForm(curr => ({ ...curr, from: e.target.value }))} className="h-10 rounded-xl border-[var(--bk-border)] font-mono text-xs" />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] font-black text-[#687177] uppercase ml-1">Range To</Label>
-                      <Input value={backtestForm.to} onChange={(e) => setBacktestForm(curr => ({ ...curr, to: e.target.value }))} className="h-10 rounded-xl font-mono text-xs border-[#d8cfba]" />
+                      <Label className="ml-1 text-[10px] font-black uppercase text-[var(--bk-text-muted)]">Range To</Label>
+                      <Input value={backtestForm.to} onChange={(e) => setBacktestForm(curr => ({ ...curr, to: e.target.value }))} className="h-10 rounded-xl border-[var(--bk-border)] font-mono text-xs" />
                     </div>
                   </div>
                </div>
  
                <Button 
-                  className="w-full h-12 bg-[#1f2328] hover:bg-[#0e6d60] text-white font-black text-xs rounded-2xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
+                  variant="bento"
+                  className="h-12 w-full rounded-2xl text-xs font-black shadow-lg transition-all active:scale-95 disabled:opacity-50 hover:bg-[var(--bk-status-success)]"
                   disabled={backtestAction || !selectedSymbolAvailable || !selectedStrategy}
                   onClick={() => {
                     const versionId = selectedStrategy?.currentVersion?.id ?? "";
@@ -542,15 +545,15 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                </Button>
  
                {backtestOptions && (
-                 <div className="p-4 rounded-2xl bg-[#f3f0e7]/50 border border-[#d8cfba]/40 space-y-3">
-                    <div className="flex items-center gap-2 text-[10px] text-[#687177] font-black uppercase opacity-60">
+                 <div className="space-y-3 rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[color-mix(in_srgb,var(--bk-canvas)_50%,transparent)] p-4">
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase text-[var(--bk-text-muted)] opacity-60">
                        <Database size={12} /> <span>数据就绪状态</span>
                     </div>
                     <div className="space-y-2">
                        {['tick', '1min'].map(type => (
                          <div key={type} className="flex justify-between items-center text-[11px]">
-                           <span className="text-[#687177] font-medium">{type} Support</span>
-                           <Badge variant="outline" className={`h-4 text-[9px] font-black border-transparent uppercase ${backtestOptions.availability?.[type as 'tick'|'1min'] === 'ready' ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                           <span className="font-medium text-[var(--bk-text-muted)]">{type} Support</span>
+                           <Badge variant="neutral" className={`h-4 border-transparent text-[9px] font-black uppercase ${backtestOptions.availability?.[type as 'tick'|'1min'] === 'ready' ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]'}`}>
                              {String(backtestOptions.availability?.[type as 'tick'|'1min'] ?? "unknown")}
                            </Badge>
                          </div>
@@ -561,21 +564,21 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
             </div>
  
             {/* 中间：队列表格 (Lab History) */}
-            <div className="lg:col-span-5 border-r border-[#d8cfba]/40 flex flex-col min-w-0 bg-white/20">
-               <div className="p-4 border-b border-[#d8cfba]/40 bg-[#fff8ea]/50 flex items-center justify-between shrink-0">
+            <div className="flex min-w-0 flex-col border-r border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-ghost)] lg:col-span-5">
+               <div className="flex shrink-0 items-center justify-between border-b border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[color-mix(in_srgb,var(--bk-surface-strong)_50%,transparent)] p-4">
                   <div className="flex items-center gap-2">
-                    <History size={16} className="text-[#687177]" />
-                    <span className="text-[11px] font-black text-[#1f2328] uppercase tracking-widest">历史任务队列</span>
+                    <History size={16} className="text-[var(--bk-text-muted)]" />
+                    <span className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-primary)]">历史任务队列</span>
                   </div>
                </div>
                <div className="flex-1 overflow-y-auto">
-                  <Table>
-                    <TableHeader className="bg-white/50 sticky top-0 z-10">
-                      <TableRow className="hover:bg-transparent border-[#d8cfba]/40">
-                        <TableHead className="px-5 h-10 text-[9px] uppercase font-black text-[#687177]">执行时间</TableHead>
-                        <TableHead className="h-10 text-[9px] uppercase font-black text-[#687177]">币种</TableHead>
-                        <TableHead className="h-10 text-[9px] uppercase font-black text-[#687177]">PnL (%)</TableHead>
-                        <TableHead className="h-10 text-[9px] uppercase font-black text-[#687177] pr-5 text-right">状态</TableHead>
+                  <Table tone="bento">
+                    <TableHeader className="sticky top-0 z-10">
+                      <TableRow className="hover:bg-transparent border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)]">
+                        <TableHead className="h-10 px-5 text-[9px] font-black uppercase">执行时间</TableHead>
+                        <TableHead className="h-10 text-[9px] font-black uppercase">币种</TableHead>
+                        <TableHead className="h-10 text-[9px] font-black uppercase">PnL (%)</TableHead>
+                        <TableHead className="h-10 pr-5 text-right text-[9px] font-black uppercase">状态</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -586,27 +589,27 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                           return (
                             <TableRow 
                               key={item.id} 
-                              className={`group cursor-pointer transition-all ${isSelected ? 'bg-white shadow-inner' : 'hover:bg-white/50'}`}
+                              className={`group cursor-pointer transition-all ${isSelected ? 'bg-[var(--bk-surface)] shadow-inner' : 'hover:bg-[var(--bk-surface-faint)]'}`}
                               onClick={() => setSelectedBacktestId(item.id)}
                             >
-                              <TableCell className="px-5 py-3 text-[10px] font-mono text-[#687177]">
+                              <TableCell className="px-5 py-3 font-mono text-[10px] text-[var(--bk-text-muted)]">
                                 {formatTime(item.createdAt).split(' ')[1]}
                               </TableCell>
-                              <TableCell className="py-3 font-black text-[11px] text-[#1f2328]">
+                              <TableCell className="py-3 text-[11px] font-black text-[var(--bk-text-primary)]">
                                 {String(item.parameters?.symbol ?? "--")}
                               </TableCell>
-                              <TableCell className={`py-3 font-mono font-black text-xs ${(pnl ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                              <TableCell className={`py-3 font-mono text-xs font-black ${(pnl ?? 0) >= 0 ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]'}`}>
                                 {pnl !== undefined ? (pnl > 0 ? "+" : "") + formatPercent(pnl) : "--"}
                               </TableCell>
                               <TableCell className="py-3 pr-5 text-right">
-                                <div className={`size-2 rounded-full inline-block ${item.status === 'COMPLETED' ? 'bg-[#0e6d60]' : 'bg-amber-500'}`} title={item.status} />
+                                <div className={`inline-block size-2 rounded-full ${item.status === 'COMPLETED' ? 'bg-[var(--bk-status-success)]' : 'bg-amber-500'}`} title={item.status} />
                               </TableCell>
                             </TableRow>
                           );
                         })
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={4} className="h-64 text-center text-xs text-[#687177] italic opacity-40">队列为空，等待第一次实验</TableCell>
+                          <TableCell colSpan={4} className="h-64 text-center text-xs italic text-[var(--bk-text-muted)] opacity-40">队列为空，等待第一次实验</TableCell>
                         </TableRow>
                       )}
                     </TableBody>
@@ -615,15 +618,15 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
             </div>
  
             {/* 右侧：分析审计 (Auditor) */}
-            <div className="lg:col-span-4 p-6 flex flex-col bg-white/10 overflow-y-auto">
+            <div className="flex flex-col overflow-y-auto bg-[var(--bk-surface-ghost)] p-6 lg:col-span-4">
                {selectedBacktest ? (
                  <div className="space-y-8">
                     <div className="flex items-center justify-between">
                        <div className="flex items-center gap-2">
-                          <BarChart4 size={18} className="text-[#1f2328]" />
-                          <h4 className="text-sm font-black text-[#1f2328] uppercase tracking-wider">执行回放结果</h4>
+                          <BarChart4 size={18} className="text-[var(--bk-text-primary)]" />
+                          <h4 className="text-sm font-black uppercase tracking-wider text-[var(--bk-text-primary)]">执行回放结果</h4>
                        </div>
-                       <Badge className={`text-[9px] font-black h-5 ${selectedBacktest.status === 'COMPLETED' ? 'bg-[#1f2328]' : 'bg-rose-500'}`}>
+                       <Badge className={`h-5 text-[9px] font-black ${selectedBacktest.status === 'COMPLETED' ? 'bg-[var(--bk-surface-inverse)] text-[var(--bk-text-contrast)]' : 'bg-rose-500'}`}>
                          {selectedBacktest.status}
                        </Badge>
                     </div>
@@ -632,20 +635,20 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                        {[
                          { label: "Trades", value: String(latestBacktestSummary.executionTradeCount ?? "--"), icon: Clock },
                          { label: "Win Rate", value: formatPercent(latestBacktestSummary.executionWinRate), icon: Play },
-                         { label: "Total PnL", value: formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0), color: (getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
-                         { label: "Max DD", value: formatPercent(latestBacktestSummary.maxDrawdown), color: 'text-amber-700' },
+                         { label: "Total PnL", value: formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0), color: (getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0) >= 0 ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]' },
+                         { label: "Max DD", value: formatPercent(latestBacktestSummary.maxDrawdown), color: 'text-[var(--bk-status-warning)]' },
                        ].map((stat, i) => (
-                         <div key={i} className="bg-white p-3.5 rounded-2xl border border-[#d8cfba]/40 shadow-sm">
-                           <span className="block text-[8px] font-black text-[#687177] uppercase mb-1.5 opacity-60 tracking-widest">{stat.label}</span>
-                           <strong className={`text-[13px] font-black block tabular-nums ${stat.color || 'text-[#1f2328]'}`}>{stat.value}</strong>
+                         <div key={i} className="rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface)] p-3.5 shadow-sm">
+                           <span className="mb-1.5 block text-[8px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-60">{stat.label}</span>
+                           <strong className={`block text-[13px] font-black tabular-nums ${stat.color || 'text-[var(--bk-text-primary)]'}`}>{stat.value}</strong>
                          </div>
                        ))}
                     </div>
  
                     <div className="flex gap-2">
                        <Button 
-                         variant="outline" 
-                         className="flex-1 h-10 border-[#d8cfba] bg-white hover:bg-[#fff8ea] rounded-xl text-[10px] font-black"
+                         variant="bento-outline" 
+                         className="h-10 flex-1 rounded-xl bg-[var(--bk-surface)] text-[10px] font-black hover:bg-[var(--bk-surface-strong)]"
                          disabled={!selectedBacktest?.parameters?.from || !selectedBacktest?.parameters?.to}
                          onClick={() => {
                             const from = Date.parse(String(selectedBacktest?.parameters?.from ?? ""));
@@ -658,18 +661,18 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                          <Maximize2 size={12} className="mr-2 opacity-50" /> 还原复现窗口
                        </Button>
                        <Button 
-                         variant="outline" 
-                         className="h-10 w-10 border-[#d8cfba] bg-white hover:bg-[#fff8ea] rounded-xl flex items-center justify-center p-0"
+                         variant="bento-outline" 
+                         className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--bk-surface)] p-0 hover:bg-[var(--bk-surface-strong)]"
                          onClick={() => window.open(`${API_BASE}/api/v1/backtests/${selectedBacktest.id}/execution-trades.csv`)}
                        >
-                         <FileDown size={14} className="text-[#1f2328]" />
+                         <FileDown size={14} className="text-[var(--bk-text-primary)]" />
                        </Button>
                     </div>
  
                     <div className="space-y-4">
-                       <div className="flex items-center gap-2 border-b border-[#d8cfba]/60 pb-2">
-                          <Database size={13} className="text-[#687177]" />
-                          <span className="text-[10px] font-black text-[#687177] uppercase tracking-widest">成交与观测样本审计</span>
+                       <div className="flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--bk-border)_60%,transparent)] pb-2">
+                          <Database size={13} className="text-[var(--bk-text-muted)]" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">成交与观测样本审计</span>
                        </div>
                        
                        <div className="grid grid-cols-1 gap-2.5 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
@@ -706,7 +709,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                             </div>
                           )}
                           {(latestReplayCompletedSamples.length === 0 && latestReplaySkippedSamples.length === 0) && (
-                            <div className="p-8 text-center text-[10px] text-[#687177] italic bg-[#fff8ea]/40 rounded-2xl border border-dashed border-[#d8cfba]">
+                            <div className="rounded-2xl border border-dashed border-[var(--bk-border)] bg-[color-mix(in_srgb,var(--bk-surface-strong)_40%,transparent)] p-8 text-center text-[10px] italic text-[var(--bk-text-muted)]">
                               未产生审计点
                             </div>
                           )}
@@ -716,7 +719,7 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                ) : (
                  <div className="flex-1 flex flex-col items-center justify-center opacity-30">
                     <BarChart4 size={40} className="mb-4" />
-                    <p className="text-xs font-black uppercase tracking-widest text-[#1f2328]">分析审计就绪</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-[var(--bk-text-primary)]">分析审计就绪</p>
                  </div>
                )}
             </div>
