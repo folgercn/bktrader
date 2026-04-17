@@ -437,6 +437,7 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 	defer s.mu.RUnlock()
 	items := make([]domain.Order, 0, len(s.orders))
 	for _, item := range s.orders {
+		item.NormalizeExecutionFlags()
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
@@ -446,6 +447,7 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	order.NormalizeExecutionFlags()
 	order.ID = s.nextID("order")
 	order.Status = "NEW"
 	order.CreatedAt = time.Now().UTC()
@@ -459,6 +461,7 @@ func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
 func (s *Store) UpdateOrder(order domain.Order) (domain.Order, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	order.NormalizeExecutionFlags()
 	existing, ok := s.orders[order.ID]
 	if !ok {
 		return domain.Order{}, fmt.Errorf("order not found: %s", order.ID)

@@ -29,6 +29,8 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				Type              string         `json:"type"`
 				Quantity          float64        `json:"quantity"`
 				Price             float64        `json:"price"`
+				ReduceOnly        bool           `json:"reduceOnly"`
+				ClosePosition     bool           `json:"closePosition"`
 				Metadata          map[string]any `json:"metadata"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
@@ -52,6 +54,8 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				Type:              payload.Type,
 				Quantity:          payload.Quantity,
 				Price:             payload.Price,
+				ReduceOnly:        payload.ReduceOnly,
+				ClosePosition:     payload.ClosePosition,
 				Metadata:          payload.Metadata,
 			}
 			item, err := platform.CreateOrder(order)

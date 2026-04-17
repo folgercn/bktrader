@@ -29,45 +29,37 @@ func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
 }
 
 func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
-	positions, err := p.store.ListPositions()
+	position, _, err := p.resolveClosePositionTarget(positionID)
 	if err != nil {
 		return domain.Order{}, err
 	}
-	for _, item := range positions {
-		if item.ID != positionID {
-			continue
-		}
-		if item.Quantity <= 0 {
-			return domain.Order{}, fmt.Errorf("position has no quantity to close: %s", positionID)
-		}
-		closeSide := "SELL"
-		if strings.EqualFold(strings.TrimSpace(item.Side), "SHORT") {
-			closeSide = "BUY"
-		}
-		order := domain.Order{
-			AccountID:         item.AccountID,
-			StrategyVersionID: item.StrategyVersionID,
-			Symbol:            NormalizeSymbol(item.Symbol),
-			Side:              closeSide,
-			Type:              "MARKET",
-			Quantity:          item.Quantity,
-			Price:             item.MarkPrice,
-			Metadata: map[string]any{
-				"reduceOnly":   true,
-				"source":       "manual-position-close",
-				"positionId":   item.ID,
-				"markPrice":    item.MarkPrice,
-				"manualAction": "close-position",
-			},
-		}
-		return p.CreateOrder(order)
+	closeSide := "SELL"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		closeSide = "BUY"
 	}
-	return domain.Order{}, fmt.Errorf("position not found: %s", positionID)
+	order := domain.Order{
+		AccountID:         position.AccountID,
+		StrategyVersionID: position.StrategyVersionID,
+		Symbol:            NormalizeSymbol(position.Symbol),
+		Side:              closeSide,
+		Type:              "MARKET",
+		Quantity:          position.Quantity,
+		Price:             position.MarkPrice,
+		ReduceOnly:        true,
+		Metadata: map[string]any{
+			"source":       "manual-position-close",
+			"positionId":   position.ID,
+			"markPrice":    position.MarkPrice,
+			"manualAction": "close-position",
+		},
+	}
+	return p.CreateOrder(order)
 }
 
 // CreateOrder 创建订单。对于 PAPER 模式账户，订单会被立即执行（模拟成交），
 // 生成 fill 记录、更新持仓、捕获净值快照。
 func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
+	order.NormalizeExecutionFlags()
 	logger := p.logger("service.order",
 		"account_id", order.AccountID,
 		"strategy_version_id", order.StrategyVersionID,
@@ -99,6 +91,9 @@ func (p *Platform) prepareOrderAccount(order domain.Order) (domain.Account, erro
 }
 
 func (p *Platform) preflightOrderExecution(account domain.Account, order domain.Order) error {
+	if err := p.validateReduceOnlyOrder(account, order); err != nil {
+		return err
+	}
 	if account.Mode != "LIVE" {
 		return nil
 	}
@@ -113,6 +108,77 @@ func (p *Platform) preflightOrderExecution(account domain.Account, order domain.
 	}
 	if _, _, err := p.ensureLiveRuntimeReady(account, order); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (p *Platform) resolveClosePositionTarget(positionID string) (domain.Position, domain.Account, error) {
+	position, found, err := p.findPositionByID(positionID)
+	if err != nil {
+		return domain.Position{}, domain.Account{}, err
+	}
+	if !found {
+		return domain.Position{}, domain.Account{}, fmt.Errorf("position not found: %s", positionID)
+	}
+	account, err := p.store.GetAccount(position.AccountID)
+	if err != nil {
+		return domain.Position{}, domain.Account{}, err
+	}
+	if strings.EqualFold(strings.TrimSpace(account.Mode), "LIVE") {
+		if _, err := p.SyncLiveAccount(account.ID); err != nil {
+			return domain.Position{}, domain.Account{}, err
+		}
+		position, found, err = p.findPositionByID(positionID)
+		if err != nil {
+			return domain.Position{}, domain.Account{}, err
+		}
+		if !found {
+			return domain.Position{}, domain.Account{}, fmt.Errorf("position not found: %s", positionID)
+		}
+	}
+	if position.Quantity <= 0 {
+		return domain.Position{}, domain.Account{}, fmt.Errorf("position has no quantity to close: %s", positionID)
+	}
+	return position, account, nil
+}
+
+func (p *Platform) findPositionByID(positionID string) (domain.Position, bool, error) {
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return domain.Position{}, false, err
+	}
+	for _, item := range positions {
+		if item.ID == positionID {
+			return item, true, nil
+		}
+	}
+	return domain.Position{}, false, nil
+}
+
+func (p *Platform) validateReduceOnlyOrder(account domain.Account, order domain.Order) error {
+	if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+		return nil
+	}
+	symbol := NormalizeSymbol(order.Symbol)
+	position, found, err := p.store.FindPosition(account.ID, symbol)
+	if err != nil {
+		return err
+	}
+	if !found || position.Quantity <= 0 {
+		return fmt.Errorf("reduce-only order requires an open position for %s", symbol)
+	}
+	expectedSide := "SELL"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		expectedSide = "BUY"
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.Side), expectedSide) {
+		return fmt.Errorf("reduce-only order side %s does not reduce %s position on %s", order.Side, position.Side, symbol)
+	}
+	if order.Quantity <= 0 {
+		return fmt.Errorf("reduce-only order quantity must be positive for %s", symbol)
+	}
+	if order.Quantity-position.Quantity > 1e-9 {
+		return fmt.Errorf("reduce-only order quantity %.12f exceeds open position quantity %.12f for %s", order.Quantity, position.Quantity, symbol)
 	}
 	return nil
 }

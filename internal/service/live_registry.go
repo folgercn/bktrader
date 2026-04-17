@@ -377,10 +377,10 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 	if orderType != "MARKET" && timeInForce != "" {
 		params["timeInForce"] = timeInForce
 	}
-	if boolValue(normalizedOrder.Metadata["reduceOnly"]) {
+	if normalizedOrder.EffectiveReduceOnly() {
 		params["reduceOnly"] = "true"
 	}
-	if boolValue(normalizedOrder.Metadata["closePosition"]) {
+	if normalizedOrder.EffectiveClosePosition() {
 		params["closePosition"] = "true"
 	}
 	params["signature"] = signBinanceQuery(params, resolved.APISecret)
@@ -722,6 +722,7 @@ func resolveBinanceRESTCredentials(binding map[string]any) (binanceRESTCredentia
 func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds binanceRESTCredentials) (domain.Order, binanceSymbolRules, error) {
 	normalized := order
 	normalized.Metadata = cloneMetadata(order.Metadata)
+	normalized.NormalizeExecutionFlags()
 	rules, err := fetchBinanceSymbolRules(creds, NormalizeSymbol(order.Symbol))
 	if err != nil {
 		return domain.Order{}, binanceSymbolRules{}, err
@@ -736,6 +737,9 @@ func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds 
 	}
 	if rules.MinQty > 0 && rawQuantity > 0 && rawQuantity < rules.MinQty {
 		quantityAdjustments = append(quantityAdjustments, "min_qty")
+	}
+	if normalized.EffectiveReduceOnly() && baseQuantity > rawQuantity {
+		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("reduce-only order quantity %.12f is below minQty %.12f for %s", rawQuantity, rules.MinQty, rules.Symbol)
 	}
 	normalized.Quantity = baseQuantity
 	if normalized.Quantity <= 0 {
@@ -756,6 +760,9 @@ func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds 
 		}
 	}
 	if requiredQty := requiredBinanceQuantityForMinNotional(normalized.Quantity, firstPositive(normalized.Price, priceReference), rules); requiredQty > normalized.Quantity {
+		if normalized.EffectiveReduceOnly() {
+			return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("reduce-only order quantity %.12f does not satisfy minNotional %.12f for %s", normalized.Quantity, rules.MinNotional, rules.Symbol)
+		}
 		normalized.Quantity = requiredQty
 		quantityAdjustments = append(quantityAdjustments, "min_notional")
 	}

@@ -177,6 +177,8 @@ type Order struct {
 	Status            string         `json:"status"` // NEW / FILLED / CANCELLED
 	Quantity          float64        `json:"quantity"`
 	Price             float64        `json:"price"`
+	ReduceOnly        bool           `json:"reduceOnly,omitempty"`
+	ClosePosition     bool           `json:"closePosition,omitempty"`
 	Metadata          map[string]any `json:"metadata"` // 扩展信息（执行模式、来源等）
 	CreatedAt         time.Time      `json:"createdAt"`
 }

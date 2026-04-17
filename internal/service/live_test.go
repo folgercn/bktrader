@@ -1019,6 +1019,9 @@ func TestBuildLiveOrderFromExecutionProposalUsesExecutionFields(t *testing.T) {
 	if !boolValue(order.Metadata["reduceOnly"]) {
 		t.Fatal("expected reduceOnly metadata")
 	}
+	if !order.ReduceOnly {
+		t.Fatal("expected reduceOnly formal field")
+	}
 }
 
 func TestBuildLiveOrderUsesProposalQuantityOverSessionDefault(t *testing.T) {

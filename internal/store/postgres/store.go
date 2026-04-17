@@ -510,12 +510,14 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 		if len(metadataRaw) > 0 {
 			_ = json.Unmarshal(metadataRaw, &item.Metadata)
 		}
+		item.NormalizeExecutionFlags()
 		items = append(items, item)
 	}
 	return items, rows.Err()
 }
 
 func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
+	order.NormalizeExecutionFlags()
 	order.ID = fmt.Sprintf("order-%d", time.Now().UTC().UnixNano())
 	order.Status = "NEW"
 	order.CreatedAt = time.Now().UTC()
@@ -532,6 +534,7 @@ func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
 }
 
 func (s *Store) UpdateOrder(order domain.Order) (domain.Order, error) {
+	order.NormalizeExecutionFlags()
 	if order.Metadata == nil {
 		order.Metadata = map[string]any{}
 	}

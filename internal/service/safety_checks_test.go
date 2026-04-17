@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,6 +180,9 @@ func TestClosePositionCreatesReduceOnlyMarketOrder(t *testing.T) {
 	if order.Type != "MARKET" {
 		t.Fatalf("expected MARKET close order, got %s", order.Type)
 	}
+	if !order.ReduceOnly {
+		t.Fatal("expected close order to set the formal ReduceOnly field")
+	}
 	if !boolValue(order.Metadata["reduceOnly"]) {
 		t.Fatal("expected close order to be reduceOnly")
 	}
@@ -192,5 +196,236 @@ func TestClosePositionCreatesReduceOnlyMarketOrder(t *testing.T) {
 		t.Fatalf("find position failed: %v", err)
 	} else if exists {
 		t.Fatal("expected close order to flatten the paper position")
+	}
+}
+
+func TestResolveClosePositionTargetRefreshesLivePositionBeforeSubmitting(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-close-refresh",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			refreshed, found, err := p.findPositionByID(position.ID)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			if !found {
+				return domain.Account{}, errors.New("position disappeared during refresh")
+			}
+			refreshed.Quantity = 0.1
+			refreshed.MarkPrice = 68200
+			if _, err := p.store.SavePosition(refreshed); err != nil {
+				return domain.Account{}, err
+			}
+			return account, nil
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-close-refresh",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
+
+	target, _, err := platform.resolveClosePositionTarget(position.ID)
+	if err != nil {
+		t.Fatalf("resolveClosePositionTarget failed: %v", err)
+	}
+	if target.Quantity != 0.1 {
+		t.Fatalf("expected refreshed close quantity 0.1, got %v", target.Quantity)
+	}
+	if target.MarkPrice != 68200 {
+		t.Fatalf("expected refreshed close markPrice 68200, got %v", target.MarkPrice)
+	}
+}
+
+func TestResolveClosePositionTargetFailsWhenPositionDisappearsAfterRefresh(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-close-disappear",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			if err := p.store.DeletePosition(position.ID); err != nil {
+				return domain.Account{}, err
+			}
+			return account, nil
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-close-disappear",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
+
+	if _, _, err := platform.resolveClosePositionTarget(position.ID); err == nil || !strings.Contains(err.Error(), "position not found") {
+		t.Fatalf("expected refreshed close target lookup to fail after position disappears, got %v", err)
+	}
+}
+
+func TestCreateOrderReduceOnlyFormalFieldPreventsReverseOpen(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.CreateAccount("Paper ReduceOnly", "PAPER", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	order, err := platform.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Quantity:          0.1,
+		ReduceOnly:        true,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder reduce-only failed: %v", err)
+	}
+	if !order.ReduceOnly {
+		t.Fatal("expected returned order to preserve ReduceOnly field")
+	}
+	if !boolValue(order.Metadata["reduceOnly"]) {
+		t.Fatal("expected returned order metadata to preserve reduceOnly")
+	}
+	position, found, err := platform.store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected partial reduce-only execution to leave a remaining position")
+	}
+	if position.Side != "LONG" || position.Quantity != 0.15 {
+		t.Fatalf("expected remaining LONG 0.15 after partial reduce-only close, got side=%s qty=%v", position.Side, position.Quantity)
+	}
+}
+
+func TestCreateOrderReduceOnlyRejectsOversizedQuantity(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.CreateAccount("Paper ReduceOnly Oversize", "PAPER", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	if _, err := platform.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Quantity:          0.5,
+		ReduceOnly:        true,
+	}); err == nil || !strings.Contains(err.Error(), "exceeds open position quantity") {
+		t.Fatalf("expected oversized reduce-only order to be rejected, got %v", err)
+	}
+
+	position, found, err := platform.store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found || position.Side != "LONG" || position.Quantity != 0.25 {
+		t.Fatalf("expected original LONG 0.25 position to remain untouched, got found=%t side=%s qty=%v", found, position.Side, position.Quantity)
+	}
+}
+
+func TestNormalizeRESTOrderRejectsReduceOnlyQuantityExpansion(t *testing.T) {
+	adapter := binanceFuturesLiveAdapter{}
+	creds := binanceRESTCredentials{BaseURL: "https://example.test"}
+	cacheKey := creds.BaseURL + "|BTCUSDT"
+	binanceSymbolRulesCacheMu.Lock()
+	previous, existed := binanceSymbolRulesCache[cacheKey]
+	binanceSymbolRulesCacheMu.Unlock()
+	t.Cleanup(func() {
+		binanceSymbolRulesCacheMu.Lock()
+		defer binanceSymbolRulesCacheMu.Unlock()
+		if existed {
+			binanceSymbolRulesCache[cacheKey] = previous
+		} else {
+			delete(binanceSymbolRulesCache, cacheKey)
+		}
+	})
+	binanceSymbolRulesCacheMu.Lock()
+	binanceSymbolRulesCache[cacheKey] = binanceSymbolRules{
+		Symbol:      "BTCUSDT",
+		TickSize:    0.1,
+		StepSize:    0.001,
+		MinQty:      0.001,
+		MaxQty:      1000,
+		MinNotional: 100,
+		UpdatedAt:   time.Now().UTC(),
+	}
+	binanceSymbolRulesCacheMu.Unlock()
+
+	if _, _, err := adapter.normalizeRESTOrder(domain.Order{
+		Symbol:     "BTCUSDT",
+		Type:       "MARKET",
+		Quantity:   0.0005,
+		ReduceOnly: true,
+	}, creds); err == nil || !strings.Contains(err.Error(), "reduce-only order quantity") {
+		t.Fatalf("expected reduce-only REST normalization to reject quantity expansion, got %v", err)
 	}
 }

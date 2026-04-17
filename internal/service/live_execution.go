@@ -336,6 +336,7 @@ func buildLiveOrderFromExecutionProposal(session domain.LiveSession, strategyVer
 		Type:              orderType,
 		Quantity:          quantity,
 		Price:             price,
+		ReduceOnly:        proposal.ReduceOnly,
 		Metadata: map[string]any{
 			"source":             "live-session-intent",
 			"liveSessionId":      session.ID,
