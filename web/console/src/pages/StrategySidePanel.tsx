@@ -82,18 +82,18 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
     : [];
 
   return (
-    <div className="p-4 space-y-6 animate-in slide-in-from-right duration-500">
+    <div className="space-y-6 p-4 animate-in slide-in-from-right duration-500">
       {/* 1. 回测配置面板 */}
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-lg rounded-[24px] overflow-hidden">
-        <CardHeader className="bg-white/30 border-b border-[#d8cfba]/50 py-4 px-5">
+      <Card tone="bento" className="overflow-hidden rounded-[24px] shadow-lg">
+        <CardHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] py-4 px-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-[#ebe5d5] rounded-lg">
-                <FlaskConical className="size-4 text-[#1f2328]" />
+              <div className="rounded-lg bg-[var(--bk-surface-muted)] p-1.5">
+                <FlaskConical className="size-4 text-[var(--bk-text-primary)]" />
               </div>
-              <CardTitle className="text-base font-bold text-[#1f2328]">回测配置</CardTitle>
+              <CardTitle className="text-base font-bold text-[var(--bk-text-primary)]">回测配置</CardTitle>
             </div>
-            <Badge variant="outline" className="text-[9px] border-[#d8cfba] font-mono tracking-tight">
+            <Badge variant="outline" className="border-[var(--bk-border)] text-[9px] font-mono tracking-tight text-[var(--bk-text-secondary)]">
               {backtests.length} RUNS
             </Badge>
           </div>
@@ -101,15 +101,15 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
         <CardContent className="p-5 space-y-4">
           <div className="grid grid-cols-1 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase tracking-wide">Strategy</Label>
+              <Label className="ml-0.5 text-[11px] font-black uppercase tracking-wide text-[var(--bk-text-secondary)]">Strategy</Label>
               <Select 
                 value={backtestForm.strategyVersionId}
                 onValueChange={(val: any) => setBacktestForm(curr => ({ ...curr, strategyVersionId: val }))}
               >
-                <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px] font-medium">
+                <SelectTrigger tone="bento" className="h-9 rounded-xl text-[12px] font-medium">
                   <SelectValue placeholder="选择策略版本" />
                 </SelectTrigger>
-                <SelectContent className="bg-white border-[#d8cfba] rounded-xl shadow-xl">
+                <SelectContent tone="bento" className="rounded-xl shadow-xl">
                   {strategies.map((strategy) => (
                     <SelectItem key={strategy.id} value={strategy.currentVersion?.id ?? ""}>
                       {strategyLabel(strategy)}
@@ -121,15 +121,15 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">Timeframe</Label>
+                <Label className="ml-0.5 text-[11px] font-black uppercase text-[var(--bk-text-secondary)]">Timeframe</Label>
                 <Select 
                   value={backtestForm.signalTimeframe}
                   onValueChange={(val: any) => setBacktestForm(curr => ({ ...curr, signalTimeframe: val }))}
                 >
-                  <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px]">
+                  <SelectTrigger tone="bento" className="h-9 rounded-xl text-[12px]">
                     <SelectValue placeholder="周期" />
                   </SelectTrigger>
-                  <SelectContent className="bg-white border-[#d8cfba] rounded-xl">
+                  <SelectContent tone="bento" className="rounded-xl">
                     {(backtestOptions?.signalTimeframes ?? ["5m", "4h", "1d"]).map((item) => (
                       <SelectItem key={item} value={item}>{item}</SelectItem>
                     ))}
@@ -137,15 +137,15 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">Source</Label>
+                <Label className="ml-0.5 text-[11px] font-black uppercase text-[var(--bk-text-secondary)]">Source</Label>
                 <Select 
                   value={backtestForm.executionDataSource}
                   onValueChange={(val: any) => setBacktestForm(curr => ({ ...curr, executionDataSource: val }))}
                 >
-                  <SelectTrigger className="h-9 rounded-xl border-[#d8cfba] bg-white/50 text-[12px]">
+                  <SelectTrigger tone="bento" className="h-9 rounded-xl text-[12px]">
                     <SelectValue placeholder="数据源" />
                   </SelectTrigger>
-                  <SelectContent className="bg-white border-[#d8cfba] rounded-xl">
+                  <SelectContent tone="bento" className="rounded-xl">
                     {(backtestOptions?.executionDataSources ?? ["tick", "1min"]).map((item) => (
                       <SelectItem key={item} value={item}>{item}</SelectItem>
                     ))}
@@ -155,39 +155,40 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">Symbol</Label>
+              <Label className="ml-0.5 text-[11px] font-black uppercase text-[var(--bk-text-secondary)]">Symbol</Label>
               <Input 
                 value={backtestForm.symbol}
                 onChange={(e) => setBacktestForm(curr => ({ ...curr, symbol: e.target.value.toUpperCase() }))}
                 placeholder="例如：BTCUSDT"
-                className={`h-9 rounded-xl text-[12px] font-mono font-bold border-[#d8cfba] bg-white/50 focus:bg-white ${!selectedSymbolAvailable ? 'border-rose-300 ring-rose-100 ring-2' : ''}`}
+                className={`h-9 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] text-[12px] font-mono font-bold focus:bg-[var(--bk-surface)] ${!selectedSymbolAvailable ? 'border-[var(--bk-status-danger)] ring-2 ring-[color:color-mix(in_srgb,var(--bk-status-danger)_14%,transparent)]' : ''}`}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">From</Label>
+                <Label className="ml-0.5 text-[11px] font-black uppercase text-[var(--bk-text-secondary)]">From</Label>
                 <Input 
                   value={backtestForm.from}
                   onChange={(e) => setBacktestForm(curr => ({ ...curr, from: e.target.value }))}
                   placeholder="2024-01-01..."
-                  className="h-9 rounded-xl text-[10px] font-mono border-[#d8cfba] bg-white/50"
+                  className="h-9 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] text-[10px] font-mono"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-black text-[#687177] ml-0.5 uppercase">To</Label>
+                <Label className="ml-0.5 text-[11px] font-black uppercase text-[var(--bk-text-secondary)]">To</Label>
                 <Input 
                   value={backtestForm.to}
                   onChange={(e) => setBacktestForm(curr => ({ ...curr, to: e.target.value }))}
                   placeholder="2024-01-31..."
-                  className="h-9 rounded-xl text-[10px] font-mono border-[#d8cfba] bg-white/50"
+                  className="h-9 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] text-[10px] font-mono"
                 />
               </div>
             </div>
           </div>
 
           <Button 
-            className="w-full h-11 rounded-2xl bg-[#1f2328] hover:bg-[#2f353c] text-white font-black text-sm transition-all shadow-md active:scale-95 disabled:opacity-50"
+            variant="bento"
+            className="h-11 w-full rounded-2xl text-sm font-black shadow-md active:scale-95"
             disabled={
               backtestAction ||
               backtestForm.strategyVersionId.trim() === "" ||
@@ -202,21 +203,21 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
           </Button>
 
           {backtestOptions && (
-            <div className="p-3 rounded-xl bg-[#fff8ea] border border-[#d8cfba]/40 space-y-2">
-              <div className="flex items-center gap-2 text-[10px] text-[#687177] font-bold">
+            <div className="space-y-2 rounded-xl border border-[var(--bk-border-soft)] bg-[color:color-mix(in_srgb,var(--bk-accent-soft)_55%,var(--bk-surface)_45%)] p-3">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-[var(--bk-text-secondary)]">
                  <Database className="size-3" />
                  <span>数据就绪检查</span>
               </div>
               <div className="grid grid-cols-1 gap-1">
                  <div className="flex justify-between text-[9px]">
-                   <span className="text-[#687177]">Tick Availability</span>
-                   <span className={`font-mono font-bold ${backtestOptions.availability?.tick === 'ready' ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                   <span className="text-[var(--bk-text-secondary)]">Tick Availability</span>
+                   <span className={`font-mono font-bold ${backtestOptions.availability?.tick === 'ready' ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]'}`}>
                      {String(backtestOptions.availability?.tick ?? "unknown")}
                    </span>
                  </div>
                  <div className="flex justify-between text-[9px]">
-                   <span className="text-[#687177]">1min Availability</span>
-                   <span className={`font-mono font-bold ${backtestOptions.availability?.['1min'] === 'ready' ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                   <span className="text-[var(--bk-text-secondary)]">1min Availability</span>
+                   <span className={`font-mono font-bold ${backtestOptions.availability?.['1min'] === 'ready' ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]'}`}>
                      {String(backtestOptions.availability?.['1min'] ?? "unknown")}
                    </span>
                  </div>
@@ -227,20 +228,20 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
       </Card>
 
       {/* 2. 回测历史 Tab 式概览 (简化版) */}
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-lg rounded-[24px] overflow-hidden">
-        <CardHeader className="bg-white/30 border-b border-[#d8cfba]/50 py-3 px-5">
+      <Card tone="bento" className="overflow-hidden rounded-[24px] shadow-lg">
+        <CardHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] py-3 px-5">
           <div className="flex items-center gap-2">
-            <History className="size-4 text-[#1f2328]/40" />
-            <CardTitle className="text-xs font-bold text-[#1f2328]/60 uppercase tracking-widest">历史队列</CardTitle>
+            <History className="size-4 text-[var(--bk-text-secondary)]/70" />
+            <CardTitle className="text-xs font-bold uppercase tracking-widest text-[var(--bk-text-secondary)]">历史队列</CardTitle>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader className="bg-[#ebe5d5]/20">
-              <TableRow className="border-[#d8cfba]/40 hover:bg-transparent">
-                <TableHead className="h-8 py-0 px-5 text-[9px] uppercase font-black text-[#687177]">Time</TableHead>
-                <TableHead className="h-8 py-0 text-[9px] uppercase font-black text-[#687177]">Symbol</TableHead>
-                <TableHead className="h-8 py-0 text-right pr-5 text-[9px] uppercase font-black text-[#687177]">PnL</TableHead>
+          <Table tone="bento">
+            <TableHeader className="bg-[var(--bk-surface-muted)]/35">
+              <TableRow className="border-[var(--bk-border-soft)] hover:bg-transparent">
+                <TableHead className="h-8 px-5 py-0 text-[9px] font-black uppercase text-[var(--bk-text-secondary)]">Time</TableHead>
+                <TableHead className="h-8 py-0 text-[9px] font-black uppercase text-[var(--bk-text-secondary)]">Symbol</TableHead>
+                <TableHead className="h-8 py-0 pr-5 text-right text-[9px] font-black uppercase text-[var(--bk-text-secondary)]">PnL</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -251,16 +252,16 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                   return (
                     <TableRow 
                       key={item.id} 
-                      className={`cursor-pointer transition-colors border-[#d8cfba]/20 ${isSelected ? 'bg-white shadow-inner' : 'hover:bg-white/50'}`}
+                      className={`cursor-pointer border-[var(--bk-border-soft)] transition-colors ${isSelected ? 'bg-[var(--bk-surface)] shadow-inner' : 'hover:bg-[var(--bk-surface-overlay)]'}`}
                       onClick={() => setSelectedBacktestId(item.id)}
                     >
-                      <TableCell className="px-5 py-2 text-[10px] font-mono text-[#687177]">
+                      <TableCell className="px-5 py-2 text-[10px] font-mono text-[var(--bk-text-secondary)]">
                         {formatTime(item.createdAt).split(' ')[1]}
                       </TableCell>
                       <TableCell className="py-2">
-                        <span className="text-[10px] font-bold text-[#1f2328]">{String(item.parameters?.symbol ?? "--")}</span>
+                        <span className="text-[10px] font-bold text-[var(--bk-text-primary)]">{String(item.parameters?.symbol ?? "--")}</span>
                       </TableCell>
-                      <TableCell className={`py-2 pr-5 text-right font-mono text-[10px] font-black ${(pnl ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                      <TableCell className={`py-2 pr-5 text-right font-mono text-[10px] font-black ${(pnl ?? 0) >= 0 ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]'}`}>
                         {formatPercent(pnl)}
                       </TableCell>
                     </TableRow>
@@ -268,7 +269,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={3} className="h-20 text-center text-[10px] italic text-[#687177]">暂无执行记录</TableCell>
+                  <TableCell colSpan={3} className="h-20 text-center text-[10px] italic text-[var(--bk-text-secondary)]">暂无执行记录</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -278,14 +279,14 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
 
       {/* 3. 详细统计与采样 */}
       {selectedBacktest && (
-        <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-xl rounded-[24px] overflow-hidden">
-          <CardHeader className="bg-white/30 border-b border-[#d8cfba]/50 py-4 px-5">
+        <Card tone="bento" className="overflow-hidden rounded-[24px] shadow-xl">
+          <CardHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] py-4 px-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <BarChart4 className="size-4 text-[#1f2328]" />
-                <CardTitle className="text-base font-bold text-[#1f2328]">回放审计</CardTitle>
+                <BarChart4 className="size-4 text-[var(--bk-text-primary)]" />
+                <CardTitle className="text-base font-bold text-[var(--bk-text-primary)]">回放审计</CardTitle>
               </div>
-              <Badge className={`text-[9px] font-black ${selectedBacktest.status === 'COMPLETED' ? 'bg-[#1f2328]' : 'bg-rose-500'}`}>
+              <Badge className={`text-[9px] font-black ${selectedBacktest.status === 'COMPLETED' ? 'bg-[var(--bk-text-primary)] text-[var(--bk-canvas)]' : 'bg-[var(--bk-status-danger)] text-[var(--bk-canvas)]'}`}>
                 {selectedBacktest.status}
               </Badge>
             </div>
@@ -295,21 +296,21 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
               {[
                 { label: "Trade Count", value: String(latestBacktestSummary.executionTradeCount ?? "--"), icon: Clock },
                 { label: "Win Rate", value: formatPercent(latestBacktestSummary.executionWinRate), icon: Play },
-                { label: "Total PnL", value: formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0), color: (getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0) >= 0 ? 'text-[#0e6d60]' : 'text-rose-600' },
-                { label: "Max DD", value: formatPercent(latestBacktestSummary.maxDrawdown), color: 'text-amber-700' },
+                { label: "Total PnL", value: formatSigned(getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0), color: (getNumber(latestBacktestSummary.executionRealizedPnL) ?? 0) >= 0 ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]' },
+                { label: "Max DD", value: formatPercent(latestBacktestSummary.maxDrawdown), color: 'text-[var(--bk-status-warning)]' },
               ].map((stat, i) => (
-                <div key={i} className="bg-white/60 border border-[#d8cfba]/50 rounded-xl p-2.5 shadow-sm">
-                  <span className="block text-[9px] font-black text-[#687177] uppercase mb-1">{stat.label}</span>
-                  <strong className={`text-[12px] font-black block tracking-tight ${stat.color || 'text-[#1f2328]'}`}>{stat.value}</strong>
+                <div key={i} className="rounded-xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] p-2.5 shadow-sm">
+                  <span className="mb-1 block text-[9px] font-black uppercase text-[var(--bk-text-secondary)]">{stat.label}</span>
+                  <strong className={`block text-[12px] font-black tracking-tight ${stat.color || 'text-[var(--bk-text-primary)]'}`}>{stat.value}</strong>
                 </div>
               ))}
             </div>
 
             <div className="flex flex-wrap gap-2">
               <Button 
-                variant="outline" 
+                variant="bento-outline"
                 size="sm" 
-                className="flex-1 h-8 text-[10px] font-bold border-[#d8cfba] bg-white hover:bg-[#fff8ea] rounded-xl"
+                className="h-8 flex-1 rounded-xl text-[10px] font-bold"
                 disabled={!selectedBacktest?.parameters?.from || !selectedBacktest?.parameters?.to}
                 onClick={() => {
                   const from = Date.parse(String(selectedBacktest?.parameters?.from ?? ""));
@@ -323,9 +324,9 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 复现窗口
               </Button>
               <Button 
-                variant="outline" 
+                variant="bento-outline"
                 size="sm" 
-                className="h-8 text-[10px] font-bold border-[#d8cfba] bg-white hover:bg-[#fff8ea] rounded-xl"
+                className="h-8 rounded-xl text-[10px] font-bold"
                 onClick={() => window.open(`${API_BASE}/api/v1/backtests/${selectedBacktest.id}/execution-trades.csv`)}
               >
                 <FileDown className="size-3" />
@@ -335,15 +336,15 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
             {/* 采样区 */}
             {latestReplayCompletedSamples.length > 0 || latestReplaySkippedSamples.length > 0 ? (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-[#d8cfba] pb-2">
-                  <Database className="size-3 text-[#687177]" />
-                  <span className="text-[10px] font-black text-[#687177] uppercase tracking-widest">成交/观测样本点</span>
+                <div className="flex items-center gap-2 border-b border-[var(--bk-border)] pb-2">
+                  <Database className="size-3 text-[var(--bk-text-secondary)]" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-secondary)]">成交/观测样本点</span>
                 </div>
                 
                 <div className="grid grid-cols-1 gap-3 max-h-[400px] overflow-y-auto pr-1">
                   {latestReplayCompletedSamples.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[9px] font-black text-[#0e6d60] ml-1 uppercase">✓ 成交样本</p>
+                      <p className="ml-1 text-[9px] font-black uppercase text-[var(--bk-status-success)]">✓ 成交样本</p>
                       {latestReplayCompletedSamples.map((sample, index) => (
                         <SampleCard
                           key={`completed-${index}`}
@@ -365,7 +366,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
 
                   {latestReplaySkippedSamples.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[9px] font-black text-rose-600 ml-1 uppercase">⚠ 跳过/异常样本</p>
+                      <p className="ml-1 text-[9px] font-black uppercase text-[var(--bk-status-danger)]">⚠ 跳过/异常样本</p>
                       {latestReplaySkippedSamples.map((sample, index) => (
                         <SampleCard
                           key={`skipped-${index}`}
@@ -387,7 +388,7 @@ export function StrategySidePanel({ createBacktestRun }: StrategySidePanelProps)
                 </div>
               </div>
             ) : (
-              <div className="p-8 text-center text-[10px] text-[#687177] italic bg-[#fff8ea]/40 rounded-2xl border border-dashed border-[#d8cfba]">
+              <div className="rounded-2xl border border-dashed border-[var(--bk-border)] bg-[color:color-mix(in_srgb,var(--bk-accent-soft)_42%,transparent)] p-8 text-center text-[10px] italic text-[var(--bk-text-secondary)]">
                 该回测轮次未产生观测样本
               </div>
             )}

@@ -1,6 +1,25 @@
-import React from 'react';
-import { ActionButton } from '../components/ui/ActionButton';
-import { AccountRecord, LiveAdapter, LiveBindingForm, ActiveSettingsModal } from '../types/domain';
+import React from "react";
+
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import { AccountRecord, ActiveSettingsModal, LiveAdapter, LiveBindingForm } from "../types/domain";
+import {
+  ModalActions,
+  ModalCheckboxField,
+  ModalField,
+  ModalFormGrid,
+  ModalMetaItem,
+  ModalMetaStrip,
+  ModalNotice,
+  SettingsModalFrame,
+} from "./modal-frame";
 
 interface LiveBindingModalProps {
   activeSettingsModal: ActiveSettingsModal;
@@ -27,98 +46,136 @@ export function LiveBindingModal({
   liveAdapters,
   quickLiveAccount,
   liveBindAction,
-  bindLiveAccount
+  bindLiveAccount,
 }: LiveBindingModalProps) {
-  if (activeSettingsModal !== "live-binding") return null;
+  const open = activeSettingsModal === "live-binding";
 
   return (
-    <div className="modal-overlay" onClick={() => setActiveSettingsModal(null)}>
-      <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
-        <div className="panel-header panel-header-tight">
-          <div>
-            <p className="panel-kicker">Live Binding</p>
-            <h3>绑定 Live / Testnet 适配器</h3>
-          </div>
-          <button type="button" className="hero-menu-button" onClick={() => setActiveSettingsModal(null)}>
-            关闭
-          </button>
+    <SettingsModalFrame
+      open={open}
+      onOpenChange={(nextOpen) => !nextOpen && setActiveSettingsModal(null)}
+      kicker="Live Binding"
+      title="绑定 Live / Testnet 适配器"
+      description="账户、适配器和 sandbox 行为在这里收敛，保留原有实盘控制边界。"
+      className="max-w-[min(820px,calc(100vw-2rem))]"
+    >
+      {liveBindingError ? <ModalNotice tone="error">{liveBindingError}</ModalNotice> : null}
+      {liveBindingNotice ? <ModalNotice tone="success">{liveBindingNotice}</ModalNotice> : null}
+
+      <ModalMetaStrip>
+        <ModalMetaItem
+          label="Binding"
+          value={`${String(quickLiveAccount?.bindings?.live?.adapterKey ?? "--")} · sandbox ${String(quickLiveAccount?.bindings?.live?.sandbox ?? "--")}`}
+        />
+        <ModalMetaItem label="Adapters" value={String(liveAdapters.length)} />
+      </ModalMetaStrip>
+
+      <ModalFormGrid>
+        <ModalField label="Live Account">
+          <Select
+            value={liveBindingForm.accountId}
+            onValueChange={(value) => setLiveBindingForm((current) => ({ ...current, accountId: value ?? "" }))}
+          >
+            <SelectTrigger tone="bento" className="h-10 w-full rounded-xl">
+              <SelectValue placeholder="选择账户" />
+            </SelectTrigger>
+            <SelectContent tone="bento" className="rounded-xl">
+              {liveAccounts.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  {account.name} ({account.status})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </ModalField>
+
+        <ModalField label="Adapter">
+          <Select
+            value={liveBindingForm.adapterKey}
+            onValueChange={(value) => setLiveBindingForm((current) => ({ ...current, adapterKey: value ?? "" }))}
+          >
+            <SelectTrigger tone="bento" className="h-10 w-full rounded-xl">
+              <SelectValue placeholder="选择适配器" />
+            </SelectTrigger>
+            <SelectContent tone="bento" className="rounded-xl">
+              {liveAdapters.map((adapter) => (
+                <SelectItem key={adapter.key} value={adapter.key}>
+                  {adapter.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </ModalField>
+
+        <ModalField label="Position Mode">
+          <Select
+            value={liveBindingForm.positionMode}
+            onValueChange={(value) => setLiveBindingForm((current) => ({ ...current, positionMode: value ?? "" }))}
+          >
+            <SelectTrigger tone="bento" className="h-10 w-full rounded-xl">
+              <SelectValue placeholder="Position Mode" />
+            </SelectTrigger>
+            <SelectContent tone="bento" className="rounded-xl">
+              <SelectItem value="ONE_WAY">ONE_WAY</SelectItem>
+              <SelectItem value="HEDGE">HEDGE</SelectItem>
+            </SelectContent>
+          </Select>
+        </ModalField>
+
+        <ModalField label="Margin Mode">
+          <Select
+            value={liveBindingForm.marginMode}
+            onValueChange={(value) => setLiveBindingForm((current) => ({ ...current, marginMode: value ?? "" }))}
+          >
+            <SelectTrigger tone="bento" className="h-10 w-full rounded-xl">
+              <SelectValue placeholder="Margin Mode" />
+            </SelectTrigger>
+            <SelectContent tone="bento" className="rounded-xl">
+              <SelectItem value="CROSSED">CROSSED</SelectItem>
+              <SelectItem value="ISOLATED">ISOLATED</SelectItem>
+            </SelectContent>
+          </Select>
+        </ModalField>
+
+        <ModalField label="API Key Env">
+          <Input
+            value={liveBindingForm.apiKeyRef}
+            onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiKeyRef: event.target.value }))}
+            className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
+          />
+        </ModalField>
+
+        <ModalField label="API Secret Env">
+          <Input
+            value={liveBindingForm.apiSecretRef}
+            onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiSecretRef: event.target.value }))}
+            className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
+          />
+        </ModalField>
+
+        <div className="md:col-span-2">
+          <ModalCheckboxField
+            label="Sandbox"
+            checked={liveBindingForm.sandbox}
+            onChange={(checked) => setLiveBindingForm((current) => ({ ...current, sandbox: checked }))}
+          />
         </div>
-        <div className="backtest-form modal-form">
-          {liveBindingError ? <div className="modal-error">{liveBindingError}</div> : null}
-          {liveBindingNotice ? <div className="modal-success">{liveBindingNotice}</div> : null}
-          <div className="form-grid">
-            <label className="form-field">
-              <span>Live Account</span>
-              <select
-                value={liveBindingForm.accountId}
-                onChange={(event) => setLiveBindingForm((current) => ({ ...current, accountId: event.target.value }))}
-              >
-                {liveAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} ({account.status})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="form-field">
-              <span>Adapter</span>
-              <select
-                value={liveBindingForm.adapterKey}
-                onChange={(event) => setLiveBindingForm((current) => ({ ...current, adapterKey: event.target.value }))}
-              >
-                {liveAdapters.map((adapter) => (
-                  <option key={adapter.key} value={adapter.key}>
-                    {adapter.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="form-field">
-              <span>Position Mode</span>
-              <select
-                value={liveBindingForm.positionMode}
-                onChange={(event) => setLiveBindingForm((current) => ({ ...current, positionMode: event.target.value }))}
-              >
-                <option value="ONE_WAY">ONE_WAY</option>
-                <option value="HEDGE">HEDGE</option>
-              </select>
-            </label>
-            <label className="form-field">
-              <span>Margin Mode</span>
-              <select
-                value={liveBindingForm.marginMode}
-                onChange={(event) => setLiveBindingForm((current) => ({ ...current, marginMode: event.target.value }))}
-              >
-                <option value="CROSSED">CROSSED</option>
-                <option value="ISOLATED">ISOLATED</option>
-              </select>
-            </label>
-            <label className="form-field">
-              <span>API Key Env</span>
-              <input value={liveBindingForm.apiKeyRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiKeyRef: event.target.value }))} />
-            </label>
-            <label className="form-field">
-              <span>API Secret Env</span>
-              <input value={liveBindingForm.apiSecretRef} onChange={(event) => setLiveBindingForm((current) => ({ ...current, apiSecretRef: event.target.value }))} />
-            </label>
-            <label className="form-field form-field-checkbox">
-              <span>Sandbox</span>
-              <input
-                type="checkbox"
-                checked={liveBindingForm.sandbox}
-                onChange={(event) => setLiveBindingForm((current) => ({ ...current, sandbox: event.target.checked }))}
-              />
-            </label>
-          </div>
-          <div className="backtest-notes notes-compact">
-            <div className="note-item">sandbox=true 时默认从 `.env` 读取 `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`。</div>
-            <div className="note-item">当前账户绑定状态：{String(quickLiveAccount?.bindings?.live?.adapterKey ?? "--")} · sandbox {String(quickLiveAccount?.bindings?.live?.sandbox ?? "--")}</div>
-          </div>
-          <div className="backtest-actions inline-actions">
-            <ActionButton label={liveBindAction ? "Binding..." : "Bind Live Adapter"} disabled={liveBindAction || !liveBindingForm.accountId} onClick={bindLiveAccount} />
-          </div>
-        </div>
-      </div>
-    </div>
+      </ModalFormGrid>
+
+      <ModalNotice tone="info">
+        sandbox=true 时默认从 <code>.env</code> 读取 <code>BINANCE_TESTNET_API_KEY</code> / <code>BINANCE_TESTNET_API_SECRET</code>。
+      </ModalNotice>
+
+      <ModalActions>
+        <Button
+          variant="bento"
+          className="h-10 rounded-xl px-5 font-black"
+          disabled={liveBindAction || !liveBindingForm.accountId}
+          onClick={bindLiveAccount}
+        >
+          {liveBindAction ? "Binding..." : "Bind Live Adapter"}
+        </Button>
+      </ModalActions>
+    </SettingsModalFrame>
   );
 }

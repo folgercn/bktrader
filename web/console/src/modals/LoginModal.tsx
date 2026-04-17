@@ -1,6 +1,17 @@
-import React from 'react';
-import { ActionButton } from '../components/ui/ActionButton';
-import { AuthSession, LoginForm } from '../types/domain';
+import React from "react";
+
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { AuthSession, LoginForm } from "../types/domain";
+import {
+  ModalActions,
+  ModalField,
+  ModalFormGrid,
+  ModalMetaItem,
+  ModalMetaStrip,
+  ModalNotice,
+  SettingsModalFrame,
+} from "./modal-frame";
 
 interface LoginModalProps {
   authSession: AuthSession | null;
@@ -17,52 +28,55 @@ export function LoginModal({
   loginForm,
   loginAction,
   setLoginForm,
-  login
+  login,
 }: LoginModalProps) {
-  if (authSession) return null;
-
   return (
-    <div className="modal-overlay">
-      <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
-        <div className="panel-header panel-header-tight">
-          <div>
-            <p className="panel-kicker">Authentication</p>
-            <h3>登录平台 API</h3>
-          </div>
-        </div>
-        <div className="backtest-form modal-form">
-          {error ? <div className="modal-error">{error}</div> : null}
-          <div className="form-grid">
-            <label className="form-field">
-              <span>Username</span>
-              <input
-                value={loginForm.username}
-                onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
-                placeholder="admin"
-              />
-            </label>
-            <label className="form-field">
-              <span>Password</span>
-              <input
-                type="password"
-                value={loginForm.password}
-                onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
-                placeholder="change-this-password"
-              />
-            </label>
-          </div>
-          <div className="backtest-notes notes-compact">
-            <div className="note-item">当前页面需要 Bearer token 才能加载账户、持仓和交易监控。</div>
-          </div>
-          <div className="backtest-actions inline-actions">
-            <ActionButton
-              label={loginAction ? "登录中..." : "登录"}
-              disabled={loginAction || !loginForm.username.trim() || !loginForm.password}
-              onClick={login}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+    <SettingsModalFrame
+      open={!authSession}
+      onOpenChange={() => {}}
+      kicker="Authentication"
+      title="登录平台 API"
+      description="当前控制台需要 Bearer token 才能加载账户、持仓和交易监控。"
+      className="max-w-[min(560px,calc(100vw-2rem))]"
+      showClose={false}
+    >
+      {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
+
+      <ModalMetaStrip>
+        <ModalMetaItem label="Mode" value="Protected Session" />
+        <ModalMetaItem label="Access" value="Bearer Token Required" />
+      </ModalMetaStrip>
+
+      <ModalFormGrid>
+        <ModalField label="Username">
+          <Input
+            value={loginForm.username}
+            onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
+            placeholder="admin"
+            className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
+          />
+        </ModalField>
+        <ModalField label="Password">
+          <Input
+            type="password"
+            value={loginForm.password}
+            onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+            placeholder="change-this-password"
+            className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
+          />
+        </ModalField>
+      </ModalFormGrid>
+
+      <ModalActions>
+        <Button
+          variant="bento"
+          className="h-10 rounded-xl px-5 font-black"
+          disabled={loginAction || !loginForm.username.trim() || !loginForm.password}
+          onClick={login}
+        >
+          {loginAction ? "登录中..." : "登录"}
+        </Button>
+      </ModalActions>
+    </SettingsModalFrame>
   );
 }

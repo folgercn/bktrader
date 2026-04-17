@@ -154,17 +154,17 @@ export function LogStage() {
   }, [snapshot, logType, levelFilter, searchQuery]);
 
   return (
-    <div className="flex flex-col h-full bg-[#f3f0e7]">
+    <div className="flex h-full flex-col bg-[var(--bk-canvas)]">
       {/* 顶部过滤器 - 采用熟悉的奶油色面板风格 */}
-      <header className="px-6 py-4 border-b border-[#d8cfba] bg-[var(--panel)] backdrop-blur-md shrink-0 flex items-center justify-between gap-4 z-20 shadow-sm">
+      <header className="z-20 flex shrink-0 items-center justify-between gap-4 border-b border-[var(--bk-border)] bg-[var(--bk-surface)] px-6 py-4 shadow-sm backdrop-blur-md">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-             <Filter size={14} className="text-[#687177]" />
+             <Filter size={14} className="text-[var(--bk-text-muted)]" />
              <Select value={logType} onValueChange={(val) => setLogType(val as any)}>
-               <SelectTrigger className="w-32 h-8 text-[11px] border-[#d8cfba] bg-white/50 text-[#1f2328]">
+               <SelectTrigger tone="bento" className="h-8 w-32 bg-[var(--bk-surface-faint)] text-[11px] text-[var(--bk-text-primary)]">
                  <SelectValue placeholder="来源" />
                </SelectTrigger>
-               <SelectContent className="bg-[#fffbf2] border-[#d8cfba]">
+               <SelectContent tone="bento" className="bg-[var(--bk-surface-overlay-strong)]">
                  <SelectItem value="all">所有来源</SelectItem>
                  <SelectItem value="alert">异常告警</SelectItem>
                  <SelectItem value="notification">通知</SelectItem>
@@ -175,12 +175,12 @@ export function LogStage() {
           </div>
 
           <div className="flex items-center gap-2">
-             <Zap size={14} className="text-[#687177]" />
+             <Zap size={14} className="text-[var(--bk-text-muted)]" />
              <Select value={levelFilter} onValueChange={(val) => setLevelFilter(val as any)}>
-               <SelectTrigger className="w-32 h-8 text-[11px] border-[#d8cfba] bg-white/50 text-[#1f2328]">
+               <SelectTrigger tone="bento" className="h-8 w-32 bg-[var(--bk-surface-faint)] text-[11px] text-[var(--bk-text-primary)]">
                  <SelectValue placeholder="等级" />
                </SelectTrigger>
-               <SelectContent className="bg-[#fffbf2] border-[#d8cfba]">
+               <SelectContent tone="bento" className="bg-[var(--bk-surface-overlay-strong)]">
                  <SelectItem value="all">所有等级</SelectItem>
                  <SelectItem value="critical">严重 (Critical)</SelectItem>
                  <SelectItem value="warning">警告 (Warning)</SelectItem>
@@ -190,10 +190,10 @@ export function LogStage() {
           </div>
 
           <div className="flex items-center gap-2 w-64">
-            <Search size={14} className="text-[#687177]" />
+            <Search size={14} className="text-[var(--bk-text-muted)]" />
             <Input 
               placeholder="搜索日志..." 
-              className="h-8 text-[11px] border-[#d8cfba] bg-white/50 text-[#1f2328] focus-visible:ring-[#0e6d60]"
+              className="h-8 border-[var(--bk-border)] bg-[var(--bk-surface-faint)] text-[11px] text-[var(--bk-text-primary)]"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -202,13 +202,13 @@ export function LogStage() {
 
         <div className="flex items-center gap-2">
           <Button 
-            variant="outline"
+            variant="bento-outline"
             size="sm"
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`h-8 text-[11px] gap-2 border-[#d8cfba] transition-all ${
+            className={`h-8 gap-2 text-[11px] transition-all ${
               autoRefresh 
-                ? 'bg-[#d9eee8] text-[#0e6d60] hover:bg-[#c9ded8]' 
-                : 'bg-white/50 text-[#687177]'
+                ? 'border-[var(--bk-border-accent)] bg-[var(--bk-status-success-soft)] text-[var(--bk-status-success)] hover:bg-[color-mix(in_srgb,var(--bk-status-success-soft)_85%,white)]' 
+                : 'bg-[var(--bk-surface-faint)] text-[var(--bk-text-muted)]'
             }`}
           >
             {autoRefresh ? <Pause size={12} /> : <Play size={12} />}
@@ -216,9 +216,9 @@ export function LogStage() {
           </Button>
           
           <Button
-             variant="ghost"
+             variant="bento-ghost"
              size="icon"
-             className="h-8 w-8 text-[#687177] hover:bg-white/50"
+             className="h-8 w-8 text-[var(--bk-text-muted)] hover:bg-[var(--bk-surface-faint)]"
              onClick={() => setSnapshot(processedEvents)}
           >
             <RefreshCcw size={14} />
@@ -230,7 +230,7 @@ export function LogStage() {
       <div className="flex-1 min-h-0 relative">
         <div className="absolute inset-0 overflow-y-auto p-6 flex flex-col gap-3">
           {filteredEvents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-96 text-[#687177] gap-3 opacity-40">
+            <div className="flex h-96 flex-col items-center justify-center gap-3 text-[var(--bk-text-muted)] opacity-40">
               <Terminal size={64} />
               <p className="text-sm font-bold">没有匹配的日志项</p>
             </div>
@@ -247,24 +247,24 @@ export function LogStage() {
 
 function LogEntry({ log }: { log: ConsoleLogEvent }) {
   const levelShadows = {
-    critical: "border-rose-200 bg-rose-50 shadow-sm",
-    warning: "border-amber-200 bg-amber-50 shadow-sm",
-    info: "border-[#d8cfba] bg-[#fff8ea] shadow-sm",
-    debug: "border-zinc-200 bg-zinc-50",
+    critical: "border-[var(--bk-status-danger)]/20 bg-[color:color-mix(in_srgb,var(--bk-status-danger)_8%,transparent)] shadow-sm",
+    warning: "border-[var(--bk-status-warning)]/20 bg-[color:color-mix(in_srgb,var(--bk-status-warning)_10%,transparent)] shadow-sm",
+    info: "border-[var(--bk-border)] bg-[var(--bk-surface-strong)] shadow-sm",
+    debug: "border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)]",
   };
 
   const textColors = {
-    critical: "text-rose-900",
-    warning: "text-amber-900",
-    info: "text-[#1f2328]",
-    debug: "text-[#687177]",
+    critical: "text-[var(--bk-status-danger)]",
+    warning: "text-[var(--bk-status-warning)]",
+    info: "text-[var(--bk-text-primary)]",
+    debug: "text-[var(--bk-text-muted)]",
   };
 
   const sourceIcons = {
-    alert: <ShieldAlert size={16} className="text-rose-600" />,
-    notification: <Bell size={16} className="text-[#0e6d60]" />,
-    timeline: <Activity size={16} className="text-emerald-600" />,
-    system: <Terminal size={16} className="text-zinc-600" />,
+    alert: <ShieldAlert size={16} className="text-[var(--bk-status-danger)]" />,
+    notification: <Bell size={16} className="text-[var(--bk-status-success)]" />,
+    timeline: <Activity size={16} className="text-[var(--bk-status-success)]" />,
+    system: <Terminal size={16} className="text-[var(--bk-text-secondary)]" />,
   };
 
   const sourceLabels = {
@@ -278,12 +278,12 @@ function LogEntry({ log }: { log: ConsoleLogEvent }) {
     <div className={`group flex flex-col gap-2 p-4 rounded-[20px] border transition-all hover:translate-x-1 ${levelShadows[log.level]}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-           <div className="p-2 rounded-xl bg-white/80 border border-inherit shadow-inner">
+           <div className="rounded-xl border border-inherit bg-[var(--bk-surface)]/85 p-2 shadow-inner">
              {sourceIcons[log.source]}
            </div>
            <div>
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-[9px] font-bold uppercase tracking-widest text-[#687177]">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--bk-text-muted)]">
                   {sourceLabels[log.source]}
                 </span>
                 <Badge variant="outline" className={`text-[8px] h-4 border-inherit px-1 py-0 font-mono ${textColors[log.level]}`}>
@@ -295,7 +295,7 @@ function LogEntry({ log }: { log: ConsoleLogEvent }) {
               </h4>
            </div>
         </div>
-        <span className="shrink-0 text-[10px] font-mono font-bold text-[#687177] opacity-60">
+        <span className="shrink-0 text-[10px] font-mono font-bold text-[var(--bk-text-muted)] opacity-60">
           {formatFullLogTime(log.eventTime)}
         </span>
       </div>
@@ -306,7 +306,7 @@ function LogEntry({ log }: { log: ConsoleLogEvent }) {
         </p>
 
         {log.metadata && (
-          <div className="mt-3 text-[10px] font-mono p-3 bg-black/5 rounded-xl border border-black/5 text-zinc-700 hidden group-hover:block max-h-48 overflow-y-auto shadow-inner">
+          <div className="mt-3 hidden max-h-48 overflow-y-auto rounded-xl border border-[var(--bk-border-soft)] bg-[color:color-mix(in_srgb,var(--bk-text-primary)_4%,transparent)] p-3 font-mono text-[10px] text-[var(--bk-text-secondary)] shadow-inner group-hover:block">
              {JSON.stringify(log.metadata, null, 2)}
           </div>
         )}

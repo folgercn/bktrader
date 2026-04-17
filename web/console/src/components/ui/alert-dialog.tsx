@@ -39,9 +39,11 @@ function AlertDialogOverlay({
 function AlertDialogContent({
   className,
   size = "default",
+  tone = "default",
   ...props
 }: AlertDialogPrimitive.Popup.Props & {
   size?: "default" | "sm"
+  tone?: "default" | "bento"
 }) {
   return (
     <AlertDialogPortal>
@@ -49,8 +51,11 @@ function AlertDialogContent({
       <AlertDialogPrimitive.Popup
         data-slot="alert-dialog-content"
         data-size={size}
+        data-tone={tone}
         className={cn(
-          "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl p-4 duration-100 outline-none data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "data-[tone=default]:bg-popover data-[tone=default]:text-popover-foreground data-[tone=default]:ring-1 data-[tone=default]:ring-foreground/10",
+          "data-[tone=bento]:bg-[var(--bk-surface-strong)] data-[tone=bento]:text-[var(--bk-text-primary)] data-[tone=bento]:shadow-[var(--bk-shadow-card)] data-[tone=bento]:ring-1 data-[tone=bento]:ring-[var(--bk-border-strong)]",
           className
         )}
         {...props}

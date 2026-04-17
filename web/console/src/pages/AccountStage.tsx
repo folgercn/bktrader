@@ -2,9 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { HelpCircle, Zap, Edit3, Square, Trash2, Play, ArrowRight, ShieldCheck, Activity, RotateCw, AlertTriangle } from 'lucide-react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
-import { ActionButton } from '../components/ui/ActionButton';
-import { SimpleTable } from '../components/ui/SimpleTable';
-import { StatusPill } from '../components/ui/StatusPill';
 import { SignalBarChart } from '../components/charts/SignalBarChart';
 import { formatTime, formatMaybeNumber, shrink } from '../utils/format';
 import { 
@@ -65,6 +62,14 @@ import {
 } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 import { Separator } from "../components/ui/separator";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 
 interface AccountStageProps {
   logout: () => void;
@@ -303,40 +308,40 @@ export function AccountStage({
   }
 
   return (
-    <div className="absolute inset-0 overflow-y-auto p-8 space-y-8 bg-[#f3f0e7]">
+    <div className="absolute inset-0 overflow-y-auto space-y-8 bg-[var(--bk-canvas)] p-8">
       {/* 顶部总控 - 扁平化重构 */}
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-sm rounded-[24px] overflow-hidden">
+      <Card tone="bento" className="overflow-hidden rounded-[24px] border border-[var(--bk-border-strong)] shadow-sm">
         <div className="py-3 px-6 flex flex-col md:flex-row items-center justify-between gap-4">
            <div className="flex items-center gap-6 overflow-hidden">
               <div className="shrink-0">
-                <p className="text-[#0e6d60] text-[9px] font-black uppercase tracking-widest font-mono mb-0.5">Control Center</p>
-                <h2 className="text-lg font-black text-[#1f2328] tracking-tight whitespace-nowrap">账户与信号实盘总控</h2>
+                <p className="mb-0.5 font-mono text-[9px] font-black uppercase tracking-widest text-[var(--bk-status-success)]">Control Center</p>
+                <h2 className="whitespace-nowrap text-lg font-black tracking-tight text-[var(--bk-text-primary)]">账户与信号实盘总控</h2>
               </div>
               
-              <Separator orientation="vertical" className="h-8 bg-[#d8cfba]/40 hidden lg:block" />
+              <Separator orientation="vertical" className="hidden h-8 bg-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] lg:block" />
               
-              <div className="hidden lg:flex items-center gap-2 h-8 px-3 rounded-xl bg-[#fffbf2] border border-[#d8cfba]/50 transition-all">
-                <span className="text-[9px] font-black text-[#687177] uppercase opacity-40">Live:</span>
-                <span className="text-[10px] font-black text-[#1f2328]">{quickLiveAccount?.name ?? "--"}</span>
-                <Badge variant="outline" className="text-[8px] h-3.5 border-[#d8cfba] text-[#0e6d60] font-black lowercase">{quickLiveAccount?.status ?? "no_state"}</Badge>
+              <div className="hidden h-8 items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--bk-border)_50%,transparent)] bg-[var(--bk-surface-strong)] px-3 transition-all lg:flex">
+                <span className="text-[9px] font-black uppercase text-[var(--bk-text-muted)] opacity-40">Live:</span>
+                <span className="text-[10px] font-black text-[var(--bk-text-primary)]">{quickLiveAccount?.name ?? "--"}</span>
+                <Badge variant="success" className="h-3.5 text-[8px] font-black lowercase">{quickLiveAccount?.status ?? "no_state"}</Badge>
               </div>
            </div>
            
            <div className="flex items-center gap-2">
-              <div className="flex items-center p-1 rounded-xl bg-white/40 border border-[#d8cfba]/20">
+              <div className="flex items-center rounded-xl border border-[color-mix(in_srgb,var(--bk-border)_20%,transparent)] bg-[var(--bk-surface-faint)] p-1">
                 <Button 
-                  variant="ghost" 
+                  variant="bento-ghost" 
                   size="sm" 
-                  className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none" 
+                  className="h-8 rounded-lg px-4 text-[10px] font-black shadow-none hover:bg-[var(--bk-surface)]" 
                   onClick={openLiveAccountModal}
                 >
                   新建账户
                 </Button>
-                <Separator orientation="vertical" className="h-4 bg-[#d8cfba]/30 mx-1" />
+                <Separator orientation="vertical" className="mx-1 h-4 bg-[color-mix(in_srgb,var(--bk-border)_30%,transparent)]" />
                 <Button 
-                   variant="ghost" 
+                   variant="bento-ghost" 
                    size="sm" 
-                   className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none"
+                   className="h-8 rounded-lg px-4 text-[10px] font-black shadow-none hover:bg-[var(--bk-surface)]"
                    disabled={!quickLiveAccountId}
                    onClick={() => {
                      if (quickLiveAccountId) selectQuickLiveAccount(quickLiveAccountId);
@@ -345,11 +350,11 @@ export function AccountStage({
                 >
                   绑定适配器
                 </Button>
-                <Separator orientation="vertical" className="h-4 bg-[#d8cfba]/30 mx-1" />
+                <Separator orientation="vertical" className="mx-1 h-4 bg-[color-mix(in_srgb,var(--bk-border)_30%,transparent)]" />
                 <Button 
-                   variant="ghost" 
+                   variant="bento-ghost" 
                    size="sm" 
-                   className="h-8 px-4 text-[10px] font-black text-[#1f2328] rounded-lg hover:bg-white shadow-none"
+                   className="h-8 rounded-lg px-4 text-[10px] font-black shadow-none hover:bg-[var(--bk-surface)]"
                    disabled={!quickLiveAccountId}
                    onClick={() => {
                      if (quickLiveAccountId) selectQuickLiveAccount(quickLiveAccountId);
@@ -364,14 +369,14 @@ export function AccountStage({
       </Card>
 
       {/* Workflow 引导区域 */}
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+      <Card tone="bento" className="rounded-[24px] shadow-[var(--bk-shadow-card)]">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Step by Step</p>
-              <CardTitle className="text-lg font-black text-[#1f2328]">建立一条可运行的实盘链路</CardTitle>
+              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--bk-status-success)]">Step by Step</p>
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">建立一条可运行的实盘链路</CardTitle>
             </div>
-            <Activity size={20} className="text-[#d8cfba] opacity-50" />
+            <Activity size={20} className="text-[var(--bk-border)] opacity-50" />
           </div>
         </CardHeader>
         <CardContent>
@@ -381,48 +386,48 @@ export function AccountStage({
                 key={step.key} 
                 className={`relative p-4 rounded-[20px] border transition-all ${
                   step.status === "done" 
-                    ? "bg-[#d9eee8] border-[#0e6d60]/20" 
+                    ? "bg-[var(--bk-status-success-soft)] border-[color:color-mix(in_srgb,var(--bk-status-success)_20%,transparent)]" 
                     : step.status === "current" 
-                      ? "bg-[#fff8ea] border-[#d8cfba] shadow-sm" 
-                      : "bg-[#f8f6f0] border-transparent opacity-60"
+                      ? "bg-[var(--bk-surface-strong)] border-[var(--bk-border)] shadow-sm" 
+                      : "bg-[var(--bk-surface-muted)]/45 border-transparent opacity-60"
                 }`}
               >
                 <div className="flex items-center justify-between mb-3">
                    <div className={`flex items-center justify-center w-6 h-6 rounded-lg text-[10px] font-bold border ${
-                     step.status === "done" ? "bg-[#0e6d60] text-white border-transparent" : "bg-white border-[#d8cfba] text-[#1f2328]"
+                     step.status === "done" ? "bg-[var(--bk-status-success)] text-[var(--bk-canvas)] border-transparent" : "bg-[var(--bk-surface)] border-[var(--bk-border)] text-[var(--bk-text-primary)]"
                    }`}>
                      {index + 1}
                    </div>
                    <Badge variant="outline" className={`text-[9px] h-4 border-inherit font-bold ${
-                     step.status === "done" ? "text-[#0e6d60]" : step.status === "current" ? "text-amber-700 font-black" : "text-[#687177]"
+                     step.status === "done" ? "text-[var(--bk-status-success)]" : step.status === "current" ? "text-[var(--bk-status-warning)] font-black" : "text-[var(--bk-text-muted)]"
                    }`}>
                      {step.status === "done" ? "已完成" : step.status === "current" ? "进行中" : "待处理"}
                    </Badge>
                 </div>
-                <h4 className={`text-sm font-black mb-1.5 ${step.status === "pending" ? "text-[#687177]" : "text-[#1f2328]"}`}>{step.title}</h4>
-                <p className="text-xs leading-relaxed text-[#687177] font-medium">{step.detail}</p>
+                <h4 className={`mb-1.5 text-sm font-black ${step.status === "pending" ? "text-[var(--bk-text-muted)]" : "text-[var(--bk-text-primary)]"}`}>{step.title}</h4>
+                <p className="text-xs font-medium leading-relaxed text-[var(--bk-text-muted)]">{step.detail}</p>
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
 
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+      <Card tone="bento" className="rounded-[24px] shadow-[var(--bk-shadow-card)]">
         <CardHeader className="pb-4 flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div>
-              <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Step 1 / Accounts</p>
-              <CardTitle className="text-lg font-black text-[#1f2328]">第一步：准备账户</CardTitle>
+              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--bk-status-success)]">Step 1 / Accounts</p>
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">第一步：准备账户</CardTitle>
             </div>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <HelpCircle size={14} className="text-[#687177] cursor-help hover:text-[#0e6d60] transition-colors" />
+                  <HelpCircle size={14} className="cursor-help text-[var(--bk-text-muted)] transition-colors hover:text-[var(--bk-status-success)]" />
                 </TooltipTrigger>
-                <TooltipContent className="w-80 p-4 border-[#d8cfba] bg-[#fffbf2] shadow-xl rounded-xl">
+                <TooltipContent className="w-80 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-4 shadow-xl">
                   <div className="space-y-3">
-                    <p className="text-[10px] text-[#0e6d60] uppercase font-bold">账户准备指南</p>
-                    <div className="space-y-2 text-[11px] text-[#1f2328] leading-relaxed">
+                    <p className="text-[10px] font-bold uppercase text-[var(--bk-status-success)]">账户准备指南</p>
+                    <div className="space-y-2 text-[11px] leading-relaxed text-[var(--bk-text-primary)]">
                       <p>• <strong>适配器绑定</strong>：账户需绑定具体的交易所适配器（如 Binance-Live）才能与实盘环境交互。</p>
                       <p>• <strong>数据同步</strong>：实盘账户需定期点击同步，以刷新订单、成交和资产快照。</p>
                       <p>• <strong>环境预检</strong>：系统会自动检查网络延迟、API 权限和资产充足度。</p>
@@ -432,7 +437,7 @@ export function AccountStage({
               </Tooltip>
             </TooltipProvider>
           </div>
-          <Button variant="ghost" size="sm" className="text-[#0e6d60] font-bold h-8" onClick={openLiveAccountModal}>
+          <Button variant="bento-ghost" size="sm" className="h-8 font-bold text-[var(--bk-status-success)]" onClick={openLiveAccountModal}>
             + 新建账户
           </Button>
         </CardHeader>
@@ -466,70 +471,71 @@ export function AccountStage({
                 const accountDetailOpen = expandedAccountId === account.id;
 
                 return (
-                  <div key={account.id} className="group border border-[#d8cfba] bg-[#fff8ea] rounded-[24px] overflow-hidden shadow-sm hover:shadow-xl hover:translate-y-[-2px] transition-all duration-300">
+                  <div key={account.id} className="group overflow-hidden rounded-[24px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] shadow-sm transition-all duration-300 hover:translate-y-[-2px] hover:shadow-xl">
                     <div className="flex flex-col lg:flex-row items-stretch">
                        {/* 左侧：身份与环境状态 (Identity & Context) */}
-                       <div className="p-6 lg:w-1/3 xl:w-1/4 space-y-4 border-r border-[#d8cfba]/30">
+                       <div className="space-y-4 border-r border-[color-mix(in_srgb,var(--bk-border)_30%,transparent)] p-6 lg:w-1/3 xl:w-1/4">
                           <div className="flex items-center gap-4">
-                             <div className="w-12 h-12 rounded-2xl bg-white border-2 border-[#d8cfba] group-hover:border-[#1f2328] flex items-center justify-center font-black text-xl text-[#0e6d60] transition-colors shadow-sm shrink-0">
+                             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xl font-black text-[var(--bk-status-success)] shadow-sm transition-colors group-hover:border-[var(--bk-text-primary)]">
                                {account.exchange?.charAt(0) || "A"}
                              </div>
                              <div className="space-y-1 min-w-0">
-                                <h4 className="text-lg font-black text-[#1f2328] tracking-tight truncate">{account.name}</h4>
+                                <h4 className="truncate text-lg font-black tracking-tight text-[var(--bk-text-primary)]">{account.name}</h4>
                                 <div className="flex flex-wrap gap-1.5">
-                                   <Badge variant="outline" className="text-[10px] h-4.5 border-[#d8cfba] bg-white text-[#687177] font-bold">{account.exchange}</Badge>
-                                   <Badge variant="outline" className="text-[10px] h-4.5 border-[#d8cfba] bg-white text-[#687177] font-bold uppercase">{String(binding.adapterKey ?? "NO_ADAPTER")}</Badge>
+                                   <Badge variant="neutral" className="h-4.5 bg-[var(--bk-surface)] text-[10px] font-bold text-[var(--bk-text-muted)]">{account.exchange}</Badge>
+                                   <Badge variant="neutral" className="h-4.5 bg-[var(--bk-surface)] text-[10px] font-bold uppercase text-[var(--bk-text-muted)]">{String(binding.adapterKey ?? "NO_ADAPTER")}</Badge>
                                 </div>
                              </div>
                           </div>
                           
                           <div className="flex items-center gap-2 pt-1">
-                             <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm ${activeRuntimeReadiness.status === 'ready' ? 'bg-[#d9eee8] text-[#0e6d60]' : 'bg-amber-100 text-amber-700'}`}>
-                                <div className={`size-1.5 rounded-full ${activeRuntimeReadiness.status === 'ready' ? 'bg-[#0e6d60] animate-pulse' : 'bg-amber-600'}`} />
+                             <div className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm ${activeRuntimeReadiness.status === 'ready' ? 'bg-[var(--bk-status-success-soft)] text-[var(--bk-status-success)]' : 'bg-[var(--bk-status-warning-soft)] text-[var(--bk-status-warning)]'}`}>
+                                <div className={`size-1.5 rounded-full ${activeRuntimeReadiness.status === 'ready' ? 'bg-[var(--bk-status-success)] animate-pulse' : 'bg-amber-600'}`} />
                                 环境：{statusLabelZh(activeRuntimeReadiness.status)}
                              </div>
-                             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#d8cfba] text-[10px] font-black uppercase text-[#687177] shadow-sm">
+                             <div className="flex items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--bk-text-muted)] shadow-sm">
                                 预检：{statusLabelZh(livePreflight.status)}
                              </div>
                           </div>
                        </div>
 
-                       <div className="flex-1 bg-white/40 p-6 flex flex-col justify-center border-r border-[#d8cfba]/30">
+                       <div className="flex flex-1 flex-col justify-center border-r border-[color-mix(in_srgb,var(--bk-border)_30%,transparent)] bg-[var(--bk-surface-faint)] p-6">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
-                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Net Equity</span>
-                                <p className="text-xl font-mono font-black text-[#0e6d60] tracking-tighter tabular-nums">{summary ? formatMaybeNumber(summary.netEquity) : "--"}</p>
+                             <div className="rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-muted)] p-3.5 shadow-sm transition-all hover:border-[var(--bk-text-primary)] hover:bg-[var(--bk-surface)]">
+                                <span className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-60">Net Equity</span>
+                                <p className="font-mono text-xl font-black tracking-tighter text-[var(--bk-status-success)] tabular-nums">{summary ? formatMaybeNumber(summary.netEquity) : "--"}</p>
                              </div>
-                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
-                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Unrealized PnL</span>
-                                <p className={`text-xl font-mono font-black tracking-tighter tabular-nums ${summary && summary.unrealizedPnl >= 0 ? 'text-[#0e6d60]' : 'text-rose-600'}`}>
+                             <div className="rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-muted)] p-3.5 shadow-sm transition-all hover:border-[var(--bk-text-primary)] hover:bg-[var(--bk-surface)]">
+                                <span className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-60">Unrealized PnL</span>
+                                <p className={`text-xl font-mono font-black tracking-tighter tabular-nums ${summary && summary.unrealizedPnl >= 0 ? 'text-[var(--bk-status-success)]' : 'text-[var(--bk-status-danger)]'}`}>
                                   {summary ? (summary.unrealizedPnl > 0 ? "+" : "") + formatMaybeNumber(summary.unrealizedPnl) : "--"}
                                 </p>
                              </div>
-                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
-                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Market Price</span>
-                                <p className="text-xl font-mono font-black text-[#1f2328] tracking-tighter tabular-nums">{formatMaybeNumber(activeRuntimeMarket.tradePrice)}</p>
+                             <div className="rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-muted)] p-3.5 shadow-sm transition-all hover:border-[var(--bk-text-primary)] hover:bg-[var(--bk-surface)]">
+                                <span className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-60">Market Price</span>
+                                <p className="font-mono text-xl font-black tracking-tighter text-[var(--bk-text-primary)] tabular-nums">{formatMaybeNumber(activeRuntimeMarket.tradePrice)}</p>
                              </div>
-                             <div className="p-3.5 bg-white/50 rounded-2xl border border-[#d8cfba]/40 hover:bg-white hover:border-[#1f2328] transition-all shadow-sm">
-                                <span className="text-[9px] text-[#687177] uppercase font-black tracking-widest block mb-1.5 opacity-60">Next Advice</span>
-                                <p className="text-[11px] text-[#1f2328] font-black leading-tight uppercase line-clamp-2">{liveNextAction.label}</p>
+                             <div className="rounded-2xl border border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-muted)] p-3.5 shadow-sm transition-all hover:border-[var(--bk-text-primary)] hover:bg-[var(--bk-surface)]">
+                                <span className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-[var(--bk-text-muted)] opacity-60">Next Advice</span>
+                                <p className="line-clamp-2 text-[11px] font-black uppercase leading-tight text-[var(--bk-text-primary)]">{liveNextAction.label}</p>
                              </div>
                           </div>
                           
-                          <div className="mt-4 flex items-start gap-3 text-[10px] text-[#687177] bg-white/80 p-3 rounded-xl border border-[#d8cfba]/40 shadow-inner">
-                             <div className="size-5 rounded-lg bg-[#fff8ea] border border-[#d8cfba] flex items-center justify-center shrink-0">
+                          <div className="mt-4 flex items-start gap-3 rounded-xl border border-[color-mix(in_srgb,var(--bk-border)_40%,transparent)] bg-[var(--bk-surface-soft)] p-3 text-[10px] text-[var(--bk-text-muted)] shadow-inner">
+                             <div className="flex size-5 shrink-0 items-center justify-center rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-strong)]">
                                <HelpCircle size={10} className="opacity-50" />
                              </div>
                              <p className="font-medium leading-relaxed">
-                               <strong className="text-[#1f2328] uppercase text-[9px]">Preflight Feedback:</strong> {livePreflight.reason} · <span className="opacity-70">{shrink(livePreflight.detail)}</span>
+                               <strong className="text-[9px] uppercase text-[var(--bk-text-primary)]">Preflight Feedback:</strong> {livePreflight.reason} · <span className="opacity-70">{shrink(livePreflight.detail)}</span>
                              </p>
                           </div>
                        </div>
 
                        {/* 右侧：操作指挥塔 (Control Tower) */}
-                       <div className="p-6 lg:w-56 bg-white/5 flex flex-col justify-center gap-3">
+                       <div className="bg-[var(--bk-surface-ghost)] p-6 lg:w-56 flex flex-col justify-center gap-3">
                           <Button 
-                            className={`w-full h-11 font-black text-xs shadow-md rounded-xl transition-transform active:scale-95 ${isLiveFlowRunning ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#0e6d60] hover:bg-[#0a5a4f]'}`}
+                            variant={isLiveFlowRunning ? "bento-danger" : "bento"}
+                            className="h-11 w-full rounded-xl text-xs font-black shadow-md transition-transform active:scale-95"
                             disabled={liveFlowAction !== null || liveBindAction || signalRuntimeAction !== null}
                             onClick={() => isLiveFlowRunning ? stopLiveFlow(account.id) : launchLiveFlow(account)}
                           >
@@ -540,15 +546,15 @@ export function AccountStage({
                              )}
                           </Button>
                           <div className="grid grid-cols-2 gap-2">
-                            <Button variant="outline" className="h-9 text-[10px] border-[#d8cfba] bg-white text-[#1f2328] font-black rounded-lg hover:border-[#1f2328] shadow-sm" onClick={() => syncLiveAccount(account.id)}>
+                            <Button variant="bento-outline" className="h-9 rounded-lg bg-[var(--bk-surface)] text-[10px] font-black shadow-sm hover:border-[var(--bk-text-primary)]" onClick={() => syncLiveAccount(account.id)}>
                               同步账户
                             </Button>
-                            <Button variant="outline" className="h-9 text-[10px] border-[#d8cfba] bg-white text-[#1f2328] font-black rounded-lg hover:border-[#1f2328] shadow-sm" onClick={() => setExpandedAccountId((current) => current === account.id ? null : account.id)}>
+                            <Button variant="bento-outline" className="h-9 rounded-lg bg-[var(--bk-surface)] text-[10px] font-black shadow-sm hover:border-[var(--bk-text-primary)]" onClick={() => setExpandedAccountId((current) => current === account.id ? null : account.id)}>
                               {accountDetailOpen ? "隐藏详情" : "账户详情"}
                             </Button>
                           </div>
                           {activeRuntime && (
-                            <Button variant="ghost" className="h-8 text-[10px] text-[#0e6d60]/90 hover:text-[#0e6d60] font-black group-hover:underline" onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}>
+                            <Button variant="bento-ghost" className="h-8 text-[10px] font-black text-[color-mix(in_srgb,var(--bk-status-success)_90%,transparent)] group-hover:underline hover:text-[var(--bk-status-success)]" onClick={() => jumpToSignalRuntimeSession(activeRuntime.id)}>
                               打开运行环境 <ArrowRight size={12} className="ml-1" />
                             </Button>
                           )}
@@ -556,52 +562,52 @@ export function AccountStage({
                     </div>
 
                     {accountDetailOpen && (
-                      <div className="px-5 pb-5 pt-4 border-t border-[#d8cfba]/50 bg-white/50 animate-in slide-in-from-top-2 duration-300">
+                      <div className="animate-in slide-in-from-top-2 border-t border-[color-mix(in_srgb,var(--bk-border)_50%,transparent)] bg-[var(--bk-surface-faint)] px-5 pb-5 pt-4 duration-300">
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
                            <div className="space-y-4">
-                              <h5 className="text-[10px] font-black text-[#687177] uppercase tracking-widest border-l-2 border-[#d8cfba] pl-2">资产分布与保证金 / ASSETS</h5>
+                              <h5 className="border-l-2 border-[var(--bk-border)] pl-2 text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">资产分布与保证金 / ASSETS</h5>
                               <div className="grid grid-cols-3 gap-3">
-                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
-                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Wallet</span>
-                                    <strong className="text-sm text-[#1f2328] tabular-nums">{summary ? formatMaybeNumber(summary.walletBalance) : "--"}</strong>
+                                 <div className="rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface)] p-3 text-center shadow-sm">
+                                    <span className="mb-1 block text-[8px] font-black uppercase text-[var(--bk-text-muted)]">Wallet</span>
+                                    <strong className="text-sm tabular-nums text-[var(--bk-text-primary)]">{summary ? formatMaybeNumber(summary.walletBalance) : "--"}</strong>
                                  </div>
-                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
-                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Margin</span>
-                                    <strong className="text-sm text-[#1f2328] tabular-nums">{summary ? formatMaybeNumber(summary.marginBalance) : "--"}</strong>
+                                 <div className="rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface)] p-3 text-center shadow-sm">
+                                    <span className="mb-1 block text-[8px] font-black uppercase text-[var(--bk-text-muted)]">Margin</span>
+                                    <strong className="text-sm tabular-nums text-[var(--bk-text-primary)]">{summary ? formatMaybeNumber(summary.marginBalance) : "--"}</strong>
                                  </div>
-                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
-                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Available</span>
-                                    <strong className="text-sm text-[#1f2328] tabular-nums">{summary ? formatMaybeNumber(summary.availableBalance) : "--"}</strong>
+                                 <div className="rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface)] p-3 text-center shadow-sm">
+                                    <span className="mb-1 block text-[8px] font-black uppercase text-[var(--bk-text-muted)]">Available</span>
+                                    <strong className="text-sm tabular-nums text-[var(--bk-text-primary)]">{summary ? formatMaybeNumber(summary.availableBalance) : "--"}</strong>
                                  </div>
                               </div>
                            </div>
                            <div className="space-y-4">
-                              <h5 className="text-[10px] font-black text-[#687177] uppercase tracking-widest border-l-2 border-[#d8cfba] pl-2">账户同步状态 / SNAPSHOT</h5>
+                              <h5 className="border-l-2 border-[var(--bk-border)] pl-2 text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">账户同步状态 / SNAPSHOT</h5>
                               <div className="grid grid-cols-3 gap-3">
-                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
-                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Orders</span>
-                                    <strong className="text-sm text-[#1f2328] tabular-nums">{String(syncSnapshot.orderCount ?? "0")}</strong>
+                                 <div className="rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface)] p-3 text-center shadow-sm">
+                                    <span className="mb-1 block text-[8px] font-black uppercase text-[var(--bk-text-muted)]">Orders</span>
+                                    <strong className="text-sm tabular-nums text-[var(--bk-text-primary)]">{String(syncSnapshot.orderCount ?? "0")}</strong>
                                  </div>
-                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
-                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Fills</span>
-                                    <strong className="text-sm text-[#1f2328] tabular-nums">{String(syncSnapshot.fillCount ?? "0")}</strong>
+                                 <div className="rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface)] p-3 text-center shadow-sm">
+                                    <span className="mb-1 block text-[8px] font-black uppercase text-[var(--bk-text-muted)]">Fills</span>
+                                    <strong className="text-sm tabular-nums text-[var(--bk-text-primary)]">{String(syncSnapshot.fillCount ?? "0")}</strong>
                                  </div>
-                                 <div className="p-3 rounded-2xl bg-white border border-[#d8cfba] text-center shadow-sm">
-                                    <span className="block text-[8px] text-[#687177] font-black uppercase mb-1">Positions</span>
-                                    <strong className="text-sm text-[#1f2328] tabular-nums">{String(syncSnapshot.positionCount ?? "0")}</strong>
+                                 <div className="rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface)] p-3 text-center shadow-sm">
+                                    <span className="mb-1 block text-[8px] font-black uppercase text-[var(--bk-text-muted)]">Positions</span>
+                                    <strong className="text-sm tabular-nums text-[var(--bk-text-primary)]">{String(syncSnapshot.positionCount ?? "0")}</strong>
                                  </div>
                               </div>
                            </div>
                            <div className="space-y-4">
-                              <h5 className="text-[10px] font-black text-[#687177] uppercase tracking-widest border-l-2 border-[#d8cfba] pl-2">诊断与事件流 / DIAGNOSTICS</h5>
+                              <h5 className="border-l-2 border-[var(--bk-border)] pl-2 text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">诊断与事件流 / DIAGNOSTICS</h5>
                               <div className="space-y-2">
                                 {buildAlertNotes(liveAlerts).map((item) => (
-                                  <div key={`${account.id}-${item.title}`} className={`text-[10px] p-3 rounded-xl border-l-4 shadow-sm ${item.level === 'critical' ? 'bg-rose-50 border-rose-500 text-rose-800' : 'bg-amber-50 border-amber-500 text-amber-800'}`}>
+                                  <div key={`${account.id}-${item.title}`} className={`text-[10px] p-3 rounded-xl border-l-4 shadow-sm ${item.level === 'critical' ? 'bg-[color:color-mix(in_srgb,var(--bk-status-danger)_8%,transparent)] border-[var(--bk-status-danger)] text-[var(--bk-status-danger)]' : 'bg-[color:color-mix(in_srgb,var(--bk-status-warning)_10%,transparent)] border-[var(--bk-status-warning)] text-[var(--bk-status-warning)]'}`}>
                                     <strong className="uppercase">{item.title}:</strong> {item.detail}
                                   </div>
                                 ))}
                                 {buildSignalActionNotes(activeSignalAction).slice(0, 2).map((line) => (
-                                  <div key={line} className="text-[10px] text-[#687177] pl-3 border-l border-[#d8cfba] py-0.5 italic">{line}</div>
+                                  <div key={line} className="border-l border-[var(--bk-border)] py-0.5 pl-3 text-[10px] italic text-[var(--bk-text-muted)]">{line}</div>
                                 ))}
                               </div>
                            </div>
@@ -613,7 +619,7 @@ export function AccountStage({
               })}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center p-16 border-2 border-dashed border-[#d8cfba] rounded-[32px] text-[#687177] opacity-60">
+            <div className="flex flex-col items-center justify-center rounded-[32px] border-2 border-dashed border-[var(--bk-border)] p-16 text-[var(--bk-text-muted)] opacity-60">
               <Activity size={32} className="mb-4 opacity-20" />
               <p className="text-sm font-black uppercase tracking-widest">暂无活跃实盘账户</p>
               <p className="text-[11px] font-medium mt-1">需先新建账户并绑定交易所适配器</p>
@@ -622,16 +628,16 @@ export function AccountStage({
         </CardContent>
       </Card>
 
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+      <Card tone="bento" className="rounded-[24px] shadow-[var(--bk-shadow-card)]">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Step 2 / Signal Pipeline</p>
-              <CardTitle className="text-lg font-black text-[#1f2328]">第二步：接通信号源并启动运行时</CardTitle>
+              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--bk-status-success)]">Step 2 / Signal Pipeline</p>
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">第二步：接通信号源并启动运行时</CardTitle>
             </div>
-            <div className="flex items-center gap-2 bg-[#fff8ea] px-3 py-1 rounded-full border border-[#d8cfba] text-[10px] font-bold text-[#687177]">
+            <div className="flex items-center gap-2 rounded-full border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] px-3 py-1 text-[10px] font-bold text-[var(--bk-text-muted)]">
                <span>{signalCatalog?.sources?.length ?? 0} 个源</span>
-               <Separator orientation="vertical" className="h-3 bg-[#d8cfba]" />
+               <Separator orientation="vertical" className="h-3 bg-[var(--bk-border)]" />
                <span>{signalRuntimeSessions.length} 个会话</span>
             </div>
           </div>
@@ -640,37 +646,38 @@ export function AccountStage({
           {/* 启动模板区域 */}
           <div className="space-y-4">
              <div className="flex items-center gap-2">
-               <Zap size={16} className="text-amber-500" />
-               <h4 className="text-xs font-black text-[#1f2328] uppercase tracking-wider">2.1 推荐启动模板</h4>
+               <Zap size={16} className="text-[var(--bk-status-warning)]" />
+               <h4 className="text-xs font-black uppercase tracking-wider text-[var(--bk-text-primary)]">2.1 推荐启动模板</h4>
              </div>
              
              {launchTemplates.length > 0 ? (
                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                  {launchTemplates.map((tpl) => (
-                   <div key={tpl.key} className="group p-4 rounded-[20px] border border-[#d8cfba] bg-[#fff8ea] hover:bg-white hover:shadow-lg hover:translate-y-[-2px] transition-all duration-300 flex flex-col justify-between min-h-[160px]">
+                   <div key={tpl.key} className="group flex min-h-[160px] flex-col justify-between rounded-[20px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-4 transition-all duration-300 hover:translate-y-[-2px] hover:bg-[var(--bk-surface)] hover:shadow-lg">
                       <div className="space-y-3">
                          <div className="flex justify-between items-start pt-1">
                              <div className="flex items-center gap-1.5 min-w-0">
-                                <div className="w-1.5 h-1.5 rounded-full bg-[#0e6d60] shrink-0" />
-                                <span className="text-[13px] font-black text-[#1f2328] truncate leading-tight">{tpl.name}</span>
+                                <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bk-status-success)]" />
+                                <span className="truncate text-[13px] font-black leading-tight text-[var(--bk-text-primary)]">{tpl.name}</span>
                              </div>
-                             <Badge variant="outline" className="text-[8px] h-3.5 border-[#d8cfba] bg-white text-[#1f2328] shrink-0 ml-1">
+                             <Badge variant="neutral" className="ml-1 h-3.5 shrink-0 bg-[var(--bk-surface)] text-[8px] text-[var(--bk-text-primary)]">
                                {tpl.symbol}
                              </Badge>
                          </div>
-                         <p className="text-[10px] text-[#687177] leading-relaxed line-clamp-2 font-medium h-9 overflow-hidden">{tpl.description}</p>
+                         <p className="h-9 overflow-hidden text-[10px] font-medium leading-relaxed text-[var(--bk-text-muted)] line-clamp-2">{tpl.description}</p>
                       </div>
                       
                       <div className="space-y-3 pt-2">
                         <div className="flex flex-wrap gap-1">
                           {tpl.strategySignalBindings?.slice(0, 3).map((b: any, idx: number) => (
-                            <Badge key={idx} variant="secondary" className="text-[7px] h-3 px-1 bg-white border-[#d8cfba]/50 text-[#687177] uppercase font-bold tracking-tighter">
+                            <Badge key={idx} variant="neutral" className="h-3 border-[color-mix(in_srgb,var(--bk-border)_50%,transparent)] bg-[var(--bk-surface)] px-1 text-[7px] font-bold uppercase tracking-tighter text-[var(--bk-text-muted)]">
                               {b.role}
                             </Badge>
                           ))}
                         </div>
                         <Button 
-                          className="w-full h-8 bg-white border border-[#d8cfba] text-[#1f2328] hover:bg-[#1f2328] hover:text-white hover:border-transparent text-[10px] font-black transition-all rounded-lg"
+                          variant="bento-outline"
+                          className="h-8 w-full rounded-lg bg-[var(--bk-surface)] text-[10px] font-black transition-all hover:border-transparent hover:bg-[var(--bk-surface-inverse)] hover:text-[var(--bk-text-contrast)]"
                           disabled={launchingTemplate !== null}
                           onClick={() => executeLaunchTemplate(tpl, quickLiveAccountId)}
                         >
@@ -681,68 +688,70 @@ export function AccountStage({
                  ))}
                </div>
              ) : (
-               <div className="p-12 text-center border-2 border-dashed border-[#d8cfba] rounded-[24px]">
-                 <p className="text-xs text-[#687177] font-bold italic opacity-40">正在获取推荐模板...</p>
+               <div className="rounded-[24px] border-2 border-dashed border-[var(--bk-border)] p-12 text-center">
+                 <p className="text-xs font-bold italic text-[var(--bk-text-muted)] opacity-40">正在获取推荐模板...</p>
                </div>
              )}
           </div>
 
-          <Separator className="bg-[#d8cfba]/30" />
+          <Separator className="bg-[color-mix(in_srgb,var(--bk-border)_30%,transparent)]" />
 
           {/* 信号绑定结果表格 */}
           <div className="space-y-4">
-            <h4 className="text-xs font-black text-[#1f2328] uppercase tracking-wider">当前信号绑定结果</h4>
-            <div className="rounded-[18px] border border-[#d8cfba] bg-[#fff8ea] overflow-hidden overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#f8f6f0] border-b border-[#d8cfba]">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[var(--bk-text-primary)]">当前信号绑定结果</h4>
+            <div className="overflow-hidden rounded-[18px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)]">
+              <Table tone="bento">
+                <TableHeader className="bg-[var(--bk-surface-muted)]/45">
+                  <TableRow className="border-[var(--bk-border)] hover:bg-transparent">
                     {["信号源", "角色", "代码 (Symbol)", "周期", "交易所", "状态"].map((h) => (
-                      <th key={h} className="p-3 text-[10px] font-black text-[#687177] uppercase tracking-wider">{h}</th>
+                      <TableHead key={h} className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">
+                        {h}
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#d8cfba]/50">
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-[color-mix(in_srgb,var(--bk-border)_50%,transparent)]">
                   {strategySignalBindings.length > 0 ? (
                     strategySignalBindings.map((item, idx) => (
-<tr key={idx} className="hover:bg-white/50 transition-colors">
-                        <td className="p-3 text-[11px] font-bold text-[#1f2328]">{item.sourceName}</td>
-                        <td className="p-3">
-                          <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white text-[#1f2328]">{item.role}</Badge>
-                        </td>
-                        <td className="p-3 text-[11px] font-mono font-bold text-[#0e6d60]">{item.symbol || "--"}</td>
-                        <td className="p-3 text-[11px] text-[#687177]">{displaySignalBindingTimeframe(item)}</td>
-                        <td className="p-3 text-[11px] text-[#687177]">{item.exchange}</td>
-                        <td className="p-3">
-                          <Badge className={`text-[9px] h-4 bg-white border border-inherit ${item.status === 'READY' ? 'text-[#0e6d60] border-[#0e6d60]/20' : 'text-amber-700'}`}>
+                      <TableRow key={idx} className="transition-colors hover:bg-[var(--bk-surface-faint)]">
+                        <TableCell className="p-3 text-[11px] font-bold text-[var(--bk-text-primary)]">{item.sourceName}</TableCell>
+                        <TableCell className="p-3">
+                          <Badge variant="neutral" className="h-4 bg-[var(--bk-surface)] text-[9px] text-[var(--bk-text-primary)]">{item.role}</Badge>
+                        </TableCell>
+                        <TableCell className="p-3 font-mono text-[11px] font-bold text-[var(--bk-status-success)]">{item.symbol || "--"}</TableCell>
+                        <TableCell className="p-3 text-[11px] text-[var(--bk-text-muted)]">{displaySignalBindingTimeframe(item)}</TableCell>
+                        <TableCell className="p-3 text-[11px] text-[var(--bk-text-muted)]">{item.exchange}</TableCell>
+                        <TableCell className="p-3">
+                          <Badge variant={item.status === 'READY' ? "success" : "neutral"} className={`h-4 bg-[var(--bk-surface)] text-[9px] border ${item.status === 'READY' ? '' : 'text-[var(--bk-status-warning)]'}`}>
                             {technicalStatusLabel(item.status)}
                           </Badge>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))
                   ) : (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-xs text-[#687177] italic">暂无策略绑定信息</td>
-                    </tr>
+                    <TableRow>
+                      <TableCell colSpan={6} className="p-8 text-center text-xs italic text-[var(--bk-text-muted)]">暂无策略绑定信息</TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         </CardContent>
       </Card>
       {/* 信号源目录 - 降噪处理 */}
-      <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+      <Card tone="bento" className="rounded-[24px] shadow-[var(--bk-shadow-card)]">
         <CardHeader className="pb-4 flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <CardTitle className="text-xs font-black text-[#1f2328] uppercase tracking-wider">信号源目录与诊断说明</CardTitle>
+            <CardTitle className="text-xs font-black uppercase tracking-wider text-[var(--bk-text-primary)]">信号源目录与诊断说明</CardTitle>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <HelpCircle size={14} className="text-[#687177] cursor-help" />
+                  <HelpCircle size={14} className="cursor-help text-[var(--bk-text-muted)]" />
                 </TooltipTrigger>
-                <TooltipContent className="w-80 p-4 border-[#d8cfba] bg-[#fffbf2]">
-                  <div className="space-y-3 text-[11px] text-[#1f2328]">
-                    <p className="font-bold text-[#0e6d60]">操作建议</p>
+                <TooltipContent className="w-80 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-4">
+                  <div className="space-y-3 text-[11px] text-[var(--bk-text-primary)]">
+                    <p className="font-bold text-[var(--bk-status-success)]">操作建议</p>
                     {(signalCatalog?.notes ?? []).map((note, idx) => (
                       <p key={idx}>• {note}</p>
                     ))}
@@ -753,57 +762,59 @@ export function AccountStage({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-[18px] border border-[#d8cfba] bg-[#fff8ea] overflow-hidden overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#f8f6f0] border-b border-[#d8cfba]">
+          <div className="overflow-hidden rounded-[18px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)]">
+            <Table tone="bento">
+              <TableHeader className="bg-[var(--bk-surface-muted)]/45">
+                <TableRow className="border-[var(--bk-border)] hover:bg-transparent">
                   {["名称", "交易所", "流类型", "角色", "环境", "传输方式"].map((h) => (
-                    <th key={h} className="p-3 text-[10px] font-black text-[#687177] uppercase tracking-wider">{h}</th>
+                    <TableHead key={h} className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">
+                      {h}
+                    </TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#d8cfba]/50">
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-[color-mix(in_srgb,var(--bk-border)_50%,transparent)]">
                 {signalCatalog?.sources?.length ? (
                   signalCatalog.sources.map((source, idx) => (
-                    <tr key={idx} className="hover:bg-white/50 transition-colors text-[11px]">
-                      <td className="p-3 font-bold text-[#1f2328]">{source.name}</td>
-                      <td className="p-3 text-[#687177]">{source.exchange}</td>
-                      <td className="p-3 text-[#687177]">{source.streamType}</td>
-                      <td className="p-3">
-                         <Badge variant="outline" className="text-[9px] h-4 border-[#d8cfba] bg-white">{source.roles.join(", ")}</Badge>
-                      </td>
-                      <td className="p-3 text-[#687177]">{source.environments.join(", ")}</td>
-                      <td className="p-3 text-[#687177]">{source.transport}</td>
-                    </tr>
+                    <TableRow key={idx} className="transition-colors hover:bg-[var(--bk-surface-faint)] text-[11px]">
+                      <TableCell className="p-3 font-bold text-[var(--bk-text-primary)]">{source.name}</TableCell>
+                      <TableCell className="p-3 text-[var(--bk-text-muted)]">{source.exchange}</TableCell>
+                      <TableCell className="p-3 text-[var(--bk-text-muted)]">{source.streamType}</TableCell>
+                      <TableCell className="p-3">
+                        <Badge variant="neutral" className="h-4 bg-[var(--bk-surface)] text-[9px]">{source.roles.join(", ")}</Badge>
+                      </TableCell>
+                      <TableCell className="p-3 text-[var(--bk-text-muted)]">{source.environments.join(", ")}</TableCell>
+                      <TableCell className="p-3 text-[var(--bk-text-muted)]">{source.transport}</TableCell>
+                    </TableRow>
                   ))
                 ) : (
-                  <tr>
-                    <td colSpan={6} className="p-8 text-center text-xs text-[#687177] italic">信号源目录为空</td>
-                  </tr>
+                  <TableRow>
+                    <TableCell colSpan={6} className="p-8 text-center text-xs italic text-[var(--bk-text-muted)]">信号源目录为空</TableCell>
+                  </TableRow>
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* 运行时策略设置 */}
-        <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <Card tone="bento" className="rounded-[24px] shadow-[var(--bk-shadow-card)]">
           <CardHeader className="pb-4 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <div>
-                <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Step 3 / Policy</p>
-                <CardTitle className="text-lg font-black text-[#1f2328]">第三步：执行策略设置</CardTitle>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--bk-status-success)]">Step 3 / Policy</p>
+                <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">第三步：执行策略设置</CardTitle>
               </div>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
-                    <HelpCircle size={14} className="text-[#687177] cursor-help" />
+                    <HelpCircle size={14} className="cursor-help text-[var(--bk-text-muted)]" />
                   </TooltipTrigger>
-                  <TooltipContent className="w-80 p-4 border-[#d8cfba] bg-[#fffbf2]">
-                    <div className="space-y-3 text-[11px] text-[#1f2328]">
-                      <p className="font-bold text-[#0e6d60]">当前生效阈值</p>
+                  <TooltipContent className="w-80 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-4">
+                    <div className="space-y-3 text-[11px] text-[var(--bk-text-primary)]">
+                      <p className="font-bold text-[var(--bk-status-success)]">当前生效阈值</p>
                       <div className="space-y-1">
                         <p>• 账户同步：{runtimePolicyValueLabel(platformRuntimePolicy?.liveAccountSyncFreshnessSeconds)}</p>
                         <p>• 运行时静默：{runtimePolicyValueLabel(platformRuntimePolicy?.runtimeQuietSeconds)}</p>
@@ -815,34 +826,34 @@ export function AccountStage({
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-             <div className="space-y-5 p-6 rounded-[24px] bg-[#fff8ea] border border-[#d8cfba]">
+             <div className="space-y-5 rounded-[24px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-6">
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">价格新鲜度(秒)</label>
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">价格新鲜度(秒)</label>
                     <Input 
-                      className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm"
+                      className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
                       value={runtimePolicyForm.tradeTickFreshnessSeconds}
                       onChange={(e) => setRuntimePolicyForm(c => ({ ...c, tradeTickFreshnessSeconds: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">同步间隔(秒)</label>
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">同步间隔(秒)</label>
                     <Input 
-                      className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm"
+                      className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
                       value={runtimePolicyForm.liveAccountSyncFreshnessSeconds}
                       onChange={(e) => setRuntimePolicyForm(c => ({ ...c, liveAccountSyncFreshnessSeconds: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-[#687177] uppercase whitespace-nowrap">派发模式</label>
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">派发模式</label>
                     <Select 
                        value={runtimePolicyForm.dispatchMode}
                        onValueChange={(val: any) => setRuntimePolicyForm(c => ({ ...c, dispatchMode: val }))}
                     >
-                       <SelectTrigger className="bg-white border-[#d8cfba] h-9 text-xs font-bold shadow-sm px-2">
+                       <SelectTrigger tone="bento" className="h-9 bg-[var(--bk-surface)] px-2 text-xs font-bold shadow-sm">
                          <SelectValue />
                        </SelectTrigger>
-                       <SelectContent className="bg-white border-[#d8cfba]">
+                       <SelectContent tone="bento" className="bg-[var(--bk-surface)]">
                           <SelectItem value="manual-review" className="text-xs font-bold">人工审核</SelectItem>
                           <SelectItem value="auto-dispatch" className="text-xs font-bold">自动派发</SelectItem>
                        </SelectContent>
@@ -850,7 +861,8 @@ export function AccountStage({
                   </div>
                 </div>
                 <Button 
-                   className="w-full bg-[#0e6d60] hover:bg-[#0a5a4f] text-white font-bold text-xs h-10 shadow-sm"
+                   variant="bento"
+                   className="h-10 w-full text-xs font-bold shadow-sm"
                    disabled={runtimePolicyAction !== null}
                    onClick={updateRuntimePolicy}
                 >
@@ -861,13 +873,13 @@ export function AccountStage({
         </Card>
 
         {/* 实盘会话管理区 */}
-        <Card className="border-[#d8cfba] bg-[var(--panel)] shadow-[var(--shadow)] rounded-[24px]">
+        <Card tone="bento" className="rounded-[24px] shadow-[var(--bk-shadow-card)]">
           <CardHeader className="pb-4 flex flex-row items-center justify-between">
             <div>
-              <p className="text-[#0e6d60] text-[10px] font-bold uppercase tracking-widest font-mono">Operations</p>
-              <CardTitle className="text-lg font-black text-[#1f2328]">实盘会话控制</CardTitle>
+              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--bk-status-success)]">Operations</p>
+              <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">实盘会话控制</CardTitle>
             </div>
-            <Button variant="outline" size="sm" className="h-8 border-[#d8cfba] text-[#1f2328] font-bold text-[10px]" onClick={openMonitorStage}>
+            <Button variant="bento-outline" size="sm" className="h-8 text-[10px] font-bold" onClick={openMonitorStage}>
               打开监控台
             </Button>
           </CardHeader>
@@ -877,40 +889,40 @@ export function AccountStage({
                  validLiveSessions.map((session) => {
                    const isRunning = session.status === "RUNNING";
                    return (
-                     <div key={session.id} className="p-4 rounded-[20px] bg-[#fff8ea] border border-[#d8cfba] flex items-center justify-between hover:bg-white transition-all group">
+                     <div key={session.id} className="group flex items-center justify-between rounded-[20px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-4 transition-all hover:bg-[var(--bk-surface)]">
                         <div className="space-y-1">
                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-black text-[#1f2328]">
+                              <span className="text-sm font-black text-[var(--bk-text-primary)]">
                                 {session.id.length > 28 ? session.id.slice(0, 18) + '...' + session.id.slice(-6) : session.id}
                               </span>
-                              <Badge className={`h-4 text-[8px] ${isRunning ? 'bg-[#0e6d60]' : 'bg-zinc-400'}`}>
+                              <Badge variant={isRunning ? "success" : "neutral"} className={`h-4 text-[8px] ${isRunning ? '' : 'bg-[var(--bk-text-muted)] text-[var(--bk-canvas)] border-transparent'}`}>
                                 {session.status}
                               </Badge>
                            </div>
-                           <p className="text-[10px] text-[#687177] font-mono">{String(getRecord(session.state).symbol || "--")} · {session.strategyId}</p>
+                           <p className="text-[10px] font-mono text-[var(--bk-text-muted)]">{String(getRecord(session.state).symbol || "--")} · {session.strategyId}</p>
                         </div>
                         <div className="flex items-center gap-1">
                            <Button 
-                              variant="ghost" 
+                              variant="bento-ghost" 
                               size="icon" 
-                              className={`h-8 w-8 ${isRunning ? 'text-rose-600' : 'text-[#0e6d60]'}`}
+                              className={`h-8 w-8 ${isRunning ? 'text-[var(--bk-status-danger)]' : 'text-[var(--bk-status-success)]'}`}
                               disabled={liveSessionAction !== null}
                               onClick={() => runLiveSessionAction(session.id, isRunning ? "stop" : "start")}
                             >
                               {isRunning ? <Square size={14} /> : <Play size={14} fill="currentColor" />}
                            </Button>
                            <Button 
-                              variant="ghost" 
+                              variant="bento-ghost" 
                               size="icon" 
-                              className="h-8 w-8 text-[#687177]"
+                              className="h-8 w-8 text-[var(--bk-text-muted)]"
                               onClick={() => openLiveSessionModal(session)}
                             >
                               <Edit3 size={14} />
                            </Button>
                            <Button 
-                              variant="ghost" 
+                              variant="bento-ghost" 
                               size="icon" 
-                              className="h-8 w-8 text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="h-8 w-8 text-[var(--bk-status-danger)] opacity-0 group-hover:opacity-100 transition-opacity"
                               disabled={liveSessionDeleteAction !== null}
                               onClick={() => openConfirm("删除会话？", "确定要彻底删除该实盘会话吗？删除后相关监控快照将无法恢复。", () => deleteLiveSession(session.id))}
                             >
@@ -921,8 +933,8 @@ export function AccountStage({
                    );
                  })
                ) : (
-                 <div className="p-12 text-center border-2 border-dashed border-[#d8cfba] rounded-[24px] opacity-40">
-                    <p className="text-xs text-[#687177] font-bold italic">暂无实盘会话</p>
+                 <div className="rounded-[24px] border-2 border-dashed border-[var(--bk-border)] p-12 text-center opacity-40">
+                    <p className="text-xs font-bold italic text-[var(--bk-text-muted)]">暂无实盘会话</p>
                  </div>
                )}
              </div>
@@ -939,17 +951,18 @@ export function AccountStage({
           if (!open) setConfirmConfig(c => ({ ...c, open: false }));
         }}
       >
-        <AlertDialogContent className="bg-[#fffbf2] border-[#d8cfba] rounded-[32px] p-8 shadow-2xl">
+        <AlertDialogContent tone="bento" className="rounded-[32px] border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-8 shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-xl font-black text-[#1f2328]">{confirmConfig.title}</AlertDialogTitle>
-            <AlertDialogDescription className="text-sm text-[#687177] leading-relaxed py-2">
+            <AlertDialogTitle className="text-xl font-black text-[var(--bk-text-primary)]">{confirmConfig.title}</AlertDialogTitle>
+            <AlertDialogDescription className="py-2 text-sm leading-relaxed text-[var(--bk-text-muted)]">
               {confirmConfig.description}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="pt-6">
             <AlertDialogCancel 
               disabled={liveSessionDeleteAction !== null}
-              className="h-11 px-6 rounded-xl border-[#d8cfba] font-bold text-[#1f2328]"
+              variant="bento-outline"
+              className="h-11 rounded-xl px-6 font-bold"
             >
               取消
             </AlertDialogCancel>
@@ -959,7 +972,8 @@ export function AccountStage({
                 await confirmConfig.onConfirm();
                 setConfirmConfig(c => ({ ...c, open: false }));
               }}
-              className="h-11 px-6 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md"
+              variant="bento-danger"
+              className="h-11 rounded-xl px-6 font-bold shadow-md"
             >
               确 认 执 行
             </Button>
@@ -969,4 +983,3 @@ export function AccountStage({
     </div>
   );
 }
-
