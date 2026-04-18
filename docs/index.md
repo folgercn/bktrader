@@ -14,6 +14,7 @@
 - [llm-project-index.md](llm-project-index.md) - **推荐阅读：深入解读代码目录结构的索引层**。
 - [system-design.md](system-design.md) - 项目早期整体抽象架构。
 - [20260403改进计划_plan.md](20260403改进计划_plan.md) - 记录了平台重构与组件拆解的核心思考。
+- [20260418-live-plan-exhausted-troubleshooting.md](20260418-live-plan-exhausted-troubleshooting.md) - `live session` 长时间不下单且持续 `plan-exhausted` 时的定位手册。
 - [部署与网络架构.md](部署与网络架构.md) - 包含有关容器/负载路由的信息。
 - [cicd-maintenance.md](cicd-maintenance.md) - GitHub Actions 维保说明。
 - [frontend-live-reconcile-collab.md](frontend-live-reconcile-collab.md) - Live 账户全量对账的前端协作文档与 API 接入约定。

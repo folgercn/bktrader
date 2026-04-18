@@ -1660,6 +1660,149 @@ func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexToExitWhenPositionExist
 	}
 }
 
+func TestEnsureLiveExecutionPlanReconcilesExhaustedCachedPlanIndexToCompletionWhenFlat(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"dispatchMode":        "manual-review",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+
+	updatedState := cloneMetadata(session.State)
+	updatedState["planIndex"] = 5
+	updatedState["planLength"] = 8
+	session, err = platform.store.UpdateLiveSessionState(session.ID, updatedState)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}
+	platform.mu.Unlock()
+
+	reconciled, plan, err := platform.ensureLiveExecutionPlan(session)
+	if err != nil {
+		t.Fatalf("ensure live execution plan failed: %v", err)
+	}
+	if len(plan) != 2 {
+		t.Fatalf("expected cached live plan to be preserved, got %d steps", len(plan))
+	}
+	gotIndex, ok := toFloat64(reconciled.State["planIndex"])
+	if !ok || int(gotIndex) != len(plan) {
+		t.Fatalf("expected exhausted cached plan index to reconcile to completion marker, got %v", reconciled.State["planIndex"])
+	}
+	if got := maxIntValue(reconciled.State["planLength"], -1); got != len(plan) {
+		t.Fatalf("expected cached plan length to refresh to current plan length, got %d", got)
+	}
+	if !boolValue(reconciled.State["planIndexRecoveredFromPosition"]) {
+		t.Fatal("expected exhausted plan reconciliation to be recorded in session state")
+	}
+}
+
+func TestEvaluateLiveSessionOnSignalRollsOverFlatSessionWhenPlanExhausted(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"dispatchMode":        "manual-review",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+
+	updatedState := cloneMetadata(session.State)
+	updatedState["planIndex"] = 7
+	session, err = platform.store.UpdateLiveSessionState(session.ID, updatedState)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}
+	platform.mu.Unlock()
+
+	eventTime := time.Date(2026, 4, 18, 2, 0, 0, 0, time.UTC)
+	if err := platform.evaluateLiveSessionOnSignal(session, "", map[string]any{
+		"symbol": "BTCUSDT",
+	}, eventTime); err != nil {
+		t.Fatalf("evaluate live session failed: %v", err)
+	}
+
+	stopped, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session failed: %v", err)
+	}
+	if got := stopped.Status; got != "RUNNING" {
+		t.Fatalf("expected flat exhausted live session to remain running for rollover, got %s", got)
+	}
+	if got := stringValue(stopped.State["lastStrategyEvaluationStatus"]); got != "plan-exhausted" {
+		t.Fatalf("expected lastStrategyEvaluationStatus=plan-exhausted, got %s", got)
+	}
+	gotIndex, ok := toFloat64(stopped.State["planIndex"])
+	if !ok || int(gotIndex) != 0 {
+		t.Fatalf("expected rollover to reset planIndex, got %v", stopped.State["planIndex"])
+	}
+	gotLength, ok := toFloat64(stopped.State["planLength"])
+	if !ok || int(gotLength) != 0 {
+		t.Fatalf("expected rollover to clear current planLength, got %v", stopped.State["planLength"])
+	}
+	if got := stringValue(stopped.State["completedAt"]); got != eventTime.UTC().Format(time.RFC3339) {
+		t.Fatalf("expected completedAt to be recorded at exhaustion time, got %s", got)
+	}
+	if got := stringValue(stopped.State["lastPlanRolloverAt"]); got != eventTime.UTC().Format(time.RFC3339) {
+		t.Fatalf("expected lastPlanRolloverAt to be recorded, got %s", got)
+	}
+	if got := stringValue(stopped.State["lastPlanRolloverReason"]); got != "plan-exhausted" {
+		t.Fatalf("expected lastPlanRolloverReason=plan-exhausted, got %s", got)
+	}
+	platform.mu.Lock()
+	_, cached := platform.livePlans[session.ID]
+	platform.mu.Unlock()
+	if cached {
+		t.Fatal("expected cached live execution plan to be cleared when rollover is scheduled")
+	}
+
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}
+	platform.mu.Unlock()
+
+	rolledForward, plan, err := platform.ensureLiveExecutionPlan(stopped)
+	if err != nil {
+		t.Fatalf("ensure live execution plan after rollover failed: %v", err)
+	}
+	if len(plan) != 2 {
+		t.Fatalf("expected rollover to accept the fresh cached plan, got %d steps", len(plan))
+	}
+	gotIndex, ok = toFloat64(rolledForward.State["planIndex"])
+	if !ok || int(gotIndex) != 0 {
+		t.Fatalf("expected fresh cycle to start at planIndex 0, got %v", rolledForward.State["planIndex"])
+	}
+	gotLength, ok = toFloat64(rolledForward.State["planLength"])
+	if !ok || int(gotLength) != 2 {
+		t.Fatalf("expected fresh cycle to refresh planLength, got %v", rolledForward.State["planLength"])
+	}
+	if _, ok := rolledForward.State["completedAt"]; ok {
+		t.Fatal("expected completedAt to be cleared after fresh plan is available")
+	}
+}
+
 func TestParseBinanceSymbolRules(t *testing.T) {
 	rules := parseBinanceSymbolRules(map[string]any{
 		"symbol": "BTCUSDT",
