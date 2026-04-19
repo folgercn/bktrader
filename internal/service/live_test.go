@@ -361,6 +361,12 @@ func TestBuildLiveExecutionPlanFromMarketDataAcceptsTickExecutionSource(t *testi
 	if err != nil {
 		t.Fatalf("resolve live session parameters failed: %v", err)
 	}
+	if !boolValue(parameters["dir2_zero_initial"]) {
+		t.Fatal("expected live session parameters to default dir2_zero_initial=true")
+	}
+	if got := stringValue(parameters["zero_initial_mode"]); got != strategyZeroInitialModeReentryWindow {
+		t.Fatalf("expected live session zero_initial_mode=%s, got %s", strategyZeroInitialModeReentryWindow, got)
+	}
 	engine, engineKey, err := platform.resolveStrategyEngine(version.ID, parameters)
 	if err != nil {
 		t.Fatalf("resolve strategy engine failed: %v", err)

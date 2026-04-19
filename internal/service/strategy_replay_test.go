@@ -75,6 +75,19 @@ func TestNormalizeBacktestParametersCanonicalizesFiveMinuteSignalTimeframe(t *te
 	}
 }
 
+func TestNormalizeBacktestParametersDefaultsZeroInitialToReentryWindow(t *testing.T) {
+	normalized, err := NormalizeBacktestParameters(map[string]any{})
+	if err != nil {
+		t.Fatalf("expected normalization to succeed, got %v", err)
+	}
+	if !boolValue(normalized["dir2_zero_initial"]) {
+		t.Fatal("expected dir2_zero_initial to default to true")
+	}
+	if got := stringValue(normalized["zero_initial_mode"]); got != strategyZeroInitialModeReentryWindow {
+		t.Fatalf("expected zero_initial_mode=%s, got %s", strategyZeroInitialModeReentryWindow, got)
+	}
+}
+
 func TestBuildSignalBarsSupportsFiveMinuteAggregation(t *testing.T) {
 	minuteBars := make([]candleBar, 0, 12)
 	start := time.Date(2026, 4, 16, 0, 0, 0, 0, time.UTC)
@@ -133,6 +146,9 @@ func TestBuildStrategyReplayConfigUsesUpdatedBaselineDefaults(t *testing.T) {
 	}
 	if cfg.ZeroInitialMode != strategyZeroInitialModeReentryWindow {
 		t.Fatalf("expected zero initial mode %s, got %s", strategyZeroInitialModeReentryWindow, cfg.ZeroInitialMode)
+	}
+	if !cfg.Dir2ZeroInitial {
+		t.Fatal("expected dir2 zero initial to remain enabled by default")
 	}
 }
 
