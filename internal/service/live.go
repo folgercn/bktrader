@@ -2121,7 +2121,7 @@ func alignLivePlanStepToCurrentMarket(
 	if signalBarState == nil {
 		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
-	gate := evaluateSignalBarGate(signalBarState, "", "entry")
+	gate := evaluateSignalBarGate(signalBarState, "", "entry", "")
 	longReady := boolValue(gate["longReady"])
 	shortReady := boolValue(gate["shortReady"])
 	if longReady == shortReady {
