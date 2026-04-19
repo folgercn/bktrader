@@ -188,6 +188,129 @@ func TestAlignLivePlanStepToCurrentMarketKeepsExitForVirtualPosition(t *testing.
 	}
 }
 
+func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBars(t *testing.T) {
+	barStart := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"ma20":      68000.0,
+			"atr14":     900.0,
+			"current": map[string]any{
+				"barStart": barStart.Format(time.RFC3339),
+				"close":    68100.0,
+				"high":     69010.0,
+				"low":      67800.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 68850.0,
+				"low":  67750.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 69000.0,
+				"low":  67600.0,
+			},
+		},
+	}
+	state, gotEvent, gotPrice, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		map[string]any{},
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"long_reentry_atr":  0.1,
+		},
+		signalStates,
+		"BTCUSDT",
+		"1d",
+		map[string]any{},
+		barStart.Add(2*time.Hour),
+		barStart.Add(-48*time.Hour),
+		68950.0,
+		"BUY",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
+		t.Fatalf("expected zero initial reentry override, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if gotPrice != 67840.0 {
+		t.Fatalf("expected long reentry price 67840, got %.2f", gotPrice)
+	}
+	if gotEvent.IsZero() {
+		t.Fatal("expected planned event for zero initial window")
+	}
+	pending := mapValue(state[livePendingZeroInitialWindowStateKey])
+	if stringValue(pending["side"]) != "BUY" {
+		t.Fatalf("expected pending BUY window, got %+v", pending)
+	}
+
+	nextBarStart := barStart.Add(24 * time.Hour)
+	nextBarStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"atr14":     900.0,
+			"current": map[string]any{
+				"barStart": nextBarStart.Format(time.RFC3339),
+				"close":    68200.0,
+				"high":     68800.0,
+				"low":      67820.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 69010.0,
+				"low":  67800.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 68850.0,
+				"low":  67750.0,
+			},
+		},
+	}
+	state, _, _, gotSide, gotRole, gotReason = prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"long_reentry_atr":  0.1,
+		},
+		nextBarStates,
+		"BTCUSDT",
+		"1d",
+		map[string]any{},
+		nextBarStart.Add(2*time.Hour),
+		barStart.Add(-24*time.Hour),
+		68950.0,
+		"BUY",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
+		t.Fatalf("expected pending zero initial window to remain active on next bar, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+
+	expiredState, _, _, _, _, _ := prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"long_reentry_atr":  0.1,
+		},
+		nextBarStates,
+		"BTCUSDT",
+		"1d",
+		map[string]any{},
+		barStart.Add(49*time.Hour),
+		barStart.Add(-72*time.Hour),
+		68950.0,
+		"BUY",
+		"entry",
+		"Initial",
+	)
+	if pending := mapValue(expiredState[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected zero initial window to expire after next bar, got %+v", pending)
+	}
+}
+
 func TestEvaluateSignalBarGateAllowsReentryWithoutInitialBreakout(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "1d",
@@ -419,6 +542,7 @@ func TestEvaluateLiveExitStateTriggersSLForLong(t *testing.T) {
 func TestAdjustLiveExecutionProposalForVirtualInitialWhenZeroInitialEnabled(t *testing.T) {
 	proposal := adjustLiveExecutionProposalForVirtualSemantics(domain.LiveSession{}, map[string]any{
 		"dir2_zero_initial": true,
+		"zero_initial_mode": "position",
 	}, ExecutionProposal{
 		Role:   "entry",
 		Reason: "Initial",
@@ -432,6 +556,20 @@ func TestAdjustLiveExecutionProposalForVirtualInitialWhenZeroInitialEnabled(t *t
 	}
 	if !boolValue(proposal.Metadata["virtualPosition"]) {
 		t.Fatal("expected virtualPosition marker on proposal metadata")
+	}
+}
+
+func TestAdjustLiveExecutionProposalLeavesInitialDispatchableWhenZeroInitialWindowEnabled(t *testing.T) {
+	proposal := adjustLiveExecutionProposalForVirtualSemantics(domain.LiveSession{}, map[string]any{
+		"dir2_zero_initial": true,
+		"zero_initial_mode": "reentry_window",
+	}, ExecutionProposal{
+		Role:   "entry",
+		Reason: "Initial",
+		Status: "dispatchable",
+	})
+	if proposal.Status != "dispatchable" {
+		t.Fatalf("expected initial proposal to remain dispatchable under reentry window mode, got %s", proposal.Status)
 	}
 }
 
@@ -1263,6 +1401,27 @@ func TestNormalizeLiveSessionOverridesIncludesPositionSizing(t *testing.T) {
 	}
 }
 
+func TestNormalizeLiveSessionOverridesIncludesZeroInitialControls(t *testing.T) {
+	overrides := normalizeLiveSessionOverrides(map[string]any{
+		"dir2_zero_initial":               false,
+		"zero_initial_mode":               "position",
+		"trailing_stop_atr":               0.3,
+		"delayed_trailing_activation_atr": 0.5,
+	})
+	if boolValue(overrides["dir2_zero_initial"]) {
+		t.Fatal("expected dir2_zero_initial override to be preserved")
+	}
+	if got := stringValue(overrides["zero_initial_mode"]); got != "position" {
+		t.Fatalf("expected zero_initial_mode=position, got %s", got)
+	}
+	if got := parseFloatValue(overrides["trailing_stop_atr"]); got != 0.3 {
+		t.Fatalf("expected trailing_stop_atr=0.3, got %v", got)
+	}
+	if got := parseFloatValue(overrides["delayed_trailing_activation_atr"]); got != 0.5 {
+		t.Fatalf("expected delayed_trailing_activation_atr=0.5, got %v", got)
+	}
+}
+
 func TestCreateLiveSessionAppliesExecutionOverrides(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
@@ -1659,6 +1818,7 @@ func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexBackToEntryWhenPosition
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
 		"dispatchMode":        "manual-review",
+		"zero_initial_mode":   "position",
 	})
 	if err != nil {
 		t.Fatalf("create live session failed: %v", err)
@@ -1701,6 +1861,7 @@ func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexToExitWhenPositionExist
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
 		"dispatchMode":        "manual-review",
+		"zero_initial_mode":   "position",
 	})
 	if err != nil {
 		t.Fatalf("create live session failed: %v", err)
@@ -1752,6 +1913,7 @@ func TestEnsureLiveExecutionPlanReconcilesExhaustedCachedPlanIndexToCompletionWh
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
 		"dispatchMode":        "manual-review",
+		"zero_initial_mode":   "position",
 	})
 	if err != nil {
 		t.Fatalf("create live session failed: %v", err)
@@ -2401,6 +2563,7 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
 		"dispatchMode":        "manual-review",
+		"zero_initial_mode":   "position",
 	})
 	if err != nil {
 		t.Fatalf("create live session failed: %v", err)
@@ -2427,7 +2590,7 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 		"role":               "trigger",
 		"symbol":             "BTCUSDT",
 		"subscriptionSymbol": "BTCUSDT",
-		"price":              69010.0,
+		"price":              68110.0,
 		"event":              "trade_tick",
 	}
 	err = platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
@@ -2445,7 +2608,7 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 				"streamType":  "trade_tick",
 				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
 				"summary": map[string]any{
-					"price": 69010.0,
+					"price": 68110.0,
 				},
 			},
 			signalKey: map[string]any{
@@ -2506,6 +2669,155 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 	}
 	if got := maxIntValue(updated.State["planIndex"], -1); got != 1 {
 		t.Fatalf("expected planIndex to advance after virtual initial, got %d", got)
+	}
+}
+
+func TestEvaluateLiveSessionOnSignalUsesZeroInitialReentryWindowInsteadOfVirtualInitial(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal failed: %v", err)
+	}
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-trade-tick",
+		"role":      "trigger",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind strategy trigger failed: %v", err)
+	}
+	if _, err := platform.BindAccountSignalSource("live-main", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind account signal failed: %v", err)
+	}
+	if _, err := platform.BindAccountSignalSource("live-main", map[string]any{
+		"sourceKey": "binance-trade-tick",
+		"role":      "trigger",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind account trigger failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"dispatchMode":        "manual-review",
+		"zero_initial_mode":   "reentry_window",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		t.Fatal("expected linked runtime session id")
+	}
+
+	eventTime := time.Date(2026, 4, 7, 9, 0, 0, 0, time.UTC)
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{{
+		EventTime: eventTime.Add(-48 * time.Hour),
+		Price:     69000.0,
+		Side:      "BUY",
+		Role:      "entry",
+		Reason:    "Initial",
+	}}
+	platform.mu.Unlock()
+
+	signalKey := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT")
+	triggerKey := signalBindingMatchKey("binance-trade-tick", "trigger", "BTCUSDT")
+	summary := map[string]any{
+		"role":               "trigger",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"price":              67845.0,
+		"event":              "trade_tick",
+	}
+	err = platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		runtimeSession.Status = "RUNNING"
+		state := cloneMetadata(runtimeSession.State)
+		state["health"] = "healthy"
+		state["lastEventAt"] = eventTime.UTC().Format(time.RFC3339)
+		state["lastHeartbeatAt"] = eventTime.UTC().Format(time.RFC3339)
+		state["lastEventSummary"] = cloneMetadata(summary)
+		state["sourceStates"] = map[string]any{
+			triggerKey: map[string]any{
+				"sourceKey":   "binance-trade-tick",
+				"role":        "trigger",
+				"symbol":      "BTCUSDT",
+				"streamType":  "trade_tick",
+				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
+				"summary": map[string]any{
+					"price": 67845.0,
+				},
+			},
+			signalKey: map[string]any{
+				"sourceKey":   "binance-kline",
+				"role":        "signal",
+				"symbol":      "BTCUSDT",
+				"streamType":  "signal_bar",
+				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
+			},
+		}
+		state["signalBarStates"] = map[string]any{
+			signalKey: map[string]any{
+				"symbol":    "BTCUSDT",
+				"timeframe": "1d",
+				"ma20":      68000.0,
+				"atr14":     900.0,
+				"current": map[string]any{
+					"barStart": eventTime.Truncate(24 * time.Hour).Format(time.RFC3339),
+					"close":    68100.0,
+					"high":     69010.0,
+					"low":      67800.0,
+				},
+				"prevBar1": map[string]any{
+					"high": 68850.0,
+					"low":  67750.0,
+				},
+				"prevBar2": map[string]any{
+					"high": 69000.0,
+					"low":  67600.0,
+				},
+			},
+		}
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = eventTime
+	})
+	if err != nil {
+		t.Fatalf("update runtime state failed: %v", err)
+	}
+
+	if err := platform.evaluateLiveSessionOnSignal(session, runtimeSessionID, summary, eventTime); err != nil {
+		t.Fatalf("evaluate live session failed: %v", err)
+	}
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastDispatchedOrderStatus"]); got == liveOrderStatusVirtualInitial {
+		t.Fatalf("expected zero initial window mode to avoid virtual initial dispatch marker, got %s", got)
+	}
+	if virtualPosition := mapValue(updated.State["virtualPosition"]); len(virtualPosition) != 0 {
+		t.Fatalf("expected zero initial window mode to avoid virtual positions, got %+v", virtualPosition)
+	}
+	proposal := mapValue(updated.State["lastExecutionProposal"])
+	if got := stringValue(proposal["status"]); got != "dispatchable" {
+		t.Fatalf("expected dispatchable reentry proposal, got %s", got)
+	}
+	if got := stringValue(proposal["reason"]); got != "Zero-Initial-Reentry" {
+		t.Fatalf("expected Zero-Initial-Reentry proposal reason, got %s", got)
+	}
+	if pending := mapValue(updated.State[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
+		t.Fatalf("expected pending BUY zero initial window in session state, got %+v", pending)
 	}
 }
 
@@ -3030,7 +3342,7 @@ func TestEvaluateLiveSignalDecisionDoesNotMutateOriginalSessionState(t *testing.
 		},
 	}
 
-	_, decision, err := platform.evaluateLiveSignalDecision(
+	_, decision, _, err := platform.evaluateLiveSignalDecision(
 		session,
 		summary,
 		sourceStates,

@@ -256,6 +256,7 @@ func prepareLiveDecisionTelemetryFixture(t *testing.T) (*Platform, domain.LiveSe
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
 		"dispatchMode":        "manual-review",
+		"zero_initial_mode":   "position",
 	})
 	if err != nil {
 		t.Fatalf("create live session failed: %v", err)
