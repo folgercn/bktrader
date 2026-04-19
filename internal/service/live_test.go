@@ -649,6 +649,41 @@ func TestResolveLiveSessionPositionSnapshotUsesVirtualPosition(t *testing.T) {
 	}
 }
 
+func TestResolveLiveSessionPositionSnapshotIgnoresZeroQuantityStoredPosition(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0,
+		EntryPrice:        69000.0,
+		MarkPrice:         69010.0,
+	}); err != nil {
+		t.Fatalf("save zero-quantity position failed: %v", err)
+	}
+
+	session := domain.LiveSession{
+		AccountID: "live-main",
+		State: map[string]any{
+			"symbol": "BTCUSDT",
+		},
+	}
+	position, found, err := platform.resolveLiveSessionPositionSnapshot(session, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if found {
+		t.Fatal("expected zero-quantity stored position not to be treated as found")
+	}
+	if boolValue(position["found"]) {
+		t.Fatal("expected returned snapshot to remain flat for zero-quantity stored position")
+	}
+	if got := parseFloatValue(position["quantity"]); got != 0 {
+		t.Fatalf("expected zero quantity snapshot, got %v", got)
+	}
+}
+
 func TestShouldAutoDispatchLiveIntentBlocksRepeatedVirtualInitialWithinCooldown(t *testing.T) {
 	now := time.Now().UTC()
 	intent := map[string]any{
@@ -4003,6 +4038,42 @@ func TestRefreshLiveSessionPositionContextClearsStaleLivePositionStateWithoutRea
 	}
 	if liveState := mapValue(updated.State["livePositionState"]); len(liveState) != 0 {
 		t.Fatalf("expected stale livePositionState to be cleared, got %+v", liveState)
+	}
+}
+
+func TestRefreshLiveSessionPositionContextTreatsZeroQuantityStoredPositionAsFlat(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0,
+		EntryPrice:        50000.0,
+		MarkPrice:         50010.0,
+	}); err != nil {
+		t.Fatalf("save zero-quantity position failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 12, 8, 0, 0, 0, time.UTC), "test-zero-qty")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "flat" {
+		t.Fatalf("expected flat recovery status for zero-quantity stored position, got %s", got)
+	}
+	if boolValue(updated.State["hasRecoveredPosition"]) {
+		t.Fatal("expected zero-quantity stored position not to count as recovered position")
+	}
+	if got := parseFloatValue(mapValue(updated.State["recoveredPosition"])["quantity"]); got != 0 {
+		t.Fatalf("expected recovered position snapshot quantity 0, got %v", got)
 	}
 }
 
