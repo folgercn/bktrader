@@ -83,6 +83,13 @@ def _normalize_reentry_trigger_mode(reentry_trigger_mode):
     raise ValueError(f"未知重入触发模式: {reentry_trigger_mode}")
 
 
+def _normalize_zero_initial_mode(zero_initial_mode):
+    normalized = str(zero_initial_mode).lower().strip()
+    if normalized in ('position', 'reentry_window'):
+        return normalized
+    raise ValueError(f"未知 zero_initial_mode: {zero_initial_mode}")
+
+
 def _reentry_triggered(side, trigger_mode, high_value, low_value, close_value, prev_close_value, re_p, confirm=False):
     mode = _normalize_reentry_trigger_mode(trigger_mode)
     if mode == 'pullback':
@@ -1393,7 +1400,8 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                           cooldown_bars=6,
                           reentry_mode='default',
                           reentry_anchor_levels='wick',
-                          reentry_trigger_mode='reclaim'):
+                          reentry_trigger_mode='reclaim',
+                          zero_initial_mode='position'):
     """
     增强版 1min 回测引擎，在原始引擎基础上新增：
 
@@ -1422,6 +1430,7 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
     REENTRY_SIZE_SCHEDULE = _normalize_reentry_sizes(reentry_size_schedule)
     PROFIT_PROTECT = profit_protect_atr
     stop_mode = 'structural' if dir3_structural_sl and stop_mode is None else (stop_mode or 'atr')
+    zero_initial_mode = _normalize_zero_initial_mode(zero_initial_mode)
 
     # 根据 reentry_mode 调整 schedule
     if reentry_mode == 'fixed':
@@ -1435,6 +1444,8 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
     REENTRY_TIMEOUT = 1
     last_exit_reason = None
     last_exit_side = None
+    pending_zero_initial_side = None
+    pending_zero_initial_bar_index = -999
 
     # 熔断状态
     circuit_breaker_until = -999  # bar index until which trading is paused
@@ -1446,6 +1457,7 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
     if reentry_mode != 'default': label_parts.append(f"Re:{reentry_mode}")
     if reentry_anchor_levels != 'wick': label_parts.append(f"ReAnchor:{reentry_anchor_levels}")
     if reentry_trigger_mode != 'reclaim': label_parts.append(f"ReTrigger:{reentry_trigger_mode}")
+    if dir2_zero_initial and zero_initial_mode != 'position': label_parts.append(f"ZeroInit:{zero_initial_mode}")
     label_parts.append(f"ReATR:{long_reentry_atr}/{short_reentry_atr}")
     label = " | ".join(label_parts) if label_parts else "Enhanced"
 
@@ -1473,6 +1485,8 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
 
         if i - last_exit_bar_index > REENTRY_TIMEOUT:
             last_exit_side = None
+        if i - pending_zero_initial_bar_index > REENTRY_TIMEOUT:
+            pending_zero_initial_side = None
 
         while current_idx < total_steps:
             bar = window.iloc[current_idx]
@@ -1492,22 +1506,28 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                     re_p = _resolve_reentry_price(sig, 'long', reentry_anchor_levels, long_reentry_atr)
                     if trades_in_bar == 0 and sig['prev_high_2'] > sig['prev_high_1']:
                         if bar['high'] >= sig['prev_high_2']:
-                            entry_p = max(bar['open'], sig['prev_high_2']) * (1 + SLIPPAGE)
-                            notional_value = balance * CASH_USAGE_INITIAL
-                            initial_sl = _resolve_stop_price('long', entry_p, sig, stop_mode, stop_loss_atr)
-                            position = {
-                                'side': 'long', 'entry_p': entry_p,
-                                'sl': initial_sl, 'protected': False,
-                                'notional': notional_value,
-                                'hwm': entry_p,  # high water mark
-                            }
-                            balance -= notional_value * COMMISSION
-                            trade_logs.append({'time': bar_time, 'type': 'BUY', 'price': entry_p,
-                                               'reason': 'Initial', 'notional': notional_value, 'bal': balance})
-                            trades_in_bar += 1
-                            executed = True
+                            if dir2_zero_initial and zero_initial_mode == 'reentry_window':
+                                pending_zero_initial_side = 'long'
+                                pending_zero_initial_bar_index = i
+                            else:
+                                entry_p = max(bar['open'], sig['prev_high_2']) * (1 + SLIPPAGE)
+                                notional_value = balance * CASH_USAGE_INITIAL
+                                initial_sl = _resolve_stop_price('long', entry_p, sig, stop_mode, stop_loss_atr)
+                                position = {
+                                    'side': 'long', 'entry_p': entry_p,
+                                    'sl': initial_sl, 'protected': False,
+                                    'notional': notional_value,
+                                    'hwm': entry_p,  # high water mark
+                                }
+                                balance -= notional_value * COMMISSION
+                                trade_logs.append({'time': bar_time, 'type': 'BUY', 'price': entry_p,
+                                                   'reason': 'Initial', 'notional': notional_value, 'bal': balance})
+                                trades_in_bar += 1
+                                executed = True
 
-                    elif last_exit_side == 'long' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
+                    has_exit_reentry_window = last_exit_side == 'long' and (i - last_exit_bar_index <= REENTRY_TIMEOUT)
+                    has_zero_initial_window = pending_zero_initial_side == 'long' and (i - pending_zero_initial_bar_index <= REENTRY_TIMEOUT)
+                    if has_exit_reentry_window or has_zero_initial_window:
                         prev_close = prev_bar['close'] if prev_bar is not None else None
                         is_triggered, entry_p_raw = _reentry_triggered(
                             'long',
@@ -1521,9 +1541,11 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                         )
 
                         if is_triggered:
-                            reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
+                            reason = 'Zero-Initial-Reentry'
+                            if has_exit_reentry_window:
+                                reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
                             if trades_in_bar < MAX_TRADES_PER_BAR:
-                                current_reentry_size = _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
+                                current_reentry_size = REENTRY_SIZE_SCHEDULE[0] if (has_zero_initial_window and not has_exit_reentry_window) else _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
                                 notional_value = balance * current_reentry_size
                                 entry_price = entry_p_raw * (1 + SLIPPAGE)
                                 reentry_sl = _resolve_stop_price('long', entry_price, sig, stop_mode, stop_loss_atr)
@@ -1538,28 +1560,37 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                                                    'reason': reason, 'notional': notional_value, 'bal': balance})
                                 trades_in_bar += 1
                                 executed = True
-                            last_exit_side = None
+                            if has_exit_reentry_window:
+                                last_exit_side = None
+                            if has_zero_initial_window:
+                                pending_zero_initial_side = None
 
                 elif short_regime_ready:
                     re_p = _resolve_reentry_price(sig, 'short', reentry_anchor_levels, short_reentry_atr)
                     if trades_in_bar == 0 and sig['prev_low_2'] < sig['prev_low_1']:
                         if bar['low'] <= sig['prev_low_2']:
-                            entry_p = min(bar['open'], sig['prev_low_2']) * (1 - SLIPPAGE)
-                            notional_value = balance * CASH_USAGE_INITIAL
-                            initial_sl = _resolve_stop_price('short', entry_p, sig, stop_mode, stop_loss_atr)
-                            position = {
-                                'side': 'short', 'entry_p': entry_p,
-                                'sl': initial_sl, 'protected': False,
-                                'notional': notional_value,
-                                'lwm': entry_p,  # low water mark
-                            }
-                            balance -= notional_value * COMMISSION
-                            trade_logs.append({'time': bar_time, 'type': 'SHORT', 'price': entry_p,
-                                               'reason': 'Initial', 'notional': notional_value, 'bal': balance})
-                            trades_in_bar += 1
-                            executed = True
+                            if dir2_zero_initial and zero_initial_mode == 'reentry_window':
+                                pending_zero_initial_side = 'short'
+                                pending_zero_initial_bar_index = i
+                            else:
+                                entry_p = min(bar['open'], sig['prev_low_2']) * (1 - SLIPPAGE)
+                                notional_value = balance * CASH_USAGE_INITIAL
+                                initial_sl = _resolve_stop_price('short', entry_p, sig, stop_mode, stop_loss_atr)
+                                position = {
+                                    'side': 'short', 'entry_p': entry_p,
+                                    'sl': initial_sl, 'protected': False,
+                                    'notional': notional_value,
+                                    'lwm': entry_p,  # low water mark
+                                }
+                                balance -= notional_value * COMMISSION
+                                trade_logs.append({'time': bar_time, 'type': 'SHORT', 'price': entry_p,
+                                                   'reason': 'Initial', 'notional': notional_value, 'bal': balance})
+                                trades_in_bar += 1
+                                executed = True
 
-                    elif last_exit_side == 'short' and (i - last_exit_bar_index <= REENTRY_TIMEOUT):
+                    has_exit_reentry_window = last_exit_side == 'short' and (i - last_exit_bar_index <= REENTRY_TIMEOUT)
+                    has_zero_initial_window = pending_zero_initial_side == 'short' and (i - pending_zero_initial_bar_index <= REENTRY_TIMEOUT)
+                    if has_exit_reentry_window or has_zero_initial_window:
                         prev_close = prev_bar['close'] if prev_bar is not None else None
                         is_triggered, entry_p_raw = _reentry_triggered(
                             'short',
@@ -1573,9 +1604,11 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                         )
 
                         if is_triggered:
-                            reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
+                            reason = 'Zero-Initial-Reentry'
+                            if has_exit_reentry_window:
+                                reason = 'SL-Reentry' if last_exit_reason == 'SL' else 'PT-Reentry'
                             if trades_in_bar < MAX_TRADES_PER_BAR:
-                                current_reentry_size = _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
+                                current_reentry_size = REENTRY_SIZE_SCHEDULE[0] if (has_zero_initial_window and not has_exit_reentry_window) else _get_reentry_size(trades_in_bar, REENTRY_SIZE_SCHEDULE)
                                 notional_value = balance * current_reentry_size
                                 entry_price = entry_p_raw * (1 - SLIPPAGE)
                                 reentry_sl = _resolve_stop_price('short', entry_price, sig, stop_mode, stop_loss_atr)
@@ -1590,7 +1623,10 @@ def run_backtest_enhanced(df_1min, df_4h, initial_balance=100000.0,
                                                    'reason': reason, 'notional': notional_value, 'bal': balance})
                                 trades_in_bar += 1
                                 executed = True
-                            last_exit_side = None
+                            if has_exit_reentry_window:
+                                last_exit_side = None
+                            if has_zero_initial_window:
+                                pending_zero_initial_side = None
 
                 current_idx += 1
 
