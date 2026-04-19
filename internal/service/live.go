@@ -2111,7 +2111,7 @@ func alignLivePlanStepToCurrentMarket(
 	nextPlannedPrice float64,
 	nextPlannedSide, nextPlannedRole, nextPlannedReason string,
 ) (time.Time, float64, string, string, string) {
-	if boolValue(currentPosition["found"]) || parseFloatValue(currentPosition["quantity"]) > 0 {
+	if hasActiveLivePositionSnapshot(currentPosition) {
 		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
 	if !isLivePlanStepStale(nextPlannedEvent, signalTimeframe, eventTime) {
