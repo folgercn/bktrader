@@ -1785,7 +1785,9 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		return err
 	}
 
-	executionContext, decision, err := p.evaluateLiveSignalDecision(session, summary, sourceStates, signalBarStates, eventTime, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason)
+	evaluationSession := session
+	evaluationSession.State = cloneMetadata(state)
+	executionContext, decision, updatedDecisionState, err := p.evaluateLiveSignalDecision(evaluationSession, summary, sourceStates, signalBarStates, eventTime, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason)
 	if err != nil {
 		state["lastStrategyEvaluationStatus"] = "decision-error"
 		state["lastStrategyDecision"] = map[string]any{
@@ -1800,6 +1802,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		}
 		return err
 	}
+	state = updatedDecisionState
 
 	signalIntent := deriveLiveSignalIntent(decision, executionContext.Symbol)
 	var intent map[string]any
@@ -2030,18 +2033,18 @@ func (p *Platform) rolloverLiveSessionPlan(session domain.LiveSession, eventTime
 	return nil
 }
 
-func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time, nextPlannedEvent time.Time, nextPlannedPrice float64, nextPlannedSide, nextPlannedRole, nextPlannedReason string) (StrategyExecutionContext, StrategySignalDecision, error) {
+func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summary map[string]any, sourceStates map[string]any, signalBarStates map[string]any, eventTime time.Time, nextPlannedEvent time.Time, nextPlannedPrice float64, nextPlannedSide, nextPlannedRole, nextPlannedReason string) (StrategyExecutionContext, StrategySignalDecision, map[string]any, error) {
 	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
 	if err != nil {
-		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+		return StrategyExecutionContext{}, StrategySignalDecision{}, cloneMetadata(session.State), err
 	}
 	parameters, err := p.resolveLiveSessionParameters(session, version)
 	if err != nil {
-		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+		return StrategyExecutionContext{}, StrategySignalDecision{}, cloneMetadata(session.State), err
 	}
 	engine, engineKey, err := p.resolveStrategyEngine(version.ID, parameters)
 	if err != nil {
-		return StrategyExecutionContext{}, StrategySignalDecision{}, err
+		return StrategyExecutionContext{}, StrategySignalDecision{}, cloneMetadata(session.State), err
 	}
 	executionContext := StrategyExecutionContext{
 		StrategyEngineKey:   engineKey,
@@ -2059,14 +2062,17 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		return executionContext, StrategySignalDecision{
 			Action: "wait",
 			Reason: "engine-has-no-signal-evaluator",
-		}, nil
+		}, cloneMetadata(session.State), nil
 	}
 	currentPosition, _, err := p.resolveLiveSessionPositionSnapshot(session, executionContext.Symbol)
 	if err != nil {
-		return executionContext, StrategySignalDecision{}, err
+		return executionContext, StrategySignalDecision{}, cloneMetadata(session.State), err
 	}
-	nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason = alignLivePlanStepToCurrentMarket(
+	updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason := prepareLivePlanStepForSignalEvaluation(
+		session.State,
+		executionContext.Parameters,
 		signalBarStates,
+		executionContext.Symbol,
 		executionContext.SignalTimeframe,
 		currentPosition,
 		eventTime,
@@ -2091,7 +2097,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		NextPlannedReason: nextPlannedReason,
 	})
 	if err != nil {
-		return executionContext, StrategySignalDecision{}, err
+		return executionContext, StrategySignalDecision{}, updatedState, err
 	}
 	if strings.TrimSpace(decision.Action) == "" {
 		decision.Action = "wait"
@@ -2099,7 +2105,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 	if strings.TrimSpace(decision.Reason) == "" {
 		decision.Reason = "unspecified"
 	}
-	return executionContext, decision, nil
+	return executionContext, decision, updatedState, nil
 }
 
 func alignLivePlanStepToCurrentMarket(
@@ -2550,6 +2556,18 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"to",
 		"strategyEngine",
 		"fixed_slippage",
+		"stop_mode",
+		"stop_loss_atr",
+		"profit_protect_atr",
+		"long_reentry_atr",
+		"short_reentry_atr",
+		"reentry_size_schedule",
+		"trailing_stop_atr",
+		"delayed_trailing_activation_atr",
+		"reentry_decay_factor",
+		"max_trades_per_bar",
+		"dir2_zero_initial",
+		"zero_initial_mode",
 	} {
 		if value, ok := state[key]; ok {
 			parameters[key] = value
@@ -2653,7 +2671,8 @@ func adjustLiveExecutionProposalForVirtualSemantics(session domain.LiveSession, 
 	if _, ok := parameters["dir2_zero_initial"]; ok {
 		zeroInitial = boolValue(parameters["dir2_zero_initial"])
 	}
-	if strings.EqualFold(proposal.Role, "entry") && zeroInitial {
+	zeroInitialMode := resolveStrategyZeroInitialMode(zeroInitial, parameters["zero_initial_mode"])
+	if strings.EqualFold(proposal.Role, "entry") && zeroInitial && zeroInitialMode == strategyZeroInitialModePosition {
 		if reasonTag == "initial" || reasonTag == "livesignalbootstrap" {
 			proposal.Status = "virtual-initial"
 			proposal.Metadata = cloneMetadata(proposal.Metadata)

@@ -75,6 +75,19 @@ func TestNormalizeBacktestParametersCanonicalizesFiveMinuteSignalTimeframe(t *te
 	}
 }
 
+func TestNormalizeBacktestParametersDefaultsZeroInitialToReentryWindow(t *testing.T) {
+	normalized, err := NormalizeBacktestParameters(map[string]any{})
+	if err != nil {
+		t.Fatalf("expected normalization to succeed, got %v", err)
+	}
+	if !boolValue(normalized["dir2_zero_initial"]) {
+		t.Fatal("expected dir2_zero_initial to default to true")
+	}
+	if got := stringValue(normalized["zero_initial_mode"]); got != strategyZeroInitialModeReentryWindow {
+		t.Fatalf("expected zero_initial_mode=%s, got %s", strategyZeroInitialModeReentryWindow, got)
+	}
+}
+
 func TestBuildSignalBarsSupportsFiveMinuteAggregation(t *testing.T) {
 	minuteBars := make([]candleBar, 0, 12)
 	start := time.Date(2026, 4, 16, 0, 0, 0, 0, time.UTC)
@@ -130,6 +143,68 @@ func TestBuildStrategyReplayConfigUsesUpdatedBaselineDefaults(t *testing.T) {
 	}
 	if cfg.ShortReentryATR != 0.0 {
 		t.Fatalf("expected short reentry atr 0.0, got %v", cfg.ShortReentryATR)
+	}
+	if cfg.ZeroInitialMode != strategyZeroInitialModeReentryWindow {
+		t.Fatalf("expected zero initial mode %s, got %s", strategyZeroInitialModeReentryWindow, cfg.ZeroInitialMode)
+	}
+	if !cfg.Dir2ZeroInitial {
+		t.Fatal("expected dir2 zero initial to remain enabled by default")
+	}
+}
+
+func TestRunStrategyReplayOnMinuteBarsUsesZeroInitialReentryWindowForLongEntries(t *testing.T) {
+	start := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	signals := []strategySignalBar{
+		{
+			Time:      start,
+			Close:     110,
+			MA5:       100,
+			MA20:      100,
+			ATR:       10,
+			PrevHigh1: 100,
+			PrevHigh2: 105,
+			PrevLow1:  95,
+			PrevLow2:  94,
+		},
+		{Time: start.Add(24 * time.Hour)},
+	}
+	minuteBars := []candleBar{
+		{Time: start.Add(time.Minute), Open: 105, High: 106, Low: 104, Close: 105},
+		{Time: start.Add(2 * time.Minute), Open: 106, High: 106, Low: 94, Close: 95},
+	}
+	cfg := strategyReplayConfig{
+		SignalTimeframe:     "1d",
+		ExecutionDataSource: "1min",
+		InitialBalance:      100000,
+		Dir2ZeroInitial:     true,
+		ZeroInitialMode:     strategyZeroInitialModeReentryWindow,
+		FixedSlippage:       0,
+		StopLossATR:         0.05,
+		MaxTradesPerBar:     4,
+		ReentrySizeSchedule: []float64{0.10, 0.05, 0.025},
+		LongReentryATR:      0.1,
+		ShortReentryATR:     0.0,
+		StopMode:            "atr",
+		ProfitProtectATR:    1.0,
+		TradingFeeRate:      0,
+	}
+
+	result, err := runStrategyReplayOnMinuteBars(cfg, signals, minuteBars)
+	if err != nil {
+		t.Fatalf("runStrategyReplayOnMinuteBars failed: %v", err)
+	}
+	trades, err := executionTradesFromResult(result)
+	if err != nil {
+		t.Fatalf("executionTradesFromResult failed: %v", err)
+	}
+	if len(trades) != 1 {
+		t.Fatalf("expected one execution trade, got %d", len(trades))
+	}
+	if got := stringValue(trades[0]["entryReason"]); got != "Zero-Initial-Reentry" {
+		t.Fatalf("expected Zero-Initial-Reentry entry reason, got %s", got)
+	}
+	if got := parseFloatValue(trades[0]["notional"]); got <= 0 {
+		t.Fatalf("expected positive notional for zero initial reentry window, got %v", got)
 	}
 }
 

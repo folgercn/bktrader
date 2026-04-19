@@ -1175,8 +1175,16 @@ func (p *Platform) resolvePaperSessionParameters(session domain.PaperSession, ve
 		"stop_mode",
 		"stop_loss_atr",
 		"profit_protect_atr",
+		"long_reentry_atr",
+		"short_reentry_atr",
+		"reentry_size_schedule",
+		"trailing_stop_atr",
+		"delayed_trailing_activation_atr",
+		"reentry_decay_factor",
 		"max_trades_per_bar",
 		"fixed_slippage",
+		"dir2_zero_initial",
+		"zero_initial_mode",
 	} {
 		if value, ok := state[key]; ok {
 			parameters[key] = value
@@ -1229,14 +1237,33 @@ func normalizePaperSessionOverrides(overrides map[string]any) map[string]any {
 			}
 		case "strategyEngine":
 			normalized[key] = normalizeStrategyEngineKey(stringValue(value))
-		case "tradingFeeBps", "fundingRateBps", "fixed_slippage", "stop_loss_atr", "profit_protect_atr":
+		case "tradingFeeBps", "fundingRateBps", "fixed_slippage", "stop_loss_atr", "profit_protect_atr",
+			"long_reentry_atr", "short_reentry_atr", "trailing_stop_atr", "delayed_trailing_activation_atr",
+			"reentry_decay_factor":
 			normalized[key] = parseFloatValue(value)
 		case "fundingIntervalHours", "max_trades_per_bar":
 			normalized[key] = maxIntValue(value, 0)
+		case "dir2_zero_initial":
+			normalized[key] = boolValue(value)
 		case "stop_mode":
 			mode := strings.ToLower(strings.TrimSpace(stringValue(value)))
 			if mode != "" {
 				normalized[key] = mode
+			}
+		case "zero_initial_mode":
+			if mode := normalizeStrategyZeroInitialMode(stringValue(value)); mode != "" {
+				normalized[key] = mode
+			}
+		case "reentry_size_schedule":
+			switch schedule := value.(type) {
+			case []float64:
+				normalized[key] = append([]float64(nil), schedule...)
+			case []any:
+				normalized[key] = append([]any(nil), schedule...)
+			case []string:
+				normalized[key] = append([]string(nil), schedule...)
+			default:
+				normalized[key] = value
 			}
 		}
 	}

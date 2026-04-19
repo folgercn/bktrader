@@ -440,6 +440,8 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 			switch reasonTag {
 			case "initial":
 				return "initial-entry"
+			case "zero-initial-reentry":
+				return "zero-initial-reentry"
 			case "sl-reentry":
 				return "sl-reentry"
 			case "pt-reentry":
@@ -477,6 +479,17 @@ func classifyStrategySignalKind(action, reason, nextRole, nextReason string, cur
 				return "initial-entry-near"
 			}
 			return "initial-entry-watch"
+		case "zero-initial-reentry":
+			if nearEntry && reason == "bias-unfavorable" {
+				return "zero-initial-reentry-near-weak"
+			}
+			if nearEntry {
+				if favorableBias {
+					return "zero-initial-reentry-near-strong"
+				}
+				return "zero-initial-reentry-near"
+			}
+			return "zero-initial-reentry-watch"
 		case "sl-reentry":
 			if nearEntry && reason == "bias-unfavorable" {
 				return "sl-reentry-near-weak"
@@ -671,7 +684,7 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	shortBreakoutReady := lowPrice <= prevLow2 && prevLow2 > 0
 	longReady := longStructureReady && longBreakoutReady
 	shortReady := shortStructureReady && shortBreakoutReady
-	if role == "entry" && (reasonTag == "sl-reentry" || reasonTag == "pt-reentry") {
+	if role == "entry" && (reasonTag == "zero-initial-reentry" || reasonTag == "sl-reentry" || reasonTag == "pt-reentry") {
 		longReady = longStructureReady
 		shortReady = shortStructureReady
 	}
@@ -710,7 +723,7 @@ func isFavorableBiasForPlan(nextRole, nextReason, liquidityBias string) bool {
 	reasonTag := normalizeStrategyReasonTag(nextReason)
 	if role == "entry" {
 		switch reasonTag {
-		case "initial", "sl-reentry", "pt-reentry":
+		case "initial", "zero-initial-reentry", "sl-reentry", "pt-reentry":
 			return liquidityBias == "bid-heavy"
 		}
 	}
