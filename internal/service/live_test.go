@@ -66,7 +66,7 @@ func TestEvaluateSignalBarGateRequiresLongBreakoutAlignmentWithResearch(t *testi
 			"high": 69000.0,
 			"low":  67600.0,
 		},
-	}, "BUY", "entry")
+	}, "BUY", "entry", "")
 	if boolValue(gate["longStructureReady"]) != true {
 		t.Fatal("expected long structure to be ready")
 	}
@@ -98,7 +98,7 @@ func TestEvaluateSignalBarGateAllowsLongAfterBreakoutAlignmentWithResearch(t *te
 			"high": 69000.0,
 			"low":  67600.0,
 		},
-	}, "BUY", "entry")
+	}, "BUY", "entry", "")
 	if !boolValue(gate["longStructureReady"]) {
 		t.Fatal("expected long structure to be ready")
 	}
@@ -127,7 +127,7 @@ func TestEvaluateSignalBarGateDoesNotRequireOppositeBreakoutForExit(t *testing.T
 			"high": 69000.0,
 			"low":  67600.0,
 		},
-	}, "SELL", "exit")
+	}, "SELL", "exit", "")
 	if !boolValue(gate["ready"]) {
 		t.Fatalf("expected exit gate to stay ready, got reason=%s", stringValue(gate["reason"]))
 	}
@@ -185,6 +185,36 @@ func TestAlignLivePlanStepToCurrentMarketKeepsExitForVirtualPosition(t *testing.
 	}
 	if gotSide != "SELL" || gotRole != "exit" || gotReason != "SL" {
 		t.Fatalf("expected virtual position to preserve exit step, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+}
+
+func TestEvaluateSignalBarGateAllowsReentryWithoutInitialBreakout(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"timeframe": "1d",
+		"sma5":      68050.0,
+		"atr14":     900.0,
+		"current": map[string]any{
+			"close": 68100.0,
+			"high":  68900.0,
+			"low":   67800.0,
+		},
+		"prevBar1": map[string]any{
+			"high": 68850.0,
+			"low":  67750.0,
+		},
+		"prevBar2": map[string]any{
+			"high": 69000.0,
+			"low":  67600.0,
+		},
+	}, "BUY", "entry", "SL-Reentry")
+	if !boolValue(gate["longStructureReady"]) {
+		t.Fatal("expected long structure to be ready for reentry")
+	}
+	if boolValue(gate["longBreakoutReady"]) {
+		t.Fatal("expected initial breakout to remain not ready for reentry regression")
+	}
+	if !boolValue(gate["longReady"]) || !boolValue(gate["ready"]) {
+		t.Fatalf("expected reentry gate to stay ready without initial breakout, got %#v", gate)
 	}
 }
 
@@ -2638,7 +2668,7 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualExitForStaleExitStepWithVirtua
 	}
 }
 
-func TestEvaluateLiveSessionOnSignalKeepsReentryDispatchable(t *testing.T) {
+func TestEvaluateLiveSessionOnSignalKeepsReentryDispatchableWithoutInitialBreakout(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
 		"sourceKey": "binance-kline",
@@ -2739,7 +2769,7 @@ func TestEvaluateLiveSessionOnSignalKeepsReentryDispatchable(t *testing.T) {
 				"atr14":     900.0,
 				"current": map[string]any{
 					"close": 68100.0,
-					"high":  69010.0,
+					"high":  68900.0,
 					"low":   67800.0,
 				},
 				"prevBar1": map[string]any{

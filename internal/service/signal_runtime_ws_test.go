@@ -349,7 +349,7 @@ func TestDeriveSignalBarStatesUsesOpenCurrentBarWithClosedHistory(t *testing.T) 
 	if stringValue(prevBar2["barStart"]) != base.Add(18*5*time.Minute).Format(time.RFC3339) {
 		t.Fatalf("expected prevBar2 to be second latest closed bar, got %#v", prevBar2)
 	}
-	gate := evaluateSignalBarGate(state, "BUY", "entry")
+	gate := evaluateSignalBarGate(state, "BUY", "entry", "")
 	if !boolValue(gate["ready"]) || !boolValue(gate["longReady"]) {
 		t.Fatalf("expected open current bar breakout to be actionable, got %#v", gate)
 	}

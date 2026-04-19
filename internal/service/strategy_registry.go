@@ -212,7 +212,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	signalBarDecision := map[string]any{}
 	signalFilterReady := true
 	if signalBarState != nil {
-		signalBarDecision = evaluateSignalBarGate(signalBarState, context.NextPlannedSide, context.NextPlannedRole)
+		signalBarDecision = evaluateSignalBarGate(signalBarState, context.NextPlannedSide, context.NextPlannedRole, context.NextPlannedReason)
 		if value, ok := signalBarDecision["ready"].(bool); ok {
 			signalFilterReady = value
 		}
@@ -591,8 +591,9 @@ func pickSignalBarState(signalBarStates map[string]any, symbol, timeframe string
 	return nil, ""
 }
 
-func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole string) map[string]any {
+func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, nextReason string) map[string]any {
 	role := strings.ToLower(strings.TrimSpace(nextRole))
+	reasonTag := normalizeStrategyReasonTag(nextReason)
 	timeframe := strings.ToLower(strings.TrimSpace(stringValue(signalBarState["timeframe"])))
 	if timeframe == "" {
 		timeframe = strings.ToLower(strings.TrimSpace(stringValue(mapValue(signalBarState["current"])["timeframe"])))
@@ -670,6 +671,10 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole str
 	shortBreakoutReady := lowPrice <= prevLow2 && prevLow2 > 0
 	longReady := longStructureReady && longBreakoutReady
 	shortReady := shortStructureReady && shortBreakoutReady
+	if role == "entry" && (reasonTag == "sl-reentry" || reasonTag == "pt-reentry") {
+		longReady = longStructureReady
+		shortReady = shortStructureReady
+	}
 	result["longStructureReady"] = longStructureReady
 	result["shortStructureReady"] = shortStructureReady
 	result["longEarlyReversalReady"] = longEarlyReversalReady
