@@ -61,15 +61,53 @@ Delta, `reentry_window - position`:
 - Win rate: `+2.44 pp`
 - Sharpe: `+0.75`
 
+## BTC 1D Q1 2026
+
+| Scenario | Final Balance | Return | Max DD | Trades | Win Rate | Sharpe | Entry Reasons | Exit Reasons |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| Baseline `position` | 117,616.10 | 17.62% | -0.17% | 78 | 83.33% | 20.47 | `Initial:15`, `SL-Reentry:97` | `SL:112` |
+| Variant `reentry_window` | 123,531.85 | 23.53% | -0.17% | 86 | 84.88% | 21.37 | `Zero-Initial-Reentry:15`, `SL-Reentry:90` | `SL:105` |
+
+Delta, `reentry_window - position`:
+
+- Final balance: `+5,915.75`
+- Return: `+5.92 pp`
+- Max drawdown: `+0.00 pp` (no material change)
+- Trades: `+8`
+- Win rate: `+1.55 pp`
+- Sharpe: `+0.90`
+
+## ETH 1D Q1 2026
+
+| Scenario | Final Balance | Return | Max DD | Trades | Win Rate | Sharpe | Entry Reasons | Exit Reasons |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| Baseline `position` | 121,632.54 | 21.63% | -0.04% | 54 | 98.15% | 26.24 | `Initial:16`, `SL-Reentry:67` | `SL:83` |
+| Variant `reentry_window` | 131,336.73 | 31.34% | -0.04% | 63 | 98.41% | 27.89 | `Zero-Initial-Reentry:16`, `SL-Reentry:60` | `SL:76` |
+
+Delta, `reentry_window - position`:
+
+- Final balance: `+9,704.20`
+- Return: `+9.70 pp`
+- Max drawdown: `+0.00 pp` (no material change)
+- Trades: `+9`
+- Win rate: `+0.26 pp`
+- Sharpe: `+1.65`
+
 ## Read
 
-On the current enhanced ETH `4h` baseline, replacing the persistent zero-notional `Initial` position with a current+next-bar reentry window materially improved returns without increasing drawdown.
+Across the three enhanced Q1 runs completed so far, replacing the persistent zero-notional `Initial` position with a current+next-bar reentry window improved returns without increasing drawdown.
 
 The main behavioral shift is:
 
 - baseline keeps a synthetic position alive and spends many bars managing its `SL/PT`
 - `reentry_window` waits for the first actual reentry trigger before creating exposure
 - the trade mix shifts from `Initial` entries into `Zero-Initial-Reentry` entries, while downstream `SL-Reentry` remains the dominant path
+
+Current enhanced Q1 deltas:
+
+- `ETH 4h`: `+12.68 pp`
+- `BTC 1d`: `+5.92 pp`
+- `ETH 1d`: `+9.70 pp`
 
 ## Next Step
 
