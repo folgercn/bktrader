@@ -133,6 +133,61 @@ func TestEvaluateSignalBarGateDoesNotRequireOppositeBreakoutForExit(t *testing.T
 	}
 }
 
+func TestAlignLivePlanStepToCurrentMarketKeepsExitForVirtualPosition(t *testing.T) {
+	eventTime := time.Date(2026, 4, 10, 10, 0, 0, 0, time.UTC)
+	nextPlannedEvent := eventTime.Add(-48 * time.Hour)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"ma20":      68000.0,
+			"atr14":     900.0,
+			"current": map[string]any{
+				"close": 68100.0,
+				"high":  69010.0,
+				"low":   67800.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 68850.0,
+				"low":  67750.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 69000.0,
+				"low":  67600.0,
+			},
+		},
+	}
+	currentPosition := map[string]any{
+		"id":         "virtual|session-1|signal-1",
+		"virtual":    true,
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 69000.0,
+		"quantity":   0.0,
+	}
+
+	gotEvent, gotPrice, gotSide, gotRole, gotReason := alignLivePlanStepToCurrentMarket(
+		signalStates,
+		"1d",
+		currentPosition,
+		eventTime,
+		nextPlannedEvent,
+		68950.0,
+		"SELL",
+		"exit",
+		"SL",
+	)
+	if !gotEvent.Equal(nextPlannedEvent.UTC()) {
+		t.Fatalf("expected stale exit event to stay unchanged, got %s", gotEvent.Format(time.RFC3339))
+	}
+	if gotPrice != 68950.0 {
+		t.Fatalf("expected planned price to stay unchanged, got %.2f", gotPrice)
+	}
+	if gotSide != "SELL" || gotRole != "exit" || gotReason != "SL" {
+		t.Fatalf("expected virtual position to preserve exit step, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+}
+
 func TestBuildLiveExecutionPlanFromMarketDataAcceptsTickExecutionSource(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
@@ -2421,6 +2476,165 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 	}
 	if got := maxIntValue(updated.State["planIndex"], -1); got != 1 {
 		t.Fatalf("expected planIndex to advance after virtual initial, got %d", got)
+	}
+}
+
+func TestEvaluateLiveSessionOnSignalRecordsVirtualExitForStaleExitStepWithVirtualPosition(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal failed: %v", err)
+	}
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-trade-tick",
+		"role":      "trigger",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind strategy trigger failed: %v", err)
+	}
+	if _, err := platform.BindAccountSignalSource("live-main", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind account signal failed: %v", err)
+	}
+	if _, err := platform.BindAccountSignalSource("live-main", map[string]any{
+		"sourceKey": "binance-trade-tick",
+		"role":      "trigger",
+		"symbol":    "BTCUSDT",
+	}); err != nil {
+		t.Fatalf("bind account trigger failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"dispatchMode":        "manual-review",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["virtualPosition"] = map[string]any{
+		"id":         "virtual|session-1|signal-1",
+		"virtual":    true,
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 69000.0,
+		"stopLoss":   69050.0,
+		"quantity":   0.0,
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		t.Fatal("expected linked runtime session id")
+	}
+
+	eventTime := time.Date(2026, 4, 10, 10, 0, 0, 0, time.UTC)
+	staleExitEvent := eventTime.Add(-48 * time.Hour)
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{{
+		EventTime: staleExitEvent,
+		Price:     68950.0,
+		Side:      "SELL",
+		Role:      "exit",
+		Reason:    "SL",
+	}}
+	platform.mu.Unlock()
+
+	signalKey := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT")
+	triggerKey := signalBindingMatchKey("binance-trade-tick", "trigger", "BTCUSDT")
+	summary := map[string]any{
+		"role":               "trigger",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"price":              68900.0,
+		"event":              "trade_tick",
+	}
+	err = platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		runtimeSession.Status = "RUNNING"
+		runtimeState := cloneMetadata(runtimeSession.State)
+		runtimeState["health"] = "healthy"
+		runtimeState["lastEventAt"] = eventTime.UTC().Format(time.RFC3339)
+		runtimeState["lastHeartbeatAt"] = eventTime.UTC().Format(time.RFC3339)
+		runtimeState["lastEventSummary"] = cloneMetadata(summary)
+		runtimeState["sourceStates"] = map[string]any{
+			triggerKey: map[string]any{
+				"sourceKey":   "binance-trade-tick",
+				"role":        "trigger",
+				"symbol":      "BTCUSDT",
+				"streamType":  "trade_tick",
+				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
+				"summary": map[string]any{
+					"price": 68900.0,
+				},
+			},
+			signalKey: map[string]any{
+				"sourceKey":   "binance-kline",
+				"role":        "signal",
+				"symbol":      "BTCUSDT",
+				"streamType":  "signal_bar",
+				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
+			},
+		}
+		runtimeState["signalBarStates"] = map[string]any{
+			signalKey: map[string]any{
+				"symbol":    "BTCUSDT",
+				"timeframe": "1d",
+				"ma20":      68000.0,
+				"atr14":     900.0,
+				"current": map[string]any{
+					"close": 68100.0,
+					"high":  69010.0,
+					"low":   67800.0,
+				},
+				"prevBar1": map[string]any{
+					"high": 68850.0,
+					"low":  67750.0,
+				},
+				"prevBar2": map[string]any{
+					"high": 69000.0,
+					"low":  67600.0,
+				},
+			},
+		}
+		runtimeSession.State = runtimeState
+		runtimeSession.UpdatedAt = eventTime
+	})
+	if err != nil {
+		t.Fatalf("update runtime state failed: %v", err)
+	}
+
+	if err := platform.evaluateLiveSessionOnSignal(session, runtimeSessionID, summary, eventTime); err != nil {
+		t.Fatalf("evaluate live session failed: %v", err)
+	}
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastDispatchedOrderStatus"]); got != liveOrderStatusVirtualExit {
+		t.Fatalf("expected virtual exit dispatch marker, got %s", got)
+	}
+	if got := stringValue(updated.State["lastVirtualSignalType"]); got != "exit" {
+		t.Fatalf("expected lastVirtualSignalType=exit, got %s", got)
+	}
+	if virtualPosition := mapValue(updated.State["virtualPosition"]); len(virtualPosition) != 0 {
+		t.Fatalf("expected virtualPosition to be cleared after virtual exit, got %+v", virtualPosition)
+	}
+	if got := maxIntValue(updated.State["planIndex"], -1); got != 1 {
+		t.Fatalf("expected planIndex to advance after virtual exit, got %d", got)
 	}
 }
 
