@@ -4363,6 +4363,139 @@ func TestDispatchLiveSessionIntentAllowsRecoveredPassiveCloseWithCompleteMetadat
 	}
 }
 
+func TestRecoverRunningLiveSessionAllowsVerifiedTakeoverPassiveCloseDispatch(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-recovery-passive-close-rest",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+			exchangePositions := []map[string]any{{
+				"symbol":      "BTCUSDT",
+				"positionAmt": 0.002,
+				"entryPrice":  69000.0,
+				"markPrice":   68900.0,
+			}}
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":          "binance-rest-account-v3",
+				"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+				"syncedAt":        time.Now().UTC().Format(time.RFC3339),
+				"bindingMode":     stringValue(binding["connectionMode"]),
+				"executionMode":   "rest",
+				"syncStatus":      "SYNCED",
+				"accountExchange": account.Exchange,
+				"positions":       exchangePositions,
+				"openOrders":      []map[string]any{},
+			}
+			var err error
+			account, err = p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			reconcileGate, err := p.reconcileLiveAccountPositions(account, exchangePositions)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["livePositionReconcileGate"] = reconcileGate
+			account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+			clearLiveAccountPositionReconcileRequirement(account.Metadata)
+			return p.store.UpdateAccount(account)
+		},
+		submitOrderFunc: func(_ domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
+			return LiveOrderSubmission{
+				Status:          "ACCEPTED",
+				ExchangeOrderID: "recovery-exit-order-1",
+				AcceptedAt:      time.Now().UTC().Format(time.RFC3339),
+				Metadata: map[string]any{
+					"adapterMode":   "test-recovery-passive-close",
+					"executionMode": stringValue(binding["executionMode"]),
+					"positionSide":  stringValue(order.Metadata["positionSide"]),
+				},
+			}, nil
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-recovery-passive-close-rest",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        69000,
+		MarkPrice:         68900,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["lastStrategyEvaluationSignalBarStates"] = testLiveRecoverySignalBarStates("BTCUSDT", 68900.0)
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	freshRuntimeAt := time.Now().UTC()
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+		state["lastHeartbeatAt"] = freshRuntimeAt.Format(time.RFC3339)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		for key, item := range sourceStates {
+			sourceState := cloneMetadata(mapValue(item))
+			sourceState["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+			sourceStates[key] = sourceState
+		}
+		runtimeSession.State = state
+		runtimeSession.State["sourceStates"] = sourceStates
+		runtimeSession.UpdatedAt = freshRuntimeAt
+	}); err != nil {
+		t.Fatalf("refresh runtime state failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "RUNNING" {
+		t.Fatalf("expected verified takeover session to stay RUNNING, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusVerified {
+		t.Fatalf("expected verified reconcile gate status, got %s", got)
+	}
+	proposal := mapValue(recovered.State["lastExecutionProposal"])
+	if !isLiveWatchdogFallbackProposal(proposal) {
+		t.Fatalf("expected recovered watchdog passive-close proposal, got %+v", proposal)
+	}
+
+	order, err := platform.dispatchLiveSessionIntent(recovered)
+	if err != nil {
+		t.Fatalf("dispatch recovered passive close failed: %v", err)
+	}
+	if got := order.Status; got != "ACCEPTED" {
+		t.Fatalf("expected accepted recovery close order, got %s", got)
+	}
+	if got := stringValue(order.Metadata["runtimeSessionId"]); got != runtimeSessionID {
+		t.Fatalf("expected order runtimeSessionId %s, got %s", runtimeSessionID, got)
+	}
+	if got := stringValue(order.Metadata["exchangeOrderId"]); got != "recovery-exit-order-1" {
+		t.Fatalf("expected exchange order id recovery-exit-order-1, got %s", got)
+	}
+}
+
 func TestRefreshLiveSessionPositionContextDoesNotRetriggerWatchdogWhileExitOrderWorking(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.store.SavePosition(domain.Position{
@@ -5751,6 +5884,126 @@ func TestClosePositionAllowsRecoveredCloseOnlyTakeoverWithoutRuntimeLinkage(t *t
 	}
 }
 
+func TestRecoverRunningLiveSessionPreservesRemainingQuantityAfterPartialFillRestart(t *testing.T) {
+	platform, session, _, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-partial-fill-restart",
+		syncOrderFunc: func(_ domain.Account, order domain.Order, _ map[string]any) (LiveOrderSync, error) {
+			return LiveOrderSync{
+				Status:   "PARTIALLY_FILLED",
+				SyncedAt: time.Now().UTC().Format(time.RFC3339),
+				Fills: []LiveFillReport{{
+					Quantity: 0.004,
+					Price:    68950.0,
+				}},
+			}, nil
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-partial-fill-restart",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        69000,
+		MarkPrice:         68980,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	order, err := platform.store.CreateOrder(domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Status:            "ACCEPTED",
+		Quantity:          0.01,
+		ReduceOnly:        true,
+		Metadata: map[string]any{
+			"source":        "live-session-intent",
+			"liveSessionId": session.ID,
+			"executionProposal": map[string]any{
+				"role":       "exit",
+				"reason":     "SL",
+				"side":       "SELL",
+				"symbol":     "BTCUSDT",
+				"quantity":   0.01,
+				"reduceOnly": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["lastDispatchedOrderId"] = order.ID
+	state["lastDispatchedOrderStatus"] = "ACCEPTED"
+	state["lastDispatchedIntent"] = map[string]any{
+		"role":       "exit",
+		"reason":     "SL",
+		"side":       "SELL",
+		"symbol":     "BTCUSDT",
+		"quantity":   0.01,
+		"reduceOnly": true,
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "RUNNING" {
+		t.Fatalf("expected recovered session to stay RUNNING, got %s", recovered.Status)
+	}
+
+	syncedOrder, err := platform.GetOrder(order.ID)
+	if err != nil {
+		t.Fatalf("get synced order failed: %v", err)
+	}
+	if got := syncedOrder.Status; got != "PARTIALLY_FILLED" {
+		t.Fatalf("expected partial fill order status, got %s", got)
+	}
+	if got := parseFloatValue(syncedOrder.Metadata["filledQuantity"]); got != 0.004 {
+		t.Fatalf("expected filled quantity 0.004, got %v", got)
+	}
+	if got := parseFloatValue(syncedOrder.Metadata["remainingQuantity"]); got != 0.006 {
+		t.Fatalf("expected remaining quantity 0.006, got %v", got)
+	}
+	position, found, err := platform.store.FindPosition(session.AccountID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected remaining position after partial fill restart")
+	}
+	if got := position.Quantity; got != 0.006 {
+		t.Fatalf("expected remaining position quantity 0.006, got %v", got)
+	}
+	if got := stringValue(recovered.State["lastSyncedOrderStatus"]); got != "PARTIALLY_FILLED" {
+		t.Fatalf("expected last synced order status PARTIALLY_FILLED, got %s", got)
+	}
+}
+
 func TestCompleteRecoveredLiveSessionMetadataClearsCloseOnlyTakeoverWhenPositionFlat(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
@@ -5992,6 +6245,9 @@ type testLiveAccountSyncAdapter struct {
 	syncErr             error
 	persistsSyncSuccess bool
 	syncSnapshotFunc    func(*Platform, domain.Account, map[string]any) (domain.Account, error)
+	submitOrderFunc     func(domain.Account, domain.Order, map[string]any) (LiveOrderSubmission, error)
+	syncOrderFunc       func(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error)
+	cancelOrderFunc     func(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error)
 }
 
 func (a testLiveAccountSyncAdapter) Key() string {
@@ -6010,15 +6266,24 @@ func (a testLiveAccountSyncAdapter) ValidateAccountConfig(map[string]any) error 
 	return nil
 }
 
-func (a testLiveAccountSyncAdapter) SubmitOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSubmission, error) {
+func (a testLiveAccountSyncAdapter) SubmitOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
+	if a.submitOrderFunc != nil {
+		return a.submitOrderFunc(account, order, binding)
+	}
 	return LiveOrderSubmission{}, nil
 }
 
-func (a testLiveAccountSyncAdapter) SyncOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+func (a testLiveAccountSyncAdapter) SyncOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	if a.syncOrderFunc != nil {
+		return a.syncOrderFunc(account, order, binding)
+	}
 	return LiveOrderSync{}, nil
 }
 
-func (a testLiveAccountSyncAdapter) CancelOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+func (a testLiveAccountSyncAdapter) CancelOrder(account domain.Account, order domain.Order, binding map[string]any) (LiveOrderSync, error) {
+	if a.cancelOrderFunc != nil {
+		return a.cancelOrderFunc(account, order, binding)
+	}
 	return LiveOrderSync{}, nil
 }
 
