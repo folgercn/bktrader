@@ -12,12 +12,13 @@
 
 - **图谱** == **graphify** (本项目的知识图谱工具)
 - **UI 规范** == **shadcn** (本项目的基础 UI 组件库与规范指南，见 [.skills/shadcn/SKILL.md](.skills/shadcn/SKILL.md))
+- **Research Baseline**: 研究/回测语境下，当前长期 baseline 视为 `dir2_zero_initial=true` + `zero_initial_mode=reentry_window`，并固定使用 `reentry_size_schedule=[0.20, 0.10]`、`max_trades_per_bar=2`。也就是同一根 signal bar 内，第 1 次真实下单为 `20%`，第 2 次真实下单为 `10%`。除非人类明确要求复现历史对照组，否则不要再默认把 `position` 或旧的 `10%/5%/2.5%` 方案当作 baseline 反复判断。
 
 ### 环境路径规约 (Environment Paths)
 
 由于部分 Shell 会话环境受限，请在涉及以下工具的操作中优先使用绝对路径，或参考 [docs/AGENT_PATHS.md](docs/AGENT_PATHS.md)：
-- **GitHub CLI (gh)**: `/opt/homebrew/bin/gh`
-- **Git**: `/usr/bin/git`
+- **GitHub CLI (gh)**: `/usr/local/bin/gh`
+- **Git**: `/usr/local/bin/git`
 
 ### graphify 规则
 
