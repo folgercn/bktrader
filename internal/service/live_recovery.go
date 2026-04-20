@@ -112,6 +112,11 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		return domain.LiveSession{}, err
 	}
 	hasRealPositionContext := foundPosition || math.Abs(parseFloatValue(positionSnapshot["quantity"])) > 0
+	account, err := p.store.GetAccount(refreshed.AccountID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	reconcileGate := resolveLivePositionReconcileGate(account, symbol, hasRealPositionContext)
 	state["recoveredPosition"] = positionSnapshot
 	state["hasRecoveredPosition"] = foundPosition
 	state["hasRecoveredRealPosition"] = foundPosition
@@ -126,6 +131,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		delete(state, "livePositionState")
 		state["lastLivePositionState"] = map[string]any{}
 		state["positionRecoveryStatus"] = "flat"
+		applyLivePositionReconcileGateState(state, reconcileGate)
 		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
@@ -137,6 +143,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		clearLiveWatchdogExitState(state)
 		state["positionRecoveryStatus"] = "monitoring-virtual-position"
 	}
+	applyLivePositionReconcileGateState(state, reconcileGate)
 
 	version, err := p.resolveCurrentStrategyVersion(refreshed.StrategyID)
 	if err != nil {
@@ -166,6 +173,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 				applyLivePositionWatermarks(state, watermarks)
 			}
 		}
+		applyLivePositionReconcileGateState(state, reconcileGate)
 		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
@@ -176,6 +184,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	marketPrice := firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(mapValue(signalBarState["current"])["close"]))
 	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, state)
 	if len(livePositionState) == 0 {
+		applyLivePositionReconcileGateState(state, reconcileGate)
 		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
@@ -196,7 +205,8 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		watchdogExitPending = syncLiveWatchdogExitState(state, eventTime)
 	}
 
-	if !watchdogExitPending &&
+	if !boolValue(reconcileGate["blocking"]) &&
+		!watchdogExitPending &&
 		boolValue(state["protectionRecoveryAuthoritative"]) &&
 		stringValue(state["positionRecoveryStatus"]) == "unprotected-open-position" {
 		stopLoss := parseFloatValue(livePositionState["stopLoss"])
@@ -264,6 +274,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		}
 	}
 
+	applyLivePositionReconcileGateState(state, reconcileGate)
 	applyRecoveryMode(state)
 	updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 	if updateErr != nil {
