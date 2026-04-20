@@ -814,14 +814,21 @@ func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
 		if session.AccountID != account.ID {
 			continue
 		}
-		updated := session
-		if completed, _, _, completeErr := p.completeRecoveredLiveSessionMetadata(updated); completeErr == nil {
-			updated = completed
-		}
-		if refreshed, refreshErr := p.refreshLiveSessionPositionContext(updated, time.Now().UTC(), "live-account-sync"); refreshErr == nil {
-			_ = refreshed
-		}
+		p.refreshLiveSessionForAccountSnapshot(session, time.Now().UTC())
 	}
+}
+
+func (p *Platform) refreshLiveSessionForAccountSnapshot(session domain.LiveSession, refreshedAt time.Time) domain.LiveSession {
+	updated := session
+	if completed, _, _, completeErr := p.completeRecoveredLiveSessionMetadata(updated); completeErr == nil {
+		updated = completed
+	}
+	// refreshLiveSessionPositionContext persists its own state updates; we retain
+	// the returned snapshot here only to make the refresh sequence explicit.
+	if refreshed, refreshErr := p.refreshLiveSessionPositionContext(updated, refreshedAt, "live-account-sync"); refreshErr == nil {
+		updated = refreshed
+	}
+	return updated
 }
 
 func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {

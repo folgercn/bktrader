@@ -613,6 +613,92 @@ func TestSettleImmediatelyFilledLiveOrderReturnsSettledOrderWhenAccountRefreshFa
 	}
 }
 
+func TestImmediateFilledLiveOrderRepeatedSyncKeepsRetryMarkerAndFillDedupeStable(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{
+		key: "test-immediate-filled-repeat-sync",
+		syncResult: LiveOrderSync{
+			Status:   "FILLED",
+			SyncedAt: "2026-04-20T10:20:01Z",
+			Fills: []LiveFillReport{{
+				Price:    68250,
+				Quantity: 0.25,
+				Fee:      1.2,
+				Metadata: map[string]any{
+					"exchangeOrderId": "exchange-order-filled-4",
+					"tradeId":         "trade-filled-4",
+					"tradeTime":       "2026-04-20T10:20:01Z",
+				},
+			}},
+			Terminal: true,
+		},
+	}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": adapter.key,
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "LONG",
+		Quantity:  0.25,
+		MarkPrice: 68250,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	order, err := store.CreateOrder(domain.Order{
+		AccountID:  account.ID,
+		Symbol:     "BTCUSDT",
+		Side:       "SELL",
+		Type:       "MARKET",
+		Quantity:   0.25,
+		Status:     "FILLED",
+		ReduceOnly: true,
+		Metadata: map[string]any{
+			"exchangeOrderId":             "exchange-order-filled-4",
+			liveSettlementSyncErrorKey:    "previous refresh failure",
+			liveSettlementSyncRequiredKey: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	syncedOrder, err := platform.SyncLiveOrder(order.ID)
+	if err != nil {
+		t.Fatalf("first sync failed: %v", err)
+	}
+	syncedOrder, err = platform.SyncLiveOrder(order.ID)
+	if err != nil {
+		t.Fatalf("second sync failed: %v", err)
+	}
+
+	fills, err := store.ListFills()
+	if err != nil {
+		t.Fatalf("list fills failed: %v", err)
+	}
+	fillCount := 0
+	for _, item := range fills {
+		if item.OrderID == order.ID {
+			fillCount++
+		}
+	}
+	if fillCount != 1 {
+		t.Fatalf("expected repeated sync to keep one fill, got %d", fillCount)
+	}
+	if got := stringValue(syncedOrder.Metadata[liveSettlementSyncErrorKey]); got != "previous refresh failure" {
+		t.Fatalf("expected retry marker error to remain stable, got %q", got)
+	}
+	if !boolValue(syncedOrder.Metadata[liveSettlementSyncRequiredKey]) {
+		t.Fatal("expected retry marker to remain stable across repeated sync")
+	}
+}
+
 func TestRecoveredPassiveCloseExecutionBoundaryAllowsValidHedgeClose(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)

@@ -8,6 +8,11 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
+const (
+	liveSettlementSyncErrorKey    = "immediateFillSyncError"
+	liveSettlementSyncRequiredKey = "immediateFillSyncRequired"
+)
+
 // --- 订单管理服务方法 ---
 
 // ListOrders 获取所有订单列表。
@@ -533,9 +538,7 @@ func (p *Platform) applyLiveSubmissionResult(
 	if strings.EqualFold(updatedOrder.Status, "FILLED") {
 		settledOrder, settleErr := p.settleImmediatelyFilledLiveOrder(updatedOrder)
 		if settleErr != nil {
-			settledOrder.Metadata = cloneMetadata(settledOrder.Metadata)
-			settledOrder.Metadata["immediateFillSyncError"] = settleErr.Error()
-			settledOrder.Metadata["immediateFillSyncRequired"] = true
+			settledOrder = markLiveSettlementSyncRetry(settledOrder, settleErr)
 			persistedOrder, updateErr := p.store.UpdateOrder(settledOrder)
 			if updateErr != nil {
 				return domain.Order{}, updateErr
@@ -549,6 +552,13 @@ func (p *Platform) applyLiveSubmissionResult(
 		return settledOrder, nil
 	}
 	return updatedOrder, nil
+}
+
+func markLiveSettlementSyncRetry(order domain.Order, err error) domain.Order {
+	order.Metadata = cloneMetadata(order.Metadata)
+	order.Metadata[liveSettlementSyncErrorKey] = err.Error()
+	order.Metadata[liveSettlementSyncRequiredKey] = true
+	return order
 }
 
 func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.Order, error) {
