@@ -648,3 +648,10 @@ export interface LiveLaunchResult {
   runtimePlanRefreshed?: boolean;
   stoppedLiveSessions?: number;
 }
+
+export type TimelineConfig = {
+  deduplicationEnabled: boolean;
+  quietSeconds: number;
+  maxRepeats: number;
+};
+

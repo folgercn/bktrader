@@ -30,8 +30,12 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '.
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { Button } from '../components/ui/button';
-import { Activity, Layout, ShieldCheck, Zap, BarChart3, Clock, ArrowRightLeft, HeartPulse, LineChart, CandlestickChart, Compass, ShieldAlert, FileText, Layers, ChevronDown } from 'lucide-react';
+import { Activity, Layout, ShieldCheck, Zap, BarChart3, Clock, ArrowRightLeft, HeartPulse, LineChart, CandlestickChart, Compass, ShieldAlert, FileText, Layers, ChevronDown, Settings, Filter } from 'lucide-react';
+
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+
 import { cn } from '../lib/utils';
 
 type MonitorStageProps = {
@@ -55,6 +59,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
   const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
   const setSelectedSignalRuntimeId = useTradingStore(s => s.setSelectedSignalRuntimeId);
+  const timelineConfig = useUIStore(s => s.timelineConfig);
+  const setTimelineConfig = useUIStore(s => s.setTimelineConfig);
+
 
   // 1. 高亮会话选择逻辑
   const highlightedLiveSession = useMemo(
@@ -167,7 +174,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   );
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
-  const timelineLogs = buildTimelineNotes(monitorTimeline).slice(0, 50);
+  const timelineLogs = buildTimelineNotes(monitorTimeline, timelineConfig, monitorSession?.id).slice(0, 50);
+
+
   const reconciledOrders = orders.filter(o => !!(o.metadata?.orderLifecycle as any)?.synced);
   const orphanedOrders = orders.filter(o => (o.metadata?.orderLifecycle as any)?.reconciliationState === 'orphaned');
   const reconAuditLabel = orphanedOrders.length > 0 ? `${orphanedOrders.length} 异常` : (reconciledOrders.length > 0 ? "已审计" : "平衡");
@@ -464,11 +473,59 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                   <div className="size-2 animate-pulse rounded-full bg-[var(--bk-status-success)]" />
                   <h5 className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-primary)]">Execution Timeline Terminal</h5>
                 </div>
-                <div className="rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-0.5 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-muted)]">
-                  AUTO_SCROLL_MONITOR
+                <div className="flex items-center gap-3">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-1 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-muted)] hover:bg-[var(--bk-surface-muted)] transition-colors">
+                        <Settings className="size-3" />
+                        终端配置
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-[280px] p-5 rounded-3xl border-2 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] shadow-2xl isolate z-[70]">
+                      <div className="space-y-5">
+                         <div className="flex items-center justify-between">
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-[var(--bk-text-primary)]">过滤冗余决策</Label>
+                            <input 
+                              type="checkbox" 
+                              checked={timelineConfig.deduplicationEnabled}
+                              onChange={(e) => setTimelineConfig({ ...timelineConfig, deduplicationEnabled: e.target.checked })}
+                              className="size-4 rounded border-[var(--bk-border)] bg-[var(--bk-surface)] accent-[var(--bk-status-success)] cursor-pointer"
+                            />
+                         </div>
+                         <div className="space-y-2">
+                            <Label className="text-[9px] font-black uppercase tracking-tighter text-[var(--bk-text-muted)]">静默触发时间 (秒)</Label>
+                            <Input 
+                              type="number" 
+                              value={timelineConfig.quietSeconds}
+                              onChange={(e) => setTimelineConfig({ ...timelineConfig, quietSeconds: Math.max(0, parseInt(e.target.value) || 0) })}
+                              className="h-8 text-[11px] font-black rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-faint)]"
+                              placeholder="60"
+                            />
+                            <p className="text-[10px] text-[var(--bk-text-muted)] leading-tight italic opacity-60">定义静默隔离的时间长度。在此时间内的重复事件将被限制显示频率。</p>
+                         </div>
+
+                         <div className="space-y-2">
+                            <Label className="text-[9px] font-black uppercase tracking-tighter text-[var(--bk-text-muted)]">窗口内最大显示数</Label>
+                            <Input 
+                              type="number" 
+                              value={timelineConfig.maxRepeats}
+                              onChange={(e) => setTimelineConfig({ ...timelineConfig, maxRepeats: Math.max(1, parseInt(e.target.value) || 1) })}
+                              className="h-8 text-[11px] font-black rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-faint)]"
+                              placeholder="1"
+                            />
+                            <p className="text-[10px] text-[var(--bk-text-muted)] leading-tight italic opacity-60">定义在静默周期内允许显示的该类事件的最大总次数（包含首条）。</p>
+                         </div>
+
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  <div className="rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-1 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-muted)]">
+                    AUTO_SCROLL_MONITOR
+                  </div>
                 </div>
              </div>
           </CardHeader>
+
           <CardContent className="p-0">
             <div className="custom-scrollbar h-[260px] overflow-y-auto px-8 py-5 font-mono text-[10px] leading-relaxed">
                {timelineLogs.length > 0 ? timelineLogs.map((line: string, idx: number) => (

@@ -1,4 +1,5 @@
-import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, AuthSession } from '../types/domain';
+import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, AuthSession, TimelineConfig } from '../types/domain';
+
 
 import { formatMoney, formatSigned, formatPercent, formatNumber, formatMaybeNumber, formatTime, formatShortTime, shrink } from './format';
 import { createChart } from 'lightweight-charts';
@@ -1200,11 +1201,61 @@ export function buildSignalActionNotes(signalAction: { bias: string; state: stri
   return [`信号活动: ${signalAction.bias} · ${signalAction.state} · ${signalAction.reason}`];
 }
 
-export function buildTimelineNotes(items: Array<Record<string, unknown>>) {
+export function buildTimelineNotes(items: Array<Record<string, unknown>>, config?: TimelineConfig, sessionId?: string) {
   if (items.length === 0) {
     return ["时间线: --"];
   }
-  return items
+
+  const { deduplicationEnabled = true, quietSeconds = 60, maxRepeats = 1 } = config ?? {};
+  let processedItems = items;
+
+  if (deduplicationEnabled) {
+    const filtered: Array<Record<string, unknown>> = [];
+    // 摘要去重追踪：Digest -> { lastTime, displayCount }
+    const lastSeenMap = new Map<string, { lastTime: number; displayCount: number }>();
+
+    for (const item of items) {
+      const metadata = getRecord(item.metadata);
+      const category = String(item.category ?? "");
+      const title = String(item.title ?? "");
+      const reason = String(metadata.reason ?? "");
+      const action = String(metadata.action ?? "");
+      const eventTimeStr = String(item.time ?? "");
+      const eventTime = Date.parse(eventTimeStr);
+
+      // 生成增强版摘要：加入 sessionId 以实现会话隔离
+      const activeSessionId = sessionId || String(metadata.liveSessionId ?? metadata.signalRuntimeSessionId ?? "");
+      const digest = `${activeSessionId}|${category}|${title}|${reason}|${action}|${metadata.symbol ?? ""}`;
+
+      const currentTime = !Number.isNaN(eventTime) ? eventTime : 0;
+      const isDeduplicatable = category === "strategy" || category === "reconcile" || title === "waiting-source-states";
+
+      if (isDeduplicatable) {
+        const record = lastSeenMap.get(digest);
+        // 判断是否在静默时间窗口内（与该摘要上一次出现的时间对比）
+        const isWithinQuietPeriod = record && record.lastTime > 0 && (currentTime - record.lastTime) < quietSeconds * 1000;
+
+        if (isWithinQuietPeriod) {
+          if (record.displayCount < maxRepeats) {
+            record.displayCount++;
+            filtered.push(item);
+          }
+          // 无论是否显示，都更新该摘要的最后触达时间，确保“静默”是相对于上一次脉冲的
+          record.lastTime = currentTime;
+        } else {
+          // 超出窗口或首次出现：开启新窗口，重置计数
+          lastSeenMap.set(digest, { lastTime: currentTime, displayCount: 1 });
+          filtered.push(item);
+        }
+      } else {
+        // 非初筛决策类（如重要告警、成交记录等）始终保留，不参与去重
+        filtered.push(item);
+      }
+    }
+    processedItems = filtered;
+  }
+
+  return processedItems
     .slice(-50)
     .reverse()
     .map((item) => {
@@ -1247,6 +1298,8 @@ export function buildTimelineNotes(items: Array<Record<string, unknown>>) {
       return fragments.join(" · ");
     });
 }
+
+
 
 export function summarizeOrderPreflight(value: unknown) {
   const preflight = getRecord(value);
