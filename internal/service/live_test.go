@@ -6100,6 +6100,43 @@ func TestCompleteRecoveredLiveSessionMetadataClearsCloseOnlyTakeoverWhenPosition
 	}
 }
 
+func TestSyncLiveSessionsForAccountSnapshotDoesNotResumeOtherBlockedSession(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["signalRuntimeRequired"] = false
+	state["signalRuntimeReady"] = false
+	state["lastStrategyEvaluationStatus"] = "operator-paused"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	session, err = platform.store.UpdateLiveSessionStatus(session.ID, "BLOCKED")
+	if err != nil {
+		t.Fatalf("update live session status failed: %v", err)
+	}
+	account, err := platform.store.GetAccount(session.AccountID)
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+
+	platform.syncLiveSessionsForAccountSnapshot(account)
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := updated.Status; got != "BLOCKED" {
+		t.Fatalf("expected unrelated blocked session to stay BLOCKED, got %s", got)
+	}
+}
+
 func TestEnsureLiveExecutionPlanPreservesSignalRuntimeRequirementWhenFlat(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	for _, payload := range []map[string]any{

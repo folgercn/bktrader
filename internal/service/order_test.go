@@ -292,7 +292,6 @@ func TestCreateLiveOrderImmediateFilledSubmissionSettlesReduceOnlyExit(t *testin
 	if err != nil {
 		t.Fatalf("bind live account failed: %v", err)
 	}
-
 	if _, err := store.SavePosition(domain.Position{
 		AccountID:         account.ID,
 		StrategyVersionID: "strategy-version-bk-1d-v010",
@@ -341,7 +340,6 @@ func TestCreateLiveOrderImmediateFilledSubmissionSettlesReduceOnlyExit(t *testin
 	} else if found {
 		t.Fatal("expected reduce-only FILLED exit to clear the local position")
 	}
-
 	fills, err := store.ListFills()
 	if err != nil {
 		t.Fatalf("list fills failed: %v", err)
@@ -358,6 +356,346 @@ func TestCreateLiveOrderImmediateFilledSubmissionSettlesReduceOnlyExit(t *testin
 	}
 	if orderFillCount != 1 {
 		t.Fatalf("expected one fill for settled immediate-FILLED order, got %d", orderFillCount)
+	}
+}
+
+func TestClosePositionImmediatelySettlesFilledLiveManualClose(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{
+		key: "test-immediate-filled-close",
+		submitResult: LiveOrderSubmission{
+			Status:          "FILLED",
+			ExchangeOrderID: "exchange-order-filled-1",
+			AcceptedAt:      "2026-04-20T10:00:00Z",
+		},
+		syncResult: LiveOrderSync{
+			Status:   "FILLED",
+			SyncedAt: "2026-04-20T10:00:01Z",
+			Fills: []LiveFillReport{{
+				Price:    68100,
+				Quantity: 0.25,
+				Fee:      1.25,
+				Metadata: map[string]any{
+					"exchangeOrderId": "exchange-order-filled-1",
+					"tradeId":         "trade-filled-1",
+					"tradeTime":       "2026-04-20T10:00:01Z",
+				},
+			}},
+			Terminal: true,
+		},
+	}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": adapter.key,
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	position, err := store.SavePosition(domain.Position{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "LONG",
+		Quantity:  0.25,
+		MarkPrice: 68100,
+	})
+	if err != nil {
+		t.Fatalf("save live position failed: %v", err)
+	}
+
+	order, err := platform.ClosePosition(position.ID)
+	if err != nil {
+		t.Fatalf("close position failed: %v", err)
+	}
+	if got := order.Status; got != "FILLED" {
+		t.Fatalf("expected immediate settlement to return FILLED, got %s", got)
+	}
+	if adapter.syncCount != 1 {
+		t.Fatalf("expected immediate FILLED submission to trigger one order sync, got %d", adapter.syncCount)
+	}
+	if _, found, err := store.FindPosition(account.ID, "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected immediate FILLED live close to delete the position")
+	}
+	fills, err := store.ListFills()
+	if err != nil {
+		t.Fatalf("list fills failed: %v", err)
+	}
+	fillCount := 0
+	for _, item := range fills {
+		if item.OrderID == order.ID {
+			fillCount++
+		}
+	}
+	if fillCount != 1 {
+		t.Fatalf("expected one persisted fill for immediate FILLED close, got %d", fillCount)
+	}
+}
+
+func TestClosePositionFilledLiveManualCloseClearsRecoverySessionState(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{
+		key: "test-filled-close-session-refresh",
+		submitResult: LiveOrderSubmission{
+			Status:          "FILLED",
+			ExchangeOrderID: "exchange-order-filled-2",
+			AcceptedAt:      "2026-04-20T10:05:00Z",
+		},
+		syncResult: LiveOrderSync{
+			Status:   "FILLED",
+			SyncedAt: "2026-04-20T10:05:01Z",
+			Fills: []LiveFillReport{{
+				Price:    68150,
+				Quantity: 0.25,
+				Fee:      1.1,
+				Metadata: map[string]any{
+					"exchangeOrderId": "exchange-order-filled-2",
+					"tradeId":         "trade-filled-2",
+					"tradeTime":       "2026-04-20T10:05:01Z",
+				},
+			}},
+			Terminal: true,
+		},
+	}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": adapter.key,
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	position, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		MarkPrice:         68150,
+	})
+	if err != nil {
+		t.Fatalf("save live position failed: %v", err)
+	}
+	session, err := platform.CreateLiveSession(account.ID, "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["recoveryMode"] = liveRecoveryModeCloseOnlyTakeover
+	state["runtimeMode"] = liveRecoveryModeCloseOnlyTakeover
+	state["signalRuntimeMode"] = liveRecoveryModeCloseOnlyTakeover
+	state["signalRuntimeRequired"] = false
+	state["signalRuntimeReady"] = false
+	state["positionRecoveryStatus"] = liveRecoveryModeCloseOnlyTakeover
+	state["lastStrategyEvaluationStatus"] = liveRecoveryModeCloseOnlyTakeover
+	state["recoveredPosition"] = buildRecoveredLivePositionStateSnapshot(position)
+	state["hasRecoveredPosition"] = true
+	state["hasRecoveredRealPosition"] = true
+	session, err = store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	session, err = store.UpdateLiveSessionStatus(session.ID, "BLOCKED")
+	if err != nil {
+		t.Fatalf("update live session status failed: %v", err)
+	}
+
+	if _, err := platform.ClosePosition(position.ID); err != nil {
+		t.Fatalf("close position failed: %v", err)
+	}
+
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(updatedSession.State["recoveryMode"]); got != "" {
+		t.Fatalf("expected recoveryMode to clear after successful close, got %s", got)
+	}
+	if got := stringValue(updatedSession.State["positionRecoveryStatus"]); got != "flat" {
+		t.Fatalf("expected positionRecoveryStatus flat after successful close, got %s", got)
+	}
+	if updatedSession.Status != "BLOCKED" {
+		t.Fatalf("expected session status to stay BLOCKED until normal runtime flow resumes it, got %s", updatedSession.Status)
+	}
+}
+
+func TestSettleImmediatelyFilledLiveOrderReturnsSettledOrderWhenAccountRefreshFails(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{
+		key: "test-filled-close-refresh-failure",
+		syncResult: LiveOrderSync{
+			Status:   "FILLED",
+			SyncedAt: "2026-04-20T10:10:01Z",
+			Fills: []LiveFillReport{{
+				Price:    68200,
+				Quantity: 0.25,
+				Fee:      1.15,
+				Metadata: map[string]any{
+					"exchangeOrderId": "exchange-order-filled-3",
+					"tradeId":         "trade-filled-3",
+					"tradeTime":       "2026-04-20T10:10:01Z",
+				},
+			}},
+			Terminal: true,
+		},
+	}
+	adapter.syncHook = func(account domain.Account, _ domain.Order) {
+		account.Metadata = cloneMetadata(account.Metadata)
+		delete(account.Metadata, "liveBinding")
+		if _, err := store.UpdateAccount(account); err != nil {
+			t.Fatalf("update account failed: %v", err)
+		}
+	}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": adapter.key,
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "LONG",
+		Quantity:  0.25,
+		MarkPrice: 68200,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	order, err := store.CreateOrder(domain.Order{
+		AccountID:  account.ID,
+		Symbol:     "BTCUSDT",
+		Side:       "SELL",
+		Type:       "MARKET",
+		Quantity:   0.25,
+		Status:     "FILLED",
+		ReduceOnly: true,
+		Metadata: map[string]any{
+			"exchangeOrderId": "exchange-order-filled-3",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	settled, err := platform.settleImmediatelyFilledLiveOrder(order)
+	if err == nil {
+		t.Fatal("expected account refresh failure after settlement")
+	}
+	if got := settled.Status; got != "FILLED" {
+		t.Fatalf("expected returned order to stay FILLED, got %s", got)
+	}
+	if _, found, findErr := store.FindPosition(account.ID, "BTCUSDT"); findErr != nil {
+		t.Fatalf("find position failed: %v", findErr)
+	} else if found {
+		t.Fatal("expected position to be deleted even when account refresh fails")
+	}
+	fills, err := store.ListFills()
+	if err != nil {
+		t.Fatalf("list fills failed: %v", err)
+	}
+	fillCount := 0
+	for _, item := range fills {
+		if item.OrderID == order.ID {
+			fillCount++
+		}
+	}
+	if fillCount != 1 {
+		t.Fatalf("expected one fill persisted before account refresh failure, got %d", fillCount)
+	}
+}
+
+func TestImmediateFilledLiveOrderRepeatedSyncKeepsRetryMarkerAndFillDedupeStable(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{
+		key: "test-immediate-filled-repeat-sync",
+		syncResult: LiveOrderSync{
+			Status:   "FILLED",
+			SyncedAt: "2026-04-20T10:20:01Z",
+			Fills: []LiveFillReport{{
+				Price:    68250,
+				Quantity: 0.25,
+				Fee:      1.2,
+				Metadata: map[string]any{
+					"exchangeOrderId": "exchange-order-filled-4",
+					"tradeId":         "trade-filled-4",
+					"tradeTime":       "2026-04-20T10:20:01Z",
+				},
+			}},
+			Terminal: true,
+		},
+	}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": adapter.key,
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "LONG",
+		Quantity:  0.25,
+		MarkPrice: 68250,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	order, err := store.CreateOrder(domain.Order{
+		AccountID:  account.ID,
+		Symbol:     "BTCUSDT",
+		Side:       "SELL",
+		Type:       "MARKET",
+		Quantity:   0.25,
+		Status:     "FILLED",
+		ReduceOnly: true,
+		Metadata: map[string]any{
+			"exchangeOrderId":             "exchange-order-filled-4",
+			liveSettlementSyncErrorKey:    "previous refresh failure",
+			liveSettlementSyncRequiredKey: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	syncedOrder, err := platform.SyncLiveOrder(order.ID)
+	if err != nil {
+		t.Fatalf("first sync failed: %v", err)
+	}
+	syncedOrder, err = platform.SyncLiveOrder(order.ID)
+	if err != nil {
+		t.Fatalf("second sync failed: %v", err)
+	}
+
+	fills, err := store.ListFills()
+	if err != nil {
+		t.Fatalf("list fills failed: %v", err)
+	}
+	fillCount := 0
+	for _, item := range fills {
+		if item.OrderID == order.ID {
+			fillCount++
+		}
+	}
+	if fillCount != 1 {
+		t.Fatalf("expected repeated sync to keep one fill, got %d", fillCount)
+	}
+	if got := stringValue(syncedOrder.Metadata[liveSettlementSyncErrorKey]); got != "previous refresh failure" {
+		t.Fatalf("expected retry marker error to remain stable, got %q", got)
+	}
+	if !boolValue(syncedOrder.Metadata[liveSettlementSyncRequiredKey]) {
+		t.Fatal("expected retry marker to remain stable across repeated sync")
 	}
 }
 
@@ -814,9 +1152,15 @@ func TestFinalizeExecutedOrderKeepsLastFilledAtOnDuplicateSync(t *testing.T) {
 }
 
 type recordingLiveExecutionAdapter struct {
-	key         string
-	submitCount int
-	lastOrder   domain.Order
+	key          string
+	submitCount  int
+	syncCount    int
+	lastOrder    domain.Order
+	submitResult LiveOrderSubmission
+	syncResult   LiveOrderSync
+	submitErr    error
+	syncErr      error
+	syncHook     func(domain.Account, domain.Order)
 }
 
 func (a *recordingLiveExecutionAdapter) Key() string {
@@ -834,6 +1178,23 @@ func (a *recordingLiveExecutionAdapter) ValidateAccountConfig(map[string]any) er
 func (a *recordingLiveExecutionAdapter) SubmitOrder(_ domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
 	a.submitCount++
 	a.lastOrder = order
+	if a.submitErr != nil {
+		return LiveOrderSubmission{}, a.submitErr
+	}
+	if a.submitResult.Status != "" || a.submitResult.ExchangeOrderID != "" || a.submitResult.AcceptedAt != "" || len(a.submitResult.Metadata) > 0 {
+		result := a.submitResult
+		result.Metadata = cloneMetadata(result.Metadata)
+		if result.Metadata == nil {
+			result.Metadata = map[string]any{}
+		}
+		if result.Metadata["executionMode"] == nil {
+			result.Metadata["executionMode"] = stringValue(binding["executionMode"])
+		}
+		if result.Metadata["positionMode"] == nil {
+			result.Metadata["positionMode"] = stringValue(binding["positionMode"])
+		}
+		return result, nil
+	}
 	return LiveOrderSubmission{
 		Status:          "ACCEPTED",
 		ExchangeOrderID: "exchange-order-1",
@@ -847,8 +1208,23 @@ func (a *recordingLiveExecutionAdapter) SubmitOrder(_ domain.Account, order doma
 	}, nil
 }
 
-func (a *recordingLiveExecutionAdapter) SyncOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
-	return LiveOrderSync{}, nil
+func (a *recordingLiveExecutionAdapter) SyncOrder(account domain.Account, order domain.Order, _ map[string]any) (LiveOrderSync, error) {
+	a.syncCount++
+	if a.syncHook != nil {
+		a.syncHook(account, order)
+	}
+	if a.syncErr != nil {
+		return LiveOrderSync{}, a.syncErr
+	}
+	return LiveOrderSync{
+		Status:     a.syncResult.Status,
+		SyncedAt:   a.syncResult.SyncedAt,
+		Fills:      append([]LiveFillReport(nil), a.syncResult.Fills...),
+		Metadata:   cloneMetadata(a.syncResult.Metadata),
+		Terminal:   a.syncResult.Terminal,
+		FeeSource:  a.syncResult.FeeSource,
+		FundingSrc: a.syncResult.FundingSrc,
+	}, nil
 }
 
 func (a *recordingLiveExecutionAdapter) CancelOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {

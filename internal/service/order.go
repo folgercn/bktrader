@@ -8,6 +8,11 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
+const (
+	liveSettlementSyncErrorKey    = "immediateFillSyncError"
+	liveSettlementSyncRequiredKey = "immediateFillSyncRequired"
+)
+
 // --- 订单管理服务方法 ---
 
 // ListOrders 获取所有订单列表。
@@ -531,24 +536,40 @@ func (p *Platform) applyLiveSubmissionResult(
 		logger.Warn("record live order submission event failed", "error", telemetryErr)
 	}
 	if strings.EqualFold(updatedOrder.Status, "FILLED") {
-		syncedOrder, syncErr := p.SyncLiveOrder(updatedOrder.ID)
-		if syncErr == nil {
-			return syncedOrder, nil
+		settledOrder, settleErr := p.settleImmediatelyFilledLiveOrder(updatedOrder)
+		if settleErr != nil {
+			settledOrder = markLiveSettlementSyncRetry(settledOrder, settleErr)
+			persistedOrder, updateErr := p.store.UpdateOrder(settledOrder)
+			if updateErr != nil {
+				return domain.Order{}, updateErr
+			}
+			logger.Warn("live order immediate fill sync failed",
+				"exchange_order_id", submission.ExchangeOrderID,
+				"error", settleErr,
+			)
+			return persistedOrder, settleErr
 		}
-		updatedOrder.Metadata = cloneMetadata(updatedOrder.Metadata)
-		updatedOrder.Metadata["immediateFillSyncError"] = syncErr.Error()
-		updatedOrder.Metadata["immediateFillSyncRequired"] = true
-		persistedOrder, updateErr := p.store.UpdateOrder(updatedOrder)
-		if updateErr != nil {
-			return domain.Order{}, updateErr
-		}
-		logger.Warn("live order immediate fill sync failed",
-			"exchange_order_id", submission.ExchangeOrderID,
-			"error", syncErr,
-		)
-		return persistedOrder, syncErr
+		return settledOrder, nil
 	}
 	return updatedOrder, nil
+}
+
+func markLiveSettlementSyncRetry(order domain.Order, err error) domain.Order {
+	order.Metadata = cloneMetadata(order.Metadata)
+	order.Metadata[liveSettlementSyncErrorKey] = err.Error()
+	order.Metadata[liveSettlementSyncRequiredKey] = true
+	return order
+}
+
+func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.Order, error) {
+	settledOrder, err := p.SyncLiveOrder(order.ID)
+	if err != nil {
+		return order, fmt.Errorf("live order %s submitted as FILLED but settlement sync failed: %w", order.ID, err)
+	}
+	if _, syncErr := p.SyncLiveAccount(order.AccountID); syncErr != nil {
+		return settledOrder, fmt.Errorf("live order %s settled but account/session refresh failed: %w", order.ID, syncErr)
+	}
+	return settledOrder, nil
 }
 
 func (p *Platform) ensureLiveRuntimeReady(account domain.Account, order domain.Order) (domain.SignalRuntimeSession, map[string]any, error) {
