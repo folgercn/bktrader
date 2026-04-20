@@ -394,11 +394,8 @@ func shouldBlockAutoDispatchForRecoveryIntent(session domain.LiveSession, intent
 		return true
 	}
 	recoveryActions := currentLiveRecoveryActionMatrix(session.State)
-	if !recoveryActions.AutoDispatch {
-		action := resolveLiveRecoveryIntentAction(intent)
-		if liveRecoveryIntentActionAllowed(recoveryActions, action) || boolValue(session.State["recoveryTakeoverActive"]) {
-			return true
-		}
+	if boolValue(session.State["recoveryTakeoverActive"]) && !recoveryActions.AutoDispatch {
+		return true
 	}
 	if !isRecoveryTriggeredPassiveCloseProposal(intent) {
 		return false

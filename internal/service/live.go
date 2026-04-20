@@ -2875,7 +2875,7 @@ func applyLivePositionReconcileGateState(state map[string]any, gate map[string]a
 		delete(state, "positionReconcileGateMismatchFields")
 	}
 	if boolValue(gate["blocking"]) {
-		state["positionRecoveryStatus"] = firstNonEmpty(stringValue(gate["takeoverState"]), firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusError))
+		state["positionRecoveryStatus"] = firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusError)
 		state["lastStrategyEvaluationStatus"] = liveRecoveryModeReconcileGateBlocked
 	}
 }

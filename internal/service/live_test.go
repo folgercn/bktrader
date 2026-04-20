@@ -5382,8 +5382,11 @@ func TestRecoverRunningLiveSessionBlocksWhenDBPositionMissingOnExchange(t *testi
 	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusStale {
 		t.Fatalf("expected stale reconcile gate status, got %s", got)
 	}
-	if got := stringValue(recovered.State["positionRecoveryStatus"]); got != liveRecoveryTakeoverStateStaleSync {
-		t.Fatalf("expected stale position recovery status %s, got %s", liveRecoveryTakeoverStateStaleSync, got)
+	if got := stringValue(recovered.State["positionRecoveryStatus"]); got != livePositionReconcileGateStatusStale {
+		t.Fatalf("expected stale position recovery status %s, got %s", livePositionReconcileGateStatusStale, got)
+	}
+	if got := stringValue(recovered.State["recoveryTakeoverState"]); got != liveRecoveryTakeoverStateStaleSync {
+		t.Fatalf("expected takeover state %s, got %s", liveRecoveryTakeoverStateStaleSync, got)
 	}
 	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "db-position-exchange-missing" {
 		t.Fatalf("expected db-position-exchange-missing scenario, got %s", got)
