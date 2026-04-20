@@ -1838,6 +1838,24 @@ func TestEnsureLaunchLiveSessionCreatesDistinctSessionPerSymbolAndTimeframe(t *t
 	}
 }
 
+func TestCreateLiveSessionPersistsLaunchScopeIntoState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "5m",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if got := stringValue(session.State["symbol"]); got != "BTCUSDT" {
+		t.Fatalf("expected session state symbol BTCUSDT, got %q", got)
+	}
+	if got := stringValue(session.State["signalTimeframe"]); got != "5m" {
+		t.Fatalf("expected session state signalTimeframe 5m, got %q", got)
+	}
+}
+
 func TestIsLivePlanStepStaleUsesFiveMinuteTimeframe(t *testing.T) {
 	nextPlannedEvent := time.Date(2026, 4, 16, 12, 0, 0, 0, time.UTC)
 	if isLivePlanStepStale(nextPlannedEvent, "5m", nextPlannedEvent.Add(4*time.Minute+59*time.Second)) {
