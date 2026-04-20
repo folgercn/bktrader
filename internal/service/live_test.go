@@ -4904,6 +4904,73 @@ func TestStartLiveSessionRejectsActiveCloseOnlyTakeoverMode(t *testing.T) {
 	}
 }
 
+func TestStartLiveSessionDowngradesIncompleteRecoveredMetadataToCloseOnly(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-start-incomplete"})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-start-incomplete",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	secondary, err := platform.store.CreateLiveSession("live-main", "strategy-ambiguous")
+	if err != nil {
+		t.Fatalf("create secondary live session failed: %v", err)
+	}
+	secondaryState := cloneMetadata(secondary.State)
+	secondaryState["symbol"] = "BTCUSDT"
+	if _, err := platform.store.UpdateLiveSessionState(secondary.ID, secondaryState); err != nil {
+		t.Fatalf("update secondary live session state failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	if _, err := platform.StartLiveSession(session.ID); err == nil {
+		t.Fatal("expected StartLiveSession to block incomplete recovered metadata")
+	} else if !strings.Contains(err.Error(), liveRecoveryModeCloseOnlyTakeover) {
+		t.Fatalf("expected close-only takeover error, got %v", err)
+	}
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if updated.Status != "BLOCKED" {
+		t.Fatalf("expected session to downgrade to BLOCKED, got %s", updated.Status)
+	}
+	if got := stringValue(updated.State["recoveryMode"]); got != liveRecoveryModeCloseOnlyTakeover {
+		t.Fatalf("expected recoveryMode %s, got %s", liveRecoveryModeCloseOnlyTakeover, got)
+	}
+	if got := stringValue(updated.State["recoveryMetadataStatus"]); got != liveRecoveryMetadataStatusIncomplete {
+		t.Fatalf("expected incomplete recovery metadata status, got %s", got)
+	}
+}
+
 type testLiveAccountSyncAdapter struct {
 	key                 string
 	syncErr             error

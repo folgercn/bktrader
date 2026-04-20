@@ -1427,10 +1427,18 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 		logger.Warn("resolve live adapter failed", "error", err)
 		return domain.LiveSession{}, err
 	}
-	session, _, _, err = p.completeRecoveredLiveSessionMetadata(session)
+	session, recoveredPosition, incompleteRecoveryMetadata, err := p.completeRecoveredLiveSessionMetadata(session)
 	if err != nil {
 		logger.Warn("complete recovered live session metadata failed", "error", err)
 		return domain.LiveSession{}, err
+	}
+	if incompleteRecoveryMetadata {
+		session, err = p.enterRecoveredLiveSessionCloseOnlyMode(session, recoveredPosition, "missing-strategy-version", "recovered position is missing strategyVersionId")
+		if err != nil {
+			logger.Warn("enter close-only takeover mode failed", "error", err)
+			return domain.LiveSession{}, err
+		}
+		return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeCloseOnlyTakeover)
 	}
 	if isLiveSessionRecoveryCloseOnlyMode(session.State) {
 		return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeCloseOnlyTakeover)
