@@ -1,6 +1,12 @@
 package service
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	neturl "net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -236,6 +242,381 @@ func TestClosePositionAllowsLiveManualCloseWithoutRuntimeSession(t *testing.T) {
 	}
 }
 
+func TestRecoveredPassiveCloseExecutionBoundaryAllowsValidHedgeClose(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{key: "test-recovered-close-valid"}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":    adapter.key,
+		"executionMode": "mock",
+		"positionMode":  "HEDGE",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save live position failed: %v", err)
+	}
+
+	order, err := platform.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Quantity:          0.25,
+		ReduceOnly:        true,
+		Metadata: map[string]any{
+			"skipRuntimeCheck": true,
+			"executionProposal": map[string]any{
+				"role":       "exit",
+				"side":       "SELL",
+				"symbol":     "BTCUSDT",
+				"signalKind": "recovery-watchdog",
+				"metadata": map[string]any{
+					"recoveryTriggered": true,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create recovered close order failed: %v", err)
+	}
+	if adapter.submitCount != 1 {
+		t.Fatalf("expected adapter submit to be called once, got %d", adapter.submitCount)
+	}
+	if got := stringValue(adapter.lastOrder.Metadata["executionBoundaryClass"]); got != liveExecutionBoundaryClassRecoveredPassiveClose {
+		t.Fatalf("expected recovered-passive-close classification, got %s", got)
+	}
+	if got := stringValue(adapter.lastOrder.Metadata["positionSide"]); got != "LONG" {
+		t.Fatalf("expected hedge recovered close to submit positionSide LONG, got %s", got)
+	}
+	if got := order.Status; got != "ACCEPTED" {
+		t.Fatalf("expected recovered close order to be accepted, got %s", got)
+	}
+}
+
+func TestRecoveredPassiveCloseExecutionBoundaryBlocksMissingReduceOnly(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{key: "test-recovered-close-missing-reduce-only"}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":    adapter.key,
+		"executionMode": "mock",
+		"positionMode":  "ONE_WAY",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.25,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save live position failed: %v", err)
+	}
+
+	order, err := platform.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Quantity:          0.25,
+		Metadata: map[string]any{
+			"skipRuntimeCheck": true,
+			"executionProposal": map[string]any{
+				"role":       "exit",
+				"side":       "SELL",
+				"symbol":     "BTCUSDT",
+				"signalKind": "recovery-watchdog",
+				"metadata": map[string]any{
+					"recoveryTriggered": true,
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected recovered close without reduceOnly to be blocked")
+	}
+	if adapter.submitCount != 0 {
+		t.Fatalf("expected adapter submit not to be called, got %d", adapter.submitCount)
+	}
+	if got := order.Status; got != "REJECTED" {
+		t.Fatalf("expected blocked recovered close order to be marked REJECTED, got %s", got)
+	}
+}
+
+func TestRecoveredPassiveCloseExecutionBoundaryBlocksInvalidSideAndHedgePayload(t *testing.T) {
+	tests := []struct {
+		name         string
+		side         string
+		positionSide string
+		wantErr      string
+	}{
+		{
+			name:    "wrong side",
+			side:    "BUY",
+			wantErr: "does not reduce LONG position",
+		},
+		{
+			name:         "wrong hedge positionSide",
+			side:         "SELL",
+			positionSide: "SHORT",
+			wantErr:      "does not match LONG position",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := memory.NewStore()
+			platform := NewPlatform(store)
+			adapter := &recordingLiveExecutionAdapter{key: "test-recovered-close-" + strings.ReplaceAll(tt.name, " ", "-")}
+			platform.registerLiveAdapter(adapter)
+
+			account, err := platform.BindLiveAccount("live-main", map[string]any{
+				"adapterKey":    adapter.key,
+				"executionMode": "mock",
+				"positionMode":  "HEDGE",
+			})
+			if err != nil {
+				t.Fatalf("bind live account failed: %v", err)
+			}
+			if _, err := store.SavePosition(domain.Position{
+				AccountID:         account.ID,
+				StrategyVersionID: "strategy-version-bk-1d-v010",
+				Symbol:            "BTCUSDT",
+				Side:              "LONG",
+				Quantity:          0.25,
+				MarkPrice:         68100,
+			}); err != nil {
+				t.Fatalf("save live position failed: %v", err)
+			}
+			binding := resolveLiveBinding(account)
+			order, err := platform.prepareLiveOrderForSubmission(account, domain.Order{
+				AccountID:         account.ID,
+				StrategyVersionID: "strategy-version-bk-1d-v010",
+				Symbol:            "BTCUSDT",
+				Side:              tt.side,
+				Type:              "MARKET",
+				Quantity:          0.25,
+				ReduceOnly:        true,
+				Metadata: map[string]any{
+					"skipRuntimeCheck": true,
+					"positionSide":     tt.positionSide,
+					"executionProposal": map[string]any{
+						"role":       "exit",
+						"side":       tt.side,
+						"symbol":     "BTCUSDT",
+						"signalKind": "recovery-watchdog",
+						"metadata": map[string]any{
+							"recoveryTriggered": true,
+						},
+					},
+				},
+			}, binding)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+			if got := stringValue(order.Metadata["executionBoundaryClass"]); got != liveExecutionBoundaryClassRecoveredPassiveClose {
+				t.Fatalf("expected recovered-passive-close classification, got %s", got)
+			}
+		})
+	}
+}
+
+func TestRecoveredPassiveCloseExecutionBoundaryLeavesNormalEntryFlowIntact(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{key: "test-normal-entry"}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":    adapter.key,
+		"executionMode": "mock",
+		"positionMode":  "ONE_WAY",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	order, err := platform.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Quantity:          0.25,
+		Metadata: map[string]any{
+			"skipRuntimeCheck": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create normal entry order failed: %v", err)
+	}
+	if adapter.submitCount != 1 {
+		t.Fatalf("expected adapter submit to be called once, got %d", adapter.submitCount)
+	}
+	if got := stringValue(adapter.lastOrder.Metadata["executionBoundaryClass"]); got != liveExecutionBoundaryClassNormalEntry {
+		t.Fatalf("expected normal-entry classification, got %s", got)
+	}
+	if got := stringValue(adapter.lastOrder.Metadata["positionSide"]); got != "" {
+		t.Fatalf("expected normal entry not to inject positionSide, got %s", got)
+	}
+	if got := order.Status; got != "ACCEPTED" {
+		t.Fatalf("expected normal entry order to be accepted, got %s", got)
+	}
+}
+
+func TestShouldSendBinanceReduceOnlyFlagRespectsPositionMode(t *testing.T) {
+	order := domain.Order{ReduceOnly: true}
+	if !shouldSendBinanceReduceOnlyFlag(map[string]any{"positionMode": "ONE_WAY"}, order) {
+		t.Fatal("expected reduceOnly flag to be sent in ONE_WAY mode")
+	}
+	if shouldSendBinanceReduceOnlyFlag(map[string]any{"positionMode": "HEDGE"}, order) {
+		t.Fatal("expected reduceOnly flag to be omitted in HEDGE mode")
+	}
+}
+
+func TestResolveBinancePositionSideForSubmissionOmitsOneWayBoth(t *testing.T) {
+	order := domain.Order{Metadata: map[string]any{"positionSide": "BOTH"}}
+	if got := resolveBinancePositionSideForSubmission(map[string]any{"positionMode": "ONE_WAY"}, order); got != "" {
+		t.Fatalf("expected ONE_WAY BOTH to be omitted, got %s", got)
+	}
+	if got := resolveBinancePositionSideForSubmission(map[string]any{"positionMode": "HEDGE"}, domain.Order{
+		Metadata: map[string]any{"positionSide": "LONG"},
+	}); got != "LONG" {
+		t.Fatalf("expected hedge positionSide LONG to be preserved, got %s", got)
+	}
+}
+
+func TestSubmitRESTOrderRecoveredPassiveClosePayloadMatchesBinanceModes(t *testing.T) {
+	tests := []struct {
+		name                  string
+		positionMode          string
+		side                  string
+		positionSide          string
+		reduceOnly            bool
+		wantPositionSide      string
+		wantReduceOnlyPresent bool
+	}{
+		{
+			name:                  "hedge long close",
+			positionMode:          "HEDGE",
+			side:                  "SELL",
+			positionSide:          "LONG",
+			reduceOnly:            true,
+			wantPositionSide:      "LONG",
+			wantReduceOnlyPresent: false,
+		},
+		{
+			name:                  "one way close",
+			positionMode:          "ONE_WAY",
+			side:                  "SELL",
+			positionSide:          "BOTH",
+			reduceOnly:            true,
+			wantPositionSide:      "",
+			wantReduceOnlyPresent: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var capturedForm neturl.Values
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/fapi/v1/exchangeInfo":
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"symbols": []map[string]any{{
+							"symbol": "BTCUSDT",
+							"filters": []map[string]any{
+								{"filterType": "PRICE_FILTER", "tickSize": "0.1"},
+								{"filterType": "LOT_SIZE", "stepSize": "0.001", "minQty": "0.001", "maxQty": "1000"},
+								{"filterType": "MIN_NOTIONAL", "notional": "100"},
+							},
+						}},
+					})
+				case "/fapi/v1/order":
+					body, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Fatalf("read order body failed: %v", err)
+					}
+					capturedForm, err = neturl.ParseQuery(string(body))
+					if err != nil {
+						t.Fatalf("parse order form failed: %v", err)
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"status":        "NEW",
+						"orderId":       12345,
+						"clientOrderId": "order-test",
+						"updateTime":    time.Now().UTC().UnixMilli(),
+					})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			t.Setenv("TEST_BINANCE_KEY", "key")
+			t.Setenv("TEST_BINANCE_SECRET", "secret")
+
+			binanceSymbolRulesCacheMu.Lock()
+			binanceSymbolRulesCache = map[string]binanceSymbolRules{}
+			binanceSymbolRulesCacheMu.Unlock()
+
+			adapter := binanceFuturesLiveAdapter{}
+			_, err := adapter.submitRESTOrder(domain.Account{Exchange: "binance-futures"}, domain.Order{
+				ID:         "order-test",
+				AccountID:  "live-main",
+				Symbol:     "BTCUSDT",
+				Side:       tt.side,
+				Type:       "MARKET",
+				Quantity:   0.25,
+				ReduceOnly: tt.reduceOnly,
+				Metadata: map[string]any{
+					"positionSide": tt.positionSide,
+				},
+			}, map[string]any{
+				"executionMode": "rest",
+				"positionMode":  tt.positionMode,
+				"restBaseUrl":   server.URL,
+				"recvWindowMs":  5000,
+				"credentialRefs": map[string]any{
+					"apiKeyRef":    "TEST_BINANCE_KEY",
+					"apiSecretRef": "TEST_BINANCE_SECRET",
+				},
+			})
+			if err != nil {
+				t.Fatalf("submit REST order failed: %v", err)
+			}
+			if got := capturedForm.Get("side"); got != tt.side {
+				t.Fatalf("expected side %s, got %s", tt.side, got)
+			}
+			if got := capturedForm.Get("positionSide"); got != tt.wantPositionSide {
+				t.Fatalf("expected positionSide %q, got %q", tt.wantPositionSide, got)
+			}
+			_, hasReduceOnly := capturedForm["reduceOnly"]
+			if hasReduceOnly != tt.wantReduceOnlyPresent {
+				t.Fatalf("expected reduceOnly present=%t, form=%v", tt.wantReduceOnlyPresent, capturedForm)
+			}
+		})
+	}
+}
+
 func TestFinalizeExecutedOrderFallsBackToNowWhenExchangeTradeTimeMissing(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
@@ -311,4 +692,46 @@ func TestFinalizeExecutedOrderKeepsLastFilledAtOnDuplicateSync(t *testing.T) {
 	if got := stringValue(filledOrder.Metadata["lastFilledAt"]); got != firstTradeTime.Format(time.RFC3339) {
 		t.Fatalf("expected duplicate sync to keep original lastFilledAt, got %q", got)
 	}
+}
+
+type recordingLiveExecutionAdapter struct {
+	key         string
+	submitCount int
+	lastOrder   domain.Order
+}
+
+func (a *recordingLiveExecutionAdapter) Key() string {
+	return a.key
+}
+
+func (a *recordingLiveExecutionAdapter) Describe() map[string]any {
+	return map[string]any{"key": a.key}
+}
+
+func (a *recordingLiveExecutionAdapter) ValidateAccountConfig(map[string]any) error {
+	return nil
+}
+
+func (a *recordingLiveExecutionAdapter) SubmitOrder(_ domain.Account, order domain.Order, binding map[string]any) (LiveOrderSubmission, error) {
+	a.submitCount++
+	a.lastOrder = order
+	return LiveOrderSubmission{
+		Status:          "ACCEPTED",
+		ExchangeOrderID: "exchange-order-1",
+		AcceptedAt:      time.Now().UTC().Format(time.RFC3339),
+		Metadata: map[string]any{
+			"adapterMode":   "recording",
+			"executionMode": stringValue(binding["executionMode"]),
+			"positionMode":  stringValue(binding["positionMode"]),
+			"positionSide":  stringValue(order.Metadata["positionSide"]),
+		},
+	}, nil
+}
+
+func (a *recordingLiveExecutionAdapter) SyncOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+	return LiveOrderSync{}, nil
+}
+
+func (a *recordingLiveExecutionAdapter) CancelOrder(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+	return LiveOrderSync{}, nil
 }

@@ -343,8 +343,109 @@ func (p *Platform) submitLiveOrder(account domain.Account, order domain.Order) (
 			return domain.Order{}, err
 		}
 	}
+	order, err = p.prepareLiveOrderForSubmission(account, order, binding)
+	if err != nil {
+		return p.applyLiveSubmissionResult(order, binding, runtimeSession, sourceGate, LiveOrderSubmission{}, err)
+	}
 	submission, submitErr := adapter.SubmitOrder(account, order, binding)
 	return p.applyLiveSubmissionResult(order, binding, runtimeSession, sourceGate, submission, submitErr)
+}
+
+const (
+	liveExecutionBoundaryClassNormalEntry           = "normal-entry"
+	liveExecutionBoundaryClassNormalExit            = "normal-exit"
+	liveExecutionBoundaryClassRecoveredPassiveClose = "recovered-passive-close"
+	liveExecutionBoundaryClassVirtualPath           = "virtual-path"
+)
+
+func (p *Platform) prepareLiveOrderForSubmission(account domain.Account, order domain.Order, binding map[string]any) (domain.Order, error) {
+	order.Metadata = cloneMetadata(order.Metadata)
+	if order.Metadata == nil {
+		order.Metadata = map[string]any{}
+	}
+	classification := classifyLiveExecutionBoundaryOrder(order)
+	order.Metadata["executionBoundaryClass"] = classification
+	if classification != liveExecutionBoundaryClassRecoveredPassiveClose {
+		return order, nil
+	}
+	if !order.EffectiveReduceOnly() {
+		return order, fmt.Errorf("recovered passive close requires reduceOnly semantics at execution boundary for %s", NormalizeSymbol(order.Symbol))
+	}
+	position, found, err := p.resolveReduceOnlyTargetPosition(account.ID, order)
+	if err != nil {
+		return order, err
+	}
+	if !found || position.Quantity <= 0 {
+		return order, fmt.Errorf("recovered passive close requires an open position for %s", NormalizeSymbol(order.Symbol))
+	}
+	expectedSide := "SELL"
+	expectedPositionSide := "LONG"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		expectedSide = "BUY"
+		expectedPositionSide = "SHORT"
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.Side), expectedSide) {
+		return order, fmt.Errorf("recovered passive close side %s does not reduce %s position on %s", order.Side, position.Side, NormalizeSymbol(order.Symbol))
+	}
+	positionMode := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(binding["positionMode"]), "ONE_WAY")))
+	providedPositionSide := strings.ToUpper(strings.TrimSpace(stringValue(order.Metadata["positionSide"])))
+	switch positionMode {
+	case "HEDGE":
+		if providedPositionSide != "" && providedPositionSide != expectedPositionSide {
+			return order, fmt.Errorf("recovered passive close positionSide %s does not match %s position on %s", providedPositionSide, expectedPositionSide, NormalizeSymbol(order.Symbol))
+		}
+		order.Metadata["positionSide"] = expectedPositionSide
+	case "ONE_WAY":
+		if providedPositionSide != "" && providedPositionSide != "BOTH" {
+			return order, fmt.Errorf("recovered passive close positionSide %s is invalid in ONE_WAY mode for %s", providedPositionSide, NormalizeSymbol(order.Symbol))
+		}
+		order.Metadata["positionSide"] = "BOTH"
+	default:
+		return order, fmt.Errorf("unsupported positionMode: %s", positionMode)
+	}
+	order.Metadata["executionBoundaryGuard"] = liveExecutionBoundaryClassRecoveredPassiveClose
+	order.Metadata["executionBoundaryTargetSide"] = strings.ToUpper(strings.TrimSpace(position.Side))
+	return order, nil
+}
+
+func classifyLiveExecutionBoundaryOrder(order domain.Order) string {
+	metadata := mapValue(order.Metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	if isVirtualExecutionBoundaryOrder(order, metadata) {
+		return liveExecutionBoundaryClassVirtualPath
+	}
+	if isRecoveredPassiveCloseOrder(order, metadata) {
+		return liveExecutionBoundaryClassRecoveredPassiveClose
+	}
+	proposal := mapValue(firstNonEmptyMapValue(metadata["executionProposal"], metadata["intent"]))
+	if order.EffectiveReduceOnly() || order.EffectiveClosePosition() || strings.EqualFold(strings.TrimSpace(stringValue(proposal["role"])), "exit") {
+		return liveExecutionBoundaryClassNormalExit
+	}
+	return liveExecutionBoundaryClassNormalEntry
+}
+
+func isRecoveredPassiveCloseOrder(order domain.Order, metadata map[string]any) bool {
+	if boolValue(metadata["recoveryCloseOnlyTakeover"]) {
+		return true
+	}
+	proposal := mapValue(firstNonEmptyMapValue(metadata["executionProposal"], metadata["intent"]))
+	proposalMeta := mapValue(proposal["metadata"])
+	if boolValue(metadata["recoveryTriggered"]) || boolValue(proposalMeta["recoveryTriggered"]) {
+		return strings.EqualFold(strings.TrimSpace(firstNonEmpty(stringValue(proposal["role"]), stringValue(metadata["role"]), "exit")), "exit")
+	}
+	return strings.EqualFold(strings.TrimSpace(stringValue(proposal["signalKind"])), "recovery-watchdog") &&
+		strings.EqualFold(strings.TrimSpace(firstNonEmpty(stringValue(proposal["role"]), "exit")), "exit")
+}
+
+func isVirtualExecutionBoundaryOrder(order domain.Order, metadata map[string]any) bool {
+	status := strings.ToLower(strings.TrimSpace(order.Status))
+	if strings.HasPrefix(status, "virtual-") {
+		return true
+	}
+	source := strings.ToLower(strings.TrimSpace(stringValue(metadata["source"])))
+	return strings.HasPrefix(source, "virtual-")
 }
 
 func shouldSkipLiveRuntimeCheck(order domain.Order) bool {
