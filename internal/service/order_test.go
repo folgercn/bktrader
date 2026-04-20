@@ -242,6 +242,125 @@ func TestClosePositionAllowsLiveManualCloseWithoutRuntimeSession(t *testing.T) {
 	}
 }
 
+func TestCreateLiveOrderImmediateFilledSubmissionSettlesReduceOnlyExit(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	tradeTime := time.Date(2026, 4, 20, 12, 33, 23, 0, time.UTC)
+	syncCalls := 0
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-immediate-filled",
+		submitOrderFunc: func(domain.Account, domain.Order, map[string]any) (LiveOrderSubmission, error) {
+			return LiveOrderSubmission{
+				Status:          "FILLED",
+				ExchangeOrderID: "exchange-order-1",
+				AcceptedAt:      tradeTime.Format(time.RFC3339),
+				Metadata: map[string]any{
+					"adapterMode":   "test",
+					"executionMode": "rest",
+					"executedQty":   0.002,
+					"avgPrice":      75399.42,
+					"updateTime":    tradeTime.Format(time.RFC3339),
+				},
+			}, nil
+		},
+		syncOrderFunc: func(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+			syncCalls++
+			return LiveOrderSync{
+				Status:   "FILLED",
+				SyncedAt: tradeTime.Format(time.RFC3339),
+				Fills: []LiveFillReport{{
+					Price:    75399.42,
+					Quantity: 0.002,
+					Fee:      0.06,
+					Metadata: map[string]any{
+						"source":          "exchange-sync",
+						"exchangeOrderId": "exchange-order-1",
+						"tradeId":         "trade-1",
+						"tradeTime":       tradeTime.Format(time.RFC3339),
+					},
+				}},
+				Terminal:   true,
+				FeeSource:  "exchange",
+				FundingSrc: "exchange",
+			}, nil
+		},
+	})
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": "test-immediate-filled",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        75405,
+		MarkPrice:         75399.42,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	order, err := platform.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Quantity:          0.002,
+		Price:             75399.42,
+		ReduceOnly:        true,
+		Metadata: map[string]any{
+			"skipRuntimeCheck": true,
+			"executionProposal": map[string]any{
+				"role":       "exit",
+				"signalKind": "risk-exit",
+				"reason":     "SL",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	if syncCalls != 1 {
+		t.Fatalf("expected immediate FILLED submission to force one sync, got %d", syncCalls)
+	}
+	if got := order.Status; got != "FILLED" {
+		t.Fatalf("expected order to stay FILLED after settlement, got %s", got)
+	}
+	if got := parseFloatValue(order.Metadata["filledQuantity"]); got != 0.002 {
+		t.Fatalf("expected filledQuantity 0.002, got %v", got)
+	}
+	if _, found, err := store.FindPosition(account.ID, "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected reduce-only FILLED exit to clear the local position")
+	}
+
+	fills, err := store.ListFills()
+	if err != nil {
+		t.Fatalf("list fills failed: %v", err)
+	}
+	orderFillCount := 0
+	for _, item := range fills {
+		if item.OrderID != order.ID {
+			continue
+		}
+		orderFillCount++
+		if item.Fee != 0.06 {
+			t.Fatalf("expected synced fee 0.06, got %v", item.Fee)
+		}
+	}
+	if orderFillCount != 1 {
+		t.Fatalf("expected one fill for settled immediate-FILLED order, got %d", orderFillCount)
+	}
+}
+
 func TestRecoveredPassiveCloseExecutionBoundaryAllowsValidHedgeClose(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)

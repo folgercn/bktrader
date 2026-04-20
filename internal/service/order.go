@@ -522,6 +522,24 @@ func (p *Platform) applyLiveSubmissionResult(
 	if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "submitted", time.Now().UTC(), false, nil); telemetryErr != nil {
 		logger.Warn("record live order submission event failed", "error", telemetryErr)
 	}
+	if strings.EqualFold(updatedOrder.Status, "FILLED") {
+		syncedOrder, syncErr := p.SyncLiveOrder(updatedOrder.ID)
+		if syncErr == nil {
+			return syncedOrder, nil
+		}
+		updatedOrder.Metadata = cloneMetadata(updatedOrder.Metadata)
+		updatedOrder.Metadata["immediateFillSyncError"] = syncErr.Error()
+		updatedOrder.Metadata["immediateFillSyncRequired"] = true
+		persistedOrder, updateErr := p.store.UpdateOrder(updatedOrder)
+		if updateErr != nil {
+			return domain.Order{}, updateErr
+		}
+		logger.Warn("live order immediate fill sync failed",
+			"exchange_order_id", submission.ExchangeOrderID,
+			"error", syncErr,
+		)
+		return persistedOrder, syncErr
+	}
 	return updatedOrder, nil
 }
 

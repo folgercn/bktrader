@@ -428,6 +428,38 @@ func TestBuildLiveExecutionPlanFromMarketDataAcceptsTickExecutionSource(t *testi
 	}
 }
 
+func TestResolveLiveSessionParametersDefaultsMissingStopsToTrailingForLive(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	if _, err := platform.store.UpdateStrategyParameters("strategy-bk-1d", map[string]any{}); err != nil {
+		t.Fatalf("update strategy parameters failed: %v", err)
+	}
+
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	version, err := platform.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		t.Fatalf("resolve strategy version failed: %v", err)
+	}
+
+	parameters, err := platform.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		t.Fatalf("resolve live session parameters failed: %v", err)
+	}
+
+	if got := parseFloatValue(parameters["trailing_stop_atr"]); got != 0.3 {
+		t.Fatalf("expected trailing_stop_atr live default 0.3, got %v", got)
+	}
+	if got := parseFloatValue(parameters["delayed_trailing_activation_atr"]); got != 0.5 {
+		t.Fatalf("expected delayed_trailing_activation_atr live default 0.5, got %v", got)
+	}
+	if got := parseFloatValue(parameters["stop_loss_atr"]); got != 0.3 {
+		t.Fatalf("expected stop_loss_atr to inherit trailing live default 0.3, got %v", got)
+	}
+}
+
 func TestRefreshLiveMarketSnapshotFailsWithoutRESTWarmData(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	originalFetch := fetchLiveCandleRange
