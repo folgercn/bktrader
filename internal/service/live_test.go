@@ -2079,6 +2079,233 @@ func TestShouldAdvanceLivePlanForOrderStatus(t *testing.T) {
 	}
 }
 
+func TestLiveRecoveryActionMatrixUsesExplicitTakeoverStates(t *testing.T) {
+	cases := []struct {
+		state                string
+		openNewPosition      bool
+		closeExisting        bool
+		placeProtection      bool
+		autoDispatch         bool
+		manualReviewRequired bool
+		allowPlanProgression bool
+	}{
+		{state: liveRecoveryModeCloseOnlyTakeover, closeExisting: true, manualReviewRequired: true},
+		{state: liveRecoveryTakeoverStateMonitoring, closeExisting: true, placeProtection: true, manualReviewRequired: true, allowPlanProgression: true},
+		{state: liveRecoveryTakeoverStateUnprotected, closeExisting: true, placeProtection: true, manualReviewRequired: true},
+		{state: liveRecoveryTakeoverStateStaleSync, manualReviewRequired: true},
+		{state: liveRecoveryTakeoverStateConflict, manualReviewRequired: true},
+		{state: liveRecoveryTakeoverStateError, manualReviewRequired: true},
+	}
+	for _, tc := range cases {
+		matrix := liveRecoveryActionMatrixForState(tc.state)
+		if matrix.OpenNewPosition != tc.openNewPosition ||
+			matrix.CloseExistingPosition != tc.closeExisting ||
+			matrix.PlaceProtectionOrders != tc.placeProtection ||
+			matrix.AutoDispatch != tc.autoDispatch ||
+			matrix.ManualReviewRequired != tc.manualReviewRequired ||
+			matrix.AllowPlanProgression != tc.allowPlanProgression {
+			t.Fatalf("unexpected matrix for %s: %+v", tc.state, matrix)
+		}
+	}
+}
+
+func TestEnsureLiveExecutionPlanBlocksCloseOnlyTakeoverFreshEntry(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	secondary, err := platform.store.CreateLiveSession("live-main", "strategy-ambiguous")
+	if err != nil {
+		t.Fatalf("create secondary live session failed: %v", err)
+	}
+	secondaryState := cloneMetadata(secondary.State)
+	secondaryState["symbol"] = "BTCUSDT"
+	if _, err := platform.store.UpdateLiveSessionState(secondary.ID, secondaryState); err != nil {
+		t.Fatalf("update secondary live session state failed: %v", err)
+	}
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	session, err = platform.enterRecoveredLiveSessionCloseOnlyMode(session, position, "missing-strategy-version", "test")
+	if err != nil {
+		t.Fatalf("enter close-only mode failed: %v", err)
+	}
+
+	updated, plan, err := platform.ensureLiveExecutionPlan(session)
+	if err == nil {
+		t.Fatal("expected close-only takeover to block fresh entry plan construction")
+	}
+	if len(plan) != 0 {
+		t.Fatalf("expected no live plan to be returned, got %d steps", len(plan))
+	}
+	if got := stringValue(updated.State["recoveryTakeoverState"]); got != liveRecoveryModeCloseOnlyTakeover {
+		t.Fatalf("expected takeover state %s, got %s", liveRecoveryModeCloseOnlyTakeover, got)
+	}
+}
+
+func TestRecoveryMonitoringDisablesAutoDispatch(t *testing.T) {
+	now := time.Now().UTC()
+	session := domain.LiveSession{
+		State: map[string]any{
+			"dispatchMode":             "auto-dispatch",
+			"recoveryTakeoverActive":   true,
+			"positionRecoveryStatus":   "protected-open-position",
+			"hasRecoveredPosition":     true,
+			"hasRecoveredRealPosition": true,
+		},
+	}
+	intent := map[string]any{
+		"action": "open",
+		"role":   "entry",
+		"side":   "BUY",
+		"symbol": "BTCUSDT",
+		"status": "dispatchable",
+	}
+	if shouldAutoDispatchLiveIntent(session, intent, now) {
+		t.Fatal("expected recovery-monitoring takeover to stay manual")
+	}
+}
+
+func TestReconcileLiveSessionPlanIndexBlocksRecoveryConflictProgression(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["planIndex"] = 0
+	state["recoveryTakeoverActive"] = true
+	state["positionRecoveryStatus"] = liveRecoveryTakeoverStateConflict
+	state["positionReconcileGateStatus"] = livePositionReconcileGateStatusConflict
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	reconciled, err := platform.reconcileLiveSessionPlanIndex(session, []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}, time.Now().UTC(), "test-recovery-conflict")
+	if err != nil {
+		t.Fatalf("reconcile live session plan index failed: %v", err)
+	}
+	gotIndex, ok := toFloat64(reconciled.State["planIndex"])
+	if !ok || int(gotIndex) != 0 {
+		t.Fatalf("expected recovery conflict to keep planIndex at entry, got %v", reconciled.State["planIndex"])
+	}
+	if got := stringValue(reconciled.State["recoveryTakeoverState"]); got != liveRecoveryTakeoverStateConflict {
+		t.Fatalf("expected takeover state %s, got %s", liveRecoveryTakeoverStateConflict, got)
+	}
+}
+
+func TestReconcileLiveSessionPlanIndexAllowsRecoveryMonitoringClosePath(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["planIndex"] = 0
+	state["recoveryTakeoverActive"] = true
+	state["positionRecoveryStatus"] = "protected-open-position"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	reconciled, err := platform.reconcileLiveSessionPlanIndex(session, []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}, time.Now().UTC(), "test-recovery-monitoring")
+	if err != nil {
+		t.Fatalf("reconcile live session plan index failed: %v", err)
+	}
+	gotIndex, ok := toFloat64(reconciled.State["planIndex"])
+	if !ok || int(gotIndex) != 1 {
+		t.Fatalf("expected recovery-monitoring takeover to advance into close path, got %v", reconciled.State["planIndex"])
+	}
+	if got := stringValue(reconciled.State["recoveryTakeoverState"]); got != liveRecoveryTakeoverStateMonitoring {
+		t.Fatalf("expected takeover state %s, got %s", liveRecoveryTakeoverStateMonitoring, got)
+	}
+}
+
+func TestReconcileLiveSessionPlanIndexLeavesHealthySessionUnchanged(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	reconciled, err := platform.reconcileLiveSessionPlanIndex(session, []paperPlannedOrder{
+		{Role: "entry", Side: "BUY", Symbol: "BTCUSDT"},
+		{Role: "exit", Side: "SELL", Symbol: "BTCUSDT"},
+	}, time.Now().UTC(), "test-healthy")
+	if err != nil {
+		t.Fatalf("reconcile live session plan index failed: %v", err)
+	}
+	gotIndex, ok := toFloat64(reconciled.State["planIndex"])
+	if !ok || int(gotIndex) != 1 {
+		t.Fatalf("expected healthy session to keep advancing to exit, got %v", reconciled.State["planIndex"])
+	}
+	if got := stringValue(reconciled.State["recoveryTakeoverState"]); got != "" {
+		t.Fatalf("expected healthy session to avoid takeover state, got %s", got)
+	}
+}
+
 func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexBackToEntryWhenPositionFlat(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
@@ -5155,8 +5382,8 @@ func TestRecoverRunningLiveSessionBlocksWhenDBPositionMissingOnExchange(t *testi
 	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusStale {
 		t.Fatalf("expected stale reconcile gate status, got %s", got)
 	}
-	if got := stringValue(recovered.State["positionRecoveryStatus"]); got != livePositionReconcileGateStatusStale {
-		t.Fatalf("expected stale position recovery status, got %s", got)
+	if got := stringValue(recovered.State["positionRecoveryStatus"]); got != liveRecoveryTakeoverStateStaleSync {
+		t.Fatalf("expected stale position recovery status %s, got %s", liveRecoveryTakeoverStateStaleSync, got)
 	}
 	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "db-position-exchange-missing" {
 		t.Fatalf("expected db-position-exchange-missing scenario, got %s", got)

@@ -393,6 +393,13 @@ func shouldBlockAutoDispatchForRecoveryIntent(session domain.LiveSession, intent
 	if isLiveSessionBlockedByPositionReconcileGate(session.State) {
 		return true
 	}
+	recoveryActions := currentLiveRecoveryActionMatrix(session.State)
+	if !recoveryActions.AutoDispatch {
+		action := resolveLiveRecoveryIntentAction(intent)
+		if liveRecoveryIntentActionAllowed(recoveryActions, action) || boolValue(session.State["recoveryTakeoverActive"]) {
+			return true
+		}
+	}
 	if !isRecoveryTriggeredPassiveCloseProposal(intent) {
 		return false
 	}

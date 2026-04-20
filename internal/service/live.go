@@ -1854,6 +1854,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	if err != nil {
 		return err
 	}
+	recoveryActions := currentLiveRecoveryActionMatrix(session.State)
 
 	state := cloneMetadata(session.State)
 	state["strategyEvaluationMode"] = "signal-runtime-heartbeat"
@@ -2032,6 +2033,24 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		delete(state, "lastStrategyIntent")
 		delete(state, "lastStrategyIntentSignature")
 	}
+	if len(executionProposal) > 0 {
+		action := resolveLiveRecoveryIntentAction(executionProposal)
+		if !liveRecoveryIntentActionAllowed(recoveryActions, action) {
+			delete(state, "lastExecutionProposal")
+			delete(state, "lastExecutionProfile")
+			delete(state, "lastStrategyIntent")
+			delete(state, "lastStrategyIntentSignature")
+			state["lastStrategyEvaluationStatus"] = "recovery-manual-review"
+			state["lastRecoveryBlockedAction"] = action
+			state["lastRecoveryBlockedAt"] = eventTime.UTC().Format(time.RFC3339)
+			appendTimelineEvent(state, "recovery", eventTime, "recovery-action-blocked", map[string]any{
+				"takeoverState": stringValue(state["recoveryTakeoverState"]),
+				"action":        action,
+			})
+			intent = nil
+			executionProposal = nil
+		}
+	}
 	decisionEvent, decisionEventErr := p.recordStrategyDecisionEvent(
 		session,
 		firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])),
@@ -2079,6 +2098,8 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		state["lastStrategyEvaluationStatus"] = "intent-ready"
 	} else if executionProposal != nil {
 		state["lastStrategyEvaluationStatus"] = "waiting-execution"
+	} else if strings.EqualFold(stringValue(state["lastStrategyEvaluationStatus"]), "recovery-manual-review") {
+		// Keep the takeover/manual-review verdict instead of downgrading back to a normal monitoring state.
 	} else if decision.Action == "advance-plan" {
 		state["lastStrategyEvaluationStatus"] = "monitoring"
 	} else {
@@ -2551,13 +2572,13 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 	state["hasRecoveredVirtualPosition"] = boolValue(positionSnapshot["virtual"])
 	state["lastRecoveredPositionAt"] = time.Now().UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = "platform-position-store"
-	state["positionRecoveryStatus"] = "flat"
-	if foundPosition {
-		state["positionRecoveryStatus"] = "monitoring-open-position"
-	} else if boolValue(positionSnapshot["virtual"]) {
-		state["positionRecoveryStatus"] = "monitoring-virtual-position"
-	}
-	if nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, resolveLivePlanIndex(state), positionSnapshot, foundPosition); adjusted {
+	state["positionRecoveryStatus"] = normalizedRecoveredPositionStatus(
+		stringValue(state["positionRecoveryStatus"]),
+		foundPosition,
+		boolValue(positionSnapshot["virtual"]),
+	)
+	takeoverMatrix := applyLiveRecoveryTakeoverState(state, boolValue(state["recoveryTakeoverActive"]))
+	if nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, resolveLivePlanIndex(state), positionSnapshot, foundPosition); adjusted && takeoverMatrix.AllowPlanProgression {
 		state["planIndex"] = nextIndex
 		state["planIndexRecoveredFromPosition"] = true
 		state["recoveredPlanIndex"] = nextIndex
@@ -2576,12 +2597,194 @@ const (
 	liveRecoveryModeReconcileGateBlocked    = "reconcile-gate-blocked"
 	liveRecoveryMetadataStatusComplete      = "complete"
 	liveRecoveryMetadataStatusIncomplete    = "incomplete"
+	liveRecoveryTakeoverStateMonitoring     = "recovery-monitoring"
+	liveRecoveryTakeoverStateUnprotected    = "unprotected-open-position"
+	liveRecoveryTakeoverStateStaleSync      = "stale-sync"
+	liveRecoveryTakeoverStateConflict       = "recovery-conflict"
+	liveRecoveryTakeoverStateError          = "error"
 	livePositionReconcileGateStatusAdopted  = "adopted"
 	livePositionReconcileGateStatusVerified = "verified"
 	livePositionReconcileGateStatusStale    = "stale"
 	livePositionReconcileGateStatusConflict = "conflict"
 	livePositionReconcileGateStatusError    = "error"
 )
+
+type liveRecoveryActionMatrix struct {
+	OpenNewPosition       bool
+	CloseExistingPosition bool
+	PlaceProtectionOrders bool
+	AutoDispatch          bool
+	ManualReviewRequired  bool
+	AllowPlanProgression  bool
+}
+
+// Recovery/takeover action matrix.
+// State                     open close protect auto-dispatch manual-review plan-progress
+// close-only-takeover       no   yes   no      no            yes           no
+// recovery-monitoring       no   yes   yes     no            yes           yes
+// unprotected-open-position no   yes   yes     no            yes           no
+// stale-sync                no   no    no      no            yes           no
+// recovery-conflict         no   no    no      no            yes           no
+// error                     no   no    no      no            yes           no
+func liveRecoveryActionMatrixForState(state string) liveRecoveryActionMatrix {
+	switch strings.TrimSpace(state) {
+	case liveRecoveryModeCloseOnlyTakeover:
+		return liveRecoveryActionMatrix{
+			CloseExistingPosition: true,
+			ManualReviewRequired:  true,
+		}
+	case liveRecoveryTakeoverStateMonitoring:
+		return liveRecoveryActionMatrix{
+			CloseExistingPosition: true,
+			PlaceProtectionOrders: true,
+			ManualReviewRequired:  true,
+			AllowPlanProgression:  true,
+		}
+	case liveRecoveryTakeoverStateUnprotected:
+		return liveRecoveryActionMatrix{
+			CloseExistingPosition: true,
+			PlaceProtectionOrders: true,
+			ManualReviewRequired:  true,
+		}
+	case liveRecoveryTakeoverStateStaleSync, liveRecoveryTakeoverStateConflict, liveRecoveryTakeoverStateError:
+		return liveRecoveryActionMatrix{ManualReviewRequired: true}
+	default:
+		return liveRecoveryActionMatrix{
+			OpenNewPosition:       true,
+			CloseExistingPosition: true,
+			PlaceProtectionOrders: true,
+			AutoDispatch:          true,
+			AllowPlanProgression:  true,
+		}
+	}
+}
+
+func hasRecoveredLiveRealPosition(state map[string]any) bool {
+	return boolValue(state["hasRecoveredPosition"]) ||
+		boolValue(state["hasRecoveredRealPosition"]) ||
+		math.Abs(parseFloatValue(mapValue(state["recoveredPosition"])["quantity"])) > 0
+}
+
+func shouldActivateLiveRecoveryTakeover(source string, state map[string]any) bool {
+	if boolValue(state["recoveryTakeoverActive"]) {
+		return true
+	}
+	return strings.HasPrefix(strings.TrimSpace(source), "live-startup-recovery")
+}
+
+func resolveLiveRecoveryTakeoverState(state map[string]any, active bool) string {
+	if !active {
+		return ""
+	}
+	if isLiveSessionRecoveryCloseOnlyMode(state) ||
+		strings.EqualFold(stringValue(state["positionRecoveryStatus"]), liveRecoveryModeCloseOnlyTakeover) {
+		return liveRecoveryModeCloseOnlyTakeover
+	}
+	switch strings.TrimSpace(stringValue(state["positionReconcileGateStatus"])) {
+	case livePositionReconcileGateStatusStale:
+		return liveRecoveryTakeoverStateStaleSync
+	case livePositionReconcileGateStatusConflict:
+		return liveRecoveryTakeoverStateConflict
+	case livePositionReconcileGateStatusError:
+		return liveRecoveryTakeoverStateError
+	}
+	switch strings.TrimSpace(stringValue(state["positionRecoveryStatus"])) {
+	case liveRecoveryTakeoverStateUnprotected:
+		return liveRecoveryTakeoverStateUnprotected
+	case "protected-open-position", "monitoring-open-position", "monitoring-virtual-position", livePositionRecoveryStatusClosingPending:
+		return liveRecoveryTakeoverStateMonitoring
+	case livePositionReconcileGateStatusStale:
+		return liveRecoveryTakeoverStateStaleSync
+	case livePositionReconcileGateStatusConflict:
+		return liveRecoveryTakeoverStateConflict
+	case livePositionReconcileGateStatusError:
+		return liveRecoveryTakeoverStateError
+	}
+	if hasRecoveredLiveRealPosition(state) {
+		return liveRecoveryTakeoverStateMonitoring
+	}
+	if strings.TrimSpace(stringValue(state["positionRecoveryStatus"])) == "" ||
+		strings.EqualFold(stringValue(state["positionRecoveryStatus"]), "flat") {
+		return ""
+	}
+	return liveRecoveryTakeoverStateError
+}
+
+func applyLiveRecoveryTakeoverState(state map[string]any, active bool) liveRecoveryActionMatrix {
+	if state == nil {
+		return liveRecoveryActionMatrixForState("")
+	}
+	takeoverState := resolveLiveRecoveryTakeoverState(state, active)
+	if takeoverState == "" {
+		delete(state, "recoveryTakeoverActive")
+		delete(state, "recoveryTakeoverState")
+		delete(state, "recoveryActionMatrix")
+		delete(state, "recoveryManualReviewRequired")
+		return liveRecoveryActionMatrixForState("")
+	}
+	matrix := liveRecoveryActionMatrixForState(takeoverState)
+	state["recoveryTakeoverActive"] = true
+	state["recoveryTakeoverState"] = takeoverState
+	state["recoveryManualReviewRequired"] = matrix.ManualReviewRequired
+	state["recoveryActionMatrix"] = map[string]any{
+		"openNewPosition":       matrix.OpenNewPosition,
+		"closeExistingPosition": matrix.CloseExistingPosition,
+		"placeProtectionOrders": matrix.PlaceProtectionOrders,
+		"autoDispatch":          matrix.AutoDispatch,
+		"manualReviewRequired":  matrix.ManualReviewRequired,
+		"allowPlanProgression":  matrix.AllowPlanProgression,
+	}
+	return matrix
+}
+
+func currentLiveRecoveryActionMatrix(state map[string]any) liveRecoveryActionMatrix {
+	return liveRecoveryActionMatrixForState(resolveLiveRecoveryTakeoverState(state, boolValue(state["recoveryTakeoverActive"])))
+}
+
+func normalizedRecoveredPositionStatus(currentStatus string, foundPosition, virtualPosition bool) string {
+	switch strings.TrimSpace(currentStatus) {
+	case "protected-open-position", "unprotected-open-position", livePositionRecoveryStatusClosingPending:
+		if foundPosition {
+			return currentStatus
+		}
+	}
+	switch {
+	case foundPosition:
+		return "monitoring-open-position"
+	case virtualPosition:
+		return "monitoring-virtual-position"
+	default:
+		return "flat"
+	}
+}
+
+func resolveLiveRecoveryIntentAction(intent map[string]any) string {
+	if len(intent) == 0 {
+		return ""
+	}
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(intent["type"]), stringValue(mapValue(intent["metadata"])["orderType"]))))
+	role := strings.ToLower(strings.TrimSpace(stringValue(intent["role"])))
+	if strings.Contains(orderType, "STOP") || strings.Contains(orderType, "TAKE_PROFIT") {
+		return "place-protection-orders"
+	}
+	if role == "exit" || boolValue(intent["reduceOnly"]) || boolValue(intent["closePosition"]) {
+		return "close-existing-position"
+	}
+	return "open-new-position"
+}
+
+func liveRecoveryIntentActionAllowed(matrix liveRecoveryActionMatrix, action string) bool {
+	switch action {
+	case "open-new-position":
+		return matrix.OpenNewPosition
+	case "close-existing-position":
+		return matrix.CloseExistingPosition
+	case "place-protection-orders":
+		return matrix.PlaceProtectionOrders
+	default:
+		return true
+	}
+}
 
 func isLiveSessionRecoveryCloseOnlyMode(state map[string]any) bool {
 	return strings.EqualFold(strings.TrimSpace(stringValue(state["recoveryMode"])), liveRecoveryModeCloseOnlyTakeover)
@@ -2624,6 +2827,7 @@ func resolveLivePositionReconcileGate(account domain.Account, symbol string, req
 		gate["status"] = livePositionReconcileGateStatusError
 		gate["blocking"] = true
 		gate["scenario"] = "exchange-truth-unavailable"
+		gate["takeoverState"] = liveRecoveryTakeoverStateError
 		return gate
 	}
 	symbolGate := cloneMetadata(mapValue(mapValue(mapValue(account.Metadata["livePositionReconcileGate"])["symbols"])[symbol]))
@@ -2631,6 +2835,7 @@ func resolveLivePositionReconcileGate(account domain.Account, symbol string, req
 		gate["status"] = livePositionReconcileGateStatusError
 		gate["blocking"] = true
 		gate["scenario"] = "missing-reconcile-verdict"
+		gate["takeoverState"] = liveRecoveryTakeoverStateError
 		return gate
 	}
 	for key, value := range symbolGate {
@@ -2639,6 +2844,16 @@ func resolveLivePositionReconcileGate(account domain.Account, symbol string, req
 	gate["symbol"] = symbol
 	gate["blocking"] = boolValue(gate["blocking"])
 	gate["status"] = firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusVerified)
+	switch strings.TrimSpace(stringValue(gate["status"])) {
+	case livePositionReconcileGateStatusStale:
+		gate["takeoverState"] = liveRecoveryTakeoverStateStaleSync
+	case livePositionReconcileGateStatusConflict:
+		gate["takeoverState"] = liveRecoveryTakeoverStateConflict
+	case livePositionReconcileGateStatusError:
+		gate["takeoverState"] = liveRecoveryTakeoverStateError
+	default:
+		gate["takeoverState"] = ""
+	}
 	return gate
 }
 
@@ -2660,7 +2875,7 @@ func applyLivePositionReconcileGateState(state map[string]any, gate map[string]a
 		delete(state, "positionReconcileGateMismatchFields")
 	}
 	if boolValue(gate["blocking"]) {
-		state["positionRecoveryStatus"] = firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusError)
+		state["positionRecoveryStatus"] = firstNonEmpty(stringValue(gate["takeoverState"]), firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusError))
 		state["lastStrategyEvaluationStatus"] = liveRecoveryModeReconcileGateBlocked
 	}
 }
@@ -2730,6 +2945,7 @@ func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSessi
 		delete(state, "positionReconcileGateMismatchFields")
 		delete(state, "positionReconcileGateDBPosition")
 		delete(state, "positionReconcileGateExchangePosition")
+		applyLiveRecoveryTakeoverState(state, false)
 		if !metadataEqual(state, session.State) {
 			session, err = p.store.UpdateLiveSessionState(session.ID, state)
 			if err != nil {
@@ -2772,6 +2988,7 @@ func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSessi
 	delete(state, "recoveryBlockedReason")
 	delete(state, "recoveryBlockedDetail")
 	delete(state, "recoveryBlockedAt")
+	applyLiveRecoveryTakeoverState(state, boolValue(state["recoveryTakeoverActive"]))
 	if !metadataEqual(state, session.State) {
 		session, err = p.store.UpdateLiveSessionState(session.ID, state)
 		if err != nil {
@@ -2804,6 +3021,7 @@ func (p *Platform) enterRecoveredLiveSessionCloseOnlyMode(session domain.LiveSes
 	delete(state, "lastStrategyIntent")
 	delete(state, "lastSignalIntent")
 	delete(state, "lastStrategyIntentSignature")
+	applyLiveRecoveryTakeoverState(state, true)
 	session, err := p.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		return domain.LiveSession{}, err
@@ -2832,6 +3050,7 @@ func (p *Platform) enterRecoveredLiveSessionReconcileGateBlocked(session domain.
 	delete(state, "lastSignalIntent")
 	delete(state, "lastStrategyIntentSignature")
 	applyLivePositionReconcileGateState(state, gate)
+	applyLiveRecoveryTakeoverState(state, true)
 	session, err := p.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		return domain.LiveSession{}, err
@@ -2863,24 +3082,28 @@ func (p *Platform) reconcileLiveSessionPlanIndex(session domain.LiveSession, pla
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
+	state["recoveredPosition"] = positionSnapshot
+	state["hasRecoveredPosition"] = foundPosition
+	state["hasRecoveredRealPosition"] = foundPosition
+	state["hasRecoveredVirtualPosition"] = boolValue(positionSnapshot["virtual"])
+	takeoverMatrix := applyLiveRecoveryTakeoverState(state, boolValue(state["recoveryTakeoverActive"]))
 
 	nextIndex, adjusted := reconcileLivePlanIndexWithPosition(plan, currentIndex, positionSnapshot, foundPosition)
 	planLengthAdjusted := maxIntValue(state["planLength"], -1) != len(plan)
 	if !adjusted && !planLengthAdjusted {
-		return session, nil
+		if metadataEqual(state, session.State) {
+			return session, nil
+		}
+		return p.store.UpdateLiveSessionState(session.ID, state)
 	}
 
 	state["planLength"] = len(plan)
 	if nextIndex < len(plan) {
 		delete(state, "completedAt")
 	}
-	if !adjusted {
+	if !adjusted || !takeoverMatrix.AllowPlanProgression {
 		return p.store.UpdateLiveSessionState(session.ID, state)
 	}
-	state["recoveredPosition"] = positionSnapshot
-	state["hasRecoveredPosition"] = foundPosition
-	state["hasRecoveredRealPosition"] = foundPosition
-	state["hasRecoveredVirtualPosition"] = boolValue(positionSnapshot["virtual"])
 	state["lastRecoveredPositionAt"] = recoveredAt.UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = firstNonEmpty(source, "live-plan-cache-reconcile")
 	state["planIndex"] = nextIndex
