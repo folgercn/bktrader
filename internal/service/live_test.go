@@ -4053,6 +4053,73 @@ func TestRefreshLiveSessionPositionContextDoesNotGenerateWatchdogFallbackFromLoc
 	}
 }
 
+func TestRefreshLiveSessionPositionContextGeneratesWatchdogFallbackFromAuthoritativeSyncSnapshot(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":         "binance-rest-account-v3",
+		"syncStatus":     "SYNCED",
+		"openOrderCount": 0,
+		"openOrders":     []map[string]any{},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        69000,
+		MarkPrice:         68900,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastStrategyEvaluationSignalBarStates"] = testLiveRecoverySignalBarStates("BTCUSDT", 68900.0)
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 17, 4, 10, 0, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	proposal := executionProposalFromMap(mapValue(updated.State["lastExecutionProposal"]))
+	if proposal.Reason != "sl-breached-fallback" {
+		t.Fatalf("expected sl-breached-fallback reason, got %s", proposal.Reason)
+	}
+	if proposal.Side != "SELL" {
+		t.Fatalf("expected SELL exit side, got %s", proposal.Side)
+	}
+	if proposal.Type != "MARKET" || !proposal.ReduceOnly {
+		t.Fatalf("expected reduce-only MARKET fallback proposal, got type=%s reduceOnly=%t", proposal.Type, proposal.ReduceOnly)
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != livePositionRecoveryStatusClosingPending {
+		t.Fatalf("expected %s recovery status, got %s", livePositionRecoveryStatusClosingPending, got)
+	}
+	if !boolValue(updated.State["protectionRecoveryAuthoritative"]) {
+		t.Fatal("expected exchange sync snapshot to remain authoritative")
+	}
+	if got := stringValue(updated.State["protectionRecoverySource"]); got != "binance-rest-account-v3" {
+		t.Fatalf("expected authoritative recovery source to be recorded, got %s", got)
+	}
+}
+
 func TestRefreshLiveSessionPositionContextRebuildsVirtualWatermarksFromVirtualPosition(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
