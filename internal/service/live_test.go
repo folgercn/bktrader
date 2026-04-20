@@ -4470,6 +4470,154 @@ func TestSyncLiveAccountDoesNotDoubleCountPersistedAdapterSuccessHealth(t *testi
 	}
 }
 
+func TestResolveRecoveredLiveEntryPriceFallsBackThroughRiskAndExistingValues(t *testing.T) {
+	if got := resolveRecoveredLiveEntryPrice(74500.0, 74400.0, 74300.0); got != 74500.0 {
+		t.Fatalf("expected primary entry price to win, got %v", got)
+	}
+	if got := resolveRecoveredLiveEntryPrice(0, 74400.0, 74300.0); got != 74400.0 {
+		t.Fatalf("expected secondary entry price fallback, got %v", got)
+	}
+	if got := resolveRecoveredLiveEntryPrice(0, 0, 74300.0); got != 74300.0 {
+		t.Fatalf("expected existing entry price fallback, got %v", got)
+	}
+}
+
+func TestReconcileLiveAccountPositionsFallsBackToBreakEvenPrice(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+
+	err = platform.reconcileLiveAccountPositions(account, []map[string]any{
+		{
+			"symbol":         "BTCUSDT",
+			"positionAmt":    -0.002,
+			"entryPrice":     0.0,
+			"breakEvenPrice": 74512.34,
+			"markPrice":      74618.69,
+		},
+	})
+	if err != nil {
+		t.Fatalf("reconcile live account positions failed: %v", err)
+	}
+
+	position, found, err := platform.store.FindPosition("live-main", "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected reconciled BTCUSDT position")
+	}
+	if position.Side != "SHORT" {
+		t.Fatalf("expected SHORT side, got %s", position.Side)
+	}
+	if position.EntryPrice != 74512.34 {
+		t.Fatalf("expected breakEvenPrice fallback to populate entry price, got %v", position.EntryPrice)
+	}
+}
+
+func TestReconcileLiveAccountPositionsPreservesExistingEntryPriceWhenSnapshotIsZero(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.002,
+		EntryPrice:        74123.45,
+		MarkPrice:         74618.69,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+
+	err = platform.reconcileLiveAccountPositions(account, []map[string]any{
+		{
+			"symbol":      "BTCUSDT",
+			"positionAmt": -0.002,
+			"entryPrice":  0.0,
+			"markPrice":   74618.69,
+		},
+	})
+	if err != nil {
+		t.Fatalf("reconcile live account positions failed: %v", err)
+	}
+
+	position, found, err := platform.store.FindPosition("live-main", "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected reconciled BTCUSDT position")
+	}
+	if position.EntryPrice != 74123.45 {
+		t.Fatalf("expected existing entry price to be preserved, got %v", position.EntryPrice)
+	}
+}
+
+func TestRefreshLiveSessionPositionContextBuildsRiskStateFromRecoveredBreakEvenEntryPrice(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"openOrders": []map[string]any{},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	if err := platform.reconcileLiveAccountPositions(account, []map[string]any{
+		{
+			"symbol":         "BTCUSDT",
+			"positionAmt":    -0.002,
+			"entryPrice":     0.0,
+			"breakEvenPrice": 74512.34,
+			"markPrice":      74520.0,
+		},
+	}); err != nil {
+		t.Fatalf("reconcile live account positions failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastStrategyEvaluationSignalBarStates"] = testLiveRecoverySignalBarStates("BTCUSDT", 74520.0)
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 20, 2, 0, 0, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	liveState := mapValue(updated.State["livePositionState"])
+	if len(liveState) == 0 {
+		t.Fatal("expected live position state to be rebuilt from recovered entry price")
+	}
+	if got := parseFloatValue(liveState["entryPrice"]); got != 74512.34 {
+		t.Fatalf("expected recovered break-even entry price in live position state, got %v", got)
+	}
+	if got := stringValue(liveState["side"]); got != "SHORT" {
+		t.Fatalf("expected SHORT live position side, got %s", got)
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "unprotected-open-position" {
+		t.Fatalf("expected unprotected-open-position without recovered protection orders, got %s", got)
+	}
+}
+
 type testLiveAccountSyncAdapter struct {
 	key                 string
 	syncErr             error
