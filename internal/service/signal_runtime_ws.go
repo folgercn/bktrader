@@ -479,7 +479,13 @@ func (p *Platform) runExchangeWebsocketLoop(
 				session.State = state
 				session.UpdatedAt = now
 			})
-			_ = p.handleSignalRuntimeMessage(session.ID, summary, now)
+			if err := p.handleSignalRuntimeMessage(session.ID, summary, now); err != nil {
+				p.logger("service.signal_runtime",
+					"session_id", session.ID,
+					"symbol", signalRuntimeSummarySymbol(summary),
+					"stream_type", inferSignalRuntimeStreamType(summary),
+				).Warn("signal runtime live fanout failed", "error", err)
+			}
 		}
 	}()
 
@@ -574,19 +580,80 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 		if session.Status != "RUNNING" {
 			continue
 		}
+		requiredValue, hasRequired := session.State["signalRuntimeRequired"]
+		if !boolValue(requiredValue) && (!hasRequired || requiredValue == nil) {
+			refreshed, refreshErr := p.syncLiveSessionRuntime(session)
+			if refreshErr != nil {
+				p.recordLiveRuntimeFanoutDrop(session, runtimeSessionID, summary, eventTime, "runtime-state-refresh-failed", map[string]any{
+					"error": refreshErr.Error(),
+				})
+				continue
+			} else {
+				session = refreshed
+				p.logger("service.live",
+					"session_id", session.ID,
+					"runtime_session_id", runtimeSessionID,
+					"symbol", targetSymbol,
+				).Info("restored missing signalRuntimeRequired before live runtime fanout")
+			}
+		}
 		if !boolValue(session.State["signalRuntimeRequired"]) {
+			p.recordLiveRuntimeFanoutDrop(session, runtimeSessionID, summary, eventTime, "runtime-not-required", map[string]any{
+				"signalRuntimeRequired": session.State["signalRuntimeRequired"],
+			})
 			continue
 		}
 		sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
 		if sessionSymbol == "" {
+			p.recordLiveRuntimeFanoutDrop(session, runtimeSessionID, summary, eventTime, "missing-session-symbol", nil)
 			continue // session has no symbol — skip
 		}
 		if sessionSymbol != targetSymbol {
 			continue
 		}
-		_ = p.triggerLiveSessionFromSignal(session.ID, runtimeSessionID, summary, eventTime)
+		if err := p.triggerLiveSessionFromSignal(session.ID, runtimeSessionID, summary, eventTime); err != nil {
+			p.logger("service.live",
+				"session_id", session.ID,
+				"runtime_session_id", runtimeSessionID,
+				"symbol", targetSymbol,
+			).Warn("trigger live session from signal failed", "error", err)
+		}
 	}
 	return nil
+}
+
+func (p *Platform) recordLiveRuntimeFanoutDrop(
+	session domain.LiveSession,
+	runtimeSessionID string,
+	summary map[string]any,
+	eventTime time.Time,
+	reason string,
+	details map[string]any,
+) {
+	state := cloneMetadata(session.State)
+	lastReason := stringValue(state["lastRuntimeFanoutDropReason"])
+	lastRecordedAt := parseOptionalRFC3339(stringValue(state["lastRuntimeFanoutDropAt"]))
+	if lastReason == reason && !lastRecordedAt.IsZero() && eventTime.Sub(lastRecordedAt) < 30*time.Second {
+		return
+	}
+	state["lastRuntimeFanoutDropReason"] = reason
+	state["lastRuntimeFanoutDropAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastRuntimeFanoutDropRuntimeSessionId"] = runtimeSessionID
+	state["lastRuntimeFanoutDropSummary"] = cloneMetadata(summary)
+	if len(details) > 0 {
+		state["lastRuntimeFanoutDropDetails"] = cloneMetadata(details)
+	} else {
+		delete(state, "lastRuntimeFanoutDropDetails")
+	}
+	if updated, err := p.store.UpdateLiveSessionState(session.ID, state); err == nil {
+		session = updated
+	}
+	p.logger("service.live",
+		"session_id", session.ID,
+		"runtime_session_id", runtimeSessionID,
+		"reason", reason,
+		"symbol", signalRuntimeSummarySymbol(summary),
+	).Warn("runtime event skipped for live session fanout")
 }
 
 func signalRuntimeSummaryShouldTriggerLiveEvaluation(summary map[string]any) bool {
