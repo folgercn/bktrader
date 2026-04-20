@@ -505,3 +505,134 @@ func TestHandleSignalRuntimeMessageScopesTriggerByLiveSessionSymbol(t *testing.T
 		t.Fatalf("expected BTC trigger to reach BTC session, got empty last event state")
 	}
 }
+
+func runTestSignalRuntimeReconnect(platform *Platform, runtimeSessionID string) {
+	outcomes := []struct {
+		connected bool
+		err       error
+	}{
+		{connected: true, err: errors.New("read tcp: EOF")},
+		{connected: true, err: errors.New("read tcp: EOF")},
+		{connected: false, err: errors.New("dial failed: 403 forbidden")},
+	}
+	callCount := 0
+	platform.runSignalRuntimeWithRecoveryUsing(
+		context.Background(),
+		runtimeSessionID,
+		func(context.Context, string) (bool, error) {
+			if callCount >= len(outcomes) {
+				return false, errors.New("unexpected extra reconnect loop")
+			}
+			outcome := outcomes[callCount]
+			callCount++
+			return outcome.connected, outcome.err
+		},
+		func(_ context.Context, _ time.Duration) bool {
+			return true
+		},
+	)
+}
+
+func TestRunSignalRuntimeWithRecoveryReconnectTriggersAuthoritativeRESTSync(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-ws-reconnect-reconcile", []map[string]any{
+		{
+			"symbol":      "BTCUSDT",
+			"positionAmt": 0.01,
+			"entryPrice":  68000.0,
+			"markPrice":   68100.0,
+		},
+	})
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	runtimeSession, err := platform.CreateSignalRuntimeSession(session.AccountID, session.StrategyID)
+	if err != nil {
+		t.Fatalf("create runtime session failed: %v", err)
+	}
+	runTestSignalRuntimeReconnect(platform, runtimeSession.ID)
+
+	account, err := platform.store.GetAccount(session.AccountID)
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	if got := stringValue(account.Metadata["lastLivePositionSyncAt"]); got == "" {
+		t.Fatal("expected websocket reconnect to trigger a REST position sync")
+	}
+	if liveAccountPositionReconcilePending(account) {
+		t.Fatalf("expected reconnect-triggered reconcile to clear pending gate, account=%#v", account.Metadata)
+	}
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusVerified {
+		t.Fatalf("expected verified gate after healthy reconnect reconcile, got %s", got)
+	}
+	if boolValue(updated.State["positionReconcileGateBlocking"]) {
+		t.Fatal("expected healthy reconnect reconcile not to block live session actions")
+	}
+}
+
+func TestRunSignalRuntimeWithRecoveryReconnectMarksStaleSyncOnRESTMismatch(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-ws-reconnect-stale", []map[string]any{})
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	runtimeSession, err := platform.CreateSignalRuntimeSession(session.AccountID, session.StrategyID)
+	if err != nil {
+		t.Fatalf("create runtime session failed: %v", err)
+	}
+	runTestSignalRuntimeReconnect(platform, runtimeSession.ID)
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusStale {
+		t.Fatalf("expected stale reconcile gate after reconnect mismatch, got %s", got)
+	}
+	if got := stringValue(updated.State["recoveryTakeoverState"]); got != liveRecoveryTakeoverStateStaleSync {
+		t.Fatalf("expected stale-sync takeover state after reconnect mismatch, got %s", got)
+	}
+	if !boolValue(updated.State["positionReconcileGateBlocking"]) {
+		t.Fatal("expected reconnect mismatch to block live session actions")
+	}
+	if _, err := platform.ClosePosition(position.ID); err == nil {
+		t.Fatal("expected stale reconnect mismatch to block close execution")
+	}
+}

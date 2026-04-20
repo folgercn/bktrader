@@ -172,6 +172,7 @@ func (p *Platform) runSignalRuntimeWithRecoveryUsing(
 			if connected {
 				// The reconnect succeeded and the runtime ran again before dropping later.
 				// Start a fresh recovery cycle so the next disconnect gets a full retry budget.
+				p.handleSignalRuntimeReconnect(sessionID, time.Now().UTC())
 				disconnectErr = retryErr
 				recovered = true
 				break
@@ -190,6 +191,17 @@ func (p *Platform) runSignalRuntimeWithRecoveryUsing(
 			"reconnect exhausted after %d attempts (severity=%s): %w",
 			policy.maxAttempts, severity.String(), disconnectErr))
 		return
+	}
+}
+
+func (p *Platform) handleSignalRuntimeReconnect(sessionID string, eventTime time.Time) {
+	runtimeSession, err := p.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		return
+	}
+	if _, reconcileErr := p.triggerAuthoritativeLiveAccountReconcile(runtimeSession.AccountID, "ws-reconnect-rest-verify-required", eventTime); reconcileErr != nil {
+		p.logger("service.signal_runtime", "session_id", sessionID, "account_id", runtimeSession.AccountID).
+			Warn("live account reconcile after websocket reconnect failed", "error", reconcileErr)
 	}
 }
 

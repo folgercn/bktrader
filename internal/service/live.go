@@ -200,6 +200,62 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	return account, fallbackErr
 }
 
+func liveAccountPositionReconcilePending(account domain.Account) bool {
+	requiredAt := parseOptionalRFC3339(stringValue(account.Metadata["livePositionReconcileRequiredAt"]))
+	if requiredAt.IsZero() {
+		return false
+	}
+	lastSyncAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLivePositionSyncAt"]))
+	return lastSyncAt.IsZero() || requiredAt.After(lastSyncAt)
+}
+
+func clearLiveAccountPositionReconcileRequirement(metadata map[string]any) {
+	if metadata == nil {
+		return
+	}
+	delete(metadata, "livePositionReconcileRequiredAt")
+	delete(metadata, "livePositionReconcileTrigger")
+}
+
+func (p *Platform) markLiveAccountPositionReconcileRequired(account domain.Account, trigger string, eventTime time.Time) (domain.Account, error) {
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["livePositionReconcileRequiredAt"] = eventTime.UTC().Format(time.RFC3339)
+	account.Metadata["livePositionReconcileTrigger"] = firstNonEmpty(strings.TrimSpace(trigger), "reconcile-required")
+	return p.store.UpdateAccount(account)
+}
+
+func (p *Platform) triggerAuthoritativeLiveAccountReconcile(accountID, trigger string, eventTime time.Time) (domain.Account, error) {
+	account, err := p.store.GetAccount(accountID)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	if !strings.EqualFold(account.Mode, "LIVE") {
+		return domain.Account{}, fmt.Errorf("account %s is not a LIVE account", accountID)
+	}
+	binding := cloneMetadata(mapValue(account.Metadata["liveBinding"]))
+	if normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) != "rest" {
+		return account, nil
+	}
+	account, err = p.markLiveAccountPositionReconcileRequired(account, trigger, eventTime)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	p.syncLiveSessionsForAccountSnapshot(account)
+
+	synced, syncErr := p.SyncLiveAccount(accountID)
+	if syncErr != nil {
+		latest, latestErr := p.store.GetAccount(accountID)
+		if latestErr == nil {
+			return latest, syncErr
+		}
+		return account, syncErr
+	}
+	if liveAccountPositionReconcilePending(synced) {
+		return synced, fmt.Errorf("live account %s reconcile is still pending after %s", accountID, firstNonEmpty(strings.TrimSpace(trigger), "reconcile"))
+	}
+	return synced, nil
+}
+
 func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountReconcileOptions) (LiveAccountReconcileResult, error) {
 	options = normalizeLiveAccountReconcileOptions(options)
 	result := LiveAccountReconcileResult{
@@ -1008,6 +1064,7 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 	delete(account.Metadata, "lastLivePositionSyncError")
 	account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
 	account.Metadata["livePositionReconcileGate"] = reconcileGate
+	clearLiveAccountPositionReconcileRequirement(account.Metadata)
 	return p.store.UpdateAccount(account)
 }
 
@@ -1429,6 +1486,16 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 		logger.Warn("resolve live adapter failed", "error", err)
 		return domain.LiveSession{}, err
 	}
+	if syncedAccount, reconcileErr := p.triggerAuthoritativeLiveAccountReconcile(account.ID, "historical-takeover-activation", time.Now().UTC()); reconcileErr == nil {
+		account = syncedAccount
+	} else {
+		if latestAccount, latestErr := p.store.GetAccount(account.ID); latestErr == nil {
+			account = latestAccount
+		}
+		if liveAccountPositionReconcilePending(account) {
+			logger.Warn("authoritative live account reconcile pending on start", "error", reconcileErr)
+		}
+	}
 	session, recoveredPosition, incompleteRecoveryMetadata, err := p.completeRecoveredLiveSessionMetadata(session)
 	if err != nil {
 		logger.Warn("complete recovered live session metadata failed", "error", err)
@@ -1536,6 +1603,9 @@ func (p *Platform) syncActiveLiveAccounts(eventTime time.Time) error {
 }
 
 func (p *Platform) shouldRefreshLiveAccountSync(account domain.Account, eventTime time.Time) bool {
+	if liveAccountPositionReconcilePending(account) {
+		return true
+	}
 	threshold := time.Duration(p.runtimePolicy.LiveAccountSyncFreshnessSecs) * time.Second
 	if threshold <= 0 {
 		return false
@@ -1556,8 +1626,11 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
-	if syncedAccount, syncErr := p.SyncLiveAccount(account.ID); syncErr != nil {
-		// Keep recovery moving so runtime monitoring can still come back.
+	if syncedAccount, syncErr := p.triggerAuthoritativeLiveAccountReconcile(account.ID, "startup-recovery", time.Now().UTC()); syncErr != nil {
+		latestAccount, latestErr := p.store.GetAccount(account.ID)
+		if latestErr == nil {
+			account = latestAccount
+		}
 	} else {
 		account = syncedAccount
 	}
@@ -2821,6 +2894,17 @@ func resolveLivePositionReconcileGate(account domain.Account, symbol string, req
 		"required":      livePositionReconcileGateRequired(snapshot),
 	}
 	if !requiresVerification || symbol == "" || !boolValue(gate["required"]) {
+		return gate
+	}
+	if liveAccountPositionReconcilePending(account) {
+		gate["status"] = livePositionReconcileGateStatusStale
+		gate["blocking"] = true
+		gate["scenario"] = firstNonEmpty(
+			strings.TrimSpace(stringValue(account.Metadata["livePositionReconcileTrigger"])),
+			"reconcile-required",
+		)
+		gate["requiredAt"] = stringValue(account.Metadata["livePositionReconcileRequiredAt"])
+		gate["takeoverState"] = liveRecoveryTakeoverStateStaleSync
 		return gate
 	}
 	if !boolValue(gate["authoritative"]) {

@@ -118,6 +118,9 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		return domain.LiveSession{}, err
 	}
 	reconcileGate := resolveLivePositionReconcileGate(account, symbol, hasRealPositionContext)
+	if boolValue(reconcileGate["blocking"]) {
+		takeoverActive = true
+	}
 	state["recoveredPosition"] = positionSnapshot
 	state["hasRecoveredPosition"] = foundPosition
 	state["hasRecoveredRealPosition"] = foundPosition
