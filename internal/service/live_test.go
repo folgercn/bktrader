@@ -5301,6 +5301,74 @@ func TestRecoverRunningLiveSessionCompletesRecoveredPositionMetadata(t *testing.
 	}
 }
 
+func TestRecoverRunningLiveSessionRequiresRESTVerificationBeforeRestartTakeover(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key:     "test-restart-rest-required",
+		syncErr: errors.New("rest adapter unavailable"),
+	})
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-restart-rest-required",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "BLOCKED" {
+		t.Fatalf("expected restart takeover to stay BLOCKED until REST verify succeeds, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusStale {
+		t.Fatalf("expected stale reconcile gate while REST verify is pending, got %s", got)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "startup-recovery" {
+		t.Fatalf("expected startup-recovery gate scenario, got %s", got)
+	}
+	if got := stringValue(recovered.State["recoveryTakeoverState"]); got != liveRecoveryTakeoverStateStaleSync {
+		t.Fatalf("expected stale-sync takeover state while restart verify is pending, got %s", got)
+	}
+	account, err = platform.store.GetAccount(session.AccountID)
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	if !liveAccountPositionReconcilePending(account) {
+		t.Fatal("expected account reconcile requirement to remain pending after fallback-only sync")
+	}
+	if _, err := platform.ClosePosition(position.ID); err == nil {
+		t.Fatal("expected restart takeover close to stay blocked until REST verify completes")
+	}
+}
+
 func TestRecoverRunningLiveSessionAllowsTakeoverAfterVerifiedReconcileMatch(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	configureTestLiveRESTReconcileAdapter(t, platform, "test-reconcile-match", []map[string]any{
@@ -5790,6 +5858,68 @@ func TestStartLiveSessionRejectsActiveCloseOnlyTakeoverMode(t *testing.T) {
 	}
 }
 
+func TestStartLiveSessionRequiresRESTVerificationForHistoricalTakeoverActivation(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key:     "test-start-rest-required",
+		syncErr: errors.New("rest adapter unavailable"),
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-start-rest-required",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	_, err = platform.StartLiveSession(session.ID)
+	if err == nil {
+		t.Fatal("expected historical takeover activation to require REST verification before start")
+	}
+	if !strings.Contains(err.Error(), "requires authoritative reconcile before historical takeover activation") {
+		t.Fatalf("expected fail-fast authoritative reconcile error, got %v", err)
+	}
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session failed: %v", err)
+	}
+	if updated.Status != "BLOCKED" {
+		t.Fatalf("expected start-time takeover to stay BLOCKED, got %s", updated.Status)
+	}
+	if got := stringValue(updated.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusStale {
+		t.Fatalf("expected stale reconcile gate on start-time takeover, got %s", got)
+	}
+	if got := stringValue(updated.State["positionReconcileGateScenario"]); got != "historical-takeover-activation" {
+		t.Fatalf("expected historical takeover trigger scenario, got %s", got)
+	}
+}
+
 func TestStartLiveSessionDowngradesIncompleteRecoveredMetadataToCloseOnly(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-start-incomplete"})
@@ -5932,6 +6062,7 @@ func configureTestLiveRESTReconcileAdapter(t *testing.T, platform *Platform, ada
 			account.Metadata = cloneMetadata(account.Metadata)
 			account.Metadata["livePositionReconcileGate"] = reconcileGate
 			account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+			clearLiveAccountPositionReconcileRequirement(account.Metadata)
 			return p.store.UpdateAccount(account)
 		},
 	})
