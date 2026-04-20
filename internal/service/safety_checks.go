@@ -65,6 +65,18 @@ func (p *Platform) ensureNoActivePositionsOrOrders(accountID, strategyID string)
 		return err
 	}
 	if active {
+		healed, healErr := p.attemptLiveExposureReconcileSelfHeal(accountID)
+		if healErr != nil {
+			return healErr
+		}
+		if healed {
+			active, err = p.HasActivePositionsOrOrders(accountID, strategyID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if active {
 		return activePositionsOrOrdersError{}
 	}
 	return nil

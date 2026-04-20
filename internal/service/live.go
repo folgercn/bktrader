@@ -80,8 +80,9 @@ type liveAccountSyncSuccessOwner interface {
 }
 
 const (
-	liveOrderStatusVirtualInitial = "VIRTUAL_INITIAL"
-	liveOrderStatusVirtualExit    = "VIRTUAL_EXIT"
+	liveOrderStatusVirtualInitial             = "VIRTUAL_INITIAL"
+	liveOrderStatusVirtualExit                = "VIRTUAL_EXIT"
+	liveAccountReconcileSelfHealLookbackHours = 24
 )
 
 func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
@@ -347,6 +348,62 @@ func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountRec
 	}
 	result.Account = account
 	return result, nil
+}
+
+func livePositionReconcileGateCanSelfHeal(gate map[string]any) bool {
+	return strings.EqualFold(strings.TrimSpace(stringValue(gate["status"])), livePositionReconcileGateStatusStale) &&
+		strings.EqualFold(strings.TrimSpace(stringValue(gate["scenario"])), "db-position-exchange-missing")
+}
+
+func (p *Platform) supportsLiveAccountReconcile(account domain.Account) bool {
+	if !strings.EqualFold(strings.TrimSpace(account.Mode), "LIVE") {
+		return false
+	}
+	binding := cloneMetadata(mapValue(account.Metadata["liveBinding"]))
+	if normalizeLiveExecutionMode(binding["executionMode"], boolValue(binding["sandbox"])) != "rest" {
+		return false
+	}
+	adapter, _, err := p.resolveLiveAdapterForAccount(account)
+	if err != nil {
+		return false
+	}
+	_, ok := adapter.(LiveAccountReconcileAdapter)
+	return ok
+}
+
+func (p *Platform) attemptLiveAccountReconcileSelfHeal(account domain.Account, symbol string) (domain.Account, bool, error) {
+	symbol = NormalizeSymbol(symbol)
+	if symbol == "" {
+		return account, false, nil
+	}
+	gate := resolveLivePositionReconcileGate(account, symbol, true)
+	if !livePositionReconcileGateCanSelfHeal(gate) || !p.supportsLiveAccountReconcile(account) {
+		return account, false, nil
+	}
+	result, err := p.ReconcileLiveAccount(account.ID, LiveAccountReconcileOptions{
+		LookbackHours: liveAccountReconcileSelfHealLookbackHours,
+	})
+	if err != nil {
+		return account, true, err
+	}
+	return result.Account, true, nil
+}
+
+func (p *Platform) attemptLiveExposureReconcileSelfHeal(accountID string) (bool, error) {
+	account, err := p.store.GetAccount(accountID)
+	if err != nil {
+		return false, err
+	}
+	if !p.supportsLiveAccountReconcile(account) {
+		return false, nil
+	}
+	_, err = p.ReconcileLiveAccount(accountID, LiveAccountReconcileOptions{
+		LookbackHours: liveAccountReconcileSelfHealLookbackHours,
+	})
+	if err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 func (p *Platform) persistLiveAccountSyncFailure(account domain.Account, attemptedAt time.Time, err error) domain.Account {
@@ -1528,7 +1585,34 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 	if isLiveSessionRecoveryCloseOnlyMode(session.State) {
 		return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeCloseOnlyTakeover)
 	}
-	if gate := resolveLivePositionReconcileGate(account, recoveredPosition.Symbol, recoveredPosition.Quantity > 0); boolValue(gate["blocking"]) {
+	gate := resolveLivePositionReconcileGate(account, recoveredPosition.Symbol, recoveredPosition.Quantity > 0)
+	if boolValue(gate["blocking"]) {
+		if healedAccount, attempted, healErr := p.attemptLiveAccountReconcileSelfHeal(account, recoveredPosition.Symbol); attempted {
+			if healErr != nil {
+				logger.Warn("reconcile self-heal failed before start gate evaluation", "error", healErr)
+			} else {
+				account = healedAccount
+				session, recoveredPosition, incompleteRecoveryMetadata, err = p.completeRecoveredLiveSessionMetadata(session)
+				if err != nil {
+					logger.Warn("complete recovered live session metadata failed after self-heal", "error", err)
+					return domain.LiveSession{}, err
+				}
+				if incompleteRecoveryMetadata {
+					session, err = p.enterRecoveredLiveSessionCloseOnlyMode(session, recoveredPosition, "missing-strategy-version", "recovered position is missing strategyVersionId")
+					if err != nil {
+						logger.Warn("enter close-only takeover mode failed after self-heal", "error", err)
+						return domain.LiveSession{}, err
+					}
+					return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeCloseOnlyTakeover)
+				}
+				if isLiveSessionRecoveryCloseOnlyMode(session.State) {
+					return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeCloseOnlyTakeover)
+				}
+				gate = resolveLivePositionReconcileGate(account, recoveredPosition.Symbol, recoveredPosition.Quantity > 0)
+			}
+		}
+	}
+	if boolValue(gate["blocking"]) {
 		session, err = p.enterRecoveredLiveSessionReconcileGateBlocked(session, recoveredPosition, gate)
 		if err != nil {
 			logger.Warn("enter reconcile gate blocked mode failed", "error", err)
@@ -1667,7 +1751,28 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 		session, _ = p.refreshLiveSessionPositionContext(session, time.Now().UTC(), "live-startup-recovery-close-only")
 		return session, nil
 	}
-	if gate := resolveLivePositionReconcileGate(account, recoveredPosition.Symbol, recoveredPosition.Quantity > 0); boolValue(gate["blocking"]) {
+	gate := resolveLivePositionReconcileGate(account, recoveredPosition.Symbol, recoveredPosition.Quantity > 0)
+	if boolValue(gate["blocking"]) {
+		if healedAccount, attempted, healErr := p.attemptLiveAccountReconcileSelfHeal(account, recoveredPosition.Symbol); attempted {
+			if healErr == nil {
+				account = healedAccount
+				session, recoveredPosition, incompleteRecoveryMetadata, err = p.completeRecoveredLiveSessionMetadata(session)
+				if err != nil {
+					return domain.LiveSession{}, err
+				}
+				if incompleteRecoveryMetadata {
+					session, err = p.enterRecoveredLiveSessionCloseOnlyMode(session, recoveredPosition, "missing-strategy-version", "recovered position is missing strategyVersionId")
+					if err != nil {
+						return domain.LiveSession{}, err
+					}
+					session, _ = p.refreshLiveSessionPositionContext(session, time.Now().UTC(), "live-startup-recovery-close-only")
+					return session, nil
+				}
+				gate = resolveLivePositionReconcileGate(account, recoveredPosition.Symbol, recoveredPosition.Quantity > 0)
+			}
+		}
+	}
+	if boolValue(gate["blocking"]) {
 		return p.enterRecoveredLiveSessionReconcileGateBlocked(session, recoveredPosition, gate)
 	}
 	session, err = p.syncLiveSessionRuntime(session)

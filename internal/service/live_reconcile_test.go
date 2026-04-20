@@ -144,6 +144,66 @@ func TestReconcileLiveAccountRecoversMissingFilledOrder(t *testing.T) {
 	}
 }
 
+func configureTestLiveRESTReconcileHistoryAdapter(
+	t *testing.T,
+	platform *Platform,
+	adapterKey string,
+	exchangePositions []map[string]any,
+	ordersBySymbol map[string][]map[string]any,
+	tradesBySymbol map[string][]LiveFillReport,
+) {
+	t.Helper()
+	platform.registerLiveAdapter(testLiveAccountReconcileAdapter{
+		key: adapterKey,
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":          "binance-rest-account-v3",
+				"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+				"syncedAt":        time.Now().UTC().Format(time.RFC3339),
+				"bindingMode":     stringValue(binding["connectionMode"]),
+				"executionMode":   "rest",
+				"syncStatus":      "SYNCED",
+				"accountExchange": account.Exchange,
+				"positions":       exchangePositions,
+				"openOrders":      []map[string]any{},
+			}
+			var err error
+			account, err = p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			reconcileGate, err := p.reconcileLiveAccountPositions(account, exchangePositions)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["livePositionReconcileGate"] = reconcileGate
+			account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+			clearLiveAccountPositionReconcileRequirement(account.Metadata)
+			return p.store.UpdateAccount(account)
+		},
+		ordersBySymbol: ordersBySymbol,
+		tradesBySymbol: tradesBySymbol,
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     adapterKey,
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
+}
+
 type testLiveAccountReconcileAdapter struct {
 	key              string
 	syncSnapshotFunc func(*Platform, domain.Account, map[string]any) (domain.Account, error)
