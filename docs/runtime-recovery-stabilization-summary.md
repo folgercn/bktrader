@@ -1,234 +1,234 @@
-# Runtime Recovery Stabilization Summary
+# 运行时恢复稳定性总结
 
-## Background
+## 背景
 
-This document summarizes the runtime recovery and takeover stabilization work completed for the research/live execution path.
+本文档用于总结本次围绕 research / live 执行链路所完成的运行时恢复与接管稳定性改造工作。
 
-The original research strategy logic was validated mostly in offline or paper-style environments. Those environments do not fully exercise runtime-specific failure modes such as:
+原有的 research 策略逻辑，主要是在离线回测或类 paper 的环境中验证的。这类环境并不能完整覆盖真实运行时中的故障场景，例如：
 
-- service restart and recovery
-- takeover of persisted historical positions
-- passive close of positions opened by a previous process
-- drift between DB state, session state, websocket state, and exchange reality
-- missing execution metadata during recovered close flows
+- 服务重启后的恢复
+- 接管数据库中已经存在的历史仓位
+- 对前一个进程打开的仓位进行被动平仓
+- 数据库状态、会话状态、WebSocket 状态与交易所真实状态之间发生漂移
+- 在恢复态平仓时缺少执行元数据
 
-The stabilization work described here was intended to close that gap and turn the system from a strategy runner into a more recovery-safe trading runtime.
-
----
-
-## What Was Changed
-
-The work was executed through the following plan and issue series:
-
-- PR #83: runtime recovery / passive close review plan and execution index
-- Issue #84: source-of-truth mapping and recovery sequence review
-- Issue #85: recovery metadata completion and close-only fallback mode
-- Issue #86: hard reconcile gate before takeover activation
-- Issue #87: passive-close execution metadata completeness
-- Issue #88: reduce-only execution-boundary guard
-- Issue #89: takeover state machine and action matrix
-- Issue #90: WS + REST dual-channel reconciliation model
-- Issue #91: restart / takeover / passive-close regression suite
-
-The changes can be grouped into four main areas.
-
-### 1. Recovery Metadata Completion
-
-Recovered historical positions are no longer allowed to drift into execution with incomplete runtime context.
-
-Main outcomes:
-- recovery paths now validate whether required execution context can be rebuilt
-- missing metadata no longer leads directly to runtime execution failure
-- incomplete recovery is downgraded into a restricted mode such as close-only takeover instead of being treated as a normal running session
-
-This closed the class of failures where a recovered position could logically require a close, but the execution path would fail because strategy/runtime linkage was missing.
-
-### 2. Hard Reconciliation Before Takeover Becomes Actionable
-
-Recovered/taken-over positions are no longer considered tradable merely because they exist in DB or cached session state.
-
-Main outcomes:
-- recovered state must pass a reconcile gate before automated actions are allowed
-- local state is compared against exchange truth for side, quantity, and entry-price-related semantics
-- mismatch is classified into explicit safe states such as stale, conflict, or error
-- unresolved mismatch blocks dispatch and passive close instead of silently continuing
-
-This closed the gap where stale local state could be treated as healthy tradeable truth.
-
-### 3. Passive-Close Execution Path Hardening
-
-Recovery-triggered close orders now go through a more explicit and complete execution boundary.
-
-Main outcomes:
-- passive-close orders must carry sufficient metadata to reach execution safely
-- recovered close flows no longer bypass metadata completeness checks
-- the final execution boundary now classifies recovered passive close separately from normal entry/exit paths
-- a reduce-only safety guard was added at the execution boundary
-- Binance payload semantics for HEDGE vs ONE_WAY modes are now explicitly guarded and tested
-
-This reduced the risk of a recovered close flow issuing an unsafe payload, opening reverse exposure, or failing only at the final submission stage.
-
-### 4. Recovery State Machine and Reconciliation Model
-
-Recovery behavior is now more explicit and less dependent on loosely related flags.
-
-Main outcomes:
-- takeover/recovery states are represented explicitly rather than only by incidental flag combinations
-- runtime behavior is constrained by takeover state
-- unresolved recovery can no longer silently behave like a normal healthy strategy session
-- WS is treated as the timely channel, while REST is treated as the authoritative verification channel at critical boundaries such as startup and reconnect
-
-This moved the runtime away from implicit recovery behavior and toward a more auditable state machine.
-
-### 5. Regression Test Coverage
-
-A focused test suite was added/expanded around restart, takeover, reconciliation mismatch, and passive-close execution.
-
-Main outcomes:
-- DB-backed takeover scenarios are now testable
-- exchange-only takeover scenarios are now testable
-- DB vs exchange mismatch scenarios are now testable
-- duplicate exit prevention is covered
-- partial fill + restart behavior is covered
-- passive-close payload semantics are covered at the execution boundary
-
-This provides a foundation for preventing future regressions in the same class.
+本次稳定性改造的目标，就是补上这部分能力，把系统从“策略执行器”收敛成“更适合真实恢复场景的交易运行时”。
 
 ---
 
-## Why These Changes Were Necessary
+## 本次改了什么
 
-The underlying problem was not simply “a few bugs in live mode.”
+本轮工作通过以下计划与任务序列完成：
 
-The real issue was that research/runtime execution had previously been optimized for strategy logic in idealized conditions, but not for the operational reality of a live system:
+- PR #83：运行时恢复 / 被动平仓审查计划与执行索引
+- Issue #84：事实源梳理与恢复时序审查
+- Issue #85：恢复元数据补齐与 close-only fallback 模式
+- Issue #86：接管生效前的强制对账门禁
+- Issue #87：被动平仓执行链元数据完整性
+- Issue #88：最终执行边界的 reduce-only 护栏
+- Issue #89：接管状态机与动作矩阵
+- Issue #90：WS + REST 双通道对账模型
+- Issue #91：重启 / 接管 / 被动平仓回归测试集
 
-- processes restart
-- runtime sessions may disappear while positions still exist
-- DB state may lag or diverge from exchange truth
-- websocket continuity cannot be assumed
-- recovered positions may need to be closed even though the current process never opened them
+这些改动可以归纳为五个方面。
 
-Without explicit recovery semantics, the system could end up in dangerous states such as:
+### 1. 恢复元数据补齐
 
-- believing a position exists when the exchange is flat
-- believing it is flat when the exchange still has exposure
-- attempting to close with incomplete metadata
-- silently resuming strategy execution on unverified recovery state
-- sending payloads whose reduce-only / positionSide semantics are unsafe
+恢复出来的历史仓位，不再允许在运行时上下文不完整的情况下直接进入执行链路。
 
-These changes were necessary to enforce a simple rule:
+主要结果：
+- 恢复链路现在会检查是否能够重建执行所需的上下文
+- 元数据缺失不再直接导致运行时执行报错
+- 如果恢复不完整，系统会降级到受限模式，例如 close-only takeover，而不是假装自己已经是一个正常运行中的会话
 
-> A recovered position must not become actionable unless its execution context is complete and its state has been reconciled against exchange truth.
+这修复了这样一类问题：逻辑上已经判断出需要平仓，但执行链因为缺少 strategy/runtime 绑定而在最后阶段失败。
 
-That rule now sits at the center of the runtime recovery model.
+### 2. 接管生效前的强制对账门禁
 
----
+恢复态 / 接管态的仓位，不再仅仅因为“数据库里存在”或“会话缓存里存在”就被视为可交易状态。
 
-## What the System Can Do Better Now
+主要结果：
+- 恢复态在允许自动动作前，必须先通过对账门禁
+- 本地状态会和交易所事实进行比对，重点关注方向、数量和与 entry price 相关的语义
+- 一旦发现不一致，会进入 stale、conflict 或 error 等显式安全状态
+- 未解决的不一致会阻断 dispatch 和被动平仓，而不是静默继续执行
 
-After this stabilization work, the runtime is better equipped to:
+这补上了一个关键缺口：避免把已经过期的本地状态重新当成“健康且可交易的事实”。
 
-- restart and reattach to existing positions safely
-- classify incomplete or conflicting recovery into explicit safe states
-- prevent automatic action on unresolved mismatch
-- route recovered passive-close orders through a safer execution boundary
-- prevent reverse-opening mistakes using reduce-only execution guards
-- verify payload semantics for HEDGE vs ONE_WAY futures execution
-- catch regressions through targeted recovery/takeover tests
+### 3. 被动平仓执行链加固
 
-In practice, this means the system is now closer to being a recovery-aware trading runtime rather than a strategy runner that only behaves well when the process remains uninterrupted.
+恢复态触发的平仓单，现在会经过更明确、更完整的最终执行边界。
 
----
+主要结果：
+- 被动平仓单必须带足够的执行元数据，才能安全进入执行层
+- 恢复态平仓路径不再绕过元数据完整性检查
+- 最终执行边界会显式区分 recovered passive close 与 normal entry / normal exit
+- 在最终执行边界增加了 reduce-only 安全护栏
+- Binance 在 HEDGE / ONE_WAY 模式下的 payload 语义，现在有了明确的保护与测试
 
-## How to Extend This in the Future
+这降低了这样一类风险：恢复态平仓在最终提交时带着不安全的 payload，导致反向开仓、错误命中仓位，或只在最后一步才失败。
 
-The completed work provides a baseline, but future changes should follow several rules.
+### 4. 恢复状态机与对账模型显式化
 
-### 1. Preserve the Source-of-Truth Hierarchy
+恢复行为现在更加显式，不再依赖一堆松散 flag 的隐式组合。
 
-Any future recovery or trading-path change should explicitly state:
-- what is authoritative truth
-- what is cached state
-- what is derived state
+主要结果：
+- 接管 / 恢复状态现在是显式表达的，而不是依赖若干状态字段碰巧组合出来
+- 运行时行为会受到 takeover state 的约束
+- 未解决的恢复态不再可能静默地表现成一个正常健康的策略会话
+- WS 被明确视为时效性通道，REST 被明确视为关键边界上的权威校验通道，例如启动、重连和接管前
 
-Do not allow cached session fields to silently replace authoritative exchange truth at recovery boundaries.
+这一步的意义，是把恢复逻辑从“隐式行为”收敛成“可审计的状态机行为”。
 
-### 2. Keep Recovery State Explicit
+### 5. 回归测试覆盖补齐
 
-If new takeover or recovery behaviors are added, they should extend the explicit recovery state machine instead of introducing more hidden flag combinations.
+围绕重启、接管、对账不一致与被动平仓执行，这次增加 / 扩展了一组聚焦测试。
 
-New actions should always answer:
-- is this state allowed to open?
-- is this state allowed to close?
-- is this state allowed to place protection orders?
-- is auto-dispatch allowed?
-- is manual review required?
+主要结果：
+- DB 驱动的历史仓位接管场景现在可测试
+- 只有交易所有仓、本地无仓的接管场景现在可测试
+- DB 与交易所不一致的场景现在可测试
+- 重复平仓单防护现在有覆盖
+- partial fill + restart 的行为现在有覆盖
+- 被动平仓在执行边界上的 payload 语义现在有覆盖
 
-### 3. Treat WS and REST as Different Tools
-
-WS should remain the timely event stream.
-REST should remain the authoritative reconciliation mechanism at critical boundaries.
-
-Do not let reconnect behavior silently collapse these responsibilities back into one ambiguous path.
-
-### 4. Keep the Execution Boundary Strict
-
-Any future extension to passive close, takeover close, or exchange routing should preserve the final submission safety boundary.
-
-If a new order class is introduced, define:
-- how it is classified at execution boundary
-- whether reduce-only semantics are required
-- what payload invariants must hold before submit
-
-### 5. Extend Tests Before Extending Runtime Semantics
-
-If future work introduces new recovery behaviors, hedge-mode semantics, or exchange adapters, first add or update the regression suite to cover the new runtime reality.
-
-The safest way to extend this system is:
-1. define behavior
-2. write/adjust recovery tests
-3. change runtime logic
-4. verify no regressions in recovery/takeover flows
+这为后续防止同类回归提供了基础。
 
 ---
 
-## Recommended Follow-Up Operational Validation
+## 为什么必须这样改
 
-Even with code and tests complete, runtime recovery changes should still be validated operationally.
+问题的本质并不是“live 模式里有几个 bug”。
 
-Recommended checks:
+真正的问题在于：research/runtime 这条执行链以前主要针对“理想条件下的策略逻辑”做优化，却没有针对真实交易系统的运行现实做完整约束，例如：
 
-### Restart validation
-- kill the process during an open position
-- restart the service
-- confirm the system enters the correct recovery/takeover state
-- confirm it does not open or close unexpectedly
+- 进程会重启
+- runtime session 可能消失，但仓位还在
+- DB 状态可能滞后，或者与交易所真实状态漂移
+- WebSocket 连续性不能假设永远存在
+- 被恢复出来的仓位，可能需要平仓，但当前进程其实从未开过这笔仓位
 
-### Exchange mismatch validation
-- manually change exchange state outside the process
-- confirm local runtime enters stale/conflict/error rather than continuing blindly
+在没有显式恢复语义之前，系统很容易落入以下危险状态：
 
-### Long-running observation
-- observe recovery/reconcile-related logs over time
-- confirm recovery state does not flap
-- confirm reconnect does not silently resume unsafe actions
+- 交易所已经平仓，但系统仍认为有仓
+- 交易所仍有风险敞口，但系统误认为已经平仓
+- 平仓时因为元数据不完整而失败
+- 用未验证过的恢复态直接继续策略运行
+- 在最终提交时发出 reduce-only / positionSide 语义不安全的 payload
 
-These checks are not replacements for tests, but they help verify that runtime behavior remains correct under operational conditions.
+因此，这轮改动的核心，就是把一条简单但重要的原则真正落到代码里：
+
+> 被恢复出来的仓位，只有在执行上下文完整、且已经与交易所真实状态完成对账之后，才允许变成可执行动作。
+
+这条原则现在已经成为运行时恢复模型的中心约束。
 
 ---
 
-## Final Summary
+## 现在系统比以前强在哪里
 
-This stabilization effort did not merely fix isolated bugs.
+经过这轮稳定性改造，系统现在更擅长处理这些事情：
 
-It introduced a runtime model with stronger guarantees around:
-- recovery metadata completeness
-- exchange reconciliation before action
-- passive-close execution safety
-- explicit takeover/recovery states
-- WS/REST role separation
-- regression protection for restart and takeover scenarios
+- 服务重启后安全地重新接管已有仓位
+- 把不完整恢复或冲突恢复分类到显式安全状态
+- 在未解决 mismatch 时阻断自动动作
+- 把恢复态被动平仓单送进更安全的执行边界
+- 通过 reduce-only 护栏避免反向开仓
+- 校验 HEDGE / ONE_WAY 模式下的 futures payload 语义
+- 通过专门的恢复 / 接管测试提前发现回归
 
-The net result is that the system is now better prepared to handle real runtime interruption and recovery, not just idealized uninterrupted strategy execution.
+更直白一点说，这说明系统已经更接近一个“可恢复的交易运行时”，而不仅仅是一个“进程不断线时表现正常的策略执行器”。
 
-Future changes in this area should use this document and PR #83 as the historical baseline for reasoning about runtime recovery safety.
+---
+
+## 以后怎么扩展
+
+这轮工作已经提供了一个基础，但后续所有相关改动都应该遵守几条规则。
+
+### 1. 保持事实源层级清晰
+
+以后任何和恢复或交易路径有关的改动，都应该明确说明：
+- 哪个是真实事实源
+- 哪个是缓存态
+- 哪个是推导态
+
+不要让 session 缓存字段在关键恢复边界上悄悄替代交易所事实。
+
+### 2. 恢复状态必须保持显式
+
+如果以后增加新的接管或恢复行为，应该扩展显式 recovery state machine，而不是继续堆更多隐藏的 flag 组合。
+
+每个新动作都应该先回答：
+- 这个状态允许开仓吗？
+- 这个状态允许平仓吗？
+- 这个状态允许补保护单吗？
+- 这个状态允许 auto-dispatch 吗？
+- 这个状态必须人工 review 吗？
+
+### 3. 明确区分 WS 和 REST 的职责
+
+WS 继续负责时效性更新。
+REST 继续负责关键边界上的权威校验。
+
+不要在后续重连逻辑里，再把两者的职责悄悄揉回一个模糊路径中。
+
+### 4. 最终执行边界必须保持严格
+
+以后如果新增新的被动平仓类型、接管态平仓类型或新的交易所适配逻辑，都要继续维持最终执行边界的严格性。
+
+如果引入新的订单类别，必须定义清楚：
+- 它在最终执行边界里属于哪种分类
+- 是否必须具备 reduce-only 语义
+- 提交前必须满足哪些 payload 约束
+
+### 5. 先补测试，再扩运行语义
+
+如果以后引入新的恢复行为、对冲模式语义或新的交易所适配器，应该先补或更新回归测试，让测试先覆盖“新的运行现实”。
+
+最稳妥的扩展顺序应当是：
+1. 先定义行为
+2. 先写 / 改恢复测试
+3. 再改运行时逻辑
+4. 最后确认接管 / 恢复链没有回归
+
+---
+
+## 建议继续做的运行验证
+
+即使代码和测试都已经补齐，运行时恢复相关改动仍然建议做操作层验证。
+
+建议至少做以下几类检查：
+
+### 重启验证
+- 在有持仓时直接 kill 掉进程
+- 重启服务
+- 确认系统进入正确的 recovery / takeover 状态
+- 确认没有意外开仓或意外平仓
+
+### 交易所不一致验证
+- 在进程外手动改变交易所状态
+- 确认本地运行时进入 stale / conflict / error，而不是盲目继续
+
+### 长时间观察
+- 持续观察 recovery / reconcile 相关日志
+- 确认 recovery state 不会频繁抖动
+- 确认 reconnect 不会静默恢复危险动作
+
+这些检查不是测试的替代品，但它们可以帮助确认：运行时行为在真实环境里确实与设计一致。
+
+---
+
+## 最终总结
+
+这轮稳定性改造，并不是简单修掉几个孤立 bug。
+
+它实际上给系统增加了一套更强的运行时保证，覆盖了：
+- 恢复元数据完整性
+- 执行动作前的交易所对账
+- 被动平仓的执行安全边界
+- 显式的接管 / 恢复状态
+- WS / REST 职责分离
+- 重启与接管场景下的回归保护
+
+最终结果是：系统现在更有能力面对真实运行中的中断、恢复与接管，而不只是依赖“进程不断、状态理想”的前提。
+
+后续所有与运行时恢复安全相关的改动，都建议以本文档和 PR #83 作为历史基线来理解和扩展。
