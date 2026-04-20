@@ -1507,6 +1507,11 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 			}
 		}
 	}
+	if strings.TrimSpace(stringValue(session.State["lastDispatchedOrderId"])) != "" {
+		if syncedSession, syncErr := p.syncLatestLiveSessionOrder(session, time.Now().UTC()); syncErr == nil {
+			session = syncedSession
+		}
+	}
 	session, recoveredPosition, incompleteRecoveryMetadata, err := p.completeRecoveredLiveSessionMetadata(session)
 	if err != nil {
 		logger.Warn("complete recovered live session metadata failed", "error", err)
@@ -1644,6 +1649,11 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 		}
 	} else {
 		account = syncedAccount
+	}
+	if strings.TrimSpace(stringValue(session.State["lastDispatchedOrderId"])) != "" {
+		if syncedSession, syncErr := p.syncLatestLiveSessionOrder(session, time.Now().UTC()); syncErr == nil {
+			session = syncedSession
+		}
 	}
 	session, recoveredPosition, incompleteRecoveryMetadata, err := p.completeRecoveredLiveSessionMetadata(session)
 	if err != nil {
