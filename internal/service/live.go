@@ -1427,6 +1427,14 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 		logger.Warn("resolve live adapter failed", "error", err)
 		return domain.LiveSession{}, err
 	}
+	session, _, _, err = p.completeRecoveredLiveSessionMetadata(session)
+	if err != nil {
+		logger.Warn("complete recovered live session metadata failed", "error", err)
+		return domain.LiveSession{}, err
+	}
+	if isLiveSessionRecoveryCloseOnlyMode(session.State) {
+		return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeCloseOnlyTakeover)
+	}
 
 	session, err = p.syncLiveSessionRuntime(session)
 	if err != nil {
@@ -2477,6 +2485,20 @@ func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSessi
 		delete(state, "recoveryMetadataStatus")
 		delete(state, "recoveryMetadataMissing")
 		delete(state, "recoveryMetadataCompletedAt")
+		delete(state, "recoveryMode")
+		delete(state, "recoveryCloseOnlyReason")
+		delete(state, "recoveryCloseOnlyDetail")
+		delete(state, "recoveryCloseOnlyAt")
+		delete(state, "runtimeMode")
+		delete(state, "signalRuntimeMode")
+		delete(state, "signalRuntimeRequired")
+		delete(state, "signalRuntimeReady")
+		if strings.EqualFold(stringValue(state["lastStrategyEvaluationStatus"]), liveRecoveryModeCloseOnlyTakeover) {
+			delete(state, "lastStrategyEvaluationStatus")
+		}
+		if strings.EqualFold(stringValue(state["positionRecoveryStatus"]), liveRecoveryModeCloseOnlyTakeover) {
+			state["positionRecoveryStatus"] = "flat"
+		}
 		if !metadataEqual(state, session.State) {
 			session, err = p.store.UpdateLiveSessionState(session.ID, state)
 			if err != nil {
