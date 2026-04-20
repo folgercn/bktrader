@@ -901,10 +901,15 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 		}
 		riskKey := strings.ToUpper(strings.TrimSpace(stringValue(item["symbol"]))) + "|" + strings.ToUpper(strings.TrimSpace(stringValue(item["positionSide"])))
 		risk := positionRiskIndex[riskKey]
+		entryPrice := resolveRecoveredLiveEntryPrice(
+			parseFloatValue(item["entryPrice"]),
+			parseFloatValue(risk["entryPrice"]),
+			parseFloatValue(risk["breakEvenPrice"]),
+		)
 		openPositions = append(openPositions, map[string]any{
 			"symbol":           stringValue(item["symbol"]),
 			"positionAmt":      positionAmt,
-			"entryPrice":       parseFloatValue(item["entryPrice"]),
+			"entryPrice":       entryPrice,
 			"markPrice":        firstPositive(parseFloatValue(risk["markPrice"]), parseFloatValue(item["markPrice"])),
 			"unrealizedProfit": firstPositive(parseFloatValue(risk["unRealizedProfit"]), parseFloatValue(item["unrealizedProfit"])),
 			"liquidationPrice": parseFloatValue(risk["liquidationPrice"]),
@@ -1564,10 +1569,14 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			side = "SHORT"
 		}
 		quantity := math.Abs(positionAmt)
-		entryPrice := parseFloatValue(item["entryPrice"])
-		markPrice := firstPositive(parseFloatValue(item["markPrice"]), entryPrice)
 		strategyVersionID := p.resolveLivePositionStrategyVersionID(account.ID, symbol)
 		position := existingBySymbol[symbol]
+		entryPrice := resolveRecoveredLiveEntryPrice(
+			parseFloatValue(item["entryPrice"]),
+			parseFloatValue(item["breakEvenPrice"]),
+			position.EntryPrice,
+		)
+		markPrice := firstPositive(parseFloatValue(item["markPrice"]), entryPrice)
 		position.AccountID = account.ID
 		position.StrategyVersionID = firstNonEmpty(strategyVersionID, position.StrategyVersionID)
 		position.Symbol = symbol
@@ -1589,6 +1598,10 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		}
 	}
 	return nil
+}
+
+func resolveRecoveredLiveEntryPrice(primary, secondary, fallback float64) float64 {
+	return firstPositive(primary, firstPositive(secondary, fallback))
 }
 
 func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string) string {
