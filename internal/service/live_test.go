@@ -1541,6 +1541,25 @@ func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithoutCurrentRunt
 	}
 }
 
+func TestIsRecoveryTriggeredPassiveCloseProposalRequiresExplicitRecoverySignal(t *testing.T) {
+	if isRecoveryTriggeredPassiveCloseProposal(map[string]any{
+		"role":       "exit",
+		"reduceOnly": true,
+		"reason":     "sl-breached-fallback",
+		"signalKind": "protect-exit",
+	}) {
+		t.Fatal("expected reason-only passive close not to be treated as recovery-triggered")
+	}
+	if !isRecoveryTriggeredPassiveCloseProposal(map[string]any{
+		"role":       "exit",
+		"reduceOnly": true,
+		"reason":     "sl-breached-fallback",
+		"signalKind": "recovery-watchdog",
+	}) {
+		t.Fatal("expected recovery-watchdog passive close to be treated as recovery-triggered")
+	}
+}
+
 func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
 		"executionStrategy":                   "book-aware-v1",

@@ -232,10 +232,7 @@ func isRecoveryTriggeredPassiveCloseProposal(proposalMap map[string]any) bool {
 	if !boolValue(proposalMap["reduceOnly"]) && !boolValue(metadata["reduceOnly"]) {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["signalKind"])), "recovery-watchdog") {
-		return true
-	}
-	return strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["reason"])), "sl-breached-fallback")
+	return strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["signalKind"])), "recovery-watchdog")
 }
 
 func buildLiveExecutionContextMetadata(session domain.LiveSession, strategyVersionID string, proposalMap map[string]any, metadata map[string]any) map[string]any {
@@ -360,7 +357,7 @@ func validateLiveExecutionProposalMetadata(session domain.LiveSession, proposalM
 	if len(executionContext) == 0 {
 		return fmt.Errorf("live session %s execution proposal missing execution context", session.ID)
 	}
-	missing := make([]string, 0, 4)
+	missing := make([]string, 0, 5)
 	if strings.TrimSpace(stringValue(executionContext["strategyVersionId"])) == "" {
 		missing = append(missing, "strategyVersionId")
 	}
@@ -372,6 +369,9 @@ func validateLiveExecutionProposalMetadata(session domain.LiveSession, proposalM
 	}
 	if strings.TrimSpace(stringValue(executionContext["executionDataSource"])) == "" {
 		missing = append(missing, "executionDataSource")
+	}
+	if strings.TrimSpace(stringValue(executionContext["executionMode"])) == "" {
+		missing = append(missing, "executionMode")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf(
