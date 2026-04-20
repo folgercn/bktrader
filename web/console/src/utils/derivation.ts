@@ -1,4 +1,5 @@
-import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, AuthSession } from '../types/domain';
+import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, AuthSession, TimelineConfig } from '../types/domain';
+
 
 import { formatMoney, formatSigned, formatPercent, formatNumber, formatMaybeNumber, formatTime, formatShortTime, shrink } from './format';
 import { createChart } from 'lightweight-charts';
@@ -1200,11 +1201,59 @@ export function buildSignalActionNotes(signalAction: { bias: string; state: stri
   return [`信号活动: ${signalAction.bias} · ${signalAction.state} · ${signalAction.reason}`];
 }
 
-export function buildTimelineNotes(items: Array<Record<string, unknown>>) {
+export function buildTimelineNotes(items: Array<Record<string, unknown>>, config?: TimelineConfig) {
   if (items.length === 0) {
     return ["时间线: --"];
   }
-  return items
+
+  const { deduplicationEnabled = true, quietSeconds = 60, maxRepeats = 1 } = config ?? {};
+  let processedItems = items;
+
+  if (deduplicationEnabled) {
+    const filtered: Array<Record<string, unknown>> = [];
+    let lastDigest = "";
+    let lastEventTime = 0;
+    let repeatCount = 0;
+
+    for (const item of items) {
+      const metadata = getRecord(item.metadata);
+      const category = String(item.category ?? "");
+      const title = String(item.title ?? "");
+      const reason = String(metadata.reason ?? "");
+      const action = String(metadata.action ?? "");
+      const eventTimeStr = String(item.time ?? "");
+      const eventTime = Date.parse(eventTimeStr);
+
+      // 生成去重摘要：类别、标题、原因、动作、交易对
+      const digest = `${category}|${title}|${reason}|${action}|${metadata.symbol ?? ""}`;
+      const isDuplicate = digest === lastDigest;
+
+      const currentTime = !Number.isNaN(eventTime) ? eventTime : 0;
+      // 检查静默时间窗口
+      const isWithinQuietPeriod = lastEventTime > 0 && (currentTime - lastEventTime) < quietSeconds * 1000;
+
+      // 仅针对策略决策、对账、源状态等待等高频低熵信息进行过滤；危险信号或重要成交记录豁免
+      const isDeduplicatable = category === "strategy" || category === "reconcile" || title === "waiting-source-states";
+
+      if (isDeduplicatable && isDuplicate && isWithinQuietPeriod) {
+        repeatCount++;
+        if (repeatCount >= maxRepeats) {
+          continue;
+        }
+      } else {
+        repeatCount = 0;
+      }
+
+      filtered.push(item);
+      lastDigest = digest;
+      if (currentTime > 0) {
+        lastEventTime = currentTime;
+      }
+    }
+    processedItems = filtered;
+  }
+
+  return processedItems
     .slice(-50)
     .reverse()
     .map((item) => {
@@ -1247,6 +1296,7 @@ export function buildTimelineNotes(items: Array<Record<string, unknown>>) {
       return fragments.join(" · ");
     });
 }
+
 
 export function summarizeOrderPreflight(value: unknown) {
   const preflight = getRecord(value);

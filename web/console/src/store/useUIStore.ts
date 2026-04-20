@@ -2,8 +2,10 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import { 
   AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession,
-  LoginForm, BacktestForm, PaperForm, LiveAccountForm, LiveBindingForm, LiveOrderForm, LiveSessionForm, StrategySignalForm, StrategyCreateForm, StrategyEditorForm, SignalRuntimeForm, RuntimePolicyForm, TelegramForm
+  LoginForm, BacktestForm, PaperForm, LiveAccountForm, LiveBindingForm, LiveOrderForm, LiveSessionForm, StrategySignalForm, StrategyCreateForm, StrategyEditorForm, SignalRuntimeForm, RuntimePolicyForm, TelegramForm,
+  TimelineConfig
 } from '../types/domain';
+
 import { readStoredAuthSession } from '../utils/auth';
 import { resolveUpdater } from './helpers';
 
@@ -28,6 +30,8 @@ const CONSOLE_NAV_STORAGE_KEY = "bktrader-console-nav";
 const SYSTEM_LOGS_STORAGE_KEY = "bktrader-system-logs";
 const DEFAULT_SIDEBAR_TAB: SidebarTab = "monitor";
 const DEFAULT_DOCK_TAB: DockTab = "orders";
+const TIMELINE_CONFIG_STORAGE_KEY = "bktrader-timeline-config";
+
 
 function readStoredSystemLogs(): SystemLogEntry[] {
   if (typeof window === "undefined") {
@@ -86,7 +90,36 @@ function writeStoredConsoleNav(partial: Partial<{ sidebarTab: SidebarTab; dockTa
   }));
 }
 
+const DEFAULT_TIMELINE_CONFIG: TimelineConfig = {
+
+  deduplicationEnabled: true,
+  quietSeconds: 60,
+  maxRepeats: 1,
+};
+
+function readStoredTimelineConfig(): TimelineConfig {
+  if (typeof window === "undefined") {
+    return DEFAULT_TIMELINE_CONFIG;
+  }
+  try {
+    const raw = window.localStorage.getItem(TIMELINE_CONFIG_STORAGE_KEY);
+    if (!raw) return DEFAULT_TIMELINE_CONFIG;
+    return { ...DEFAULT_TIMELINE_CONFIG, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_TIMELINE_CONFIG;
+  }
+}
+
+function writeStoredTimelineConfig(config: TimelineConfig) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(TIMELINE_CONFIG_STORAGE_KEY, JSON.stringify(config));
+}
+
 const initialConsoleNav = readStoredConsoleNav();
+const initialTimelineConfig = readStoredTimelineConfig();
+
 
 export interface useUIStoreState {
   sidebarTab: SidebarTab;
@@ -215,7 +248,10 @@ export interface useUIStoreState {
   setConfirmDialogConfig: (valOrUpdater: ConfirmDialogConfig | ((prev: ConfirmDialogConfig) => ConfirmDialogConfig)) => void;
   openConfirmDialog: (title: string, description: string, onConfirm: () => Promise<void> | void) => void;
   closeConfirmDialog: () => void;
+  timelineConfig: TimelineConfig;
+  setTimelineConfig: (valOrUpdater: TimelineConfig | ((prev: TimelineConfig) => TimelineConfig)) => void;
 }
+
 
 export const useUIStore = create<useUIStoreState>((set) => ({
   sidebarTab: initialConsoleNav.sidebarTab,
@@ -402,4 +438,11 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   setConfirmDialogConfig: (valOrUpdater) => set((state) => ({ confirmDialogConfig: resolveUpdater(valOrUpdater, state.confirmDialogConfig) })),
   openConfirmDialog: (title, description, onConfirm) => set(() => ({ confirmDialogConfig: { isOpen: true, title, description, onConfirm } })),
   closeConfirmDialog: () => set((state) => ({ confirmDialogConfig: { ...state.confirmDialogConfig, isOpen: false } })),
+  timelineConfig: initialTimelineConfig,
+  setTimelineConfig: (valOrUpdater) => set((state) => {
+    const next = resolveUpdater(valOrUpdater, state.timelineConfig);
+    writeStoredTimelineConfig(next);
+    return { timelineConfig: next };
+  }),
 }));
+
