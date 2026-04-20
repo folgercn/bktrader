@@ -50,11 +50,12 @@ func buildClosePositionOrder(position domain.Position) domain.Order {
 		Quantity:          position.Quantity,
 		ReduceOnly:        true,
 		Metadata: map[string]any{
-			"source":       "manual-position-close",
-			"positionId":   position.ID,
-			"markPrice":    position.MarkPrice,
-			"priceHint":    position.MarkPrice,
-			"manualAction": "close-position",
+			"source":           "manual-position-close",
+			"positionId":       position.ID,
+			"markPrice":        position.MarkPrice,
+			"priceHint":        position.MarkPrice,
+			"manualAction":     "close-position",
+			"skipRuntimeCheck": true,
 		},
 	}
 }

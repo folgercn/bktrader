@@ -17,6 +17,8 @@ func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession)
 	}
 	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
 	openOrders := metadataList(snapshot["openOrders"])
+	protectionRecoverySource := strings.TrimSpace(stringValue(snapshot["source"]))
+	protectionRecoveryAuthoritative := liveProtectionSnapshotIsAuthoritative(snapshot)
 	sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
 	position, found, err := p.resolvePaperSessionPositionSnapshot(session.AccountID, sessionSymbol)
 	if err != nil {
@@ -53,6 +55,8 @@ func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession)
 	state["recoveredTakeProfitOrderCount"] = len(takeProfitOrders)
 	state["lastProtectionRecoveryAt"] = time.Now().UTC().Format(time.RFC3339)
 	state["lastProtectionRecoverySymbol"] = sessionSymbol
+	state["protectionRecoverySource"] = protectionRecoverySource
+	state["protectionRecoveryAuthoritative"] = protectionRecoveryAuthoritative
 	state["recoveredStopOrder"] = firstMetadataOrEmpty(stopOrders)
 	state["recoveredTakeProfitOrder"] = firstMetadataOrEmpty(takeProfitOrders)
 
@@ -182,7 +186,9 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		watchdogExitPending = syncLiveWatchdogExitState(state, eventTime)
 	}
 
-	if !watchdogExitPending && stringValue(state["positionRecoveryStatus"]) == "unprotected-open-position" {
+	if !watchdogExitPending &&
+		boolValue(state["protectionRecoveryAuthoritative"]) &&
+		stringValue(state["positionRecoveryStatus"]) == "unprotected-open-position" {
 		stopLoss := parseFloatValue(livePositionState["stopLoss"])
 		entryPrice := parseFloatValue(livePositionState["entryPrice"])
 		quantity := math.Abs(parseFloatValue(positionSnapshot["quantity"]))
@@ -275,6 +281,11 @@ func firstMetadataOrEmpty(items []map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return cloneMetadata(items[0])
+}
+
+func liveProtectionSnapshotIsAuthoritative(snapshot map[string]any) bool {
+	source := strings.TrimSpace(stringValue(snapshot["source"]))
+	return !strings.EqualFold(source, "platform-live-reconciliation")
 }
 
 func syncLiveWatchdogExitState(state map[string]any, eventTime time.Time) bool {
