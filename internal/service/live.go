@@ -3349,7 +3349,40 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 			parameters[key] = value
 		}
 	}
+	parameters = applyLiveSafeStopDefaults(parameters)
 	return NormalizeBacktestParameters(parameters)
+}
+
+const (
+	liveDefaultTrailingStopATR           = 0.3
+	liveDefaultDelayedTrailingActivation = 0.5
+)
+
+func applyLiveSafeStopDefaults(parameters map[string]any) map[string]any {
+	normalized := cloneMetadata(parameters)
+	if normalized == nil {
+		normalized = map[string]any{}
+	}
+
+	trailingStopATR, trailingConfigured := normalized["trailing_stop_atr"]
+	resolvedTrailingStopATR := parseFloatValue(trailingStopATR)
+	if !trailingConfigured || resolvedTrailingStopATR <= 0 {
+		resolvedTrailingStopATR = liveDefaultTrailingStopATR
+		normalized["trailing_stop_atr"] = resolvedTrailingStopATR
+	}
+
+	delayedActivationATR, delayedConfigured := normalized["delayed_trailing_activation_atr"]
+	resolvedDelayedActivationATR := parseFloatValue(delayedActivationATR)
+	if !delayedConfigured || resolvedDelayedActivationATR <= 0 {
+		normalized["delayed_trailing_activation_atr"] = liveDefaultDelayedTrailingActivation
+	}
+
+	stopLossATR, stopConfigured := normalized["stop_loss_atr"]
+	if !stopConfigured || parseFloatValue(stopLossATR) <= 0 {
+		normalized["stop_loss_atr"] = resolvedTrailingStopATR
+	}
+
+	return normalized
 }
 
 func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *SignalIntent {
