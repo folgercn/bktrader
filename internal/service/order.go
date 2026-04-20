@@ -33,6 +33,13 @@ func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
 	if err != nil {
 		return domain.Order{}, err
 	}
+	// Reconcile-gated recoveries are intentionally fail-closed: once local state
+	// diverges from exchange truth, the platform must not place any additional
+	// execution claim, including manual close orders, until an operator resolves
+	// the position directly against the exchange.
+	if err := p.ensureLivePositionReconcileGateAllowsExecution(position.AccountID, position.Symbol, position.Quantity > 0); err != nil {
+		return domain.Order{}, err
+	}
 	order := buildClosePositionOrder(position)
 	if session, ok := p.findLiveRecoveryCloseOnlySession(position.AccountID, position.Symbol); ok {
 		order.Metadata = cloneMetadata(order.Metadata)
@@ -43,6 +50,23 @@ func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
 		order.StrategyVersionID = firstNonEmpty(order.StrategyVersionID, stringValue(session.State["strategyVersionId"]))
 	}
 	return p.CreateOrder(order)
+}
+
+func (p *Platform) ensureLivePositionReconcileGateAllowsExecution(accountID, symbol string, requiresVerification bool) error {
+	account, err := p.store.GetAccount(accountID)
+	if err != nil {
+		return err
+	}
+	gate := resolveLivePositionReconcileGate(account, symbol, requiresVerification)
+	if !boolValue(gate["blocking"]) {
+		return nil
+	}
+	return fmt.Errorf(
+		"live position %s execution blocked by reconcile gate: %s (%s)",
+		NormalizeSymbol(symbol),
+		firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusError),
+		firstNonEmpty(stringValue(gate["scenario"]), "unknown"),
+	)
 }
 
 func buildClosePositionOrder(position domain.Position) domain.Order {

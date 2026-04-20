@@ -390,6 +390,9 @@ func validateLiveExecutionProposalMetadata(session domain.LiveSession, proposalM
 }
 
 func shouldBlockAutoDispatchForRecoveryIntent(session domain.LiveSession, intent map[string]any) bool {
+	if isLiveSessionBlockedByPositionReconcileGate(session.State) {
+		return true
+	}
 	if !isRecoveryTriggeredPassiveCloseProposal(intent) {
 		return false
 	}
@@ -407,6 +410,14 @@ func shouldBlockAutoDispatchForRecoveryIntent(session domain.LiveSession, intent
 func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain.Order, error) {
 	if !strings.EqualFold(session.Status, "RUNNING") && !strings.EqualFold(session.Status, "READY") {
 		return domain.Order{}, fmt.Errorf("live session %s is not dispatchable in status %s", session.ID, session.Status)
+	}
+	if isLiveSessionBlockedByPositionReconcileGate(session.State) {
+		return domain.Order{}, fmt.Errorf(
+			"live session %s is blocked by reconcile gate: %s (%s)",
+			session.ID,
+			firstNonEmpty(stringValue(session.State["positionReconcileGateStatus"]), livePositionReconcileGateStatusError),
+			firstNonEmpty(stringValue(session.State["positionReconcileGateScenario"]), "unknown"),
+		)
 	}
 
 	proposalMap := cloneMetadata(mapValue(firstNonEmptyMapValue(session.State["lastExecutionProposal"], session.State["lastStrategyIntent"])))

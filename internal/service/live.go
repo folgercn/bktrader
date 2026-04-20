@@ -997,7 +997,8 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 	if err != nil {
 		return domain.Account{}, err
 	}
-	if reconcileErr := p.reconcileLiveAccountPositions(account, openPositions); reconcileErr != nil {
+	reconcileGate, reconcileErr := p.reconcileLiveAccountPositions(account, openPositions)
+	if reconcileErr != nil {
 		account.Metadata = cloneMetadata(account.Metadata)
 		account.Metadata["lastLivePositionSyncError"] = reconcileErr.Error()
 		account, _ = p.store.UpdateAccount(account)
@@ -1006,6 +1007,7 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 	account.Metadata = cloneMetadata(account.Metadata)
 	delete(account.Metadata, "lastLivePositionSyncError")
 	account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+	account.Metadata["livePositionReconcileGate"] = reconcileGate
 	return p.store.UpdateAccount(account)
 }
 
@@ -1443,6 +1445,17 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 	if isLiveSessionRecoveryCloseOnlyMode(session.State) {
 		return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeCloseOnlyTakeover)
 	}
+	if gate := resolveLivePositionReconcileGate(account, recoveredPosition.Symbol, recoveredPosition.Quantity > 0); boolValue(gate["blocking"]) {
+		session, err = p.enterRecoveredLiveSessionReconcileGateBlocked(session, recoveredPosition, gate)
+		if err != nil {
+			logger.Warn("enter reconcile gate blocked mode failed", "error", err)
+			return domain.LiveSession{}, err
+		}
+		return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeReconcileGateBlocked)
+	}
+	if isLiveSessionRecoveryReconcileGateBlocked(session.State) {
+		return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeReconcileGateBlocked)
+	}
 
 	session, err = p.syncLiveSessionRuntime(session)
 	if err != nil {
@@ -1543,8 +1556,10 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
-	if _, syncErr := p.SyncLiveAccount(account.ID); syncErr != nil {
+	if syncedAccount, syncErr := p.SyncLiveAccount(account.ID); syncErr != nil {
 		// Keep recovery moving so runtime monitoring can still come back.
+	} else {
+		account = syncedAccount
 	}
 	session, recoveredPosition, incompleteRecoveryMetadata, err := p.completeRecoveredLiveSessionMetadata(session)
 	if err != nil {
@@ -1557,6 +1572,9 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 		}
 		session, _ = p.refreshLiveSessionPositionContext(session, time.Now().UTC(), "live-startup-recovery-close-only")
 		return session, nil
+	}
+	if gate := resolveLivePositionReconcileGate(account, recoveredPosition.Symbol, recoveredPosition.Quantity > 0); boolValue(gate["blocking"]) {
+		return p.enterRecoveredLiveSessionReconcileGateBlocked(session, recoveredPosition, gate)
 	}
 	session, err = p.syncLiveSessionRuntime(session)
 	if err != nil {
@@ -1582,10 +1600,10 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 	return p.store.UpdateLiveSessionStatus(session.ID, "RUNNING")
 }
 
-func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchangePositions []map[string]any) error {
+func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchangePositions []map[string]any) (map[string]any, error) {
 	existing, err := p.store.ListPositions()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	existingBySymbol := make(map[string]domain.Position)
 	for _, position := range existing {
@@ -1595,6 +1613,21 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		existingBySymbol[NormalizeSymbol(position.Symbol)] = position
 	}
 
+	syncedAt := time.Now().UTC()
+	symbols := make(map[string]any)
+	blockingCount := 0
+	recordGate := func(symbol string, gate map[string]any) {
+		if symbol == "" || gate == nil {
+			return
+		}
+		gate = cloneMetadata(gate)
+		gate["symbol"] = symbol
+		gate["comparedAt"] = firstNonEmpty(stringValue(gate["comparedAt"]), syncedAt.Format(time.RFC3339))
+		if boolValue(gate["blocking"]) {
+			blockingCount++
+		}
+		symbols[symbol] = gate
+	}
 	seenSymbols := make(map[string]struct{}, len(exchangePositions))
 	for _, item := range exchangePositions {
 		symbol := NormalizeSymbol(stringValue(item["symbol"]))
@@ -1619,6 +1652,55 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			position.EntryPrice,
 		)
 		markPrice := firstPositive(parseFloatValue(item["markPrice"]), entryPrice)
+		exchangeSnapshot := map[string]any{
+			"symbol":     symbol,
+			"side":       side,
+			"quantity":   quantity,
+			"entryPrice": entryPrice,
+			"markPrice":  markPrice,
+		}
+		if position.ID == "" || position.Quantity <= 0 {
+			position.AccountID = account.ID
+			position.StrategyVersionID = firstNonEmpty(strategyVersionID, position.StrategyVersionID)
+			position.Symbol = symbol
+			position.Side = side
+			position.Quantity = quantity
+			position.EntryPrice = entryPrice
+			position.MarkPrice = markPrice
+			if _, err := p.store.SavePosition(position); err != nil {
+				return nil, err
+			}
+			recordGate(symbol, map[string]any{
+				"status":           livePositionReconcileGateStatusAdopted,
+				"scenario":         "exchange-position-db-missing",
+				"blocking":         false,
+				"dbPosition":       map[string]any{},
+				"exchangePosition": exchangeSnapshot,
+			})
+			continue
+		}
+		dbSnapshot := buildRecoveredLivePositionStateSnapshot(position)
+		mismatchFields := make([]any, 0, 3)
+		if !strings.EqualFold(strings.TrimSpace(position.Side), side) {
+			mismatchFields = append(mismatchFields, "side")
+		}
+		if math.Abs(position.Quantity-quantity) > 1e-9 {
+			mismatchFields = append(mismatchFields, "quantity")
+		}
+		if math.Abs(position.EntryPrice-entryPrice) > 1e-6 {
+			mismatchFields = append(mismatchFields, "entryPrice")
+		}
+		if len(mismatchFields) > 0 {
+			recordGate(symbol, map[string]any{
+				"status":           livePositionReconcileGateStatusConflict,
+				"scenario":         classifyLivePositionReconcileScenario(mismatchFields),
+				"blocking":         true,
+				"mismatchFields":   mismatchFields,
+				"dbPosition":       dbSnapshot,
+				"exchangePosition": exchangeSnapshot,
+			})
+			continue
+		}
 		position.AccountID = account.ID
 		position.StrategyVersionID = firstNonEmpty(strategyVersionID, position.StrategyVersionID)
 		position.Symbol = symbol
@@ -1627,23 +1709,57 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		position.EntryPrice = entryPrice
 		position.MarkPrice = markPrice
 		if _, err := p.store.SavePosition(position); err != nil {
-			return err
+			return nil, err
 		}
+		recordGate(symbol, map[string]any{
+			"status":           livePositionReconcileGateStatusVerified,
+			"scenario":         "db-position-matches-exchange",
+			"blocking":         false,
+			"dbPosition":       dbSnapshot,
+			"exchangePosition": exchangeSnapshot,
+		})
 	}
 
 	for symbol, position := range existingBySymbol {
 		if _, ok := seenSymbols[symbol]; ok {
 			continue
 		}
-		if err := p.store.DeletePosition(position.ID); err != nil {
-			return err
+		if position.Quantity <= 0 {
+			continue
 		}
+		recordGate(symbol, map[string]any{
+			"status":           livePositionReconcileGateStatusStale,
+			"scenario":         "db-position-exchange-missing",
+			"blocking":         true,
+			"dbPosition":       buildRecoveredLivePositionStateSnapshot(position),
+			"exchangePosition": map[string]any{},
+		})
 	}
-	return nil
+	return map[string]any{
+		"source":              "binance-position-reconcile",
+		"syncedAt":            syncedAt.Format(time.RFC3339),
+		"authoritative":       true,
+		"blockingSymbolCount": blockingCount,
+		"symbols":             symbols,
+	}, nil
 }
 
 func resolveRecoveredLiveEntryPrice(primary, secondary, fallback float64) float64 {
 	return firstPositive(primary, firstPositive(secondary, fallback))
+}
+
+func classifyLivePositionReconcileScenario(mismatchFields []any) string {
+	if len(mismatchFields) == 1 {
+		switch stringValue(mismatchFields[0]) {
+		case "side":
+			return "side-mismatch"
+		case "quantity":
+			return "quantity-mismatch"
+		case "entryPrice":
+			return "entry-price-mismatch"
+		}
+	}
+	return "multi-field-mismatch"
 }
 
 func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string) string {
@@ -2354,6 +2470,9 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 	if isLiveSessionRecoveryCloseOnlyMode(session.State) {
 		return session, nil, fmt.Errorf("live session %s is in close-only takeover mode", session.ID)
 	}
+	if isLiveSessionRecoveryReconcileGateBlocked(session.State) {
+		return session, nil, fmt.Errorf("live session %s is blocked by reconcile gate", session.ID)
+	}
 
 	p.mu.Lock()
 	if plan, ok := p.livePlans[session.ID]; ok {
@@ -2453,13 +2572,97 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 }
 
 const (
-	liveRecoveryModeCloseOnlyTakeover    = "close-only-takeover"
-	liveRecoveryMetadataStatusComplete   = "complete"
-	liveRecoveryMetadataStatusIncomplete = "incomplete"
+	liveRecoveryModeCloseOnlyTakeover       = "close-only-takeover"
+	liveRecoveryModeReconcileGateBlocked    = "reconcile-gate-blocked"
+	liveRecoveryMetadataStatusComplete      = "complete"
+	liveRecoveryMetadataStatusIncomplete    = "incomplete"
+	livePositionReconcileGateStatusAdopted  = "adopted"
+	livePositionReconcileGateStatusVerified = "verified"
+	livePositionReconcileGateStatusStale    = "stale"
+	livePositionReconcileGateStatusConflict = "conflict"
+	livePositionReconcileGateStatusError    = "error"
 )
 
 func isLiveSessionRecoveryCloseOnlyMode(state map[string]any) bool {
 	return strings.EqualFold(strings.TrimSpace(stringValue(state["recoveryMode"])), liveRecoveryModeCloseOnlyTakeover)
+}
+
+func isLiveSessionRecoveryReconcileGateBlocked(state map[string]any) bool {
+	return strings.EqualFold(strings.TrimSpace(stringValue(state["recoveryMode"])), liveRecoveryModeReconcileGateBlocked)
+}
+
+func isLiveSessionBlockedByPositionReconcileGate(state map[string]any) bool {
+	if boolValue(state["positionReconcileGateBlocking"]) {
+		return true
+	}
+	switch strings.TrimSpace(stringValue(state["positionReconcileGateStatus"])) {
+	case livePositionReconcileGateStatusStale, livePositionReconcileGateStatusConflict, livePositionReconcileGateStatusError:
+		return true
+	}
+	return isLiveSessionRecoveryReconcileGateBlocked(state)
+}
+
+func livePositionReconcileGateRequired(snapshot map[string]any) bool {
+	return strings.EqualFold(strings.TrimSpace(stringValue(snapshot["executionMode"])), "rest")
+}
+
+func resolveLivePositionReconcileGate(account domain.Account, symbol string, requiresVerification bool) map[string]any {
+	symbol = NormalizeSymbol(symbol)
+	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+	gate := map[string]any{
+		"symbol":        symbol,
+		"status":        livePositionReconcileGateStatusVerified,
+		"blocking":      false,
+		"source":        stringValue(snapshot["source"]),
+		"authoritative": liveProtectionSnapshotIsAuthoritative(snapshot),
+		"required":      livePositionReconcileGateRequired(snapshot),
+	}
+	if !requiresVerification || symbol == "" || !boolValue(gate["required"]) {
+		return gate
+	}
+	if !boolValue(gate["authoritative"]) {
+		gate["status"] = livePositionReconcileGateStatusError
+		gate["blocking"] = true
+		gate["scenario"] = "exchange-truth-unavailable"
+		return gate
+	}
+	symbolGate := cloneMetadata(mapValue(mapValue(mapValue(account.Metadata["livePositionReconcileGate"])["symbols"])[symbol]))
+	if len(symbolGate) == 0 {
+		gate["status"] = livePositionReconcileGateStatusError
+		gate["blocking"] = true
+		gate["scenario"] = "missing-reconcile-verdict"
+		return gate
+	}
+	for key, value := range symbolGate {
+		gate[key] = value
+	}
+	gate["symbol"] = symbol
+	gate["blocking"] = boolValue(gate["blocking"])
+	gate["status"] = firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusVerified)
+	return gate
+}
+
+func applyLivePositionReconcileGateState(state map[string]any, gate map[string]any) {
+	if state == nil {
+		return
+	}
+	gate = cloneMetadata(gate)
+	state["positionReconcileGateStatus"] = firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusVerified)
+	state["positionReconcileGateBlocking"] = boolValue(gate["blocking"])
+	state["positionReconcileGateScenario"] = stringValue(gate["scenario"])
+	state["positionReconcileGateComparedAt"] = stringValue(gate["comparedAt"])
+	state["positionReconcileGateSource"] = stringValue(gate["source"])
+	state["positionReconcileGateDBPosition"] = cloneMetadata(mapValue(gate["dbPosition"]))
+	state["positionReconcileGateExchangePosition"] = cloneMetadata(mapValue(gate["exchangePosition"]))
+	if mismatchFields := metadataList(gate["mismatchFields"]); len(mismatchFields) > 0 {
+		state["positionReconcileGateMismatchFields"] = mismatchFields
+	} else {
+		delete(state, "positionReconcileGateMismatchFields")
+	}
+	if boolValue(gate["blocking"]) {
+		state["positionRecoveryStatus"] = firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusError)
+		state["lastStrategyEvaluationStatus"] = liveRecoveryModeReconcileGateBlocked
+	}
 }
 
 func buildRecoveredLivePositionStateSnapshot(position domain.Position) map[string]any {
@@ -2497,6 +2700,9 @@ func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSessi
 		delete(state, "recoveryCloseOnlyReason")
 		delete(state, "recoveryCloseOnlyDetail")
 		delete(state, "recoveryCloseOnlyAt")
+		delete(state, "recoveryBlockedReason")
+		delete(state, "recoveryBlockedDetail")
+		delete(state, "recoveryBlockedAt")
 		delete(state, "runtimeMode")
 		delete(state, "signalRuntimeMode")
 		delete(state, "signalRuntimeRequired")
@@ -2504,9 +2710,26 @@ func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSessi
 		if strings.EqualFold(stringValue(state["lastStrategyEvaluationStatus"]), liveRecoveryModeCloseOnlyTakeover) {
 			delete(state, "lastStrategyEvaluationStatus")
 		}
+		if strings.EqualFold(stringValue(state["lastStrategyEvaluationStatus"]), liveRecoveryModeReconcileGateBlocked) {
+			delete(state, "lastStrategyEvaluationStatus")
+		}
 		if strings.EqualFold(stringValue(state["positionRecoveryStatus"]), liveRecoveryModeCloseOnlyTakeover) {
 			state["positionRecoveryStatus"] = "flat"
 		}
+		if isLiveSessionRecoveryReconcileGateBlocked(state) || strings.EqualFold(stringValue(state["positionRecoveryStatus"]), livePositionReconcileGateStatusStale) ||
+			strings.EqualFold(stringValue(state["positionRecoveryStatus"]), livePositionReconcileGateStatusConflict) ||
+			strings.EqualFold(stringValue(state["positionRecoveryStatus"]), livePositionReconcileGateStatusError) {
+			state["positionRecoveryStatus"] = "flat"
+		}
+		delete(state, "recoveryMode")
+		delete(state, "positionReconcileGateStatus")
+		delete(state, "positionReconcileGateBlocking")
+		delete(state, "positionReconcileGateScenario")
+		delete(state, "positionReconcileGateComparedAt")
+		delete(state, "positionReconcileGateSource")
+		delete(state, "positionReconcileGateMismatchFields")
+		delete(state, "positionReconcileGateDBPosition")
+		delete(state, "positionReconcileGateExchangePosition")
 		if !metadataEqual(state, session.State) {
 			session, err = p.store.UpdateLiveSessionState(session.ID, state)
 			if err != nil {
@@ -2546,6 +2769,9 @@ func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSessi
 	delete(state, "recoveryCloseOnlyReason")
 	delete(state, "recoveryCloseOnlyDetail")
 	delete(state, "recoveryCloseOnlyAt")
+	delete(state, "recoveryBlockedReason")
+	delete(state, "recoveryBlockedDetail")
+	delete(state, "recoveryBlockedAt")
 	if !metadataEqual(state, session.State) {
 		session, err = p.store.UpdateLiveSessionState(session.ID, state)
 		if err != nil {
@@ -2578,6 +2804,34 @@ func (p *Platform) enterRecoveredLiveSessionCloseOnlyMode(session domain.LiveSes
 	delete(state, "lastStrategyIntent")
 	delete(state, "lastSignalIntent")
 	delete(state, "lastStrategyIntentSignature")
+	session, err := p.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return p.store.UpdateLiveSessionStatus(session.ID, "BLOCKED")
+}
+
+func (p *Platform) enterRecoveredLiveSessionReconcileGateBlocked(session domain.LiveSession, position domain.Position, gate map[string]any) (domain.LiveSession, error) {
+	state := cloneMetadata(session.State)
+	state["recoveryMode"] = liveRecoveryModeReconcileGateBlocked
+	state["runtimeMode"] = liveRecoveryModeReconcileGateBlocked
+	state["signalRuntimeMode"] = liveRecoveryModeReconcileGateBlocked
+	state["signalRuntimeRequired"] = false
+	state["signalRuntimeReady"] = false
+	state["recoveryBlockedReason"] = firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusError)
+	state["recoveryBlockedDetail"] = firstNonEmpty(stringValue(gate["scenario"]), "position-reconcile-gate-blocked")
+	state["recoveryBlockedAt"] = time.Now().UTC().Format(time.RFC3339)
+	state["recoveredPosition"] = buildRecoveredLivePositionStateSnapshot(position)
+	state["hasRecoveredPosition"] = position.Quantity > 0
+	state["hasRecoveredRealPosition"] = position.Quantity > 0
+	state["hasRecoveredVirtualPosition"] = false
+	delete(state, "signalRuntimeSessionId")
+	delete(state, "signalRuntimeStatus")
+	delete(state, "lastExecutionProposal")
+	delete(state, "lastStrategyIntent")
+	delete(state, "lastSignalIntent")
+	delete(state, "lastStrategyIntentSignature")
+	applyLivePositionReconcileGateState(state, gate)
 	session, err := p.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		return domain.LiveSession{}, err

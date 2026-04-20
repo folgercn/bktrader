@@ -4900,7 +4900,7 @@ func TestReconcileLiveAccountPositionsFallsBackToBreakEvenPrice(t *testing.T) {
 		t.Fatalf("get account failed: %v", err)
 	}
 
-	err = platform.reconcileLiveAccountPositions(account, []map[string]any{
+	_, err = platform.reconcileLiveAccountPositions(account, []map[string]any{
 		{
 			"symbol":         "BTCUSDT",
 			"positionAmt":    -0.002,
@@ -4946,7 +4946,7 @@ func TestReconcileLiveAccountPositionsPreservesExistingEntryPriceWhenSnapshotIsZ
 		t.Fatalf("get account failed: %v", err)
 	}
 
-	err = platform.reconcileLiveAccountPositions(account, []map[string]any{
+	_, err = platform.reconcileLiveAccountPositions(account, []map[string]any{
 		{
 			"symbol":      "BTCUSDT",
 			"positionAmt": -0.002,
@@ -4984,7 +4984,7 @@ func TestRefreshLiveSessionPositionContextBuildsRiskStateFromRecoveredBreakEvenE
 		t.Fatalf("update account failed: %v", err)
 	}
 
-	if err := platform.reconcileLiveAccountPositions(account, []map[string]any{
+	if _, err := platform.reconcileLiveAccountPositions(account, []map[string]any{
 		{
 			"symbol":         "BTCUSDT",
 			"positionAmt":    -0.002,
@@ -5071,6 +5071,251 @@ func TestRecoverRunningLiveSessionCompletesRecoveredPositionMetadata(t *testing.
 	}
 	if got := position.StrategyVersionID; got != "strategy-version-bk-1d-v010" {
 		t.Fatalf("expected recovered strategy version to be completed, got %s", got)
+	}
+}
+
+func TestRecoverRunningLiveSessionAllowsTakeoverAfterVerifiedReconcileMatch(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-reconcile-match", []map[string]any{
+		{
+			"symbol":      "BTCUSDT",
+			"positionAmt": 0.01,
+			"entryPrice":  68000.0,
+			"markPrice":   68100.0,
+		},
+	})
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "RUNNING" {
+		t.Fatalf("expected recovered session to stay RUNNING, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusVerified {
+		t.Fatalf("expected verified reconcile gate status, got %s", got)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "db-position-matches-exchange" {
+		t.Fatalf("expected db-position-matches-exchange scenario, got %s", got)
+	}
+	if boolValue(recovered.State["positionReconcileGateBlocking"]) {
+		t.Fatal("expected verified reconcile gate not to block execution")
+	}
+}
+
+func TestRecoverRunningLiveSessionBlocksWhenDBPositionMissingOnExchange(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-reconcile-stale", []map[string]any{})
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "BLOCKED" {
+		t.Fatalf("expected stale recovery to stay BLOCKED, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["recoveryMode"]); got != liveRecoveryModeReconcileGateBlocked {
+		t.Fatalf("expected reconcile gate blocked mode, got %s", got)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusStale {
+		t.Fatalf("expected stale reconcile gate status, got %s", got)
+	}
+	if got := stringValue(recovered.State["positionRecoveryStatus"]); got != livePositionReconcileGateStatusStale {
+		t.Fatalf("expected stale position recovery status, got %s", got)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "db-position-exchange-missing" {
+		t.Fatalf("expected db-position-exchange-missing scenario, got %s", got)
+	}
+	if !boolValue(recovered.State["positionReconcileGateBlocking"]) {
+		t.Fatal("expected stale reconcile gate to block execution")
+	}
+	if _, err := platform.ClosePosition(position.ID); err == nil {
+		t.Fatal("expected ClosePosition to be blocked by reconcile gate")
+	}
+}
+
+func TestRecoverRunningLiveSessionAllowsControlledExchangeOnlyTakeover(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-reconcile-exchange-only", []map[string]any{
+		{
+			"symbol":      "BTCUSDT",
+			"positionAmt": -0.02,
+			"entryPrice":  70250.0,
+			"markPrice":   70100.0,
+		},
+	})
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "RUNNING" {
+		t.Fatalf("expected controlled exchange takeover to proceed, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusAdopted {
+		t.Fatalf("expected adopted reconcile gate status, got %s", got)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "exchange-position-db-missing" {
+		t.Fatalf("expected exchange-position-db-missing scenario, got %s", got)
+	}
+	position, found, err := platform.store.FindPosition(session.AccountID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected exchange-backed position to be created in store")
+	}
+	if position.Side != "SHORT" || position.Quantity != 0.02 {
+		t.Fatalf("expected short exchange-backed takeover position, got side=%s qty=%v", position.Side, position.Quantity)
+	}
+}
+
+func TestRecoverRunningLiveSessionBlocksSideMismatchAndPreventsCloseExecution(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-reconcile-conflict", []map[string]any{
+		{
+			"symbol":      "BTCUSDT",
+			"positionAmt": -0.01,
+			"entryPrice":  68000.0,
+			"markPrice":   67950.0,
+		},
+	})
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "BLOCKED" {
+		t.Fatalf("expected mismatched recovery to stay BLOCKED, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusConflict {
+		t.Fatalf("expected conflict reconcile gate status, got %s", got)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "side-mismatch" {
+		t.Fatalf("expected side-mismatch scenario, got %s", got)
+	}
+	stored, found, err := platform.store.FindPosition(session.AccountID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected local conflict position to be preserved")
+	}
+	if stored.Side != "LONG" || stored.Quantity != 0.01 {
+		t.Fatalf("expected conflicting local position to stay unchanged, got side=%s qty=%v", stored.Side, stored.Quantity)
+	}
+	if _, err := platform.ClosePosition(position.ID); err == nil {
+		t.Fatal("expected ClosePosition to be blocked during unresolved conflict")
+	}
+}
+
+func TestUnresolvedReconcileMismatchPreventsAutoDispatch(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-reconcile-auto-dispatch", []map[string]any{
+		{
+			"symbol":      "BTCUSDT",
+			"positionAmt": 0.02,
+			"entryPrice":  68000.0,
+			"markPrice":   67950.0,
+		},
+	})
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":                  "BTCUSDT",
+		"signalTimeframe":         "1d",
+		"dispatchMode":            "auto-dispatch",
+		"dispatchCooldownSeconds": 0,
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "quantity-mismatch" {
+		t.Fatalf("expected quantity-mismatch scenario, got %s", got)
+	}
+	intent := map[string]any{
+		"action":   "exit",
+		"side":     "SELL",
+		"symbol":   "BTCUSDT",
+		"status":   "dispatchable",
+		"quantity": 0.01,
+		"metadata": map[string]any{},
+	}
+	if shouldAutoDispatchLiveIntent(recovered, intent, time.Now().UTC()) {
+		t.Fatal("expected unresolved reconcile mismatch to suppress auto-dispatch")
 	}
 }
 
@@ -5425,6 +5670,56 @@ func (a testLiveAccountSyncAdapter) SyncAccountSnapshot(platform *Platform, acco
 		return a.syncSnapshotFunc(platform, account, binding)
 	}
 	return account, nil
+}
+
+func configureTestLiveRESTReconcileAdapter(t *testing.T, platform *Platform, adapterKey string, exchangePositions []map[string]any) {
+	t.Helper()
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: adapterKey,
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":          "binance-rest-account-v3",
+				"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+				"syncedAt":        time.Now().UTC().Format(time.RFC3339),
+				"bindingMode":     stringValue(binding["connectionMode"]),
+				"executionMode":   "rest",
+				"syncStatus":      "SYNCED",
+				"accountExchange": account.Exchange,
+				"positions":       exchangePositions,
+				"openOrders":      []map[string]any{},
+			}
+			var err error
+			account, err = p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			reconcileGate, err := p.reconcileLiveAccountPositions(account, exchangePositions)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["livePositionReconcileGate"] = reconcileGate
+			account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     adapterKey,
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
 }
 
 type testFailingListOrdersStore struct {
