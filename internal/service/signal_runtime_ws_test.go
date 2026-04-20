@@ -506,6 +506,141 @@ func TestHandleSignalRuntimeMessageScopesTriggerByLiveSessionSymbol(t *testing.T
 	}
 }
 
+func TestHandleSignalRuntimeMessageRepairsMissingSignalRuntimeRequired(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	for _, payload := range []map[string]any{
+		{
+			"sourceKey": "binance-kline",
+			"role":      "signal",
+			"symbol":    "BTCUSDT",
+			"options":   map[string]any{"timeframe": "1d"},
+		},
+		{
+			"sourceKey": "binance-trade-tick",
+			"role":      "trigger",
+			"symbol":    "BTCUSDT",
+		},
+	} {
+		if _, err := platform.BindStrategySignalSource("strategy-bk-1d", payload); err != nil {
+			t.Fatalf("bind strategy source failed: %v", err)
+		}
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		t.Fatal("expected linked runtime session id")
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["signalRuntimeRequired"] = nil
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("corrupt live session state failed: %v", err)
+	}
+
+	eventTime := time.Date(2026, 4, 20, 10, 23, 0, 0, time.UTC)
+	if err := platform.handleSignalRuntimeMessage(runtimeSessionID, map[string]any{
+		"role":               "trigger",
+		"streamType":         "trade_tick",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"event":              "trade",
+		"price":              "75229.70",
+	}, eventTime); err != nil {
+		t.Fatalf("handle trigger after missing signalRuntimeRequired failed: %v", err)
+	}
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if !boolValue(updated.State["signalRuntimeRequired"]) {
+		t.Fatalf("expected fanout to restore signalRuntimeRequired, got %#v", updated.State)
+	}
+	if got := stringValue(updated.State["lastSignalRuntimeEventAt"]); got == "" {
+		t.Fatalf("expected repaired session to consume runtime trigger, got %#v", updated.State)
+	}
+}
+
+func TestHandleSignalRuntimeMessageRecordsRuntimeNotRequiredDrop(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	for _, payload := range []map[string]any{
+		{
+			"sourceKey": "binance-kline",
+			"role":      "signal",
+			"symbol":    "BTCUSDT",
+			"options":   map[string]any{"timeframe": "1d"},
+		},
+		{
+			"sourceKey": "binance-trade-tick",
+			"role":      "trigger",
+			"symbol":    "BTCUSDT",
+		},
+	} {
+		if _, err := platform.BindStrategySignalSource("strategy-bk-1d", payload); err != nil {
+			t.Fatalf("bind strategy source failed: %v", err)
+		}
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	if runtimeSessionID == "" {
+		t.Fatal("expected linked runtime session id")
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["signalRuntimeRequired"] = false
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	eventTime := time.Date(2026, 4, 20, 10, 23, 0, 0, time.UTC)
+	if err := platform.handleSignalRuntimeMessage(runtimeSessionID, map[string]any{
+		"role":               "trigger",
+		"streamType":         "trade_tick",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"event":              "trade",
+		"price":              "75229.70",
+	}, eventTime); err != nil {
+		t.Fatalf("handle trigger with runtime disabled failed: %v", err)
+	}
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSignalRuntimeEventAt"]); got != "" {
+		t.Fatalf("expected runtime-not-required session to skip fanout, got lastSignalRuntimeEventAt=%s", got)
+	}
+	if got := stringValue(updated.State["lastRuntimeFanoutDropReason"]); got != "runtime-not-required" {
+		t.Fatalf("expected runtime-not-required drop breadcrumb, got %s", got)
+	}
+	if got := stringValue(updated.State["lastRuntimeFanoutDropAt"]); got == "" {
+		t.Fatalf("expected runtime fanout drop timestamp, got %#v", updated.State)
+	}
+}
+
 func runTestSignalRuntimeReconnect(platform *Platform, runtimeSessionID string) {
 	outcomes := []struct {
 		connected bool

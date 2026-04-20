@@ -6050,6 +6050,64 @@ func TestCompleteRecoveredLiveSessionMetadataClearsCloseOnlyTakeoverWhenPosition
 	}
 }
 
+func TestEnsureLiveExecutionPlanPreservesSignalRuntimeRequirementWhenFlat(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	for _, payload := range []map[string]any{
+		{
+			"sourceKey": "binance-kline",
+			"role":      "signal",
+			"symbol":    "BTCUSDT",
+			"options":   map[string]any{"timeframe": "1d"},
+		},
+		{
+			"sourceKey": "binance-trade-tick",
+			"role":      "trigger",
+			"symbol":    "BTCUSDT",
+		},
+	} {
+		if _, err := platform.BindStrategySignalSource("strategy-bk-1d", payload); err != nil {
+			t.Fatalf("bind strategy signal source failed: %v", err)
+		}
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if !boolValue(session.State["signalRuntimeRequired"]) {
+		t.Fatalf("expected linked live session to require runtime before plan evaluation, got %#v", session.State)
+	}
+
+	eventTime := time.Date(2026, 4, 20, 8, 36, 10, 0, time.UTC)
+	platform.mu.Lock()
+	platform.livePlans[session.ID] = []paperPlannedOrder{{
+		EventTime: eventTime,
+		Price:     70000.0,
+		Side:      "BUY",
+		Role:      "entry",
+		Reason:    "cached-plan",
+	}}
+	platform.mu.Unlock()
+
+	updated, plan, err := platform.ensureLiveExecutionPlan(session)
+	if err != nil {
+		t.Fatalf("ensure live execution plan failed: %v", err)
+	}
+	if len(plan) != 1 {
+		t.Fatalf("expected cached plan to be preserved, got %#v", plan)
+	}
+	if _, ok := updated.State["signalRuntimeRequired"]; !ok {
+		t.Fatalf("expected signalRuntimeRequired to remain present, got %#v", updated.State)
+	}
+	if !boolValue(updated.State["signalRuntimeRequired"]) {
+		t.Fatalf("expected flat RUNNING session to keep signalRuntimeRequired, got %#v", updated.State)
+	}
+}
+
 func TestStartLiveSessionRejectsActiveCloseOnlyTakeoverMode(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-start-close-only"})

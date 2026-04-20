@@ -3015,8 +3015,10 @@ func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSessi
 		delete(state, "recoveryBlockedAt")
 		delete(state, "runtimeMode")
 		delete(state, "signalRuntimeMode")
-		delete(state, "signalRuntimeRequired")
-		delete(state, "signalRuntimeReady")
+		// Preserve the current runtime linkage gate for RUNNING sessions.
+		// Clearing these flags while flat can silently detach runtime fanout
+		// from an otherwise healthy live session until some later resync
+		// happens to rebuild the linkage state.
 		if strings.EqualFold(stringValue(state["lastStrategyEvaluationStatus"]), liveRecoveryModeCloseOnlyTakeover) {
 			delete(state, "lastStrategyEvaluationStatus")
 		}
