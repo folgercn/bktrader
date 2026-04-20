@@ -83,3 +83,4 @@ bash scripts/testnet_live_session_smoke.sh
 - 严格使用 `.github/pull_request_template.md`，并在描述中声明你的参与。
 - 不能隐式破坏 `testnet` 到 `mainnet` 的沙盒设定。
 - 不能破坏 `mock` 模式或制造未授权的 `real` 数据分发。
+
