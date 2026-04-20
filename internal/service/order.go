@@ -522,7 +522,25 @@ func (p *Platform) applyLiveSubmissionResult(
 	if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "submitted", time.Now().UTC(), false, nil); telemetryErr != nil {
 		logger.Warn("record live order submission event failed", "error", telemetryErr)
 	}
+	if strings.EqualFold(updatedOrder.Status, "FILLED") {
+		settledOrder, settleErr := p.settleImmediatelyFilledLiveOrder(updatedOrder)
+		if settleErr != nil {
+			return settledOrder, settleErr
+		}
+		return settledOrder, nil
+	}
 	return updatedOrder, nil
+}
+
+func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.Order, error) {
+	settledOrder, err := p.SyncLiveOrder(order.ID)
+	if err != nil {
+		return order, fmt.Errorf("live order %s submitted as FILLED but settlement sync failed: %w", order.ID, err)
+	}
+	if _, syncErr := p.SyncLiveAccount(order.AccountID); syncErr != nil {
+		return settledOrder, fmt.Errorf("live order %s settled but account/session refresh failed: %w", order.ID, syncErr)
+	}
+	return settledOrder, nil
 }
 
 func (p *Platform) ensureLiveRuntimeReady(account domain.Account, order domain.Order) (domain.SignalRuntimeSession, map[string]any, error) {
