@@ -1228,7 +1228,7 @@ export function buildTimelineNotes(items: Array<Record<string, unknown>>, config
       const digest = `${activeSessionId}|${category}|${title}|${reason}|${action}|${metadata.symbol ?? ""}`;
 
       const currentTime = !Number.isNaN(eventTime) ? eventTime : 0;
-      const isDeduplicatable = category === "strategy" || category === "reconcile" || title === "waiting-source-states";
+      const isDeduplicatable = category === "strategy" || category === "reconcile" || category === "recovery" || title === "waiting-source-states";
 
       if (isDeduplicatable) {
         const record = lastSeenMap.get(digest);
