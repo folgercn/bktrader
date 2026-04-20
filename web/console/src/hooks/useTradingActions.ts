@@ -1033,6 +1033,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     const nextAccountId = session?.accountId || quickLiveAccountId || accounts[0]?.id || "";
     const nextStrategyId = normalizeStrategyId(session?.strategyId ?? "", strategies[0]?.id || "");
     const sessionState = getRecord(session?.state);
+    const isEditingExistingSession = Boolean(session);
     if (nextAccountId) {
       selectQuickLiveAccount(nextAccountId);
     }
@@ -1040,26 +1041,48 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
       ...current,
       accountId: nextAccountId || current.accountId,
       strategyId: nextStrategyId,
-      signalTimeframe: String(sessionState.signalTimeframe ?? current.signalTimeframe ?? "1d"),
-      executionDataSource: String(sessionState.executionDataSource ?? current.executionDataSource ?? "tick"),
-      symbol: String(sessionState.symbol ?? current.symbol ?? "BTCUSDT"),
-      defaultOrderQuantity: String(sessionState.defaultOrderQuantity ?? current.defaultOrderQuantity ?? "0.001"),
-      executionEntryOrderType: String(sessionState.executionEntryOrderType ?? current.executionEntryOrderType ?? "MARKET"),
-      executionEntryMaxSpreadBps: String(sessionState.executionEntryMaxSpreadBps ?? current.executionEntryMaxSpreadBps ?? "8"),
-      executionEntryWideSpreadMode: String(sessionState.executionEntryWideSpreadMode ?? current.executionEntryWideSpreadMode ?? "limit-maker"),
+      signalTimeframe: String(sessionState.signalTimeframe ?? (isEditingExistingSession ? "" : current.signalTimeframe ?? "1d")),
+      executionDataSource: String(sessionState.executionDataSource ?? (isEditingExistingSession ? "" : current.executionDataSource ?? "tick")),
+      symbol: String(sessionState.symbol ?? (isEditingExistingSession ? "" : current.symbol ?? "BTCUSDT")),
+      defaultOrderQuantity: String(
+        sessionState.defaultOrderQuantity ?? (isEditingExistingSession ? "" : current.defaultOrderQuantity ?? "0.001")
+      ),
+      executionEntryOrderType: String(
+        sessionState.executionEntryOrderType ?? (isEditingExistingSession ? "" : current.executionEntryOrderType ?? "MARKET")
+      ),
+      executionEntryMaxSpreadBps: String(
+        sessionState.executionEntryMaxSpreadBps ?? (isEditingExistingSession ? "" : current.executionEntryMaxSpreadBps ?? "8")
+      ),
+      executionEntryWideSpreadMode: String(
+        sessionState.executionEntryWideSpreadMode ?? (isEditingExistingSession ? "" : current.executionEntryWideSpreadMode ?? "limit-maker")
+      ),
       executionEntryTimeoutFallbackOrderType: String(
-        sessionState.executionEntryTimeoutFallbackOrderType ?? current.executionEntryTimeoutFallbackOrderType ?? "MARKET"
+        sessionState.executionEntryTimeoutFallbackOrderType ??
+          (isEditingExistingSession ? "" : current.executionEntryTimeoutFallbackOrderType ?? "MARKET")
       ),
-      executionPTExitOrderType: String(sessionState.executionPTExitOrderType ?? current.executionPTExitOrderType ?? "LIMIT"),
-      executionPTExitTimeInForce: String(sessionState.executionPTExitTimeInForce ?? current.executionPTExitTimeInForce ?? "GTX"),
-      executionPTExitPostOnly: Boolean(sessionState.executionPTExitPostOnly ?? current.executionPTExitPostOnly),
+      executionPTExitOrderType: String(
+        sessionState.executionPTExitOrderType ?? (isEditingExistingSession ? "" : current.executionPTExitOrderType ?? "LIMIT")
+      ),
+      executionPTExitTimeInForce: String(
+        sessionState.executionPTExitTimeInForce ?? (isEditingExistingSession ? "" : current.executionPTExitTimeInForce ?? "GTX")
+      ),
+      executionPTExitPostOnly: isEditingExistingSession
+        ? Boolean(sessionState.executionPTExitPostOnly)
+        : Boolean(sessionState.executionPTExitPostOnly ?? current.executionPTExitPostOnly),
       executionPTExitTimeoutFallbackOrderType: String(
-        sessionState.executionPTExitTimeoutFallbackOrderType ?? current.executionPTExitTimeoutFallbackOrderType ?? "MARKET"
+        sessionState.executionPTExitTimeoutFallbackOrderType ??
+          (isEditingExistingSession ? "" : current.executionPTExitTimeoutFallbackOrderType ?? "MARKET")
       ),
-      executionSLExitOrderType: String(sessionState.executionSLExitOrderType ?? current.executionSLExitOrderType ?? "MARKET"),
-      executionSLExitMaxSpreadBps: String(sessionState.executionSLExitMaxSpreadBps ?? current.executionSLExitMaxSpreadBps ?? "999"),
-      dispatchMode: String(sessionState.dispatchMode ?? current.dispatchMode ?? "manual-review"),
-      dispatchCooldownSeconds: String(sessionState.dispatchCooldownSeconds ?? current.dispatchCooldownSeconds ?? "30"),
+      executionSLExitOrderType: String(
+        sessionState.executionSLExitOrderType ?? (isEditingExistingSession ? "" : current.executionSLExitOrderType ?? "MARKET")
+      ),
+      executionSLExitMaxSpreadBps: String(
+        sessionState.executionSLExitMaxSpreadBps ?? (isEditingExistingSession ? "" : current.executionSLExitMaxSpreadBps ?? "999")
+      ),
+      dispatchMode: String(sessionState.dispatchMode ?? (isEditingExistingSession ? "" : current.dispatchMode ?? "manual-review")),
+      dispatchCooldownSeconds: String(
+        sessionState.dispatchCooldownSeconds ?? (isEditingExistingSession ? "" : current.dispatchCooldownSeconds ?? "30")
+      ),
     }));
     setEditingLiveSessionId(session?.id ?? null);
     setError(null);

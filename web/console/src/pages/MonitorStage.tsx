@@ -305,14 +305,12 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
 
                   <div className="flex items-center gap-2 overflow-hidden">
                     <Popover>
-                      <PopoverTrigger>
-                        <button 
-                          className={`flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 font-mono text-[10px] font-bold shadow-sm transition-all active:scale-95 ${allSessionItems.length > 1 ? 'cursor-pointer hover:bg-[var(--bk-surface-muted)]' : 'cursor-default'}`}
-                          disabled={allSessionItems.length <= 1}
-                        >
-                          <span className="truncate max-w-[120px]">{highlightedLiveSession.session.id}</span>
-                          {allSessionItems.length > 1 && <ChevronDown className="size-2.5 shrink-0 text-[var(--bk-text-muted)] opacity-60" />}
-                        </button>
+                      <PopoverTrigger
+                        className={`flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 font-mono text-[10px] font-bold shadow-sm transition-all active:scale-95 ${allSessionItems.length > 1 ? 'cursor-pointer hover:bg-[var(--bk-surface-muted)]' : 'cursor-default'}`}
+                        disabled={allSessionItems.length <= 1}
+                      >
+                        <span className="truncate max-w-[120px]">{highlightedLiveSession.session.id}</span>
+                        {allSessionItems.length > 1 && <ChevronDown className="size-2.5 shrink-0 text-[var(--bk-text-muted)] opacity-60" />}
                       </PopoverTrigger>
                       <PopoverContent align="start" className="isolate z-[60] w-[320px] rounded-[20px] border-2 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-2 shadow-xl">
                          <div className="space-y-1.5">
@@ -475,11 +473,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                 </div>
                 <div className="flex items-center gap-3">
                   <Popover>
-                    <PopoverTrigger asChild>
-                      <button className="flex items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-1 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-muted)] hover:bg-[var(--bk-surface-muted)] transition-colors">
-                        <Settings className="size-3" />
-                        终端配置
-                      </button>
+                    <PopoverTrigger className="flex items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-1 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-muted)] transition-colors hover:bg-[var(--bk-surface-muted)]">
+                      <Settings className="size-3" />
+                      终端配置
                     </PopoverTrigger>
                     <PopoverContent align="end" className="w-[280px] p-5 rounded-3xl border-2 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] shadow-2xl isolate z-[70]">
                       <div className="space-y-5">
