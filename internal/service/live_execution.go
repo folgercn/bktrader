@@ -218,6 +218,187 @@ func (p *Platform) DispatchLiveSessionIntent(sessionID string) (domain.Order, er
 	return p.dispatchLiveSessionIntent(session)
 }
 
+func isRecoveryTriggeredPassiveCloseProposal(proposalMap map[string]any) bool {
+	if len(proposalMap) == 0 {
+		return false
+	}
+	metadata := mapValue(proposalMap["metadata"])
+	if boolValue(metadata["recoveryTriggered"]) {
+		return true
+	}
+	if !strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["role"])), "exit") {
+		return false
+	}
+	if !boolValue(proposalMap["reduceOnly"]) && !boolValue(metadata["reduceOnly"]) {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["signalKind"])), "recovery-watchdog") {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["reason"])), "sl-breached-fallback")
+}
+
+func buildLiveExecutionContextMetadata(session domain.LiveSession, strategyVersionID string, proposalMap map[string]any, metadata map[string]any) map[string]any {
+	context := cloneMetadata(mapValue(metadata["executionContext"]))
+	sessionContext := cloneMetadata(mapValue(session.State["lastStrategyEvaluationContext"]))
+	if context == nil {
+		context = map[string]any{}
+	}
+	for key, value := range sessionContext {
+		if stringValue(context[key]) == "" {
+			context[key] = value
+		}
+	}
+	if value := firstNonEmpty(
+		stringValue(context["strategyVersionId"]),
+		stringValue(sessionContext["strategyVersionId"]),
+		stringValue(metadata["strategyVersionId"]),
+		strategyVersionID,
+		stringValue(session.State["strategyVersionId"]),
+	); value != "" {
+		context["strategyVersionId"] = value
+	}
+	if value := NormalizeSymbol(firstNonEmpty(
+		stringValue(context["symbol"]),
+		stringValue(sessionContext["symbol"]),
+		stringValue(proposalMap["symbol"]),
+		stringValue(session.State["symbol"]),
+		stringValue(session.State["lastSymbol"]),
+	)); value != "" {
+		context["symbol"] = value
+	}
+	if value := firstNonEmpty(
+		stringValue(context["signalTimeframe"]),
+		stringValue(sessionContext["signalTimeframe"]),
+		stringValue(session.State["signalTimeframe"]),
+	); value != "" {
+		context["signalTimeframe"] = value
+	}
+	if value := firstNonEmpty(
+		stringValue(context["executionDataSource"]),
+		stringValue(sessionContext["executionDataSource"]),
+		stringValue(session.State["executionDataSource"]),
+	); value != "" {
+		context["executionDataSource"] = value
+	}
+	if value := firstNonEmpty(
+		stringValue(context["executionMode"]),
+		stringValue(sessionContext["executionMode"]),
+		stringValue(metadata["executionMode"]),
+		stringValue(session.State["executionMode"]),
+		"live",
+	); value != "" {
+		context["executionMode"] = value
+	}
+	if value := firstNonEmpty(
+		stringValue(context["strategyEngineKey"]),
+		stringValue(sessionContext["strategyEngineKey"]),
+		stringValue(session.State["strategyEngine"]),
+	); value != "" {
+		context["strategyEngineKey"] = value
+	}
+	return context
+}
+
+func assembleLiveExecutionProposalMetadata(session domain.LiveSession, strategyVersionID string, proposalMap map[string]any) map[string]any {
+	if len(proposalMap) == 0 {
+		return map[string]any{}
+	}
+	normalized := cloneMetadata(proposalMap)
+	metadata := cloneMetadata(mapValue(normalized["metadata"]))
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	strategyVersionID = firstNonEmpty(
+		strategyVersionID,
+		stringValue(normalized["strategyVersionId"]),
+		stringValue(metadata["strategyVersionId"]),
+		stringValue(mapValue(session.State["lastStrategyEvaluationContext"])["strategyVersionId"]),
+		stringValue(session.State["strategyVersionId"]),
+	)
+	if strategyVersionID != "" {
+		normalized["strategyVersionId"] = strategyVersionID
+		metadata["strategyVersionId"] = strategyVersionID
+	}
+	if runtimeSessionID := firstNonEmpty(
+		stringValue(metadata["runtimeSessionId"]),
+		stringValue(session.State["signalRuntimeSessionId"]),
+		stringValue(session.State["lastSignalRuntimeSessionId"]),
+	); runtimeSessionID != "" {
+		metadata["runtimeSessionId"] = runtimeSessionID
+	}
+	if session.ID != "" {
+		metadata["liveSessionId"] = session.ID
+	}
+	metadata["executionMode"] = firstNonEmpty(stringValue(metadata["executionMode"]), "live")
+	metadata["executionContext"] = buildLiveExecutionContextMetadata(session, strategyVersionID, normalized, metadata)
+	if isRecoveryTriggeredPassiveCloseProposal(normalized) {
+		metadata["recoveryTriggered"] = true
+		if value := firstNonEmpty(stringValue(metadata["positionRecoveryStatus"]), stringValue(session.State["positionRecoveryStatus"])); value != "" {
+			metadata["positionRecoveryStatus"] = value
+		}
+		if value := firstNonEmpty(stringValue(metadata["positionRecoverySource"]), stringValue(session.State["positionRecoverySource"])); value != "" {
+			metadata["positionRecoverySource"] = value
+		}
+	}
+	normalized["metadata"] = metadata
+	return normalized
+}
+
+func validateLiveExecutionProposalMetadata(session domain.LiveSession, proposalMap map[string]any) error {
+	if len(proposalMap) == 0 {
+		return fmt.Errorf("live session %s has no execution proposal metadata", session.ID)
+	}
+	metadata := mapValue(proposalMap["metadata"])
+	strategyVersionID := firstNonEmpty(stringValue(proposalMap["strategyVersionId"]), stringValue(metadata["strategyVersionId"]))
+	if strings.TrimSpace(strategyVersionID) == "" {
+		return fmt.Errorf("live session %s execution proposal missing strategyVersionId", session.ID)
+	}
+	executionContext := mapValue(metadata["executionContext"])
+	if len(executionContext) == 0 {
+		return fmt.Errorf("live session %s execution proposal missing execution context", session.ID)
+	}
+	missing := make([]string, 0, 4)
+	if strings.TrimSpace(stringValue(executionContext["strategyVersionId"])) == "" {
+		missing = append(missing, "strategyVersionId")
+	}
+	if NormalizeSymbol(stringValue(executionContext["symbol"])) == "" {
+		missing = append(missing, "symbol")
+	}
+	if strings.TrimSpace(stringValue(executionContext["signalTimeframe"])) == "" {
+		missing = append(missing, "signalTimeframe")
+	}
+	if strings.TrimSpace(stringValue(executionContext["executionDataSource"])) == "" {
+		missing = append(missing, "executionDataSource")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf(
+			"live session %s execution proposal missing execution context fields: %s",
+			session.ID,
+			strings.Join(missing, ", "),
+		)
+	}
+	if isRecoveryTriggeredPassiveCloseProposal(proposalMap) && strings.TrimSpace(stringValue(metadata["runtimeSessionId"])) == "" {
+		return fmt.Errorf("live session %s recovery close proposal missing runtimeSessionId", session.ID)
+	}
+	return nil
+}
+
+func shouldBlockAutoDispatchForRecoveryIntent(session domain.LiveSession, intent map[string]any) bool {
+	if !isRecoveryTriggeredPassiveCloseProposal(intent) {
+		return false
+	}
+	status := strings.TrimSpace(stringValue(session.State["positionRecoveryStatus"]))
+	if status == "" || status == "unprotected-open-position" {
+		return true
+	}
+	if !boolValue(session.State["hasRecoveredPosition"]) && !boolValue(session.State["hasRecoveredRealPosition"]) {
+		return true
+	}
+	proposalMap := assembleLiveExecutionProposalMetadata(session, "", intent)
+	return validateLiveExecutionProposalMetadata(session, proposalMap) != nil
+}
+
 func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain.Order, error) {
 	if !strings.EqualFold(session.Status, "RUNNING") && !strings.EqualFold(session.Status, "READY") {
 		return domain.Order{}, fmt.Errorf("live session %s is not dispatchable in status %s", session.ID, session.Status)
@@ -236,6 +417,11 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	if err != nil {
 		return domain.Order{}, err
 	}
+	proposalMap = assembleLiveExecutionProposalMetadata(session, version.ID, proposalMap)
+	if err := validateLiveExecutionProposalMetadata(session, proposalMap); err != nil {
+		return domain.Order{}, err
+	}
+	proposal = executionProposalFromMap(proposalMap)
 	order := buildLiveOrderFromExecutionProposal(session, version.ID, proposal, proposalMap)
 	created, createErr := p.CreateOrder(order)
 	if createErr != nil && created.ID == "" {
@@ -328,6 +514,33 @@ func buildLiveOrderFromExecutionProposal(session domain.LiveSession, strategyVer
 	if orderType != "MARKET" {
 		price = firstPositive(proposal.LimitPrice, proposal.PriceHint)
 	}
+	proposalMeta := cloneMetadata(mapValue(proposalMap["metadata"]))
+	if proposalMeta == nil {
+		proposalMeta = map[string]any{}
+	}
+	orderMetadata := map[string]any{
+		"source":             "live-session-intent",
+		"liveSessionId":      session.ID,
+		"signalKind":         proposal.SignalKind,
+		"dispatchMode":       stringValue(session.State["dispatchMode"]),
+		"timeInForce":        proposal.TimeInForce,
+		"postOnly":           proposal.PostOnly,
+		"reduceOnly":         proposal.ReduceOnly,
+		"decisionEventId":    stringValue(proposalMap["decisionEventId"]),
+		"executionStrategy":  proposal.ExecutionStrategy,
+		"executionExpiresAt": stringValue(proposal.Metadata["executionExpiresAt"]),
+		"executionProposal":  cloneMetadata(proposalMap),
+		"intent":             cloneMetadata(proposalMap),
+	}
+	applyExecutionMetadata(orderMetadata, map[string]any{
+		"strategyVersionId":      firstNonEmpty(stringValue(proposalMeta["strategyVersionId"]), strategyVersionID),
+		"runtimeSessionId":       stringValue(proposalMeta["runtimeSessionId"]),
+		"executionContext":       cloneMetadata(mapValue(proposalMeta["executionContext"])),
+		"executionMode":          firstNonEmpty(stringValue(proposalMeta["executionMode"]), "live"),
+		"recoveryTriggered":      boolValue(proposalMeta["recoveryTriggered"]),
+		"positionRecoveryStatus": stringValue(proposalMeta["positionRecoveryStatus"]),
+		"positionRecoverySource": stringValue(proposalMeta["positionRecoverySource"]),
+	})
 	return domain.Order{
 		AccountID:         session.AccountID,
 		StrategyVersionID: strategyVersionID,
@@ -337,20 +550,7 @@ func buildLiveOrderFromExecutionProposal(session domain.LiveSession, strategyVer
 		Quantity:          quantity,
 		Price:             price,
 		ReduceOnly:        proposal.ReduceOnly,
-		Metadata: map[string]any{
-			"source":             "live-session-intent",
-			"liveSessionId":      session.ID,
-			"signalKind":         proposal.SignalKind,
-			"dispatchMode":       stringValue(session.State["dispatchMode"]),
-			"timeInForce":        proposal.TimeInForce,
-			"postOnly":           proposal.PostOnly,
-			"reduceOnly":         proposal.ReduceOnly,
-			"decisionEventId":    stringValue(proposalMap["decisionEventId"]),
-			"executionStrategy":  proposal.ExecutionStrategy,
-			"executionExpiresAt": stringValue(proposal.Metadata["executionExpiresAt"]),
-			"executionProposal":  cloneMetadata(proposalMap),
-			"intent":             cloneMetadata(proposalMap),
-		},
+		Metadata:          orderMetadata,
 	}
 }
 

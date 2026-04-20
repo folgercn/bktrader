@@ -250,12 +250,15 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 							"livePositionState": cloneMetadata(livePositionState),
 						},
 					}
-					executionProposalMap := executionProposalToMap(proposal)
+					state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
+					executionProposalMap := assembleLiveExecutionProposalMetadata(domain.LiveSession{
+						ID:    refreshed.ID,
+						State: state,
+					}, version.ID, executionProposalToMap(proposal))
 					state["lastExecutionProposal"] = executionProposalMap
 					state["lastStrategyIntent"] = executionProposalMap
 					state["lastStrategyEvaluationStatus"] = "intent-ready"
 					markLiveWatchdogExitState(state, eventTime.UTC().Format(time.RFC3339), "sl-breached-fallback", "", "", "intent-ready")
-					state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
 				}
 			}
 		}

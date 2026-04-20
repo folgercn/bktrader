@@ -2862,7 +2862,9 @@ func (p *Platform) buildLiveExecutionProposal(session domain.LiveSession, execut
 	if err != nil {
 		return ExecutionProposal{}, err
 	}
-	return adjustLiveExecutionProposalForVirtualSemantics(session, executionContext.Parameters, proposal), nil
+	proposal = adjustLiveExecutionProposalForVirtualSemantics(session, executionContext.Parameters, proposal)
+	proposalMap := assembleLiveExecutionProposalMetadata(session, executionContext.StrategyVersionID, executionProposalToMap(proposal))
+	return executionProposalFromMap(proposalMap), nil
 }
 
 func adjustLiveExecutionProposalForVirtualSemantics(session domain.LiveSession, parameters map[string]any, proposal ExecutionProposal) ExecutionProposal {
@@ -2881,7 +2883,12 @@ func adjustLiveExecutionProposalForVirtualSemantics(session domain.LiveSession, 
 			return proposal
 		}
 	}
-	if strings.EqualFold(proposal.Role, "exit") && boolValue(mapValue(session.State["virtualPosition"])["virtual"]) {
+	hasRecoveredRealPosition := boolValue(session.State["hasRecoveredPosition"]) ||
+		boolValue(session.State["hasRecoveredRealPosition"]) ||
+		math.Abs(parseFloatValue(mapValue(session.State["recoveredPosition"])["quantity"])) > 0
+	if strings.EqualFold(proposal.Role, "exit") &&
+		boolValue(mapValue(session.State["virtualPosition"])["virtual"]) &&
+		!hasRecoveredRealPosition {
 		proposal.Status = "virtual-exit"
 		proposal.Metadata = cloneMetadata(proposal.Metadata)
 		proposal.Metadata["virtualExit"] = true
@@ -3055,6 +3062,9 @@ func shouldAutoDispatchLiveIntent(session domain.LiveSession, intent map[string]
 	}
 	signature := buildLiveIntentSignature(intent)
 	if signature == "" {
+		return false
+	}
+	if shouldBlockAutoDispatchForRecoveryIntent(session, intent) {
 		return false
 	}
 	lastSignature := stringValue(session.State["lastDispatchedIntentSignature"])

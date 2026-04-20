@@ -1441,6 +1441,52 @@ func TestDispatchLiveSessionIntentRejectsNonDispatchableProposal(t *testing.T) {
 	}
 }
 
+func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithIncompleteMetadata(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	delete(state, "signalRuntimeSessionId")
+	delete(state, "lastSignalRuntimeSessionId")
+	delete(state, "executionDataSource")
+	state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
+	state["hasRecoveredPosition"] = true
+	state["hasRecoveredRealPosition"] = true
+	state["lastExecutionProposal"] = executionProposalToMap(ExecutionProposal{
+		Action:            "risk-exit-fallback",
+		Role:              "exit",
+		Reason:            "sl-breached-fallback",
+		Side:              "SELL",
+		Symbol:            "BTCUSDT",
+		Type:              "MARKET",
+		Quantity:          0.002,
+		PriceHint:         68900.0,
+		PriceSource:       "fallback-watchdog",
+		TimeInForce:       "GTC",
+		ReduceOnly:        true,
+		SignalKind:        "recovery-watchdog",
+		DecisionState:     "unprotected",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"recoveryTriggered": true,
+		},
+	})
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	if _, err := platform.dispatchLiveSessionIntent(session); err == nil {
+		t.Fatal("expected incomplete recovered passive close metadata to be rejected")
+	}
+}
+
 func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
 		"executionStrategy":                   "book-aware-v1",
@@ -1904,6 +1950,41 @@ func TestShouldAutoDispatchLiveIntentAllowsTerminalOrder(t *testing.T) {
 	}
 	if !shouldAutoDispatchLiveIntent(session, intent, now) {
 		t.Fatal("expected terminal order to allow auto dispatch for new intent")
+	}
+}
+
+func TestShouldAutoDispatchLiveIntentBlocksUnresolvedRecoveryWatchdogClose(t *testing.T) {
+	now := time.Now().UTC()
+	intent := map[string]any{
+		"action":     "risk-exit-fallback",
+		"role":       "exit",
+		"reason":     "sl-breached-fallback",
+		"side":       "SELL",
+		"symbol":     "BTCUSDT",
+		"signalKind": "recovery-watchdog",
+		"reduceOnly": true,
+		"status":     "dispatchable",
+		"metadata": map[string]any{
+			"strategyVersionId": "strategy-version-bk-1d-v010",
+			"runtimeSessionId":  "runtime-1",
+			"executionContext": map[string]any{
+				"strategyVersionId":   "strategy-version-bk-1d-v010",
+				"signalTimeframe":     "1d",
+				"executionDataSource": "tick",
+				"symbol":              "BTCUSDT",
+			},
+		},
+	}
+	session := domain.LiveSession{
+		State: map[string]any{
+			"dispatchMode":             "auto-dispatch",
+			"positionRecoveryStatus":   "unprotected-open-position",
+			"hasRecoveredPosition":     true,
+			"hasRecoveredRealPosition": true,
+		},
+	}
+	if shouldAutoDispatchLiveIntent(session, intent, now) {
+		t.Fatal("expected unresolved recovery watchdog close to stay manual")
 	}
 }
 
@@ -3686,6 +3767,60 @@ func TestRefreshLiveSessionPositionContextGeneratesShortWatchdogFallbackOnStopLo
 	}
 }
 
+func TestRefreshLiveSessionPositionContextBuildsCompleteMetadataForRecoveredWatchdogClose(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        69000,
+		MarkPrice:         68900,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["lastStrategyEvaluationSignalBarStates"] = testLiveRecoverySignalBarStates("BTCUSDT", 68900.0)
+	session, err := platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 17, 2, 0, 0, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	proposal := mapValue(updated.State["lastExecutionProposal"])
+	metadata := mapValue(proposal["metadata"])
+	if got := stringValue(metadata["strategyVersionId"]); got == "" {
+		t.Fatal("expected recovered watchdog proposal to carry strategyVersionId")
+	}
+	if got := stringValue(metadata["runtimeSessionId"]); got != runtimeSessionID {
+		t.Fatalf("expected runtimeSessionId %s, got %s", runtimeSessionID, got)
+	}
+	if !boolValue(metadata["recoveryTriggered"]) {
+		t.Fatal("expected recovered watchdog proposal to be marked recoveryTriggered")
+	}
+	if got := stringValue(metadata["positionRecoveryStatus"]); got != livePositionRecoveryStatusClosingPending {
+		t.Fatalf("expected positionRecoveryStatus %s, got %s", livePositionRecoveryStatusClosingPending, got)
+	}
+	executionContext := mapValue(metadata["executionContext"])
+	if got := stringValue(executionContext["strategyVersionId"]); got == "" {
+		t.Fatal("expected recovered watchdog proposal execution context to include strategyVersionId")
+	}
+	if got := stringValue(executionContext["signalTimeframe"]); got != "1d" {
+		t.Fatalf("expected signalTimeframe 1d, got %s", got)
+	}
+	if got := stringValue(executionContext["executionDataSource"]); got != "tick" {
+		t.Fatalf("expected executionDataSource tick, got %s", got)
+	}
+	if got := stringValue(executionContext["symbol"]); got != "BTCUSDT" {
+		t.Fatalf("expected execution context symbol BTCUSDT, got %s", got)
+	}
+}
+
 func TestRefreshLiveSessionPositionContextDoesNotGenerateWatchdogFallbackWithoutBreach(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.store.SavePosition(domain.Position{
@@ -3848,6 +3983,83 @@ func TestRefreshLiveSessionPositionContextDoesNotCrossProtectedBoundary(t *testi
 	}
 	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "protected-open-position" {
 		t.Fatalf("expected protected-open-position, got %s", got)
+	}
+}
+
+func TestDispatchLiveSessionIntentAllowsRecoveredPassiveCloseWithCompleteMetadata(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-recovered-passive-close"})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-recovered-passive-close",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        69000,
+		MarkPrice:         68900,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["lastStrategyEvaluationSignalBarStates"] = testLiveRecoverySignalBarStates("BTCUSDT", 68900.0)
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	freshRuntimeAt := time.Now().UTC()
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+		state["lastHeartbeatAt"] = freshRuntimeAt.Format(time.RFC3339)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		for key, item := range sourceStates {
+			sourceState := cloneMetadata(mapValue(item))
+			sourceState["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+			sourceStates[key] = sourceState
+		}
+		runtimeSession.State = state
+		runtimeSession.State["sourceStates"] = sourceStates
+		runtimeSession.UpdatedAt = freshRuntimeAt
+	}); err != nil {
+		t.Fatalf("refresh runtime state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 17, 2, 0, 0, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	order, err := platform.dispatchLiveSessionIntent(updated)
+	if err != nil {
+		t.Fatalf("expected recovered passive close dispatch to succeed, got %v", err)
+	}
+	if got := order.StrategyVersionID; got == "" {
+		t.Fatal("expected dispatched recovery close order to keep strategyVersionId")
+	}
+	if got := stringValue(order.Metadata["runtimeSessionId"]); got != runtimeSessionID {
+		t.Fatalf("expected order runtimeSessionId %s, got %s", runtimeSessionID, got)
+	}
+	executionContext := mapValue(order.Metadata["executionContext"])
+	if got := stringValue(executionContext["executionDataSource"]); got != "tick" {
+		t.Fatalf("expected order executionDataSource tick, got %s", got)
+	}
+	if got := stringValue(order.Metadata["executionMode"]); got != "live" {
+		t.Fatalf("expected order executionMode live, got %s", got)
 	}
 }
 
