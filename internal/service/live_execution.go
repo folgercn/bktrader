@@ -330,6 +330,8 @@ func assembleLiveExecutionProposalMetadata(session domain.LiveSession, strategyV
 	if session.ID != "" {
 		metadata["liveSessionId"] = session.ID
 	}
+	// executionMode here describes the live-session execution pipeline semantics.
+	// It is intentionally separate from account binding modes such as mock/rest.
 	metadata["executionMode"] = firstNonEmpty(stringValue(metadata["executionMode"]), "live")
 	metadata["executionContext"] = buildLiveExecutionContextMetadata(session, strategyVersionID, normalized, metadata)
 	if isRecoveryTriggeredPassiveCloseProposal(normalized) {
@@ -378,6 +380,9 @@ func validateLiveExecutionProposalMetadata(session domain.LiveSession, proposalM
 			strings.Join(missing, ", "),
 		)
 	}
+	// Recovery-triggered passive closes stay fail-closed here: if the current session
+	// no longer has an explicit runtime linkage, we do not recover lineage indirectly
+	// from historical evaluation context and we block dispatch instead.
 	if isRecoveryTriggeredPassiveCloseProposal(proposalMap) && strings.TrimSpace(stringValue(metadata["runtimeSessionId"])) == "" {
 		return fmt.Errorf("live session %s recovery close proposal missing runtimeSessionId", session.ID)
 	}

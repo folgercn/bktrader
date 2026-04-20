@@ -1487,6 +1487,60 @@ func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithIncompleteMeta
 	}
 }
 
+func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithoutCurrentRuntimeLink(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	delete(state, "signalRuntimeSessionId")
+	delete(state, "lastSignalRuntimeSessionId")
+	state["positionRecoveryStatus"] = livePositionRecoveryStatusClosingPending
+	state["hasRecoveredPosition"] = true
+	state["hasRecoveredRealPosition"] = true
+	state["lastStrategyEvaluationContext"] = map[string]any{
+		"strategyVersionId":   "strategy-version-bk-1d-v010",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"symbol":              "BTCUSDT",
+	}
+	state["lastExecutionProposal"] = executionProposalToMap(ExecutionProposal{
+		Action:            "risk-exit-fallback",
+		Role:              "exit",
+		Reason:            "sl-breached-fallback",
+		Side:              "SELL",
+		Symbol:            "BTCUSDT",
+		Type:              "MARKET",
+		Quantity:          0.002,
+		PriceHint:         68900.0,
+		PriceSource:       "fallback-watchdog",
+		TimeInForce:       "GTC",
+		ReduceOnly:        true,
+		SignalKind:        "recovery-watchdog",
+		DecisionState:     "unprotected",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"recoveryTriggered": true,
+		},
+	})
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	if _, err := platform.dispatchLiveSessionIntent(session); err == nil {
+		t.Fatal("expected recovered passive close without current runtime link to be rejected")
+	} else if !strings.Contains(err.Error(), "runtimeSessionId") {
+		t.Fatalf("expected runtimeSessionId validation error, got %v", err)
+	}
+}
+
 func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
 		"executionStrategy":                   "book-aware-v1",
