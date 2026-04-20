@@ -781,18 +781,38 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		}
 		lastPrice = executionPrice
 		execOrder := order
+		execOrder.Quantity = createdFill.Quantity
 		execOrder.Price = executionPrice
 		if err := p.applyExecutionFill(account, execOrder, executionPrice); err != nil {
 			return domain.Order{}, err
 		}
 	}
-	order.Status = "FILLED"
+	filledQuantity, err := p.totalFilledQuantityForOrder(order.ID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	order.Metadata["filledQuantity"] = filledQuantity
+	remainingQuantity := order.Quantity - filledQuantity
+	if remainingQuantity < 0 && remainingQuantity > -1e-9 {
+		remainingQuantity = 0
+	}
+	if remainingQuantity < 0 {
+		remainingQuantity = 0
+	}
+	order.Metadata["remainingQuantity"] = remainingQuantity
+
+	orderCompletelyFilled := filledQuantity >= order.Quantity-1e-9
+	if orderCompletelyFilled {
+		order.Status = "FILLED"
+	} else if filledQuantity > 0 {
+		order.Status = "PARTIALLY_FILLED"
+	}
 	order.Price = lastPrice
-	markOrderLifecycle(order.Metadata, "filled", true)
+	markOrderLifecycle(order.Metadata, "filled", orderCompletelyFilled)
 	if order.Metadata["acceptedAt"] == nil {
 		order.Metadata["acceptedAt"] = time.Now().UTC().Format(time.RFC3339)
 	}
-	if len(newFills) > 0 || strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "" {
+	if (len(newFills) > 0 || strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "") && filledQuantity > 0 {
 		filledAt := time.Now().UTC()
 		if latestTradeTime := latestFillExchangeTradeTime(newFills); !latestTradeTime.IsZero() {
 			filledAt = latestTradeTime
@@ -817,11 +837,30 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		"symbol", NormalizeSymbol(updatedOrder.Symbol),
 	)
 	if strings.EqualFold(account.Mode, "LIVE") {
-		levelLogger.Info("order filled", "fill_count", len(newFills), "price", updatedOrder.Price)
+		if strings.EqualFold(updatedOrder.Status, "FILLED") {
+			levelLogger.Info("order filled", "fill_count", len(newFills), "price", updatedOrder.Price)
+		} else {
+			levelLogger.Info("order partially filled", "fill_count", len(newFills), "price", updatedOrder.Price)
+		}
 	} else {
 		levelLogger.Debug("paper order filled", "fill_count", len(newFills), "price", updatedOrder.Price)
 	}
 	return updatedOrder, nil
+}
+
+func (p *Platform) totalFilledQuantityForOrder(orderID string) (float64, error) {
+	fills, err := p.store.ListFills()
+	if err != nil {
+		return 0, err
+	}
+	total := 0.0
+	for _, fill := range fills {
+		if fill.OrderID != orderID {
+			continue
+		}
+		total += fill.Quantity
+	}
+	return total, nil
 }
 
 func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.Fill) ([]domain.Fill, error) {
