@@ -683,7 +683,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
             ...template.launchPayload,
             liveSessionOverrides: {
               ...(template.launchPayload.liveSessionOverrides || {}),
-              dispatchMode: "manual-review" // 强制手动审核，确保隔离安全
+              dispatchMode: template.defaultDispatchMode || "manual-review"
             }
           };
         } else {
