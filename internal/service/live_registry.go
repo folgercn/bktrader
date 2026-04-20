@@ -421,7 +421,7 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 	if orderType != "MARKET" && timeInForce != "" {
 		params["timeInForce"] = timeInForce
 	}
-	if positionSide := strings.ToUpper(strings.TrimSpace(stringValue(normalizedOrder.Metadata["positionSide"]))); positionSide != "" {
+	if positionSide := resolveBinancePositionSideForSubmission(binding, normalizedOrder); positionSide != "" {
 		params["positionSide"] = positionSide
 	}
 	if shouldSendBinanceReduceOnlyFlag(binding, normalizedOrder) {
@@ -886,6 +886,20 @@ func shouldSendBinanceReduceOnlyFlag(binding map[string]any, order domain.Order)
 		return false
 	}
 	return !strings.EqualFold(strings.TrimSpace(stringValue(binding["positionMode"])), "HEDGE")
+}
+
+func resolveBinancePositionSideForSubmission(binding map[string]any, order domain.Order) string {
+	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(order.Metadata["positionSide"])))
+	if positionSide == "" {
+		return ""
+	}
+	if strings.EqualFold(strings.TrimSpace(stringValue(binding["positionMode"])), "HEDGE") {
+		return positionSide
+	}
+	if positionSide == "BOTH" {
+		return ""
+	}
+	return positionSide
 }
 
 func fetchBinanceSymbolRules(creds binanceRESTCredentials, symbol string) (binanceSymbolRules, error) {

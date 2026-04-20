@@ -1,6 +1,11 @@
 package service
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	neturl "net/url"
 	"strings"
 	"testing"
 	"time"
@@ -484,6 +489,131 @@ func TestShouldSendBinanceReduceOnlyFlagRespectsPositionMode(t *testing.T) {
 	}
 	if shouldSendBinanceReduceOnlyFlag(map[string]any{"positionMode": "HEDGE"}, order) {
 		t.Fatal("expected reduceOnly flag to be omitted in HEDGE mode")
+	}
+}
+
+func TestResolveBinancePositionSideForSubmissionOmitsOneWayBoth(t *testing.T) {
+	order := domain.Order{Metadata: map[string]any{"positionSide": "BOTH"}}
+	if got := resolveBinancePositionSideForSubmission(map[string]any{"positionMode": "ONE_WAY"}, order); got != "" {
+		t.Fatalf("expected ONE_WAY BOTH to be omitted, got %s", got)
+	}
+	if got := resolveBinancePositionSideForSubmission(map[string]any{"positionMode": "HEDGE"}, domain.Order{
+		Metadata: map[string]any{"positionSide": "LONG"},
+	}); got != "LONG" {
+		t.Fatalf("expected hedge positionSide LONG to be preserved, got %s", got)
+	}
+}
+
+func TestSubmitRESTOrderRecoveredPassiveClosePayloadMatchesBinanceModes(t *testing.T) {
+	tests := []struct {
+		name                  string
+		positionMode          string
+		side                  string
+		positionSide          string
+		reduceOnly            bool
+		wantPositionSide      string
+		wantReduceOnlyPresent bool
+	}{
+		{
+			name:                  "hedge long close",
+			positionMode:          "HEDGE",
+			side:                  "SELL",
+			positionSide:          "LONG",
+			reduceOnly:            true,
+			wantPositionSide:      "LONG",
+			wantReduceOnlyPresent: false,
+		},
+		{
+			name:                  "one way close",
+			positionMode:          "ONE_WAY",
+			side:                  "SELL",
+			positionSide:          "BOTH",
+			reduceOnly:            true,
+			wantPositionSide:      "",
+			wantReduceOnlyPresent: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var capturedForm neturl.Values
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/fapi/v1/exchangeInfo":
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"symbols": []map[string]any{{
+							"symbol": "BTCUSDT",
+							"filters": []map[string]any{
+								{"filterType": "PRICE_FILTER", "tickSize": "0.1"},
+								{"filterType": "LOT_SIZE", "stepSize": "0.001", "minQty": "0.001", "maxQty": "1000"},
+								{"filterType": "MIN_NOTIONAL", "notional": "100"},
+							},
+						}},
+					})
+				case "/fapi/v1/order":
+					body, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Fatalf("read order body failed: %v", err)
+					}
+					capturedForm, err = neturl.ParseQuery(string(body))
+					if err != nil {
+						t.Fatalf("parse order form failed: %v", err)
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"status":        "NEW",
+						"orderId":       12345,
+						"clientOrderId": "order-test",
+						"updateTime":    time.Now().UTC().UnixMilli(),
+					})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			t.Setenv("TEST_BINANCE_KEY", "key")
+			t.Setenv("TEST_BINANCE_SECRET", "secret")
+
+			binanceSymbolRulesCacheMu.Lock()
+			binanceSymbolRulesCache = map[string]binanceSymbolRules{}
+			binanceSymbolRulesCacheMu.Unlock()
+
+			adapter := binanceFuturesLiveAdapter{}
+			_, err := adapter.submitRESTOrder(domain.Account{Exchange: "binance-futures"}, domain.Order{
+				ID:         "order-test",
+				AccountID:  "live-main",
+				Symbol:     "BTCUSDT",
+				Side:       tt.side,
+				Type:       "MARKET",
+				Quantity:   0.25,
+				ReduceOnly: tt.reduceOnly,
+				Metadata: map[string]any{
+					"positionSide": tt.positionSide,
+				},
+			}, map[string]any{
+				"executionMode": "rest",
+				"positionMode":  tt.positionMode,
+				"restBaseUrl":   server.URL,
+				"recvWindowMs":  5000,
+				"credentialRefs": map[string]any{
+					"apiKeyRef":    "TEST_BINANCE_KEY",
+					"apiSecretRef": "TEST_BINANCE_SECRET",
+				},
+			})
+			if err != nil {
+				t.Fatalf("submit REST order failed: %v", err)
+			}
+			if got := capturedForm.Get("side"); got != tt.side {
+				t.Fatalf("expected side %s, got %s", tt.side, got)
+			}
+			if got := capturedForm.Get("positionSide"); got != tt.wantPositionSide {
+				t.Fatalf("expected positionSide %q, got %q", tt.wantPositionSide, got)
+			}
+			_, hasReduceOnly := capturedForm["reduceOnly"]
+			if hasReduceOnly != tt.wantReduceOnlyPresent {
+				t.Fatalf("expected reduceOnly present=%t, form=%v", tt.wantReduceOnlyPresent, capturedForm)
+			}
+		})
 	}
 }
 
