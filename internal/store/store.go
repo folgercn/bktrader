@@ -40,6 +40,8 @@ type Repository interface {
 
 	// ListFills 获取所有成交记录。
 	ListFills() ([]domain.Fill, error)
+	// TotalFilledQuantityForOrder 返回指定订单已落账成交数量总和。
+	TotalFilledQuantityForOrder(orderID string) (float64, error)
 	// CreateFill 创建新成交记录。
 	CreateFill(fill domain.Fill) (domain.Fill, error)
 

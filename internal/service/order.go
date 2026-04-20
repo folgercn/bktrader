@@ -787,7 +787,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 			return domain.Order{}, err
 		}
 	}
-	filledQuantity, err := p.totalFilledQuantityForOrder(order.ID)
+	filledQuantity, err := p.store.TotalFilledQuantityForOrder(order.ID)
 	if err != nil {
 		return domain.Order{}, err
 	}
@@ -846,21 +846,6 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		levelLogger.Debug("paper order filled", "fill_count", len(newFills), "price", updatedOrder.Price)
 	}
 	return updatedOrder, nil
-}
-
-func (p *Platform) totalFilledQuantityForOrder(orderID string) (float64, error) {
-	fills, err := p.store.ListFills()
-	if err != nil {
-		return 0, err
-	}
-	total := 0.0
-	for _, fill := range fills {
-		if fill.OrderID != orderID {
-			continue
-		}
-		total += fill.Quantity
-	}
-	return total, nil
 }
 
 func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.Fill) ([]domain.Fill, error) {

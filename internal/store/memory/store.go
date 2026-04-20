@@ -482,6 +482,19 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 	return items, nil
 }
 
+func (s *Store) TotalFilledQuantityForOrder(orderID string) (float64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	total := 0.0
+	for _, item := range s.fills {
+		if item.OrderID != orderID {
+			continue
+		}
+		total += item.Quantity
+	}
+	return total, nil
+}
+
 func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

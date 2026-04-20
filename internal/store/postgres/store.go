@@ -585,6 +585,21 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 	return items, rows.Err()
 }
 
+func (s *Store) TotalFilledQuantityForOrder(orderID string) (float64, error) {
+	var total sql.NullFloat64
+	if err := s.db.QueryRow(`
+		select coalesce(sum(quantity), 0)
+		from fills
+		where order_id = $1
+	`, orderID).Scan(&total); err != nil {
+		return 0, err
+	}
+	if !total.Valid {
+		return 0, nil
+	}
+	return total.Float64, nil
+}
+
 func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	now := time.Now().UTC()
 	fill.ID = fmt.Sprintf("fill-%d", now.UnixNano())
