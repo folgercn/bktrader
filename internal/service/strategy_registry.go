@@ -956,6 +956,31 @@ func evaluateLivePositionState(parameters map[string]any, currentPosition map[st
 	return deriveLivePositionState(parameters, currentPosition, signalBarState, marketPrice, watermarks)
 }
 
+func explainLivePositionUnavailable(currentPosition map[string]any, signalBarState map[string]any) string {
+	if !boolValue(currentPosition["found"]) && parseFloatValue(currentPosition["quantity"]) <= 0 && !boolValue(currentPosition["virtual"]) {
+		return "position-unavailable-no-active-position"
+	}
+	if entryPrice := parseFloatValue(currentPosition["entryPrice"]); entryPrice <= 0 {
+		return "position-unavailable-missing-entry-price"
+	}
+	if side := strings.TrimSpace(stringValue(currentPosition["side"])); side == "" {
+		return "position-unavailable-missing-side"
+	}
+	current := mapValue(signalBarState["current"])
+	if current == nil {
+		return "position-unavailable-missing-current-bar"
+	}
+	prevBar1 := mapValue(signalBarState["prevBar1"])
+	if prevBar1 == nil {
+		return "position-unavailable-missing-prev-bar-1"
+	}
+	prevBar2 := mapValue(signalBarState["prevBar2"])
+	if prevBar2 == nil {
+		return "position-unavailable-missing-prev-bar-2"
+	}
+	return "position-unavailable"
+}
+
 func deriveLivePositionState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, watermarks livePositionWatermarks) map[string]any {
 	if !boolValue(currentPosition["found"]) && parseFloatValue(currentPosition["quantity"]) <= 0 && !boolValue(currentPosition["virtual"]) {
 		return nil
@@ -986,16 +1011,35 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 	if stopLossATR <= 0 {
 		stopLossATR = 0.05
 	}
+	baseStopLoss := resolveStopPrice(side, entryPrice, sig, stopMode, stopLossATR)
 	stopLoss := parseFloatValue(currentPosition["stopLoss"])
 	if stopLoss <= 0 {
-		stopLoss = resolveStopPrice(side, entryPrice, sig, stopMode, stopLossATR)
+		stopLoss = baseStopLoss
+	}
+	stopLossSource := "initial-stop"
+	if baseStopLoss > 0 {
+		switch side {
+		case "long":
+			if stopLoss > baseStopLoss {
+				stopLossSource = "trailing-stop"
+			}
+		case "short":
+			if stopLoss < baseStopLoss {
+				stopLossSource = "trailing-stop"
+			}
+		}
 	}
 	hwm := firstPositive(watermarks.HWM, entryPrice)
 	lwm := firstPositive(watermarks.LWM, entryPrice)
 
 	// Calculate Trailing Stop Loss
+	trailingStopConfigured := parseFloatValue(parameters["trailing_stop_atr"])
+	trailingStopActive := false
+	trailingActivationArmed := false
+	trailingStopCandidate := 0.0
 	if trailingStopATR := parseFloatValue(parameters["trailing_stop_atr"]); trailingStopATR > 0 {
 		isActive := true
+		trailingActivationArmed = true
 		if delayedActivation := parseFloatValue(parameters["delayed_trailing_activation_atr"]); delayedActivation > 0 {
 			profitATR := 0.0
 			if sig.ATR > 0 {
@@ -1011,15 +1055,20 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 		}
 
 		if isActive && sig.ATR > 0 {
+			trailingStopActive = true
 			if side == "long" {
 				trailingSL := hwm - trailingStopATR*sig.ATR
+				trailingStopCandidate = trailingSL
 				if trailingSL > stopLoss {
 					stopLoss = trailingSL
+					stopLossSource = "trailing-stop"
 				}
 			} else if side == "short" {
 				trailingSL := lwm + trailingStopATR*sig.ATR
+				trailingStopCandidate = trailingSL
 				if trailingSL < stopLoss {
 					stopLoss = trailingSL
+					stopLossSource = "trailing-stop"
 				}
 			}
 		}
@@ -1040,20 +1089,26 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 		}
 	}
 	return map[string]any{
-		"found":                true,
-		"symbol":               NormalizeSymbol(stringValue(currentPosition["symbol"])),
-		"side":                 strings.ToUpper(side),
-		"entryPrice":           entryPrice,
-		"stopLoss":             stopLoss,
-		"protected":            protected,
-		"protectionTrigger":    protectionPrice,
-		"prevHigh1":            sig.PrevHigh1,
-		"prevLow1":             sig.PrevLow1,
-		"atr14":                sig.ATR,
-		"profitProtectATR":     profitProtectATR,
-		"hwm":                  hwm,
-		"lwm":                  lwm,
-		"watermarkPositionKey": watermarks.PositionKey,
+		"found":                   true,
+		"symbol":                  NormalizeSymbol(stringValue(currentPosition["symbol"])),
+		"side":                    strings.ToUpper(side),
+		"entryPrice":              entryPrice,
+		"baseStopLoss":            baseStopLoss,
+		"stopLoss":                stopLoss,
+		"stopLossSource":          stopLossSource,
+		"trailingStopConfigured":  trailingStopConfigured > 0,
+		"trailingStopActive":      trailingStopActive,
+		"trailingActivationArmed": trailingActivationArmed,
+		"trailingStopCandidate":   trailingStopCandidate,
+		"protected":               protected,
+		"protectionTrigger":       protectionPrice,
+		"prevHigh1":               sig.PrevHigh1,
+		"prevLow1":                sig.PrevLow1,
+		"atr14":                   sig.ATR,
+		"profitProtectATR":        profitProtectATR,
+		"hwm":                     hwm,
+		"lwm":                     lwm,
+		"watermarkPositionKey":    watermarks.PositionKey,
 	}
 }
 
@@ -1065,6 +1120,14 @@ func updateLivePositionWatermarks(sessionState map[string]any, currentPosition m
 func evaluateLiveExitState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, sessionState map[string]any, nextReason string) map[string]any {
 	watermarks := refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
 	positionState := deriveLivePositionState(parameters, currentPosition, signalBarState, marketPrice, watermarks)
+	if len(positionState) == 0 {
+		waitReason := explainLivePositionUnavailable(currentPosition, signalBarState)
+		return map[string]any{
+			"ready":             false,
+			"waitReason":        waitReason,
+			"unavailableReason": waitReason,
+		}
+	}
 	return deriveLiveExitState(parameters, currentPosition, positionState, marketPrice, nextReason)
 }
 
@@ -1088,13 +1151,19 @@ func deriveLiveExitState(parameters map[string]any, currentPosition map[string]a
 		switch reasonTag {
 		case "sl":
 			state["targetPrice"] = stopLoss
+			state["targetPriceSource"] = firstNonEmpty(stringValue(positionState["stopLossSource"]), "initial-stop")
 			if marketPrice > 0 && stopLoss > 0 && marketPrice <= stopLoss {
 				state["ready"] = true
 			} else {
-				state["waitReason"] = "sl-not-triggered"
+				if strings.EqualFold(stringValue(positionState["stopLossSource"]), "trailing-stop") {
+					state["waitReason"] = "trailing-sl-not-triggered"
+				} else {
+					state["waitReason"] = "sl-not-triggered"
+				}
 			}
 		case "pt":
 			state["targetPrice"] = prevLow1
+			state["targetPriceSource"] = "structure-profit"
 			if !protected {
 				state["waitReason"] = "profit-protection-not-armed"
 			} else if marketPrice > 0 && prevLow1 > 0 && marketPrice <= prevLow1 {
@@ -1107,13 +1176,19 @@ func deriveLiveExitState(parameters map[string]any, currentPosition map[string]a
 		switch reasonTag {
 		case "sl":
 			state["targetPrice"] = stopLoss
+			state["targetPriceSource"] = firstNonEmpty(stringValue(positionState["stopLossSource"]), "initial-stop")
 			if marketPrice > 0 && stopLoss > 0 && marketPrice >= stopLoss {
 				state["ready"] = true
 			} else {
-				state["waitReason"] = "sl-not-triggered"
+				if strings.EqualFold(stringValue(positionState["stopLossSource"]), "trailing-stop") {
+					state["waitReason"] = "trailing-sl-not-triggered"
+				} else {
+					state["waitReason"] = "sl-not-triggered"
+				}
 			}
 		case "pt":
 			state["targetPrice"] = prevHigh1
+			state["targetPriceSource"] = "structure-profit"
 			if !protected {
 				state["waitReason"] = "profit-protection-not-armed"
 			} else if marketPrice > 0 && prevHigh1 > 0 && marketPrice >= prevHigh1 {

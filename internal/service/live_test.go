@@ -545,6 +545,79 @@ func TestEvaluateLiveExitStateTriggersSLForLong(t *testing.T) {
 	}
 }
 
+func TestEvaluateLiveExitStateUsesTrailingStopDiagnosticsForLong(t *testing.T) {
+	state := evaluateLiveExitState(map[string]any{
+		"profit_protect_atr":              1.0,
+		"stop_loss_atr":                   0.05,
+		"stop_mode":                       "atr",
+		"trailing_stop_atr":               0.3,
+		"delayed_trailing_activation_atr": 0.5,
+	}, map[string]any{
+		"found":      true,
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"quantity":   0.002,
+		"entryPrice": 69000.0,
+	}, map[string]any{
+		"atr14": 900.0,
+		"current": map[string]any{
+			"close": 69600.0,
+		},
+		"prevBar1": map[string]any{
+			"high": 69700.0,
+			"low":  68800.0,
+		},
+		"prevBar2": map[string]any{
+			"high": 69650.0,
+			"low":  68700.0,
+		},
+	}, 69600.0, map[string]any{}, "SL")
+	if boolValue(state["ready"]) {
+		t.Fatal("expected trailing SL to remain untriggered while price stays above the tightened stop")
+	}
+	if got := stringValue(state["waitReason"]); got != "trailing-sl-not-triggered" {
+		t.Fatalf("expected trailing-sl-not-triggered, got %s", got)
+	}
+	if got := stringValue(state["targetPriceSource"]); got != "trailing-stop" {
+		t.Fatalf("expected targetPriceSource trailing-stop, got %s", got)
+	}
+	if !boolValue(state["trailingStopActive"]) {
+		t.Fatal("expected trailingStopActive to be surfaced in exit diagnostics")
+	}
+}
+
+func TestEvaluateLiveExitStateReportsMissingEntryPrice(t *testing.T) {
+	state := evaluateLiveExitState(map[string]any{
+		"profit_protect_atr": 1.0,
+		"stop_loss_atr":      0.05,
+		"stop_mode":          "atr",
+	}, map[string]any{
+		"found":    true,
+		"symbol":   "BTCUSDT",
+		"side":     "LONG",
+		"quantity": 0.002,
+	}, map[string]any{
+		"atr14": 900.0,
+		"current": map[string]any{
+			"close": 68940.0,
+		},
+		"prevBar1": map[string]any{
+			"high": 69500.0,
+			"low":  68800.0,
+		},
+		"prevBar2": map[string]any{
+			"high": 69400.0,
+			"low":  68700.0,
+		},
+	}, 68940.0, map[string]any{}, "SL")
+	if boolValue(state["ready"]) {
+		t.Fatal("expected exit state to stay blocked when entry price is unavailable")
+	}
+	if got := stringValue(state["waitReason"]); got != "position-unavailable-missing-entry-price" {
+		t.Fatalf("expected position-unavailable-missing-entry-price, got %s", got)
+	}
+}
+
 func TestAdjustLiveExecutionProposalForVirtualInitialWhenZeroInitialEnabled(t *testing.T) {
 	proposal := adjustLiveExecutionProposalForVirtualSemantics(domain.LiveSession{}, map[string]any{
 		"dir2_zero_initial": true,
