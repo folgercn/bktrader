@@ -120,3 +120,40 @@ func TestLiveLaunchTemplatesIncludeIdempotentFrontendWorkflow(t *testing.T) {
 		t.Fatalf("unexpected step 2 path: %#v", steps[1])
 	}
 }
+
+func TestLiveLaunchTemplatesExposeDispatchModeMetadata(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	templates, err := platform.LiveLaunchTemplates()
+	if err != nil {
+		t.Fatalf("list live launch templates failed: %v", err)
+	}
+
+	for _, item := range templates {
+		// 验证模板层级暴露了默认分发模式，供前端 hook 使用，避免前端硬编码安全基线
+		if item.DefaultDispatchMode == "" {
+			t.Errorf("template %s: expected non-empty DefaultDispatchMode", item.Key)
+		}
+
+		// 验证 LaunchPayload 中不应包含强制的 dispatchMode 覆盖
+		// 这样前端在调用 launch 接口时，传入的 overrides 才能生效，且前端有权决定回落逻辑
+		if _, ok := item.LaunchPayload.LiveSessionOverrides["dispatchMode"]; ok {
+			t.Errorf("template %s: LaunchPayload.LiveSessionOverrides should not contain fixed dispatchMode", item.Key)
+		}
+
+		// 验证提供了合法的模式选项以便 UI 渲染
+		foundManual := false
+		foundAuto := false
+		for _, opt := range item.DispatchModeOptions {
+			if opt == "manual-review" {
+				foundManual = true
+			}
+			if opt == "auto-dispatch" {
+				foundAuto = true
+			}
+		}
+		if !foundManual || !foundAuto {
+			t.Errorf("template %s: missing required dispatch mode options, got %#v", item.Key, item.DispatchModeOptions)
+		}
+	}
+}
