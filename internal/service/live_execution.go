@@ -755,6 +755,28 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	}
 	state := cloneMetadata(session.State)
 	if isTerminalOrderStatus(order.Status) {
+		if shouldBackfillTerminalFilledLiveOrder(order, state) {
+			state["lastSyncAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
+			recordExecutionSyncAttemptHealth(state, eventTime)
+			syncedOrder, syncErr := p.SyncLiveOrder(order.ID)
+			if syncErr != nil {
+				state["lastSyncError"] = syncErr.Error()
+				recordExecutionSyncResultHealth(state, eventTime, order.Status, syncErr)
+				appendTimelineEvent(state, "order", eventTime, "live-order-sync-error", map[string]any{
+					"orderId": order.ID,
+					"error":   syncErr.Error(),
+				})
+				updated, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
+				if updateErr != nil {
+					return domain.LiveSession{}, updateErr
+				}
+				return updated, syncErr
+			}
+			order = syncedOrder
+			delete(state, "lastSyncError")
+			state["lastSyncedAt"] = eventTime.UTC().Format(time.RFC3339)
+			recordExecutionSyncResultHealth(state, eventTime, order.Status, nil)
+		}
 		maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), order.ID, order.Status)
 		state["lastSyncedOrderId"] = order.ID
 		state["lastSyncedOrderStatus"] = order.Status
@@ -852,6 +874,19 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		}
 	}
 	return updated, nil
+}
+
+func shouldBackfillTerminalFilledLiveOrder(order domain.Order, state map[string]any) bool {
+	if !strings.EqualFold(order.Status, "FILLED") {
+		return false
+	}
+	if parseFloatValue(order.Metadata["filledQuantity"]) < order.Quantity-1e-9 {
+		return true
+	}
+	if strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "" {
+		return true
+	}
+	return isLiveSessionBlockedByPositionReconcileGate(state)
 }
 
 func isTerminalOrderStatus(status string) bool {

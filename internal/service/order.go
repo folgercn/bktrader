@@ -184,8 +184,16 @@ func (p *Platform) resolveClosePositionTarget(positionID string) (domain.Positio
 		return domain.Position{}, domain.Account{}, err
 	}
 	if strings.EqualFold(strings.TrimSpace(account.Mode), "LIVE") {
-		if _, err := p.SyncLiveAccount(account.ID); err != nil {
+		syncedAccount, err := p.SyncLiveAccount(account.ID)
+		if err != nil {
 			return domain.Position{}, domain.Account{}, err
+		}
+		account = syncedAccount
+		if healedAccount, attempted, healErr := p.attemptLiveAccountReconcileSelfHeal(account, position.Symbol); attempted {
+			if healErr != nil {
+				return domain.Position{}, domain.Account{}, healErr
+			}
+			account = healedAccount
 		}
 		position, found, err = p.findPositionByID(positionID)
 		if err != nil {
@@ -525,7 +533,18 @@ func (p *Platform) applyLiveSubmissionResult(
 	if strings.EqualFold(updatedOrder.Status, "FILLED") {
 		settledOrder, settleErr := p.settleImmediatelyFilledLiveOrder(updatedOrder)
 		if settleErr != nil {
-			return settledOrder, settleErr
+			settledOrder.Metadata = cloneMetadata(settledOrder.Metadata)
+			settledOrder.Metadata["immediateFillSyncError"] = settleErr.Error()
+			settledOrder.Metadata["immediateFillSyncRequired"] = true
+			persistedOrder, updateErr := p.store.UpdateOrder(settledOrder)
+			if updateErr != nil {
+				return domain.Order{}, updateErr
+			}
+			logger.Warn("live order immediate fill sync failed",
+				"exchange_order_id", submission.ExchangeOrderID,
+				"error", settleErr,
+			)
+			return persistedOrder, settleErr
 		}
 		return settledOrder, nil
 	}
