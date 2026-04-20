@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -767,7 +768,11 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 		state := cloneMetadata(recovered.State)
 		delete(state, "lastRecoveryError")
 		state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
-		state["lastRecoveryStatus"] = "recovered"
+		if isLiveSessionRecoveryCloseOnlyMode(state) {
+			state["lastRecoveryStatus"] = liveRecoveryModeCloseOnlyTakeover
+		} else {
+			state["lastRecoveryStatus"] = "recovered"
+		}
 		_, _ = p.store.UpdateLiveSessionState(recovered.ID, state)
 	}
 	logger.Info("live trading recovery completed",
@@ -1525,18 +1530,39 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 	if _, syncErr := p.SyncLiveAccount(account.ID); syncErr != nil {
 		// Keep recovery moving so runtime monitoring can still come back.
 	}
+	session, recoveredPosition, incompleteRecoveryMetadata, err := p.completeRecoveredLiveSessionMetadata(session)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	if incompleteRecoveryMetadata {
+		session, err = p.enterRecoveredLiveSessionCloseOnlyMode(session, recoveredPosition, "missing-strategy-version", "recovered position is missing strategyVersionId")
+		if err != nil {
+			return domain.LiveSession{}, err
+		}
+		session, _ = p.refreshLiveSessionPositionContext(session, time.Now().UTC(), "live-startup-recovery-close-only")
+		return session, nil
+	}
 	session, err = p.syncLiveSessionRuntime(session)
 	if err != nil {
+		if recoveredPosition.Quantity > 0 {
+			return p.enterRecoveredLiveSessionCloseOnlyMode(session, recoveredPosition, "runtime-linkage-unavailable", err.Error())
+		}
 		return domain.LiveSession{}, err
 	}
 	session, err = p.ensureLiveSessionSignalRuntimeStarted(session)
 	if err != nil {
+		if recoveredPosition.Quantity > 0 {
+			return p.enterRecoveredLiveSessionCloseOnlyMode(session, recoveredPosition, "runtime-linkage-unavailable", err.Error())
+		}
 		return domain.LiveSession{}, err
 	}
 	if strings.TrimSpace(stringValue(session.State["lastDispatchedOrderId"])) != "" {
 		session, _ = p.syncLatestLiveSessionOrder(session, time.Now().UTC())
 	}
 	session, _ = p.refreshLiveSessionPositionContext(session, time.Now().UTC(), "live-startup-recovery")
+	if isLiveSessionRecoveryCloseOnlyMode(session.State) {
+		return session, nil
+	}
 	return p.store.UpdateLiveSessionStatus(session.ID, "RUNNING")
 }
 
@@ -1605,23 +1631,7 @@ func resolveRecoveredLiveEntryPrice(primary, secondary, fallback float64) float6
 }
 
 func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string) string {
-	sessions, err := p.ListLiveSessions()
-	if err == nil {
-		for _, session := range sessions {
-			if session.AccountID != accountID {
-				continue
-			}
-			sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
-			if sessionSymbol != "" && sessionSymbol != symbol {
-				continue
-			}
-			version, versionErr := p.resolveCurrentStrategyVersion(session.StrategyID)
-			if versionErr == nil {
-				return version.ID
-			}
-		}
-	}
-	return ""
+	return p.inferReconcileStrategyVersionID(accountID, symbol)
 }
 
 func (p *Platform) StopLiveSession(sessionID string) (domain.LiveSession, error) {
@@ -2172,6 +2182,15 @@ func isLivePlanStepStale(nextPlannedEvent time.Time, signalTimeframe string, now
 
 func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.LiveSession, error) {
 	state := cloneMetadata(session.State)
+	if isLiveSessionRecoveryCloseOnlyMode(state) {
+		state["runtimeMode"] = liveRecoveryModeCloseOnlyTakeover
+		state["signalRuntimeMode"] = liveRecoveryModeCloseOnlyTakeover
+		state["signalRuntimeRequired"] = false
+		state["signalRuntimeReady"] = false
+		delete(state, "signalRuntimeSessionId")
+		delete(state, "signalRuntimeStatus")
+		return p.store.UpdateLiveSessionState(session.ID, state)
+	}
 	plan, err := p.BuildSignalRuntimePlan(session.AccountID, session.StrategyID)
 	if err != nil {
 		state["signalRuntimeMode"] = "detached"
@@ -2305,6 +2324,21 @@ func (p *Platform) stopLinkedLiveSignalRuntime(session domain.LiveSession) (doma
 }
 
 func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.LiveSession, []paperPlannedOrder, error) {
+	session, recoveredPosition, incompleteRecoveryMetadata, err := p.completeRecoveredLiveSessionMetadata(session)
+	if err != nil {
+		return domain.LiveSession{}, nil, err
+	}
+	if incompleteRecoveryMetadata {
+		session, err = p.enterRecoveredLiveSessionCloseOnlyMode(session, recoveredPosition, "missing-strategy-version", "recovered position is missing strategyVersionId")
+		if err != nil {
+			return domain.LiveSession{}, nil, err
+		}
+		return session, nil, fmt.Errorf("live session %s is in close-only takeover mode", session.ID)
+	}
+	if isLiveSessionRecoveryCloseOnlyMode(session.State) {
+		return session, nil, fmt.Errorf("live session %s is in close-only takeover mode", session.ID)
+	}
+
 	p.mu.Lock()
 	if plan, ok := p.livePlans[session.ID]; ok {
 		p.mu.Unlock()
@@ -2316,7 +2350,7 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 	}
 	p.mu.Unlock()
 
-	session, err := p.syncLiveSessionRuntime(session)
+	session, err = p.syncLiveSessionRuntime(session)
 	if err != nil {
 		return domain.LiveSession{}, nil, err
 	}
@@ -2400,6 +2434,129 @@ func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.L
 		return domain.LiveSession{}, nil, err
 	}
 	return updatedSession, plan, nil
+}
+
+const (
+	liveRecoveryModeCloseOnlyTakeover    = "close-only-takeover"
+	liveRecoveryMetadataStatusComplete   = "complete"
+	liveRecoveryMetadataStatusIncomplete = "incomplete"
+)
+
+func isLiveSessionRecoveryCloseOnlyMode(state map[string]any) bool {
+	return strings.EqualFold(strings.TrimSpace(stringValue(state["recoveryMode"])), liveRecoveryModeCloseOnlyTakeover)
+}
+
+func buildRecoveredLivePositionStateSnapshot(position domain.Position) map[string]any {
+	if position.Quantity <= 0 {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"id":                position.ID,
+		"symbol":            NormalizeSymbol(position.Symbol),
+		"side":              position.Side,
+		"quantity":          position.Quantity,
+		"entryPrice":        position.EntryPrice,
+		"markPrice":         position.MarkPrice,
+		"strategyVersionId": position.StrategyVersionID,
+		"updatedAt":         position.UpdatedAt.UTC().Format(time.RFC3339),
+		"found":             true,
+	}
+}
+
+func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSession) (domain.LiveSession, domain.Position, bool, error) {
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+	if symbol == "" {
+		return session, domain.Position{}, false, nil
+	}
+	position, found, err := p.store.FindPosition(session.AccountID, symbol)
+	if err != nil {
+		return domain.LiveSession{}, domain.Position{}, false, err
+	}
+	if !found || position.Quantity <= 0 {
+		state := cloneMetadata(session.State)
+		delete(state, "recoveryMetadataStatus")
+		delete(state, "recoveryMetadataMissing")
+		delete(state, "recoveryMetadataCompletedAt")
+		if !metadataEqual(state, session.State) {
+			session, err = p.store.UpdateLiveSessionState(session.ID, state)
+			if err != nil {
+				return domain.LiveSession{}, domain.Position{}, false, err
+			}
+		}
+		return session, domain.Position{}, false, nil
+	}
+
+	state := cloneMetadata(session.State)
+	if strings.TrimSpace(position.StrategyVersionID) == "" {
+		position.StrategyVersionID = p.resolveLivePositionStrategyVersionID(session.AccountID, symbol)
+		if strings.TrimSpace(position.StrategyVersionID) != "" {
+			position, err = p.store.SavePosition(position)
+			if err != nil {
+				return domain.LiveSession{}, domain.Position{}, false, err
+			}
+		}
+	}
+	if strings.TrimSpace(position.StrategyVersionID) == "" {
+		state["recoveryMetadataStatus"] = liveRecoveryMetadataStatusIncomplete
+		state["recoveryMetadataMissing"] = []any{"strategyVersionId"}
+		if !metadataEqual(state, session.State) {
+			session, err = p.store.UpdateLiveSessionState(session.ID, state)
+			if err != nil {
+				return domain.LiveSession{}, domain.Position{}, false, err
+			}
+		}
+		return session, position, true, nil
+	}
+
+	state["strategyVersionId"] = position.StrategyVersionID
+	state["recoveryMetadataStatus"] = liveRecoveryMetadataStatusComplete
+	state["recoveryMetadataCompletedAt"] = time.Now().UTC().Format(time.RFC3339)
+	delete(state, "recoveryMetadataMissing")
+	delete(state, "recoveryMode")
+	delete(state, "recoveryCloseOnlyReason")
+	delete(state, "recoveryCloseOnlyDetail")
+	delete(state, "recoveryCloseOnlyAt")
+	if !metadataEqual(state, session.State) {
+		session, err = p.store.UpdateLiveSessionState(session.ID, state)
+		if err != nil {
+			return domain.LiveSession{}, domain.Position{}, false, err
+		}
+	}
+	return session, position, false, nil
+}
+
+func (p *Platform) enterRecoveredLiveSessionCloseOnlyMode(session domain.LiveSession, position domain.Position, reason, detail string) (domain.LiveSession, error) {
+	state := cloneMetadata(session.State)
+	state["recoveryMode"] = liveRecoveryModeCloseOnlyTakeover
+	state["runtimeMode"] = liveRecoveryModeCloseOnlyTakeover
+	state["signalRuntimeMode"] = liveRecoveryModeCloseOnlyTakeover
+	state["signalRuntimeRequired"] = false
+	state["signalRuntimeReady"] = false
+	state["recoveryMetadataStatus"] = liveRecoveryMetadataStatusIncomplete
+	state["recoveryCloseOnlyReason"] = reason
+	state["recoveryCloseOnlyDetail"] = detail
+	state["recoveryCloseOnlyAt"] = time.Now().UTC().Format(time.RFC3339)
+	state["lastStrategyEvaluationStatus"] = liveRecoveryModeCloseOnlyTakeover
+	state["positionRecoveryStatus"] = liveRecoveryModeCloseOnlyTakeover
+	state["recoveredPosition"] = buildRecoveredLivePositionStateSnapshot(position)
+	state["hasRecoveredPosition"] = position.Quantity > 0
+	state["hasRecoveredRealPosition"] = position.Quantity > 0
+	state["hasRecoveredVirtualPosition"] = false
+	delete(state, "signalRuntimeSessionId")
+	delete(state, "signalRuntimeStatus")
+	delete(state, "lastExecutionProposal")
+	delete(state, "lastStrategyIntent")
+	delete(state, "lastSignalIntent")
+	delete(state, "lastStrategyIntentSignature")
+	session, err := p.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return p.store.UpdateLiveSessionStatus(session.ID, "BLOCKED")
+}
+
+func metadataEqual(left, right map[string]any) bool {
+	return reflect.DeepEqual(left, right)
 }
 
 func (p *Platform) reconcileLiveSessionPlanIndex(session domain.LiveSession, plan []paperPlannedOrder, recoveredAt time.Time, source string) (domain.LiveSession, error) {

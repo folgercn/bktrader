@@ -33,7 +33,16 @@ func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
 	if err != nil {
 		return domain.Order{}, err
 	}
-	return p.CreateOrder(buildClosePositionOrder(position))
+	order := buildClosePositionOrder(position)
+	if session, ok := p.findLiveRecoveryCloseOnlySession(position.AccountID, position.Symbol); ok {
+		order.Metadata = cloneMetadata(order.Metadata)
+		order.Metadata["skipRuntimeCheck"] = true
+		order.Metadata["recoveryMode"] = liveRecoveryModeCloseOnlyTakeover
+		order.Metadata["recoveryCloseOnlyTakeover"] = true
+		order.Metadata["recoveryTakeoverSessionId"] = session.ID
+		order.StrategyVersionID = firstNonEmpty(order.StrategyVersionID, stringValue(session.State["strategyVersionId"]))
+	}
+	return p.CreateOrder(order)
 }
 
 func buildClosePositionOrder(position domain.Position) domain.Order {
@@ -57,6 +66,28 @@ func buildClosePositionOrder(position domain.Position) domain.Order {
 			"manualAction": "close-position",
 		},
 	}
+}
+
+func (p *Platform) findLiveRecoveryCloseOnlySession(accountID, symbol string) (domain.LiveSession, bool) {
+	sessions, err := p.ListLiveSessions()
+	if err != nil {
+		return domain.LiveSession{}, false
+	}
+	normalizedSymbol := NormalizeSymbol(symbol)
+	for _, session := range sessions {
+		if session.AccountID != accountID {
+			continue
+		}
+		if !isLiveSessionRecoveryCloseOnlyMode(session.State) {
+			continue
+		}
+		sessionSymbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+		if normalizedSymbol != "" && sessionSymbol != "" && sessionSymbol != normalizedSymbol {
+			continue
+		}
+		return session, true
+	}
+	return domain.LiveSession{}, false
 }
 
 // CreateOrder 创建订单。对于 PAPER 模式账户，订单会被立即执行（模拟成交），

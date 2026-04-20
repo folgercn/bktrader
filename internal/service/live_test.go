@@ -4618,6 +4618,185 @@ func TestRefreshLiveSessionPositionContextBuildsRiskStateFromRecoveredBreakEvenE
 	}
 }
 
+func TestRecoverRunningLiveSessionCompletesRecoveredPositionMetadata(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "RUNNING" {
+		t.Fatalf("expected recovered session to stay RUNNING, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["recoveryMetadataStatus"]); got != liveRecoveryMetadataStatusComplete {
+		t.Fatalf("expected recovery metadata status complete, got %s", got)
+	}
+	if got := stringValue(recovered.State["recoveryMode"]); got != "" {
+		t.Fatalf("expected no restricted recovery mode, got %s", got)
+	}
+	position, found, err := platform.store.FindPosition(session.AccountID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected recovered position to remain present")
+	}
+	if got := position.StrategyVersionID; got != "strategy-version-bk-1d-v010" {
+		t.Fatalf("expected recovered strategy version to be completed, got %s", got)
+	}
+}
+
+func TestRecoverRunningLiveSessionFallsBackToCloseOnlyWhenMetadataIsAmbiguous(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create primary live session failed: %v", err)
+	}
+	secondary, err := platform.store.CreateLiveSession("live-main", "strategy-ambiguous")
+	if err != nil {
+		t.Fatalf("create secondary live session failed: %v", err)
+	}
+	secondaryState := cloneMetadata(secondary.State)
+	secondaryState["symbol"] = "BTCUSDT"
+	if _, err := platform.store.UpdateLiveSessionState(secondary.ID, secondaryState); err != nil {
+		t.Fatalf("update secondary live session state failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "BLOCKED" {
+		t.Fatalf("expected recovered session to downgrade into BLOCKED close-only mode, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["recoveryMode"]); got != liveRecoveryModeCloseOnlyTakeover {
+		t.Fatalf("expected recovery mode %s, got %s", liveRecoveryModeCloseOnlyTakeover, got)
+	}
+	if got := stringValue(recovered.State["recoveryMetadataStatus"]); got != liveRecoveryMetadataStatusIncomplete {
+		t.Fatalf("expected incomplete recovery metadata status, got %s", got)
+	}
+	if got := stringValue(recovered.State["lastStrategyEvaluationStatus"]); got != liveRecoveryModeCloseOnlyTakeover {
+		t.Fatalf("expected strategy evaluation status %s, got %s", liveRecoveryModeCloseOnlyTakeover, got)
+	}
+	if got := stringValue(recovered.State["positionRecoveryStatus"]); got != liveRecoveryModeCloseOnlyTakeover {
+		t.Fatalf("expected position recovery status %s, got %s", liveRecoveryModeCloseOnlyTakeover, got)
+	}
+	position, found, err := platform.store.FindPosition(session.AccountID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected recovered position to remain present")
+	}
+	if got := position.StrategyVersionID; got != "" {
+		t.Fatalf("expected ambiguous recovered position to remain unlinked, got %s", got)
+	}
+}
+
+func TestClosePositionAllowsRecoveredCloseOnlyTakeoverWithoutRuntimeLinkage(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-close-only"})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-close-only",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create primary live session failed: %v", err)
+	}
+	secondary, err := platform.store.CreateLiveSession("live-main", "strategy-ambiguous")
+	if err != nil {
+		t.Fatalf("create secondary live session failed: %v", err)
+	}
+	secondaryState := cloneMetadata(secondary.State)
+	secondaryState["symbol"] = "BTCUSDT"
+	if _, err := platform.store.UpdateLiveSessionState(secondary.ID, secondaryState); err != nil {
+		t.Fatalf("update secondary live session state failed: %v", err)
+	}
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:  session.AccountID,
+		Symbol:     "BTCUSDT",
+		Side:       "LONG",
+		Quantity:   0.01,
+		EntryPrice: 68000,
+		MarkPrice:  68100,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if got := stringValue(recovered.State["recoveryMode"]); got != liveRecoveryModeCloseOnlyTakeover {
+		t.Fatalf("expected close-only recovery mode, got %s", got)
+	}
+
+	platform.mu.Lock()
+	platform.signalSessions = map[string]domain.SignalRuntimeSession{}
+	platform.mu.Unlock()
+
+	order, err := platform.ClosePosition(position.ID)
+	if err != nil {
+		t.Fatalf("expected close-only takeover close to bypass missing runtime linkage, got %v", err)
+	}
+	if !boolValue(order.Metadata["skipRuntimeCheck"]) {
+		t.Fatal("expected close-only takeover close order to skip runtime preflight")
+	}
+	if !boolValue(order.Metadata["recoveryCloseOnlyTakeover"]) {
+		t.Fatal("expected close-only takeover marker on close order metadata")
+	}
+	if got := stringValue(order.Status); got == "" {
+		t.Fatal("expected live close order to be persisted with a status")
+	}
+}
+
 type testLiveAccountSyncAdapter struct {
 	key                 string
 	syncErr             error

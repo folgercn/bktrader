@@ -78,6 +78,13 @@ func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession)
 }
 
 func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession, eventTime time.Time, source string) (domain.LiveSession, error) {
+	applyRecoveryMode := func(state map[string]any) {
+		if !isLiveSessionRecoveryCloseOnlyMode(state) {
+			return
+		}
+		state["positionRecoveryStatus"] = liveRecoveryModeCloseOnlyTakeover
+		state["lastStrategyEvaluationStatus"] = liveRecoveryModeCloseOnlyTakeover
+	}
 	persistSnapshot := func(updated domain.LiveSession) (domain.LiveSession, error) {
 		if updated.ID == "" {
 			return updated, nil
@@ -115,6 +122,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		delete(state, "livePositionState")
 		state["lastLivePositionState"] = map[string]any{}
 		state["positionRecoveryStatus"] = "flat"
+		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
 			return domain.LiveSession{}, updateErr
@@ -154,6 +162,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 				applyLivePositionWatermarks(state, watermarks)
 			}
 		}
+		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
 			return domain.LiveSession{}, updateErr
@@ -163,6 +172,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	marketPrice := firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(mapValue(signalBarState["current"])["close"]))
 	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, state)
 	if len(livePositionState) == 0 {
+		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
 			return domain.LiveSession{}, updateErr
@@ -245,6 +255,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		}
 	}
 
+	applyRecoveryMode(state)
 	updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 	if updateErr != nil {
 		return domain.LiveSession{}, updateErr
