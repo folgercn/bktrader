@@ -144,6 +144,104 @@ func TestReconcileLiveAccountRecoversMissingFilledOrder(t *testing.T) {
 	}
 }
 
+func TestReconcileLiveAccountRefreshClearsStaleRecoveryCache(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	syncedAt := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
+	platform.registerLiveAdapter(testLiveAccountReconcileAdapter{
+		key: "test-reconcile-refresh",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":      "test-reconcile-refresh",
+				"syncedAt":    syncedAt.Format(time.RFC3339),
+				"openOrders":  []map[string]any{},
+				"positions":   []map[string]any{},
+				"bindingMode": stringValue(binding["connectionMode"]),
+			}
+			account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+			return p.store.UpdateAccount(account)
+		},
+		ordersBySymbol: map[string][]map[string]any{
+			"BTCUSDT": {},
+		},
+		tradesBySymbol: map[string][]LiveFillReport{
+			"BTCUSDT": {},
+		},
+	})
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-reconcile-refresh",
+		"connectionMode": "rest",
+		"executionMode":  "rest",
+	}
+	account.Metadata["livePositionReconcileGate"] = map[string]any{
+		"symbols": map[string]any{
+			"BTCUSDT": map[string]any{
+				"status":   livePositionReconcileGateStatusVerified,
+				"blocking": false,
+				"scenario": "exchange-flat",
+			},
+		},
+	}
+	if _, err := store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["recoveryMode"] = liveRecoveryModeReconcileGateBlocked
+	state["runtimeMode"] = liveRecoveryModeReconcileGateBlocked
+	state["signalRuntimeMode"] = liveRecoveryModeReconcileGateBlocked
+	state["signalRuntimeRequired"] = false
+	state["signalRuntimeReady"] = false
+	state["positionRecoveryStatus"] = livePositionReconcileGateStatusConflict
+	state["positionReconcileGateStatus"] = livePositionReconcileGateStatusConflict
+	state["positionReconcileGateBlocking"] = true
+	state["positionReconcileGateScenario"] = "db-position-exchange-missing"
+	session, err = store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	session, err = store.UpdateLiveSessionStatus(session.ID, "BLOCKED")
+	if err != nil {
+		t.Fatalf("update live session status failed: %v", err)
+	}
+
+	if _, err := platform.ReconcileLiveAccount("live-main", LiveAccountReconcileOptions{LookbackHours: 24}); err != nil {
+		t.Fatalf("reconcile live account failed: %v", err)
+	}
+
+	updated, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["recoveryMode"]); got != "" {
+		t.Fatalf("expected recoveryMode cleared after reconcile refresh, got %s", got)
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "flat" {
+		t.Fatalf("expected positionRecoveryStatus flat after reconcile refresh, got %s", got)
+	}
+	if got := stringValue(updated.State["positionReconcileGateStatus"]); got != "verified" {
+		t.Fatalf("expected positionReconcileGateStatus verified, got %s", got)
+	}
+	if got := updated.Status; got != "BLOCKED" {
+		t.Fatalf("expected reconcile refresh to clear stale cache without auto-resuming session, got %s", got)
+	}
+}
+
 type testLiveAccountReconcileAdapter struct {
 	key              string
 	syncSnapshotFunc func(*Platform, domain.Account, map[string]any) (domain.Account, error)

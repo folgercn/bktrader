@@ -762,31 +762,9 @@ func (p *Platform) syncLiveSessionsForAccountSnapshot(account domain.Account) {
 			updated = completed
 		}
 		if refreshed, refreshErr := p.refreshLiveSessionPositionContext(updated, time.Now().UTC(), "live-account-sync"); refreshErr == nil {
-			updated = refreshed
+			_ = refreshed
 		}
-		_, _ = p.resumeFlatBlockedLiveSession(updated)
 	}
-}
-
-func (p *Platform) resumeFlatBlockedLiveSession(session domain.LiveSession) (domain.LiveSession, error) {
-	if !strings.EqualFold(session.Status, "BLOCKED") {
-		return session, nil
-	}
-	if boolValue(session.State["hasRecoveredPosition"]) || boolValue(session.State["hasRecoveredRealPosition"]) || boolValue(session.State["hasRecoveredVirtualPosition"]) {
-		return session, nil
-	}
-	if isLiveSessionRecoveryCloseOnlyMode(session.State) || isLiveSessionRecoveryReconcileGateBlocked(session.State) || isLiveSessionBlockedByPositionReconcileGate(session.State) {
-		return session, nil
-	}
-	updated, err := p.syncLiveSessionRuntime(session)
-	if err != nil {
-		return updated, err
-	}
-	updated, err = p.ensureLiveSessionSignalRuntimeStarted(updated)
-	if err != nil {
-		return updated, err
-	}
-	return p.store.UpdateLiveSessionStatus(updated.ID, "RUNNING")
 }
 
 func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
