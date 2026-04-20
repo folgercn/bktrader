@@ -333,6 +333,138 @@ func TestResolveClosePositionTargetFailsWhenPositionDisappearsAfterRefresh(t *te
 	}
 }
 
+func TestEnsureNoActivePositionsOrOrdersSelfHealsStaleLiveExposureViaReconcile(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	syncedAt := time.Date(2026, 4, 20, 12, 33, 23, 0, time.UTC)
+	configureTestLiveRESTReconcileHistoryAdapter(
+		t,
+		platform,
+		"test-active-exposure-self-heal",
+		[]map[string]any{},
+		map[string][]map[string]any{
+			"BTCUSDT": {{
+				"symbol":        "BTCUSDT",
+				"orderId":       "9101",
+				"clientOrderId": "client-9101",
+				"status":        "FILLED",
+				"side":          "SELL",
+				"type":          "MARKET",
+				"origType":      "MARKET",
+				"origQty":       0.01,
+				"executedQty":   0.01,
+				"price":         67950.0,
+				"avgPrice":      67950.0,
+				"reduceOnly":    true,
+				"closePosition": false,
+				"time":          float64(syncedAt.Add(-2 * time.Minute).UnixMilli()),
+				"updateTime":    float64(syncedAt.UnixMilli()),
+			}},
+		},
+		map[string][]LiveFillReport{
+			"BTCUSDT": {{
+				Price:    67950.0,
+				Quantity: 0.01,
+				Fee:      0.01,
+				Metadata: map[string]any{
+					"exchangeOrderId": "9101",
+					"tradeId":         "trade-9101",
+					"tradeTime":       syncedAt.Format(time.RFC3339),
+				},
+			}},
+		},
+	)
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         67950,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	if err := platform.ensureNoActivePositionsOrOrders("live-main", "strategy-bk-1d"); err != nil {
+		t.Fatalf("expected stale live exposure to self-heal before blocking, got %v", err)
+	}
+	if _, found, err := platform.store.FindPosition("live-main", "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected reconcile self-heal to clear stale BTCUSDT position")
+	}
+	active, err := platform.HasActivePositionsOrOrders("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("HasActivePositionsOrOrders after self-heal returned error: %v", err)
+	}
+	if active {
+		t.Fatal("expected no remaining active exposure after reconcile self-heal")
+	}
+}
+
+func TestClosePositionSelfHealsStaleLivePositionViaReconcile(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	syncedAt := time.Date(2026, 4, 20, 12, 33, 23, 0, time.UTC)
+	configureTestLiveRESTReconcileHistoryAdapter(
+		t,
+		platform,
+		"test-close-self-heal",
+		[]map[string]any{},
+		map[string][]map[string]any{
+			"BTCUSDT": {{
+				"symbol":        "BTCUSDT",
+				"orderId":       "9102",
+				"clientOrderId": "client-9102",
+				"status":        "FILLED",
+				"side":          "SELL",
+				"type":          "MARKET",
+				"origType":      "MARKET",
+				"origQty":       0.01,
+				"executedQty":   0.01,
+				"price":         67950.0,
+				"avgPrice":      67950.0,
+				"reduceOnly":    true,
+				"closePosition": false,
+				"time":          float64(syncedAt.Add(-2 * time.Minute).UnixMilli()),
+				"updateTime":    float64(syncedAt.UnixMilli()),
+			}},
+		},
+		map[string][]LiveFillReport{
+			"BTCUSDT": {{
+				Price:    67950.0,
+				Quantity: 0.01,
+				Fee:      0.01,
+				Metadata: map[string]any{
+					"exchangeOrderId": "9102",
+					"tradeId":         "trade-9102",
+					"tradeTime":       syncedAt.Format(time.RFC3339),
+				},
+			}},
+		},
+	)
+	position, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         67950,
+	})
+	if err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	if _, err := platform.ClosePosition(position.ID); err == nil || !strings.Contains(err.Error(), "position not found") {
+		t.Fatalf("expected ClosePosition to self-heal stale local position before manual close, got %v", err)
+	}
+	if _, found, err := platform.store.FindPosition("live-main", "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected stale BTCUSDT position to be removed after reconcile self-heal")
+	}
+}
+
 func TestCreateOrderReduceOnlyFormalFieldPreventsReverseOpen(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	account, err := platform.CreateAccount("Paper ReduceOnly", "PAPER", "binance-futures")

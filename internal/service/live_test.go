@@ -6432,6 +6432,86 @@ func TestStartLiveSessionBackfillsFilledExitBeforeReconcileGateBlock(t *testing.
 	}
 }
 
+func TestStartLiveSessionSelfHealsStaleDBPositionViaReconcileHistory(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	syncedAt := time.Date(2026, 4, 20, 12, 33, 23, 0, time.UTC)
+	configureTestLiveRESTReconcileHistoryAdapter(
+		t,
+		platform,
+		"test-start-reconcile-history-heal",
+		[]map[string]any{},
+		map[string][]map[string]any{
+			"BTCUSDT": {{
+				"symbol":        "BTCUSDT",
+				"orderId":       "9201",
+				"clientOrderId": "client-9201",
+				"status":        "FILLED",
+				"side":          "SELL",
+				"type":          "MARKET",
+				"origType":      "MARKET",
+				"origQty":       0.01,
+				"executedQty":   0.01,
+				"price":         67950.0,
+				"avgPrice":      67950.0,
+				"reduceOnly":    true,
+				"closePosition": false,
+				"time":          float64(syncedAt.Add(-2 * time.Minute).UnixMilli()),
+				"updateTime":    float64(syncedAt.UnixMilli()),
+			}},
+		},
+		map[string][]LiveFillReport{
+			"BTCUSDT": {{
+				Price:    67950.0,
+				Quantity: 0.01,
+				Fee:      0.01,
+				Metadata: map[string]any{
+					"exchangeOrderId": "9201",
+					"tradeId":         "trade-9201",
+					"tradeTime":       syncedAt.Format(time.RFC3339),
+				},
+			}},
+		},
+	)
+
+	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         67950,
+	}); err != nil {
+		t.Fatalf("save stale position failed: %v", err)
+	}
+
+	started, err := platform.StartLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("expected StartLiveSession to self-heal stale db-position-exchange-missing state, got %v", err)
+	}
+	if started.Status != "RUNNING" {
+		t.Fatalf("expected session to start RUNNING after reconcile history heal, got %s", started.Status)
+	}
+	if _, found, err := platform.store.FindPosition(session.AccountID, "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected reconcile history self-heal to clear stale BTCUSDT position before start completes")
+	}
+	if got := stringValue(started.State["recoveryMode"]); got == liveRecoveryModeReconcileGateBlocked {
+		t.Fatalf("expected reconcile gate block to clear after reconcile history self-heal, got %s", got)
+	}
+	if got := stringValue(started.State["positionReconcileGateScenario"]); got == "db-position-exchange-missing" {
+		t.Fatalf("expected stale db-position-exchange-missing scenario to clear after self-heal, got %s", got)
+	}
+}
+
 func TestStartLiveSessionDowngradesIncompleteRecoveredMetadataToCloseOnly(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-start-incomplete"})
