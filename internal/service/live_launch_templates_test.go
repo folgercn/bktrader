@@ -157,4 +157,3 @@ func TestLiveLaunchTemplatesExposeDispatchModeMetadata(t *testing.T) {
 		}
 	}
 }
-

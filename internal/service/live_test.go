@@ -6446,7 +6446,6 @@ func TestSyncLiveSessionRuntimePreservesConfiguredDispatchMode(t *testing.T) {
 		t.Fatalf("syncLiveSessionRuntime failed: %v", err)
 	}
 
-
 	// Validation
 	if got := stringValue(updated.State["dispatchMode"]); got != "auto-dispatch" {
 		t.Errorf("expected auto-dispatch to be preserved after sync, got %s", got)
@@ -6462,6 +6461,3 @@ func TestSyncLiveSessionRuntimePreservesConfiguredDispatchMode(t *testing.T) {
 		t.Errorf("expected manual-review to be preserved, got %s", got)
 	}
 }
-
-
-
