@@ -82,6 +82,7 @@ func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession)
 }
 
 func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession, eventTime time.Time, source string) (domain.LiveSession, error) {
+	takeoverActive := shouldActivateLiveRecoveryTakeover(source, session.State)
 	applyRecoveryMode := func(state map[string]any) {
 		if !isLiveSessionRecoveryCloseOnlyMode(state) {
 			return
@@ -132,6 +133,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		state["lastLivePositionState"] = map[string]any{}
 		state["positionRecoveryStatus"] = "flat"
 		applyLivePositionReconcileGateState(state, reconcileGate)
+		applyLiveRecoveryTakeoverState(state, takeoverActive)
 		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
@@ -174,6 +176,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 			}
 		}
 		applyLivePositionReconcileGateState(state, reconcileGate)
+		applyLiveRecoveryTakeoverState(state, takeoverActive)
 		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
@@ -185,6 +188,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, state)
 	if len(livePositionState) == 0 {
 		applyLivePositionReconcileGateState(state, reconcileGate)
+		applyLiveRecoveryTakeoverState(state, takeoverActive)
 		applyRecoveryMode(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
@@ -275,6 +279,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	}
 
 	applyLivePositionReconcileGateState(state, reconcileGate)
+	applyLiveRecoveryTakeoverState(state, takeoverActive)
 	applyRecoveryMode(state)
 	updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 	if updateErr != nil {
