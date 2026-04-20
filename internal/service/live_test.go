@@ -5194,6 +5194,9 @@ func TestRecoverRunningLiveSessionAllowsControlledExchangeOnlyTakeover(t *testin
 	if recovered.Status != "RUNNING" {
 		t.Fatalf("expected controlled exchange takeover to proceed, got %s", recovered.Status)
 	}
+	if got := stringValue(recovered.State["positionReconcileGateStatus"]); got != livePositionReconcileGateStatusAdopted {
+		t.Fatalf("expected adopted reconcile gate status, got %s", got)
+	}
 	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "exchange-position-db-missing" {
 		t.Fatalf("expected exchange-position-db-missing scenario, got %s", got)
 	}

@@ -33,6 +33,10 @@ func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
 	if err != nil {
 		return domain.Order{}, err
 	}
+	// Reconcile-gated recoveries are intentionally fail-closed: once local state
+	// diverges from exchange truth, the platform must not place any additional
+	// execution claim, including manual close orders, until an operator resolves
+	// the position directly against the exchange.
 	if err := p.ensureLivePositionReconcileGateAllowsExecution(position.AccountID, position.Symbol, position.Quantity > 0); err != nil {
 		return domain.Order{}, err
 	}

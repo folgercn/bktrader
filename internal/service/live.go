@@ -1671,7 +1671,7 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 				return nil, err
 			}
 			recordGate(symbol, map[string]any{
-				"status":           livePositionReconcileGateStatusVerified,
+				"status":           livePositionReconcileGateStatusAdopted,
 				"scenario":         "exchange-position-db-missing",
 				"blocking":         false,
 				"dbPosition":       map[string]any{},
@@ -2576,6 +2576,7 @@ const (
 	liveRecoveryModeReconcileGateBlocked    = "reconcile-gate-blocked"
 	liveRecoveryMetadataStatusComplete      = "complete"
 	liveRecoveryMetadataStatusIncomplete    = "incomplete"
+	livePositionReconcileGateStatusAdopted  = "adopted"
 	livePositionReconcileGateStatusVerified = "verified"
 	livePositionReconcileGateStatusStale    = "stale"
 	livePositionReconcileGateStatusConflict = "conflict"
