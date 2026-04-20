@@ -13,8 +13,8 @@
 
 ## 2. 协作与版本控制 (CLI Tools)
 
-- **GitHub CLI (gh)**: `/opt/homebrew/bin/gh`
-- **Git**: `/usr/bin/git`
+- **GitHub CLI (gh)**: `/usr/local/bin/gh`
+- **Git**: `/usr/local/bin/git`
 
 ## 3. 环境变量加载
 
