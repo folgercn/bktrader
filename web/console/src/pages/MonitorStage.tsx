@@ -174,7 +174,8 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   );
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
-  const timelineLogs = buildTimelineNotes(monitorTimeline, timelineConfig).slice(0, 50);
+  const timelineLogs = buildTimelineNotes(monitorTimeline, timelineConfig, monitorSession?.id).slice(0, 50);
+
 
   const reconciledOrders = orders.filter(o => !!(o.metadata?.orderLifecycle as any)?.synced);
   const orphanedOrders = orders.filter(o => (o.metadata?.orderLifecycle as any)?.reconciliationState === 'orphaned');
@@ -500,10 +501,11 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                               className="h-8 text-[11px] font-black rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-faint)]"
                               placeholder="60"
                             />
-                            <p className="text-[10px] text-[var(--bk-text-muted)] leading-tight italic opacity-60">相同精度的决策在该时间内将只记录一次。</p>
+                            <p className="text-[10px] text-[var(--bk-text-muted)] leading-tight italic opacity-60">定义静默隔离的时间长度。在此时间内的重复事件将被限制显示频率。</p>
                          </div>
+
                          <div className="space-y-2">
-                            <Label className="text-[9px] font-black uppercase tracking-tighter text-[var(--bk-text-muted)]">连贯保留数</Label>
+                            <Label className="text-[9px] font-black uppercase tracking-tighter text-[var(--bk-text-muted)]">窗口内最大显示数</Label>
                             <Input 
                               type="number" 
                               value={timelineConfig.maxRepeats}
@@ -511,8 +513,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                               className="h-8 text-[11px] font-black rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-faint)]"
                               placeholder="1"
                             />
-                            <p className="text-[10px] text-[var(--bk-text-muted)] leading-tight italic opacity-60">允许在静默期内连续显示的最大相同项数。</p>
+                            <p className="text-[10px] text-[var(--bk-text-muted)] leading-tight italic opacity-60">定义在静默周期内允许显示的该类事件的最大总次数（包含首条）。</p>
                          </div>
+
                       </div>
                     </PopoverContent>
                   </Popover>

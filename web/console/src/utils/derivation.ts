@@ -1201,7 +1201,7 @@ export function buildSignalActionNotes(signalAction: { bias: string; state: stri
   return [`信号活动: ${signalAction.bias} · ${signalAction.state} · ${signalAction.reason}`];
 }
 
-export function buildTimelineNotes(items: Array<Record<string, unknown>>, config?: TimelineConfig) {
+export function buildTimelineNotes(items: Array<Record<string, unknown>>, config?: TimelineConfig, sessionId?: string) {
   if (items.length === 0) {
     return ["时间线: --"];
   }
@@ -1211,9 +1211,8 @@ export function buildTimelineNotes(items: Array<Record<string, unknown>>, config
 
   if (deduplicationEnabled) {
     const filtered: Array<Record<string, unknown>> = [];
-    let lastDigest = "";
-    let lastEventTime = 0;
-    let repeatCount = 0;
+    // 摘要去重追踪：Digest -> { lastTime, displayCount }
+    const lastSeenMap = new Map<string, { lastTime: number; displayCount: number }>();
 
     for (const item of items) {
       const metadata = getRecord(item.metadata);
@@ -1224,30 +1223,33 @@ export function buildTimelineNotes(items: Array<Record<string, unknown>>, config
       const eventTimeStr = String(item.time ?? "");
       const eventTime = Date.parse(eventTimeStr);
 
-      // 生成去重摘要：类别、标题、原因、动作、交易对
-      const digest = `${category}|${title}|${reason}|${action}|${metadata.symbol ?? ""}`;
-      const isDuplicate = digest === lastDigest;
+      // 生成增强版摘要：加入 sessionId 以实现会话隔离
+      const activeSessionId = sessionId || String(metadata.liveSessionId ?? metadata.signalRuntimeSessionId ?? "");
+      const digest = `${activeSessionId}|${category}|${title}|${reason}|${action}|${metadata.symbol ?? ""}`;
 
       const currentTime = !Number.isNaN(eventTime) ? eventTime : 0;
-      // 检查静默时间窗口
-      const isWithinQuietPeriod = lastEventTime > 0 && (currentTime - lastEventTime) < quietSeconds * 1000;
-
-      // 仅针对策略决策、对账、源状态等待等高频低熵信息进行过滤；危险信号或重要成交记录豁免
       const isDeduplicatable = category === "strategy" || category === "reconcile" || title === "waiting-source-states";
 
-      if (isDeduplicatable && isDuplicate && isWithinQuietPeriod) {
-        repeatCount++;
-        if (repeatCount >= maxRepeats) {
-          continue;
+      if (isDeduplicatable) {
+        const record = lastSeenMap.get(digest);
+        // 判断是否在静默时间窗口内（与该摘要上一次出现的时间对比）
+        const isWithinQuietPeriod = record && record.lastTime > 0 && (currentTime - record.lastTime) < quietSeconds * 1000;
+
+        if (isWithinQuietPeriod) {
+          if (record.displayCount < maxRepeats) {
+            record.displayCount++;
+            filtered.push(item);
+          }
+          // 无论是否显示，都更新该摘要的最后触达时间，确保“静默”是相对于上一次脉冲的
+          record.lastTime = currentTime;
+        } else {
+          // 超出窗口或首次出现：开启新窗口，重置计数
+          lastSeenMap.set(digest, { lastTime: currentTime, displayCount: 1 });
+          filtered.push(item);
         }
       } else {
-        repeatCount = 0;
-      }
-
-      filtered.push(item);
-      lastDigest = digest;
-      if (currentTime > 0) {
-        lastEventTime = currentTime;
+        // 非初筛决策类（如重要告警、成交记录等）始终保留，不参与去重
+        filtered.push(item);
       }
     }
     processedItems = filtered;
@@ -1296,6 +1298,7 @@ export function buildTimelineNotes(items: Array<Record<string, unknown>>, config
       return fragments.join(" · ");
     });
 }
+
 
 
 export function summarizeOrderPreflight(value: unknown) {
