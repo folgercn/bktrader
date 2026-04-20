@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,6 +220,49 @@ func TestUpdateRuntimePolicyAllowsDisablingHealthThresholds(t *testing.T) {
 	}
 	if updated.LiveAccountSyncFreshnessSecs != 0 {
 		t.Fatalf("expected live account sync freshness threshold to allow zero, got %d", updated.LiveAccountSyncFreshnessSecs)
+	}
+}
+
+func TestListAlertsShowsAuthoritativeSyncWarningForLocalRecoveryFallback(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["protectionRecoveryStatus"] = "unprotected-open-position"
+	state["positionRecoveryStatus"] = "unprotected-open-position"
+	state["protectionRecoveryAuthoritative"] = false
+	state["protectionRecoverySource"] = "platform-live-reconciliation"
+	state["lastProtectionRecoveryAt"] = time.Date(2026, 4, 20, 3, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	session.State = state
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session failed: %v", err)
+	}
+
+	alerts, err := platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list alerts failed: %v", err)
+	}
+
+	foundSyncWarning := false
+	for _, alert := range alerts {
+		if alert.ID == "live-recovery-awaiting-authoritative-sync-"+session.ID {
+			foundSyncWarning = true
+			if alert.Level != "warning" {
+				t.Fatalf("expected warning level, got %s", alert.Level)
+			}
+			if !strings.Contains(alert.Detail, "watchdog auto-exit is paused") {
+				t.Fatalf("expected pause detail in alert, got %s", alert.Detail)
+			}
+		}
+		if alert.ID == "live-unprotected-position-"+session.ID {
+			t.Fatal("expected local fallback recovery to suppress authoritative unprotected-position alert")
+		}
+	}
+	if !foundSyncWarning {
+		t.Fatal("expected authoritative sync warning alert to be present")
 	}
 }
 

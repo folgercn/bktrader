@@ -198,6 +198,44 @@ func TestFinalizeExecutedOrderUsesExchangeTradeTimeForLastFilledAt(t *testing.T)
 	}
 }
 
+func TestClosePositionAllowsLiveManualCloseWithoutRuntimeSession(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-manual-close"})
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": "test-manual-close",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	position, err := store.SavePosition(domain.Position{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "LONG",
+		Quantity:  0.25,
+		MarkPrice: 68100,
+	})
+	if err != nil {
+		t.Fatalf("save live position failed: %v", err)
+	}
+
+	order, err := platform.ClosePosition(position.ID)
+	if err != nil {
+		t.Fatalf("expected live manual close to bypass runtime session checks, got %v", err)
+	}
+	if got := boolValue(order.Metadata["skipRuntimeCheck"]); !got {
+		t.Fatal("expected live manual close order to set skipRuntimeCheck")
+	}
+	if got := order.Status; got != "ACCEPTED" {
+		t.Fatalf("expected live manual close order to be accepted, got %s", got)
+	}
+	if got := stringValue(order.Metadata["runtimeSessionId"]); got != "" {
+		t.Fatalf("expected bypassed live manual close to avoid linking a runtime session, got %s", got)
+	}
+}
+
 func TestFinalizeExecutedOrderFallsBackToNowWhenExchangeTradeTimeMissing(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)

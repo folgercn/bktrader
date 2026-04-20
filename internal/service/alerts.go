@@ -311,6 +311,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		}
 		recoveryStatus := strings.TrimSpace(stringValue(state["protectionRecoveryStatus"]))
 		recoveryError := strings.TrimSpace(stringValue(state["lastRecoveryError"]))
+		recoveryAuthoritative := boolValue(state["protectionRecoveryAuthoritative"])
+		recoverySource := firstNonEmpty(strings.TrimSpace(stringValue(state["protectionRecoverySource"])), "local-fallback")
 		eventTime := parseOptionalRFC3339(firstNonEmpty(stringValue(state["lastProtectionRecoveryAt"]), stringValue(state["lastRecoveryAttemptAt"])))
 		if recoveryError != "" {
 			appendAlert(domain.PlatformAlert{
@@ -327,6 +329,26 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 			})
 		}
 		if recoveryStatus == "unprotected-open-position" {
+			if !recoveryAuthoritative {
+				appendAlert(domain.PlatformAlert{
+					ID:           fmt.Sprintf("live-recovery-awaiting-authoritative-sync-%s", session.ID),
+					Scope:        "live",
+					Level:        "warning",
+					Title:        "Recovery awaiting authoritative sync",
+					Detail:       fmt.Sprintf("watchdog auto-exit is paused because recovery state came from %s; run a successful live account sync or reconcile to confirm exchange positions and open orders", recoverySource),
+					AccountID:    session.AccountID,
+					StrategyID:   session.StrategyID,
+					StrategyName: strategyNameByID[session.StrategyID],
+					Anchor:       "live",
+					EventTime:    eventTime,
+					Metadata: map[string]any{
+						"protectionRecoverySource":        recoverySource,
+						"protectionRecoveryAuthoritative": false,
+						"watchdogAutoExitPaused":          true,
+					},
+				})
+				continue
+			}
 			appendAlert(domain.PlatformAlert{
 				ID:           fmt.Sprintf("live-unprotected-position-%s", session.ID),
 				Scope:        "live",
