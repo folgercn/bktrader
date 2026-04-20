@@ -6414,3 +6414,54 @@ type testFailingListOrdersStore struct {
 func (s *testFailingListOrdersStore) ListOrders() ([]domain.Order, error) {
 	return nil, s.listError
 }
+
+func TestSyncLiveSessionRuntimePreservesConfiguredDispatchMode(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	// Prepare account and strategy to satisfy BuildSignalRuntimePlan
+	acc, _ := platform.store.CreateAccount("acc-1", "LIVE", "binance-futures")
+	strat, _ := platform.store.CreateStrategy("strat-1", "test", map[string]any{
+		"strategyEngine": "bk-default",
+	})
+	stratID := strat["id"].(string)
+
+	// Case 1: auto-dispatch is preserved
+	// We create a session normally, which defaults to manual-review
+	session, err := platform.CreateLiveSession(acc.ID, stratID, nil)
+	if err != nil {
+		t.Fatalf("CreateLiveSession failed: %v", err)
+	}
+
+	// Manually set it to auto-dispatch and persist
+	state := session.State
+	state["dispatchMode"] = "auto-dispatch"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("UpdateLiveSessionState failed: %v", err)
+	}
+
+	// Execution: Trigger sync (e.g. on restart/recovery)
+	updated, err := platform.syncLiveSessionRuntime(session)
+	if err != nil {
+		t.Fatalf("syncLiveSessionRuntime failed: %v", err)
+	}
+
+
+	// Validation
+	if got := stringValue(updated.State["dispatchMode"]); got != "auto-dispatch" {
+		t.Errorf("expected auto-dispatch to be preserved after sync, got %s", got)
+	}
+
+	// Case 2: manual-review is preserved (default case)
+	session2, _ := platform.CreateLiveSession(acc.ID, stratID, nil)
+	updated2, err := platform.syncLiveSessionRuntime(session2)
+	if err != nil {
+		t.Fatalf("syncLiveSessionRuntime failed: %v", err)
+	}
+	if got := stringValue(updated2.State["dispatchMode"]); got != "manual-review" {
+		t.Errorf("expected manual-review to be preserved, got %s", got)
+	}
+}
+
+
+
