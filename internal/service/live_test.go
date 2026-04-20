@@ -5902,6 +5902,9 @@ func TestStartLiveSessionRequiresRESTVerificationForHistoricalTakeoverActivation
 	if err == nil {
 		t.Fatal("expected historical takeover activation to require REST verification before start")
 	}
+	if !strings.Contains(err.Error(), "requires authoritative reconcile before historical takeover activation") {
+		t.Fatalf("expected fail-fast authoritative reconcile error, got %v", err)
+	}
 	updated, err := platform.store.GetLiveSession(session.ID)
 	if err != nil {
 		t.Fatalf("reload live session failed: %v", err)

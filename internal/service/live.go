@@ -1494,6 +1494,17 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 		}
 		if liveAccountPositionReconcilePending(account) {
 			logger.Warn("authoritative live account reconcile pending on start", "error", reconcileErr)
+			symbol := NormalizeSymbol(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+			if symbol != "" {
+				if position, found, findErr := p.store.FindPosition(session.AccountID, symbol); findErr == nil && found && position.Quantity > 0 {
+					gate := resolveLivePositionReconcileGate(account, symbol, true)
+					blocked, blockErr := p.enterRecoveredLiveSessionReconcileGateBlocked(session, position, gate)
+					if blockErr == nil {
+						return blocked, fmt.Errorf("live session %s requires authoritative reconcile before historical takeover activation", session.ID)
+					}
+					return domain.LiveSession{}, blockErr
+				}
+			}
 		}
 	}
 	session, recoveredPosition, incompleteRecoveryMetadata, err := p.completeRecoveredLiveSessionMetadata(session)
