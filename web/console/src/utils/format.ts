@@ -34,12 +34,16 @@ export function formatNumber(value?: number, digits = 2) {
   return value.toFixed(digits);
 }
 
-export function formatMaybeNumber(value: unknown) {
+export function formatMaybeNumber(value: unknown, maxDigits = 8) {
   const number = getNumber(value);
   if (number == null) {
     return "--";
   }
-  return number.toFixed(2);
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: maxDigits,
+    useGrouping: false,
+  }).format(number);
 }
 
 export function formatTime(value: string) {
