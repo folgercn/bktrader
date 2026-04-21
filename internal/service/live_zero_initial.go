@@ -40,7 +40,10 @@ func prepareLivePlanStepForSignalEvaluation(
 	}
 
 	updatedState = refreshLiveZeroInitialWindowState(updatedState, signalBarStates, symbol, signalTimeframe, currentPosition, eventTime)
-	if liveExitReentryPlanStep(nextPlannedRole, nextPlannedReason) {
+	// Replay only keeps PT/SL reentry eligible through the next signal bar.
+	// Once the planned step is stale, live should fall back to current-market alignment.
+	if liveExitReentryPlanStep(nextPlannedRole, nextPlannedReason) &&
+		(hasActiveLivePositionSnapshot(currentPosition) || !isLivePlanStepStale(nextPlannedEvent, signalTimeframe, eventTime)) {
 		clearLivePendingZeroInitialWindow(updatedState, eventTime, "exit-reentry-priority")
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
