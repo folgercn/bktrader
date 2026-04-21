@@ -1554,6 +1554,139 @@ func TestDispatchLiveSessionIntentRejectsNonDispatchableProposal(t *testing.T) {
 	}
 }
 
+func TestDispatchLiveSessionIntentBackfillsMissingDecisionEventReference(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-decision-event-backfill"})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-decision-event-backfill",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	freshRuntimeAt := time.Now().UTC()
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+		state["lastHeartbeatAt"] = freshRuntimeAt.Format(time.RFC3339)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		for key, item := range sourceStates {
+			sourceState := cloneMetadata(mapValue(item))
+			sourceState["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+			sourceStates[key] = sourceState
+		}
+		state["sourceStates"] = sourceStates
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = freshRuntimeAt
+	}); err != nil {
+		t.Fatalf("refresh runtime state failed: %v", err)
+	}
+
+	missingDecisionEventID := "strategy-decision-event-missing-live-dispatch"
+	proposal := executionProposalToMap(ExecutionProposal{
+		Action:            "entry",
+		Role:              "entry",
+		Reason:            "SL-Reentry",
+		Side:              "SELL",
+		Symbol:            "BTCUSDT",
+		Type:              "LIMIT",
+		Quantity:          0.002,
+		LimitPrice:        75600.0,
+		PriceHint:         75600.0,
+		PriceSource:       "test-book",
+		TimeInForce:       "GTC",
+		SignalKind:        "sl-reentry",
+		DecisionState:     "entry-ready",
+		SignalBarStateKey: "binance-kline|BTCUSDT|signal|1d",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"runtimeSessionId":  runtimeSessionID,
+			"executionDecision": "maker-resting",
+			"executionMode":     "live",
+		},
+	})
+	proposal = setExecutionProposalDecisionEventID(proposal, missingDecisionEventID)
+	state := cloneMetadata(session.State)
+	state["lastExecutionProposal"] = proposal
+	state["lastStrategyIntent"] = proposal
+	state["lastStrategyIntentSignature"] = buildLiveIntentSignature(proposal)
+	state["lastStrategyEvaluationContext"] = map[string]any{
+		"strategyVersionId":   "strategy-version-bk-1d-v010",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"symbol":              "BTCUSDT",
+	}
+	state["lastStrategyDecision"] = map[string]any{
+		"action": "advance-plan",
+		"reason": "SL-Reentry",
+		"metadata": map[string]any{
+			"signalKind":    "sl-reentry",
+			"decisionState": "entry-ready",
+		},
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	order, err := platform.dispatchLiveSessionIntent(session)
+	if err != nil {
+		t.Fatalf("dispatch live session intent failed: %v", err)
+	}
+	if got := stringValue(order.Metadata["decisionEventId"]); got != missingDecisionEventID {
+		t.Fatalf("expected order decisionEventId %s, got %s", missingDecisionEventID, got)
+	}
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if got := stringValue(updatedSession.State["lastStrategyDecisionEventId"]); got != missingDecisionEventID {
+		t.Fatalf("expected session lastStrategyDecisionEventId %s, got %s", missingDecisionEventID, got)
+	}
+
+	events, err := platform.store.ListStrategyDecisionEvents(session.ID)
+	if err != nil {
+		t.Fatalf("list strategy decision events failed: %v", err)
+	}
+	var backfilled domain.StrategyDecisionEvent
+	for _, event := range events {
+		if event.ID == missingDecisionEventID {
+			backfilled = event
+			break
+		}
+	}
+	if backfilled.ID == "" {
+		t.Fatalf("expected missing decision event %s to be backfilled", missingDecisionEventID)
+	}
+	if !boolValue(backfilled.DecisionMetadata["decisionEventBackfilled"]) {
+		t.Fatalf("expected backfilled decision metadata, got %+v", backfilled.DecisionMetadata)
+	}
+	if got := stringValue(backfilled.ExecutionProposal["decisionEventId"]); got != missingDecisionEventID {
+		t.Fatalf("expected backfilled execution proposal decisionEventId %s, got %s", missingDecisionEventID, got)
+	}
+
+	executionEvents, err := platform.store.ListOrderExecutionEvents(order.ID)
+	if err != nil {
+		t.Fatalf("list order execution events failed: %v", err)
+	}
+	if len(executionEvents) == 0 {
+		t.Fatal("expected order execution telemetry to be persisted")
+	}
+	if got := executionEvents[0].DecisionEventID; got != missingDecisionEventID {
+		t.Fatalf("expected order execution event decisionEventId %s, got %s", missingDecisionEventID, got)
+	}
+}
+
 func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithIncompleteMetadata(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
