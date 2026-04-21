@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -20,8 +21,8 @@ func TestReconcileLiveAccountRecoversMissingFilledOrder(t *testing.T) {
 			account.Metadata["liveSyncSnapshot"] = map[string]any{
 				"source":      "test-reconcile",
 				"syncedAt":    syncedAt.Format(time.RFC3339),
-				"openOrders":  []map[string]any{{"symbol": "BTCUSDT"}},
-				"positions":   []map[string]any{},
+				"openOrders":  []map[string]any{},
+				"positions":   []map[string]any{{"symbol": "BTCUSDT", "positionAmt": 0.2, "entryPrice": 68010.0}},
 				"bindingMode": stringValue(binding["connectionMode"]),
 			}
 			account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
@@ -31,7 +32,7 @@ func TestReconcileLiveAccountRecoversMissingFilledOrder(t *testing.T) {
 			"BTCUSDT": {{
 				"symbol":        "BTCUSDT",
 				"orderId":       "9001",
-				"clientOrderId": "client-9001",
+				"clientOrderId": "order-9001",
 				"status":        "FILLED",
 				"side":          "BUY",
 				"type":          "MARKET",
@@ -141,6 +142,215 @@ func TestReconcileLiveAccountRecoversMissingFilledOrder(t *testing.T) {
 	lastReconcile := mapValue(updatedAccount.Metadata["lastLiveReconcile"])
 	if got := int(parseFloatValue(lastReconcile["createdOrderCount"])); got != 1 {
 		t.Fatalf("expected reconcile summary createdOrderCount=1, got %d", got)
+	}
+}
+
+func TestReconcileLiveAccountSkipsHistoricalTerminalOrderWithoutLocalMatchAndWithoutLivePosition(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	configureTestLiveRESTReconcileHistoryAdapter(t, platform, "test-skip-historical-terminal", []map[string]any{}, map[string][]map[string]any{
+		"BTCUSDT": {{
+			"symbol":        "BTCUSDT",
+			"orderId":       "9002",
+			"clientOrderId": "external-9002",
+			"status":        "FILLED",
+			"side":          "BUY",
+			"type":          "MARKET",
+			"origType":      "MARKET",
+			"origQty":       0.2,
+			"executedQty":   0.2,
+			"price":         68000.0,
+			"avgPrice":      68010.0,
+			"time":          float64(time.Now().UTC().Add(-2 * time.Minute).UnixMilli()),
+			"updateTime":    float64(time.Now().UTC().UnixMilli()),
+		}},
+	}, map[string][]LiveFillReport{
+		"BTCUSDT": {{
+			Price:    68010,
+			Quantity: 0.2,
+			Fee:      1.2,
+			Metadata: map[string]any{
+				"exchangeOrderId": "9002",
+				"tradeId":         "trade-9002",
+				"executionMode":   "rest",
+			},
+		}},
+	})
+
+	result, err := platform.ReconcileLiveAccount("live-main", LiveAccountReconcileOptions{LookbackHours: 4})
+	if err != nil {
+		t.Fatalf("reconcile live account failed: %v", err)
+	}
+	if result.CreatedOrderCount != 0 || result.OrderCount != 0 {
+		t.Fatalf("expected historical terminal order to be skipped, got created=%d total=%d", result.CreatedOrderCount, result.OrderCount)
+	}
+
+	orders, err := store.ListOrders()
+	if err != nil {
+		t.Fatalf("list orders failed: %v", err)
+	}
+	for _, item := range orders {
+		if item.AccountID == "live-main" && stringValue(item.Metadata["exchangeOrderId"]) == "9002" {
+			t.Fatal("expected skipped historical order to not be persisted locally")
+		}
+	}
+	fills, err := store.ListFills()
+	if err != nil {
+		t.Fatalf("list fills failed: %v", err)
+	}
+	for _, item := range fills {
+		if item.ExchangeTradeID == "trade-9002" {
+			t.Fatal("expected skipped historical order to not create fills")
+		}
+	}
+	if _, found, err := store.FindPosition("live-main", "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected skipped historical order to not rebuild a position")
+	}
+}
+
+func TestReconcileLiveAccountReusesExistingOrderByExchangeOrderIDInsteadOfCreatingRecoveredDuplicate(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	configureTestLiveRESTReconcileHistoryAdapter(t, platform, "test-reuse-existing-order", []map[string]any{{
+		"symbol":      "BTCUSDT",
+		"positionAmt": 0.2,
+		"entryPrice":  68010.0,
+	}}, map[string][]map[string]any{
+		"BTCUSDT": {{
+			"symbol":        "BTCUSDT",
+			"orderId":       "9003",
+			"clientOrderId": "order-9003",
+			"status":        "FILLED",
+			"side":          "BUY",
+			"type":          "MARKET",
+			"origType":      "MARKET",
+			"origQty":       0.2,
+			"executedQty":   0.2,
+			"price":         68000.0,
+			"avgPrice":      68010.0,
+			"time":          float64(time.Now().UTC().Add(-2 * time.Minute).UnixMilli()),
+			"updateTime":    float64(time.Now().UTC().UnixMilli()),
+		}},
+	}, map[string][]LiveFillReport{
+		"BTCUSDT": {{
+			Price:    68010,
+			Quantity: 0.2,
+			Fee:      1.2,
+			Metadata: map[string]any{
+				"exchangeOrderId": "9003",
+				"tradeId":         "trade-9003",
+				"executionMode":   "rest",
+			},
+		}},
+	})
+
+	existing, err := store.CreateOrder(domain.Order{
+		ID:                "order-9003-local",
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Status:            "ACCEPTED",
+		Quantity:          0.2,
+		Price:             68000,
+		Metadata: map[string]any{
+			"exchangeOrderId":       "9003",
+			"exchangeClientOrderId": "order-9003",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create existing order failed: %v", err)
+	}
+
+	result, err := platform.ReconcileLiveAccount("live-main", LiveAccountReconcileOptions{LookbackHours: 4})
+	if err != nil {
+		t.Fatalf("reconcile live account failed: %v", err)
+	}
+	if result.CreatedOrderCount != 0 {
+		t.Fatalf("expected reconcile to reuse existing order, got created=%d", result.CreatedOrderCount)
+	}
+	if result.UpdatedOrderCount != 1 || result.OrderCount != 1 {
+		t.Fatalf("expected one updated reconciled order, got updated=%d total=%d", result.UpdatedOrderCount, result.OrderCount)
+	}
+
+	orders, err := store.ListOrders()
+	if err != nil {
+		t.Fatalf("list orders failed: %v", err)
+	}
+	matchCount := 0
+	for _, item := range orders {
+		if item.AccountID == "live-main" && stringValue(item.Metadata["exchangeOrderId"]) == "9003" {
+			matchCount++
+			if item.ID != existing.ID {
+				t.Fatalf("expected reconcile to reuse order %s, got %s", existing.ID, item.ID)
+			}
+		}
+	}
+	if matchCount != 1 {
+		t.Fatalf("expected one local order for exchangeOrderId 9003, got %d", matchCount)
+	}
+}
+
+func TestCollectLiveAccountReconcileSymbolsExcludesHistoricalTerminalOrdersWithoutLiveReferences(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"positions":  []map[string]any{{"symbol": "BTCUSDT", "positionAmt": 0.2}},
+		"openOrders": []map[string]any{{"symbol": "SOLUSDT"}},
+	}
+	account, err = store.UpdateAccount(account)
+	if err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	if _, err := store.CreateOrder(domain.Order{
+		AccountID: "live-main",
+		Symbol:    "ETHUSDT",
+		Status:    "FILLED",
+		Quantity:  0.1,
+		Price:     3000,
+		Metadata:  map[string]any{},
+	}); err != nil {
+		t.Fatalf("create historical terminal order failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:  "live-main",
+		Symbol:     "BNBUSDT",
+		Side:       "LONG",
+		Quantity:   1,
+		EntryPrice: 600,
+		MarkPrice:  610,
+	}); err != nil {
+		t.Fatalf("save local position failed: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol": "XRPUSDT",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark session running failed: %v", err)
+	}
+
+	symbols, err := platform.collectLiveAccountReconcileSymbols(account, 4)
+	if err != nil {
+		t.Fatalf("collect reconcile symbols failed: %v", err)
+	}
+	got := strings.Join(symbols, ",")
+	if got != "BNBUSDT,BTCUSDT,SOLUSDT,XRPUSDT" {
+		t.Fatalf("unexpected reconcile symbols: %s", got)
 	}
 }
 

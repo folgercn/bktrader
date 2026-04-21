@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -82,7 +83,16 @@ type liveAccountSyncSuccessOwner interface {
 const (
 	liveOrderStatusVirtualInitial             = "VIRTUAL_INITIAL"
 	liveOrderStatusVirtualExit                = "VIRTUAL_EXIT"
-	liveAccountReconcileSelfHealLookbackHours = 24
+	liveAccountReconcileSelfHealLookbackHours = 8
+)
+
+var ErrLiveAccountOperationInProgress = errors.New("live account operation already in progress")
+
+type liveAccountOperationKind string
+
+const (
+	liveAccountOperationSync      liveAccountOperationKind = "sync"
+	liveAccountOperationReconcile liveAccountOperationKind = "reconcile"
 )
 
 func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
@@ -153,6 +163,15 @@ func (p *Platform) UpdateLiveSession(sessionID, alias, accountID, strategyID str
 }
 
 func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
+	release, acquired := p.tryStartLiveAccountOperation(accountID, liveAccountOperationSync)
+	if !acquired {
+		return domain.Account{}, fmt.Errorf("%w: sync account=%s", ErrLiveAccountOperationInProgress, accountID)
+	}
+	defer release()
+	return p.syncLiveAccountWithoutGate(accountID)
+}
+
+func (p *Platform) syncLiveAccountWithoutGate(accountID string) (domain.Account, error) {
 	logger := p.logger("service.live", "account_id", accountID)
 	logger.Debug("syncing live account")
 	attemptedAt := time.Now().UTC()
@@ -201,6 +220,19 @@ func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
 	}
 	account = p.persistLiveAccountSyncFailure(account, attemptedAt, fallbackErr)
 	return account, fallbackErr
+}
+
+func (p *Platform) tryStartLiveAccountOperation(accountID string, kind liveAccountOperationKind) (func(), bool) {
+	if strings.TrimSpace(accountID) == "" {
+		return func() {}, false
+	}
+	actual, _ := p.liveAccountOpMu.LoadOrStore(accountID, &sync.Mutex{})
+	mu, _ := actual.(*sync.Mutex)
+	if mu == nil || !mu.TryLock() {
+		p.logger("service.live", "account_id", accountID, "operation", string(kind)).Debug("skip live account operation while another operation is in progress")
+		return func() {}, false
+	}
+	return mu.Unlock, true
 }
 
 func liveAccountPositionReconcilePending(account domain.Account) bool {
@@ -265,7 +297,13 @@ func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountRec
 		LookbackHours: options.LookbackHours,
 	}
 
-	account, err := p.SyncLiveAccount(accountID)
+	release, acquired := p.tryStartLiveAccountOperation(accountID, liveAccountOperationReconcile)
+	if !acquired {
+		return result, fmt.Errorf("live account %s sync/reconcile already in progress", accountID)
+	}
+	defer release()
+
+	account, err := p.syncLiveAccountWithoutGate(accountID)
 	if err != nil {
 		return result, err
 	}
@@ -305,6 +343,7 @@ func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountRec
 		return result, err
 	}
 	index := buildLiveOrderReconcileIndex(orders, account.ID)
+	snapshotPositions := liveSyncSnapshotPositionAmounts(account)
 
 	for _, symbol := range symbols {
 		exchangeOrders, err := reconcileAdapter.FetchRecentOrders(account, binding, symbol, options.LookbackHours)
@@ -324,7 +363,7 @@ func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountRec
 			if exchangeOrderID == "" {
 				continue
 			}
-			reconciledOrder, created, err := p.reconcileLiveAccountExchangeOrder(account, binding, payload, tradesByExchangeOrderID[exchangeOrderID], &index)
+			reconciledOrder, created, err := p.reconcileLiveAccountExchangeOrder(account, binding, payload, tradesByExchangeOrderID[exchangeOrderID], snapshotPositions, &index)
 			if err != nil {
 				return result, err
 			}
@@ -479,31 +518,16 @@ func (p *Platform) refreshLiveAccountPositionReconcileGate(account domain.Accoun
 
 func normalizeLiveAccountReconcileOptions(options LiveAccountReconcileOptions) LiveAccountReconcileOptions {
 	if options.LookbackHours <= 0 {
-		options.LookbackHours = 24
+		options.LookbackHours = 4
 	}
-	if options.LookbackHours > 24*7 {
-		options.LookbackHours = 24 * 7
+	if options.LookbackHours > 48 {
+		options.LookbackHours = 48
 	}
 	return options
 }
 
 func (p *Platform) collectLiveAccountReconcileSymbols(account domain.Account, lookbackHours int) ([]string, error) {
 	symbolSet := make(map[string]struct{})
-	cutoff := time.Now().UTC().Add(-time.Duration(maxInt(lookbackHours, 1)) * time.Hour)
-
-	orders, err := p.store.ListOrders()
-	if err != nil {
-		return nil, err
-	}
-	for _, order := range orders {
-		if order.AccountID != account.ID {
-			continue
-		}
-		status := strings.ToUpper(strings.TrimSpace(order.Status))
-		if order.CreatedAt.After(cutoff) || !isTerminalOrderStatus(status) {
-			addLiveAccountReconcileSymbol(symbolSet, order.Symbol)
-		}
-	}
 
 	positions, err := p.store.ListPositions()
 	if err != nil {
@@ -529,7 +553,7 @@ func (p *Platform) collectLiveAccountReconcileSymbols(account domain.Account, lo
 		return nil, err
 	}
 	for _, session := range sessions {
-		if session.AccountID != account.ID {
+		if session.AccountID != account.ID || !strings.EqualFold(strings.TrimSpace(session.Status), "RUNNING") {
 			continue
 		}
 		addLiveAccountReconcileSymbol(symbolSet, stringValue(session.State["symbol"]))
@@ -549,6 +573,23 @@ func addLiveAccountReconcileSymbol(symbols map[string]struct{}, raw string) {
 		return
 	}
 	symbols[symbol] = struct{}{}
+}
+
+func liveSyncSnapshotPositionAmounts(account domain.Account) map[string]float64 {
+	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+	amounts := make(map[string]float64)
+	for _, item := range metadataList(snapshot["positions"]) {
+		symbol := NormalizeSymbol(stringValue(item["symbol"]))
+		if symbol == "" {
+			continue
+		}
+		amount := parseFloatValue(item["positionAmt"])
+		if amount == 0 {
+			amount = parseFloatValue(item["quantity"])
+		}
+		amounts[symbol] = math.Abs(amount)
+	}
+	return amounts
 }
 
 func buildLiveOrderReconcileIndex(orders []domain.Order, accountID string) liveOrderReconcileIndex {
@@ -612,7 +653,7 @@ func groupTradeReportsByExchangeOrderID(reports []LiveFillReport) map[string][]L
 	return grouped
 }
 
-func (p *Platform) reconcileLiveAccountExchangeOrder(account domain.Account, binding map[string]any, payload map[string]any, tradeReports []LiveFillReport, index *liveOrderReconcileIndex) (domain.Order, bool, error) {
+func (p *Platform) reconcileLiveAccountExchangeOrder(account domain.Account, binding map[string]any, payload map[string]any, tradeReports []LiveFillReport, snapshotPositions map[string]float64, index *liveOrderReconcileIndex) (domain.Order, bool, error) {
 	exchangeOrderID := normalizeBinanceOrderID(payload["orderId"], payload["clientOrderId"])
 	clientOrderID := strings.TrimSpace(stringValue(payload["clientOrderId"]))
 	if exchangeOrderID == "" {
@@ -622,6 +663,16 @@ func (p *Platform) reconcileLiveAccountExchangeOrder(account domain.Account, bin
 	created := false
 	var err error
 	if !found {
+		if skipReason := classifyLiveReconcileOrderSkip(payload, clientOrderID, snapshotPositions, index); skipReason != "" {
+			p.logger("service.live",
+				"account_id", account.ID,
+				"symbol", NormalizeSymbol(stringValue(payload["symbol"])),
+				"exchange_order_id", exchangeOrderID,
+				"client_order_id", clientOrderID,
+				"skip_reason", skipReason,
+			).Warn("skip reconcile exchange order")
+			return domain.Order{}, false, nil
+		}
 		order, err = p.createRecoveredLiveOrderFromExchange(account, binding, payload)
 		if err != nil {
 			return domain.Order{}, false, err
@@ -642,6 +693,30 @@ func (p *Platform) reconcileLiveAccountExchangeOrder(account domain.Account, bin
 	}
 	index.put(updated)
 	return updated, created, nil
+}
+
+func classifyLiveReconcileOrderSkip(payload map[string]any, clientOrderID string, snapshotPositions map[string]float64, index *liveOrderReconcileIndex) string {
+	status := strings.ToUpper(strings.TrimSpace(stringValue(payload["status"])))
+	terminal := isTerminalOrderStatus(mapBinanceOrderStatus(status)) || isTerminalOrderStatus(status)
+	executedQty := parseFloatValue(payload["executedQty"])
+	isSystemOrder := strings.HasPrefix(clientOrderID, "order-")
+	if !isSystemOrder && clientOrderID != "" && index != nil {
+		_, isSystemOrder = index.byClientOrderID[clientOrderID]
+	}
+	if !isSystemOrder {
+		return "non-system-order"
+	}
+	symbol := NormalizeSymbol(stringValue(payload["symbol"]))
+	if terminal && snapshotPositions[symbol] <= 1e-9 {
+		return "closed-position-historical-order"
+	}
+	if (strings.EqualFold(status, "CANCELED") || strings.EqualFold(status, "CANCELLED") || strings.EqualFold(status, "REJECTED")) && executedQty <= 1e-9 {
+		return "no-fill-cancelled"
+	}
+	if !terminal && snapshotPositions[symbol] <= 1e-9 {
+		return "no-live-position"
+	}
+	return ""
 }
 
 func (p *Platform) createRecoveredLiveOrderFromExchange(account domain.Account, binding map[string]any, payload map[string]any) (domain.Order, error) {

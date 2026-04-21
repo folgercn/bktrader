@@ -38,6 +38,7 @@ type Platform struct {
 	signalSessions         map[string]domain.SignalRuntimeSession
 	liveMarketMu           sync.RWMutex
 	liveMarketData         map[string]liveMarketSnapshot
+	liveAccountOpMu        sync.Map // accountID -> *sync.Mutex
 	manifestMu             sync.Mutex
 	once                   sync.Once             // 确保 CSV ledger 只加载一次
 	ledger                 []strategyReplayEvent // 缓存的策略回放账本

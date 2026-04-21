@@ -374,7 +374,7 @@ func TestClosePositionAllowsLiveManualCloseWithoutRuntimeSession(t *testing.T) {
 	}
 }
 
-func TestEnsureLivePositionReconcileGateAllowsExecutionSelfHealsStaleDBOnlyPosition(t *testing.T) {
+func TestEnsureLivePositionReconcileGateKeepsHistoricalExternalOrdersFromSelfHealingStaleDBOnlyPosition(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
 	syncedAt := time.Date(2026, 4, 21, 1, 23, 45, 0, time.UTC)
@@ -438,13 +438,13 @@ func TestEnsureLivePositionReconcileGateAllowsExecutionSelfHealsStaleDBOnlyPosit
 		t.Fatalf("expected initial stale db-position-exchange-missing gate, got %#v", initialGate)
 	}
 
-	if err := platform.ensureLivePositionReconcileGateAllowsExecution("live-main", "BTCUSDT", true); err != nil {
-		t.Fatalf("expected reconcile gate check to self-heal stale db-only position, got %v", err)
+	if err := platform.ensureLivePositionReconcileGateAllowsExecution("live-main", "BTCUSDT", true); err == nil || !strings.Contains(err.Error(), "reconcile gate") {
+		t.Fatalf("expected reconcile gate check to stay blocked, got %v", err)
 	}
 	if _, found, err := store.FindPosition("live-main", "BTCUSDT"); err != nil {
 		t.Fatalf("find position failed: %v", err)
-	} else if found {
-		t.Fatal("expected stale BTCUSDT position to be removed after reconcile gate self-heal")
+	} else if !found {
+		t.Fatal("expected stale BTCUSDT position to remain until manual review")
 	}
 
 	account, err = store.GetAccount("live-main")
@@ -452,8 +452,8 @@ func TestEnsureLivePositionReconcileGateAllowsExecutionSelfHealsStaleDBOnlyPosit
 		t.Fatalf("get healed account failed: %v", err)
 	}
 	healedGate := resolveLivePositionReconcileGate(account, "BTCUSDT", true)
-	if boolValue(healedGate["blocking"]) {
-		t.Fatalf("expected reconcile gate to clear after self-heal, got %#v", healedGate)
+	if !boolValue(healedGate["blocking"]) {
+		t.Fatalf("expected reconcile gate to remain blocking, got %#v", healedGate)
 	}
 }
 
