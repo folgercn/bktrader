@@ -17,8 +17,11 @@ import {
   deriveRuntimeReadiness,
   deriveRuntimeSourceSummary,
   deriveLiveSessionExecutionSummary,
+  buildSignalBarDecisionNotes,
+  buildSignalBarStateNotes,
   deriveLiveSessionHealth,
   buildTimelineNotes,
+  boolLabel,
   liveSessionHealthTone,
   getNumber,
   runtimePolicyValueLabel,
@@ -124,14 +127,33 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : {};
   const monitorSessionState = getRecord(monitorSession?.state);
   const sessionSymbol = String(monitorSession?.state?.symbol ?? "").trim().toUpperCase();
+  const monitorSignalContext = getRecord(monitorSessionState.lastStrategyEvaluationContext);
+  const monitorDecisionMeta = getRecord(getRecord(monitorSession?.state?.lastStrategyDecision).metadata);
+  const monitorSignalTimeframe = String(
+    monitorSessionState.signalTimeframe ?? monitorSignalContext.signalTimeframe ?? monitorDecisionMeta.signalTimeframe ?? ""
+  )
+    .trim()
+    .toLowerCase();
+  const monitorSignalBarStateKey = String(
+    monitorSessionState.lastStrategyEvaluationSignalBarStateKey ?? monitorDecisionMeta.signalBarStateKey ?? ""
+  ).trim();
 
   const monitorBars = useMemo(() => {
-    return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), sessionSymbol);
-  }, [highlightedLiveRuntimeState.sourceStates, sessionSymbol]);
+    return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), {
+      targetSymbol: sessionSymbol,
+      targetTimeframe: monitorSignalTimeframe,
+      targetStateKey: monitorSignalBarStateKey,
+    });
+  }, [highlightedLiveRuntimeState.sourceStates, sessionSymbol, monitorSignalTimeframe, monitorSignalBarStateKey]);
 
   const monitorSignalState = derivePrimarySignalBarState(
     getRecord(highlightedLiveRuntimeState.signalBarStates),
-    getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates)
+    {
+      fallbackStates: getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates),
+      targetSymbol: sessionSymbol,
+      targetTimeframe: monitorSignalTimeframe,
+      targetStateKey: monitorSignalBarStateKey,
+    }
   );
   const monitorMarket = deriveRuntimeMarketSnapshot(
     getRecord(monitorRuntimeState.sourceStates),
@@ -158,7 +180,21 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     { requireTick: true, requireOrderBook: false }
   );
   const monitorIntent = getRecord(monitorSession?.state?.lastStrategyIntent);
-  const monitorSignalBarDecision = getRecord(monitorSession?.state?.lastStrategyEvaluationSignalBarDecision);
+  const monitorSignalBarDecision = getRecord(
+    monitorSession?.state?.lastStrategyEvaluationSignalBarDecision ?? monitorDecisionMeta.signalBarDecision
+  );
+  const monitorSignalTraceNotes = monitorSession
+    ? [
+        `decision: ${String(monitorDecisionMeta.decisionState ?? "--")} · kind=${String(monitorDecisionMeta.signalKind ?? "--")} · planned=${String(monitorDecisionMeta.nextPlannedRole ?? "--")}/${String(monitorDecisionMeta.nextPlannedReason ?? "--")}`,
+        `gate: long struct=${boolLabel(monitorSignalBarDecision.longStructureReady)} breakout=${boolLabel(monitorSignalBarDecision.longBreakoutReady)} ready=${boolLabel(monitorSignalBarDecision.longReady)} · short struct=${boolLabel(monitorSignalBarDecision.shortStructureReady)} breakout=${boolLabel(monitorSignalBarDecision.shortBreakoutReady)} ready=${boolLabel(monitorSignalBarDecision.shortReady)}`,
+        `current-bar: closed=${boolLabel(getRecord(monitorSignalBarDecision.current).isClosed ?? monitorSignalState.currentClosed)} · key=${String(monitorSignalBarStateKey || "--")}`,
+        ...(
+          Object.keys(monitorSignalBarDecision).length > 0
+            ? buildSignalBarDecisionNotes(monitorSignalBarDecision, monitorSignalState)
+            : buildSignalBarStateNotes(monitorSignalState)
+        ),
+      ]
+    : [];
   const monitorTimeline = getList(monitorSession?.state?.timeline);
   const monitorDispatchPreview = deriveLiveDispatchPreview(
     monitorSession,
@@ -431,6 +467,21 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               <p className="text-center text-[11px] font-bold leading-tight text-[var(--bk-text-muted)] italic opacity-70">
                 {String(monitorSignalBarDecision.reason ?? "当前无执行信号或正在等待波动...")}
               </p>
+
+              {monitorSignalTraceNotes.length > 0 && (
+                <div className="rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface-primary-faint)] p-3 shadow-sm">
+                  <div className="mb-2 text-[9px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">
+                    Signal Trace
+                  </div>
+                  <div className="space-y-1.5">
+                    {monitorSignalTraceNotes.slice(0, 7).map((note, idx) => (
+                      <div key={`${idx}-${note}`} className="font-mono text-[10px] leading-relaxed text-[var(--bk-text-primary)]">
+                        {note}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

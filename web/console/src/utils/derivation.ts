@@ -508,19 +508,90 @@ export function deriveRuntimeReadiness(
   return { ready: true, status: "ready", reason: "健康" };
 }
 
-export function deriveSignalBarCandles(sourceStates: Record<string, unknown>, targetSymbol?: string): SignalBarCandle[] {
-  const candles: SignalBarCandle[] = [];
-  const normalizedTarget = (targetSymbol ?? "").trim().toUpperCase();
+type SignalBarSelectionOptions = {
+  fallbackStates?: Record<string, unknown>;
+  targetSymbol?: string;
+  targetTimeframe?: string;
+  targetStateKey?: string;
+};
 
-  for (const value of Object.values(sourceStates)) {
+function normalizeSignalSymbol(value: unknown) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeSignalTimeframe(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function resolveSignalBarEntry(
+  signalBarStates: Record<string, unknown>,
+  options?: Omit<SignalBarSelectionOptions, "fallbackStates">
+) {
+  const targetStateKey = String(options?.targetStateKey ?? "").trim();
+  const targetSymbol = normalizeSignalSymbol(options?.targetSymbol);
+  const targetTimeframe = normalizeSignalTimeframe(options?.targetTimeframe);
+
+  if (targetStateKey) {
+    const exact = getRecord(signalBarStates[targetStateKey]);
+    if (Object.keys(exact).length > 0) {
+      return exact;
+    }
+  }
+
+  for (const value of Object.values(signalBarStates)) {
+    const entry = getRecord(value);
+    if (Object.keys(entry).length === 0) {
+      continue;
+    }
+    const entrySymbol = normalizeSignalSymbol(entry.symbol ?? getRecord(entry.current).symbol);
+    const entryTimeframe = normalizeSignalTimeframe(entry.timeframe ?? getRecord(entry.current).timeframe);
+    if (targetSymbol && entrySymbol && entrySymbol !== targetSymbol) {
+      continue;
+    }
+    if (targetTimeframe && entryTimeframe && entryTimeframe !== targetTimeframe) {
+      continue;
+    }
+    return entry;
+  }
+
+  return {};
+}
+
+export function deriveSignalBarCandles(
+  sourceStates: Record<string, unknown>,
+  options?: Omit<SignalBarSelectionOptions, "fallbackStates">
+): SignalBarCandle[] {
+  const candles: SignalBarCandle[] = [];
+  const targetStateKey = String(options?.targetStateKey ?? "").trim();
+  const targetSymbol = normalizeSignalSymbol(options?.targetSymbol);
+  const targetTimeframe = normalizeSignalTimeframe(options?.targetTimeframe);
+  const candidateEntries = targetStateKey
+    ? Object.entries(sourceStates).filter(([key]) => key === targetStateKey)
+    : Object.entries(sourceStates);
+
+  for (const [, value] of candidateEntries) {
     const state = getRecord(value);
     if (String(state.streamType ?? "") !== "signal_bar") {
       continue;
     }
+    if (!targetStateKey) {
+      const stateSymbol = normalizeSignalSymbol(state.symbol);
+      const stateTimeframe = normalizeSignalTimeframe(state.timeframe);
+      if (targetSymbol && stateSymbol && stateSymbol !== targetSymbol) {
+        continue;
+      }
+      if (targetTimeframe && stateTimeframe && stateTimeframe !== targetTimeframe) {
+        continue;
+      }
+    }
     const bars = Array.isArray(state.bars) ? (state.bars as Array<Record<string, unknown>>) : [];
     for (const bar of bars) {
-      const barSymbol = String(bar.symbol ?? "").trim().toUpperCase();
-      if (normalizedTarget && barSymbol && barSymbol !== normalizedTarget) {
+      const barSymbol = normalizeSignalSymbol(bar.symbol);
+      const barTimeframe = normalizeSignalTimeframe(bar.timeframe ?? state.timeframe);
+      if (targetSymbol && barSymbol && barSymbol !== targetSymbol) {
+        continue;
+      }
+      if (targetTimeframe && barTimeframe && barTimeframe !== targetTimeframe) {
         continue;
       }
       const barStart = String(bar.barStart ?? "");
@@ -539,10 +610,16 @@ export function deriveSignalBarCandles(sourceStates: Record<string, unknown>, ta
         high,
         low,
         close,
-        timeframe: String(bar.timeframe ?? "--"),
+        timeframe: String(bar.timeframe ?? state.timeframe ?? "--"),
         isClosed: Boolean(bar.isClosed),
       });
     }
+  }
+  if (candles.length === 0 && targetStateKey) {
+    return deriveSignalBarCandles(sourceStates, {
+      targetSymbol: options?.targetSymbol,
+      targetTimeframe: options?.targetTimeframe,
+    });
   }
   candles.sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
   return candles.slice(-120);
@@ -571,13 +648,12 @@ export function applyDefaultChartWindow(chart: ReturnType<typeof createChart>, c
   chart.timeScale().setVisibleLogicalRange({ from, to });
 }
 
-export function derivePrimarySignalBarState(signalBarStates: Record<string, unknown>, fallbackStates?: Record<string, unknown>) {
-  const primary = Object.values(signalBarStates)[0];
-  if (primary != null) {
-    return getRecord(primary);
+export function derivePrimarySignalBarState(signalBarStates: Record<string, unknown>, options?: SignalBarSelectionOptions) {
+  const primary = resolveSignalBarEntry(signalBarStates, options);
+  if (Object.keys(primary).length > 0) {
+    return primary;
   }
-  const first = Object.values(fallbackStates ?? {})[0];
-  return getRecord(first);
+  return resolveSignalBarEntry(getRecord(options?.fallbackStates), options);
 }
 
 export function buildRuntimeEventNotes(summary: Record<string, unknown>) {
@@ -623,10 +699,13 @@ export function buildSignalBarDecisionNotes(signalBarDecision: Record<string, un
   const prevBar1 = getRecord(signalBarDecision.prevBar1);
   const prevBar2 = getRecord(signalBarDecision.prevBar2);
   const timeframe = String(signalBarDecision.timeframe ?? signalBarState.timeframe ?? "--");
+  const usesLegacyFallback = signalBarDecision.usedLegacyMA20Fallback === true;
   const filterLabel =
     timeframe === "1d"
       ? `sma5 ${formatMaybeNumber(signalBarDecision.sma5)} · early-long=${boolLabel(signalBarDecision.longEarlyReversalReady)} · early-short=${boolLabel(signalBarDecision.shortEarlyReversalReady)}`
-      : `ma20 ${formatMaybeNumber(signalBarDecision.ma20)}`;
+      : usesLegacyFallback
+        ? `ma20 ${formatMaybeNumber(signalBarDecision.ma20)} · legacy fallback`
+        : `sma5 ${formatMaybeNumber(signalBarDecision.sma5)}`;
   return [
     `signal-bar: ${String(signalBarDecision.reason ?? "--")} · longReady=${boolLabel(signalBarDecision.longReady)} · shortReady=${boolLabel(signalBarDecision.shortReady)}`,
     `filter: tf=${timeframe} · ${filterLabel}`,
@@ -683,11 +762,16 @@ export function deriveSignalActionSummary(signalBarState: Record<string, unknown
     shortReady = shortHard || shortEarly;
     longReason = longHard ? "收盘>sma5" : longEarly ? "早期反转触发" : "1d 做多过滤阻断";
     shortReason = shortHard ? "收盘<sma5" : shortEarly ? "早期反转触发" : "1d 做空过滤阻断";
+  } else if (sma5 != null) {
+    longReady = close > sma5 && longBreakoutShape;
+    shortReady = close < sma5 && shortBreakoutShape;
+    longReason = longReady ? "收盘>sma5且高点突破" : "趋势/形态未就绪";
+    shortReason = shortReady ? "收盘<sma5且低点突破" : "趋势/形态未就绪";
   } else if (ma20 != null) {
     longReady = close > ma20 && longBreakoutShape;
     shortReady = close < ma20 && shortBreakoutShape;
-    longReason = longReady ? "收盘>ma20且高点突破" : "趋势/形态未就绪";
-    shortReason = shortReady ? "收盘<ma20且低点突破" : "趋势/形态未就绪";
+    longReason = longReady ? "收盘>ma20且高点突破（legacy fallback）" : "趋势/形态未就绪";
+    shortReason = shortReady ? "收盘<ma20且低点突破（legacy fallback）" : "趋势/形态未就绪";
   } else {
     return { bias: "中性", state: "等待中", reason: "信号 K 线不足" };
   }
@@ -706,11 +790,17 @@ export function deriveSignalActionSummary(signalBarState: Record<string, unknown
     }
     return { bias: "中性", state: "观察中", reason: "收盘于 sma5 附近" };
   }
+  if (sma5 != null && close > sma5) {
+    return { bias: "看多", state: "观察中", reason: "位于 sma5 上方，形态未就绪" };
+  }
+  if (sma5 != null && close < sma5) {
+    return { bias: "看空", state: "观察中", reason: "位于 sma5 下方，形态未就绪" };
+  }
   if (ma20 != null && close > ma20) {
-    return { bias: "看多", state: "观察中", reason: "趋势看多，形态未就绪" };
+    return { bias: "看多", state: "观察中", reason: "位于 ma20 上方，形态未就绪（legacy fallback）" };
   }
   if (ma20 != null && close < ma20) {
-    return { bias: "看空", state: "观察中", reason: "趋势看空，形态未就绪" };
+    return { bias: "看空", state: "观察中", reason: "位于 ma20 下方，形态未就绪（legacy fallback）" };
   }
   return { bias: "中性", state: "观察中", reason: "收盘于均线附近" };
 }
@@ -1345,7 +1435,7 @@ export function derivePaperAlerts(
     alerts.push({ level: "warning", title: "缺失 K 线", detail: "运行时尚未采集到足够的周期 K 线" });
   }
   if (signalReason === "insufficient-signal-bars") {
-    alerts.push({ level: "warning", title: "信号过滤阻断", detail: "MA20 / t-1 / t-2 所需的已收盘 K 线不足" });
+    alerts.push({ level: "warning", title: "信号过滤阻断", detail: "SMA5 / t-1 / t-2 所需的已收盘 K 线不足" });
   }
   if (Number.isFinite(lastEventAt) && Date.now()-lastEventAt > runtimeQuietMs) {
     alerts.push({

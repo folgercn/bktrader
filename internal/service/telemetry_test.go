@@ -35,6 +35,16 @@ func TestEvaluateLiveSessionOnSignalPersistsStrategyDecisionEvent(t *testing.T) 
 	if events[0].Action == "" || events[0].Reason == "" {
 		t.Fatalf("expected non-empty action/reason, got %+v", events[0])
 	}
+	signalBarDecision := mapValue(updated.State["lastStrategyEvaluationSignalBarDecision"])
+	if len(signalBarDecision) == 0 {
+		t.Fatal("expected lastStrategyEvaluationSignalBarDecision to be recorded")
+	}
+	if !boolValue(signalBarDecision["longBreakoutReady"]) {
+		t.Fatalf("expected longBreakoutReady=true, got %#v", signalBarDecision)
+	}
+	if got := stringValue(updated.State["lastStrategyEvaluationSignalBarStateKey"]); got == "" {
+		t.Fatal("expected lastStrategyEvaluationSignalBarStateKey to be recorded")
+	}
 	dispatchedIntent := mapValue(updated.State["lastDispatchedIntent"])
 	if got := stringValue(dispatchedIntent["decisionEventId"]); got != events[0].ID {
 		t.Fatalf("expected dispatched intent to carry decision event id %s, got %s", events[0].ID, got)

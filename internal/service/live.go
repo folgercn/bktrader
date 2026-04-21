@@ -2227,6 +2227,16 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		"reason":   decision.Reason,
 		"metadata": cloneMetadata(decision.Metadata),
 	}
+	if signalBarDecision := cloneMetadata(mapValue(decision.Metadata["signalBarDecision"])); len(signalBarDecision) > 0 {
+		state["lastStrategyEvaluationSignalBarDecision"] = signalBarDecision
+	} else {
+		delete(state, "lastStrategyEvaluationSignalBarDecision")
+	}
+	if signalBarStateKey := stringValue(decision.Metadata["signalBarStateKey"]); signalBarStateKey != "" {
+		state["lastStrategyEvaluationSignalBarStateKey"] = signalBarStateKey
+	} else {
+		delete(state, "lastStrategyEvaluationSignalBarStateKey")
+	}
 	recordStrategyDecisionHealth(state, decision, eventTime)
 	if livePositionState := cloneMetadata(mapValue(decision.Metadata["livePositionState"])); len(livePositionState) > 0 {
 		state["lastLivePositionState"] = livePositionState

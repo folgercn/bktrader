@@ -264,7 +264,20 @@ export function AccountStage({
   const selectedSignalBarStates = getRecord(selectedSignalRuntimeState.signalBarStates);
   const selectedSignalRuntimeTimeline = getList(selectedSignalRuntimeState.timeline);
   const selectedRuntimeSymbol = String(selectedSignalRuntimeState.symbol ?? "").trim().toUpperCase();
-  const selectedSignalRuntimeSignalBars = deriveSignalBarCandles(selectedSignalRuntimeSourceStates, selectedRuntimeSymbol);
+  const selectedRuntimeSession = selectedSignalRuntime
+    ? validLiveSessions.find((item) => String(item.state?.signalRuntimeSessionId ?? "") === selectedSignalRuntime.id) ??
+      validLiveSessions.find(
+        (item) => item.accountId === selectedSignalRuntime.accountId && item.strategyId === selectedSignalRuntime.strategyId
+      ) ??
+      null
+    : null;
+  const selectedRuntimeSignalTimeframe = String(selectedRuntimeSession?.state?.signalTimeframe ?? "").trim().toLowerCase();
+  const selectedRuntimeSignalBarStateKey = String(selectedRuntimeSession?.state?.lastStrategyEvaluationSignalBarStateKey ?? "").trim();
+  const selectedSignalRuntimeSignalBars = deriveSignalBarCandles(selectedSignalRuntimeSourceStates, {
+    targetSymbol: selectedRuntimeSymbol,
+    targetTimeframe: selectedRuntimeSignalTimeframe,
+    targetStateKey: selectedRuntimeSignalBarStateKey,
+  });
   const selectedSignalRuntimeSubscriptions = Array.isArray(selectedSignalRuntimeState.subscriptions)
     ? (selectedSignalRuntimeState.subscriptions as Array<Record<string, unknown>>)
     : [];
@@ -470,7 +483,13 @@ export function AccountStage({
                  const activeRuntimeMarket = deriveRuntimeMarketSnapshot(getRecord(activeRuntimeState.sourceStates), activeRuntimeSummary, accountSymbol);
                 const strategyBindings = (activeRuntime?.strategyId ? strategySignalBindingMap[activeRuntime.strategyId] : undefined) ?? strategySignalBindingMap[validLiveSessions.find((item) => item.accountId === account.id)?.strategyId ?? ""] ?? [];
                 const activeRuntimeSourceSummary = deriveRuntimeSourceSummary(getRecord(activeRuntimeState.sourceStates), runtimePolicy, accountSymbol);
-                const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates));
+                const activeSignalTimeframe = String(accountSession?.state?.signalTimeframe ?? "").trim().toLowerCase();
+                const activeSignalBarStateKey = String(accountSession?.state?.lastStrategyEvaluationSignalBarStateKey ?? "").trim();
+                const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates), {
+                  targetSymbol: accountSymbol,
+                  targetTimeframe: activeSignalTimeframe,
+                  targetStateKey: activeSignalBarStateKey,
+                });
                 const activeSignalAction = deriveSignalActionSummary(activeSignalBarState);
                 const activeRuntimeTimeline = getList(activeRuntimeState.timeline);
                 const activeRuntimeReadiness = deriveRuntimeReadiness(activeRuntimeState, activeRuntimeSourceSummary, {
