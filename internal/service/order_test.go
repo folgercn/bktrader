@@ -1070,11 +1070,75 @@ func TestImmediateFilledLiveOrderRepeatedSyncKeepsRetryMarkerAndFillDedupeStable
 	if fillCount != 1 {
 		t.Fatalf("expected repeated sync to keep one fill, got %d", fillCount)
 	}
-	if got := stringValue(syncedOrder.Metadata[liveSettlementSyncErrorKey]); got != "previous refresh failure" {
-		t.Fatalf("expected retry marker error to remain stable, got %q", got)
+	if got := stringValue(syncedOrder.Metadata[liveSettlementSyncErrorKey]); got != "" {
+		t.Fatalf("expected retry marker error to clear after settlement, got %q", got)
 	}
-	if !boolValue(syncedOrder.Metadata[liveSettlementSyncRequiredKey]) {
-		t.Fatal("expected retry marker to remain stable across repeated sync")
+	if boolValue(syncedOrder.Metadata[liveSettlementSyncRequiredKey]) {
+		t.Fatal("expected retry marker to clear after settlement")
+	}
+}
+
+func TestImmediateFilledLiveOrderPartialSettlementKeepsRetryMarker(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	platform.registerLiveAdapter(&recordingLiveExecutionAdapter{key: "test-partial-settlement"})
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": "test-partial-settlement",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	order, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Quantity:          0.004,
+		Price:             75600,
+		Status:            "FILLED",
+		Metadata: map[string]any{
+			"exchangeOrderId":             "exchange-order-partial",
+			liveSettlementSyncErrorKey:    "previous immediate settlement failure",
+			liveSettlementSyncRequiredKey: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+	order.Status = "FILLED"
+	if order, err = store.UpdateOrder(order); err != nil {
+		t.Fatalf("mark order filled failed: %v", err)
+	}
+
+	settled, err := platform.applyLiveSyncResult(account, order, LiveOrderSync{
+		Status:   "FILLED",
+		SyncedAt: "2026-04-21T06:35:00Z",
+		Fills: []LiveFillReport{{
+			Price:    75600,
+			Quantity: 0.002,
+			Fee:      0.04,
+			Metadata: map[string]any{
+				"exchangeOrderId": "exchange-order-partial",
+				"tradeId":         "trade-partial-1",
+				"tradeTime":       "2026-04-21T06:35:00Z",
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("partial settlement failed: %v", err)
+	}
+	if got := settled.Status; got != "PARTIALLY_FILLED" {
+		t.Fatalf("expected partial settlement status PARTIALLY_FILLED, got %s", got)
+	}
+	if !boolValue(settled.Metadata[liveSettlementSyncRequiredKey]) {
+		t.Fatal("expected partial settlement to keep retry marker")
+	}
+	if got := stringValue(settled.Metadata[liveSettlementSyncErrorKey]); got == "" {
+		t.Fatal("expected partial settlement to keep retry error")
+	}
+	if !liveOrderSettlementSyncPending(settled) {
+		t.Fatal("expected partial settlement to remain pending")
 	}
 }
 

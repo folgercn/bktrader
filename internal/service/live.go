@@ -1845,6 +1845,10 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		}
 		existingBySymbol[NormalizeSymbol(position.Symbol)] = position
 	}
+	pendingSettlementSymbols, err := p.liveSettlementPendingOrderSymbols(account.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	syncedAt := time.Now().UTC()
 	symbols := make(map[string]any)
@@ -1899,6 +1903,16 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			"quantity":   quantity,
 			"entryPrice": entryPrice,
 			"markPrice":  markPrice,
+		}
+		if _, pending := pendingSettlementSymbols[symbol]; pending {
+			recordGate(symbol, map[string]any{
+				"status":           livePositionReconcileGateStatusStale,
+				"scenario":         "order-settlement-pending",
+				"blocking":         true,
+				"dbPosition":       buildRecoveredLivePositionStateSnapshot(position),
+				"exchangePosition": exchangeSnapshot,
+			})
+			continue
 		}
 		if position.ID == "" || position.Quantity <= 0 {
 			position.AccountID = account.ID
@@ -2001,6 +2015,23 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		"blockingSymbolCount": blockingCount,
 		"symbols":             symbols,
 	}, nil
+}
+
+func (p *Platform) liveSettlementPendingOrderSymbols(accountID string) (map[string]struct{}, error) {
+	orders, err := p.store.ListOrders()
+	if err != nil {
+		return nil, err
+	}
+	symbols := make(map[string]struct{})
+	for _, order := range orders {
+		if order.AccountID != accountID || !liveOrderSettlementSyncPending(order) {
+			continue
+		}
+		if symbol := NormalizeSymbol(order.Symbol); symbol != "" {
+			symbols[symbol] = struct{}{}
+		}
+	}
+	return symbols, nil
 }
 
 func resolveRecoveredLiveEntryPrice(primary, secondary, fallback float64) float64 {

@@ -144,6 +144,149 @@ func TestReconcileLiveAccountRecoversMissingFilledOrder(t *testing.T) {
 	}
 }
 
+func TestReconcileLiveAccountDefersPositionAdoptForPendingImmediateFilledSettlement(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	syncedAt := time.Date(2026, 4, 21, 6, 30, 0, 0, time.UTC)
+	platform.registerLiveAdapter(testLiveAccountReconcileAdapter{
+		key: "test-pending-immediate-filled",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":   "test-pending-immediate-filled",
+				"syncedAt": syncedAt.Format(time.RFC3339),
+				"positions": []map[string]any{{
+					"symbol":         "BTCUSDT",
+					"positionAmt":    0.002,
+					"entryPrice":     75600.0,
+					"breakEvenPrice": 75600.0,
+					"markPrice":      75620.0,
+				}},
+				"openOrders":    []map[string]any{},
+				"bindingMode":   stringValue(binding["connectionMode"]),
+				"executionMode": stringValue(binding["executionMode"]),
+			}
+			account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+			updated, err := p.store.UpdateAccount(account)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			return p.refreshLiveAccountPositionReconcileGate(updated)
+		},
+	})
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-pending-immediate-filled",
+		"connectionMode": "rest",
+		"executionMode":  "rest",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	order, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Quantity:          0.002,
+		Price:             75600.0,
+		Status:            "FILLED",
+		Metadata: map[string]any{
+			"exchangeOrderId":             "13056935018",
+			liveSettlementSyncErrorKey:    "live order order-1 submitted as FILLED but settlement sync failed: Order does not exist",
+			liveSettlementSyncRequiredKey: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create pending immediate filled order failed: %v", err)
+	}
+	order.Status = "FILLED"
+	if order, err = store.UpdateOrder(order); err != nil {
+		t.Fatalf("mark pending immediate filled order failed: %v", err)
+	}
+
+	syncedAccount, err := platform.SyncLiveAccount(account.ID)
+	if err != nil {
+		t.Fatalf("sync live account failed: %v", err)
+	}
+	if position, found, err := store.FindPosition(account.ID, "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatalf("expected pending order settlement to block reconcile position adopt, got %+v", position)
+	}
+	gate := resolveLivePositionReconcileGate(syncedAccount, "BTCUSDT", true)
+	if got := stringValue(gate["status"]); got != livePositionReconcileGateStatusStale {
+		t.Fatalf("expected stale gate while settlement pending, got %s", got)
+	}
+	if got := stringValue(gate["scenario"]); got != "order-settlement-pending" {
+		t.Fatalf("expected order-settlement-pending scenario, got %s", got)
+	}
+	if !boolValue(gate["blocking"]) {
+		t.Fatal("expected pending settlement gate to block")
+	}
+
+	settledOrder, err := platform.applyLiveSyncResult(account, order, LiveOrderSync{
+		Status:   "FILLED",
+		SyncedAt: syncedAt.Add(time.Second).Format(time.RFC3339),
+		Fills: []LiveFillReport{{
+			Price:    75600.0,
+			Quantity: 0.002,
+			Fee:      0.04,
+			Metadata: map[string]any{
+				"exchangeOrderId": "13056935018",
+				"tradeId":         "trade-13056935018",
+				"tradeTime":       syncedAt.Add(time.Second).Format(time.RFC3339),
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("settle pending immediate filled order failed: %v", err)
+	}
+	if boolValue(settledOrder.Metadata[liveSettlementSyncRequiredKey]) {
+		t.Fatal("expected settlement marker to clear after order fill settlement")
+	}
+	position, found, err := store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position after settlement failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected order settlement to create position")
+	}
+	if position.Quantity != 0.002 {
+		t.Fatalf("expected order settlement position quantity 0.002, got %v", position.Quantity)
+	}
+
+	account, err = store.GetAccount(account.ID)
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	account, err = platform.refreshLiveAccountPositionReconcileGate(account)
+	if err != nil {
+		t.Fatalf("refresh position reconcile gate after settlement failed: %v", err)
+	}
+	gate = resolveLivePositionReconcileGate(account, "BTCUSDT", true)
+	if got := stringValue(gate["status"]); got != livePositionReconcileGateStatusVerified {
+		t.Fatalf("expected reconcile gate to verify after settlement, got %s", got)
+	}
+	if got := stringValue(gate["scenario"]); got != "db-position-matches-exchange" {
+		t.Fatalf("expected reconcile gate to clear pending scenario after settlement, got %s", got)
+	}
+	if boolValue(gate["blocking"]) {
+		t.Fatal("expected reconcile gate to unblock after settlement")
+	}
+	position, found, err = store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position after reconcile verify failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected reconciled position to remain")
+	}
+	if position.Quantity != 0.002 {
+		t.Fatalf("expected reconcile verify not to double position quantity, got %v", position.Quantity)
+	}
+}
+
 func TestReconcileLiveAccountRefreshClearsStaleRecoveryCache(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
