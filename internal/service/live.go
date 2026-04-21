@@ -2620,6 +2620,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 	if err != nil {
 		return executionContext, StrategySignalDecision{}, cloneMetadata(session.State), err
 	}
+	breakoutPrice, breakoutPriceSource := pickSignalBreakoutPrice(summary, sourceStates)
 	updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason := prepareLivePlanStepForSignalEvaluation(
 		session.State,
 		executionContext.Parameters,
@@ -2628,6 +2629,8 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		executionContext.SignalTimeframe,
 		currentPosition,
 		eventTime,
+		breakoutPrice,
+		breakoutPriceSource,
 		nextPlannedEvent,
 		nextPlannedPrice,
 		nextPlannedSide,
@@ -2665,6 +2668,8 @@ func alignLivePlanStepToCurrentMarket(
 	signalTimeframe string,
 	currentPosition map[string]any,
 	eventTime time.Time,
+	breakoutPrice float64,
+	breakoutPriceSource string,
 	nextPlannedEvent time.Time,
 	nextPlannedPrice float64,
 	nextPlannedSide, nextPlannedRole, nextPlannedReason string,
@@ -2679,7 +2684,7 @@ func alignLivePlanStepToCurrentMarket(
 	if signalBarState == nil {
 		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
-	gate := evaluateSignalBarGate(signalBarState, "", "entry", "")
+	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource)
 	longReady := boolValue(gate["longReady"])
 	shortReady := boolValue(gate["shortReady"])
 	if longReady == shortReady {
@@ -3799,10 +3804,13 @@ func deriveBreakoutSignalSnapshot(decision StrategySignalDecision, eventTime tim
 		"side":              side,
 		"level":             level,
 		"barTime":           barTime.Format(time.RFC3339),
+		"eventAt":           eventTime.UTC().Format(time.RFC3339),
+		"price":             parseFloatValue(signalBarDecision["breakoutPrice"]),
+		"priceSource":       stringValue(signalBarDecision["breakoutPriceSource"]),
 		"close":             parseFloatValue(current["close"]),
 		"timeframe":         stringValue(signalBarDecision["timeframe"]),
 		"signalBarStateKey": stringValue(meta["signalBarStateKey"]),
-		"source":            "signal-breakout-pattern",
+		"source":            "signal-breakout-price",
 	}
 }
 

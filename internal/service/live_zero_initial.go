@@ -15,6 +15,8 @@ func prepareLivePlanStepForSignalEvaluation(
 	signalTimeframe string,
 	currentPosition map[string]any,
 	eventTime time.Time,
+	breakoutPrice float64,
+	breakoutPriceSource string,
 	nextPlannedEvent time.Time,
 	nextPlannedPrice float64,
 	nextPlannedSide, nextPlannedRole, nextPlannedReason string,
@@ -26,6 +28,8 @@ func prepareLivePlanStepForSignalEvaluation(
 			signalTimeframe,
 			currentPosition,
 			eventTime,
+			breakoutPrice,
+			breakoutPriceSource,
 			nextPlannedEvent,
 			nextPlannedPrice,
 			nextPlannedSide,
@@ -58,7 +62,7 @@ func prepareLivePlanStepForSignalEvaluation(
 	if signalBarState == nil {
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
-	gate := evaluateSignalBarGate(signalBarState, "", "entry", "")
+	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource)
 	longReady := boolValue(gate["longReady"])
 	shortReady := boolValue(gate["shortReady"])
 	if longReady == shortReady {

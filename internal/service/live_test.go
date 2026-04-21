@@ -56,7 +56,7 @@ func TestEvaluateSignalBarGateRequiresLongBreakoutAlignmentWithResearch(t *testi
 		"atr14": 900.0,
 		"current": map[string]any{
 			"close": 68100.0,
-			"high":  68900.0,
+			"high":  69010.0,
 			"low":   67800.0,
 		},
 		"prevBar1": map[string]any{
@@ -67,12 +67,12 @@ func TestEvaluateSignalBarGateRequiresLongBreakoutAlignmentWithResearch(t *testi
 			"high": 69000.0,
 			"low":  67600.0,
 		},
-	}, "BUY", "entry", "")
+	}, "BUY", "entry", "", 68990.0, "trade_tick.price")
 	if boolValue(gate["longStructureReady"]) != true {
 		t.Fatal("expected long structure to be ready")
 	}
 	if boolValue(gate["longBreakoutReady"]) {
-		t.Fatal("expected breakout to remain not ready before current high breaks prevHigh2")
+		t.Fatal("expected breakout to remain blocked until current breakout price crosses prevHigh2")
 	}
 	if boolValue(gate["longReady"]) {
 		t.Fatal("expected long signal to stay blocked without breakout confirmation")
@@ -99,25 +99,25 @@ func TestEvaluateSignalBarGateAllowsLongAfterBreakoutAlignmentWithResearch(t *te
 			"high": 69000.0,
 			"low":  67600.0,
 		},
-	}, "BUY", "entry", "")
+	}, "BUY", "entry", "", 69010.0, "trade_tick.price")
 	if !boolValue(gate["longStructureReady"]) {
 		t.Fatal("expected long structure to be ready")
 	}
 	if !boolValue(gate["longBreakoutReady"]) {
-		t.Fatal("expected breakout to be ready after current high breaks prevHigh2")
+		t.Fatal("expected breakout to be ready after current breakout price crosses prevHigh2")
 	}
 	if !boolValue(gate["longReady"]) {
 		t.Fatal("expected long signal to be ready after breakout confirmation")
 	}
 }
 
-func TestEvaluateSignalBarGateTracksClosedBarBreakoutPattern(t *testing.T) {
+func TestEvaluateSignalBarGateTracksCurrentPriceBreakoutPattern(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"ma20":  68000.0,
 		"atr14": 900.0,
 		"current": map[string]any{
-			"close": 69010.0,
-			"high":  69030.0,
+			"close": 68100.0,
+			"high":  68950.0,
 			"low":   67800.0,
 		},
 		"prevBar1": map[string]any{
@@ -128,12 +128,15 @@ func TestEvaluateSignalBarGateTracksClosedBarBreakoutPattern(t *testing.T) {
 			"high": 69000.0,
 			"low":  67600.0,
 		},
-	}, "BUY", "entry", "")
+	}, "BUY", "entry", "", 69010.0, "trade_tick.price")
 	if !boolValue(gate["longBreakoutPatternReady"]) {
-		t.Fatalf("expected close-based long breakout pattern, got %#v", gate)
+		t.Fatalf("expected current-price long breakout pattern, got %#v", gate)
 	}
 	if boolValue(gate["shortBreakoutPatternReady"]) {
 		t.Fatalf("expected short breakout pattern to stay false, got %#v", gate)
+	}
+	if got := parseFloatValue(gate["breakoutPrice"]); got != 69010.0 {
+		t.Fatalf("expected breakout price 69010, got %v", got)
 	}
 }
 
@@ -154,7 +157,7 @@ func TestEvaluateSignalBarGateDoesNotRequireOppositeBreakoutForExit(t *testing.T
 			"high": 69000.0,
 			"low":  67600.0,
 		},
-	}, "SELL", "exit", "")
+	}, "SELL", "exit", "", 68990.0, "trade_tick.price")
 	if !boolValue(gate["ready"]) {
 		t.Fatalf("expected exit gate to stay ready, got reason=%s", stringValue(gate["reason"]))
 	}
@@ -198,6 +201,8 @@ func TestAlignLivePlanStepToCurrentMarketKeepsExitForVirtualPosition(t *testing.
 		"1d",
 		currentPosition,
 		eventTime,
+		0,
+		"",
 		nextPlannedEvent,
 		68950.0,
 		"SELL",
@@ -251,6 +256,8 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 		"1d",
 		map[string]any{},
 		barStart.Add(2*time.Hour),
+		69010.0,
+		"trade_tick.price",
 		barStart.Add(-48*time.Hour),
 		68950.0,
 		"BUY",
@@ -317,6 +324,8 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 		"1d",
 		map[string]any{},
 		nextBarStart.Add(2*time.Hour),
+		0,
+		"",
 		barStart.Add(-24*time.Hour),
 		68950.0,
 		"BUY",
@@ -342,6 +351,8 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 		"1d",
 		map[string]any{},
 		barStart.Add(49*time.Hour),
+		0,
+		"",
 		barStart.Add(-72*time.Hour),
 		68950.0,
 		"BUY",
@@ -395,6 +406,8 @@ func TestPrepareLivePlanStepForSignalEvaluationPrioritizesExitReentryOverZeroIni
 		"1d",
 		map[string]any{},
 		eventTime,
+		0,
+		"",
 		eventTime,
 		75600.0,
 		"SELL",
@@ -419,6 +432,58 @@ func TestPrepareLivePlanStepForSignalEvaluationPrioritizesExitReentryOverZeroIni
 	}
 }
 
+func TestPrepareLivePlanStepForSignalEvaluationRequiresCurrentBreakoutPrice(t *testing.T) {
+	barStart := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"ma20":      68000.0,
+			"atr14":     900.0,
+			"current": map[string]any{
+				"barStart": barStart.Format(time.RFC3339),
+				"close":    68100.0,
+				"high":     69010.0,
+				"low":      67800.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 68850.0,
+				"low":  67750.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 69000.0,
+				"low":  67600.0,
+			},
+		},
+	}
+	state, _, _, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		map[string]any{},
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"long_reentry_atr":  0.1,
+		},
+		signalStates,
+		"BTCUSDT",
+		"1d",
+		map[string]any{},
+		barStart.Add(2*time.Hour),
+		68990.0,
+		"trade_tick.price",
+		barStart.Add(-48*time.Hour),
+		68950.0,
+		"BUY",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "Initial" || gotSide != "BUY" {
+		t.Fatalf("expected zero initial window to stay unarmed without breakout price confirmation, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected no pending zero initial window before breakout price confirmation, got %+v", pending)
+	}
+}
+
 func TestEvaluateSignalBarGateAllowsReentryWithoutInitialBreakout(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "1d",
@@ -437,7 +502,7 @@ func TestEvaluateSignalBarGateAllowsReentryWithoutInitialBreakout(t *testing.T) 
 			"high": 69000.0,
 			"low":  67600.0,
 		},
-	}, "BUY", "entry", "SL-Reentry")
+	}, "BUY", "entry", "SL-Reentry", 68990.0, "trade_tick.price")
 	if !boolValue(gate["longStructureReady"]) {
 		t.Fatal("expected long structure to be ready for reentry")
 	}
@@ -3399,7 +3464,7 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 		"role":               "trigger",
 		"symbol":             "BTCUSDT",
 		"subscriptionSymbol": "BTCUSDT",
-		"price":              68110.0,
+		"price":              69010.0,
 		"event":              "trade_tick",
 	}
 	err = platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
@@ -3417,7 +3482,7 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 				"streamType":  "trade_tick",
 				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
 				"summary": map[string]any{
-					"price": 68110.0,
+					"price": 69010.0,
 				},
 			},
 			signalKey: map[string]any{
@@ -3546,7 +3611,7 @@ func TestEvaluateLiveSessionOnSignalUsesZeroInitialReentryWindowInsteadOfVirtual
 		"role":               "trigger",
 		"symbol":             "BTCUSDT",
 		"subscriptionSymbol": "BTCUSDT",
-		"price":              67845.0,
+		"price":              69010.0,
 		"event":              "trade_tick",
 	}
 	err = platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
@@ -3564,7 +3629,7 @@ func TestEvaluateLiveSessionOnSignalUsesZeroInitialReentryWindowInsteadOfVirtual
 				"streamType":  "trade_tick",
 				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
 				"summary": map[string]any{
-					"price": 67845.0,
+					"price": 69010.0,
 				},
 			},
 			signalKey: map[string]any{
@@ -3618,15 +3683,51 @@ func TestEvaluateLiveSessionOnSignalUsesZeroInitialReentryWindowInsteadOfVirtual
 	if virtualPosition := mapValue(updated.State["virtualPosition"]); len(virtualPosition) != 0 {
 		t.Fatalf("expected zero initial window mode to avoid virtual positions, got %+v", virtualPosition)
 	}
+	if pending := mapValue(updated.State[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
+		t.Fatalf("expected pending BUY zero initial window in session state, got %+v", pending)
+	}
+
+	reentryTime := eventTime.Add(5 * time.Second)
+	reentrySummary := cloneMetadata(summary)
+	reentrySummary["price"] = 67845.0
+	err = platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = reentryTime.UTC().Format(time.RFC3339)
+		state["lastHeartbeatAt"] = reentryTime.UTC().Format(time.RFC3339)
+		state["lastEventSummary"] = cloneMetadata(reentrySummary)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		triggerState := cloneMetadata(mapValue(sourceStates[triggerKey]))
+		triggerState["lastEventAt"] = reentryTime.UTC().Format(time.RFC3339)
+		triggerSummary := cloneMetadata(mapValue(triggerState["summary"]))
+		triggerSummary["price"] = 67845.0
+		triggerState["summary"] = triggerSummary
+		sourceStates[triggerKey] = triggerState
+		state["sourceStates"] = sourceStates
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = reentryTime
+	})
+	if err != nil {
+		t.Fatalf("update runtime state for reentry failed: %v", err)
+	}
+
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session before reentry failed: %v", err)
+	}
+	if err := platform.evaluateLiveSessionOnSignal(updatedSession, runtimeSessionID, reentrySummary, reentryTime); err != nil {
+		t.Fatalf("evaluate live session on reentry failed: %v", err)
+	}
+
+	updated, err = platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session after reentry failed: %v", err)
+	}
 	proposal := mapValue(updated.State["lastExecutionProposal"])
 	if got := stringValue(proposal["status"]); got != "dispatchable" {
 		t.Fatalf("expected dispatchable reentry proposal, got %s", got)
 	}
 	if got := stringValue(proposal["reason"]); got != "Zero-Initial-Reentry" {
 		t.Fatalf("expected Zero-Initial-Reentry proposal reason, got %s", got)
-	}
-	if pending := mapValue(updated.State[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
-		t.Fatalf("expected pending BUY zero initial window in session state, got %+v", pending)
 	}
 }
 
