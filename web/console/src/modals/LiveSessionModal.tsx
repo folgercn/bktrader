@@ -120,7 +120,7 @@ export function LiveSessionModal({
       onOpenChange={(nextOpen) => !nextOpen && setActiveSettingsModal(null)}
       kicker="Live Session"
       title="配置实盘会话"
-      description="在此统一管理账户、策略执行和风发参数。系统会严格遵守人工审核边界以确保交易安全。"
+      description="在此统一管理账户、策略执行和分发参数。系统会严格遵守人工审核边界以确保交易安全。"
       className="max-w-[min(810px,calc(100vw-2rem))]"
 
     >
@@ -181,8 +181,6 @@ export function LiveSessionModal({
               onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: value }))}
               options={[
                 { value: "5m", label: "5m" },
-                { value: "15m", label: "15m" },
-                { value: "1h", label: "1h" },
                 { value: "4h", label: "4h" },
                 { value: "1d", label: "1d" },
               ]}
