@@ -1888,6 +1888,29 @@ func TestCreateLiveSessionPersistsLaunchScopeIntoState(t *testing.T) {
 	}
 }
 
+func TestUpdateLiveSessionAliasClearing(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, _ := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{"symbol": "BTCUSDT"})
+
+	// 1. Set alias
+	updated, err := platform.UpdateLiveSession(session.ID, "New Alias", "", map[string]any{})
+	if err != nil {
+		t.Fatalf("set alias failed: %v", err)
+	}
+	if updated.Alias != "New Alias" {
+		t.Fatalf("expected alias 'New Alias', got %q", updated.Alias)
+	}
+
+	// 2. Clear alias (provide empty string)
+	cleared, err := platform.UpdateLiveSession(session.ID, "  ", "", map[string]any{})
+	if err != nil {
+		t.Fatalf("clear alias failed: %v", err)
+	}
+	if cleared.Alias != "" {
+		t.Fatalf("expected cleared alias (empty string), got %q", cleared.Alias)
+	}
+}
+
 func TestIsLivePlanStepStaleUsesFiveMinuteTimeframe(t *testing.T) {
 	nextPlannedEvent := time.Date(2026, 4, 16, 12, 0, 0, 0, time.UTC)
 	if isLivePlanStepStale(nextPlannedEvent, "5m", nextPlannedEvent.Add(4*time.Minute+59*time.Second)) {

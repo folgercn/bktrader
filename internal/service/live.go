@@ -127,6 +127,7 @@ func (p *Platform) UpdateLiveSession(sessionID, alias, accountID, strategyID str
 	if strings.TrimSpace(strategyID) != "" {
 		session.StrategyID = strategyID
 	}
+	// Always assign alias (trimmed) to support clearing an existing alias by providing an empty string.
 	session.Alias = strings.TrimSpace(alias)
 	state := cloneMetadata(session.State)
 	for key, value := range normalizeLiveSessionOverrides(overrides) {
