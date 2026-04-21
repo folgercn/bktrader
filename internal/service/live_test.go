@@ -2296,6 +2296,205 @@ func TestMaybeIncrementLiveSessionReentryCountOnlyCountsFilledReentries(t *testi
 	}
 }
 
+func TestMaybeIncrementLiveSessionReentryCountCountsZeroInitialWindowEntry(t *testing.T) {
+	state := map[string]any{}
+	proposal := map[string]any{
+		"reason":            "Zero-Initial-Reentry",
+		"signalBarStateKey": "bar-1",
+	}
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED")
+	if got := parseFloatValue(state["sessionReentryCount"]); got != 1 {
+		t.Fatalf("expected zero-initial window entry to count as first bar trade, got %v", got)
+	}
+	if got := stringValue(state["lastSignalBarStateKey"]); got != "bar-1" {
+		t.Fatalf("expected signal bar key to be recorded, got %s", got)
+	}
+}
+
+func TestShouldAutoDispatchLiveIntentBlocksEntryAfterMaxTradesPerSignalBar(t *testing.T) {
+	intent := map[string]any{
+		"action":            "entry",
+		"role":              "entry",
+		"reason":            "SL-Reentry",
+		"side":              "SELL",
+		"symbol":            "BTCUSDT",
+		"signalKind":        "sl-reentry",
+		"signalBarStateKey": "bar-1",
+		"status":            "dispatchable",
+	}
+	session := domain.LiveSession{
+		ID: "live-session-1",
+		State: map[string]any{
+			"dispatchMode":          "auto-dispatch",
+			"max_trades_per_bar":    2,
+			"lastSignalBarStateKey": "bar-1",
+			"sessionReentryCount":   2.0,
+		},
+	}
+	if shouldAutoDispatchLiveIntent(session, intent, time.Now().UTC()) {
+		t.Fatal("expected auto-dispatch to stop after max_trades_per_bar entries in one signal bar")
+	}
+}
+
+func TestValidateLiveSignalBarEntryTradeLimitAllowsNewBar(t *testing.T) {
+	session := domain.LiveSession{
+		ID: "live-session-1",
+		State: map[string]any{
+			"max_trades_per_bar":    2,
+			"lastSignalBarStateKey": "bar-1",
+			"sessionReentryCount":   2.0,
+		},
+	}
+	proposal := map[string]any{
+		"role":              "entry",
+		"reason":            "SL-Reentry",
+		"signalBarStateKey": "bar-2",
+	}
+	if err := validateLiveSignalBarEntryTradeLimit(session, proposal); err != nil {
+		t.Fatalf("expected a new signal bar to reset the entry limit, got %v", err)
+	}
+}
+
+func TestDispatchLiveSessionIntentRejectsEntryAfterMaxTradesPerSignalBar(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "30m",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["max_trades_per_bar"] = 2
+	state["lastSignalBarStateKey"] = "bar-1"
+	state["sessionReentryCount"] = 2.0
+	state["signalRuntimeSessionId"] = "runtime-1"
+	state["lastExecutionProposal"] = map[string]any{
+		"action":            "entry",
+		"role":              "entry",
+		"reason":            "SL-Reentry",
+		"side":              "SELL",
+		"symbol":            "BTCUSDT",
+		"type":              "MARKET",
+		"quantity":          0.001,
+		"priceHint":         76129.0,
+		"reduceOnly":        false,
+		"signalKind":        "sl-reentry",
+		"signalBarStateKey": "bar-1",
+		"status":            "dispatchable",
+		"metadata": map[string]any{
+			"executionMode": "live",
+			"executionContext": map[string]any{
+				"symbol":              "BTCUSDT",
+				"signalTimeframe":     "30m",
+				"executionDataSource": "tick",
+				"executionMode":       "live",
+			},
+		},
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	_, err = platform.dispatchLiveSessionIntent(session)
+	if err == nil || !strings.Contains(err.Error(), "max_trades_per_bar=2") {
+		t.Fatalf("expected dispatch to reject after max_trades_per_bar, got %v", err)
+	}
+}
+
+func TestResolveLiveSessionPositionSnapshotDoesNotMergeStaleLivePositionState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.store.SavePosition(domain.Position{
+		ID:                "position-new",
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.001,
+		EntryPrice:        76129.0,
+		MarkPrice:         76130.6,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	session := domain.LiveSession{
+		AccountID: "live-main",
+		State: map[string]any{
+			"livePositionState": map[string]any{
+				"symbol":               "BTCUSDT",
+				"side":                 "SHORT",
+				"entryPrice":           76129.0,
+				"stopLoss":             75861.2,
+				"stopLossSource":       "trailing-stop",
+				"watermarkPositionKey": encodeLivePositionWatermarkIdentityComponent("position-old") + "|BTCUSDT|SHORT|76129.00000000",
+			},
+		},
+	}
+	snapshot, found, err := platform.resolveLiveSessionPositionSnapshot(session, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("resolve position snapshot failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected real position to be found")
+	}
+	if got := parseFloatValue(snapshot["stopLoss"]); got != 0 {
+		t.Fatalf("expected stale cached stopLoss to stay out of factual snapshot, got %v", got)
+	}
+	if got := stringValue(snapshot["watermarkPositionKey"]); got != "" {
+		t.Fatalf("expected stale watermark key to stay out of factual snapshot, got %s", got)
+	}
+	if got := parseFloatValue(snapshot["entryPrice"]); got != 76129.0 {
+		t.Fatalf("expected factual entry price to be preserved, got %v", got)
+	}
+}
+
+func TestResolveLiveSessionPositionSnapshotMergesMatchingRiskStateOnly(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.store.SavePosition(domain.Position{
+		ID:                "position-1",
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.001,
+		EntryPrice:        76129.0,
+		MarkPrice:         76130.6,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	key := encodeLivePositionWatermarkIdentityComponent("position-1") + "|BTCUSDT|SHORT|76129.00000000"
+	session := domain.LiveSession{
+		AccountID: "live-main",
+		State: map[string]any{
+			"livePositionState": map[string]any{
+				"symbol":               "BTCUSDT",
+				"side":                 "SHORT",
+				"entryPrice":           76129.0,
+				"stopLoss":             76241.6,
+				"stopLossSource":       "initial-stop",
+				"protected":            true,
+				"watermarkPositionKey": key,
+			},
+		},
+	}
+	snapshot, found, err := platform.resolveLiveSessionPositionSnapshot(session, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("resolve position snapshot failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected real position to be found")
+	}
+	if got := parseFloatValue(snapshot["stopLoss"]); got != 76241.6 {
+		t.Fatalf("expected matching risk stopLoss to be merged, got %v", got)
+	}
+	if got := stringValue(snapshot["watermarkPositionKey"]); got != key {
+		t.Fatalf("expected matching watermark key to be merged, got %s", got)
+	}
+	if got := parseFloatValue(snapshot["quantity"]); got != 0.001 {
+		t.Fatalf("expected factual quantity to remain authoritative, got %v", got)
+	}
+}
+
 func TestEvaluateExecutionQualityDoesNotTreatCancelsAsRejections(t *testing.T) {
 	state := map[string]any{
 		"executionEventStats": map[string]any{
