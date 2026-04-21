@@ -929,9 +929,6 @@ func isCompatibleLivePositionWatermarkMigration(lastKey string, currentPosition 
 		if boolValue(currentPosition["virtual"]) && lastKey == positionID {
 			return true
 		}
-		if lastKey == baseKey {
-			return true
-		}
 		return lastKey == buildLegacyPrefixedLivePositionWatermarkKey(currentPosition)
 	}
 	return lastKey == baseKey

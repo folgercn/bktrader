@@ -3570,12 +3570,8 @@ func (p *Platform) resolveLiveSessionPositionSnapshot(session domain.LiveSession
 	livePositionState := cloneMetadata(mapValue(session.State["livePositionState"]))
 	if len(livePositionState) > 0 && hasRealPosition {
 		liveSymbol := NormalizeSymbol(firstNonEmpty(stringValue(livePositionState["symbol"]), symbol))
-		if liveSymbol == NormalizeSymbol(symbol) {
-			mergedPosition := cloneMetadata(positionSnapshot)
-			for key, value := range livePositionState {
-				mergedPosition[key] = value
-			}
-			positionSnapshot = mergedPosition
+		if liveSymbol == NormalizeSymbol(symbol) && livePositionStateMatchesPositionSnapshot(positionSnapshot, livePositionState) {
+			positionSnapshot = mergeLivePositionRiskState(positionSnapshot, livePositionState)
 		}
 	}
 	if hasRealPosition {
@@ -3595,6 +3591,70 @@ func (p *Platform) resolveLiveSessionPositionSnapshot(session domain.LiveSession
 	virtualPosition["virtual"] = true
 	virtualPosition["symbol"] = virtualSymbol
 	return virtualPosition, false, nil
+}
+
+func livePositionStateMatchesPositionSnapshot(positionSnapshot map[string]any, livePositionState map[string]any) bool {
+	if len(positionSnapshot) == 0 || len(livePositionState) == 0 {
+		return false
+	}
+	positionSymbol := NormalizeSymbol(stringValue(positionSnapshot["symbol"]))
+	liveSymbol := NormalizeSymbol(stringValue(livePositionState["symbol"]))
+	if liveSymbol != "" && positionSymbol != "" && liveSymbol != positionSymbol {
+		return false
+	}
+	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(positionSnapshot["side"])))
+	liveSide := strings.ToUpper(strings.TrimSpace(stringValue(livePositionState["side"])))
+	if liveSide != "" && positionSide != "" && liveSide != positionSide {
+		return false
+	}
+	positionEntry := parseFloatValue(positionSnapshot["entryPrice"])
+	liveEntry := parseFloatValue(livePositionState["entryPrice"])
+	if liveEntry > 0 && positionEntry > 0 && math.Abs(liveEntry-positionEntry) > 1e-6 {
+		return false
+	}
+	positionKey := buildLivePositionWatermarkKey(positionSnapshot)
+	if positionKey == "" {
+		return false
+	}
+	liveKey := strings.TrimSpace(stringValue(livePositionState["watermarkPositionKey"]))
+	if liveKey == "" {
+		return false
+	}
+	if liveKey == positionKey {
+		return true
+	}
+	if strings.TrimSpace(stringValue(positionSnapshot["id"])) != "" {
+		return liveKey == buildLegacyPrefixedLivePositionWatermarkKey(positionSnapshot)
+	}
+	return liveKey == buildLivePositionWatermarkBaseKey(positionSnapshot) ||
+		liveKey == buildLegacyLivePositionWatermarkKey(positionSnapshot)
+}
+
+func mergeLivePositionRiskState(positionSnapshot map[string]any, livePositionState map[string]any) map[string]any {
+	mergedPosition := cloneMetadata(positionSnapshot)
+	for _, key := range []string{
+		"baseStopLoss",
+		"stopLoss",
+		"stopLossSource",
+		"trailingStopConfigured",
+		"trailingStopActive",
+		"trailingActivationArmed",
+		"trailingStopCandidate",
+		"protected",
+		"protectionTrigger",
+		"prevHigh1",
+		"prevLow1",
+		"atr14",
+		"profitProtectATR",
+		"hwm",
+		"lwm",
+		"watermarkPositionKey",
+	} {
+		if value, ok := livePositionState[key]; ok {
+			mergedPosition[key] = value
+		}
+	}
+	return mergedPosition
 }
 
 func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, version domain.StrategyVersion) (map[string]any, error) {
@@ -4045,6 +4105,9 @@ func shouldAutoDispatchLiveIntent(session domain.LiveSession, intent map[string]
 		return false
 	}
 	if shouldBlockAutoDispatchForRecoveryIntent(session, intent) {
+		return false
+	}
+	if shouldBlockAutoDispatchForLiveEntryTradeLimit(session, intent) {
 		return false
 	}
 	lastSignature := stringValue(session.State["lastDispatchedIntentSignature"])

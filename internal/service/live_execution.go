@@ -412,6 +412,53 @@ func shouldBlockAutoDispatchForRecoveryIntent(session domain.LiveSession, intent
 	return validateLiveExecutionProposalMetadata(session, proposalMap) != nil
 }
 
+func shouldBlockAutoDispatchForLiveEntryTradeLimit(session domain.LiveSession, intent map[string]any) bool {
+	return validateLiveSignalBarEntryTradeLimit(session, intent) != nil
+}
+
+func validateLiveSignalBarEntryTradeLimit(session domain.LiveSession, proposalMap map[string]any) error {
+	if !liveEntryCountsTowardSignalBarLimit(proposalMap) {
+		return nil
+	}
+	maxTradesPerBar := maxIntValue(session.State["max_trades_per_bar"], 0)
+	if maxTradesPerBar <= 0 {
+		return nil
+	}
+	currentBarKey := liveProposalSignalBarStateKey(proposalMap)
+	if currentBarKey == "" || currentBarKey != stringValue(session.State["lastSignalBarStateKey"]) {
+		return nil
+	}
+	currentCount := maxIntValue(session.State["sessionReentryCount"], 0)
+	if currentCount < maxTradesPerBar {
+		return nil
+	}
+	return fmt.Errorf(
+		"live session %s reached max_trades_per_bar=%d for signal bar %s",
+		session.ID,
+		maxTradesPerBar,
+		currentBarKey,
+	)
+}
+
+func liveEntryCountsTowardSignalBarLimit(proposalMap map[string]any) bool {
+	if !strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["role"])), "entry") {
+		return false
+	}
+	switch normalizeStrategyReasonTag(stringValue(proposalMap["reason"])) {
+	case "zero-initial-reentry", "sl-reentry", "pt-reentry":
+		return true
+	default:
+		return false
+	}
+}
+
+func liveProposalSignalBarStateKey(proposalMap map[string]any) string {
+	if key := strings.TrimSpace(stringValue(proposalMap["signalBarStateKey"])); key != "" {
+		return key
+	}
+	return strings.TrimSpace(stringValue(mapValue(proposalMap["metadata"])["signalBarStateKey"]))
+}
+
 func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain.Order, error) {
 	if !strings.EqualFold(session.Status, "RUNNING") && !strings.EqualFold(session.Status, "READY") {
 		return domain.Order{}, fmt.Errorf("live session %s is not dispatchable in status %s", session.ID, session.Status)
@@ -440,6 +487,9 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	}
 	proposalMap = assembleLiveExecutionProposalMetadata(session, version.ID, proposalMap)
 	if err := validateLiveExecutionProposalMetadata(session, proposalMap); err != nil {
+		return domain.Order{}, err
+	}
+	if err := validateLiveSignalBarEntryTradeLimit(session, proposalMap); err != nil {
 		return domain.Order{}, err
 	}
 	dispatchStartedAt := time.Now().UTC()
@@ -942,7 +992,7 @@ func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map
 		return
 	}
 	reasonTag := normalizeStrategyReasonTag(stringValue(proposalMap["reason"]))
-	if reasonTag != "sl-reentry" && reasonTag != "pt-reentry" {
+	if reasonTag != "zero-initial-reentry" && reasonTag != "sl-reentry" && reasonTag != "pt-reentry" {
 		return
 	}
 	if orderID != "" && stringValue(state["lastCountedReentryOrderId"]) == orderID {

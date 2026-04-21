@@ -366,6 +366,29 @@ func TestResolveLivePositionWatermarksResetsLegacyRealPositionKey(t *testing.T) 
 	}
 }
 
+func TestResolveLivePositionWatermarksResetsSymbolBaseKeyForRealPositionWithID(t *testing.T) {
+	sessionState := map[string]any{
+		"hwm":                  52000.0,
+		"lwm":                  49000.0,
+		"watermarkPositionKey": "BTCUSDT|LONG|50000.00000000",
+	}
+	currentPosition := map[string]any{
+		"id":         "position-1",
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"entryPrice": 50000.0,
+		"quantity":   1.0,
+		"found":      true,
+	}
+	watermarks := resolveLivePositionWatermarks(currentPosition, sessionState)
+	if got := watermarks.PositionKey; got != encodeLivePositionWatermarkIdentityComponent("position-1")+"|BTCUSDT|LONG|50000.00000000" {
+		t.Fatalf("expected canonical real-position watermark key, got %s", got)
+	}
+	if watermarks.HWM != 50000.0 || watermarks.LWM != 50000.0 {
+		t.Fatalf("expected symbol base key to reset for identified real position, got %+v", watermarks)
+	}
+}
+
 func TestResolveLivePositionWatermarksResetsForPositionIDOnlyLegacyKey(t *testing.T) {
 	sessionState := map[string]any{
 		"hwm":                  52000.0,
