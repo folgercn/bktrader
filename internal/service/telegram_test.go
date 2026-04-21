@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
@@ -134,5 +135,121 @@ func TestTelegramNotificationRecoveryRestart(t *testing.T) {
 	}
 	if !strings.Contains(lastMsg, "✅ *[已恢复]*") {
 		t.Fatalf("expected recovery marker, got: %s", lastMsg)
+	}
+}
+
+func TestTelegramDispatchSuppressesFlappingRuntimeStaleAlerts(t *testing.T) {
+	var messages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		_ = json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	oldNow := telegramNow
+	base := time.Date(2026, 4, 21, 13, 0, 0, 0, time.UTC)
+	now := base
+	telegramNow = func() time.Time { return now }
+	defer func() { telegramNow = oldNow }()
+
+	store := memory.NewStore()
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:    true,
+			BotToken:   "test-token",
+			ChatID:     "123",
+			SendLevels: []string{"warning", "error"},
+		},
+	}
+
+	item := domain.PlatformNotification{
+		ID:     "runtime-stale-signal-runtime-1",
+		Status: "active",
+		Alert: domain.PlatformAlert{
+			ID:               "runtime-stale-signal-runtime-1",
+			Scope:            "runtime",
+			Level:            "warning",
+			Title:            "数据源过期",
+			Detail:           "1 个数据源状态已陈旧",
+			AccountName:      "Binance Testnet",
+			StrategyID:       "2",
+			RuntimeSessionID: "signal-runtime-1",
+			EventTime:        base,
+		},
+		UpdatedAt: base,
+	}
+
+	pending, shouldSend, err := p.advanceTelegramFlapSuppressedActiveDelivery(item, domain.NotificationDelivery{}, false, now)
+	if err != nil {
+		t.Fatalf("seed pending delivery failed: %v", err)
+	}
+	if shouldSend {
+		t.Fatal("expected first observation to stay pending")
+	}
+	if pending.Status != "pending" {
+		t.Fatalf("expected pending status, got %s", pending.Status)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no telegram message on first observation, got %#v", messages)
+	}
+
+	now = base.Add(30 * time.Second)
+	pending, shouldSend, err = p.advanceTelegramFlapSuppressedActiveDelivery(item, pending, true, now)
+	if err != nil {
+		t.Fatalf("refresh pending delivery failed: %v", err)
+	}
+	if shouldSend {
+		t.Fatal("expected flap-suppressed alert to stay pending before grace window")
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no telegram message before grace window, got %#v", messages)
+	}
+
+	now = base.Add(50 * time.Second)
+	sent, shouldSend, err := p.advanceTelegramFlapSuppressedActiveDelivery(item, pending, true, now)
+	if err != nil {
+		t.Fatalf("send suppressed alert failed: %v", err)
+	}
+	if !shouldSend {
+		t.Fatal("expected alert to send after grace window")
+	}
+	if sent.Status != "sent" {
+		t.Fatalf("expected sent status, got %s", sent.Status)
+	}
+	if len(messages) != 1 || !strings.Contains(messages[0], "数据源过期") {
+		t.Fatalf("expected one alert message after grace window, got %#v", messages)
+	}
+
+	now = base.Add(70 * time.Second)
+	resolvePending, recovered, err := p.advanceTelegramFlapSuppressedRecoveredDelivery(sent, now)
+	if err != nil {
+		t.Fatalf("mark resolve pending failed: %v", err)
+	}
+	if recovered {
+		t.Fatal("expected recovery to wait for stabilization window")
+	}
+	if resolvePending.Status != "resolve_pending" {
+		t.Fatalf("expected resolve_pending status, got %s", resolvePending.Status)
+	}
+
+	now = base.Add(135 * time.Second)
+	_, recovered, err = p.advanceTelegramFlapSuppressedRecoveredDelivery(resolvePending, now)
+	if err != nil {
+		t.Fatalf("send stabilized recovery failed: %v", err)
+	}
+	if !recovered {
+		t.Fatal("expected stabilized recovery message after grace window")
+	}
+	if len(messages) != 2 || !strings.Contains(messages[1], "✅ *[已恢复]*") {
+		t.Fatalf("expected recovery message after stabilization window, got %#v", messages)
 	}
 }
