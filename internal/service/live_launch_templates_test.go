@@ -6,28 +6,31 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
 
-func TestLiveLaunchTemplatesExposeSixBinanceTestnetVariants(t *testing.T) {
+func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
 	templates, err := platform.LiveLaunchTemplates()
 	if err != nil {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
-	if len(templates) != 6 {
-		t.Fatalf("expected 6 launch templates, got %d", len(templates))
+	if len(templates) != 8 {
+		t.Fatalf("expected 8 launch templates, got %d", len(templates))
 	}
 
 	expected := map[string]struct {
-		symbol    string
-		timeframe string
-		quantity  float64
+		symbol           string
+		timeframe        string
+		quantity         float64
+		researchBaseline bool
 	}{
-		"binance-testnet-btc-5m": {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
-		"binance-testnet-btc-4h": {symbol: "BTCUSDT", timeframe: "4h", quantity: 0.002},
-		"binance-testnet-btc-1d": {symbol: "BTCUSDT", timeframe: "1d", quantity: 0.002},
-		"binance-testnet-eth-5m": {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
-		"binance-testnet-eth-4h": {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
-		"binance-testnet-eth-1d": {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
+		"binance-testnet-btc-5m":  {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
+		"binance-testnet-btc-15m": {symbol: "BTCUSDT", timeframe: "15m", quantity: 0.002, researchBaseline: true},
+		"binance-testnet-btc-30m": {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, researchBaseline: true},
+		"binance-testnet-btc-4h":  {symbol: "BTCUSDT", timeframe: "4h", quantity: 0.002},
+		"binance-testnet-btc-1d":  {symbol: "BTCUSDT", timeframe: "1d", quantity: 0.002},
+		"binance-testnet-eth-5m":  {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
+		"binance-testnet-eth-4h":  {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
+		"binance-testnet-eth-1d":  {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
 	}
 
 	for _, item := range templates {
@@ -91,6 +94,45 @@ func TestLiveLaunchTemplatesExposeSixBinanceTestnetVariants(t *testing.T) {
 		}
 		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["defaultOrderQuantity"]); got != want.quantity {
 			t.Fatalf("expected defaultOrderQuantity=%v, got %v", want.quantity, got)
+		}
+		if want.researchBaseline {
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got == "" {
+				t.Fatalf("expected explicit strategyEngine for %s", item.Key)
+			}
+			if !boolValue(item.LaunchPayload.LiveSessionOverrides["dir2_zero_initial"]) {
+				t.Fatalf("expected dir2_zero_initial=true for %s", item.Key)
+			}
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["zero_initial_mode"]); got != "reentry_window" {
+				t.Fatalf("expected zero_initial_mode=reentry_window for %s, got %s", item.Key, got)
+			}
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["stop_mode"]); got != "atr" {
+				t.Fatalf("expected stop_mode=atr for %s, got %s", item.Key, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["stop_loss_atr"]); got != 0.05 {
+				t.Fatalf("expected stop_loss_atr=0.05 for %s, got %v", item.Key, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["profit_protect_atr"]); got != 1.0 {
+				t.Fatalf("expected profit_protect_atr=1.0 for %s, got %v", item.Key, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["trailing_stop_atr"]); got != 0.3 {
+				t.Fatalf("expected trailing_stop_atr=0.3 for %s, got %v", item.Key, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["delayed_trailing_activation_atr"]); got != 0.5 {
+				t.Fatalf("expected delayed_trailing_activation_atr=0.5 for %s, got %v", item.Key, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["long_reentry_atr"]); got != 0.1 {
+				t.Fatalf("expected long_reentry_atr=0.1 for %s, got %v", item.Key, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["short_reentry_atr"]); got != 0.0 {
+				t.Fatalf("expected short_reentry_atr=0.0 for %s, got %v", item.Key, got)
+			}
+			if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["max_trades_per_bar"], 0); got != 2 {
+				t.Fatalf("expected max_trades_per_bar=2 for %s, got %d", item.Key, got)
+			}
+			schedule := normalizeBacktestFloatSlice(item.LaunchPayload.LiveSessionOverrides["reentry_size_schedule"], nil)
+			if len(schedule) != 2 || schedule[0] != 0.20 || schedule[1] != 0.10 {
+				t.Fatalf("expected reentry_size_schedule [0.20, 0.10] for %s, got %#v", item.Key, item.LaunchPayload.LiveSessionOverrides["reentry_size_schedule"])
+			}
 		}
 		if item.LaunchPayload.LaunchTemplateKey != item.Key {
 			t.Fatalf("expected launch template key %s, got %s", item.Key, item.LaunchPayload.LaunchTemplateKey)

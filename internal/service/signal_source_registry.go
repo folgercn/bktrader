@@ -84,10 +84,10 @@ func (p *Platform) registerBuiltInSignalSources() {
 		Roles:        []string{"signal"},
 		Environments: []string{"paper", "live"},
 		SymbolScope:  "multi_symbol",
-		Description:  "交易所原生 5m/4h/1d K 线流，用于实时策略信号计算、MA20 和前两根 OHLC 状态。",
+		Description:  "交易所原生 5m/15m/30m/4h/1d K 线流，用于实时策略信号计算、SMA5/MA20 和前两根 OHLC 状态。",
 		Metadata: map[string]any{
 			"stream":               "kline",
-			"supportedTimeframes":  []string{"5m", "4h", "1d"},
+			"supportedTimeframes":  []string{"5m", "15m", "30m", "4h", "1d"},
 			"preferForSignalState": true,
 		},
 	}})
@@ -211,7 +211,7 @@ func (p *Platform) SignalSourceCatalog() map[string]any {
 		"sources": sources,
 		"notes": []string{
 			"账户级信号源绑定支持多源并行，可同时绑定交易触发源和盘口特征源。",
-			"5m / 4h / 1d 策略信号建议直接绑定交易所 kline 源，而不是从 tick 聚合 signal bar。",
+			"5m / 15m / 30m / 4h / 1d 策略信号建议直接绑定交易所 kline 源，而不是从 tick 聚合 signal bar。",
 			"paper/live 应优先绑定交易所 trade tick；order book 建议作为 feature 源单独接入。",
 			"跨市场套利可在单账户或多账户上并行绑定 Binance / OKX 等多个来源。",
 		},
@@ -224,7 +224,7 @@ func (p *Platform) SignalSourceTypes() []map[string]any {
 		{
 			"streamType":    "signal_bar",
 			"primaryRole":   "signal",
-			"description":   "交易所原生 K 线流，适合作为 5m / 4h / 1d 策略信号源。",
+			"description":   "交易所原生 K 线流，适合作为 5m / 15m / 30m / 4h / 1d 策略信号源。",
 			"typicalInputs": []string{"open", "high", "low", "close", "volume", "interval", "barStart", "barEnd", "isClosed"},
 		},
 		{

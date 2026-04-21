@@ -71,7 +71,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		},
 	}
 
-	buildTemplate := func(symbol, timeframe string, quantity float64) LiveLaunchTemplate {
+	buildTemplate := func(symbol, timeframe string, quantity float64, applyResearchBaseline bool) LiveLaunchTemplate {
 		signalBindings := []map[string]any{
 			{
 				"sourceKey": "binance-kline",
@@ -114,8 +114,36 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			"executionSLExitTimeoutFallbackOrderType": "MARKET",
 			"dispatchCooldownSeconds":                 30,
 		}
+		baselineNotes := []string{}
+		if applyResearchBaseline {
+			liveOverrides["strategyEngine"] = firstNonEmpty(strategyEngine, "bk-default")
+			liveOverrides["dir2_zero_initial"] = true
+			liveOverrides["zero_initial_mode"] = "reentry_window"
+			liveOverrides["stop_mode"] = "atr"
+			liveOverrides["stop_loss_atr"] = 0.05
+			liveOverrides["profit_protect_atr"] = 1.0
+			liveOverrides["trailing_stop_atr"] = 0.3
+			liveOverrides["delayed_trailing_activation_atr"] = 0.5
+			liveOverrides["long_reentry_atr"] = 0.1
+			liveOverrides["short_reentry_atr"] = 0.0
+			liveOverrides["max_trades_per_bar"] = 2
+			liveOverrides["reentry_size_schedule"] = []float64{0.20, 0.10}
+			baselineNotes = append(baselineNotes,
+				"该模板已显式固化 intraday research baseline：dir2 zero initial + reentry_window + reentry_size_schedule=[0.20, 0.10] + max_trades_per_bar=2。",
+				"非 1d 周期默认使用 canonical SMA5 hard filter；移动止损与利润保护参数分别固定为 trailing_stop_atr=0.3、profit_protect_atr=1.0、delayed_trailing_activation_atr=0.5。",
+			)
+		}
 		key := fmt.Sprintf("binance-testnet-%s-%s", strings.ToLower(symbol[:3]), strings.ToLower(timeframe))
 		quantityNote := fmt.Sprintf("默认下单量 %.3f 用于尽量避免 Binance testnet 最小名义价值拦截。", quantity)
+		notes := []string{
+			fmt.Sprintf("当前主策略使用 %s（strategyEngine=%s）。", strategyName, firstNonEmpty(strategyEngine, "bk-default")),
+			"signal 绑定使用 Binance 原生 kline；trigger 绑定使用 Binance trade tick；feature 绑定使用 Binance order book。",
+			"点击模板会独占替换该策略当前模板绑定，不再在旧模板之上继续叠加 symbol / timeframe。",
+			quantityNote,
+			"模板里只有 dispatchMode 需要前端在提交前注入；其余 launch 参数保持固定。",
+			"launch 会在安全前提下刷新 account + strategy 级 runtime 订阅，live session 仍按 symbol + signalTimeframe 分开创建或复用。",
+		}
+		notes = append(notes, baselineNotes...)
 		return LiveLaunchTemplate{
 			Key:                 key,
 			Name:                fmt.Sprintf("Binance Testnet %s %s", symbol, timeframe),
@@ -148,24 +176,19 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 				StartSession:           true,
 			},
 			Steps: cloneLiveLaunchTemplateSteps(steps),
-			Notes: []string{
-				fmt.Sprintf("当前主策略使用 %s（strategyEngine=%s）。", strategyName, firstNonEmpty(strategyEngine, "bk-default")),
-				"signal 绑定使用 Binance 原生 kline；trigger 绑定使用 Binance trade tick；feature 绑定使用 Binance order book。",
-				"点击模板会独占替换该策略当前模板绑定，不再在旧模板之上继续叠加 symbol / timeframe。",
-				quantityNote,
-				"模板里只有 dispatchMode 需要前端在提交前注入；其余 launch 参数保持固定。",
-				"launch 会在安全前提下刷新 account + strategy 级 runtime 订阅，live session 仍按 symbol + signalTimeframe 分开创建或复用。",
-			},
+			Notes: notes,
 		}
 	}
 
 	return []LiveLaunchTemplate{
-		buildTemplate("BTCUSDT", "5m", 0.002),
-		buildTemplate("BTCUSDT", "4h", 0.002),
-		buildTemplate("BTCUSDT", "1d", 0.002),
-		buildTemplate("ETHUSDT", "5m", 0.100),
-		buildTemplate("ETHUSDT", "4h", 0.100),
-		buildTemplate("ETHUSDT", "1d", 0.100),
+		buildTemplate("BTCUSDT", "5m", 0.002, false),
+		buildTemplate("BTCUSDT", "15m", 0.002, true),
+		buildTemplate("BTCUSDT", "30m", 0.002, true),
+		buildTemplate("BTCUSDT", "4h", 0.002, false),
+		buildTemplate("BTCUSDT", "1d", 0.002, false),
+		buildTemplate("ETHUSDT", "5m", 0.100, false),
+		buildTemplate("ETHUSDT", "4h", 0.100, false),
+		buildTemplate("ETHUSDT", "1d", 0.100, false),
 	}, nil
 }
 
