@@ -1893,7 +1893,7 @@ func TestUpdateLiveSessionAliasClearing(t *testing.T) {
 	session, _ := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{"symbol": "BTCUSDT"})
 
 	// 1. Set alias
-	updated, err := platform.UpdateLiveSession(session.ID, "New Alias", "", map[string]any{})
+	updated, err := platform.UpdateLiveSession(session.ID, "New Alias", "", "", map[string]any{})
 	if err != nil {
 		t.Fatalf("set alias failed: %v", err)
 	}
@@ -1902,7 +1902,7 @@ func TestUpdateLiveSessionAliasClearing(t *testing.T) {
 	}
 
 	// 2. Clear alias (provide empty string)
-	cleared, err := platform.UpdateLiveSession(session.ID, "  ", "", map[string]any{})
+	cleared, err := platform.UpdateLiveSession(session.ID, "  ", "", "", map[string]any{})
 	if err != nil {
 		t.Fatalf("clear alias failed: %v", err)
 	}
