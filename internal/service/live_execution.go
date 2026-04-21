@@ -501,13 +501,14 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 		delete(state, "lastAutoDispatchError")
 	}
 	appendTimelineEvent(state, "order", dispatchedAt, "live-intent-dispatched", executionDispatchTimelineMetadata(proposalMap, created, createErr != nil))
-	if strings.EqualFold(created.Status, "FILLED") {
+	settlementPending := liveOrderSettlementSyncPending(created)
+	if strings.EqualFold(created.Status, "FILLED") && !settlementPending {
 		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil {
 			state["lastSyncError"] = syncErr.Error()
 		}
 	}
 	updatedSession, _ := p.store.UpdateLiveSessionState(session.ID, state)
-	if strings.EqualFold(created.Status, "FILLED") && updatedSession.ID != "" {
+	if strings.EqualFold(created.Status, "FILLED") && !settlementPending && updatedSession.ID != "" {
 		if refreshed, refreshErr := p.refreshLiveSessionPositionContext(updatedSession, dispatchedAt, "live-order-fill-sync"); refreshErr == nil {
 			updatedSession = refreshed
 		}

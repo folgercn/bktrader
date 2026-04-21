@@ -579,8 +579,24 @@ func (p *Platform) applyLiveSubmissionResult(
 func markLiveSettlementSyncRetry(order domain.Order, err error) domain.Order {
 	order.Metadata = cloneMetadata(order.Metadata)
 	order.Metadata[liveSettlementSyncErrorKey] = err.Error()
-	order.Metadata[liveSettlementSyncRequiredKey] = true
+	if liveOrderFillSettlementComplete(order) {
+		delete(order.Metadata, liveSettlementSyncRequiredKey)
+	} else {
+		order.Metadata[liveSettlementSyncRequiredKey] = true
+	}
 	return order
+}
+
+func liveOrderSettlementSyncPending(order domain.Order) bool {
+	return boolValue(order.Metadata[liveSettlementSyncRequiredKey]) &&
+		!liveOrderFillSettlementComplete(order)
+}
+
+func liveOrderFillSettlementComplete(order domain.Order) bool {
+	if order.Quantity <= 0 {
+		return false
+	}
+	return parseFloatValue(order.Metadata["filledQuantity"]) >= order.Quantity-1e-9
 }
 
 func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.Order, error) {
@@ -959,6 +975,8 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	orderCompletelyFilled := filledQuantity >= order.Quantity-1e-9
 	if orderCompletelyFilled {
 		order.Status = "FILLED"
+		delete(order.Metadata, liveSettlementSyncRequiredKey)
+		delete(order.Metadata, liveSettlementSyncErrorKey)
 	} else if filledQuantity > 0 {
 		order.Status = "PARTIALLY_FILLED"
 	}
