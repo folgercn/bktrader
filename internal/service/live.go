@@ -346,6 +346,10 @@ func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountRec
 	if err != nil {
 		return result, err
 	}
+	account, err = p.refreshLiveAccountPositionReconcileGate(account)
+	if err != nil {
+		return result, err
+	}
 	p.syncLiveSessionsForAccountSnapshot(account)
 	result.Account = account
 	return result, nil
@@ -450,6 +454,24 @@ func (p *Platform) persistLiveAccountSyncSuccess(account domain.Account, binding
 	account.Metadata["liveSyncSnapshot"] = snapshot
 	account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
 	updateAccountSyncSuccessHealth(&account, syncedAt, previousSuccessAt)
+	return p.store.UpdateAccount(account)
+}
+
+func (p *Platform) refreshLiveAccountPositionReconcileGate(account domain.Account) (domain.Account, error) {
+	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+	exchangePositions := metadataList(snapshot["positions"])
+	reconcileGate, reconcileErr := p.reconcileLiveAccountPositions(account, exchangePositions)
+	if reconcileErr != nil {
+		account.Metadata = cloneMetadata(account.Metadata)
+		account.Metadata["lastLivePositionSyncError"] = reconcileErr.Error()
+		account, _ = p.store.UpdateAccount(account)
+		return account, reconcileErr
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	delete(account.Metadata, "lastLivePositionSyncError")
+	account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+	account.Metadata["livePositionReconcileGate"] = reconcileGate
+	clearLiveAccountPositionReconcileRequirement(account.Metadata)
 	return p.store.UpdateAccount(account)
 }
 
@@ -1124,19 +1146,7 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 	if err != nil {
 		return domain.Account{}, err
 	}
-	reconcileGate, reconcileErr := p.reconcileLiveAccountPositions(account, openPositions)
-	if reconcileErr != nil {
-		account.Metadata = cloneMetadata(account.Metadata)
-		account.Metadata["lastLivePositionSyncError"] = reconcileErr.Error()
-		account, _ = p.store.UpdateAccount(account)
-		return account, reconcileErr
-	}
-	account.Metadata = cloneMetadata(account.Metadata)
-	delete(account.Metadata, "lastLivePositionSyncError")
-	account.Metadata["lastLivePositionSyncAt"] = time.Now().UTC().Format(time.RFC3339)
-	account.Metadata["livePositionReconcileGate"] = reconcileGate
-	clearLiveAccountPositionReconcileRequirement(account.Metadata)
-	return p.store.UpdateAccount(account)
+	return p.refreshLiveAccountPositionReconcileGate(account)
 }
 
 func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
@@ -1829,6 +1839,14 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 	syncedAt := time.Now().UTC()
 	symbols := make(map[string]any)
 	blockingCount := 0
+	previousSymbols := make(map[string]struct{})
+	for symbol := range mapValue(mapValue(account.Metadata["livePositionReconcileGate"])["symbols"]) {
+		normalized := NormalizeSymbol(symbol)
+		if normalized == "" {
+			continue
+		}
+		previousSymbols[normalized] = struct{}{}
+	}
 	recordGate := func(symbol string, gate map[string]any) {
 		if symbol == "" || gate == nil {
 			return
@@ -1945,6 +1963,24 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			"scenario":         "db-position-exchange-missing",
 			"blocking":         true,
 			"dbPosition":       buildRecoveredLivePositionStateSnapshot(position),
+			"exchangePosition": map[string]any{},
+		})
+	}
+	for symbol := range previousSymbols {
+		if _, ok := symbols[symbol]; ok {
+			continue
+		}
+		if _, ok := seenSymbols[symbol]; ok {
+			continue
+		}
+		if position, ok := existingBySymbol[symbol]; ok && position.Quantity > 0 {
+			continue
+		}
+		recordGate(symbol, map[string]any{
+			"status":           livePositionReconcileGateStatusVerified,
+			"scenario":         "exchange-flat",
+			"blocking":         false,
+			"dbPosition":       map[string]any{},
 			"exchangePosition": map[string]any{},
 		})
 	}

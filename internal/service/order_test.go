@@ -242,6 +242,89 @@ func TestClosePositionAllowsLiveManualCloseWithoutRuntimeSession(t *testing.T) {
 	}
 }
 
+func TestEnsureLivePositionReconcileGateAllowsExecutionSelfHealsStaleDBOnlyPosition(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	syncedAt := time.Date(2026, 4, 21, 1, 23, 45, 0, time.UTC)
+
+	configureTestLiveRESTReconcileHistoryAdapter(
+		t,
+		platform,
+		"test-manual-close-gate-self-heal",
+		[]map[string]any{},
+		map[string][]map[string]any{
+			"BTCUSDT": {{
+				"symbol":        "BTCUSDT",
+				"orderId":       "9103",
+				"clientOrderId": "client-9103",
+				"status":        "FILLED",
+				"side":          "SELL",
+				"type":          "MARKET",
+				"origType":      "MARKET",
+				"origQty":       0.01,
+				"executedQty":   0.01,
+				"price":         67940.0,
+				"avgPrice":      67940.0,
+				"reduceOnly":    true,
+				"closePosition": false,
+				"time":          float64(syncedAt.Add(-2 * time.Minute).UnixMilli()),
+				"updateTime":    float64(syncedAt.UnixMilli()),
+			}},
+		},
+		map[string][]LiveFillReport{
+			"BTCUSDT": {{
+				Price:    67940.0,
+				Quantity: 0.01,
+				Fee:      0.01,
+				Metadata: map[string]any{
+					"exchangeOrderId": "9103",
+					"tradeId":         "trade-9103",
+					"tradeTime":       syncedAt.Format(time.RFC3339),
+				},
+			}},
+		},
+	)
+
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         67940,
+	}); err != nil {
+		t.Fatalf("save stale position failed: %v", err)
+	}
+
+	account, err := platform.SyncLiveAccount("live-main")
+	if err != nil {
+		t.Fatalf("sync live account failed: %v", err)
+	}
+	initialGate := resolveLivePositionReconcileGate(account, "BTCUSDT", true)
+	if !boolValue(initialGate["blocking"]) || stringValue(initialGate["scenario"]) != "db-position-exchange-missing" {
+		t.Fatalf("expected initial stale db-position-exchange-missing gate, got %#v", initialGate)
+	}
+
+	if err := platform.ensureLivePositionReconcileGateAllowsExecution("live-main", "BTCUSDT", true); err != nil {
+		t.Fatalf("expected reconcile gate check to self-heal stale db-only position, got %v", err)
+	}
+	if _, found, err := store.FindPosition("live-main", "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected stale BTCUSDT position to be removed after reconcile gate self-heal")
+	}
+
+	account, err = store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get healed account failed: %v", err)
+	}
+	healedGate := resolveLivePositionReconcileGate(account, "BTCUSDT", true)
+	if boolValue(healedGate["blocking"]) {
+		t.Fatalf("expected reconcile gate to clear after self-heal, got %#v", healedGate)
+	}
+}
+
 func TestCreateLiveOrderImmediateFilledSubmissionSettlesReduceOnlyExit(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)

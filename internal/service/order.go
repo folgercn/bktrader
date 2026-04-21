@@ -38,11 +38,14 @@ func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
 	if err != nil {
 		return domain.Order{}, err
 	}
-	// Reconcile-gated recoveries are intentionally fail-closed: once local state
-	// diverges from exchange truth, the platform must not place any additional
-	// execution claim, including manual close orders, until an operator resolves
-	// the position directly against the exchange.
+	// Manual close stays fail-closed for unresolved reconcile conflicts, but a
+	// stale local-only position is allowed one authoritative reconcile self-heal
+	// attempt before we block the close path.
 	if err := p.ensureLivePositionReconcileGateAllowsExecution(position.AccountID, position.Symbol, position.Quantity > 0); err != nil {
+		return domain.Order{}, err
+	}
+	position, _, err = p.resolveClosePositionTarget(positionID)
+	if err != nil {
 		return domain.Order{}, err
 	}
 	order := buildClosePositionOrder(position)
@@ -63,6 +66,25 @@ func (p *Platform) ensureLivePositionReconcileGateAllowsExecution(accountID, sym
 		return err
 	}
 	gate := resolveLivePositionReconcileGate(account, symbol, requiresVerification)
+	if boolValue(gate["blocking"]) {
+		if healedAccount, attempted, healErr := p.attemptLiveAccountReconcileSelfHeal(account, symbol); attempted {
+			if healErr != nil {
+				return healErr
+			}
+			account = healedAccount
+			gate = resolveLivePositionReconcileGate(account, symbol, requiresVerification)
+			if boolValue(gate["blocking"]) &&
+				strings.EqualFold(strings.TrimSpace(stringValue(gate["scenario"])), "missing-reconcile-verdict") {
+				position, found, findErr := p.store.FindPosition(accountID, symbol)
+				if findErr != nil {
+					return findErr
+				}
+				if !found || position.Quantity <= 0 {
+					return nil
+				}
+			}
+		}
+	}
 	if !boolValue(gate["blocking"]) {
 		return nil
 	}
