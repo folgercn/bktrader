@@ -260,7 +260,7 @@ func (s *Store) ListNotificationDeliveries() ([]domain.NotificationDelivery, err
 	return items, nil
 }
 
-func (s *Store) UpsertNotificationDelivery(notificationID, channel, status, lastError string) (domain.NotificationDelivery, error) {
+func (s *Store) UpsertNotificationDelivery(notificationID, channel, status, lastError string, metadata map[string]any) (domain.NotificationDelivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -270,6 +270,7 @@ func (s *Store) UpsertNotificationDelivery(notificationID, channel, status, last
 		Channel:        channel,
 		Status:         status,
 		LastError:      lastError,
+		Metadata:       metadata,
 		AttemptedAt:    now,
 		UpdatedAt:      now,
 	}

@@ -47,7 +47,7 @@ func TestTelegramNotificationRecovery(t *testing.T) {
 	
 	// 模拟核心记录：
 	// a. Store 中有已发送记录
-	_, _ = store.UpsertNotificationDelivery(notificationID, "telegram", "sent", "")
+	_, _ = store.UpsertNotificationDelivery(notificationID, "telegram", "sent", "", nil)
 	// b. 内存缓存中有标题记录
 	p.telegramSentAlertCache.Store(notificationID, alertTitle)
 	// c. 当前活跃告警列表为空 (ListNotifications 会返回空)
@@ -83,5 +83,56 @@ func TestTelegramNotificationRecovery(t *testing.T) {
 	// c. 内存缓存应被清理
 	if _, ok := p.telegramSentAlertCache.Load(notificationID); ok {
 		t.Fatal("expected alert to be removed from memory cache")
+	}
+}
+
+func TestTelegramNotificationRecoveryRestart(t *testing.T) {
+	// 这个测试模拟服务重启：内存缓存为空，但数据库中存有 metadata 标题
+	var lastMsg string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		json.Unmarshal(body, &p)
+		lastMsg = p["text"].(string)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	store := memory.NewStore()
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:    true,
+			BotToken:   "test-token",
+			ChatID:     "123",
+			SendLevels: []string{"warning", "error"},
+		},
+	}
+
+	notificationID := "alert-restart-456"
+	alertTitle := "重启后恢复标题"
+
+	// 1. 模拟场景：
+	// a. Store 中有已发送记录，且包含 metadata 标题
+	_, _ = store.UpsertNotificationDelivery(notificationID, "telegram", "sent", "", map[string]any{"title": alertTitle})
+	// b. 内存缓存为空 (模拟重启)
+	p.telegramSentAlertCache.Delete(notificationID)
+
+	// 2. 执行调度
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("dispatch failed: %v", err)
+	}
+
+	// 3. 验证回复内容包含持久化的标题
+	if !strings.Contains(lastMsg, alertTitle) {
+		t.Fatalf("expected persistent alert title in recovery msg, got: %s", lastMsg)
+	}
+	if !strings.Contains(lastMsg, "✅ *[已恢复]*") {
+		t.Fatalf("expected recovery marker, got: %s", lastMsg)
 	}
 }

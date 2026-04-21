@@ -490,11 +490,12 @@ type TelegramConfig struct {
 
 // NotificationDelivery 记录通知通过外部通道的发送结果。
 type NotificationDelivery struct {
-	NotificationID string    `json:"notificationId"`
-	Channel        string    `json:"channel"` // telegram
-	Status         string    `json:"status"`  // sent / failed
-	LastError      string    `json:"lastError,omitempty"`
-	AttemptedAt    time.Time `json:"attemptedAt"`
-	SentAt         time.Time `json:"sentAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	NotificationID string         `json:"notificationId"`
+	Channel        string         `json:"channel"` // telegram
+	Status         string         `json:"status"`  // sent / failed
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	LastError      string         `json:"lastError,omitempty"`
+	AttemptedAt    time.Time      `json:"attemptedAt"`
+	SentAt         time.Time      `json:"sentAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }

@@ -26,11 +26,11 @@ func (p *Platform) SendNotificationToTelegram(notificationID string) error {
 			continue
 		}
 		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
-			_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", err.Error())
+			_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", err.Error(), nil)
 			logger.Warn("send telegram notification failed", "error", err)
 			return err
 		}
-		_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", "")
+		_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", "", map[string]any{"title": item.Alert.Title})
 		logger.Info("telegram notification sent", "level", item.Alert.Level)
 		return nil
 	}
@@ -164,7 +164,7 @@ func (p *Platform) DispatchTelegramNotifications() error {
 			continue
 		}
 		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
-			_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", err.Error())
+			_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", err.Error(), nil)
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -173,7 +173,7 @@ func (p *Platform) DispatchTelegramNotifications() error {
 		}
 		// 记录到缓存用于恢复通知
 		p.telegramSentAlertCache.Store(item.ID, item.Alert.Title)
-		if _, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", ""); err != nil {
+		if _, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", "", map[string]any{"title": item.Alert.Title}); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -195,6 +195,11 @@ func (p *Platform) DispatchTelegramNotifications() error {
 			title := "未知告警"
 			if ok {
 				title = titleRaw.(string)
+			} else if delivery.Metadata != nil {
+				// 如果内存缓存失效（如重启后），尝试从持久化的 Metadata 中恢复标题
+				if persistentTitle, exists := delivery.Metadata["title"]; exists {
+					title = fmt.Sprintf("%v", persistentTitle)
+				}
 			}
 
 			recoveryMsg := fmt.Sprintf("✅ *[已恢复]* %s\n告警已自动解除。ID: %s", title, delivery.NotificationID)
@@ -204,7 +209,7 @@ func (p *Platform) DispatchTelegramNotifications() error {
 			}
 
 			// 标记为已恢复，防止重复发送
-			if _, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "recovered", ""); err != nil {
+			if _, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "recovered", "", delivery.Metadata); err != nil {
 				p.logger("service.telegram", "notification_id", delivery.NotificationID).Warn("record telegram recovery delivery failed", "error", err)
 			}
 			p.telegramSentAlertCache.Delete(delivery.NotificationID)
