@@ -253,7 +253,7 @@ func TestListAlertsShowsAuthoritativeSyncWarningForLocalRecoveryFallback(t *test
 			if alert.Level != "warning" {
 				t.Fatalf("expected warning level, got %s", alert.Level)
 			}
-			if !strings.Contains(alert.Detail, "watchdog auto-exit is paused") {
+			if !strings.Contains(alert.Detail, "看门狗自动平仓已暂停") {
 				t.Fatalf("expected pause detail in alert, got %s", alert.Detail)
 			}
 		}

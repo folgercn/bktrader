@@ -182,6 +182,11 @@ func cloneMetadata(metadata map[string]any) map[string]any {
 	return out
 }
 
+// ToFloat64 将 any 类型值转换为 float64，支持常见数值类型和字符串（导出版本）。
+func ToFloat64(value any) (float64, bool) {
+	return toFloat64(value)
+}
+
 // toFloat64 将 any 类型值转换为 float64，支持常见数值类型和字符串。
 func toFloat64(value any) (float64, bool) {
 	switch v := value.(type) {

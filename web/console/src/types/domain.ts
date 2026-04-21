@@ -586,6 +586,10 @@ export interface LiveSessionForm {
   executionSLExitMaxSpreadBps: string;
   dispatchMode: string;
   dispatchCooldownSeconds: string;
+  freshnessOverrideSignalBarFreshnessSeconds?: string;
+  freshnessOverrideTradeTickFreshnessSeconds?: string;
+  freshnessOverrideOrderBookFreshnessSeconds?: string;
+  freshnessOverrideRuntimeQuietSeconds?: string;
 }
 
 export interface AccountSignalForm {

@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { AccountRecord, ActiveSettingsModal, LiveSession, LiveSessionForm, StrategyRecord } from "../types/domain";
+import { AccountRecord, ActiveSettingsModal, LiveSession, LiveSessionForm, RuntimePolicy, StrategyRecord } from "../types/domain";
 import { strategyLabel } from "../utils/derivation";
 import {
   ModalActions,
@@ -56,6 +56,7 @@ interface LiveSessionModalProps {
   loadDashboard: () => Promise<void>;
   setError: (val: string | null) => void;
   fetchJSON: <T>(path: string, init?: RequestInit) => Promise<T>;
+  runtimePolicy: RuntimePolicy | null;
 }
 
 const EMPTY_SELECT_VALUE = "__empty__";
@@ -108,6 +109,7 @@ export function LiveSessionModal({
   loadDashboard,
   setError,
   fetchJSON,
+  runtimePolicy,
 }: LiveSessionModalProps) {
   const open = activeSettingsModal === "live-session";
 
@@ -121,8 +123,7 @@ export function LiveSessionModal({
       kicker="Live Session"
       title="配置实盘会话"
       description="在此统一管理账户、策略执行和分发参数。系统会严格遵守人工审核边界以确保交易安全。"
-      className="max-w-[min(810px,calc(100vw-2rem))]"
-
+      className="max-w-[min(880px,calc(100vw-2rem))]"
     >
       {liveSessionError ? <ModalNotice tone="error">{liveSessionError}</ModalNotice> : null}
       {liveSessionNotice ? <ModalNotice tone="success">{liveSessionNotice}</ModalNotice> : null}
@@ -150,210 +151,247 @@ export function LiveSessionModal({
 
       </ModalMetaStrip>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Core Config Section */}
-        <ModalGroup>
-          <ModalSectionHeader 
-            icon={Layers} 
-            title="核心配置" 
-            description="设置交易账户、策略及基本交易参数" 
-          />
-          <ModalFormGrid>
-
-            <LiveSelectField
-              label="实盘账户"
-              value={liveSessionForm.accountId}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, accountId: value }))}
-              options={liveAccounts.map((account) => ({
-                value: account.id,
-                label: `${account.name} (${account.status})`,
-              }))}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          {/* Core Config Section */}
+          <ModalGroup>
+            <ModalSectionHeader 
+              icon={Layers} 
+              title="核心配置" 
+              description="设置账户、策略及基本参数" 
             />
-            <LiveSelectField
-              label="绑定策略"
-              value={liveSessionForm.strategyId}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, strategyId: value }))}
-              options={strategyOptions}
-            />
-            <LiveSelectField
-              label="信号周期"
-              value={liveSessionForm.signalTimeframe}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: value }))}
-              options={[
-                { value: "5m", label: "5m" },
-                { value: "4h", label: "4h" },
-                { value: "1d", label: "1d" },
-              ]}
-            />
-            <LiveSelectField
-              label="执行数据源"
-              value={liveSessionForm.executionDataSource}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionDataSource: value }))}
-              options={[
-                { value: "tick", label: "Tick (High Precision)" },
-                { value: "1min", label: "1 min (Optimized)" },
-              ]}
-            />
-            <ModalField label="交易对 (Symbol)">
-              <ModalInput
-                placeholder="例如: BTCUSDT"
-                value={liveSessionForm.symbol}
-                onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+            <ModalFormGrid columns="wide">
+              <LiveSelectField
+                label="实盘账户"
+                value={liveSessionForm.accountId}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, accountId: value }))}
+                options={liveAccounts.map((account) => ({
+                  value: account.id,
+                  label: `${account.name} (${account.status})`,
+                }))}
               />
-            </ModalField>
-            <ModalField label="默认下单量">
-              <ModalInput
-                placeholder="0.00"
-                value={liveSessionForm.defaultOrderQuantity}
-                onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
+              <LiveSelectField
+                label="绑定策略"
+                value={liveSessionForm.strategyId}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, strategyId: value }))}
+                options={strategyOptions}
               />
-
-            </ModalField>
-          </ModalFormGrid>
-        </ModalGroup>
-
-        {/* Entry Execution Section */}
-        <ModalGroup>
-          <ModalSectionHeader 
-            icon={Zap} 
-            title="进场执行" 
-            description="定义开仓时的委托类型及滑点保护机制" 
-          />
-          <ModalFormGrid>
-
-            <LiveSelectField
-              label="进场订单类型"
-              value={liveSessionForm.executionEntryOrderType}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionEntryOrderType: value }))}
-              options={[
-                { value: "MARKET", label: "MARKET" },
-                { value: "LIMIT", label: "LIMIT" },
-              ]}
-            />
-            <ModalField label="最大价差 (bps)">
-              <ModalInput
-                placeholder="BPS"
-                value={liveSessionForm.executionEntryMaxSpreadBps}
-                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
+              <LiveSelectField
+                label="信号周期"
+                value={liveSessionForm.signalTimeframe}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, signalTimeframe: value }))}
+                options={[
+                  { value: "5m", label: "5m" },
+                  { value: "4h", label: "4h" },
+                  { value: "1d", label: "1d" },
+                ]}
               />
-            </ModalField>
-
-            <LiveSelectField
-              label="宽价差处理"
-              value={liveSessionForm.executionEntryWideSpreadMode}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionEntryWideSpreadMode: value }))}
-              options={[
-                { value: "limit-maker", label: "Limit Maker (Post-Only)" },
-                { value: "", label: "Wait / Skip" },
-              ]}
-            />
-            <LiveSelectField
-              label="进场超时备选"
-              value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
-              onValueChange={(value) =>
-                setLiveSessionForm((current) => ({ ...current, executionEntryTimeoutFallbackOrderType: value }))
-              }
-              options={[
-                { value: "MARKET", label: "MARKET" },
-                { value: "LIMIT", label: "LIMIT" },
-                { value: "", label: "Disabled" },
-              ]}
-            />
-          </ModalFormGrid>
-        </ModalGroup>
-
-        {/* Exit Strategy Section */}
-        <ModalGroup>
-          <ModalSectionHeader 
-            icon={Target} 
-            title="出场策略 (PT/SL)" 
-            description="配置止盈(Take Profit)与止损(Stop Loss)的执行细节" 
-          />
-          <ModalFormGrid>
-
-            <LiveSelectField
-              label="止盈订单类型"
-              value={liveSessionForm.executionPTExitOrderType}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionPTExitOrderType: value }))}
-              options={[
-                { value: "LIMIT", label: "LIMIT" },
-                { value: "MARKET", label: "MARKET" },
-              ]}
-            />
-            <LiveSelectField
-              label="止盈 TIF"
-              value={liveSessionForm.executionPTExitTimeInForce}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeInForce: value }))}
-              options={[
-                { value: "GTC", label: "GTC (Good Till Cancel)" },
-                { value: "GTX", label: "GTX (Post Only)" },
-                { value: "IOC", label: "IOC (Immediate or Cancel)" },
-              ]}
-            />
-            <ModalCheckboxField
-              label="止盈仅做 Maker"
-              checked={liveSessionForm.executionPTExitPostOnly}
-              onChange={(checked) => setLiveSessionForm((current) => ({ ...current, executionPTExitPostOnly: checked }))}
-            />
-            <LiveSelectField
-              label="止盈超时备选"
-              value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
-              onValueChange={(value) =>
-                setLiveSessionForm((current) => ({ ...current, executionPTExitTimeoutFallbackOrderType: value }))
-              }
-              options={[
-                { value: "MARKET", label: "MARKET" },
-                { value: "LIMIT", label: "LIMIT" },
-                { value: "", label: "Disabled" },
-              ]}
-            />
-            <LiveSelectField
-              label="止损订单类型"
-              value={liveSessionForm.executionSLExitOrderType}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionSLExitOrderType: value }))}
-              options={[
-                { value: "MARKET", label: "MARKET" },
-                { value: "LIMIT", label: "LIMIT" },
-              ]}
-            />
-            <ModalField label="止损最大价差 (bps)">
-              <ModalInput
-                placeholder="BPS"
-                value={liveSessionForm.executionSLExitMaxSpreadBps}
-                onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
+              <LiveSelectField
+                label="数据源"
+                value={liveSessionForm.executionDataSource}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionDataSource: value }))}
+                options={[
+                  { value: "tick", label: "Tick" },
+                  { value: "1min", label: "1 min" },
+                ]}
               />
-            </ModalField>
+              <ModalField label="交易对">
+                <ModalInput
+                  placeholder="BTCUSDT"
+                  value={liveSessionForm.symbol}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
+                />
+              </ModalField>
+              <ModalField label="默认下单量">
+                <ModalInput
+                  placeholder="0.00"
+                  value={liveSessionForm.defaultOrderQuantity}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
+                />
+              </ModalField>
+            </ModalFormGrid>
+          </ModalGroup>
 
-          </ModalFormGrid>
-        </ModalGroup>
-
-        {/* Dispatch & Risk Section */}
-        <ModalGroup>
-          <ModalSectionHeader 
-            icon={ShieldAlert} 
-            title="分发与风控" 
-            description="控制订单下发模式及执行频率限制" 
-          />
-          <ModalFormGrid columns="wide">
-            <LiveSelectField
-              label="分发模式"
-              value={liveSessionForm.dispatchMode}
-              onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, dispatchMode: value }))}
-              options={[
-                { value: "manual-review", label: "Manual Review (Safety)" },
-                { value: "auto-dispatch", label: "Auto Dispatch (Aggressive)" },
-              ]}
+          {/* Exit Strategy Section */}
+          <ModalGroup>
+            <ModalSectionHeader 
+              icon={Target} 
+              title="出场策略 (PT/SL)" 
+              description="配置止盈(Take Profit)与止损(Stop Loss)执行" 
             />
-            <ModalField label="分发冷却 (秒)">
-              <ModalInput
-                placeholder="30"
-                value={liveSessionForm.dispatchCooldownSeconds}
-                onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
+            <ModalFormGrid>
+              <LiveSelectField
+                label="止盈订单类型"
+                value={liveSessionForm.executionPTExitOrderType}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionPTExitOrderType: value }))}
+                options={[
+                  { value: "LIMIT", label: "LIMIT" },
+                  { value: "MARKET", label: "MARKET" },
+                ]}
               />
-            </ModalField>
+              <LiveSelectField
+                label="止盈 TIF"
+                value={liveSessionForm.executionPTExitTimeInForce}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionPTExitTimeInForce: value }))}
+                options={[
+                  { value: "GTC", label: "GTC" },
+                  { value: "GTX", label: "GTX (Post Only)" },
+                  { value: "IOC", label: "IOC" },
+                ]}
+              />
+              <ModalCheckboxField
+                label="止盈仅做 Maker"
+                checked={liveSessionForm.executionPTExitPostOnly}
+                onChange={(checked) => setLiveSessionForm((current) => ({ ...current, executionPTExitPostOnly: checked }))}
+              />
+              <LiveSelectField
+                label="止盈超时备选"
+                value={liveSessionForm.executionPTExitTimeoutFallbackOrderType}
+                onValueChange={(value) =>
+                  setLiveSessionForm((current) => ({ ...current, executionPTExitTimeoutFallbackOrderType: value }))
+                }
+                options={[
+                  { value: "MARKET", label: "MARKET" },
+                  { value: "LIMIT", label: "LIMIT" },
+                  { value: "", label: "Disabled" },
+                ]}
+              />
+              <LiveSelectField
+                label="止损订单类型"
+                value={liveSessionForm.executionSLExitOrderType}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionSLExitOrderType: value }))}
+                options={[
+                  { value: "MARKET", label: "MARKET" },
+                  { value: "LIMIT", label: "LIMIT" },
+                ]}
+              />
+              <ModalField label="止损最大价差">
+                <ModalInput
+                  placeholder="BPS"
+                  value={liveSessionForm.executionSLExitMaxSpreadBps}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionSLExitMaxSpreadBps: event.target.value }))}
+                />
+              </ModalField>
+            </ModalFormGrid>
+          </ModalGroup>
+        </div>
 
-          </ModalFormGrid>
-        </ModalGroup>
+        <div className="space-y-4">
+          {/* Entry Execution Section */}
+          <ModalGroup>
+            <ModalSectionHeader 
+              icon={Zap} 
+              title="进场执行" 
+              description="定义开仓委托及滑点保护" 
+            />
+            <ModalFormGrid>
+              <LiveSelectField
+                label="订单类型"
+                value={liveSessionForm.executionEntryOrderType}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionEntryOrderType: value }))}
+                options={[
+                  { value: "MARKET", label: "MARKET" },
+                  { value: "LIMIT", label: "LIMIT" },
+                ]}
+              />
+              <ModalField label="最大价差 (bps)">
+                <ModalInput
+                  placeholder="BPS"
+                  value={liveSessionForm.executionEntryMaxSpreadBps}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, executionEntryMaxSpreadBps: event.target.value }))}
+                />
+              </ModalField>
+
+              <LiveSelectField
+                label="宽价差处理"
+                value={liveSessionForm.executionEntryWideSpreadMode}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, executionEntryWideSpreadMode: value }))}
+                options={[
+                  { value: "limit-maker", label: "Limit Maker" },
+                  { value: "", label: "Wait / Skip" },
+                ]}
+              />
+              <LiveSelectField
+                label="超时备选"
+                value={liveSessionForm.executionEntryTimeoutFallbackOrderType}
+                onValueChange={(value) =>
+                  setLiveSessionForm((current) => ({ ...current, executionEntryTimeoutFallbackOrderType: value }))
+                }
+                options={[
+                  { value: "MARKET", label: "MARKET" },
+                  { value: "LIMIT", label: "LIMIT" },
+                  { value: "", label: "Disabled" },
+                ]}
+              />
+            </ModalFormGrid>
+          </ModalGroup>
+
+          {/* Dispatch & Risk Section */}
+          <ModalGroup>
+            <ModalSectionHeader 
+              icon={ShieldAlert} 
+              title="分发与风控" 
+              description="控制订单下发与频率" 
+            />
+            <ModalFormGrid>
+              <LiveSelectField
+                label="分发模式"
+                value={liveSessionForm.dispatchMode}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, dispatchMode: value }))}
+                options={[
+                  { value: "manual-review", label: "Manual Review" },
+                  { value: "auto-dispatch", label: "Auto Dispatch" },
+                ]}
+              />
+              <ModalField label="分发冷却 (秒)">
+                <ModalInput
+                  placeholder="30"
+                  value={liveSessionForm.dispatchCooldownSeconds}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, dispatchCooldownSeconds: event.target.value }))}
+                />
+              </ModalField>
+            </ModalFormGrid>
+          </ModalGroup>
+
+          {/* Freshness Overrides Section */}
+          <ModalGroup>
+            <ModalSectionHeader 
+              icon={ShieldAlert} 
+              title="新鲜度覆盖" 
+              description="（可选）留空则使用全局默认" 
+            />
+            <ModalFormGrid columns="wide">
+              <ModalField label="信号 (秒)">
+                <ModalInput
+                  placeholder={`${runtimePolicy?.signalBarFreshnessSeconds ?? "--"}`}
+                  value={liveSessionForm.freshnessOverrideSignalBarFreshnessSeconds ?? ""}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, freshnessOverrideSignalBarFreshnessSeconds: event.target.value }))}
+                />
+              </ModalField>
+              <ModalField label="成交 (秒)">
+                <ModalInput
+                  placeholder={`${runtimePolicy?.tradeTickFreshnessSeconds ?? "--"}`}
+                  value={liveSessionForm.freshnessOverrideTradeTickFreshnessSeconds ?? ""}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, freshnessOverrideTradeTickFreshnessSeconds: event.target.value }))}
+                />
+              </ModalField>
+              <ModalField label="盘口 (秒)">
+                <ModalInput
+                  placeholder={`${runtimePolicy?.orderBookFreshnessSeconds ?? "--"}`}
+                  value={liveSessionForm.freshnessOverrideOrderBookFreshnessSeconds ?? ""}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, freshnessOverrideOrderBookFreshnessSeconds: event.target.value }))}
+                />
+              </ModalField>
+              <ModalField label="运行时静默">
+                <ModalInput
+                  placeholder={`${runtimePolicy?.runtimeQuietSeconds ?? "--"}`}
+                  value={liveSessionForm.freshnessOverrideRuntimeQuietSeconds ?? ""}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, freshnessOverrideRuntimeQuietSeconds: event.target.value }))}
+                />
+              </ModalField>
+            </ModalFormGrid>
+          </ModalGroup>
+        </div>
       </div>
 
       <ModalActions>

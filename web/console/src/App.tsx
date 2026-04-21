@@ -75,6 +75,7 @@ export default function App() {
   const strategies = useTradingStore(s => s.strategies);
   const liveAdapters = useTradingStore(s => s.liveAdapters);
   const telegramConfig = useTradingStore(s => s.telegramConfig);
+  const runtimePolicy = useTradingStore(s => s.runtimePolicy);
   const editingLiveSessionId = useTradingStore(s => s.editingLiveSessionId);
 
   // Quick Account Resolution
@@ -175,6 +176,7 @@ export default function App() {
         loadDashboard={loadDashboard}
         setError={actions.setError}
         fetchJSON={fetchJSON}
+        runtimePolicy={runtimePolicy}
       />
       <TelegramModal 
         activeSettingsModal={activeSettingsModal} 

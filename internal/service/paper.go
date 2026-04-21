@@ -452,7 +452,7 @@ func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runti
 		}
 		available++
 		lastEventAt := parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
-		maxAge := p.signalSourceFreshnessWindow(binding)
+		maxAge := p.signalSourceFreshnessWindowWithOverride(binding, runtimeSession.State)
 		if lastEventAt.IsZero() || eventTime.Sub(lastEventAt) > maxAge {
 			stale = append(stale, map[string]any{
 				"sourceKey":   binding.SourceKey,
@@ -477,9 +477,34 @@ func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runti
 }
 
 func (p *Platform) signalSourceFreshnessWindow(binding domain.AccountSignalBinding) time.Duration {
+	return p.signalSourceFreshnessWindowWithOverride(binding, nil)
+}
+
+func (p *Platform) signalSourceFreshnessWindowWithOverride(binding domain.AccountSignalBinding, sessionState map[string]any) time.Duration {
+	// 1. 优先尝试从 session state 的 freshnessOverride 中读取 (会话级最高优先级覆盖)
+	if override := mapValue(sessionState["freshnessOverride"]); override != nil {
+		var key string
+		switch strings.ToLower(strings.TrimSpace(binding.StreamType)) {
+		case "trade_tick":
+			key = "tradeTickFreshnessSeconds"
+		case "order_book":
+			key = "orderBookFreshnessSeconds"
+		case "signal_bar":
+			key = "signalBarFreshnessSeconds"
+		}
+		if key != "" {
+			if val, ok := toFloat64(override[key]); ok && val > 0 {
+				return time.Duration(val) * time.Second
+			}
+		}
+	}
+
+	// 2. 其次尝试从绑定选项中读取 (launch/template 级配置)
 	if value, ok := toFloat64(binding.Options["freshnessSeconds"]); ok && value > 0 {
 		return time.Duration(value) * time.Second
 	}
+
+	// 3. 最后回退到全局默认策略
 	switch strings.ToLower(strings.TrimSpace(binding.StreamType)) {
 	case "trade_tick":
 		return time.Duration(p.runtimePolicy.TradeTickFreshnessSeconds) * time.Second
