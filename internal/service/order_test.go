@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -239,6 +240,253 @@ func TestClosePositionAllowsLiveManualCloseWithoutRuntimeSession(t *testing.T) {
 	}
 	if got := stringValue(order.Metadata["runtimeSessionId"]); got != "" {
 		t.Fatalf("expected bypassed live manual close to avoid linking a runtime session, got %s", got)
+	}
+}
+
+func TestEnsureLivePositionReconcileGateAllowsExecutionSelfHealsStaleDBOnlyPosition(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	syncedAt := time.Date(2026, 4, 21, 1, 23, 45, 0, time.UTC)
+
+	configureTestLiveRESTReconcileHistoryAdapter(
+		t,
+		platform,
+		"test-manual-close-gate-self-heal",
+		[]map[string]any{},
+		map[string][]map[string]any{
+			"BTCUSDT": {{
+				"symbol":        "BTCUSDT",
+				"orderId":       "9103",
+				"clientOrderId": "client-9103",
+				"status":        "FILLED",
+				"side":          "SELL",
+				"type":          "MARKET",
+				"origType":      "MARKET",
+				"origQty":       0.01,
+				"executedQty":   0.01,
+				"price":         67940.0,
+				"avgPrice":      67940.0,
+				"reduceOnly":    true,
+				"closePosition": false,
+				"time":          float64(syncedAt.Add(-2 * time.Minute).UnixMilli()),
+				"updateTime":    float64(syncedAt.UnixMilli()),
+			}},
+		},
+		map[string][]LiveFillReport{
+			"BTCUSDT": {{
+				Price:    67940.0,
+				Quantity: 0.01,
+				Fee:      0.01,
+				Metadata: map[string]any{
+					"exchangeOrderId": "9103",
+					"tradeId":         "trade-9103",
+					"tradeTime":       syncedAt.Format(time.RFC3339),
+				},
+			}},
+		},
+	)
+
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         67940,
+	}); err != nil {
+		t.Fatalf("save stale position failed: %v", err)
+	}
+
+	account, err := platform.SyncLiveAccount("live-main")
+	if err != nil {
+		t.Fatalf("sync live account failed: %v", err)
+	}
+	initialGate := resolveLivePositionReconcileGate(account, "BTCUSDT", true)
+	if !boolValue(initialGate["blocking"]) || stringValue(initialGate["scenario"]) != "db-position-exchange-missing" {
+		t.Fatalf("expected initial stale db-position-exchange-missing gate, got %#v", initialGate)
+	}
+
+	if err := platform.ensureLivePositionReconcileGateAllowsExecution("live-main", "BTCUSDT", true); err != nil {
+		t.Fatalf("expected reconcile gate check to self-heal stale db-only position, got %v", err)
+	}
+	if _, found, err := store.FindPosition("live-main", "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected stale BTCUSDT position to be removed after reconcile gate self-heal")
+	}
+
+	account, err = store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get healed account failed: %v", err)
+	}
+	healedGate := resolveLivePositionReconcileGate(account, "BTCUSDT", true)
+	if boolValue(healedGate["blocking"]) {
+		t.Fatalf("expected reconcile gate to clear after self-heal, got %#v", healedGate)
+	}
+}
+
+func TestClosePositionKeepsFailClosedWhenReconcileSelfHealFails(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	platform.registerLiveAdapter(testLiveAccountReconcileAdapter{
+		key: "test-manual-close-self-heal-fails",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":          "binance-rest-account-v3",
+				"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+				"syncedAt":        time.Now().UTC().Format(time.RFC3339),
+				"bindingMode":     stringValue(binding["connectionMode"]),
+				"executionMode":   "rest",
+				"syncStatus":      "SYNCED",
+				"accountExchange": account.Exchange,
+				"positions":       []map[string]any{},
+				"openOrders":      []map[string]any{},
+			}
+			var err error
+			account, err = p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			return p.refreshLiveAccountPositionReconcileGate(account)
+		},
+		ordersErr: errors.New("reconcile fetch recent orders failed"),
+	})
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-manual-close-self-heal-fails",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-manual-close-self-heal-fails",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
+
+	position, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         67940,
+	})
+	if err != nil {
+		t.Fatalf("save stale position failed: %v", err)
+	}
+
+	if _, err := platform.ClosePosition(position.ID); err == nil || !strings.Contains(err.Error(), "reconcile fetch recent orders failed") {
+		t.Fatalf("expected manual close to stay fail-closed when reconcile self-heal fails, got %v", err)
+	}
+}
+
+func TestClosePositionKeepsFailClosedWhenSelfHealStillLeavesBlockingGate(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	syncedAt := time.Date(2026, 4, 21, 2, 0, 0, 0, time.UTC)
+
+	platform.registerLiveAdapter(testLiveAccountReconcileAdapter{
+		key: "test-manual-close-self-heal-still-blocked",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			previousSuccessAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":          "binance-rest-account-v3",
+				"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+				"syncedAt":        syncedAt.Format(time.RFC3339),
+				"bindingMode":     stringValue(binding["connectionMode"]),
+				"executionMode":   "rest",
+				"syncStatus":      "SYNCED",
+				"accountExchange": account.Exchange,
+				"positions":       []map[string]any{},
+				"openOrders":      []map[string]any{},
+			}
+			var err error
+			account, err = p.persistLiveAccountSyncSuccess(account, binding, previousSuccessAt)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			return p.refreshLiveAccountPositionReconcileGate(account)
+		},
+		ordersBySymbol: map[string][]map[string]any{
+			"BTCUSDT": {{
+				"symbol":        "BTCUSDT",
+				"orderId":       "9201",
+				"clientOrderId": "client-9201",
+				"status":        "FILLED",
+				"side":          "BUY",
+				"type":          "MARKET",
+				"origType":      "MARKET",
+				"origQty":       0.02,
+				"executedQty":   0.02,
+				"price":         68020.0,
+				"avgPrice":      68020.0,
+				"reduceOnly":    false,
+				"closePosition": false,
+				"time":          float64(syncedAt.Add(-2 * time.Minute).UnixMilli()),
+				"updateTime":    float64(syncedAt.UnixMilli()),
+			}},
+		},
+		tradesBySymbol: map[string][]LiveFillReport{
+			"BTCUSDT": {{
+				Price:    68020.0,
+				Quantity: 0.02,
+				Fee:      0.01,
+				Metadata: map[string]any{
+					"exchangeOrderId": "9201",
+					"tradeId":         "trade-9201",
+					"tradeTime":       syncedAt.Format(time.RFC3339),
+				},
+			}},
+		},
+	})
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-manual-close-self-heal-still-blocked",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-manual-close-self-heal-still-blocked",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := store.UpdateAccount(account); err != nil {
+		t.Fatalf("update live account failed: %v", err)
+	}
+
+	position, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        68000,
+		MarkPrice:         67940,
+	})
+	if err != nil {
+		t.Fatalf("save stale position failed: %v", err)
+	}
+
+	if _, err := platform.ClosePosition(position.ID); err == nil || !strings.Contains(err.Error(), "execution blocked by reconcile gate") {
+		t.Fatalf("expected manual close to stay fail-closed when self-heal still leaves a blocking gate, got %v", err)
 	}
 }
 
