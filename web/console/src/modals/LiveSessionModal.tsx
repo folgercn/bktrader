@@ -161,6 +161,13 @@ export function LiveSessionModal({
               description="设置账户、策略及基本参数" 
             />
             <ModalFormGrid columns="wide">
+              <ModalField label="会话别名">
+                <ModalInput
+                  placeholder="例如：趋势策略-2024 (可选)"
+                  value={liveSessionForm.alias}
+                  onChange={(event) => setLiveSessionForm((current) => ({ ...current, alias: event.target.value }))}
+                />
+              </ModalField>
               <LiveSelectField
                 label="实盘账户"
                 value={liveSessionForm.accountId}

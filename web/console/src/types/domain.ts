@@ -111,6 +111,7 @@ export type PaperSession = {
 
 export type LiveSession = {
   id: string;
+  alias: string;
   accountId: string;
   strategyId: string;
   status: string;
@@ -568,6 +569,7 @@ export interface LiveOrderForm {
 }
 
 export interface LiveSessionForm {
+  alias: string;
   accountId: string;
   strategyId: string;
   signalTimeframe: string;

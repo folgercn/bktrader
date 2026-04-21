@@ -111,6 +111,7 @@ type PaperSession struct {
 // LiveSession 实盘策略会话，绑定 LIVE 账户和策略，管理运行状态与实时评估上下文。
 type LiveSession struct {
 	ID         string         `json:"id"`
+	Alias      string         `json:"alias"`
 	AccountID  string         `json:"accountId"`
 	StrategyID string         `json:"strategyId"`
 	Status     string         `json:"status"` // READY / RUNNING / STOPPED / BLOCKED

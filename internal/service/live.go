@@ -107,7 +107,7 @@ func (p *Platform) DeleteLiveSessionWithForce(sessionID string, force bool) erro
 	return p.store.DeleteLiveSession(sessionID)
 }
 
-func (p *Platform) UpdateLiveSession(sessionID, accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
+func (p *Platform) UpdateLiveSession(sessionID, alias, accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
 	logger := p.logger("service.live", "session_id", sessionID)
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
@@ -126,6 +126,9 @@ func (p *Platform) UpdateLiveSession(sessionID, accountID, strategyID string, ov
 	}
 	if strings.TrimSpace(strategyID) != "" {
 		session.StrategyID = strategyID
+	}
+	if strings.TrimSpace(alias) != "" {
+		session.Alias = alias
 	}
 	state := cloneMetadata(session.State)
 	for key, value := range normalizeLiveSessionOverrides(overrides) {
@@ -1149,7 +1152,7 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 	return p.refreshLiveAccountPositionReconcileGate(account)
 }
 
-func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
+func (p *Platform) CreateLiveSession(alias, accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
 	logger := p.logger("service.live", "account_id", accountID, "strategy_id", strategyID)
 	account, err := p.store.GetAccount(accountID)
 	if err != nil {
@@ -1164,6 +1167,14 @@ func (p *Platform) CreateLiveSession(accountID, strategyID string, overrides map
 	if err != nil {
 		logger.Error("create live session failed", "error", err)
 		return domain.LiveSession{}, err
+	}
+	if strings.TrimSpace(alias) != "" {
+		session.Alias = alias
+		session, err = p.store.UpdateLiveSession(session)
+		if err != nil {
+			logger.Error("set live session alias failed", "error", err)
+			return domain.LiveSession{}, err
+		}
 	}
 	if len(overrides) > 0 {
 		state := cloneMetadata(session.State)
@@ -1542,7 +1553,7 @@ func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrid
 		synced, err := p.syncLiveSessionRuntime(updated)
 		return synced, false, err
 	}
-	session, err := p.CreateLiveSession(accountID, strategyID, normalizedOverrides)
+	session, err := p.CreateLiveSession("", accountID, strategyID, normalizedOverrides)
 	return session, true, err
 }
 

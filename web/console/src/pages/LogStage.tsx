@@ -106,7 +106,7 @@ export function LogStage() {
           source: "timeline",
           level: (item.category === "error" || String(item.title).toLowerCase().includes("error")) ? "warning" : "info",
           title: String(item.title || "Timeline Event"),
-          message: `${session.accountId} | ${session.strategyId}`,
+          message: `${session.alias || session.id} | ${session.accountId} | ${session.strategyId}`,
           eventTime: Date.parse(String(item.time || "")),
           metadata: { ...item, sessionId: session.id },
         });
