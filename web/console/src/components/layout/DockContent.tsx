@@ -287,10 +287,12 @@ export function DockContent({ dockTab, actions }: DockContentProps) {
               formatTime(fill.exchangeTradeTime ?? ""),
               formatTime(fill.createdAt),
               suspiciousDuplicate ? (
-                <DockBadge key={`${fill.id}-dup`} tone="watch">疑似重复同步</DockBadge>
+                <DockBadge key={`${fill.id}-dup`} tone="watch">疑似重复</DockBadge>
+              ) : fill.exchangeTradeId ? (
+                <DockBadge key={`${fill.id}-ok`} tone="ready">已同步</DockBadge>
               ) : (
-                <span key={`${fill.id}-ok`} className="text-[11px] text-[var(--bk-text-muted)]">
-                  --
+                <span key={`${fill.id}-pending`} className="text-[11px] text-[var(--bk-text-muted)]">
+                  等待同步
                 </span>
               ),
             ];
