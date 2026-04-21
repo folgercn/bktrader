@@ -303,43 +303,44 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    <Popover>
-                      <PopoverTrigger
-                        className={`flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 py-1 font-mono text-[10px] font-bold shadow-sm transition-all active:scale-95 ${allSessionItems.length > 1 ? 'cursor-pointer hover:bg-[var(--bk-surface-muted)]' : 'cursor-default'}`}
-                        disabled={allSessionItems.length <= 1}
-                      >
-                        <span className="truncate max-w-[120px]">{highlightedLiveSession.session.id}</span>
-                        {allSessionItems.length > 1 && <ChevronDown className="size-2.5 shrink-0 text-[var(--bk-text-muted)] opacity-60" />}
-                      </PopoverTrigger>
-                      <PopoverContent align="start" className="isolate z-[60] w-[320px] rounded-[20px] border-2 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-2 shadow-xl">
-                         <div className="space-y-1.5">
-                            {allSessionItems.map((item) => (
-                              <div 
-                                key={item.session.id} 
-                                onClick={() => handleSelectSession(item.session.id)}
-                                className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                                  item.isHighlighted 
-                                    ? 'bg-[var(--bk-status-success-soft)] border-[var(--bk-status-success)]' 
-                                    : 'bg-[var(--bk-surface-overlay)] border-[var(--bk-border-soft)] hover:bg-[var(--bk-surface)]'
-                                }`}
-                              >
-                                 <div className="flex items-center gap-3">
-                                    <div className={`size-2 rounded-full ${item.health.status === "ready" ? "bg-[var(--bk-status-success)]" : "bg-rose-500"}`} />
-                                    <span className="text-[10px] font-black">{shrink(item.session.id)}</span>
-                                 </div>
-                                 <span className="text-[10px] font-black tabular-nums">
-                                   {formatSigned(item.summary?.unrealizedPnl ?? 0)}
-                                 </span>
-                              </div>
-                            ))}
-                         </div>
-                      </PopoverContent>
-                    </Popover>
-                    <Badge variant="metal" className="shrink-0 text-[var(--bk-text-muted)] py-1 px-2.5">
-                      {highlightedLiveSession.session.accountId}
-                    </Badge>
-                  </div>
+                    <div className="flex items-center gap-1.5 overflow-hidden">
+                      <Popover>
+                        <PopoverTrigger
+                          className={`flex h-6 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 font-mono text-[10px] font-bold text-[var(--bk-text-primary)] shadow-sm transition-all active:scale-95 ${allSessionItems.length > 1 ? 'cursor-pointer hover:bg-[var(--bk-surface-muted)]' : 'cursor-default'}`}
+                          disabled={allSessionItems.length <= 1}
+                        >
+                          <span className="truncate max-w-[320px]">{highlightedLiveSession.session.id}</span>
+                          {allSessionItems.length > 1 && <ChevronDown className="size-2.5 shrink-0 text-[var(--bk-text-muted)] opacity-60" />}
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="isolate z-[60] w-[320px] rounded-[20px] border-2 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-2 shadow-xl">
+                          <div className="space-y-1.5">
+                              {allSessionItems.map((item) => (
+                                <div 
+                                  key={item.session.id} 
+                                  onClick={() => handleSelectSession(item.session.id)}
+                                  className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                                    item.isHighlighted 
+                                      ? 'bg-[var(--bk-status-success-soft)] border-[var(--bk-status-success)]' 
+                                      : 'bg-[var(--bk-surface-overlay)] border-[var(--bk-border-soft)] hover:bg-[var(--bk-surface)]'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                      <div className={`size-2 rounded-full ${item.health.status === "ready" ? "bg-[var(--bk-status-success)]" : "bg-rose-500"}`} />
+                                      <span className="font-mono text-[10px] font-black">{item.session.id}</span>
+                                  </div>
+                                  <span className="font-mono text-[10px] font-black tabular-nums">
+                                    {formatSigned(item.summary?.unrealizedPnl ?? 0)}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                      <div className="flex h-6 shrink-0 items-center rounded-lg border border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)] px-2.5 font-mono text-[10px] font-bold text-[var(--bk-text-muted)]">
+                        {highlightedLiveSession.session.accountId}
+                      </div>
+                    </div>
+
 
                   <div className="rounded-2xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)] p-5 shadow-inner">
                     <p className="text-[13px] font-bold leading-relaxed text-[var(--bk-text-primary)]">
