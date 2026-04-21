@@ -344,7 +344,7 @@ func TestEvaluateSignalBarGateAllowsReentryWithoutInitialBreakout(t *testing.T) 
 func TestBuildLiveExecutionPlanFromMarketDataAcceptsTickExecutionSource(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -1475,7 +1475,7 @@ func TestDispatchLiveSessionIntentRejectsNonDispatchableProposal(t *testing.T) {
 
 func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithIncompleteMetadata(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -1521,7 +1521,7 @@ func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithIncompleteMeta
 
 func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithoutCurrentRuntimeLink(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -1689,7 +1689,7 @@ func TestNormalizeLiveSessionOverridesIncludesZeroInitialControls(t *testing.T) 
 
 func TestCreateLiveSessionAppliesExecutionOverrides(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":                              "BTCUSDT",
 		"executionStrategy":                   "book-aware-v1",
 		"executionOrderType":                  "LIMIT",
@@ -1873,7 +1873,7 @@ func TestEnsureLaunchLiveSessionCreatesDistinctSessionPerSymbolAndTimeframe(t *t
 func TestCreateLiveSessionPersistsLaunchScopeIntoState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "5m",
 	})
@@ -2161,7 +2161,7 @@ func TestLiveRecoveryActionMatrixUsesExplicitTakeoverStates(t *testing.T) {
 
 func TestEnsureLiveExecutionPlanBlocksCloseOnlyTakeoverFreshEntry(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -2230,7 +2230,7 @@ func TestRecoveryMonitoringDisablesAutoDispatch(t *testing.T) {
 
 func TestReconcileLiveSessionPlanIndexBlocksRecoveryConflictProgression(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -2276,7 +2276,7 @@ func TestReconcileLiveSessionPlanIndexBlocksRecoveryConflictProgression(t *testi
 
 func TestReconcileLiveSessionPlanIndexAllowsRecoveryMonitoringClosePath(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -2321,7 +2321,7 @@ func TestReconcileLiveSessionPlanIndexAllowsRecoveryMonitoringClosePath(t *testi
 
 func TestReconcileLiveSessionPlanIndexLeavesHealthySessionUnchanged(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -2358,7 +2358,7 @@ func TestReconcileLiveSessionPlanIndexLeavesHealthySessionUnchanged(t *testing.T
 
 func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexBackToEntryWhenPositionFlat(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -2401,7 +2401,7 @@ func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexBackToEntryWhenPosition
 
 func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexToExitWhenPositionExists(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -2453,7 +2453,7 @@ func TestEnsureLiveExecutionPlanReconcilesCachedPlanIndexToExitWhenPositionExist
 
 func TestEnsureLiveExecutionPlanReconcilesExhaustedCachedPlanIndexToCompletionWhenFlat(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -2500,7 +2500,7 @@ func TestEnsureLiveExecutionPlanReconcilesExhaustedCachedPlanIndexToCompletionWh
 
 func TestEvaluateLiveSessionOnSignalRollsOverFlatSessionWhenPlanExhausted(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -3103,7 +3103,7 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualInitialForZeroInitialStrategy(
 		t.Fatalf("bind account trigger failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -3250,7 +3250,7 @@ func TestEvaluateLiveSessionOnSignalUsesZeroInitialReentryWindowInsteadOfVirtual
 		t.Fatalf("bind account trigger failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -3399,7 +3399,7 @@ func TestEvaluateLiveSessionOnSignalRecordsVirtualExitForStaleExitStepWithVirtua
 		t.Fatalf("bind account trigger failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -3558,7 +3558,7 @@ func TestEvaluateLiveSessionOnSignalKeepsReentryDispatchableWithoutInitialBreako
 		t.Fatalf("bind account trigger failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -3712,7 +3712,7 @@ func TestEvaluateLiveSessionOnSignalUsesInjectedATRForVolatilitySizing(t *testin
 		t.Fatalf("update account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -3825,7 +3825,7 @@ func TestEvaluateLiveSessionOnSignalUsesInjectedATRForVolatilitySizing(t *testin
 
 func TestEvaluateLiveSignalDecisionDoesNotMutateOriginalSessionState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -3973,7 +3973,7 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4040,7 +4040,7 @@ func TestRefreshLiveSessionPositionContextGeneratesLongWatchdogFallbackOnStopLos
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4087,7 +4087,7 @@ func TestRefreshLiveSessionPositionContextGeneratesShortWatchdogFallbackOnStopLo
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4185,7 +4185,7 @@ func TestRefreshLiveSessionPositionContextDoesNotGenerateWatchdogFallbackWithout
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4225,7 +4225,7 @@ func TestRefreshLiveSessionPositionContextKeepsExistingWatchdogFallbackIntent(t 
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4310,7 +4310,7 @@ func TestRefreshLiveSessionPositionContextDoesNotCrossProtectedBoundary(t *testi
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4560,7 +4560,7 @@ func TestRefreshLiveSessionPositionContextDoesNotRetriggerWatchdogWhileExitOrder
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4654,7 +4654,7 @@ func TestRefreshLiveSessionPositionContextTracksActiveReduceOnlyExitOrder(t *tes
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4716,7 +4716,7 @@ func TestRefreshLiveSessionPositionContextDoesNotGenerateWatchdogFallbackFromLoc
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4776,7 +4776,7 @@ func TestRefreshLiveSessionPositionContextGeneratesWatchdogFallbackFromAuthorita
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4817,7 +4817,7 @@ func TestRefreshLiveSessionPositionContextGeneratesWatchdogFallbackFromAuthorita
 
 func TestRefreshLiveSessionPositionContextRebuildsVirtualWatermarksFromVirtualPosition(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4889,7 +4889,7 @@ func TestRefreshLiveSessionPositionContextRebuildsVirtualWatermarksFromVirtualPo
 
 func TestRefreshLiveSessionPositionContextClearsStaleLivePositionStateWithoutRealOrVirtualPosition(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -4937,7 +4937,7 @@ func TestRefreshLiveSessionPositionContextClearsStaleLivePositionStateWithoutRea
 
 func TestRefreshLiveSessionPositionContextTreatsZeroQuantityStoredPositionAsFlat(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5108,7 +5108,7 @@ func TestSyncActiveLiveAccountsReturnsPerAccountSyncErrors(t *testing.T) {
 		t.Fatalf("update account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5147,7 +5147,7 @@ func TestSyncActiveLiveAccountsThrottlesFailedRetriesUntilFreshnessWindow(t *tes
 		t.Fatalf("update account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5406,7 +5406,7 @@ func TestRefreshLiveSessionPositionContextBuildsRiskStateFromRecoveredBreakEvenE
 		t.Fatalf("reconcile live account positions failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5441,7 +5441,7 @@ func TestRefreshLiveSessionPositionContextBuildsRiskStateFromRecoveredBreakEvenE
 
 func TestRecoverRunningLiveSessionCompletesRecoveredPositionMetadata(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5505,7 +5505,7 @@ func TestRecoverRunningLiveSessionRequiresRESTVerificationBeforeRestartTakeover(
 		t.Fatalf("update account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5562,7 +5562,7 @@ func TestRecoverRunningLiveSessionAllowsTakeoverAfterVerifiedReconcileMatch(t *t
 			"markPrice":   68100.0,
 		},
 	})
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5601,7 +5601,7 @@ func TestRecoverRunningLiveSessionAllowsTakeoverAfterVerifiedReconcileMatch(t *t
 func TestRecoverRunningLiveSessionBlocksWhenDBPositionMissingOnExchange(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	configureTestLiveRESTReconcileAdapter(t, platform, "test-reconcile-stale", []map[string]any{})
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5660,7 +5660,7 @@ func TestRecoverRunningLiveSessionAllowsControlledExchangeOnlyTakeover(t *testin
 			"markPrice":   70100.0,
 		},
 	})
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5703,7 +5703,7 @@ func TestRecoverRunningLiveSessionBlocksSideMismatchAndPreventsCloseExecution(t 
 			"markPrice":   67950.0,
 		},
 	})
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5760,7 +5760,7 @@ func TestUnresolvedReconcileMismatchPreventsAutoDispatch(t *testing.T) {
 			"markPrice":   67950.0,
 		},
 	})
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":                  "BTCUSDT",
 		"signalTimeframe":         "1d",
 		"dispatchMode":            "auto-dispatch",
@@ -5802,7 +5802,7 @@ func TestUnresolvedReconcileMismatchPreventsAutoDispatch(t *testing.T) {
 
 func TestRecoverRunningLiveSessionFallsBackToCloseOnlyWhenMetadataIsAmbiguous(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -5879,7 +5879,7 @@ func TestClosePositionAllowsRecoveredCloseOnlyTakeoverWithoutRuntimeLinkage(t *t
 		t.Fatalf("update live account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -6056,7 +6056,7 @@ func TestRecoverRunningLiveSessionPreservesRemainingQuantityAfterPartialFillRest
 
 func TestCompleteRecoveredLiveSessionMetadataClearsCloseOnlyTakeoverWhenPositionFlat(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -6102,7 +6102,7 @@ func TestCompleteRecoveredLiveSessionMetadataClearsCloseOnlyTakeoverWhenPosition
 
 func TestSyncLiveSessionsForAccountSnapshotDoesNotResumeOtherBlockedSession(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -6157,7 +6157,7 @@ func TestEnsureLiveExecutionPlanPreservesSignalRuntimeRequirementWhenFlat(t *tes
 		}
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -6214,7 +6214,7 @@ func TestStartLiveSessionRejectsActiveCloseOnlyTakeoverMode(t *testing.T) {
 		t.Fatalf("update live account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -6278,7 +6278,7 @@ func TestStartLiveSessionRequiresRESTVerificationForHistoricalTakeoverActivation
 		t.Fatalf("update live account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -6390,7 +6390,7 @@ func TestStartLiveSessionBackfillsFilledExitBeforeReconcileGateBlock(t *testing.
 		t.Fatalf("update live account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -6510,7 +6510,7 @@ func TestStartLiveSessionSelfHealsStaleDBPositionViaReconcileHistory(t *testing.
 		},
 	)
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -6568,7 +6568,7 @@ func TestStartLiveSessionDowngradesIncompleteRecoveredMetadataToCloseOnly(t *tes
 		t.Fatalf("update live account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -6745,7 +6745,7 @@ func TestSyncLiveSessionRuntimePreservesConfiguredDispatchMode(t *testing.T) {
 
 	// Case 1: auto-dispatch is preserved
 	// We create a session normally, which defaults to manual-review
-	session, err := platform.CreateLiveSession(acc.ID, stratID, nil)
+	session, err := platform.CreateLiveSession("", acc.ID, stratID, nil)
 	if err != nil {
 		t.Fatalf("CreateLiveSession failed: %v", err)
 	}
@@ -6770,7 +6770,7 @@ func TestSyncLiveSessionRuntimePreservesConfiguredDispatchMode(t *testing.T) {
 	}
 
 	// Case 2: manual-review is preserved (default case)
-	session2, _ := platform.CreateLiveSession(acc.ID, stratID, nil)
+	session2, _ := platform.CreateLiveSession("", acc.ID, stratID, nil)
 	updated2, err := platform.syncLiveSessionRuntime(session2)
 	if err != nil {
 		t.Fatalf("syncLiveSessionRuntime failed: %v", err)

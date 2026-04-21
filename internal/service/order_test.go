@@ -727,7 +727,7 @@ func TestClosePositionFilledLiveManualCloseClearsRecoverySessionState(t *testing
 	if err != nil {
 		t.Fatalf("save live position failed: %v", err)
 	}
-	session, err := platform.CreateLiveSession(account.ID, "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", account.ID, "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})

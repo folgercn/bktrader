@@ -431,7 +431,7 @@ func TestHandleSignalRuntimeMessageScopesTriggerByLiveSessionSymbol(t *testing.T
 		}
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -535,7 +535,7 @@ func TestHandleSignalRuntimeMessageRepairsMissingSignalRuntimeRequired(t *testin
 		}
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -601,7 +601,7 @@ func TestHandleSignalRuntimeMessageRecordsRuntimeNotRequiredDrop(t *testing.T) {
 		}
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",
@@ -688,7 +688,7 @@ func TestRunSignalRuntimeWithRecoveryReconnectTriggersAuthoritativeRESTSync(t *t
 		},
 	})
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -738,7 +738,7 @@ func TestRunSignalRuntimeWithRecoveryReconnectMarksStaleSyncOnRESTMismatch(t *te
 	platform := NewPlatform(memory.NewStore())
 	configureTestLiveRESTReconcileAdapter(t, platform, "test-ws-reconnect-stale", []map[string]any{})
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})

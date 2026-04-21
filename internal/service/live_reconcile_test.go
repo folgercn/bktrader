@@ -194,7 +194,7 @@ func TestReconcileLiveAccountRefreshClearsStaleRecoveryCache(t *testing.T) {
 		t.Fatalf("update account failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})

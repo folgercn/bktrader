@@ -1,5 +1,5 @@
 -- +migrate Up
-ALTER TABLE live_sessions ADD COLUMN alias TEXT DEFAULT '';
+ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS alias TEXT DEFAULT '';
 
 -- +migrate Down
-ALTER TABLE live_sessions DROP COLUMN alias;
+ALTER TABLE live_sessions DROP COLUMN IF EXISTS alias;

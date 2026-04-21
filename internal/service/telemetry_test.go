@@ -251,7 +251,7 @@ func prepareLiveDecisionTelemetryFixture(t *testing.T) (*Platform, domain.LiveSe
 		t.Fatalf("bind account trigger failed: %v", err)
 	}
 
-	session, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":              "BTCUSDT",
 		"signalTimeframe":     "1d",
 		"executionDataSource": "tick",

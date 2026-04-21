@@ -39,7 +39,7 @@ func TestLaunchLiveFlowTemplateSwitchReplacesBindingsAndRefreshesRuntimePlan(t *
 	runtimeSession.Status = "RUNNING"
 	platform.signalSessions[runtimeSession.ID] = runtimeSession
 
-	oldLiveSession, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	oldLiveSession, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "5m",
 	})
@@ -50,7 +50,7 @@ func TestLaunchLiveFlowTemplateSwitchReplacesBindingsAndRefreshesRuntimePlan(t *
 	if err != nil {
 		t.Fatalf("mark old live session running failed: %v", err)
 	}
-	targetScopeSession, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	targetScopeSession, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "ETHUSDT",
 		"signalTimeframe": "4h",
 	})
@@ -65,7 +65,7 @@ func TestLaunchLiveFlowTemplateSwitchReplacesBindingsAndRefreshesRuntimePlan(t *
 	if err != nil {
 		t.Fatalf("create secondary live account failed: %v", err)
 	}
-	otherAccountSession, err := platform.CreateLiveSession(otherAccount.ID, "strategy-bk-1d", map[string]any{
+	otherAccountSession, err := platform.CreateLiveSession("", otherAccount.ID, "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "5m",
 	})
