@@ -441,6 +441,11 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	if err := validateLiveExecutionProposalMetadata(session, proposalMap); err != nil {
 		return domain.Order{}, err
 	}
+	dispatchStartedAt := time.Now().UTC()
+	proposalMap, err = p.ensureStrategyDecisionEventForExecutionProposal(session, version.ID, proposalMap, dispatchStartedAt, "dispatch-preflight")
+	if err != nil {
+		return domain.Order{}, err
+	}
 	proposal = executionProposalFromMap(proposalMap)
 	order := buildLiveOrderFromExecutionProposal(session, version.ID, proposal, proposalMap)
 	created, createErr := p.CreateOrder(order)
@@ -451,6 +456,12 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	state := cloneMetadata(session.State)
 	intentSignature := buildLiveIntentSignature(proposalMap)
 	dispatchedAt := time.Now().UTC()
+	if dispatchedAt.Before(dispatchStartedAt) {
+		dispatchedAt = dispatchStartedAt
+	}
+	if decisionEventID := stringValue(proposalMap["decisionEventId"]); decisionEventID != "" {
+		state["lastStrategyDecisionEventId"] = decisionEventID
+	}
 	state["lastDispatchedOrderId"] = created.ID
 	state["lastDispatchedOrderStatus"] = created.Status
 	state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, created, false)

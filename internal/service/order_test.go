@@ -170,6 +170,137 @@ func TestFinalizeExecutedOrderSkipsDuplicateFallbackFillsWithoutExchangeTradeID(
 	}
 }
 
+func TestFilledExitWithoutFillReportsDoesNotLeaveStaleShortPosition(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+
+	entryOrder, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "LIMIT",
+		Quantity:          0.002,
+		Price:             75600.0,
+		Metadata: map[string]any{
+			"source":        "live-session-intent",
+			"executionMode": "live",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create entry order failed: %v", err)
+	}
+	if _, err := platform.finalizeExecutedOrder(account, entryOrder, []domain.Fill{{
+		OrderID:         entryOrder.ID,
+		ExchangeTradeID: "entry-trade-1",
+		Price:           75600.0,
+		Quantity:        0.002,
+	}}); err != nil {
+		t.Fatalf("finalize entry order failed: %v", err)
+	}
+
+	exitOrder, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "LIMIT",
+		Quantity:          0.002,
+		Price:             75600.1,
+		ReduceOnly:        true,
+		Status:            "ACCEPTED",
+		Metadata: map[string]any{
+			"source":          "live-session-intent",
+			"executionMode":   "live",
+			"exchangeOrderId": "exchange-exit-1",
+			"executionProposal": map[string]any{
+				"role":       "exit",
+				"reason":     "SL",
+				"signalKind": "risk-exit",
+				"reduceOnly": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create exit order failed: %v", err)
+	}
+	syncedExit, err := platform.applyLiveSyncResult(account, exitOrder, LiveOrderSync{
+		Status:   "FILLED",
+		SyncedAt: "2026-04-21T06:03:12Z",
+		Metadata: map[string]any{
+			"exchangeOrderId": "exchange-exit-1",
+			"executedQty":     0.002,
+			"avgPrice":        75600.1,
+			"updateTime":      "2026-04-21T06:03:12Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("apply filled exit sync without fills failed: %v", err)
+	}
+	if got := parseFloatValue(syncedExit.Metadata["filledQuantity"]); got != 0.002 {
+		t.Fatalf("expected fallback settlement to mark filled quantity 0.002, got %v", got)
+	}
+	if position, found, err := store.FindPosition(account.ID, "BTCUSDT"); err != nil {
+		t.Fatalf("find position after exit failed: %v", err)
+	} else if found {
+		t.Fatalf("expected filled reduce-only exit to clear local short, got %+v", position)
+	}
+
+	if _, err := platform.finalizeExecutedOrder(account, syncedExit, []domain.Fill{{
+		OrderID:         syncedExit.ID,
+		ExchangeTradeID: "late-exit-trade-1",
+		Price:           75600.1,
+		Quantity:        0.002,
+	}}); err != nil {
+		t.Fatalf("late duplicate exit fill should be ignored: %v", err)
+	}
+	if position, found, err := store.FindPosition(account.ID, "BTCUSDT"); err != nil {
+		t.Fatalf("find position after duplicate exit failed: %v", err)
+	} else if found {
+		t.Fatalf("expected late duplicate exit fill not to reopen/invert position, got %+v", position)
+	}
+
+	reentryOrder, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "LIMIT",
+		Quantity:          0.002,
+		Price:             75600.0,
+		Metadata: map[string]any{
+			"source":        "live-session-intent",
+			"executionMode": "live",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create reentry order failed: %v", err)
+	}
+	if _, err := platform.finalizeExecutedOrder(account, reentryOrder, []domain.Fill{{
+		OrderID:         reentryOrder.ID,
+		ExchangeTradeID: "reentry-trade-1",
+		Price:           75600.0,
+		Quantity:        0.002,
+	}}); err != nil {
+		t.Fatalf("finalize reentry order failed: %v", err)
+	}
+	position, found, err := store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find final position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected final reentry short position")
+	}
+	if position.Side != "SHORT" || position.Quantity != 0.002 {
+		t.Fatalf("expected final position SHORT 0.002, got %+v", position)
+	}
+}
+
 func TestFinalizeExecutedOrderUsesExchangeTradeTimeForLastFilledAt(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)

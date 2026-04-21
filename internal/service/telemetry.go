@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -78,6 +79,266 @@ func (p *Platform) recordStrategyDecisionEvent(
 	return recorded, err
 }
 
+func (p *Platform) ensureStrategyDecisionEventForExecutionProposal(session domain.LiveSession, strategyVersionID string, proposalMap map[string]any, eventTime time.Time, trigger string) (map[string]any, error) {
+	normalized := cloneMetadata(proposalMap)
+	if len(normalized) == 0 {
+		return normalized, nil
+	}
+	metadata := cloneMetadata(mapValue(normalized["metadata"]))
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	decisionEventID := firstNonEmpty(stringValue(normalized["decisionEventId"]), stringValue(metadata["decisionEventId"]))
+	if decisionEventID != "" {
+		exists, err := p.strategyDecisionEventExists(session.ID, decisionEventID)
+		if err != nil {
+			return normalized, err
+		}
+		if exists {
+			return setExecutionProposalDecisionEventID(normalized, decisionEventID), nil
+		}
+	} else {
+		decisionEventID = newStrategyDecisionEventID()
+	}
+
+	normalized = setExecutionProposalDecisionEventID(normalized, decisionEventID)
+	event := strategyDecisionEventFromExecutionProposal(session, strategyVersionID, normalized, eventTime, trigger)
+	event.ID = decisionEventID
+	recorded, err := p.store.CreateStrategyDecisionEvent(event)
+	if err != nil {
+		return normalized, err
+	}
+	p.publishLogEvent(strategyDecisionToUnifiedLogEvent(recorded))
+	return setExecutionProposalDecisionEventID(normalized, recorded.ID), nil
+}
+
+func (p *Platform) ensureStrategyDecisionEventForOrderExecution(order domain.Order, proposalMap map[string]any, eventTime time.Time, eventType string) error {
+	metadata := mapValue(order.Metadata)
+	decisionEventID := firstNonEmpty(stringValue(metadata["decisionEventId"]), stringValue(proposalMap["decisionEventId"]))
+	if decisionEventID == "" {
+		return nil
+	}
+	liveSessionID := stringValue(metadata["liveSessionId"])
+	if liveSessionID == "" {
+		return nil
+	}
+	exists, err := p.strategyDecisionEventExists(liveSessionID, decisionEventID)
+	if err != nil || exists {
+		return err
+	}
+	session, err := p.store.GetLiveSession(liveSessionID)
+	if err != nil {
+		return err
+	}
+	proposal := cloneMetadata(proposalMap)
+	if len(proposal) == 0 {
+		proposal = cloneMetadata(mapValue(firstNonEmptyMapValue(metadata["executionProposal"], metadata["intent"])))
+	}
+	if len(proposal) == 0 {
+		proposal = map[string]any{
+			"action":            liveOrderActionFromOrder(order),
+			"role":              liveOrderRoleFromOrder(order),
+			"reason":            firstNonEmpty(stringValue(metadata["reason"]), "order-execution"),
+			"side":              order.Side,
+			"symbol":            order.Symbol,
+			"type":              order.Type,
+			"quantity":          order.Quantity,
+			"priceHint":         order.Price,
+			"executionStrategy": stringValue(metadata["executionStrategy"]),
+			"status":            "dispatchable",
+		}
+	}
+	proposal = setExecutionProposalDecisionEventID(proposal, decisionEventID)
+	_, err = p.ensureStrategyDecisionEventForExecutionProposal(
+		session,
+		order.StrategyVersionID,
+		proposal,
+		eventTime,
+		orderExecutionDecisionBackfillTrigger(eventType),
+	)
+	return err
+}
+
+func strategyDecisionEventFromExecutionProposal(session domain.LiveSession, strategyVersionID string, proposalMap map[string]any, eventTime time.Time, trigger string) domain.StrategyDecisionEvent {
+	if eventTime.IsZero() {
+		eventTime = time.Now().UTC()
+	}
+	state := cloneMetadata(session.State)
+	metadata := cloneMetadata(mapValue(proposalMap["metadata"]))
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	lastDecision := mapValue(state["lastStrategyDecision"])
+	decisionMetadata := cloneMetadata(mapValue(lastDecision["metadata"]))
+	if decisionMetadata == nil {
+		decisionMetadata = map[string]any{}
+	}
+	decisionMetadata["decisionEventBackfilled"] = true
+	decisionMetadata["decisionEventBackfillTrigger"] = firstNonEmpty(trigger, "dispatch-preflight")
+
+	sourceGate := cloneMetadata(mapValue(state["lastStrategyEvaluationSourceGate"]))
+	if len(sourceGate) == 0 {
+		sourceGate = map[string]any{
+			"ready":      true,
+			"backfilled": true,
+			"trigger":    firstNonEmpty(trigger, "dispatch-preflight"),
+		}
+	}
+	triggerSummary := cloneMetadata(mapValue(state["lastStrategyEvaluationRuntimeSummary"]))
+	if len(triggerSummary) == 0 {
+		triggerSummary = map[string]any{}
+	}
+	triggerSummary["event"] = firstNonEmpty(stringValue(triggerSummary["event"]), trigger, "dispatch-preflight")
+	triggerSummary["decisionEventBackfilled"] = true
+
+	evaluationContext := cloneMetadata(mapValue(metadata["executionContext"]))
+	if len(evaluationContext) == 0 {
+		evaluationContext = cloneMetadata(mapValue(state["lastStrategyEvaluationContext"]))
+	}
+	if evaluationContext == nil {
+		evaluationContext = map[string]any{}
+	}
+	strategyVersionID = firstNonEmpty(strategyVersionID, stringValue(proposalMap["strategyVersionId"]), stringValue(metadata["strategyVersionId"]), stringValue(evaluationContext["strategyVersionId"]))
+	if strategyVersionID != "" {
+		evaluationContext["strategyVersionId"] = strategyVersionID
+	}
+	evaluationContext["signalTimeframe"] = firstNonEmpty(stringValue(evaluationContext["signalTimeframe"]), stringValue(state["signalTimeframe"]))
+	evaluationContext["executionDataSource"] = firstNonEmpty(stringValue(evaluationContext["executionDataSource"]), stringValue(state["executionDataSource"]))
+	evaluationContext["symbol"] = firstNonEmpty(NormalizeSymbol(stringValue(evaluationContext["symbol"])), NormalizeSymbol(stringValue(proposalMap["symbol"])), NormalizeSymbol(stringValue(state["symbol"])))
+	evaluationContext["executionMode"] = firstNonEmpty(stringValue(evaluationContext["executionMode"]), stringValue(metadata["executionMode"]), "live")
+
+	signalIntent := cloneMetadata(mapValue(state["lastSignalIntent"]))
+	if len(signalIntent) == 0 {
+		signalIntent = signalIntentFromExecutionProposalMap(proposalMap)
+	}
+	positionSnapshot := cloneMetadata(mapValue(state["recoveredPosition"]))
+	if len(positionSnapshot) == 0 {
+		positionSnapshot = cloneMetadata(mapValue(state["livePositionState"]))
+	}
+
+	return domain.StrategyDecisionEvent{
+		LiveSessionID:     session.ID,
+		RuntimeSessionID:  firstNonEmpty(stringValue(metadata["runtimeSessionId"]), stringValue(state["signalRuntimeSessionId"]), stringValue(state["lastSignalRuntimeSessionId"])),
+		AccountID:         session.AccountID,
+		StrategyID:        session.StrategyID,
+		StrategyVersionID: strategyVersionID,
+		Symbol: firstNonEmpty(
+			NormalizeSymbol(stringValue(proposalMap["symbol"])),
+			NormalizeSymbol(stringValue(evaluationContext["symbol"])),
+			NormalizeSymbol(stringValue(state["symbol"])),
+		),
+		TriggerType:       firstNonEmpty(stringValue(triggerSummary["event"]), trigger, "dispatch-preflight"),
+		Action:            firstNonEmpty(stringValue(proposalMap["action"]), stringValue(lastDecision["action"]), "dispatch"),
+		Reason:            firstNonEmpty(stringValue(proposalMap["reason"]), stringValue(lastDecision["reason"]), "dispatchable-intent"),
+		SignalKind:        firstNonEmpty(stringValue(proposalMap["signalKind"]), stringValue(metadata["signalKind"]), stringValue(decisionMetadata["signalKind"])),
+		DecisionState:     firstNonEmpty(stringValue(proposalMap["decisionState"]), stringValue(metadata["decisionState"]), stringValue(decisionMetadata["decisionState"])),
+		IntentSignature:   buildLiveIntentSignature(proposalMap),
+		SourceGateReady:   boolValue(sourceGate["ready"]),
+		MissingCount:      len(metadataList(sourceGate["missing"])),
+		StaleCount:        len(metadataList(sourceGate["stale"])),
+		EventTime:         eventTime.UTC(),
+		TriggerSummary:    triggerSummary,
+		SourceGate:        sourceGate,
+		SourceStates:      cloneMetadata(mapValue(state["lastStrategyEvaluationSourceStates"])),
+		SignalBarStates:   cloneMetadata(mapValue(state["lastStrategyEvaluationSignalBarStates"])),
+		PositionSnapshot:  positionSnapshot,
+		DecisionMetadata:  decisionMetadata,
+		SignalIntent:      signalIntent,
+		ExecutionProposal: cloneMetadata(proposalMap),
+		EvaluationContext: evaluationContext,
+	}
+}
+
+func (p *Platform) strategyDecisionEventExists(liveSessionID, decisionEventID string) (bool, error) {
+	decisionEventID = strings.TrimSpace(decisionEventID)
+	if decisionEventID == "" {
+		return false, nil
+	}
+	if reader, ok := p.store.(strategyDecisionEventQueryReader); ok {
+		items, err := reader.QueryStrategyDecisionEvents(domain.StrategyDecisionEventQuery{
+			LiveSessionID:   strings.TrimSpace(liveSessionID),
+			DecisionEventID: decisionEventID,
+			Limit:           1,
+		})
+		if err != nil {
+			return false, err
+		}
+		return len(items) > 0, nil
+	}
+	items, err := p.store.ListStrategyDecisionEvents(strings.TrimSpace(liveSessionID))
+	if err != nil {
+		return false, err
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item.ID) != decisionEventID {
+			continue
+		}
+		if strings.TrimSpace(liveSessionID) == "" || strings.TrimSpace(item.LiveSessionID) == strings.TrimSpace(liveSessionID) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func setExecutionProposalDecisionEventID(proposalMap map[string]any, decisionEventID string) map[string]any {
+	normalized := cloneMetadata(proposalMap)
+	if len(normalized) == 0 || strings.TrimSpace(decisionEventID) == "" {
+		return normalized
+	}
+	metadata := cloneMetadata(mapValue(normalized["metadata"]))
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	normalized["decisionEventId"] = decisionEventID
+	metadata["decisionEventId"] = decisionEventID
+	normalized["metadata"] = metadata
+	return normalized
+}
+
+func signalIntentFromExecutionProposalMap(proposalMap map[string]any) map[string]any {
+	return map[string]any{
+		"action":         stringValue(proposalMap["action"]),
+		"role":           stringValue(proposalMap["role"]),
+		"reason":         stringValue(proposalMap["reason"]),
+		"side":           stringValue(proposalMap["side"]),
+		"symbol":         NormalizeSymbol(stringValue(proposalMap["symbol"])),
+		"signalKind":     stringValue(proposalMap["signalKind"]),
+		"decisionState":  stringValue(proposalMap["decisionState"]),
+		"plannedEventAt": stringValue(proposalMap["plannedEventAt"]),
+		"plannedPrice":   parseFloatValue(proposalMap["plannedPrice"]),
+		"priceHint":      parseFloatValue(proposalMap["priceHint"]),
+		"priceSource":    stringValue(proposalMap["priceSource"]),
+		"quantity":       parseFloatValue(proposalMap["quantity"]),
+		"metadata":       cloneMetadata(mapValue(proposalMap["metadata"])),
+	}
+}
+
+func liveOrderActionFromOrder(order domain.Order) string {
+	if order.EffectiveReduceOnly() || order.EffectiveClosePosition() {
+		return "exit"
+	}
+	return "entry"
+}
+
+func liveOrderRoleFromOrder(order domain.Order) string {
+	if order.EffectiveReduceOnly() || order.EffectiveClosePosition() {
+		return "exit"
+	}
+	return "entry"
+}
+
+func orderExecutionDecisionBackfillTrigger(eventType string) string {
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "" {
+		return "order-execution"
+	}
+	return "order-execution-" + eventType
+}
+
+func newStrategyDecisionEventID() string {
+	return fmt.Sprintf("strategy-decision-event-%d", time.Now().UTC().UnixNano())
+}
+
 func (p *Platform) recordLiveOrderExecutionEvent(order domain.Order, eventType string, eventTime time.Time, failed bool, eventErr error) error {
 	if !stringsEqualFoldSafe(stringValue(order.Metadata["executionMode"]), "live") && !stringsEqualFoldSafe(stringValue(order.Metadata["source"]), "live-session-intent") {
 		return nil
@@ -93,6 +354,10 @@ func (p *Platform) recordLiveOrderExecutionEvent(order domain.Order, eventType s
 			order.CreatedAt,
 			time.Now().UTC(),
 		)
+	}
+
+	if err := p.ensureStrategyDecisionEventForOrderExecution(order, proposalMap, eventTime, eventType); err != nil {
+		return err
 	}
 
 	event := domain.OrderExecutionEvent{

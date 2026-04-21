@@ -243,6 +243,18 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 	if stringValue(pending["side"]) != "BUY" {
 		t.Fatalf("expected pending BUY window, got %+v", pending)
 	}
+	timeline := metadataList(state["timeline"])
+	if len(timeline) != 1 {
+		t.Fatalf("expected one zero initial window timeline event, got %+v", timeline)
+	}
+	if got := stringValue(timeline[0]["title"]); got != "zero-initial-window-armed" {
+		t.Fatalf("expected zero-initial-window-armed timeline event, got %s", got)
+	}
+	timelineMetadata := mapValue(timeline[0]["metadata"])
+	pendingFromTimeline := mapValue(timelineMetadata[livePendingZeroInitialWindowStateKey])
+	if stringValue(pendingFromTimeline["side"]) != "BUY" || stringValue(pendingFromTimeline["symbol"]) != "BTCUSDT" {
+		t.Fatalf("expected pending window snapshot in timeline metadata, got %+v", pendingFromTimeline)
+	}
 
 	nextBarStart := barStart.Add(24 * time.Hour)
 	nextBarStates := map[string]any{
@@ -287,6 +299,9 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
 		t.Fatalf("expected pending zero initial window to remain active on next bar, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
 	}
+	if timeline := metadataList(state["timeline"]); len(timeline) != 1 {
+		t.Fatalf("expected existing pending window to avoid duplicate timeline events, got %+v", timeline)
+	}
 
 	expiredState, _, _, _, _, _ := prepareLivePlanStepForSignalEvaluation(
 		state,
@@ -308,6 +323,72 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 	)
 	if pending := mapValue(expiredState[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
 		t.Fatalf("expected zero initial window to expire after next bar, got %+v", pending)
+	}
+}
+
+func TestPrepareLivePlanStepForSignalEvaluationPrioritizesExitReentryOverZeroInitialWindow(t *testing.T) {
+	eventTime := time.Date(2026, 4, 10, 2, 0, 0, 0, time.UTC)
+	state := map[string]any{
+		livePendingZeroInitialWindowStateKey: map[string]any{
+			"side":            "SELL",
+			"symbol":          "BTCUSDT",
+			"signalTimeframe": "1d",
+			"armedAt":         eventTime.Add(-time.Minute).Format(time.RFC3339),
+			"signalBarStart":  eventTime.Truncate(24 * time.Hour).Format(time.RFC3339),
+			"expiresAt":       eventTime.Truncate(24 * time.Hour).Add(48 * time.Hour).Format(time.RFC3339),
+		},
+	}
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"sma5":      75650.0,
+			"atr14":     100.0,
+			"current": map[string]any{
+				"barStart": eventTime.Truncate(24 * time.Hour).Format(time.RFC3339),
+				"close":    75600.0,
+				"high":     75700.0,
+				"low":      75500.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 75600.0,
+				"low":  75400.0,
+			},
+		},
+	}
+
+	updated, gotEvent, gotPrice, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+		},
+		signalStates,
+		"BTCUSDT",
+		"1d",
+		map[string]any{},
+		eventTime,
+		eventTime,
+		75600.0,
+		"SELL",
+		"entry",
+		"SL-Reentry",
+	)
+	if gotRole != "entry" || gotReason != "SL-Reentry" || gotSide != "SELL" {
+		t.Fatalf("expected SL-Reentry to outrank pending zero initial window, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if !gotEvent.Equal(eventTime) || gotPrice != 75600.0 {
+		t.Fatalf("expected original SL-Reentry plan step to be preserved, got event=%s price=%v", gotEvent, gotPrice)
+	}
+	if pending := mapValue(updated[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected pending zero initial window to be consumed by exit reentry priority, got %+v", pending)
+	}
+	timeline := metadataList(updated["timeline"])
+	if len(timeline) != 1 || stringValue(timeline[0]["title"]) != "zero-initial-window-consumed" {
+		t.Fatalf("expected zero initial window consumed timeline event, got %+v", timeline)
+	}
+	if got := stringValue(mapValue(timeline[0]["metadata"])["reason"]); got != "exit-reentry-priority" {
+		t.Fatalf("expected exit-reentry-priority consume reason, got %s", got)
 	}
 }
 
@@ -1470,6 +1551,139 @@ func TestDispatchLiveSessionIntentRejectsNonDispatchableProposal(t *testing.T) {
 	}
 	if _, err := platform.dispatchLiveSessionIntent(session); err == nil {
 		t.Fatal("expected non-dispatchable proposal to be rejected")
+	}
+}
+
+func TestDispatchLiveSessionIntentBackfillsMissingDecisionEventReference(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-decision-event-backfill"})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-decision-event-backfill",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	freshRuntimeAt := time.Now().UTC()
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+		state["lastHeartbeatAt"] = freshRuntimeAt.Format(time.RFC3339)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		for key, item := range sourceStates {
+			sourceState := cloneMetadata(mapValue(item))
+			sourceState["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+			sourceStates[key] = sourceState
+		}
+		state["sourceStates"] = sourceStates
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = freshRuntimeAt
+	}); err != nil {
+		t.Fatalf("refresh runtime state failed: %v", err)
+	}
+
+	missingDecisionEventID := "strategy-decision-event-missing-live-dispatch"
+	proposal := executionProposalToMap(ExecutionProposal{
+		Action:            "entry",
+		Role:              "entry",
+		Reason:            "SL-Reentry",
+		Side:              "SELL",
+		Symbol:            "BTCUSDT",
+		Type:              "LIMIT",
+		Quantity:          0.002,
+		LimitPrice:        75600.0,
+		PriceHint:         75600.0,
+		PriceSource:       "test-book",
+		TimeInForce:       "GTC",
+		SignalKind:        "sl-reentry",
+		DecisionState:     "entry-ready",
+		SignalBarStateKey: "binance-kline|BTCUSDT|signal|1d",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"runtimeSessionId":  runtimeSessionID,
+			"executionDecision": "maker-resting",
+			"executionMode":     "live",
+		},
+	})
+	proposal = setExecutionProposalDecisionEventID(proposal, missingDecisionEventID)
+	state := cloneMetadata(session.State)
+	state["lastExecutionProposal"] = proposal
+	state["lastStrategyIntent"] = proposal
+	state["lastStrategyIntentSignature"] = buildLiveIntentSignature(proposal)
+	state["lastStrategyEvaluationContext"] = map[string]any{
+		"strategyVersionId":   "strategy-version-bk-1d-v010",
+		"signalTimeframe":     "1d",
+		"executionDataSource": "tick",
+		"symbol":              "BTCUSDT",
+	}
+	state["lastStrategyDecision"] = map[string]any{
+		"action": "advance-plan",
+		"reason": "SL-Reentry",
+		"metadata": map[string]any{
+			"signalKind":    "sl-reentry",
+			"decisionState": "entry-ready",
+		},
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	order, err := platform.dispatchLiveSessionIntent(session)
+	if err != nil {
+		t.Fatalf("dispatch live session intent failed: %v", err)
+	}
+	if got := stringValue(order.Metadata["decisionEventId"]); got != missingDecisionEventID {
+		t.Fatalf("expected order decisionEventId %s, got %s", missingDecisionEventID, got)
+	}
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if got := stringValue(updatedSession.State["lastStrategyDecisionEventId"]); got != missingDecisionEventID {
+		t.Fatalf("expected session lastStrategyDecisionEventId %s, got %s", missingDecisionEventID, got)
+	}
+
+	events, err := platform.store.ListStrategyDecisionEvents(session.ID)
+	if err != nil {
+		t.Fatalf("list strategy decision events failed: %v", err)
+	}
+	var backfilled domain.StrategyDecisionEvent
+	for _, event := range events {
+		if event.ID == missingDecisionEventID {
+			backfilled = event
+			break
+		}
+	}
+	if backfilled.ID == "" {
+		t.Fatalf("expected missing decision event %s to be backfilled", missingDecisionEventID)
+	}
+	if !boolValue(backfilled.DecisionMetadata["decisionEventBackfilled"]) {
+		t.Fatalf("expected backfilled decision metadata, got %+v", backfilled.DecisionMetadata)
+	}
+	if got := stringValue(backfilled.ExecutionProposal["decisionEventId"]); got != missingDecisionEventID {
+		t.Fatalf("expected backfilled execution proposal decisionEventId %s, got %s", missingDecisionEventID, got)
+	}
+
+	executionEvents, err := platform.store.ListOrderExecutionEvents(order.ID)
+	if err != nil {
+		t.Fatalf("list order execution events failed: %v", err)
+	}
+	if len(executionEvents) == 0 {
+		t.Fatal("expected order execution telemetry to be persisted")
+	}
+	if got := executionEvents[0].DecisionEventID; got != missingDecisionEventID {
+		t.Fatalf("expected order execution event decisionEventId %s, got %s", missingDecisionEventID, got)
 	}
 }
 
@@ -4025,6 +4239,14 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 			},
 		},
 	}
+	state[livePendingZeroInitialWindowStateKey] = map[string]any{
+		"side":            "BUY",
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+		"armedAt":         time.Date(2026, 4, 17, 1, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"signalBarStart":  time.Date(2026, 4, 17, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"expiresAt":       time.Date(2026, 4, 19, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+	}
 	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		t.Fatalf("update live session state failed: %v", err)
@@ -4046,6 +4268,22 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 	}
 	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "protected-open-position" {
 		t.Fatalf("expected protected-open-position, got %s", got)
+	}
+	if pending := mapValue(updated.State[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected real position refresh to consume pending zero initial window, got %+v", pending)
+	}
+	var consumed map[string]any
+	for _, item := range metadataList(updated.State["timeline"]) {
+		if stringValue(item["title"]) == "zero-initial-window-consumed" {
+			consumed = item
+			break
+		}
+	}
+	if consumed == nil {
+		t.Fatalf("expected zero initial window consumed timeline event, got %+v", metadataList(updated.State["timeline"]))
+	}
+	if got := stringValue(mapValue(consumed["metadata"])["reason"]); got != "real-position-confirmed" {
+		t.Fatalf("expected real-position-confirmed consume reason, got %s", got)
 	}
 }
 

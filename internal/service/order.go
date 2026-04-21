@@ -778,8 +778,8 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 		markOrderLifecycle(order.Metadata, "filled", false)
 	}
 	markOrderLifecycle(order.Metadata, "synced", true)
-	if len(syncResult.Fills) > 0 {
-		fills, lastFundingPnL, lastPrice := buildLiveSyncSettlement(order, syncResult)
+	fills, lastFundingPnL, lastPrice := buildLiveSyncSettlement(order, syncResult)
+	if len(fills) > 0 {
 		order.Price = lastPrice
 		order.Metadata["fundingPnL"] = lastFundingPnL
 		order.Metadata["fillCount"] = len(fills)
@@ -808,10 +808,19 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 }
 
 func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]domain.Fill, float64, float64) {
-	fills := make([]domain.Fill, 0, len(syncResult.Fills))
+	reports := syncResult.Fills
+	if len(reports) == 0 {
+		if fallback, ok := buildTerminalFilledFallbackReport(order, syncResult); ok {
+			reports = []LiveFillReport{fallback}
+		}
+	}
+	fills := make([]domain.Fill, 0, len(reports))
 	lastFundingPnL := 0.0
 	lastPrice := order.Price
-	for _, report := range syncResult.Fills {
+	for _, report := range reports {
+		if report.Quantity <= 0 {
+			continue
+		}
 		price := report.Price
 		if price <= 0 {
 			price = resolveExecutionPrice(order)
@@ -822,12 +831,84 @@ func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]do
 			OrderID:           order.ID,
 			ExchangeTradeID:   resolveLiveFillTradeID(report),
 			ExchangeTradeTime: resolveLiveFillTradeTime(report),
+			DedupFingerprint:  strings.TrimSpace(stringValue(mapValue(report.Metadata)["dedupFingerprint"])),
 			Price:             price,
 			Quantity:          report.Quantity,
 			Fee:               report.Fee - report.FundingPnL,
 		})
 	}
 	return fills, lastFundingPnL, lastPrice
+}
+
+func buildTerminalFilledFallbackReport(order domain.Order, syncResult LiveOrderSync) (LiveFillReport, bool) {
+	if !strings.EqualFold(strings.TrimSpace(syncResult.Status), "FILLED") {
+		return LiveFillReport{}, false
+	}
+	metadata := cloneMetadata(syncResult.Metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	totalFilledQty := firstPositive(
+		parseFloatValue(metadata["executedQty"]),
+		firstPositive(
+			parseFloatValue(metadata["cumQty"]),
+			firstPositive(
+				parseFloatValue(metadata["filledQuantity"]),
+				order.Quantity,
+			),
+		),
+	)
+	if totalFilledQty <= 0 {
+		return LiveFillReport{}, false
+	}
+	alreadyFilledQty := parseFloatValue(order.Metadata["filledQuantity"])
+	fallbackQty := totalFilledQty - alreadyFilledQty
+	if order.Quantity > 0 && fallbackQty > order.Quantity-alreadyFilledQty {
+		fallbackQty = order.Quantity - alreadyFilledQty
+	}
+	if fallbackQty <= 1e-9 {
+		return LiveFillReport{}, false
+	}
+	price := firstPositive(
+		parseFloatValue(metadata["avgPrice"]),
+		firstPositive(
+			parseFloatValue(metadata["price"]),
+			firstPositive(order.Price, resolveExecutionPrice(order)),
+		),
+	)
+	tradeTime := firstNonEmpty(
+		stringValue(metadata["updateTime"]),
+		syncResult.SyncedAt,
+		stringValue(order.Metadata["lastExchangeUpdateAt"]),
+		stringValue(order.Metadata["acceptedAt"]),
+		time.Now().UTC().Format(time.RFC3339),
+	)
+	exchangeOrderID := firstNonEmpty(
+		stringValue(metadata["exchangeOrderId"]),
+		stringValue(order.Metadata["exchangeOrderId"]),
+	)
+	metadata["source"] = firstNonEmpty(stringValue(metadata["source"]), "terminal-filled-order-fallback")
+	metadata["exchangeOrderId"] = exchangeOrderID
+	metadata["clientOrderId"] = firstNonEmpty(stringValue(metadata["clientOrderId"]), order.ID)
+	metadata["tradeTime"] = tradeTime
+	metadata["syntheticFill"] = true
+	metadata["dedupFingerprint"] = terminalFilledFallbackDedupFingerprint(order, syncResult, totalFilledQty)
+	return LiveFillReport{
+		Price:    price,
+		Quantity: fallbackQty,
+		Fee:      0,
+		Metadata: metadata,
+	}, true
+}
+
+func terminalFilledFallbackDedupFingerprint(order domain.Order, syncResult LiveOrderSync, totalFilledQty float64) string {
+	metadata := mapValue(syncResult.Metadata)
+	return strings.Join([]string{
+		"terminal-filled-order-fallback",
+		strings.TrimSpace(order.ID),
+		firstNonEmpty(stringValue(metadata["exchangeOrderId"]), stringValue(order.Metadata["exchangeOrderId"])),
+		fmt.Sprintf("%.12f", totalFilledQty),
+	}, "|")
 }
 
 func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Order, fills []domain.Fill) (domain.Order, error) {
@@ -838,6 +919,11 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	if err != nil {
 		return domain.Order{}, err
 	}
+	existingFilledQuantity, err := p.store.TotalFilledQuantityForOrder(order.ID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	newFills = limitExecutionFillsToRemainingQuantity(newFills, order.Quantity-existingFilledQuantity)
 	lastPrice := order.Price
 	for _, fill := range newFills {
 		createdFill, err := p.store.CreateFill(fill)
@@ -969,6 +1055,27 @@ func buildFillDedupKey(fill domain.Fill) string {
 		fingerprint = fill.FallbackFingerprint()
 	}
 	return orderID + "|fallback|" + fingerprint
+}
+
+func limitExecutionFillsToRemainingQuantity(fills []domain.Fill, remainingQuantity float64) []domain.Fill {
+	if len(fills) == 0 || remainingQuantity <= 1e-9 {
+		return nil
+	}
+	limited := make([]domain.Fill, 0, len(fills))
+	remaining := remainingQuantity
+	for _, fill := range fills {
+		if fill.Quantity <= 0 || remaining <= 1e-9 {
+			continue
+		}
+		if fill.Quantity > remaining {
+			ratio := remaining / fill.Quantity
+			fill.Quantity = remaining
+			fill.Fee *= ratio
+		}
+		limited = append(limited, fill)
+		remaining -= fill.Quantity
+	}
+	return limited
 }
 
 func resolveLiveFillTradeID(report LiveFillReport) string {
