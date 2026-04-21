@@ -209,10 +209,19 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		action = "wait"
 		reason = "planned-event-not-reached"
 	}
+	marketPrice, marketSource := pickDecisionMarketPrice(trigger, sourceStates, context.NextPlannedSide)
+	breakoutPrice, breakoutPriceSource := pickSignalBreakoutPrice(trigger, sourceStates)
 	signalBarDecision := map[string]any{}
 	signalFilterReady := true
 	if signalBarState != nil {
-		signalBarDecision = evaluateSignalBarGate(signalBarState, context.NextPlannedSide, context.NextPlannedRole, context.NextPlannedReason)
+		signalBarDecision = evaluateSignalBarGate(
+			signalBarState,
+			context.NextPlannedSide,
+			context.NextPlannedRole,
+			context.NextPlannedReason,
+			breakoutPrice,
+			breakoutPriceSource,
+		)
 		if value, ok := signalBarDecision["ready"].(bool); ok {
 			signalFilterReady = value
 		}
@@ -221,7 +230,6 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		action = "wait"
 		reason = "signal-filter-not-ready"
 	}
-	marketPrice, marketSource := pickDecisionMarketPrice(trigger, sourceStates, context.NextPlannedSide)
 	orderBookStats := extractOrderBookStats(trigger, sourceStates)
 	maxDeviationBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxDeviationBps"]), 50)
 	maxSpreadBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxSpreadBps"]), 8)
@@ -293,6 +301,8 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"nextPlannedSide":     context.NextPlannedSide,
 			"nextPlannedRole":     context.NextPlannedRole,
 			"nextPlannedReason":   context.NextPlannedReason,
+			"breakoutPrice":       breakoutPrice,
+			"breakoutPriceSource": breakoutPriceSource,
 			"marketPrice":         marketPrice,
 			"marketSource":        marketSource,
 			"bestBid":             orderBookStats.bestBid,
@@ -312,6 +322,56 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"priceActionable":     strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") || isPlannedPriceActionable(context.NextPlannedSide, effectivePlannedPrice, marketPrice, maxDeviationBps),
 		},
 	}, nil
+}
+
+func pickSignalBreakoutPrice(trigger map[string]any, sourceStates map[string]any) (float64, string) {
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(trigger["subscriptionSymbol"]), stringValue(trigger["symbol"])))
+	tradePrice := parseFloatValue(trigger["price"])
+	tradeSource := ""
+	if tradePrice > 0 {
+		tradeSource = "trigger.price"
+	}
+	bestBid, bestAsk := 0.0, 0.0
+
+	for _, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		if symbol != "" && NormalizeSymbol(stringValue(entry["symbol"])) != symbol {
+			continue
+		}
+		summary := mapValue(entry["summary"])
+		switch strings.ToLower(strings.TrimSpace(stringValue(entry["streamType"]))) {
+		case "trade_tick":
+			if tradePrice <= 0 {
+				tradePrice = parseFloatValue(summary["price"])
+				if tradePrice > 0 {
+					tradeSource = "trade_tick.price"
+				}
+			}
+		case "order_book":
+			if bestBid <= 0 {
+				bestBid = parseFloatValue(summary["bestBid"])
+			}
+			if bestAsk <= 0 {
+				bestAsk = parseFloatValue(summary["bestAsk"])
+			}
+		}
+	}
+	if tradePrice > 0 {
+		return tradePrice, tradeSource
+	}
+	if bestBid > 0 && bestAsk > 0 {
+		return (bestBid + bestAsk) / 2, "order_book.mid"
+	}
+	if bestBid > 0 {
+		return bestBid, "order_book.bestBid"
+	}
+	if bestAsk > 0 {
+		return bestAsk, "order_book.bestAsk"
+	}
+	return 0, ""
 }
 
 func formatOptionalRFC3339(value time.Time) string {
@@ -604,7 +664,7 @@ func pickSignalBarState(signalBarStates map[string]any, symbol, timeframe string
 	return nil, ""
 }
 
-func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, nextReason string) map[string]any {
+func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, nextReason string, breakoutPrice float64, breakoutPriceSource string) map[string]any {
 	role := strings.ToLower(strings.TrimSpace(nextRole))
 	reasonTag := normalizeStrategyReasonTag(nextReason)
 	timeframe := strings.ToLower(strings.TrimSpace(stringValue(signalBarState["timeframe"])))
@@ -636,8 +696,6 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		return result
 	}
 	closePrice := parseFloatValue(current["close"])
-	highPrice := parseFloatValue(current["high"])
-	lowPrice := parseFloatValue(current["low"])
 	prevHigh1 := parseFloatValue(prevBar1["high"])
 	prevHigh2 := parseFloatValue(prevBar2["high"])
 	prevLow1 := parseFloatValue(prevBar1["low"])
@@ -680,10 +738,12 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		longStructureReady = closePrice > ma20
 		shortStructureReady = closePrice < ma20
 	}
-	longBreakoutReady := highPrice >= prevHigh2 && prevHigh2 > 0
-	shortBreakoutReady := lowPrice <= prevLow2 && prevLow2 > 0
-	longBreakoutPatternReady := prevHigh2 > prevHigh1 && closePrice > prevHigh2 && prevHigh2 > 0
-	shortBreakoutPatternReady := prevLow2 < prevLow1 && closePrice < prevLow2 && prevLow2 > 0
+	longBreakoutShapeReady := prevHigh2 > prevHigh1 && prevHigh2 > 0
+	shortBreakoutShapeReady := prevLow2 < prevLow1 && prevLow2 > 0
+	longBreakoutPriceReady := breakoutPrice > prevHigh2 && prevHigh2 > 0
+	shortBreakoutPriceReady := breakoutPrice < prevLow2 && prevLow2 > 0
+	longBreakoutReady := longBreakoutShapeReady && longBreakoutPriceReady
+	shortBreakoutReady := shortBreakoutShapeReady && shortBreakoutPriceReady
 	longReady := longStructureReady && longBreakoutReady
 	shortReady := shortStructureReady && shortBreakoutReady
 	if role == "entry" && (reasonTag == "zero-initial-reentry" || reasonTag == "sl-reentry" || reasonTag == "pt-reentry") {
@@ -694,10 +754,16 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	result["shortStructureReady"] = shortStructureReady
 	result["longEarlyReversalReady"] = longEarlyReversalReady
 	result["shortEarlyReversalReady"] = shortEarlyReversalReady
+	result["breakoutPrice"] = breakoutPrice
+	result["breakoutPriceSource"] = breakoutPriceSource
+	result["longBreakoutShapeReady"] = longBreakoutShapeReady
+	result["shortBreakoutShapeReady"] = shortBreakoutShapeReady
+	result["longBreakoutPriceReady"] = longBreakoutPriceReady
+	result["shortBreakoutPriceReady"] = shortBreakoutPriceReady
 	result["longBreakoutReady"] = longBreakoutReady
 	result["shortBreakoutReady"] = shortBreakoutReady
-	result["longBreakoutPatternReady"] = longBreakoutPatternReady
-	result["shortBreakoutPatternReady"] = shortBreakoutPatternReady
+	result["longBreakoutPatternReady"] = longBreakoutReady
+	result["shortBreakoutPatternReady"] = shortBreakoutReady
 	result["longReady"] = longReady
 	result["shortReady"] = shortReady
 	if role == "exit" {

@@ -39,33 +39,42 @@ func TestEvaluateLiveSessionOnSignalPersistsStrategyDecisionEvent(t *testing.T) 
 	if len(signalBarDecision) == 0 {
 		t.Fatal("expected lastStrategyEvaluationSignalBarDecision to be recorded")
 	}
-	if !boolValue(signalBarDecision["longBreakoutReady"]) {
-		t.Fatalf("expected longBreakoutReady=true, got %#v", signalBarDecision)
+	if boolValue(signalBarDecision["longBreakoutReady"]) {
+		t.Fatalf("expected longBreakoutReady=false until breakout price crosses prevHigh2, got %#v", signalBarDecision)
 	}
 	if got := stringValue(updated.State["lastStrategyEvaluationSignalBarStateKey"]); got == "" {
 		t.Fatal("expected lastStrategyEvaluationSignalBarStateKey to be recorded")
 	}
 	if breakout := mapValue(updated.State["lastBreakoutSignal"]); len(breakout) != 0 {
-		t.Fatalf("expected no close-based breakout snapshot for default fixture, got %#v", breakout)
+		t.Fatalf("expected no breakout snapshot before breakout price crosses prevHigh2, got %#v", breakout)
 	}
-	dispatchedIntent := mapValue(updated.State["lastDispatchedIntent"])
-	if got := stringValue(dispatchedIntent["decisionEventId"]); got != events[0].ID {
-		t.Fatalf("expected dispatched intent to carry decision event id %s, got %s", events[0].ID, got)
+	if dispatchedIntent := mapValue(updated.State["lastDispatchedIntent"]); len(dispatchedIntent) != 0 {
+		t.Fatalf("expected no dispatched intent before breakout price crosses prevHigh2, got %#v", dispatchedIntent)
 	}
 }
 
 func TestEvaluateLiveSessionOnSignalPersistsBreakoutHistory(t *testing.T) {
 	platform, session, runtimeSessionID, summary, eventTime := prepareLiveDecisionTelemetryFixture(t)
 	signalKey := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT")
+	triggerKey := signalBindingMatchKey("binance-trade-tick", "trigger", "BTCUSDT")
+	summary["price"] = 69010.0
 	err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
 		state := cloneMetadata(runtimeSession.State)
+		state["lastEventSummary"] = cloneMetadata(summary)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		triggerState := cloneMetadata(mapValue(sourceStates[triggerKey]))
+		triggerSummary := cloneMetadata(mapValue(triggerState["summary"]))
+		triggerSummary["price"] = 69010.0
+		triggerState["summary"] = triggerSummary
+		sourceStates[triggerKey] = triggerState
+		state["sourceStates"] = sourceStates
 		signalStates := cloneMetadata(mapValue(state["signalBarStates"]))
 		entry := cloneMetadata(mapValue(signalStates[signalKey]))
 		current := cloneMetadata(mapValue(entry["current"]))
 		prevBar1 := cloneMetadata(mapValue(entry["prevBar1"]))
 		prevBar2 := cloneMetadata(mapValue(entry["prevBar2"]))
-		current["close"] = 69010.0
-		current["high"] = 69030.0
+		current["close"] = 68100.0
+		current["high"] = 68950.0
 		current["barStart"] = eventTime.Add(-24 * time.Hour).UnixMilli()
 		prevBar1["high"] = 68850.0
 		prevBar2["high"] = 69000.0
@@ -97,6 +106,9 @@ func TestEvaluateLiveSessionOnSignalPersistsBreakoutHistory(t *testing.T) {
 	}
 	if got := parseFloatValue(breakout["level"]); got != 69000.0 {
 		t.Fatalf("expected breakout level 69000, got %v", got)
+	}
+	if got := parseFloatValue(breakout["price"]); got != 69010.0 {
+		t.Fatalf("expected breakout price 69010, got %v", got)
 	}
 	history := metadataList(updated.State["breakoutHistory"])
 	if len(history) != 1 {
@@ -346,7 +358,7 @@ func prepareLiveDecisionTelemetryFixture(t *testing.T) (*Platform, domain.LiveSe
 		"role":               "trigger",
 		"symbol":             "BTCUSDT",
 		"subscriptionSymbol": "BTCUSDT",
-		"price":              69010.0,
+		"price":              68990.0,
 		"event":              "trade_tick",
 	}
 	err = platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
@@ -364,7 +376,7 @@ func prepareLiveDecisionTelemetryFixture(t *testing.T) (*Platform, domain.LiveSe
 				"streamType":  "trade_tick",
 				"lastEventAt": eventTime.UTC().Format(time.RFC3339),
 				"summary": map[string]any{
-					"price": 69010.0,
+					"price": 68990.0,
 				},
 			},
 			signalKey: map[string]any{
