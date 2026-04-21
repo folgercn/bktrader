@@ -307,6 +307,8 @@ type testLiveAccountReconcileAdapter struct {
 	syncSnapshotFunc func(*Platform, domain.Account, map[string]any) (domain.Account, error)
 	ordersBySymbol   map[string][]map[string]any
 	tradesBySymbol   map[string][]LiveFillReport
+	ordersErr        error
+	tradesErr        error
 }
 
 func (a testLiveAccountReconcileAdapter) Key() string {
@@ -341,10 +343,16 @@ func (a testLiveAccountReconcileAdapter) SyncAccountSnapshot(platform *Platform,
 }
 
 func (a testLiveAccountReconcileAdapter) FetchRecentOrders(_ domain.Account, _ map[string]any, symbol string, _ int) ([]map[string]any, error) {
+	if a.ordersErr != nil {
+		return nil, a.ordersErr
+	}
 	return cloneReconcileOrders(a.ordersBySymbol[symbol]), nil
 }
 
 func (a testLiveAccountReconcileAdapter) FetchRecentTrades(_ domain.Account, _ map[string]any, symbol string, _ int) ([]LiveFillReport, error) {
+	if a.tradesErr != nil {
+		return nil, a.tradesErr
+	}
 	return cloneReconcileTrades(a.tradesBySymbol[symbol]), nil
 }
 
