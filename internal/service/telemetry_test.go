@@ -45,9 +45,62 @@ func TestEvaluateLiveSessionOnSignalPersistsStrategyDecisionEvent(t *testing.T) 
 	if got := stringValue(updated.State["lastStrategyEvaluationSignalBarStateKey"]); got == "" {
 		t.Fatal("expected lastStrategyEvaluationSignalBarStateKey to be recorded")
 	}
+	if breakout := mapValue(updated.State["lastBreakoutSignal"]); len(breakout) != 0 {
+		t.Fatalf("expected no close-based breakout snapshot for default fixture, got %#v", breakout)
+	}
 	dispatchedIntent := mapValue(updated.State["lastDispatchedIntent"])
 	if got := stringValue(dispatchedIntent["decisionEventId"]); got != events[0].ID {
 		t.Fatalf("expected dispatched intent to carry decision event id %s, got %s", events[0].ID, got)
+	}
+}
+
+func TestEvaluateLiveSessionOnSignalPersistsBreakoutHistory(t *testing.T) {
+	platform, session, runtimeSessionID, summary, eventTime := prepareLiveDecisionTelemetryFixture(t)
+	signalKey := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT")
+	err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		signalStates := cloneMetadata(mapValue(state["signalBarStates"]))
+		entry := cloneMetadata(mapValue(signalStates[signalKey]))
+		current := cloneMetadata(mapValue(entry["current"]))
+		prevBar1 := cloneMetadata(mapValue(entry["prevBar1"]))
+		prevBar2 := cloneMetadata(mapValue(entry["prevBar2"]))
+		current["close"] = 69010.0
+		current["high"] = 69030.0
+		current["barStart"] = eventTime.Add(-24 * time.Hour).UnixMilli()
+		prevBar1["high"] = 68850.0
+		prevBar2["high"] = 69000.0
+		entry["current"] = current
+		entry["prevBar1"] = prevBar1
+		entry["prevBar2"] = prevBar2
+		signalStates[signalKey] = entry
+		state["signalBarStates"] = signalStates
+		runtimeSession.State = state
+	})
+	if err != nil {
+		t.Fatalf("update runtime breakout state failed: %v", err)
+	}
+
+	if err := platform.evaluateLiveSessionOnSignal(session, runtimeSessionID, summary, eventTime); err != nil {
+		t.Fatalf("evaluate live session failed: %v", err)
+	}
+
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	breakout := mapValue(updated.State["lastBreakoutSignal"])
+	if len(breakout) == 0 {
+		t.Fatal("expected breakout snapshot to be recorded")
+	}
+	if got := stringValue(breakout["side"]); got != "BUY" {
+		t.Fatalf("expected breakout side BUY, got %s", got)
+	}
+	if got := parseFloatValue(breakout["level"]); got != 69000.0 {
+		t.Fatalf("expected breakout level 69000, got %v", got)
+	}
+	history := metadataList(updated.State["breakoutHistory"])
+	if len(history) != 1 {
+		t.Fatalf("expected breakout history length 1, got %#v", history)
 	}
 }
 

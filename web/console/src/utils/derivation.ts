@@ -1,4 +1,4 @@
-import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, AuthSession, TimelineConfig } from '../types/domain';
+import { AccountSummary, AccountRecord, StrategyVersion, StrategyRecord, AccountEquitySnapshot, Order, Fill, Position, PaperSession, LiveSession, ChartCandle, ChartAnnotation, MarkerLegendItem, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceDefinition, SignalSourceCatalog, SignalSourceType, SignalBinding, SignalRuntimeAdapter, SignalRuntimeSession, ReplayReasonStats, ReplaySample, ExecutionTrade, SourceFilter, EventFilter, TimeWindow, MarkerDetail, ChartOverrideRange, SelectedSample, SelectableSample, RuntimeMarketSnapshot, RuntimeSourceSummary, RuntimeReadiness, SignalBarCandle, AlertItem, PlatformAlert, PlatformNotification, TelegramConfig, RuntimePolicy, LivePreflightSummary, LiveNextAction, LiveDispatchPreview, LiveSessionExecutionSummary, LiveSessionHealth, HighlightedLiveSession, LiveSessionFlowStep, SessionMarker, SignalMonitorOverlay, AuthSession, TimelineConfig } from '../types/domain';
 
 
 import { formatMoney, formatSigned, formatPercent, formatNumber, formatMaybeNumber, formatTime, formatShortTime, shrink } from './format';
@@ -1056,6 +1056,138 @@ export function deriveSessionMarkers(session: LiveSession | PaperSession | null,
       text: `${isBuy ? "开" : "平"} ${formatMaybeNumber(order.price)}`,
     };
   });
+}
+
+function resolveSessionOrders(session: LiveSession | PaperSession | null, orders: Order[]) {
+  if (!session) {
+    return [];
+  }
+  const isLiveSession = "strategyId" in session && !("startEquity" in session);
+  return orders
+    .filter((order) =>
+      isLiveSession
+        ? String(order.metadata?.liveSessionId ?? "") === session.id
+        : String(order.metadata?.paperSession ?? "") === session.id
+    )
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+}
+
+function clampAnnotationTime(time: string, visibleStart: string, visibleEnd: string) {
+  const parsed = Date.parse(time);
+  const start = Date.parse(visibleStart);
+  const end = Date.parse(visibleEnd);
+  if (!Number.isFinite(parsed) || !Number.isFinite(start) || !Number.isFinite(end)) {
+    return "";
+  }
+  if (parsed <= start) {
+    return visibleStart;
+  }
+  if (parsed >= end) {
+    return visibleEnd;
+  }
+  return new Date(parsed).toISOString();
+}
+
+export function deriveSignalMonitorDecorations(
+  session: LiveSession | PaperSession | null,
+  candles: SignalBarCandle[],
+  position: Position | null,
+  orders: Order[],
+  fills: Fill[]
+): { markers: SessionMarker[]; overlays: SignalMonitorOverlay[] } {
+  if (!session || candles.length < 3) {
+    return { markers: [], overlays: [] };
+  }
+
+  const markers: SessionMarker[] = [];
+  const overlays: SignalMonitorOverlay[] = [];
+  const visibleStart = candles[0]?.time ?? "";
+  const visibleEnd = candles[candles.length - 1]?.time ?? "";
+  const state = getRecord(session.state);
+
+  const breakoutEntries = getList(state.breakoutHistory);
+  if (breakoutEntries.length === 0 && Object.keys(getRecord(state.lastBreakoutSignal)).length > 0) {
+    breakoutEntries.push(getRecord(state.lastBreakoutSignal));
+  }
+
+  for (const rawEntry of breakoutEntries.slice(-12)) {
+    const breakout = getRecord(rawEntry);
+    const breakoutTime = clampAnnotationTime(
+      String(breakout.barTime ?? breakout.eventAt ?? ""),
+      visibleStart,
+      visibleEnd
+    );
+    const breakoutLevel = getNumber(breakout.level);
+    const breakoutSide = String(breakout.side ?? "").trim().toUpperCase();
+    if (!breakoutTime || breakoutLevel == null || breakoutLevel <= 0) {
+      continue;
+    }
+    const breakoutColor = breakoutSide === "SELL" ? "#b04a37" : "#0e6d60";
+    const nextCandleTime =
+      candles.find((item) => Date.parse(item.time) > Date.parse(breakoutTime))?.time ?? visibleEnd;
+    overlays.push({
+      startTime: breakoutTime,
+      endTime: nextCandleTime,
+      price: breakoutLevel,
+      color: breakoutColor,
+      lineStyle: "dotted",
+    });
+    markers.push({
+      time: breakoutTime,
+      position: breakoutSide === "SELL" ? "aboveBar" : "belowBar",
+      color: breakoutColor,
+      shape: "circle",
+      text: "BO",
+    });
+  }
+
+  if (!position || Math.abs(Number(position.quantity ?? 0)) <= 0 || !visibleEnd) {
+    return { markers, overlays };
+  }
+
+  const livePositionState =
+    getRecord(state.lastLivePositionState).found === true
+      ? getRecord(state.lastLivePositionState)
+      : getRecord(state.livePositionState);
+  const stopLoss = getNumber(livePositionState.stopLoss);
+  if (stopLoss == null || stopLoss <= 0) {
+    return { markers, overlays };
+  }
+
+  const sessionOrders = resolveSessionOrders(session, orders);
+  const fillByOrderId = new Map(fills.map((fill) => [fill.orderId, fill] as const));
+  const normalizedSide = String(position.side ?? livePositionState.side ?? "").trim().toUpperCase();
+  const entrySide = normalizedSide === "SHORT" ? "SELL" : "BUY";
+  const entryOrder = [...sessionOrders]
+    .reverse()
+    .find((order) => String(order.side ?? "").trim().toUpperCase() === entrySide);
+  const entryTime = clampAnnotationTime(
+    fillByOrderId.get(entryOrder?.id ?? "")?.createdAt ?? entryOrder?.createdAt ?? visibleStart,
+    visibleStart,
+    visibleEnd
+  );
+  const trailingActive =
+    livePositionState.trailingStopActive === true ||
+    String(livePositionState.stopLossSource ?? "").trim().toLowerCase() === "trailing-stop";
+  const stopMarkerPosition = normalizedSide === "SHORT" ? "aboveBar" : "belowBar";
+  const stopMarkerColor = trailingActive ? "#2563eb" : "#b04a37";
+
+  overlays.push({
+    startTime: entryTime || visibleStart,
+    endTime: visibleEnd,
+    price: stopLoss,
+    color: stopMarkerColor,
+    lineStyle: "dashed",
+  });
+  markers.push({
+    time: visibleEnd,
+    position: stopMarkerPosition,
+    color: stopMarkerColor,
+    shape: "square",
+    text: trailingActive ? "TSL" : "SL",
+  });
+
+  return { markers, overlays };
 }
 
 export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessionExecutionSummary): LiveSessionHealth {

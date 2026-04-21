@@ -682,6 +682,8 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	}
 	longBreakoutReady := highPrice >= prevHigh2 && prevHigh2 > 0
 	shortBreakoutReady := lowPrice <= prevLow2 && prevLow2 > 0
+	longBreakoutPatternReady := prevHigh2 > prevHigh1 && closePrice > prevHigh2 && prevHigh2 > 0
+	shortBreakoutPatternReady := prevLow2 < prevLow1 && closePrice < prevLow2 && prevLow2 > 0
 	longReady := longStructureReady && longBreakoutReady
 	shortReady := shortStructureReady && shortBreakoutReady
 	if role == "entry" && (reasonTag == "zero-initial-reentry" || reasonTag == "sl-reentry" || reasonTag == "pt-reentry") {
@@ -694,6 +696,8 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	result["shortEarlyReversalReady"] = shortEarlyReversalReady
 	result["longBreakoutReady"] = longBreakoutReady
 	result["shortBreakoutReady"] = shortBreakoutReady
+	result["longBreakoutPatternReady"] = longBreakoutPatternReady
+	result["shortBreakoutPatternReady"] = shortBreakoutPatternReady
 	result["longReady"] = longReady
 	result["shortReady"] = shortReady
 	if role == "exit" {
