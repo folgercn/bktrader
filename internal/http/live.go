@@ -20,6 +20,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
 			var payload struct {
+				Alias                                     string `json:"alias"`
 				AccountID                                 string `json:"accountId"`
 				StrategyID                                string `json:"strategyId"`
 				PositionSizingMode                        string `json:"positionSizingMode"`
@@ -234,7 +235,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				overrides["freshnessOverride"] = freshnessOverride
 			}
 
-			item, err := platform.CreateLiveSession(payload.AccountID, payload.StrategyID, overrides)
+			item, err := platform.CreateLiveSession(payload.Alias, payload.AccountID, payload.StrategyID, overrides)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -254,6 +255,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				return
 			}
 			var payload struct {
+				Alias                                     string `json:"alias"`
 				AccountID                                 string `json:"accountId"`
 				StrategyID                                string `json:"strategyId"`
 				PositionSizingMode                        string `json:"positionSizingMode"`
@@ -469,7 +471,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				overrides["freshnessOverride"] = freshnessOverride
 			}
 
-			item, err := platform.UpdateLiveSession(parts[0], payload.AccountID, payload.StrategyID, overrides)
+			item, err := platform.UpdateLiveSession(parts[0], payload.Alias, payload.AccountID, payload.StrategyID, overrides)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return

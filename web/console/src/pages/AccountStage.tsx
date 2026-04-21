@@ -990,7 +990,7 @@ export function AccountStage({
                         <div className="space-y-1">
                            <div className="flex items-center gap-2">
                               <span className="text-sm font-black text-[var(--bk-text-primary)]">
-                                {session.id.length > 28 ? session.id.slice(0, 18) + '...' + session.id.slice(-6) : session.id}
+                                {session.alias || (session.id.length > 28 ? session.id.slice(0, 18) + '...' + session.id.slice(-6) : session.id)}
                               </span>
                               <Badge variant={isRunning ? "success" : "neutral"} className={`h-4 text-[8px] ${isRunning ? '' : 'bg-[var(--bk-text-muted)] text-[var(--bk-canvas)] border-transparent'}`}>
                                 {session.status}

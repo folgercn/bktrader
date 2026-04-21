@@ -933,7 +933,7 @@ func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) 
 
 func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
 	rows, err := s.db.Query(`
-		select id, account_id, strategy_id, status, state, created_at
+		select id, alias, account_id, strategy_id, status, state, created_at
 		from live_sessions order by created_at asc
 	`)
 	if err != nil {
@@ -945,7 +945,7 @@ func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
 	for rows.Next() {
 		var item domain.LiveSession
 		var stateRaw []byte
-		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Alias, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		item.State = map[string]any{}
@@ -961,10 +961,10 @@ func (s *Store) GetLiveSession(sessionID string) (domain.LiveSession, error) {
 	var item domain.LiveSession
 	var stateRaw []byte
 	err := s.db.QueryRow(`
-		select id, account_id, strategy_id, status, state, created_at
+		select id, alias, account_id, strategy_id, status, state, created_at
 		from live_sessions
 		where id = $1
-	`, sessionID).Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt)
+	`, sessionID).Scan(&item.ID, &item.Alias, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
@@ -981,6 +981,7 @@ func (s *Store) GetLiveSession(sessionID string) (domain.LiveSession, error) {
 func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error) {
 	item := domain.LiveSession{
 		ID:         fmt.Sprintf("live-session-%d", time.Now().UTC().UnixNano()),
+		Alias:      "",
 		AccountID:  accountID,
 		StrategyID: strategyID,
 		Status:     "READY",
@@ -994,9 +995,9 @@ func (s *Store) CreateLiveSession(accountID, strategyID string) (domain.LiveSess
 	stateRaw, _ := json.Marshal(item.State)
 
 	_, err := s.db.Exec(`
-		insert into live_sessions (id, account_id, strategy_id, status, state, created_at)
-		values ($1, $2, $3, $4, $5, $6)
-	`, item.ID, item.AccountID, item.StrategyID, item.Status, stateRaw, item.CreatedAt)
+		insert into live_sessions (id, alias, account_id, strategy_id, status, state, created_at)
+		values ($1, $2, $3, $4, $5, $6, $7)
+	`, item.ID, item.Alias, item.AccountID, item.StrategyID, item.Status, stateRaw, item.CreatedAt)
 	return item, err
 }
 
@@ -1007,9 +1008,9 @@ func (s *Store) UpdateLiveSession(item domain.LiveSession) (domain.LiveSession, 
 	}
 	result, err := s.db.Exec(`
 		update live_sessions
-		set account_id = $2, strategy_id = $3, status = $4, state = $5
+		set alias = $2, account_id = $3, strategy_id = $4, status = $5, state = $6
 		where id = $1
-	`, item.ID, item.AccountID, item.StrategyID, item.Status, stateRaw)
+	`, item.ID, item.Alias, item.AccountID, item.StrategyID, item.Status, stateRaw)
 	if err != nil {
 		return domain.LiveSession{}, err
 	}

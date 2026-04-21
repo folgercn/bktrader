@@ -306,7 +306,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                           className={`flex h-6 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2.5 font-mono text-[10px] font-bold text-[var(--bk-text-primary)] shadow-sm transition-all active:scale-95 ${allSessionItems.length > 1 ? 'cursor-pointer hover:bg-[var(--bk-surface-muted)]' : 'cursor-default'}`}
                           disabled={allSessionItems.length <= 1}
                         >
-                          <span className="truncate max-w-[320px]">{highlightedLiveSession.session.id}</span>
+                          <span className="truncate max-w-[320px]">{highlightedLiveSession.session.alias || highlightedLiveSession.session.id}</span>
                           {allSessionItems.length > 1 && <ChevronDown className="size-2.5 shrink-0 text-[var(--bk-text-muted)] opacity-60" />}
                         </PopoverTrigger>
                         <PopoverContent align="start" className="isolate z-[60] w-[320px] rounded-[20px] border-2 border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-2 shadow-xl">
@@ -332,7 +332,10 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                                               : "bg-rose-500"
                                       }`} />
                                       <div className="flex flex-col gap-0.5">
-                                        <span className="font-mono text-[10px] font-black leading-none">{item.session.id}</span>
+                                        <span className="font-mono text-[10px] font-black leading-none">{item.session.alias || item.session.id}</span>
+                                        {item.session.alias && (
+                                          <span className="font-mono text-[8px] opacity-40 leading-none">{item.session.id}</span>
+                                        )}
                                         <span className={cn(
                                           "text-[8px] font-bold uppercase tracking-wider opacity-60",
                                           item.session.status.toLowerCase() === "running" ? "text-[var(--bk-status-success)]" : "text-[var(--bk-text-muted)]"

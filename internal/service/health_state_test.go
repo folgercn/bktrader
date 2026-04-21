@@ -390,7 +390,7 @@ func TestHealthSnapshotAggregatesBackendHealthState(t *testing.T) {
 	if _, err := platform.store.UpdateLiveSessionState("live-session-main", liveState); err != nil {
 		t.Fatalf("update live session state failed: %v", err)
 	}
-	stoppedSession, err := platform.CreateLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	stoppedSession, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
