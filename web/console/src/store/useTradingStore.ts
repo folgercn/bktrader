@@ -118,8 +118,16 @@ export const useTradingStore = create<useTradingStoreState>((set) => ({
   setStrategySignalBindingMap: (valOrUpdater) => set((state) => ({ strategySignalBindingMap: resolveUpdater(valOrUpdater, state.strategySignalBindingMap) })),
   signalRuntimePlan: null,
   setSignalRuntimePlan: (valOrUpdater) => set((state) => ({ signalRuntimePlan: resolveUpdater(valOrUpdater, state.signalRuntimePlan) })),
-  selectedSignalRuntimeId: null,
-  setSelectedSignalRuntimeId: (valOrUpdater) => set((state) => ({ selectedSignalRuntimeId: resolveUpdater(valOrUpdater, state.selectedSignalRuntimeId) })),
+  selectedSignalRuntimeId: localStorage.getItem('bk_selected_signal_runtime_id'),
+  setSelectedSignalRuntimeId: (valOrUpdater) => set((state) => {
+    const next = resolveUpdater(valOrUpdater, state.selectedSignalRuntimeId);
+    if (next) {
+      localStorage.setItem('bk_selected_signal_runtime_id', next);
+    } else {
+      localStorage.removeItem('bk_selected_signal_runtime_id');
+    }
+    return { selectedSignalRuntimeId: next };
+  }),
   selectedStrategyId: null,
   setSelectedStrategyId: (valOrUpdater) => set((state) => ({ selectedStrategyId: resolveUpdater(valOrUpdater, state.selectedStrategyId) })),
   candles: [],

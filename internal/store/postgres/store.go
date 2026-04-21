@@ -933,7 +933,7 @@ func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) 
 
 func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
 	rows, err := s.db.Query(`
-		select id, account_id, strategy_id, status, state, created_at
+		select id, alias, account_id, strategy_id, status, state, created_at
 		from live_sessions order by created_at asc
 	`)
 	if err != nil {
@@ -945,9 +945,11 @@ func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
 	for rows.Next() {
 		var item domain.LiveSession
 		var stateRaw []byte
-		if err := rows.Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt); err != nil {
+		var alias sql.NullString
+		if err := rows.Scan(&item.ID, &alias, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt); err != nil {
 			return nil, err
 		}
+		item.Alias = alias.String
 		item.State = map[string]any{}
 		if len(stateRaw) > 0 {
 			_ = json.Unmarshal(stateRaw, &item.State)
@@ -959,18 +961,20 @@ func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
 
 func (s *Store) GetLiveSession(sessionID string) (domain.LiveSession, error) {
 	var item domain.LiveSession
+	var alias sql.NullString
 	var stateRaw []byte
 	err := s.db.QueryRow(`
-		select id, account_id, strategy_id, status, state, created_at
+		select id, alias, account_id, strategy_id, status, state, created_at
 		from live_sessions
 		where id = $1
-	`, sessionID).Scan(&item.ID, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt)
+	`, sessionID).Scan(&item.ID, &alias, &item.AccountID, &item.StrategyID, &item.Status, &stateRaw, &item.CreatedAt);
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return domain.LiveSession{}, fmt.Errorf("live session not found: %s", sessionID)
 		}
 		return domain.LiveSession{}, err
 	}
+	item.Alias = alias.String
 	item.State = map[string]any{}
 	if len(stateRaw) > 0 {
 		_ = json.Unmarshal(stateRaw, &item.State)
@@ -1007,9 +1011,9 @@ func (s *Store) UpdateLiveSession(item domain.LiveSession) (domain.LiveSession, 
 	}
 	result, err := s.db.Exec(`
 		update live_sessions
-		set account_id = $2, strategy_id = $3, status = $4, state = $5
+		set account_id = $2, strategy_id = $3, status = $4, state = $5, alias = $6
 		where id = $1
-	`, item.ID, item.AccountID, item.StrategyID, item.Status, stateRaw)
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, stateRaw, nullIfEmpty(item.Alias))
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
