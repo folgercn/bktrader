@@ -159,6 +159,10 @@ func normalizeSignalBarInterval(value string) string {
 	switch value {
 	case "5m", "5", "5min", "5minute":
 		return "5m"
+	case "15m", "15", "15min", "15minute":
+		return "15m"
+	case "30m", "30", "30min", "30minute":
+		return "30m"
 	case "1d", "d", "1day":
 		return "1d"
 	case "4h", "240", "4hour":

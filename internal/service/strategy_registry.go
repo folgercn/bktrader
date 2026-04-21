@@ -168,7 +168,7 @@ func (e bkStrategyEngine) Describe() map[string]any {
 	return map[string]any{
 		"key":                  e.Key(),
 		"name":                 "BK Default Strategy",
-		"supportedSignalBars":  []string{"5m", "4h", "1d"},
+		"supportedSignalBars":  []string{"5m", "15m", "30m", "4h", "1d"},
 		"supportedExecutions":  []string{"tick", "1min"},
 		"runtimeConsistency":   "canonical-execution-shared",
 		"backtestSlippageOnly": true,

@@ -1196,7 +1196,7 @@ func (p *Platform) resolvePaperSessionParameters(session domain.PaperSession, ve
 func normalizePaperSignalTimeframe(value string) string {
 	normalized := normalizeSignalBarInterval(value)
 	switch normalized {
-	case "5m", "4h", "1d":
+	case "5m", "15m", "30m", "4h", "1d":
 		return normalized
 	default:
 		return "1d"

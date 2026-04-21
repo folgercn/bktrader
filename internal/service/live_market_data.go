@@ -112,6 +112,14 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 	if err != nil {
 		return err
 	}
+	signal15M, err := p.syncStoredSignalBars(normalizedSymbol, "15m", fastSignalStart, end)
+	if err != nil {
+		return err
+	}
+	signal30M, err := p.syncStoredSignalBars(normalizedSymbol, "30m", fastSignalStart, end)
+	if err != nil {
+		return err
+	}
 	signal1D, err := p.syncStoredSignalBars(normalizedSymbol, "1d", signalStart, end)
 	if err != nil {
 		return err
@@ -125,9 +133,11 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 		Symbol:     normalizedSymbol,
 		MinuteBars: minuteBars,
 		SignalBars: map[string][]strategySignalBar{
-			"5m": signal5M,
-			"1d": signal1D,
-			"4h": signal4H,
+			"5m":  signal5M,
+			"15m": signal15M,
+			"30m": signal30M,
+			"1d":  signal1D,
+			"4h":  signal4H,
 		},
 		UpdatedAt: time.Now().UTC(),
 	}
@@ -135,6 +145,8 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 	logger.Debug("live market snapshot refreshed",
 		"minute_bar_count", len(minuteBars),
 		"signal_5m_bar_count", len(signal5M),
+		"signal_15m_bar_count", len(signal15M),
+		"signal_30m_bar_count", len(signal30M),
 		"signal_1d_bar_count", len(signal1D),
 		"signal_4h_bar_count", len(signal4H),
 	)
@@ -218,7 +230,7 @@ func (p *Platform) ingestLiveSignalBarSummary(summary map[string]any, eventTime 
 		return nil
 	}
 	timeframe := normalizeSignalBarInterval(stringValue(summary["timeframe"]))
-	if timeframe != "5m" && timeframe != "1d" && timeframe != "4h" {
+	if timeframe != "5m" && timeframe != "15m" && timeframe != "30m" && timeframe != "1d" && timeframe != "4h" {
 		return nil
 	}
 	symbol := NormalizeSymbol(stringValue(summary["symbol"]))
@@ -289,6 +301,10 @@ func liveSignalResolution(timeframe string) string {
 	switch normalizeSignalBarInterval(timeframe) {
 	case "5m":
 		return "5"
+	case "15m":
+		return "15"
+	case "30m":
+		return "30"
 	case "1d":
 		return "1D"
 	case "4h":

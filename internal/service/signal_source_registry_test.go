@@ -97,6 +97,53 @@ func TestBindStrategySignalSourceCanonicalizesFiveMinuteKlineBinding(t *testing.
 	}
 }
 
+func TestBindStrategySignalSourceCanonicalizesFifteenAndThirtyMinuteKlineBindings(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	for _, item := range []struct {
+		input    string
+		wantTF   string
+		wantChan string
+	}{
+		{input: "15min", wantTF: "15m", wantChan: "btcusdt@kline_15m"},
+		{input: "30min", wantTF: "30m", wantChan: "btcusdt@kline_30m"},
+	} {
+		if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+			"sourceKey": "binance-kline",
+			"role":      "signal",
+			"symbol":    "BTCUSDT",
+			"options":   map[string]any{"timeframe": item.input},
+		}); err != nil {
+			t.Fatalf("bind %s kline failed: %v", item.input, err)
+		}
+
+		bindings, err := platform.ListStrategySignalBindings("strategy-bk-1d")
+		if err != nil {
+			t.Fatalf("list strategy bindings failed: %v", err)
+		}
+		if len(bindings) != 1 {
+			t.Fatalf("expected one %s kline binding, got %#v", item.wantTF, bindings)
+		}
+		if got := stringValue(bindings[0].Options["timeframe"]); got != item.wantTF {
+			t.Fatalf("expected canonicalized timeframe %s, got %s", item.wantTF, got)
+		}
+
+		plan, err := platform.BuildSignalRuntimePlan("live-main", "strategy-bk-1d")
+		if err != nil {
+			t.Fatalf("build runtime plan failed: %v", err)
+		}
+		subscriptions := metadataList(plan["subscriptions"])
+		if len(subscriptions) != 1 {
+			t.Fatalf("expected one %s kline subscription, got %#v", item.wantTF, subscriptions)
+		}
+		if got := stringValue(subscriptions[0]["channel"]); got != item.wantChan {
+			t.Fatalf("expected %s kline subscription, got %s", item.wantTF, got)
+		}
+
+		platform = NewPlatform(memory.NewStore())
+	}
+}
+
 func TestLegacyStrategyBindingWithoutTimeframeCanonicalizesToSingle1dBinding(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 

@@ -534,7 +534,7 @@ func (p *Platform) BacktestOptions() map[string]any {
 	}
 
 	return map[string]any{
-		"signalTimeframes":           []string{"5m", "4h", "1d"},
+		"signalTimeframes":           []string{"5m", "15m", "30m", "4h", "1d"},
 		"executionDataSources":       []string{"tick", "1min"},
 		"defaultSignalTimeframe":     "1d",
 		"defaultExecutionDataSource": "tick",
@@ -567,7 +567,7 @@ func (p *Platform) BacktestOptions() map[string]any {
 			"1min": minuteDatasets,
 		},
 		"notes": []string{
-			"5m 用于调试快速出信号，4h 和 1d 用于常规策略信号周期。",
+			"5m 用于调试快速出信号，15m / 30m / 4h / 1d 用于常规策略信号周期。",
 			"执行层测试可选 tick 或 1min。",
 			"回测模块聚焦单一执行源回放，不做 tick 与 1min 的结果对比分析。",
 		},
@@ -605,7 +605,7 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	if signalTimeframe == "" {
 		signalTimeframe = "1d"
 	}
-	if signalTimeframe != "5m" && signalTimeframe != "4h" && signalTimeframe != "1d" {
+	if signalTimeframe != "5m" && signalTimeframe != "15m" && signalTimeframe != "30m" && signalTimeframe != "4h" && signalTimeframe != "1d" {
 		return nil, fmt.Errorf("unsupported signalTimeframe: %s", signalTimeframe)
 	}
 
