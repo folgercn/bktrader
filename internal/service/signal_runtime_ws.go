@@ -910,10 +910,16 @@ func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
 			"barCount":       len(indicatorBars),
 			"closedBarCount": len(closed),
 			"currentClosed":  currentClosed,
-			"sma5":           rollingMean(closes, len(indicatorBars)-1, 5),
-			"ma20":           rollingMean(closes, len(indicatorBars)-1, 20),
-			"atr14":          rollingMean(trueRanges, len(indicatorBars)-1, 14),
 			"current":        cloneMetadata(current),
+		}
+		if sma5 := finiteSignalBarIndicator(rollingMean(closes, len(indicatorBars)-1, 5)); sma5 != nil {
+			entry["sma5"] = *sma5
+		}
+		if ma20 := finiteSignalBarIndicator(rollingMean(closes, len(indicatorBars)-1, 20)); ma20 != nil {
+			entry["ma20"] = *ma20
+		}
+		if atr14 := finiteSignalBarIndicator(rollingMean(trueRanges, len(indicatorBars)-1, 14)); atr14 != nil {
+			entry["atr14"] = *atr14
 		}
 		if len(previousClosed) >= 1 {
 			entry["prevBar1"] = cloneMetadata(previousClosed[len(previousClosed)-1])
@@ -924,6 +930,13 @@ func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
 		out[key] = entry
 	}
 	return out
+}
+
+func finiteSignalBarIndicator(value float64) *float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil
+	}
+	return &value
 }
 
 func normalizeSignalBarEntries(value any) []map[string]any {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -407,6 +408,14 @@ func TestBootstrapSignalRuntimeSourceStatesUsesWarmMarketCache(t *testing.T) {
 	}
 	if mapValue(signalState["prevBar2"]) == nil {
 		t.Fatalf("expected bootstrap state to include previous bars, got %#v", signalState)
+	}
+	for _, indicatorKey := range []string{"sma5", "ma20", "atr14"} {
+		if _, exists := signalState[indicatorKey]; exists {
+			t.Fatalf("expected insufficient warm bars to omit %s, got %#v", indicatorKey, signalState[indicatorKey])
+		}
+	}
+	if _, err := json.Marshal(signalBarStates); err != nil {
+		t.Fatalf("expected derived signal bar states to remain JSON encodable, got %v", err)
 	}
 }
 
