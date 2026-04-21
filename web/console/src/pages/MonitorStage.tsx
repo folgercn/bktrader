@@ -102,11 +102,8 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const otherSessionItems = allSessionItems.filter(item => !item.isHighlighted);
 
   const handleSelectSession = (sid: string) => {
-    const session = liveSessions.find(s => s.id === sid);
-    const runtimeId = String(session?.state?.signalRuntimeSessionId ?? "");
-    if (runtimeId) {
-      setSelectedSignalRuntimeId(runtimeId);
-    }
+    // 直接设置会话 ID，highlightedLiveSession 逻辑会负责匹配 s.id 或 runtimeId
+    setSelectedSignalRuntimeId(sid);
   };
 
   const highlightedLiveRuntime =
@@ -325,8 +322,24 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                                   }`}
                                 >
                                   <div className="flex items-center gap-3">
-                                      <div className={`size-2 rounded-full ${item.health.status === "ready" ? "bg-[var(--bk-status-success)]" : "bg-rose-500"}`} />
-                                      <span className="font-mono text-[10px] font-black">{item.session.id}</span>
+                                      <div className={`size-2 rounded-full transition-colors ${
+                                        (item.health.status === "ready" || item.health.status === "active" || item.health.status === "idle") 
+                                          ? "bg-[var(--bk-status-success)]" 
+                                          : item.health.status === "waiting-sync" 
+                                            ? "bg-amber-400"
+                                            : item.health.status === "neutral"
+                                              ? "bg-[var(--bk-text-muted)] opacity-50"
+                                              : "bg-rose-500"
+                                      }`} />
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="font-mono text-[10px] font-black leading-none">{item.session.id}</span>
+                                        <span className={cn(
+                                          "text-[8px] font-bold uppercase tracking-wider opacity-60",
+                                          item.session.status.toLowerCase() === "running" ? "text-[var(--bk-status-success)]" : "text-[var(--bk-text-muted)]"
+                                        )}>
+                                          {technicalStatusLabel(item.session.status)}
+                                        </span>
+                                      </div>
                                   </div>
                                   <span className="font-mono text-[10px] font-black tabular-nums">
                                     {formatSigned(item.summary?.unrealizedPnl ?? 0)}
