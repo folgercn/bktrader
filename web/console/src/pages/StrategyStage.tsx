@@ -395,7 +395,8 @@ export function StrategyStage({ createStrategy, saveStrategyParameters, createBa
                   </SelectTrigger>
                   <SelectContent tone="bento" className="rounded-xl bg-[var(--bk-surface)] shadow-2xl">
                     <SelectItem value="5m">5m</SelectItem>
-                    <SelectItem value="1h">1h</SelectItem>
+                    <SelectItem value="15m">15m</SelectItem>
+                    <SelectItem value="30m">30m</SelectItem>
                     <SelectItem value="4h">4h</SelectItem>
                     <SelectItem value="1d">1d</SelectItem>
                   </SelectContent>
