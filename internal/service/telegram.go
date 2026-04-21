@@ -274,7 +274,7 @@ func telegramAlertNeedsFlapSuppression(alert domain.PlatformAlert) bool {
 	if alert.Scope == "runtime" && alert.ID != "" && strings.HasPrefix(alert.ID, "runtime-stale-") {
 		return true
 	}
-	return alert.Scope == "live" && alert.Title == "实盘运行时告警" && alert.Detail == "stale-source-states"
+	return alert.Scope == "live" && alert.ID != "" && strings.HasPrefix(alert.ID, "live-warning-stale-source-states-")
 }
 
 func telegramDeliveryNeedsFlapSuppression(delivery domain.NotificationDelivery) bool {
@@ -287,7 +287,7 @@ func telegramDeliveryNeedsFlapSuppression(delivery domain.NotificationDelivery) 
 	if delivery.Metadata == nil {
 		return false
 	}
-	return stringValue(delivery.Metadata["flapSuppressionKey"]) == "live-stale-source-states"
+	return stringValue(delivery.Metadata["flapSuppressionKey"]) == "live-warning-stale-source-states"
 }
 
 func (p *Platform) advanceTelegramFlapSuppressedActiveDelivery(
@@ -304,8 +304,8 @@ func (p *Platform) advanceTelegramFlapSuppressedActiveDelivery(
 	metadata["scope"] = item.Alert.Scope
 	metadata["detail"] = item.Alert.Detail
 	metadata["firstActiveAt"] = firstNonEmpty(stringValue(metadata["firstActiveAt"]), now.Format(time.RFC3339))
-	if item.Alert.Scope == "live" {
-		metadata["flapSuppressionKey"] = "live-stale-source-states"
+	if strings.HasPrefix(item.Alert.ID, "live-warning-stale-source-states-") {
+		metadata["flapSuppressionKey"] = "live-warning-stale-source-states"
 	}
 	delete(metadata, "resolveObservedAt")
 

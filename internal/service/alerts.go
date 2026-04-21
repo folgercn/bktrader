@@ -282,8 +282,12 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				EventTime:        parseOptionalRFC3339(stringValue(activeRuntime.State["lastEventAt"])),
 			})
 		} else if readiness.status == "warning" {
+			alertID := fmt.Sprintf("live-warning-%s", account.ID)
+			if readiness.reason == "stale-source-states" {
+				alertID = fmt.Sprintf("live-warning-stale-source-states-%s", account.ID)
+			}
 			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("live-warning-%s", account.ID),
+				ID:               alertID,
 				Scope:            "live",
 				Level:            "warning",
 				Title:            "实盘运行时告警",
@@ -295,6 +299,9 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				RuntimeSessionID: activeRuntime.ID,
 				Anchor:           "live",
 				EventTime:        parseOptionalRFC3339(stringValue(activeRuntime.State["lastEventAt"])),
+				Metadata: map[string]any{
+					"reason": readiness.reason,
+				},
 			})
 		}
 	}
