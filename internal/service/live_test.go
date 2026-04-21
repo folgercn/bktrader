@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -5468,6 +5469,79 @@ func TestSyncActiveLiveAccountsThrottlesFailedRetriesUntilFreshnessWindow(t *tes
 	}
 }
 
+func TestSyncLiveAccountSkipsConcurrentAdapterSyncForSameAccount(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	blockSync := make(chan struct{})
+	enteredSync := make(chan struct{}, 1)
+	var syncCalls atomic.Int32
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-gate",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			if syncCalls.Add(1) == 1 {
+				enteredSync <- struct{}{}
+			}
+			<-blockSync
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["lastLiveSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-gate",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := platform.SyncLiveAccount("live-main")
+		firstDone <- err
+	}()
+
+	select {
+	case <-enteredSync:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first sync to enter adapter")
+	}
+
+	secondDone := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := platform.SyncLiveAccount("live-main")
+		secondDone <- err
+	}()
+
+	select {
+	case err := <-secondDone:
+		if !errors.Is(err, ErrLiveAccountOperationInProgress) {
+			t.Fatalf("expected concurrent sync to return in-progress error, got %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected concurrent sync to return immediately while first sync is in progress")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("expected concurrent sync to skip adapter call quickly, took %s", elapsed)
+	}
+	if got := syncCalls.Load(); got != 1 {
+		t.Fatalf("expected only one adapter sync call, got %d", got)
+	}
+
+	close(blockSync)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first sync failed: %v", err)
+	}
+}
+
 func TestSyncLiveAccountNormalizesAdapterSuccessHealthState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
@@ -6756,7 +6830,7 @@ func TestStartLiveSessionBackfillsFilledExitBeforeReconcileGateBlock(t *testing.
 	}
 }
 
-func TestStartLiveSessionSelfHealsStaleDBPositionViaReconcileHistory(t *testing.T) {
+func TestStartLiveSessionKeepsStaleDBPositionBlockedWhenReconcileOnlyFindsHistoricalExternalOrders(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	syncedAt := time.Date(2026, 4, 20, 12, 33, 23, 0, time.UTC)
 	configureTestLiveRESTReconcileHistoryAdapter(
@@ -6817,22 +6891,26 @@ func TestStartLiveSessionSelfHealsStaleDBPositionViaReconcileHistory(t *testing.
 	}
 
 	started, err := platform.StartLiveSession(session.ID)
-	if err != nil {
-		t.Fatalf("expected StartLiveSession to self-heal stale db-position-exchange-missing state, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), liveRecoveryModeReconcileGateBlocked) {
+		t.Fatalf("expected StartLiveSession to remain blocked by reconcile gate, got %v", err)
 	}
-	if started.Status != "RUNNING" {
-		t.Fatalf("expected session to start RUNNING after reconcile history heal, got %s", started.Status)
+	started, err = platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get blocked live session failed: %v", err)
+	}
+	if started.Status != "BLOCKED" {
+		t.Fatalf("expected session to stay BLOCKED when reconcile only finds historical external orders, got %s", started.Status)
 	}
 	if _, found, err := platform.store.FindPosition(session.AccountID, "BTCUSDT"); err != nil {
 		t.Fatalf("find position failed: %v", err)
-	} else if found {
-		t.Fatal("expected reconcile history self-heal to clear stale BTCUSDT position before start completes")
+	} else if !found {
+		t.Fatal("expected stale BTCUSDT position to remain until manual review")
 	}
-	if got := stringValue(started.State["recoveryMode"]); got == liveRecoveryModeReconcileGateBlocked {
-		t.Fatalf("expected reconcile gate block to clear after reconcile history self-heal, got %s", got)
+	if got := stringValue(started.State["recoveryMode"]); got != liveRecoveryModeReconcileGateBlocked {
+		t.Fatalf("expected reconcile gate block to remain, got %s", got)
 	}
-	if got := stringValue(started.State["positionReconcileGateScenario"]); got == "db-position-exchange-missing" {
-		t.Fatalf("expected stale db-position-exchange-missing scenario to clear after self-heal, got %s", got)
+	if got := stringValue(started.State["positionReconcileGateScenario"]); got != "db-position-exchange-missing" {
+		t.Fatalf("expected stale db-position-exchange-missing scenario to remain, got %s", got)
 	}
 }
 

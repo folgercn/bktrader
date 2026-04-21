@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -605,6 +606,9 @@ func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.
 		return order, fmt.Errorf("live order %s submitted as FILLED but settlement sync failed: %w", order.ID, err)
 	}
 	if _, syncErr := p.SyncLiveAccount(order.AccountID); syncErr != nil {
+		if errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
+			return settledOrder, nil
+		}
 		return settledOrder, fmt.Errorf("live order %s settled but account/session refresh failed: %w", order.ID, syncErr)
 	}
 	return settledOrder, nil
@@ -1030,7 +1034,11 @@ func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.F
 		return nil, err
 	}
 	seen := make(map[string]struct{}, len(existing)+len(fills))
+	globalTradeSeen := make(map[string]struct{}, len(existing)+len(fills))
 	for _, item := range existing {
+		if item.ExchangeTradeID != "" {
+			globalTradeSeen[strings.TrimSpace(item.ExchangeTradeID)] = struct{}{}
+		}
 		if item.OrderID != orderID {
 			continue
 		}
@@ -1045,6 +1053,12 @@ func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.F
 		fill.OrderID = orderID
 		if strings.TrimSpace(fill.ExchangeTradeID) == "" && strings.TrimSpace(fill.DedupFingerprint) == "" {
 			fill.DedupFingerprint = fill.FallbackFingerprint()
+		}
+		if tradeID := strings.TrimSpace(fill.ExchangeTradeID); tradeID != "" {
+			if _, exists := globalTradeSeen[tradeID]; exists {
+				continue
+			}
+			globalTradeSeen[tradeID] = struct{}{}
 		}
 		key := buildFillDedupKey(fill)
 		if key == "" {
@@ -1188,6 +1202,17 @@ func (p *Platform) ListFills() ([]domain.Fill, error) {
 // applyExecutionFill 根据已确认成交更新仓位。
 // 它是 paper/live 共用的持仓落账逻辑，只处理 canonical fill 之后的仓位变更。
 func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order, executionPrice float64) error {
+	if boolValue(order.Metadata["reconcileRecovered"]) {
+		snapshotQty := liveSyncSnapshotPositionAmounts(account)[NormalizeSymbol(order.Symbol)]
+		if snapshotQty <= 1e-9 {
+			p.logger("service.order",
+				"account_id", account.ID,
+				"order_id", order.ID,
+				"symbol", NormalizeSymbol(order.Symbol),
+			).Warn("skip reconcile fill position apply without authoritative live position")
+			return nil
+		}
+	}
 	position, exists, err := p.store.FindPosition(account.ID, order.Symbol)
 	if err != nil {
 		return err

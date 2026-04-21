@@ -761,7 +761,107 @@ type binanceSymbolRules struct {
 var (
 	binanceSymbolRulesCache   = map[string]binanceSymbolRules{}
 	binanceSymbolRulesCacheMu sync.Mutex
+	binanceRESTLimiterState   = newBinanceRESTLimiter()
 )
+
+var (
+	binanceRESTRequestsPerSecond = 30
+	binanceRESTBurst             = 50
+	binanceRESTBackoffDuration   = 60 * time.Second
+)
+
+type binanceRESTLimiter struct {
+	mu    sync.Mutex
+	gates map[string]*binanceRESTGate
+}
+
+type binanceRESTGate struct {
+	tokens chan struct{}
+	mu     sync.Mutex
+	block  time.Time
+}
+
+func newBinanceRESTLimiter() *binanceRESTLimiter {
+	return &binanceRESTLimiter{gates: make(map[string]*binanceRESTGate)}
+}
+
+func (l *binanceRESTLimiter) gate(key string) *binanceRESTGate {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if gate, ok := l.gates[key]; ok {
+		return gate
+	}
+	gate := newBinanceRESTGate(maxInt(binanceRESTRequestsPerSecond, 1), maxInt(binanceRESTBurst, 1))
+	l.gates[key] = gate
+	return gate
+}
+
+func newBinanceRESTGate(requestsPerSecond, burst int) *binanceRESTGate {
+	gate := &binanceRESTGate{tokens: make(chan struct{}, burst)}
+	for i := 0; i < burst; i++ {
+		gate.tokens <- struct{}{}
+	}
+	interval := time.Second
+	if requestsPerSecond > 0 {
+		interval = time.Second / time.Duration(requestsPerSecond)
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			select {
+			case gate.tokens <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	return gate
+}
+
+func (g *binanceRESTGate) acquire() error {
+	g.mu.Lock()
+	blockedUntil := g.block
+	g.mu.Unlock()
+	if time.Now().UTC().Before(blockedUntil) {
+		return fmt.Errorf("binance rest temporarily rate-limited until %s", blockedUntil.Format(time.RFC3339))
+	}
+	<-g.tokens
+	g.mu.Lock()
+	blockedUntil = g.block
+	g.mu.Unlock()
+	if time.Now().UTC().Before(blockedUntil) {
+		return fmt.Errorf("binance rest temporarily rate-limited until %s", blockedUntil.Format(time.RFC3339))
+	}
+	return nil
+}
+
+func (g *binanceRESTGate) markBackoff(duration time.Duration) {
+	if duration <= 0 {
+		duration = binanceRESTBackoffDuration
+	}
+	until := time.Now().UTC().Add(duration)
+	g.mu.Lock()
+	if until.After(g.block) {
+		g.block = until
+	}
+	g.mu.Unlock()
+}
+
+func binanceRESTLimiterKey(creds binanceRESTCredentials) string {
+	return creds.BaseURL + "|" + creds.APIKeyRef
+}
+
+func parseBinanceRetryAfter(headers http.Header) time.Duration {
+	raw := strings.TrimSpace(headers.Get("Retry-After"))
+	if raw == "" {
+		return 0
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
 
 func resolveBinanceRESTCredentials(binding map[string]any) (binanceRESTCredentials, error) {
 	credentialRefs := normalizeCredentialRefs(binding["credentialRefs"])
@@ -915,6 +1015,10 @@ func fetchBinanceSymbolRules(creds binanceRESTCredentials, symbol string) (binan
 		return cached, nil
 	}
 	requestURL := creds.BaseURL + "/fapi/v1/exchangeInfo?symbol=" + url.QueryEscape(normalizedSymbol)
+	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(creds))
+	if err := gate.acquire(); err != nil {
+		return binanceSymbolRules{}, err
+	}
 	request, err := http.NewRequest(http.MethodGet, requestURL, nil)
 	if err != nil {
 		return binanceSymbolRules{}, err
@@ -927,6 +1031,9 @@ func fetchBinanceSymbolRules(creds binanceRESTCredentials, symbol string) (binan
 	responseBody, readErr := io.ReadAll(response.Body)
 	if readErr != nil {
 		return binanceSymbolRules{}, readErr
+	}
+	if response.StatusCode == http.StatusTooManyRequests {
+		gate.markBackoff(firstPositiveDuration(parseBinanceRetryAfter(response.Header), binanceRESTBackoffDuration))
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return binanceSymbolRules{}, fmt.Errorf("binance exchangeInfo failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
@@ -1114,6 +1221,10 @@ func cloneStringMap(input map[string]string) map[string]string {
 }
 
 func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path string, params map[string]string) ([]byte, error) {
+	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(creds))
+	if err := gate.acquire(); err != nil {
+		return nil, err
+	}
 	query := encodeBinanceQuery(params, false)
 	requestURL := creds.BaseURL + path
 	var body io.Reader
@@ -1140,10 +1251,22 @@ func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path st
 	if readErr != nil {
 		return nil, readErr
 	}
+	if response.StatusCode == http.StatusTooManyRequests {
+		gate.markBackoff(firstPositiveDuration(parseBinanceRetryAfter(response.Header), binanceRESTBackoffDuration))
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("binance request failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
 	}
 	return responseBody, nil
+}
+
+func firstPositiveDuration(values ...time.Duration) time.Duration {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func mapBinanceOrderStatus(status string) string {

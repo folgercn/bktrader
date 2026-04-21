@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -504,7 +505,9 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	settlementPending := liveOrderSettlementSyncPending(created)
 	if strings.EqualFold(created.Status, "FILLED") && !settlementPending {
 		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil {
-			state["lastSyncError"] = syncErr.Error()
+			if !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
+				state["lastSyncError"] = syncErr.Error()
+			}
 		}
 	}
 	updatedSession, _ := p.store.UpdateLiveSessionState(session.ID, state)
@@ -796,7 +799,9 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), order, false)
 		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 		if strings.EqualFold(order.Status, "FILLED") {
-			_, _ = p.SyncLiveAccount(session.AccountID)
+			if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil && !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
+				p.logger("service.live_execution", "session_id", session.ID, "account_id", session.AccountID).Warn("live account sync failed after terminal order sync", "error", syncErr)
+			}
 		}
 		updated, err := p.store.UpdateLiveSessionState(session.ID, state)
 		if err != nil {
@@ -873,7 +878,9 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), syncedOrder, false)
 	updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 	if strings.EqualFold(syncedOrder.Status, "FILLED") {
-		_, _ = p.SyncLiveAccount(session.AccountID)
+		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil && !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
+			p.logger("service.live_execution", "session_id", session.ID, "account_id", session.AccountID).Warn("live account sync failed after filled order sync", "error", syncErr)
+		}
 	}
 	appendTimelineEvent(state, "order", eventTime, "live-order-synced", executionDispatchTimelineMetadata(mapValue(order.Metadata["executionProposal"]), syncedOrder, false))
 	updated, err := p.store.UpdateLiveSessionState(session.ID, state)

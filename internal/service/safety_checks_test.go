@@ -333,7 +333,7 @@ func TestResolveClosePositionTargetFailsWhenPositionDisappearsAfterRefresh(t *te
 	}
 }
 
-func TestEnsureNoActivePositionsOrOrdersSelfHealsStaleLiveExposureViaReconcile(t *testing.T) {
+func TestEnsureNoActivePositionsOrOrdersKeepsStaleLiveExposureBlockedWhenReconcileOnlyFindsHistoricalExternalOrders(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	syncedAt := time.Date(2026, 4, 20, 12, 33, 23, 0, time.UTC)
 	configureTestLiveRESTReconcileHistoryAdapter(
@@ -385,24 +385,24 @@ func TestEnsureNoActivePositionsOrOrdersSelfHealsStaleLiveExposureViaReconcile(t
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	if err := platform.ensureNoActivePositionsOrOrders("live-main", "strategy-bk-1d"); err != nil {
-		t.Fatalf("expected stale live exposure to self-heal before blocking, got %v", err)
+	if err := platform.ensureNoActivePositionsOrOrders("live-main", "strategy-bk-1d"); err == nil || !strings.Contains(err.Error(), "活动中的订单或未平仓头寸") {
+		t.Fatalf("expected stale live exposure to remain and block session cleanup, got %v", err)
 	}
 	if _, found, err := platform.store.FindPosition("live-main", "BTCUSDT"); err != nil {
 		t.Fatalf("find position failed: %v", err)
-	} else if found {
-		t.Fatal("expected reconcile self-heal to clear stale BTCUSDT position")
+	} else if !found {
+		t.Fatal("expected stale BTCUSDT position to remain until manual review")
 	}
 	active, err := platform.HasActivePositionsOrOrders("live-main", "strategy-bk-1d")
 	if err != nil {
-		t.Fatalf("HasActivePositionsOrOrders after self-heal returned error: %v", err)
+		t.Fatalf("HasActivePositionsOrOrders after blocked reconcile returned error: %v", err)
 	}
-	if active {
-		t.Fatal("expected no remaining active exposure after reconcile self-heal")
+	if !active {
+		t.Fatal("expected active exposure to remain until manual review")
 	}
 }
 
-func TestClosePositionSelfHealsStaleLivePositionViaReconcile(t *testing.T) {
+func TestClosePositionKeepsStaleLivePositionBlockedWhenReconcileOnlyFindsHistoricalExternalOrders(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	syncedAt := time.Date(2026, 4, 20, 12, 33, 23, 0, time.UTC)
 	configureTestLiveRESTReconcileHistoryAdapter(
@@ -455,13 +455,13 @@ func TestClosePositionSelfHealsStaleLivePositionViaReconcile(t *testing.T) {
 		t.Fatalf("save position failed: %v", err)
 	}
 
-	if _, err := platform.ClosePosition(position.ID); err == nil || !strings.Contains(err.Error(), "position not found") {
-		t.Fatalf("expected ClosePosition to self-heal stale local position before manual close, got %v", err)
+	if _, err := platform.ClosePosition(position.ID); err == nil || !strings.Contains(err.Error(), "reconcile gate") {
+		t.Fatalf("expected ClosePosition to stay blocked by reconcile gate, got %v", err)
 	}
 	if _, found, err := platform.store.FindPosition("live-main", "BTCUSDT"); err != nil {
 		t.Fatalf("find position failed: %v", err)
-	} else if found {
-		t.Fatal("expected stale BTCUSDT position to be removed after reconcile self-heal")
+	} else if !found {
+		t.Fatal("expected stale BTCUSDT position to remain until manual review")
 	}
 }
 
