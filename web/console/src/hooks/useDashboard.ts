@@ -245,10 +245,15 @@ export function useDashboard() {
     setStrategySignalBindings(strategyBindingEntries.flatMap((e) => e[1]));
     setSignalRuntimePlan(runtimePlanData);
     setSelectedSignalRuntimeId((current: string | null) => {
-      if (current && normalizedSignalRuntimeSessions.some((item) => item.id === current)) {
+      // 检查当前选中的 ID 是否在运行时会话或实盘会话中依然有效
+      const stillValid = 
+        (current && normalizedSignalRuntimeSessions.some((item) => item.id === current)) ||
+        (current && normalizedLiveSessions.some((item) => item.id === current));
+      
+      if (stillValid) {
         return current;
       }
-      return normalizedSignalRuntimeSessions[0]?.id ?? null;
+      return normalizedSignalRuntimeSessions[0]?.id ?? normalizedLiveSessions[0]?.id ?? null;
     });
     setCandles(normalizedCandles);
     setAnnotations(normalizedAnnotations);
