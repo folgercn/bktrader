@@ -108,8 +108,8 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["stop_mode"]); got != "atr" {
 				t.Fatalf("expected stop_mode=atr for %s, got %s", item.Key, got)
 			}
-			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["stop_loss_atr"]); got != 0.05 {
-				t.Fatalf("expected stop_loss_atr=0.05 for %s, got %v", item.Key, got)
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["stop_loss_atr"]); got != 0.3 {
+				t.Fatalf("expected stop_loss_atr=0.3 for %s, got %v", item.Key, got)
 			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["profit_protect_atr"]); got != 1.0 {
 				t.Fatalf("expected profit_protect_atr=1.0 for %s, got %v", item.Key, got)

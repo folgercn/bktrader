@@ -2258,6 +2258,17 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		"reason":   decision.Reason,
 		"metadata": cloneMetadata(decision.Metadata),
 	}
+	if signalBarDecision := cloneMetadata(mapValue(decision.Metadata["signalBarDecision"])); len(signalBarDecision) > 0 {
+		state["lastStrategyEvaluationSignalBarDecision"] = signalBarDecision
+	} else {
+		delete(state, "lastStrategyEvaluationSignalBarDecision")
+	}
+	if signalBarStateKey := stringValue(decision.Metadata["signalBarStateKey"]); signalBarStateKey != "" {
+		state["lastStrategyEvaluationSignalBarStateKey"] = signalBarStateKey
+	} else {
+		delete(state, "lastStrategyEvaluationSignalBarStateKey")
+	}
+	recordLatestBreakoutSignal(state, decision, eventTime)
 	recordStrategyDecisionHealth(state, decision, eventTime)
 	if livePositionState := cloneMetadata(mapValue(decision.Metadata["livePositionState"])); len(livePositionState) > 0 {
 		state["lastLivePositionState"] = livePositionState
@@ -3657,6 +3668,77 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 			"bookImbalance":     parseFloatValue(meta["bookImbalance"]),
 		},
 	}
+}
+
+func recordLatestBreakoutSignal(state map[string]any, decision StrategySignalDecision, eventTime time.Time) {
+	if state == nil {
+		return
+	}
+	breakout := deriveBreakoutSignalSnapshot(decision, eventTime)
+	if len(breakout) == 0 {
+		return
+	}
+	state["lastBreakoutSignal"] = breakout
+	history := metadataList(state["breakoutHistory"])
+	signature := stringValue(breakout["signature"])
+	if len(history) > 0 {
+		last := mapValue(history[len(history)-1])
+		if stringValue(last["signature"]) == signature {
+			state["breakoutHistory"] = history
+			return
+		}
+	}
+	history = append(history, breakout)
+	if len(history) > 24 {
+		history = history[len(history)-24:]
+	}
+	state["breakoutHistory"] = history
+}
+
+func deriveBreakoutSignalSnapshot(decision StrategySignalDecision, eventTime time.Time) map[string]any {
+	meta := cloneMetadata(decision.Metadata)
+	signalBarDecision := mapValue(meta["signalBarDecision"])
+	if len(signalBarDecision) == 0 {
+		return nil
+	}
+	current := mapValue(signalBarDecision["current"])
+	prevBar2 := mapValue(signalBarDecision["prevBar2"])
+	side := ""
+	level := 0.0
+	switch {
+	case boolValue(signalBarDecision["longBreakoutPatternReady"]):
+		side = "BUY"
+		level = parseFloatValue(prevBar2["high"])
+	case boolValue(signalBarDecision["shortBreakoutPatternReady"]):
+		side = "SELL"
+		level = parseFloatValue(prevBar2["low"])
+	default:
+		return nil
+	}
+	if level <= 0 {
+		return nil
+	}
+	barTime := resolveBreakoutSignalTime(current["barStart"], eventTime)
+	return map[string]any{
+		"signature":         fmt.Sprintf("%s|%s|%.8f", side, barTime.Format(time.RFC3339), level),
+		"side":              side,
+		"level":             level,
+		"barTime":           barTime.Format(time.RFC3339),
+		"close":             parseFloatValue(current["close"]),
+		"timeframe":         stringValue(signalBarDecision["timeframe"]),
+		"signalBarStateKey": stringValue(meta["signalBarStateKey"]),
+		"source":            "signal-breakout-pattern",
+	}
+}
+
+func resolveBreakoutSignalTime(raw any, fallback time.Time) time.Time {
+	if numeric, ok := toFloat64(raw); ok && numeric > 0 {
+		return time.UnixMilli(int64(numeric)).UTC()
+	}
+	if parsed := parseOptionalRFC3339(stringValue(raw)); !parsed.IsZero() {
+		return parsed.UTC()
+	}
+	return fallback.UTC()
 }
 
 func (p *Platform) buildLiveExecutionProposal(session domain.LiveSession, executionContext StrategyExecutionContext, summary map[string]any, sourceStates map[string]any, eventTime time.Time, intent SignalIntent) (ExecutionProposal, error) {

@@ -120,7 +120,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			liveOverrides["dir2_zero_initial"] = true
 			liveOverrides["zero_initial_mode"] = "reentry_window"
 			liveOverrides["stop_mode"] = "atr"
-			liveOverrides["stop_loss_atr"] = 0.05
+			liveOverrides["stop_loss_atr"] = 0.3
 			liveOverrides["profit_protect_atr"] = 1.0
 			liveOverrides["trailing_stop_atr"] = 0.3
 			liveOverrides["delayed_trailing_activation_atr"] = 0.5
@@ -130,7 +130,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			liveOverrides["reentry_size_schedule"] = []float64{0.20, 0.10}
 			baselineNotes = append(baselineNotes,
 				"该模板已显式固化 intraday research baseline：dir2 zero initial + reentry_window + reentry_size_schedule=[0.20, 0.10] + max_trades_per_bar=2。",
-				"非 1d 周期默认使用 canonical SMA5 hard filter；移动止损与利润保护参数分别固定为 trailing_stop_atr=0.3、profit_protect_atr=1.0、delayed_trailing_activation_atr=0.5。",
+				"非 1d 周期默认使用 canonical SMA5 hard filter；止损与移动止损参数分别固定为 stop_loss_atr=0.3、trailing_stop_atr=0.3、profit_protect_atr=1.0、delayed_trailing_activation_atr=0.5。",
 				"当前 research baseline 只提升 BTCUSDT 15m/30m；BTCUSDT 5m 暂保留为通用模板，因为现阶段 5m 对执行摩擦更敏感，尚不作为默认 intraday baseline 候选。",
 			)
 		}

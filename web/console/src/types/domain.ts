@@ -507,6 +507,14 @@ export type SessionMarker = {
   text: string;
 };
 
+export type SignalMonitorOverlay = {
+  startTime: string;
+  endTime: string;
+  price: number;
+  color: string;
+  lineStyle: "solid" | "dashed" | "dotted";
+};
+
 export type AuthSession = {
   token: string;
   username: string;
@@ -660,4 +668,3 @@ export type TimelineConfig = {
   quietSeconds: number;
   maxRepeats: number;
 };
-

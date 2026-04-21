@@ -1,14 +1,15 @@
 import { useEffect, useRef } from 'react';
-import { Time, CandlestickSeries, ColorType, CrosshairMode, LineStyle, createChart, createSeriesMarkers } from 'lightweight-charts';
-import { SignalBarCandle, SessionMarker } from '../../types/domain';
+import { Time, CandlestickSeries, LineSeries, ColorType, CrosshairMode, LineStyle, createChart, createSeriesMarkers } from 'lightweight-charts';
+import { SignalBarCandle, SessionMarker, SignalMonitorOverlay } from '../../types/domain';
 import { applyDefaultChartWindow } from '../../utils/derivation';
 import { normalizeChartData } from '../../utils/chart';
 
-export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: SessionMarker[] }) {
+export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: SessionMarker[]; overlays?: SignalMonitorOverlay[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const seriesRef = useRef<ReturnType<any> | null>(null);
   const markersRef = useRef<ReturnType<any> | null>(null);
+  const overlaySeriesRefs = useRef<Array<ReturnType<any>>>([]);
   const isInitialRender = useRef(true);
 
   useEffect(() => {
@@ -51,6 +52,7 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
     markersRef.current = createSeriesMarkers(series, []);
 
     return () => {
+      overlaySeriesRefs.current = [];
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -76,11 +78,47 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
       }))
     );
 
+    overlaySeriesRefs.current.forEach((overlaySeries) => {
+      chart.removeSeries(overlaySeries);
+    });
+    overlaySeriesRefs.current = [];
+
+    for (const overlay of props.overlays ?? []) {
+      if (!overlay.startTime || !overlay.endTime || !Number.isFinite(overlay.price) || overlay.price <= 0) {
+        continue;
+      }
+      const lineSeries = chart.addSeries(LineSeries, {
+        color: overlay.color,
+        lineWidth: 2,
+        lineStyle:
+          overlay.lineStyle === "dotted"
+            ? LineStyle.Dotted
+            : overlay.lineStyle === "dashed"
+              ? LineStyle.Dashed
+              : LineStyle.Solid,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        pointMarkersVisible: false,
+      });
+      lineSeries.setData([
+        {
+          time: Math.floor(new Date(overlay.startTime).getTime() / 1000) as Time,
+          value: overlay.price,
+        },
+        {
+          time: Math.floor(new Date(overlay.endTime).getTime() / 1000) as Time,
+          value: overlay.price,
+        },
+      ]);
+      overlaySeriesRefs.current.push(lineSeries);
+    }
+
     if (isInitialRender.current) {
       applyDefaultChartWindow(chart, props.candles.length, 90);
       isInitialRender.current = false;
     }
-  }, [props.candles, props.markers]);
+  }, [props.candles, props.markers, props.overlays]);
 
   return <div ref={containerRef} className="tv-chart" />;
 }

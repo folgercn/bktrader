@@ -110,6 +110,32 @@ func TestEvaluateSignalBarGateAllowsLongAfterBreakoutAlignmentWithResearch(t *te
 	}
 }
 
+func TestEvaluateSignalBarGateTracksClosedBarBreakoutPattern(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"ma20":  68000.0,
+		"atr14": 900.0,
+		"current": map[string]any{
+			"close": 69010.0,
+			"high":  69030.0,
+			"low":   67800.0,
+		},
+		"prevBar1": map[string]any{
+			"high": 68850.0,
+			"low":  67750.0,
+		},
+		"prevBar2": map[string]any{
+			"high": 69000.0,
+			"low":  67600.0,
+		},
+	}, "BUY", "entry", "")
+	if !boolValue(gate["longBreakoutPatternReady"]) {
+		t.Fatalf("expected close-based long breakout pattern, got %#v", gate)
+	}
+	if boolValue(gate["shortBreakoutPatternReady"]) {
+		t.Fatalf("expected short breakout pattern to stay false, got %#v", gate)
+	}
+}
+
 func TestEvaluateSignalBarGateDoesNotRequireOppositeBreakoutForExit(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"ma20":  68000.0,

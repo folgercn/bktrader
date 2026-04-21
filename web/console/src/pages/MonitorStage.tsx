@@ -9,7 +9,8 @@ import {
   deriveSignalBarCandles,
   derivePrimarySignalBarState, 
   deriveRuntimeMarketSnapshot, 
-  deriveSessionMarkers, 
+  deriveSessionMarkers,
+  deriveSignalMonitorDecorations,
   derivePaperSessionExecutionSummary,
   deriveHighlightedLiveSession,
   deriveLiveDispatchPreview,
@@ -124,14 +125,33 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : {};
   const monitorSessionState = getRecord(monitorSession?.state);
   const sessionSymbol = String(monitorSession?.state?.symbol ?? "").trim().toUpperCase();
+  const monitorSignalContext = getRecord(monitorSessionState.lastStrategyEvaluationContext);
+  const monitorDecisionMeta = getRecord(getRecord(monitorSession?.state?.lastStrategyDecision).metadata);
+  const monitorSignalTimeframe = String(
+    monitorSessionState.signalTimeframe ?? monitorSignalContext.signalTimeframe ?? monitorDecisionMeta.signalTimeframe ?? ""
+  )
+    .trim()
+    .toLowerCase();
+  const monitorSignalBarStateKey = String(
+    monitorSessionState.lastStrategyEvaluationSignalBarStateKey ?? monitorDecisionMeta.signalBarStateKey ?? ""
+  ).trim();
 
   const monitorBars = useMemo(() => {
-    return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), sessionSymbol);
-  }, [highlightedLiveRuntimeState.sourceStates, sessionSymbol]);
+    return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), {
+      targetSymbol: sessionSymbol,
+      targetTimeframe: monitorSignalTimeframe,
+      targetStateKey: monitorSignalBarStateKey,
+    });
+  }, [highlightedLiveRuntimeState.sourceStates, sessionSymbol, monitorSignalTimeframe, monitorSignalBarStateKey]);
 
   const monitorSignalState = derivePrimarySignalBarState(
     getRecord(highlightedLiveRuntimeState.signalBarStates),
-    getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates)
+    {
+      fallbackStates: getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates),
+      targetSymbol: sessionSymbol,
+      targetTimeframe: monitorSignalTimeframe,
+      targetStateKey: monitorSignalBarStateKey,
+    }
   );
   const monitorMarket = deriveRuntimeMarketSnapshot(
     getRecord(monitorRuntimeState.sourceStates),
@@ -141,6 +161,21 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorSummary =
     monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
   const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
+  const monitorDecorations = useMemo(
+    () =>
+      deriveSignalMonitorDecorations(
+        monitorSession,
+        monitorBars,
+        monitorExecutionSummary.position,
+        orders,
+        fills
+      ),
+    [monitorBars, monitorExecutionSummary.position, monitorSession, orders, fills]
+  );
+  const monitorChartMarkers = useMemo(
+    () => [...monitorMarkers, ...monitorDecorations.markers],
+    [monitorMarkers, monitorDecorations.markers]
+  );
   const monitorFlow = useMemo(
     () =>
       highlightedLiveSession
@@ -158,7 +193,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     { requireTick: true, requireOrderBook: false }
   );
   const monitorIntent = getRecord(monitorSession?.state?.lastStrategyIntent);
-  const monitorSignalBarDecision = getRecord(monitorSession?.state?.lastStrategyEvaluationSignalBarDecision);
+  const monitorSignalBarDecision = getRecord(
+    monitorSession?.state?.lastStrategyEvaluationSignalBarDecision ?? monitorDecisionMeta.signalBarDecision
+  );
   const monitorTimeline = getList(monitorSession?.state?.timeline);
   const monitorDispatchPreview = deriveLiveDispatchPreview(
     monitorSession,
@@ -237,7 +274,11 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
          <CardContent className="p-0">
             <div className="chart-shell relative h-[360px] overflow-hidden bg-[color-mix(in_srgb,var(--bk-surface-strong)_40%,transparent)]">
                 {monitorBars.length > 0 ? (
-                  <SignalMonitorChart candles={monitorBars} markers={monitorMarkers} />
+                  <SignalMonitorChart
+                    candles={monitorBars}
+                    markers={monitorChartMarkers}
+                    overlays={monitorDecorations.overlays}
+                  />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center space-y-3 opacity-30">
                     <Activity className="size-16 animate-pulse" />
