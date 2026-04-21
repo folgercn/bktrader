@@ -395,6 +395,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         body: JSON.stringify({
           accountId: liveSessionForm.accountId,
           strategyId: normalizedStrategyId,
+          alias: liveSessionForm.alias,
           signalTimeframe: liveSessionForm.signalTimeframe,
           executionDataSource: liveSessionForm.executionDataSource,
           symbol: liveSessionForm.symbol,
@@ -448,6 +449,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         body: JSON.stringify({
           accountId: liveSessionForm.accountId,
           strategyId: normalizedStrategyId,
+          alias: liveSessionForm.alias,
           signalTimeframe: liveSessionForm.signalTimeframe,
           executionDataSource: liveSessionForm.executionDataSource,
           symbol: liveSessionForm.symbol,
@@ -562,6 +564,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
           startRuntime: true,
           startSession: true,
           liveSessionOverrides: {
+            alias: liveSessionForm.alias,
             signalTimeframe: liveSessionForm.signalTimeframe,
             executionDataSource: liveSessionForm.executionDataSource,
             symbol: liveSessionForm.symbol,
