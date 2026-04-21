@@ -36,6 +36,10 @@ func prepareLivePlanStepForSignalEvaluation(
 	}
 
 	updatedState = refreshLiveZeroInitialWindowState(updatedState, signalBarStates, symbol, signalTimeframe, currentPosition, eventTime)
+	if liveExitReentryPlanStep(nextPlannedRole, nextPlannedReason) {
+		clearLivePendingZeroInitialWindow(updatedState, eventTime, "exit-reentry-priority")
+		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
+	}
 	if updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, ok := liveZeroInitialWindowPlanStep(
 		updatedState,
 		parameters,
@@ -107,7 +111,7 @@ func refreshLiveZeroInitialWindowState(
 		state = map[string]any{}
 	}
 	if hasActiveLivePositionSnapshot(currentPosition) {
-		delete(state, livePendingZeroInitialWindowStateKey)
+		clearLivePendingZeroInitialWindow(state, eventTime, "real-position-confirmed")
 		return state
 	}
 	pending := cloneMetadata(mapValue(state[livePendingZeroInitialWindowStateKey]))
@@ -140,6 +144,34 @@ func refreshLiveZeroInitialWindowState(
 	}
 	state[livePendingZeroInitialWindowStateKey] = pending
 	return state
+}
+
+func liveExitReentryPlanStep(nextRole, nextReason string) bool {
+	if !strings.EqualFold(strings.TrimSpace(nextRole), "entry") {
+		return false
+	}
+	switch normalizeStrategyReasonTag(nextReason) {
+	case "sl-reentry", "pt-reentry":
+		return true
+	default:
+		return false
+	}
+}
+
+func clearLivePendingZeroInitialWindow(state map[string]any, eventTime time.Time, reason string) {
+	if state == nil {
+		return
+	}
+	pending := cloneMetadata(mapValue(state[livePendingZeroInitialWindowStateKey]))
+	if len(pending) == 0 {
+		delete(state, livePendingZeroInitialWindowStateKey)
+		return
+	}
+	delete(state, livePendingZeroInitialWindowStateKey)
+	appendTimelineEvent(state, "strategy", eventTime, "zero-initial-window-consumed", map[string]any{
+		livePendingZeroInitialWindowStateKey: pending,
+		"reason":                             firstNonEmpty(strings.TrimSpace(reason), "consumed"),
+	})
 }
 
 func liveZeroInitialWindowPlanStep(
