@@ -730,11 +730,17 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		longStructureReady = longStructureReady || longEarlyReversalReady
 		shortStructureReady = shortStructureReady || shortEarlyReversalReady
 	default:
+		if sma5 > 0 {
+			longStructureReady = closePrice > sma5
+			shortStructureReady = closePrice < sma5
+			break
+		}
 		if ma20 <= 0 {
 			result["ready"] = false
 			result["reason"] = "insufficient-signal-bars"
 			return result
 		}
+		result["usedLegacyMA20Fallback"] = true
 		longStructureReady = closePrice > ma20
 		shortStructureReady = closePrice < ma20
 	}

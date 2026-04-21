@@ -111,6 +111,40 @@ func TestEvaluateSignalBarGateAllowsLongAfterBreakoutAlignmentWithResearch(t *te
 	}
 }
 
+func TestEvaluateSignalBarGateUsesSMA5ForIntradayReentry(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"timeframe": "30m",
+		"sma5":      76485.78,
+		"ma20":      76151.175,
+		"atr14":     520.0,
+		"current": map[string]any{
+			"close": 76312.10,
+			"high":  76455.40,
+			"low":   76200.00,
+		},
+		"prevBar1": map[string]any{
+			"high": 74253.80,
+			"low":  76180.00,
+		},
+		"prevBar2": map[string]any{
+			"high": 76520.00,
+			"low":  76250.00,
+		},
+	}, "SELL", "entry", "Zero-Initial-Reentry", 76236.80, "trade_tick.price")
+	if boolValue(gate["longStructureReady"]) {
+		t.Fatalf("expected intraday SMA5 hard filter to block long structure, got %#v", gate)
+	}
+	if !boolValue(gate["shortStructureReady"]) {
+		t.Fatalf("expected intraday SMA5 hard filter to allow short structure, got %#v", gate)
+	}
+	if !boolValue(gate["shortReady"]) || !boolValue(gate["ready"]) {
+		t.Fatalf("expected zero-initial reentry short gate to be ready, got %#v", gate)
+	}
+	if boolValue(gate["usedLegacyMA20Fallback"]) {
+		t.Fatalf("expected SMA5 to be used instead of MA20 fallback, got %#v", gate)
+	}
+}
+
 func TestEvaluateSignalBarGateTracksCurrentPriceBreakoutPattern(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"ma20":  68000.0,
