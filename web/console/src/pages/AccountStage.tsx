@@ -877,21 +877,68 @@ export function AccountStage({
           </CardHeader>
           <CardContent className="space-y-6">
              <div className="space-y-5 rounded-[24px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-6">
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">价格新鲜度(秒)</label>
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">成交新鲜度(秒)</label>
                     <Input 
                       className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
                       value={runtimePolicyForm.tradeTickFreshnessSeconds}
                       onChange={(e) => setRuntimePolicyForm(c => ({ ...c, tradeTickFreshnessSeconds: e.target.value }))}
+                      placeholder="默认: 15"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">同步间隔(秒)</label>
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">盘口新鲜度(秒)</label>
+                    <Input 
+                      className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
+                      value={runtimePolicyForm.orderBookFreshnessSeconds}
+                      onChange={(e) => setRuntimePolicyForm(c => ({ ...c, orderBookFreshnessSeconds: e.target.value }))}
+                      placeholder="默认: 10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">信号新鲜度(秒)</label>
+                    <Input 
+                      className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
+                      value={runtimePolicyForm.signalBarFreshnessSeconds}
+                      onChange={(e) => setRuntimePolicyForm(c => ({ ...c, signalBarFreshnessSeconds: e.target.value }))}
+                      placeholder="默认: 30"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">同步过期(秒)</label>
                     <Input 
                       className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
                       value={runtimePolicyForm.liveAccountSyncFreshnessSeconds}
                       onChange={(e) => setRuntimePolicyForm(c => ({ ...c, liveAccountSyncFreshnessSeconds: e.target.value }))}
+                      placeholder="默认: 60"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">运行时静默(秒)</label>
+                    <Input 
+                      className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
+                      value={runtimePolicyForm.runtimeQuietSeconds}
+                      onChange={(e) => setRuntimePolicyForm(c => ({ ...c, runtimeQuietSeconds: e.target.value }))}
+                      placeholder="默认: 30"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">评估静默(秒)</label>
+                    <Input 
+                      className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
+                      value={runtimePolicyForm.strategyEvaluationQuietSeconds}
+                      onChange={(e) => setRuntimePolicyForm(c => ({ ...c, strategyEvaluationQuietSeconds: e.target.value }))}
+                      placeholder="默认: 0"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase whitespace-nowrap text-[var(--bk-text-muted)]">模拟启动超时(秒)</label>
+                    <Input 
+                      className="h-9 border-[var(--bk-border)] bg-[var(--bk-surface)] text-xs font-bold shadow-sm"
+                      value={runtimePolicyForm.paperStartReadinessTimeoutSeconds}
+                      onChange={(e) => setRuntimePolicyForm(c => ({ ...c, paperStartReadinessTimeoutSeconds: e.target.value }))}
+                      placeholder="默认: 5"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -913,7 +960,7 @@ export function AccountStage({
                 <Button 
                    variant="bento"
                    className="h-10 w-full text-xs font-bold shadow-sm"
-                   disabled={runtimePolicyAction !== null}
+                   disabled={!!runtimePolicyAction}
                    onClick={updateRuntimePolicy}
                 >
                    {runtimePolicyAction ? "保存中..." : "保存运行时策略"}

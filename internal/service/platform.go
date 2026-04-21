@@ -51,6 +51,7 @@ type Platform struct {
 	tickManifest        []tradeArchiveManifestEntry
 	runtimePolicy       RuntimePolicy
 	telegramConfig      domain.TelegramConfig
+	telegramSentAlertCache sync.Map // notificationID -> alertTitle
 	logBroker           *logging.Broker
 }
 

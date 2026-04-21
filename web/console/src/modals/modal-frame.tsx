@@ -57,17 +57,17 @@ export function SettingsModalFrame({
 
 
       >
-        <DialogHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] px-6 py-5">
+        <DialogHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] px-6 py-4">
           <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--bk-text-secondary)]">
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--bk-text-secondary)]">
                 {kicker}
               </p>
-              <DialogTitle className="text-xl font-black text-[var(--bk-text-primary)]">
+              <DialogTitle className="text-lg font-black text-[var(--bk-text-primary)]">
                 {title}
               </DialogTitle>
               {description ? (
-                <DialogDescription className="max-w-2xl text-sm font-medium leading-relaxed text-[var(--bk-text-muted)]">
+                <DialogDescription className="max-w-2xl text-[13px] font-medium leading-normal text-[var(--bk-text-muted)]">
                   {description}
                 </DialogDescription>
               ) : null}
@@ -76,16 +76,21 @@ export function SettingsModalFrame({
               <Button
                 type="button"
                 variant="bento-ghost"
-                className="size-10 shrink-0 rounded-2xl border border-[var(--bk-border-soft)] p-0 text-[var(--bk-text-muted)] hover:border-[var(--bk-border-strong)] hover:bg-[var(--bk-surface-strong)] hover:text-[var(--bk-text-primary)]"
+                className="size-9 shrink-0 rounded-2xl border border-[var(--bk-border-soft)] p-0 text-[var(--bk-text-muted)] hover:border-[var(--bk-border-strong)] hover:bg-[var(--bk-surface-strong)] hover:text-[var(--bk-text-primary)]"
                 onClick={() => onOpenChange(false)}
               >
-                <X size={20} strokeWidth={2.5} />
+                <X size={18} strokeWidth={2.5} />
               </Button>
             ) : null}
 
           </div>
         </DialogHeader>
-        <div className={cn("space-y-5 px-6 py-6", contentClassName)}>{children}</div>
+        <div className={cn(
+          "max-h-[calc(100vh-220px)] overflow-y-auto custom-scrollbar space-y-4 px-6 py-5", 
+          contentClassName
+        )}>
+          {children}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -141,18 +146,18 @@ export function ModalSectionHeader({
   description?: string;
 }) {
   return (
-    <div className="mb-4 mt-2 flex items-center gap-3 px-1">
+    <div className="mb-3 mt-1 flex items-center gap-2.5 px-0.5">
       {Icon && (
-        <div className="flex size-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-[var(--bk-bg-button-bento)]/10 to-[var(--bk-bg-button-bento)]/5 text-[var(--bk-bg-button-bento)]">
-          <Icon size={20} strokeWidth={2.5} />
+        <div className="flex size-9 items-center justify-center rounded-[14px] bg-gradient-to-tr from-[var(--bk-bg-button-bento)]/10 to-[var(--bk-bg-button-bento)]/5 text-[var(--bk-bg-button-bento)]">
+          <Icon size={18} strokeWidth={2.5} />
         </div>
       )}
-      <div className="space-y-0.5">
-        <h3 className="text-sm font-black uppercase tracking-wider text-[var(--bk-text-primary)]">
+      <div className="space-y-0">
+        <h3 className="text-[12px] font-black uppercase tracking-wider text-[var(--bk-text-primary)]">
           {title}
         </h3>
         {description && (
-          <p className="text-[11px] font-medium text-[var(--bk-text-muted)]">{description}</p>
+          <p className="text-[10px] font-medium text-[var(--bk-text-muted)]">{description}</p>
         )}
       </div>
     </div>
@@ -162,7 +167,7 @@ export function ModalSectionHeader({
 export function ModalGroup({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={cn(
-      "rounded-[28px] border border-[var(--bk-border-soft)] bg-gradient-to-b from-[var(--bk-surface-overlay)] to-[var(--bk-surface-strong)]/30 p-5 shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]",
+      "rounded-[24px] border border-[var(--bk-border-soft)] bg-gradient-to-b from-[var(--bk-surface-overlay)] to-[var(--bk-surface-strong)]/30 p-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]",
       className
     )}>
       {children}
@@ -180,7 +185,7 @@ export function ModalFormGrid({
   return (
     <div
       className={cn(
-        "grid gap-x-8 gap-y-4",
+        "grid gap-x-6 gap-y-3",
         columns === "wide" ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1 md:grid-cols-2"
       )}
     >
@@ -200,8 +205,8 @@ export function ModalField({
   wide?: boolean;
 }) {
   return (
-    <label className={cn("space-y-1.5", wide && "md:col-span-2")}>
-      <Label className="ml-0.5 whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-[var(--bk-text-secondary)]">
+    <label className={cn("space-y-1", wide && "md:col-span-2")}>
+      <Label className="ml-0.5 whitespace-nowrap text-[10px] font-black uppercase tracking-wide text-[var(--bk-text-secondary)]">
         {label}
       </Label>
       {children}
@@ -221,18 +226,18 @@ export function ModalCheckboxField({
 }) {
   return (
     <div className="flex flex-col space-y-1.5">
-      <Label className="ml-0.5 whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-transparent select-none">
+      <Label className="ml-0.5 whitespace-nowrap text-[10px] font-black uppercase tracking-wide text-transparent select-none">
         &nbsp;
       </Label>
-      <label className="flex h-11 !h-11 items-center justify-between gap-4 rounded-2xl border border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-4 py-2 hover:bg-[var(--bk-surface)] transition-colors cursor-pointer group">
-        <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-[var(--bk-text-secondary)] group-hover:text-[var(--bk-text-primary)]">
+      <label className="flex h-10 !h-10 items-center justify-between gap-4 rounded-xl border border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-4 py-2 hover:bg-[var(--bk-surface)] transition-colors cursor-pointer group">
+        <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-wide text-[var(--bk-text-secondary)] group-hover:text-[var(--bk-text-primary)]">
           {label}
         </span>
         <input
           type="checkbox"
           checked={checked}
           onChange={(event) => onChange(event.target.checked)}
-          className="size-4 shrink-0 rounded border-[var(--bk-border-strong)] accent-[var(--bk-text-primary)]"
+          className="size-3.5 shrink-0 rounded border-[var(--bk-border-strong)] accent-[var(--bk-text-primary)]"
         />
       </label>
     </div>
@@ -255,7 +260,7 @@ export function ModalInput({ className, ...props }: React.ComponentProps<typeof 
   return (
     <Input
       className={cn(
-        "h-11 !h-11 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-4 transition-all focus:ring-1 focus:ring-[var(--bk-bg-button-bento)]",
+        "h-10 !h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-4 text-xs transition-all focus:ring-1 focus:ring-[var(--bk-bg-button-bento)]",
         className
       )}
       {...props}
@@ -288,7 +293,7 @@ export function ModalSelect({
     >
       <SelectTrigger
         tone="bento"
-        className={cn("h-11 !h-11 w-full rounded-xl px-4", className)}
+        className={cn("h-10 !h-10 w-full rounded-xl px-4 text-xs", className)}
       >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>

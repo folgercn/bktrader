@@ -80,22 +80,22 @@ func formatTelegramNotification(item domain.PlatformNotification) string {
 		alert.Detail,
 	}
 	if alert.Scope != "" {
-		lines = append(lines, fmt.Sprintf("scope: %s", alert.Scope))
+		lines = append(lines, fmt.Sprintf("范围: %s", alert.Scope))
 	}
 	if alert.AccountName != "" || alert.AccountID != "" {
-		lines = append(lines, fmt.Sprintf("account: %s", firstNonEmpty(alert.AccountName, alert.AccountID)))
+		lines = append(lines, fmt.Sprintf("账户: %s", firstNonEmpty(alert.AccountName, alert.AccountID)))
 	}
 	if alert.StrategyName != "" || alert.StrategyID != "" {
-		lines = append(lines, fmt.Sprintf("strategy: %s", firstNonEmpty(alert.StrategyName, alert.StrategyID)))
+		lines = append(lines, fmt.Sprintf("策略: %s", firstNonEmpty(alert.StrategyName, alert.StrategyID)))
 	}
 	if alert.RuntimeSessionID != "" {
-		lines = append(lines, fmt.Sprintf("runtime: %s", alert.RuntimeSessionID))
+		lines = append(lines, fmt.Sprintf("运行时: %s", alert.RuntimeSessionID))
 	}
 	if alert.PaperSessionID != "" {
-		lines = append(lines, fmt.Sprintf("paper: %s", alert.PaperSessionID))
+		lines = append(lines, fmt.Sprintf("模拟盘: %s", alert.PaperSessionID))
 	}
 	if !alert.EventTime.IsZero() {
-		lines = append(lines, fmt.Sprintf("time: %s", alert.EventTime.Format(time.RFC3339)))
+		lines = append(lines, fmt.Sprintf("时间: %s", alert.EventTime.Format(time.RFC3339)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -149,12 +149,16 @@ func (p *Platform) DispatchTelegramNotifications() error {
 	}
 	var firstErr error
 	sentCount := 0
+	activeNotificationIDs := make(map[string]struct{}, len(notifications))
 	for _, item := range notifications {
+		activeNotificationIDs[item.ID] = struct{}{}
 		level := strings.ToLower(strings.TrimSpace(item.Alert.Level))
 		if _, ok := allowedLevels[level]; !ok {
 			continue
 		}
 		if _, ok := delivered[item.ID]; ok {
+			// 如果已经发送过，确保缓存中有标题（用于后续恢复）
+			p.telegramSentAlertCache.Store(item.ID, item.Alert.Title)
 			continue
 		}
 		if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
@@ -165,6 +169,8 @@ func (p *Platform) DispatchTelegramNotifications() error {
 			p.logger("service.telegram", "notification_id", item.ID).Warn("send telegram notification failed", "error", err)
 			continue
 		}
+		// 记录到缓存用于恢复通知
+		p.telegramSentAlertCache.Store(item.ID, item.Alert.Title)
 		if _, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", ""); err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -174,6 +180,38 @@ func (p *Platform) DispatchTelegramNotifications() error {
 		}
 		sentCount++
 	}
-	logger.Debug("telegram dispatch cycle completed", "sent_count", sentCount, "notification_count", len(notifications))
+
+	// 恢复检测：遍历已发送的 delivery
+	recoveredCount := 0
+	for _, delivery := range deliveries {
+		if !strings.EqualFold(delivery.Channel, "telegram") || !strings.EqualFold(delivery.Status, "sent") {
+			continue
+		}
+		// 如果该告警 ID 不再活跃，说明已恢复
+		if _, isActive := activeNotificationIDs[delivery.NotificationID]; !isActive {
+			titleRaw, ok := p.telegramSentAlertCache.Load(delivery.NotificationID)
+			title := "未知告警"
+			if ok {
+				title = titleRaw.(string)
+			}
+
+			recoveryMsg := fmt.Sprintf("✅ *[已恢复]* %s\n告警已自动解除。ID: %s", title, delivery.NotificationID)
+			if err := p.sendTelegramMessage(recoveryMsg); err != nil {
+				p.logger("service.telegram", "notification_id", delivery.NotificationID).Warn("send telegram recovery notification failed", "error", err)
+				continue
+			}
+
+			// 标记为已恢复，防止重复发送
+			if _, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "recovered", ""); err != nil {
+				p.logger("service.telegram", "notification_id", delivery.NotificationID).Warn("record telegram recovery delivery failed", "error", err)
+			}
+			p.telegramSentAlertCache.Delete(delivery.NotificationID)
+			recoveredCount++
+		}
+	}
+
+	if sentCount > 0 || recoveredCount > 0 {
+		logger.Debug("telegram dispatch cycle completed", "sent", sentCount, "recovered", recoveredCount, "active", len(notifications))
+	}
 	return firstErr
 }

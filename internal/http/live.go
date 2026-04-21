@@ -66,6 +66,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				DefaultOrderQty                           any    `json:"defaultOrderQuantity"`
 				DispatchMode                              string `json:"dispatchMode"`
 				DispatchCooldownSec                       int    `json:"dispatchCooldownSeconds"`
+				FreshnessOverrideSignalBarFreshnessSecs  any    `json:"freshnessOverrideSignalBarFreshnessSeconds"`
+				FreshnessOverrideTradeTickFreshnessSecs  any    `json:"freshnessOverrideTradeTickFreshnessSeconds"`
+				FreshnessOverrideOrderBookFreshnessSecs  any    `json:"freshnessOverrideOrderBookFreshnessSeconds"`
+				FreshnessOverrideRuntimeQuietSecs        any    `json:"freshnessOverrideRuntimeQuietSeconds"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -211,6 +215,25 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			if payload.DispatchCooldownSec > 0 {
 				overrides["dispatchCooldownSeconds"] = payload.DispatchCooldownSec
 			}
+
+			// 处理新鲜度覆盖
+			freshnessOverride := map[string]any{}
+			if val, ok := service.ToFloat64(payload.FreshnessOverrideSignalBarFreshnessSecs); ok && val > 0 {
+				freshnessOverride["signalBarFreshnessSeconds"] = val
+			}
+			if val, ok := service.ToFloat64(payload.FreshnessOverrideTradeTickFreshnessSecs); ok && val > 0 {
+				freshnessOverride["tradeTickFreshnessSeconds"] = val
+			}
+			if val, ok := service.ToFloat64(payload.FreshnessOverrideOrderBookFreshnessSecs); ok && val > 0 {
+				freshnessOverride["orderBookFreshnessSeconds"] = val
+			}
+			if val, ok := service.ToFloat64(payload.FreshnessOverrideRuntimeQuietSecs); ok && val > 0 {
+				freshnessOverride["runtimeQuietSeconds"] = val
+			}
+			if len(freshnessOverride) > 0 {
+				overrides["freshnessOverride"] = freshnessOverride
+			}
+
 			item, err := platform.CreateLiveSession(payload.AccountID, payload.StrategyID, overrides)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -277,6 +300,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				DefaultOrderQty                           any    `json:"defaultOrderQuantity"`
 				DispatchMode                              string `json:"dispatchMode"`
 				DispatchCooldownSec                       int    `json:"dispatchCooldownSeconds"`
+				FreshnessOverrideSignalBarFreshnessSecs  any    `json:"freshnessOverrideSignalBarFreshnessSeconds"`
+				FreshnessOverrideTradeTickFreshnessSecs  any    `json:"freshnessOverrideTradeTickFreshnessSeconds"`
+				FreshnessOverrideOrderBookFreshnessSecs  any    `json:"freshnessOverrideOrderBookFreshnessSeconds"`
+				FreshnessOverrideRuntimeQuietSecs        any    `json:"freshnessOverrideRuntimeQuietSeconds"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -415,6 +442,33 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			if payload.DispatchCooldownSec > 0 {
 				overrides["dispatchCooldownSeconds"] = payload.DispatchCooldownSec
 			}
+
+			// 处理新鲜度覆盖
+			freshnessOverride := map[string]any{}
+			if val, ok := service.ToFloat64(payload.FreshnessOverrideSignalBarFreshnessSecs); ok && val > 0 {
+				freshnessOverride["signalBarFreshnessSeconds"] = val
+			} else if payload.FreshnessOverrideSignalBarFreshnessSecs != nil {
+				freshnessOverride["signalBarFreshnessSeconds"] = nil
+			}
+			if val, ok := service.ToFloat64(payload.FreshnessOverrideTradeTickFreshnessSecs); ok && val > 0 {
+				freshnessOverride["tradeTickFreshnessSeconds"] = val
+			} else if payload.FreshnessOverrideTradeTickFreshnessSecs != nil {
+				freshnessOverride["tradeTickFreshnessSeconds"] = nil
+			}
+			if val, ok := service.ToFloat64(payload.FreshnessOverrideOrderBookFreshnessSecs); ok && val > 0 {
+				freshnessOverride["orderBookFreshnessSeconds"] = val
+			} else if payload.FreshnessOverrideOrderBookFreshnessSecs != nil {
+				freshnessOverride["orderBookFreshnessSeconds"] = nil
+			}
+			if val, ok := service.ToFloat64(payload.FreshnessOverrideRuntimeQuietSecs); ok && val > 0 {
+				freshnessOverride["runtimeQuietSeconds"] = val
+			} else if payload.FreshnessOverrideRuntimeQuietSecs != nil {
+				freshnessOverride["runtimeQuietSeconds"] = nil
+			}
+			if len(freshnessOverride) > 0 {
+				overrides["freshnessOverride"] = freshnessOverride
+			}
+
 			item, err := platform.UpdateLiveSession(parts[0], payload.AccountID, payload.StrategyID, overrides)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())

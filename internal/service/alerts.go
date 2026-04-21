@@ -79,8 +79,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:               fmt.Sprintf("runtime-health-%s", session.ID),
 				Scope:            "runtime",
 				Level:            "critical",
-				Title:            "Runtime health",
-				Detail:           fmt.Sprintf("session=%s health=%s", session.Status, firstNonEmpty(health, "unknown")),
+				Title:            "运行时异常",
+				Detail:           fmt.Sprintf("会话状态=%s 健康度=%s", session.Status, firstNonEmpty(health, "未知")),
 				AccountID:        session.AccountID,
 				AccountName:      account.Name,
 				StrategyID:       session.StrategyID,
@@ -95,11 +95,11 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:    fmt.Sprintf("runtime-recovering-%s", session.ID),
 				Scope: "runtime",
 				Level: "warning",
-				Title: "Runtime recovering",
-				Detail: fmt.Sprintf("attempt %d/%d: %s",
+				Title: "运行时恢复中",
+				Detail: fmt.Sprintf("尝试次数 %d/%d: %s",
 					maxIntValue(state["reconnectAttempt"], 0),
 					maxIntValue(state["reconnectMaxAttempts"], 0),
-					firstNonEmpty(stringValue(state["lastDisconnectError"]), "unknown")),
+					firstNonEmpty(stringValue(state["lastDisconnectError"]), "未知")),
 				AccountID:        session.AccountID,
 				AccountName:      account.Name,
 				StrategyID:       session.StrategyID,
@@ -114,8 +114,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:               fmt.Sprintf("runtime-stale-reconnect-%s", session.ID),
 				Scope:            "runtime",
 				Level:            "critical",
-				Title:            "Signal bar may be stale after reconnect",
-				Detail:           "WS disconnect may have missed a K-line close, please verify data and manually restart if needed",
+				Title:            "重连后信号K线可能过期",
+				Detail:           "WebSocket 断开可能导致错过 K 线收盘，请校验数据，必要时手动重启会话",
 				AccountID:        session.AccountID,
 				AccountName:      account.Name,
 				StrategyID:       session.StrategyID,
@@ -131,8 +131,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 					ID:               fmt.Sprintf("runtime-stale-%s", session.ID),
 					Scope:            "runtime",
 					Level:            "warning",
-					Title:            "Stale sources",
-					Detail:           fmt.Sprintf("%d source state(s) outdated", sourceSummary.staleCount),
+					Title:            "数据源过期",
+					Detail:           fmt.Sprintf("%d 个数据源状态已陈旧", sourceSummary.staleCount),
 					AccountID:        session.AccountID,
 					AccountName:      account.Name,
 					StrategyID:       session.StrategyID,
@@ -143,12 +143,18 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				})
 			}
 			if p.runtimeSessionQuiet(state) {
+				quietSecs := p.runtimePolicy.RuntimeQuietSeconds
+				if override := mapValue(state["freshnessOverride"]); override != nil {
+					if val, ok := toFloat64(override["runtimeQuietSeconds"]); ok && val > 0 {
+						quietSecs = int(val)
+					}
+				}
 				appendAlert(domain.PlatformAlert{
 					ID:               fmt.Sprintf("runtime-quiet-%s", session.ID),
 					Scope:            "runtime",
 					Level:            "warning",
-					Title:            "Runtime quiet",
-					Detail:           fmt.Sprintf("no runtime events observed in the last %ds", p.runtimePolicy.RuntimeQuietSeconds),
+					Title:            "运行时静默",
+					Detail:           fmt.Sprintf("过去 %d 秒内未观测到运行时事件", quietSecs),
 					AccountID:        session.AccountID,
 					AccountName:      account.Name,
 					StrategyID:       session.StrategyID,
@@ -170,8 +176,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:          fmt.Sprintf("live-config-%s", account.ID),
 				Scope:       "live",
 				Level:       "warning",
-				Title:       "Account not configured",
-				Detail:      fmt.Sprintf("status=%s", account.Status),
+				Title:       "账户未配置",
+				Detail:      fmt.Sprintf("当前状态=%s", account.Status),
 				AccountID:   account.ID,
 				AccountName: account.Name,
 				Anchor:      "live",
@@ -198,8 +204,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:          fmt.Sprintf("live-position-unmonitored-%s", account.ID),
 				Scope:       "live",
 				Level:       "critical",
-				Title:       "Open position without running session",
-				Detail:      fmt.Sprintf("exchange reports %d open position(s) but no live session is RUNNING", openPositionCount),
+				Title:       "存在持仓但无运行中会话",
+				Detail:      fmt.Sprintf("交易所报告有 %d 个持仓，但没有对应的实盘会话在运行 (RUNNING)", openPositionCount),
 				AccountID:   account.ID,
 				AccountName: account.Name,
 				Anchor:      "live",
@@ -215,8 +221,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:          fmt.Sprintf("live-account-sync-stale-%s", account.ID),
 				Scope:       "live",
 				Level:       level,
-				Title:       "Live account sync stale",
-				Detail:      fmt.Sprintf("last successful account sync was %ds ago", ageSeconds),
+				Title:       "账户同步过期",
+				Detail:      fmt.Sprintf("上次成功的账户同步发生在 %d 秒前", ageSeconds),
 				AccountID:   account.ID,
 				AccountName: account.Name,
 				Anchor:      "live",
@@ -232,8 +238,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:          fmt.Sprintf("live-account-sync-error-%s", account.ID),
 				Scope:       "live",
 				Level:       level,
-				Title:       "Live account sync errors",
-				Detail:      fmt.Sprintf("consecutive_errors=%d last_error=%s", consecutiveErrors, firstNonEmpty(stringValue(accountSyncSummary["lastError"]), "unknown")),
+				Title:       "账户同步出错",
+				Detail:      fmt.Sprintf("连续错误次数=%d 错误信息=%s", consecutiveErrors, firstNonEmpty(stringValue(accountSyncSummary["lastError"]), "未知")),
 				AccountID:   account.ID,
 				AccountName: account.Name,
 				Anchor:      "live",
@@ -246,8 +252,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:          fmt.Sprintf("live-runtime-%s", account.ID),
 				Scope:       "live",
 				Level:       "warning",
-				Title:       "No runtime session",
-				Detail:      "create or start a runtime session before live trading",
+				Title:       "无运行时会话",
+				Detail:      "在开始实盘交易前，请先创建并启动运行时会话 (Signal Runtime)",
 				AccountID:   account.ID,
 				AccountName: account.Name,
 				Anchor:      "live",
@@ -265,7 +271,7 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:               fmt.Sprintf("live-preflight-%s", account.ID),
 				Scope:            "live",
 				Level:            "critical",
-				Title:            "Live preflight blocked",
+				Title:            "实盘预检受阻",
 				Detail:           readiness.reason,
 				AccountID:        account.ID,
 				AccountName:      account.Name,
@@ -280,7 +286,7 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:               fmt.Sprintf("live-warning-%s", account.ID),
 				Scope:            "live",
 				Level:            "warning",
-				Title:            "Live runtime warning",
+				Title:            "实盘运行时告警",
 				Detail:           readiness.reason,
 				AccountID:        account.ID,
 				AccountName:      account.Name,
@@ -300,8 +306,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:           fmt.Sprintf("live-strategy-eval-quiet-%s", session.ID),
 				Scope:        "live",
 				Level:        "warning",
-				Title:        "Strategy evaluation quiet",
-				Detail:       fmt.Sprintf("runtime triggers observed but no strategy evaluation recorded in the last %ds", p.runtimePolicy.StrategyEvaluationQuietSeconds),
+				Title:        "策略评估静默",
+				Detail:       fmt.Sprintf("观测到运行时触发但过去 %d 秒内未记录策略评估行为", p.runtimePolicy.StrategyEvaluationQuietSeconds),
 				AccountID:    session.AccountID,
 				StrategyID:   session.StrategyID,
 				StrategyName: strategyNameByID[session.StrategyID],
@@ -319,7 +325,7 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:           fmt.Sprintf("live-recovery-error-%s", session.ID),
 				Scope:        "live",
 				Level:        "critical",
-				Title:        "Live recovery failed",
+				Title:        "实盘恢复失败",
 				Detail:       recoveryError,
 				AccountID:    session.AccountID,
 				StrategyID:   session.StrategyID,
@@ -334,8 +340,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 					ID:           fmt.Sprintf("live-recovery-awaiting-authoritative-sync-%s", session.ID),
 					Scope:        "live",
 					Level:        "warning",
-					Title:        "Recovery awaiting authoritative sync",
-					Detail:       fmt.Sprintf("watchdog auto-exit is paused because recovery state came from %s; run a successful live account sync or reconcile to confirm exchange positions and open orders", recoverySource),
+					Title:        "恢复等待权威同步",
+					Detail:       fmt.Sprintf("看门狗自动平仓已暂停，因为当前恢复状态来自 %s；请执行账户同步或对账以确认交易所持仓和挂单", recoverySource),
 					AccountID:    session.AccountID,
 					StrategyID:   session.StrategyID,
 					StrategyName: strategyNameByID[session.StrategyID],
@@ -353,8 +359,8 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:           fmt.Sprintf("live-unprotected-position-%s", session.ID),
 				Scope:        "live",
 				Level:        "critical",
-				Title:        "Recovered position has no protection",
-				Detail:       "open position was restored but no stop-loss / take-profit protection order was recovered",
+				Title:        "恢复持仓无保护",
+				Detail:       "已恢复持仓但未发现对应的止损/止盈保护订单",
 				AccountID:    session.AccountID,
 				StrategyID:   session.StrategyID,
 				StrategyName: strategyNameByID[session.StrategyID],
@@ -366,9 +372,9 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				ID:    fmt.Sprintf("live-protected-position-%s", session.ID),
 				Scope: "live",
 				Level: "info",
-				Title: "Recovered protected position",
+				Title: "恢复持仓已保护",
 				Detail: fmt.Sprintf(
-					"recovered %d protection order(s): stop=%d take-profit=%d",
+					"成功恢复 %d 个保护订单：止损=%d 止盈=%d",
 					maxIntValue(state["recoveredProtectionCount"], 0),
 					maxIntValue(state["recoveredStopOrderCount"], 0),
 					maxIntValue(state["recoveredTakeProfitOrderCount"], 0),
@@ -488,10 +494,10 @@ func (p *Platform) summarizeRuntimeSources(runtimeSession domain.SignalRuntimeSe
 		if !lastEventAt.IsZero() && lastEventAt.After(summary.latestEventAt) {
 			summary.latestEventAt = lastEventAt
 		}
-		maxAge := p.signalSourceFreshnessWindow(domain.AccountSignalBinding{
+		maxAge := p.signalSourceFreshnessWindowWithOverride(domain.AccountSignalBinding{
 			StreamType: streamType,
 			Options:    cloneMetadata(mapValue(entry["options"])),
-		})
+		}, runtimeSession.State)
 		if lastEventAt.IsZero() || now.Sub(lastEventAt) > maxAge {
 			summary.staleCount++
 		}
@@ -504,7 +510,13 @@ func (p *Platform) runtimeSessionQuiet(runtimeState map[string]any) bool {
 	if lastEventAt.IsZero() {
 		return false
 	}
-	return time.Since(lastEventAt) > time.Duration(p.runtimePolicy.RuntimeQuietSeconds)*time.Second
+	threshold := time.Duration(p.runtimePolicy.RuntimeQuietSeconds) * time.Second
+	if override := mapValue(runtimeState["freshnessOverride"]); override != nil {
+		if val, ok := toFloat64(override["runtimeQuietSeconds"]); ok && val > 0 {
+			threshold = time.Duration(val) * time.Second
+		}
+	}
+	return time.Since(lastEventAt) > threshold
 }
 
 func (p *Platform) strategyEvaluationQuiet(sessionState map[string]any) bool {
