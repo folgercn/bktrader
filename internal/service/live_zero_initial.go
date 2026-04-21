@@ -74,7 +74,7 @@ func prepareLivePlanStepForSignalEvaluation(
 	if shortReady {
 		side = "SELL"
 	}
-	updatedState[livePendingZeroInitialWindowStateKey] = map[string]any{
+	pendingWindow := map[string]any{
 		"side":            side,
 		"symbol":          NormalizeSymbol(symbol),
 		"signalTimeframe": strings.ToLower(strings.TrimSpace(signalTimeframe)),
@@ -82,6 +82,14 @@ func prepareLivePlanStepForSignalEvaluation(
 		"signalBarStart":  currentBarStart.UTC().Format(time.RFC3339),
 		"expiresAt":       currentBarStart.UTC().Add(2 * step).Format(time.RFC3339),
 	}
+	updatedState[livePendingZeroInitialWindowStateKey] = pendingWindow
+	appendTimelineEvent(updatedState, "strategy", eventTime, "zero-initial-window-armed", map[string]any{
+		livePendingZeroInitialWindowStateKey: cloneMetadata(pendingWindow),
+		"reason":                             "Zero-Initial-Reentry",
+		"side":                               side,
+		"symbol":                             NormalizeSymbol(symbol),
+		"signalTimeframe":                    strings.ToLower(strings.TrimSpace(signalTimeframe)),
+	})
 	updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, _ := liveZeroInitialWindowPlanStep(updatedState, parameters, signalBarStates, symbol, signalTimeframe, eventTime)
 	return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason
 }

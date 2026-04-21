@@ -243,6 +243,18 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 	if stringValue(pending["side"]) != "BUY" {
 		t.Fatalf("expected pending BUY window, got %+v", pending)
 	}
+	timeline := metadataList(state["timeline"])
+	if len(timeline) != 1 {
+		t.Fatalf("expected one zero initial window timeline event, got %+v", timeline)
+	}
+	if got := stringValue(timeline[0]["title"]); got != "zero-initial-window-armed" {
+		t.Fatalf("expected zero-initial-window-armed timeline event, got %s", got)
+	}
+	timelineMetadata := mapValue(timeline[0]["metadata"])
+	pendingFromTimeline := mapValue(timelineMetadata[livePendingZeroInitialWindowStateKey])
+	if stringValue(pendingFromTimeline["side"]) != "BUY" || stringValue(pendingFromTimeline["symbol"]) != "BTCUSDT" {
+		t.Fatalf("expected pending window snapshot in timeline metadata, got %+v", pendingFromTimeline)
+	}
 
 	nextBarStart := barStart.Add(24 * time.Hour)
 	nextBarStates := map[string]any{
@@ -286,6 +298,9 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 	)
 	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
 		t.Fatalf("expected pending zero initial window to remain active on next bar, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if timeline := metadataList(state["timeline"]); len(timeline) != 1 {
+		t.Fatalf("expected existing pending window to avoid duplicate timeline events, got %+v", timeline)
 	}
 
 	expiredState, _, _, _, _, _ := prepareLivePlanStepForSignalEvaluation(
