@@ -4,7 +4,7 @@ services:
     container_name: bktrader-app
     restart: unless-stopped
     env_file:
-      - ${APP_ENV_FILE:-/opt/bktrader/.env}
+      - ${APP_ENV_FILE:-./.env}
     environment:
       LOG_DIR: ${LOG_DIR:-/app/logs}
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}

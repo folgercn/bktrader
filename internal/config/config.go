@@ -78,7 +78,7 @@ func Load() Config {
 		LogMaxSizeMB:                   intFromEnv("LOG_MAX_SIZE_MB", 100),
 		HTTPAddr:                       getenv("HTTP_ADDR", ":8080"),
 		StoreBackend:                   getenv("STORE_BACKEND", "memory"),
-		AutoMigrate:                    boolFromEnv("AUTO_MIGRATE", false),
+		AutoMigrate:                    boolFromEnv("AUTO_MIGRATE", true),
 		PostgresDSN:                    getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
 		RedisAddr:                      getenv("REDIS_ADDR", "localhost:6379"),
 		NATSURL:                        getenv("NATS_URL", "nats://localhost:4222"),
