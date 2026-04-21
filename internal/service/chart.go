@@ -363,6 +363,9 @@ func toInt64(value any) (int64, bool) {
 		return v, true
 	case int:
 		return int64(v), true
+	case json.Number:
+		i, err := v.Int64()
+		return i, err == nil
 	case string:
 		parsed, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 		return parsed, err == nil
