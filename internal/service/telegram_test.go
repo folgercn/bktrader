@@ -253,3 +253,20 @@ func TestTelegramDispatchSuppressesFlappingRuntimeStaleAlerts(t *testing.T) {
 		t.Fatalf("expected recovery message after stabilization window, got %#v", messages)
 	}
 }
+
+func TestTelegramAlertNeedsFlapSuppressionUsesStableLiveWarningID(t *testing.T) {
+	alert := domain.PlatformAlert{
+		ID:     "live-warning-stale-source-states-account-1",
+		Scope:  "live",
+		Title:  "任意文案",
+		Detail: "任意细节",
+	}
+	if !telegramAlertNeedsFlapSuppression(alert) {
+		t.Fatal("expected live stale-source warning id prefix to enable flap suppression")
+	}
+
+	alert.ID = "live-warning-account-1"
+	if telegramAlertNeedsFlapSuppression(alert) {
+		t.Fatal("expected generic live warning id not to enable flap suppression")
+	}
+}
