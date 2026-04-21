@@ -13,6 +13,12 @@ import (
 )
 
 var telegramBaseURL = "https://api.telegram.org"
+var telegramNow = func() time.Time { return time.Now().UTC() }
+
+const (
+	telegramFlapSendGrace    = 45 * time.Second
+	telegramFlapRecoverGrace = 60 * time.Second
+)
 
 func (p *Platform) SendNotificationToTelegram(notificationID string) error {
 	logger := p.logger("service.telegram", "notification_id", strings.TrimSpace(notificationID))
@@ -139,10 +145,11 @@ func (p *Platform) DispatchTelegramNotifications() error {
 		logger.Warn("list notification deliveries failed", "error", err)
 		return err
 	}
-	delivered := make(map[string]struct{}, len(deliveries))
+	now := telegramNow()
+	deliveryByID := make(map[string]domain.NotificationDelivery, len(deliveries))
 	for _, item := range deliveries {
-		if strings.EqualFold(item.Channel, "telegram") && strings.EqualFold(item.Status, "sent") {
-			delivered[item.NotificationID] = struct{}{}
+		if strings.EqualFold(item.Channel, "telegram") {
+			deliveryByID[item.NotificationID] = item
 		}
 	}
 	allowedLevels := make(map[string]struct{}, len(config.SendLevels))
@@ -158,7 +165,30 @@ func (p *Platform) DispatchTelegramNotifications() error {
 		if _, ok := allowedLevels[level]; !ok {
 			continue
 		}
-		if _, ok := delivered[item.ID]; ok {
+		delivery, hasDelivery := deliveryByID[item.ID]
+		if telegramAlertNeedsFlapSuppression(item.Alert) {
+			nextDelivery, shouldSend, sendErr := p.advanceTelegramFlapSuppressedActiveDelivery(item, delivery, hasDelivery, now)
+			if sendErr != nil {
+				_, _ = p.store.UpsertNotificationDelivery(item.ID, "telegram", "failed", sendErr.Error(), nil)
+				if firstErr == nil {
+					firstErr = sendErr
+				}
+				p.logger("service.telegram", "notification_id", item.ID).Warn("send telegram notification failed", "error", sendErr)
+				continue
+			}
+			if nextDelivery.NotificationID != "" {
+				deliveryByID[item.ID] = nextDelivery
+			}
+			if strings.EqualFold(nextDelivery.Status, "sent") {
+				p.telegramSentAlertCache.Store(item.ID, item.Alert.Title)
+			}
+			if !shouldSend {
+				continue
+			}
+			sentCount++
+			continue
+		}
+		if hasDelivery && strings.EqualFold(delivery.Status, "sent") {
 			// 如果已经发送过，确保缓存中有标题（用于后续恢复）
 			p.telegramSentAlertCache.Store(item.ID, item.Alert.Title)
 			continue
@@ -186,39 +216,168 @@ func (p *Platform) DispatchTelegramNotifications() error {
 	// 恢复检测：遍历已发送的 delivery
 	recoveredCount := 0
 	for _, delivery := range deliveries {
-		if !strings.EqualFold(delivery.Channel, "telegram") || !strings.EqualFold(delivery.Status, "sent") {
+		if !strings.EqualFold(delivery.Channel, "telegram") {
 			continue
 		}
-		// 如果该告警 ID 不再活跃，说明已恢复
-		if _, isActive := activeNotificationIDs[delivery.NotificationID]; !isActive {
-			titleRaw, ok := p.telegramSentAlertCache.Load(delivery.NotificationID)
-			title := "未知告警"
-			if ok {
-				title = titleRaw.(string)
-			} else if delivery.Metadata != nil {
-				// 如果内存缓存失效（如重启后），尝试从持久化的 Metadata 中恢复标题
-				if persistentTitle, exists := delivery.Metadata["title"]; exists {
-					title = fmt.Sprintf("%v", persistentTitle)
-				}
-			}
-
-			recoveryMsg := fmt.Sprintf("✅ *[已恢复]* %s\n告警已自动解除。ID: %s", title, delivery.NotificationID)
-			if err := p.sendTelegramMessage(recoveryMsg); err != nil {
-				p.logger("service.telegram", "notification_id", delivery.NotificationID).Warn("send telegram recovery notification failed", "error", err)
+		if _, isActive := activeNotificationIDs[delivery.NotificationID]; isActive {
+			continue
+		}
+		if telegramDeliveryNeedsFlapSuppression(delivery) {
+			nextDelivery, recovered, recoverErr := p.advanceTelegramFlapSuppressedRecoveredDelivery(delivery, now)
+			if recoverErr != nil {
+				p.logger("service.telegram", "notification_id", delivery.NotificationID).Warn("send telegram recovery notification failed", "error", recoverErr)
 				continue
 			}
-
-			// 标记为已恢复，防止重复发送
-			if _, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "recovered", "", delivery.Metadata); err != nil {
-				p.logger("service.telegram", "notification_id", delivery.NotificationID).Warn("record telegram recovery delivery failed", "error", err)
+			if nextDelivery.NotificationID != "" {
+				deliveryByID[delivery.NotificationID] = nextDelivery
 			}
-			p.telegramSentAlertCache.Delete(delivery.NotificationID)
-			recoveredCount++
+			if recovered {
+				recoveredCount++
+			}
+			continue
 		}
+		if !strings.EqualFold(delivery.Status, "sent") {
+			continue
+		}
+		titleRaw, ok := p.telegramSentAlertCache.Load(delivery.NotificationID)
+		title := "未知告警"
+		if ok {
+			title = titleRaw.(string)
+		} else if delivery.Metadata != nil {
+			// 如果内存缓存失效（如重启后），尝试从持久化的 Metadata 中恢复标题
+			if persistentTitle, exists := delivery.Metadata["title"]; exists {
+				title = fmt.Sprintf("%v", persistentTitle)
+			}
+		}
+
+		recoveryMsg := fmt.Sprintf("✅ *[已恢复]* %s\n告警已自动解除。ID: %s", title, delivery.NotificationID)
+		if err := p.sendTelegramMessage(recoveryMsg); err != nil {
+			p.logger("service.telegram", "notification_id", delivery.NotificationID).Warn("send telegram recovery notification failed", "error", err)
+			continue
+		}
+
+		// 标记为已恢复，防止重复发送
+		if _, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "recovered", "", delivery.Metadata); err != nil {
+			p.logger("service.telegram", "notification_id", delivery.NotificationID).Warn("record telegram recovery delivery failed", "error", err)
+		}
+		p.telegramSentAlertCache.Delete(delivery.NotificationID)
+		recoveredCount++
 	}
 
 	if sentCount > 0 || recoveredCount > 0 {
 		logger.Debug("telegram dispatch cycle completed", "sent", sentCount, "recovered", recoveredCount, "active", len(notifications))
 	}
 	return firstErr
+}
+
+func telegramAlertNeedsFlapSuppression(alert domain.PlatformAlert) bool {
+	if alert.Scope == "runtime" && alert.ID != "" && strings.HasPrefix(alert.ID, "runtime-stale-") {
+		return true
+	}
+	return alert.Scope == "live" && alert.Title == "实盘运行时告警" && alert.Detail == "stale-source-states"
+}
+
+func telegramDeliveryNeedsFlapSuppression(delivery domain.NotificationDelivery) bool {
+	if delivery.NotificationID == "" {
+		return false
+	}
+	if strings.HasPrefix(delivery.NotificationID, "runtime-stale-") {
+		return true
+	}
+	if delivery.Metadata == nil {
+		return false
+	}
+	return stringValue(delivery.Metadata["flapSuppressionKey"]) == "live-stale-source-states"
+}
+
+func (p *Platform) advanceTelegramFlapSuppressedActiveDelivery(
+	item domain.PlatformNotification,
+	delivery domain.NotificationDelivery,
+	hasDelivery bool,
+	now time.Time,
+) (domain.NotificationDelivery, bool, error) {
+	metadata := cloneMetadata(delivery.Metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["title"] = item.Alert.Title
+	metadata["scope"] = item.Alert.Scope
+	metadata["detail"] = item.Alert.Detail
+	metadata["firstActiveAt"] = firstNonEmpty(stringValue(metadata["firstActiveAt"]), now.Format(time.RFC3339))
+	if item.Alert.Scope == "live" {
+		metadata["flapSuppressionKey"] = "live-stale-source-states"
+	}
+	delete(metadata, "resolveObservedAt")
+
+	if hasDelivery {
+		switch {
+		case strings.EqualFold(delivery.Status, "sent"):
+			return delivery, false, nil
+		case strings.EqualFold(delivery.Status, "resolve_pending"):
+			nextDelivery, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", "", metadata)
+			return nextDelivery, false, err
+		case strings.EqualFold(delivery.Status, "pending"):
+			firstActiveAt := parseOptionalRFC3339(stringValue(metadata["firstActiveAt"]))
+			if firstActiveAt.IsZero() {
+				firstActiveAt = now
+				metadata["firstActiveAt"] = now.Format(time.RFC3339)
+			}
+			if now.Sub(firstActiveAt) < telegramFlapSendGrace {
+				nextDelivery, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "pending", "", metadata)
+				return nextDelivery, false, err
+			}
+		}
+	}
+
+	if !hasDelivery || !strings.EqualFold(delivery.Status, "pending") {
+		nextDelivery, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "pending", "", metadata)
+		return nextDelivery, false, err
+	}
+	if err := p.sendTelegramMessage(formatTelegramNotification(item)); err != nil {
+		return domain.NotificationDelivery{}, false, err
+	}
+	nextDelivery, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "sent", "", metadata)
+	return nextDelivery, true, err
+}
+
+func (p *Platform) advanceTelegramFlapSuppressedRecoveredDelivery(delivery domain.NotificationDelivery, now time.Time) (domain.NotificationDelivery, bool, error) {
+	metadata := cloneMetadata(delivery.Metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	if strings.EqualFold(delivery.Status, "pending") {
+		nextDelivery, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "recovered", "", metadata)
+		return nextDelivery, false, err
+	}
+	if !strings.EqualFold(delivery.Status, "sent") && !strings.EqualFold(delivery.Status, "resolve_pending") {
+		return delivery, false, nil
+	}
+	resolveObservedAt := parseOptionalRFC3339(stringValue(metadata["resolveObservedAt"]))
+	if strings.EqualFold(delivery.Status, "sent") || resolveObservedAt.IsZero() {
+		metadata["resolveObservedAt"] = now.Format(time.RFC3339)
+		nextDelivery, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "resolve_pending", "", metadata)
+		return nextDelivery, false, err
+	}
+	if now.Sub(resolveObservedAt) < telegramFlapRecoverGrace {
+		nextDelivery, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "resolve_pending", "", metadata)
+		return nextDelivery, false, err
+	}
+
+	titleRaw, ok := p.telegramSentAlertCache.Load(delivery.NotificationID)
+	title := "未知告警"
+	if ok {
+		title = titleRaw.(string)
+	} else if persistentTitle, exists := metadata["title"]; exists {
+		title = fmt.Sprintf("%v", persistentTitle)
+	}
+	recoveryMsg := fmt.Sprintf("✅ *[已恢复]* %s\n告警已自动解除。ID: %s", title, delivery.NotificationID)
+	if err := p.sendTelegramMessage(recoveryMsg); err != nil {
+		return domain.NotificationDelivery{}, false, err
+	}
+	nextDelivery, err := p.store.UpsertNotificationDelivery(delivery.NotificationID, "telegram", "recovered", "", metadata)
+	if err != nil {
+		return domain.NotificationDelivery{}, false, err
+	}
+	p.telegramSentAlertCache.Delete(delivery.NotificationID)
+	return nextDelivery, true, nil
 }
