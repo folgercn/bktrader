@@ -44,7 +44,7 @@ func TestTelegramNotificationRecovery(t *testing.T) {
 	// 2. 模拟场景：已发送告警，但现在不再活跃
 	notificationID := "alert-123"
 	alertTitle := "数据同步异常"
-	
+
 	// 模拟核心记录：
 	// a. Store 中有已发送记录
 	_, _ = store.UpsertNotificationDelivery(notificationID, "telegram", "sent", "", nil)

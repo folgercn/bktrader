@@ -54,7 +54,7 @@ func TestPlatformRuntimeQuietIsolation(t *testing.T) {
 	}
 
 	binding := domain.AccountSignalBinding{StreamType: "signal_bar"}
-	
+
 	// 设置只含有 runtimeQuietSeconds 的覆盖
 	sessionState := map[string]any{
 		"freshnessOverride": map[string]any{

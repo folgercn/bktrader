@@ -66,10 +66,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				DefaultOrderQty                           any    `json:"defaultOrderQuantity"`
 				DispatchMode                              string `json:"dispatchMode"`
 				DispatchCooldownSec                       int    `json:"dispatchCooldownSeconds"`
-				FreshnessOverrideSignalBarFreshnessSecs  any    `json:"freshnessOverrideSignalBarFreshnessSeconds"`
-				FreshnessOverrideTradeTickFreshnessSecs  any    `json:"freshnessOverrideTradeTickFreshnessSeconds"`
-				FreshnessOverrideOrderBookFreshnessSecs  any    `json:"freshnessOverrideOrderBookFreshnessSeconds"`
-				FreshnessOverrideRuntimeQuietSecs        any    `json:"freshnessOverrideRuntimeQuietSeconds"`
+				FreshnessOverrideSignalBarFreshnessSecs   any    `json:"freshnessOverrideSignalBarFreshnessSeconds"`
+				FreshnessOverrideTradeTickFreshnessSecs   any    `json:"freshnessOverrideTradeTickFreshnessSeconds"`
+				FreshnessOverrideOrderBookFreshnessSecs   any    `json:"freshnessOverrideOrderBookFreshnessSeconds"`
+				FreshnessOverrideRuntimeQuietSecs         any    `json:"freshnessOverrideRuntimeQuietSeconds"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -300,10 +300,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				DefaultOrderQty                           any    `json:"defaultOrderQuantity"`
 				DispatchMode                              string `json:"dispatchMode"`
 				DispatchCooldownSec                       int    `json:"dispatchCooldownSeconds"`
-				FreshnessOverrideSignalBarFreshnessSecs  any    `json:"freshnessOverrideSignalBarFreshnessSeconds"`
-				FreshnessOverrideTradeTickFreshnessSecs  any    `json:"freshnessOverrideTradeTickFreshnessSeconds"`
-				FreshnessOverrideOrderBookFreshnessSecs  any    `json:"freshnessOverrideOrderBookFreshnessSeconds"`
-				FreshnessOverrideRuntimeQuietSecs        any    `json:"freshnessOverrideRuntimeQuietSeconds"`
+				FreshnessOverrideSignalBarFreshnessSecs   any    `json:"freshnessOverrideSignalBarFreshnessSeconds"`
+				FreshnessOverrideTradeTickFreshnessSecs   any    `json:"freshnessOverrideTradeTickFreshnessSeconds"`
+				FreshnessOverrideOrderBookFreshnessSecs   any    `json:"freshnessOverrideOrderBookFreshnessSeconds"`
+				FreshnessOverrideRuntimeQuietSecs         any    `json:"freshnessOverrideRuntimeQuietSeconds"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
