@@ -481,11 +481,7 @@ func (p *Platform) signalSourceFreshnessWindow(binding domain.AccountSignalBindi
 }
 
 func (p *Platform) signalSourceFreshnessWindowWithOverride(binding domain.AccountSignalBinding, sessionState map[string]any) time.Duration {
-	if value, ok := toFloat64(binding.Options["freshnessSeconds"]); ok && value > 0 {
-		return time.Duration(value) * time.Second
-	}
-
-	// 尝试从 session state 的 freshnessOverride 中读取
+	// 1. 优先尝试从 session state 的 freshnessOverride 中读取 (会话级最高优先级覆盖)
 	if override := mapValue(sessionState["freshnessOverride"]); override != nil {
 		var key string
 		switch strings.ToLower(strings.TrimSpace(binding.StreamType)) {
@@ -501,12 +497,14 @@ func (p *Platform) signalSourceFreshnessWindowWithOverride(binding domain.Accoun
 				return time.Duration(val) * time.Second
 			}
 		}
-		// 运行时静默覆盖（当没有匹配到具体 streamType 时作为 fallback）
-		if val, ok := toFloat64(override["runtimeQuietSeconds"]); ok && val > 0 {
-			return time.Duration(val) * time.Second
-		}
 	}
 
+	// 2. 其次尝试从绑定选项中读取 (launch/template 级配置)
+	if value, ok := toFloat64(binding.Options["freshnessSeconds"]); ok && value > 0 {
+		return time.Duration(value) * time.Second
+	}
+
+	// 3. 最后回退到全局默认策略
 	switch strings.ToLower(strings.TrimSpace(binding.StreamType)) {
 	case "trade_tick":
 		return time.Duration(p.runtimePolicy.TradeTickFreshnessSeconds) * time.Second

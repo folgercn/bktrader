@@ -12,6 +12,8 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
+var telegramBaseURL = "https://api.telegram.org"
+
 func (p *Platform) SendNotificationToTelegram(notificationID string) error {
 	logger := p.logger("service.telegram", "notification_id", strings.TrimSpace(notificationID))
 	notifications, err := p.ListNotifications(true)
@@ -55,7 +57,7 @@ func (p *Platform) sendTelegramMessage(text string) error {
 		"text":    text,
 	}
 	raw, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", config.BotToken), bytes.NewReader(raw))
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/bot%s/sendMessage", telegramBaseURL, config.BotToken), bytes.NewReader(raw))
 	if err != nil {
 		return err
 	}
