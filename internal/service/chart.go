@@ -4,8 +4,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -149,32 +147,28 @@ func fetchBinanceFuturesCandles(symbol string, resolution string, from int64, to
 	if strings.TrimSpace(endpoint) == "" {
 		endpoint = "https://fapi.binance.com"
 	}
-	baseURL := strings.TrimRight(endpoint, "/") + "/fapi/v1/klines"
-	params := url.Values{}
-	params.Set("symbol", NormalizeSymbol(symbol))
-	params.Set("interval", interval)
+	params := map[string]string{
+		"symbol":   NormalizeSymbol(symbol),
+		"interval": interval,
+	}
 	if limit > 0 {
 		if limit > 1500 {
 			limit = 1500
 		}
-		params.Set("limit", strconv.Itoa(limit))
+		params["limit"] = strconv.Itoa(limit)
 	}
 	if from > 0 {
-		params.Set("startTime", strconv.FormatInt(from*1000, 10))
+		params["startTime"] = strconv.FormatInt(from*1000, 10)
 	}
 	if to > 0 {
-		params.Set("endTime", strconv.FormatInt(to*1000, 10))
+		params["endTime"] = strconv.FormatInt(to*1000, 10)
 	}
-	resp, err := http.Get(baseURL + "?" + params.Encode())
+	responseBody, _, err := doBinancePublicGET(endpoint, "/fapi/v1/klines", params, binanceRESTCategoryMarketData)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("binance klines request failed: %s", resp.Status)
-	}
 	var payload [][]any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
 		return nil, err
 	}
 	bars := make([]candleBar, 0, len(payload))

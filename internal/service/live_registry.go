@@ -271,7 +271,7 @@ func (a binanceFuturesLiveAdapter) FetchRecentOrders(account domain.Account, bin
 		"limit":      "1000",
 	}
 	params["signature"] = signBinanceQuery(params, resolved.APISecret)
-	payload, err := doBinanceSignedRequest(http.MethodGet, resolved, "/fapi/v1/allOrders", params)
+	payload, err := doBinanceSignedRequest(http.MethodGet, resolved, "/fapi/v1/allOrders", params, binanceRESTCategoryHistoryRead)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +431,7 @@ func (a binanceFuturesLiveAdapter) submitRESTOrder(account domain.Account, order
 		params["closePosition"] = "true"
 	}
 	params["signature"] = signBinanceQuery(params, resolved.APISecret)
-	responseBody, err := doBinanceSignedRequest(http.MethodPost, resolved, "/fapi/v1/order", params)
+	responseBody, err := doBinanceSignedRequest(http.MethodPost, resolved, "/fapi/v1/order", params, binanceRESTCategoryTradeCritical)
 	if err != nil {
 		return LiveOrderSubmission{}, err
 	}
@@ -502,7 +502,7 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 		params["origClientOrderId"] = order.ID
 	}
 	params["signature"] = signBinanceQuery(params, resolved.APISecret)
-	responseBody, err := doBinanceSignedRequest(http.MethodGet, resolved, "/fapi/v1/order", params)
+	responseBody, err := doBinanceSignedRequest(http.MethodGet, resolved, "/fapi/v1/order", params, binanceRESTCategoryTradeCritical)
 	if err != nil {
 		return LiveOrderSync{}, err
 	}
@@ -593,7 +593,7 @@ func (a binanceFuturesLiveAdapter) cancelRESTOrder(account domain.Account, order
 		params["origClientOrderId"] = order.ID
 	}
 	params["signature"] = signBinanceQuery(params, resolved.APISecret)
-	responseBody, err := doBinanceSignedRequest(http.MethodDelete, resolved, "/fapi/v1/order", params)
+	responseBody, err := doBinanceSignedRequest(http.MethodDelete, resolved, "/fapi/v1/order", params, binanceRESTCategoryTradeCritical)
 	if err != nil {
 		return LiveOrderSync{}, err
 	}
@@ -639,7 +639,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReports(account domain.Account,
 	if exchangeOrderID := normalizeBinanceOrderID(order.Metadata["exchangeOrderId"], nil); exchangeOrderID != "" {
 		params["orderId"] = exchangeOrderID
 	}
-	payload, err := binanceSignedGET(resolved, "/fapi/v1/userTrades", params)
+	payload, err := binanceSignedGETWithCategory(resolved, "/fapi/v1/userTrades", params, binanceRESTCategoryHistoryRead)
 	if err != nil {
 		return nil, err
 	}
@@ -661,7 +661,7 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReportsForSymbol(account domain
 		"endTime":    fmt.Sprintf("%d", endTime.UnixMilli()),
 		"limit":      "1000",
 	}
-	payload, err := binanceSignedGET(resolved, "/fapi/v1/userTrades", params)
+	payload, err := binanceSignedGETWithCategory(resolved, "/fapi/v1/userTrades", params, binanceRESTCategoryHistoryRead)
 	if err != nil {
 		return nil, err
 	}
@@ -770,6 +770,17 @@ var (
 	binanceRESTBackoffDuration   = 60 * time.Second
 )
 
+type binanceRESTRequestCategory string
+
+const (
+	binanceRESTCategoryTradeCritical binanceRESTRequestCategory = "trade-critical"
+	binanceRESTCategoryAccountSync   binanceRESTRequestCategory = "account-sync"
+	binanceRESTCategoryReconcile     binanceRESTRequestCategory = "reconcile"
+	binanceRESTCategoryHistoryRead   binanceRESTRequestCategory = "history-read"
+	binanceRESTCategoryMetadataRead  binanceRESTRequestCategory = "metadata-read"
+	binanceRESTCategoryMarketData    binanceRESTRequestCategory = "market-data"
+)
+
 type binanceRESTLimiter struct {
 	mu    sync.Mutex
 	gates map[string]*binanceRESTGate
@@ -847,8 +858,12 @@ func (g *binanceRESTGate) markBackoff(duration time.Duration) {
 	g.mu.Unlock()
 }
 
-func binanceRESTLimiterKey(creds binanceRESTCredentials) string {
-	return creds.BaseURL + "|" + creds.APIKeyRef
+func binanceRESTLimiterKey(baseURL string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/")
+}
+
+func binanceRESTLimiterKeyForCreds(creds binanceRESTCredentials) string {
+	return binanceRESTLimiterKey(creds.BaseURL)
 }
 
 func parseBinanceRetryAfter(headers http.Header) time.Duration {
@@ -1014,29 +1029,20 @@ func fetchBinanceSymbolRules(creds binanceRESTCredentials, symbol string) (binan
 	if ok && time.Since(cached.UpdatedAt) < 30*time.Minute {
 		return cached, nil
 	}
-	requestURL := creds.BaseURL + "/fapi/v1/exchangeInfo?symbol=" + url.QueryEscape(normalizedSymbol)
-	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(creds))
-	if err := gate.acquire(); err != nil {
-		return binanceSymbolRules{}, err
-	}
-	request, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	responseBody, _, err := doBinancePublicGET(
+		creds.BaseURL,
+		"/fapi/v1/exchangeInfo",
+		map[string]string{"symbol": normalizedSymbol},
+		binanceRESTCategoryMetadataRead,
+	)
 	if err != nil {
+		if strings.Contains(err.Error(), "rate-limited") {
+			return binanceSymbolRules{}, err
+		}
+		if strings.HasPrefix(err.Error(), "binance request failed:") {
+			return binanceSymbolRules{}, fmt.Errorf("binance exchangeInfo failed: %s", strings.TrimPrefix(err.Error(), "binance request failed: "))
+		}
 		return binanceSymbolRules{}, err
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return binanceSymbolRules{}, err
-	}
-	defer response.Body.Close()
-	responseBody, readErr := io.ReadAll(response.Body)
-	if readErr != nil {
-		return binanceSymbolRules{}, readErr
-	}
-	if response.StatusCode == http.StatusTooManyRequests {
-		gate.markBackoff(firstPositiveDuration(parseBinanceRetryAfter(response.Header), binanceRESTBackoffDuration))
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return binanceSymbolRules{}, fmt.Errorf("binance exchangeInfo failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(responseBody, &payload); err != nil {
@@ -1204,9 +1210,13 @@ func decimalPlacesForStep(step float64) int {
 }
 
 func binanceSignedGET(creds binanceRESTCredentials, path string, params map[string]string) ([]byte, error) {
+	return binanceSignedGETWithCategory(creds, path, params, binanceRESTCategoryTradeCritical)
+}
+
+func binanceSignedGETWithCategory(creds binanceRESTCredentials, path string, params map[string]string, category binanceRESTRequestCategory) ([]byte, error) {
 	params = cloneStringMap(params)
 	params["signature"] = signBinanceQuery(params, creds.APISecret)
-	return doBinanceSignedRequest(http.MethodGet, creds, path, params)
+	return doBinanceSignedRequest(http.MethodGet, creds, path, params, category)
 }
 
 func cloneStringMap(input map[string]string) map[string]string {
@@ -1220,44 +1230,61 @@ func cloneStringMap(input map[string]string) map[string]string {
 	return out
 }
 
-func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path string, params map[string]string) ([]byte, error) {
-	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(creds))
-	if err := gate.acquire(); err != nil {
-		return nil, err
-	}
+func doBinancePublicGET(baseURL, path string, params map[string]string, category binanceRESTRequestCategory) ([]byte, http.Header, error) {
 	query := encodeBinanceQuery(params, false)
-	requestURL := creds.BaseURL + path
+	return doBinanceRESTRequest(http.MethodGet, baseURL, path, query, nil, nil, category)
+}
+
+func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path string, params map[string]string, category binanceRESTRequestCategory) ([]byte, error) {
+	query := encodeBinanceQuery(params, false)
+	headers := map[string]string{
+		"X-MBX-APIKEY": creds.APIKey,
+		"Content-Type": "application/x-www-form-urlencoded",
+	}
 	var body io.Reader
-	if method == http.MethodGet || method == http.MethodDelete {
-		requestURL += "?" + query
-	} else {
+	if method != http.MethodGet && method != http.MethodDelete {
 		body = strings.NewReader(query)
+		headers["Accept"] = "application/json"
+	}
+	responseBody, _, err := doBinanceRESTRequest(method, creds.BaseURL, path, query, headers, body, category)
+	return responseBody, err
+}
+
+func doBinanceRESTRequest(method, baseURL, path, query string, headers map[string]string, body io.Reader, category binanceRESTRequestCategory) ([]byte, http.Header, error) {
+	// Categories are tracked now so later PRs can add per-class scheduling without
+	// changing call sites again; this pass only unifies enforcement under one gate.
+	_ = category
+	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(baseURL))
+	if err := gate.acquire(); err != nil {
+		return nil, nil, err
+	}
+	requestURL := strings.TrimRight(baseURL, "/") + path
+	if (method == http.MethodGet || method == http.MethodDelete) && query != "" {
+		requestURL += "?" + query
 	}
 	request, err := http.NewRequest(method, requestURL, body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	request.Header.Set("X-MBX-APIKEY", creds.APIKey)
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if method != http.MethodGet && method != http.MethodDelete {
-		request.Header.Set("Accept", "application/json")
+	for key, value := range headers {
+		request.Header.Set(key, value)
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer response.Body.Close()
 	responseBody, readErr := io.ReadAll(response.Body)
 	if readErr != nil {
-		return nil, readErr
+		return nil, response.Header, readErr
 	}
 	if response.StatusCode == http.StatusTooManyRequests {
 		gate.markBackoff(firstPositiveDuration(parseBinanceRetryAfter(response.Header), binanceRESTBackoffDuration))
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("binance request failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
+		return nil, response.Header, fmt.Errorf("binance request failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
 	}
-	return responseBody, nil
+	return responseBody, response.Header, nil
 }
 
 func firstPositiveDuration(values ...time.Duration) time.Duration {
