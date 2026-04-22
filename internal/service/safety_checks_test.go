@@ -151,6 +151,61 @@ func TestSignalRuntimeSessionForceActionsRespectSafetyLock(t *testing.T) {
 	}
 }
 
+func TestStopLiveFlowWithForceSucceedsWhenLiveStopAlreadyStoppedLinkedRuntime(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal failed: %v", err)
+	}
+
+	session, err := platform.store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	runtime, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("create runtime failed: %v", err)
+	}
+	if _, err := platform.StartSignalRuntimeSession(runtime.ID); err != nil {
+		t.Fatalf("start runtime failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionState(session.ID, map[string]any{
+		"signalRuntimeSessionId": runtime.ID,
+	}); err != nil {
+		t.Fatalf("link runtime into live session state failed: %v", err)
+	}
+
+	result, err := platform.StopLiveFlowWithForce("live-main", false)
+	if err != nil {
+		t.Fatalf("StopLiveFlowWithForce failed: %v", err)
+	}
+	if len(result.StoppedLiveSessionIDs) != 1 || result.StoppedLiveSessionIDs[0] != session.ID {
+		t.Fatalf("expected stopped live session %s, got %#v", session.ID, result.StoppedLiveSessionIDs)
+	}
+	if len(result.StoppedRuntimeSessionIDs) != 1 || result.StoppedRuntimeSessionIDs[0] != runtime.ID {
+		t.Fatalf("expected stopped runtime session %s, got %#v", runtime.ID, result.StoppedRuntimeSessionIDs)
+	}
+
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session failed: %v", err)
+	}
+	if updatedSession.Status != "STOPPED" {
+		t.Fatalf("expected live session STOPPED, got %s", updatedSession.Status)
+	}
+	updatedRuntime, err := platform.GetSignalRuntimeSession(runtime.ID)
+	if err != nil {
+		t.Fatalf("reload runtime failed: %v", err)
+	}
+	if updatedRuntime.Status != "STOPPED" {
+		t.Fatalf("expected runtime STOPPED, got %s", updatedRuntime.Status)
+	}
+}
+
 func TestClosePositionCreatesReduceOnlyMarketOrder(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	account, err := platform.CreateAccount("Paper Close", "PAPER", "binance-futures")
