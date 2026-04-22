@@ -538,6 +538,7 @@ func (p *Platform) applyLiveSubmissionResult(
 	}
 	delete(order.Metadata, "liveSubmitError")
 	order.Status = firstNonEmpty(submission.Status, "ACCEPTED")
+	adoptNormalizedLiveSubmissionValues(&order, submission.Metadata)
 	order.Metadata["exchangeOrderId"] = submission.ExchangeOrderID
 	order.Metadata["acceptedAt"] = submission.AcceptedAt
 	order.Metadata["adapterSubmission"] = submission.Metadata
@@ -575,6 +576,29 @@ func (p *Platform) applyLiveSubmissionResult(
 		return settledOrder, nil
 	}
 	return updatedOrder, nil
+}
+
+func adoptNormalizedLiveSubmissionValues(order *domain.Order, submissionMetadata map[string]any) {
+	if order == nil {
+		return
+	}
+	submission := cloneMetadata(submissionMetadata)
+	if len(submission) == 0 {
+		return
+	}
+	normalization := mapValue(submission["normalization"])
+	if quantity := firstPositive(
+		parseFloatValue(submission["normalizedQuantity"]),
+		parseFloatValue(normalization["normalizedQuantity"]),
+	); quantity > 0 {
+		order.Quantity = quantity
+	}
+	if price := firstPositive(
+		parseFloatValue(submission["normalizedPrice"]),
+		parseFloatValue(normalization["normalizedPrice"]),
+	); price > 0 {
+		order.Price = price
+	}
 }
 
 func markLiveSettlementSyncRetry(order domain.Order, err error) domain.Order {
@@ -784,6 +808,7 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 		"symbol", NormalizeSymbol(order.Symbol),
 	)
 	order.Metadata = cloneMetadata(order.Metadata)
+	adoptNormalizedLiveSubmissionValues(&order, mapValue(order.Metadata["adapterSubmission"]))
 	applyExecutionMetadata(order.Metadata, map[string]any{
 		"lastSyncAt":           syncResult.SyncedAt,
 		"syncMode":             "adapter",

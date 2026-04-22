@@ -738,6 +738,166 @@ func TestCreateLiveOrderImmediateFilledSubmissionSettlesReduceOnlyExit(t *testin
 	}
 }
 
+func TestCreateOrderAdoptsNormalizedLiveSubmissionValues(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{
+		key: "test-normalized-submission-values",
+		submitResult: LiveOrderSubmission{
+			Status:          "ACCEPTED",
+			ExchangeOrderID: "exchange-order-normalized-1",
+			AcceptedAt:      "2026-04-22T10:00:00Z",
+			Metadata: map[string]any{
+				"adapterMode":        "rest",
+				"executionMode":      "rest",
+				"rawQuantity":        0.00213794,
+				"rawPriceReference":  68643.67,
+				"normalizedQuantity": 0.002,
+				"normalizedPrice":    68643.6,
+				"normalization": map[string]any{
+					"rawQuantity":        0.00213794,
+					"rawPriceReference":  68643.67,
+					"normalizedQuantity": 0.002,
+					"normalizedPrice":    68643.6,
+				},
+			},
+		},
+	}
+	platform.registerLiveAdapter(adapter)
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": adapter.key,
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	order, err := platform.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "LIMIT",
+		Quantity:          0.00213794,
+		Price:             68643.67,
+		Metadata: map[string]any{
+			"skipRuntimeCheck": true,
+			"executionProposal": map[string]any{
+				"role":       "entry",
+				"signalKind": "initial-entry-near",
+				"reason":     "Zero-Initial-Reentry",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	if got := order.Status; got != "ACCEPTED" {
+		t.Fatalf("expected accepted order, got %s", got)
+	}
+	if got := order.Quantity; got != 0.002 {
+		t.Fatalf("expected stored quantity to adopt normalized value 0.002, got %v", got)
+	}
+	if got := order.Price; got != 68643.6 {
+		t.Fatalf("expected stored price to adopt normalized value 68643.6, got %v", got)
+	}
+
+	orders, err := store.ListOrders()
+	if err != nil {
+		t.Fatalf("list orders failed: %v", err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("expected one persisted order, got %d", len(orders))
+	}
+	if got := orders[0].Quantity; got != 0.002 {
+		t.Fatalf("expected persisted quantity to use normalized value 0.002, got %v", got)
+	}
+	if got := orders[0].Price; got != 68643.6 {
+		t.Fatalf("expected persisted price to use normalized value 68643.6, got %v", got)
+	}
+	submission := mapValue(order.Metadata["adapterSubmission"])
+	if got := parseFloatValue(submission["rawQuantity"]); got != 0.00213794 {
+		t.Fatalf("expected adapter submission to preserve raw quantity, got %v", got)
+	}
+	if got := parseFloatValue(submission["normalizedQuantity"]); got != 0.002 {
+		t.Fatalf("expected adapter submission normalizedQuantity 0.002, got %v", got)
+	}
+}
+
+func TestApplyLiveSyncResultHealsStoredQuantityFromNormalizedSubmission(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	order, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Quantity:          0.00213794,
+		Price:             68643.67,
+		Status:            "ACCEPTED",
+		Metadata: map[string]any{
+			"executionMode": "live",
+			"adapterSubmission": map[string]any{
+				"rawQuantity":        0.00213794,
+				"rawPriceReference":  68643.67,
+				"normalizedQuantity": 0.002,
+				"normalizedPrice":    68643.6,
+				"normalization": map[string]any{
+					"rawQuantity":        0.00213794,
+					"rawPriceReference":  68643.67,
+					"normalizedQuantity": 0.002,
+					"normalizedPrice":    68643.6,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	synced, err := platform.applyLiveSyncResult(account, order, LiveOrderSync{
+		Status:   "FILLED",
+		SyncedAt: "2026-04-22T10:00:01Z",
+		Fills: []LiveFillReport{{
+			Price:    68643.6,
+			Quantity: 0.002,
+			Fee:      0.01,
+			Metadata: map[string]any{
+				"exchangeOrderId": "exchange-order-normalized-2",
+				"tradeId":         "trade-normalized-2",
+				"tradeTime":       "2026-04-22T10:00:01Z",
+			},
+		}},
+		Terminal: true,
+	})
+	if err != nil {
+		t.Fatalf("apply live sync result failed: %v", err)
+	}
+
+	if got := synced.Quantity; got != 0.002 {
+		t.Fatalf("expected synced order quantity to heal to 0.002, got %v", got)
+	}
+	if got := synced.Price; got != 68643.6 {
+		t.Fatalf("expected synced order price to heal to 68643.6, got %v", got)
+	}
+	if got := synced.Status; got != "FILLED" {
+		t.Fatalf("expected healed order to settle FILLED, got %s", got)
+	}
+	if got := parseFloatValue(synced.Metadata["filledQuantity"]); got != 0.002 {
+		t.Fatalf("expected healed order filledQuantity 0.002, got %v", got)
+	}
+	if got := parseFloatValue(synced.Metadata["remainingQuantity"]); got != 0 {
+		t.Fatalf("expected healed order remainingQuantity 0, got %v", got)
+	}
+}
+
 func TestClosePositionImmediatelySettlesFilledLiveManualClose(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
