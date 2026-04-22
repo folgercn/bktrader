@@ -395,7 +395,9 @@ func shouldBlockAutoDispatchForRecoveryIntent(session domain.LiveSession, intent
 		return true
 	}
 	recoveryActions := currentLiveRecoveryActionMatrix(session.State)
-	if boolValue(session.State["recoveryTakeoverActive"]) && !recoveryActions.AutoDispatch {
+	if boolValue(session.State["recoveryTakeoverActive"]) &&
+		!recoveryActions.AutoDispatch &&
+		!shouldAllowAutoDispatchRecoveredClose(session, intent, recoveryActions) {
 		return true
 	}
 	if !isRecoveryTriggeredPassiveCloseProposal(intent) {
@@ -410,6 +412,31 @@ func shouldBlockAutoDispatchForRecoveryIntent(session domain.LiveSession, intent
 	}
 	proposalMap := assembleLiveExecutionProposalMetadata(session, "", intent)
 	return validateLiveExecutionProposalMetadata(session, proposalMap) != nil
+}
+
+// Verified takeover sessions may auto-dispatch close intents so recovered
+// positions can be exited without reopening manual-review debt. Entry/protection
+// intents remain blocked until the recovery state clears.
+func shouldAllowAutoDispatchRecoveredClose(session domain.LiveSession, intent map[string]any, recoveryActions liveRecoveryActionMatrix) bool {
+	if !boolValue(session.State["recoveryTakeoverActive"]) || recoveryActions.CloseExistingPosition == false {
+		return false
+	}
+	if strings.TrimSpace(stringValue(session.State["recoveryTakeoverState"])) != liveRecoveryTakeoverStateMonitoring {
+		return false
+	}
+	switch strings.TrimSpace(stringValue(session.State["positionReconcileGateStatus"])) {
+	case livePositionReconcileGateStatusVerified, livePositionReconcileGateStatusAdopted:
+	default:
+		return false
+	}
+	if resolveLiveRecoveryIntentAction(intent) != "close-existing-position" {
+		return false
+	}
+	if !boolValue(session.State["hasRecoveredPosition"]) && !boolValue(session.State["hasRecoveredRealPosition"]) {
+		return false
+	}
+	proposalMap := assembleLiveExecutionProposalMetadata(session, "", intent)
+	return validateLiveExecutionProposalMetadata(session, proposalMap) == nil
 }
 
 func shouldBlockAutoDispatchForLiveEntryTradeLimit(session domain.LiveSession, intent map[string]any) bool {

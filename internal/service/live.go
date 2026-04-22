@@ -3982,6 +3982,10 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 	quantity := firstPositive(parseFloatValue(meta["suggestedQuantity"]), 0.001)
 	role := strings.ToLower(strings.TrimSpace(firstNonEmpty(stringValue(meta["nextPlannedRole"]), "entry")))
 	reason := stringValue(meta["nextPlannedReason"])
+	currentPosition := cloneMetadata(mapValue(meta["currentPosition"]))
+	if role == "exit" {
+		quantity = firstPositive(math.Abs(parseFloatValue(currentPosition["quantity"])), quantity)
+	}
 
 	return &SignalIntent{
 		Action:         role,
@@ -4009,6 +4013,7 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 			"bestAsk":                       bestAsk,
 			"bestBidQty":                    bestBidQty,
 			"bestAskQty":                    bestAskQty,
+			"currentPosition":               currentPosition,
 			"bookImbalance":                 parseFloatValue(meta["bookImbalance"]),
 		},
 	}

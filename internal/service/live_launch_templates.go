@@ -117,6 +117,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		baselineNotes := []string{}
 		if applyResearchBaseline {
 			liveOverrides["strategyEngine"] = firstNonEmpty(strategyEngine, "bk-default")
+			liveOverrides["positionSizingMode"] = "reentry_size_schedule"
 			liveOverrides["dir2_zero_initial"] = true
 			liveOverrides["zero_initial_mode"] = "reentry_window"
 			liveOverrides["stop_mode"] = "atr"

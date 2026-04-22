@@ -96,6 +96,9 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 			t.Fatalf("expected defaultOrderQuantity=%v, got %v", want.quantity, got)
 		}
 		if want.researchBaseline {
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "reentry_size_schedule" {
+				t.Fatalf("expected positionSizingMode=reentry_size_schedule for %s, got %s", item.Key, got)
+			}
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got == "" {
 				t.Fatalf("expected explicit strategyEngine for %s", item.Key)
 			}

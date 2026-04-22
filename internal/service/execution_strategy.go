@@ -351,6 +351,8 @@ func normalizePositionSizingMode(raw any) string {
 		return "fixed_quantity"
 	case "fixed-fraction", "fixed_fraction", "fraction", "percent", "percentage":
 		return "fixed_fraction"
+	case "reentry-size-schedule", "reentry_size_schedule", "reentry-schedule", "reentry_schedule", "schedule":
+		return "reentry_size_schedule"
 	case "volatility-adjusted", "volatility_adjusted", "vol_adjusted", "atr_adjusted":
 		return "volatility_adjusted"
 	default:
@@ -377,6 +379,12 @@ func resolveExecutionQuantity(session domain.LiveSession, account domain.Account
 	}
 	if fixedFraction > 0 {
 		metadata["configuredOrderFraction"] = fixedFraction
+	}
+	if quantity, ok := resolveExitPositionQuantity(intent, metadata); ok {
+		return quantity, metadata
+	}
+	if quantity, ok := resolveReentryScheduleQuantity(session, account, parameters, intent, priceHint, mode, metadata); ok {
+		return quantity, metadata
 	}
 	if mode == "fixed_fraction" && fixedFraction > 0 && priceHint > 0 {
 		if balance, basis := resolveLiveSizingBalance(account); balance > 0 {
@@ -429,6 +437,75 @@ func resolveExecutionQuantity(session domain.LiveSession, account domain.Account
 		metadata["sizingBalanceBasis"] = "default_minimum"
 	}
 	return quantity, metadata
+}
+
+func resolveExitPositionQuantity(intent SignalIntent, metadata map[string]any) (float64, bool) {
+	if !strings.EqualFold(strings.TrimSpace(intent.Role), "exit") {
+		return 0, false
+	}
+	currentPosition := mapValue(intent.Metadata["currentPosition"])
+	if quantity := math.Abs(parseFloatValue(currentPosition["quantity"])); quantity > 0 {
+		metadata["sizingMethod"] = "exit_position_quantity"
+		metadata["sizingPositionQuantity"] = quantity
+		metadata["sizingComputedQuantity"] = quantity
+		return quantity, true
+	}
+	if intent.Quantity > 0 {
+		metadata["sizingMethod"] = "exit_intent_quantity"
+		metadata["sizingComputedQuantity"] = intent.Quantity
+		return intent.Quantity, true
+	}
+	return 0, false
+}
+
+func resolveReentryScheduleQuantity(session domain.LiveSession, account domain.Account, parameters map[string]any, intent SignalIntent, priceHint float64, mode string, metadata map[string]any) (float64, bool) {
+	if !strings.EqualFold(strings.TrimSpace(intent.Role), "entry") {
+		return 0, false
+	}
+	reasonTag := normalizeStrategyReasonTag(intent.Reason)
+	if reasonTag != "zero-initial-reentry" && reasonTag != "sl-reentry" && reasonTag != "pt-reentry" {
+		return 0, false
+	}
+	if mode != "reentry_size_schedule" {
+		metadata["reentryScheduleSizingSkippedReason"] = "position_sizing_mode_" + firstNonEmpty(mode, "fixed_quantity")
+		return 0, false
+	}
+	schedule := normalizeBacktestFloatSlice(parameters["reentry_size_schedule"], nil)
+	if len(schedule) == 0 {
+		return 0, false
+	}
+	index := int(effectiveReentryCountForSizing(session.State, intent.Metadata))
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(schedule) {
+		index = len(schedule) - 1
+	}
+	fraction := schedule[index]
+	metadata["sizingReentryReason"] = reasonTag
+	metadata["sizingReentrySchedule"] = append([]float64(nil), schedule...)
+	metadata["sizingReentryScheduleIndex"] = index
+	metadata["sizingReentryFraction"] = fraction
+	if fraction <= 0 {
+		metadata["sizingMethod"] = "reentry_size_schedule"
+		metadata["sizingFallbackReason"] = "reentry_schedule_non_positive_fraction"
+		return 0, true
+	}
+	if priceHint <= 0 {
+		metadata["reentryScheduleSizingSkippedReason"] = "missing_price"
+		return 0, false
+	}
+	balance, basis := resolveLiveSizingBalance(account)
+	if balance <= 0 {
+		metadata["reentryScheduleSizingSkippedReason"] = "missing_balance"
+		return 0, false
+	}
+	quantity := balance * fraction / priceHint
+	metadata["sizingMethod"] = "reentry_size_schedule"
+	metadata["sizingBalance"] = balance
+	metadata["sizingBalanceBasis"] = basis
+	metadata["sizingComputedQuantity"] = quantity
+	return quantity, true
 }
 
 func resolveLiveSizingBalance(account domain.Account) (float64, string) {

@@ -101,6 +101,51 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     return strategyIds.has(candidate) ? candidate : fallback;
   }
 
+  function normalizeLivePositionSizingMode(candidate: unknown, schedule: unknown) {
+    const value = String(candidate ?? "").trim().toLowerCase().replaceAll("-", "_");
+    if (value === "reentry_size_schedule" || value === "reentry_schedule" || value === "schedule") {
+      return "reentry_size_schedule";
+    }
+    if (value === "fixed_quantity" || value === "fixed_size" || value === "fixed") {
+      return "fixed_quantity";
+    }
+    if (value === "fixed_fraction" || value === "fraction" || value === "percent" || value === "percentage") {
+      return "fixed_fraction";
+    }
+    if (value === "volatility_adjusted" || value === "vol_adjusted" || value === "atr_adjusted") {
+      return "volatility_adjusted";
+    }
+    if (Array.isArray(schedule) && schedule.length >= 2 && schedule.some((item) => Number(item) > 0)) {
+      return "reentry_size_schedule";
+    }
+    return "fixed_quantity";
+  }
+
+  function readReentrySizeSchedule(raw: unknown): [string, string] {
+    if (!Array.isArray(raw)) {
+      return ["0.20", "0.10"];
+    }
+    const first = Number(raw[0]);
+    const second = Number(raw[1]);
+    return [
+      Number.isFinite(first) && first > 0 ? String(first) : "0.20",
+      Number.isFinite(second) && second > 0 ? String(second) : "0.10",
+    ];
+  }
+
+  function buildLiveSessionSizingPayload() {
+    const first = Number(liveSessionForm.reentrySizeScheduleFirst);
+    const second = Number(liveSessionForm.reentrySizeScheduleSecond);
+    return {
+      positionSizingMode: liveSessionForm.positionSizingMode || "fixed_quantity",
+      defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+      reentry_size_schedule: [
+        Number.isFinite(first) && first > 0 ? first : 0.20,
+        Number.isFinite(second) && second > 0 ? second : 0.10,
+      ],
+    };
+  }
+
   function selectQuickLiveAccount(accountId: string) {
     setLiveBindingForm((current: any) => ({ ...current, accountId }));
     setLiveSessionForm((current: any) => ({ ...current, accountId }));
@@ -399,7 +444,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
           signalTimeframe: liveSessionForm.signalTimeframe,
           executionDataSource: liveSessionForm.executionDataSource,
           symbol: liveSessionForm.symbol,
-          defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+          ...buildLiveSessionSizingPayload(),
           executionEntryOrderType: liveSessionForm.executionEntryOrderType,
           executionEntryMaxSpreadBps: Number(liveSessionForm.executionEntryMaxSpreadBps) || undefined,
           executionEntryWideSpreadMode: liveSessionForm.executionEntryWideSpreadMode,
@@ -453,7 +498,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
           signalTimeframe: liveSessionForm.signalTimeframe,
           executionDataSource: liveSessionForm.executionDataSource,
           symbol: liveSessionForm.symbol,
-          defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+          ...buildLiveSessionSizingPayload(),
           executionEntryOrderType: liveSessionForm.executionEntryOrderType,
           executionEntryMaxSpreadBps: Number(liveSessionForm.executionEntryMaxSpreadBps) || undefined,
           executionEntryWideSpreadMode: liveSessionForm.executionEntryWideSpreadMode,
@@ -568,7 +613,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
             signalTimeframe: liveSessionForm.signalTimeframe,
             executionDataSource: liveSessionForm.executionDataSource,
             symbol: liveSessionForm.symbol,
-            defaultOrderQuantity: Number(liveSessionForm.defaultOrderQuantity) || 0.001,
+            ...buildLiveSessionSizingPayload(),
             dispatchMode: liveSessionForm.dispatchMode,
             dispatchCooldownSeconds: Number(liveSessionForm.dispatchCooldownSeconds) || 30,
           },
@@ -1037,6 +1082,8 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     const nextStrategyId = normalizeStrategyId(session?.strategyId ?? "", strategies[0]?.id || "");
     const sessionState = getRecord(session?.state);
     const isEditingExistingSession = Boolean(session);
+    const [reentrySizeScheduleFirst, reentrySizeScheduleSecond] = readReentrySizeSchedule(sessionState.reentry_size_schedule);
+    const positionSizingMode = normalizeLivePositionSizingMode(sessionState.positionSizingMode, sessionState.reentry_size_schedule);
     if (nextAccountId) {
       selectQuickLiveAccount(nextAccountId);
     }
@@ -1047,8 +1094,19 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
       signalTimeframe: String(sessionState.signalTimeframe ?? (isEditingExistingSession ? "" : current.signalTimeframe ?? "1d")),
       executionDataSource: String(sessionState.executionDataSource ?? (isEditingExistingSession ? "" : current.executionDataSource ?? "tick")),
       symbol: String(sessionState.symbol ?? (isEditingExistingSession ? "" : current.symbol ?? "BTCUSDT")),
+      positionSizingMode: String(
+        sessionState.positionSizingMode != null || Array.isArray(sessionState.reentry_size_schedule)
+          ? positionSizingMode
+          : (isEditingExistingSession ? "fixed_quantity" : current.positionSizingMode ?? "fixed_quantity")
+      ),
       defaultOrderQuantity: String(
         sessionState.defaultOrderQuantity ?? (isEditingExistingSession ? "" : current.defaultOrderQuantity ?? "0.001")
+      ),
+      reentrySizeScheduleFirst: String(
+        sessionState.reentry_size_schedule != null ? reentrySizeScheduleFirst : current.reentrySizeScheduleFirst ?? "0.20"
+      ),
+      reentrySizeScheduleSecond: String(
+        sessionState.reentry_size_schedule != null ? reentrySizeScheduleSecond : current.reentrySizeScheduleSecond ?? "0.10"
       ),
       executionEntryOrderType: String(
         sessionState.executionEntryOrderType ?? (isEditingExistingSession ? "" : current.executionEntryOrderType ?? "MARKET")
