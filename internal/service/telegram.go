@@ -14,6 +14,13 @@ import (
 
 var telegramBaseURL = "https://api.telegram.org"
 var telegramNow = func() time.Time { return time.Now().UTC() }
+var telegramBeijingLocation = func() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("CST", 8*3600)
+	}
+	return loc
+}()
 
 const (
 	telegramFlapSendGrace    = 45 * time.Second
@@ -103,7 +110,7 @@ func formatTelegramNotification(item domain.PlatformNotification) string {
 		lines = append(lines, fmt.Sprintf("模拟盘: %s", alert.PaperSessionID))
 	}
 	if !alert.EventTime.IsZero() {
-		lines = append(lines, fmt.Sprintf("时间: %s", alert.EventTime.Format(time.RFC3339)))
+		lines = append(lines, fmt.Sprintf("北京时间: %s", formatTelegramBeijingTime(alert.EventTime)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -447,7 +454,7 @@ func formatTelegramTradeEvent(event domain.OrderExecutionEvent) string {
 		lines = append(lines, fmt.Sprintf("实盘会话: %s", event.LiveSessionID))
 	}
 	if !event.EventTime.IsZero() {
-		lines = append(lines, fmt.Sprintf("时间: %s", event.EventTime.UTC().Format(time.RFC3339)))
+		lines = append(lines, fmt.Sprintf("北京时间: %s", formatTelegramBeijingTime(event.EventTime)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -467,7 +474,7 @@ func telegramTradeEventIsClose(event domain.OrderExecutionEvent) bool {
 func formatTelegramPositionReport(accounts []domain.Account, summaries map[string]domain.AccountSummary, bucket time.Time, intervalMinutes int) string {
 	lines := []string{
 		fmt.Sprintf("📊 *持仓定时播报* %d分钟", intervalMinutes),
-		fmt.Sprintf("时间: %s", bucket.UTC().Format(time.RFC3339)),
+		fmt.Sprintf("北京时间: %s", formatTelegramBeijingTime(bucket)),
 	}
 	for _, account := range accounts {
 		summary := summaries[account.ID]
@@ -556,6 +563,13 @@ func formatTelegramSignedNumber(value float64) string {
 		return "+" + formatTelegramNumber(value)
 	}
 	return formatTelegramNumber(value)
+}
+
+func formatTelegramBeijingTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.In(telegramBeijingLocation).Format("2006-01-02 15:04:05")
 }
 
 func telegramAlertNeedsFlapSuppression(alert domain.PlatformAlert) bool {
