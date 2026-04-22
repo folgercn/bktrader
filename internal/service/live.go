@@ -1081,24 +1081,24 @@ func (p *Platform) syncLiveAccountFromBinance(account domain.Account, binding ma
 	if err != nil {
 		return domain.Account{}, err
 	}
-	accountPayload, err := binanceSignedGET(resolved, "/fapi/v3/account", map[string]string{
+	accountPayload, err := binanceSignedGETWithCategory(resolved, "/fapi/v3/account", map[string]string{
 		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
 		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
-	})
+	}, binanceRESTCategoryAccountSync)
 	if err != nil {
 		return domain.Account{}, fmt.Errorf("binance account sync failed: %w", err)
 	}
-	positionRiskPayload, err := binanceSignedGET(resolved, "/fapi/v2/positionRisk", map[string]string{
+	positionRiskPayload, err := binanceSignedGETWithCategory(resolved, "/fapi/v2/positionRisk", map[string]string{
 		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
 		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
-	})
+	}, binanceRESTCategoryAccountSync)
 	if err != nil {
 		return domain.Account{}, fmt.Errorf("binance position risk sync failed: %w", err)
 	}
-	openOrdersPayload, err := binanceSignedGET(resolved, "/fapi/v1/openOrders", map[string]string{
+	openOrdersPayload, err := binanceSignedGETWithCategory(resolved, "/fapi/v1/openOrders", map[string]string{
 		"timestamp":  fmt.Sprintf("%d", time.Now().UTC().UnixMilli()),
 		"recvWindow": fmt.Sprintf("%d", maxIntValue(binding["recvWindowMs"], 5000)),
-	})
+	}, binanceRESTCategoryAccountSync)
 	if err != nil {
 		return domain.Account{}, fmt.Errorf("binance open orders sync failed: %w", err)
 	}
