@@ -300,14 +300,20 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     }
   }
 
-  async function stopLiveFlow(accountId: string) {
+  async function stopLiveFlow(accountId: string, force = false) {
     setLiveFlowAction(accountId);
     try {
-      await fetchJSON(`/api/v1/live/accounts/${accountId}/stop`, { method: "POST" });
+      await fetchJSON(`/api/v1/live/accounts/${accountId}/stop${force ? '?force=true' : ''}`, { method: "POST" });
       await loadDashboard();
+      setNotification({
+        type: 'success',
+        message: force ? "已强制停止账户实盘流程" : "已安全停止账户实盘流程",
+      });
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to stop live flow");
+      const message = err instanceof Error ? err.message : "Failed to stop live flow";
+      setError(message);
+      setNotification({ type: 'error', message: `停止实盘流程失败: ${message}` });
     } finally {
       setLiveFlowAction(null);
     }

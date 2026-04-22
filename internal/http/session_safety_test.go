@@ -44,6 +44,64 @@ func TestLiveSessionStopRouteRespectsForceQuery(t *testing.T) {
 	}
 }
 
+func TestLiveAccountStopRouteStopsRunningFlow(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal failed: %v", err)
+	}
+
+	session, err := store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	runtime, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("create runtime failed: %v", err)
+	}
+	if _, err := platform.StartSignalRuntimeSession(runtime.ID); err != nil {
+		t.Fatalf("start runtime failed: %v", err)
+	}
+	state := map[string]any{
+		"signalRuntimeSessionId": runtime.ID,
+	}
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	registerAccountRoutes(mux, platform)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/accounts/live-main/stop", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for account stop, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	updatedSession, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("load live session failed: %v", err)
+	}
+	if updatedSession.Status != "STOPPED" {
+		t.Fatalf("expected live session to be stopped, got %s", updatedSession.Status)
+	}
+
+	updatedRuntime, err := platform.GetSignalRuntimeSession(runtime.ID)
+	if err != nil {
+		t.Fatalf("load runtime failed: %v", err)
+	}
+	if updatedRuntime.Status != "STOPPED" {
+		t.Fatalf("expected runtime to be stopped, got %s", updatedRuntime.Status)
+	}
+}
+
 func TestPositionCloseAndOrderDetailRoutes(t *testing.T) {
 	store := memory.NewStore()
 	platform := service.NewPlatform(store)

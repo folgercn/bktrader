@@ -81,7 +81,7 @@ interface AccountStageProps {
   openLiveSessionModal: (session?: LiveSession | null) => void;
   openMonitorStage: () => void;
   launchLiveFlow: (account: AccountRecord) => void;
-  stopLiveFlow: (accountId: string) => void;
+  stopLiveFlow: (accountId: string, force?: boolean) => Promise<void>;
   runLiveSessionAction: (id: string, action: "start" | "stop") => void;
   dispatchLiveSessionIntent: (id: string) => void;
   syncLiveSession: (id: string) => void;
@@ -197,12 +197,16 @@ export function AccountStage({
     onConfirm: () => Promise<void> | void;
   }>({ open: false, title: "", description: "", onConfirm: () => {} });
 
+  const confirmActionPending = liveSessionDeleteAction !== null || liveFlowAction !== null;
+
   const activeLiveSession = liveSessions.find(s => s.accountId === quickLiveAccountId);
   const activeTemplateKey = (activeLiveSession?.metadata as any)?.launchTemplateKey;
 
   const openConfirm = (title: string, description: string, onConfirm: () => Promise<void> | void) => {
     setConfirmConfig({ open: true, title, description, onConfirm });
   };
+
+  const activeOrderStatuses = useMemo(() => new Set(["NEW", "PARTIALLY_FILLED", "ACCEPTED"]), []);
 
   // Derived states
   const highlightedLiveSession = useMemo(
@@ -477,6 +481,9 @@ export function AccountStage({
                 const binding = (account.metadata?.liveBinding as Record<string, unknown> | undefined) ?? {};
                 const syncSnapshot = getRecord(getRecord(account.metadata).liveSyncSnapshot);
                 const summary = summaries.find(s => s.accountId === account.id);
+                const openPositionCount = positions.filter((item) => item.accountId === account.id && Number(item.quantity) > 0).length;
+                const activeOrderCount = orders.filter((item) => item.accountId === account.id && activeOrderStatuses.has(String(item.status).toUpperCase())).length;
+                const hasOpenExposure = openPositionCount > 0 || activeOrderCount > 0;
                 const runtimeSessionsForAccount = signalRuntimeSessions.filter((item) => item.accountId === account.id);
                 const activeRuntime = runtimeSessionsForAccount.find((item) => item.status === "RUNNING") ?? runtimeSessionsForAccount[0] ?? null;
                 const activeRuntimeState = getRecord(activeRuntime?.state);
@@ -506,6 +513,26 @@ export function AccountStage({
                 const liveNextAction = deriveLiveNextAction(livePreflight);
                 const liveAlerts = deriveLiveAlerts(account, activeRuntimeState, activeRuntimeSourceSummary, activeRuntimeReadiness, activeSignalAction, runtimePolicy);
                 const accountDetailOpen = expandedAccountId === account.id;
+                const handleStopLiveFlow = () => {
+                  if (!hasOpenExposure) {
+                    openConfirm(
+                      "确认停止实盘流程？",
+                      "系统会按安全停止路径关闭该账户下的运行时与实盘会话。若交易所侧随后出现未识别仓单，下次启动前仍建议先做一次同步或 reconcile。",
+                      () => stopLiveFlow(account.id)
+                    );
+                    return;
+                  }
+                  openConfirm(
+                    "安全停止已阻断",
+                    `检测到账户仍有 ${openPositionCount} 笔未平仓 / ${activeOrderCount} 笔活动订单。默认停止不会继续执行。若要继续，下一步将进入强制停止确认。`,
+                    () =>
+                      openConfirm(
+                        "确认强制停止？",
+                        "强制停止会立刻切断本地托管链路，但不会替你平掉交易所上的真实仓位或撤掉挂单。之后重新启动将进入恢复校验，可能出现 close-only、reconcile blocked 或 error 状态。",
+                        () => stopLiveFlow(account.id, true)
+                      )
+                  );
+                };
 
                 return (
                   <div key={account.id} className="group overflow-hidden rounded-[24px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] shadow-sm transition-all duration-300 hover:translate-y-[-2px] hover:shadow-xl">
@@ -585,7 +612,7 @@ export function AccountStage({
                             variant={isLiveFlowRunning ? "bento-danger" : "bento"}
                             className="h-11 w-full rounded-xl text-xs font-black shadow-md transition-transform active:scale-95"
                             disabled={liveFlowAction !== null || liveBindAction || signalRuntimeAction !== null}
-                            onClick={() => isLiveFlowRunning ? stopLiveFlow(account.id) : launchLiveFlow(account)}
+                            onClick={() => isLiveFlowRunning ? handleStopLiveFlow() : launchLiveFlow(account)}
                           >
                              {isLiveFlowRunning ? (
                                <div className="flex items-center gap-2"><Square size={14} fill="currentColor" /> 停止实盘流程</div>
@@ -1078,7 +1105,7 @@ export function AccountStage({
       <AlertDialog 
         open={confirmConfig.open} 
         onOpenChange={(open) => {
-          if (!open && liveSessionDeleteAction !== null) return;
+          if (!open && confirmActionPending) return;
           if (!open) setConfirmConfig(c => ({ ...c, open: false }));
         }}
       >
@@ -1091,14 +1118,14 @@ export function AccountStage({
           </AlertDialogHeader>
           <AlertDialogFooter className="pt-6">
             <AlertDialogCancel 
-              disabled={liveSessionDeleteAction !== null}
+              disabled={confirmActionPending}
               variant="bento-outline"
               className="h-11 rounded-xl px-6 font-bold"
             >
               取消
             </AlertDialogCancel>
             <Button 
-              loading={liveSessionDeleteAction !== null}
+              loading={confirmActionPending}
               onClick={async () => {
                 await confirmConfig.onConfirm();
                 setConfirmConfig(c => ({ ...c, open: false }));
