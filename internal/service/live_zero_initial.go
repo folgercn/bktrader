@@ -5,7 +5,10 @@ import (
 	"time"
 )
 
-const livePendingZeroInitialWindowStateKey = "pendingZeroInitialWindow"
+const (
+	livePendingZeroInitialWindowStateKey          = "pendingZeroInitialWindow"
+	liveZeroInitialWindowOpenReasonBreakoutLocked = "breakout-confirmed"
+)
 
 func prepareLivePlanStepForSignalEvaluation(
 	sessionState map[string]any,
@@ -104,12 +107,26 @@ func prepareLivePlanStepForSignalEvaluation(
 		side = "SELL"
 	}
 	pendingWindow := map[string]any{
-		"side":            side,
-		"symbol":          NormalizeSymbol(symbol),
-		"signalTimeframe": strings.ToLower(strings.TrimSpace(signalTimeframe)),
-		"armedAt":         eventTime.UTC().Format(time.RFC3339),
-		"signalBarStart":  currentBarStart.UTC().Format(time.RFC3339),
-		"expiresAt":       currentBarStart.UTC().Add(2 * step).Format(time.RFC3339),
+		"side":                      side,
+		"symbol":                    NormalizeSymbol(symbol),
+		"signalTimeframe":           strings.ToLower(strings.TrimSpace(signalTimeframe)),
+		"armedAt":                   eventTime.UTC().Format(time.RFC3339),
+		"signalBarStart":            currentBarStart.UTC().Format(time.RFC3339),
+		"expiresAt":                 currentBarStart.UTC().Add(2 * step).Format(time.RFC3339),
+		"breakoutBacked":            true,
+		"openReason":                liveZeroInitialWindowOpenReasonBreakoutLocked,
+		"breakoutPrice":             breakoutPrice,
+		"breakoutPriceSource":       strings.TrimSpace(breakoutPriceSource),
+		"longStructureReady":        boolValue(gate["longStructureReady"]),
+		"shortStructureReady":       boolValue(gate["shortStructureReady"]),
+		"longBreakoutReady":         boolValue(gate["longBreakoutReady"]),
+		"shortBreakoutReady":        boolValue(gate["shortBreakoutReady"]),
+		"longBreakoutPriceReady":    boolValue(gate["longBreakoutPriceReady"]),
+		"shortBreakoutPriceReady":   boolValue(gate["shortBreakoutPriceReady"]),
+		"longBreakoutShapeReady":    boolValue(gate["longBreakoutShapeReady"]),
+		"shortBreakoutShapeReady":   boolValue(gate["shortBreakoutShapeReady"]),
+		"longBreakoutPatternReady":  boolValue(gate["longBreakoutPatternReady"]),
+		"shortBreakoutPatternReady": boolValue(gate["shortBreakoutPatternReady"]),
 	}
 	updatedState[livePendingZeroInitialWindowStateKey] = pendingWindow
 	timelineMetadata := map[string]any{
@@ -157,6 +174,10 @@ func refreshLiveZeroInitialWindowState(
 	}
 	pending := cloneMetadata(mapValue(state[livePendingZeroInitialWindowStateKey]))
 	if len(pending) == 0 {
+		return state
+	}
+	if !liveZeroInitialWindowHasBreakoutProof(pending) {
+		clearLivePendingZeroInitialWindow(state, eventTime, "zero-initial-window-missing-breakout-proof")
 		return state
 	}
 	if pendingSymbol := NormalizeSymbol(stringValue(pending["symbol"])); pendingSymbol != "" && pendingSymbol != NormalizeSymbol(symbol) {
@@ -215,9 +236,19 @@ func clearLivePendingZeroInitialWindow(state map[string]any, eventTime time.Time
 	})
 }
 
+func liveZeroInitialWindowHasBreakoutProof(pending map[string]any) bool {
+	if !boolValue(pending["breakoutBacked"]) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(stringValue(pending["openReason"])), liveZeroInitialWindowOpenReasonBreakoutLocked)
+}
+
 func livePendingZeroInitialWindowOpen(sessionState map[string]any, symbol, signalTimeframe, side string, eventTime time.Time) bool {
 	pending := cloneMetadata(mapValue(sessionState[livePendingZeroInitialWindowStateKey]))
 	if len(pending) == 0 {
+		return false
+	}
+	if !liveZeroInitialWindowHasBreakoutProof(pending) {
 		return false
 	}
 	if pendingSide := strings.ToUpper(strings.TrimSpace(stringValue(pending["side"]))); pendingSide != "" &&
@@ -323,6 +354,10 @@ func liveZeroInitialWindowPlanStep(
 	state := cloneMetadata(sessionState)
 	pending := cloneMetadata(mapValue(state[livePendingZeroInitialWindowStateKey]))
 	if len(pending) == 0 {
+		return state, time.Time{}, 0, "", "", "", false
+	}
+	if !liveZeroInitialWindowHasBreakoutProof(pending) {
+		clearLivePendingZeroInitialWindow(state, eventTime, "zero-initial-window-missing-breakout-proof")
 		return state, time.Time{}, 0, "", "", "", false
 	}
 	side := strings.ToUpper(strings.TrimSpace(stringValue(pending["side"])))

@@ -241,6 +241,8 @@ func TestEvaluateSignalRequiresReentryTriggerWithinOpenWindow(t *testing.T) {
 			"armedAt":         barStart.Add(-5 * time.Minute).Format(time.RFC3339),
 			"signalBarStart":  barStart.Format(time.RFC3339),
 			"expiresAt":       barStart.Add(30 * time.Minute).Format(time.RFC3339),
+			"breakoutBacked":  true,
+			"openReason":      liveZeroInitialWindowOpenReasonBreakoutLocked,
 		},
 	}
 	decision, err := engine.EvaluateSignal(StrategySignalEvaluationContext{
@@ -288,6 +290,84 @@ func TestEvaluateSignalRequiresReentryTriggerWithinOpenWindow(t *testing.T) {
 	}
 	if boolValue(decision.Metadata["reentryTriggerReady"]) {
 		t.Fatalf("expected reentry trigger to stay false before price crosses planned level, got %+v", decision.Metadata)
+	}
+}
+
+func TestEvaluateSignalRejectsZeroInitialWindowWithoutBreakoutProof(t *testing.T) {
+	engine := bkStrategyEngine{}
+	barStart := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+	signalState := map[string]any{
+		"symbol":    "BTCUSDT",
+		"timeframe": "30m",
+		"sma5":      77800.0,
+		"atr14":     416.0,
+		"current": map[string]any{
+			"barStart": barStart.Format(time.RFC3339),
+			"close":    77966.3,
+			"high":     77978.0,
+			"low":      77930.0,
+		},
+		"prevBar1": map[string]any{
+			"high": 78335.7,
+			"low":  77928.6,
+		},
+		"prevBar2": map[string]any{
+			"high": 78447.5,
+			"low":  77406.0,
+		},
+	}
+	sessionState := map[string]any{
+		livePendingZeroInitialWindowStateKey: map[string]any{
+			"side":            "BUY",
+			"symbol":          "BTCUSDT",
+			"signalTimeframe": "30m",
+			"armedAt":         barStart.Add(-time.Minute).Format(time.RFC3339),
+			"signalBarStart":  barStart.Format(time.RFC3339),
+			"expiresAt":       barStart.Add(30 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	decision, err := engine.EvaluateSignal(StrategySignalEvaluationContext{
+		ExecutionContext: StrategyExecutionContext{
+			Symbol:          "BTCUSDT",
+			SignalTimeframe: "30m",
+			Parameters: map[string]any{
+				"symbol":                     "BTCUSDT",
+				"signalTimeframe":            "30m",
+				"signalDecisionMaxSpreadBps": 8.0,
+			},
+		},
+		TriggerSummary: map[string]any{
+			"role":   "trigger",
+			"symbol": "BTCUSDT",
+			"price":  77974.3,
+		},
+		SourceStates: map[string]any{
+			"tick": map[string]any{
+				"streamType": "trade_tick",
+				"symbol":     "BTCUSDT",
+				"summary":    map[string]any{"price": 77974.3},
+			},
+		},
+		SignalBarStates: map[string]any{
+			signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): signalState,
+		},
+		CurrentPosition:   map[string]any{},
+		SessionState:      sessionState,
+		EventTime:         barStart.Add(35 * time.Second),
+		NextPlannedEvent:  barStart,
+		NextPlannedPrice:  77970.28,
+		NextPlannedSide:   "BUY",
+		NextPlannedRole:   "entry",
+		NextPlannedReason: "Zero-Initial-Reentry",
+	})
+	if err != nil {
+		t.Fatalf("evaluate signal failed: %v", err)
+	}
+	if decision.Action != "wait" || decision.Reason != "reentry-window-not-open" {
+		t.Fatalf("expected unproven zero-initial window to stay blocked, got %+v", decision)
+	}
+	if boolValue(decision.Metadata["reentryWindowOpen"]) {
+		t.Fatalf("expected unproven pending window to be treated as closed, got %+v", decision.Metadata)
 	}
 }
 
@@ -457,6 +537,9 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 	if stringValue(pending["side"]) != "BUY" {
 		t.Fatalf("expected pending BUY window, got %+v", pending)
 	}
+	if !boolValue(pending["breakoutBacked"]) || stringValue(pending["openReason"]) != liveZeroInitialWindowOpenReasonBreakoutLocked {
+		t.Fatalf("expected pending window to carry breakout proof, got %+v", pending)
+	}
 	timeline := metadataList(state["timeline"])
 	if len(timeline) != 1 {
 		t.Fatalf("expected one zero initial window timeline event, got %+v", timeline)
@@ -468,6 +551,9 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialWindowAcrossTwoBar
 	pendingFromTimeline := mapValue(timelineMetadata[livePendingZeroInitialWindowStateKey])
 	if stringValue(pendingFromTimeline["side"]) != "BUY" || stringValue(pendingFromTimeline["symbol"]) != "BTCUSDT" {
 		t.Fatalf("expected pending window snapshot in timeline metadata, got %+v", pendingFromTimeline)
+	}
+	if !boolValue(pendingFromTimeline["breakoutBacked"]) || stringValue(pendingFromTimeline["openReason"]) != liveZeroInitialWindowOpenReasonBreakoutLocked {
+		t.Fatalf("expected timeline pending window snapshot to retain breakout proof, got %+v", pendingFromTimeline)
 	}
 
 	nextBarStart := barStart.Add(24 * time.Hour)
@@ -554,6 +640,8 @@ func TestPrepareLivePlanStepForSignalEvaluationPrioritizesExitReentryOverZeroIni
 			"armedAt":         eventTime.Add(-time.Minute).Format(time.RFC3339),
 			"signalBarStart":  eventTime.Truncate(24 * time.Hour).Format(time.RFC3339),
 			"expiresAt":       eventTime.Truncate(24 * time.Hour).Add(48 * time.Hour).Format(time.RFC3339),
+			"breakoutBacked":  true,
+			"openReason":      liveZeroInitialWindowOpenReasonBreakoutLocked,
 		},
 	}
 	signalStates := map[string]any{
@@ -4107,6 +4195,8 @@ func TestEvaluateLiveSessionOnSignalUsesZeroInitialReentryWindowInsteadOfVirtual
 	}
 	if pending := mapValue(updated.State[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
 		t.Fatalf("expected pending BUY zero initial window in session state, got %+v", pending)
+	} else if !boolValue(pending["breakoutBacked"]) || stringValue(pending["openReason"]) != liveZeroInitialWindowOpenReasonBreakoutLocked {
+		t.Fatalf("expected pending zero initial window to carry breakout proof, got %+v", pending)
 	}
 
 	reentryTime := eventTime.Add(5 * time.Second)
@@ -4796,6 +4886,8 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 		"armedAt":         time.Date(2026, 4, 17, 1, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"signalBarStart":  time.Date(2026, 4, 17, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"expiresAt":       time.Date(2026, 4, 19, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"breakoutBacked":  true,
+		"openReason":      liveZeroInitialWindowOpenReasonBreakoutLocked,
 	}
 	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
