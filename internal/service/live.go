@@ -180,20 +180,28 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 	if accountID == "" {
 		return domain.Account{}, fmt.Errorf("live account id is required")
 	}
+	normalizedTrigger := firstNonEmpty(strings.TrimSpace(trigger), "unspecified")
 	state := p.liveAccountSyncEntry(accountID)
-	logger := p.logger("service.live", "account_id", accountID, "trigger", firstNonEmpty(strings.TrimSpace(trigger), "unspecified"))
+	logger := p.logger("service.live", "account_id", accountID, "trigger", normalizedTrigger)
 
 	state.mu.Lock()
 	if state.running {
 		done := state.done
 		state.mu.Unlock()
-		logger.Debug("coalescing live account sync request while another sync is in progress")
+		waitStartedAt := time.Now()
 		if done != nil {
 			<-done
 		}
 		state.mu.Lock()
 		result, err := state.result, state.err
 		state.mu.Unlock()
+		logger.Info("live account sync request reused in-flight result",
+			"coalesced", true,
+			"waited_for_inflight", true,
+			"wait_ms", time.Since(waitStartedAt).Milliseconds(),
+			"reused_recent_result", false,
+			"result_error", err != nil,
+		)
 		return result, err
 	}
 	if p.liveAccountSyncAllowsRecentReuse(trigger) {
@@ -202,7 +210,14 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 			if age >= 0 && age < reuseWindow {
 				result, err := state.result, state.err
 				state.mu.Unlock()
-				logger.Debug("reusing recent live account sync result", "age_ms", age.Milliseconds(), "reuse_window_ms", reuseWindow.Milliseconds(), "has_error", err != nil)
+				logger.Info("live account sync request reused recent result",
+					"coalesced", false,
+					"waited_for_inflight", false,
+					"reused_recent_result", true,
+					"age_ms", age.Milliseconds(),
+					"reuse_window_ms", reuseWindow.Milliseconds(),
+					"result_error", err != nil,
+				)
 				return result, err
 			}
 		}
@@ -225,6 +240,11 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 		return domain.Account{}, err
 	}
 	defer release()
+	logger.Info("live account sync request executing",
+		"coalesced", false,
+		"waited_for_inflight", false,
+		"reused_recent_result", false,
+	)
 	result, err := p.syncLiveAccountWithoutGate(accountID)
 	state.mu.Lock()
 	state.result = result
@@ -234,6 +254,13 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 	state.done = nil
 	close(done)
 	state.mu.Unlock()
+	logger.Info("live account sync request completed",
+		"coalesced", false,
+		"waited_for_inflight", false,
+		"reused_recent_result", false,
+		"result_error", err != nil,
+		"completed_at", state.completedAt.Format(time.RFC3339),
+	)
 	return result, err
 }
 
@@ -278,6 +305,72 @@ func (p *Platform) liveAccountSyncAllowsRecentReuse(trigger string) bool {
 	default:
 		return true
 	}
+}
+
+func compactSourceGateEntries(entries []map[string]any) []map[string]any {
+	if len(entries) == 0 {
+		return []map[string]any{}
+	}
+	items := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, map[string]any{
+			"sourceKey":   stringValue(entry["sourceKey"]),
+			"role":        stringValue(entry["role"]),
+			"streamType":  stringValue(entry["streamType"]),
+			"symbol":      stringValue(entry["symbol"]),
+			"lastEventAt": stringValue(entry["lastEventAt"]),
+			"maxAgeSec":   maxIntValue(entry["maxAgeSec"], 0),
+		})
+	}
+	return items
+}
+
+func runtimeSourceGateIssueSignature(sourceGate map[string]any) string {
+	payload, err := json.Marshal(map[string]any{
+		"missing": compactSourceGateEntries(metadataList(sourceGate["missing"])),
+		"stale":   compactSourceGateEntries(metadataList(sourceGate["stale"])),
+		"ready":   boolValue(sourceGate["ready"]),
+	})
+	if err != nil {
+		return ""
+	}
+	return string(payload)
+}
+
+func (p *Platform) logRuntimeSourceGateState(strategyID string, runtimeSession domain.SignalRuntimeSession, sourceGate map[string]any, eventTime time.Time) {
+	runtimeID := strings.TrimSpace(runtimeSession.ID)
+	if runtimeID == "" {
+		return
+	}
+	signature := runtimeSourceGateIssueSignature(sourceGate)
+	previous, hadPrevious := p.runtimeSourceGateState.Load(runtimeID)
+	previousSignature, _ := previous.(string)
+	if boolValue(sourceGate["ready"]) {
+		if hadPrevious && previousSignature != "" {
+			p.logger("service.runtime_source_gate",
+				"runtime_session_id", runtimeID,
+				"account_id", runtimeSession.AccountID,
+				"strategy_id", strategyID,
+			).Info("runtime source gate recovered", "event_time", eventTime.Format(time.RFC3339))
+			p.runtimeSourceGateState.Delete(runtimeID)
+		}
+		return
+	}
+	if signature != "" && hadPrevious && previousSignature == signature {
+		return
+	}
+	p.runtimeSourceGateState.Store(runtimeID, signature)
+	p.logger("service.runtime_source_gate",
+		"runtime_session_id", runtimeID,
+		"account_id", runtimeSession.AccountID,
+		"strategy_id", strategyID,
+	).Warn("runtime source gate blocked",
+		"event_time", eventTime.Format(time.RFC3339),
+		"missing_count", len(metadataList(sourceGate["missing"])),
+		"stale_count", len(metadataList(sourceGate["stale"])),
+		"missing_sources", compactSourceGateEntries(metadataList(sourceGate["missing"])),
+		"stale_sources", compactSourceGateEntries(metadataList(sourceGate["stale"])),
+	)
 }
 
 func (p *Platform) syncLiveAccountWithoutGate(accountID string) (domain.Account, error) {

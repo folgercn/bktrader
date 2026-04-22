@@ -5958,6 +5958,72 @@ func TestSyncLiveAccountAuthoritativeReconcileBypassesRecentReuseWindow(t *testi
 	}
 }
 
+func TestCompactSourceGateEntriesPreservesStaleDetailFields(t *testing.T) {
+	items := compactSourceGateEntries([]map[string]any{
+		map[string]any{
+			"sourceKey":   "binance-trade-tick",
+			"role":        "trigger",
+			"streamType":  "trade_tick",
+			"symbol":      "BTCUSDT",
+			"lastEventAt": "2026-04-22T02:20:00Z",
+			"maxAgeSec":   15,
+		},
+	})
+	if len(items) != 1 {
+		t.Fatalf("expected one compacted source gate entry, got %d", len(items))
+	}
+	item := items[0]
+	if item["sourceKey"] != "binance-trade-tick" || item["streamType"] != "trade_tick" {
+		t.Fatalf("unexpected compacted source gate item: %#v", item)
+	}
+	if item["lastEventAt"] != "2026-04-22T02:20:00Z" || item["maxAgeSec"] != 15 {
+		t.Fatalf("expected stale detail fields to be preserved, got %#v", item)
+	}
+}
+
+func TestLogRuntimeSourceGateStateTracksBlockedSignatureTransitions(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	runtimeSession := domain.SignalRuntimeSession{
+		ID:        "runtime-1",
+		AccountID: "live-main",
+	}
+	blocked := map[string]any{
+		"ready": false,
+		"stale": []any{
+			map[string]any{
+				"sourceKey":   "binance-trade-tick",
+				"role":        "trigger",
+				"streamType":  "trade_tick",
+				"symbol":      "BTCUSDT",
+				"lastEventAt": "2026-04-22T02:20:00Z",
+				"maxAgeSec":   15,
+			},
+		},
+		"missing": []any{},
+	}
+
+	platform.logRuntimeSourceGateState("strategy-bk-1d", runtimeSession, blocked, time.Date(2026, 4, 22, 2, 21, 0, 0, time.UTC))
+	firstSignature, ok := platform.runtimeSourceGateState.Load(runtimeSession.ID)
+	if !ok || strings.TrimSpace(stringValue(firstSignature)) == "" {
+		t.Fatal("expected blocked runtime source gate signature to be recorded")
+	}
+
+	platform.logRuntimeSourceGateState("strategy-bk-1d", runtimeSession, blocked, time.Date(2026, 4, 22, 2, 21, 5, 0, time.UTC))
+	secondSignature, ok := platform.runtimeSourceGateState.Load(runtimeSession.ID)
+	if !ok || secondSignature != firstSignature {
+		t.Fatalf("expected identical blocked source gate signature to remain stable, got first=%v second=%v", firstSignature, secondSignature)
+	}
+
+	platform.logRuntimeSourceGateState("strategy-bk-1d", runtimeSession, map[string]any{
+		"ready":   true,
+		"missing": []any{},
+		"stale":   []any{},
+	}, time.Date(2026, 4, 22, 2, 21, 10, 0, time.UTC))
+	if _, ok := platform.runtimeSourceGateState.Load(runtimeSession.ID); ok {
+		t.Fatal("expected ready runtime source gate to clear recorded blocked signature")
+	}
+}
+
 func TestSyncLiveAccountReusesRecentFailureWithinReuseWindow(t *testing.T) {
 	baseStore := memory.NewStore()
 	platform := NewPlatform(&testFailingListOrdersStore{
