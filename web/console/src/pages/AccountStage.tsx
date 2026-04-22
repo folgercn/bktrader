@@ -3,6 +3,8 @@ import { HelpCircle, Zap, Edit3, Square, Trash2, Play, ArrowRight, ShieldCheck, 
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { SignalBarChart } from '../components/charts/SignalBarChart';
+import { LiveTradePairsCard } from '../components/live/LiveTradePairsCard';
+import { useLiveTradePairs } from '../hooks/useLiveTradePairs';
 import { formatTime, formatMaybeNumber, shrink } from '../utils/format';
 import { 
   getRecord, 
@@ -247,6 +249,7 @@ export function AccountStage({
     primaryLiveSessionRuntimeReadiness,
     primaryLiveSessionIntent
   );
+  const primaryTradePairs = useLiveTradePairs(primaryLiveSession?.id ?? null, 6);
   
   const strategyOptions = useMemo(() => strategies.map((strategy) => ({
     value: strategy.id,
@@ -1058,6 +1061,18 @@ export function AccountStage({
 
           </CardContent>
         </Card>
+
+        <LiveTradePairsCard
+          title="开平订单对追溯"
+          description={
+            primaryLiveSession
+              ? `聚合焦点会话 ${primaryLiveSession.alias || shrink(primaryLiveSession.id)} 的 round-trip 交易，直接判断退出是否正常。`
+              : '选中一个活跃实盘会话后，这里会显示可追溯的开平订单对与盈亏。'
+          }
+          pairs={primaryTradePairs.pairs}
+          loading={primaryTradePairs.loading}
+          error={primaryTradePairs.error}
+        />
       </div>
 
       <AlertDialog 

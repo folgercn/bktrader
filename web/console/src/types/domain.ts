@@ -484,6 +484,36 @@ export type LiveSessionExecutionSummary = {
   position: Position | null;
 };
 
+export type LiveTradePair = {
+  id: string;
+  liveSessionId: string;
+  accountId: string;
+  strategyId: string;
+  symbol: string;
+  status: string;
+  side: string;
+  entryOrderIds: string[];
+  exitOrderIds: string[];
+  entryAt: string;
+  exitAt?: string;
+  entryAvgPrice: number;
+  exitAvgPrice: number;
+  entryQuantity: number;
+  exitQuantity: number;
+  openQuantity: number;
+  entryReason?: string;
+  exitReason?: string;
+  exitClassifier?: string;
+  exitVerdict: string;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  fees: number;
+  netPnl: number;
+  entryFillCount: number;
+  exitFillCount: number;
+  notes?: string[];
+};
+
 export type LiveSessionHealth = {
   status: "ready" | "active" | "waiting-sync" | "error" | "idle" | "neutral";
   detail: string;
