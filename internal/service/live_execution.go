@@ -554,7 +554,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	appendTimelineEvent(state, "order", dispatchedAt, "live-intent-dispatched", executionDispatchTimelineMetadata(proposalMap, created, createErr != nil))
 	settlementPending := liveOrderSettlementSyncPending(created)
 	if strings.EqualFold(created.Status, "FILLED") && !settlementPending {
-		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil {
+		if _, syncErr := p.requestLiveAccountSync(session.AccountID, "live-intent-dispatched-filled"); syncErr != nil {
 			if !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
 				state["lastSyncError"] = syncErr.Error()
 			}
@@ -849,7 +849,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), order, false)
 		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 		if strings.EqualFold(order.Status, "FILLED") {
-			if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil && !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
+			if _, syncErr := p.requestLiveAccountSync(session.AccountID, "live-terminal-order-sync"); syncErr != nil && !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
 				p.logger("service.live_execution", "session_id", session.ID, "account_id", session.AccountID).Warn("live account sync failed after terminal order sync", "error", syncErr)
 			}
 		}
@@ -928,7 +928,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), syncedOrder, false)
 	updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
 	if strings.EqualFold(syncedOrder.Status, "FILLED") {
-		if _, syncErr := p.SyncLiveAccount(session.AccountID); syncErr != nil && !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
+		if _, syncErr := p.requestLiveAccountSync(session.AccountID, "live-filled-order-sync"); syncErr != nil && !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
 			p.logger("service.live_execution", "session_id", session.ID, "account_id", session.AccountID).Warn("live account sync failed after filled order sync", "error", syncErr)
 		}
 	}
