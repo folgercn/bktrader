@@ -1000,7 +1000,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	if err != nil {
 		return domain.Order{}, err
 	}
-	if strings.EqualFold(account.Mode, "LIVE") {
+	if strings.EqualFold(account.Mode, "LIVE") && len(newFills) > 0 {
 		if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "filled", parseOptionalRFC3339(stringValue(updatedOrder.Metadata["lastFilledAt"])), false, nil); telemetryErr != nil {
 			p.logger("service.order", "order_id", updatedOrder.ID).Warn("record live order fill event failed", "error", telemetryErr)
 		}
