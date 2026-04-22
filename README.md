@@ -135,6 +135,7 @@ go run ./cmd/platform-api
 - 通过 `signal-runtime session` 拉起实时行情
 - 通过 `live session` 进行策略评估、派单、同步与恢复
 - 通过 Binance Futures testnet 完成模拟交易、订单同步与持仓恢复
+- 前端 Monitor 主图优先使用 runtime `sourceStates.signal_bar` 展示 K 线；仅在 runtime bars 不足时按需请求 `/api/v1/chart/candles` 作为展示兜底，且最小 fallback 粒度为 `5m`
 - 服务启动时会主动从 Binance 行情源预热 `1m / 4h / 1d` 市场缓存，并计算 `SMA5 / MA20 / ATR14`，live 链路不再依赖本地 CSV
 - 已验证一条真实的 `4h -> live intent -> auto-dispatch -> Binance Futures testnet FILLED` 主链路
       - `sl-reentry-watch`
