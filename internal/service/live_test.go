@@ -5958,6 +5958,100 @@ func TestSyncLiveAccountAuthoritativeReconcileBypassesRecentReuseWindow(t *testi
 	}
 }
 
+func TestSyncLatestLiveSessionOrderDoesNotRepeatTerminalAccountSync(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	var syncCalls atomic.Int32
+	now := time.Date(2026, 4, 22, 3, 10, 0, 0, time.UTC)
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-terminal-account-sync",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			syncCalls.Add(1)
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["lastLiveSyncAt"] = now.Format(time.RFC3339)
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-terminal-account-sync",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	order, err := platform.store.CreateOrder(domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Status:            "FILLED",
+		Quantity:          0.01,
+		Price:             68000,
+		Metadata: map[string]any{
+			"source":          "live-session-intent",
+			"liveSessionId":   session.ID,
+			"exchangeOrderId": "exchange-order-terminal-filled",
+			"filledQuantity":  0.01,
+			"lastFilledAt":    now.Format(time.RFC3339),
+			"executionProposal": map[string]any{
+				"role":     "entry",
+				"side":     "BUY",
+				"symbol":   "BTCUSDT",
+				"quantity": 0.01,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create filled order failed: %v", err)
+	}
+	order.Status = "FILLED"
+	order, err = platform.store.UpdateOrder(order)
+	if err != nil {
+		t.Fatalf("update filled order failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastDispatchedOrderId"] = order.ID
+	state["lastDispatchedOrderStatus"] = "FILLED"
+	state["positionReconcileGateBlocking"] = false
+	state["positionReconcileGateStatus"] = "matched"
+	state["recoveryMode"] = ""
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	session, err = platform.syncLatestLiveSessionOrder(session, now)
+	if err != nil {
+		t.Fatalf("first terminal order sync failed: %v", err)
+	}
+	session, err = platform.syncLatestLiveSessionOrder(session, now.Add(5*time.Second))
+	if err != nil {
+		t.Fatalf("second terminal order sync failed: %v", err)
+	}
+	if got := syncCalls.Load(); got != 1 {
+		t.Fatalf("expected repeated terminal order sync to reuse prior account refresh, got %d adapter calls", got)
+	}
+	if got := stringValue(session.State["lastTerminalAccountSyncedOrderId"]); got != order.ID {
+		t.Fatalf("expected terminal account sync marker for order %s, got %s", order.ID, got)
+	}
+}
+
 func TestCompactSourceGateEntriesPreservesStaleDetailFields(t *testing.T) {
 	items := compactSourceGateEntries([]map[string]any{
 		map[string]any{
