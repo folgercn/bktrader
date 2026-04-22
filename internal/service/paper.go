@@ -473,6 +473,7 @@ func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runti
 	result["missing"] = missing
 	result["stale"] = stale
 	result["ready"] = len(missing) == 0 && len(stale) == 0
+	p.logRuntimeSourceGateState(strategyID, runtimeSession, result, eventTime)
 	return result
 }
 
