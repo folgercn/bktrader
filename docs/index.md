@@ -8,7 +8,8 @@
 - [agent-risk-model.md](agent-risk-model.md) - Agent 及人工改动风险分级表 (L0~L3)。
 - [live-safety-invariants.md](live-safety-invariants.md) - 实盘关键不变量定性和边界约束。
 - [test-matrix.md](test-matrix.md) - 各相关组件所需的最低自测/回归验证矩阵。
-- [harness-engineering-部署方案.md](harness-engineering-部署方案.md) - 早期 Harness 设计思路。
+- [harness-engineering-部署方案.md](harness-engineering-部署方案.md) - Harness Engineering 建设方案、PR 实战踩坑模式、Review 黄金规则与 AI Agent 协作纪律。
+- [pr-lessons-learned.md](pr-lessons-learned.md) - **从 155 个 PR 提炼的实战踩坑模式、review 黄金规则与 AI Agent 协作纪律**。
 
 ## 2. 架构与工程设计
 - [llm-project-index.md](llm-project-index.md) - **推荐阅读：深入解读代码目录结构的索引层**。

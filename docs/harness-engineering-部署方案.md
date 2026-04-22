@@ -450,7 +450,114 @@ Harness Engineering 的目标是减少无效人工消耗，不是移除人工判
 
 ---
 
-## 10. 成功标准
+## 10. 实战经验：高频踩坑模式（从 155 个 PR 提炼）
+
+> 以下内容来自项目 PR#1 ~ PR#155 的 review 记录，不是理论推导。
+> 完整案例详见 [pr-lessons-learned.md](pr-lessons-learned.md)。
+
+### 10.1 状态一致性陷阱
+
+这是 review 中**出现频率最高**的问题类型，覆盖了 PR#22、PR#26、PR#39、PR#109、PR#124、PR#146 等多个关键 PR。
+
+核心规则：
+
+- **每条状态变更链路只允许有一个写入出口**。如果有 N 个路径都可能写同一个字段，必须收敛到统一 helper，或通过 capability flag 声明谁负责写。（PR#39：live account sync 双写 healthSummary）
+- **同一个判定只能有一个入口**。如果 alerts 和 snapshot 都需要判断"是否 quiet"，必须走同一个函数，禁止各自维护平行条件。（PR#39、PR#146）
+- **运维开关必须全链路一致**。API → 内存态 → 持久态 → 判断函数，每一层都必须支持相同的语义（如 `0 = disable`）。一旦某层"忘了支持"，用户会遇到"配置看起来生效了，实际没变"。（PR#39）
+
+### 10.2 零值与默认值语义
+
+Go 的 `false` / `0` 与"未提供"无法区分。这在以下场景反复造成问题：
+
+- **fallback / merge 逻辑**：显式传入的 `reduceOnly = false` 被旧值覆盖为 `true`。（PR#22）
+- **SL protection 计算**：BUY-side 插值方向搞反，滑点封顶失效。（PR#22）
+- **NaN 污染**：float 运算产生 NaN，写入 JSON state 后整个 session 不可恢复。（PR#51）
+
+核心规则：
+
+- 任何涉及 fallback / merge 的逻辑，必须对每类字段显式定义"零值是否有意义"
+- 任何涉及 BUY / SELL 双向逻辑的函数，必须同时补双向测试
+- 任何写入持久化的 float 值，必须在写入前检查 NaN / Inf
+
+### 10.3 身份与生命周期管理
+
+- **Watermark 身份泄漏**：`watermarkPositionKey` 只用 `side | entryPrice`，无法区分新旧仓位，导致 trailing stop 计算错误。修复：扩展为 `positionID | symbol | side | entryPrice`。（PR#22、PR#26）
+- **Legacy 数据隐式迁移**：给"空值"回填默认值的逻辑，如果这个值参与身份识别（match key、缓存 key），就不是"格式化"而是"语义迁移"，必须补兼容性测试。（PR#43）
+
+### 10.4 执行安全边界
+
+- **自动 resume 不能靠排除法**：不能靠"已知的阻塞原因都不存在 → 就恢复"。因为未来会新增阻塞原因。（PR#109）
+- **Reconcile 不能信任历史外部订单**：只能信任当前活跃的、本系统下达的订单/仓位。（PR#126）
+- **Settlement 未完成时禁止抢先落账**：订单状态变更的消费必须幂等。如果 settlement 还没完成，sync / reconcile 不能抢先落账，否则仓位翻倍。（PR#124）
+
+### 10.5 性能与限流
+
+- **热路径不能全表扫描**：live sync / reconcile 路径上的 `ListXxx()` + 内存过滤在数据量增长后会成为瓶颈。（PR#124）
+- **外部 API 必须统一 gating**：多个调用方不能各自独立打 Binance REST。必须经过统一的请求合并（coalesce）和限流。（PR#135、PR#136、PR#138、PR#143）
+
+### 10.6 监控与告警可信度
+
+- **告警 ID 必须稳定**：不能在 ID 中包含时间戳或动态文案。（PR#130、PR#131）
+- **告警 flap suppression 必须覆盖完整状态循环**：`active → recovered → 再次 active` 时，grace 计时器必须重置。（PR#146）
+
+---
+
+## 11. Review 黄金规则
+
+从 folgercn 在 155 个 PR review 中反复强调的审查标准，提炼为 10 条可执行的规则：
+
+1. **成功/失败路径必须统一 accounting** — 每个出口都走统一 helper，不允许散落多处
+2. **不允许"失败装成功"** — fallback 失败必须真实返错，不能静默吞掉
+3. **同一个判定只能有一个入口** — alerts 和 snapshot 不能各自维护平行条件
+4. **全链路一致性** — 配置从 API → 内存 → 持久化 → 判断函数必须同语义
+5. **缓存态 ≠ 事实** — WS 状态、内存快照、推导结果不能直接当交易事实
+6. **未对账不允许自动执行** — recovery / takeover 后必须等 REST 对账完成
+7. **PR 不能静默扩大范围** — "加监控"不能顺手变成"改 live sync 行为"
+8. **Legacy 数据迁移需要兼容性测试** — 隐式改身份键必须补回归测试
+9. **热路径不能全表扫描** — live sync / reconcile 路径上的查询必须有索引
+10. **自动 resume / dispatch 必须有显式前置条件** — 不能靠"看起来没问题就恢复"
+
+---
+
+## 12. AI Agent 协作实战纪律
+
+从 155 个 PR 的 Agent 协作模式中观察到的特有问题和应对策略：
+
+### 12.1 Agent 倾向于"一次修完"
+
+Agent 会在一个 PR 中反复叠加 fix，导致 PR 从 L1 膨胀到 L2/L3。
+
+典型案例：PR#22 经历了 16+ 轮 AI review + 修复循环，最终从"加 telemetry"变成了横跨 7 个文件、1000+ 行新代码的巨型 PR。
+
+**应对**：限制单 PR 的 scope；发现范围蔓延时主动拆分到新 issue + 新分支。
+
+### 12.2 Agent 对零值语义把握不足
+
+Agent 反复在 bool / float 的零值 fallback 上出错。这是语言层面的盲区——LLM 对"Go 的零值 vs 未赋值"缺乏直觉。
+
+**应对**：任何涉及 fallback / merge / default 的逻辑，必须人工 review，不能只靠 AI review 通过。
+
+### 12.3 Agent 补测试偏正确路径
+
+Agent 补的测试多是"基础正确路径"，少"边界错误路径"。review 中最常被要求补的是 failure path 测试。
+
+**应对**：review 时明确列出需要的 failure path 场景（如 adapter resolve 失败、fallback 失败、partial fill + restart 等）。
+
+### 12.4 Agent 对 recovery 语义缺乏先验知识
+
+Agent 不知道"恢复后什么操作允许、什么禁止"，容易写出"未对账就自动 dispatch"的代码。
+
+**应对**：AGENTS.md §7 的显式状态机是必须的。Agent 改 recovery 相关代码前，必须先读完状态机定义。
+
+### 12.5 高风险 PR 仍需人工主审
+
+AI review（`@codex review`）响应速度快，但对深层语义问题发现率低。在 PR#22、PR#39 等关键 PR 中，阻塞性问题（如 SL protection 方向错误、状态双写）都是人工 review 发现的。
+
+**应对**：AI review 做辅助（基础扫描 + 行级评论），高风险 PR 仍需人工主审。
+
+---
+
+## 13. 成功标准
 
 当以下指标成立时，可以认为 `bktrader` 的 Harness Engineering 进入可用状态：
 
@@ -459,10 +566,11 @@ Harness Engineering 的目标是减少无效人工消耗，不是移除人工判
 - 高风险改动会被自动识别并要求更高审查等级
 - CI/CD 能对环境、部署、敏感默认值提供基础防呆
 - 团队对“哪些改动可以让 Agent 做，哪些必须人工主导”形成稳定共识
+- **新增**：PR review 中反复出现的踩坑模式被文档化，Agent 能在改动前主动查阅
 
 ---
 
-## 11. 结论
+## 14. 结论
 
 `bktrader` 非常适合作为 Harness Engineering 的首个完整试点项目。
 
@@ -473,5 +581,6 @@ Harness Engineering 的目标是减少无效人工消耗，不是移除人工判
 - 一套项目级工程治理能力
 - 一套 AI Coding Agent 的安全工作系统
 - 一套把团队经验沉淀为仓库资产的机制
+- **一套从真实 PR review 中持续沉淀规则的知识体系**
 
 而不是一套“让 AI 自由发挥”的工具接入方案。

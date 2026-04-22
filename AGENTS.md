@@ -48,6 +48,7 @@ This project has a graphify knowledge graph at `graphify-out/`.
 2. [docs/llm-project-index.md](docs/llm-project-index.md): 详细的目录边界说明
 3. [CONTRIBUTING.md](CONTRIBUTING.md): wuyaocheng 和 folgercn 两位主核心贡献者的协作纪律
 4. `graphify-out/GRAPH_REPORT.md` (如有必要): 理解项目具体实现的依赖拓扑。
+5. [docs/pr-lessons-learned.md](docs/pr-lessons-learned.md): **从 155 个 PR 提炼的实战踩坑模式和 review 黄金规则**。在修改 `internal/service/` 下的代码前**必读**。
 
 若任务是线上告警 / 生产日志 / `stale-source-states` / Binance REST 限流排查，必须优先阅读 [docs/production-log-troubleshooting.md](docs/production-log-troubleshooting.md)，其中记录了生产服务器 SSH 入口与日志目录。
 
@@ -85,11 +86,49 @@ bash scripts/testnet_live_session_smoke.sh
 你协助提交的改动或是撰写的 PR 必须：
 - 严格使用 `.github/pull_request_template.md`，并在描述中声明你的参与。
 - 不能隐式破坏 `testnet` 到 `mainnet` 的沙盒设定。
-## 7. 运行时恢复 / 接管专项规则（仅在相关改动时强制生效）
+## 7. Review 黄金规则（从 155 个 PR 提炼）
+
+以下 10 条规则来自项目实际 PR review，不是理论推导。**修改 `internal/` 下任何代码前必须过一遍**：
+
+1. **成功/失败路径必须统一 accounting** — 每个出口都走统一 helper，不允许散落多处
+2. **不允许"失败装成功"** — fallback 失败必须真实返错，不能静默吞掉
+3. **同一个判定只能有一个入口** — alerts 和 snapshot 不能各自维护平行条件
+4. **全链路一致性** — 配置从 API → 内存 → 持久化 → 判断函数必须同语义
+5. **缓存态 ≠ 事实** — WS 状态、内存快照、推导结果不能直接当交易事实
+6. **未对账不允许自动执行** — recovery / takeover 后必须等 REST 对账完成
+7. **PR 不能静默扩大范围** — "加监控"不能顺手变成"改 live sync 行为"
+8. **Legacy 数据迁移需要兼容性测试** — 隐式改身份键必须补回归测试
+9. **热路径不能全表扫描** — live sync / reconcile 路径上的查询必须有索引
+10. **自动 resume / dispatch 必须有显式前置条件** — 不能靠"看起来没问题就恢复"
+
+完整案例与 PR 出处详见 [docs/pr-lessons-learned.md](docs/pr-lessons-learned.md)。
+
+## 8. 高频踩坑模式速查
+
+以下是 review 中出现频率最高的 6 类问题。**改 `internal/` 代码前先自查**，详细案例见 [docs/pr-lessons-learned.md](docs/pr-lessons-learned.md)：
+
+1. **状态一致性** — N 个路径写同一字段 → 收敛统一 helper；同一判定只能有一个入口
+2. **零值与默认值** — Go 零值 ≠ "未提供"；fallback/merge 必须显式定义零值语义；float 写入前检查 NaN/Inf
+3. **身份与生命周期** — 缓存 key 必须唯一标识当前仓位；空值回填如改身份键 = 语义迁移，必须补兼容性测试
+4. **执行安全边界** — 自动 resume 不能靠排除法；reconcile 只信任本系统活跃订单；settlement 未完成不能抢先落账
+5. **性能与限流** — 热路径禁止全表扫描；外部 API 必须统一 gating + 限流
+6. **监控与告警** — 告警 ID 必须稳定（不含时间戳）；flap suppression 必须覆盖完整状态循环
+
+## 9. AI Agent 协作纪律
+
+> 以下规则针对 AI Agent 的已知行为盲区。**所有 Agent 在本项目中必须自我约束**。
+
+1. **禁止"一次修完"** — 发现修改范围超出原始目标时，**主动拆分到新 issue + 新分支**
+2. **零值语义是 Agent 盲区** — 涉及 fallback / merge / default 的逻辑，**必须请求人工 review**
+3. **测试必须覆盖失败路径** — 补测试时，**至少包含一个 failure path**（adapter resolve 失败、NaN 输入等）
+4. **修改 recovery 代码前必须读状态机** — 先读完 §10 的状态机定义和 §7 的 review 黄金规则
+5. **高风险 PR 仍需人工主审** — L2/L3 级别的 PR，**AI review 只做辅助**，必须等待人工主审通过
+
+## 10. 运行时恢复 / 接管专项规则（仅在相关改动时强制生效）
 
 以下规则**不是全项目通用基础规范**，而是 **runtime recovery / takeover / passive-close / reconcile 专项规则**。
 
-### 7.1 什么时候必须严格遵守
+### 10.1 什么时候必须严格遵守
 
 如果本次改动涉及以下任一内容，则必须严格遵守本节：
 
@@ -104,7 +143,7 @@ bash scripts/testnet_live_session_smoke.sh
 
 如果不涉及以上内容，则不需要套用本规则。
 
-### 7.2 三类状态必须区分清楚
+### 10.2 三类状态必须区分清楚
 
 修改前必须明确：
 
@@ -114,7 +153,7 @@ bash scripts/testnet_live_session_smoke.sh
 
 ❗ 禁止把缓存态或推导态直接当成交易事实。
 
-### 7.3 未对账恢复态不得自动交易
+### 10.3 未对账恢复态不得自动交易
 
 恢复 / 接管 / WS 重连后的状态：
 
@@ -128,7 +167,7 @@ bash scripts/testnet_live_session_smoke.sh
 - 进入 close-only takeover
 - 等待人工处理
 
-### 7.4 恢复状态必须显式
+### 10.4 恢复状态必须显式
 
 禁止用多个 flag “猜状态”。
 
@@ -145,7 +184,7 @@ bash scripts/testnet_live_session_smoke.sh
 - 能不能平仓？
 - 能不能 auto-dispatch？
 
-### 7.5 WS ≠ REST（必须区分职责）
+### 10.5 WS ≠ REST（必须区分职责）
 
 - WS：实时事件
 - REST：权威校验
@@ -156,7 +195,7 @@ bash scripts/testnet_live_session_smoke.sh
 - WS 重连 → 必须触发 REST 校验
 - 不允许“WS 连上就当恢复正常”
 
-### 7.6 执行边界必须二次校验
+### 10.6 执行边界必须二次校验
 
 在最终 submit 前必须再次检查：
 
@@ -168,7 +207,7 @@ bash scripts/testnet_live_session_smoke.sh
 
 ❗ 禁止只在 proposal 阶段校验。
 
-### 7.7 禁止顺手扩大修改范围
+### 10.7 禁止顺手扩大修改范围
 
 - 一个 PR 只解决一个问题域
 - 不允许顺手改状态机 / 执行链 / reconcile
@@ -180,7 +219,7 @@ bash scripts/testnet_live_session_smoke.sh
 - 一 issue 一 PR
 - merge 串行
 
-### 7.8 必须补 recovery regression tests
+### 10.8 必须补 recovery regression tests
 
 至少覆盖：
 
@@ -193,7 +232,7 @@ bash scripts/testnet_live_session_smoke.sh
 
 ❗ 禁止只写 helper 测试。
 
-### 7.9 AI / Codex 必须遵守
+### 10.9 AI / Codex 必须遵守
 
 AI 修改本范围代码时必须输出：
 
@@ -209,7 +248,7 @@ AI 修改本范围代码时必须输出：
 - 擅自扩大 scope
 - 未说明事实源直接改逻辑
 
-### 7.10 相关参考文档
+### 10.10 相关参考文档
 
 必须结合：
 
