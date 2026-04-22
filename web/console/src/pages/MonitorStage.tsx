@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { SignalMonitorChart } from '../components/charts/SignalMonitorChart';
@@ -6,7 +6,10 @@ import { formatMoney, formatSigned, formatMaybeNumber, formatTime, shrink } from
 import { 
   getRecord, 
   getList,
+  resolveChartAnchor,
+  buildTimeRange,
   deriveSignalBarCandles,
+  mapChartCandlesToSignalBarCandles,
   derivePrimarySignalBarState, 
   deriveRuntimeMarketSnapshot, 
   deriveSessionMarkers,
@@ -25,6 +28,7 @@ import {
   runtimePolicyValueLabel,
   technicalStatusLabel
 } from '../utils/derivation';
+import { fetchJSON } from '../utils/api';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '../components/ui/table';
@@ -38,6 +42,21 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
 import { cn } from '../lib/utils';
+import type { ChartCandle } from '../types/domain';
+
+function resolveMonitorFallbackResolution(timeframe: string) {
+  const normalized = String(timeframe ?? "").trim().toLowerCase();
+  const supported: Record<string, string> = {
+    "5m": "5",
+    "15m": "15",
+    "30m": "30",
+    "1h": "60",
+    "2h": "120",
+    "4h": "240",
+    "1d": "1D",
+  };
+  return supported[normalized] ?? "5";
+}
 
 type MonitorStageProps = {
   syncLiveOrder: (id: string) => void;
@@ -58,10 +77,15 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const accounts = useTradingStore(s => s.accounts);
   const strategySignalBindingMap = useTradingStore(s => s.strategySignalBindingMap);
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
+  const timeWindow = useUIStore(s => s.timeWindow);
+  const chartOverrideRange = useUIStore(s => s.chartOverrideRange);
   const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
   const setSelectedSignalRuntimeId = useTradingStore(s => s.setSelectedSignalRuntimeId);
+  const monitorCandles = useTradingStore(s => s.monitorCandles);
+  const setMonitorCandles = useTradingStore(s => s.setMonitorCandles);
   const timelineConfig = useUIStore(s => s.timelineConfig);
   const setTimelineConfig = useUIStore(s => s.setTimelineConfig);
+  const fallbackRequestKeyRef = useRef<string>("");
 
 
   // 1. 高亮会话选择逻辑
@@ -144,6 +168,80 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     });
   }, [highlightedLiveRuntimeState.sourceStates, sessionSymbol, monitorSignalTimeframe, monitorSignalBarStateKey]);
 
+  const fallbackResolution = useMemo(
+    () => resolveMonitorFallbackResolution(monitorSignalTimeframe),
+    [monitorSignalTimeframe]
+  );
+  const fallbackMonitorBars = useMemo(
+    () => mapChartCandlesToSignalBarCandles(monitorCandles, fallbackResolution),
+    [monitorCandles, fallbackResolution]
+  );
+  const displayMonitorBars = monitorBars.length > 0 ? monitorBars : fallbackMonitorBars;
+
+  useEffect(() => {
+    const monitorSessionId = monitorSession?.id ?? "";
+    if (!monitorSessionId || !sessionSymbol) {
+      fallbackRequestKeyRef.current = "";
+      setMonitorCandles([]);
+      return;
+    }
+    if (monitorBars.length > 0) {
+      fallbackRequestKeyRef.current = "";
+      setMonitorCandles([]);
+      return;
+    }
+
+    const requestKey = [
+      monitorSessionId,
+      sessionSymbol,
+      fallbackResolution,
+      timeWindow,
+      chartOverrideRange?.from ?? "",
+      chartOverrideRange?.to ?? "",
+    ].join(":");
+
+    if (fallbackRequestKeyRef.current === requestKey) {
+      return;
+    }
+    fallbackRequestKeyRef.current = requestKey;
+    setMonitorCandles([]);
+
+    const anchorDate = resolveChartAnchor(monitorSession, orders);
+    const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
+
+    let active = true;
+    fetchJSON<{ candles: ChartCandle[] }>(
+      `/api/v1/chart/candles?symbol=${encodeURIComponent(sessionSymbol)}&resolution=${fallbackResolution}&from=${range.from}&to=${range.to}&limit=240`
+    )
+      .then((payload) => {
+        if (!active) {
+          return;
+        }
+        const candles = Array.isArray(payload?.candles) ? payload.candles : [];
+        setMonitorCandles(candles);
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+        console.warn("Failed to load monitor fallback candles", error);
+        setMonitorCandles([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    chartOverrideRange,
+    fallbackResolution,
+    monitorBars.length,
+    monitorSession,
+    orders,
+    sessionSymbol,
+    setMonitorCandles,
+    timeWindow,
+  ]);
+
   const monitorSignalState = derivePrimarySignalBarState(
     getRecord(highlightedLiveRuntimeState.signalBarStates),
     {
@@ -165,12 +263,12 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     () =>
       deriveSignalMonitorDecorations(
         monitorSession,
-        monitorBars,
+        displayMonitorBars,
         monitorExecutionSummary.position,
         orders,
         fills
       ),
-    [monitorBars, monitorExecutionSummary.position, monitorSession, orders, fills]
+    [displayMonitorBars, monitorExecutionSummary.position, monitorSession, orders, fills]
   );
   const monitorChartMarkers = useMemo(
     () => [...monitorMarkers, ...monitorDecorations.markers],
@@ -273,9 +371,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
          </CardHeader>
          <CardContent className="p-0">
             <div className="chart-shell relative h-[360px] overflow-hidden bg-[color-mix(in_srgb,var(--bk-surface-strong)_40%,transparent)]">
-                {monitorBars.length > 0 ? (
+                {displayMonitorBars.length > 0 ? (
                   <SignalMonitorChart
-                    candles={monitorBars}
+                    candles={displayMonitorBars}
                     markers={monitorChartMarkers}
                     overlays={monitorDecorations.overlays}
                   />
