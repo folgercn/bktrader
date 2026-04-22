@@ -331,6 +331,11 @@ func (p *Platform) advanceTelegramFlapSuppressedActiveDelivery(
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
+	if !hasDelivery || (!strings.EqualFold(delivery.Status, "pending") &&
+		!strings.EqualFold(delivery.Status, "sent") &&
+		!strings.EqualFold(delivery.Status, "resolve_pending")) {
+		delete(metadata, "firstActiveAt")
+	}
 	metadata["title"] = item.Alert.Title
 	metadata["scope"] = item.Alert.Scope
 	metadata["detail"] = item.Alert.Detail

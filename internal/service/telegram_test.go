@@ -254,6 +254,92 @@ func TestTelegramDispatchSuppressesFlappingRuntimeStaleAlerts(t *testing.T) {
 	}
 }
 
+func TestTelegramFlapSuppressionResetsFirstActiveAtAfterRecoveredDelivery(t *testing.T) {
+	var messages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		_ = json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	store := memory.NewStore()
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:    true,
+			BotToken:   "test-token",
+			ChatID:     "123",
+			SendLevels: []string{"warning", "error"},
+		},
+	}
+	oldActiveAt := time.Date(2026, 4, 22, 3, 59, 25, 0, time.UTC)
+	newActiveAt := oldActiveAt.Add(6 * time.Minute)
+	item := domain.PlatformNotification{
+		ID:     "runtime-stale-signal-runtime-1",
+		Status: "active",
+		Alert: domain.PlatformAlert{
+			ID:               "runtime-stale-signal-runtime-1",
+			Scope:            "runtime",
+			Level:            "warning",
+			Title:            "数据源过期",
+			Detail:           "1 个数据源状态已陈旧",
+			RuntimeSessionID: "signal-runtime-1",
+			EventTime:        newActiveAt,
+		},
+		UpdatedAt: newActiveAt,
+	}
+	recoveredDelivery := domain.NotificationDelivery{
+		NotificationID: item.ID,
+		Channel:        "telegram",
+		Status:         "recovered",
+		Metadata: map[string]any{
+			"firstActiveAt": oldActiveAt.Format(time.RFC3339),
+			"title":         "数据源过期",
+		},
+	}
+
+	pending, shouldSend, err := p.advanceTelegramFlapSuppressedActiveDelivery(item, recoveredDelivery, true, newActiveAt)
+	if err != nil {
+		t.Fatalf("reactivate recovered delivery failed: %v", err)
+	}
+	if shouldSend {
+		t.Fatal("expected reactivated recovered delivery to reset grace window")
+	}
+	if pending.Status != "pending" {
+		t.Fatalf("expected pending status, got %s", pending.Status)
+	}
+	if got := stringValue(pending.Metadata["firstActiveAt"]); got != newActiveAt.Format(time.RFC3339) {
+		t.Fatalf("expected firstActiveAt reset to new active time, got %s", got)
+	}
+
+	pending, shouldSend, err = p.advanceTelegramFlapSuppressedActiveDelivery(item, pending, true, newActiveAt.Add(30*time.Second))
+	if err != nil {
+		t.Fatalf("refresh reactivated pending delivery failed: %v", err)
+	}
+	if shouldSend {
+		t.Fatal("expected reactivated alert to remain pending before fresh grace window")
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no telegram message before fresh grace window, got %#v", messages)
+	}
+
+	_, shouldSend, err = p.advanceTelegramFlapSuppressedActiveDelivery(item, pending, true, newActiveAt.Add(50*time.Second))
+	if err != nil {
+		t.Fatalf("send reactivated pending delivery failed: %v", err)
+	}
+	if !shouldSend {
+		t.Fatal("expected reactivated alert to send after fresh grace window")
+	}
+}
+
 func TestTelegramDispatchSuppressesTransientRuntimeRecoveringAlert(t *testing.T) {
 	var messages []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
