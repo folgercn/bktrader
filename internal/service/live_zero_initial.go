@@ -68,6 +68,14 @@ func prepareLivePlanStepForSignalEvaluation(
 	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource)
 	longReady := boolValue(gate["longReady"])
 	shortReady := boolValue(gate["shortReady"])
+	if liveExitReentryPlanStep(nextPlannedRole, nextPlannedReason) && longReady == shortReady {
+		// Stale PT/SL re-entry steps should first prefer a breakout-confirmed
+		// current direction, but may fall back to zero-initial reentry semantics
+		// when intraday structure is ready before a fresh breakout prints.
+		gate = evaluateSignalBarGate(signalBarState, "", "entry", "Zero-Initial-Reentry", breakoutPrice, breakoutPriceSource)
+		longReady = boolValue(gate["longReady"])
+		shortReady = boolValue(gate["shortReady"])
+	}
 	if longReady == shortReady {
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
