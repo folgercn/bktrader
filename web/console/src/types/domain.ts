@@ -583,7 +583,10 @@ export interface LiveSessionForm {
   signalTimeframe: string;
   executionDataSource: string;
   symbol: string;
+  positionSizingMode: string;
   defaultOrderQuantity: string;
+  reentrySizeScheduleFirst: string;
+  reentrySizeScheduleSecond: string;
   executionEntryOrderType: string;
   executionEntryMaxSpreadBps: string;
   executionEntryWideSpreadMode: string;

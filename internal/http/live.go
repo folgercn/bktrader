@@ -25,6 +25,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				StrategyID                                string `json:"strategyId"`
 				PositionSizingMode                        string `json:"positionSizingMode"`
 				DefaultOrderFraction                      any    `json:"defaultOrderFraction"`
+				ReentrySizeSchedule                       any    `json:"reentry_size_schedule"`
 				SignalTimeframe                           string `json:"signalTimeframe"`
 				ExecutionDataSource                       string `json:"executionDataSource"`
 				ExecutionStrategy                         string `json:"executionStrategy"`
@@ -92,6 +93,9 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			if payload.DefaultOrderFraction != nil {
 				overrides["defaultOrderFraction"] = payload.DefaultOrderFraction
+			}
+			if payload.ReentrySizeSchedule != nil {
+				overrides["reentry_size_schedule"] = payload.ReentrySizeSchedule
 			}
 			if payload.ExecutionDataSource != "" {
 				overrides["executionDataSource"] = payload.ExecutionDataSource
@@ -260,6 +264,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				StrategyID                                string `json:"strategyId"`
 				PositionSizingMode                        string `json:"positionSizingMode"`
 				DefaultOrderFraction                      any    `json:"defaultOrderFraction"`
+				ReentrySizeSchedule                       any    `json:"reentry_size_schedule"`
 				SignalTimeframe                           string `json:"signalTimeframe"`
 				ExecutionDataSource                       string `json:"executionDataSource"`
 				ExecutionStrategy                         string `json:"executionStrategy"`
@@ -320,6 +325,9 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			if payload.DefaultOrderFraction != nil {
 				overrides["defaultOrderFraction"] = payload.DefaultOrderFraction
+			}
+			if payload.ReentrySizeSchedule != nil {
+				overrides["reentry_size_schedule"] = payload.ReentrySizeSchedule
 			}
 			if payload.ExecutionDataSource != "" {
 				overrides["executionDataSource"] = payload.ExecutionDataSource

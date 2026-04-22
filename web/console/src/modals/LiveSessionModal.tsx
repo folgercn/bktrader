@@ -211,13 +211,43 @@ export function LiveSessionModal({
                   onChange={(event) => setLiveSessionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
                 />
               </ModalField>
-              <ModalField label="默认下单量">
+              <LiveSelectField
+                label="数量模式"
+                value={liveSessionForm.positionSizingMode}
+                onValueChange={(value) => setLiveSessionForm((current) => ({ ...current, positionSizingMode: value }))}
+                options={[
+                  { value: "fixed_quantity", label: "自定义固定数量" },
+                  { value: "reentry_size_schedule", label: "按 Reentry Schedule" },
+                ]}
+              />
+              <ModalField label={liveSessionForm.positionSizingMode === "reentry_size_schedule" ? "固定回退数量" : "固定下单量"}>
                 <ModalInput
                   placeholder="0.00"
                   value={liveSessionForm.defaultOrderQuantity}
                   onChange={(event) => setLiveSessionForm((current) => ({ ...current, defaultOrderQuantity: event.target.value }))}
                 />
               </ModalField>
+              {liveSessionForm.positionSizingMode === "reentry_size_schedule" && (
+                <>
+                  <ModalField label="首笔 Reentry 比例">
+                    <ModalInput
+                      placeholder="0.20"
+                      value={liveSessionForm.reentrySizeScheduleFirst}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, reentrySizeScheduleFirst: event.target.value }))}
+                    />
+                  </ModalField>
+                  <ModalField label="次笔 Reentry 比例">
+                    <ModalInput
+                      placeholder="0.10"
+                      value={liveSessionForm.reentrySizeScheduleSecond}
+                      onChange={(event) => setLiveSessionForm((current) => ({ ...current, reentrySizeScheduleSecond: event.target.value }))}
+                    />
+                  </ModalField>
+                  <div className="md:col-span-3 rounded-2xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] px-4 py-3 text-[11px] font-semibold leading-relaxed text-[var(--bk-text-muted)]">
+                    Reentry schedule 使用账户可用余额按比例换算下单量，例如 0.20 / 0.10 表示同一 signal bar 内第 1 笔真实 reentry 使用 20%，第 2 笔使用 10%；SL/PT 仍按当前持仓数量 reduceOnly 平仓。
+                  </div>
+                </>
+              )}
             </ModalFormGrid>
           </ModalGroup>
 

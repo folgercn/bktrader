@@ -27,6 +27,13 @@ func TestDeriveLiveSignalIntentUsesNextPlannedStep(t *testing.T) {
 			"signalKind":        "protect-exit",
 			"decisionState":     "exit-ready",
 			"signalBarStateKey": "binance|BTCUSDT|trigger|4h",
+			"currentPosition": map[string]any{
+				"found":      true,
+				"symbol":     "BTCUSDT",
+				"side":       "LONG",
+				"quantity":   0.008,
+				"entryPrice": 25000.0,
+			},
 			"nextPlannedSide":   "SELL",
 			"nextPlannedRole":   "exit",
 			"nextPlannedReason": "PT",
@@ -47,6 +54,9 @@ func TestDeriveLiveSignalIntentUsesNextPlannedStep(t *testing.T) {
 	}
 	if got := intent.Reason; got != "PT" {
 		t.Fatalf("expected PT reason, got %v", got)
+	}
+	if got := intent.Quantity; got != 0.008 {
+		t.Fatalf("expected exit intent quantity to match current position, got %v", got)
 	}
 }
 
@@ -1369,6 +1379,187 @@ func TestBookAwareExecutionStrategyBuildsProposalFromBalanceFraction(t *testing.
 	}
 }
 
+func TestBookAwareExecutionStrategyUsesReentrySizeScheduleForLiveEntry(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	account := domain.Account{
+		Metadata: map[string]any{
+			"liveSyncSnapshot": map[string]any{
+				"availableBalance": 1000.0,
+			},
+		},
+	}
+	execution := StrategyExecutionContext{
+		Parameters: map[string]any{
+			"executionMaxSpreadBps": 8.0,
+			"reentry_size_schedule": []float64{0.20, 0.10},
+		},
+	}
+	baseIntent := SignalIntent{
+		Action:        "entry",
+		Role:          "entry",
+		Reason:        "Zero-Initial-Reentry",
+		Side:          "BUY",
+		Symbol:        "BTCUSDT",
+		SignalKind:    "zero-initial-reentry",
+		DecisionState: "entry-ready",
+		PriceHint:     25000,
+		PriceSource:   "trade_tick.price",
+		Metadata: map[string]any{
+			"bestBid":                       24999.5,
+			"bestAsk":                       25000.0,
+			"spreadBps":                     0.1,
+			"signalBarStateKey":             "state-schedule",
+			liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-22T06:00:00Z",
+		},
+	}
+
+	fixed, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{
+			State: map[string]any{
+				"positionSizingMode":   "fixed_quantity",
+				"defaultOrderQuantity": 0.002,
+			},
+		},
+		Account:   account,
+		Execution: execution,
+		Intent:    baseIntent,
+	})
+	if err != nil {
+		t.Fatalf("unexpected fixed proposal error: %v", err)
+	}
+	if fixed.Quantity != 0.002 {
+		t.Fatalf("expected fixed_quantity mode to ignore reentry schedule, got %v", fixed.Quantity)
+	}
+	if got := stringValue(fixed.Metadata["reentryScheduleSizingSkippedReason"]); got != "position_sizing_mode_fixed_quantity" {
+		t.Fatalf("expected fixed mode skip reason, got %s", got)
+	}
+
+	first, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{
+			State: map[string]any{
+				"positionSizingMode":   "reentry_size_schedule",
+				"defaultOrderQuantity": 0.002,
+			},
+		},
+		Account:   account,
+		Execution: execution,
+		Intent:    baseIntent,
+	})
+	if err != nil {
+		t.Fatalf("unexpected first proposal error: %v", err)
+	}
+	if first.Quantity != 0.008 {
+		t.Fatalf("expected first reentry to use 20%% of balance, got %v", first.Quantity)
+	}
+	if got := stringValue(first.Metadata["sizingMethod"]); got != "reentry_size_schedule" {
+		t.Fatalf("expected reentry schedule sizing method, got %s", got)
+	}
+	if got := parseFloatValue(first.Metadata["sizingReentryFraction"]); got != 0.20 {
+		t.Fatalf("expected first schedule fraction 0.20, got %v", got)
+	}
+	if got := parseFloatValue(first.Metadata["configuredOrderQuantity"]); got != 0.002 {
+		t.Fatalf("expected fixed quantity fallback metadata to remain visible, got %v", got)
+	}
+
+	second, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{
+			State: map[string]any{
+				"positionSizingMode":    "reentry_size_schedule",
+				"defaultOrderQuantity":  0.002,
+				"lastSignalBarStateKey": "BTCUSDT|30m|2026-04-22T06:00:00Z",
+				"sessionReentryCount":   1.0,
+				"max_trades_per_bar":    2,
+			},
+		},
+		Account:   account,
+		Execution: execution,
+		Intent:    baseIntent,
+	})
+	if err != nil {
+		t.Fatalf("unexpected second proposal error: %v", err)
+	}
+	if second.Quantity != 0.004 {
+		t.Fatalf("expected second reentry to use 10%% of balance, got %v", second.Quantity)
+	}
+	if got := parseFloatValue(second.Metadata["sizingReentryScheduleIndex"]); got != 1 {
+		t.Fatalf("expected second schedule index 1, got %v", got)
+	}
+	if got := parseFloatValue(second.Metadata["sizingReentryFraction"]); got != 0.10 {
+		t.Fatalf("expected second schedule fraction 0.10, got %v", got)
+	}
+}
+
+func TestBookAwareExecutionStrategyUsesPositionQuantityForScheduledReentryExits(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	for _, tc := range []struct {
+		name             string
+		reason           string
+		positionQuantity float64
+	}{
+		{name: "pt after 20 percent entry", reason: "PT", positionQuantity: 0.008},
+		{name: "sl after 10 percent entry", reason: "SL", positionQuantity: 0.004},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+				Session: domain.LiveSession{
+					State: map[string]any{
+						"positionSizingMode":   "reentry_size_schedule",
+						"defaultOrderQuantity": 0.002,
+					},
+				},
+				Account: domain.Account{
+					Metadata: map[string]any{
+						"liveSyncSnapshot": map[string]any{
+							"availableBalance": 1000.0,
+						},
+					},
+				},
+				Execution: StrategyExecutionContext{
+					Parameters: map[string]any{
+						"executionMaxSpreadBps": 8.0,
+						"reentry_size_schedule": []float64{0.20, 0.10},
+					},
+				},
+				Intent: SignalIntent{
+					Action:        "exit",
+					Role:          "exit",
+					Reason:        tc.reason,
+					Side:          "SELL",
+					Symbol:        "BTCUSDT",
+					SignalKind:    "risk-exit",
+					DecisionState: "exit-ready",
+					PriceHint:     26000,
+					PriceSource:   "trade_tick.price",
+					Metadata: map[string]any{
+						"bestBid":   25999.5,
+						"bestAsk":   26000.0,
+						"spreadBps": 0.1,
+						"currentPosition": map[string]any{
+							"found":      true,
+							"symbol":     "BTCUSDT",
+							"side":       "LONG",
+							"quantity":   tc.positionQuantity,
+							"entryPrice": 25000.0,
+						},
+					},
+				},
+			})
+			if err != nil {
+				t.Fatalf("unexpected proposal error: %v", err)
+			}
+			if proposal.Quantity != tc.positionQuantity {
+				t.Fatalf("expected %s exit quantity to match open position %.6f, got %v", tc.reason, tc.positionQuantity, proposal.Quantity)
+			}
+			if !proposal.ReduceOnly {
+				t.Fatalf("expected %s exit to be reduceOnly", tc.reason)
+			}
+			if got := stringValue(proposal.Metadata["sizingMethod"]); got != "exit_position_quantity" {
+				t.Fatalf("expected exit_position_quantity sizing, got %s", got)
+			}
+		})
+	}
+}
+
 func TestBookAwareExecutionStrategyUsesReduceOnlyMakerProfileForPTExit(t *testing.T) {
 	strategy := bookAwareExecutionStrategy{}
 	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
@@ -2231,12 +2422,26 @@ func TestNormalizeLiveSessionOverridesIncludesPositionSizing(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
 		"positionSizingMode":   "fixed-fraction",
 		"defaultOrderFraction": 0.12,
+		"reentry_size_schedule": []any{
+			0.20,
+			0.10,
+		},
 	})
 	if got := stringValue(overrides["positionSizingMode"]); got != "fixed_fraction" {
 		t.Fatalf("expected fixed_fraction mode, got %s", got)
 	}
 	if got := parseFloatValue(overrides["defaultOrderFraction"]); got != 0.12 {
 		t.Fatalf("expected default order fraction 0.12, got %v", got)
+	}
+	schedule := normalizeBacktestFloatSlice(overrides["reentry_size_schedule"], nil)
+	if len(schedule) != 2 || schedule[0] != 0.20 || schedule[1] != 0.10 {
+		t.Fatalf("expected reentry size schedule [0.20, 0.10], got %#v", overrides["reentry_size_schedule"])
+	}
+	scheduleMode := normalizeLiveSessionOverrides(map[string]any{
+		"positionSizingMode": "reentry-size-schedule",
+	})
+	if got := stringValue(scheduleMode["positionSizingMode"]); got != "reentry_size_schedule" {
+		t.Fatalf("expected reentry_size_schedule mode, got %s", got)
 	}
 }
 
