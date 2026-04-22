@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
@@ -253,6 +254,28 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/live/sessions/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/live/sessions/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if r.Method == http.MethodGet {
+			if len(parts) == 2 && parts[0] != "" && parts[1] == "trade-pairs" {
+				limit, err := parseOptionalPositiveInt(r.URL.Query().Get("limit"))
+				if err != nil {
+					writeError(w, http.StatusBadRequest, "invalid limit")
+					return
+				}
+				items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+					LiveSessionID: parts[0],
+					Status:        r.URL.Query().Get("status"),
+					Limit:         limit,
+				})
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, items)
+				return
+			}
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		if r.Method == http.MethodPut {
 			if len(parts) != 1 || parts[0] == "" {
 				writeError(w, http.StatusNotFound, "live session route not found")

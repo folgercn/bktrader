@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { SignalMonitorChart } from '../components/charts/SignalMonitorChart';
+import { LiveTradePairsCard } from '../components/live/LiveTradePairsCard';
 import { formatMoney, formatSigned, formatMaybeNumber, formatTime, shrink } from '../utils/format';
 import { 
   getRecord, 
@@ -29,6 +30,7 @@ import {
   technicalStatusLabel
 } from '../utils/derivation';
 import { fetchJSON } from '../utils/api';
+import { useLiveTradePairs } from '../hooks/useLiveTradePairs';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '../components/ui/table';
@@ -308,6 +310,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
   const timelineLogs = buildTimelineNotes(monitorTimeline, timelineConfig, monitorSession?.id).slice(0, 50);
+  const monitorTradePairs = useLiveTradePairs(monitorSession?.id ?? null, 8);
 
 
   const reconciledOrders = orders.filter(o => !!(o.metadata?.orderLifecycle as any)?.synced);
@@ -409,6 +412,16 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
            <CandlestickChart className="size-12 text-[var(--bk-text-muted)]" />
            <p className="text-sm font-black uppercase tracking-wider italic text-[var(--bk-text-muted)]">需选择活跃焦点会话以同步实时 K 线数据</p>
         </div>
+      )}
+
+      {monitorSession && (
+        <LiveTradePairsCard
+          title="开平订单对追溯"
+          description="聚合当前焦点会话的 round-trip 交易，直接判断是否正常退出，以及这笔单现在赚亏多少。"
+          pairs={monitorTradePairs.pairs}
+          loading={monitorTradePairs.loading}
+          error={monitorTradePairs.error}
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
