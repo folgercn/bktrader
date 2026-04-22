@@ -40,9 +40,12 @@ func prepareLivePlanStepForSignalEvaluation(
 	}
 
 	updatedState = refreshLiveZeroInitialWindowState(updatedState, signalBarStates, symbol, signalTimeframe, currentPosition, eventTime)
-	// Replay only keeps PT/SL reentry eligible through the next signal bar.
-	// Once the planned step is stale, live should fall back to current-market alignment.
-	if liveExitReentryPlanStep(nextPlannedRole, nextPlannedReason) &&
+	staleExitReentry := liveExitReentryPlanStep(nextPlannedRole, nextPlannedReason)
+	// Replay only keeps PT/SL reentry eligible through the next signal bar. Once
+	// that boundary is crossed, live no longer trusts the historical trigger
+	// timing and must re-align using the current signal bar instead of replaying
+	// the stale plan step indefinitely.
+	if staleExitReentry &&
 		(hasActiveLivePositionSnapshot(currentPosition) || !isLivePlanStepStale(nextPlannedEvent, signalTimeframe, eventTime)) {
 		clearLivePendingZeroInitialWindow(updatedState, eventTime, "exit-reentry-priority")
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
@@ -65,9 +68,24 @@ func prepareLivePlanStepForSignalEvaluation(
 	if signalBarState == nil {
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
+	alignmentMode := ""
 	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource)
 	longReady := boolValue(gate["longReady"])
 	shortReady := boolValue(gate["shortReady"])
+	if longReady != shortReady {
+		alignmentMode = "breakout-confirmed"
+	}
+	if staleExitReentry && longReady == shortReady {
+		// Stale PT/SL re-entry steps should first prefer a breakout-confirmed
+		// current direction, but may fall back to zero-initial reentry semantics
+		// when intraday structure is ready before a fresh breakout prints.
+		gate = evaluateSignalBarGate(signalBarState, "", "entry", "Zero-Initial-Reentry", breakoutPrice, breakoutPriceSource)
+		longReady = boolValue(gate["longReady"])
+		shortReady = boolValue(gate["shortReady"])
+		if longReady != shortReady {
+			alignmentMode = "structure-ready-no-breakout"
+		}
+	}
 	if longReady == shortReady {
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
@@ -94,13 +112,29 @@ func prepareLivePlanStepForSignalEvaluation(
 		"expiresAt":       currentBarStart.UTC().Add(2 * step).Format(time.RFC3339),
 	}
 	updatedState[livePendingZeroInitialWindowStateKey] = pendingWindow
-	appendTimelineEvent(updatedState, "strategy", eventTime, "zero-initial-window-armed", map[string]any{
+	timelineMetadata := map[string]any{
 		livePendingZeroInitialWindowStateKey: cloneMetadata(pendingWindow),
 		"reason":                             "Zero-Initial-Reentry",
 		"side":                               side,
 		"symbol":                             NormalizeSymbol(symbol),
 		"signalTimeframe":                    strings.ToLower(strings.TrimSpace(signalTimeframe)),
-	})
+	}
+	if staleExitReentry {
+		timelineMetadata["staleExitReentryContext"] = liveStaleExitReentryContext(
+			signalBarState,
+			signalTimeframe,
+			eventTime,
+			breakoutPrice,
+			breakoutPriceSource,
+			nextPlannedEvent,
+			nextPlannedPrice,
+			nextPlannedSide,
+			nextPlannedRole,
+			nextPlannedReason,
+			alignmentMode,
+		)
+	}
+	appendTimelineEvent(updatedState, "strategy", eventTime, "zero-initial-window-armed", timelineMetadata)
 	updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, _ := liveZeroInitialWindowPlanStep(updatedState, parameters, signalBarStates, symbol, signalTimeframe, eventTime)
 	return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason
 }
@@ -179,6 +213,54 @@ func clearLivePendingZeroInitialWindow(state map[string]any, eventTime time.Time
 		livePendingZeroInitialWindowStateKey: pending,
 		"reason":                             firstNonEmpty(strings.TrimSpace(reason), "consumed"),
 	})
+}
+
+func liveStaleExitReentryContext(
+	signalBarState map[string]any,
+	signalTimeframe string,
+	eventTime time.Time,
+	breakoutPrice float64,
+	breakoutPriceSource string,
+	nextPlannedEvent time.Time,
+	nextPlannedPrice float64,
+	nextPlannedSide, nextPlannedRole, nextPlannedReason string,
+	alignmentMode string,
+) map[string]any {
+	context := map[string]any{
+		"alignmentMode":       strings.TrimSpace(alignmentMode),
+		"breakoutPrice":       breakoutPrice,
+		"breakoutPriceSource": strings.TrimSpace(breakoutPriceSource),
+		"plannedPrice":        nextPlannedPrice,
+		"plannedReason":       strings.TrimSpace(nextPlannedReason),
+		"plannedRole":         strings.ToLower(strings.TrimSpace(nextPlannedRole)),
+		"plannedSide":         strings.ToUpper(strings.TrimSpace(nextPlannedSide)),
+	}
+	if !nextPlannedEvent.IsZero() {
+		context["plannedEvent"] = nextPlannedEvent.UTC().Format(time.RFC3339)
+	}
+	step := resolutionToDuration(liveSignalResolution(signalTimeframe))
+	if step <= 0 {
+		step = 4 * time.Hour
+	}
+	context["staleWindowSeconds"] = step.Seconds()
+	if !nextPlannedEvent.IsZero() && eventTime.After(nextPlannedEvent) {
+		context["staleAgeSeconds"] = eventTime.Sub(nextPlannedEvent).Seconds()
+	}
+	current := mapValue(signalBarState["current"])
+	currentClose := parseFloatValue(current["close"])
+	if currentClose > 0 {
+		context["currentClose"] = currentClose
+	}
+	if currentBarStart := parseOptionalRFC3339(stringValue(current["barStart"])); !currentBarStart.IsZero() {
+		context["currentBarStart"] = currentBarStart.UTC().Format(time.RFC3339)
+	}
+	if nextPlannedPrice > 0 && currentClose > 0 {
+		context["currentCloseDeviationBps"] = computePriceProximityBps(nextPlannedPrice, currentClose)
+	}
+	if nextPlannedPrice > 0 && breakoutPrice > 0 {
+		context["breakoutDeviationBps"] = computePriceProximityBps(nextPlannedPrice, breakoutPrice)
+	}
+	return context
 }
 
 func liveZeroInitialWindowPlanStep(

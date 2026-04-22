@@ -62,4 +62,91 @@ func TestPrepareLivePlanStepForSignalEvaluationExpiresStaleExitReentryWindow(t *
 	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
 		t.Fatalf("expected pending BUY window after stale SL-Reentry fallback, got %+v", pending)
 	}
+	timeline := metadataList(state["timeline"])
+	if len(timeline) != 1 || stringValue(timeline[0]["title"]) != "zero-initial-window-armed" {
+		t.Fatalf("expected one zero-initial-window-armed event, got %+v", timeline)
+	}
+	context := mapValue(mapValue(timeline[0]["metadata"])["staleExitReentryContext"])
+	if stringValue(context["alignmentMode"]) != "breakout-confirmed" {
+		t.Fatalf("expected breakout-confirmed stale exit reentry context, got %+v", context)
+	}
+	if stringValue(context["plannedReason"]) != "SL-Reentry" || stringValue(context["breakoutPriceSource"]) != "trade_tick.price" {
+		t.Fatalf("expected stale exit reentry context to retain original plan and breakout source, got %+v", context)
+	}
+	if parseFloatValue(context["staleAgeSeconds"]) <= parseFloatValue(context["staleWindowSeconds"]) {
+		t.Fatalf("expected stale age to exceed stale window in context, got %+v", context)
+	}
+}
+
+func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialSemanticsForStaleIntradayReentry(t *testing.T) {
+	barStart := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      100.0,
+			"atr14":     20.0,
+			"current": map[string]any{
+				"barStart": barStart.Format(time.RFC3339),
+				"close":    108.0,
+				"high":     109.0,
+				"low":      104.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 104.0,
+				"low":  95.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 106.0,
+				"low":  96.0,
+			},
+		},
+	}
+
+	state, gotEvent, gotPrice, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		map[string]any{},
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"long_reentry_atr":  0.1,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		barStart.Add(45*time.Minute),
+		101.0,
+		"trade_tick.price",
+		barStart.Add(-2*time.Hour),
+		92.0,
+		"SELL",
+		"entry",
+		"SL-Reentry",
+	)
+	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
+		t.Fatalf("expected stale intraday SL-Reentry to fall back to zero-initial semantics, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if gotPrice != 97.0 {
+		t.Fatalf("expected stale intraday fallback price 97.0, got %.2f", gotPrice)
+	}
+	if gotEvent != barStart {
+		t.Fatalf("expected stale intraday fallback planned event %s, got %s", barStart.Format(time.RFC3339), gotEvent.Format(time.RFC3339))
+	}
+	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
+		t.Fatalf("expected pending BUY window after stale intraday fallback, got %+v", pending)
+	}
+	timeline := metadataList(state["timeline"])
+	if len(timeline) != 1 || stringValue(timeline[0]["title"]) != "zero-initial-window-armed" {
+		t.Fatalf("expected one zero-initial-window-armed event, got %+v", timeline)
+	}
+	context := mapValue(mapValue(timeline[0]["metadata"])["staleExitReentryContext"])
+	if stringValue(context["alignmentMode"]) != "structure-ready-no-breakout" {
+		t.Fatalf("expected structure-ready-no-breakout stale exit reentry context, got %+v", context)
+	}
+	if stringValue(context["plannedReason"]) != "SL-Reentry" || stringValue(context["plannedSide"]) != "SELL" {
+		t.Fatalf("expected stale intraday context to retain original plan info, got %+v", context)
+	}
+	if parseFloatValue(context["currentCloseDeviationBps"]) <= 0 || parseFloatValue(context["breakoutDeviationBps"]) <= 0 {
+		t.Fatalf("expected stale intraday context to record current-vs-planned deviations, got %+v", context)
+	}
 }
