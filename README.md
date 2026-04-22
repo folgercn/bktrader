@@ -21,10 +21,30 @@
 平台围绕当前首选策略配置进行设计：
 
 - 信号时间框架：`1D` 信号，`1m` 执行
+- 运行模式：`dir2_zero_initial=true` + `zero_initial_mode=reentry_window`
 - 初始仓位为零
-- `max_trades_per_bar=3`（每根 K 线最大交易次数）
-- 再入场风险仓位管理：首次 `10%`，后续 `20%`
+- `max_trades_per_bar=2`（每根 K 线最大交易次数）
+- 再入场风险仓位管理：首次 `20%`，后续 `10%` (`reentry_size_schedule=[0.20, 0.10]`)
 - 止损模式：`atr`
+
+## 🏗️ Harness Engineering & 协作准则
+
+本项目引入了 **Harness Engineering** 体系，旨在通过自动化工具和严格的协作纪律确保交易系统的执行安全性：
+
+- **[AGENTS.md](AGENTS.md)**: AI Agent 介入本项目的最高行动指南。所有参与开发的 Agent 必须首先阅读并严格遵守其中的风险约束、baseline 规范和协作纪律。
+- **安全传感器 (Safety Sensors)**: 
+    - `scripts/check_high_risk_defaults.sh`: 静态扫描代码库，防止高风险默认配置（如 `auto-dispatch`）被误提交。
+    - `scripts/check_migration_safety.py`: 数据库迁移安全检测，防止非向后兼容的变更破坏生产数据。
+    - `scripts/check_env_safety.sh`: 环境安全检查。
+- **验证矩阵**: 详见 `docs/test-matrix.md`，定义了不同风险等级改动所需的验证深度。
+
+## 🧠 知识图谱 (Knowledge Graph)
+
+本项目通过 `graphify` 维护着一套自动更新的知识图谱：
+
+- **目录**: `graphify-out/`
+- **核心报告**: `graphify-out/GRAPH_REPORT.md` (包含 God Nodes 分析、社区结构和潜在架构瓶颈建议)
+- **作用**: 帮助 LLM 和开发者快速理解系统核心组件（如 `Platform`, `Store`, `Adapter`）之间的依赖拓扑，避免在修改热路径代码时产生非预期的副作用。
 
 ## 快速开始
 

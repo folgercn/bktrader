@@ -1,7 +1,10 @@
 # BKTrader LLM 快速引导与文件索引
 
 > **提示给后续的 LLM Agent：** 
-> 当你介入本项目时，请首先阅读此文件，以快速建立关于 BKTrader 系统架构和文件目录的全局上下文。
+> 当你介入本项目时，请**务必按顺序**阅读以下文件：
+> 1. **[AGENTS.md](file:///Users/fujun/node/bktrader/AGENTS.md)**: **最高优先级规范**，包含风险约束、Baseline 参数与协作纪律。
+> 2. **本文件 (docs/llm-project-index.md)**: 建立系统架构和文件目录的全局上下文。
+> 3. **[docs/index.md](file:///Users/fujun/node/bktrader/docs/index.md)**: 详细的项目级 Harness 与文档清单。
 
 ## 1. 项目定位
 **BKTrader** 是一个加密货币自动化交易与回测平台。
@@ -21,6 +24,7 @@
   - `store/`: 持久化层（主要使用 PostgreSQL）。
 - **`db/migrations/`**: PostgreSQL 数据库的建表和变更 SQL 脚本。
 - **`data/tick/`**: 存放 Tick 级行情数据的示例或规范。
+- **`graphify-out/`**: **知识图谱资产**，包含 `GRAPH_REPORT.md`，用于理解系统核心组件的依赖拓扑。
 
 ### 🖥️ 前端 (React + Vite + TypeScript)
 前端位于 **`web/console/`**，采用 Zustand 进行状态管理，设计风格偏向暗黑玻璃拟态。
@@ -35,15 +39,20 @@
 
 ### 🔬 投研与运维 (Python & Shell)
 - **`research/`**: Python 投研脚本，用于数据预处理、本地回测和策略验证。
-- **`scripts/`**: 运维和测试脚本（部署、数据校验、回归测试等）。
+- **`scripts/`**: 运维和测试脚本。
+  - **安全传感器 (Safety Sensors)**: `check_high_risk_defaults.sh` (防误操作), `check_migration_safety.py` (迁移安全), `check_env_safety.sh` (环境检查)。
+  - **回归测试**: `testnet_live_session_smoke.sh` 等。
 - **`deployments/`**: Docker Compose 编排文件（本地开发与生产环境）。
 
 ### 📚 文档与智能体资产
-- **`docs/`**: 人类可读的系统设计文档、更新计划、数据规范。
-- **`docs/AGENT_PATHS.md`**: **重要！** 后端 Go 与前端 Node 环境工具的绝对路径导览，防止 Agent 在命令行环境找不到工具。
-- **`docs/frontend-live-reconcile-collab.md`**: Live 账户全量对账接口的前端协作说明，约定入口、展示条件与返回摘要。
-- **`docs/frontend-live-launch-template-isolation-collab.md`**: Live launch template 从“叠加绑定”收敛为“独占切换模板”后的前端协作说明。
-- **`.agents/skills/`**: 注入给 Gemini/LLM 的特定技能库（如前端设计规范、特定交互理论）。
+- **`docs/`**: 人类可读的系统设计文档。
+  - **`test-matrix.md`**: 定义各风险等级改动所需的验证深度。
+  - **`pr-lessons-learned.md`**: **必读！** 从 155 个 PR 提炼的实战踩坑模式与 Review 黄金规则。
+  - **`agent-risk-model.md`**: L0 到 L3 的风险定级说明。
+  - **`production-log-troubleshooting.md`**: 生产环境排障与 SSH/日志路径说明。
+- **`docs/AGENT_PATHS.md`**: **重要！** 工具链绝对路径导览。
+- **`.skills/`**: 注入给 LLM 的特定技能库（如前端规范、shadcn 使用规范）。
 
 ## 3. 最近的重大重构记录
-- **前端模块化拆解**: 曾将 5000 行的 `main.tsx` 逻辑抽离成了几十个职责单一的 React 组件，状态管理和派生逻辑已完全解耦。在后续新增前端功能时，请严格遵守当前的组件划分目录规范。
+- **前端模块化拆解**: 曾将 5000 行的 `main.tsx` 逻辑抽离成了几十个职责单一的 React 组件。
+- **Harness Engineering 体系部署**: 引入了 `AGENTS.md` 强约束、自动化安全传感器以及基于风险定级的验证矩阵（`test-matrix.md`），将安全边界从文档口头约定转为机械化拦截。
