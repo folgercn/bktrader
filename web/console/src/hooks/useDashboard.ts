@@ -1,18 +1,17 @@
 import { useEffect } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
-import { fetchJSON, API_BASE } from '../utils/api';
+import { fetchJSON } from '../utils/api';
 import { writeStoredAuthSession } from '../utils/auth';
 import { 
   AccountSummary, AccountRecord, Order, Fill, Position, PaperSession, LiveSession, 
   StrategyRecord, BacktestRun, BacktestOptions, LiveAdapter, SignalSourceCatalog, 
   SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, 
   PlatformAlert, PlatformNotification, TelegramConfig, AccountEquitySnapshot, PlatformHealthSnapshot,
-  ChartCandle, ChartAnnotation, SignalBinding 
+  ChartAnnotation, SignalBinding 
 } from '../types/domain';
 import { 
-  resolveChartAnchor, buildTimeRange, strategyLabel, getRecord, getList, 
-  deriveRuntimeMarketSnapshot, summarizeOrderPreflight 
+  resolveChartAnchor, buildTimeRange
 } from '../utils/derivation';
 
 export function useDashboard() {
@@ -26,8 +25,6 @@ export function useDashboard() {
   const authSession = useUIStore(s => s.authSession);
   const timeWindow = useUIStore(s => s.timeWindow);
   const chartOverrideRange = useUIStore(s => s.chartOverrideRange);
-  const monitorResolution = useUIStore(s => s.monitorResolution);
-  const liveOrderForm = useUIStore(s => s.liveOrderForm);
   const setSelectedBacktestId = useUIStore(s => s.setSelectedBacktestId);
   const setBacktestForm = useUIStore(s => s.setBacktestForm);
 
@@ -38,7 +35,6 @@ export function useDashboard() {
   const setFills = useTradingStore(s => s.setFills);
   const setPositions = useTradingStore(s => s.setPositions);
   const setSnapshots = useTradingStore(s => s.setSnapshots);
-  const setMonitorCandles = useTradingStore(s => s.setMonitorCandles);
   const setStrategies = useTradingStore(s => s.setStrategies);
   const setSelectedStrategyId = useTradingStore(s => s.setSelectedStrategyId);
   const setBacktests = useTradingStore(s => s.setBacktests);
@@ -151,15 +147,12 @@ export function useDashboard() {
     const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
     const { from, to } = range;
 
-    const [snapshotData, candleData, annotationData] = await Promise.all([
+    const [snapshotData, annotationData] = await Promise.all([
       summaryData[0]?.accountId
         ? fetchJSON<AccountEquitySnapshot[]>(
             `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(summaryData[0].accountId)}`
           )
         : Promise.resolve([]),
-      fetchJSON<{ candles: ChartCandle[] }>(
-        `/api/v1/chart/candles?symbol=BTCUSDT&resolution=1&from=${from}&to=${to}&limit=840`
-      ),
       fetchJSON<ChartAnnotation[]>(
         `/api/v1/chart/annotations?symbol=BTCUSDT&from=${from}&to=${to}&limit=300`
       ),
@@ -182,7 +175,6 @@ export function useDashboard() {
     const normalizedNotifications = Array.isArray(notificationData) ? notificationData : [];
     const normalizedSnapshots = Array.isArray(snapshotData) ? snapshotData : [];
     const normalizedAnnotations = Array.isArray(annotationData) ? annotationData : [];
-    const normalizedCandles = Array.isArray(candleData?.candles) ? candleData.candles : [];
     const normalizedSignalCatalog = signalCatalogData && typeof signalCatalogData === "object" ? signalCatalogData : { sources: [], notes: [] };
     const normalizedBacktestOptions =
       backtestOptionsData && typeof backtestOptionsData === "object" ? backtestOptionsData : ({} as BacktestOptions);
@@ -255,7 +247,7 @@ export function useDashboard() {
       }
       return normalizedSignalRuntimeSessions[0]?.id ?? normalizedLiveSessions[0]?.id ?? null;
     });
-    setCandles(normalizedCandles);
+    setCandles([]);
     setAnnotations(normalizedAnnotations);
     setBacktestForm((current: any) => ({
       strategyVersionId: current.strategyVersionId || normalizedStrategies[0]?.currentVersion?.id || "",
@@ -305,7 +297,7 @@ export function useDashboard() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [authSession?.token, timeWindow, chartOverrideRange, monitorResolution]);
+  }, [authSession?.token, timeWindow, chartOverrideRange]);
 
   return { loadDashboard };
 }
