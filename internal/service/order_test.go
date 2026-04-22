@@ -114,6 +114,20 @@ func TestFinalizeExecutedOrderSkipsDuplicateExchangeTradeIDFills(t *testing.T) {
 	if position.Quantity != 0.1 {
 		t.Fatalf("expected duplicate sync to keep position quantity at 0.1, got %v", position.Quantity)
 	}
+
+	events, err := store.ListOrderExecutionEvents(order.ID)
+	if err != nil {
+		t.Fatalf("list order execution events failed: %v", err)
+	}
+	filledEventCount := 0
+	for _, item := range events {
+		if strings.EqualFold(item.EventType, "filled") {
+			filledEventCount++
+		}
+	}
+	if filledEventCount != 1 {
+		t.Fatalf("expected duplicate sync to keep one filled execution event, got %d", filledEventCount)
+	}
 }
 
 func TestFinalizeExecutedOrderSkipsDuplicateFallbackFillsWithoutExchangeTradeID(t *testing.T) {

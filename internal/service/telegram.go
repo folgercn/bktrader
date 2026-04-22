@@ -311,7 +311,7 @@ func (p *Platform) DispatchTelegramTradeEvents(deliveryByID map[string]domain.No
 		if event.Failed || strings.TrimSpace(event.Error) != "" {
 			continue
 		}
-		notificationID := "trade-event:" + event.ID
+		notificationID := tradeEventNotificationID(event)
 		if delivery, ok := deliveryByID[notificationID]; ok && strings.EqualFold(delivery.Status, "sent") {
 			continue
 		}
@@ -346,6 +346,27 @@ func (p *Platform) DispatchTelegramTradeEvents(deliveryByID map[string]domain.No
 		sent++
 	}
 	return sent, firstErr
+}
+
+func tradeEventNotificationID(event domain.OrderExecutionEvent) string {
+	anchor := firstNonEmpty(
+		strings.TrimSpace(event.OrderID),
+		strings.TrimSpace(event.ExchangeOrderID),
+		strings.TrimSpace(event.ID),
+	)
+	eventTime := ""
+	if !event.EventTime.IsZero() {
+		eventTime = event.EventTime.UTC().Format(time.RFC3339Nano)
+	}
+	return strings.Join([]string{
+		"trade-event",
+		anchor,
+		NormalizeSymbol(event.Symbol),
+		strings.ToUpper(strings.TrimSpace(event.Side)),
+		strings.ToLower(strings.TrimSpace(event.EventType)),
+		strings.ToUpper(strings.TrimSpace(event.Status)),
+		eventTime,
+	}, ":")
 }
 
 func (p *Platform) DispatchTelegramPositionReport(deliveryByID map[string]domain.NotificationDelivery, now time.Time) (int, error) {

@@ -234,6 +234,66 @@ func TestTelegramDispatchSendsFilledTradeEventsWithPnLAndDedup(t *testing.T) {
 	}
 }
 
+func TestTelegramDispatchDedupesSemanticDuplicateTradeEvents(t *testing.T) {
+	messages := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	store := memory.NewStore()
+	now := time.Date(2026, 4, 22, 10, 0, 36, 0, time.UTC)
+	baseEvent := domain.OrderExecutionEvent{
+		OrderID:         "order-dup-1",
+		ExchangeOrderID: "exchange-dup-1",
+		AccountID:       "account-live-1",
+		LiveSessionID:   "live-session-1",
+		Symbol:          "BTCUSDT",
+		Side:            "SELL",
+		EventType:       "filled",
+		Status:          "FILLED",
+		Quantity:        0.01304935,
+		Price:           77946.3,
+		EventTime:       now,
+		ExecutionMode:   "live",
+		DispatchSummary: map[string]any{"role": "entry"},
+	}
+	for _, id := range []string{"dup-event-1", "dup-event-2", "dup-event-3"} {
+		event := baseEvent
+		event.ID = id
+		if _, err := store.CreateOrderExecutionEvent(event); err != nil {
+			t.Fatalf("create duplicate event %s failed: %v", id, err)
+		}
+	}
+
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:            true,
+			BotToken:           "test-token",
+			ChatID:             "123",
+			SendLevels:         []string{},
+			TradeEventsEnabled: true,
+		},
+	}
+
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("dispatch failed: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected semantic duplicate trade events to send once, got %d: %#v", len(messages), messages)
+	}
+}
+
 func TestTelegramPositionReportUsesThirtyMinuteBucketAndSkipsRecovery(t *testing.T) {
 	messages := make([]string, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
