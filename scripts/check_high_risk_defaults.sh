@@ -15,8 +15,9 @@ if grep -rnw 'internal/' -e '"auto-dispatch"' | grep -v '_test\.go'; then
 fi
 
 # 检查是否在业务代码中硬编码了 mainnet 路由地址
-# 排除测试文件、注释行、文档引用
-if grep -rnw 'internal/' -e '"mainnet"' | grep -v '_test\.go' | grep -v '^\s*//'; then
+# 排除测试文件；排除注释行（grep 输出格式为 path:line:content，
+# 需要用 awk 提取 content 部分再判断是否以 // 开头）
+if grep -rnw 'internal/' -e '"mainnet"' | grep -v '_test\.go' | awk -F: '{content=$0; sub(/^[^:]*:[^:]*:/, "", content); if (content !~ /^[[:space:]]*\/\//) print}' | grep -q .; then
   echo ""
   echo "🚨 [CRITICAL RISK DETECTED] 🚨"
   echo "Found hardcoded 'mainnet' string in internal package source code."

@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Check SQL migration files for common safety issues.
 
+NOTE: This is an **advisory sensor** (warn-only). It scans all historical
+migration files and prints warnings, but does NOT block CI. Its purpose is
+to surface potential risks for human review, not to enforce a hard gate.
+
+To promote this to a blocking check in the future, change `exit_code = 0`
+to `exit_code = 1` in main() when issues are found.
+
 Checks performed:
 1. Dangerous DROP TABLE / DROP COLUMN without IF EXISTS
 2. ADD COLUMN without IF NOT EXISTS (idempotency)
@@ -114,12 +121,14 @@ def main() -> int:
         print("请确认以上问题是否为有意行为。如果是新增 migration，请修复后再提交。")
         print("如果是已有的历史 migration，可忽略此警告。")
 
-        # Only fail for files changed in this commit (if in CI)
-        # For now, we warn but don't block on historical files
-        # To make it strict, change the next line to: exit_code = 1
+        # === ADVISORY SENSOR: warn-only, does NOT block CI ===
+        # This scans all historical migration files. To evolve into a
+        # blocking gate, change to: exit_code = 1 (and ideally scope
+        # to only newly-added migration files in the current PR).
         exit_code = 0
         print("")
-        print("⚠️  当前为警告模式（不阻塞 CI）。")
+        print("⚠️  [ADVISORY SENSOR] 当前为警告模式（不阻塞 CI）。")
+        print("    此检查仅提示潜在风险供人工 review，不具备强制约束力。")
         print("    对新增 migration 文件请人工确认安全性。")
     else:
         print("✅ Migration safety check passed.")
