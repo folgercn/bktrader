@@ -254,6 +254,63 @@ func TestTelegramDispatchSuppressesFlappingRuntimeStaleAlerts(t *testing.T) {
 	}
 }
 
+func TestTelegramDispatchSuppressesTransientRuntimeRecoveringAlert(t *testing.T) {
+	var messages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		_ = json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	store := memory.NewStore()
+	p := &Platform{store: store}
+	base := time.Date(2026, 4, 22, 3, 51, 53, 0, time.UTC)
+	item := domain.PlatformNotification{
+		ID:     "runtime-recovering-signal-runtime-1",
+		Status: "active",
+		Alert: domain.PlatformAlert{
+			ID:               "runtime-recovering-signal-runtime-1",
+			Scope:            "runtime",
+			Level:            "warning",
+			Title:            "运行时恢复中",
+			Detail:           "尝试次数 1/3: unexpected EOF",
+			RuntimeSessionID: "signal-runtime-1",
+			EventTime:        base,
+		},
+		UpdatedAt: base,
+	}
+
+	pending, shouldSend, err := p.advanceTelegramFlapSuppressedActiveDelivery(item, domain.NotificationDelivery{}, false, base)
+	if err != nil {
+		t.Fatalf("seed runtime recovering pending delivery failed: %v", err)
+	}
+	if shouldSend {
+		t.Fatal("expected transient runtime recovering alert to stay pending")
+	}
+
+	recovered, sentRecovery, err := p.advanceTelegramFlapSuppressedRecoveredDelivery(pending, base.Add(15*time.Second))
+	if err != nil {
+		t.Fatalf("recover pending runtime recovering delivery failed: %v", err)
+	}
+	if sentRecovery {
+		t.Fatal("expected unsent pending runtime recovering alert to recover silently")
+	}
+	if recovered.Status != "recovered" {
+		t.Fatalf("expected recovered status, got %s", recovered.Status)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no telegram messages for transient runtime recovering flap, got %#v", messages)
+	}
+}
+
 func TestTelegramAlertNeedsFlapSuppressionUsesStableLiveWarningID(t *testing.T) {
 	alert := domain.PlatformAlert{
 		ID:     "live-warning-stale-source-states-account-1",
@@ -268,5 +325,22 @@ func TestTelegramAlertNeedsFlapSuppressionUsesStableLiveWarningID(t *testing.T) 
 	alert.ID = "live-warning-account-1"
 	if telegramAlertNeedsFlapSuppression(alert) {
 		t.Fatal("expected generic live warning id not to enable flap suppression")
+	}
+}
+
+func TestTelegramAlertNeedsFlapSuppressionForTransientRuntimeRecoveryIDs(t *testing.T) {
+	cases := []domain.PlatformAlert{
+		{ID: "runtime-recovering-signal-runtime-1", Scope: "runtime"},
+		{ID: "live-preflight-runtime-error-account-1", Scope: "live"},
+	}
+	for _, alert := range cases {
+		if !telegramAlertNeedsFlapSuppression(alert) {
+			t.Fatalf("expected %s to enable flap suppression", alert.ID)
+		}
+	}
+
+	nonSuppressed := domain.PlatformAlert{ID: "live-preflight-account-1", Scope: "live"}
+	if telegramAlertNeedsFlapSuppression(nonSuppressed) {
+		t.Fatal("expected generic live preflight alert not to enable flap suppression")
 	}
 }

@@ -271,10 +271,7 @@ func (p *Platform) DispatchTelegramNotifications() error {
 }
 
 func telegramAlertNeedsFlapSuppression(alert domain.PlatformAlert) bool {
-	if alert.Scope == "runtime" && alert.ID != "" && strings.HasPrefix(alert.ID, "runtime-stale-") {
-		return true
-	}
-	return alert.Scope == "live" && alert.ID != "" && strings.HasPrefix(alert.ID, "live-warning-stale-source-states-")
+	return telegramFlapSuppressionKeyForAlert(alert) != ""
 }
 
 func telegramDeliveryNeedsFlapSuppression(delivery domain.NotificationDelivery) bool {
@@ -284,10 +281,44 @@ func telegramDeliveryNeedsFlapSuppression(delivery domain.NotificationDelivery) 
 	if strings.HasPrefix(delivery.NotificationID, "runtime-stale-") {
 		return true
 	}
+	if strings.HasPrefix(delivery.NotificationID, "runtime-recovering-") {
+		return true
+	}
+	if strings.HasPrefix(delivery.NotificationID, "live-preflight-runtime-error-") {
+		return true
+	}
 	if delivery.Metadata == nil {
 		return false
 	}
-	return stringValue(delivery.Metadata["flapSuppressionKey"]) == "live-warning-stale-source-states"
+	return telegramFlapSuppressionKeyIsKnown(stringValue(delivery.Metadata["flapSuppressionKey"]))
+}
+
+func telegramFlapSuppressionKeyForAlert(alert domain.PlatformAlert) string {
+	if alert.ID == "" {
+		return ""
+	}
+	if alert.Scope == "runtime" && strings.HasPrefix(alert.ID, "runtime-stale-") {
+		return "runtime-stale"
+	}
+	if alert.Scope == "runtime" && strings.HasPrefix(alert.ID, "runtime-recovering-") {
+		return "runtime-recovering"
+	}
+	if alert.Scope == "live" && strings.HasPrefix(alert.ID, "live-warning-stale-source-states-") {
+		return "live-warning-stale-source-states"
+	}
+	if alert.Scope == "live" && strings.HasPrefix(alert.ID, "live-preflight-runtime-error-") {
+		return "live-preflight-runtime-error"
+	}
+	return ""
+}
+
+func telegramFlapSuppressionKeyIsKnown(key string) bool {
+	switch key {
+	case "runtime-stale", "runtime-recovering", "live-warning-stale-source-states", "live-preflight-runtime-error":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Platform) advanceTelegramFlapSuppressedActiveDelivery(
@@ -304,8 +335,8 @@ func (p *Platform) advanceTelegramFlapSuppressedActiveDelivery(
 	metadata["scope"] = item.Alert.Scope
 	metadata["detail"] = item.Alert.Detail
 	metadata["firstActiveAt"] = firstNonEmpty(stringValue(metadata["firstActiveAt"]), now.Format(time.RFC3339))
-	if strings.HasPrefix(item.Alert.ID, "live-warning-stale-source-states-") {
-		metadata["flapSuppressionKey"] = "live-warning-stale-source-states"
+	if key := telegramFlapSuppressionKeyForAlert(item.Alert); key != "" {
+		metadata["flapSuppressionKey"] = key
 	}
 	delete(metadata, "resolveObservedAt")
 
