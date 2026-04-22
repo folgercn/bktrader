@@ -291,6 +291,52 @@ func TestMergeSignalSourceStatePreservesSignalBarHistory(t *testing.T) {
 	}
 }
 
+func TestMergeSignalSourceStateCanonicalizesScientificBarTimestamps(t *testing.T) {
+	sourceStates := map[string]any{}
+	first := map[string]any{
+		"sourceKey":          "binance-kline",
+		"role":               "signal",
+		"streamType":         "signal_bar",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"timeframe":          "30m",
+		"barStart":           "1776826800000",
+		"barEnd":             "1776828600000",
+		"open":               "77300",
+		"high":               "77400",
+		"low":                "77200",
+		"close":              "77350",
+		"volume":             "100",
+		"isClosed":           true,
+	}
+	second := cloneMetadata(first)
+	second["close"] = "77380"
+	second["barStart"] = "1.7768268e+12"
+	second["barEnd"] = "1.7768286e+12"
+
+	sourceStates = mergeSignalSourceState(sourceStates, first, time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC))
+	sourceStates = mergeSignalSourceState(sourceStates, second, time.Date(2026, 4, 22, 3, 0, 5, 0, time.UTC))
+
+	key := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"})
+	entry := mapValue(sourceStates[key])
+	if entry == nil {
+		t.Fatalf("expected source state entry, got %#v", sourceStates)
+	}
+	bars := normalizeSignalBarEntries(entry["bars"])
+	if len(bars) != 1 {
+		t.Fatalf("expected canonicalized duplicate bar to collapse into one entry, got %#v", bars)
+	}
+	if got := stringValue(bars[0]["barStart"]); got != "1776826800000" {
+		t.Fatalf("expected canonical barStart 1776826800000, got %#v", bars[0])
+	}
+	if got := stringValue(bars[0]["barEnd"]); got != "1776828600000" {
+		t.Fatalf("expected canonical barEnd 1776828600000, got %#v", bars[0])
+	}
+	if got := stringValue(bars[0]["close"]); got != "77380" {
+		t.Fatalf("expected later duplicate bar to win after normalization, got %#v", bars[0])
+	}
+}
+
 func TestDeriveSignalBarStatesUsesOpenCurrentBarWithClosedHistory(t *testing.T) {
 	key := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "5m"})
 	base := time.Date(2026, 4, 16, 10, 0, 0, 0, time.UTC)
@@ -356,6 +402,67 @@ func TestDeriveSignalBarStatesUsesOpenCurrentBarWithClosedHistory(t *testing.T) 
 	}
 	if boolValue(gate["longBreakoutShapeReady"]) {
 		t.Fatalf("expected breakout shape to remain false for this monotonic sample, got %#v", gate)
+	}
+}
+
+func TestDeriveSignalBarStatesDedupesCanonicalBarHistory(t *testing.T) {
+	key := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"})
+	states := deriveSignalBarStates(map[string]any{
+		key: map[string]any{
+			"sourceKey":  "binance-kline",
+			"role":       "signal",
+			"streamType": "signal_bar",
+			"symbol":     "BTCUSDT",
+			"timeframe":  "30m",
+			"bars": []any{
+				map[string]any{
+					"symbol":    "BTCUSDT",
+					"timeframe": "30m",
+					"barStart":  "1776825000000",
+					"close":     77250.0,
+					"high":      77320.0,
+					"low":       77180.0,
+					"isClosed":  true,
+				},
+				map[string]any{
+					"symbol":    "BTCUSDT",
+					"timeframe": "30m",
+					"barStart":  "1776826800000",
+					"close":     77350.0,
+					"high":      77420.0,
+					"low":       77290.0,
+					"isClosed":  true,
+				},
+				map[string]any{
+					"symbol":    "BTCUSDT",
+					"timeframe": "30m",
+					"barStart":  "1.7768268e+12",
+					"close":     77360.0,
+					"high":      77430.0,
+					"low":       77295.0,
+					"isClosed":  true,
+				},
+				map[string]any{
+					"symbol":    "BTCUSDT",
+					"timeframe": "30m",
+					"barStart":  "1776828600000",
+					"close":     77410.0,
+					"high":      77480.0,
+					"low":       77340.0,
+					"isClosed":  false,
+				},
+			},
+		},
+	})
+	state := mapValue(states[key])
+	if state == nil {
+		t.Fatalf("expected signal bar state, got %#v", states)
+	}
+	if got := stringValue(mapValue(state["prevBar1"])["barStart"]); got != "1776826800000" {
+		t.Fatalf("expected prevBar1 to use the deduped latest closed bar, got %#v", state["prevBar1"])
+	}
+	if got := stringValue(mapValue(state["prevBar2"])["barStart"]); got != "1776825000000" {
+		t.Fatalf("expected prevBar2 to use the prior distinct closed bar, got %#v", state["prevBar2"])
 	}
 }
 

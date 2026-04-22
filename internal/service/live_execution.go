@@ -424,7 +424,7 @@ func validateLiveSignalBarEntryTradeLimit(session domain.LiveSession, proposalMa
 	if maxTradesPerBar <= 0 {
 		return nil
 	}
-	currentBarKey := liveProposalSignalBarStateKey(proposalMap)
+	currentBarKey := liveProposalSignalBarTradeLimitKey(proposalMap)
 	if currentBarKey == "" || currentBarKey != stringValue(session.State["lastSignalBarStateKey"]) {
 		return nil
 	}
@@ -450,6 +450,16 @@ func liveEntryCountsTowardSignalBarLimit(proposalMap map[string]any) bool {
 	default:
 		return false
 	}
+}
+
+func liveProposalSignalBarTradeLimitKey(proposalMap map[string]any) string {
+	if key := strings.TrimSpace(stringValue(proposalMap[liveSignalBarTradeLimitKeyField])); key != "" {
+		return key
+	}
+	if key := effectiveSignalBarTradeLimitKey(mapValue(proposalMap["metadata"])); key != "" {
+		return key
+	}
+	return strings.TrimSpace(stringValue(proposalMap["signalBarStateKey"]))
 }
 
 func liveProposalSignalBarStateKey(proposalMap map[string]any) string {
@@ -1026,7 +1036,7 @@ func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map
 		return
 	}
 
-	currentBarKey := stringValue(proposalMap["signalBarStateKey"])
+	currentBarKey := liveProposalSignalBarTradeLimitKey(proposalMap)
 	lastBarKey := stringValue(state["lastSignalBarStateKey"])
 	reentryCount := parseFloatValue(state["sessionReentryCount"])
 	if currentBarKey != "" && currentBarKey != lastBarKey {

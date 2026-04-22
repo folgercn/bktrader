@@ -128,6 +128,25 @@ func TestEffectiveReentryCountForSizingResetsOnNewSignalBar(t *testing.T) {
 	}
 }
 
+func TestEffectiveReentryCountForSizingUsesPerBarIdentity(t *testing.T) {
+	sessionState := map[string]any{
+		"sessionReentryCount":   2.0,
+		"lastSignalBarStateKey": "BTCUSDT|30m|2026-04-22T03:00:00Z",
+	}
+	if got := effectiveReentryCountForSizing(sessionState, map[string]any{
+		"signalBarStateKey":             "binance-kline|signal|BTCUSDT|30m",
+		liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-22T03:30:00Z",
+	}); got != 0 {
+		t.Fatalf("expected new per-bar identity to reset effective reentry count, got %v", got)
+	}
+	if got := effectiveReentryCountForSizing(sessionState, map[string]any{
+		"signalBarStateKey":             "binance-kline|signal|BTCUSDT|30m",
+		liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-22T03:00:00Z",
+	}); got != 2 {
+		t.Fatalf("expected matching per-bar identity to keep reentry count, got %v", got)
+	}
+}
+
 func TestResolveExecutionQuantityVolatilityAdjustedUsesStopDistance(t *testing.T) {
 	quantity, metadata := resolveExecutionQuantity(
 		domain.LiveSession{

@@ -234,6 +234,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	maxDeviationBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxDeviationBps"]), 50)
 	maxSpreadBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxSpreadBps"]), 8)
 	effectivePlannedPrice := context.NextPlannedPrice
+	reasonTag := normalizeStrategyReasonTag(context.NextPlannedReason)
 	livePositionState := map[string]any{}
 	if signalBarState != nil {
 		watermarks := refreshLivePositionWatermarks(context.SessionState, currentPosition, marketPrice)
@@ -255,6 +256,37 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 				action = "wait"
 				reason = firstNonEmpty(stringValue(livePositionState["waitReason"]), "exit-signal-not-ready")
 			}
+		}
+	}
+	reentryWindowOpen := true
+	if action == "advance-plan" &&
+		strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "entry") &&
+		reasonTag == "zero-initial-reentry" {
+		reentryWindowOpen = livePendingZeroInitialWindowOpen(
+			context.SessionState,
+			symbol,
+			context.ExecutionContext.SignalTimeframe,
+			context.NextPlannedSide,
+			context.EventTime,
+		)
+		if !reentryWindowOpen {
+			action = "wait"
+			reason = "reentry-window-not-open"
+		}
+	}
+	reentryTriggerPrice := firstPositive(breakoutPrice, marketPrice)
+	reentryTriggerPriceSource := breakoutPriceSource
+	if reentryTriggerPriceSource == "" && reentryTriggerPrice > 0 {
+		reentryTriggerPriceSource = marketSource
+	}
+	reentryTriggerReady := true
+	if action == "advance-plan" &&
+		strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "entry") &&
+		(reasonTag == "zero-initial-reentry" || reasonTag == "sl-reentry" || reasonTag == "pt-reentry") {
+		reentryTriggerReady = isReentryTriggerReached(context.NextPlannedSide, effectivePlannedPrice, reentryTriggerPrice)
+		if !reentryTriggerReady {
+			action = "wait"
+			reason = "reentry-trigger-not-reached"
 		}
 	}
 	deviationBps := 0.0
@@ -280,46 +312,52 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 	entryProximityBps := computePriceProximityBps(effectivePlannedPrice, marketPrice)
 	exitProximityBps := entryProximityBps
 	signalKind := classifyStrategySignalKind(action, reason, context.NextPlannedRole, context.NextPlannedReason, currentPosition, positionPnLBps, entryProximityBps, exitProximityBps, orderBookStats.bias)
+	signalBarTradeLimitKey := resolveSignalBarTradeLimitKey(signalBarState, symbol, context.ExecutionContext.SignalTimeframe)
 	return StrategySignalDecision{
 		Action: action,
 		Reason: reason,
 		Metadata: map[string]any{
-			"decisionState":       decisionState,
-			"signalKind":          signalKind,
-			"trigger":             trigger,
-			"sourceStateCount":    len(sourceStates),
-			"signalBarStateCount": len(signalBarStates),
-			"currentPosition":     currentPosition,
-			"symbol":              symbol,
-			"triggerSymbol":       triggerSymbol,
-			"signalBarStateKey":   signalBarStateKey,
-			"signalBarState":      cloneMetadata(signalBarState),
-			"signalBarDecision":   signalBarDecision,
-			"livePositionState":   cloneMetadata(livePositionState),
-			"nextPlannedEvent":    formatOptionalRFC3339(context.NextPlannedEvent),
-			"nextPlannedPrice":    effectivePlannedPrice,
-			"nextPlannedSide":     context.NextPlannedSide,
-			"nextPlannedRole":     context.NextPlannedRole,
-			"nextPlannedReason":   context.NextPlannedReason,
-			"breakoutPrice":       breakoutPrice,
-			"breakoutPriceSource": breakoutPriceSource,
-			"marketPrice":         marketPrice,
-			"marketSource":        marketSource,
-			"bestBid":             orderBookStats.bestBid,
-			"bestAsk":             orderBookStats.bestAsk,
-			"bestBidQty":          orderBookStats.bestBidQty,
-			"bestAskQty":          orderBookStats.bestAskQty,
-			"spreadBps":           orderBookStats.spreadBps,
-			"bookImbalance":       orderBookStats.imbalance,
-			"liquidityBias":       orderBookStats.bias,
-			"biasActionable":      biasActionable,
-			"positionPnLBps":      positionPnLBps,
-			"entryProximityBps":   entryProximityBps,
-			"exitProximityBps":    exitProximityBps,
-			"maxDeviationBps":     maxDeviationBps,
-			"maxSpreadBps":        maxSpreadBps,
-			"deviationBps":        deviationBps,
-			"priceActionable":     strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") || isPlannedPriceActionable(context.NextPlannedSide, effectivePlannedPrice, marketPrice, maxDeviationBps),
+			"decisionState":                 decisionState,
+			"signalKind":                    signalKind,
+			"trigger":                       trigger,
+			"sourceStateCount":              len(sourceStates),
+			"signalBarStateCount":           len(signalBarStates),
+			"currentPosition":               currentPosition,
+			"symbol":                        symbol,
+			"triggerSymbol":                 triggerSymbol,
+			"signalBarStateKey":             signalBarStateKey,
+			liveSignalBarTradeLimitKeyField: signalBarTradeLimitKey,
+			"signalBarState":                cloneMetadata(signalBarState),
+			"signalBarDecision":             signalBarDecision,
+			"livePositionState":             cloneMetadata(livePositionState),
+			"nextPlannedEvent":              formatOptionalRFC3339(context.NextPlannedEvent),
+			"nextPlannedPrice":              effectivePlannedPrice,
+			"nextPlannedSide":               context.NextPlannedSide,
+			"nextPlannedRole":               context.NextPlannedRole,
+			"nextPlannedReason":             context.NextPlannedReason,
+			"breakoutPrice":                 breakoutPrice,
+			"breakoutPriceSource":           breakoutPriceSource,
+			"marketPrice":                   marketPrice,
+			"marketSource":                  marketSource,
+			"reentryWindowOpen":             reentryWindowOpen,
+			"reentryTriggerPrice":           reentryTriggerPrice,
+			"reentryTriggerPriceSource":     reentryTriggerPriceSource,
+			"reentryTriggerReady":           reentryTriggerReady,
+			"bestBid":                       orderBookStats.bestBid,
+			"bestAsk":                       orderBookStats.bestAsk,
+			"bestBidQty":                    orderBookStats.bestBidQty,
+			"bestAskQty":                    orderBookStats.bestAskQty,
+			"spreadBps":                     orderBookStats.spreadBps,
+			"bookImbalance":                 orderBookStats.imbalance,
+			"liquidityBias":                 orderBookStats.bias,
+			"biasActionable":                biasActionable,
+			"positionPnLBps":                positionPnLBps,
+			"entryProximityBps":             entryProximityBps,
+			"exitProximityBps":              exitProximityBps,
+			"maxDeviationBps":               maxDeviationBps,
+			"maxSpreadBps":                  maxSpreadBps,
+			"deviationBps":                  deviationBps,
+			"priceActionable":               strings.EqualFold(strings.TrimSpace(context.NextPlannedRole), "exit") || isPlannedPriceActionable(context.NextPlannedSide, effectivePlannedPrice, marketPrice, maxDeviationBps),
 		},
 	}, nil
 }
@@ -453,6 +491,20 @@ func isPlannedPriceActionable(side string, plannedPrice, marketPrice, maxDeviati
 	}
 }
 
+func isReentryTriggerReached(side string, plannedPrice, triggerPrice float64) bool {
+	if plannedPrice <= 0 || triggerPrice <= 0 {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(side)) {
+	case "BUY":
+		return triggerPrice >= plannedPrice
+	case "SELL", "SHORT":
+		return triggerPrice <= plannedPrice
+	default:
+		return false
+	}
+}
+
 func classifyStrategyDecisionState(action, reason, nextRole string) string {
 	if action == "advance-plan" {
 		switch strings.ToLower(strings.TrimSpace(nextRole)) {
@@ -475,7 +527,11 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 		return "waiting-time"
 	case "signal-filter-not-ready":
 		return "waiting-signal-filter"
+	case "reentry-window-not-open":
+		return "waiting-signal-filter"
 	case "price-not-actionable":
+		return "waiting-price"
+	case "reentry-trigger-not-reached":
 		return "waiting-price"
 	case "spread-too-wide":
 		return "waiting-liquidity"

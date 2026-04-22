@@ -76,14 +76,14 @@ func prepareLivePlanStepForSignalEvaluation(
 		alignmentMode = "breakout-confirmed"
 	}
 	if staleExitReentry && longReady == shortReady {
-		// Stale PT/SL re-entry steps should first prefer a breakout-confirmed
-		// current direction, but may fall back to zero-initial reentry semantics
-		// when intraday structure is ready before a fresh breakout prints.
-		gate = evaluateSignalBarGate(signalBarState, "", "entry", "Zero-Initial-Reentry", breakoutPrice, breakoutPriceSource)
-		longReady = boolValue(gate["longReady"])
-		shortReady = boolValue(gate["shortReady"])
-		if longReady != shortReady {
-			alignmentMode = "structure-ready-no-breakout"
+		if alignedEvent, alignedPrice, alignedSide, ok := liveBootstrapPlanStepFromSignalBar(
+			signalBarState,
+			eventTime,
+			nextPlannedPrice,
+			boolValue(gate["longStructureReady"]),
+			boolValue(gate["shortStructureReady"]),
+		); ok {
+			return updatedState, alignedEvent, alignedPrice, alignedSide, "entry", "Initial"
 		}
 	}
 	if longReady == shortReady {
@@ -213,6 +213,55 @@ func clearLivePendingZeroInitialWindow(state map[string]any, eventTime time.Time
 		livePendingZeroInitialWindowStateKey: pending,
 		"reason":                             firstNonEmpty(strings.TrimSpace(reason), "consumed"),
 	})
+}
+
+func livePendingZeroInitialWindowOpen(sessionState map[string]any, symbol, signalTimeframe, side string, eventTime time.Time) bool {
+	pending := cloneMetadata(mapValue(sessionState[livePendingZeroInitialWindowStateKey]))
+	if len(pending) == 0 {
+		return false
+	}
+	if pendingSide := strings.ToUpper(strings.TrimSpace(stringValue(pending["side"]))); pendingSide != "" &&
+		pendingSide != strings.ToUpper(strings.TrimSpace(side)) {
+		return false
+	}
+	if pendingSymbol := NormalizeSymbol(stringValue(pending["symbol"])); pendingSymbol != "" &&
+		pendingSymbol != NormalizeSymbol(symbol) {
+		return false
+	}
+	if pendingTimeframe := strings.ToLower(strings.TrimSpace(stringValue(pending["signalTimeframe"]))); pendingTimeframe != "" &&
+		pendingTimeframe != strings.ToLower(strings.TrimSpace(signalTimeframe)) {
+		return false
+	}
+	expiresAt := parseOptionalRFC3339(stringValue(pending["expiresAt"]))
+	if !expiresAt.IsZero() && !eventTime.UTC().Before(expiresAt.UTC()) {
+		return false
+	}
+	return true
+}
+
+func liveBootstrapPlanStepFromSignalBar(
+	signalBarState map[string]any,
+	eventTime time.Time,
+	fallbackPrice float64,
+	longStructureReady, shortStructureReady bool,
+) (time.Time, float64, string, bool) {
+	if longStructureReady == shortStructureReady {
+		return time.Time{}, 0, "", false
+	}
+	current := mapValue(signalBarState["current"])
+	plannedEvent := parseOptionalRFC3339(stringValue(current["barStart"]))
+	if plannedEvent.IsZero() {
+		plannedEvent = eventTime.UTC()
+	}
+	price := parseFloatValue(current["close"])
+	if price <= 0 {
+		price = fallbackPrice
+	}
+	side := "BUY"
+	if shortStructureReady {
+		side = "SELL"
+	}
+	return plannedEvent.UTC(), price, side, true
 }
 
 func liveStaleExitReentryContext(
