@@ -411,12 +411,14 @@ func (p *Platform) evaluateSignalSourceReadiness(session domain.PaperSession, ru
 
 func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runtimeSession domain.SignalRuntimeSession, eventTime time.Time) map[string]any {
 	result := map[string]any{
-		"ready":          true,
-		"requiredCount":  0,
-		"availableCount": 0,
-		"freshCount":     0,
-		"missing":        []any{},
-		"stale":          []any{},
+		"ready":           true,
+		"requiredCount":   0,
+		"availableCount":  0,
+		"freshCount":      0,
+		"missing":         []any{},
+		"stale":           []any{},
+		"advisoryMissing": []any{},
+		"advisoryStale":   []any{},
 	}
 
 	requiredBindings, err := p.ListStrategySignalBindings(strategyID)
@@ -432,6 +434,8 @@ func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runti
 
 	missing := make([]any, 0)
 	stale := make([]any, 0)
+	advisoryMissing := make([]any, 0)
+	advisoryStale := make([]any, 0)
 	requiredCount := 0
 	available := 0
 	fresh := 0
@@ -439,32 +443,44 @@ func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runti
 		if strings.ToUpper(strings.TrimSpace(binding.Status)) == "DISABLED" {
 			continue
 		}
-		requiredCount++
+		blocking := signalBindingBlocksRuntimeReady(binding)
+		if blocking {
+			requiredCount++
+		}
+		readinessItem := map[string]any{
+			"sourceKey":  binding.SourceKey,
+			"role":       binding.Role,
+			"streamType": binding.StreamType,
+			"symbol":     binding.Symbol,
+		}
 		entry := resolveRuntimeSourceStateEntry(sourceStates, binding)
 		if entry == nil {
-			missing = append(missing, map[string]any{
-				"sourceKey":  binding.SourceKey,
-				"role":       binding.Role,
-				"streamType": binding.StreamType,
-				"symbol":     binding.Symbol,
-			})
+			if blocking {
+				missing = append(missing, readinessItem)
+			} else {
+				advisoryMissing = append(advisoryMissing, readinessItem)
+			}
 			continue
 		}
-		available++
+		if blocking {
+			available++
+		}
 		lastEventAt := parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
 		maxAge := p.signalSourceFreshnessWindowWithOverride(binding, runtimeSession.State)
 		if lastEventAt.IsZero() || eventTime.Sub(lastEventAt) > maxAge {
-			stale = append(stale, map[string]any{
-				"sourceKey":   binding.SourceKey,
-				"role":        binding.Role,
-				"streamType":  binding.StreamType,
-				"symbol":      binding.Symbol,
-				"lastEventAt": stringValue(entry["lastEventAt"]),
-				"maxAgeSec":   int(maxAge.Seconds()),
-			})
+			staleItem := cloneMetadata(readinessItem)
+			staleItem["lastEventAt"] = stringValue(entry["lastEventAt"])
+			staleItem["maxAgeSec"] = int(maxAge.Seconds())
+			if blocking {
+				stale = append(stale, staleItem)
+			} else {
+				advisoryStale = append(advisoryStale, staleItem)
+			}
 			continue
 		}
-		fresh++
+		if blocking {
+			fresh++
+		}
 	}
 
 	result["requiredCount"] = requiredCount
@@ -472,6 +488,8 @@ func (p *Platform) evaluateRuntimeSignalSourceReadiness(strategyID string, runti
 	result["freshCount"] = fresh
 	result["missing"] = missing
 	result["stale"] = stale
+	result["advisoryMissing"] = advisoryMissing
+	result["advisoryStale"] = advisoryStale
 	result["ready"] = len(missing) == 0 && len(stale) == 0
 	p.logRuntimeSourceGateState(strategyID, runtimeSession, result, eventTime)
 	return result
