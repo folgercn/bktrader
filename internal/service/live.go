@@ -95,6 +95,15 @@ const (
 	liveAccountOperationReconcile liveAccountOperationKind = "reconcile"
 )
 
+type liveAccountSyncState struct {
+	mu          sync.Mutex
+	running     bool
+	done        chan struct{}
+	result      domain.Account
+	err         error
+	completedAt time.Time
+}
+
 func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 	return p.store.ListLiveSessions()
 }
@@ -163,12 +172,112 @@ func (p *Platform) UpdateLiveSession(sessionID, alias, accountID, strategyID str
 }
 
 func (p *Platform) SyncLiveAccount(accountID string) (domain.Account, error) {
+	return p.requestLiveAccountSync(accountID, "direct")
+}
+
+func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Account, error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return domain.Account{}, fmt.Errorf("live account id is required")
+	}
+	state := p.liveAccountSyncEntry(accountID)
+	logger := p.logger("service.live", "account_id", accountID, "trigger", firstNonEmpty(strings.TrimSpace(trigger), "unspecified"))
+
+	state.mu.Lock()
+	if state.running {
+		done := state.done
+		state.mu.Unlock()
+		logger.Debug("coalescing live account sync request while another sync is in progress")
+		if done != nil {
+			<-done
+		}
+		state.mu.Lock()
+		result, err := state.result, state.err
+		state.mu.Unlock()
+		return result, err
+	}
+	if p.liveAccountSyncAllowsRecentReuse(trigger) {
+		if reuseWindow := p.liveAccountSyncReuseWindow(); reuseWindow > 0 && !state.completedAt.IsZero() {
+			age := time.Since(state.completedAt)
+			if age >= 0 && age < reuseWindow {
+				result, err := state.result, state.err
+				state.mu.Unlock()
+				logger.Debug("reusing recent live account sync result", "age_ms", age.Milliseconds(), "reuse_window_ms", reuseWindow.Milliseconds(), "has_error", err != nil)
+				return result, err
+			}
+		}
+	}
+	done := make(chan struct{})
+	state.running = true
+	state.done = done
+	state.mu.Unlock()
+
 	release, acquired := p.tryStartLiveAccountOperation(accountID, liveAccountOperationSync)
 	if !acquired {
-		return domain.Account{}, fmt.Errorf("%w: sync account=%s", ErrLiveAccountOperationInProgress, accountID)
+		err := fmt.Errorf("%w: sync account=%s", ErrLiveAccountOperationInProgress, accountID)
+		state.mu.Lock()
+		state.result = domain.Account{}
+		state.err = err
+		state.running = false
+		state.done = nil
+		close(done)
+		state.mu.Unlock()
+		return domain.Account{}, err
 	}
 	defer release()
-	return p.syncLiveAccountWithoutGate(accountID)
+	result, err := p.syncLiveAccountWithoutGate(accountID)
+	state.mu.Lock()
+	state.result = result
+	state.err = err
+	state.completedAt = time.Now().UTC()
+	state.running = false
+	state.done = nil
+	close(done)
+	state.mu.Unlock()
+	return result, err
+}
+
+func (p *Platform) liveAccountSyncEntry(accountID string) *liveAccountSyncState {
+	actual, _ := p.liveAccountSyncState.LoadOrStore(strings.TrimSpace(accountID), &liveAccountSyncState{})
+	entry, _ := actual.(*liveAccountSyncState)
+	if entry == nil {
+		entry = &liveAccountSyncState{}
+		p.liveAccountSyncState.Store(strings.TrimSpace(accountID), entry)
+	}
+	return entry
+}
+
+func (p *Platform) liveAccountSyncReuseWindow() time.Duration {
+	threshold := time.Duration(p.runtimePolicy.LiveAccountSyncFreshnessSecs) * time.Second
+	switch {
+	case threshold <= 0:
+		return 5 * time.Second
+	case threshold < 4*time.Second:
+		return threshold
+	default:
+		window := threshold / 4
+		if window > 5*time.Second {
+			window = 5 * time.Second
+		}
+		if window < time.Second {
+			window = time.Second
+		}
+		return window
+	}
+}
+
+func (p *Platform) liveAccountSyncAllowsRecentReuse(trigger string) bool {
+	switch strings.TrimSpace(trigger) {
+	case "authoritative-reconcile",
+		"recover-live-session",
+		"live-immediate-fill-settlement",
+		"live-intent-dispatched-filled",
+		"live-terminal-order-sync",
+		"live-filled-order-sync":
+		return false
+	default:
+		return true
+	}
 }
 
 func (p *Platform) syncLiveAccountWithoutGate(accountID string) (domain.Account, error) {
@@ -277,7 +386,7 @@ func (p *Platform) triggerAuthoritativeLiveAccountReconcile(accountID, trigger s
 	}
 	p.syncLiveSessionsForAccountSnapshot(account)
 
-	synced, syncErr := p.SyncLiveAccount(accountID)
+	synced, syncErr := p.requestLiveAccountSync(accountID, "authoritative-reconcile")
 	if syncErr != nil {
 		latest, latestErr := p.store.GetAccount(accountID)
 		if latestErr == nil {
@@ -951,7 +1060,7 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 		if !strings.EqualFold(account.Mode, "LIVE") {
 			continue
 		}
-		syncedAccount, syncErr := p.SyncLiveAccount(account.ID)
+		syncedAccount, syncErr := p.requestLiveAccountSync(account.ID, "recover-live-session")
 		if syncErr == nil {
 			account = syncedAccount
 			syncedAccounts++
@@ -1804,7 +1913,7 @@ func (p *Platform) syncActiveLiveAccounts(eventTime time.Time) error {
 		if !p.shouldRefreshLiveAccountSync(account, eventTime) {
 			continue
 		}
-		if _, syncErr := p.SyncLiveAccount(account.ID); syncErr != nil {
+		if _, syncErr := p.requestLiveAccountSync(account.ID, "sync-active-live-accounts"); syncErr != nil {
 			syncErrs = append(syncErrs, fmt.Errorf("live account %s sync failed: %w", account.ID, syncErr))
 		}
 	}

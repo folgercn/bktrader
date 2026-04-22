@@ -212,7 +212,7 @@ func (p *Platform) resolveClosePositionTarget(positionID string) (domain.Positio
 		return domain.Position{}, domain.Account{}, err
 	}
 	if strings.EqualFold(strings.TrimSpace(account.Mode), "LIVE") {
-		syncedAccount, err := p.SyncLiveAccount(account.ID)
+		syncedAccount, err := p.requestLiveAccountSync(account.ID, "resolve-close-position-target")
 		if err != nil {
 			return domain.Position{}, domain.Account{}, err
 		}
@@ -605,7 +605,7 @@ func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.
 	if err != nil {
 		return order, fmt.Errorf("live order %s submitted as FILLED but settlement sync failed: %w", order.ID, err)
 	}
-	if _, syncErr := p.SyncLiveAccount(order.AccountID); syncErr != nil {
+	if _, syncErr := p.requestLiveAccountSync(order.AccountID, "live-immediate-fill-settlement"); syncErr != nil {
 		if errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
 			return settledOrder, nil
 		}

@@ -5803,7 +5803,7 @@ func TestSyncActiveLiveAccountsThrottlesFailedRetriesUntilFreshnessWindow(t *tes
 	}
 }
 
-func TestSyncLiveAccountSkipsConcurrentAdapterSyncForSameAccount(t *testing.T) {
+func TestSyncLiveAccountCoalescesConcurrentAdapterSyncForSameAccount(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	blockSync := make(chan struct{})
 	enteredSync := make(chan struct{}, 1)
@@ -5856,15 +5856,12 @@ func TestSyncLiveAccountSkipsConcurrentAdapterSyncForSameAccount(t *testing.T) {
 	}()
 
 	select {
-	case err := <-secondDone:
-		if !errors.Is(err, ErrLiveAccountOperationInProgress) {
-			t.Fatalf("expected concurrent sync to return in-progress error, got %v", err)
-		}
+	case <-secondDone:
+		t.Fatal("expected concurrent sync to wait for the in-flight sync result")
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("expected concurrent sync to return immediately while first sync is in progress")
 	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("expected concurrent sync to skip adapter call quickly, took %s", elapsed)
+	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
+		t.Fatalf("expected concurrent sync to wait instead of returning immediately, took %s", elapsed)
 	}
 	if got := syncCalls.Load(); got != 1 {
 		t.Fatalf("expected only one adapter sync call, got %d", got)
@@ -5873,6 +5870,91 @@ func TestSyncLiveAccountSkipsConcurrentAdapterSyncForSameAccount(t *testing.T) {
 	close(blockSync)
 	if err := <-firstDone; err != nil {
 		t.Fatalf("first sync failed: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("expected coalesced sync to reuse first result, got %v", err)
+	}
+}
+
+func TestSyncLiveAccountReusesRecentResultWithinReuseWindow(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	var syncCalls atomic.Int32
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-reuse-window",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			syncCalls.Add(1)
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["lastLiveSyncAt"] = time.Now().UTC().Format(time.RFC3339)
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-reuse-window",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	if _, err := platform.SyncLiveAccount("live-main"); err != nil {
+		t.Fatalf("first sync failed: %v", err)
+	}
+	if _, err := platform.requestLiveAccountSync("live-main", "follow-up"); err != nil {
+		t.Fatalf("expected immediate follow-up sync to reuse recent result, got %v", err)
+	}
+	if got := syncCalls.Load(); got != 1 {
+		t.Fatalf("expected recent follow-up sync to reuse prior result, got %d adapter calls", got)
+	}
+}
+
+func TestSyncLiveAccountAuthoritativeReconcileBypassesRecentReuseWindow(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	var syncCalls atomic.Int32
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-authoritative-bypass",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			syncCalls.Add(1)
+			account.Metadata = cloneMetadata(account.Metadata)
+			now := time.Now().UTC().Format(time.RFC3339)
+			account.Metadata["lastLiveSyncAt"] = now
+			account.Metadata["lastLivePositionSyncAt"] = now
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-authoritative-bypass",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	if _, err := platform.requestLiveAccountSync("live-main", "direct"); err != nil {
+		t.Fatalf("first sync failed: %v", err)
+	}
+	if _, err := platform.requestLiveAccountSync("live-main", "authoritative-reconcile"); err != nil {
+		t.Fatalf("authoritative reconcile sync failed: %v", err)
+	}
+	if got := syncCalls.Load(); got != 2 {
+		t.Fatalf("expected authoritative reconcile to bypass recent reuse, got %d adapter calls", got)
 	}
 }
 
