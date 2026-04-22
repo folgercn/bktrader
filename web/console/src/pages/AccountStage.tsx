@@ -1127,8 +1127,9 @@ export function AccountStage({
             <Button 
               loading={confirmActionPending}
               onClick={async () => {
-                await confirmConfig.onConfirm();
-                setConfirmConfig(c => ({ ...c, open: false }));
+                const currentConfirm = confirmConfig;
+                await currentConfirm.onConfirm();
+                setConfirmConfig((c) => (c === currentConfirm ? { ...c, open: false } : c));
               }}
               variant="bento-danger"
               className="h-11 rounded-xl px-6 font-bold shadow-md"
