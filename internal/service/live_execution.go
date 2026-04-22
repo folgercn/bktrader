@@ -848,9 +848,18 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastDispatchedOrderStatus"] = order.Status
 		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), order, false)
 		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
-		if strings.EqualFold(order.Status, "FILLED") {
+		if shouldSyncLiveAccountAfterTerminalFilledOrder(order, state, eventTime) {
+			state["lastTerminalAccountSyncAttemptOrderId"] = order.ID
+			state["lastTerminalAccountSyncAttemptOrderStatus"] = order.Status
+			state["lastTerminalAccountSyncAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
 			if _, syncErr := p.requestLiveAccountSync(session.AccountID, "live-terminal-order-sync"); syncErr != nil && !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
+				state["lastTerminalAccountSyncError"] = syncErr.Error()
 				p.logger("service.live_execution", "session_id", session.ID, "account_id", session.AccountID).Warn("live account sync failed after terminal order sync", "error", syncErr)
+			} else {
+				state["lastTerminalAccountSyncedOrderId"] = order.ID
+				state["lastTerminalAccountSyncedOrderStatus"] = order.Status
+				state["lastTerminalAccountSyncedAt"] = eventTime.UTC().Format(time.RFC3339)
+				delete(state, "lastTerminalAccountSyncError")
 			}
 		}
 		updated, err := p.store.UpdateLiveSessionState(session.ID, state)
@@ -956,6 +965,24 @@ func shouldBackfillTerminalFilledLiveOrder(order domain.Order, state map[string]
 		return true
 	}
 	return isLiveSessionBlockedByPositionReconcileGate(state)
+}
+
+func shouldSyncLiveAccountAfterTerminalFilledOrder(order domain.Order, state map[string]any, eventTime time.Time) bool {
+	if !strings.EqualFold(order.Status, "FILLED") {
+		return false
+	}
+	if stringValue(state["lastTerminalAccountSyncedOrderId"]) == order.ID &&
+		strings.EqualFold(stringValue(state["lastTerminalAccountSyncedOrderStatus"]), order.Status) {
+		return false
+	}
+	if stringValue(state["lastTerminalAccountSyncAttemptOrderId"]) == order.ID &&
+		strings.EqualFold(stringValue(state["lastTerminalAccountSyncAttemptOrderStatus"]), order.Status) {
+		lastAttemptAt := parseOptionalRFC3339(stringValue(state["lastTerminalAccountSyncAttemptAt"]))
+		if !lastAttemptAt.IsZero() && eventTime.UTC().Sub(lastAttemptAt.UTC()) < 30*time.Second {
+			return false
+		}
+	}
+	return true
 }
 
 func isTerminalOrderStatus(status string) bool {
