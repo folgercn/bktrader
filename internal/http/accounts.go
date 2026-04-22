@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -146,6 +147,17 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			item, err := platform.LaunchLiveFlow(accountID, payload)
 			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case "stop":
+			item, err := platform.StopLiveFlowWithForce(accountID, queryFlagEnabled(r, "force"))
+			if err != nil {
+				if errors.Is(err, service.ErrActivePositionsOrOrders) {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
