@@ -30,3 +30,4 @@ btc_perp_1m_dataset/
 web/console/*.py
 configs/app.env
 graphify-out/
+tmp/

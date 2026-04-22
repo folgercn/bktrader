@@ -21,6 +21,9 @@ jobs:
       - name: Check env safety
         run: bash scripts/check_env_safety.sh
 
+      - name: Check migration safety
+        run: python3 scripts/check_migration_safety.py
+
   backend:
     name: Backend (Go)
     runs-on: ubuntu-latest
