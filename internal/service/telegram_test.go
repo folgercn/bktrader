@@ -331,6 +331,93 @@ func TestTelegramPositionReportUsesThirtyMinuteBucketAndSkipsRecovery(t *testing
 	}
 }
 
+func TestTelegramPositionReportSkipsEmptyPositions(t *testing.T) {
+	messages := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	base := time.Date(2026, 4, 22, 10, 5, 0, 0, time.UTC)
+	oldNow := telegramNow
+	telegramNow = func() time.Time { return base }
+	defer func() { telegramNow = oldNow }()
+
+	store := memory.NewStore()
+	accounts, err := store.ListAccounts()
+	if err != nil {
+		t.Fatalf("list accounts failed: %v", err)
+	}
+	var account domain.Account
+	for _, item := range accounts {
+		if strings.EqualFold(item.Mode, "LIVE") {
+			account = item
+			break
+		}
+	}
+	if account.ID == "" {
+		t.Fatal("expected default live account")
+	}
+	account.Metadata = map[string]any{
+		"lastLiveSyncAt": base.Format(time.RFC3339),
+		"liveSyncSnapshot": map[string]any{
+			"syncStatus":            "SYNCED",
+			"syncedAt":              base.Format(time.RFC3339),
+			"totalMarginBalance":    12000.0,
+			"availableBalance":      8000.0,
+			"totalWalletBalance":    12000.0,
+			"totalUnrealizedProfit": 0.0,
+			"positions": []map[string]any{{
+				"symbol":       "ETHUSDT",
+				"positionAmt":  0.0,
+				"entryPrice":   0.0,
+				"markPrice":    0.0,
+				"positionSide": "BOTH",
+			}},
+		},
+	}
+	if _, err := store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:                       true,
+			BotToken:                      "test-token",
+			ChatID:                        "123",
+			SendLevels:                    []string{},
+			PositionReportEnabled:         true,
+			PositionReportIntervalMinutes: 30,
+		},
+	}
+
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("dispatch failed: %v", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected empty position report to be skipped, got %#v", messages)
+	}
+	deliveries, err := store.ListNotificationDeliveries()
+	if err != nil {
+		t.Fatalf("list deliveries failed: %v", err)
+	}
+	for _, delivery := range deliveries {
+		if strings.HasPrefix(delivery.NotificationID, "position-report:") {
+			t.Fatalf("expected no position report delivery for empty positions, got %#v", delivery)
+		}
+	}
+}
+
 func TestTelegramDispatchSuppressesFlappingRuntimeStaleAlerts(t *testing.T) {
 	var messages []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

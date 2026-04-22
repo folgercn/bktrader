@@ -366,6 +366,9 @@ func (p *Platform) DispatchTelegramPositionReport(deliveryByID map[string]domain
 	if len(liveAccounts) == 0 {
 		return 0, nil
 	}
+	if !telegramAccountsHaveOpenPosition(liveAccounts) {
+		return 0, nil
+	}
 	summaries, err := p.ListAccountSummaries()
 	if err != nil {
 		return 0, err
@@ -393,6 +396,21 @@ func (p *Platform) DispatchTelegramPositionReport(deliveryByID map[string]domain
 	}
 	deliveryByID[notificationID] = delivery
 	return 1, nil
+}
+
+func telegramAccountsHaveOpenPosition(accounts []domain.Account) bool {
+	for _, account := range accounts {
+		for _, position := range metadataList(mapValue(account.Metadata["liveSyncSnapshot"])["positions"]) {
+			qty := firstNonZeroFloat(parseFloatValue(position["quantity"]), parseFloatValue(position["positionAmt"]))
+			if qty < 0 {
+				qty = -qty
+			}
+			if qty > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func formatTelegramTradeEvent(event domain.OrderExecutionEvent) string {
