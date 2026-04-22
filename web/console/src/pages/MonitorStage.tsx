@@ -225,6 +225,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
           return;
         }
         console.warn("Failed to load monitor fallback candles", error);
+        fallbackRequestKeyRef.current = "";
         setMonitorCandles([]);
       });
 
