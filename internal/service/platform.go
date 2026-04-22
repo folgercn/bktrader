@@ -85,6 +85,13 @@ func NewPlatform(store store.Repository) *Platform {
 		signalSessions:      make(map[string]domain.SignalRuntimeSession),
 		liveMarketData:      make(map[string]liveMarketSnapshot),
 		logBroker:           logging.NewBroker(),
+		telegramConfig: domain.TelegramConfig{
+			SendLevels:                    []string{"critical", "warning"},
+			TradeEventsEnabled:            true,
+			PositionReportEnabled:         true,
+			PositionReportIntervalMinutes: 30,
+			UpdatedAt:                     time.Now().UTC(),
+		},
 		runtimePolicy: RuntimePolicy{
 			TradeTickFreshnessSeconds:      15,
 			OrderBookFreshnessSeconds:      10,
@@ -233,6 +240,9 @@ func (p *Platform) LoadPersistedRuntimePolicy() error {
 
 func (p *Platform) SetTelegramConfig(config domain.TelegramConfig) {
 	p.telegramConfig.Enabled = config.Enabled
+	p.telegramConfig.TradeEventsEnabled = config.TradeEventsEnabled
+	p.telegramConfig.PositionReportEnabled = config.PositionReportEnabled
+	p.telegramConfig.PositionReportIntervalMinutes = normalizeTelegramPositionReportInterval(config.PositionReportIntervalMinutes)
 	if strings.TrimSpace(config.BotToken) != "" {
 		p.telegramConfig.BotToken = strings.TrimSpace(config.BotToken)
 	}
@@ -256,18 +266,24 @@ func (p *Platform) SetTelegramConfig(config domain.TelegramConfig) {
 func (p *Platform) TelegramConfigView() map[string]any {
 	token := strings.TrimSpace(p.telegramConfig.BotToken)
 	return map[string]any{
-		"enabled":        p.telegramConfig.Enabled,
-		"chatId":         p.telegramConfig.ChatID,
-		"sendLevels":     append([]string(nil), p.telegramConfig.SendLevels...),
-		"hasBotToken":    token != "",
-		"maskedBotToken": maskTelegramToken(token),
-		"updatedAt":      p.telegramConfig.UpdatedAt,
+		"enabled":                       p.telegramConfig.Enabled,
+		"chatId":                        p.telegramConfig.ChatID,
+		"sendLevels":                    append([]string(nil), p.telegramConfig.SendLevels...),
+		"tradeEventsEnabled":            p.telegramConfig.TradeEventsEnabled,
+		"positionReportEnabled":         p.telegramConfig.PositionReportEnabled,
+		"positionReportIntervalMinutes": normalizeTelegramPositionReportInterval(p.telegramConfig.PositionReportIntervalMinutes),
+		"hasBotToken":                   token != "",
+		"maskedBotToken":                maskTelegramToken(token),
+		"updatedAt":                     p.telegramConfig.UpdatedAt,
 	}
 }
 
-func (p *Platform) UpdateTelegramConfig(enabled bool, botToken, chatID string, sendLevels []string) (map[string]any, error) {
+func (p *Platform) UpdateTelegramConfig(enabled bool, botToken, chatID string, sendLevels []string, tradeEventsEnabled, positionReportEnabled bool, positionReportIntervalMinutes int) (map[string]any, error) {
 	config := p.telegramConfig
 	config.Enabled = enabled
+	config.TradeEventsEnabled = tradeEventsEnabled
+	config.PositionReportEnabled = positionReportEnabled
+	config.PositionReportIntervalMinutes = normalizeTelegramPositionReportInterval(positionReportIntervalMinutes)
 	if strings.TrimSpace(botToken) != "" {
 		config.BotToken = strings.TrimSpace(botToken)
 	}
@@ -300,8 +316,12 @@ func (p *Platform) LoadPersistedTelegramConfig() error {
 	}
 	if !ok {
 		p.logger("service.platform").Debug("no persisted telegram config found")
+		if p.telegramConfig.PositionReportIntervalMinutes <= 0 {
+			p.telegramConfig.PositionReportIntervalMinutes = 30
+		}
 		return nil
 	}
+	config.PositionReportIntervalMinutes = normalizeTelegramPositionReportInterval(config.PositionReportIntervalMinutes)
 	p.telegramConfig = config
 	p.logger("service.platform").Info("persisted telegram config loaded",
 		"enabled", config.Enabled,
@@ -341,6 +361,19 @@ func normalizeTelegramSendLevels(levels []string) []string {
 		return []string{"critical", "warning"}
 	}
 	return out
+}
+
+func normalizeTelegramPositionReportInterval(minutes int) int {
+	if minutes <= 0 {
+		return 30
+	}
+	if minutes < 5 {
+		return 5
+	}
+	if minutes > 1440 {
+		return 1440
+	}
+	return minutes
 }
 
 func maskTelegramToken(token string) string {

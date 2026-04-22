@@ -221,6 +221,9 @@ export function useDashboard() {
         botToken: "",
         chatId: String(telegramConfigData.chatId ?? ""),
         sendLevels: (telegramConfigData.sendLevels ?? []).join(",") || "critical,warning",
+        tradeEventsEnabled: Boolean(telegramConfigData.tradeEventsEnabled),
+        positionReportEnabled: Boolean(telegramConfigData.positionReportEnabled),
+        positionReportIntervalMinutes: String(telegramConfigData.positionReportIntervalMinutes ?? 30),
       });
     }
     setRuntimePolicyForm({

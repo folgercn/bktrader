@@ -400,7 +400,7 @@ export const useUIStore = create<useUIStoreState>((set) => ({
     dispatchMode: "manual-review",
   },
   setRuntimePolicyForm: (valOrUpdater) => set((state) => ({ runtimePolicyForm: resolveUpdater(valOrUpdater, state.runtimePolicyForm) })),
-  telegramForm: { enabled: false, botToken: "", chatId: "", sendLevels: "critical,warning", },
+  telegramForm: { enabled: false, botToken: "", chatId: "", sendLevels: "critical,warning", tradeEventsEnabled: true, positionReportEnabled: true, positionReportIntervalMinutes: "30", },
   setTelegramForm: (valOrUpdater) => set((state) => ({ telegramForm: resolveUpdater(valOrUpdater, state.telegramForm) })),
   liveAccountError: null,
   setLiveAccountError: (valOrUpdater) => set((state) => ({ liveAccountError: resolveUpdater(valOrUpdater, state.liveAccountError) })),

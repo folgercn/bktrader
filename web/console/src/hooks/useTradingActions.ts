@@ -937,6 +937,9 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
             .split(",")
             .map((item: string) => item.trim().toLowerCase())
             .filter(Boolean),
+          tradeEventsEnabled: telegramForm.tradeEventsEnabled,
+          positionReportEnabled: telegramForm.positionReportEnabled,
+          positionReportIntervalMinutes: Number(telegramForm.positionReportIntervalMinutes) || 30,
         }),
       });
       setTelegramConfig(updated);
@@ -944,7 +947,10 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         ...current, 
         enabled: Boolean(updated.enabled),
         chatId: String(updated.chatId ?? ""),
-        botToken: "" 
+        botToken: "",
+        tradeEventsEnabled: Boolean(updated.tradeEventsEnabled),
+        positionReportEnabled: Boolean(updated.positionReportEnabled),
+        positionReportIntervalMinutes: String(updated.positionReportIntervalMinutes ?? 30),
       }));
       await loadDashboard();
       setError(null);

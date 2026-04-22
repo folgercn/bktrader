@@ -213,10 +213,22 @@ func (p *Platform) DispatchTelegramNotifications() error {
 		sentCount++
 	}
 
+	tradeEventCount, tradeEventErr := p.DispatchTelegramTradeEvents(deliveryByID)
+	if tradeEventErr != nil && firstErr == nil {
+		firstErr = tradeEventErr
+	}
+	positionReportCount, positionReportErr := p.DispatchTelegramPositionReport(deliveryByID, now)
+	if positionReportErr != nil && firstErr == nil {
+		firstErr = positionReportErr
+	}
+
 	// 恢复检测：遍历已发送的 delivery
 	recoveredCount := 0
 	for _, delivery := range deliveries {
 		if !strings.EqualFold(delivery.Channel, "telegram") {
+			continue
+		}
+		if telegramDeliveryIsOneShot(delivery.NotificationID) {
 			continue
 		}
 		if _, isActive := activeNotificationIDs[delivery.NotificationID]; isActive {
@@ -264,10 +276,286 @@ func (p *Platform) DispatchTelegramNotifications() error {
 		recoveredCount++
 	}
 
-	if sentCount > 0 || recoveredCount > 0 {
-		logger.Debug("telegram dispatch cycle completed", "sent", sentCount, "recovered", recoveredCount, "active", len(notifications))
+	if sentCount > 0 || recoveredCount > 0 || tradeEventCount > 0 || positionReportCount > 0 {
+		logger.Debug("telegram dispatch cycle completed", "sent", sentCount, "recovered", recoveredCount, "trade_events", tradeEventCount, "position_reports", positionReportCount, "active", len(notifications))
 	}
 	return firstErr
+}
+
+func telegramDeliveryIsOneShot(notificationID string) bool {
+	return strings.HasPrefix(notificationID, "trade-event:") || strings.HasPrefix(notificationID, "position-report:")
+}
+
+func (p *Platform) DispatchTelegramTradeEvents(deliveryByID map[string]domain.NotificationDelivery) (int, error) {
+	config := p.telegramConfig
+	if !config.Enabled || !config.TradeEventsEnabled || strings.TrimSpace(config.BotToken) == "" || strings.TrimSpace(config.ChatID) == "" {
+		return 0, nil
+	}
+	events, err := p.store.ListOrderExecutionEvents("")
+	if err != nil {
+		return 0, err
+	}
+	sent := 0
+	var firstErr error
+	for _, event := range events {
+		if !strings.EqualFold(event.EventType, "filled") {
+			continue
+		}
+		if event.Failed || strings.TrimSpace(event.Error) != "" {
+			continue
+		}
+		notificationID := "trade-event:" + event.ID
+		if delivery, ok := deliveryByID[notificationID]; ok && strings.EqualFold(delivery.Status, "sent") {
+			continue
+		}
+		message := formatTelegramTradeEvent(event)
+		if err := p.sendTelegramMessage(message); err != nil {
+			_, _ = p.store.UpsertNotificationDelivery(notificationID, "telegram", "failed", err.Error(), map[string]any{
+				"kind":      "trade-event",
+				"eventId":   event.ID,
+				"orderId":   event.OrderID,
+				"symbol":    event.Symbol,
+				"eventTime": event.EventTime.Format(time.RFC3339),
+			})
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		delivery, err := p.store.UpsertNotificationDelivery(notificationID, "telegram", "sent", "", map[string]any{
+			"kind":      "trade-event",
+			"eventId":   event.ID,
+			"orderId":   event.OrderID,
+			"symbol":    event.Symbol,
+			"eventTime": event.EventTime.Format(time.RFC3339),
+		})
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		deliveryByID[notificationID] = delivery
+		sent++
+	}
+	return sent, firstErr
+}
+
+func (p *Platform) DispatchTelegramPositionReport(deliveryByID map[string]domain.NotificationDelivery, now time.Time) (int, error) {
+	config := p.telegramConfig
+	if !config.Enabled || !config.PositionReportEnabled || strings.TrimSpace(config.BotToken) == "" || strings.TrimSpace(config.ChatID) == "" {
+		return 0, nil
+	}
+	intervalMinutes := normalizeTelegramPositionReportInterval(config.PositionReportIntervalMinutes)
+	interval := time.Duration(intervalMinutes) * time.Minute
+	bucket := now.UTC().Truncate(interval)
+	notificationID := fmt.Sprintf("position-report:%d:%d", intervalMinutes, bucket.Unix())
+	if delivery, ok := deliveryByID[notificationID]; ok && strings.EqualFold(delivery.Status, "sent") {
+		return 0, nil
+	}
+	accounts, err := p.store.ListAccounts()
+	if err != nil {
+		return 0, err
+	}
+	liveAccounts := make([]domain.Account, 0)
+	for _, account := range accounts {
+		if strings.EqualFold(account.Mode, "LIVE") {
+			liveAccounts = append(liveAccounts, account)
+		}
+	}
+	if len(liveAccounts) == 0 {
+		return 0, nil
+	}
+	if !telegramAccountsHaveOpenPosition(liveAccounts) {
+		return 0, nil
+	}
+	summaries, err := p.ListAccountSummaries()
+	if err != nil {
+		return 0, err
+	}
+	summaryByAccount := make(map[string]domain.AccountSummary, len(summaries))
+	for _, summary := range summaries {
+		summaryByAccount[summary.AccountID] = summary
+	}
+	message := formatTelegramPositionReport(liveAccounts, summaryByAccount, bucket, intervalMinutes)
+	if err := p.sendTelegramMessage(message); err != nil {
+		_, _ = p.store.UpsertNotificationDelivery(notificationID, "telegram", "failed", err.Error(), map[string]any{
+			"kind":            "position-report",
+			"bucket":          bucket.Format(time.RFC3339),
+			"intervalMinutes": intervalMinutes,
+		})
+		return 0, err
+	}
+	delivery, err := p.store.UpsertNotificationDelivery(notificationID, "telegram", "sent", "", map[string]any{
+		"kind":            "position-report",
+		"bucket":          bucket.Format(time.RFC3339),
+		"intervalMinutes": intervalMinutes,
+	})
+	if err != nil {
+		return 0, err
+	}
+	deliveryByID[notificationID] = delivery
+	return 1, nil
+}
+
+func telegramAccountsHaveOpenPosition(accounts []domain.Account) bool {
+	for _, account := range accounts {
+		for _, position := range metadataList(mapValue(account.Metadata["liveSyncSnapshot"])["positions"]) {
+			qty := firstNonZeroFloat(parseFloatValue(position["quantity"]), parseFloatValue(position["positionAmt"]))
+			if qty < 0 {
+				qty = -qty
+			}
+			if qty > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func formatTelegramTradeEvent(event domain.OrderExecutionEvent) string {
+	action := "开仓"
+	if telegramTradeEventIsClose(event) {
+		action = "平仓"
+	}
+	price := firstPositiveTelegramFloat(event.Price, event.NormalizedPrice, event.ExpectedPrice, event.RawPriceReference)
+	realizedPnL := firstNonZeroFloat(
+		parseFloatValue(event.AdapterSync["totalRealizedPnl"]),
+		parseFloatValue(event.AdapterSync["realizedPnl"]),
+		parseFloatValue(event.DispatchSummary["realizedPnl"]),
+	)
+	fee := firstNonZeroFloat(parseFloatValue(event.AdapterSync["totalFee"]), parseFloatValue(event.DispatchSummary["fee"]))
+	lines := []string{
+		fmt.Sprintf("📌 *%s成交* %s %s", action, NormalizeSymbol(event.Symbol), strings.ToUpper(strings.TrimSpace(event.Side))),
+		fmt.Sprintf("数量: %s", formatTelegramNumber(event.Quantity)),
+		fmt.Sprintf("价格: %s", formatTelegramNumber(price)),
+		fmt.Sprintf("订单: %s", event.OrderID),
+	}
+	if event.ExchangeOrderID != "" {
+		lines = append(lines, fmt.Sprintf("交易所订单: %s", event.ExchangeOrderID))
+	}
+	if action == "平仓" {
+		lines = append(lines, fmt.Sprintf("已实现盈亏: %s", formatTelegramSignedNumber(realizedPnL)))
+	}
+	if fee != 0 {
+		lines = append(lines, fmt.Sprintf("手续费: %s", formatTelegramSignedNumber(-fee)))
+	}
+	if event.AccountID != "" {
+		lines = append(lines, fmt.Sprintf("账户: %s", event.AccountID))
+	}
+	if event.LiveSessionID != "" {
+		lines = append(lines, fmt.Sprintf("实盘会话: %s", event.LiveSessionID))
+	}
+	if !event.EventTime.IsZero() {
+		lines = append(lines, fmt.Sprintf("时间: %s", event.EventTime.UTC().Format(time.RFC3339)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func telegramTradeEventIsClose(event domain.OrderExecutionEvent) bool {
+	if event.ReduceOnly {
+		return true
+	}
+	decision := strings.ToLower(strings.TrimSpace(event.ExecutionDecision))
+	if strings.Contains(decision, "exit") || strings.Contains(decision, "close") {
+		return true
+	}
+	role := strings.ToLower(firstNonEmpty(stringValue(event.DispatchSummary["role"]), stringValue(event.DispatchSummary["orderRole"]), stringValue(event.Metadata["role"])))
+	return strings.Contains(role, "exit") || strings.Contains(role, "close")
+}
+
+func formatTelegramPositionReport(accounts []domain.Account, summaries map[string]domain.AccountSummary, bucket time.Time, intervalMinutes int) string {
+	lines := []string{
+		fmt.Sprintf("📊 *持仓定时播报* %d分钟", intervalMinutes),
+		fmt.Sprintf("时间: %s", bucket.UTC().Format(time.RFC3339)),
+	}
+	for _, account := range accounts {
+		summary := summaries[account.ID]
+		lines = append(lines, "")
+		lines = append(lines, fmt.Sprintf("账户: %s", firstNonEmpty(account.Name, account.ID)))
+		lines = append(lines, fmt.Sprintf("净值: %s 可用: %s 未实现盈亏: %s", formatTelegramNumber(summary.NetEquity), formatTelegramNumber(summary.AvailableBalance), formatTelegramSignedNumber(summary.UnrealizedPnL)))
+		snapshot := mapValue(account.Metadata["liveSyncSnapshot"])
+		syncStatus := firstNonEmpty(stringValue(snapshot["syncStatus"]), account.Status)
+		if syncedAt := firstNonEmpty(stringValue(snapshot["syncedAt"]), stringValue(account.Metadata["lastLiveSyncAt"])); syncedAt != "" {
+			lines = append(lines, fmt.Sprintf("同步: %s %s", syncStatus, syncedAt))
+		} else {
+			lines = append(lines, fmt.Sprintf("同步: %s", syncStatus))
+		}
+		positions := metadataList(snapshot["positions"])
+		if len(positions) == 0 {
+			lines = append(lines, "持仓: 无")
+			continue
+		}
+		for _, position := range positions {
+			symbol := NormalizeSymbol(stringValue(position["symbol"]))
+			qty := firstNonZeroFloat(parseFloatValue(position["quantity"]), parseFloatValue(position["positionAmt"]))
+			side := firstNonEmpty(stringValue(position["side"]), stringValue(position["positionSide"]))
+			if side == "" {
+				if qty < 0 {
+					side = "SHORT"
+				} else {
+					side = "LONG"
+				}
+			}
+			if qty < 0 {
+				qty = -qty
+			}
+			entryPrice := parseFloatValue(position["entryPrice"])
+			markPrice := parseFloatValue(position["markPrice"])
+			unrealized := parseFloatValue(position["unrealizedProfit"])
+			if unrealized == 0 && entryPrice > 0 && markPrice > 0 && qty > 0 {
+				if strings.EqualFold(side, "SHORT") {
+					unrealized = (entryPrice - markPrice) * qty
+				} else {
+					unrealized = (markPrice - entryPrice) * qty
+				}
+			}
+			lines = append(lines, fmt.Sprintf("%s %s 数量:%s 入场:%s 标记:%s 浮盈亏:%s",
+				symbol,
+				strings.ToUpper(side),
+				formatTelegramNumber(qty),
+				formatTelegramNumber(entryPrice),
+				formatTelegramNumber(markPrice),
+				formatTelegramSignedNumber(unrealized),
+			))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func firstNonZeroFloat(values ...float64) float64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstPositiveTelegramFloat(values ...float64) float64 {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func formatTelegramNumber(value float64) string {
+	text := fmt.Sprintf("%.8f", value)
+	text = strings.TrimRight(text, "0")
+	text = strings.TrimRight(text, ".")
+	if text == "" || text == "-0" {
+		return "0"
+	}
+	return text
+}
+
+func formatTelegramSignedNumber(value float64) string {
+	if value > 0 {
+		return "+" + formatTelegramNumber(value)
+	}
+	return formatTelegramNumber(value)
 }
 
 func telegramAlertNeedsFlapSuppression(alert domain.PlatformAlert) bool {

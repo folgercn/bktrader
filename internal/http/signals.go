@@ -130,16 +130,19 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeJSON(w, http.StatusOK, platform.TelegramConfigView())
 		case http.MethodPost:
 			var payload struct {
-				Enabled    bool     `json:"enabled"`
-				BotToken   string   `json:"botToken"`
-				ChatID     string   `json:"chatId"`
-				SendLevels []string `json:"sendLevels"`
+				Enabled                       bool     `json:"enabled"`
+				BotToken                      string   `json:"botToken"`
+				ChatID                        string   `json:"chatId"`
+				SendLevels                    []string `json:"sendLevels"`
+				TradeEventsEnabled            bool     `json:"tradeEventsEnabled"`
+				PositionReportEnabled         bool     `json:"positionReportEnabled"`
+				PositionReportIntervalMinutes int      `json:"positionReportIntervalMinutes"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			item, err := platform.UpdateTelegramConfig(payload.Enabled, payload.BotToken, payload.ChatID, payload.SendLevels)
+			item, err := platform.UpdateTelegramConfig(payload.Enabled, payload.BotToken, payload.ChatID, payload.SendLevels, payload.TradeEventsEnabled, payload.PositionReportEnabled, payload.PositionReportIntervalMinutes)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
