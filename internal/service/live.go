@@ -2845,7 +2845,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		SourceStates:      cloneMetadata(sourceStates),
 		SignalBarStates:   cloneMetadata(signalBarStates),
 		CurrentPosition:   currentPosition,
-		SessionState:      cloneMetadata(session.State),
+		SessionState:      cloneMetadata(updatedState),
 		EventTime:         eventTime.UTC(),
 		NextPlannedEvent:  nextPlannedEvent.UTC(),
 		NextPlannedPrice:  nextPlannedPrice,
@@ -3968,6 +3968,7 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 	signalKind := stringValue(meta["signalKind"])
 	decisionState := stringValue(meta["decisionState"])
 	signalBarStateKey := stringValue(meta["signalBarStateKey"])
+	signalBarTradeLimitKey := stringValue(meta[liveSignalBarTradeLimitKeyField])
 	entryProximityBps := parseFloatValue(meta["entryProximityBps"])
 	spreadBps := parseFloatValue(meta["spreadBps"])
 	ma20 := parseFloatValue(signalBarDecision["ma20"])
@@ -3996,18 +3997,19 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 		PriceSource:    marketSource,
 		Quantity:       quantity,
 		Metadata: map[string]any{
-			"signalBarStateKey": signalBarStateKey,
-			"entryProximityBps": entryProximityBps,
-			"spreadBps":         spreadBps,
-			"ma20":              ma20,
-			"atr14":             atr14,
-			"liquidityBias":     liquidityBias,
-			"biasActionable":    biasActionable,
-			"bestBid":           bestBid,
-			"bestAsk":           bestAsk,
-			"bestBidQty":        bestBidQty,
-			"bestAskQty":        bestAskQty,
-			"bookImbalance":     parseFloatValue(meta["bookImbalance"]),
+			"signalBarStateKey":             signalBarStateKey,
+			liveSignalBarTradeLimitKeyField: signalBarTradeLimitKey,
+			"entryProximityBps":             entryProximityBps,
+			"spreadBps":                     spreadBps,
+			"ma20":                          ma20,
+			"atr14":                         atr14,
+			"liquidityBias":                 liquidityBias,
+			"biasActionable":                biasActionable,
+			"bestBid":                       bestBid,
+			"bestAsk":                       bestAsk,
+			"bestBidQty":                    bestBidQty,
+			"bestAskQty":                    bestAskQty,
+			"bookImbalance":                 parseFloatValue(meta["bookImbalance"]),
 		},
 	}
 }

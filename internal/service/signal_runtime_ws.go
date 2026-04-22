@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -801,21 +802,8 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 }
 
 func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.Time, limit int) []any {
-	items := make([]map[string]any, 0)
-	switch current := existing.(type) {
-	case []any:
-		for _, item := range current {
-			if entry := mapValue(item); entry != nil {
-				items = append(items, cloneMetadata(entry))
-			}
-		}
-	case []map[string]any:
-		for _, item := range current {
-			items = append(items, cloneMetadata(item))
-		}
-	}
-
-	bar := map[string]any{
+	items := normalizeSignalBarEntries(existing)
+	bar := normalizeSignalBarEntry(map[string]any{
 		"timeframe": signalBindingTimeframe(stringValue(summary["sourceKey"]), map[string]any{
 			"timeframe": stringValue(summary["timeframe"]),
 		}),
@@ -829,13 +817,12 @@ func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.
 		"volume":    stringValue(summary["volume"]),
 		"isClosed":  summary["isClosed"],
 		"updatedAt": eventTime.UTC().Format(time.RFC3339),
-	}
+	})
 
 	matchIndex := -1
-	barStart := stringValue(bar["barStart"])
-	timeframe := stringValue(bar["timeframe"])
+	barKey := signalBarHistoryKey(bar)
 	for i, item := range items {
-		if stringValue(item["barStart"]) == barStart && stringValue(item["timeframe"]) == timeframe {
+		if signalBarHistoryKey(item) == barKey && barKey != "" {
 			matchIndex = i
 			break
 		}
@@ -939,18 +926,65 @@ func finiteSignalBarIndicator(value float64) *float64 {
 	return &value
 }
 
+func canonicalSignalBarTimestamp(raw any) string {
+	if numeric, ok := toFloat64(raw); ok && numeric > 0 {
+		return strconv.FormatInt(int64(numeric), 10)
+	}
+	return strings.TrimSpace(stringValue(raw))
+}
+
+func normalizeSignalBarEntry(entry map[string]any) map[string]any {
+	if entry == nil {
+		return nil
+	}
+	normalized := cloneMetadata(entry)
+	normalized["symbol"] = NormalizeSymbol(stringValue(normalized["symbol"]))
+	normalized["timeframe"] = strings.ToLower(strings.TrimSpace(stringValue(normalized["timeframe"])))
+	normalized["barStart"] = canonicalSignalBarTimestamp(normalized["barStart"])
+	normalized["barEnd"] = canonicalSignalBarTimestamp(normalized["barEnd"])
+	return normalized
+}
+
+func signalBarHistoryKey(entry map[string]any) string {
+	barStart := canonicalSignalBarTimestamp(entry["barStart"])
+	timeframe := strings.ToLower(strings.TrimSpace(stringValue(entry["timeframe"])))
+	if barStart == "" || timeframe == "" {
+		return ""
+	}
+	return strings.Join([]string{
+		NormalizeSymbol(stringValue(entry["symbol"])),
+		timeframe,
+		barStart,
+	}, "|")
+}
+
 func normalizeSignalBarEntries(value any) []map[string]any {
 	out := make([]map[string]any, 0)
+	indexByKey := make(map[string]int)
+	appendEntry := func(entry map[string]any) {
+		normalized := normalizeSignalBarEntry(entry)
+		if normalized == nil {
+			return
+		}
+		if key := signalBarHistoryKey(normalized); key != "" {
+			if idx, exists := indexByKey[key]; exists {
+				out[idx] = normalized
+				return
+			}
+			indexByKey[key] = len(out)
+		}
+		out = append(out, normalized)
+	}
 	switch items := value.(type) {
 	case []any:
 		for _, item := range items {
 			if entry := mapValue(item); entry != nil {
-				out = append(out, cloneMetadata(entry))
+				appendEntry(entry)
 			}
 		}
 	case []map[string]any:
 		for _, item := range items {
-			out = append(out, cloneMetadata(item))
+			appendEntry(item)
 		}
 	}
 	return out
@@ -1018,8 +1052,8 @@ func summarizeSignalMessage(adapterKey string, payload []byte) map[string]any {
 			summary["event"] = "kline"
 			summary["symbol"] = firstNonEmpty(stringValue(kline["s"]), stringValue(body["s"]))
 			summary["timeframe"] = strings.ToLower(strings.TrimSpace(stringValue(kline["i"])))
-			summary["barStart"] = stringValue(kline["t"])
-			summary["barEnd"] = stringValue(kline["T"])
+			summary["barStart"] = canonicalSignalBarTimestamp(kline["t"])
+			summary["barEnd"] = canonicalSignalBarTimestamp(kline["T"])
 			summary["open"] = stringValue(kline["o"])
 			summary["high"] = stringValue(kline["h"])
 			summary["low"] = stringValue(kline["l"])

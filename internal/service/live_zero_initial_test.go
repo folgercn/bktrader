@@ -123,30 +123,20 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialSemanticsForStaleI
 		"entry",
 		"SL-Reentry",
 	)
-	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
-		t.Fatalf("expected stale intraday SL-Reentry to fall back to zero-initial semantics, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	if gotRole != "entry" || gotReason != "Initial" || gotSide != "BUY" {
+		t.Fatalf("expected stale intraday SL-Reentry without breakout to reset to initial watch, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
 	}
-	if gotPrice != 97.0 {
-		t.Fatalf("expected stale intraday fallback price 97.0, got %.2f", gotPrice)
+	if gotPrice != 108.0 {
+		t.Fatalf("expected stale intraday bootstrap price 108.0, got %.2f", gotPrice)
 	}
 	if gotEvent != barStart {
 		t.Fatalf("expected stale intraday fallback planned event %s, got %s", barStart.Format(time.RFC3339), gotEvent.Format(time.RFC3339))
 	}
-	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
-		t.Fatalf("expected pending BUY window after stale intraday fallback, got %+v", pending)
+	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected stale intraday fallback to avoid arming zero-initial window without breakout, got %+v", pending)
 	}
 	timeline := metadataList(state["timeline"])
-	if len(timeline) != 1 || stringValue(timeline[0]["title"]) != "zero-initial-window-armed" {
-		t.Fatalf("expected one zero-initial-window-armed event, got %+v", timeline)
-	}
-	context := mapValue(mapValue(timeline[0]["metadata"])["staleExitReentryContext"])
-	if stringValue(context["alignmentMode"]) != "structure-ready-no-breakout" {
-		t.Fatalf("expected structure-ready-no-breakout stale exit reentry context, got %+v", context)
-	}
-	if stringValue(context["plannedReason"]) != "SL-Reentry" || stringValue(context["plannedSide"]) != "SELL" {
-		t.Fatalf("expected stale intraday context to retain original plan info, got %+v", context)
-	}
-	if parseFloatValue(context["currentCloseDeviationBps"]) <= 0 || parseFloatValue(context["breakoutDeviationBps"]) <= 0 {
-		t.Fatalf("expected stale intraday context to record current-vs-planned deviations, got %+v", context)
+	if len(timeline) != 0 {
+		t.Fatalf("expected no zero-initial timeline event without breakout-backed window, got %+v", timeline)
 	}
 }

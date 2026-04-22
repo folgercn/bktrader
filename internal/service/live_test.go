@@ -145,6 +145,152 @@ func TestEvaluateSignalBarGateUsesSMA5ForIntradayReentry(t *testing.T) {
 	}
 }
 
+func TestEvaluateSignalRequiresZeroInitialWindowToBeOpen(t *testing.T) {
+	engine := bkStrategyEngine{}
+	signalState := map[string]any{
+		"symbol":    "BTCUSDT",
+		"timeframe": "30m",
+		"sma5":      100.0,
+		"current": map[string]any{
+			"barStart": time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"close":    98.5,
+			"high":     99.5,
+			"low":      97.8,
+		},
+		"prevBar1": map[string]any{
+			"high": 102.0,
+			"low":  98.0,
+		},
+		"prevBar2": map[string]any{
+			"high": 103.0,
+			"low":  99.0,
+		},
+	}
+	decision, err := engine.EvaluateSignal(StrategySignalEvaluationContext{
+		ExecutionContext: StrategyExecutionContext{
+			Symbol:          "BTCUSDT",
+			SignalTimeframe: "30m",
+			Parameters: map[string]any{
+				"symbol":                     "BTCUSDT",
+				"signalTimeframe":            "30m",
+				"signalDecisionMaxSpreadBps": 8.0,
+			},
+		},
+		TriggerSummary: map[string]any{
+			"role":   "trigger",
+			"symbol": "BTCUSDT",
+			"price":  99.0,
+		},
+		SourceStates: map[string]any{
+			"tick": map[string]any{
+				"streamType": "trade_tick",
+				"symbol":     "BTCUSDT",
+				"summary":    map[string]any{"price": 99.0},
+			},
+		},
+		SignalBarStates: map[string]any{
+			signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): signalState,
+		},
+		CurrentPosition:   map[string]any{},
+		SessionState:      map[string]any{},
+		EventTime:         time.Date(2026, 4, 22, 3, 5, 0, 0, time.UTC),
+		NextPlannedEvent:  time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC),
+		NextPlannedPrice:  100.0,
+		NextPlannedSide:   "SELL",
+		NextPlannedRole:   "entry",
+		NextPlannedReason: "Zero-Initial-Reentry",
+	})
+	if err != nil {
+		t.Fatalf("evaluate signal failed: %v", err)
+	}
+	if decision.Action != "wait" || decision.Reason != "reentry-window-not-open" {
+		t.Fatalf("expected zero-initial reentry to wait for an opened window, got %+v", decision)
+	}
+	if boolValue(decision.Metadata["reentryWindowOpen"]) {
+		t.Fatalf("expected zero-initial reentry metadata to record closed window, got %+v", decision.Metadata)
+	}
+}
+
+func TestEvaluateSignalRequiresReentryTriggerWithinOpenWindow(t *testing.T) {
+	engine := bkStrategyEngine{}
+	barStart := time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC)
+	signalState := map[string]any{
+		"symbol":    "BTCUSDT",
+		"timeframe": "30m",
+		"sma5":      100.0,
+		"current": map[string]any{
+			"barStart": barStart.Format(time.RFC3339),
+			"close":    99.3,
+			"high":     100.2,
+			"low":      98.8,
+		},
+		"prevBar1": map[string]any{
+			"high": 102.0,
+			"low":  98.0,
+		},
+		"prevBar2": map[string]any{
+			"high": 103.0,
+			"low":  99.0,
+		},
+	}
+	sessionState := map[string]any{
+		livePendingZeroInitialWindowStateKey: map[string]any{
+			"side":            "SELL",
+			"symbol":          "BTCUSDT",
+			"signalTimeframe": "30m",
+			"armedAt":         barStart.Add(-5 * time.Minute).Format(time.RFC3339),
+			"signalBarStart":  barStart.Format(time.RFC3339),
+			"expiresAt":       barStart.Add(30 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	decision, err := engine.EvaluateSignal(StrategySignalEvaluationContext{
+		ExecutionContext: StrategyExecutionContext{
+			Symbol:          "BTCUSDT",
+			SignalTimeframe: "30m",
+			Parameters: map[string]any{
+				"symbol":                     "BTCUSDT",
+				"signalTimeframe":            "30m",
+				"signalDecisionMaxSpreadBps": 8.0,
+			},
+		},
+		TriggerSummary: map[string]any{
+			"role":   "trigger",
+			"symbol": "BTCUSDT",
+			"price":  100.6,
+		},
+		SourceStates: map[string]any{
+			"tick": map[string]any{
+				"streamType": "trade_tick",
+				"symbol":     "BTCUSDT",
+				"summary":    map[string]any{"price": 100.6},
+			},
+		},
+		SignalBarStates: map[string]any{
+			signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): signalState,
+		},
+		CurrentPosition:   map[string]any{},
+		SessionState:      sessionState,
+		EventTime:         barStart.Add(5 * time.Minute),
+		NextPlannedEvent:  barStart,
+		NextPlannedPrice:  100.0,
+		NextPlannedSide:   "SELL",
+		NextPlannedRole:   "entry",
+		NextPlannedReason: "Zero-Initial-Reentry",
+	})
+	if err != nil {
+		t.Fatalf("evaluate signal failed: %v", err)
+	}
+	if decision.Action != "wait" || decision.Reason != "reentry-trigger-not-reached" {
+		t.Fatalf("expected zero-initial reentry to wait until reentry trigger crosses planned price, got %+v", decision)
+	}
+	if !boolValue(decision.Metadata["reentryWindowOpen"]) {
+		t.Fatalf("expected pending window to be recognized as open, got %+v", decision.Metadata)
+	}
+	if boolValue(decision.Metadata["reentryTriggerReady"]) {
+		t.Fatalf("expected reentry trigger to stay false before price crosses planned level, got %+v", decision.Metadata)
+	}
+}
+
 func TestEvaluateSignalBarGateTracksCurrentPriceBreakoutPattern(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"ma20":  68000.0,
@@ -2311,6 +2457,27 @@ func TestMaybeIncrementLiveSessionReentryCountCountsZeroInitialWindowEntry(t *te
 	}
 }
 
+func TestMaybeIncrementLiveSessionReentryCountUsesPerBarIdentity(t *testing.T) {
+	state := map[string]any{
+		"lastSignalBarStateKey": "BTCUSDT|30m|2026-04-22T03:00:00Z",
+		"sessionReentryCount":   2.0,
+	}
+	proposal := map[string]any{
+		"reason":            "Zero-Initial-Reentry",
+		"signalBarStateKey": "binance-kline|signal|BTCUSDT|30m",
+		"metadata": map[string]any{
+			liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-22T03:30:00Z",
+		},
+	}
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-2", "FILLED")
+	if got := parseFloatValue(state["sessionReentryCount"]); got != 1 {
+		t.Fatalf("expected new per-bar identity to reset reentry count before increment, got %v", got)
+	}
+	if got := stringValue(state["lastSignalBarStateKey"]); got != "BTCUSDT|30m|2026-04-22T03:30:00Z" {
+		t.Fatalf("expected last signal bar key to track per-bar identity, got %s", got)
+	}
+}
+
 func TestShouldAutoDispatchLiveIntentBlocksEntryAfterMaxTradesPerSignalBar(t *testing.T) {
 	intent := map[string]any{
 		"action":            "entry",
@@ -2352,6 +2519,28 @@ func TestValidateLiveSignalBarEntryTradeLimitAllowsNewBar(t *testing.T) {
 	}
 	if err := validateLiveSignalBarEntryTradeLimit(session, proposal); err != nil {
 		t.Fatalf("expected a new signal bar to reset the entry limit, got %v", err)
+	}
+}
+
+func TestValidateLiveSignalBarEntryTradeLimitUsesPerBarIdentity(t *testing.T) {
+	session := domain.LiveSession{
+		ID: "live-session-1",
+		State: map[string]any{
+			"max_trades_per_bar":    2,
+			"lastSignalBarStateKey": "BTCUSDT|30m|2026-04-22T03:00:00Z",
+			"sessionReentryCount":   2.0,
+		},
+	}
+	proposal := map[string]any{
+		"role":              "entry",
+		"reason":            "Zero-Initial-Reentry",
+		"signalBarStateKey": "binance-kline|signal|BTCUSDT|30m",
+		"metadata": map[string]any{
+			liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-22T03:30:00Z",
+		},
+	}
+	if err := validateLiveSignalBarEntryTradeLimit(session, proposal); err != nil {
+		t.Fatalf("expected a new per-bar identity to reset the entry limit, got %v", err)
 	}
 }
 

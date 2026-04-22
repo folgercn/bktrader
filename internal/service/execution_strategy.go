@@ -66,6 +66,8 @@ type ExecutionStrategy interface {
 	BuildProposal(ctx ExecutionPlanningContext) (ExecutionProposal, error)
 }
 
+const liveSignalBarTradeLimitKeyField = "signalBarTradeLimitKey"
+
 func normalizeExecutionStrategyKey(raw string) string {
 	value := strings.TrimSpace(strings.ToLower(raw))
 	if value == "" {
@@ -563,6 +565,35 @@ func buildExecutionSignalSignature(intent SignalIntent) string {
 	}, "|")
 }
 
+func resolveSignalBarTradeLimitKey(signalBarState map[string]any, fallbackSymbol, fallbackTimeframe string) string {
+	current := mapValue(signalBarState["current"])
+	if current == nil {
+		return ""
+	}
+	barStart := resolveBreakoutSignalTime(current["barStart"], time.Time{})
+	if barStart.IsZero() {
+		return ""
+	}
+	symbol := NormalizeSymbol(firstNonEmpty(
+		stringValue(signalBarState["symbol"]),
+		stringValue(current["symbol"]),
+		fallbackSymbol,
+	))
+	timeframe := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		stringValue(signalBarState["timeframe"]),
+		stringValue(current["timeframe"]),
+		fallbackTimeframe,
+	)))
+	return strings.Join([]string{symbol, timeframe, barStart.UTC().Format(time.RFC3339)}, "|")
+}
+
+func effectiveSignalBarTradeLimitKey(metadata map[string]any) string {
+	if key := strings.TrimSpace(stringValue(metadata[liveSignalBarTradeLimitKeyField])); key != "" {
+		return key
+	}
+	return strings.TrimSpace(stringValue(metadata["signalBarStateKey"]))
+}
+
 func mergeExecutionDecisionContext(base map[string]any, extra map[string]any) map[string]any {
 	merged := cloneMetadata(base)
 	for key, value := range extra {
@@ -572,7 +603,7 @@ func mergeExecutionDecisionContext(base map[string]any, extra map[string]any) ma
 }
 
 func effectiveReentryCountForSizing(sessionState map[string]any, intentMetadata map[string]any) float64 {
-	currentBarKey := stringValue(intentMetadata["signalBarStateKey"])
+	currentBarKey := effectiveSignalBarTradeLimitKey(intentMetadata)
 	if currentBarKey != "" && currentBarKey != stringValue(sessionState["lastSignalBarStateKey"]) {
 		return 0
 	}
