@@ -3249,15 +3249,17 @@ func TestEnsureLiveExecutionPlanBlocksCloseOnlyTakeoverFreshEntry(t *testing.T) 
 	}
 }
 
-func TestRecoveryMonitoringDisablesAutoDispatch(t *testing.T) {
+func TestRecoveryMonitoringStillDisablesEntryAutoDispatch(t *testing.T) {
 	now := time.Now().UTC()
 	session := domain.LiveSession{
 		State: map[string]any{
-			"dispatchMode":             "auto-dispatch",
-			"recoveryTakeoverActive":   true,
-			"positionRecoveryStatus":   "protected-open-position",
-			"hasRecoveredPosition":     true,
-			"hasRecoveredRealPosition": true,
+			"dispatchMode":                "auto-dispatch",
+			"recoveryTakeoverActive":      true,
+			"recoveryTakeoverState":       liveRecoveryTakeoverStateMonitoring,
+			"positionRecoveryStatus":      "protected-open-position",
+			"positionReconcileGateStatus": livePositionReconcileGateStatusVerified,
+			"hasRecoveredPosition":        true,
+			"hasRecoveredRealPosition":    true,
 		},
 	}
 	intent := map[string]any{
@@ -3269,6 +3271,51 @@ func TestRecoveryMonitoringDisablesAutoDispatch(t *testing.T) {
 	}
 	if shouldAutoDispatchLiveIntent(session, intent, now) {
 		t.Fatal("expected recovery-monitoring takeover to stay manual")
+	}
+}
+
+func TestRecoveryMonitoringAllowsVerifiedCloseAutoDispatch(t *testing.T) {
+	now := time.Now().UTC()
+	session := domain.LiveSession{
+		ID: "live-session-1",
+		State: map[string]any{
+			"dispatchMode":                "auto-dispatch",
+			"recoveryTakeoverActive":      true,
+			"recoveryTakeoverState":       liveRecoveryTakeoverStateMonitoring,
+			"positionRecoveryStatus":      livePositionRecoveryStatusClosingPending,
+			"positionReconcileGateStatus": livePositionReconcileGateStatusVerified,
+			"hasRecoveredPosition":        true,
+			"hasRecoveredRealPosition":    true,
+			"strategyVersionId":           "strategy-version-bk-1d-v010",
+			"signalTimeframe":             "30m",
+			"executionDataSource":         "tick",
+			"symbol":                      "BTCUSDT",
+		},
+	}
+	intent := map[string]any{
+		"action":            "risk-exit-fallback",
+		"role":              "exit",
+		"reason":            "sl-breached-fallback",
+		"side":              "SELL",
+		"symbol":            "BTCUSDT",
+		"status":            "dispatchable",
+		"quantity":          0.002,
+		"reduceOnly":        true,
+		"signalKind":        "recovery-watchdog",
+		"strategyVersionId": "strategy-version-bk-1d-v010",
+		"metadata": map[string]any{
+			"runtimeSessionId": "runtime-1",
+			"executionContext": map[string]any{
+				"strategyVersionId":   "strategy-version-bk-1d-v010",
+				"signalTimeframe":     "30m",
+				"executionDataSource": "tick",
+				"executionMode":       "live",
+				"symbol":              "BTCUSDT",
+			},
+		},
+	}
+	if !shouldAutoDispatchLiveIntent(session, intent, now) {
+		t.Fatal("expected verified recovery-monitoring takeover close to auto-dispatch")
 	}
 }
 
