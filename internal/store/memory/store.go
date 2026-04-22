@@ -243,6 +243,9 @@ func (s *Store) GetTelegramConfig() (domain.TelegramConfig, bool, error) {
 func (s *Store) UpsertTelegramConfig(config domain.TelegramConfig) (domain.TelegramConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if config.PositionReportIntervalMinutes <= 0 {
+		config.PositionReportIntervalMinutes = 30
+	}
 	config.UpdatedAt = time.Now().UTC()
 	copyConfig := config
 	s.telegramConfig = &copyConfig

@@ -138,6 +138,199 @@ func TestTelegramNotificationRecoveryRestart(t *testing.T) {
 	}
 }
 
+func TestTelegramDispatchSendsFilledTradeEventsWithPnLAndDedup(t *testing.T) {
+	messages := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	store := memory.NewStore()
+	now := time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)
+	_, err := store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+		ID:              "open-event-1",
+		OrderID:         "order-open-1",
+		AccountID:       "account-live-1",
+		LiveSessionID:   "live-session-1",
+		Symbol:          "BTCUSDT",
+		Side:            "BUY",
+		EventType:       "filled",
+		Status:          "FILLED",
+		Quantity:        0.2,
+		Price:           64000,
+		EventTime:       now,
+		ExecutionMode:   "live",
+		DispatchSummary: map[string]any{"role": "entry"},
+	})
+	if err != nil {
+		t.Fatalf("create open event failed: %v", err)
+	}
+	_, err = store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+		ID:              "close-event-1",
+		OrderID:         "order-close-1",
+		AccountID:       "account-live-1",
+		LiveSessionID:   "live-session-1",
+		Symbol:          "BTCUSDT",
+		Side:            "SELL",
+		EventType:       "filled",
+		Status:          "FILLED",
+		Quantity:        0.1,
+		Price:           65000,
+		EventTime:       now.Add(time.Minute),
+		ExecutionMode:   "live",
+		ReduceOnly:      true,
+		AdapterSync:     map[string]any{"totalRealizedPnl": 100.5, "totalFee": 1.25},
+		DispatchSummary: map[string]any{"role": "exit"},
+	})
+	if err != nil {
+		t.Fatalf("create close event failed: %v", err)
+	}
+
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:                       true,
+			BotToken:                      "test-token",
+			ChatID:                        "123",
+			SendLevels:                    []string{},
+			TradeEventsEnabled:            true,
+			PositionReportIntervalMinutes: 30,
+		},
+	}
+
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("dispatch failed: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 trade messages, got %d: %#v", len(messages), messages)
+	}
+	joined := strings.Join(messages, "\n---\n")
+	if !strings.Contains(joined, "*开仓成交* BTCUSDT BUY") {
+		t.Fatalf("expected open trade message, got: %s", joined)
+	}
+	if !strings.Contains(joined, "数量: 0.2") || !strings.Contains(joined, "价格: 64000") {
+		t.Fatalf("expected open qty and price, got: %s", joined)
+	}
+	if !strings.Contains(joined, "*平仓成交* BTCUSDT SELL") || !strings.Contains(joined, "已实现盈亏: +100.5") {
+		t.Fatalf("expected close pnl message, got: %s", joined)
+	}
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("second dispatch failed: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected trade delivery dedupe, got %d messages", len(messages))
+	}
+}
+
+func TestTelegramPositionReportUsesThirtyMinuteBucketAndSkipsRecovery(t *testing.T) {
+	messages := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	base := time.Date(2026, 4, 22, 10, 5, 0, 0, time.UTC)
+	oldNow := telegramNow
+	telegramNow = func() time.Time { return base }
+	defer func() { telegramNow = oldNow }()
+
+	store := memory.NewStore()
+	accounts, err := store.ListAccounts()
+	if err != nil {
+		t.Fatalf("list accounts failed: %v", err)
+	}
+	var account domain.Account
+	for _, item := range accounts {
+		if strings.EqualFold(item.Mode, "LIVE") {
+			account = item
+			break
+		}
+	}
+	if account.ID == "" {
+		t.Fatal("expected default live account")
+	}
+	account.Metadata = map[string]any{
+		"lastLiveSyncAt": base.Format(time.RFC3339),
+		"liveSyncSnapshot": map[string]any{
+			"syncStatus":            "SYNCED",
+			"syncedAt":              base.Format(time.RFC3339),
+			"totalMarginBalance":    12000.0,
+			"availableBalance":      8000.0,
+			"totalWalletBalance":    11900.0,
+			"totalUnrealizedProfit": 100.0,
+			"positions": []map[string]any{{
+				"symbol":           "ETHUSDT",
+				"positionAmt":      1.5,
+				"entryPrice":       3000.0,
+				"markPrice":        3100.0,
+				"unrealizedProfit": 150.0,
+				"positionSide":     "LONG",
+			}},
+		},
+	}
+	if _, err := store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:                       true,
+			BotToken:                      "test-token",
+			ChatID:                        "123",
+			SendLevels:                    []string{},
+			PositionReportEnabled:         true,
+			PositionReportIntervalMinutes: 30,
+		},
+	}
+
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("dispatch failed: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected one position report, got %d: %#v", len(messages), messages)
+	}
+	if !strings.Contains(messages[0], "*持仓定时播报* 30分钟") || !strings.Contains(messages[0], "ETHUSDT LONG 数量:1.5") || !strings.Contains(messages[0], "浮盈亏:+150") {
+		t.Fatalf("unexpected position report: %s", messages[0])
+	}
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("second dispatch failed: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected position report delivery dedupe, got %d messages", len(messages))
+	}
+	telegramNow = func() time.Time { return base.Add(31 * time.Minute) }
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("third dispatch failed: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected next bucket position report, got %d messages", len(messages))
+	}
+	for _, msg := range messages {
+		if strings.Contains(msg, "[已恢复]") {
+			t.Fatalf("position report must not trigger recovery message: %s", msg)
+		}
+	}
+}
+
 func TestTelegramDispatchSuppressesFlappingRuntimeStaleAlerts(t *testing.T) {
 	var messages []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

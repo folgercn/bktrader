@@ -438,6 +438,9 @@ export type TelegramConfig = {
   enabled: boolean;
   chatId: string;
   sendLevels: string[];
+  tradeEventsEnabled: boolean;
+  positionReportEnabled: boolean;
+  positionReportIntervalMinutes: number;
   hasBotToken: boolean;
   maskedBotToken: string;
   updatedAt?: string;
@@ -655,6 +658,9 @@ export interface TelegramForm {
   botToken: string;
   chatId: string;
   sendLevels: string;
+  tradeEventsEnabled: boolean;
+  positionReportEnabled: boolean;
+  positionReportIntervalMinutes: string;
 }
 
 export interface LiveLaunchResult {

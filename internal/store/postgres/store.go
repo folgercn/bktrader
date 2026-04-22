@@ -152,7 +152,7 @@ func (s *Store) GetTelegramConfig() (domain.TelegramConfig, bool, error) {
 	var item domain.TelegramConfig
 	var levelsRaw []byte
 	err := s.db.QueryRow(`
-		select enabled, bot_token, chat_id, send_levels, updated_at
+		select enabled, bot_token, chat_id, send_levels, trade_events_enabled, position_report_enabled, position_report_interval_minutes, updated_at
 		from telegram_configs
 		where id = 1
 	`).Scan(
@@ -160,6 +160,9 @@ func (s *Store) GetTelegramConfig() (domain.TelegramConfig, bool, error) {
 		&item.BotToken,
 		&item.ChatID,
 		&levelsRaw,
+		&item.TradeEventsEnabled,
+		&item.PositionReportEnabled,
+		&item.PositionReportIntervalMinutes,
 		&item.UpdatedAt,
 	)
 	if err != nil {
@@ -171,22 +174,31 @@ func (s *Store) GetTelegramConfig() (domain.TelegramConfig, bool, error) {
 	if len(levelsRaw) > 0 {
 		_ = json.Unmarshal(levelsRaw, &item.SendLevels)
 	}
+	if item.PositionReportIntervalMinutes <= 0 {
+		item.PositionReportIntervalMinutes = 30
+	}
 	return item, true, nil
 }
 
 func (s *Store) UpsertTelegramConfig(config domain.TelegramConfig) (domain.TelegramConfig, error) {
 	config.UpdatedAt = time.Now().UTC()
+	if config.PositionReportIntervalMinutes <= 0 {
+		config.PositionReportIntervalMinutes = 30
+	}
 	raw, _ := json.Marshal(config.SendLevels)
 	_, err := s.db.Exec(`
-		insert into telegram_configs (id, enabled, bot_token, chat_id, send_levels, updated_at)
-		values (1, $1, $2, $3, $4, $5)
+		insert into telegram_configs (id, enabled, bot_token, chat_id, send_levels, trade_events_enabled, position_report_enabled, position_report_interval_minutes, updated_at)
+		values (1, $1, $2, $3, $4, $5, $6, $7, $8)
 		on conflict (id) do update set
 			enabled = excluded.enabled,
 			bot_token = excluded.bot_token,
 			chat_id = excluded.chat_id,
 			send_levels = excluded.send_levels,
+			trade_events_enabled = excluded.trade_events_enabled,
+			position_report_enabled = excluded.position_report_enabled,
+			position_report_interval_minutes = excluded.position_report_interval_minutes,
 			updated_at = excluded.updated_at
-	`, config.Enabled, config.BotToken, config.ChatID, raw, config.UpdatedAt)
+	`, config.Enabled, config.BotToken, config.ChatID, raw, config.TradeEventsEnabled, config.PositionReportEnabled, config.PositionReportIntervalMinutes, config.UpdatedAt)
 	if err != nil {
 		return domain.TelegramConfig{}, err
 	}

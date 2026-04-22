@@ -482,11 +482,14 @@ type PlatformNotification struct {
 
 // TelegramConfig 保存 Telegram 通知通道配置。
 type TelegramConfig struct {
-	Enabled    bool      `json:"enabled"`
-	BotToken   string    `json:"botToken"`
-	ChatID     string    `json:"chatId"`
-	SendLevels []string  `json:"sendLevels"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	Enabled                       bool      `json:"enabled"`
+	BotToken                      string    `json:"botToken"`
+	ChatID                        string    `json:"chatId"`
+	SendLevels                    []string  `json:"sendLevels"`
+	TradeEventsEnabled            bool      `json:"tradeEventsEnabled"`
+	PositionReportEnabled         bool      `json:"positionReportEnabled"`
+	PositionReportIntervalMinutes int       `json:"positionReportIntervalMinutes"`
+	UpdatedAt                     time.Time `json:"updatedAt"`
 }
 
 // NotificationDelivery 记录通知通过外部通道的发送结果。

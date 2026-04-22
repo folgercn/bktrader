@@ -91,6 +91,27 @@ export function TelegramModal({
             className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
           />
         </ModalField>
+        <ModalCheckboxField
+          label="开平事件提醒"
+          checked={telegramForm.tradeEventsEnabled}
+          onChange={(checked) => setTelegramForm((current) => ({ ...current, tradeEventsEnabled: checked }))}
+        />
+        <ModalCheckboxField
+          label="持仓定时播报"
+          checked={telegramForm.positionReportEnabled}
+          onChange={(checked) => setTelegramForm((current) => ({ ...current, positionReportEnabled: checked }))}
+        />
+        <ModalField label="持仓播报间隔">
+          <Input
+            type="number"
+            min={5}
+            max={1440}
+            step={5}
+            value={telegramForm.positionReportIntervalMinutes}
+            onChange={(event) => setTelegramForm((current) => ({ ...current, positionReportIntervalMinutes: event.target.value }))}
+            className="h-10 rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] px-3"
+          />
+        </ModalField>
       </ModalFormGrid>
 
       <ModalActions>
