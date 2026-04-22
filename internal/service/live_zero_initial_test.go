@@ -62,6 +62,20 @@ func TestPrepareLivePlanStepForSignalEvaluationExpiresStaleExitReentryWindow(t *
 	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
 		t.Fatalf("expected pending BUY window after stale SL-Reentry fallback, got %+v", pending)
 	}
+	timeline := metadataList(state["timeline"])
+	if len(timeline) != 1 || stringValue(timeline[0]["title"]) != "zero-initial-window-armed" {
+		t.Fatalf("expected one zero-initial-window-armed event, got %+v", timeline)
+	}
+	context := mapValue(mapValue(timeline[0]["metadata"])["staleExitReentryContext"])
+	if stringValue(context["alignmentMode"]) != "breakout-confirmed" {
+		t.Fatalf("expected breakout-confirmed stale exit reentry context, got %+v", context)
+	}
+	if stringValue(context["plannedReason"]) != "SL-Reentry" || stringValue(context["breakoutPriceSource"]) != "trade_tick.price" {
+		t.Fatalf("expected stale exit reentry context to retain original plan and breakout source, got %+v", context)
+	}
+	if parseFloatValue(context["staleAgeSeconds"]) <= parseFloatValue(context["staleWindowSeconds"]) {
+		t.Fatalf("expected stale age to exceed stale window in context, got %+v", context)
+	}
 }
 
 func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialSemanticsForStaleIntradayReentry(t *testing.T) {
@@ -120,5 +134,19 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialSemanticsForStaleI
 	}
 	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
 		t.Fatalf("expected pending BUY window after stale intraday fallback, got %+v", pending)
+	}
+	timeline := metadataList(state["timeline"])
+	if len(timeline) != 1 || stringValue(timeline[0]["title"]) != "zero-initial-window-armed" {
+		t.Fatalf("expected one zero-initial-window-armed event, got %+v", timeline)
+	}
+	context := mapValue(mapValue(timeline[0]["metadata"])["staleExitReentryContext"])
+	if stringValue(context["alignmentMode"]) != "structure-ready-no-breakout" {
+		t.Fatalf("expected structure-ready-no-breakout stale exit reentry context, got %+v", context)
+	}
+	if stringValue(context["plannedReason"]) != "SL-Reentry" || stringValue(context["plannedSide"]) != "SELL" {
+		t.Fatalf("expected stale intraday context to retain original plan info, got %+v", context)
+	}
+	if parseFloatValue(context["currentCloseDeviationBps"]) <= 0 || parseFloatValue(context["breakoutDeviationBps"]) <= 0 {
+		t.Fatalf("expected stale intraday context to record current-vs-planned deviations, got %+v", context)
 	}
 }
