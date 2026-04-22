@@ -5958,6 +5958,50 @@ func TestSyncLiveAccountAuthoritativeReconcileBypassesRecentReuseWindow(t *testi
 	}
 }
 
+func TestSyncLiveAccountReusesRecentFailureWithinReuseWindow(t *testing.T) {
+	baseStore := memory.NewStore()
+	platform := NewPlatform(&testFailingListOrdersStore{
+		Store:     baseStore,
+		listError: errors.New("orders unavailable"),
+	})
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	var syncCalls atomic.Int32
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-failure-reuse-window",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			syncCalls.Add(1)
+			return domain.Account{}, errors.New("adapter sync failed")
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-failure-reuse-window",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	if _, err := platform.requestLiveAccountSync("live-main", "direct"); err == nil {
+		t.Fatal("expected first sync to fail")
+	}
+	if _, err := platform.requestLiveAccountSync("live-main", "follow-up"); err == nil {
+		t.Fatal("expected follow-up sync to reuse recent failure")
+	} else if !strings.Contains(err.Error(), "orders unavailable") {
+		t.Fatalf("expected follow-up sync to reuse failure result, got %v", err)
+	}
+	if got := syncCalls.Load(); got != 1 {
+		t.Fatalf("expected recent follow-up sync to reuse prior failure, got %d adapter calls", got)
+	}
+}
+
 func TestSyncLiveAccountNormalizesAdapterSuccessHealthState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
