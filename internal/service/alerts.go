@@ -267,8 +267,12 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		}
 		readiness := p.evaluateLiveRuntimeReadiness(strategyBindings, activeRuntime)
 		if readiness.status == "blocked" {
+			alertID := fmt.Sprintf("live-preflight-%s", account.ID)
+			if readiness.reason == "runtime-error" {
+				alertID = fmt.Sprintf("live-preflight-runtime-error-%s", account.ID)
+			}
 			appendAlert(domain.PlatformAlert{
-				ID:               fmt.Sprintf("live-preflight-%s", account.ID),
+				ID:               alertID,
 				Scope:            "live",
 				Level:            "critical",
 				Title:            "实盘预检受阻",
@@ -280,6 +284,9 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				RuntimeSessionID: activeRuntime.ID,
 				Anchor:           "live",
 				EventTime:        parseOptionalRFC3339(stringValue(activeRuntime.State["lastEventAt"])),
+				Metadata: map[string]any{
+					"reason": readiness.reason,
+				},
 			})
 		} else if readiness.status == "warning" {
 			alertID := fmt.Sprintf("live-warning-%s", account.ID)
