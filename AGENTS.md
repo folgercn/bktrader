@@ -49,6 +49,8 @@ This project has a graphify knowledge graph at `graphify-out/`.
 3. [CONTRIBUTING.md](CONTRIBUTING.md): wuyaocheng 和 folgercn 两位主核心贡献者的协作纪律
 4. `graphify-out/GRAPH_REPORT.md` (如有必要): 理解项目具体实现的依赖拓扑。
 
+若任务是线上告警 / 生产日志 / `stale-source-states` / Binance REST 限流排查，必须优先阅读 [docs/production-log-troubleshooting.md](docs/production-log-troubleshooting.md)，其中记录了生产服务器 SSH 入口与日志目录。
+
 ## 5. 常规验证手段
 
 你在提交代码后必须做以下自查（若相关）：
@@ -213,4 +215,3 @@ AI 修改本范围代码时必须输出：
 
 - [docs/runtime-recovery-stabilization-summary.md](docs/runtime-recovery-stabilization-summary.md)
 - [docs/runtime-recovery-extension-coding-rules.md](docs/runtime-recovery-extension-coding-rules.md)
-
