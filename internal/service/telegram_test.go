@@ -220,6 +220,9 @@ func TestTelegramDispatchSendsFilledTradeEventsWithPnLAndDedup(t *testing.T) {
 	if !strings.Contains(joined, "数量: 0.2") || !strings.Contains(joined, "价格: 64000") {
 		t.Fatalf("expected open qty and price, got: %s", joined)
 	}
+	if !strings.Contains(joined, "北京时间: 2026-04-22 18:00:00") || !strings.Contains(joined, "北京时间: 2026-04-22 18:01:00") {
+		t.Fatalf("expected Beijing time in trade messages, got: %s", joined)
+	}
 	if !strings.Contains(joined, "*平仓成交* BTCUSDT SELL") || !strings.Contains(joined, "已实现盈亏: +100.5") {
 		t.Fatalf("expected close pnl message, got: %s", joined)
 	}
@@ -310,6 +313,9 @@ func TestTelegramPositionReportUsesThirtyMinuteBucketAndSkipsRecovery(t *testing
 	}
 	if !strings.Contains(messages[0], "*持仓定时播报* 30分钟") || !strings.Contains(messages[0], "ETHUSDT LONG 数量:1.5") || !strings.Contains(messages[0], "浮盈亏:+150") {
 		t.Fatalf("unexpected position report: %s", messages[0])
+	}
+	if !strings.Contains(messages[0], "北京时间: 2026-04-22 18:00:00") {
+		t.Fatalf("expected Beijing time in position report, got: %s", messages[0])
 	}
 	if err := p.DispatchTelegramNotifications(); err != nil {
 		t.Fatalf("second dispatch failed: %v", err)
