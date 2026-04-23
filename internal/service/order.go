@@ -21,17 +21,13 @@ func (p *Platform) ListOrders() ([]domain.Order, error) {
 	return p.store.ListOrders()
 }
 
+// ListOrdersWithLimit 获取限制数量的订单，按时间降序（最新优先）。
+func (p *Platform) ListOrdersWithLimit(limit int) ([]domain.Order, error) {
+	return p.store.ListOrdersWithLimit(limit)
+}
+
 func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
-	items, err := p.store.ListOrders()
-	if err != nil {
-		return domain.Order{}, err
-	}
-	for _, item := range items {
-		if item.ID == orderID {
-			return item, nil
-		}
-	}
-	return domain.Order{}, fmt.Errorf("order not found: %s", orderID)
+	return p.store.GetOrderByID(orderID)
 }
 
 func (p *Platform) ClosePosition(positionID string) (domain.Order, error) {
@@ -1225,6 +1221,11 @@ func (p *Platform) ListPositions() ([]domain.Position, error) {
 // ListFills 获取所有成交记录列表。
 func (p *Platform) ListFills() ([]domain.Fill, error) {
 	return p.store.ListFills()
+}
+
+// ListFillsWithLimit 获取限制数量的成交记录，按时间降序（最新优先）。
+func (p *Platform) ListFillsWithLimit(limit int) ([]domain.Fill, error) {
+	return p.store.ListFillsWithLimit(limit)
 }
 
 // applyExecutionFill 根据已确认成交更新仓位。

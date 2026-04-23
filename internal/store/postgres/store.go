@@ -536,6 +536,71 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 	return items, rows.Err()
 }
 
+func (s *Store) ListOrdersWithLimit(limit int) ([]domain.Order, error) {
+	query := `
+		select id, account_id, strategy_version_id, symbol, side, type, status, quantity, price, metadata, created_at
+		from orders order by created_at desc
+	`
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		query += ` limit $1`
+		rows, err = s.db.Query(query, limit)
+	} else {
+		rows, err = s.db.Query(query)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.Order{}
+	for rows.Next() {
+		var (
+			item              domain.Order
+			strategyVersionID sql.NullString
+			metadataRaw       []byte
+		)
+		if err := rows.Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Type, &item.Status, &item.Quantity, &item.Price, &metadataRaw, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		item.StrategyVersionID = strategyVersionID.String
+		item.Metadata = map[string]any{}
+		if len(metadataRaw) > 0 {
+			_ = json.Unmarshal(metadataRaw, &item.Metadata)
+		}
+		item.NormalizeExecutionFlags()
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) GetOrderByID(orderID string) (domain.Order, error) {
+	var (
+		item              domain.Order
+		strategyVersionID sql.NullString
+		metadataRaw       []byte
+	)
+	err := s.db.QueryRow(`
+		select id, account_id, strategy_version_id, symbol, side, type, status, quantity, price, metadata, created_at
+		from orders
+		where id = $1
+	`, orderID).Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Type, &item.Status, &item.Quantity, &item.Price, &metadataRaw, &item.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.Order{}, fmt.Errorf("order not found: %s", orderID)
+		}
+		return domain.Order{}, err
+	}
+	item.StrategyVersionID = strategyVersionID.String
+	item.Metadata = map[string]any{}
+	if len(metadataRaw) > 0 {
+		_ = json.Unmarshal(metadataRaw, &item.Metadata)
+	}
+	item.NormalizeExecutionFlags()
+	return item, nil
+}
+
 func (s *Store) QueryOrders(query domain.OrderQuery) ([]domain.Order, error) {
 	sqlQuery := `
 		select id, account_id, strategy_version_id, symbol, side, type, status, quantity, price, metadata, created_at
@@ -619,6 +684,44 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
 		from fills order by created_at asc
 	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.Fill{}
+	for rows.Next() {
+		var item domain.Fill
+		var exchangeTradeID sql.NullString
+		var exchangeTradeTime sql.NullTime
+		var fallbackFingerprint sql.NullString
+		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &exchangeTradeTime, &fallbackFingerprint, &item.Price, &item.Quantity, &item.Fee, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		item.ExchangeTradeID = exchangeTradeID.String
+		item.DedupFingerprint = fallbackFingerprint.String
+		if exchangeTradeTime.Valid {
+			parsed := exchangeTradeTime.Time.UTC()
+			item.ExchangeTradeTime = &parsed
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) ListFillsWithLimit(limit int) ([]domain.Fill, error) {
+	query := `
+		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
+		from fills order by created_at desc
+	`
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		query += ` limit $1`
+		rows, err = s.db.Query(query, limit)
+	} else {
+		rows, err = s.db.Query(query)
+	}
 	if err != nil {
 		return nil, err
 	}

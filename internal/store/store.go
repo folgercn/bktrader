@@ -31,6 +31,10 @@ type Repository interface {
 
 	// ListOrders 获取所有订单。
 	ListOrders() ([]domain.Order, error)
+	// ListOrdersWithLimit 获取限制数量的订单，按时间降序（最新优先）。
+	ListOrdersWithLimit(limit int) ([]domain.Order, error)
+	// GetOrderByID 直接通过 ID 获取单条订单。
+	GetOrderByID(orderID string) (domain.Order, error)
 	// QueryOrders 按条件查询订单。
 	QueryOrders(query domain.OrderQuery) ([]domain.Order, error)
 	// CreateOrder 创建新订单。
@@ -42,6 +46,8 @@ type Repository interface {
 
 	// ListFills 获取所有成交记录。
 	ListFills() ([]domain.Fill, error)
+	// ListFillsWithLimit 获取限制数量的成交记录，按时间降序（最新优先）。
+	ListFillsWithLimit(limit int) ([]domain.Fill, error)
 	// QueryFills 按条件查询成交记录。
 	QueryFills(query domain.FillQuery) ([]domain.Fill, error)
 	// TotalFilledQuantityForOrder 返回指定订单已落账成交数量总和。
