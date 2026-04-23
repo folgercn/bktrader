@@ -1028,6 +1028,9 @@ func TestShouldThrottleLiveEvaluation_SamePriceSkipped(t *testing.T) {
 	if throttle.(*tickEvalThrottleState).skippedCount != 1 {
 		t.Fatalf("expected skipped count to be 1, got %d", throttle.(*tickEvalThrottleState).skippedCount)
 	}
+	if got := platform.tickEvalThrottleSkippedCount(sessionID); got != 1 {
+		t.Fatalf("expected session aggregate skipped count to be 1, got %d", got)
+	}
 }
 
 func TestShouldThrottleLiveEvaluation_PriceChangePassesThrough(t *testing.T) {
@@ -1152,6 +1155,7 @@ func TestShouldThrottleLiveEvaluation_ReplayTickNotThrottled(t *testing.T) {
 func TestTickEvalThrottleCleanedOnSessionStop(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	sessionID := "test-session"
+	otherSessionID := "other-session"
 
 	platform.signalSessions[sessionID] = domain.SignalRuntimeSession{
 		ID:     sessionID,
@@ -1159,25 +1163,104 @@ func TestTickEvalThrottleCleanedOnSessionStop(t *testing.T) {
 		State:  map[string]any{},
 	}
 
-	// Create throttle state
+	// Create aggregate and symbol-scoped throttle state.
 	platform.tickEvalThrottle.Store(sessionID, &tickEvalThrottleState{
+		skippedCount: 1,
+	})
+	platform.tickEvalThrottle.Store(tickEvalThrottleKey(sessionID, "BTCUSDT"), &tickEvalThrottleState{
 		lastPrice: "68000.5",
+	})
+	platform.tickEvalThrottle.Store(tickEvalThrottleKey(sessionID, "ETHUSDT"), &tickEvalThrottleState{
+		lastPrice: "3200.5",
+	})
+	platform.tickEvalThrottle.Store(tickEvalThrottleKey(otherSessionID, "BTCUSDT"), &tickEvalThrottleState{
+		lastPrice: "69000.5",
 	})
 
 	platform.setSessionStopped(sessionID)
 
 	if _, ok := platform.tickEvalThrottle.Load(sessionID); ok {
-		t.Fatal("expected throttle state to be cleaned up on setSessionStopped")
+		t.Fatal("expected aggregate throttle state to be cleaned up on setSessionStopped")
+	}
+	if _, ok := platform.tickEvalThrottle.Load(tickEvalThrottleKey(sessionID, "BTCUSDT")); ok {
+		t.Fatal("expected symbol-scoped throttle state to be cleaned up on setSessionStopped")
+	}
+	if _, ok := platform.tickEvalThrottle.Load(tickEvalThrottleKey(sessionID, "ETHUSDT")); ok {
+		t.Fatal("expected all symbol-scoped throttle state to be cleaned up on setSessionStopped")
+	}
+	if _, ok := platform.tickEvalThrottle.Load(tickEvalThrottleKey(otherSessionID, "BTCUSDT")); !ok {
+		t.Fatal("expected throttle state for other sessions to remain")
 	}
 
 	// Test TerminalError case
 	platform.tickEvalThrottle.Store(sessionID, &tickEvalThrottleState{
+		skippedCount: 2,
+	})
+	platform.tickEvalThrottle.Store(tickEvalThrottleKey(sessionID, "BTCUSDT"), &tickEvalThrottleState{
 		lastPrice: "68000.5",
 	})
 
 	platform.setSessionTerminalError(sessionID, errors.New("fatal"))
 
 	if _, ok := platform.tickEvalThrottle.Load(sessionID); ok {
-		t.Fatal("expected throttle state to be cleaned up on setSessionTerminalError")
+		t.Fatal("expected aggregate throttle state to be cleaned up on setSessionTerminalError")
+	}
+	if _, ok := platform.tickEvalThrottle.Load(tickEvalThrottleKey(sessionID, "BTCUSDT")); ok {
+		t.Fatal("expected symbol-scoped throttle state to be cleaned up on setSessionTerminalError")
+	}
+	if _, ok := platform.tickEvalThrottle.Load(tickEvalThrottleKey(otherSessionID, "BTCUSDT")); !ok {
+		t.Fatal("expected throttle state for other sessions to remain after terminal error cleanup")
+	}
+}
+
+func TestTickEvalThrottleSkippedCountTracksSessionAggregate(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+	eventTime := time.Now()
+
+	btcSummary := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68000.5",
+	}
+	if platform.shouldThrottleLiveEvaluation(sessionID, btcSummary, eventTime, "BTCUSDT") {
+		t.Fatal("expected first BTC eval to pass")
+	}
+	if !platform.shouldThrottleLiveEvaluation(sessionID, btcSummary, eventTime, "BTCUSDT") {
+		t.Fatal("expected second BTC eval with same price to be throttled")
+	}
+
+	ethSummary := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "3200.5",
+	}
+	ethEventTime := eventTime.Add(300 * time.Millisecond)
+	if platform.shouldThrottleLiveEvaluation(sessionID, ethSummary, ethEventTime, "ETHUSDT") {
+		t.Fatal("expected first ETH eval to pass")
+	}
+	if !platform.shouldThrottleLiveEvaluation(sessionID, ethSummary, ethEventTime, "ETHUSDT") {
+		t.Fatal("expected second ETH eval with same price to be throttled")
+	}
+
+	if got := platform.tickEvalThrottleSkippedCount(sessionID); got != 2 {
+		t.Fatalf("expected session aggregate skipped count to be 2, got %d", got)
+	}
+}
+
+func TestShouldThrottleLiveEvaluation_EmptySymbolDoesNotCreateThrottleState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+	summary := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68000.5",
+	}
+
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary, time.Now(), "") {
+		t.Fatal("expected empty-symbol trade tick to bypass throttle")
+	}
+	if _, ok := platform.tickEvalThrottle.Load(sessionID); ok {
+		t.Fatal("expected empty-symbol trade tick to avoid session aggregate throttle state")
+	}
+	if _, ok := platform.tickEvalThrottle.Load(tickEvalThrottleKey(sessionID, "BTCUSDT")); ok {
+		t.Fatal("expected empty-symbol trade tick to avoid symbol-scoped throttle state")
 	}
 }

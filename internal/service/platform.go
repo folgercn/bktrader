@@ -55,7 +55,7 @@ type Platform struct {
 	runtimePolicy          RuntimePolicy
 	telegramConfig         domain.TelegramConfig
 	telegramSentAlertCache sync.Map // notificationID -> alertTitle
-	tickEvalThrottle       sync.Map // runtimeSessionID -> *tickEvalThrottleState
+	tickEvalThrottle       sync.Map // runtimeSessionID or runtimeSessionID|symbol -> *tickEvalThrottleState
 	logBroker              *logging.Broker
 }
 

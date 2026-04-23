@@ -353,7 +353,7 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		session.State = state
 		session.UpdatedAt = time.Now().UTC()
 	})
-	p.tickEvalThrottle.Delete(sessionID)
+	p.clearTickEvalThrottleSession(sessionID)
 }
 
 func (p *Platform) setSessionStopped(sessionID string) {
@@ -376,7 +376,7 @@ func (p *Platform) setSessionStopped(sessionID string) {
 		session.State = state
 		session.UpdatedAt = time.Now().UTC()
 	})
-	p.tickEvalThrottle.Delete(sessionID)
+	p.clearTickEvalThrottleSession(sessionID)
 }
 
 func configuredBinanceFuturesWSURL() string {
@@ -551,12 +551,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 				if stringValue(state["lastDisconnectAt"]) != "" {
 					p.validateSignalBarContinuityAfterReconnect(state, summary)
 				}
-				if throttle, ok := p.tickEvalThrottle.Load(session.ID); ok {
-					ts := throttle.(*tickEvalThrottleState)
-					ts.mu.Lock()
-					state["tickEvalThrottledCount"] = ts.skippedCount
-					ts.mu.Unlock()
-				}
+				state["tickEvalThrottledCount"] = p.tickEvalThrottleSkippedCount(session.ID)
 				session.State = state
 				session.UpdatedAt = now
 			})
@@ -671,6 +666,47 @@ type tickEvalThrottleState struct {
 
 const minTickEvalInterval = 100 * time.Millisecond
 
+func tickEvalThrottleKey(runtimeSessionID string, targetSymbol string) string {
+	return runtimeSessionID + "|" + strings.TrimSpace(targetSymbol)
+}
+
+func (p *Platform) tickEvalThrottleSessionState(runtimeSessionID string) *tickEvalThrottleState {
+	val, _ := p.tickEvalThrottle.LoadOrStore(runtimeSessionID, &tickEvalThrottleState{})
+	return val.(*tickEvalThrottleState)
+}
+
+func (p *Platform) tickEvalThrottleSkippedCount(runtimeSessionID string) int64 {
+	val, ok := p.tickEvalThrottle.Load(runtimeSessionID)
+	if !ok {
+		return 0
+	}
+	state := val.(*tickEvalThrottleState)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.skippedCount
+}
+
+func (p *Platform) incrementTickEvalThrottleSkipped(runtimeSessionID string) {
+	state := p.tickEvalThrottleSessionState(runtimeSessionID)
+	state.mu.Lock()
+	state.skippedCount++
+	state.mu.Unlock()
+}
+
+func (p *Platform) clearTickEvalThrottleSession(runtimeSessionID string) {
+	prefix := runtimeSessionID + "|"
+	p.tickEvalThrottle.Range(func(key, _ any) bool {
+		keyStr, ok := key.(string)
+		if !ok {
+			return true
+		}
+		if keyStr == runtimeSessionID || strings.HasPrefix(keyStr, prefix) {
+			p.tickEvalThrottle.Delete(keyStr)
+		}
+		return true
+	})
+}
+
 func (p *Platform) shouldThrottleLiveEvaluation(runtimeSessionID string, summary map[string]any, eventTime time.Time, targetSymbol string) bool {
 	streamType := inferSignalRuntimeStreamType(summary)
 	if streamType != "trade_tick" {
@@ -681,12 +717,12 @@ func (p *Platform) shouldThrottleLiveEvaluation(runtimeSessionID string, summary
 	if price == "" {
 		return false
 	}
-
-	throttleKey := runtimeSessionID
-	if targetSymbol != "" {
-		throttleKey = runtimeSessionID + "|" + targetSymbol
+	targetSymbol = strings.TrimSpace(targetSymbol)
+	if targetSymbol == "" {
+		return false
 	}
 
+	throttleKey := tickEvalThrottleKey(runtimeSessionID, targetSymbol)
 	val, _ := p.tickEvalThrottle.LoadOrStore(throttleKey, &tickEvalThrottleState{})
 	state := val.(*tickEvalThrottleState)
 
@@ -695,11 +731,13 @@ func (p *Platform) shouldThrottleLiveEvaluation(runtimeSessionID string, summary
 
 	if state.lastPrice == price {
 		state.skippedCount++
+		p.incrementTickEvalThrottleSkipped(runtimeSessionID)
 		return true
 	}
 
 	if !state.lastEvalTime.IsZero() && eventTime.Sub(state.lastEvalTime) < minTickEvalInterval {
 		state.skippedCount++
+		p.incrementTickEvalThrottleSkipped(runtimeSessionID)
 		return true
 	}
 
@@ -713,11 +751,11 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 		return nil
 	}
 	targetSymbol := signalRuntimeSummarySymbol(summary)
-	if p.shouldThrottleLiveEvaluation(runtimeSessionID, summary, eventTime, targetSymbol) {
-		return nil
-	}
 	// Reject messages with unknown symbol — never broadcast to all sessions
 	if targetSymbol == "" {
+		return nil
+	}
+	if p.shouldThrottleLiveEvaluation(runtimeSessionID, summary, eventTime, targetSymbol) {
 		return nil
 	}
 	liveSessions, err := p.store.ListLiveSessions()
