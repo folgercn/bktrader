@@ -2409,7 +2409,7 @@ func (p *Platform) triggerLiveSessionFromSignal(sessionID, runtimeSessionID stri
 	state["lastSignalRuntimeEvent"] = cloneMetadata(summary)
 	state["lastSignalRuntimeSessionId"] = runtimeSessionID
 	recordStrategyTriggerHealth(state, summary, eventTime)
-	updatedSession, err := p.updateLiveSessionStatePreservingSignalBarTradeLimit(session.ID, state)
+	updatedSession, err := p.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, state)
 	if err != nil {
 		return err
 	}
@@ -2417,7 +2417,7 @@ func (p *Platform) triggerLiveSessionFromSignal(sessionID, runtimeSessionID stri
 		state = cloneMetadata(updatedSession.State)
 		state["lastStrategyTriggerError"] = err.Error()
 		state["lastStrategyTriggerErrorAt"] = eventTime.UTC().Format(time.RFC3339)
-		_, _ = p.updateLiveSessionStatePreservingSignalBarTradeLimit(updatedSession.ID, state)
+		_, _ = p.updateLiveSessionStatePreservingNonRegressiveFacts(updatedSession.ID, state)
 		return err
 	}
 	return nil
@@ -2516,7 +2516,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			"missing": len(metadataList(sourceGate["missing"])),
 			"stale":   len(metadataList(sourceGate["stale"])),
 		})
-		_, err := p.updateLiveSessionStatePreservingSignalBarTradeLimit(session.ID, state)
+		_, err := p.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, state)
 		return err
 	}
 
@@ -2531,7 +2531,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		}
 		appendTimelineEvent(state, "strategy", eventTime, "decision-error", map[string]any{"error": err.Error()})
 		recordStrategyDecisionErrorHealth(state, eventTime, err)
-		_, updateErr := p.updateLiveSessionStatePreservingSignalBarTradeLimit(session.ID, state)
+		_, updateErr := p.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, state)
 		if updateErr != nil {
 			return updateErr
 		}
@@ -2600,7 +2600,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			state["lastExecutionProposalError"] = proposalErr.Error()
 			recordExecutionPlanningErrorHealth(state, eventTime, proposalErr)
 			appendTimelineEvent(state, "strategy", eventTime, "execution-planning-error", map[string]any{"error": proposalErr.Error()})
-			_, updateErr := p.updateLiveSessionStatePreservingSignalBarTradeLimit(session.ID, state)
+			_, updateErr := p.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, state)
 			if updateErr != nil {
 				return updateErr
 			}
@@ -2701,7 +2701,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	} else {
 		state["lastStrategyEvaluationStatus"] = "waiting-decision"
 	}
-	updatedSession, err := p.updateLiveSessionStatePreservingSignalBarTradeLimit(session.ID, state)
+	updatedSession, err := p.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, state)
 	if err != nil {
 		return err
 	}
@@ -2749,25 +2749,33 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	return nil
 }
 
-func (p *Platform) updateLiveSessionStatePreservingSignalBarTradeLimit(sessionID string, state map[string]any) (domain.LiveSession, error) {
+func (p *Platform) updateLiveSessionStatePreservingNonRegressiveFacts(sessionID string, state map[string]any) (domain.LiveSession, error) {
 	if latestSession, err := p.store.GetLiveSession(sessionID); err == nil {
-		preserveLiveSignalBarTradeLimitState(state, latestSession.State)
+		preserveLiveSessionNonRegressiveFacts(state, latestSession.State)
 	}
 	return p.store.UpdateLiveSessionState(sessionID, state)
 }
 
-func preserveLiveSignalBarTradeLimitState(state map[string]any, latest map[string]any) {
+// Some live session fields are confirmed facts / once-only guards and must not
+// regress when a stale strategy-evaluation snapshot overwrites session state.
+// Keep this list centralized so future monotonic/idempotency guards do not get
+// patched ad hoc in scattered call sites.
+func preserveLiveSessionNonRegressiveFacts(state map[string]any, latest map[string]any) {
 	if state == nil || latest == nil {
 		return
 	}
-	for _, key := range []string{
-		"lastSignalBarStateKey",
-		"sessionReentryCount",
-		"lastCountedReentryOrderId",
-	} {
+	for _, key := range liveSessionNonRegressiveFactKeys() {
 		if value, ok := latest[key]; ok {
 			state[key] = value
 		}
+	}
+}
+
+func liveSessionNonRegressiveFactKeys() []string {
+	return []string{
+		"lastSignalBarStateKey",
+		"sessionReentryCount",
+		"lastCountedReentryOrderId",
 	}
 }
 

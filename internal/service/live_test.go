@@ -3085,7 +3085,7 @@ func TestMaybeIncrementLiveSessionReentryCountUsesPerBarIdentity(t *testing.T) {
 	}
 }
 
-func TestUpdateLiveSessionStatePreservingSignalBarTradeLimitKeepsLatestCountedBar(t *testing.T) {
+func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestCountedBar(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
 		"symbol":          "BTCUSDT",
@@ -3112,7 +3112,7 @@ func TestUpdateLiveSessionStatePreservingSignalBarTradeLimitKeepsLatestCountedBa
 	delete(staleEvaluationState, "lastCountedReentryOrderId")
 	staleEvaluationState["lastStrategyEvaluationStatus"] = "intent-ready"
 
-	updated, err := platform.updateLiveSessionStatePreservingSignalBarTradeLimit(session.ID, staleEvaluationState)
+	updated, err := platform.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, staleEvaluationState)
 	if err != nil {
 		t.Fatalf("update live session state failed: %v", err)
 	}
@@ -3134,6 +3134,26 @@ func TestUpdateLiveSessionStatePreservingSignalBarTradeLimitKeepsLatestCountedBa
 	}
 	if err := validateLiveSignalBarEntryTradeLimit(updated, proposal); err == nil {
 		t.Fatal("expected preserved per-bar reentry count to keep blocking same-bar entry")
+	}
+}
+
+func TestLiveSessionNonRegressiveFactKeysIncludeSignalBarTradeLimitFacts(t *testing.T) {
+	keys := liveSessionNonRegressiveFactKeys()
+	for _, required := range []string{
+		"lastSignalBarStateKey",
+		"sessionReentryCount",
+		"lastCountedReentryOrderId",
+	} {
+		found := false
+		for _, key := range keys {
+			if key == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected non-regressive fact keys to include %s, got %#v", required, keys)
+		}
 	}
 }
 
