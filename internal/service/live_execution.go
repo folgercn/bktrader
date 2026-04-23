@@ -995,7 +995,7 @@ func shouldBackfillTerminalFilledLiveOrder(order domain.Order, state map[string]
 	if !strings.EqualFold(order.Status, "FILLED") {
 		return false
 	}
-	if parseFloatValue(order.Metadata["filledQuantity"]) < order.Quantity-1e-9 {
+	if orderQuantityBelow(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity) {
 		return true
 	}
 	if strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "" {

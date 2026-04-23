@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -734,5 +735,123 @@ func TestNormalizeRESTOrderRejectsReduceOnlyQuantityExpansion(t *testing.T) {
 		ReduceOnly: true,
 	}, creds); err == nil || !strings.Contains(err.Error(), "reduce-only order quantity") {
 		t.Fatalf("expected reduce-only REST normalization to reject quantity expansion, got %v", err)
+	}
+}
+
+func TestNormalizeRESTOrderAllowsReduceOnlyExactStepQuantity(t *testing.T) {
+	adapter := binanceFuturesLiveAdapter{}
+	creds := binanceRESTCredentials{BaseURL: "https://example.test"}
+	cacheKey := creds.BaseURL + "|BTCUSDT"
+	binanceSymbolRulesCacheMu.Lock()
+	previous, existed := binanceSymbolRulesCache[cacheKey]
+	binanceSymbolRulesCacheMu.Unlock()
+	t.Cleanup(func() {
+		binanceSymbolRulesCacheMu.Lock()
+		defer binanceSymbolRulesCacheMu.Unlock()
+		if existed {
+			binanceSymbolRulesCache[cacheKey] = previous
+		} else {
+			delete(binanceSymbolRulesCache, cacheKey)
+		}
+	})
+	binanceSymbolRulesCacheMu.Lock()
+	binanceSymbolRulesCache[cacheKey] = binanceSymbolRules{
+		Symbol:      "BTCUSDT",
+		TickSize:    0.1,
+		StepSize:    0.0001,
+		MinQty:      0.0001,
+		MaxQty:      1000,
+		MinNotional: 100,
+		UpdatedAt:   time.Now().UTC(),
+	}
+	binanceSymbolRulesCacheMu.Unlock()
+
+	normalized, _, err := adapter.normalizeRESTOrder(domain.Order{
+		Symbol:     "BTCUSDT",
+		Type:       "MARKET",
+		Quantity:   0.013,
+		ReduceOnly: true,
+	}, creds)
+	if err != nil {
+		t.Fatalf("expected exact-step reduce-only quantity to normalize cleanly, got %v", err)
+	}
+	if math.Abs(normalized.Quantity-0.013) > 1e-12 {
+		t.Fatalf("expected normalized quantity to stay at 0.013, got %.18f", normalized.Quantity)
+	}
+	normalization := mapValue(normalized.Metadata["normalization"])
+	if normalization == nil {
+		t.Fatal("expected normalization metadata to be recorded")
+	}
+	if boolValue(normalization["stepSizeAdjusted"]) {
+		t.Fatalf("expected exact-step reduce-only quantity to avoid phantom step-size adjustment, got %#v", normalization)
+	}
+	if boolValue(normalization["minQtyAdjusted"]) {
+		t.Fatalf("expected exact-step reduce-only quantity to avoid minQty adjustment, got %#v", normalization)
+	}
+}
+
+func TestNormalizeRESTOrderAvoidsPhantomExactTickAdjustments(t *testing.T) {
+	adapter := binanceFuturesLiveAdapter{}
+	creds := binanceRESTCredentials{BaseURL: "https://example.test"}
+	cacheKey := creds.BaseURL + "|BTCUSDT"
+	binanceSymbolRulesCacheMu.Lock()
+	previous, existed := binanceSymbolRulesCache[cacheKey]
+	binanceSymbolRulesCacheMu.Unlock()
+	t.Cleanup(func() {
+		binanceSymbolRulesCacheMu.Lock()
+		defer binanceSymbolRulesCacheMu.Unlock()
+		if existed {
+			binanceSymbolRulesCache[cacheKey] = previous
+		} else {
+			delete(binanceSymbolRulesCache, cacheKey)
+		}
+	})
+	binanceSymbolRulesCacheMu.Lock()
+	binanceSymbolRulesCache[cacheKey] = binanceSymbolRules{
+		Symbol:      "BTCUSDT",
+		TickSize:    0.1,
+		StepSize:    0.0001,
+		MinQty:      0.0001,
+		MaxQty:      1000,
+		MinNotional: 100,
+		UpdatedAt:   time.Now().UTC(),
+	}
+	binanceSymbolRulesCacheMu.Unlock()
+
+	normalized, _, err := adapter.normalizeRESTOrder(domain.Order{
+		Symbol:   "BTCUSDT",
+		Type:     "LIMIT",
+		Quantity: 0.013,
+		Price:    78168.3,
+	}, creds)
+	if err != nil {
+		t.Fatalf("expected exact-step exact-tick limit order to normalize cleanly, got %v", err)
+	}
+	if math.Abs(normalized.Quantity-0.013) > 1e-12 {
+		t.Fatalf("expected normalized quantity to stay at 0.013, got %.18f", normalized.Quantity)
+	}
+	if math.Abs(normalized.Price-78168.3) > 1e-9 {
+		t.Fatalf("expected normalized price to stay at 78168.3, got %.18f", normalized.Price)
+	}
+	normalization := mapValue(normalized.Metadata["normalization"])
+	if normalization == nil {
+		t.Fatal("expected normalization metadata to be recorded")
+	}
+	if boolValue(normalization["stepSizeAdjusted"]) || boolValue(normalization["tickSizeAdjusted"]) || boolValue(normalization["normalizationApplied"]) {
+		t.Fatalf("expected exact-step exact-tick order to avoid phantom adjustments, got %#v", normalization)
+	}
+}
+
+func TestRequiredBinanceQuantityForMinNotionalKeepsBoundaryWithinFloatTolerance(t *testing.T) {
+	rules := binanceSymbolRules{
+		Symbol:      "BTCUSDT",
+		StepSize:    0.0001,
+		MinQty:      0.0001,
+		MinNotional: 100,
+	}
+
+	required := requiredBinanceQuantityForMinNotional(0.006, 16666.666666666664, rules)
+	if math.Abs(required-0.006) > 1e-12 {
+		t.Fatalf("expected exact min-notional boundary quantity to remain unchanged, got %.18f", required)
 	}
 }

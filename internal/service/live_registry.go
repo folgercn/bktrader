@@ -925,20 +925,20 @@ func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds 
 	rawPriceReference := firstPositive(order.Price, parseFloatValue(order.Metadata["priceHint"]))
 	quantityAdjustments := make([]string, 0)
 	baseQuantity := normalizeBinanceQuantity(rawQuantity, rules)
-	if rules.StepSize > 0 && baseQuantity != rawQuantity {
+	if rules.StepSize > 0 && binanceNormalizationDiffers(baseQuantity, rawQuantity, rules.StepSize) {
 		quantityAdjustments = append(quantityAdjustments, "step_size")
 	}
-	if rules.MinQty > 0 && rawQuantity > 0 && rawQuantity < rules.MinQty {
+	if rules.MinQty > 0 && rawQuantity > 0 && binanceNormalizationBelow(rawQuantity, rules.MinQty, rules.StepSize) {
 		quantityAdjustments = append(quantityAdjustments, "min_qty")
 	}
-	if normalized.EffectiveReduceOnly() && baseQuantity > rawQuantity {
+	if normalized.EffectiveReduceOnly() && binanceNormalizationExpanded(baseQuantity, rawQuantity, rules.StepSize) {
 		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("reduce-only order quantity %.12f is below minQty %.12f for %s", rawQuantity, rules.MinQty, rules.Symbol)
 	}
 	normalized.Quantity = baseQuantity
 	if normalized.Quantity <= 0 {
 		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order quantity is invalid for %s", rules.Symbol)
 	}
-	if rules.MaxQty > 0 && normalized.Quantity > rules.MaxQty {
+	if rules.MaxQty > 0 && binanceNormalizationExpanded(normalized.Quantity, rules.MaxQty, rules.StepSize) {
 		return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order quantity %.12f exceeds maxQty %.12f for %s", normalized.Quantity, rules.MaxQty, rules.Symbol)
 	}
 	priceReference := rawPriceReference
@@ -948,11 +948,11 @@ func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds 
 		if normalized.Price <= 0 {
 			return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("normalized order price is invalid for %s", rules.Symbol)
 		}
-		if rules.TickSize > 0 && normalized.Price != priceReference {
+		if rules.TickSize > 0 && binanceNormalizationDiffers(normalized.Price, priceReference, rules.TickSize) {
 			priceAdjustments = append(priceAdjustments, "tick_size")
 		}
 	}
-	if requiredQty := requiredBinanceQuantityForMinNotional(normalized.Quantity, firstPositive(normalized.Price, priceReference), rules); requiredQty > normalized.Quantity {
+	if requiredQty := requiredBinanceQuantityForMinNotional(normalized.Quantity, firstPositive(normalized.Price, priceReference), rules); binanceNormalizationExpanded(requiredQty, normalized.Quantity, rules.StepSize) {
 		if normalized.EffectiveReduceOnly() {
 			return domain.Order{}, binanceSymbolRules{}, fmt.Errorf("reduce-only order quantity %.12f does not satisfy minNotional %.12f for %s", normalized.Quantity, rules.MinNotional, rules.Symbol)
 		}
@@ -970,7 +970,7 @@ func (a binanceFuturesLiveAdapter) normalizeRESTOrder(order domain.Order, creds 
 		"normalizedPrice":          normalized.Price,
 		"quantityAdjustments":      quantityAdjustments,
 		"priceAdjustments":         priceAdjustments,
-		"normalizationApplied":     rawQuantity != normalized.Quantity || (orderType != "MARKET" && rawPriceReference != normalized.Price),
+		"normalizationApplied":     binanceNormalizationDiffers(rawQuantity, normalized.Quantity, rules.StepSize) || (orderType != "MARKET" && binanceNormalizationDiffers(rawPriceReference, normalized.Price, rules.TickSize)),
 		"minNotionalAdjusted":      containsString(quantityAdjustments, "min_notional"),
 		"stepSizeAdjusted":         containsString(quantityAdjustments, "step_size"),
 		"minQtyAdjusted":           containsString(quantityAdjustments, "min_qty"),
@@ -1097,7 +1097,7 @@ func normalizeBinanceQuantity(quantity float64, rules binanceSymbolRules) float6
 	if rules.StepSize > 0 {
 		normalized = roundToStep(normalized, rules.StepSize)
 	}
-	if rules.MinQty > 0 && normalized < rules.MinQty {
+	if rules.MinQty > 0 && binanceNormalizationBelow(normalized, rules.MinQty, rules.StepSize) {
 		normalized = rules.MinQty
 	}
 	if rules.StepSize > 0 {
@@ -1120,7 +1120,7 @@ func requiredBinanceQuantityForMinNotional(quantity, price float64, rules binanc
 	if quantity <= 0 || price <= 0 || rules.MinNotional <= 0 {
 		return quantity
 	}
-	if quantity*price >= rules.MinNotional {
+	if binanceNotionalSatisfiesMinimum(quantity*price, rules.MinNotional) {
 		return quantity
 	}
 	required := rules.MinNotional / price
@@ -1141,6 +1141,38 @@ func roundToStep(value, step float64) float64 {
 		return value
 	}
 	return math.Floor((value/step)+1e-9) * step
+}
+
+func binanceNormalizationTolerance(step float64) float64 {
+	tolerance := 1e-12
+	if step > 0 {
+		tolerance = math.Max(tolerance, step*1e-9)
+	}
+	return tolerance
+}
+
+func binanceNormalizationDiffers(left, right, step float64) bool {
+	return math.Abs(left-right) > binanceNormalizationTolerance(step)
+}
+
+func binanceNormalizationExpanded(normalized, raw, step float64) bool {
+	return normalized-raw > binanceNormalizationTolerance(step)
+}
+
+func binanceNormalizationBelow(left, right, step float64) bool {
+	return right-left > binanceNormalizationTolerance(step)
+}
+
+func binanceNotionalSatisfiesMinimum(actual, minimum float64) bool {
+	return actual+binanceNormalizationNotionalTolerance(minimum) >= minimum
+}
+
+func binanceNormalizationNotionalTolerance(minimum float64) float64 {
+	tolerance := 1e-9
+	if minimum > 0 {
+		tolerance = math.Max(tolerance, minimum*1e-12)
+	}
+	return tolerance
 }
 
 func ceilToStep(value, step float64) float64 {
