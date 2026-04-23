@@ -338,12 +338,23 @@ func runtimeSourceGateIssueSignature(sourceGate map[string]any) string {
 	return string(payload)
 }
 
+func runtimeSourceGatePhase(runtimeSession domain.SignalRuntimeSession, sourceGate map[string]any) string {
+	if boolValue(sourceGate["ready"]) {
+		return "source-gate-ready"
+	}
+	if strings.TrimSpace(stringValue(runtimeSession.State["startedAt"])) == "" {
+		return "bootstrap-pending"
+	}
+	return "source-gate-blocked"
+}
+
 func (p *Platform) logRuntimeSourceGateState(strategyID string, runtimeSession domain.SignalRuntimeSession, sourceGate map[string]any, eventTime time.Time) {
 	runtimeID := strings.TrimSpace(runtimeSession.ID)
 	if runtimeID == "" {
 		return
 	}
-	signature := runtimeSourceGateIssueSignature(sourceGate)
+	gatePhase := runtimeSourceGatePhase(runtimeSession, sourceGate)
+	signature := gatePhase + ":" + runtimeSourceGateIssueSignature(sourceGate)
 	previous, hadPrevious := p.runtimeSourceGateState.Load(runtimeID)
 	previousSignature, _ := previous.(string)
 	if boolValue(sourceGate["ready"]) {
@@ -352,7 +363,13 @@ func (p *Platform) logRuntimeSourceGateState(strategyID string, runtimeSession d
 				"runtime_session_id", runtimeID,
 				"account_id", runtimeSession.AccountID,
 				"strategy_id", strategyID,
-			).Info("runtime source gate recovered", "event_time", eventTime.Format(time.RFC3339))
+			).Info("start_source_gate_ready",
+				"event_time", eventTime.Format(time.RFC3339),
+				"gate_phase", gatePhase,
+				"ready", true,
+				"missing_count", 0,
+				"stale_count", 0,
+			)
 			p.runtimeSourceGateState.Delete(runtimeID)
 		}
 		return
@@ -361,12 +378,17 @@ func (p *Platform) logRuntimeSourceGateState(strategyID string, runtimeSession d
 		return
 	}
 	p.runtimeSourceGateState.Store(runtimeID, signature)
+	message := "runtime source gate blocked"
+	if gatePhase == "bootstrap-pending" {
+		message = "runtime source gate bootstrap pending"
+	}
 	p.logger("service.runtime_source_gate",
 		"runtime_session_id", runtimeID,
 		"account_id", runtimeSession.AccountID,
 		"strategy_id", strategyID,
-	).Warn("runtime source gate blocked",
+	).Warn(message,
 		"event_time", eventTime.Format(time.RFC3339),
+		"gate_phase", gatePhase,
 		"missing_count", len(metadataList(sourceGate["missing"])),
 		"stale_count", len(metadataList(sourceGate["stale"])),
 		"missing_sources", compactSourceGateEntries(metadataList(sourceGate["missing"])),
