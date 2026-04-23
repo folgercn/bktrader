@@ -42,6 +42,21 @@ type Config struct {
 	TelegramBotToken               string // Telegram Bot Token
 	TelegramChatID                 string // Telegram Chat ID
 	TelegramSendLevels             string // Telegram 默认发送等级（逗号分隔）
+	WSHandshakeTimeoutSeconds      int    // WebSocket 握手超时
+	WSReadStaleTimeoutSeconds      int    // WebSocket 读取陈旧超时
+	WSPingIntervalSeconds          int    // WebSocket Ping 间隔
+	WSPassiveCloseTimeoutSeconds   int    // WebSocket 被动关闭超时
+	WSReconnectBackoffs            []int  // WebSocket 普通重连退避序列
+	WSReconnectRecoveryBackoffs    []int  // WebSocket 恢复模式重连退避序列
+	RESTLimiterRPS                 int    // Binance REST 每秒请求数限制
+	RESTLimiterBurst               int    // Binance REST 突发限制
+	RESTBackoffSeconds             int    // Binance REST 熔断时长
+	LiveMarketCacheTTLMinutes      int    // 市场快照缓存有效期
+	TelegramHTTPTimeoutSeconds     int    // Telegram HTTP 请求超时
+	BinanceRecvWindowMs            int    // Binance 请求 RecvWindow
+	LiveSignalWarmWindowDays       int    // 实盘信号预热窗口（天）
+	LiveFastSignalWarmWindowDays   int    // 实盘快速信号预热窗口（天）
+	LiveMinuteWarmWindowDays       int    // 实盘分钟数据预热窗口（天）
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -101,6 +116,21 @@ func Load() Config {
 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
+		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", 10),
+		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", 60),
+		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", 20),
+		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", 2),
+		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", []int{10, 30, 60}),
+		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", []int{30, 120}),
+		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", 30),
+		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", 50),
+		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", 60),
+		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", 10),
+		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", 8),
+		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", 5000),
+		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", 400),
+		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", 7),
+		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", 30),
 	}
 }
 
@@ -181,4 +211,22 @@ func boolFromEnv(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func intSliceFromEnv(key string, fallback []int) []int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parts := strings.Split(value, ",")
+	out := make([]int, 0, len(parts))
+	for _, part := range parts {
+		if p, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return fallback
+	}
+	return out
 }

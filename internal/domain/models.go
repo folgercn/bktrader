@@ -283,6 +283,21 @@ type RuntimePolicy struct {
 	StrategyEvaluationQuietSeconds int       `json:"strategyEvaluationQuietSeconds"`
 	LiveAccountSyncFreshnessSecs   int       `json:"liveAccountSyncFreshnessSeconds"`
 	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
+	WSHandshakeTimeoutSeconds      int       `json:"wsHandshakeTimeoutSeconds"`
+	WSReadStaleTimeoutSeconds      int       `json:"wsReadStaleTimeoutSeconds"`
+	WSPingIntervalSeconds          int       `json:"wsPingIntervalSeconds"`
+	WSPassiveCloseTimeoutSeconds   int       `json:"wsPassiveCloseTimeoutSeconds"`
+	WSReconnectBackoffs            []int     `json:"wsReconnectBackoffs"`
+	WSReconnectRecoveryBackoffs    []int     `json:"wsReconnectRecoveryBackoffs"`
+	RESTLimiterRPS                 int       `json:"restLimiterRps"`
+	RESTLimiterBurst               int       `json:"restLimiterBurst"`
+	RESTBackoffSeconds             int       `json:"restBackoffSeconds"`
+	LiveMarketCacheTTLMinutes      int       `json:"liveMarketCacheTTLMinutes"`
+	TelegramHTTPTimeoutSeconds     int       `json:"telegramHTTPTimeoutSeconds"`
+	BinanceRecvWindowMs            int       `json:"binanceRecvWindowMs"`
+	LiveSignalWarmWindowDays       int       `json:"liveSignalWarmWindowDays"`
+	LiveFastSignalWarmWindowDays   int       `json:"liveFastSignalWarmWindowDays"`
+	LiveMinuteWarmWindowDays       int       `json:"liveMinuteWarmWindowDays"`
 	UpdatedAt                      time.Time `json:"updatedAt"`
 }
 

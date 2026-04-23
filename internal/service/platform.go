@@ -66,6 +66,21 @@ type RuntimePolicy struct {
 	StrategyEvaluationQuietSeconds int       `json:"strategyEvaluationQuietSeconds"`
 	LiveAccountSyncFreshnessSecs   int       `json:"liveAccountSyncFreshnessSeconds"`
 	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
+	WSHandshakeTimeoutSeconds      int       `json:"wsHandshakeTimeoutSeconds"`
+	WSReadStaleTimeoutSeconds      int       `json:"wsReadStaleTimeoutSeconds"`
+	WSPingIntervalSeconds          int       `json:"wsPingIntervalSeconds"`
+	WSPassiveCloseTimeoutSeconds   int       `json:"wsPassiveCloseTimeoutSeconds"`
+	WSReconnectBackoffs            []int     `json:"wsReconnectBackoffs"`
+	WSReconnectRecoveryBackoffs    []int     `json:"wsReconnectRecoveryBackoffs"`
+	RESTLimiterRPS                 int       `json:"restLimiterRps"`
+	RESTLimiterBurst               int       `json:"restLimiterBurst"`
+	RESTBackoffSeconds             int       `json:"restBackoffSeconds"`
+	LiveMarketCacheTTLMinutes      int       `json:"liveMarketCacheTTLMinutes"`
+	TelegramHTTPTimeoutSeconds     int       `json:"telegramHTTPTimeoutSeconds"`
+	BinanceRecvWindowMs            int       `json:"binanceRecvWindowMs"`
+	LiveSignalWarmWindowDays       int       `json:"liveSignalWarmWindowDays"`
+	LiveFastSignalWarmWindowDays   int       `json:"liveFastSignalWarmWindowDays"`
+	LiveMinuteWarmWindowDays       int       `json:"liveMinuteWarmWindowDays"`
 	UpdatedAt                      time.Time `json:"updatedAt"`
 }
 
@@ -100,6 +115,21 @@ func NewPlatform(store store.Repository) *Platform {
 			StrategyEvaluationQuietSeconds: 15,
 			LiveAccountSyncFreshnessSecs:   60,
 			PaperStartReadinessTimeoutSecs: 5,
+			WSHandshakeTimeoutSeconds:      10,
+			WSReadStaleTimeoutSeconds:      60,
+			WSPingIntervalSeconds:          20,
+			WSPassiveCloseTimeoutSeconds:   2,
+			WSReconnectBackoffs:            []int{10, 30, 60},
+			WSReconnectRecoveryBackoffs:    []int{30, 120},
+			RESTLimiterRPS:                 30,
+			RESTLimiterBurst:               50,
+			RESTBackoffSeconds:             60,
+			LiveMarketCacheTTLMinutes:      10,
+			TelegramHTTPTimeoutSeconds:     8,
+			BinanceRecvWindowMs:            5000,
+			LiveSignalWarmWindowDays:       400,
+			LiveFastSignalWarmWindowDays:   7,
+			LiveMinuteWarmWindowDays:       30,
 			UpdatedAt:                      time.Now().UTC(),
 		},
 	}
@@ -152,6 +182,51 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	if policy.PaperStartReadinessTimeoutSecs > 0 {
 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
 	}
+	if policy.WSHandshakeTimeoutSeconds > 0 {
+		p.runtimePolicy.WSHandshakeTimeoutSeconds = policy.WSHandshakeTimeoutSeconds
+	}
+	if policy.WSReadStaleTimeoutSeconds > 0 {
+		p.runtimePolicy.WSReadStaleTimeoutSeconds = policy.WSReadStaleTimeoutSeconds
+	}
+	if policy.WSPingIntervalSeconds > 0 {
+		p.runtimePolicy.WSPingIntervalSeconds = policy.WSPingIntervalSeconds
+	}
+	if policy.WSPassiveCloseTimeoutSeconds > 0 {
+		p.runtimePolicy.WSPassiveCloseTimeoutSeconds = policy.WSPassiveCloseTimeoutSeconds
+	}
+	if len(policy.WSReconnectBackoffs) > 0 {
+		p.runtimePolicy.WSReconnectBackoffs = policy.WSReconnectBackoffs
+	}
+	if len(policy.WSReconnectRecoveryBackoffs) > 0 {
+		p.runtimePolicy.WSReconnectRecoveryBackoffs = policy.WSReconnectRecoveryBackoffs
+	}
+	if policy.RESTLimiterRPS > 0 {
+		p.runtimePolicy.RESTLimiterRPS = policy.RESTLimiterRPS
+	}
+	if policy.RESTLimiterBurst > 0 {
+		p.runtimePolicy.RESTLimiterBurst = policy.RESTLimiterBurst
+	}
+	if policy.RESTBackoffSeconds > 0 {
+		p.runtimePolicy.RESTBackoffSeconds = policy.RESTBackoffSeconds
+	}
+	if policy.LiveMarketCacheTTLMinutes > 0 {
+		p.runtimePolicy.LiveMarketCacheTTLMinutes = policy.LiveMarketCacheTTLMinutes
+	}
+	if policy.TelegramHTTPTimeoutSeconds > 0 {
+		p.runtimePolicy.TelegramHTTPTimeoutSeconds = policy.TelegramHTTPTimeoutSeconds
+	}
+	if policy.BinanceRecvWindowMs > 0 {
+		p.runtimePolicy.BinanceRecvWindowMs = policy.BinanceRecvWindowMs
+	}
+	if policy.LiveSignalWarmWindowDays > 0 {
+		p.runtimePolicy.LiveSignalWarmWindowDays = policy.LiveSignalWarmWindowDays
+	}
+	if policy.LiveFastSignalWarmWindowDays > 0 {
+		p.runtimePolicy.LiveFastSignalWarmWindowDays = policy.LiveFastSignalWarmWindowDays
+	}
+	if policy.LiveMinuteWarmWindowDays > 0 {
+		p.runtimePolicy.LiveMinuteWarmWindowDays = policy.LiveMinuteWarmWindowDays
+	}
 	if !policy.UpdatedAt.IsZero() {
 		p.runtimePolicy.UpdatedAt = policy.UpdatedAt
 	}
@@ -161,6 +236,7 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 		"signal_bar_freshness_seconds", p.runtimePolicy.SignalBarFreshnessSeconds,
 		"runtime_quiet_seconds", p.runtimePolicy.RuntimeQuietSeconds,
 		"paper_start_readiness_timeout_seconds", p.runtimePolicy.PaperStartReadinessTimeoutSecs,
+		"ws_stale_timeout_seconds", p.runtimePolicy.WSReadStaleTimeoutSeconds,
 		"updated_at", p.runtimePolicy.UpdatedAt,
 	)
 }
@@ -208,6 +284,21 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		StrategyEvaluationQuietSeconds: saved.StrategyEvaluationQuietSeconds,
 		LiveAccountSyncFreshnessSecs:   saved.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: saved.PaperStartReadinessTimeoutSecs,
+		WSHandshakeTimeoutSeconds:      saved.WSHandshakeTimeoutSeconds,
+		WSReadStaleTimeoutSeconds:      saved.WSReadStaleTimeoutSeconds,
+		WSPingIntervalSeconds:          saved.WSPingIntervalSeconds,
+		WSPassiveCloseTimeoutSeconds:   saved.WSPassiveCloseTimeoutSeconds,
+		WSReconnectBackoffs:            saved.WSReconnectBackoffs,
+		WSReconnectRecoveryBackoffs:    saved.WSReconnectRecoveryBackoffs,
+		RESTLimiterRPS:                 saved.RESTLimiterRPS,
+		RESTLimiterBurst:               saved.RESTLimiterBurst,
+		RESTBackoffSeconds:             saved.RESTBackoffSeconds,
+		LiveMarketCacheTTLMinutes:      saved.LiveMarketCacheTTLMinutes,
+		TelegramHTTPTimeoutSeconds:     saved.TelegramHTTPTimeoutSeconds,
+		BinanceRecvWindowMs:            saved.BinanceRecvWindowMs,
+		LiveSignalWarmWindowDays:       saved.LiveSignalWarmWindowDays,
+		LiveFastSignalWarmWindowDays:   saved.LiveFastSignalWarmWindowDays,
+		LiveMinuteWarmWindowDays:       saved.LiveMinuteWarmWindowDays,
 		UpdatedAt:                      saved.UpdatedAt,
 	})
 	p.logger("service.platform").Info("runtime policy updated")
@@ -232,6 +323,21 @@ func (p *Platform) LoadPersistedRuntimePolicy() error {
 		StrategyEvaluationQuietSeconds: policy.StrategyEvaluationQuietSeconds,
 		LiveAccountSyncFreshnessSecs:   policy.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: policy.PaperStartReadinessTimeoutSecs,
+		WSHandshakeTimeoutSeconds:      policy.WSHandshakeTimeoutSeconds,
+		WSReadStaleTimeoutSeconds:      policy.WSReadStaleTimeoutSeconds,
+		WSPingIntervalSeconds:          policy.WSPingIntervalSeconds,
+		WSPassiveCloseTimeoutSeconds:   policy.WSPassiveCloseTimeoutSeconds,
+		WSReconnectBackoffs:            policy.WSReconnectBackoffs,
+		WSReconnectRecoveryBackoffs:    policy.WSReconnectRecoveryBackoffs,
+		RESTLimiterRPS:                 policy.RESTLimiterRPS,
+		RESTLimiterBurst:               policy.RESTLimiterBurst,
+		RESTBackoffSeconds:             policy.RESTBackoffSeconds,
+		LiveMarketCacheTTLMinutes:      policy.LiveMarketCacheTTLMinutes,
+		TelegramHTTPTimeoutSeconds:     policy.TelegramHTTPTimeoutSeconds,
+		BinanceRecvWindowMs:            policy.BinanceRecvWindowMs,
+		LiveSignalWarmWindowDays:       policy.LiveSignalWarmWindowDays,
+		LiveFastSignalWarmWindowDays:   policy.LiveFastSignalWarmWindowDays,
+		LiveMinuteWarmWindowDays:       policy.LiveMinuteWarmWindowDays,
 		UpdatedAt:                      policy.UpdatedAt,
 	})
 	p.logger("service.platform").Info("persisted runtime policy loaded")

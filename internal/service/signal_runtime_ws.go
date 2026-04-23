@@ -44,16 +44,33 @@ type reconnectPolicy struct {
 	backoffs    []time.Duration
 }
 
-var (
-	transientReconnectPolicy = reconnectPolicy{
-		maxAttempts: 3,
-		backoffs:    []time.Duration{10 * time.Second, 30 * time.Second, 60 * time.Second},
+func (p *Platform) transientReconnectPolicy() reconnectPolicy {
+	backoffs := make([]time.Duration, 0, len(p.runtimePolicy.WSReconnectBackoffs))
+	for _, b := range p.runtimePolicy.WSReconnectBackoffs {
+		backoffs = append(backoffs, time.Duration(b)*time.Second)
 	}
-	kickedReconnectPolicy = reconnectPolicy{
-		maxAttempts: 2,
-		backoffs:    []time.Duration{30 * time.Second, 120 * time.Second},
+	if len(backoffs) == 0 {
+		backoffs = []time.Duration{10 * time.Second, 30 * time.Second, 60 * time.Second}
 	}
-)
+	return reconnectPolicy{
+		maxAttempts: len(backoffs),
+		backoffs:    backoffs,
+	}
+}
+
+func (p *Platform) kickedReconnectPolicy() reconnectPolicy {
+	backoffs := make([]time.Duration, 0, len(p.runtimePolicy.WSReconnectRecoveryBackoffs))
+	for _, b := range p.runtimePolicy.WSReconnectRecoveryBackoffs {
+		backoffs = append(backoffs, time.Duration(b)*time.Second)
+	}
+	if len(backoffs) == 0 {
+		backoffs = []time.Duration{30 * time.Second, 120 * time.Second}
+	}
+	return reconnectPolicy{
+		maxAttempts: len(backoffs),
+		backoffs:    backoffs,
+	}
+}
 
 func classifyDisconnectSeverity(err error) disconnectSeverity {
 	if err == nil {
@@ -141,7 +158,7 @@ func (p *Platform) runSignalRuntimeWithRecoveryUsing(
 		}
 
 		severity := classifyDisconnectSeverity(disconnectErr)
-		policy := reconnectPolicyForSeverity(severity)
+		policy := p.reconnectPolicyForSeverity(severity)
 		p.logger("service.signal_runtime", "session_id", sessionID).Warn(
 			"signal runtime disconnected, attempting recovery",
 			"severity", severity.String(),
@@ -181,7 +198,7 @@ func (p *Platform) runSignalRuntimeWithRecoveryUsing(
 
 			disconnectErr = retryErr
 			severity = retrySeverity
-			policy = reconnectPolicyForSeverity(severity)
+			policy = p.reconnectPolicyForSeverity(severity)
 		}
 
 		if recovered {
@@ -206,12 +223,12 @@ func (p *Platform) handleSignalRuntimeReconnect(sessionID string, eventTime time
 	}
 }
 
-func reconnectPolicyForSeverity(severity disconnectSeverity) reconnectPolicy {
+func (p *Platform) reconnectPolicyForSeverity(severity disconnectSeverity) reconnectPolicy {
 	switch severity {
 	case disconnectKicked:
-		return kickedReconnectPolicy
+		return p.kickedReconnectPolicy()
 	default:
-		return transientReconnectPolicy
+		return p.transientReconnectPolicy()
 	}
 }
 
@@ -384,7 +401,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 	}
 
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
+		HandshakeTimeout: time.Duration(p.runtimePolicy.WSHandshakeTimeoutSeconds) * time.Second,
 		Proxy:            http.ProxyFromEnvironment,
 	}
 	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
@@ -393,9 +410,9 @@ func (p *Platform) runExchangeWebsocketLoop(
 	}
 	defer conn.Close()
 
-	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(time.Duration(p.runtimePolicy.WSReadStaleTimeoutSeconds) * time.Second))
 	conn.SetPongHandler(func(_ string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(time.Duration(p.runtimePolicy.WSReadStaleTimeoutSeconds) * time.Second))
 		now := time.Now().UTC()
 		_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 			state := cloneMetadata(session.State)
@@ -439,7 +456,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 	})
 	connected := true
 
-	ticker := time.NewTicker(20 * time.Second)
+	ticker := time.NewTicker(time.Duration(p.runtimePolicy.WSPingIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 
 	done := make(chan error, 1)
@@ -457,7 +474,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 			summary := summarizeSignalMessage(session.RuntimeAdapter, payload)
 			summary = enrichSignalRuntimeSummary(session, summary)
 			_ = p.ingestLiveSignalBarSummary(summary, now)
-			_ = conn.SetReadDeadline(now.Add(60 * time.Second))
+			_ = conn.SetReadDeadline(now.Add(time.Duration(p.runtimePolicy.WSReadStaleTimeoutSeconds) * time.Second))
 			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 				state := cloneMetadata(session.State)
 				state["health"] = "healthy"
@@ -493,7 +510,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 	for {
 		select {
 		case <-ctx.Done():
-			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(2*time.Second))
+			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(time.Duration(p.runtimePolicy.WSPassiveCloseTimeoutSeconds)*time.Second))
 			return connected, nil
 		case err := <-done:
 			return connected, err

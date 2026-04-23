@@ -33,6 +33,7 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	}
 
 	platform := service.NewPlatform(repository)
+	service.UpdateBinanceRESTLimits(cfg.RESTLimiterRPS, cfg.RESTLimiterBurst, cfg.RESTBackoffSeconds)
 	platform.SetTickInterval(cfg.PaperTickInterval)
 	platform.SetBacktestDataDirs(cfg.MinuteDataDir, cfg.TickDataDir)
 	platform.SetRuntimePolicy(service.RuntimePolicy{
@@ -43,6 +44,21 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 		StrategyEvaluationQuietSeconds: cfg.StrategyEvaluationQuietSeconds,
 		LiveAccountSyncFreshnessSecs:   cfg.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
+		WSHandshakeTimeoutSeconds:      cfg.WSHandshakeTimeoutSeconds,
+		WSReadStaleTimeoutSeconds:      cfg.WSReadStaleTimeoutSeconds,
+		WSPingIntervalSeconds:          cfg.WSPingIntervalSeconds,
+		WSPassiveCloseTimeoutSeconds:   cfg.WSPassiveCloseTimeoutSeconds,
+		WSReconnectBackoffs:            cfg.WSReconnectBackoffs,
+		WSReconnectRecoveryBackoffs:    cfg.WSReconnectRecoveryBackoffs,
+		RESTLimiterRPS:                 cfg.RESTLimiterRPS,
+		RESTLimiterBurst:               cfg.RESTLimiterBurst,
+		RESTBackoffSeconds:             cfg.RESTBackoffSeconds,
+		LiveMarketCacheTTLMinutes:      cfg.LiveMarketCacheTTLMinutes,
+		TelegramHTTPTimeoutSeconds:     cfg.TelegramHTTPTimeoutSeconds,
+		BinanceRecvWindowMs:            cfg.BinanceRecvWindowMs,
+		LiveSignalWarmWindowDays:       cfg.LiveSignalWarmWindowDays,
+		LiveFastSignalWarmWindowDays:   cfg.LiveFastSignalWarmWindowDays,
+		LiveMinuteWarmWindowDays:       cfg.LiveMinuteWarmWindowDays,
 	})
 	platform.SetTelegramConfig(domain.TelegramConfig{
 		Enabled:    cfg.TelegramEnabled,
@@ -58,6 +74,31 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 		logger.Error("load persisted telegram config failed", "error", err)
 		return nil, err
 	}
+	// 关键：在加载持久化配置后，再次应用环境变量配置，确保 .env 拥有最高优先级。
+	platform.SetRuntimePolicy(service.RuntimePolicy{
+		TradeTickFreshnessSeconds:      cfg.TradeTickFreshnessSeconds,
+		OrderBookFreshnessSeconds:      cfg.OrderBookFreshnessSeconds,
+		SignalBarFreshnessSeconds:      cfg.SignalBarFreshnessSeconds,
+		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
+		StrategyEvaluationQuietSeconds: cfg.StrategyEvaluationQuietSeconds,
+		LiveAccountSyncFreshnessSecs:   cfg.LiveAccountSyncFreshnessSecs,
+		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
+		WSHandshakeTimeoutSeconds:      cfg.WSHandshakeTimeoutSeconds,
+		WSReadStaleTimeoutSeconds:      cfg.WSReadStaleTimeoutSeconds,
+		WSPingIntervalSeconds:          cfg.WSPingIntervalSeconds,
+		WSPassiveCloseTimeoutSeconds:   cfg.WSPassiveCloseTimeoutSeconds,
+		WSReconnectBackoffs:            cfg.WSReconnectBackoffs,
+		WSReconnectRecoveryBackoffs:    cfg.WSReconnectRecoveryBackoffs,
+		RESTLimiterRPS:                 cfg.RESTLimiterRPS,
+		RESTLimiterBurst:               cfg.RESTLimiterBurst,
+		RESTBackoffSeconds:             cfg.RESTBackoffSeconds,
+		LiveMarketCacheTTLMinutes:      cfg.LiveMarketCacheTTLMinutes,
+		TelegramHTTPTimeoutSeconds:     cfg.TelegramHTTPTimeoutSeconds,
+		BinanceRecvWindowMs:            cfg.BinanceRecvWindowMs,
+		LiveSignalWarmWindowDays:       cfg.LiveSignalWarmWindowDays,
+		LiveFastSignalWarmWindowDays:   cfg.LiveFastSignalWarmWindowDays,
+		LiveMinuteWarmWindowDays:       cfg.LiveMinuteWarmWindowDays,
+	})
 	warmCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	if err := platform.WarmLiveMarketData(warmCtx); err != nil {
 		logger.Warn("warm live market data completed with errors", "error", err)

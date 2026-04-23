@@ -139,7 +139,7 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
 		"sandbox":        boolValue(binding["sandbox"]),
 		"restBaseUrl":    stringValue(binding["restBaseUrl"]),
 		"wsBaseUrl":      stringValue(binding["wsBaseUrl"]),
-		"recvWindowMs":   maxIntValue(binding["recvWindowMs"], 5000),
+		"recvWindowMs":   maxIntValue(binding["recvWindowMs"], p.runtimePolicy.BinanceRecvWindowMs),
 		"credentialRefs": credentialRefs,
 	}
 	if err := adapter.ValidateAccountConfig(normalized); err != nil {
@@ -159,7 +159,7 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
 		Sandbox:        boolValue(normalized["sandbox"]),
 		RESTBaseURL:    stringValue(normalized["restBaseUrl"]),
 		WSBaseURL:      stringValue(normalized["wsBaseUrl"]),
-		RecvWindowMs:   maxIntValue(normalized["recvWindowMs"], 5000),
+		RecvWindowMs:   maxIntValue(normalized["recvWindowMs"], p.runtimePolicy.BinanceRecvWindowMs),
 		CredentialRefs: normalizeCredentialRefs(normalized["credentialRefs"]),
 		UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
@@ -769,6 +769,22 @@ var (
 	binanceRESTBurst             = 50
 	binanceRESTBackoffDuration   = 60 * time.Second
 )
+
+func UpdateBinanceRESTLimits(rps, burst, backoffSec int) {
+	if rps > 0 {
+		binanceRESTRequestsPerSecond = rps
+	}
+	if burst > 0 {
+		binanceRESTBurst = burst
+	}
+	if backoffSec > 0 {
+		binanceRESTBackoffDuration = time.Duration(backoffSec) * time.Second
+	}
+	// 清空 gates，以便使用新的限制参数重新创建
+	binanceRESTLimiterState.mu.Lock()
+	binanceRESTLimiterState.gates = make(map[string]*binanceRESTGate)
+	binanceRESTLimiterState.mu.Unlock()
+}
 
 type binanceRESTRequestCategory string
 
