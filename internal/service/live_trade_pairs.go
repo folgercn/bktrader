@@ -766,7 +766,9 @@ func (p *Platform) enrichLiveTradePairs(items []domain.LiveTradePair, orderByID 
 
 				if pair.Status == "closed" {
 					if verification, ok := closeVerificationsByOrderID[lastExitOrderID]; ok {
-						if !verification.VerifiedClosed {
+						if verification.VerifiedClosed {
+							pair.ExitVerdict = "normal"
+						} else {
 							pair.ExitVerdict = "mismatch"
 						}
 					}

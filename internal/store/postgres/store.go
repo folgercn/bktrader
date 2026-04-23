@@ -1810,7 +1810,8 @@ func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerification
 		}
 	}
 
-	builder.WriteString(" order by event_time desc, recorded_at desc, id desc")
+	builder.WriteString(" order by recorded_at desc")
+
 	if query.Limit > 0 {
 		args = append(args, query.Limit)
 		builder.WriteString(fmt.Sprintf(" limit $%d", len(args)))
