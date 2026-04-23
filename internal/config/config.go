@@ -67,13 +67,13 @@ func Load() Config {
 			tickInterval = parsed
 		}
 	}
-	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", 0)
-	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", 0)
-	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", 0)
-	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", 0)
-	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", 0)
-	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", 0)
-	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", 0)
+	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", -1)
+	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", -1)
+	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", -1)
+	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", -1)
+	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", -1)
+	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", -1)
+	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", -1)
 
 	authTokenTTL := 720
 	if v := os.Getenv("AUTH_TOKEN_TTL_MINUTES"); v != "" {
@@ -116,21 +116,21 @@ func Load() Config {
 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
-		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", 0),
-		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", 0),
-		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", 0),
-		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", 0),
+		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", -1),
+		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", -1),
+		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", -1),
+		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", -1),
 		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", nil),
 		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", nil),
-		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", 0),
-		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", 0),
-		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", 0),
-		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", 0),
-		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", 0),
-		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", 0),
-		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", 0),
-		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", 0),
-		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", 0),
+		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", -1),
+		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", -1),
+		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", -1),
+		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", -1),
+		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", -1),
+		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", -1),
+		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", -1),
+		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", -1),
+		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", -1),
 	}
 }
 
@@ -192,7 +192,7 @@ func getenv(key, fallback string) string {
 
 func intFromEnv(key string, fallback int) int {
 	if value := os.Getenv(key); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+		if parsed, err := strconv.Atoi(value); err == nil {
 			return parsed
 		}
 	}

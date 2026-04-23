@@ -161,37 +161,37 @@ func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {
 }
 
 func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
-	if policy.TradeTickFreshnessSeconds > 0 {
+	if policy.TradeTickFreshnessSeconds >= 0 {
 		p.runtimePolicy.TradeTickFreshnessSeconds = policy.TradeTickFreshnessSeconds
 	}
-	if policy.OrderBookFreshnessSeconds > 0 {
+	if policy.OrderBookFreshnessSeconds >= 0 {
 		p.runtimePolicy.OrderBookFreshnessSeconds = policy.OrderBookFreshnessSeconds
 	}
-	if policy.SignalBarFreshnessSeconds > 0 {
+	if policy.SignalBarFreshnessSeconds >= 0 {
 		p.runtimePolicy.SignalBarFreshnessSeconds = policy.SignalBarFreshnessSeconds
 	}
-	if policy.RuntimeQuietSeconds > 0 {
+	if policy.RuntimeQuietSeconds >= 0 {
 		p.runtimePolicy.RuntimeQuietSeconds = policy.RuntimeQuietSeconds
 	}
-	if policy.StrategyEvaluationQuietSeconds > 0 {
+	if policy.StrategyEvaluationQuietSeconds >= 0 {
 		p.runtimePolicy.StrategyEvaluationQuietSeconds = policy.StrategyEvaluationQuietSeconds
 	}
-	if policy.LiveAccountSyncFreshnessSecs > 0 {
+	if policy.LiveAccountSyncFreshnessSecs >= 0 {
 		p.runtimePolicy.LiveAccountSyncFreshnessSecs = policy.LiveAccountSyncFreshnessSecs
 	}
-	if policy.PaperStartReadinessTimeoutSecs > 0 {
+	if policy.PaperStartReadinessTimeoutSecs >= 0 {
 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
 	}
-	if policy.WSHandshakeTimeoutSeconds > 0 {
+	if policy.WSHandshakeTimeoutSeconds >= 0 {
 		p.runtimePolicy.WSHandshakeTimeoutSeconds = policy.WSHandshakeTimeoutSeconds
 	}
-	if policy.WSReadStaleTimeoutSeconds > 0 {
+	if policy.WSReadStaleTimeoutSeconds >= 0 {
 		p.runtimePolicy.WSReadStaleTimeoutSeconds = policy.WSReadStaleTimeoutSeconds
 	}
-	if policy.WSPingIntervalSeconds > 0 {
+	if policy.WSPingIntervalSeconds >= 0 {
 		p.runtimePolicy.WSPingIntervalSeconds = policy.WSPingIntervalSeconds
 	}
-	if policy.WSPassiveCloseTimeoutSeconds > 0 {
+	if policy.WSPassiveCloseTimeoutSeconds >= 0 {
 		p.runtimePolicy.WSPassiveCloseTimeoutSeconds = policy.WSPassiveCloseTimeoutSeconds
 	}
 	if len(policy.WSReconnectBackoffs) > 0 {
@@ -200,31 +200,31 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	if len(policy.WSReconnectRecoveryBackoffs) > 0 {
 		p.runtimePolicy.WSReconnectRecoveryBackoffs = policy.WSReconnectRecoveryBackoffs
 	}
-	if policy.RESTLimiterRPS > 0 {
+	if policy.RESTLimiterRPS >= 0 {
 		p.runtimePolicy.RESTLimiterRPS = policy.RESTLimiterRPS
 	}
-	if policy.RESTLimiterBurst > 0 {
+	if policy.RESTLimiterBurst >= 0 {
 		p.runtimePolicy.RESTLimiterBurst = policy.RESTLimiterBurst
 	}
-	if policy.RESTBackoffSeconds > 0 {
+	if policy.RESTBackoffSeconds >= 0 {
 		p.runtimePolicy.RESTBackoffSeconds = policy.RESTBackoffSeconds
 	}
-	if policy.LiveMarketCacheTTLMinutes > 0 {
+	if policy.LiveMarketCacheTTLMinutes >= 0 {
 		p.runtimePolicy.LiveMarketCacheTTLMinutes = policy.LiveMarketCacheTTLMinutes
 	}
-	if policy.TelegramHTTPTimeoutSeconds > 0 {
+	if policy.TelegramHTTPTimeoutSeconds >= 0 {
 		p.runtimePolicy.TelegramHTTPTimeoutSeconds = policy.TelegramHTTPTimeoutSeconds
 	}
-	if policy.BinanceRecvWindowMs > 0 {
+	if policy.BinanceRecvWindowMs >= 0 {
 		p.runtimePolicy.BinanceRecvWindowMs = policy.BinanceRecvWindowMs
 	}
-	if policy.LiveSignalWarmWindowDays > 0 {
+	if policy.LiveSignalWarmWindowDays >= 0 {
 		p.runtimePolicy.LiveSignalWarmWindowDays = policy.LiveSignalWarmWindowDays
 	}
-	if policy.LiveFastSignalWarmWindowDays > 0 {
+	if policy.LiveFastSignalWarmWindowDays >= 0 {
 		p.runtimePolicy.LiveFastSignalWarmWindowDays = policy.LiveFastSignalWarmWindowDays
 	}
-	if policy.LiveMinuteWarmWindowDays > 0 {
+	if policy.LiveMinuteWarmWindowDays >= 0 {
 		p.runtimePolicy.LiveMinuteWarmWindowDays = policy.LiveMinuteWarmWindowDays
 	}
 	if !policy.UpdatedAt.IsZero() {
