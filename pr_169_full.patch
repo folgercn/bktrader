@@ -1,0 +1,1584 @@
+From 023c66278812a3c46f8a15048511e8d82cb8f615 Mon Sep 17 00:00:00 2001
+From: fujun <folgercn@gmail.com>
+Date: Thu, 23 Apr 2026 16:29:32 +0800
+Subject: [PATCH 1/5] feat: centralize runtime thresholds and enforce .env
+ priority
+
+---
+ internal/app/server.go                |  41 ++++++++++
+ internal/config/config.go             |  48 ++++++++++++
+ internal/domain/models.go             |  15 ++++
+ internal/service/live_market_data.go  |  40 ++++++++--
+ internal/service/live_registry.go     |  20 ++++-
+ internal/service/platform.go          | 106 ++++++++++++++++++++++++++
+ internal/service/signal_runtime_ws.go |  55 ++++++++-----
+ internal/service/telegram.go          |   2 +-
+ 8 files changed, 297 insertions(+), 30 deletions(-)
+
+diff --git a/internal/app/server.go b/internal/app/server.go
+index 350e513..56b4bd3 100644
+--- a/internal/app/server.go
++++ b/internal/app/server.go
+@@ -33,6 +33,7 @@ func NewServer(cfg config.Config) (*http.Server, error) {
+ 	}
+ 
+ 	platform := service.NewPlatform(repository)
++	service.UpdateBinanceRESTLimits(cfg.RESTLimiterRPS, cfg.RESTLimiterBurst, cfg.RESTBackoffSeconds)
+ 	platform.SetTickInterval(cfg.PaperTickInterval)
+ 	platform.SetBacktestDataDirs(cfg.MinuteDataDir, cfg.TickDataDir)
+ 	platform.SetRuntimePolicy(service.RuntimePolicy{
+@@ -43,6 +44,21 @@ func NewServer(cfg config.Config) (*http.Server, error) {
+ 		StrategyEvaluationQuietSeconds: cfg.StrategyEvaluationQuietSeconds,
+ 		LiveAccountSyncFreshnessSecs:   cfg.LiveAccountSyncFreshnessSecs,
+ 		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
++		WSHandshakeTimeoutSeconds:      cfg.WSHandshakeTimeoutSeconds,
++		WSReadStaleTimeoutSeconds:      cfg.WSReadStaleTimeoutSeconds,
++		WSPingIntervalSeconds:          cfg.WSPingIntervalSeconds,
++		WSPassiveCloseTimeoutSeconds:   cfg.WSPassiveCloseTimeoutSeconds,
++		WSReconnectBackoffs:            cfg.WSReconnectBackoffs,
++		WSReconnectRecoveryBackoffs:    cfg.WSReconnectRecoveryBackoffs,
++		RESTLimiterRPS:                 cfg.RESTLimiterRPS,
++		RESTLimiterBurst:               cfg.RESTLimiterBurst,
++		RESTBackoffSeconds:             cfg.RESTBackoffSeconds,
++		LiveMarketCacheTTLMinutes:      cfg.LiveMarketCacheTTLMinutes,
++		TelegramHTTPTimeoutSeconds:     cfg.TelegramHTTPTimeoutSeconds,
++		BinanceRecvWindowMs:            cfg.BinanceRecvWindowMs,
++		LiveSignalWarmWindowDays:       cfg.LiveSignalWarmWindowDays,
++		LiveFastSignalWarmWindowDays:   cfg.LiveFastSignalWarmWindowDays,
++		LiveMinuteWarmWindowDays:       cfg.LiveMinuteWarmWindowDays,
+ 	})
+ 	platform.SetTelegramConfig(domain.TelegramConfig{
+ 		Enabled:    cfg.TelegramEnabled,
+@@ -58,6 +74,31 @@ func NewServer(cfg config.Config) (*http.Server, error) {
+ 		logger.Error("load persisted telegram config failed", "error", err)
+ 		return nil, err
+ 	}
++	// 关键：在加载持久化配置后，再次应用环境变量配置，确保 .env 拥有最高优先级。
++	platform.SetRuntimePolicy(service.RuntimePolicy{
++		TradeTickFreshnessSeconds:      cfg.TradeTickFreshnessSeconds,
++		OrderBookFreshnessSeconds:      cfg.OrderBookFreshnessSeconds,
++		SignalBarFreshnessSeconds:      cfg.SignalBarFreshnessSeconds,
++		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
++		StrategyEvaluationQuietSeconds: cfg.StrategyEvaluationQuietSeconds,
++		LiveAccountSyncFreshnessSecs:   cfg.LiveAccountSyncFreshnessSecs,
++		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
++		WSHandshakeTimeoutSeconds:      cfg.WSHandshakeTimeoutSeconds,
++		WSReadStaleTimeoutSeconds:      cfg.WSReadStaleTimeoutSeconds,
++		WSPingIntervalSeconds:          cfg.WSPingIntervalSeconds,
++		WSPassiveCloseTimeoutSeconds:   cfg.WSPassiveCloseTimeoutSeconds,
++		WSReconnectBackoffs:            cfg.WSReconnectBackoffs,
++		WSReconnectRecoveryBackoffs:    cfg.WSReconnectRecoveryBackoffs,
++		RESTLimiterRPS:                 cfg.RESTLimiterRPS,
++		RESTLimiterBurst:               cfg.RESTLimiterBurst,
++		RESTBackoffSeconds:             cfg.RESTBackoffSeconds,
++		LiveMarketCacheTTLMinutes:      cfg.LiveMarketCacheTTLMinutes,
++		TelegramHTTPTimeoutSeconds:     cfg.TelegramHTTPTimeoutSeconds,
++		BinanceRecvWindowMs:            cfg.BinanceRecvWindowMs,
++		LiveSignalWarmWindowDays:       cfg.LiveSignalWarmWindowDays,
++		LiveFastSignalWarmWindowDays:   cfg.LiveFastSignalWarmWindowDays,
++		LiveMinuteWarmWindowDays:       cfg.LiveMinuteWarmWindowDays,
++	})
+ 	warmCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+ 	if err := platform.WarmLiveMarketData(warmCtx); err != nil {
+ 		logger.Warn("warm live market data completed with errors", "error", err)
+diff --git a/internal/config/config.go b/internal/config/config.go
+index 41ccef6..33694cf 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -42,6 +42,21 @@ type Config struct {
+ 	TelegramBotToken               string // Telegram Bot Token
+ 	TelegramChatID                 string // Telegram Chat ID
+ 	TelegramSendLevels             string // Telegram 默认发送等级（逗号分隔）
++	WSHandshakeTimeoutSeconds      int    // WebSocket 握手超时
++	WSReadStaleTimeoutSeconds      int    // WebSocket 读取陈旧超时
++	WSPingIntervalSeconds          int    // WebSocket Ping 间隔
++	WSPassiveCloseTimeoutSeconds   int    // WebSocket 被动关闭超时
++	WSReconnectBackoffs            []int  // WebSocket 普通重连退避序列
++	WSReconnectRecoveryBackoffs    []int  // WebSocket 恢复模式重连退避序列
++	RESTLimiterRPS                 int    // Binance REST 每秒请求数限制
++	RESTLimiterBurst               int    // Binance REST 突发限制
++	RESTBackoffSeconds             int    // Binance REST 熔断时长
++	LiveMarketCacheTTLMinutes      int    // 市场快照缓存有效期
++	TelegramHTTPTimeoutSeconds     int    // Telegram HTTP 请求超时
++	BinanceRecvWindowMs            int    // Binance 请求 RecvWindow
++	LiveSignalWarmWindowDays       int    // 实盘信号预热窗口（天）
++	LiveFastSignalWarmWindowDays   int    // 实盘快速信号预热窗口（天）
++	LiveMinuteWarmWindowDays       int    // 实盘分钟数据预热窗口（天）
+ }
+ 
+ // Load 从环境变量加载配置，未设置的使用默认值。
+@@ -101,6 +116,21 @@ func Load() Config {
+ 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
+ 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
+ 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
++		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", 10),
++		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", 60),
++		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", 20),
++		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", 2),
++		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", []int{10, 30, 60}),
++		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", []int{30, 120}),
++		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", 30),
++		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", 50),
++		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", 60),
++		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", 10),
++		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", 8),
++		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", 5000),
++		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", 400),
++		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", 7),
++		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", 30),
+ 	}
+ }
+ 
+@@ -182,3 +212,21 @@ func boolFromEnv(key string, fallback bool) bool {
+ 		return fallback
+ 	}
+ }
++
++func intSliceFromEnv(key string, fallback []int) []int {
++	value := strings.TrimSpace(os.Getenv(key))
++	if value == "" {
++		return fallback
++	}
++	parts := strings.Split(value, ",")
++	out := make([]int, 0, len(parts))
++	for _, part := range parts {
++		if p, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
++			out = append(out, p)
++		}
++	}
++	if len(out) == 0 {
++		return fallback
++	}
++	return out
++}
+diff --git a/internal/domain/models.go b/internal/domain/models.go
+index f977164..13a1e8b 100644
+--- a/internal/domain/models.go
++++ b/internal/domain/models.go
+@@ -283,6 +283,21 @@ type RuntimePolicy struct {
+ 	StrategyEvaluationQuietSeconds int       `json:"strategyEvaluationQuietSeconds"`
+ 	LiveAccountSyncFreshnessSecs   int       `json:"liveAccountSyncFreshnessSeconds"`
+ 	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
++	WSHandshakeTimeoutSeconds      int       `json:"wsHandshakeTimeoutSeconds"`
++	WSReadStaleTimeoutSeconds      int       `json:"wsReadStaleTimeoutSeconds"`
++	WSPingIntervalSeconds          int       `json:"wsPingIntervalSeconds"`
++	WSPassiveCloseTimeoutSeconds   int       `json:"wsPassiveCloseTimeoutSeconds"`
++	WSReconnectBackoffs            []int     `json:"wsReconnectBackoffs"`
++	WSReconnectRecoveryBackoffs    []int     `json:"wsReconnectRecoveryBackoffs"`
++	RESTLimiterRPS                 int       `json:"restLimiterRps"`
++	RESTLimiterBurst               int       `json:"restLimiterBurst"`
++	RESTBackoffSeconds             int       `json:"restBackoffSeconds"`
++	LiveMarketCacheTTLMinutes      int       `json:"liveMarketCacheTTLMinutes"`
++	TelegramHTTPTimeoutSeconds     int       `json:"telegramHTTPTimeoutSeconds"`
++	BinanceRecvWindowMs            int       `json:"binanceRecvWindowMs"`
++	LiveSignalWarmWindowDays       int       `json:"liveSignalWarmWindowDays"`
++	LiveFastSignalWarmWindowDays   int       `json:"liveFastSignalWarmWindowDays"`
++	LiveMinuteWarmWindowDays       int       `json:"liveMinuteWarmWindowDays"`
+ 	UpdatedAt                      time.Time `json:"updatedAt"`
+ }
+ 
+diff --git a/internal/service/live_market_data.go b/internal/service/live_market_data.go
+index 0c5ee69..bc88451 100644
+--- a/internal/service/live_market_data.go
++++ b/internal/service/live_market_data.go
+@@ -12,9 +12,29 @@ import (
+ 	"github.com/wuyaocheng/bktrader/internal/domain"
+ )
+ 
+-const liveSignalWarmWindow = 400 * 24 * time.Hour
+-const liveFastSignalWarmWindow = 7 * 24 * time.Hour
+-const liveMinuteWarmWindow = 30 * 24 * time.Hour
++func (p *Platform) liveSignalWarmWindow() time.Duration {
++	days := p.runtimePolicy.LiveSignalWarmWindowDays
++	if days <= 0 {
++		days = 400
++	}
++	return time.Duration(days) * 24 * time.Hour
++}
++
++func (p *Platform) liveFastSignalWarmWindow() time.Duration {
++	days := p.runtimePolicy.LiveFastSignalWarmWindowDays
++	if days <= 0 {
++		days = 7
++	}
++	return time.Duration(days) * 24 * time.Hour
++}
++
++func (p *Platform) liveMinuteWarmWindow() time.Duration {
++	days := p.runtimePolicy.LiveMinuteWarmWindowDays
++	if days <= 0 {
++		days = 30
++	}
++	return time.Duration(days) * 24 * time.Hour
++}
+ 
+ var fetchLiveCandleRange = fetchBinanceFuturesCandleRange
+ 
+@@ -98,9 +118,9 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
+ 	logger := p.logger("service.live_market", "symbol", normalizedSymbol)
+ 	logger.Debug("refreshing live market snapshot")
+ 	end := time.Now().UTC().Truncate(time.Minute)
+-	minuteStart := end.Add(-liveMinuteWarmWindow)
+-	signalStart := end.Add(-liveSignalWarmWindow)
+-	fastSignalStart := end.Add(-liveFastSignalWarmWindow)
++	minuteStart := end.Add(-p.liveMinuteWarmWindow())
++	signalStart := end.Add(-p.liveSignalWarmWindow())
++	fastSignalStart := end.Add(-p.liveFastSignalWarmWindow())
+ 	minuteBars, err := fetchLiveCandleRange(normalizedSymbol, "1", minuteStart, end)
+ 	if err != nil {
+ 		return err
+@@ -161,7 +181,11 @@ func (p *Platform) liveMarketSnapshot(symbol string) (liveMarketSnapshot, error)
+ 	p.liveMarketMu.RLock()
+ 	snapshot, ok := p.liveMarketData[normalizedSymbol]
+ 	p.liveMarketMu.RUnlock()
+-	if ok && time.Since(snapshot.UpdatedAt) < 10*time.Minute && len(snapshot.MinuteBars) > 0 {
++	ttl := 10 * time.Minute
++	if p.runtimePolicy.LiveMarketCacheTTLMinutes > 0 {
++		ttl = time.Duration(p.runtimePolicy.LiveMarketCacheTTLMinutes) * time.Minute
++	}
++	if ok && time.Since(snapshot.UpdatedAt) < ttl && len(snapshot.MinuteBars) > 0 {
+ 		return snapshot, nil
+ 	}
+ 	if err := p.refreshLiveMarketSnapshot(normalizedSymbol); err != nil {
+@@ -261,7 +285,7 @@ func (p *Platform) ingestLiveSignalBarSummary(summary map[string]any, eventTime
+ 	if err := p.store.UpsertMarketBars([]domain.MarketBar{bar}); err != nil {
+ 		return err
+ 	}
+-	start := eventTime.UTC().Add(-liveSignalWarmWindow)
++	start := eventTime.UTC().Add(-p.liveSignalWarmWindow())
+ 	storedBars, err := p.store.ListMarketBars("BINANCE", symbol, timeframe, start.Unix(), eventTime.UTC().Unix(), 0)
+ 	if err != nil {
+ 		return err
+diff --git a/internal/service/live_registry.go b/internal/service/live_registry.go
+index 657087b..5261bea 100644
+--- a/internal/service/live_registry.go
++++ b/internal/service/live_registry.go
+@@ -139,7 +139,7 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
+ 		"sandbox":        boolValue(binding["sandbox"]),
+ 		"restBaseUrl":    stringValue(binding["restBaseUrl"]),
+ 		"wsBaseUrl":      stringValue(binding["wsBaseUrl"]),
+-		"recvWindowMs":   maxIntValue(binding["recvWindowMs"], 5000),
++		"recvWindowMs":   maxIntValue(binding["recvWindowMs"], p.runtimePolicy.BinanceRecvWindowMs),
+ 		"credentialRefs": credentialRefs,
+ 	}
+ 	if err := adapter.ValidateAccountConfig(normalized); err != nil {
+@@ -159,7 +159,7 @@ func (p *Platform) BindLiveAccount(accountID string, binding map[string]any) (do
+ 		Sandbox:        boolValue(normalized["sandbox"]),
+ 		RESTBaseURL:    stringValue(normalized["restBaseUrl"]),
+ 		WSBaseURL:      stringValue(normalized["wsBaseUrl"]),
+-		RecvWindowMs:   maxIntValue(normalized["recvWindowMs"], 5000),
++		RecvWindowMs:   maxIntValue(normalized["recvWindowMs"], p.runtimePolicy.BinanceRecvWindowMs),
+ 		CredentialRefs: normalizeCredentialRefs(normalized["credentialRefs"]),
+ 		UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
+ 	}
+@@ -770,6 +770,22 @@ var (
+ 	binanceRESTBackoffDuration   = 60 * time.Second
+ )
+ 
++func UpdateBinanceRESTLimits(rps, burst, backoffSec int) {
++	if rps > 0 {
++		binanceRESTRequestsPerSecond = rps
++	}
++	if burst > 0 {
++		binanceRESTBurst = burst
++	}
++	if backoffSec > 0 {
++		binanceRESTBackoffDuration = time.Duration(backoffSec) * time.Second
++	}
++	// 清空 gates，以便使用新的限制参数重新创建
++	binanceRESTLimiterState.mu.Lock()
++	binanceRESTLimiterState.gates = make(map[string]*binanceRESTGate)
++	binanceRESTLimiterState.mu.Unlock()
++}
++
+ type binanceRESTRequestCategory string
+ 
+ const (
+diff --git a/internal/service/platform.go b/internal/service/platform.go
+index 027ff35..ac5924a 100644
+--- a/internal/service/platform.go
++++ b/internal/service/platform.go
+@@ -66,6 +66,21 @@ type RuntimePolicy struct {
+ 	StrategyEvaluationQuietSeconds int       `json:"strategyEvaluationQuietSeconds"`
+ 	LiveAccountSyncFreshnessSecs   int       `json:"liveAccountSyncFreshnessSeconds"`
+ 	PaperStartReadinessTimeoutSecs int       `json:"paperStartReadinessTimeoutSeconds"`
++	WSHandshakeTimeoutSeconds      int       `json:"wsHandshakeTimeoutSeconds"`
++	WSReadStaleTimeoutSeconds      int       `json:"wsReadStaleTimeoutSeconds"`
++	WSPingIntervalSeconds          int       `json:"wsPingIntervalSeconds"`
++	WSPassiveCloseTimeoutSeconds   int       `json:"wsPassiveCloseTimeoutSeconds"`
++	WSReconnectBackoffs            []int     `json:"wsReconnectBackoffs"`
++	WSReconnectRecoveryBackoffs    []int     `json:"wsReconnectRecoveryBackoffs"`
++	RESTLimiterRPS                 int       `json:"restLimiterRps"`
++	RESTLimiterBurst               int       `json:"restLimiterBurst"`
++	RESTBackoffSeconds             int       `json:"restBackoffSeconds"`
++	LiveMarketCacheTTLMinutes      int       `json:"liveMarketCacheTTLMinutes"`
++	TelegramHTTPTimeoutSeconds     int       `json:"telegramHTTPTimeoutSeconds"`
++	BinanceRecvWindowMs            int       `json:"binanceRecvWindowMs"`
++	LiveSignalWarmWindowDays       int       `json:"liveSignalWarmWindowDays"`
++	LiveFastSignalWarmWindowDays   int       `json:"liveFastSignalWarmWindowDays"`
++	LiveMinuteWarmWindowDays       int       `json:"liveMinuteWarmWindowDays"`
+ 	UpdatedAt                      time.Time `json:"updatedAt"`
+ }
+ 
+@@ -100,6 +115,21 @@ func NewPlatform(store store.Repository) *Platform {
+ 			StrategyEvaluationQuietSeconds: 15,
+ 			LiveAccountSyncFreshnessSecs:   60,
+ 			PaperStartReadinessTimeoutSecs: 5,
++			WSHandshakeTimeoutSeconds:      10,
++			WSReadStaleTimeoutSeconds:      60,
++			WSPingIntervalSeconds:          20,
++			WSPassiveCloseTimeoutSeconds:   2,
++			WSReconnectBackoffs:            []int{10, 30, 60},
++			WSReconnectRecoveryBackoffs:    []int{30, 120},
++			RESTLimiterRPS:                 30,
++			RESTLimiterBurst:               50,
++			RESTBackoffSeconds:             60,
++			LiveMarketCacheTTLMinutes:      10,
++			TelegramHTTPTimeoutSeconds:     8,
++			BinanceRecvWindowMs:            5000,
++			LiveSignalWarmWindowDays:       400,
++			LiveFastSignalWarmWindowDays:   7,
++			LiveMinuteWarmWindowDays:       30,
+ 			UpdatedAt:                      time.Now().UTC(),
+ 		},
+ 	}
+@@ -152,6 +182,51 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+ 	if policy.PaperStartReadinessTimeoutSecs > 0 {
+ 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
+ 	}
++	if policy.WSHandshakeTimeoutSeconds > 0 {
++		p.runtimePolicy.WSHandshakeTimeoutSeconds = policy.WSHandshakeTimeoutSeconds
++	}
++	if policy.WSReadStaleTimeoutSeconds > 0 {
++		p.runtimePolicy.WSReadStaleTimeoutSeconds = policy.WSReadStaleTimeoutSeconds
++	}
++	if policy.WSPingIntervalSeconds > 0 {
++		p.runtimePolicy.WSPingIntervalSeconds = policy.WSPingIntervalSeconds
++	}
++	if policy.WSPassiveCloseTimeoutSeconds > 0 {
++		p.runtimePolicy.WSPassiveCloseTimeoutSeconds = policy.WSPassiveCloseTimeoutSeconds
++	}
++	if len(policy.WSReconnectBackoffs) > 0 {
++		p.runtimePolicy.WSReconnectBackoffs = policy.WSReconnectBackoffs
++	}
++	if len(policy.WSReconnectRecoveryBackoffs) > 0 {
++		p.runtimePolicy.WSReconnectRecoveryBackoffs = policy.WSReconnectRecoveryBackoffs
++	}
++	if policy.RESTLimiterRPS > 0 {
++		p.runtimePolicy.RESTLimiterRPS = policy.RESTLimiterRPS
++	}
++	if policy.RESTLimiterBurst > 0 {
++		p.runtimePolicy.RESTLimiterBurst = policy.RESTLimiterBurst
++	}
++	if policy.RESTBackoffSeconds > 0 {
++		p.runtimePolicy.RESTBackoffSeconds = policy.RESTBackoffSeconds
++	}
++	if policy.LiveMarketCacheTTLMinutes > 0 {
++		p.runtimePolicy.LiveMarketCacheTTLMinutes = policy.LiveMarketCacheTTLMinutes
++	}
++	if policy.TelegramHTTPTimeoutSeconds > 0 {
++		p.runtimePolicy.TelegramHTTPTimeoutSeconds = policy.TelegramHTTPTimeoutSeconds
++	}
++	if policy.BinanceRecvWindowMs > 0 {
++		p.runtimePolicy.BinanceRecvWindowMs = policy.BinanceRecvWindowMs
++	}
++	if policy.LiveSignalWarmWindowDays > 0 {
++		p.runtimePolicy.LiveSignalWarmWindowDays = policy.LiveSignalWarmWindowDays
++	}
++	if policy.LiveFastSignalWarmWindowDays > 0 {
++		p.runtimePolicy.LiveFastSignalWarmWindowDays = policy.LiveFastSignalWarmWindowDays
++	}
++	if policy.LiveMinuteWarmWindowDays > 0 {
++		p.runtimePolicy.LiveMinuteWarmWindowDays = policy.LiveMinuteWarmWindowDays
++	}
+ 	if !policy.UpdatedAt.IsZero() {
+ 		p.runtimePolicy.UpdatedAt = policy.UpdatedAt
+ 	}
+@@ -161,6 +236,7 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+ 		"signal_bar_freshness_seconds", p.runtimePolicy.SignalBarFreshnessSeconds,
+ 		"runtime_quiet_seconds", p.runtimePolicy.RuntimeQuietSeconds,
+ 		"paper_start_readiness_timeout_seconds", p.runtimePolicy.PaperStartReadinessTimeoutSecs,
++		"ws_stale_timeout_seconds", p.runtimePolicy.WSReadStaleTimeoutSeconds,
+ 		"updated_at", p.runtimePolicy.UpdatedAt,
+ 	)
+ }
+@@ -208,6 +284,21 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
+ 		StrategyEvaluationQuietSeconds: saved.StrategyEvaluationQuietSeconds,
+ 		LiveAccountSyncFreshnessSecs:   saved.LiveAccountSyncFreshnessSecs,
+ 		PaperStartReadinessTimeoutSecs: saved.PaperStartReadinessTimeoutSecs,
++		WSHandshakeTimeoutSeconds:      saved.WSHandshakeTimeoutSeconds,
++		WSReadStaleTimeoutSeconds:      saved.WSReadStaleTimeoutSeconds,
++		WSPingIntervalSeconds:          saved.WSPingIntervalSeconds,
++		WSPassiveCloseTimeoutSeconds:   saved.WSPassiveCloseTimeoutSeconds,
++		WSReconnectBackoffs:            saved.WSReconnectBackoffs,
++		WSReconnectRecoveryBackoffs:    saved.WSReconnectRecoveryBackoffs,
++		RESTLimiterRPS:                 saved.RESTLimiterRPS,
++		RESTLimiterBurst:               saved.RESTLimiterBurst,
++		RESTBackoffSeconds:             saved.RESTBackoffSeconds,
++		LiveMarketCacheTTLMinutes:      saved.LiveMarketCacheTTLMinutes,
++		TelegramHTTPTimeoutSeconds:     saved.TelegramHTTPTimeoutSeconds,
++		BinanceRecvWindowMs:            saved.BinanceRecvWindowMs,
++		LiveSignalWarmWindowDays:       saved.LiveSignalWarmWindowDays,
++		LiveFastSignalWarmWindowDays:   saved.LiveFastSignalWarmWindowDays,
++		LiveMinuteWarmWindowDays:       saved.LiveMinuteWarmWindowDays,
+ 		UpdatedAt:                      saved.UpdatedAt,
+ 	})
+ 	p.logger("service.platform").Info("runtime policy updated")
+@@ -232,6 +323,21 @@ func (p *Platform) LoadPersistedRuntimePolicy() error {
+ 		StrategyEvaluationQuietSeconds: policy.StrategyEvaluationQuietSeconds,
+ 		LiveAccountSyncFreshnessSecs:   policy.LiveAccountSyncFreshnessSecs,
+ 		PaperStartReadinessTimeoutSecs: policy.PaperStartReadinessTimeoutSecs,
++		WSHandshakeTimeoutSeconds:      policy.WSHandshakeTimeoutSeconds,
++		WSReadStaleTimeoutSeconds:      policy.WSReadStaleTimeoutSeconds,
++		WSPingIntervalSeconds:          policy.WSPingIntervalSeconds,
++		WSPassiveCloseTimeoutSeconds:   policy.WSPassiveCloseTimeoutSeconds,
++		WSReconnectBackoffs:            policy.WSReconnectBackoffs,
++		WSReconnectRecoveryBackoffs:    policy.WSReconnectRecoveryBackoffs,
++		RESTLimiterRPS:                 policy.RESTLimiterRPS,
++		RESTLimiterBurst:               policy.RESTLimiterBurst,
++		RESTBackoffSeconds:             policy.RESTBackoffSeconds,
++		LiveMarketCacheTTLMinutes:      policy.LiveMarketCacheTTLMinutes,
++		TelegramHTTPTimeoutSeconds:     policy.TelegramHTTPTimeoutSeconds,
++		BinanceRecvWindowMs:            policy.BinanceRecvWindowMs,
++		LiveSignalWarmWindowDays:       policy.LiveSignalWarmWindowDays,
++		LiveFastSignalWarmWindowDays:   policy.LiveFastSignalWarmWindowDays,
++		LiveMinuteWarmWindowDays:       policy.LiveMinuteWarmWindowDays,
+ 		UpdatedAt:                      policy.UpdatedAt,
+ 	})
+ 	p.logger("service.platform").Info("persisted runtime policy loaded")
+diff --git a/internal/service/signal_runtime_ws.go b/internal/service/signal_runtime_ws.go
+index 15f3749..49d87b4 100644
+--- a/internal/service/signal_runtime_ws.go
++++ b/internal/service/signal_runtime_ws.go
+@@ -44,16 +44,33 @@ type reconnectPolicy struct {
+ 	backoffs    []time.Duration
+ }
+ 
+-var (
+-	transientReconnectPolicy = reconnectPolicy{
+-		maxAttempts: 3,
+-		backoffs:    []time.Duration{10 * time.Second, 30 * time.Second, 60 * time.Second},
++func (p *Platform) transientReconnectPolicy() reconnectPolicy {
++	backoffs := make([]time.Duration, 0, len(p.runtimePolicy.WSReconnectBackoffs))
++	for _, b := range p.runtimePolicy.WSReconnectBackoffs {
++		backoffs = append(backoffs, time.Duration(b)*time.Second)
+ 	}
+-	kickedReconnectPolicy = reconnectPolicy{
+-		maxAttempts: 2,
+-		backoffs:    []time.Duration{30 * time.Second, 120 * time.Second},
++	if len(backoffs) == 0 {
++		backoffs = []time.Duration{10 * time.Second, 30 * time.Second, 60 * time.Second}
+ 	}
+-)
++	return reconnectPolicy{
++		maxAttempts: len(backoffs),
++		backoffs:    backoffs,
++	}
++}
++
++func (p *Platform) kickedReconnectPolicy() reconnectPolicy {
++	backoffs := make([]time.Duration, 0, len(p.runtimePolicy.WSReconnectRecoveryBackoffs))
++	for _, b := range p.runtimePolicy.WSReconnectRecoveryBackoffs {
++		backoffs = append(backoffs, time.Duration(b)*time.Second)
++	}
++	if len(backoffs) == 0 {
++		backoffs = []time.Duration{30 * time.Second, 120 * time.Second}
++	}
++	return reconnectPolicy{
++		maxAttempts: len(backoffs),
++		backoffs:    backoffs,
++	}
++}
+ 
+ func classifyDisconnectSeverity(err error) disconnectSeverity {
+ 	if err == nil {
+@@ -141,7 +158,7 @@ func (p *Platform) runSignalRuntimeWithRecoveryUsing(
+ 		}
+ 
+ 		severity := classifyDisconnectSeverity(disconnectErr)
+-		policy := reconnectPolicyForSeverity(severity)
++		policy := p.reconnectPolicyForSeverity(severity)
+ 		p.logger("service.signal_runtime", "session_id", sessionID).Warn(
+ 			"signal runtime disconnected, attempting recovery",
+ 			"severity", severity.String(),
+@@ -181,7 +198,7 @@ func (p *Platform) runSignalRuntimeWithRecoveryUsing(
+ 
+ 			disconnectErr = retryErr
+ 			severity = retrySeverity
+-			policy = reconnectPolicyForSeverity(severity)
++			policy = p.reconnectPolicyForSeverity(severity)
+ 		}
+ 
+ 		if recovered {
+@@ -206,12 +223,12 @@ func (p *Platform) handleSignalRuntimeReconnect(sessionID string, eventTime time
+ 	}
+ }
+ 
+-func reconnectPolicyForSeverity(severity disconnectSeverity) reconnectPolicy {
++func (p *Platform) reconnectPolicyForSeverity(severity disconnectSeverity) reconnectPolicy {
+ 	switch severity {
+ 	case disconnectKicked:
+-		return kickedReconnectPolicy
++		return p.kickedReconnectPolicy()
+ 	default:
+-		return transientReconnectPolicy
++		return p.transientReconnectPolicy()
+ 	}
+ }
+ 
+@@ -384,7 +401,7 @@ func (p *Platform) runExchangeWebsocketLoop(
+ 	}
+ 
+ 	dialer := websocket.Dialer{
+-		HandshakeTimeout: 10 * time.Second,
++		HandshakeTimeout: time.Duration(p.runtimePolicy.WSHandshakeTimeoutSeconds) * time.Second,
+ 		Proxy:            http.ProxyFromEnvironment,
+ 	}
+ 	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
+@@ -393,9 +410,9 @@ func (p *Platform) runExchangeWebsocketLoop(
+ 	}
+ 	defer conn.Close()
+ 
+-	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
++	_ = conn.SetReadDeadline(time.Now().Add(time.Duration(p.runtimePolicy.WSReadStaleTimeoutSeconds) * time.Second))
+ 	conn.SetPongHandler(func(_ string) error {
+-		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
++		_ = conn.SetReadDeadline(time.Now().Add(time.Duration(p.runtimePolicy.WSReadStaleTimeoutSeconds) * time.Second))
+ 		now := time.Now().UTC()
+ 		_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
+ 			state := cloneMetadata(session.State)
+@@ -439,7 +456,7 @@ func (p *Platform) runExchangeWebsocketLoop(
+ 	})
+ 	connected := true
+ 
+-	ticker := time.NewTicker(20 * time.Second)
++	ticker := time.NewTicker(time.Duration(p.runtimePolicy.WSPingIntervalSeconds) * time.Second)
+ 	defer ticker.Stop()
+ 
+ 	done := make(chan error, 1)
+@@ -457,7 +474,7 @@ func (p *Platform) runExchangeWebsocketLoop(
+ 			summary := summarizeSignalMessage(session.RuntimeAdapter, payload)
+ 			summary = enrichSignalRuntimeSummary(session, summary)
+ 			_ = p.ingestLiveSignalBarSummary(summary, now)
+-			_ = conn.SetReadDeadline(now.Add(60 * time.Second))
++			_ = conn.SetReadDeadline(now.Add(time.Duration(p.runtimePolicy.WSReadStaleTimeoutSeconds) * time.Second))
+ 			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
+ 				state := cloneMetadata(session.State)
+ 				state["health"] = "healthy"
+@@ -493,7 +510,7 @@ func (p *Platform) runExchangeWebsocketLoop(
+ 	for {
+ 		select {
+ 		case <-ctx.Done():
+-			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(2*time.Second))
++			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(time.Duration(p.runtimePolicy.WSPassiveCloseTimeoutSeconds)*time.Second))
+ 			return connected, nil
+ 		case err := <-done:
+ 			return connected, err
+diff --git a/internal/service/telegram.go b/internal/service/telegram.go
+index 30c36f4..e7ba4cc 100644
+--- a/internal/service/telegram.go
++++ b/internal/service/telegram.go
+@@ -76,7 +76,7 @@ func (p *Platform) sendTelegramMessage(text string) error {
+ 	}
+ 	req.Header.Set("Content-Type", "application/json")
+ 
+-	client := &http.Client{Timeout: 8 * time.Second}
++	client := &http.Client{Timeout: time.Duration(p.runtimePolicy.TelegramHTTPTimeoutSeconds) * time.Second}
+ 	resp, err := client.Do(req)
+ 	if err != nil {
+ 		return err
+
+From 6604322150222c8aba1a2fb60f0afac8d9174e1b Mon Sep 17 00:00:00 2001
+From: fujun <folgercn@gmail.com>
+Date: Thu, 23 Apr 2026 16:51:59 +0800
+Subject: [PATCH 2/5] fix: address PR feedback - reject non-positive backoffs
+ and prevent silent DB policy overrides
+
+---
+ internal/config/config.go    | 46 ++++++++++++++++++------------------
+ internal/service/platform.go |  4 ++--
+ 2 files changed, 25 insertions(+), 25 deletions(-)
+
+diff --git a/internal/config/config.go b/internal/config/config.go
+index 33694cf..ef643b2 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -67,13 +67,13 @@ func Load() Config {
+ 			tickInterval = parsed
+ 		}
+ 	}
+-	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", 15)
+-	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", 10)
+-	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", 30)
+-	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", 30)
+-	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", 15)
+-	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", 60)
+-	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", 5)
++	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", 0)
++	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", 0)
++	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", 0)
++	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", 0)
++	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", 0)
++	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", 0)
++	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", 0)
+ 
+ 	authTokenTTL := 720
+ 	if v := os.Getenv("AUTH_TOKEN_TTL_MINUTES"); v != "" {
+@@ -116,21 +116,21 @@ func Load() Config {
+ 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
+ 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
+ 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
+-		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", 10),
+-		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", 60),
+-		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", 20),
+-		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", 2),
+-		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", []int{10, 30, 60}),
+-		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", []int{30, 120}),
+-		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", 30),
+-		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", 50),
+-		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", 60),
+-		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", 10),
+-		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", 8),
+-		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", 5000),
+-		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", 400),
+-		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", 7),
+-		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", 30),
++		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", 0),
++		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", 0),
++		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", 0),
++		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", 0),
++		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", nil),
++		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", nil),
++		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", 0),
++		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", 0),
++		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", 0),
++		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", 0),
++		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", 0),
++		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", 0),
++		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", 0),
++		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", 0),
++		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", 0),
+ 	}
+ }
+ 
+@@ -221,7 +221,7 @@ func intSliceFromEnv(key string, fallback []int) []int {
+ 	parts := strings.Split(value, ",")
+ 	out := make([]int, 0, len(parts))
+ 	for _, part := range parts {
+-		if p, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
++		if p, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && p > 0 {
+ 			out = append(out, p)
+ 		}
+ 	}
+diff --git a/internal/service/platform.go b/internal/service/platform.go
+index ac5924a..2585d64 100644
+--- a/internal/service/platform.go
++++ b/internal/service/platform.go
+@@ -173,10 +173,10 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+ 	if policy.RuntimeQuietSeconds > 0 {
+ 		p.runtimePolicy.RuntimeQuietSeconds = policy.RuntimeQuietSeconds
+ 	}
+-	if policy.StrategyEvaluationQuietSeconds >= 0 {
++	if policy.StrategyEvaluationQuietSeconds > 0 {
+ 		p.runtimePolicy.StrategyEvaluationQuietSeconds = policy.StrategyEvaluationQuietSeconds
+ 	}
+-	if policy.LiveAccountSyncFreshnessSecs >= 0 {
++	if policy.LiveAccountSyncFreshnessSecs > 0 {
+ 		p.runtimePolicy.LiveAccountSyncFreshnessSecs = policy.LiveAccountSyncFreshnessSecs
+ 	}
+ 	if policy.PaperStartReadinessTimeoutSecs > 0 {
+
+From e7831cecf86be1116fd1b6ba3768dd961d32d4c1 Mon Sep 17 00:00:00 2001
+From: fujun <folgercn@gmail.com>
+Date: Thu, 23 Apr 2026 17:07:11 +0800
+Subject: [PATCH 3/5] fix: restore support for explicit zero runtime thresholds
+ and fix CI failure
+
+---
+ internal/config/config.go    | 42 ++++++++++++++++++------------------
+ internal/service/platform.go | 40 +++++++++++++++++-----------------
+ 2 files changed, 41 insertions(+), 41 deletions(-)
+
+diff --git a/internal/config/config.go b/internal/config/config.go
+index ef643b2..daaf2b9 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -67,13 +67,13 @@ func Load() Config {
+ 			tickInterval = parsed
+ 		}
+ 	}
+-	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", 0)
+-	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", 0)
+-	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", 0)
+-	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", 0)
+-	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", 0)
+-	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", 0)
+-	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", 0)
++	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", -1)
++	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", -1)
++	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", -1)
++	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", -1)
++	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", -1)
++	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", -1)
++	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", -1)
+ 
+ 	authTokenTTL := 720
+ 	if v := os.Getenv("AUTH_TOKEN_TTL_MINUTES"); v != "" {
+@@ -116,21 +116,21 @@ func Load() Config {
+ 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
+ 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
+ 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
+-		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", 0),
+-		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", 0),
+-		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", 0),
+-		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", 0),
++		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", -1),
++		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", -1),
++		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", -1),
++		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", -1),
+ 		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", nil),
+ 		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", nil),
+-		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", 0),
+-		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", 0),
+-		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", 0),
+-		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", 0),
+-		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", 0),
+-		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", 0),
+-		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", 0),
+-		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", 0),
+-		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", 0),
++		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", -1),
++		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", -1),
++		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", -1),
++		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", -1),
++		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", -1),
++		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", -1),
++		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", -1),
++		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", -1),
++		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", -1),
+ 	}
+ }
+ 
+@@ -192,7 +192,7 @@ func getenv(key, fallback string) string {
+ 
+ func intFromEnv(key string, fallback int) int {
+ 	if value := os.Getenv(key); value != "" {
+-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
++		if parsed, err := strconv.Atoi(value); err == nil {
+ 			return parsed
+ 		}
+ 	}
+diff --git a/internal/service/platform.go b/internal/service/platform.go
+index 2585d64..e1144d9 100644
+--- a/internal/service/platform.go
++++ b/internal/service/platform.go
+@@ -161,37 +161,37 @@ func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {
+ }
+ 
+ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+-	if policy.TradeTickFreshnessSeconds > 0 {
++	if policy.TradeTickFreshnessSeconds >= 0 {
+ 		p.runtimePolicy.TradeTickFreshnessSeconds = policy.TradeTickFreshnessSeconds
+ 	}
+-	if policy.OrderBookFreshnessSeconds > 0 {
++	if policy.OrderBookFreshnessSeconds >= 0 {
+ 		p.runtimePolicy.OrderBookFreshnessSeconds = policy.OrderBookFreshnessSeconds
+ 	}
+-	if policy.SignalBarFreshnessSeconds > 0 {
++	if policy.SignalBarFreshnessSeconds >= 0 {
+ 		p.runtimePolicy.SignalBarFreshnessSeconds = policy.SignalBarFreshnessSeconds
+ 	}
+-	if policy.RuntimeQuietSeconds > 0 {
++	if policy.RuntimeQuietSeconds >= 0 {
+ 		p.runtimePolicy.RuntimeQuietSeconds = policy.RuntimeQuietSeconds
+ 	}
+-	if policy.StrategyEvaluationQuietSeconds > 0 {
++	if policy.StrategyEvaluationQuietSeconds >= 0 {
+ 		p.runtimePolicy.StrategyEvaluationQuietSeconds = policy.StrategyEvaluationQuietSeconds
+ 	}
+-	if policy.LiveAccountSyncFreshnessSecs > 0 {
++	if policy.LiveAccountSyncFreshnessSecs >= 0 {
+ 		p.runtimePolicy.LiveAccountSyncFreshnessSecs = policy.LiveAccountSyncFreshnessSecs
+ 	}
+-	if policy.PaperStartReadinessTimeoutSecs > 0 {
++	if policy.PaperStartReadinessTimeoutSecs >= 0 {
+ 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
+ 	}
+-	if policy.WSHandshakeTimeoutSeconds > 0 {
++	if policy.WSHandshakeTimeoutSeconds >= 0 {
+ 		p.runtimePolicy.WSHandshakeTimeoutSeconds = policy.WSHandshakeTimeoutSeconds
+ 	}
+-	if policy.WSReadStaleTimeoutSeconds > 0 {
++	if policy.WSReadStaleTimeoutSeconds >= 0 {
+ 		p.runtimePolicy.WSReadStaleTimeoutSeconds = policy.WSReadStaleTimeoutSeconds
+ 	}
+-	if policy.WSPingIntervalSeconds > 0 {
++	if policy.WSPingIntervalSeconds >= 0 {
+ 		p.runtimePolicy.WSPingIntervalSeconds = policy.WSPingIntervalSeconds
+ 	}
+-	if policy.WSPassiveCloseTimeoutSeconds > 0 {
++	if policy.WSPassiveCloseTimeoutSeconds >= 0 {
+ 		p.runtimePolicy.WSPassiveCloseTimeoutSeconds = policy.WSPassiveCloseTimeoutSeconds
+ 	}
+ 	if len(policy.WSReconnectBackoffs) > 0 {
+@@ -200,31 +200,31 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+ 	if len(policy.WSReconnectRecoveryBackoffs) > 0 {
+ 		p.runtimePolicy.WSReconnectRecoveryBackoffs = policy.WSReconnectRecoveryBackoffs
+ 	}
+-	if policy.RESTLimiterRPS > 0 {
++	if policy.RESTLimiterRPS >= 0 {
+ 		p.runtimePolicy.RESTLimiterRPS = policy.RESTLimiterRPS
+ 	}
+-	if policy.RESTLimiterBurst > 0 {
++	if policy.RESTLimiterBurst >= 0 {
+ 		p.runtimePolicy.RESTLimiterBurst = policy.RESTLimiterBurst
+ 	}
+-	if policy.RESTBackoffSeconds > 0 {
++	if policy.RESTBackoffSeconds >= 0 {
+ 		p.runtimePolicy.RESTBackoffSeconds = policy.RESTBackoffSeconds
+ 	}
+-	if policy.LiveMarketCacheTTLMinutes > 0 {
++	if policy.LiveMarketCacheTTLMinutes >= 0 {
+ 		p.runtimePolicy.LiveMarketCacheTTLMinutes = policy.LiveMarketCacheTTLMinutes
+ 	}
+-	if policy.TelegramHTTPTimeoutSeconds > 0 {
++	if policy.TelegramHTTPTimeoutSeconds >= 0 {
+ 		p.runtimePolicy.TelegramHTTPTimeoutSeconds = policy.TelegramHTTPTimeoutSeconds
+ 	}
+-	if policy.BinanceRecvWindowMs > 0 {
++	if policy.BinanceRecvWindowMs >= 0 {
+ 		p.runtimePolicy.BinanceRecvWindowMs = policy.BinanceRecvWindowMs
+ 	}
+-	if policy.LiveSignalWarmWindowDays > 0 {
++	if policy.LiveSignalWarmWindowDays >= 0 {
+ 		p.runtimePolicy.LiveSignalWarmWindowDays = policy.LiveSignalWarmWindowDays
+ 	}
+-	if policy.LiveFastSignalWarmWindowDays > 0 {
++	if policy.LiveFastSignalWarmWindowDays >= 0 {
+ 		p.runtimePolicy.LiveFastSignalWarmWindowDays = policy.LiveFastSignalWarmWindowDays
+ 	}
+-	if policy.LiveMinuteWarmWindowDays > 0 {
++	if policy.LiveMinuteWarmWindowDays >= 0 {
+ 		p.runtimePolicy.LiveMinuteWarmWindowDays = policy.LiveMinuteWarmWindowDays
+ 	}
+ 	if !policy.UpdatedAt.IsZero() {
+
+From bb628bcc89f40fe608e55a141e896767024bf2f5 Mon Sep 17 00:00:00 2001
+From: fujun <folgercn@gmail.com>
+Date: Thu, 23 Apr 2026 17:29:32 +0800
+Subject: [PATCH 4/5] feat: implement pointer-based env overrides with strict
+ field validation and comprehensive tests
+
+---
+ internal/app/server.go                        |  55 +-------
+ internal/config/config.go                     | 102 +++++++-------
+ internal/service/live_registry.go             |   6 +-
+ internal/service/platform.go                  |  98 +++++++++++---
+ .../service/runtime_policy_validation_test.go | 127 ++++++++++++++++++
+ ...ession-protection-and-manual-close-plan.md |  45 -------
+ 6 files changed, 270 insertions(+), 163 deletions(-)
+ create mode 100644 internal/service/runtime_policy_validation_test.go
+ delete mode 100644 tmp/20260417-session-protection-and-manual-close-plan.md
+
+diff --git a/internal/app/server.go b/internal/app/server.go
+index 56b4bd3..c404011 100644
+--- a/internal/app/server.go
++++ b/internal/app/server.go
+@@ -33,33 +33,9 @@ func NewServer(cfg config.Config) (*http.Server, error) {
+ 	}
+ 
+ 	platform := service.NewPlatform(repository)
+-	service.UpdateBinanceRESTLimits(cfg.RESTLimiterRPS, cfg.RESTLimiterBurst, cfg.RESTBackoffSeconds)
++	platform.ApplyRuntimeConfigOverrides(cfg)
+ 	platform.SetTickInterval(cfg.PaperTickInterval)
+ 	platform.SetBacktestDataDirs(cfg.MinuteDataDir, cfg.TickDataDir)
+-	platform.SetRuntimePolicy(service.RuntimePolicy{
+-		TradeTickFreshnessSeconds:      cfg.TradeTickFreshnessSeconds,
+-		OrderBookFreshnessSeconds:      cfg.OrderBookFreshnessSeconds,
+-		SignalBarFreshnessSeconds:      cfg.SignalBarFreshnessSeconds,
+-		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
+-		StrategyEvaluationQuietSeconds: cfg.StrategyEvaluationQuietSeconds,
+-		LiveAccountSyncFreshnessSecs:   cfg.LiveAccountSyncFreshnessSecs,
+-		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
+-		WSHandshakeTimeoutSeconds:      cfg.WSHandshakeTimeoutSeconds,
+-		WSReadStaleTimeoutSeconds:      cfg.WSReadStaleTimeoutSeconds,
+-		WSPingIntervalSeconds:          cfg.WSPingIntervalSeconds,
+-		WSPassiveCloseTimeoutSeconds:   cfg.WSPassiveCloseTimeoutSeconds,
+-		WSReconnectBackoffs:            cfg.WSReconnectBackoffs,
+-		WSReconnectRecoveryBackoffs:    cfg.WSReconnectRecoveryBackoffs,
+-		RESTLimiterRPS:                 cfg.RESTLimiterRPS,
+-		RESTLimiterBurst:               cfg.RESTLimiterBurst,
+-		RESTBackoffSeconds:             cfg.RESTBackoffSeconds,
+-		LiveMarketCacheTTLMinutes:      cfg.LiveMarketCacheTTLMinutes,
+-		TelegramHTTPTimeoutSeconds:     cfg.TelegramHTTPTimeoutSeconds,
+-		BinanceRecvWindowMs:            cfg.BinanceRecvWindowMs,
+-		LiveSignalWarmWindowDays:       cfg.LiveSignalWarmWindowDays,
+-		LiveFastSignalWarmWindowDays:   cfg.LiveFastSignalWarmWindowDays,
+-		LiveMinuteWarmWindowDays:       cfg.LiveMinuteWarmWindowDays,
+-	})
+ 	platform.SetTelegramConfig(domain.TelegramConfig{
+ 		Enabled:    cfg.TelegramEnabled,
+ 		BotToken:   cfg.TelegramBotToken,
+@@ -74,31 +50,10 @@ func NewServer(cfg config.Config) (*http.Server, error) {
+ 		logger.Error("load persisted telegram config failed", "error", err)
+ 		return nil, err
+ 	}
+-	// 关键：在加载持久化配置后，再次应用环境变量配置，确保 .env 拥有最高优先级。
+-	platform.SetRuntimePolicy(service.RuntimePolicy{
+-		TradeTickFreshnessSeconds:      cfg.TradeTickFreshnessSeconds,
+-		OrderBookFreshnessSeconds:      cfg.OrderBookFreshnessSeconds,
+-		SignalBarFreshnessSeconds:      cfg.SignalBarFreshnessSeconds,
+-		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
+-		StrategyEvaluationQuietSeconds: cfg.StrategyEvaluationQuietSeconds,
+-		LiveAccountSyncFreshnessSecs:   cfg.LiveAccountSyncFreshnessSecs,
+-		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
+-		WSHandshakeTimeoutSeconds:      cfg.WSHandshakeTimeoutSeconds,
+-		WSReadStaleTimeoutSeconds:      cfg.WSReadStaleTimeoutSeconds,
+-		WSPingIntervalSeconds:          cfg.WSPingIntervalSeconds,
+-		WSPassiveCloseTimeoutSeconds:   cfg.WSPassiveCloseTimeoutSeconds,
+-		WSReconnectBackoffs:            cfg.WSReconnectBackoffs,
+-		WSReconnectRecoveryBackoffs:    cfg.WSReconnectRecoveryBackoffs,
+-		RESTLimiterRPS:                 cfg.RESTLimiterRPS,
+-		RESTLimiterBurst:               cfg.RESTLimiterBurst,
+-		RESTBackoffSeconds:             cfg.RESTBackoffSeconds,
+-		LiveMarketCacheTTLMinutes:      cfg.LiveMarketCacheTTLMinutes,
+-		TelegramHTTPTimeoutSeconds:     cfg.TelegramHTTPTimeoutSeconds,
+-		BinanceRecvWindowMs:            cfg.BinanceRecvWindowMs,
+-		LiveSignalWarmWindowDays:       cfg.LiveSignalWarmWindowDays,
+-		LiveFastSignalWarmWindowDays:   cfg.LiveFastSignalWarmWindowDays,
+-		LiveMinuteWarmWindowDays:       cfg.LiveMinuteWarmWindowDays,
+-	})
++	// 关键：在加载持久化配置后，应用环境变量配置。
++	// ApplyRuntimeConfigOverrides 会根据字段业务语义进行严格校验 (>0 vs >=0)，
++	// 并且仅当环境变量明确设置时（指针非 nil）才执行覆盖。
++	platform.ApplyRuntimeConfigOverrides(cfg)
+ 	warmCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+ 	if err := platform.WarmLiveMarketData(warmCtx); err != nil {
+ 		logger.Warn("warm live market data completed with errors", "error", err)
+diff --git a/internal/config/config.go b/internal/config/config.go
+index daaf2b9..a673faa 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -31,32 +31,32 @@ type Config struct {
+ 	AuthPassword                   string // 管理后台密码
+ 	AuthSecret                     string // Token 签名密钥
+ 	AuthTokenTTLMinutes            int    // Token 有效期（分钟）
+-	TradeTickFreshnessSeconds      int    // trade tick 新鲜度阈值
+-	OrderBookFreshnessSeconds      int    // order book 新鲜度阈值
+-	SignalBarFreshnessSeconds      int    // signal bar 新鲜度阈值
+-	RuntimeQuietSeconds            int    // runtime quiet 告警阈值
+-	StrategyEvaluationQuietSeconds int    // 策略触发进入评估的静默阈值
+-	LiveAccountSyncFreshnessSecs   int    // live account 同步陈旧阈值
+-	PaperStartReadinessTimeoutSecs int    // paper 启动前 runtime readiness 等待阈值
++	TradeTickFreshnessSeconds      *int   // trade tick 新鲜度阈值
++	OrderBookFreshnessSeconds      *int   // order book 新鲜度阈值
++	SignalBarFreshnessSeconds      *int   // signal bar 新鲜度阈值
++	RuntimeQuietSeconds            *int   // runtime quiet 告警阈值
++	StrategyEvaluationQuietSeconds *int   // 策略触发进入评估的静默阈值
++	LiveAccountSyncFreshnessSecs   *int   // live account 同步陈旧阈值
++	PaperStartReadinessTimeoutSecs *int   // paper 启动前 runtime readiness 等待阈值
+ 	TelegramEnabled                bool   // Telegram 通知是否启用
+ 	TelegramBotToken               string // Telegram Bot Token
+ 	TelegramChatID                 string // Telegram Chat ID
+ 	TelegramSendLevels             string // Telegram 默认发送等级（逗号分隔）
+-	WSHandshakeTimeoutSeconds      int    // WebSocket 握手超时
+-	WSReadStaleTimeoutSeconds      int    // WebSocket 读取陈旧超时
+-	WSPingIntervalSeconds          int    // WebSocket Ping 间隔
+-	WSPassiveCloseTimeoutSeconds   int    // WebSocket 被动关闭超时
+-	WSReconnectBackoffs            []int  // WebSocket 普通重连退避序列
+-	WSReconnectRecoveryBackoffs    []int  // WebSocket 恢复模式重连退避序列
+-	RESTLimiterRPS                 int    // Binance REST 每秒请求数限制
+-	RESTLimiterBurst               int    // Binance REST 突发限制
+-	RESTBackoffSeconds             int    // Binance REST 熔断时长
+-	LiveMarketCacheTTLMinutes      int    // 市场快照缓存有效期
+-	TelegramHTTPTimeoutSeconds     int    // Telegram HTTP 请求超时
+-	BinanceRecvWindowMs            int    // Binance 请求 RecvWindow
+-	LiveSignalWarmWindowDays       int    // 实盘信号预热窗口（天）
+-	LiveFastSignalWarmWindowDays   int    // 实盘快速信号预热窗口（天）
+-	LiveMinuteWarmWindowDays       int    // 实盘分钟数据预热窗口（天）
++	WSHandshakeTimeoutSeconds      *int    // WebSocket 握手超时
++	WSReadStaleTimeoutSeconds      *int    // WebSocket 读取陈旧超时
++	WSPingIntervalSeconds          *int    // WebSocket Ping 间隔
++	WSPassiveCloseTimeoutSeconds   *int    // WebSocket 被动关闭超时
++	WSReconnectBackoffs            []int   // WebSocket 普通重连退避序列
++	WSReconnectRecoveryBackoffs    []int   // WebSocket 恢复模式重连退避序列
++	RESTLimiterRPS                 *int    // Binance REST 每秒请求数限制
++	RESTLimiterBurst               *int    // Binance REST 突发限制
++	RESTBackoffSeconds             *int    // Binance REST 熔断时长
++	LiveMarketCacheTTLMinutes      *int    // 市场快照缓存有效期
++	TelegramHTTPTimeoutSeconds     *int    // Telegram HTTP 请求超时
++	BinanceRecvWindowMs            *int    // Binance 请求 RecvWindow
++	LiveSignalWarmWindowDays       *int    // 实盘信号预热窗口（天）
++	LiveFastSignalWarmWindowDays   *int    // 实盘快速信号预热窗口（天）
++	LiveMinuteWarmWindowDays       *int    // 实盘分钟数据预热窗口（天）
+ }
+ 
+ // Load 从环境变量加载配置，未设置的使用默认值。
+@@ -67,13 +67,6 @@ func Load() Config {
+ 			tickInterval = parsed
+ 		}
+ 	}
+-	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", -1)
+-	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", -1)
+-	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", -1)
+-	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", -1)
+-	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", -1)
+-	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", -1)
+-	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", -1)
+ 
+ 	authTokenTTL := 720
+ 	if v := os.Getenv("AUTH_TOKEN_TTL_MINUTES"); v != "" {
+@@ -105,35 +98,46 @@ func Load() Config {
+ 		AuthPassword:                   os.Getenv("AUTH_PASSWORD"),
+ 		AuthSecret:                     os.Getenv("AUTH_SECRET"),
+ 		AuthTokenTTLMinutes:            authTokenTTL,
+-		TradeTickFreshnessSeconds:      tradeTickFreshness,
+-		OrderBookFreshnessSeconds:      orderBookFreshness,
+-		SignalBarFreshnessSeconds:      signalBarFreshness,
+-		RuntimeQuietSeconds:            runtimeQuiet,
+-		StrategyEvaluationQuietSeconds: strategyEvaluationQuiet,
+-		LiveAccountSyncFreshnessSecs:   liveAccountSyncFreshness,
+-		PaperStartReadinessTimeoutSecs: paperReadinessTimeout,
++		TradeTickFreshnessSeconds:      IntPtrFromEnv("TRADE_TICK_FRESHNESS_SECONDS"),
++		OrderBookFreshnessSeconds:      IntPtrFromEnv("ORDER_BOOK_FRESHNESS_SECONDS"),
++		SignalBarFreshnessSeconds:      IntPtrFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS"),
++		RuntimeQuietSeconds:            IntPtrFromEnv("RUNTIME_QUIET_SECONDS"),
++		StrategyEvaluationQuietSeconds: IntPtrFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS"),
++		LiveAccountSyncFreshnessSecs:   IntPtrFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS"),
++		PaperStartReadinessTimeoutSecs: IntPtrFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS"),
+ 		TelegramEnabled:                boolFromEnv("TELEGRAM_ENABLED", false),
+ 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
+ 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
+ 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
+-		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", -1),
+-		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", -1),
+-		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", -1),
+-		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", -1),
++		WSHandshakeTimeoutSeconds:      IntPtrFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS"),
++		WSReadStaleTimeoutSeconds:      IntPtrFromEnv("WS_READ_STALE_TIMEOUT_SECONDS"),
++		WSPingIntervalSeconds:          IntPtrFromEnv("WS_PING_INTERVAL_SECONDS"),
++		WSPassiveCloseTimeoutSeconds:   IntPtrFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS"),
+ 		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", nil),
+ 		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", nil),
+-		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", -1),
+-		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", -1),
+-		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", -1),
+-		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", -1),
+-		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", -1),
+-		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", -1),
+-		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", -1),
+-		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", -1),
+-		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", -1),
++		RESTLimiterRPS:                 IntPtrFromEnv("REST_LIMITER_RPS"),
++		RESTLimiterBurst:               IntPtrFromEnv("REST_LIMITER_BURST"),
++		RESTBackoffSeconds:             IntPtrFromEnv("REST_BACKOFF_SECONDS"),
++		LiveMarketCacheTTLMinutes:      IntPtrFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES"),
++		TelegramHTTPTimeoutSeconds:     IntPtrFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS"),
++		BinanceRecvWindowMs:            IntPtrFromEnv("BINANCE_REST_RECV_WINDOW_MS"),
++		LiveSignalWarmWindowDays:       IntPtrFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS"),
++		LiveFastSignalWarmWindowDays:   IntPtrFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS"),
++		LiveMinuteWarmWindowDays:       IntPtrFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS"),
+ 	}
+ }
+ 
++func IntPtrFromEnv(key string) *int {
++	if value := os.Getenv(key); value != "" {
++		if parsed, err := strconv.Atoi(value); err == nil {
++			p := new(int)
++			*p = parsed
++			return p
++		}
++	}
++	return nil
++}
++
+ // Validate 校验配置项的合法性，启动前快速失败。
+ func (c Config) Validate() error {
+ 	switch strings.ToLower(strings.TrimSpace(c.LogLevel)) {
+diff --git a/internal/service/live_registry.go b/internal/service/live_registry.go
+index a6ce5d3..8a985ff 100644
+--- a/internal/service/live_registry.go
++++ b/internal/service/live_registry.go
+@@ -769,7 +769,11 @@ var (
+ 	binanceRESTBackoffDuration   = 60 * time.Second
+ )
+ 
+-func UpdateBinanceRESTLimits(rps, burst, backoffSec int) {
++func (p *Platform) UpdateBinanceRESTLimits() {
++	rps := p.runtimePolicy.RESTLimiterRPS
++	burst := p.runtimePolicy.RESTLimiterBurst
++	backoffSec := p.runtimePolicy.RESTBackoffSeconds
++
+ 	if rps > 0 {
+ 		binanceRESTRequestsPerSecond = rps
+ 	}
+diff --git a/internal/service/platform.go b/internal/service/platform.go
+index e1144d9..0329801 100644
+--- a/internal/service/platform.go
++++ b/internal/service/platform.go
+@@ -16,6 +16,7 @@ import (
+ 	"sync"
+ 	"time"
+ 
++	"github.com/wuyaocheng/bktrader/internal/config"
+ 	"github.com/wuyaocheng/bktrader/internal/domain"
+ 	"github.com/wuyaocheng/bktrader/internal/logging"
+ 	"github.com/wuyaocheng/bktrader/internal/store"
+@@ -161,16 +162,16 @@ func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {
+ }
+ 
+ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+-	if policy.TradeTickFreshnessSeconds >= 0 {
++	if policy.TradeTickFreshnessSeconds > 0 {
+ 		p.runtimePolicy.TradeTickFreshnessSeconds = policy.TradeTickFreshnessSeconds
+ 	}
+-	if policy.OrderBookFreshnessSeconds >= 0 {
++	if policy.OrderBookFreshnessSeconds > 0 {
+ 		p.runtimePolicy.OrderBookFreshnessSeconds = policy.OrderBookFreshnessSeconds
+ 	}
+-	if policy.SignalBarFreshnessSeconds >= 0 {
++	if policy.SignalBarFreshnessSeconds > 0 {
+ 		p.runtimePolicy.SignalBarFreshnessSeconds = policy.SignalBarFreshnessSeconds
+ 	}
+-	if policy.RuntimeQuietSeconds >= 0 {
++	if policy.RuntimeQuietSeconds > 0 {
+ 		p.runtimePolicy.RuntimeQuietSeconds = policy.RuntimeQuietSeconds
+ 	}
+ 	if policy.StrategyEvaluationQuietSeconds >= 0 {
+@@ -179,19 +180,19 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+ 	if policy.LiveAccountSyncFreshnessSecs >= 0 {
+ 		p.runtimePolicy.LiveAccountSyncFreshnessSecs = policy.LiveAccountSyncFreshnessSecs
+ 	}
+-	if policy.PaperStartReadinessTimeoutSecs >= 0 {
++	if policy.PaperStartReadinessTimeoutSecs > 0 {
+ 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
+ 	}
+-	if policy.WSHandshakeTimeoutSeconds >= 0 {
++	if policy.WSHandshakeTimeoutSeconds > 0 {
+ 		p.runtimePolicy.WSHandshakeTimeoutSeconds = policy.WSHandshakeTimeoutSeconds
+ 	}
+-	if policy.WSReadStaleTimeoutSeconds >= 0 {
++	if policy.WSReadStaleTimeoutSeconds > 0 {
+ 		p.runtimePolicy.WSReadStaleTimeoutSeconds = policy.WSReadStaleTimeoutSeconds
+ 	}
+-	if policy.WSPingIntervalSeconds >= 0 {
++	if policy.WSPingIntervalSeconds > 0 {
+ 		p.runtimePolicy.WSPingIntervalSeconds = policy.WSPingIntervalSeconds
+ 	}
+-	if policy.WSPassiveCloseTimeoutSeconds >= 0 {
++	if policy.WSPassiveCloseTimeoutSeconds > 0 {
+ 		p.runtimePolicy.WSPassiveCloseTimeoutSeconds = policy.WSPassiveCloseTimeoutSeconds
+ 	}
+ 	if len(policy.WSReconnectBackoffs) > 0 {
+@@ -200,31 +201,31 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+ 	if len(policy.WSReconnectRecoveryBackoffs) > 0 {
+ 		p.runtimePolicy.WSReconnectRecoveryBackoffs = policy.WSReconnectRecoveryBackoffs
+ 	}
+-	if policy.RESTLimiterRPS >= 0 {
++	if policy.RESTLimiterRPS > 0 {
+ 		p.runtimePolicy.RESTLimiterRPS = policy.RESTLimiterRPS
+ 	}
+-	if policy.RESTLimiterBurst >= 0 {
++	if policy.RESTLimiterBurst > 0 {
+ 		p.runtimePolicy.RESTLimiterBurst = policy.RESTLimiterBurst
+ 	}
+-	if policy.RESTBackoffSeconds >= 0 {
++	if policy.RESTBackoffSeconds > 0 {
+ 		p.runtimePolicy.RESTBackoffSeconds = policy.RESTBackoffSeconds
+ 	}
+-	if policy.LiveMarketCacheTTLMinutes >= 0 {
++	if policy.LiveMarketCacheTTLMinutes > 0 {
+ 		p.runtimePolicy.LiveMarketCacheTTLMinutes = policy.LiveMarketCacheTTLMinutes
+ 	}
+-	if policy.TelegramHTTPTimeoutSeconds >= 0 {
++	if policy.TelegramHTTPTimeoutSeconds > 0 {
+ 		p.runtimePolicy.TelegramHTTPTimeoutSeconds = policy.TelegramHTTPTimeoutSeconds
+ 	}
+-	if policy.BinanceRecvWindowMs >= 0 {
++	if policy.BinanceRecvWindowMs > 0 {
+ 		p.runtimePolicy.BinanceRecvWindowMs = policy.BinanceRecvWindowMs
+ 	}
+-	if policy.LiveSignalWarmWindowDays >= 0 {
++	if policy.LiveSignalWarmWindowDays > 0 {
+ 		p.runtimePolicy.LiveSignalWarmWindowDays = policy.LiveSignalWarmWindowDays
+ 	}
+-	if policy.LiveFastSignalWarmWindowDays >= 0 {
++	if policy.LiveFastSignalWarmWindowDays > 0 {
+ 		p.runtimePolicy.LiveFastSignalWarmWindowDays = policy.LiveFastSignalWarmWindowDays
+ 	}
+-	if policy.LiveMinuteWarmWindowDays >= 0 {
++	if policy.LiveMinuteWarmWindowDays > 0 {
+ 		p.runtimePolicy.LiveMinuteWarmWindowDays = policy.LiveMinuteWarmWindowDays
+ 	}
+ 	if !policy.UpdatedAt.IsZero() {
+@@ -241,6 +242,67 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
+ 	)
+ }
+ 
++// ApplyRuntimeConfigOverrides 应用来自 Config (环境变量) 的覆盖。
++// 使用指针判断是否设置，并根据字段业务语义进行严格校验 (>0 vs >=0)。
++func (p *Platform) ApplyRuntimeConfigOverrides(cfg config.Config) {
++	// 辅助函数：仅当 source 非 nil 且 > 0 时应用
++	applyIfPositive := func(target *int, source *int, name string) {
++		if source != nil {
++			if *source > 0 {
++				*target = *source
++			} else {
++				p.logger("service.platform").Warn("invalid runtime config (must > 0), ignoring", "key", name, "value", *source)
++			}
++		}
++	}
++
++	// 辅助函数：仅当 source 非 nil 且 >= 0 时应用
++	applyIfNonNegative := func(target *int, source *int, name string) {
++		if source != nil {
++			if *source >= 0 {
++				*target = *source
++			} else {
++				p.logger("service.platform").Warn("invalid runtime config (must >= 0), ignoring", "key", name, "value", *source)
++			}
++		}
++	}
++
++	applyIfPositive(&p.runtimePolicy.TradeTickFreshnessSeconds, cfg.TradeTickFreshnessSeconds, "TRADE_TICK_FRESHNESS_SECONDS")
++	applyIfPositive(&p.runtimePolicy.OrderBookFreshnessSeconds, cfg.OrderBookFreshnessSeconds, "ORDER_BOOK_FRESHNESS_SECONDS")
++	applyIfPositive(&p.runtimePolicy.SignalBarFreshnessSeconds, cfg.SignalBarFreshnessSeconds, "SIGNAL_BAR_FRESHNESS_SECONDS")
++	applyIfPositive(&p.runtimePolicy.RuntimeQuietSeconds, cfg.RuntimeQuietSeconds, "RUNTIME_QUIET_SECONDS")
++
++	// 允许 0 的特殊字段
++	applyIfNonNegative(&p.runtimePolicy.StrategyEvaluationQuietSeconds, cfg.StrategyEvaluationQuietSeconds, "STRATEGY_EVALUATION_QUIET_SECONDS")
++	applyIfNonNegative(&p.runtimePolicy.LiveAccountSyncFreshnessSecs, cfg.LiveAccountSyncFreshnessSecs, "LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS")
++
++	applyIfPositive(&p.runtimePolicy.PaperStartReadinessTimeoutSecs, cfg.PaperStartReadinessTimeoutSecs, "PAPER_START_READINESS_TIMEOUT_SECONDS")
++	applyIfPositive(&p.runtimePolicy.WSHandshakeTimeoutSeconds, cfg.WSHandshakeTimeoutSeconds, "WS_HANDSHAKE_TIMEOUT_SECONDS")
++	applyIfPositive(&p.runtimePolicy.WSReadStaleTimeoutSeconds, cfg.WSReadStaleTimeoutSeconds, "WS_READ_STALE_TIMEOUT_SECONDS")
++	applyIfPositive(&p.runtimePolicy.WSPingIntervalSeconds, cfg.WSPingIntervalSeconds, "WS_PING_INTERVAL_SECONDS")
++	applyIfPositive(&p.runtimePolicy.WSPassiveCloseTimeoutSeconds, cfg.WSPassiveCloseTimeoutSeconds, "WS_PASSIVE_CLOSE_TIMEOUT_SECONDS")
++
++	if len(cfg.WSReconnectBackoffs) > 0 {
++		p.runtimePolicy.WSReconnectBackoffs = cfg.WSReconnectBackoffs
++	}
++	if len(cfg.WSReconnectRecoveryBackoffs) > 0 {
++		p.runtimePolicy.WSReconnectRecoveryBackoffs = cfg.WSReconnectRecoveryBackoffs
++	}
++
++	applyIfPositive(&p.runtimePolicy.RESTLimiterRPS, cfg.RESTLimiterRPS, "REST_LIMITER_RPS")
++	applyIfPositive(&p.runtimePolicy.RESTLimiterBurst, cfg.RESTLimiterBurst, "REST_LIMITER_BURST")
++	applyIfPositive(&p.runtimePolicy.RESTBackoffSeconds, cfg.RESTBackoffSeconds, "REST_BACKOFF_SECONDS")
++	applyIfPositive(&p.runtimePolicy.LiveMarketCacheTTLMinutes, cfg.LiveMarketCacheTTLMinutes, "LIVE_MARKET_CACHE_TTL_MINUTES")
++	applyIfPositive(&p.runtimePolicy.TelegramHTTPTimeoutSeconds, cfg.TelegramHTTPTimeoutSeconds, "TELEGRAM_HTTP_TIMEOUT_SECONDS")
++	applyIfPositive(&p.runtimePolicy.BinanceRecvWindowMs, cfg.BinanceRecvWindowMs, "BINANCE_REST_RECV_WINDOW_MS")
++	applyIfPositive(&p.runtimePolicy.LiveSignalWarmWindowDays, cfg.LiveSignalWarmWindowDays, "LIVE_SIGNAL_WARM_WINDOW_DAYS")
++	applyIfPositive(&p.runtimePolicy.LiveFastSignalWarmWindowDays, cfg.LiveFastSignalWarmWindowDays, "LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS")
++	applyIfPositive(&p.runtimePolicy.LiveMinuteWarmWindowDays, cfg.LiveMinuteWarmWindowDays, "LIVE_MINUTE_WARM_WINDOW_DAYS")
++
++	// 最终同步更新 limiter
++	p.UpdateBinanceRESTLimits()
++}
++
+ func (p *Platform) RuntimePolicy() RuntimePolicy {
+ 	return p.runtimePolicy
+ }
+diff --git a/internal/service/runtime_policy_validation_test.go b/internal/service/runtime_policy_validation_test.go
+new file mode 100644
+index 0000000..f7c3719
+--- /dev/null
++++ b/internal/service/runtime_policy_validation_test.go
+@@ -0,0 +1,127 @@
++package service
++
++import (
++	"os"
++	"testing"
++	"time"
++
++	"github.com/wuyaocheng/bktrader/internal/config"
++	"github.com/wuyaocheng/bktrader/internal/store/memory"
++)
++
++func TestApplyRuntimeConfigOverrides_ScenarioA_PartialOverride(t *testing.T) {
++	p := NewPlatform(memory.NewStore())
++	
++	// 1. 设置初始持久化策略
++	persisted := RuntimePolicy{
++		TradeTickFreshnessSeconds:      15,
++		StrategyEvaluationQuietSeconds: 60,
++		WSReadStaleTimeoutSeconds:      30,
++	}
++	p.runtimePolicy = persisted
++
++	// 2. 模拟环境变量：仅设置部分字段
++	val120 := 120
++	val0 := 0
++	cfg := config.Config{
++		TradeTickFreshnessSeconds:      &val120, // 覆盖
++		StrategyEvaluationQuietSeconds: &val0,   // 允许 0 覆盖
++		// WSReadStaleTimeoutSeconds 为 nil, 不应覆盖
++	}
++
++	p.ApplyRuntimeConfigOverrides(cfg)
++
++	if p.runtimePolicy.TradeTickFreshnessSeconds != 120 {
++		t.Errorf("expected TradeTickFreshnessSeconds to be overridden to 120, got %d", p.runtimePolicy.TradeTickFreshnessSeconds)
++	}
++	if p.runtimePolicy.StrategyEvaluationQuietSeconds != 0 {
++		t.Errorf("expected StrategyEvaluationQuietSeconds to be overridden to 0, got %d", p.runtimePolicy.StrategyEvaluationQuietSeconds)
++	}
++	if p.runtimePolicy.WSReadStaleTimeoutSeconds != 30 {
++		t.Errorf("expected WSReadStaleTimeoutSeconds to remain 30, got %d", p.runtimePolicy.WSReadStaleTimeoutSeconds)
++	}
++}
++
++func TestApplyRuntimeConfigOverrides_ScenarioB_InvalidValues(t *testing.T) {
++	p := NewPlatform(memory.NewStore())
++	initialTimeout := 60
++	p.runtimePolicy.WSReadStaleTimeoutSeconds = initialTimeout
++
++	// 1. 测试必须 > 0 的字段设为 0 (应被忽略并警告)
++	val0 := 0
++	cfg0 := config.Config{
++		WSReadStaleTimeoutSeconds: &val0,
++	}
++	p.ApplyRuntimeConfigOverrides(cfg0)
++	if p.runtimePolicy.WSReadStaleTimeoutSeconds != initialTimeout {
++		t.Errorf("expected WSReadStaleTimeoutSeconds to remain %d when overridden with 0, got %d", initialTimeout, p.runtimePolicy.WSReadStaleTimeoutSeconds)
++	}
++
++	// 2. 测试必须 > 0 的字段设为负数 (应被忽略)
++	valNeg := -100
++	cfgNeg := config.Config{
++		RESTLimiterRPS: &valNeg,
++	}
++	initialRPS := p.runtimePolicy.RESTLimiterRPS
++	p.ApplyRuntimeConfigOverrides(cfgNeg)
++	if p.runtimePolicy.RESTLimiterRPS != initialRPS {
++		t.Errorf("expected RESTLimiterRPS to remain %d when overridden with negative, got %d", initialRPS, p.runtimePolicy.RESTLimiterRPS)
++	}
++}
++
++func TestApplyRuntimeConfigOverrides_ScenarioC_LimiterReset(t *testing.T) {
++	p := NewPlatform(memory.NewStore())
++	
++	// 初始状态
++	p.runtimePolicy.RESTLimiterRPS = 30
++	p.UpdateBinanceRESTLimits()
++	
++	// 记录旧的 limiter 状态 (这里虽然无法直接访问内部 gate, 但可以通过逻辑间接验证或检查 UpdateBinanceRESTLimits 是否被调用)
++	// 我们主要验证 ApplyRuntimeConfigOverrides 是否最终调用了 UpdateBinanceRESTLimits
++	val100 := 100
++	cfg := config.Config{
++		RESTLimiterRPS: &val100,
++	}
++	p.ApplyRuntimeConfigOverrides(cfg)
++
++	if p.runtimePolicy.RESTLimiterRPS != 100 {
++		t.Errorf("expected RESTLimiterRPS to be 100, got %d", p.runtimePolicy.RESTLimiterRPS)
++	}
++}
++
++func TestRuntimePolicy_RoundTripPersistence(t *testing.T) {
++	s := memory.NewStore()
++	p := NewPlatform(s)
++	
++	newPolicy := RuntimePolicy{
++		TradeTickFreshnessSeconds:      99,
++		SignalBarFreshnessSeconds:      88,
++		StrategyEvaluationQuietSeconds: 0, // 显式 0
++		UpdatedAt:                      time.Now().UTC().Truncate(time.Second),
++	}
++	
++	// 1. 设置并应用
++	p.SetRuntimePolicy(newPolicy)
++}
++
++func TestConfig_IntPtrFromEnv(t *testing.T) {
++	os.Setenv("TEST_INT_PTR", "42")
++	defer os.Unsetenv("TEST_INT_PTR")
++	
++	ptr := config.IntPtrFromEnv("TEST_INT_PTR")
++	if ptr == nil || *ptr != 42 {
++		t.Errorf("expected 42, got %v", ptr)
++	}
++	
++	os.Setenv("TEST_INT_PTR_ZERO", "0")
++	defer os.Unsetenv("TEST_INT_PTR_ZERO")
++	ptrZero := config.IntPtrFromEnv("TEST_INT_PTR_ZERO")
++	if ptrZero == nil || *ptrZero != 0 {
++		t.Errorf("expected 0, got %v", ptrZero)
++	}
++	
++	ptrUnset := config.IntPtrFromEnv("UNSET_KEY")
++	if ptrUnset != nil {
++		t.Errorf("expected nil for unset key, got %v", ptrUnset)
++	}
++}
+diff --git a/tmp/20260417-session-protection-and-manual-close-plan.md b/tmp/20260417-session-protection-and-manual-close-plan.md
+deleted file mode 100644
+index 6b5740f..0000000
+--- a/tmp/20260417-session-protection-and-manual-close-plan.md
++++ /dev/null
+@@ -1,45 +0,0 @@
+-# Session 停用保护与手动平仓后端接口规划
+-
+-## 背景
+-用户反馈，当某个 `SignalRuntimeSession` 或 `LiveSession` 还在运行且带有关联此会话的未平仓头寸或活跃挂单时，如果被停用（Stop）或删除（Delete），会导致该头寸彻底失去被接管的机会并沦为“幽灵仓”。
+-为解决此问题，后端接口需要增加持仓拦截判断。同时，在此契机下一并增加明确的、便于前端操作的订单全生命周期接管接口（例如单独点击某持仓直接一键强平）。
+-
+-## 规划细节
+-
+-### 1. 生命周期接口的安全锁改造
+-我们将在会话删除和停用的主要入口挂载一个统一的前置预检函数，用于扫描并阻断破坏性的关闭动作。
+-
+-#### [NEW] internal/service/safety_checks.go (或在 `live.go` / `service.go` 中)
+-- **增加核心检验方法**: `HasActivePositionsOrOrders(accountID, strategyID string) bool`
+-  1. 向DB轮询 `ListPositions`: 找到 `Quantity > 0` 且归属当前 Account/Strategy的未平仓头寸。
+-  2. 向DB轮询 `ListOrders`: 找到状态处于 `NEW`/`PARTIALLY_FILLED`/`ACCEPTED` 且归属当前的订单。
+-
+-#### [MODIFY] internal/service/live.go
+-- **`StopLiveSession` 与 `DeleteLiveSession` 接口**： 
+-  在最初步增加上述预检逻辑。如果存在活跃订单，立即返回 `fmt.Errorf("存在活动中的订单或未平仓头寸，无法直接停用/删除")` 以阻断请求。
+-
+-#### [MODIFY] internal/service/signal_runtime_sessions.go
+-- **`StopSignalRuntimeSession` 与 `DeleteSignalRuntimeSession` 接口**： 
+-  因为 `SignalRuntime` 统带下属 LiveSessions，因此查出属于该 Runtime 的 `LiveSession` 对应的 Account + Strategy 并抛给 `HasActivePositionsOrOrders`，有挂载持仓同样退回阻断。
+-
+-> [!WARNING] 
+-> **硬退出后门支持 (Force Parameter)** 
+-> 在上述涉及到停用或删除的所有 HTTP 接口方法签名中提供对查询参数的检测。如果 HTTP 请求的 URL 中带有 `?force=true`，则完全跳过上述 `HasActivePositionsOrOrders` 拦截器。此改动兼容由于断网或其他脏数据导致的极端情况下管理员强行清理节点的需求。
+-
+----
+-
+-### 2. 订单管理与手动平仓管理接管
+-后端平台当前原生支持通过 `POST /api/v1/orders` 手动下发市价单以完成平仓能力，但这极大要求前端完全拼凑好反身逻辑。此时我们将新增单独一键冲销平仓的语义化接管 API。
+-
+-#### [MODIFY] internal/service/order.go
+-- **新增平仓业务方法**: `ClosePosition(positionID string) (domain.Order, error)`
+-  根据 Position ID 获取仓位后，向内部引擎（`p.CreateOrder`）反身提交一笔：方向相反、数量等同 `pos.Quantity`、`Type: MARKET`、带有 `reduceOnly: true` (只减仓) 属性的全新订单。
+-  此逻辑会让这笔接管单极其自然顺滑地汇聚到底层执行引擎与交易所，引发真正的清算且账册分毫不差。
+-
+-#### [MODIFY] internal/http/accounts.go (或 orders/positions路由)
+-- 暴露一条新的前端友好的平仓提交点：**`POST /api/v1/positions/{id}/close`**，这会调用上述 `ClosePosition` 并将创建的平仓单结构体丢还给前端。
+-
+-#### [MODIFY] internal/http/orders.go
+-- 新增查询指定订单明细路由：**`GET /api/v1/orders/{id}`**，方便前端页面或用户手动追踪刚刚发出的强平单或任何挂单。
+-
+-这套体系能够让系统的容错性变强，在操作层规避用户断头操作。随时可以开展编写任务。
+
+From e472466f24fb9db20c4aa2199b7ff5dfbc932ac3 Mon Sep 17 00:00:00 2001
+From: folgercn <>
+Date: Thu, 23 Apr 2026 22:40:20 +0800
+Subject: [PATCH 5/5] chore: fix gofmt issues identified by CI
+
+---
+ internal/config/config.go                     | 30 +++++++++----------
+ .../service/runtime_policy_validation_test.go | 16 +++++-----
+ 2 files changed, 23 insertions(+), 23 deletions(-)
+
+diff --git a/internal/config/config.go b/internal/config/config.go
+index a673faa..9d7c779 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -42,21 +42,21 @@ type Config struct {
+ 	TelegramBotToken               string // Telegram Bot Token
+ 	TelegramChatID                 string // Telegram Chat ID
+ 	TelegramSendLevels             string // Telegram 默认发送等级（逗号分隔）
+-	WSHandshakeTimeoutSeconds      *int    // WebSocket 握手超时
+-	WSReadStaleTimeoutSeconds      *int    // WebSocket 读取陈旧超时
+-	WSPingIntervalSeconds          *int    // WebSocket Ping 间隔
+-	WSPassiveCloseTimeoutSeconds   *int    // WebSocket 被动关闭超时
+-	WSReconnectBackoffs            []int   // WebSocket 普通重连退避序列
+-	WSReconnectRecoveryBackoffs    []int   // WebSocket 恢复模式重连退避序列
+-	RESTLimiterRPS                 *int    // Binance REST 每秒请求数限制
+-	RESTLimiterBurst               *int    // Binance REST 突发限制
+-	RESTBackoffSeconds             *int    // Binance REST 熔断时长
+-	LiveMarketCacheTTLMinutes      *int    // 市场快照缓存有效期
+-	TelegramHTTPTimeoutSeconds     *int    // Telegram HTTP 请求超时
+-	BinanceRecvWindowMs            *int    // Binance 请求 RecvWindow
+-	LiveSignalWarmWindowDays       *int    // 实盘信号预热窗口（天）
+-	LiveFastSignalWarmWindowDays   *int    // 实盘快速信号预热窗口（天）
+-	LiveMinuteWarmWindowDays       *int    // 实盘分钟数据预热窗口（天）
++	WSHandshakeTimeoutSeconds      *int   // WebSocket 握手超时
++	WSReadStaleTimeoutSeconds      *int   // WebSocket 读取陈旧超时
++	WSPingIntervalSeconds          *int   // WebSocket Ping 间隔
++	WSPassiveCloseTimeoutSeconds   *int   // WebSocket 被动关闭超时
++	WSReconnectBackoffs            []int  // WebSocket 普通重连退避序列
++	WSReconnectRecoveryBackoffs    []int  // WebSocket 恢复模式重连退避序列
++	RESTLimiterRPS                 *int   // Binance REST 每秒请求数限制
++	RESTLimiterBurst               *int   // Binance REST 突发限制
++	RESTBackoffSeconds             *int   // Binance REST 熔断时长
++	LiveMarketCacheTTLMinutes      *int   // 市场快照缓存有效期
++	TelegramHTTPTimeoutSeconds     *int   // Telegram HTTP 请求超时
++	BinanceRecvWindowMs            *int   // Binance 请求 RecvWindow
++	LiveSignalWarmWindowDays       *int   // 实盘信号预热窗口（天）
++	LiveFastSignalWarmWindowDays   *int   // 实盘快速信号预热窗口（天）
++	LiveMinuteWarmWindowDays       *int   // 实盘分钟数据预热窗口（天）
+ }
+ 
+ // Load 从环境变量加载配置，未设置的使用默认值。
+diff --git a/internal/service/runtime_policy_validation_test.go b/internal/service/runtime_policy_validation_test.go
+index f7c3719..abc4163 100644
+--- a/internal/service/runtime_policy_validation_test.go
++++ b/internal/service/runtime_policy_validation_test.go
+@@ -11,7 +11,7 @@ import (
+ 
+ func TestApplyRuntimeConfigOverrides_ScenarioA_PartialOverride(t *testing.T) {
+ 	p := NewPlatform(memory.NewStore())
+-	
++
+ 	// 1. 设置初始持久化策略
+ 	persisted := RuntimePolicy{
+ 		TradeTickFreshnessSeconds:      15,
+@@ -71,11 +71,11 @@ func TestApplyRuntimeConfigOverrides_ScenarioB_InvalidValues(t *testing.T) {
+ 
+ func TestApplyRuntimeConfigOverrides_ScenarioC_LimiterReset(t *testing.T) {
+ 	p := NewPlatform(memory.NewStore())
+-	
++
+ 	// 初始状态
+ 	p.runtimePolicy.RESTLimiterRPS = 30
+ 	p.UpdateBinanceRESTLimits()
+-	
++
+ 	// 记录旧的 limiter 状态 (这里虽然无法直接访问内部 gate, 但可以通过逻辑间接验证或检查 UpdateBinanceRESTLimits 是否被调用)
+ 	// 我们主要验证 ApplyRuntimeConfigOverrides 是否最终调用了 UpdateBinanceRESTLimits
+ 	val100 := 100
+@@ -92,14 +92,14 @@ func TestApplyRuntimeConfigOverrides_ScenarioC_LimiterReset(t *testing.T) {
+ func TestRuntimePolicy_RoundTripPersistence(t *testing.T) {
+ 	s := memory.NewStore()
+ 	p := NewPlatform(s)
+-	
++
+ 	newPolicy := RuntimePolicy{
+ 		TradeTickFreshnessSeconds:      99,
+ 		SignalBarFreshnessSeconds:      88,
+ 		StrategyEvaluationQuietSeconds: 0, // 显式 0
+ 		UpdatedAt:                      time.Now().UTC().Truncate(time.Second),
+ 	}
+-	
++
+ 	// 1. 设置并应用
+ 	p.SetRuntimePolicy(newPolicy)
+ }
+@@ -107,19 +107,19 @@ func TestRuntimePolicy_RoundTripPersistence(t *testing.T) {
+ func TestConfig_IntPtrFromEnv(t *testing.T) {
+ 	os.Setenv("TEST_INT_PTR", "42")
+ 	defer os.Unsetenv("TEST_INT_PTR")
+-	
++
+ 	ptr := config.IntPtrFromEnv("TEST_INT_PTR")
+ 	if ptr == nil || *ptr != 42 {
+ 		t.Errorf("expected 42, got %v", ptr)
+ 	}
+-	
++
+ 	os.Setenv("TEST_INT_PTR_ZERO", "0")
+ 	defer os.Unsetenv("TEST_INT_PTR_ZERO")
+ 	ptrZero := config.IntPtrFromEnv("TEST_INT_PTR_ZERO")
+ 	if ptrZero == nil || *ptrZero != 0 {
+ 		t.Errorf("expected 0, got %v", ptrZero)
+ 	}
+-	
++
+ 	ptrUnset := config.IntPtrFromEnv("UNSET_KEY")
+ 	if ptrUnset != nil {
+ 		t.Errorf("expected nil for unset key, got %v", ptrUnset)

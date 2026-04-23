@@ -33,7 +33,6 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	}
 
 	platform := service.NewPlatform(repository)
-	platform.ApplyRuntimeConfigOverrides(cfg)
 	platform.SetTickInterval(cfg.PaperTickInterval)
 	platform.SetBacktestDataDirs(cfg.MinuteDataDir, cfg.TickDataDir)
 	platform.SetTelegramConfig(domain.TelegramConfig{

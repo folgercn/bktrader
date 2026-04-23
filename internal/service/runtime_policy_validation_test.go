@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
+	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
 
@@ -174,5 +175,79 @@ func TestConfig_IntPtrFromEnv(t *testing.T) {
 	ptrUnset := config.IntPtrFromEnv("UNSET_KEY")
 	if ptrUnset != nil {
 		t.Errorf("expected nil for unset key, got %v", ptrUnset)
+	}
+}
+
+func TestApplyRuntimeConfigOverrides_LimiterSideEffect(t *testing.T) {
+	p := NewPlatform(memory.NewStore())
+
+	// 初始状态
+	p.runtimePolicy.RESTLimiterRPS = 30
+	p.UpdateBinanceRESTLimits()
+
+	// 1. 模拟非 REST 字段变更
+	val60 := 60
+	cfg := config.Config{
+		TradeTickFreshnessSeconds: &val60,
+	}
+
+	// 验证 UpdateBinanceRESTLimits 是否被调用可以通过检查其副作用（重置 gates）
+	// 这里通过模拟 gates 已有数据来验证
+	binanceRESTLimiterState.mu.Lock()
+	binanceRESTLimiterState.gates["test"] = &binanceRESTGate{}
+	binanceRESTLimiterState.mu.Unlock()
+
+	p.ApplyRuntimeConfigOverrides(cfg)
+
+	binanceRESTLimiterState.mu.Lock()
+	_, exists := binanceRESTLimiterState.gates["test"]
+	binanceRESTLimiterState.mu.Unlock()
+
+	if !exists {
+		t.Errorf("expected limiter gates NOT to be reset when non-REST config changes")
+	}
+
+	// 2. 模拟 REST 字段变更
+	val100 := 100
+	cfgRest := config.Config{
+		RESTLimiterRPS: &val100,
+	}
+	p.ApplyRuntimeConfigOverrides(cfgRest)
+
+	binanceRESTLimiterState.mu.Lock()
+	_, existsAfter := binanceRESTLimiterState.gates["test"]
+	binanceRESTLimiterState.mu.Unlock()
+
+	if existsAfter {
+		t.Errorf("expected limiter gates to be reset when REST config changes")
+	}
+}
+
+func TestRuntimePolicy_FullSequence(t *testing.T) {
+	s := memory.NewStore()
+	p := NewPlatform(s)
+
+	// 1. Default (NewPlatform 已设置)
+	if p.RuntimePolicy().TradeTickFreshnessSeconds != 15 {
+		t.Errorf("expected default 15, got %d", p.RuntimePolicy().TradeTickFreshnessSeconds)
+	}
+
+	// 2. Load DB (模拟 DB 中存了 20)
+	_, _ = s.UpsertRuntimePolicy(domain.RuntimePolicy{
+		TradeTickFreshnessSeconds: 20,
+	})
+	_ = p.LoadPersistedRuntimePolicy()
+	if p.RuntimePolicy().TradeTickFreshnessSeconds != 20 {
+		t.Errorf("expected DB value 20, got %d", p.RuntimePolicy().TradeTickFreshnessSeconds)
+	}
+
+	// 3. Env Override (模拟环境变量设置为 25)
+	val25 := 25
+	cfg := config.Config{
+		TradeTickFreshnessSeconds: &val25,
+	}
+	p.ApplyRuntimeConfigOverrides(cfg)
+	if p.RuntimePolicy().TradeTickFreshnessSeconds != 25 {
+		t.Errorf("expected Env override 25, got %d", p.RuntimePolicy().TradeTickFreshnessSeconds)
 	}
 }

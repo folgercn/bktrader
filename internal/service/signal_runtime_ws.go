@@ -450,8 +450,12 @@ func (p *Platform) runExchangeWebsocketLoop(
 	reconnectStartedAt := parseUnixMillisTime(session.State["reconnectAttemptStartedAtMs"])
 	reconnecting := !reconnectStartedAt.IsZero()
 
+	handshakeTimeout := p.runtimePolicy.WSHandshakeTimeoutSeconds
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = 10
+	}
 	dialer := websocket.Dialer{
-		HandshakeTimeout: time.Duration(p.runtimePolicy.WSHandshakeTimeoutSeconds) * time.Second,
+		HandshakeTimeout: time.Duration(handshakeTimeout) * time.Second,
 		Proxy:            http.ProxyFromEnvironment,
 	}
 	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
@@ -591,7 +595,11 @@ func (p *Platform) runExchangeWebsocketLoop(
 	for {
 		select {
 		case <-ctx.Done():
-			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(time.Duration(p.runtimePolicy.WSPassiveCloseTimeoutSeconds)*time.Second))
+			passiveTimeout := p.runtimePolicy.WSPassiveCloseTimeoutSeconds
+			if passiveTimeout <= 0 {
+				passiveTimeout = 2
+			}
+			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(time.Duration(passiveTimeout)*time.Second))
 			return connected, nil
 		case err := <-done:
 			logger.Warn("signal runtime websocket disconnected",

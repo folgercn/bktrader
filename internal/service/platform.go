@@ -196,10 +196,10 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 		p.runtimePolicy.WSPassiveCloseTimeoutSeconds = policy.WSPassiveCloseTimeoutSeconds
 	}
 	if len(policy.WSReconnectBackoffs) > 0 {
-		p.runtimePolicy.WSReconnectBackoffs = policy.WSReconnectBackoffs
+		p.runtimePolicy.WSReconnectBackoffs = append([]int(nil), policy.WSReconnectBackoffs...)
 	}
 	if len(policy.WSReconnectRecoveryBackoffs) > 0 {
-		p.runtimePolicy.WSReconnectRecoveryBackoffs = policy.WSReconnectRecoveryBackoffs
+		p.runtimePolicy.WSReconnectRecoveryBackoffs = append([]int(nil), policy.WSReconnectRecoveryBackoffs...)
 	}
 	if policy.RESTLimiterRPS > 0 {
 		p.runtimePolicy.RESTLimiterRPS = policy.RESTLimiterRPS
@@ -242,13 +242,16 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	)
 }
 
-// ApplyRuntimeConfigOverrides 应用来自 Config (环境变量) 的覆盖。
-// 使用指针判断是否设置，并根据字段业务语义进行严格校验 (>0 vs >=0)。
 func (p *Platform) ApplyRuntimeConfigOverrides(cfg config.Config) {
+	restLimitsChanged := false
+
 	// 辅助函数：仅当 source 非 nil 且 > 0 时应用
-	applyIfPositive := func(target *int, source *int, name string) {
+	applyIfPositive := func(target *int, source *int, name string, isRest bool) {
 		if source != nil {
 			if *source > 0 {
+				if *target != *source && isRest {
+					restLimitsChanged = true
+				}
 				*target = *source
 			} else {
 				p.logger("service.platform").Warn("invalid runtime config (must > 0), ignoring", "key", name, "value", *source)
@@ -267,40 +270,43 @@ func (p *Platform) ApplyRuntimeConfigOverrides(cfg config.Config) {
 		}
 	}
 
-	applyIfPositive(&p.runtimePolicy.TradeTickFreshnessSeconds, cfg.TradeTickFreshnessSeconds, "TRADE_TICK_FRESHNESS_SECONDS")
-	applyIfPositive(&p.runtimePolicy.OrderBookFreshnessSeconds, cfg.OrderBookFreshnessSeconds, "ORDER_BOOK_FRESHNESS_SECONDS")
-	applyIfPositive(&p.runtimePolicy.SignalBarFreshnessSeconds, cfg.SignalBarFreshnessSeconds, "SIGNAL_BAR_FRESHNESS_SECONDS")
-	applyIfPositive(&p.runtimePolicy.RuntimeQuietSeconds, cfg.RuntimeQuietSeconds, "RUNTIME_QUIET_SECONDS")
+	applyIfPositive(&p.runtimePolicy.TradeTickFreshnessSeconds, cfg.TradeTickFreshnessSeconds, "TRADE_TICK_FRESHNESS_SECONDS", false)
+	applyIfPositive(&p.runtimePolicy.OrderBookFreshnessSeconds, cfg.OrderBookFreshnessSeconds, "ORDER_BOOK_FRESHNESS_SECONDS", false)
+	applyIfPositive(&p.runtimePolicy.SignalBarFreshnessSeconds, cfg.SignalBarFreshnessSeconds, "SIGNAL_BAR_FRESHNESS_SECONDS", false)
+	applyIfPositive(&p.runtimePolicy.RuntimeQuietSeconds, cfg.RuntimeQuietSeconds, "RUNTIME_QUIET_SECONDS", false)
 
 	// 允许 0 的特殊字段
 	applyIfNonNegative(&p.runtimePolicy.StrategyEvaluationQuietSeconds, cfg.StrategyEvaluationQuietSeconds, "STRATEGY_EVALUATION_QUIET_SECONDS")
 	applyIfNonNegative(&p.runtimePolicy.LiveAccountSyncFreshnessSecs, cfg.LiveAccountSyncFreshnessSecs, "LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS")
 
-	applyIfPositive(&p.runtimePolicy.PaperStartReadinessTimeoutSecs, cfg.PaperStartReadinessTimeoutSecs, "PAPER_START_READINESS_TIMEOUT_SECONDS")
-	applyIfPositive(&p.runtimePolicy.WSHandshakeTimeoutSeconds, cfg.WSHandshakeTimeoutSeconds, "WS_HANDSHAKE_TIMEOUT_SECONDS")
-	applyIfPositive(&p.runtimePolicy.WSReadStaleTimeoutSeconds, cfg.WSReadStaleTimeoutSeconds, "WS_READ_STALE_TIMEOUT_SECONDS")
-	applyIfPositive(&p.runtimePolicy.WSPingIntervalSeconds, cfg.WSPingIntervalSeconds, "WS_PING_INTERVAL_SECONDS")
-	applyIfPositive(&p.runtimePolicy.WSPassiveCloseTimeoutSeconds, cfg.WSPassiveCloseTimeoutSeconds, "WS_PASSIVE_CLOSE_TIMEOUT_SECONDS")
+	applyIfPositive(&p.runtimePolicy.PaperStartReadinessTimeoutSecs, cfg.PaperStartReadinessTimeoutSecs, "PAPER_START_READINESS_TIMEOUT_SECONDS", false)
+	applyIfPositive(&p.runtimePolicy.WSHandshakeTimeoutSeconds, cfg.WSHandshakeTimeoutSeconds, "WS_HANDSHAKE_TIMEOUT_SECONDS", false)
+	applyIfPositive(&p.runtimePolicy.WSReadStaleTimeoutSeconds, cfg.WSReadStaleTimeoutSeconds, "WS_READ_STALE_TIMEOUT_SECONDS", false)
+	applyIfPositive(&p.runtimePolicy.WSPingIntervalSeconds, cfg.WSPingIntervalSeconds, "WS_PING_INTERVAL_SECONDS", false)
+	applyIfPositive(&p.runtimePolicy.WSPassiveCloseTimeoutSeconds, cfg.WSPassiveCloseTimeoutSeconds, "WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", false)
 
 	if len(cfg.WSReconnectBackoffs) > 0 {
-		p.runtimePolicy.WSReconnectBackoffs = cfg.WSReconnectBackoffs
+		p.runtimePolicy.WSReconnectBackoffs = append([]int(nil), cfg.WSReconnectBackoffs...)
 	}
 	if len(cfg.WSReconnectRecoveryBackoffs) > 0 {
-		p.runtimePolicy.WSReconnectRecoveryBackoffs = cfg.WSReconnectRecoveryBackoffs
+		p.runtimePolicy.WSReconnectRecoveryBackoffs = append([]int(nil), cfg.WSReconnectRecoveryBackoffs...)
 	}
 
-	applyIfPositive(&p.runtimePolicy.RESTLimiterRPS, cfg.RESTLimiterRPS, "REST_LIMITER_RPS")
-	applyIfPositive(&p.runtimePolicy.RESTLimiterBurst, cfg.RESTLimiterBurst, "REST_LIMITER_BURST")
-	applyIfPositive(&p.runtimePolicy.RESTBackoffSeconds, cfg.RESTBackoffSeconds, "REST_BACKOFF_SECONDS")
-	applyIfPositive(&p.runtimePolicy.LiveMarketCacheTTLMinutes, cfg.LiveMarketCacheTTLMinutes, "LIVE_MARKET_CACHE_TTL_MINUTES")
-	applyIfPositive(&p.runtimePolicy.TelegramHTTPTimeoutSeconds, cfg.TelegramHTTPTimeoutSeconds, "TELEGRAM_HTTP_TIMEOUT_SECONDS")
-	applyIfPositive(&p.runtimePolicy.BinanceRecvWindowMs, cfg.BinanceRecvWindowMs, "BINANCE_REST_RECV_WINDOW_MS")
-	applyIfPositive(&p.runtimePolicy.LiveSignalWarmWindowDays, cfg.LiveSignalWarmWindowDays, "LIVE_SIGNAL_WARM_WINDOW_DAYS")
-	applyIfPositive(&p.runtimePolicy.LiveFastSignalWarmWindowDays, cfg.LiveFastSignalWarmWindowDays, "LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS")
-	applyIfPositive(&p.runtimePolicy.LiveMinuteWarmWindowDays, cfg.LiveMinuteWarmWindowDays, "LIVE_MINUTE_WARM_WINDOW_DAYS")
+	applyIfPositive(&p.runtimePolicy.RESTLimiterRPS, cfg.RESTLimiterRPS, "REST_LIMITER_RPS", true)
+	applyIfPositive(&p.runtimePolicy.RESTLimiterBurst, cfg.RESTLimiterBurst, "REST_LIMITER_BURST", true)
+	applyIfPositive(&p.runtimePolicy.RESTBackoffSeconds, cfg.RESTBackoffSeconds, "REST_BACKOFF_SECONDS", true)
 
-	// 最终同步更新 limiter
-	p.UpdateBinanceRESTLimits()
+	applyIfPositive(&p.runtimePolicy.LiveMarketCacheTTLMinutes, cfg.LiveMarketCacheTTLMinutes, "LIVE_MARKET_CACHE_TTL_MINUTES", false)
+	applyIfPositive(&p.runtimePolicy.TelegramHTTPTimeoutSeconds, cfg.TelegramHTTPTimeoutSeconds, "TELEGRAM_HTTP_TIMEOUT_SECONDS", false)
+	applyIfPositive(&p.runtimePolicy.BinanceRecvWindowMs, cfg.BinanceRecvWindowMs, "BINANCE_REST_RECV_WINDOW_MS", false)
+	applyIfPositive(&p.runtimePolicy.LiveSignalWarmWindowDays, cfg.LiveSignalWarmWindowDays, "LIVE_SIGNAL_WARM_WINDOW_DAYS", false)
+	applyIfPositive(&p.runtimePolicy.LiveFastSignalWarmWindowDays, cfg.LiveFastSignalWarmWindowDays, "LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", false)
+	applyIfPositive(&p.runtimePolicy.LiveMinuteWarmWindowDays, cfg.LiveMinuteWarmWindowDays, "LIVE_MINUTE_WARM_WINDOW_DAYS", false)
+
+	// 最终同步更新 limiter (仅当 REST 相关参数确实变化时)
+	if restLimitsChanged {
+		p.UpdateBinanceRESTLimits()
+	}
 }
 
 func (p *Platform) RuntimePolicy() RuntimePolicy {

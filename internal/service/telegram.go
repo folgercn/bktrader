@@ -76,7 +76,11 @@ func (p *Platform) sendTelegramMessage(text string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: time.Duration(p.runtimePolicy.TelegramHTTPTimeoutSeconds) * time.Second}
+	timeoutSec := p.runtimePolicy.TelegramHTTPTimeoutSeconds
+	if timeoutSec <= 0 {
+		timeoutSec = 8
+	}
+	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
