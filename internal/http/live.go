@@ -2,8 +2,10 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/service"
@@ -530,12 +532,67 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		sessionID := parts[0]
+		if len(parts) == 4 && parts[1] == "orders" && parts[3] == "verifications" {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			orderID := parts[2]
+			var payload struct {
+				Notes string `json:"notes"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			// 获取订单详情以补全核验记录所需信息
+			order, err := platform.GetOrder(orderID)
+			if err != nil {
+				writeError(w, http.StatusNotFound, "order not found: "+err.Error())
+				return
+			}
+
+			// 获取会话以补全 StrategyID
+			session, err := platform.GetLiveSession(sessionID)
+			if err != nil {
+				writeError(w, http.StatusNotFound, "live session not found: "+err.Error())
+				return
+			}
+
+			// 创建核验记录
+			verification := domain.OrderCloseVerification{
+				ID:                   fmt.Sprintf("manual-%d", time.Now().UnixNano()),
+				LiveSessionID:        sessionID,
+				OrderID:              orderID,
+				AccountID:            order.AccountID,
+				StrategyID:           session.StrategyID,
+				Symbol:               order.Symbol,
+				VerifiedClosed:       true,
+				RemainingPositionQty: 0,
+				VerificationSource:   "manual-review",
+				EventTime:            time.Now().UTC(),
+				RecordedAt:           time.Now().UTC(),
+				Metadata: map[string]any{
+					"notes": payload.Notes,
+				},
+			}
+
+			if _, err := platform.CreateOrderCloseVerification(verification); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+
+			writeJSON(w, http.StatusCreated, verification)
+			return
+		}
+
 		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "live session route not found")
 			return
 		}
 
-		sessionID := parts[0]
 		action := parts[1]
 		switch action {
 		case "start":

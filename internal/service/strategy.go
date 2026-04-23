@@ -289,7 +289,9 @@ func (p *Platform) ListStrategySignalBindings(strategyID string) ([]domain.Accou
 	return items, nil
 }
 
-// --- 账户管理服务方法 ---
+func (p *Platform) GetLiveSession(sessionID string) (domain.LiveSession, error) {
+	return p.store.GetLiveSession(sessionID)
+}
 
 // ListAccounts 获取所有账户列表。
 func (p *Platform) ListAccounts() ([]domain.Account, error) {
