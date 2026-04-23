@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -13,24 +12,7 @@ import (
 const (
 	liveSettlementSyncErrorKey    = "immediateFillSyncError"
 	liveSettlementSyncRequiredKey = "immediateFillSyncRequired"
-	orderQuantityTolerance        = 1e-9
 )
-
-func orderQuantityEqual(left, right float64) bool {
-	return math.Abs(left-right) <= orderQuantityTolerance
-}
-
-func orderQuantityExceeds(left, right float64) bool {
-	return left-right > orderQuantityTolerance
-}
-
-func orderQuantityBelow(left, right float64) bool {
-	return right-left > orderQuantityTolerance
-}
-
-func orderQuantityPositive(value float64) bool {
-	return value > orderQuantityTolerance
-}
 
 // --- 订单管理服务方法 ---
 
@@ -290,7 +272,7 @@ func (p *Platform) validateReduceOnlyOrder(account domain.Account, order domain.
 	if order.Quantity <= 0 {
 		return fmt.Errorf("reduce-only order quantity must be positive for %s", symbol)
 	}
-	if orderQuantityExceeds(order.Quantity, position.Quantity) {
+	if tradingQuantityExceeds(order.Quantity, position.Quantity) {
 		return fmt.Errorf("reduce-only order quantity %.12f exceeds open position quantity %.12f for %s", order.Quantity, position.Quantity, symbol)
 	}
 	return nil
@@ -639,7 +621,7 @@ func liveOrderFillSettlementComplete(order domain.Order) bool {
 	if order.Quantity <= 0 {
 		return false
 	}
-	return !orderQuantityBelow(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity)
+	return !tradingQuantityBelow(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity)
 }
 
 func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.Order, error) {
@@ -926,10 +908,10 @@ func buildTerminalFilledFallbackReport(order domain.Order, syncResult LiveOrderS
 	}
 	alreadyFilledQty := parseFloatValue(order.Metadata["filledQuantity"])
 	fallbackQty := totalFilledQty - alreadyFilledQty
-	if order.Quantity > 0 && orderQuantityExceeds(fallbackQty, order.Quantity-alreadyFilledQty) {
+	if order.Quantity > 0 && tradingQuantityExceeds(fallbackQty, order.Quantity-alreadyFilledQty) {
 		fallbackQty = order.Quantity - alreadyFilledQty
 	}
-	if !orderQuantityPositive(fallbackQty) {
+	if !tradingQuantityPositive(fallbackQty) {
 		return LiveFillReport{}, false
 	}
 	price := firstPositive(
@@ -1011,7 +993,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	}
 	order.Metadata["filledQuantity"] = filledQuantity
 	remainingQuantity := order.Quantity - filledQuantity
-	if remainingQuantity < 0 && !orderQuantityExceeds(-remainingQuantity, 0) {
+	if remainingQuantity < 0 && !tradingQuantityExceeds(-remainingQuantity, 0) {
 		remainingQuantity = 0
 	}
 	if remainingQuantity < 0 {
@@ -1019,7 +1001,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	}
 	order.Metadata["remainingQuantity"] = remainingQuantity
 
-	orderCompletelyFilled := !orderQuantityBelow(filledQuantity, order.Quantity)
+	orderCompletelyFilled := !tradingQuantityBelow(filledQuantity, order.Quantity)
 	if orderCompletelyFilled {
 		order.Status = "FILLED"
 		delete(order.Metadata, liveSettlementSyncRequiredKey)
@@ -1133,23 +1115,23 @@ func buildFillDedupKey(fill domain.Fill) string {
 }
 
 func limitExecutionFillsToRemainingQuantity(fills []domain.Fill, remainingQuantity float64) []domain.Fill {
-	if len(fills) == 0 || !orderQuantityPositive(remainingQuantity) {
+	if len(fills) == 0 || !tradingQuantityPositive(remainingQuantity) {
 		return nil
 	}
 	limited := make([]domain.Fill, 0, len(fills))
 	remaining := remainingQuantity
 	for _, fill := range fills {
-		if !orderQuantityPositive(fill.Quantity) || !orderQuantityPositive(remaining) {
+		if !tradingQuantityPositive(fill.Quantity) || !tradingQuantityPositive(remaining) {
 			continue
 		}
-		if orderQuantityExceeds(fill.Quantity, remaining) {
+		if tradingQuantityExceeds(fill.Quantity, remaining) {
 			ratio := remaining / fill.Quantity
 			fill.Quantity = remaining
 			fill.Fee *= ratio
 		}
 		limited = append(limited, fill)
 		remaining -= fill.Quantity
-		if remaining < 0 && !orderQuantityExceeds(-remaining, 0) {
+		if remaining < 0 && !tradingQuantityExceeds(-remaining, 0) {
 			remaining = 0
 		}
 	}
@@ -1250,7 +1232,7 @@ func (p *Platform) ListFills() ([]domain.Fill, error) {
 func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order, executionPrice float64) error {
 	if boolValue(order.Metadata["reconcileRecovered"]) {
 		snapshotQty := liveSyncSnapshotPositionAmounts(account)[NormalizeSymbol(order.Symbol)]
-		if snapshotQty <= 1e-9 {
+		if !tradingQuantityPositive(snapshotQty) {
 			p.logger("service.order",
 				"account_id", account.ID,
 				"order_id", order.ID,
@@ -1296,7 +1278,7 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 	}
 
 	// 反方向 → 部分平仓
-	if orderQuantityBelow(order.Quantity, position.Quantity) {
+	if tradingQuantityBelow(order.Quantity, position.Quantity) {
 		position.Quantity = position.Quantity - order.Quantity
 		position.MarkPrice = executionPrice
 		_, err := p.store.SavePosition(position)
@@ -1304,7 +1286,7 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 	}
 
 	// 反方向 → 全部平仓
-	if orderQuantityEqual(order.Quantity, position.Quantity) {
+	if tradingQuantityEqual(order.Quantity, position.Quantity) {
 		err := p.store.DeletePosition(position.ID)
 		if err == nil && strings.EqualFold(account.Mode, "LIVE") {
 			liveSessionID := stringValue(order.Metadata["liveSessionId"])

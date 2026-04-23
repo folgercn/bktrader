@@ -88,7 +88,7 @@ bash scripts/testnet_live_session_smoke.sh
 - 不能隐式破坏 `testnet` 到 `mainnet` 的沙盒设定。
 ## 7. Review 黄金规则（从 155 个 PR 提炼）
 
-以下 10 条规则来自项目实际 PR review，不是理论推导。**修改 `internal/` 下任何代码前必须过一遍**：
+以下 11 条规则来自项目实际 PR review，不是理论推导。**修改 `internal/` 下任何代码前必须过一遍**：
 
 1. **成功/失败路径必须统一 accounting** — 每个出口都走统一 helper，不允许散落多处
 2. **不允许"失败装成功"** — fallback 失败必须真实返错，不能静默吞掉
@@ -100,12 +100,13 @@ bash scripts/testnet_live_session_smoke.sh
 8. **Legacy 数据迁移需要兼容性测试** — 隐式改身份键必须补回归测试
 9. **热路径不能全表扫描** — live sync / reconcile 路径上的查询必须有索引
 10. **自动 resume / dispatch 必须有显式前置条件** — 不能靠"看起来没问题就恢复"
+11. **精度和容差只能有一个入口** — 订单数量、交易所 step/tick、notional 边界禁止散落 `1e-9` / `math.Abs(...)`；必须使用 `internal/service/precision_tolerance.go` 的统一 helper，并补边界测试
 
 完整案例与 PR 出处详见 [docs/pr-lessons-learned.md](docs/pr-lessons-learned.md)。
 
 ## 8. 高频踩坑模式速查
 
-以下是 review 中出现频率最高的 6 类问题。**改 `internal/` 代码前先自查**，详细案例见 [docs/pr-lessons-learned.md](docs/pr-lessons-learned.md)：
+以下是 review 中出现频率最高的 7 类问题。**改 `internal/` 代码前先自查**，详细案例见 [docs/pr-lessons-learned.md](docs/pr-lessons-learned.md)：
 
 1. **状态一致性** — N 个路径写同一字段 → 收敛统一 helper；同一判定只能有一个入口
 2. **零值与默认值** — Go 零值 ≠ "未提供"；fallback/merge 必须显式定义零值语义；float 写入前检查 NaN/Inf
@@ -113,6 +114,7 @@ bash scripts/testnet_live_session_smoke.sh
 4. **执行安全边界** — 自动 resume 不能靠排除法；reconcile 只信任本系统活跃订单；settlement 未完成不能抢先落账
 5. **性能与限流** — 热路径禁止全表扫描；外部 API 必须统一 gating + 限流
 6. **监控与告警** — 告警 ID 必须稳定（不含时间戳）；flap suppression 必须覆盖完整状态循环
+7. **精度与容差** — 数量/价格/notional 比较必须走统一 helper；新增交易所规则时必须明确 absolute/relative tolerance 和 round/ceil 语义
 
 ## 9. AI Agent 协作纪律
 

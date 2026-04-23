@@ -638,7 +638,7 @@ func (p *Platform) resolvePaperSessionPositionSnapshot(accountID, symbol string)
 	if err != nil {
 		return nil, false, err
 	}
-	if !found || math.Abs(position.Quantity) <= 1e-9 {
+	if !found || !tradingQuantityPositive(math.Abs(position.Quantity)) {
 		return map[string]any{
 			"symbol":   NormalizeSymbol(symbol),
 			"found":    false,

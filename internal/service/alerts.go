@@ -2,13 +2,15 @@ package service
 
 import (
 	"fmt"
-	"math"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
+
+var liveExitDispatchFailureLogCache sync.Map
 
 type runtimeSourceSummary struct {
 	tradeTickCount int
@@ -460,7 +462,7 @@ func (p *Platform) buildLiveExitDispatchFailureAlert(session domain.LiveSession,
 	if err != nil {
 		return domain.PlatformAlert{}, false
 	}
-	if boolValue(positionSnapshot["virtual"]) || math.Abs(parseFloatValue(positionSnapshot["quantity"])) <= 1e-9 {
+	if boolValue(positionSnapshot["virtual"]) || !tradingQuantityPositive(parseFloatValue(positionSnapshot["quantity"])) {
 		return domain.PlatformAlert{}, false
 	}
 
@@ -484,7 +486,7 @@ func (p *Platform) buildLiveExitDispatchFailureAlert(session domain.LiveSession,
 		detailParts = append(detailParts, fmt.Sprintf("错误=%s", dispatchError))
 	}
 
-	return domain.PlatformAlert{
+	alert := domain.PlatformAlert{
 		ID:           fmt.Sprintf("live-exit-dispatch-failure-%s", session.ID),
 		Scope:        "live",
 		Level:        "critical",
@@ -510,7 +512,37 @@ func (p *Platform) buildLiveExitDispatchFailureAlert(session domain.LiveSession,
 			"reduceOnly":      boolValue(dispatchIntent["reduceOnly"]) || boolValue(dispatchSummary["reduceOnly"]),
 			"currentPosition": positionSnapshot,
 		},
-	}, true
+	}
+	p.logLiveExitDispatchFailureAlert(alert)
+	return alert, true
+}
+
+func (p *Platform) logLiveExitDispatchFailureAlert(alert domain.PlatformAlert) {
+	metadata := mapValue(alert.Metadata)
+	logSignature := strings.Join([]string{
+		alert.ID,
+		stringValue(metadata["orderId"]),
+		stringValue(metadata["orderStatus"]),
+		stringValue(metadata["error"]),
+		stringValue(metadata["reason"]),
+		stringValue(metadata["signalKind"]),
+		fmt.Sprintf("%.12f", parseFloatValue(metadata["positionQty"])),
+	}, "|")
+	if _, loaded := liveExitDispatchFailureLogCache.LoadOrStore(logSignature, struct{}{}); loaded {
+		return
+	}
+	p.logger("service.alerts",
+		"live_session_id", stringValue(metadata["liveSessionId"]),
+		"order_id", stringValue(metadata["orderId"]),
+		"order_status", stringValue(metadata["orderStatus"]),
+		"symbol", stringValue(metadata["symbol"]),
+		"position_side", stringValue(metadata["positionSide"]),
+		"position_qty", parseFloatValue(metadata["positionQty"]),
+		"reason", stringValue(metadata["reason"]),
+		"signal_kind", stringValue(metadata["signalKind"]),
+		"dispatch_mode", stringValue(metadata["dispatchMode"]),
+		"reduce_only", boolValue(metadata["reduceOnly"]),
+	).Error("critical live exit dispatch failure", "detail", alert.Detail, "error", stringValue(metadata["error"]))
 }
 
 func liveDispatchRepresentsExit(dispatchIntent map[string]any, dispatchSummary map[string]any) bool {
