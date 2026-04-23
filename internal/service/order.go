@@ -1293,6 +1293,11 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 				if resolved, resolveErr := p.resolveLiveStrategyIDForOrder(account.ID, order); resolveErr == nil {
 					strategyID = resolved
 				}
+				// NOTE(audit): OrderCloseVerification is designed as an append-only log.
+				// By default, the latest event (ordered by EventTime desc) determines the authoritative verification state
+				// for a given order in `enrichLiveTradePairs`.
+				// While `ws-sync` is an optimistic source, subsequent reconcile events can append a newer record
+				// with `VerifiedClosed=false` if residual position is detected.
 				_, _ = p.store.CreateOrderCloseVerification(domain.OrderCloseVerification{
 					LiveSessionID:        liveSessionID,
 					OrderID:              order.ID,

@@ -1476,6 +1476,19 @@ func (s *Store) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQu
 	appendQueryCondition(&builder, &args, "strategy_id = %s", strings.TrimSpace(query.StrategyID))
 	appendQueryCondition(&builder, &args, "runtime_session_id = %s", strings.TrimSpace(query.RuntimeSessionID))
 	appendQueryCondition(&builder, &args, "id = %s", strings.TrimSpace(query.DecisionEventID))
+	if len(query.DecisionEventIDs) > 0 {
+		placeholders := make([]string, 0, len(query.DecisionEventIDs))
+		for _, id := range query.DecisionEventIDs {
+			if strings.TrimSpace(id) == "" {
+				continue
+			}
+			args = append(args, strings.TrimSpace(id))
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		}
+		if len(placeholders) > 0 {
+			builder.WriteString(fmt.Sprintf(" and id in (%s)", strings.Join(placeholders, ", ")))
+		}
+	}
 	appendQueryTimeCondition(&builder, &args, "event_time >= %s", query.From)
 	appendQueryTimeCondition(&builder, &args, "event_time <= %s", query.To)
 	appendEventCursorCondition(&builder, &args, query.Before)

@@ -209,6 +209,12 @@ func (p *Platform) queryStrategyDecisionEvents(query domain.StrategyDecisionEven
 		return nil, err
 	}
 	filtered := make([]domain.StrategyDecisionEvent, 0, len(items))
+
+	decisionEventIDMap := make(map[string]struct{})
+	for _, id := range query.DecisionEventIDs {
+		decisionEventIDMap[strings.TrimSpace(id)] = struct{}{}
+	}
+
 	for _, item := range items {
 		if strings.TrimSpace(query.LiveSessionID) != "" && item.LiveSessionID != strings.TrimSpace(query.LiveSessionID) {
 			continue
@@ -224,6 +230,11 @@ func (p *Platform) queryStrategyDecisionEvents(query domain.StrategyDecisionEven
 		}
 		if strings.TrimSpace(query.DecisionEventID) != "" && item.ID != strings.TrimSpace(query.DecisionEventID) {
 			continue
+		}
+		if len(query.DecisionEventIDs) > 0 {
+			if _, ok := decisionEventIDMap[item.ID]; !ok {
+				continue
+			}
 		}
 		if !query.From.IsZero() && item.EventTime.Before(query.From.UTC()) {
 			continue

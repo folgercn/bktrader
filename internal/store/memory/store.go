@@ -14,22 +14,22 @@ import (
 type Store struct {
 	mu sync.RWMutex
 
-	strategies       map[string]domain.Strategy
-	strategyVersion  map[string]domain.StrategyVersion
-	accounts         map[string]domain.Account
-	orders           map[string]domain.Order
-	fills            map[string]domain.Fill
-	positions        map[string]domain.Position
-	backtests        map[string]domain.BacktestRun
-	paperSessions    map[string]domain.PaperSession
-	liveSessions     map[string]domain.LiveSession
-	equitySnapshots  map[string][]domain.AccountEquitySnapshot
-	decisionEvents   []domain.StrategyDecisionEvent
-	executionEvents  []domain.OrderExecutionEvent
-	liveSnapshots    []domain.PositionAccountSnapshot
-	marketBars       map[string]domain.MarketBar
-	signalSources    []map[string]any
-	annotations      []domain.ChartAnnotation
+	strategies         map[string]domain.Strategy
+	strategyVersion    map[string]domain.StrategyVersion
+	accounts           map[string]domain.Account
+	orders             map[string]domain.Order
+	fills              map[string]domain.Fill
+	positions          map[string]domain.Position
+	backtests          map[string]domain.BacktestRun
+	paperSessions      map[string]domain.PaperSession
+	liveSessions       map[string]domain.LiveSession
+	equitySnapshots    map[string][]domain.AccountEquitySnapshot
+	decisionEvents     []domain.StrategyDecisionEvent
+	executionEvents    []domain.OrderExecutionEvent
+	liveSnapshots      []domain.PositionAccountSnapshot
+	marketBars         map[string]domain.MarketBar
+	signalSources      []map[string]any
+	annotations        []domain.ChartAnnotation
 	runtimePolicy      *domain.RuntimePolicy
 	notificationAcks   map[string]domain.NotificationAck
 	telegramConfig     *domain.TelegramConfig
@@ -42,25 +42,25 @@ type Store struct {
 func NewStore() *Store {
 	now := time.Now().UTC()
 	store := &Store{
-		strategies:      make(map[string]domain.Strategy),
-		strategyVersion: make(map[string]domain.StrategyVersion),
-		accounts:        make(map[string]domain.Account),
-		orders:          make(map[string]domain.Order),
-		fills:           make(map[string]domain.Fill),
-		positions:       make(map[string]domain.Position),
-		backtests:       make(map[string]domain.BacktestRun),
-		paperSessions:   make(map[string]domain.PaperSession),
-		liveSessions:    make(map[string]domain.LiveSession),
-		equitySnapshots: make(map[string][]domain.AccountEquitySnapshot),
+		strategies:         make(map[string]domain.Strategy),
+		strategyVersion:    make(map[string]domain.StrategyVersion),
+		accounts:           make(map[string]domain.Account),
+		orders:             make(map[string]domain.Order),
+		fills:              make(map[string]domain.Fill),
+		positions:          make(map[string]domain.Position),
+		backtests:          make(map[string]domain.BacktestRun),
+		paperSessions:      make(map[string]domain.PaperSession),
+		liveSessions:       make(map[string]domain.LiveSession),
+		equitySnapshots:    make(map[string][]domain.AccountEquitySnapshot),
 		liveSnapshots:      make([]domain.PositionAccountSnapshot, 0),
 		marketBars:         make(map[string]domain.MarketBar),
 		closeVerifications: make([]domain.OrderCloseVerification, 0),
 		signalSources: []map[string]any{
 			{
-				"id":     "signal-source-bk-1d",
-				"name":   "BK 1D ATR Reentry",
-				"type":   "internal-strategy",
-				"status": "ACTIVE",
+				"id":          "signal-source-bk-1d",
+				"name":        "BK 1D ATR Reentry",
+				"type":        "internal-strategy",
+				"status":      "ACTIVE",
 				"dedupeKey":   "symbol+strategyVersion+reason+bar",
 				"description": "1D signal / 1m execution strategy feed.",
 			},
@@ -972,7 +972,7 @@ func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerification
 		items = append(items, cloneJSONValue(item))
 	}
 	sort.Slice(items, func(i, j int) bool {
-		return domain.EventLessAsc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+		return domain.EventLessDesc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
 	})
 	if query.Limit > 0 && len(items) > query.Limit {
 		items = items[:query.Limit]
@@ -984,6 +984,11 @@ func (s *Store) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQu
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.StrategyDecisionEvent, 0, len(s.decisionEvents))
+
+	decisionEventIDMap := make(map[string]struct{})
+	for _, id := range query.DecisionEventIDs {
+		decisionEventIDMap[strings.TrimSpace(id)] = struct{}{}
+	}
 	for _, item := range s.decisionEvents {
 		if strings.TrimSpace(query.LiveSessionID) != "" && item.LiveSessionID != strings.TrimSpace(query.LiveSessionID) {
 			continue
@@ -999,6 +1004,11 @@ func (s *Store) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQu
 		}
 		if strings.TrimSpace(query.DecisionEventID) != "" && item.ID != strings.TrimSpace(query.DecisionEventID) {
 			continue
+		}
+		if len(query.DecisionEventIDs) > 0 {
+			if _, ok := decisionEventIDMap[item.ID]; !ok {
+				continue
+			}
 		}
 		if !query.From.IsZero() && item.EventTime.Before(query.From.UTC()) {
 			continue

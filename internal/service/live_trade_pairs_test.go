@@ -146,7 +146,6 @@ func TestListLiveTradePairsReturnsOpenTradeWithUnrealizedPnLAndAggregatedEntries
 	assertTradePairFloat(t, pair.NetPnL, pair.UnrealizedPnL-0.03)
 }
 
-
 func TestListLiveTradePairsFallsBackWhenTelemetryTablesAreUnavailable(t *testing.T) {
 	baseStore := memory.NewStore()
 	platform := NewPlatform(&testMissingLiveTradePairTelemetryStore{Store: baseStore})
@@ -199,8 +198,8 @@ func TestListLiveTradePairsFallsBackWhenTelemetryTablesAreUnavailable(t *testing
 	if got := pair.ExitClassifier; got != "TP" {
 		t.Fatalf("expected TP classifier, got %s", got)
 	}
-	if got := pair.ExitVerdict; got != "unknown" {
-		t.Fatalf("expected unknown verdict, got %s", got)
+	if got := pair.ExitVerdict; got != "normal" {
+		t.Fatalf("expected normal verdict, got %s", got)
 	}
 	assertTradePairFloat(t, pair.RealizedPnL, 10)
 	assertTradePairFloat(t, pair.Fees, 0.2)
@@ -492,4 +491,70 @@ func (s *testScopedLiveTradePairTelemetryStore) QueryPositionAccountSnapshots(qu
 		return nil, fmt.Errorf("unexpected bulk snapshot telemetry query")
 	}
 	return s.Store.QueryPositionAccountSnapshots(query)
+}
+
+func TestListLiveTradePairsUsesLatestVerificationRecord(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.CreateAccount("Live Trade Pair", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", account.ID, "strategy-bk-1d", map[string]any{
+		"symbol": "BTCUSDT",
+	})
+	if err != nil {
+		t.Fatalf("create live session: %v", err)
+	}
+
+	exitAt := time.Date(2026, 4, 22, 6, 30, 0, 0, time.UTC)
+	pair := createClosedLiveTradePairFixture(t, platform, session, liveTradeFixture{
+		entryPrice:        100,
+		exitPrice:         110,
+		quantity:          1,
+		entryFee:          0.1,
+		exitFee:           0.1,
+		exitReason:        "PT",
+		targetPriceSource: "take-profit",
+	})
+
+	// Add an older optimistic verification (ws-sync says it's closed)
+	_, _ = platform.store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+		LiveSessionID:        session.ID,
+		OrderID:              pair.ExitOrderIDs[0],
+		AccountID:            session.AccountID,
+		StrategyID:           session.StrategyID,
+		Symbol:               "BTCUSDT",
+		VerifiedClosed:       true,
+		RemainingPositionQty: 0,
+		VerificationSource:   "ws-sync",
+		EventTime:            exitAt.Add(2 * time.Second),
+	})
+
+	// Add a newer pessimistic verification (reconcile says it's NOT closed)
+	_, _ = platform.store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+		LiveSessionID:        session.ID,
+		OrderID:              pair.ExitOrderIDs[0],
+		AccountID:            session.AccountID,
+		StrategyID:           session.StrategyID,
+		Symbol:               "BTCUSDT",
+		VerifiedClosed:       false,
+		RemainingPositionQty: 0.5, // Some residual left
+		VerificationSource:   "reconcile",
+		EventTime:            exitAt.Add(10 * time.Second),
+	})
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live trade pairs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 closed pair, got %d", len(items))
+	}
+	if got := items[0].ExitVerdict; got != "mismatch" {
+		t.Fatalf("expected mismatch verdict due to latest reconcile event, got %s", got)
+	}
 }

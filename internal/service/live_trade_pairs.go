@@ -454,13 +454,13 @@ func (b *liveTradePairBuilder) addExit(event liveTradeFillEvent, qty, fee, reali
 }
 
 func (b *liveTradePairBuilder) finalizeClosed() domain.LiveTradePair {
-	verdict := "unknown"
+	verdict := "normal"
 	if b.exitQty <= 0 {
 		verdict = "orphan-exit"
 	} else if b.hasUnsafeExitOrder {
 		verdict = "mismatch"
 	} else if b.recoveryExit {
-		verdict = "unknown" // "recovery-close" will be determined during enrich
+		verdict = "recovery-close"
 	}
 	b.exitVerdict = verdict
 	return b.build(0, 0)
@@ -694,22 +694,35 @@ func (p *Platform) enrichLiveTradePairs(items []domain.LiveTradePair, orderByID 
 
 	decisionByID := make(map[string]domain.StrategyDecisionEvent)
 	var allExitOrderIDs []string
+	var allDecisionEventIDs []string
 
 	for _, item := range items {
 		for _, orderID := range item.EntryOrderIDs {
-			order, ok := orderByID[orderID]
-			if !ok {
-				continue
+			if order, ok := orderByID[orderID]; ok {
+				if id := decisionEventIDFromOrder(order); id != "" {
+					allDecisionEventIDs = append(allDecisionEventIDs, id)
+				}
 			}
-			p.populateTradePairDecisionTelemetry(decisionByID, decisionEventIDFromOrder(order))
 		}
 		for _, orderID := range item.ExitOrderIDs {
 			allExitOrderIDs = append(allExitOrderIDs, orderID)
-			order, ok := orderByID[orderID]
-			if !ok {
-				continue
+			if order, ok := orderByID[orderID]; ok {
+				if id := decisionEventIDFromOrder(order); id != "" {
+					allDecisionEventIDs = append(allDecisionEventIDs, id)
+				}
 			}
-			p.populateTradePairDecisionTelemetry(decisionByID, decisionEventIDFromOrder(order))
+		}
+	}
+
+	if len(allDecisionEventIDs) > 0 {
+		if events, err := p.queryStrategyDecisionEvents(domain.StrategyDecisionEventQuery{
+			DecisionEventIDs: allDecisionEventIDs,
+		}); err == nil {
+			for _, event := range events {
+				if _, ok := decisionByID[event.ID]; !ok {
+					decisionByID[event.ID] = event
+				}
+			}
 		}
 	}
 
@@ -747,11 +760,9 @@ func (p *Platform) enrichLiveTradePairs(items []domain.LiveTradePair, orderByID 
 					pair.ExitClassifier = classifyLiveTradeExit(intent)
 				}
 
-				if pair.Status == "closed" && pair.ExitVerdict == "unknown" {
+				if pair.Status == "closed" {
 					if verification, ok := closeVerificationsByOrderID[lastExitOrderID]; ok {
-						if verification.VerifiedClosed {
-							pair.ExitVerdict = "normal"
-						} else {
+						if !verification.VerifiedClosed {
 							pair.ExitVerdict = "mismatch"
 						}
 					}
@@ -763,38 +774,4 @@ func (p *Platform) enrichLiveTradePairs(items []domain.LiveTradePair, orderByID 
 			}
 		}
 	}
-}
-
-func (p *Platform) populateTradePairDecisionTelemetry(target map[string]domain.StrategyDecisionEvent, decisionEventID string) {
-	decisionEventID = strings.TrimSpace(decisionEventID)
-	if decisionEventID == "" {
-		return
-	}
-	if _, ok := target[decisionEventID]; ok {
-		return
-	}
-	items, err := p.queryStrategyDecisionEvents(domain.StrategyDecisionEventQuery{
-		DecisionEventID: decisionEventID,
-		Limit:           1,
-	})
-	if err != nil {
-		if isOptionalLiveTradePairTelemetryError(err) {
-			return
-		}
-		return
-	}
-	if len(items) > 0 {
-		target[decisionEventID] = items[0]
-	}
-}
-
-func isOptionalLiveTradePairTelemetryError(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(strings.TrimSpace(err.Error()))
-	return strings.Contains(message, "sqlstate 42p01") ||
-		(strings.Contains(message, "relation") && strings.Contains(message, "does not exist")) ||
-		(strings.Contains(message, "table") && strings.Contains(message, "does not exist")) ||
-		strings.Contains(message, "no such table")
 }
