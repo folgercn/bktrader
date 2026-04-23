@@ -60,6 +60,78 @@ func TestDeriveLiveSignalIntentUsesNextPlannedStep(t *testing.T) {
 	}
 }
 
+func TestDeriveLiveSignalIntentNormalizesExitSideFromCurrentPosition(t *testing.T) {
+	decision := StrategySignalDecision{
+		Action: "advance-plan",
+		Metadata: map[string]any{
+			"signalBarDecision": map[string]any{
+				"ready": true,
+			},
+			"marketPrice":       78490.2,
+			"marketSource":      "order_book.bestBid",
+			"signalKind":        "risk-exit",
+			"decisionState":     "exit-ready",
+			"signalBarStateKey": "binance|BTCUSDT|signal|30m",
+			"currentPosition": map[string]any{
+				"found":      true,
+				"symbol":     "BTCUSDT",
+				"side":       "LONG",
+				"quantity":   0.0128,
+				"entryPrice": 78845.459375,
+			},
+			"nextPlannedSide":   "BUY",
+			"nextPlannedRole":   "exit",
+			"nextPlannedReason": "SL",
+			"nextPlannedEvent":  time.Date(2026, 4, 22, 22, 39, 47, 0, time.UTC).Format(time.RFC3339),
+			"nextPlannedPrice":  78729.46008928573,
+		},
+	}
+
+	intent := deriveLiveSignalIntent(decision, "BTCUSDT")
+	if intent == nil {
+		t.Fatal("expected exit intent")
+	}
+	if got := intent.Side; got != "SELL" {
+		t.Fatalf("expected LONG exit intent to normalize to SELL, got %s", got)
+	}
+}
+
+func TestDeriveLiveSignalIntentNormalizesShortExitSideFromCurrentPosition(t *testing.T) {
+	decision := StrategySignalDecision{
+		Action: "advance-plan",
+		Metadata: map[string]any{
+			"signalBarDecision": map[string]any{
+				"ready": true,
+			},
+			"marketPrice":       78490.2,
+			"marketSource":      "order_book.bestAsk",
+			"signalKind":        "risk-exit",
+			"decisionState":     "exit-ready",
+			"signalBarStateKey": "binance|BTCUSDT|signal|30m",
+			"currentPosition": map[string]any{
+				"found":      true,
+				"symbol":     "BTCUSDT",
+				"side":       "SHORT",
+				"quantity":   0.0128,
+				"entryPrice": 78845.459375,
+			},
+			"nextPlannedSide":   "SELL",
+			"nextPlannedRole":   "exit",
+			"nextPlannedReason": "SL",
+			"nextPlannedEvent":  time.Date(2026, 4, 22, 22, 39, 47, 0, time.UTC).Format(time.RFC3339),
+			"nextPlannedPrice":  78729.46008928573,
+		},
+	}
+
+	intent := deriveLiveSignalIntent(decision, "BTCUSDT")
+	if intent == nil {
+		t.Fatal("expected exit intent")
+	}
+	if got := intent.Side; got != "BUY" {
+		t.Fatalf("expected SHORT exit intent to normalize to BUY, got %s", got)
+	}
+}
+
 func TestEvaluateSignalBarGateRequiresLongBreakoutAlignmentWithResearch(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"ma20":  68000.0,
