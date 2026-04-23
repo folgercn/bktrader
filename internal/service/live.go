@@ -611,7 +611,7 @@ func livePositionReconcileGateCanSelfHeal(gate map[string]any) bool {
 	}
 	switch scenario {
 	case "quantity-mismatch", "entry-price-mismatch", "multi-field-mismatch":
-		return !livePositionReconcileMismatchIncludes(livePositionReconcileMismatchFields(gate["mismatchFields"]), "side")
+		return livePositionReconcileMismatchFieldsCanSelfHeal(livePositionReconcileMismatchFields(gate["mismatchFields"]))
 	default:
 		return false
 	}
@@ -2180,6 +2180,7 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		}
 		gate = cloneMetadata(gate)
 		gate["symbol"] = symbol
+		gate["authoritative"] = authoritative
 		gate["comparedAt"] = firstNonEmpty(stringValue(gate["comparedAt"]), syncedAt.Format(time.RFC3339))
 		if boolValue(gate["blocking"]) {
 			blockingCount++
@@ -2228,6 +2229,16 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			continue
 		}
 		if position.ID == "" || position.Quantity <= 0 {
+			if !authoritative {
+				recordGate(symbol, map[string]any{
+					"status":           livePositionReconcileGateStatusError,
+					"scenario":         "exchange-truth-unavailable",
+					"blocking":         true,
+					"dbPosition":       buildRecoveredLivePositionStateSnapshot(position),
+					"exchangePosition": exchangeSnapshot,
+				})
+				continue
+			}
 			position.AccountID = account.ID
 			position.StrategyVersionID = firstNonEmpty(strategyVersionID, position.StrategyVersionID)
 			position.Symbol = symbol
@@ -2429,6 +2440,7 @@ func (p *Platform) adoptLivePositionFromExchangeTruth(account domain.Account, po
 	adoptGate := cloneMetadata(gate)
 	adoptGate["status"] = livePositionReconcileGateStatusAdopted
 	adoptGate["scenario"] = livePositionReconcileAdoptScenario(mismatchFields)
+	adoptGate["authoritative"] = true
 	adoptGate["blocking"] = false
 	adoptGate["dbPosition"] = dbSnapshot
 	adoptGate["adoptedPosition"] = buildRecoveredLivePositionStateSnapshot(saved)
@@ -2514,6 +2526,21 @@ func livePositionReconcileMismatchIncludes(mismatchFields []string, target strin
 		}
 	}
 	return false
+}
+
+func livePositionReconcileMismatchFieldsCanSelfHeal(mismatchFields []string) bool {
+	if len(mismatchFields) == 0 {
+		return false
+	}
+	for _, field := range mismatchFields {
+		switch strings.TrimSpace(field) {
+		case "quantity", "entryPrice":
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func livePositionReconcileMismatchFields(value any) []string {
