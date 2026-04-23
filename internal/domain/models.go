@@ -188,6 +188,11 @@ type Order struct {
 	CreatedAt         time.Time      `json:"createdAt"`
 }
 
+// OrderQuery 定义订单查询条件。
+type OrderQuery struct {
+	LiveSessionID string
+}
+
 // Fill 成交记录，每笔成交关联一个订单。
 type Fill struct {
 	ID                string     `json:"id"`
@@ -214,6 +219,11 @@ func (f Fill) FallbackFingerprint() string {
 	}, "|")
 }
 
+// FillQuery 定义成交记录查询条件。
+type FillQuery struct {
+	OrderIDs []string
+}
+
 // Position 当前持仓，由成交记录聚合得出。
 type Position struct {
 	ID                string    `json:"id"`
@@ -225,6 +235,11 @@ type Position struct {
 	EntryPrice        float64   `json:"entryPrice"` // 加权平均入场价
 	MarkPrice         float64   `json:"markPrice"`  // 最新标记价格
 	UpdatedAt         time.Time `json:"updatedAt"`
+}
+
+// PositionQuery 定义持仓查询条件。
+type PositionQuery struct {
+	AccountID string
 }
 
 // BacktestRun 回测运行记录，保存参数和结果摘要。

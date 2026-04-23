@@ -31,6 +31,8 @@ type Repository interface {
 
 	// ListOrders 获取所有订单。
 	ListOrders() ([]domain.Order, error)
+	// QueryOrders 按条件查询订单。
+	QueryOrders(query domain.OrderQuery) ([]domain.Order, error)
 	// CreateOrder 创建新订单。
 	CreateOrder(order domain.Order) (domain.Order, error)
 	// UpdateOrder 更新订单信息（状态、价格、metadata 等）。
@@ -40,6 +42,8 @@ type Repository interface {
 
 	// ListFills 获取所有成交记录。
 	ListFills() ([]domain.Fill, error)
+	// QueryFills 按条件查询成交记录。
+	QueryFills(query domain.FillQuery) ([]domain.Fill, error)
 	// TotalFilledQuantityForOrder 返回指定订单已落账成交数量总和。
 	TotalFilledQuantityForOrder(orderID string) (float64, error)
 	// CreateFill 创建新成交记录。
@@ -49,6 +53,8 @@ type Repository interface {
 
 	// ListPositions 获取所有持仓。
 	ListPositions() ([]domain.Position, error)
+	// QueryPositions 按条件查询持仓。
+	QueryPositions(query domain.PositionQuery) ([]domain.Position, error)
 	// FindPosition 查找指定账户和交易对的持仓。
 	FindPosition(accountID, symbol string) (domain.Position, bool, error)
 	// SavePosition 创建或更新持仓。
@@ -116,6 +122,13 @@ type Repository interface {
 	ListPositionAccountSnapshots(accountID string) ([]domain.PositionAccountSnapshot, error)
 	// CreatePositionAccountSnapshot 创建新的仓位/账户快照。
 	CreatePositionAccountSnapshot(snapshot domain.PositionAccountSnapshot) (domain.PositionAccountSnapshot, error)
+
+	// --- 订单关闭核验 ---
+
+	// CreateOrderCloseVerification 创建新的订单关闭核验记录。
+	CreateOrderCloseVerification(item domain.OrderCloseVerification) (domain.OrderCloseVerification, error)
+	// QueryOrderCloseVerifications 查询订单关闭核验记录。
+	QueryOrderCloseVerifications(query domain.OrderCloseVerificationQuery) ([]domain.OrderCloseVerification, error)
 
 	// --- 市场 Bar 缓存 ---
 

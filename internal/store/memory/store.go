@@ -30,10 +30,11 @@ type Store struct {
 	marketBars       map[string]domain.MarketBar
 	signalSources    []map[string]any
 	annotations      []domain.ChartAnnotation
-	runtimePolicy    *domain.RuntimePolicy
-	notificationAcks map[string]domain.NotificationAck
-	telegramConfig   *domain.TelegramConfig
-	deliveries       map[string]domain.NotificationDelivery
+	runtimePolicy      *domain.RuntimePolicy
+	notificationAcks   map[string]domain.NotificationAck
+	telegramConfig     *domain.TelegramConfig
+	deliveries         map[string]domain.NotificationDelivery
+	closeVerifications []domain.OrderCloseVerification
 
 	sequence int64
 }
@@ -51,13 +52,15 @@ func NewStore() *Store {
 		paperSessions:   make(map[string]domain.PaperSession),
 		liveSessions:    make(map[string]domain.LiveSession),
 		equitySnapshots: make(map[string][]domain.AccountEquitySnapshot),
-		marketBars:      make(map[string]domain.MarketBar),
+		liveSnapshots:      make([]domain.PositionAccountSnapshot, 0),
+		marketBars:         make(map[string]domain.MarketBar),
+		closeVerifications: make([]domain.OrderCloseVerification, 0),
 		signalSources: []map[string]any{
 			{
-				"id":          "signal-source-bk-1d",
-				"name":        "BK 1D ATR Reentry",
-				"type":        "internal-strategy",
-				"status":      "ACTIVE",
+				"id":     "signal-source-bk-1d",
+				"name":   "BK 1D ATR Reentry",
+				"type":   "internal-strategy",
+				"status": "ACTIVE",
 				"dedupeKey":   "symbol+strategyVersion+reason+bar",
 				"description": "1D signal / 1m execution strategy feed.",
 			},
@@ -448,6 +451,24 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 	return items, nil
 }
 
+func (s *Store) QueryOrders(query domain.OrderQuery) ([]domain.Order, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.Order, 0, len(s.orders))
+	for _, item := range s.orders {
+		if query.LiveSessionID != "" {
+			val, ok := item.Metadata["liveSessionId"].(string)
+			if !ok || strings.TrimSpace(val) != query.LiveSessionID {
+				continue
+			}
+		}
+		item.NormalizeExecutionFlags()
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
 func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -480,6 +501,28 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 	defer s.mu.RUnlock()
 	items := make([]domain.Fill, 0, len(s.fills))
 	for _, item := range s.fills {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *Store) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.Fill, 0, len(s.fills))
+
+	orderIDMap := make(map[string]struct{})
+	for _, id := range query.OrderIDs {
+		orderIDMap[id] = struct{}{}
+	}
+
+	for _, item := range s.fills {
+		if len(query.OrderIDs) > 0 {
+			if _, ok := orderIDMap[item.OrderID]; !ok {
+				continue
+			}
+		}
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
@@ -534,6 +577,20 @@ func (s *Store) ListPositions() ([]domain.Position, error) {
 	defer s.mu.RUnlock()
 	items := make([]domain.Position, 0, len(s.positions))
 	for _, item := range s.positions {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.Before(items[j].UpdatedAt) })
+	return items, nil
+}
+
+func (s *Store) QueryPositions(query domain.PositionQuery) ([]domain.Position, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.Position, 0, len(s.positions))
+	for _, item := range s.positions {
+		if query.AccountID != "" && item.AccountID != query.AccountID {
+			continue
+		}
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.Before(items[j].UpdatedAt) })
@@ -871,6 +928,56 @@ func (s *Store) CreatePositionAccountSnapshot(snapshot domain.PositionAccountSna
 	snapshot = cloneJSONValue(snapshot)
 	s.liveSnapshots = append(s.liveSnapshots, snapshot)
 	return cloneJSONValue(snapshot), nil
+}
+
+func (s *Store) CreateOrderCloseVerification(item domain.OrderCloseVerification) (domain.OrderCloseVerification, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if item.ID == "" {
+		item.ID = s.nextID("order-close-verification")
+	}
+	if item.EventTime.IsZero() {
+		item.EventTime = time.Now().UTC()
+	}
+	if item.RecordedAt.IsZero() {
+		item.RecordedAt = time.Now().UTC()
+	}
+	item = cloneJSONValue(item)
+	s.closeVerifications = append(s.closeVerifications, item)
+	return cloneJSONValue(item), nil
+}
+
+func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerificationQuery) ([]domain.OrderCloseVerification, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.OrderCloseVerification, 0, len(s.closeVerifications))
+
+	orderIDMap := make(map[string]struct{})
+	for _, id := range query.OrderIDs {
+		orderIDMap[strings.TrimSpace(id)] = struct{}{}
+	}
+
+	for _, item := range s.closeVerifications {
+		if strings.TrimSpace(query.LiveSessionID) != "" && item.LiveSessionID != strings.TrimSpace(query.LiveSessionID) {
+			continue
+		}
+		if strings.TrimSpace(query.OrderID) != "" && item.OrderID != strings.TrimSpace(query.OrderID) {
+			continue
+		}
+		if len(query.OrderIDs) > 0 {
+			if _, ok := orderIDMap[item.OrderID]; !ok {
+				continue
+			}
+		}
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return domain.EventLessAsc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+	})
+	if query.Limit > 0 && len(items) > query.Limit {
+		items = items[:query.Limit]
+	}
+	return items, nil
 }
 
 func (s *Store) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQuery) ([]domain.StrategyDecisionEvent, error) {

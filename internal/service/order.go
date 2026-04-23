@@ -1259,7 +1259,30 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 
 	// 反方向 → 全部平仓
 	if order.Quantity == position.Quantity {
-		return p.store.DeletePosition(position.ID)
+		err := p.store.DeletePosition(position.ID)
+		if err == nil && strings.EqualFold(account.Mode, "LIVE") {
+			liveSessionID := stringValue(order.Metadata["liveSessionId"])
+			decisionEventID := stringValue(order.Metadata["decisionEventId"])
+			if liveSessionID != "" {
+				strategyID := ""
+				if resolved, resolveErr := p.resolveLiveStrategyIDForOrder(account.ID, order); resolveErr == nil {
+					strategyID = resolved
+				}
+				_, _ = p.store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+					LiveSessionID:        liveSessionID,
+					OrderID:              order.ID,
+					DecisionEventID:      decisionEventID,
+					AccountID:            account.ID,
+					StrategyID:           strategyID,
+					Symbol:               position.Symbol,
+					VerifiedClosed:       true,
+					RemainingPositionQty: 0,
+					VerificationSource:   "ws-sync",
+					EventTime:            time.Now().UTC(),
+				})
+			}
+		}
+		return err
 	}
 
 	// 反方向 → 平仓后反向开仓

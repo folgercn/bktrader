@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -145,6 +146,102 @@ func TestListLiveTradePairsReturnsOpenTradeWithUnrealizedPnLAndAggregatedEntries
 	assertTradePairFloat(t, pair.NetPnL, pair.UnrealizedPnL-0.03)
 }
 
+func TestListLiveTradePairsFallsBackWhenTelemetryTablesAreUnavailable(t *testing.T) {
+	baseStore := memory.NewStore()
+	platform := NewPlatform(&testMissingLiveTradePairTelemetryStore{Store: baseStore})
+	account, err := platform.CreateAccount("Live Trade Pair", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", account.ID, "strategy-bk-1d", map[string]any{
+		"symbol": "BTCUSDT",
+	})
+	if err != nil {
+		t.Fatalf("create live session: %v", err)
+	}
+
+	entryAt := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+	exitAt := entryAt.Add(30 * time.Minute)
+	createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   1,
+		price:      100,
+		fee:        0.1,
+		createdAt:  entryAt,
+		fillAt:     entryAt.Add(2 * time.Second),
+		reduceOnly: false,
+	})
+	createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "SELL",
+		reason:     "PT",
+		quantity:   1,
+		price:      110,
+		fee:        0.1,
+		createdAt:  exitAt,
+		fillAt:     exitAt.Add(2 * time.Second),
+		reduceOnly: true,
+	})
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live trade pairs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 closed pair, got %d", len(items))
+	}
+	pair := items[0]
+	if got := pair.ExitClassifier; got != "TP" {
+		t.Fatalf("expected TP classifier, got %s", got)
+	}
+	if got := pair.ExitVerdict; got != "unknown" {
+		t.Fatalf("expected unknown verdict, got %s", got)
+	}
+	assertTradePairFloat(t, pair.RealizedPnL, 10)
+	assertTradePairFloat(t, pair.Fees, 0.2)
+	assertTradePairFloat(t, pair.NetPnL, 9.8)
+}
+
+func TestListLiveTradePairsScopesTelemetryQueriesToPairOrders(t *testing.T) {
+	baseStore := memory.NewStore()
+	store := &testScopedLiveTradePairTelemetryStore{Store: baseStore}
+	platform := NewPlatform(store)
+	account, err := platform.CreateAccount("Live Trade Pair", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", account.ID, "strategy-bk-1d", map[string]any{
+		"symbol": "BTCUSDT",
+	})
+	if err != nil {
+		t.Fatalf("create live session: %v", err)
+	}
+
+	pair := createClosedLiveTradePairFixture(t, platform, session, liveTradeFixture{
+		entryPrice:        100,
+		exitPrice:         112,
+		quantity:          2,
+		entryFee:          0.2,
+		exitFee:           0.3,
+		exitReason:        "SL",
+		targetPriceSource: "trailing-stop",
+	})
+
+	if got := pair.ExitClassifier; got != "TSL" {
+		t.Fatalf("expected TSL classifier, got %s", got)
+	}
+	if store.usedLiveSessionTelemetryQuery {
+		t.Fatalf("expected trade pair telemetry lookup to avoid full live-session query")
+	}
+	if store.usedBulkSnapshotTelemetryQuery {
+		t.Fatalf("expected trade pair snapshot lookup to avoid bulk live-session query")
+	}
+}
+
 type liveTradeFixture struct {
 	entryPrice        float64
 	exitPrice         float64
@@ -245,6 +342,20 @@ func createClosedLiveTradePairFixture(t *testing.T, platform *Platform, session 
 	}); err != nil {
 		t.Fatalf("create position snapshot: %v", err)
 	}
+	if _, err := platform.store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+		LiveSessionID:        session.ID,
+		OrderID:              exitOrder.ID,
+		DecisionEventID:      exitDecisionEventID,
+		AccountID:            session.AccountID,
+		StrategyID:           session.StrategyID,
+		Symbol:               "BTCUSDT",
+		VerifiedClosed:       true,
+		RemainingPositionQty: 0,
+		VerificationSource:   "ws-sync",
+		EventTime:            exitAt.Add(3 * time.Second).UTC(),
+	}); err != nil {
+		t.Fatalf("create order close verification: %v", err)
+	}
 
 	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
 		LiveSessionID: session.ID,
@@ -324,4 +435,38 @@ func assertTradePairFloat(t *testing.T, got, want float64) {
 
 func timePointer(value time.Time) *time.Time {
 	return &value
+}
+
+type testMissingLiveTradePairTelemetryStore struct {
+	*memory.Store
+}
+
+func (s *testMissingLiveTradePairTelemetryStore) QueryStrategyDecisionEvents(domain.StrategyDecisionEventQuery) ([]domain.StrategyDecisionEvent, error) {
+	return nil, fmt.Errorf(`pq: relation "strategy_decision_events" does not exist (SQLSTATE 42P01)`)
+}
+
+func (s *testMissingLiveTradePairTelemetryStore) QueryPositionAccountSnapshots(domain.PositionAccountSnapshotQuery) ([]domain.PositionAccountSnapshot, error) {
+	return nil, fmt.Errorf(`pq: relation "position_account_snapshots" does not exist (SQLSTATE 42P01)`)
+}
+
+type testScopedLiveTradePairTelemetryStore struct {
+	*memory.Store
+	usedLiveSessionTelemetryQuery  bool
+	usedBulkSnapshotTelemetryQuery bool
+}
+
+func (s *testScopedLiveTradePairTelemetryStore) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQuery) ([]domain.StrategyDecisionEvent, error) {
+	if query.LiveSessionID != "" {
+		s.usedLiveSessionTelemetryQuery = true
+		return nil, fmt.Errorf("unexpected full live session telemetry query")
+	}
+	return s.Store.QueryStrategyDecisionEvents(query)
+}
+
+func (s *testScopedLiveTradePairTelemetryStore) QueryPositionAccountSnapshots(query domain.PositionAccountSnapshotQuery) ([]domain.PositionAccountSnapshot, error) {
+	if query.LiveSessionID != "" && query.OrderID == "" {
+		s.usedBulkSnapshotTelemetryQuery = true
+		return nil, fmt.Errorf("unexpected bulk snapshot telemetry query")
+	}
+	return s.Store.QueryPositionAccountSnapshots(query)
 }
