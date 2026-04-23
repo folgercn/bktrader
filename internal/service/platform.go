@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/logging"
 	"github.com/wuyaocheng/bktrader/internal/store"
@@ -161,16 +162,16 @@ func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {
 }
 
 func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
-	if policy.TradeTickFreshnessSeconds >= 0 {
+	if policy.TradeTickFreshnessSeconds > 0 {
 		p.runtimePolicy.TradeTickFreshnessSeconds = policy.TradeTickFreshnessSeconds
 	}
-	if policy.OrderBookFreshnessSeconds >= 0 {
+	if policy.OrderBookFreshnessSeconds > 0 {
 		p.runtimePolicy.OrderBookFreshnessSeconds = policy.OrderBookFreshnessSeconds
 	}
-	if policy.SignalBarFreshnessSeconds >= 0 {
+	if policy.SignalBarFreshnessSeconds > 0 {
 		p.runtimePolicy.SignalBarFreshnessSeconds = policy.SignalBarFreshnessSeconds
 	}
-	if policy.RuntimeQuietSeconds >= 0 {
+	if policy.RuntimeQuietSeconds > 0 {
 		p.runtimePolicy.RuntimeQuietSeconds = policy.RuntimeQuietSeconds
 	}
 	if policy.StrategyEvaluationQuietSeconds >= 0 {
@@ -179,19 +180,19 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	if policy.LiveAccountSyncFreshnessSecs >= 0 {
 		p.runtimePolicy.LiveAccountSyncFreshnessSecs = policy.LiveAccountSyncFreshnessSecs
 	}
-	if policy.PaperStartReadinessTimeoutSecs >= 0 {
+	if policy.PaperStartReadinessTimeoutSecs > 0 {
 		p.runtimePolicy.PaperStartReadinessTimeoutSecs = policy.PaperStartReadinessTimeoutSecs
 	}
-	if policy.WSHandshakeTimeoutSeconds >= 0 {
+	if policy.WSHandshakeTimeoutSeconds > 0 {
 		p.runtimePolicy.WSHandshakeTimeoutSeconds = policy.WSHandshakeTimeoutSeconds
 	}
-	if policy.WSReadStaleTimeoutSeconds >= 0 {
+	if policy.WSReadStaleTimeoutSeconds > 0 {
 		p.runtimePolicy.WSReadStaleTimeoutSeconds = policy.WSReadStaleTimeoutSeconds
 	}
-	if policy.WSPingIntervalSeconds >= 0 {
+	if policy.WSPingIntervalSeconds > 0 {
 		p.runtimePolicy.WSPingIntervalSeconds = policy.WSPingIntervalSeconds
 	}
-	if policy.WSPassiveCloseTimeoutSeconds >= 0 {
+	if policy.WSPassiveCloseTimeoutSeconds > 0 {
 		p.runtimePolicy.WSPassiveCloseTimeoutSeconds = policy.WSPassiveCloseTimeoutSeconds
 	}
 	if len(policy.WSReconnectBackoffs) > 0 {
@@ -200,31 +201,31 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	if len(policy.WSReconnectRecoveryBackoffs) > 0 {
 		p.runtimePolicy.WSReconnectRecoveryBackoffs = policy.WSReconnectRecoveryBackoffs
 	}
-	if policy.RESTLimiterRPS >= 0 {
+	if policy.RESTLimiterRPS > 0 {
 		p.runtimePolicy.RESTLimiterRPS = policy.RESTLimiterRPS
 	}
-	if policy.RESTLimiterBurst >= 0 {
+	if policy.RESTLimiterBurst > 0 {
 		p.runtimePolicy.RESTLimiterBurst = policy.RESTLimiterBurst
 	}
-	if policy.RESTBackoffSeconds >= 0 {
+	if policy.RESTBackoffSeconds > 0 {
 		p.runtimePolicy.RESTBackoffSeconds = policy.RESTBackoffSeconds
 	}
-	if policy.LiveMarketCacheTTLMinutes >= 0 {
+	if policy.LiveMarketCacheTTLMinutes > 0 {
 		p.runtimePolicy.LiveMarketCacheTTLMinutes = policy.LiveMarketCacheTTLMinutes
 	}
-	if policy.TelegramHTTPTimeoutSeconds >= 0 {
+	if policy.TelegramHTTPTimeoutSeconds > 0 {
 		p.runtimePolicy.TelegramHTTPTimeoutSeconds = policy.TelegramHTTPTimeoutSeconds
 	}
-	if policy.BinanceRecvWindowMs >= 0 {
+	if policy.BinanceRecvWindowMs > 0 {
 		p.runtimePolicy.BinanceRecvWindowMs = policy.BinanceRecvWindowMs
 	}
-	if policy.LiveSignalWarmWindowDays >= 0 {
+	if policy.LiveSignalWarmWindowDays > 0 {
 		p.runtimePolicy.LiveSignalWarmWindowDays = policy.LiveSignalWarmWindowDays
 	}
-	if policy.LiveFastSignalWarmWindowDays >= 0 {
+	if policy.LiveFastSignalWarmWindowDays > 0 {
 		p.runtimePolicy.LiveFastSignalWarmWindowDays = policy.LiveFastSignalWarmWindowDays
 	}
-	if policy.LiveMinuteWarmWindowDays >= 0 {
+	if policy.LiveMinuteWarmWindowDays > 0 {
 		p.runtimePolicy.LiveMinuteWarmWindowDays = policy.LiveMinuteWarmWindowDays
 	}
 	if !policy.UpdatedAt.IsZero() {
@@ -239,6 +240,67 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 		"ws_stale_timeout_seconds", p.runtimePolicy.WSReadStaleTimeoutSeconds,
 		"updated_at", p.runtimePolicy.UpdatedAt,
 	)
+}
+
+// ApplyRuntimeConfigOverrides 应用来自 Config (环境变量) 的覆盖。
+// 使用指针判断是否设置，并根据字段业务语义进行严格校验 (>0 vs >=0)。
+func (p *Platform) ApplyRuntimeConfigOverrides(cfg config.Config) {
+	// 辅助函数：仅当 source 非 nil 且 > 0 时应用
+	applyIfPositive := func(target *int, source *int, name string) {
+		if source != nil {
+			if *source > 0 {
+				*target = *source
+			} else {
+				p.logger("service.platform").Warn("invalid runtime config (must > 0), ignoring", "key", name, "value", *source)
+			}
+		}
+	}
+
+	// 辅助函数：仅当 source 非 nil 且 >= 0 时应用
+	applyIfNonNegative := func(target *int, source *int, name string) {
+		if source != nil {
+			if *source >= 0 {
+				*target = *source
+			} else {
+				p.logger("service.platform").Warn("invalid runtime config (must >= 0), ignoring", "key", name, "value", *source)
+			}
+		}
+	}
+
+	applyIfPositive(&p.runtimePolicy.TradeTickFreshnessSeconds, cfg.TradeTickFreshnessSeconds, "TRADE_TICK_FRESHNESS_SECONDS")
+	applyIfPositive(&p.runtimePolicy.OrderBookFreshnessSeconds, cfg.OrderBookFreshnessSeconds, "ORDER_BOOK_FRESHNESS_SECONDS")
+	applyIfPositive(&p.runtimePolicy.SignalBarFreshnessSeconds, cfg.SignalBarFreshnessSeconds, "SIGNAL_BAR_FRESHNESS_SECONDS")
+	applyIfPositive(&p.runtimePolicy.RuntimeQuietSeconds, cfg.RuntimeQuietSeconds, "RUNTIME_QUIET_SECONDS")
+
+	// 允许 0 的特殊字段
+	applyIfNonNegative(&p.runtimePolicy.StrategyEvaluationQuietSeconds, cfg.StrategyEvaluationQuietSeconds, "STRATEGY_EVALUATION_QUIET_SECONDS")
+	applyIfNonNegative(&p.runtimePolicy.LiveAccountSyncFreshnessSecs, cfg.LiveAccountSyncFreshnessSecs, "LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS")
+
+	applyIfPositive(&p.runtimePolicy.PaperStartReadinessTimeoutSecs, cfg.PaperStartReadinessTimeoutSecs, "PAPER_START_READINESS_TIMEOUT_SECONDS")
+	applyIfPositive(&p.runtimePolicy.WSHandshakeTimeoutSeconds, cfg.WSHandshakeTimeoutSeconds, "WS_HANDSHAKE_TIMEOUT_SECONDS")
+	applyIfPositive(&p.runtimePolicy.WSReadStaleTimeoutSeconds, cfg.WSReadStaleTimeoutSeconds, "WS_READ_STALE_TIMEOUT_SECONDS")
+	applyIfPositive(&p.runtimePolicy.WSPingIntervalSeconds, cfg.WSPingIntervalSeconds, "WS_PING_INTERVAL_SECONDS")
+	applyIfPositive(&p.runtimePolicy.WSPassiveCloseTimeoutSeconds, cfg.WSPassiveCloseTimeoutSeconds, "WS_PASSIVE_CLOSE_TIMEOUT_SECONDS")
+
+	if len(cfg.WSReconnectBackoffs) > 0 {
+		p.runtimePolicy.WSReconnectBackoffs = cfg.WSReconnectBackoffs
+	}
+	if len(cfg.WSReconnectRecoveryBackoffs) > 0 {
+		p.runtimePolicy.WSReconnectRecoveryBackoffs = cfg.WSReconnectRecoveryBackoffs
+	}
+
+	applyIfPositive(&p.runtimePolicy.RESTLimiterRPS, cfg.RESTLimiterRPS, "REST_LIMITER_RPS")
+	applyIfPositive(&p.runtimePolicy.RESTLimiterBurst, cfg.RESTLimiterBurst, "REST_LIMITER_BURST")
+	applyIfPositive(&p.runtimePolicy.RESTBackoffSeconds, cfg.RESTBackoffSeconds, "REST_BACKOFF_SECONDS")
+	applyIfPositive(&p.runtimePolicy.LiveMarketCacheTTLMinutes, cfg.LiveMarketCacheTTLMinutes, "LIVE_MARKET_CACHE_TTL_MINUTES")
+	applyIfPositive(&p.runtimePolicy.TelegramHTTPTimeoutSeconds, cfg.TelegramHTTPTimeoutSeconds, "TELEGRAM_HTTP_TIMEOUT_SECONDS")
+	applyIfPositive(&p.runtimePolicy.BinanceRecvWindowMs, cfg.BinanceRecvWindowMs, "BINANCE_REST_RECV_WINDOW_MS")
+	applyIfPositive(&p.runtimePolicy.LiveSignalWarmWindowDays, cfg.LiveSignalWarmWindowDays, "LIVE_SIGNAL_WARM_WINDOW_DAYS")
+	applyIfPositive(&p.runtimePolicy.LiveFastSignalWarmWindowDays, cfg.LiveFastSignalWarmWindowDays, "LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS")
+	applyIfPositive(&p.runtimePolicy.LiveMinuteWarmWindowDays, cfg.LiveMinuteWarmWindowDays, "LIVE_MINUTE_WARM_WINDOW_DAYS")
+
+	// 最终同步更新 limiter
+	p.UpdateBinanceRESTLimits()
 }
 
 func (p *Platform) RuntimePolicy() RuntimePolicy {

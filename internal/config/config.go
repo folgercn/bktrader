@@ -31,32 +31,32 @@ type Config struct {
 	AuthPassword                   string // 管理后台密码
 	AuthSecret                     string // Token 签名密钥
 	AuthTokenTTLMinutes            int    // Token 有效期（分钟）
-	TradeTickFreshnessSeconds      int    // trade tick 新鲜度阈值
-	OrderBookFreshnessSeconds      int    // order book 新鲜度阈值
-	SignalBarFreshnessSeconds      int    // signal bar 新鲜度阈值
-	RuntimeQuietSeconds            int    // runtime quiet 告警阈值
-	StrategyEvaluationQuietSeconds int    // 策略触发进入评估的静默阈值
-	LiveAccountSyncFreshnessSecs   int    // live account 同步陈旧阈值
-	PaperStartReadinessTimeoutSecs int    // paper 启动前 runtime readiness 等待阈值
+	TradeTickFreshnessSeconds      *int   // trade tick 新鲜度阈值
+	OrderBookFreshnessSeconds      *int   // order book 新鲜度阈值
+	SignalBarFreshnessSeconds      *int   // signal bar 新鲜度阈值
+	RuntimeQuietSeconds            *int   // runtime quiet 告警阈值
+	StrategyEvaluationQuietSeconds *int   // 策略触发进入评估的静默阈值
+	LiveAccountSyncFreshnessSecs   *int   // live account 同步陈旧阈值
+	PaperStartReadinessTimeoutSecs *int   // paper 启动前 runtime readiness 等待阈值
 	TelegramEnabled                bool   // Telegram 通知是否启用
 	TelegramBotToken               string // Telegram Bot Token
 	TelegramChatID                 string // Telegram Chat ID
 	TelegramSendLevels             string // Telegram 默认发送等级（逗号分隔）
-	WSHandshakeTimeoutSeconds      int    // WebSocket 握手超时
-	WSReadStaleTimeoutSeconds      int    // WebSocket 读取陈旧超时
-	WSPingIntervalSeconds          int    // WebSocket Ping 间隔
-	WSPassiveCloseTimeoutSeconds   int    // WebSocket 被动关闭超时
-	WSReconnectBackoffs            []int  // WebSocket 普通重连退避序列
-	WSReconnectRecoveryBackoffs    []int  // WebSocket 恢复模式重连退避序列
-	RESTLimiterRPS                 int    // Binance REST 每秒请求数限制
-	RESTLimiterBurst               int    // Binance REST 突发限制
-	RESTBackoffSeconds             int    // Binance REST 熔断时长
-	LiveMarketCacheTTLMinutes      int    // 市场快照缓存有效期
-	TelegramHTTPTimeoutSeconds     int    // Telegram HTTP 请求超时
-	BinanceRecvWindowMs            int    // Binance 请求 RecvWindow
-	LiveSignalWarmWindowDays       int    // 实盘信号预热窗口（天）
-	LiveFastSignalWarmWindowDays   int    // 实盘快速信号预热窗口（天）
-	LiveMinuteWarmWindowDays       int    // 实盘分钟数据预热窗口（天）
+	WSHandshakeTimeoutSeconds      *int    // WebSocket 握手超时
+	WSReadStaleTimeoutSeconds      *int    // WebSocket 读取陈旧超时
+	WSPingIntervalSeconds          *int    // WebSocket Ping 间隔
+	WSPassiveCloseTimeoutSeconds   *int    // WebSocket 被动关闭超时
+	WSReconnectBackoffs            []int   // WebSocket 普通重连退避序列
+	WSReconnectRecoveryBackoffs    []int   // WebSocket 恢复模式重连退避序列
+	RESTLimiterRPS                 *int    // Binance REST 每秒请求数限制
+	RESTLimiterBurst               *int    // Binance REST 突发限制
+	RESTBackoffSeconds             *int    // Binance REST 熔断时长
+	LiveMarketCacheTTLMinutes      *int    // 市场快照缓存有效期
+	TelegramHTTPTimeoutSeconds     *int    // Telegram HTTP 请求超时
+	BinanceRecvWindowMs            *int    // Binance 请求 RecvWindow
+	LiveSignalWarmWindowDays       *int    // 实盘信号预热窗口（天）
+	LiveFastSignalWarmWindowDays   *int    // 实盘快速信号预热窗口（天）
+	LiveMinuteWarmWindowDays       *int    // 实盘分钟数据预热窗口（天）
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -67,13 +67,6 @@ func Load() Config {
 			tickInterval = parsed
 		}
 	}
-	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", -1)
-	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", -1)
-	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", -1)
-	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", -1)
-	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", -1)
-	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", -1)
-	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", -1)
 
 	authTokenTTL := 720
 	if v := os.Getenv("AUTH_TOKEN_TTL_MINUTES"); v != "" {
@@ -105,33 +98,44 @@ func Load() Config {
 		AuthPassword:                   os.Getenv("AUTH_PASSWORD"),
 		AuthSecret:                     os.Getenv("AUTH_SECRET"),
 		AuthTokenTTLMinutes:            authTokenTTL,
-		TradeTickFreshnessSeconds:      tradeTickFreshness,
-		OrderBookFreshnessSeconds:      orderBookFreshness,
-		SignalBarFreshnessSeconds:      signalBarFreshness,
-		RuntimeQuietSeconds:            runtimeQuiet,
-		StrategyEvaluationQuietSeconds: strategyEvaluationQuiet,
-		LiveAccountSyncFreshnessSecs:   liveAccountSyncFreshness,
-		PaperStartReadinessTimeoutSecs: paperReadinessTimeout,
+		TradeTickFreshnessSeconds:      IntPtrFromEnv("TRADE_TICK_FRESHNESS_SECONDS"),
+		OrderBookFreshnessSeconds:      IntPtrFromEnv("ORDER_BOOK_FRESHNESS_SECONDS"),
+		SignalBarFreshnessSeconds:      IntPtrFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS"),
+		RuntimeQuietSeconds:            IntPtrFromEnv("RUNTIME_QUIET_SECONDS"),
+		StrategyEvaluationQuietSeconds: IntPtrFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS"),
+		LiveAccountSyncFreshnessSecs:   IntPtrFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS"),
+		PaperStartReadinessTimeoutSecs: IntPtrFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS"),
 		TelegramEnabled:                boolFromEnv("TELEGRAM_ENABLED", false),
 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
-		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", -1),
-		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", -1),
-		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", -1),
-		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", -1),
+		WSHandshakeTimeoutSeconds:      IntPtrFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS"),
+		WSReadStaleTimeoutSeconds:      IntPtrFromEnv("WS_READ_STALE_TIMEOUT_SECONDS"),
+		WSPingIntervalSeconds:          IntPtrFromEnv("WS_PING_INTERVAL_SECONDS"),
+		WSPassiveCloseTimeoutSeconds:   IntPtrFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS"),
 		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", nil),
 		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", nil),
-		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", -1),
-		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", -1),
-		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", -1),
-		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", -1),
-		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", -1),
-		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", -1),
-		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", -1),
-		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", -1),
-		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", -1),
+		RESTLimiterRPS:                 IntPtrFromEnv("REST_LIMITER_RPS"),
+		RESTLimiterBurst:               IntPtrFromEnv("REST_LIMITER_BURST"),
+		RESTBackoffSeconds:             IntPtrFromEnv("REST_BACKOFF_SECONDS"),
+		LiveMarketCacheTTLMinutes:      IntPtrFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES"),
+		TelegramHTTPTimeoutSeconds:     IntPtrFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS"),
+		BinanceRecvWindowMs:            IntPtrFromEnv("BINANCE_REST_RECV_WINDOW_MS"),
+		LiveSignalWarmWindowDays:       IntPtrFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS"),
+		LiveFastSignalWarmWindowDays:   IntPtrFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS"),
+		LiveMinuteWarmWindowDays:       IntPtrFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS"),
 	}
+}
+
+func IntPtrFromEnv(key string) *int {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			p := new(int)
+			*p = parsed
+			return p
+		}
+	}
+	return nil
 }
 
 // Validate 校验配置项的合法性，启动前快速失败。

@@ -769,7 +769,11 @@ var (
 	binanceRESTBackoffDuration   = 60 * time.Second
 )
 
-func UpdateBinanceRESTLimits(rps, burst, backoffSec int) {
+func (p *Platform) UpdateBinanceRESTLimits() {
+	rps := p.runtimePolicy.RESTLimiterRPS
+	burst := p.runtimePolicy.RESTLimiterBurst
+	backoffSec := p.runtimePolicy.RESTBackoffSeconds
+
 	if rps > 0 {
 		binanceRESTRequestsPerSecond = rps
 	}
