@@ -13,8 +13,9 @@
 
 ## 2. 协作与版本控制 (CLI Tools)
 
-- **GitHub CLI (gh)**: `/usr/local/bin/gh`
-- **Git**: `/usr/local/bin/git`
+- **GitHub CLI (gh)**: `/opt/homebrew/bin/gh`
+- **Git**: `/usr/bin/git`
+- **PostgreSQL (psql)**: `/opt/homebrew/bin/psql`
 
 ## 3. 环境变量加载
 
@@ -23,4 +24,4 @@
 source ~/.zshrc && <your_command>
 ```
 ---
-*上次更新时间: 2026-04-16*
+*上次更新时间: 2026-04-23 (Antigravity 路径修正)*
