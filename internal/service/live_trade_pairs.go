@@ -66,51 +66,54 @@ type liveTradePairBuilder struct {
 }
 
 func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain.LiveTradePair, error) {
+	startTime := time.Now()
 	liveSessionID := strings.TrimSpace(query.LiveSessionID)
 	if liveSessionID == "" {
 		return nil, fmt.Errorf("liveSessionId is required")
 	}
+
+	defer func() {
+		p.logger("service.live_trade_pairs", "session_id", liveSessionID).Info("ListLiveTradePairs completed", "elapsed", time.Since(startTime))
+	}()
+
 	session, err := p.store.GetLiveSession(liveSessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	orders, err := p.store.ListOrders()
-	if err != nil {
-		return nil, err
-	}
-	fills, err := p.store.ListFills()
-	if err != nil {
-		return nil, err
-	}
-	positions, err := p.store.ListPositions()
+	orders, err := p.store.QueryOrders(domain.OrderQuery{LiveSessionID: liveSessionID})
 	if err != nil {
 		return nil, err
 	}
 
 	orderByID := make(map[string]domain.Order)
+	var orderIDs []string
+	uniqueSymbols := make(map[string]struct{})
 	for _, order := range orders {
-		if strings.TrimSpace(stringValue(order.Metadata["liveSessionId"])) != liveSessionID {
-			continue
-		}
 		orderByID[order.ID] = order
-	}
-	filteredFills := liveTradePairRelevantFills(fills, orderByID)
-	if len(filteredFills) == 0 {
-		return filterAndLimitLiveTradePairs(nil, normalizeLiveTradePairStatus(query.Status), normalizeLiveTradePairLimit(query.Limit)), nil
+		orderIDs = append(orderIDs, order.ID)
+		uniqueSymbols[NormalizeSymbol(order.Symbol)] = struct{}{}
 	}
 
-	decisionByID, err := p.fetchLiveTradeDecisionEvents(liveSessionID, orderByID)
+	if len(uniqueSymbols) > 1 {
+		p.logger("service.live_trade_pairs", "session_id", liveSessionID).Warn("live session has orders for multiple symbols, trade pairs might be miscalculated")
+	}
+
+	fills, err := p.store.QueryFills(domain.FillQuery{OrderIDs: orderIDs})
 	if err != nil {
 		return nil, err
 	}
-	snapshotByOrderID, err := p.fetchLatestLiveTradeSnapshots(liveSessionID, orderByID)
+
+	positions, err := p.store.QueryPositions(domain.PositionQuery{AccountID: session.AccountID})
 	if err != nil {
 		return nil, err
 	}
 
 	currentPositionBySymbol := currentLivePositionBySymbol(session, positions)
-	fillEvents := buildLiveTradeFillEvents(filteredFills, orderByID, decisionByID)
+	fillEvents := buildLiveTradeFillEvents(fills, orderByID, nil)
+	if len(fillEvents) == 0 {
+		return filterAndLimitLiveTradePairs(nil, normalizeLiveTradePairStatus(query.Status), normalizeLiveTradePairLimit(query.Limit)), nil
+	}
 
 	sort.SliceStable(fillEvents, func(i, j int) bool {
 		left := fillEvents[i]
@@ -171,7 +174,7 @@ func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain
 		applyPnLFill(&state, event.order.Side, event.fill.Quantity, event.fill.Price)
 		remainingQty := absQty - closingQty
 		if absFloat(prevNetQty)-closingQty <= 1e-9 {
-			results = append(results, current.finalizeClosed(snapshotByOrderID))
+			results = append(results, current.finalizeClosed())
 			current = nil
 		}
 		if remainingQty > 1e-9 {
@@ -197,7 +200,9 @@ func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain
 			return results[i].ID > results[j].ID
 		}
 	})
-	return filterAndLimitLiveTradePairs(results, normalizeLiveTradePairStatus(query.Status), normalizeLiveTradePairLimit(query.Limit)), nil
+	results = filterAndLimitLiveTradePairs(results, normalizeLiveTradePairStatus(query.Status), normalizeLiveTradePairLimit(query.Limit))
+	p.enrichLiveTradePairs(results, orderByID)
+	return results, nil
 }
 
 func liveTradePairRelevantFills(fills []domain.Fill, orderByID map[string]domain.Order) []domain.Fill {
@@ -278,6 +283,9 @@ func buildLiveTradeFillEvents(
 	orderByID map[string]domain.Order,
 	decisionByID map[string]domain.StrategyDecisionEvent,
 ) []liveTradeFillEvent {
+	if decisionByID == nil {
+		decisionByID = map[string]domain.StrategyDecisionEvent{}
+	}
 	items := make([]liveTradeFillEvent, 0, len(fills))
 	for _, fill := range fills {
 		order, ok := orderByID[fill.OrderID]
@@ -288,11 +296,7 @@ func buildLiveTradeFillEvents(
 		if fill.ExchangeTradeTime != nil && !fill.ExchangeTradeTime.IsZero() {
 			eventTime = fill.ExchangeTradeTime.UTC()
 		}
-		decisionEventID := firstNonEmpty(
-			stringValue(order.Metadata["decisionEventId"]),
-			stringValue(mapValue(order.Metadata["executionProposal"])["decisionEventId"]),
-			stringValue(mapValue(mapValue(order.Metadata["executionProposal"])["metadata"])["decisionEventId"]),
-		)
+		decisionEventID := decisionEventIDFromOrder(order)
 		items = append(items, liveTradeFillEvent{
 			order:           order,
 			fill:            fill,
@@ -302,6 +306,14 @@ func buildLiveTradeFillEvents(
 		})
 	}
 	return items
+}
+
+func decisionEventIDFromOrder(order domain.Order) string {
+	return firstNonEmpty(
+		stringValue(order.Metadata["decisionEventId"]),
+		stringValue(mapValue(order.Metadata["executionProposal"])["decisionEventId"]),
+		stringValue(mapValue(mapValue(order.Metadata["executionProposal"])["metadata"])["decisionEventId"]),
+	)
 }
 
 func resolveLiveTradeIntentDetails(order domain.Order, decision domain.StrategyDecisionEvent) liveTradeIntentDetails {
@@ -362,21 +374,6 @@ func resolveLiveTradeIntentDetails(order domain.Order, decision domain.StrategyD
 			decision.Reason,
 		)), "manual"),
 	}
-}
-
-func latestPositionSnapshotByOrderID(items []domain.PositionAccountSnapshot) map[string]domain.PositionAccountSnapshot {
-	result := make(map[string]domain.PositionAccountSnapshot)
-	for _, item := range items {
-		orderID := strings.TrimSpace(item.OrderID)
-		if orderID == "" {
-			continue
-		}
-		current, ok := result[orderID]
-		if !ok || domain.EventLessAsc(current.EventTime, current.RecordedAt, current.ID, item.EventTime, item.RecordedAt, item.ID) {
-			result[orderID] = item
-		}
-	}
-	return result
 }
 
 func currentLivePositionBySymbol(session domain.LiveSession, positions []domain.Position) map[string]domain.Position {
@@ -456,7 +453,7 @@ func (b *liveTradePairBuilder) addExit(event liveTradeFillEvent, qty, fee, reali
 	}
 }
 
-func (b *liveTradePairBuilder) finalizeClosed(snapshotByOrderID map[string]domain.PositionAccountSnapshot) domain.LiveTradePair {
+func (b *liveTradePairBuilder) finalizeClosed() domain.LiveTradePair {
 	verdict := "normal"
 	if b.exitQty <= 0 {
 		verdict = "orphan-exit"
@@ -464,12 +461,6 @@ func (b *liveTradePairBuilder) finalizeClosed(snapshotByOrderID map[string]domai
 		verdict = "mismatch"
 	} else if b.recoveryExit {
 		verdict = "recovery-close"
-	}
-	if snapshot, ok := snapshotByOrderID[b.lastExitOrderID]; ok {
-		if snapshot.PositionFound || snapshot.PositionQuantity > 1e-9 {
-			verdict = "mismatch"
-			b.addNote("post-exit-snapshot-still-has-position")
-		}
 	}
 	b.exitVerdict = verdict
 	return b.build(0, 0)
@@ -694,4 +685,93 @@ func filterAndLimitLiveTradePairs(items []domain.LiveTradePair, status string, l
 		}
 	}
 	return filtered
+}
+
+func (p *Platform) enrichLiveTradePairs(items []domain.LiveTradePair, orderByID map[string]domain.Order) {
+	if len(items) == 0 {
+		return
+	}
+
+	decisionByID := make(map[string]domain.StrategyDecisionEvent)
+	var allExitOrderIDs []string
+	var allDecisionEventIDs []string
+
+	for _, item := range items {
+		for _, orderID := range item.EntryOrderIDs {
+			if order, ok := orderByID[orderID]; ok {
+				if id := decisionEventIDFromOrder(order); id != "" {
+					allDecisionEventIDs = append(allDecisionEventIDs, id)
+				}
+			}
+		}
+		for _, orderID := range item.ExitOrderIDs {
+			allExitOrderIDs = append(allExitOrderIDs, orderID)
+			if order, ok := orderByID[orderID]; ok {
+				if id := decisionEventIDFromOrder(order); id != "" {
+					allDecisionEventIDs = append(allDecisionEventIDs, id)
+				}
+			}
+		}
+	}
+
+	if len(allDecisionEventIDs) > 0 {
+		if events, err := p.queryStrategyDecisionEvents(domain.StrategyDecisionEventQuery{
+			DecisionEventIDs: allDecisionEventIDs,
+		}); err == nil {
+			for _, event := range events {
+				if _, ok := decisionByID[event.ID]; !ok {
+					decisionByID[event.ID] = event
+				}
+			}
+		}
+	}
+
+	closeVerificationsByOrderID := make(map[string]domain.OrderCloseVerification)
+	if len(allExitOrderIDs) > 0 {
+		if verifications, err := p.store.QueryOrderCloseVerifications(domain.OrderCloseVerificationQuery{
+			OrderIDs: allExitOrderIDs,
+		}); err == nil {
+			for _, v := range verifications {
+				if _, ok := closeVerificationsByOrderID[v.OrderID]; !ok {
+					closeVerificationsByOrderID[v.OrderID] = v
+				}
+			}
+		}
+	}
+
+	for index := range items {
+		pair := &items[index]
+		if len(pair.EntryOrderIDs) > 0 {
+			if order, ok := orderByID[pair.EntryOrderIDs[0]]; ok {
+				intent := resolveLiveTradeIntentDetails(order, decisionByID[decisionEventIDFromOrder(order)])
+				if pair.EntryReason == "" {
+					pair.EntryReason = liveTradeReasonLabel(intent.reason)
+				}
+			}
+		}
+		if len(pair.ExitOrderIDs) > 0 {
+			lastExitOrderID := pair.ExitOrderIDs[len(pair.ExitOrderIDs)-1]
+			if order, ok := orderByID[lastExitOrderID]; ok {
+				intent := resolveLiveTradeIntentDetails(order, decisionByID[decisionEventIDFromOrder(order)])
+				if pair.ExitReason == "" {
+					pair.ExitReason = liveTradeReasonLabel(intent.reason)
+				}
+				if pair.ExitClassifier == "" {
+					pair.ExitClassifier = classifyLiveTradeExit(intent)
+				}
+
+				if pair.Status == "closed" {
+					if verification, ok := closeVerificationsByOrderID[lastExitOrderID]; ok {
+						if !verification.VerifiedClosed {
+							pair.ExitVerdict = "mismatch"
+						}
+					}
+				}
+
+				if pair.ExitVerdict == "normal" && intent.recoveryTriggered {
+					pair.ExitVerdict = "recovery-close"
+				}
+			}
+		}
+	}
 }

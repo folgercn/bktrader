@@ -536,6 +536,45 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 	return items, rows.Err()
 }
 
+func (s *Store) QueryOrders(query domain.OrderQuery) ([]domain.Order, error) {
+	sqlQuery := `
+		select id, account_id, strategy_version_id, symbol, side, type, status, quantity, price, metadata, created_at
+		from orders
+	`
+	args := []any{}
+	if query.LiveSessionID != "" {
+		sqlQuery += ` where metadata->>'liveSessionId' = $1 `
+		args = append(args, query.LiveSessionID)
+	}
+	sqlQuery += ` order by created_at asc `
+
+	rows, err := s.db.Query(sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.Order{}
+	for rows.Next() {
+		var (
+			item              domain.Order
+			strategyVersionID sql.NullString
+			metadataRaw       []byte
+		)
+		if err := rows.Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Type, &item.Status, &item.Quantity, &item.Price, &metadataRaw, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		item.StrategyVersionID = strategyVersionID.String
+		item.Metadata = map[string]any{}
+		if len(metadataRaw) > 0 {
+			_ = json.Unmarshal(metadataRaw, &item.Metadata)
+		}
+		item.NormalizeExecutionFlags()
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) CreateOrder(order domain.Order) (domain.Order, error) {
 	order.NormalizeExecutionFlags()
 	order.ID = fmt.Sprintf("order-%d", time.Now().UTC().UnixNano())
@@ -580,6 +619,48 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
 		from fills order by created_at asc
 	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.Fill{}
+	for rows.Next() {
+		var item domain.Fill
+		var exchangeTradeID sql.NullString
+		var exchangeTradeTime sql.NullTime
+		var fallbackFingerprint sql.NullString
+		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &exchangeTradeTime, &fallbackFingerprint, &item.Price, &item.Quantity, &item.Fee, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		item.ExchangeTradeID = exchangeTradeID.String
+		item.DedupFingerprint = fallbackFingerprint.String
+		if exchangeTradeTime.Valid {
+			parsed := exchangeTradeTime.Time.UTC()
+			item.ExchangeTradeTime = &parsed
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {
+	sqlQuery := `
+		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
+		from fills
+	`
+	args := []any{}
+	if len(query.OrderIDs) > 0 {
+		placeholders := []string{}
+		for i, id := range query.OrderIDs {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+			args = append(args, id)
+		}
+		sqlQuery += fmt.Sprintf(" where order_id in (%s) ", strings.Join(placeholders, ","))
+	}
+	sqlQuery += ` order by created_at asc `
+
+	rows, err := s.db.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -707,6 +788,39 @@ func (s *Store) ListPositions() ([]domain.Position, error) {
 		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
 		from positions order by updated_at asc
 	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.Position{}
+	for rows.Next() {
+		var (
+			item              domain.Position
+			strategyVersionID sql.NullString
+		)
+		if err := rows.Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Quantity, &item.EntryPrice, &item.MarkPrice, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		item.StrategyVersionID = strategyVersionID.String
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) QueryPositions(query domain.PositionQuery) ([]domain.Position, error) {
+	sqlQuery := `
+		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
+		from positions
+	`
+	args := []any{}
+	if query.AccountID != "" {
+		sqlQuery += ` where account_id = $1 `
+		args = append(args, query.AccountID)
+	}
+	sqlQuery += ` order by updated_at asc `
+
+	rows, err := s.db.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1362,6 +1476,19 @@ func (s *Store) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQu
 	appendQueryCondition(&builder, &args, "strategy_id = %s", strings.TrimSpace(query.StrategyID))
 	appendQueryCondition(&builder, &args, "runtime_session_id = %s", strings.TrimSpace(query.RuntimeSessionID))
 	appendQueryCondition(&builder, &args, "id = %s", strings.TrimSpace(query.DecisionEventID))
+	if len(query.DecisionEventIDs) > 0 {
+		placeholders := make([]string, 0, len(query.DecisionEventIDs))
+		for _, id := range query.DecisionEventIDs {
+			if strings.TrimSpace(id) == "" {
+				continue
+			}
+			args = append(args, strings.TrimSpace(id))
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		}
+		if len(placeholders) > 0 {
+			builder.WriteString(fmt.Sprintf(" and id in (%s)", strings.Join(placeholders, ", ")))
+		}
+	}
 	appendQueryTimeCondition(&builder, &args, "event_time >= %s", query.From)
 	appendQueryTimeCondition(&builder, &args, "event_time <= %s", query.To)
 	appendEventCursorCondition(&builder, &args, query.Before)
@@ -1619,6 +1746,103 @@ func (s *Store) CreatePositionAccountSnapshot(snapshot domain.PositionAccountSna
 		marshalJSONValue(snapshot.PositionSnapshot), marshalJSONValue(snapshot.LivePositionState), marshalJSONValue(snapshot.AccountSnapshot), marshalJSONValue(snapshot.AccountSummary), marshalJSONValue(snapshot.Metadata),
 	)
 	return snapshot, err
+}
+
+func (s *Store) CreateOrderCloseVerification(item domain.OrderCloseVerification) (domain.OrderCloseVerification, error) {
+	if item.ID == "" {
+		item.ID = fmt.Sprintf("order-close-verification-%d", time.Now().UTC().UnixNano())
+	}
+	if item.EventTime.IsZero() {
+		item.EventTime = time.Now().UTC()
+	}
+	if item.RecordedAt.IsZero() {
+		item.RecordedAt = time.Now().UTC()
+	}
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	metadataRaw, _ := json.Marshal(item.Metadata)
+
+	_, err := s.db.Exec(`
+		insert into order_close_verifications (
+			id, live_session_id, order_id, decision_event_id, account_id, strategy_id, symbol,
+			verified_closed, remaining_position_qty, verification_source, event_time, recorded_at, metadata
+		) values (
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11, $12, $13
+		)
+	`,
+		item.ID, item.LiveSessionID, item.OrderID, nullIfEmpty(item.DecisionEventID), item.AccountID, item.StrategyID, item.Symbol,
+		item.VerifiedClosed, item.RemainingPositionQty, item.VerificationSource, item.EventTime, item.RecordedAt, metadataRaw,
+	)
+	return item, err
+}
+
+func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerificationQuery) ([]domain.OrderCloseVerification, error) {
+	builder := strings.Builder{}
+	builder.WriteString(`
+		select id, live_session_id, order_id, decision_event_id, account_id, strategy_id, symbol,
+			verified_closed, remaining_position_qty, verification_source, event_time, recorded_at, metadata
+		from order_close_verifications
+		where 1=1
+	`)
+	var args []any
+
+	if strings.TrimSpace(query.LiveSessionID) != "" {
+		args = append(args, strings.TrimSpace(query.LiveSessionID))
+		builder.WriteString(fmt.Sprintf(" and live_session_id = $%d", len(args)))
+	}
+	if strings.TrimSpace(query.OrderID) != "" {
+		args = append(args, strings.TrimSpace(query.OrderID))
+		builder.WriteString(fmt.Sprintf(" and order_id = $%d", len(args)))
+	}
+	if len(query.OrderIDs) > 0 {
+		placeholders := make([]string, 0, len(query.OrderIDs))
+		for _, id := range query.OrderIDs {
+			if strings.TrimSpace(id) == "" {
+				continue
+			}
+			args = append(args, strings.TrimSpace(id))
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		}
+		if len(placeholders) > 0 {
+			builder.WriteString(fmt.Sprintf(" and order_id in (%s)", strings.Join(placeholders, ",")))
+		}
+	}
+
+	builder.WriteString(" order by event_time desc, recorded_at desc, id desc")
+	if query.Limit > 0 {
+		args = append(args, query.Limit)
+		builder.WriteString(fmt.Sprintf(" limit $%d", len(args)))
+	}
+
+	rows, err := s.db.Query(builder.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []domain.OrderCloseVerification
+	for rows.Next() {
+		var item domain.OrderCloseVerification
+		var decisionEventID sql.NullString
+		var metadataRaw []byte
+
+		if err := rows.Scan(
+			&item.ID, &item.LiveSessionID, &item.OrderID, &decisionEventID, &item.AccountID, &item.StrategyID, &item.Symbol,
+			&item.VerifiedClosed, &item.RemainingPositionQty, &item.VerificationSource, &item.EventTime, &item.RecordedAt, &metadataRaw,
+		); err != nil {
+			return nil, err
+		}
+
+		item.DecisionEventID = decisionEventID.String
+		item.Metadata = map[string]any{}
+		if len(metadataRaw) > 0 {
+			_ = json.Unmarshal(metadataRaw, &item.Metadata)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *Store) ListMarketBars(exchange, symbol, timeframe string, from, to int64, limit int) ([]domain.MarketBar, error) {

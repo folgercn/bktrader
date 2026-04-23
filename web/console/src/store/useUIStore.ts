@@ -10,7 +10,7 @@ import { readStoredAuthSession } from '../utils/auth';
 import { resolveUpdater } from './helpers';
 
 type SidebarTab = "monitor" | "strategy" | "account" | "log";
-type DockTab = "orders" | "positions" | "fills" | "alerts";
+type DockTab = "pairs" | "orders" | "positions" | "fills" | "alerts";
 
 export type SystemLogEntry = {
   id: string;
@@ -29,7 +29,7 @@ export type ConfirmDialogConfig = {
 const CONSOLE_NAV_STORAGE_KEY = "bktrader-console-nav";
 const SYSTEM_LOGS_STORAGE_KEY = "bktrader-system-logs";
 const DEFAULT_SIDEBAR_TAB: SidebarTab = "monitor";
-const DEFAULT_DOCK_TAB: DockTab = "orders";
+const DEFAULT_DOCK_TAB: DockTab = "pairs";
 const TIMELINE_CONFIG_STORAGE_KEY = "bktrader-timeline-config";
 
 
@@ -68,7 +68,7 @@ function readStoredConsoleNav(): { sidebarTab: SidebarTab; dockTab: DockTab } {
     const sidebarTab = parsed.sidebarTab === "strategy" || parsed.sidebarTab === "account" || parsed.sidebarTab === "monitor" || parsed.sidebarTab === "log"
       ? parsed.sidebarTab
       : DEFAULT_SIDEBAR_TAB;
-    const dockTab = parsed.dockTab === "positions" || parsed.dockTab === "fills" || parsed.dockTab === "alerts" || parsed.dockTab === "orders"
+    const dockTab = parsed.dockTab === "positions" || parsed.dockTab === "fills" || parsed.dockTab === "alerts" || parsed.dockTab === "orders" || parsed.dockTab === "pairs"
       ? parsed.dockTab
       : DEFAULT_DOCK_TAB;
 

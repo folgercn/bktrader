@@ -16,6 +16,7 @@ type StrategyDecisionEventQuery struct {
 	RuntimeSessionID string
 	LiveSessionID    string
 	DecisionEventID  string
+	DecisionEventIDs []string
 	From             time.Time
 	To               time.Time
 	Before           *EventCursor

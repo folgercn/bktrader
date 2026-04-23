@@ -11,6 +11,7 @@ import { useTradingStore } from './store/useTradingStore';
 import { useDashboard } from './hooks/useDashboard';
 import { useTradingActions } from './hooks/useTradingActions';
 import { fetchJSON } from './utils/api';
+import { deriveHighlightedLiveSession } from './utils/derivation';
 
 // Layout Components
 import { HeaderMetrics } from './components/layout/HeaderMetrics';
@@ -77,6 +78,9 @@ export default function App() {
   const telegramConfig = useTradingStore(s => s.telegramConfig);
   const runtimePolicy = useTradingStore(s => s.runtimePolicy);
   const editingLiveSessionId = useTradingStore(s => s.editingLiveSessionId);
+  const orders = useTradingStore(s => s.orders);
+  const fills = useTradingStore(s => s.fills);
+  const positions = useTradingStore(s => s.positions);
 
   // Quick Account Resolution
   const liveAccounts = accounts;
@@ -89,8 +93,24 @@ export default function App() {
   );
   const strategyOptions = useMemo(() => strategies.map(s => ({ value: s.id, label: s.name })), [strategies]);
 
+  const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
+  const monitorSessionId = useMemo(() => {
+    if (selectedSignalRuntimeId) {
+      const sessionWithRuntime = liveSessions.find(s => 
+        s.id === selectedSignalRuntimeId || 
+        String(s.state?.signalRuntimeSessionId) === selectedSignalRuntimeId
+      );
+      if (sessionWithRuntime) {
+        const highlighted = deriveHighlightedLiveSession([sessionWithRuntime], orders, fills, positions);
+        return highlighted?.session.id || null;
+      }
+    }
+    const highlighted = deriveHighlightedLiveSession(liveSessions, orders, fills, positions);
+    return highlighted?.session.id || null;
+  }, [liveSessions, orders, fills, positions, selectedSignalRuntimeId]);
+
   // Compose dynamic content
-  const dockContent = <DockContent dockTab={dockTab} actions={actions} />;
+  const dockContent = <DockContent dockTab={dockTab} actions={actions} sessionId={monitorSessionId} />;
   const mainStageContent = <MainContent actions={actions} dockContent={dockContent} strategies={strategies} quickLiveAccountId={quickLiveAccountId} />;
 
   return (

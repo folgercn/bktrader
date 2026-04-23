@@ -19,6 +19,7 @@
 - [20260420-runtime-recovery-source-of-truth-map.md](20260420-runtime-recovery-source-of-truth-map.md) - Issue #84 的恢复事实源梳理、函数级 mapping、时序图与风险点清单。
 - [20260420-live-reconcile-manual-close-state-closure-bug-spec.md](20260420-live-reconcile-manual-close-state-closure-bug-spec.md) - 手动平仓、成交回写、reconcile gate 与 session 刷新闭环缺失问题说明与修复范围。
 - [20260422-binance-rest-rate-limit-and-live-sync-storm-plan.md](20260422-binance-rest-rate-limit-and-live-sync-storm-plan.md) - Binance REST 统一限流、`SyncLiveAccount` 风暴治理、stale source 观测与前端 K 线降载专项记录。
+- [20260423-live-trade-pairs-implementation-plan.md](20260423-live-trade-pairs-implementation-plan.md) - `Trade Pairs` 重构落地方案：订单/成交主链路、Decision Event 标签增强、订单级平仓核验新结构设计。
 - [production-log-troubleshooting.md](production-log-troubleshooting.md) - 生产服务器日志 SSH 入口、日志目录、stale/source gate、Binance REST 限流与前端 K 线请求排查起手式。
 - [部署与网络架构.md](部署与网络架构.md) - 包含有关容器/负载路由的信息。
 - [cicd-maintenance.md](cicd-maintenance.md) - GitHub Actions 维保说明。
