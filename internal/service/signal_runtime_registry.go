@@ -335,13 +335,15 @@ func applyLiveBindingToSignalRuntimeSubscription(subscription map[string]any, li
 	if subscription == nil || len(liveBinding) == 0 {
 		return
 	}
-	if _, exists := subscription["sandbox"]; !exists {
-		subscription["sandbox"] = boolValue(liveBinding["sandbox"])
-	}
+	subscription["sandbox"] = boolValue(liveBinding["sandbox"])
 	if restBaseURL := strings.TrimSpace(stringValue(liveBinding["restBaseUrl"])); restBaseURL != "" {
 		subscription["restBaseUrl"] = restBaseURL
+	} else {
+		delete(subscription, "restBaseUrl")
 	}
 	if wsBaseURL := strings.TrimSpace(stringValue(liveBinding["wsBaseUrl"])); wsBaseURL != "" {
 		subscription["wsBaseUrl"] = wsBaseURL
+	} else {
+		delete(subscription, "wsBaseUrl")
 	}
 }

@@ -133,3 +133,23 @@ func TestBuildSignalRuntimePlanCarriesLiveBindingSandboxToSubscriptions(t *testi
 		t.Fatalf("expected wsBaseUrl to propagate to runtime subscription, got %q", got)
 	}
 }
+
+func TestApplyLiveBindingToSignalRuntimeSubscriptionOverridesStaleEnvironmentFields(t *testing.T) {
+	subscription := map[string]any{
+		"sandbox":     false,
+		"restBaseUrl": "https://fapi.binance.com",
+		"wsBaseUrl":   "wss://fstream.binance.com/ws",
+	}
+	applyLiveBindingToSignalRuntimeSubscription(subscription, map[string]any{
+		"sandbox": true,
+	})
+	if !boolValue(subscription["sandbox"]) {
+		t.Fatalf("expected live binding to override stale sandbox=false, got %#v", subscription)
+	}
+	if got := stringValue(subscription["restBaseUrl"]); got != "" {
+		t.Fatalf("expected empty live binding to clear stale restBaseUrl, got %q", got)
+	}
+	if got := stringValue(subscription["wsBaseUrl"]); got != "" {
+		t.Fatalf("expected empty live binding to clear stale wsBaseUrl, got %q", got)
+	}
+}

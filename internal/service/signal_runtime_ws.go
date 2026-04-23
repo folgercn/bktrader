@@ -353,7 +353,7 @@ func resolveBinanceSignalRuntimeWSURL(subscriptions []map[string]any) (string, e
 		return wsURL, nil
 	}
 	if sandboxResolved && sandbox {
-		return defaultBinanceFuturesTestnetWSURL, nil
+		return configuredBinanceFuturesWSURLWithDefault(defaultBinanceFuturesTestnetWSURL), nil
 	}
 	return configuredBinanceFuturesWSURL(), nil
 }
@@ -450,9 +450,13 @@ func (p *Platform) setSessionStopped(sessionID string) {
 }
 
 func configuredBinanceFuturesWSURL() string {
+	return configuredBinanceFuturesWSURLWithDefault(defaultBinanceFuturesWSURL)
+}
+
+func configuredBinanceFuturesWSURLWithDefault(fallback string) string {
 	url := strings.TrimSpace(os.Getenv("BINANCE_FUTURES_WS_URL"))
 	if url == "" {
-		return defaultBinanceFuturesWSURL
+		return fallback
 	}
 	return url
 }

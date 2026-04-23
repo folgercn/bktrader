@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -126,6 +127,30 @@ func TestResolveBinanceSignalRuntimeWSURLUsesSandboxDefault(t *testing.T) {
 	}
 	if wsURL != defaultBinanceFuturesTestnetWSURL {
 		t.Fatalf("expected sandbox runtime to use testnet websocket url, got %s", wsURL)
+	}
+}
+
+func TestResolveBinanceSignalRuntimeWSURLKeepsEnvOverrideForSandboxSessions(t *testing.T) {
+	original := os.Getenv("BINANCE_FUTURES_WS_URL")
+	if err := os.Setenv("BINANCE_FUTURES_WS_URL", "wss://proxy.internal/ws"); err != nil {
+		t.Fatalf("set env failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if original == "" {
+			_ = os.Unsetenv("BINANCE_FUTURES_WS_URL")
+			return
+		}
+		_ = os.Setenv("BINANCE_FUTURES_WS_URL", original)
+	})
+	wsURL, err := resolveBinanceSignalRuntimeWSURL([]map[string]any{{
+		"adapterKey": "binance-market-ws",
+		"sandbox":    true,
+	}})
+	if err != nil {
+		t.Fatalf("resolve sandbox websocket url with env override failed: %v", err)
+	}
+	if wsURL != "wss://proxy.internal/ws" {
+		t.Fatalf("expected sandbox runtime to keep BINANCE_FUTURES_WS_URL override, got %s", wsURL)
 	}
 }
 
