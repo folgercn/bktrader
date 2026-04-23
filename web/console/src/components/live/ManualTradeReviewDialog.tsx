@@ -14,6 +14,7 @@ import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { LiveTradePair } from '../../types/domain';
 import { formatTime } from '../../utils/format';
+import { fetchJSON } from '../../utils/api';
 
 interface ManualTradeReviewDialogProps {
   pair: LiveTradePair | null;
@@ -44,16 +45,11 @@ export function ManualTradeReviewDialog({ pair, sessionId, onClose, onSuccess }:
 
     setIsVerifying(true);
     try {
-      const resp = await fetch(`/api/v1/live/sessions/${sessionId}/orders/${lastOrderId}/verifications`, {
+      await fetchJSON(`/api/v1/live/sessions/${sessionId}/orders/${lastOrderId}/verifications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes: reviewNotes })
       });
-
-      if (!resp.ok) {
-        const err = await resp.text();
-        throw new Error(err || "请求失败");
-      }
 
       toast.success("复核成功，订单状态已同步");
       onSuccess();
