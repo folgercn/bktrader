@@ -536,7 +536,7 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 	return items, rows.Err()
 }
 
-func (s *Store) ListOrdersWithLimit(limit int) ([]domain.Order, error) {
+func (s *Store) ListOrdersWithLimit(limit, offset int) ([]domain.Order, error) {
 	query := `
 		select id, account_id, strategy_version_id, symbol, side, type, status, quantity, price, metadata, created_at
 		from orders order by created_at desc
@@ -544,10 +544,15 @@ func (s *Store) ListOrdersWithLimit(limit int) ([]domain.Order, error) {
 	var rows *sql.Rows
 	var err error
 	if limit > 0 {
-		query += ` limit $1`
-		rows, err = s.db.Query(query, limit)
+		query += ` limit $1 offset $2`
+		rows, err = s.db.Query(query, limit, offset)
 	} else {
-		rows, err = s.db.Query(query)
+		if offset > 0 {
+			query += ` offset $1`
+			rows, err = s.db.Query(query, offset)
+		} else {
+			rows, err = s.db.Query(query)
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -573,6 +578,12 @@ func (s *Store) ListOrdersWithLimit(limit int) ([]domain.Order, error) {
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) CountOrders() (int, error) {
+	var count int
+	err := s.db.QueryRow(`select count(*) from orders`).Scan(&count)
+	return count, err
 }
 
 func (s *Store) GetOrderByID(orderID string) (domain.Order, error) {
@@ -709,7 +720,7 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 	return items, rows.Err()
 }
 
-func (s *Store) ListFillsWithLimit(limit int) ([]domain.Fill, error) {
+func (s *Store) ListFillsWithLimit(limit, offset int) ([]domain.Fill, error) {
 	query := `
 		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
 		from fills order by created_at desc
@@ -717,10 +728,15 @@ func (s *Store) ListFillsWithLimit(limit int) ([]domain.Fill, error) {
 	var rows *sql.Rows
 	var err error
 	if limit > 0 {
-		query += ` limit $1`
-		rows, err = s.db.Query(query, limit)
+		query += ` limit $1 offset $2`
+		rows, err = s.db.Query(query, limit, offset)
 	} else {
-		rows, err = s.db.Query(query)
+		if offset > 0 {
+			query += ` offset $1`
+			rows, err = s.db.Query(query, offset)
+		} else {
+			rows, err = s.db.Query(query)
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -745,6 +761,12 @@ func (s *Store) ListFillsWithLimit(limit int) ([]domain.Fill, error) {
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) CountFills() (int, error) {
+	var count int
+	err := s.db.QueryRow(`select count(*) from fills`).Scan(&count)
+	return count, err
 }
 
 func (s *Store) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {

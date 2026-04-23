@@ -85,8 +85,8 @@ export function useDashboard() {
     ] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<AccountRecord[]>("/api/v1/accounts"),
-      fetchJSON<Order[]>("/api/v1/orders?limit=500"),
-      fetchJSON<Fill[]>("/api/v1/fills?limit=500"),
+      fetchJSON<Order[]>("/api/v1/orders?limit=50"),
+      fetchJSON<Fill[]>("/api/v1/fills?limit=50"),
       fetchJSON<Position[]>("/api/v1/positions"),
       Promise.resolve([] as PaperSession[]),
       fetchJSON<LiveSession[]>("/api/v1/live/sessions"),
