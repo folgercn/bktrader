@@ -444,7 +444,7 @@ func resolveExitPositionQuantity(intent SignalIntent, metadata map[string]any) (
 		return 0, false
 	}
 	currentPosition := mapValue(intent.Metadata["currentPosition"])
-	if quantity := math.Abs(parseFloatValue(currentPosition["quantity"])); quantity > 0 {
+	if quantity := math.Abs(parseFloatValue(currentPosition["quantity"])); tradingQuantityPositive(quantity) {
 		metadata["sizingMethod"] = "exit_position_quantity"
 		metadata["sizingPositionQuantity"] = quantity
 		metadata["sizingComputedQuantity"] = quantity

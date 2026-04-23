@@ -1195,6 +1195,7 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
   const syncError = String(session.state?.lastSyncError ?? "").trim();
   const protectionRecoveryStatus = String(session.state?.protectionRecoveryStatus ?? "").trim();
   const isRunning = String(session.status).toUpperCase() === "RUNNING";
+  const exitDispatchFailure = resolveLiveExitDispatchFailure(session, summary);
 
   // 1. 恢复错误（具备最高健康度权重）
   if (recoveryError) {
@@ -1212,7 +1213,15 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
     };
   }
 
-  // 3. 数据同步错误
+  // 3. 自动平仓失败
+  if (exitDispatchFailure) {
+    return {
+      status: "error",
+      detail: exitDispatchFailure.detail,
+    };
+  }
+
+  // 4. 数据同步错误
   if (syncError) {
     return {
       status: "error",
@@ -1220,7 +1229,7 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
     };
   }
 
-  // 4. 流程阻塞状态
+  // 5. 流程阻塞状态
   if (summary.latestOrder && !["FILLED", "CANCELLED", "REJECTED"].includes(String(summary.latestOrder.status ?? "").toUpperCase())) {
     return {
       status: "waiting-sync",
@@ -1228,7 +1237,7 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
     };
   }
   
-  // 5. 活跃持仓状态
+  // 6. 活跃持仓状态
   if (summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0) {
     return {
       status: "active",
@@ -1236,7 +1245,7 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
     };
   }
 
-  // 6. 正常就绪/等待
+  // 7. 正常就绪/等待
   if (String(session.state?.lastStrategyEvaluationStatus ?? "") === "intent-ready") {
     return {
       status: "ready",
@@ -1280,6 +1289,7 @@ export function deriveLiveSessionFlow(session: LiveSession, summary: LiveSession
   const lastOrderStatus = String(summary.latestOrder?.status ?? "").toUpperCase();
   const hasPosition = !!summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0;
   const syncError = String(session.state?.lastSyncError ?? "").trim();
+  const exitDispatchFailure = resolveLiveExitDispatchFailure(session, summary);
 
   return [
     {
@@ -1298,20 +1308,22 @@ export function deriveLiveSessionFlow(session: LiveSession, summary: LiveSession
       key: "dispatch",
       label: "订单分发",
       status:
-        summary.latestOrder == null
+        exitDispatchFailure
+          ? "blocked"
+          : summary.latestOrder == null
           ? "watch"
           : ["NEW", "ACCEPTED"].includes(lastOrderStatus)
             ? "watch"
             : ["FILLED"].includes(lastOrderStatus)
               ? "ready"
               : "blocked",
-      detail: summary.latestOrder ? lastOrderStatus : "未发送",
+      detail: exitDispatchFailure?.shortDetail ?? (summary.latestOrder ? lastOrderStatus : "未发送"),
     },
     {
       key: "sync",
       label: "数据同步",
-      status: syncError ? "blocked" : ["FILLED", "CANCELLED", "REJECTED"].includes(lastOrderStatus) ? "ready" : summary.latestOrder ? "watch" : "neutral",
-      detail: syncError ? "同步错误" : String(session.state?.lastSyncedOrderStatus ?? (summary.latestOrder ? "待同步" : "--")),
+      status: syncError || exitDispatchFailure ? "blocked" : ["FILLED", "CANCELLED", "REJECTED"].includes(lastOrderStatus) ? "ready" : summary.latestOrder ? "watch" : "neutral",
+      detail: syncError ? "同步错误" : exitDispatchFailure ? "平仓失败待处理" : String(session.state?.lastSyncedOrderStatus ?? (summary.latestOrder ? "待同步" : "--")),
     },
     {
       key: "position",
@@ -1320,6 +1332,68 @@ export function deriveLiveSessionFlow(session: LiveSession, summary: LiveSession
       detail: hasPosition ? `${String(summary.position?.side ?? "OPEN")} ${formatMaybeNumber(summary.position?.quantity)}` : "空仓",
     },
   ];
+}
+
+function resolveLiveExitDispatchFailure(session: LiveSession, summary: LiveSessionExecutionSummary): { detail: string; shortDetail: string } | null {
+  const dispatchIntent = getRecord(session.state?.lastDispatchedIntent);
+  const dispatchSummary = getRecord(session.state?.lastExecutionDispatch);
+  const explicitRejectedStatus = String(session.state?.lastDispatchRejectedStatus ?? "").trim();
+  const failedDispatchStatus = liveExitDispatchFailureStatus(dispatchSummary.status) || liveExitDispatchFailureStatus(session.state?.lastDispatchedOrderStatus);
+  const rejectedStatus = explicitRejectedStatus || (liveRecordFlagEnabled(dispatchSummary.failed) ? failedDispatchStatus || "FAILED" : failedDispatchStatus);
+  const dispatchError = String(session.state?.lastAutoDispatchError ?? dispatchSummary.error ?? "").trim();
+  const hasOpenPosition = !!summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0;
+  const role = String(dispatchIntent.role ?? dispatchSummary.role ?? "").trim().toLowerCase();
+  const executionProfile = String(dispatchSummary.executionProfile ?? dispatchIntent.executionProfile ?? "").trim().toLowerCase();
+  const signalKind = String(dispatchIntent.signalKind ?? dispatchSummary.signalKind ?? "").trim().toLowerCase();
+  const reduceOnly = liveRecordFlagEnabled(dispatchIntent.reduceOnly ?? dispatchSummary.reduceOnly);
+  const isExit = role === "exit" || reduceOnly || executionProfile.includes("exit") || executionProfile.includes("close") || signalKind.includes("exit") || signalKind.includes("watchdog");
+
+  if (!hasOpenPosition || !isExit || (!rejectedStatus && !dispatchError)) {
+    return null;
+  }
+
+  const reason = String(dispatchIntent.reason ?? dispatchSummary.reason ?? dispatchIntent.signalKind ?? "").trim();
+  const detailParts = [`自动平仓失败`];
+  if (rejectedStatus) {
+    detailParts.push(`状态=${rejectedStatus}`);
+  }
+  if (reason) {
+    detailParts.push(`触发=${reason}`);
+  }
+  if (dispatchError) {
+    detailParts.push(`错误=${dispatchError}`);
+  }
+
+  return {
+    detail: detailParts.join(" · "),
+    shortDetail: rejectedStatus ? `平仓失败 · ${rejectedStatus}` : "平仓失败",
+  };
+}
+
+function liveRecordFlagEnabled(value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+  if (value === false || value == null) {
+    return false;
+  }
+  return ["true", "1", "yes", "y"].includes(String(value).trim().toLowerCase());
+}
+
+function liveExitDispatchFailureStatus(value: unknown): string {
+  const status = String(value ?? "").trim().toUpperCase();
+  switch (status) {
+    case "REJECTED":
+    case "FAILED":
+    case "ERROR":
+    case "CANCELLED":
+    case "CANCELED":
+    case "EXPIRED":
+    case "EXPIRED_IN_MATCH":
+      return status;
+    default:
+      return "";
+  }
 }
 
 export function liveSessionHealthPriority(status: string) {

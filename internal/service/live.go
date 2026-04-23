@@ -909,13 +909,13 @@ func classifyLiveReconcileOrderSkip(payload map[string]any, clientOrderID string
 		return "non-system-order"
 	}
 	symbol := NormalizeSymbol(stringValue(payload["symbol"]))
-	if terminal && snapshotPositions[symbol] <= 1e-9 {
+	if terminal && !tradingQuantityPositive(snapshotPositions[symbol]) {
 		return "closed-position-historical-order"
 	}
-	if (strings.EqualFold(status, "CANCELED") || strings.EqualFold(status, "CANCELLED") || strings.EqualFold(status, "REJECTED")) && executedQty <= 1e-9 {
+	if (strings.EqualFold(status, "CANCELED") || strings.EqualFold(status, "CANCELLED") || strings.EqualFold(status, "REJECTED")) && !tradingQuantityPositive(executedQty) {
 		return "no-fill-cancelled"
 	}
-	if !terminal && snapshotPositions[symbol] <= 1e-9 {
+	if !terminal && !tradingQuantityPositive(snapshotPositions[symbol]) {
 		return "no-live-position"
 	}
 	return ""
@@ -2216,10 +2216,10 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		if !strings.EqualFold(strings.TrimSpace(position.Side), side) {
 			mismatchFields = append(mismatchFields, "side")
 		}
-		if math.Abs(position.Quantity-quantity) > 1e-9 {
+		if tradingQuantityDiffers(position.Quantity, quantity) {
 			mismatchFields = append(mismatchFields, "quantity")
 		}
-		if math.Abs(position.EntryPrice-entryPrice) > 1e-6 {
+		if tradingPriceDiffers(position.EntryPrice, entryPrice) {
 			mismatchFields = append(mismatchFields, "entryPrice")
 		}
 		if len(mismatchFields) > 0 {
@@ -3247,7 +3247,7 @@ func liveRecoveryActionMatrixForState(state string) liveRecoveryActionMatrix {
 func hasRecoveredLiveRealPosition(state map[string]any) bool {
 	return boolValue(state["hasRecoveredPosition"]) ||
 		boolValue(state["hasRecoveredRealPosition"]) ||
-		math.Abs(parseFloatValue(mapValue(state["recoveredPosition"])["quantity"])) > 0
+		tradingQuantityPositive(math.Abs(parseFloatValue(mapValue(state["recoveredPosition"])["quantity"])))
 }
 
 func shouldActivateLiveRecoveryTakeover(source string, state map[string]any) bool {
@@ -3768,7 +3768,7 @@ func (p *Platform) resolveLiveSessionPositionSnapshot(session domain.LiveSession
 	if err != nil {
 		return nil, false, err
 	}
-	hasRealPosition := foundPosition || math.Abs(parseFloatValue(positionSnapshot["quantity"])) > 0
+	hasRealPosition := foundPosition || tradingQuantityPositive(math.Abs(parseFloatValue(positionSnapshot["quantity"])))
 	livePositionState := cloneMetadata(mapValue(session.State["livePositionState"]))
 	if len(livePositionState) > 0 && hasRealPosition {
 		liveSymbol := NormalizeSymbol(firstNonEmpty(stringValue(livePositionState["symbol"]), symbol))
@@ -3811,7 +3811,7 @@ func livePositionStateMatchesPositionSnapshot(positionSnapshot map[string]any, l
 	}
 	positionEntry := parseFloatValue(positionSnapshot["entryPrice"])
 	liveEntry := parseFloatValue(livePositionState["entryPrice"])
-	if liveEntry > 0 && positionEntry > 0 && math.Abs(liveEntry-positionEntry) > 1e-6 {
+	if liveEntry > 0 && positionEntry > 0 && tradingPriceDiffers(liveEntry, positionEntry) {
 		return false
 	}
 	positionKey := buildLivePositionWatermarkKey(positionSnapshot)
@@ -4147,7 +4147,7 @@ func adjustLiveExecutionProposalForVirtualSemantics(session domain.LiveSession, 
 	}
 	hasRecoveredRealPosition := boolValue(session.State["hasRecoveredPosition"]) ||
 		boolValue(session.State["hasRecoveredRealPosition"]) ||
-		math.Abs(parseFloatValue(mapValue(session.State["recoveredPosition"])["quantity"])) > 0
+		tradingQuantityPositive(math.Abs(parseFloatValue(mapValue(session.State["recoveredPosition"])["quantity"])))
 	if strings.EqualFold(proposal.Role, "exit") &&
 		boolValue(mapValue(session.State["virtualPosition"])["virtual"]) &&
 		!hasRecoveredRealPosition {

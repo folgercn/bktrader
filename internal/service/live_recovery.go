@@ -112,7 +112,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
-	hasRealPositionContext := foundPosition || math.Abs(parseFloatValue(positionSnapshot["quantity"])) > 0
+	hasRealPositionContext := foundPosition || tradingQuantityPositive(math.Abs(parseFloatValue(positionSnapshot["quantity"])))
 	account, err := p.store.GetAccount(refreshed.AccountID)
 	if err != nil {
 		return domain.LiveSession{}, err

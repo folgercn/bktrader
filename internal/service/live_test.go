@@ -2310,6 +2310,106 @@ func TestDispatchLiveSessionIntentBackfillsMissingDecisionEventReference(t *test
 	}
 }
 
+func TestDispatchLiveSessionIntentClearsPreviousExitDispatchFailureStateOnSuccessfulDispatch(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-clear-exit-dispatch-failure"})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-clear-exit-dispatch-failure",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	freshRuntimeAt := time.Now().UTC()
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+		state["lastHeartbeatAt"] = freshRuntimeAt.Format(time.RFC3339)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		for key, item := range sourceStates {
+			sourceState := cloneMetadata(mapValue(item))
+			sourceState["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+			sourceStates[key] = sourceState
+		}
+		state["sourceStates"] = sourceStates
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = freshRuntimeAt
+	}); err != nil {
+		t.Fatalf("refresh runtime state failed: %v", err)
+	}
+
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.013,
+		EntryPrice:        77830.1,
+		MarkPrice:         78168.3,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["lastAutoDispatchError"] = "old dispatch error"
+	state["lastDispatchRejectedStatus"] = "REJECTED"
+	state["lastDispatchRejectedAt"] = time.Date(2026, 4, 23, 6, 11, 54, 0, time.UTC).Format(time.RFC3339)
+	state["lastExecutionProposal"] = executionProposalToMap(ExecutionProposal{
+		Action:            "exit",
+		Role:              "exit",
+		Reason:            "SL",
+		Side:              "BUY",
+		Symbol:            "BTCUSDT",
+		Type:              "MARKET",
+		Quantity:          0.013,
+		PriceHint:         78168.3,
+		ReduceOnly:        true,
+		SignalKind:        "risk-exit",
+		DecisionState:     "exit-ready",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"runtimeSessionId":  runtimeSessionID,
+			"executionMode":     "live",
+			"executionDecision": "direct-dispatch",
+		},
+	})
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	order, err := platform.dispatchLiveSessionIntent(session)
+	if err != nil {
+		t.Fatalf("dispatch live session intent failed: %v", err)
+	}
+	if got := strings.ToUpper(strings.TrimSpace(order.Status)); got != "ACCEPTED" {
+		t.Fatalf("expected accepted order status, got %s", got)
+	}
+
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if got := stringValue(updatedSession.State["lastAutoDispatchError"]); got != "" {
+		t.Fatalf("expected lastAutoDispatchError to be cleared, got %s", got)
+	}
+	if got := stringValue(updatedSession.State["lastDispatchRejectedStatus"]); got != "" {
+		t.Fatalf("expected lastDispatchRejectedStatus to be cleared, got %s", got)
+	}
+	if got := stringValue(updatedSession.State["lastDispatchRejectedAt"]); got != "" {
+		t.Fatalf("expected lastDispatchRejectedAt to be cleared, got %s", got)
+	}
+}
+
 func TestDispatchLiveSessionIntentRejectsRecoveredPassiveCloseWithIncompleteMetadata(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
