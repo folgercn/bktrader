@@ -47,11 +47,11 @@ type reconnectPolicy struct {
 var (
 	transientReconnectPolicy = reconnectPolicy{
 		maxAttempts: 3,
-		backoffs:    []time.Duration{10 * time.Second, 30 * time.Second, 60 * time.Second},
+		backoffs:    []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second},
 	}
 	kickedReconnectPolicy = reconnectPolicy{
 		maxAttempts: 2,
-		backoffs:    []time.Duration{30 * time.Second, 120 * time.Second},
+		backoffs:    []time.Duration{10 * time.Second, 30 * time.Second},
 	}
 )
 
@@ -91,8 +91,12 @@ func classifyDisconnectSeverity(err error) disconnectSeverity {
 }
 
 const (
-	defaultBinanceFuturesWSURL = "wss://fstream.binance.com/ws"
-	defaultOKXPublicWSURL      = "wss://ws.okx.com:8443/ws/v5/public"
+	defaultBinanceFuturesWSURL      = "wss://fstream.binance.com/ws"
+	defaultOKXPublicWSURL           = "wss://ws.okx.com:8443/ws/v5/public"
+	signalRuntimeWSHandshakeTimeout = 5 * time.Second
+	signalRuntimeWSReadTimeout      = 10 * time.Second
+	signalRuntimeWSPingInterval     = 10 * time.Second
+	signalRuntimeWSPingWriteTimeout = 3 * time.Second
 )
 
 type signalRuntimeLoopRunner func(context.Context, string) (bool, error)
@@ -108,8 +112,8 @@ func (p *Platform) runSignalRuntimeLoop(ctx context.Context, sessionID string) {
 }
 
 // runSignalRuntimeWithRecovery wraps runSignalRuntimeLoop with tiered disconnect recovery.
-// L0 transient errors (timeout, EOF): up to 3 retries with 10s/30s/60s backoff.
-// L1 kicked errors (close 1006/1008): up to 2 retries with 30s/120s backoff.
+// L0 transient errors (timeout, EOF): up to 3 retries with 2s/5s/10s backoff.
+// L1 kicked errors (close 1006/1008): up to 2 retries with 10s/30s backoff.
 // L2 fatal errors (banned, invalid API key): NO retry, immediate ERROR.
 // After reconnect, validates signal bar continuity and marks stale if bars were missed.
 func (p *Platform) runSignalRuntimeWithRecovery(ctx context.Context, sessionID string) {
@@ -293,6 +297,7 @@ func (p *Platform) setSessionRecovering(sessionID string, lastErr error, attempt
 		state["reconnectMaxAttempts"] = maxAttempts
 		state["reconnectNextBackoff"] = nextBackoff.String()
 		state["reconnectSeverity"] = classifyDisconnectSeverity(lastErr).String()
+		state["reconnectAttemptStartedAt"] = now.Format(time.RFC3339)
 		appendSignalRuntimeTimeline(state, now, "runtime", "recovering", map[string]any{
 			"attempt":  attempt,
 			"backoff":  nextBackoff.String(),
@@ -318,6 +323,7 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		delete(state, "reconnectMaxAttempts")
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
+		delete(state, "reconnectAttemptStartedAt")
 		appendSignalRuntimeError(state, err.Error())
 		appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "error", map[string]any{
 			"message": err.Error(),
@@ -342,6 +348,7 @@ func (p *Platform) setSessionStopped(sessionID string) {
 		delete(state, "reconnectMaxAttempts")
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
+		delete(state, "reconnectAttemptStartedAt")
 		appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "stopped", nil)
 		session.State = state
 		session.UpdatedAt = time.Now().UTC()
@@ -382,9 +389,20 @@ func (p *Platform) runExchangeWebsocketLoop(
 	if err != nil {
 		return false, fmt.Errorf("subscribe payload build failed: %w", err)
 	}
+	subscriptionSummary := summarizeSubscriptions(subscriptions)
+	logger := p.logger(
+		"service.signal_runtime",
+		"session_id", session.ID,
+		"runtime_adapter", session.RuntimeAdapter,
+		"subscription_count", len(subscriptions),
+		"subscriptions", subscriptionSummary,
+		"ws_url", wsURL,
+	)
+	reconnectStartedAt := parseOptionalRFC3339(stringValue(session.State["reconnectAttemptStartedAt"]))
+	reconnecting := !reconnectStartedAt.IsZero()
 
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
+		HandshakeTimeout: signalRuntimeWSHandshakeTimeout,
 		Proxy:            http.ProxyFromEnvironment,
 	}
 	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
@@ -393,9 +411,9 @@ func (p *Platform) runExchangeWebsocketLoop(
 	}
 	defer conn.Close()
 
-	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(signalRuntimeWSReadTimeout))
 	conn.SetPongHandler(func(_ string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(signalRuntimeWSReadTimeout))
 		now := time.Now().UTC()
 		_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 			state := cloneMetadata(session.State)
@@ -412,6 +430,19 @@ func (p *Platform) runExchangeWebsocketLoop(
 	}
 
 	now := time.Now().UTC()
+	reconnectDuration := ""
+	reconnectDurationMillis := int64(0)
+	if reconnecting {
+		reconnectDurationMillis = maxInt64(0, now.Sub(reconnectStartedAt).Milliseconds())
+		reconnectDuration = (time.Duration(reconnectDurationMillis) * time.Millisecond).String()
+		logger.Info("signal runtime websocket reconnected",
+			"reconnect_duration", reconnectDuration,
+			"reconnect_duration_ms", reconnectDurationMillis,
+			"resubscribe_result", "ok",
+		)
+	} else {
+		logger.Info("signal runtime websocket connected")
+	}
 	_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 		session.Status = "RUNNING"
 		state := cloneMetadata(session.State)
@@ -424,22 +455,33 @@ func (p *Platform) runExchangeWebsocketLoop(
 			"type":              "subscribed",
 			"message":           "websocket subscribed",
 			"subscriptionCount": len(subscriptions),
+			"subscriptions":     subscriptionSummary,
 			"url":               wsURL,
+		}
+		if reconnecting {
+			state["lastReconnectAt"] = now.Format(time.RFC3339)
+			state["lastReconnectDuration"] = reconnectDuration
+			state["lastReconnectDurationMs"] = reconnectDurationMillis
+			state["lastReconnectSubscriptions"] = subscriptionSummary
 		}
 		delete(state, "reconnectAttempt")
 		delete(state, "reconnectMaxAttempts")
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
+		delete(state, "reconnectAttemptStartedAt")
 		appendSignalRuntimeTimeline(state, now, "runtime", "subscribed", map[string]any{
 			"subscriptionCount": len(subscriptions),
+			"subscriptions":     subscriptionSummary,
 			"url":               wsURL,
+			"reconnecting":      reconnecting,
+			"reconnectDuration": reconnectDuration,
 		})
 		session.State = state
 		session.UpdatedAt = now
 	})
 	connected := true
 
-	ticker := time.NewTicker(20 * time.Second)
+	ticker := time.NewTicker(signalRuntimeWSPingInterval)
 	defer ticker.Stop()
 
 	done := make(chan error, 1)
@@ -457,7 +499,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 			summary := summarizeSignalMessage(session.RuntimeAdapter, payload)
 			summary = enrichSignalRuntimeSummary(session, summary)
 			_ = p.ingestLiveSignalBarSummary(summary, now)
-			_ = conn.SetReadDeadline(now.Add(60 * time.Second))
+			_ = conn.SetReadDeadline(now.Add(signalRuntimeWSReadTimeout))
 			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 				state := cloneMetadata(session.State)
 				state["health"] = "healthy"
@@ -496,9 +538,20 @@ func (p *Platform) runExchangeWebsocketLoop(
 			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(2*time.Second))
 			return connected, nil
 		case err := <-done:
+			logger.Warn("signal runtime websocket disconnected",
+				"connected", connected,
+				"disconnect_severity", classifyDisconnectSeverity(err).String(),
+				"error", err,
+			)
 			return connected, err
 		case <-ticker.C:
-			_ = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
+			if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(signalRuntimeWSPingWriteTimeout)); err != nil {
+				logger.Warn("signal runtime websocket ping failed",
+					"connected", connected,
+					"error", err,
+				)
+				return connected, fmt.Errorf("websocket ping failed: %w", err)
+			}
 			now := time.Now().UTC()
 			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 				state := cloneMetadata(session.State)
@@ -527,6 +580,7 @@ func (p *Platform) validateSignalBarContinuityAfterReconnect(state map[string]an
 		delete(state, "reconnectMaxAttempts")
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
+		delete(state, "reconnectAttemptStartedAt")
 		return
 	}
 
@@ -559,6 +613,14 @@ func (p *Platform) validateSignalBarContinuityAfterReconnect(state map[string]an
 	delete(state, "reconnectMaxAttempts")
 	delete(state, "reconnectNextBackoff")
 	delete(state, "reconnectSeverity")
+	delete(state, "reconnectAttemptStartedAt")
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
