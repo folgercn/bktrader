@@ -116,6 +116,70 @@ func TestSignalRuntimeWSProfileForAttemptExpandsReadTimeout(t *testing.T) {
 	}
 }
 
+func TestResolveBinanceSignalRuntimeWSURLUsesSandboxDefault(t *testing.T) {
+	wsURL, err := resolveBinanceSignalRuntimeWSURL([]map[string]any{{
+		"adapterKey": "binance-market-ws",
+		"sandbox":    true,
+	}})
+	if err != nil {
+		t.Fatalf("resolve sandbox websocket url failed: %v", err)
+	}
+	if wsURL != defaultBinanceFuturesTestnetWSURL {
+		t.Fatalf("expected sandbox runtime to use testnet websocket url, got %s", wsURL)
+	}
+}
+
+func TestResolveBinanceSignalRuntimeWSURLPrefersExplicitSubscriptionURL(t *testing.T) {
+	wsURL, err := resolveBinanceSignalRuntimeWSURL([]map[string]any{{
+		"adapterKey": "binance-market-ws",
+		"sandbox":    true,
+		"wsBaseUrl":  "wss://custom.binance.test/ws",
+	}})
+	if err != nil {
+		t.Fatalf("resolve explicit websocket url failed: %v", err)
+	}
+	if wsURL != "wss://custom.binance.test/ws" {
+		t.Fatalf("expected explicit runtime wsBaseUrl to win, got %s", wsURL)
+	}
+}
+
+func TestSignalRuntimeSubscriptionsOverlayLiveBindingForReconnect(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.CreateAccount("runtime-reconnect-live", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create live account failed: %v", err)
+	}
+	if _, err := platform.BindLiveAccount(account.ID, map[string]any{
+		"adapterKey":  "binance-futures",
+		"sandbox":     true,
+		"restBaseUrl": "https://testnet.binancefuture.com",
+		"wsBaseUrl":   "wss://stream.binancefuture.com/ws",
+	}); err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	subscriptions := platform.signalRuntimeSubscriptions(domain.SignalRuntimeSession{
+		AccountID: account.ID,
+		State: map[string]any{
+			"subscriptions": []map[string]any{{
+				"adapterKey": "binance-market-ws",
+				"sourceKey":  "binance-kline",
+				"symbol":     "BTCUSDT",
+				"channel":    "btcusdt@kline_30m",
+			}},
+		},
+	})
+	if len(subscriptions) != 1 {
+		t.Fatalf("expected one subscription, got %#v", subscriptions)
+	}
+	if !boolValue(subscriptions[0]["sandbox"]) {
+		t.Fatalf("expected reconnect overlay to recover sandbox=true, got %#v", subscriptions[0])
+	}
+	if got := stringValue(subscriptions[0]["wsBaseUrl"]); got != "wss://stream.binancefuture.com/ws" {
+		t.Fatalf("expected reconnect overlay to recover wsBaseUrl, got %q", got)
+	}
+}
+
 func TestRunExchangeWebsocketLoopRecordsReconnectObservability(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	now := time.Now().UTC()

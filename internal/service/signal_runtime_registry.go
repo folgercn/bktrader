@@ -190,6 +190,7 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 	if err != nil {
 		return nil, err
 	}
+	liveBinding := resolveLiveBinding(account)
 
 	strategyBindings, err := p.ListStrategySignalBindings(strategyID)
 	if err != nil {
@@ -259,6 +260,7 @@ func (p *Platform) BuildSignalRuntimePlan(accountID, strategyID string) (map[str
 		subscription := runtimeAdapter.BuildSubscription(source, binding)
 		subscription["environment"] = environment
 		subscription["accountMode"] = account.Mode
+		applyLiveBindingToSignalRuntimeSubscription(subscription, liveBinding)
 		matchedItem["subscription"] = subscription
 		subscriptions = append(subscriptions, subscription)
 		matched = append(matched, matchedItem)
@@ -327,4 +329,19 @@ func firstString(values []string) string {
 		return ""
 	}
 	return values[0]
+}
+
+func applyLiveBindingToSignalRuntimeSubscription(subscription map[string]any, liveBinding map[string]any) {
+	if subscription == nil || len(liveBinding) == 0 {
+		return
+	}
+	if _, exists := subscription["sandbox"]; !exists {
+		subscription["sandbox"] = boolValue(liveBinding["sandbox"])
+	}
+	if restBaseURL := strings.TrimSpace(stringValue(liveBinding["restBaseUrl"])); restBaseURL != "" {
+		subscription["restBaseUrl"] = restBaseURL
+	}
+	if wsBaseURL := strings.TrimSpace(stringValue(liveBinding["wsBaseUrl"])); wsBaseURL != "" {
+		subscription["wsBaseUrl"] = wsBaseURL
+	}
 }

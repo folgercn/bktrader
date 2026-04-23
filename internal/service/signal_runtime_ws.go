@@ -92,11 +92,12 @@ func classifyDisconnectSeverity(err error) disconnectSeverity {
 }
 
 const (
-	defaultBinanceFuturesWSURL      = "wss://fstream.binance.com/ws"
-	defaultOKXPublicWSURL           = "wss://ws.okx.com:8443/ws/v5/public"
-	signalRuntimeWSHandshakeTimeout = 5 * time.Second
-	signalRuntimeWSPingInterval     = 10 * time.Second
-	signalRuntimeWSPingWriteTimeout = 3 * time.Second
+	defaultBinanceFuturesWSURL        = "wss://fstream.binance.com/ws"
+	defaultBinanceFuturesTestnetWSURL = "wss://stream.binancefuture.com/ws"
+	defaultOKXPublicWSURL             = "wss://ws.okx.com:8443/ws/v5/public"
+	signalRuntimeWSHandshakeTimeout   = 5 * time.Second
+	signalRuntimeWSPingInterval       = 10 * time.Second
+	signalRuntimeWSPingWriteTimeout   = 3 * time.Second
 )
 
 type signalRuntimeWSProfile struct {
@@ -278,8 +279,13 @@ func (p *Platform) runSignalRuntimeLoopOnce(ctx context.Context, sessionID strin
 	if err != nil {
 		return false, err
 	}
+	subscriptions := p.signalRuntimeSubscriptions(session)
+	if len(subscriptions) > 0 {
+		session.State = cloneMetadata(session.State)
+		session.State["subscriptions"] = subscriptions
+	}
 
-	wsURL, subscribeBuilder, err := signalRuntimeWebsocketConfig(session.RuntimeAdapter)
+	wsURL, subscribeBuilder, err := signalRuntimeWebsocketConfig(session.RuntimeAdapter, subscriptions)
 	if err != nil {
 		return false, err
 	}
@@ -287,15 +293,79 @@ func (p *Platform) runSignalRuntimeLoopOnce(ctx context.Context, sessionID strin
 	return p.runExchangeWebsocketLoop(ctx, session, wsURL, subscribeBuilder)
 }
 
-func signalRuntimeWebsocketConfig(runtimeAdapter string) (string, func([]map[string]any) (map[string]any, error), error) {
+func (p *Platform) signalRuntimeSubscriptions(session domain.SignalRuntimeSession) []map[string]any {
+	subscriptions := cloneMetadataList(metadataList(session.State["subscriptions"]))
+	if len(subscriptions) == 0 {
+		return subscriptions
+	}
+	account, err := p.store.GetAccount(session.AccountID)
+	if err != nil {
+		return subscriptions
+	}
+	liveBinding := resolveLiveBinding(account)
+	for _, subscription := range subscriptions {
+		applyLiveBindingToSignalRuntimeSubscription(subscription, liveBinding)
+	}
+	return subscriptions
+}
+
+func signalRuntimeWebsocketConfig(runtimeAdapter string, subscriptions []map[string]any) (string, func([]map[string]any) (map[string]any, error), error) {
 	switch runtimeAdapter {
 	case "binance-market-ws":
-		return configuredBinanceFuturesWSURL(), buildBinanceSubscribePayload, nil
+		wsURL, err := resolveBinanceSignalRuntimeWSURL(subscriptions)
+		if err != nil {
+			return "", nil, err
+		}
+		return wsURL, buildBinanceSubscribePayload, nil
 	case "okx-market-ws":
 		return configuredOKXPublicWSURL(), buildOKXSubscribePayload, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported runtime adapter: %s", runtimeAdapter)
 	}
+}
+
+func resolveBinanceSignalRuntimeWSURL(subscriptions []map[string]any) (string, error) {
+	wsURL := ""
+	sandboxResolved := false
+	sandbox := false
+	for _, subscription := range subscriptions {
+		if subscription == nil {
+			continue
+		}
+		if candidate := strings.TrimSpace(stringValue(subscription["wsBaseUrl"])); candidate != "" {
+			if wsURL == "" {
+				wsURL = candidate
+			} else if wsURL != candidate {
+				return "", fmt.Errorf("binance runtime subscriptions require a single websocket base url: %s vs %s", wsURL, candidate)
+			}
+		}
+		subscriptionSandbox := binanceSignalRuntimeSubscriptionUsesTestnet(subscription)
+		if !sandboxResolved {
+			sandbox = subscriptionSandbox
+			sandboxResolved = true
+			continue
+		}
+		if sandbox != subscriptionSandbox {
+			return "", fmt.Errorf("binance runtime subscriptions mix sandbox and live market data environments")
+		}
+	}
+	if wsURL != "" {
+		return wsURL, nil
+	}
+	if sandboxResolved && sandbox {
+		return defaultBinanceFuturesTestnetWSURL, nil
+	}
+	return configuredBinanceFuturesWSURL(), nil
+}
+
+func binanceSignalRuntimeSubscriptionUsesTestnet(subscription map[string]any) bool {
+	if subscription == nil {
+		return false
+	}
+	if _, exists := subscription["sandbox"]; exists && boolValue(subscription["sandbox"]) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(strings.TrimSpace(stringValue(subscription["restBaseUrl"]))), "testnet.binancefuture.com")
 }
 
 func minInt(a, b int) int {

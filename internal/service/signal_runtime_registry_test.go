@@ -83,3 +83,53 @@ func TestBuildSignalRuntimePlanAllowsMissingFeatureBindings(t *testing.T) {
 		t.Fatalf("expected optional missing feature binding, got %#v", optional)
 	}
 }
+
+func TestBuildSignalRuntimePlanCarriesLiveBindingSandboxToSubscriptions(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.CreateAccount("runtime-live", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create live account failed: %v", err)
+	}
+	strategy, err := platform.store.CreateStrategy("runtime-strategy", "runtime strategy", map[string]any{
+		"strategyEngine": "bk-default",
+	})
+	if err != nil {
+		t.Fatalf("create strategy failed: %v", err)
+	}
+	strategyID := strategy["id"].(string)
+	if _, err := platform.BindStrategySignalSource(strategyID, map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "30m"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal source failed: %v", err)
+	}
+	if _, err := platform.BindLiveAccount(account.ID, map[string]any{
+		"adapterKey":  "binance-futures",
+		"sandbox":     true,
+		"restBaseUrl": "https://testnet.binancefuture.com",
+		"wsBaseUrl":   "wss://stream.binancefuture.com/ws",
+	}); err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	plan, err := platform.BuildSignalRuntimePlan(account.ID, strategyID)
+	if err != nil {
+		t.Fatalf("build runtime plan failed: %v", err)
+	}
+	subscriptions := metadataList(plan["subscriptions"])
+	if len(subscriptions) != 1 {
+		t.Fatalf("expected one subscription, got %#v", subscriptions)
+	}
+	subscription := subscriptions[0]
+	if !boolValue(subscription["sandbox"]) {
+		t.Fatalf("expected sandbox=true on runtime subscription, got %#v", subscription)
+	}
+	if got := stringValue(subscription["restBaseUrl"]); got != "https://testnet.binancefuture.com" {
+		t.Fatalf("expected restBaseUrl to propagate to runtime subscription, got %q", got)
+	}
+	if got := stringValue(subscription["wsBaseUrl"]); got != "wss://stream.binancefuture.com/ws" {
+		t.Fatalf("expected wsBaseUrl to propagate to runtime subscription, got %q", got)
+	}
+}
