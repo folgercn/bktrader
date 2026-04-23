@@ -3129,6 +3129,78 @@ func TestMaybeIncrementLiveSessionReentryCountUsesPerBarIdentity(t *testing.T) {
 	}
 }
 
+func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestCountedBar(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "30m",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, map[string]any{
+		"symbol":                    "BTCUSDT",
+		"signalTimeframe":           "30m",
+		"max_trades_per_bar":        2,
+		"lastSignalBarStateKey":     "BTCUSDT|30m|2026-04-22T03:00:00Z",
+		"sessionReentryCount":       2.0,
+		"lastCountedReentryOrderId": "order-2",
+	})
+	if err != nil {
+		t.Fatalf("seed live session state failed: %v", err)
+	}
+
+	staleEvaluationState := cloneMetadata(session.State)
+	delete(staleEvaluationState, "lastSignalBarStateKey")
+	delete(staleEvaluationState, "sessionReentryCount")
+	delete(staleEvaluationState, "lastCountedReentryOrderId")
+	staleEvaluationState["lastStrategyEvaluationStatus"] = "intent-ready"
+
+	updated, err := platform.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, staleEvaluationState)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSignalBarStateKey"]); got != "BTCUSDT|30m|2026-04-22T03:00:00Z" {
+		t.Fatalf("expected latest signal bar key to survive stale evaluation write, got %q", got)
+	}
+	if got := parseFloatValue(updated.State["sessionReentryCount"]); got != 2 {
+		t.Fatalf("expected latest reentry count to survive stale evaluation write, got %v", got)
+	}
+	if got := stringValue(updated.State["lastCountedReentryOrderId"]); got != "order-2" {
+		t.Fatalf("expected last counted reentry order id to survive stale evaluation write, got %q", got)
+	}
+	proposal := map[string]any{
+		"role":   "entry",
+		"reason": "SL-Reentry",
+		"metadata": map[string]any{
+			liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-22T03:00:00Z",
+		},
+	}
+	if err := validateLiveSignalBarEntryTradeLimit(updated, proposal); err == nil {
+		t.Fatal("expected preserved per-bar reentry count to keep blocking same-bar entry")
+	}
+}
+
+func TestLiveSessionNonRegressiveFactKeysIncludeSignalBarTradeLimitFacts(t *testing.T) {
+	keys := liveSessionNonRegressiveFactKeys()
+	for _, required := range []string{
+		"lastSignalBarStateKey",
+		"sessionReentryCount",
+		"lastCountedReentryOrderId",
+	} {
+		found := false
+		for _, key := range keys {
+			if key == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected non-regressive fact keys to include %s, got %#v", required, keys)
+		}
+	}
+}
+
 func TestShouldAutoDispatchLiveIntentBlocksEntryAfterMaxTradesPerSignalBar(t *testing.T) {
 	intent := map[string]any{
 		"action":            "entry",
