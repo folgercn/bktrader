@@ -310,7 +310,7 @@ func TestTelegramPositionReportUsesThirtyMinuteBucketAndSkipsRecovery(t *testing
 	telegramBaseURL = server.URL
 	defer func() { telegramBaseURL = oldURL }()
 
-	base := time.Date(2026, 4, 22, 10, 5, 0, 0, time.UTC)
+	base := time.Date(2026, 4, 22, 10, 1, 0, 0, time.UTC)
 	oldNow := telegramNow
 	telegramNow = func() time.Time { return base }
 	defer func() { telegramNow = oldNow }()
@@ -374,7 +374,7 @@ func TestTelegramPositionReportUsesThirtyMinuteBucketAndSkipsRecovery(t *testing
 	if !strings.Contains(messages[0], "*持仓定时播报* 30分钟") || !strings.Contains(messages[0], "ETHUSDT LONG 数量:1.5") || !strings.Contains(messages[0], "浮盈亏:+150") {
 		t.Fatalf("unexpected position report: %s", messages[0])
 	}
-	if !strings.Contains(messages[0], "北京时间: 2026-04-22 18:00:00") {
+	if !strings.Contains(messages[0], "北京时间: 2026-04-22 18:01:00") {
 		t.Fatalf("expected Beijing time in position report, got: %s", messages[0])
 	}
 	if err := p.DispatchTelegramNotifications(); err != nil {

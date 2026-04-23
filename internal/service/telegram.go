@@ -381,6 +381,11 @@ func (p *Platform) DispatchTelegramPositionReport(deliveryByID map[string]domain
 	if delivery, ok := deliveryByID[notificationID]; ok && strings.EqualFold(delivery.Status, "sent") {
 		return 0, nil
 	}
+
+	// 仅在时间桶开始后的前 2 分钟内允许发起播报，避免“一开仓就播报”的突兀感。
+	if now.UTC().Sub(bucket) > 2*time.Minute {
+		return 0, nil
+	}
 	accounts, err := p.store.ListAccounts()
 	if err != nil {
 		return 0, err
@@ -405,7 +410,7 @@ func (p *Platform) DispatchTelegramPositionReport(deliveryByID map[string]domain
 	for _, summary := range summaries {
 		summaryByAccount[summary.AccountID] = summary
 	}
-	message := formatTelegramPositionReport(liveAccounts, summaryByAccount, bucket, intervalMinutes)
+	message := formatTelegramPositionReport(liveAccounts, summaryByAccount, now, intervalMinutes)
 	if err := p.sendTelegramMessage(message); err != nil {
 		_, _ = p.store.UpsertNotificationDelivery(notificationID, "telegram", "failed", err.Error(), map[string]any{
 			"kind":            "position-report",
@@ -505,7 +510,11 @@ func formatTelegramPositionReport(accounts []domain.Account, summaries map[strin
 		snapshot := mapValue(account.Metadata["liveSyncSnapshot"])
 		syncStatus := firstNonEmpty(stringValue(snapshot["syncStatus"]), account.Status)
 		if syncedAt := firstNonEmpty(stringValue(snapshot["syncedAt"]), stringValue(account.Metadata["lastLiveSyncAt"])); syncedAt != "" {
-			lines = append(lines, fmt.Sprintf("同步: %s %s", syncStatus, syncedAt))
+			displayTime := syncedAt
+			if t, err := time.Parse(time.RFC3339, syncedAt); err == nil {
+				displayTime = formatTelegramBeijingTime(t)
+			}
+			lines = append(lines, fmt.Sprintf("同步: %s %s", syncStatus, displayTime))
 		} else {
 			lines = append(lines, fmt.Sprintf("同步: %s", syncStatus))
 		}
