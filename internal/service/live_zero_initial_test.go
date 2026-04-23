@@ -212,3 +212,108 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesZeroInitialSemanticsForStaleI
 		t.Fatalf("expected no zero-initial timeline event without breakout-backed window, got %+v", timeline)
 	}
 }
+
+func TestPrepareLivePlanStepForSignalEvaluationKeepsPendingWindowLatentWhilePositionActive(t *testing.T) {
+	barStart := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+	state := map[string]any{
+		livePendingZeroInitialWindowStateKey: map[string]any{
+			"side":            "BUY",
+			"symbol":          "BTCUSDT",
+			"signalTimeframe": "30m",
+			"armedAt":         barStart.Add(-time.Minute).Format(time.RFC3339),
+			"signalBarStart":  barStart.Format(time.RFC3339),
+			"expiresAt":       barStart.Add(30 * time.Minute).Format(time.RFC3339),
+			"breakoutBacked":  true,
+			"openReason":      liveZeroInitialWindowOpenReasonBreakoutLocked,
+		},
+	}
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      77800.0,
+			"atr14":     416.0,
+			"current": map[string]any{
+				"barStart": barStart.Format(time.RFC3339),
+				"close":    77966.3,
+				"high":     77978.0,
+				"low":      77930.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 78335.7,
+				"low":  77928.6,
+			},
+			"prevBar2": map[string]any{
+				"high": 78447.5,
+				"low":  77406.0,
+			},
+		},
+	}
+
+	updated, gotEvent, gotPrice, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"long_reentry_atr":  0.1,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{
+			"id":         "position-1",
+			"symbol":     "BTCUSDT",
+			"side":       "LONG",
+			"quantity":   0.0128,
+			"entryPrice": 77974.3,
+			"found":      true,
+		},
+		barStart.Add(5*time.Minute),
+		77974.3,
+		"trade_tick.price",
+		barStart.Add(5*time.Minute),
+		77850.0,
+		"SELL",
+		"exit",
+		"SL",
+	)
+	if gotRole != "exit" || gotReason != "SL" || gotSide != "SELL" {
+		t.Fatalf("expected active position to keep exit plan, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if gotPrice != 77850.0 || gotEvent != barStart.Add(5*time.Minute) {
+		t.Fatalf("expected exit plan step to stay untouched while position active, got event=%s price=%v", gotEvent.Format(time.RFC3339), gotPrice)
+	}
+	if pending := mapValue(updated[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
+		t.Fatalf("expected pending zero initial window to remain latent while position active, got %+v", pending)
+	}
+	if timeline := metadataList(updated["timeline"]); len(timeline) != 0 {
+		t.Fatalf("expected no consume timeline event while position is still active, got %+v", timeline)
+	}
+
+	reactivated, _, _, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		updated,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"long_reentry_atr":  0.1,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		barStart.Add(6*time.Minute),
+		77974.3,
+		"trade_tick.price",
+		barStart,
+		77970.28,
+		"BUY",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
+		t.Fatalf("expected latent pending window to reactivate once flat, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if pending := mapValue(reactivated[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
+		t.Fatalf("expected pending zero initial window to remain available until a real reentry consumes it, got %+v", pending)
+	}
+}

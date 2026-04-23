@@ -146,6 +146,7 @@ func TestListLiveTradePairsReturnsOpenTradeWithUnrealizedPnLAndAggregatedEntries
 	assertTradePairFloat(t, pair.NetPnL, pair.UnrealizedPnL-0.03)
 }
 
+
 func TestListLiveTradePairsFallsBackWhenTelemetryTablesAreUnavailable(t *testing.T) {
 	baseStore := memory.NewStore()
 	platform := NewPlatform(&testMissingLiveTradePairTelemetryStore{Store: baseStore})
@@ -263,6 +264,28 @@ type tradePairOrderFixture struct {
 	reduceOnly        bool
 	decisionEventID   string
 	targetPriceSource string
+}
+
+type liveTradePairTargetedQueryStore struct {
+	*memory.Store
+	decisionQueries []domain.StrategyDecisionEventQuery
+	snapshotQueries []domain.PositionAccountSnapshotQuery
+}
+
+func (s *liveTradePairTargetedQueryStore) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQuery) ([]domain.StrategyDecisionEvent, error) {
+	s.decisionQueries = append(s.decisionQueries, query)
+	if query.DecisionEventID == "" {
+		return nil, fmt.Errorf("expected targeted decision event query")
+	}
+	return s.Store.QueryStrategyDecisionEvents(query)
+}
+
+func (s *liveTradePairTargetedQueryStore) QueryPositionAccountSnapshots(query domain.PositionAccountSnapshotQuery) ([]domain.PositionAccountSnapshot, error) {
+	s.snapshotQueries = append(s.snapshotQueries, query)
+	if query.OrderID == "" {
+		return nil, fmt.Errorf("expected targeted position snapshot query")
+	}
+	return s.Store.QueryPositionAccountSnapshots(query)
 }
 
 func newLiveTradePairTestPlatform(t *testing.T) (*Platform, domain.LiveSession) {

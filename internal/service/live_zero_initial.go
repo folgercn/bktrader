@@ -25,6 +25,7 @@ func prepareLivePlanStepForSignalEvaluation(
 	nextPlannedSide, nextPlannedRole, nextPlannedReason string,
 ) (map[string]any, time.Time, float64, string, string, string) {
 	updatedState := cloneMetadata(sessionState)
+	hasActivePosition := hasActiveLivePositionSnapshot(currentPosition)
 	if !strategyZeroInitialReentryWindowEnabled(parameters) {
 		alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason := alignLivePlanStepToCurrentMarket(
 			signalBarStates,
@@ -48,9 +49,14 @@ func prepareLivePlanStepForSignalEvaluation(
 	// that boundary is crossed, live no longer trusts the historical trigger
 	// timing and must re-align using the current signal bar instead of replaying
 	// the stale plan step indefinitely.
-	if staleExitReentry &&
-		(hasActiveLivePositionSnapshot(currentPosition) || !isLivePlanStepStale(nextPlannedEvent, signalTimeframe, eventTime)) {
+	if staleExitReentry && hasActivePosition {
+		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
+	}
+	if staleExitReentry && !isLivePlanStepStale(nextPlannedEvent, signalTimeframe, eventTime) {
 		clearLivePendingZeroInitialWindow(updatedState, eventTime, "exit-reentry-priority")
+		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
+	}
+	if hasActivePosition {
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
 	if updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, ok := liveZeroInitialWindowPlanStep(
@@ -167,10 +173,6 @@ func refreshLiveZeroInitialWindowState(
 	state := cloneMetadata(sessionState)
 	if state == nil {
 		state = map[string]any{}
-	}
-	if hasActiveLivePositionSnapshot(currentPosition) {
-		clearLivePendingZeroInitialWindow(state, eventTime, "real-position-confirmed")
-		return state
 	}
 	pending := cloneMetadata(mapValue(state[livePendingZeroInitialWindowStateKey]))
 	if len(pending) == 0 {

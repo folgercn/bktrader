@@ -205,6 +205,79 @@ func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain
 	return results, nil
 }
 
+func liveTradePairRelevantFills(fills []domain.Fill, orderByID map[string]domain.Order) []domain.Fill {
+	items := make([]domain.Fill, 0, len(fills))
+	for _, fill := range fills {
+		if _, ok := orderByID[fill.OrderID]; !ok {
+			continue
+		}
+		items = append(items, fill)
+	}
+	return items
+}
+
+func (p *Platform) fetchLiveTradeDecisionEvents(liveSessionID string, orderByID map[string]domain.Order) (map[string]domain.StrategyDecisionEvent, error) {
+	ids := make([]string, 0, len(orderByID))
+	seen := make(map[string]struct{})
+	for _, order := range orderByID {
+		decisionEventID := firstNonEmpty(
+			stringValue(order.Metadata["decisionEventId"]),
+			stringValue(mapValue(order.Metadata["executionProposal"])["decisionEventId"]),
+			stringValue(mapValue(mapValue(order.Metadata["executionProposal"])["metadata"])["decisionEventId"]),
+		)
+		decisionEventID = strings.TrimSpace(decisionEventID)
+		if decisionEventID == "" {
+			continue
+		}
+		if _, ok := seen[decisionEventID]; ok {
+			continue
+		}
+		seen[decisionEventID] = struct{}{}
+		ids = append(ids, decisionEventID)
+	}
+	sort.Strings(ids)
+	items := make(map[string]domain.StrategyDecisionEvent, len(ids))
+	for _, decisionEventID := range ids {
+		events, err := p.queryStrategyDecisionEvents(domain.StrategyDecisionEventQuery{
+			LiveSessionID:   liveSessionID,
+			DecisionEventID: decisionEventID,
+			Limit:           1,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(events) == 0 {
+			continue
+		}
+		items[decisionEventID] = events[0]
+	}
+	return items, nil
+}
+
+func (p *Platform) fetchLatestLiveTradeSnapshots(liveSessionID string, orderByID map[string]domain.Order) (map[string]domain.PositionAccountSnapshot, error) {
+	orderIDs := make([]string, 0, len(orderByID))
+	for orderID := range orderByID {
+		orderIDs = append(orderIDs, orderID)
+	}
+	sort.Strings(orderIDs)
+	items := make(map[string]domain.PositionAccountSnapshot, len(orderIDs))
+	for _, orderID := range orderIDs {
+		snapshots, err := p.queryPositionAccountSnapshots(domain.PositionAccountSnapshotQuery{
+			LiveSessionID: liveSessionID,
+			OrderID:       orderID,
+			Limit:         1,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(snapshots) == 0 {
+			continue
+		}
+		items[orderID] = snapshots[0]
+	}
+	return items, nil
+}
+
 func buildLiveTradeFillEvents(
 	fills []domain.Fill,
 	orderByID map[string]domain.Order,
