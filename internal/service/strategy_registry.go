@@ -916,7 +916,7 @@ func hasActiveVirtualPositionSnapshot(currentPosition map[string]any) bool {
 
 func hasActiveLivePositionSnapshot(currentPosition map[string]any) bool {
 	return boolValue(currentPosition["found"]) ||
-		math.Abs(parseFloatValue(currentPosition["quantity"])) > 0 ||
+		tradingQuantityPositive(math.Abs(parseFloatValue(currentPosition["quantity"]))) ||
 		hasActiveVirtualPositionSnapshot(currentPosition)
 }
 

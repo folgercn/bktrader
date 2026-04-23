@@ -177,11 +177,11 @@ func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain
 
 		applyPnLFill(&state, event.order.Side, event.fill.Quantity, event.fill.Price)
 		remainingQty := absQty - closingQty
-		if absFloat(prevNetQty)-closingQty <= 1e-9 {
+		if !tradingQuantityExceeds(absFloat(prevNetQty)-closingQty, 0) {
 			results = append(results, current.finalizeClosed())
 			current = nil
 		}
-		if remainingQty > 1e-9 {
+		if tradingQuantityPositive(remainingQty) {
 			pairIndex++
 			current = newLiveTradePairBuilder(pairIndex, session, event.order.Symbol, liveTradeSideFromSignedQty(signedQty))
 			current.addEntry(event, remainingQty, remainingFee)
@@ -497,7 +497,7 @@ func (b *liveTradePairBuilder) finalizeOpen(position domain.Position) domain.Liv
 func (b *liveTradePairBuilder) build(openQty, unrealizedPnL float64) domain.LiveTradePair {
 	status := "closed"
 	var exitAt *time.Time
-	if openQty > 1e-9 || b.exitAt.IsZero() {
+	if tradingQuantityPositive(openQty) || b.exitAt.IsZero() {
 		status = "open"
 	} else {
 		exitTime := b.exitAt.UTC()
@@ -766,7 +766,9 @@ func (p *Platform) enrichLiveTradePairs(items []domain.LiveTradePair, orderByID 
 
 				if pair.Status == "closed" {
 					if verification, ok := closeVerificationsByOrderID[lastExitOrderID]; ok {
-						if !verification.VerifiedClosed {
+						if verification.VerifiedClosed {
+							pair.ExitVerdict = "normal"
+						} else {
 							pair.ExitVerdict = "mismatch"
 						}
 					}

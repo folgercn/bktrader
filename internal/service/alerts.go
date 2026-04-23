@@ -4,10 +4,23 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
+
+const (
+	liveExitDispatchFailureLogDedupeTTL        = 6 * time.Hour
+	liveExitDispatchFailureLogDedupeMaxEntries = 512
+)
+
+var liveExitDispatchFailureLogDedupe = struct {
+	sync.Mutex
+	entries map[string]time.Time
+}{
+	entries: map[string]time.Time{},
+}
 
 type runtimeSourceSummary struct {
 	tradeTickCount int
@@ -400,6 +413,9 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				EventTime:    eventTime,
 			})
 		}
+		if alert, ok := p.buildLiveExitDispatchFailureAlert(session, state, accountByID[session.AccountID].Name, strategyNameByID[session.StrategyID]); ok {
+			appendAlert(alert)
+		}
 	}
 
 	slices.SortFunc(alerts, func(a, b domain.PlatformAlert) int {
@@ -422,6 +438,214 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		return 1
 	})
 	return alerts, nil
+}
+
+func (p *Platform) buildLiveExitDispatchFailureAlert(session domain.LiveSession, state map[string]any, accountName, strategyName string) (domain.PlatformAlert, bool) {
+	dispatchIntent := cloneMetadata(mapValue(state["lastDispatchedIntent"]))
+	dispatchSummary := cloneMetadata(mapValue(state["lastExecutionDispatch"]))
+	if !liveDispatchRepresentsExit(dispatchIntent, dispatchSummary) {
+		return domain.PlatformAlert{}, false
+	}
+	rejectedStatus := liveExitDispatchFailureStatus(state, dispatchSummary)
+	dispatchError := strings.TrimSpace(firstNonEmpty(
+		stringValue(state["lastAutoDispatchError"]),
+		stringValue(dispatchSummary["error"]),
+	))
+	if rejectedStatus == "" && dispatchError == "" {
+		return domain.PlatformAlert{}, false
+	}
+	symbol := NormalizeSymbol(firstNonEmpty(
+		stringValue(dispatchIntent["symbol"]),
+		stringValue(dispatchSummary["symbol"]),
+		stringValue(state["symbol"]),
+		stringValue(state["lastSymbol"]),
+		stringValue(mapValue(state["livePositionState"])["symbol"]),
+	))
+	if symbol == "" {
+		return domain.PlatformAlert{}, false
+	}
+	positionSnapshot, _, err := p.resolveLiveSessionPositionSnapshot(session, symbol)
+	if err != nil {
+		return domain.PlatformAlert{}, false
+	}
+	if boolValue(positionSnapshot["virtual"]) || !tradingQuantityPositive(parseFloatValue(positionSnapshot["quantity"])) {
+		return domain.PlatformAlert{}, false
+	}
+
+	eventTime := parseOptionalRFC3339(firstNonEmpty(
+		stringValue(state["lastDispatchRejectedAt"]),
+		stringValue(state["lastAutoDispatchAttemptAt"]),
+		stringValue(state["lastDispatchedAt"]),
+	))
+	reason := firstNonEmpty(
+		stringValue(dispatchIntent["reason"]),
+		stringValue(dispatchSummary["reason"]),
+		stringValue(dispatchIntent["signalKind"]),
+		stringValue(dispatchSummary["signalKind"]),
+	)
+	statusLabel := firstNonEmpty(rejectedStatus, "DISPATCH_ERROR")
+	detailParts := []string{fmt.Sprintf("自动平仓派单失败，状态=%s", statusLabel)}
+	if reason != "" {
+		detailParts = append(detailParts, fmt.Sprintf("触发=%s", reason))
+	}
+	if dispatchError != "" {
+		detailParts = append(detailParts, fmt.Sprintf("错误=%s", dispatchError))
+	}
+
+	alert := domain.PlatformAlert{
+		ID:           fmt.Sprintf("live-exit-dispatch-failure-%s", session.ID),
+		Scope:        "live",
+		Level:        "critical",
+		Title:        "自动平仓失败",
+		Detail:       strings.Join(detailParts, " · "),
+		AccountID:    session.AccountID,
+		AccountName:  accountName,
+		StrategyID:   session.StrategyID,
+		StrategyName: strategyName,
+		Anchor:       "live",
+		EventTime:    eventTime,
+		Metadata: map[string]any{
+			"liveSessionId":   session.ID,
+			"orderId":         stringValue(state["lastDispatchedOrderId"]),
+			"orderStatus":     statusLabel,
+			"error":           dispatchError,
+			"reason":          reason,
+			"signalKind":      firstNonEmpty(stringValue(dispatchIntent["signalKind"]), stringValue(dispatchSummary["signalKind"])),
+			"symbol":          symbol,
+			"positionSide":    stringValue(positionSnapshot["side"]),
+			"positionQty":     parseFloatValue(positionSnapshot["quantity"]),
+			"dispatchMode":    stringValue(state["dispatchMode"]),
+			"reduceOnly":      boolValue(dispatchIntent["reduceOnly"]) || boolValue(dispatchSummary["reduceOnly"]),
+			"currentPosition": positionSnapshot,
+		},
+	}
+	p.logLiveExitDispatchFailureAlert(alert)
+	return alert, true
+}
+
+func (p *Platform) logLiveExitDispatchFailureAlert(alert domain.PlatformAlert) {
+	metadata := mapValue(alert.Metadata)
+	logSignature := strings.Join([]string{
+		alert.ID,
+		stringValue(metadata["orderId"]),
+		stringValue(metadata["orderStatus"]),
+		stringValue(metadata["error"]),
+		stringValue(metadata["reason"]),
+		stringValue(metadata["signalKind"]),
+		fmt.Sprintf("%.12f", parseFloatValue(metadata["positionQty"])),
+	}, "|")
+	if !shouldLogLiveExitDispatchFailure(logSignature, time.Now().UTC()) {
+		return
+	}
+	p.logger("service.alerts",
+		"live_session_id", stringValue(metadata["liveSessionId"]),
+		"order_id", stringValue(metadata["orderId"]),
+		"order_status", stringValue(metadata["orderStatus"]),
+		"symbol", stringValue(metadata["symbol"]),
+		"position_side", stringValue(metadata["positionSide"]),
+		"position_qty", parseFloatValue(metadata["positionQty"]),
+		"reason", stringValue(metadata["reason"]),
+		"signal_kind", stringValue(metadata["signalKind"]),
+		"dispatch_mode", stringValue(metadata["dispatchMode"]),
+		"reduce_only", boolValue(metadata["reduceOnly"]),
+	).Error("critical live exit dispatch failure", "detail", alert.Detail, "error", stringValue(metadata["error"]))
+}
+
+func liveExitDispatchFailureStatus(state map[string]any, dispatchSummary map[string]any) string {
+	if status := strings.TrimSpace(stringValue(state["lastDispatchRejectedStatus"])); status != "" {
+		return status
+	}
+	if boolValue(dispatchSummary["failed"]) {
+		for _, raw := range []string{
+			stringValue(dispatchSummary["status"]),
+			stringValue(state["lastDispatchedOrderStatus"]),
+		} {
+			status := strings.ToUpper(strings.TrimSpace(raw))
+			if liveOrderStatusIndicatesDispatchFailure(status) {
+				return status
+			}
+		}
+		return "FAILED"
+	}
+	for _, raw := range []string{
+		stringValue(dispatchSummary["status"]),
+		stringValue(state["lastDispatchedOrderStatus"]),
+	} {
+		status := strings.ToUpper(strings.TrimSpace(raw))
+		if liveOrderStatusIndicatesDispatchFailure(status) {
+			return status
+		}
+	}
+	return ""
+}
+
+func liveOrderStatusIndicatesDispatchFailure(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "REJECTED", "FAILED", "ERROR", "CANCELLED", "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldLogLiveExitDispatchFailure(signature string, now time.Time) bool {
+	signature = strings.TrimSpace(signature)
+	if signature == "" {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	liveExitDispatchFailureLogDedupe.Lock()
+	defer liveExitDispatchFailureLogDedupe.Unlock()
+	if liveExitDispatchFailureLogDedupe.entries == nil {
+		liveExitDispatchFailureLogDedupe.entries = map[string]time.Time{}
+	}
+	for key, lastSeen := range liveExitDispatchFailureLogDedupe.entries {
+		if now.Sub(lastSeen) > liveExitDispatchFailureLogDedupeTTL {
+			delete(liveExitDispatchFailureLogDedupe.entries, key)
+		}
+	}
+	if _, ok := liveExitDispatchFailureLogDedupe.entries[signature]; ok {
+		return false
+	}
+	for len(liveExitDispatchFailureLogDedupe.entries) >= liveExitDispatchFailureLogDedupeMaxEntries {
+		oldestKey := ""
+		var oldestSeen time.Time
+		for key, lastSeen := range liveExitDispatchFailureLogDedupe.entries {
+			if oldestKey == "" || lastSeen.Before(oldestSeen) {
+				oldestKey = key
+				oldestSeen = lastSeen
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		delete(liveExitDispatchFailureLogDedupe.entries, oldestKey)
+	}
+	liveExitDispatchFailureLogDedupe.entries[signature] = now
+	return true
+}
+
+func liveDispatchRepresentsExit(dispatchIntent map[string]any, dispatchSummary map[string]any) bool {
+	if strings.EqualFold(strings.TrimSpace(stringValue(dispatchIntent["role"])), "exit") {
+		return true
+	}
+	if boolValue(dispatchIntent["reduceOnly"]) || boolValue(dispatchSummary["reduceOnly"]) {
+		return true
+	}
+	executionProfile := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		stringValue(dispatchSummary["executionProfile"]),
+		stringValue(dispatchIntent["executionProfile"]),
+	)))
+	if strings.Contains(executionProfile, "exit") || strings.Contains(executionProfile, "close") {
+		return true
+	}
+	signalKind := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		stringValue(dispatchIntent["signalKind"]),
+		stringValue(dispatchSummary["signalKind"]),
+	)))
+	return strings.Contains(signalKind, "exit") || strings.Contains(signalKind, "watchdog")
 }
 
 type liveRuntimeReadiness struct {

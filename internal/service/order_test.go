@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
@@ -14,6 +15,76 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
+
+func TestValidateReduceOnlyOrderAllowsQuantityWithinTolerance(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "SHORT",
+		Quantity:  0.013,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	order := domain.Order{
+		AccountID:     account.ID,
+		Symbol:        "BTCUSDT",
+		Side:          "BUY",
+		Type:          "MARKET",
+		Quantity:      math.Nextafter(0.013, 1),
+		ReduceOnly:    true,
+		ClosePosition: false,
+	}
+	if err := platform.validateReduceOnlyOrder(account, order); err != nil {
+		t.Fatalf("expected reduce-only quantity within tolerance to pass validation, got %v", err)
+	}
+}
+
+func TestApplyExecutionFillTreatsToleranceSizedExitAsFullClose(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.013,
+		EntryPrice:        77830.1,
+		MarkPrice:         77830.1,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	if err := platform.applyExecutionFill(account, domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Quantity:          math.Nextafter(0.013, 1),
+		ReduceOnly:        true,
+	}, 78168.3); err != nil {
+		t.Fatalf("apply execution fill failed: %v", err)
+	}
+
+	if position, found, err := store.FindPosition(account.ID, "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatalf("expected tolerance-sized exit to fully close the position, got %+v", position)
+	}
+}
 
 func TestBuildLiveSyncSettlementKeepsExchangeTradeIDEmptyWithoutRealTradeID(t *testing.T) {
 	order := domain.Order{ID: "order-1", Symbol: "BTCUSDT"}

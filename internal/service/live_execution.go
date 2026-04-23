@@ -561,6 +561,8 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	state["lastDispatchedAt"] = dispatchedAt.Format(time.RFC3339)
 	state["lastDispatchedIntent"] = proposalMap
 	state["lastDispatchedIntentSignature"] = intentSignature
+	delete(state, "lastDispatchRejectedAt")
+	delete(state, "lastDispatchRejectedStatus")
 	recordExecutionDispatchHealth(state, created, dispatchedAt, createErr)
 	delete(state, "lastExecutionTimeoutAt")
 	delete(state, "lastExecutionTimeoutReason")
@@ -703,6 +705,8 @@ func (p *Platform) applyLiveVirtualInitialEvent(session domain.LiveSession, prop
 	state["lastDispatchedIntentSignature"] = intentSignature
 	state["lastDispatchedOrderStatus"] = liveOrderStatusVirtualInitial
 	state["lastSyncedOrderStatus"] = liveOrderStatusVirtualInitial
+	delete(state, "lastDispatchRejectedAt")
+	delete(state, "lastDispatchRejectedStatus")
 	recordExecutionDispatchHealth(state, domain.Order{
 		Side:   proposal.Side,
 		Symbol: proposal.Symbol,
@@ -809,6 +813,8 @@ func (p *Platform) applyLiveVirtualExitEvent(session domain.LiveSession, proposa
 	state["lastDispatchedIntentSignature"] = intentSignature
 	state["lastDispatchedOrderStatus"] = liveOrderStatusVirtualExit
 	state["lastSyncedOrderStatus"] = liveOrderStatusVirtualExit
+	delete(state, "lastDispatchRejectedAt")
+	delete(state, "lastDispatchRejectedStatus")
 	recordExecutionDispatchHealth(state, domain.Order{
 		Side:   proposal.Side,
 		Symbol: proposal.Symbol,
@@ -995,7 +1001,7 @@ func shouldBackfillTerminalFilledLiveOrder(order domain.Order, state map[string]
 	if !strings.EqualFold(order.Status, "FILLED") {
 		return false
 	}
-	if parseFloatValue(order.Metadata["filledQuantity"]) < order.Quantity-1e-9 {
+	if tradingQuantityBelow(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity) {
 		return true
 	}
 	if strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "" {

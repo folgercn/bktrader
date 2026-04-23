@@ -90,6 +90,7 @@ func (p *Platform) sendTelegramMessage(text string) error {
 
 func formatTelegramNotification(item domain.PlatformNotification) string {
 	alert := item.Alert
+	metadata := mapValue(alert.Metadata)
 	lines := []string{
 		fmt.Sprintf("[%s] %s", strings.ToUpper(alert.Level), alert.Title),
 		alert.Detail,
@@ -105,6 +106,12 @@ func formatTelegramNotification(item domain.PlatformNotification) string {
 	}
 	if alert.RuntimeSessionID != "" {
 		lines = append(lines, fmt.Sprintf("运行时: %s", alert.RuntimeSessionID))
+	}
+	if liveSessionID := strings.TrimSpace(stringValue(metadata["liveSessionId"])); liveSessionID != "" {
+		lines = append(lines, fmt.Sprintf("实盘会话: %s", liveSessionID))
+	}
+	if orderID := strings.TrimSpace(stringValue(metadata["orderId"])); orderID != "" {
+		lines = append(lines, fmt.Sprintf("订单: %s", orderID))
 	}
 	if alert.PaperSessionID != "" {
 		lines = append(lines, fmt.Sprintf("模拟盘: %s", alert.PaperSessionID))

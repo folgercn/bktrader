@@ -558,3 +558,64 @@ func TestListLiveTradePairsUsesLatestVerificationRecord(t *testing.T) {
 		t.Fatalf("expected mismatch verdict due to latest reconcile event, got %s", got)
 	}
 }
+func TestListLiveTradePairsManualVerificationCorrectsMismatch(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.CreateAccount("Live Trade Pair", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", account.ID, "strategy-bk-1d", map[string]any{
+		"symbol": "BTCUSDT",
+	})
+	if err != nil {
+		t.Fatalf("create live session: %v", err)
+	}
+
+	entryAt := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+	exitAt := entryAt.Add(30 * time.Minute)
+
+	// Create an "unsafe" exit order (not reduce-only) which should trigger mismatch initially
+	createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "BUY",
+		quantity:   1,
+		price:      100,
+		fee:        0.1,
+		createdAt:  entryAt,
+		fillAt:     entryAt.Add(2 * time.Second),
+		reduceOnly: false,
+	})
+	exitOrder := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "SELL",
+		quantity:   1,
+		price:      110,
+		fee:        0.1,
+		createdAt:  exitAt,
+		fillAt:     exitAt.Add(2 * time.Second),
+		reduceOnly: false, // UNSAFE!
+	})
+
+	// 1. Verify initial status is mismatch
+	items, _ := platform.ListLiveTradePairs(domain.LiveTradePairQuery{LiveSessionID: session.ID})
+	if items[0].ExitVerdict != "mismatch" {
+		t.Fatalf("expected initial mismatch verdict, got %s", items[0].ExitVerdict)
+	}
+
+	// 2. Add manual verification (VerifiedClosed = true)
+	_, _ = platform.store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+		LiveSessionID:        session.ID,
+		OrderID:              exitOrder.ID,
+		AccountID:            session.AccountID,
+		StrategyID:           session.StrategyID,
+		Symbol:               "BTCUSDT",
+		VerifiedClosed:       true,
+		RemainingPositionQty: 0,
+		VerificationSource:   "manual",
+		RecordedAt:           time.Now().UTC(),
+	})
+
+	// 3. Verify status becomes normal
+	items, _ = platform.ListLiveTradePairs(domain.LiveTradePairQuery{LiveSessionID: session.ID})
+	if items[0].ExitVerdict != "normal" {
+		t.Fatalf("expected verdict corrected to normal after manual verification, got %s", items[0].ExitVerdict)
+	}
+}

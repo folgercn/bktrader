@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
@@ -79,6 +83,120 @@ func TestRunSignalRuntimeWithRecoveryResetsAttemptsAfterRecoveredRun(t *testing.
 	}
 	if waits[0] != 10*time.Second || waits[1] != 10*time.Second {
 		t.Fatalf("expected retry budget to reset after recovered run, got wait sequence %#v", waits)
+	}
+}
+
+func TestRecoveryBackoffUsesFasterReconnectBudget(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if got := recoveryBackoff(platform.transientReconnectPolicy(), 1); got != 10*time.Second {
+		t.Fatalf("expected first transient backoff to be 10s, got %s", got)
+	}
+	if got := recoveryBackoff(platform.transientReconnectPolicy(), 2); got != 30*time.Second {
+		t.Fatalf("expected second transient backoff to be 30s, got %s", got)
+	}
+	if got := recoveryBackoff(platform.transientReconnectPolicy(), 3); got != 60*time.Second {
+		t.Fatalf("expected third transient backoff to be 60s, got %s", got)
+	}
+	if got := recoveryBackoff(platform.kickedReconnectPolicy(), 1); got != 30*time.Second {
+		t.Fatalf("expected first kicked backoff to be 30s, got %s", got)
+	}
+	if got := recoveryBackoff(platform.kickedReconnectPolicy(), 2); got != 120*time.Second {
+		t.Fatalf("expected second kicked backoff to be 120s, got %s", got)
+	}
+}
+
+func TestSignalRuntimeWSProfileForAttemptExpandsReadTimeout(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.SetRuntimePolicy(RuntimePolicy{
+		WSReadStaleTimeoutSeconds: 20,
+	})
+	if got := platform.signalRuntimeWSProfileForAttempt(0).readTimeout; got != 20*time.Second {
+		t.Fatalf("expected initial read timeout to be 20s, got %s", got)
+	}
+	if got := platform.signalRuntimeWSProfileForAttempt(1).readTimeout; got != 30*time.Second {
+		t.Fatalf("expected first reconnect read timeout to be 30s, got %s", got)
+	}
+	if got := platform.signalRuntimeWSProfileForAttempt(2).readTimeout; got != 45*time.Second {
+		t.Fatalf("expected later reconnect read timeout to be 45s, got %s", got)
+	}
+}
+
+func TestRunExchangeWebsocketLoopRecordsReconnectObservability(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	now := time.Now().UTC()
+	session := domain.SignalRuntimeSession{
+		ID:             "runtime-reconnect-observe",
+		Status:         "RUNNING",
+		RuntimeAdapter: "binance-market-ws",
+		State: map[string]any{
+			"subscriptions": []map[string]any{{
+				"sourceKey":  "binance-trade-tick",
+				"role":       "trigger",
+				"symbol":     "BTCUSDT",
+				"channel":    "btcusdt@trade",
+				"adapterKey": "binance-market-ws",
+			}},
+			"reconnectAttempt":            2,
+			"reconnectAttemptStartedAtMs": now.Add(-1500 * time.Millisecond).UnixMilli(),
+			"lastDisconnectAt":            now.Add(-2 * time.Second).Format(time.RFC3339),
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	platform.signalSessions[session.ID] = session
+
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade failed: %v", err)
+			return
+		}
+		defer conn.Close()
+		if _, _, err := conn.ReadMessage(); err != nil {
+			t.Errorf("read subscribe payload failed: %v", err)
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "test done"), time.Now().Add(time.Second))
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	connected, err := platform.runExchangeWebsocketLoop(context.Background(), session, wsURL, func([]map[string]any) (map[string]any, error) {
+		return map[string]any{
+			"method": "SUBSCRIBE",
+			"params": []string{"btcusdt@trade"},
+			"id":     1,
+		}, nil
+	})
+	if !connected {
+		t.Fatal("expected websocket loop to report connected before disconnect")
+	}
+	if err == nil {
+		t.Fatal("expected websocket loop to end with disconnect error")
+	}
+
+	stored, getErr := platform.GetSignalRuntimeSession(session.ID)
+	if getErr != nil {
+		t.Fatalf("get runtime session failed: %v", getErr)
+	}
+	if got := stringValue(stored.State["lastReconnectDuration"]); got == "" {
+		t.Fatalf("expected reconnect duration to be recorded, got %#v", stored.State)
+	}
+	reconnectMs, ok := stored.State["lastReconnectDurationMs"].(int64)
+	if !ok || reconnectMs <= 0 {
+		t.Fatalf("expected reconnect duration ms to be positive, got %#v", stored.State["lastReconnectDurationMs"])
+	}
+	subs := metadataList(stored.State["lastReconnectSubscriptions"])
+	if len(subs) != 1 {
+		t.Fatalf("expected reconnect subscription summary, got %#v", stored.State["lastReconnectSubscriptions"])
+	}
+	if got := stringValue(stored.State["lastReconnectResult"]); got != "subscribe_request_sent" {
+		t.Fatalf("expected reconnect result to record subscribe request only, got %#v", got)
+	}
+	if stringValue(stored.State["reconnectAttemptStartedAtMs"]) != "" {
+		t.Fatalf("expected reconnect attempt marker to be cleared, got %#v", stored.State)
 	}
 }
 
