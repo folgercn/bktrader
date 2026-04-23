@@ -65,11 +65,11 @@ go build ./cmd/db-migrate
 ```
 
 **前端**：
-在结束任何前端代码编辑前，**必须**运行以下指令进行静态类型校验（路径见 `docs/AGENT_PATHS.md`）：
+在结束任何前端代码编辑前，**必须**运行以下指令进行静态类型校验（路径见 `docs/AGENT_PATHS.md`）。**注意：** 禁止在验证时滥用 `--skipLibCheck`，必须确保命令行标志与 `tsconfig.json`（如 `moduleResolution: Bundler`）保持同步，严禁忽略 IDE 中已出现的红线报错。
 ```bash
-# 示例：使用本地 tsc 执行校验
+# 示例：使用本地 tsc 执行校验 (确保不跳过必要的库检查)
 cd web/console
-./node_modules/.bin/tsc --noEmit src/pages/AccountStage.tsx --jsx react-jsx --esModuleInterop --skipLibCheck --target esnext --moduleResolution node --allowSyntheticDefaultImports
+./node_modules/.bin/tsc --noEmit src/pages/AccountStage.tsx --jsx react-jsx --esModuleInterop --target esnext --moduleResolution Bundler --allowSyntheticDefaultImports
 
 # 全量构建验证 (如必要)
 npm run build
@@ -123,6 +123,7 @@ bash scripts/testnet_live_session_smoke.sh
 3. **测试必须覆盖失败路径** — 补测试时，**至少包含一个 failure path**（adapter resolve 失败、NaN 输入等）
 4. **修改 recovery 代码前必须读状态机** — 先读完 §10 的状态机定义和 §7 的 review 黄金规则
 5. **高风险 PR 仍需人工主审** — L2/L3 级别的 PR，**AI review 只做辅助**，必须等待人工主审通过
+6. **严禁"跳过"静态校验错误** — 禁止滥用 `--skipLibCheck` 或忽略 IDE 报错。若命令行通过但 IDE 报错，以 IDE 为准，必须对齐环境配置。
 
 ## 10. 运行时恢复 / 接管专项规则（仅在相关改动时强制生效）
 

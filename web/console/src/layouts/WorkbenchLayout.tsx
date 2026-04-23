@@ -4,8 +4,8 @@ import { Activity, Briefcase, Settings, FileText } from 'lucide-react';
 export interface WorkbenchLayoutProps {
   sidebarTab: 'monitor' | 'strategy' | 'account' | 'log';
   onSidebarTabChange: (tab: 'monitor' | 'strategy' | 'account' | 'log') => void;
-  dockTab: 'orders' | 'positions' | 'fills' | 'alerts';
-  onDockTabChange: (tab: 'orders' | 'positions' | 'fills' | 'alerts') => void;
+  dockTab: 'pairs' | 'orders' | 'positions' | 'fills' | 'alerts';
+  onDockTabChange: (tab: 'pairs' | 'orders' | 'positions' | 'fills' | 'alerts') => void;
   
   headerMetrics: React.ReactNode;
   headerConnection: React.ReactNode;

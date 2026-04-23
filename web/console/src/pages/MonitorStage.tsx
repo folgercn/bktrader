@@ -30,7 +30,6 @@ import {
   technicalStatusLabel
 } from '../utils/derivation';
 import { fetchJSON } from '../utils/api';
-import { useLiveTradePairs } from '../hooks/useLiveTradePairs';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '../components/ui/table';
@@ -62,8 +61,8 @@ function resolveMonitorFallbackResolution(timeframe: string) {
 
 type MonitorStageProps = {
   syncLiveOrder: (id: string) => void;
-  dockTab: 'orders' | 'positions' | 'fills' | 'alerts';
-  onDockTabChange: (tab: 'orders' | 'positions' | 'fills' | 'alerts') => void;
+  dockTab: 'pairs' | 'orders' | 'positions' | 'fills' | 'alerts';
+  onDockTabChange: (tab: 'pairs' | 'orders' | 'positions' | 'fills' | 'alerts') => void;
   dockContent: React.ReactNode;
 };
 
@@ -310,7 +309,6 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const syncableLiveOrders = orders.filter((item) => item.metadata?.executionMode === "live" && item.status === "ACCEPTED");
   const platformRuntimePolicy = monitorHealth?.runtimePolicy ?? runtimePolicy;
   const timelineLogs = buildTimelineNotes(monitorTimeline, timelineConfig, monitorSession?.id).slice(0, 50);
-  const monitorTradePairs = useLiveTradePairs(monitorSession?.id ?? null, 8);
 
 
   const reconciledOrders = orders.filter(o => !!(o.metadata?.orderLifecycle as any)?.synced);
@@ -414,15 +412,6 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
         </div>
       )}
 
-      {monitorSession && (
-        <LiveTradePairsCard
-          title="开平订单对追溯"
-          description="聚合当前焦点会话的 round-trip 交易，直接判断是否正常退出，以及这笔单现在赚亏多少。"
-          pairs={monitorTradePairs.pairs}
-          loading={monitorTradePairs.loading}
-          error={monitorTradePairs.error}
-        />
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* 2. 实时执行与指标监控 (三柱式 Bento 架构) */}
@@ -719,6 +708,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                 <CardTitle className="text-xl font-black text-[var(--bk-text-primary)]">事务审计与管理控制</CardTitle>
               </div>
               <TabsList variant="bento" className="flex h-10 gap-1 rounded-2xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-strong)] p-1 shadow-inner">
+                <TabsTrigger value="pairs" className="rounded-xl px-4 text-[10px] font-black uppercase">追溯</TabsTrigger>
                 <TabsTrigger value="orders" className="rounded-xl px-4 text-[10px] font-black uppercase">订单</TabsTrigger>
                 <TabsTrigger value="positions" className="rounded-xl px-4 text-[10px] font-black uppercase">持仓</TabsTrigger>
                 <TabsTrigger value="fills" className="rounded-xl px-4 text-[10px] font-black uppercase">成交</TabsTrigger>
