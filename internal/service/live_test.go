@@ -983,6 +983,42 @@ func TestResolveLiveSessionParametersDefaultsMissingStopsToTrailingForLive(t *te
 	}
 }
 
+func TestResolveLiveSessionParametersPrefersSignalBindingTimeframeOverStaleSessionState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "30m"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal source failed: %v", err)
+	}
+
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("seed stale live session state failed: %v", err)
+	}
+
+	version, err := platform.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		t.Fatalf("resolve strategy version failed: %v", err)
+	}
+	parameters, err := platform.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		t.Fatalf("resolve live session parameters failed: %v", err)
+	}
+	if got := stringValue(parameters["signalTimeframe"]); got != "30m" {
+		t.Fatalf("expected signalTimeframe to canonicalize to 30m, got %q", got)
+	}
+}
+
 func TestRefreshLiveMarketSnapshotFailsWithoutRESTWarmData(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	originalFetch := fetchLiveCandleRange
@@ -2818,6 +2854,49 @@ func TestEnsureLaunchLiveSessionCreatesDistinctSessionPerSymbolAndTimeframe(t *t
 	}
 	if reused.ID != first.ID {
 		t.Fatalf("expected reused live session %s, got %s", first.ID, reused.ID)
+	}
+}
+
+func TestEnsureLaunchLiveSessionCanonicalizesSignalTimeframeFromStrategyBindings(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "30m"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal source failed: %v", err)
+	}
+
+	first, created, err := platform.ensureLaunchLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("ensure launch live session failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected first canonicalized launch session to be created")
+	}
+	if got := stringValue(first.State["signalTimeframe"]); got != "30m" {
+		t.Fatalf("expected created session signalTimeframe 30m, got %q", got)
+	}
+
+	reused, created, err := platform.ensureLaunchLiveSession("live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("ensure reused launch live session failed: %v", err)
+	}
+	if created {
+		t.Fatal("expected canonicalized launch scope to reuse existing live session")
+	}
+	if reused.ID != first.ID {
+		t.Fatalf("expected reused live session %s, got %s", first.ID, reused.ID)
+	}
+	if got := stringValue(reused.State["signalTimeframe"]); got != "30m" {
+		t.Fatalf("expected reused session signalTimeframe 30m, got %q", got)
 	}
 }
 
@@ -8460,5 +8539,41 @@ func TestSyncLiveSessionRuntimePreservesConfiguredDispatchMode(t *testing.T) {
 	}
 	if got := stringValue(updated2.State["dispatchMode"]); got != "manual-review" {
 		t.Errorf("expected manual-review to be preserved, got %s", got)
+	}
+}
+
+func TestSyncLiveSessionRuntimeCanonicalizesSignalScopeFromBindings(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "30m"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal source failed: %v", err)
+	}
+
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+		"dispatchMode":    "manual-review",
+	})
+	if err != nil {
+		t.Fatalf("seed stale live session state failed: %v", err)
+	}
+
+	updated, err := platform.syncLiveSessionRuntime(session)
+	if err != nil {
+		t.Fatalf("syncLiveSessionRuntime failed: %v", err)
+	}
+	if got := stringValue(updated.State["signalTimeframe"]); got != "30m" {
+		t.Fatalf("expected synced session signalTimeframe 30m, got %q", got)
+	}
+	if got := stringValue(updated.State["symbol"]); got != "BTCUSDT" {
+		t.Fatalf("expected synced session symbol BTCUSDT, got %q", got)
 	}
 }
