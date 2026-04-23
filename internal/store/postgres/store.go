@@ -1816,6 +1816,8 @@ func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerification
 		builder.WriteString(fmt.Sprintf(" limit $%d", len(args)))
 	}
 
+	builder.WriteString(" order by recorded_at desc")
+
 	rows, err := s.db.Query(builder.String(), args...)
 	if err != nil {
 		return nil, err
