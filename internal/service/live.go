@@ -342,6 +342,8 @@ func runtimeSourceGatePhase(runtimeSession domain.SignalRuntimeSession, sourceGa
 	if boolValue(sourceGate["ready"]) {
 		return "source-gate-ready"
 	}
+	// Treat startedAt as the runtime bootstrap marker here. The exact timestamp
+	// validity is enforced by runtime lifecycle writes, not source-gate logging.
 	if strings.TrimSpace(stringValue(runtimeSession.State["startedAt"])) == "" {
 		return "bootstrap-pending"
 	}
