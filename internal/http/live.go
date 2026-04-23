@@ -561,6 +561,51 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 				return
 			}
 
+			// 安全校验 1：归属确认 (Metadata 标识)
+			// 注意：domain.Order 本身不直接持有 LiveSessionID 字段，关联关系存储在 Metadata 中
+			orderSessionID, _ := order.Metadata["liveSessionId"].(string)
+			if orderSessionID != sessionID {
+				writeError(w, http.StatusForbidden, "order does not belong to this session (metadata mismatch)")
+				return
+			}
+
+			// 业务校验：仅允许复核退出类订单
+			if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+				writeError(w, http.StatusForbidden, "only exit/reduce-only orders can be manually verified")
+				return
+			}
+
+			// 状态校验：仅允许复核 mismatch 或 orphan-exit 状态的交易对
+			pairs, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{LiveSessionID: sessionID})
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to analyze trade pairs: "+err.Error())
+				return
+			}
+
+			var targetPair *domain.LiveTradePair
+			for _, p := range pairs {
+				for _, eid := range p.ExitOrderIDs {
+					if eid == orderID {
+						targetPair = &p
+						break
+					}
+				}
+				if targetPair != nil {
+					break
+				}
+			}
+
+			if targetPair == nil {
+				writeError(w, http.StatusNotFound, "trade pair containing this exit order not found")
+				return
+			}
+
+			verdict := strings.ToLower(targetPair.ExitVerdict)
+			if verdict != "mismatch" && verdict != "orphan-exit" {
+				writeError(w, http.StatusForbidden, fmt.Sprintf("manual verification only allowed for mismatch/orphan-exit states (current: %s)", verdict))
+				return
+			}
+
 			// 创建核验记录
 			verification := domain.OrderCloseVerification{
 				ID:                   fmt.Sprintf("manual-%d", time.Now().UnixNano()),
