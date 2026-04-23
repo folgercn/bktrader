@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -14,7 +15,16 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/orders", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			items, err := platform.ListOrders()
+			limit := 500
+			if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+				if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+					limit = parsed
+					if limit > 2000 {
+						limit = 2000
+					}
+				}
+			}
+			items, err := platform.ListOrdersWithLimit(limit)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
@@ -119,7 +129,16 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		items, err := platform.ListFills()
+		limit := 500
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+				limit = parsed
+				if limit > 2000 {
+					limit = 2000
+				}
+			}
+		}
+		items, err := platform.ListFillsWithLimit(limit)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
