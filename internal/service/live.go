@@ -3984,6 +3984,7 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 	reason := stringValue(meta["nextPlannedReason"])
 	currentPosition := cloneMetadata(mapValue(meta["currentPosition"]))
 	if role == "exit" {
+		nextSide = normalizeLiveExitIntentSide(nextSide, currentPosition)
 		quantity = firstPositive(math.Abs(parseFloatValue(currentPosition["quantity"])), quantity)
 	}
 
@@ -4016,6 +4017,18 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 			"currentPosition":               currentPosition,
 			"bookImbalance":                 parseFloatValue(meta["bookImbalance"]),
 		},
+	}
+}
+
+func normalizeLiveExitIntentSide(plannedSide string, currentPosition map[string]any) string {
+	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
+	switch positionSide {
+	case "LONG":
+		return "SELL"
+	case "SHORT":
+		return "BUY"
+	default:
+		return plannedSide
 	}
 }
 
