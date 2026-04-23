@@ -16,6 +16,7 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 		switch r.Method {
 		case http.MethodGet:
 			limit := 500
+			offset := 0
 			if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 				if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
 					limit = parsed
@@ -24,7 +25,12 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 					}
 				}
 			}
-			items, err := platform.ListOrdersWithLimit(limit)
+			if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+				if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed > 0 {
+					offset = parsed
+				}
+			}
+			items, err := platform.ListOrdersWithLimit(limit, offset)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
@@ -123,6 +129,19 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 	})
 
+	mux.HandleFunc("/api/v1/orders/count", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		count, err := platform.CountOrders()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]int{"count": count})
+	})
+
 	// GET /api/v1/fills — 成交流水列表
 	mux.HandleFunc("/api/v1/fills", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -130,6 +149,7 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 			return
 		}
 		limit := 500
+		offset := 0
 		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 			if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
 				limit = parsed
@@ -138,11 +158,29 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				}
 			}
 		}
-		items, err := platform.ListFillsWithLimit(limit)
+		if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+			if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed > 0 {
+				offset = parsed
+			}
+		}
+		items, err := platform.ListFillsWithLimit(limit, offset)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, items)
+	})
+
+	mux.HandleFunc("/api/v1/fills/count", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		count, err := platform.CountFills()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]int{"count": count})
 	})
 }

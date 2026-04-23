@@ -451,7 +451,7 @@ func (s *Store) ListOrders() ([]domain.Order, error) {
 	return items, nil
 }
 
-func (s *Store) ListOrdersWithLimit(limit int) ([]domain.Order, error) {
+func (s *Store) ListOrdersWithLimit(limit, offset int) ([]domain.Order, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.Order, 0, len(s.orders))
@@ -460,10 +460,22 @@ func (s *Store) ListOrdersWithLimit(limit int) ([]domain.Order, error) {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	if offset > 0 {
+		if offset >= len(items) {
+			return []domain.Order{}, nil
+		}
+		items = items[offset:]
+	}
 	if limit > 0 && len(items) > limit {
 		items = items[:limit]
 	}
 	return items, nil
+}
+
+func (s *Store) CountOrders() (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.orders), nil
 }
 
 func (s *Store) QueryOrders(query domain.OrderQuery) ([]domain.Order, error) {
@@ -533,7 +545,7 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 	return items, nil
 }
 
-func (s *Store) ListFillsWithLimit(limit int) ([]domain.Fill, error) {
+func (s *Store) ListFillsWithLimit(limit, offset int) ([]domain.Fill, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.Fill, 0, len(s.fills))
@@ -541,10 +553,22 @@ func (s *Store) ListFillsWithLimit(limit int) ([]domain.Fill, error) {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	if offset > 0 {
+		if offset >= len(items) {
+			return []domain.Fill{}, nil
+		}
+		items = items[offset:]
+	}
 	if limit > 0 && len(items) > limit {
 		items = items[:limit]
 	}
 	return items, nil
+}
+
+func (s *Store) CountFills() (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.fills), nil
 }
 
 func (s *Store) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {

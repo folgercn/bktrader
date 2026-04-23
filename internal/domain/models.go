@@ -191,6 +191,8 @@ type Order struct {
 // OrderQuery 定义订单查询条件。
 type OrderQuery struct {
 	LiveSessionID string
+	Limit         int
+	Offset        int
 }
 
 // Fill 成交记录，每笔成交关联一个订单。
@@ -222,6 +224,8 @@ func (f Fill) FallbackFingerprint() string {
 // FillQuery 定义成交记录查询条件。
 type FillQuery struct {
 	OrderIDs []string
+	Limit    int
+	Offset   int
 }
 
 // Position 当前持仓，由成交记录聚合得出。

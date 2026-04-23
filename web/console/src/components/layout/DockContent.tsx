@@ -23,6 +23,8 @@ import { technicalStatusLabel } from '../../utils/derivation';
 import { useTradingStore } from '../../store/useTradingStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useLiveTradePairs } from '../../hooks/useLiveTradePairs';
+import { useOrdersPageQuery } from '../../hooks/useOrdersPageQuery';
+import { useFillsPageQuery } from '../../hooks/useFillsPageQuery';
 import { ShieldCheck, Loader2, ChevronLeft, ChevronRight, ArrowRightLeft, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
 import { 
   Dialog, 
@@ -322,27 +324,38 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
   const [selectedPairForReview, setSelectedPairForReview] = useState<any | null>(null);
 
   // Pagination & Sorting State
-  const [pages, setPages] = useState({ pairs: 1, orders: 1, positions: 1, fills: 1, alerts: 1 });
+  const [pages, setPages] = useState({ pairs: 1, positions: 1, alerts: 1 });
   const [pageSize, setPageSize] = useState(5);
+
+  const ordersPageQuery = useOrdersPageQuery(pageSize, dockTab === 'orders');
+  const fillsPageQuery = useFillsPageQuery(pageSize, dockTab === 'fills');
 
   // Reset page when tab or pageSize changes
   const handlePageChange = (page: number) => {
-    setPages(prev => ({ ...prev, [dockTab]: page }));
+    if (dockTab === 'orders') {
+      ordersPageQuery.setCurrentPage(page);
+    } else if (dockTab === 'fills') {
+      fillsPageQuery.setCurrentPage(page);
+    } else {
+      setPages(prev => ({ ...prev, [dockTab]: page }));
+    }
   };
 
   const handlePageSizeChange = (size: number) => {
     setPageSize(size);
-    setPages({ pairs: 1, orders: 1, positions: 1, fills: 1, alerts: 1 });
+    setPages({ pairs: 1, positions: 1, alerts: 1 });
+    if (dockTab === 'orders' || dockTab === 'fills') {
+      ordersPageQuery.setCurrentPage(1);
+      fillsPageQuery.setCurrentPage(1);
+    }
   };
 
-  const sortedOrders = useMemo(() => [...orders].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)), [orders]);
-  const sortedFills = useMemo(() => [...fills].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)), [fills]);
   const sortedPositions = useMemo(() => [...positions].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), [positions]);
   const sortedAlerts = useMemo(() => [...alerts].sort((a, b) => Date.parse(b.eventTime ?? "") - Date.parse(a.eventTime ?? "")), [alerts]);
   const sortedPairs = useMemo(() => [...pairs].sort((a, b) => Date.parse(b.entryAt) - Date.parse(a.entryAt)), [pairs]);
 
-  const pagedOrders = useMemo(() => sortedOrders.slice((pages.orders - 1) * pageSize, pages.orders * pageSize), [sortedOrders, pages.orders, pageSize]);
-  const pagedFills = useMemo(() => sortedFills.slice((pages.fills - 1) * pageSize, pages.fills * pageSize), [sortedFills, pages.fills, pageSize]);
+  const pagedOrders = ordersPageQuery.orders;
+  const pagedFills = fillsPageQuery.fills;
   const pagedPositions = useMemo(() => sortedPositions.slice((pages.positions - 1) * pageSize, pages.positions * pageSize), [sortedPositions, pages.positions, pageSize]);
   const pagedAlerts = useMemo(() => sortedAlerts.slice((pages.alerts - 1) * pageSize, pages.alerts * pageSize), [sortedAlerts, pages.alerts, pageSize]);
   const pagedPairs = useMemo(() => sortedPairs.slice((pages.pairs - 1) * pageSize, pages.pairs * pageSize), [sortedPairs, pages.pairs, pageSize]);
@@ -590,8 +603,8 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
       </div>
 
       <Pagination 
-        currentPage={pages[dockTab]}
-        totalItems={{ pairs: pairs.length, orders: orders.length, fills: fills.length, positions: positions.length, alerts: alerts.length }[dockTab]}
+        currentPage={dockTab === 'orders' ? ordersPageQuery.currentPage : dockTab === 'fills' ? fillsPageQuery.currentPage : pages[dockTab]}
+        totalItems={dockTab === 'orders' ? ordersPageQuery.totalCount : dockTab === 'fills' ? fillsPageQuery.totalCount : { pairs: pairs.length, positions: positions.length, alerts: alerts.length }[dockTab]}
         pageSize={pageSize}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}

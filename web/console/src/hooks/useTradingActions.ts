@@ -102,7 +102,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   }
 
   function normalizeLivePositionSizingMode(candidate: unknown, schedule: unknown) {
-    const value = String(candidate ?? "").trim().toLowerCase().replaceAll("-", "_");
+    const value = String(candidate ?? "").trim().toLowerCase().replace(/-/g, "_");
     if (value === "reentry_size_schedule" || value === "reentry_schedule" || value === "schedule") {
       return "reentry_size_schedule";
     }
