@@ -1809,10 +1809,22 @@ func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrid
 		if session.AccountID != accountID || session.StrategyID != strategyID {
 			continue
 		}
-		if targetSymbol != "" && NormalizeSymbol(stringValue(session.State["symbol"])) != targetSymbol {
+		rawSessionSymbol := strings.TrimSpace(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+		rawSessionTimeframe := strings.TrimSpace(firstNonEmpty(stringValue(session.State["signalTimeframe"]), stringValue(session.State["timeframe"])))
+		sessionSymbol := normalizeOptionalLiveScopeSymbol(rawSessionSymbol)
+		sessionTimeframe := normalizeSignalBarInterval(rawSessionTimeframe)
+		if rawSessionSymbol != "" || rawSessionTimeframe != "" {
+			sessionScope := p.canonicalizeLiveSessionOverridesForStrategy(strategyID, map[string]any{
+				"symbol":          rawSessionSymbol,
+				"signalTimeframe": rawSessionTimeframe,
+			})
+			sessionSymbol = normalizeOptionalLiveScopeSymbol(firstNonEmpty(stringValue(sessionScope["symbol"]), rawSessionSymbol))
+			sessionTimeframe = normalizeSignalBarInterval(firstNonEmpty(stringValue(sessionScope["signalTimeframe"]), rawSessionTimeframe))
+		}
+		if targetSymbol != "" && sessionSymbol != targetSymbol {
 			continue
 		}
-		if targetTimeframe != "" && normalizeSignalBarInterval(stringValue(session.State["signalTimeframe"])) != targetTimeframe {
+		if targetTimeframe != "" && sessionTimeframe != targetTimeframe {
 			continue
 		}
 		if len(normalizedOverrides) == 0 {

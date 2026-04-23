@@ -2859,7 +2859,18 @@ func TestEnsureLaunchLiveSessionCreatesDistinctSessionPerSymbolAndTimeframe(t *t
 
 func TestEnsureLaunchLiveSessionCanonicalizesSignalTimeframeFromStrategyBindings(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
-	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+	account, err := platform.store.CreateAccount("launch-scope-live", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create live account failed: %v", err)
+	}
+	strategy, err := platform.store.CreateStrategy("launch-scope-strategy", "test", map[string]any{
+		"strategyEngine": "bk-default",
+	})
+	if err != nil {
+		t.Fatalf("create strategy failed: %v", err)
+	}
+	strategyID := strategy["id"].(string)
+	if _, err := platform.BindStrategySignalSource(strategyID, map[string]any{
 		"sourceKey": "binance-kline",
 		"role":      "signal",
 		"symbol":    "BTCUSDT",
@@ -2868,7 +2879,7 @@ func TestEnsureLaunchLiveSessionCanonicalizesSignalTimeframeFromStrategyBindings
 		t.Fatalf("bind strategy signal source failed: %v", err)
 	}
 
-	first, created, err := platform.ensureLaunchLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	first, created, err := platform.ensureLaunchLiveSession(account.ID, strategyID, map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -2882,7 +2893,7 @@ func TestEnsureLaunchLiveSessionCanonicalizesSignalTimeframeFromStrategyBindings
 		t.Fatalf("expected created session signalTimeframe 30m, got %q", got)
 	}
 
-	reused, created, err := platform.ensureLaunchLiveSession("live-main", "strategy-bk-1d", map[string]any{
+	reused, created, err := platform.ensureLaunchLiveSession(account.ID, strategyID, map[string]any{
 		"symbol":          "BTCUSDT",
 		"signalTimeframe": "1d",
 	})
@@ -2894,6 +2905,58 @@ func TestEnsureLaunchLiveSessionCanonicalizesSignalTimeframeFromStrategyBindings
 	}
 	if reused.ID != first.ID {
 		t.Fatalf("expected reused live session %s, got %s", first.ID, reused.ID)
+	}
+	if got := stringValue(reused.State["signalTimeframe"]); got != "30m" {
+		t.Fatalf("expected reused session signalTimeframe 30m, got %q", got)
+	}
+}
+
+func TestEnsureLaunchLiveSessionReusesStoredSessionAfterCanonicalScopeRecovery(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.CreateAccount("stale-launch-live", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create live account failed: %v", err)
+	}
+	strategy, err := platform.store.CreateStrategy("stale-launch-strategy", "test", map[string]any{
+		"strategyEngine": "bk-default",
+	})
+	if err != nil {
+		t.Fatalf("create strategy failed: %v", err)
+	}
+	strategyID := strategy["id"].(string)
+	if _, err := platform.BindStrategySignalSource(strategyID, map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "30m"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal source failed: %v", err)
+	}
+
+	staleSession, err := platform.store.CreateLiveSession(account.ID, strategyID)
+	if err != nil {
+		t.Fatalf("create stale live session failed: %v", err)
+	}
+	staleSession, err = platform.store.UpdateLiveSessionState(staleSession.ID, map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("seed stale live session state failed: %v", err)
+	}
+
+	reused, created, err := platform.ensureLaunchLiveSession(account.ID, strategyID, map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("ensure reused launch live session failed: %v", err)
+	}
+	if created {
+		t.Fatal("expected stale session to be reused after canonical scope recovery")
+	}
+	if reused.ID != staleSession.ID {
+		t.Fatalf("expected reused live session %s, got %s", staleSession.ID, reused.ID)
 	}
 	if got := stringValue(reused.State["signalTimeframe"]); got != "30m" {
 		t.Fatalf("expected reused session signalTimeframe 30m, got %q", got)

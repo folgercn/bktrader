@@ -278,10 +278,12 @@ export function AccountStage({
       ) ??
       null
     : null;
+  const selectedRuntimeSignalTimeframeHint = String(selectedRuntimeSession?.state?.signalTimeframe ?? "").trim().toLowerCase();
   const selectedRuntimeSignalBarStateKey = String(selectedRuntimeSession?.state?.lastStrategyEvaluationSignalBarStateKey ?? "").trim();
   const selectedRuntimeSignalState = derivePrimarySignalBarState(selectedSignalBarStates, {
     fallbackStates: getRecord(selectedRuntimeSession?.state?.lastStrategyEvaluationSignalBarStates),
     targetSymbol: selectedRuntimeSymbol,
+    targetTimeframe: selectedRuntimeSignalTimeframeHint,
     targetStateKey: selectedRuntimeSignalBarStateKey,
   });
   const selectedRuntimeSignalSymbol = String(
@@ -504,10 +506,12 @@ export function AccountStage({
                 const accountSession = validLiveSessions.find((item) => item.accountId === account.id);
                 const accountSymbol = String(accountSession?.state?.symbol ?? activeRuntime?.state?.symbol ?? "").trim().toUpperCase();
                 const strategyBindings = (activeRuntime?.strategyId ? strategySignalBindingMap[activeRuntime.strategyId] : undefined) ?? strategySignalBindingMap[validLiveSessions.find((item) => item.accountId === account.id)?.strategyId ?? ""] ?? [];
+                const activeSignalTimeframeHint = String(accountSession?.state?.signalTimeframe ?? "").trim().toLowerCase();
                 const activeSignalBarStateKey = String(accountSession?.state?.lastStrategyEvaluationSignalBarStateKey ?? "").trim();
                 const activeSignalBarState = derivePrimarySignalBarState(getRecord(activeRuntimeState.signalBarStates), {
                   fallbackStates: getRecord(accountSession?.state?.lastStrategyEvaluationSignalBarStates),
                   targetSymbol: accountSymbol,
+                  targetTimeframe: activeSignalTimeframeHint,
                   targetStateKey: activeSignalBarStateKey,
                 });
                 const activeSignalSymbol = String(

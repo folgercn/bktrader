@@ -152,6 +152,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const sessionSymbol = String(monitorSession?.state?.symbol ?? "").trim().toUpperCase();
   const monitorSignalContext = getRecord(monitorSessionState.lastStrategyEvaluationContext);
   const monitorDecisionMeta = getRecord(getRecord(monitorSession?.state?.lastStrategyDecision).metadata);
+  const monitorSignalTimeframeHint = String(
+    monitorSessionState.signalTimeframe ?? monitorSignalContext.signalTimeframe ?? monitorDecisionMeta.signalTimeframe ?? ""
+  ).trim().toLowerCase();
   const monitorSignalBarStateKey = String(
     monitorSessionState.lastStrategyEvaluationSignalBarStateKey ?? monitorDecisionMeta.signalBarStateKey ?? ""
   ).trim();
@@ -160,6 +163,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     {
       fallbackStates: getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates),
       targetSymbol: sessionSymbol,
+      targetTimeframe: monitorSignalTimeframeHint,
       targetStateKey: monitorSignalBarStateKey,
     }
   );
