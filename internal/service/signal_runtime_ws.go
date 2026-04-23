@@ -47,11 +47,11 @@ type reconnectPolicy struct {
 var (
 	transientReconnectPolicy = reconnectPolicy{
 		maxAttempts: 3,
-		backoffs:    []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second},
+		backoffs:    []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second},
 	}
 	kickedReconnectPolicy = reconnectPolicy{
 		maxAttempts: 2,
-		backoffs:    []time.Duration{10 * time.Second, 30 * time.Second},
+		backoffs:    []time.Duration{20 * time.Second, 60 * time.Second},
 	}
 )
 
@@ -94,10 +94,15 @@ const (
 	defaultBinanceFuturesWSURL      = "wss://fstream.binance.com/ws"
 	defaultOKXPublicWSURL           = "wss://ws.okx.com:8443/ws/v5/public"
 	signalRuntimeWSHandshakeTimeout = 5 * time.Second
-	signalRuntimeWSReadTimeout      = 10 * time.Second
 	signalRuntimeWSPingInterval     = 10 * time.Second
 	signalRuntimeWSPingWriteTimeout = 3 * time.Second
 )
+
+type signalRuntimeWSProfile struct {
+	readTimeout      time.Duration
+	pingInterval     time.Duration
+	pingWriteTimeout time.Duration
+}
 
 type signalRuntimeLoopRunner func(context.Context, string) (bool, error)
 type signalRuntimeBackoffWaiter func(context.Context, time.Duration) bool
@@ -112,8 +117,8 @@ func (p *Platform) runSignalRuntimeLoop(ctx context.Context, sessionID string) {
 }
 
 // runSignalRuntimeWithRecovery wraps runSignalRuntimeLoop with tiered disconnect recovery.
-// L0 transient errors (timeout, EOF): up to 3 retries with 2s/5s/10s backoff.
-// L1 kicked errors (close 1006/1008): up to 2 retries with 10s/30s backoff.
+// L0 transient errors (timeout, EOF): up to 3 retries with 5s/15s/30s backoff.
+// L1 kicked errors (close 1006/1008): up to 2 retries with 20s/60s backoff.
 // L2 fatal errors (banned, invalid API key): NO retry, immediate ERROR.
 // After reconnect, validates signal bar continuity and marks stale if bars were missed.
 func (p *Platform) runSignalRuntimeWithRecovery(ctx context.Context, sessionID string) {
@@ -230,6 +235,21 @@ func recoveryBackoff(policy reconnectPolicy, attempt int) time.Duration {
 	return policy.backoffs[minInt(index, len(policy.backoffs)-1)]
 }
 
+func signalRuntimeWSProfileForAttempt(attempt int) signalRuntimeWSProfile {
+	profile := signalRuntimeWSProfile{
+		readTimeout:      20 * time.Second,
+		pingInterval:     signalRuntimeWSPingInterval,
+		pingWriteTimeout: signalRuntimeWSPingWriteTimeout,
+	}
+	switch {
+	case attempt >= 2:
+		profile.readTimeout = 45 * time.Second
+	case attempt == 1:
+		profile.readTimeout = 30 * time.Second
+	}
+	return profile
+}
+
 func waitSignalRuntimeBackoff(ctx context.Context, backoff time.Duration) bool {
 	if backoff <= 0 {
 		return ctx.Err() == nil
@@ -297,12 +317,13 @@ func (p *Platform) setSessionRecovering(sessionID string, lastErr error, attempt
 		state["reconnectMaxAttempts"] = maxAttempts
 		state["reconnectNextBackoff"] = nextBackoff.String()
 		state["reconnectSeverity"] = classifyDisconnectSeverity(lastErr).String()
-		state["reconnectAttemptStartedAt"] = now.Format(time.RFC3339)
+		state["reconnectAttemptStartedAtMs"] = now.UnixMilli()
 		appendSignalRuntimeTimeline(state, now, "runtime", "recovering", map[string]any{
-			"attempt":  attempt,
-			"backoff":  nextBackoff.String(),
-			"error":    lastErr.Error(),
-			"severity": classifyDisconnectSeverity(lastErr).String(),
+			"attempt":            attempt,
+			"backoff":            nextBackoff.String(),
+			"error":              lastErr.Error(),
+			"severity":           classifyDisconnectSeverity(lastErr).String(),
+			"attemptStartedAtMs": now.UnixMilli(),
 		})
 		session.State = state
 		session.UpdatedAt = now
@@ -323,7 +344,7 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		delete(state, "reconnectMaxAttempts")
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
-		delete(state, "reconnectAttemptStartedAt")
+		delete(state, "reconnectAttemptStartedAtMs")
 		appendSignalRuntimeError(state, err.Error())
 		appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "error", map[string]any{
 			"message": err.Error(),
@@ -348,7 +369,7 @@ func (p *Platform) setSessionStopped(sessionID string) {
 		delete(state, "reconnectMaxAttempts")
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
-		delete(state, "reconnectAttemptStartedAt")
+		delete(state, "reconnectAttemptStartedAtMs")
 		appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "stopped", nil)
 		session.State = state
 		session.UpdatedAt = time.Now().UTC()
@@ -398,7 +419,9 @@ func (p *Platform) runExchangeWebsocketLoop(
 		"subscriptions", subscriptionSummary,
 		"ws_url", wsURL,
 	)
-	reconnectStartedAt := parseOptionalRFC3339(stringValue(session.State["reconnectAttemptStartedAt"]))
+	reconnectAttempt := maxIntValue(session.State["reconnectAttempt"], 0)
+	wsProfile := signalRuntimeWSProfileForAttempt(reconnectAttempt)
+	reconnectStartedAt := parseUnixMillisTime(session.State["reconnectAttemptStartedAtMs"])
 	reconnecting := !reconnectStartedAt.IsZero()
 
 	dialer := websocket.Dialer{
@@ -411,9 +434,9 @@ func (p *Platform) runExchangeWebsocketLoop(
 	}
 	defer conn.Close()
 
-	_ = conn.SetReadDeadline(time.Now().Add(signalRuntimeWSReadTimeout))
+	_ = conn.SetReadDeadline(time.Now().Add(wsProfile.readTimeout))
 	conn.SetPongHandler(func(_ string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(signalRuntimeWSReadTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(wsProfile.readTimeout))
 		now := time.Now().UTC()
 		_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 			state := cloneMetadata(session.State)
@@ -436,12 +459,16 @@ func (p *Platform) runExchangeWebsocketLoop(
 		reconnectDurationMillis = maxInt64(0, now.Sub(reconnectStartedAt).Milliseconds())
 		reconnectDuration = (time.Duration(reconnectDurationMillis) * time.Millisecond).String()
 		logger.Info("signal runtime websocket reconnected",
+			"reconnect_attempt", reconnectAttempt,
 			"reconnect_duration", reconnectDuration,
 			"reconnect_duration_ms", reconnectDurationMillis,
-			"resubscribe_result", "ok",
+			"read_timeout", wsProfile.readTimeout.String(),
+			"resubscribe_result", "subscribe_request_sent",
 		)
 	} else {
-		logger.Info("signal runtime websocket connected")
+		logger.Info("signal runtime websocket connected",
+			"read_timeout", wsProfile.readTimeout.String(),
+		)
 	}
 	_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 		session.Status = "RUNNING"
@@ -463,25 +490,28 @@ func (p *Platform) runExchangeWebsocketLoop(
 			state["lastReconnectDuration"] = reconnectDuration
 			state["lastReconnectDurationMs"] = reconnectDurationMillis
 			state["lastReconnectSubscriptions"] = subscriptionSummary
+			state["lastReconnectResult"] = "subscribe_request_sent"
 		}
 		delete(state, "reconnectAttempt")
 		delete(state, "reconnectMaxAttempts")
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
-		delete(state, "reconnectAttemptStartedAt")
+		delete(state, "reconnectAttemptStartedAtMs")
 		appendSignalRuntimeTimeline(state, now, "runtime", "subscribed", map[string]any{
 			"subscriptionCount": len(subscriptions),
 			"subscriptions":     subscriptionSummary,
 			"url":               wsURL,
 			"reconnecting":      reconnecting,
+			"readTimeout":       wsProfile.readTimeout.String(),
 			"reconnectDuration": reconnectDuration,
+			"result":            "subscribe_request_sent",
 		})
 		session.State = state
 		session.UpdatedAt = now
 	})
 	connected := true
 
-	ticker := time.NewTicker(signalRuntimeWSPingInterval)
+	ticker := time.NewTicker(wsProfile.pingInterval)
 	defer ticker.Stop()
 
 	done := make(chan error, 1)
@@ -499,7 +529,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 			summary := summarizeSignalMessage(session.RuntimeAdapter, payload)
 			summary = enrichSignalRuntimeSummary(session, summary)
 			_ = p.ingestLiveSignalBarSummary(summary, now)
-			_ = conn.SetReadDeadline(now.Add(signalRuntimeWSReadTimeout))
+			_ = conn.SetReadDeadline(now.Add(wsProfile.readTimeout))
 			_ = p.updateSignalRuntimeSessionState(session.ID, func(session *domain.SignalRuntimeSession) {
 				state := cloneMetadata(session.State)
 				state["health"] = "healthy"
@@ -545,7 +575,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 			)
 			return connected, err
 		case <-ticker.C:
-			if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(signalRuntimeWSPingWriteTimeout)); err != nil {
+			if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(wsProfile.pingWriteTimeout)); err != nil {
 				logger.Warn("signal runtime websocket ping failed",
 					"connected", connected,
 					"error", err,
@@ -580,7 +610,7 @@ func (p *Platform) validateSignalBarContinuityAfterReconnect(state map[string]an
 		delete(state, "reconnectMaxAttempts")
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
-		delete(state, "reconnectAttemptStartedAt")
+		delete(state, "reconnectAttemptStartedAtMs")
 		return
 	}
 
@@ -613,7 +643,7 @@ func (p *Platform) validateSignalBarContinuityAfterReconnect(state map[string]an
 	delete(state, "reconnectMaxAttempts")
 	delete(state, "reconnectNextBackoff")
 	delete(state, "reconnectSeverity")
-	delete(state, "reconnectAttemptStartedAt")
+	delete(state, "reconnectAttemptStartedAtMs")
 }
 
 func maxInt64(a, b int64) int64 {
