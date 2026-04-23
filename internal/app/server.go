@@ -35,15 +35,6 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	platform := service.NewPlatform(repository)
 	platform.SetTickInterval(cfg.PaperTickInterval)
 	platform.SetBacktestDataDirs(cfg.MinuteDataDir, cfg.TickDataDir)
-	platform.SetRuntimePolicy(service.RuntimePolicy{
-		TradeTickFreshnessSeconds:      cfg.TradeTickFreshnessSeconds,
-		OrderBookFreshnessSeconds:      cfg.OrderBookFreshnessSeconds,
-		SignalBarFreshnessSeconds:      cfg.SignalBarFreshnessSeconds,
-		RuntimeQuietSeconds:            cfg.RuntimeQuietSeconds,
-		StrategyEvaluationQuietSeconds: cfg.StrategyEvaluationQuietSeconds,
-		LiveAccountSyncFreshnessSecs:   cfg.LiveAccountSyncFreshnessSecs,
-		PaperStartReadinessTimeoutSecs: cfg.PaperStartReadinessTimeoutSecs,
-	})
 	platform.SetTelegramConfig(domain.TelegramConfig{
 		Enabled:    cfg.TelegramEnabled,
 		BotToken:   cfg.TelegramBotToken,
@@ -58,6 +49,10 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 		logger.Error("load persisted telegram config failed", "error", err)
 		return nil, err
 	}
+	// 关键：在加载持久化配置后，应用环境变量配置。
+	// ApplyRuntimeConfigOverrides 会根据字段业务语义进行严格校验 (>0 vs >=0)，
+	// 并且仅当环境变量明确设置时（指针非 nil）才执行覆盖。
+	platform.ApplyRuntimeConfigOverrides(cfg)
 	warmCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	if err := platform.WarmLiveMarketData(warmCtx); err != nil {
 		logger.Warn("warm live market data completed with errors", "error", err)

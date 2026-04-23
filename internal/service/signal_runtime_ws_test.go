@@ -81,37 +81,42 @@ func TestRunSignalRuntimeWithRecoveryResetsAttemptsAfterRecoveredRun(t *testing.
 	if len(waits) != 2 {
 		t.Fatalf("expected two recovery waits across two disconnect cycles, got %#v", waits)
 	}
-	if waits[0] != 5*time.Second || waits[1] != 5*time.Second {
+	if waits[0] != 10*time.Second || waits[1] != 10*time.Second {
 		t.Fatalf("expected retry budget to reset after recovered run, got wait sequence %#v", waits)
 	}
 }
 
 func TestRecoveryBackoffUsesFasterReconnectBudget(t *testing.T) {
-	if got := recoveryBackoff(transientReconnectPolicy, 1); got != 5*time.Second {
-		t.Fatalf("expected first transient backoff to be 5s, got %s", got)
+	platform := NewPlatform(memory.NewStore())
+	if got := recoveryBackoff(platform.transientReconnectPolicy(), 1); got != 10*time.Second {
+		t.Fatalf("expected first transient backoff to be 10s, got %s", got)
 	}
-	if got := recoveryBackoff(transientReconnectPolicy, 2); got != 15*time.Second {
-		t.Fatalf("expected second transient backoff to be 15s, got %s", got)
+	if got := recoveryBackoff(platform.transientReconnectPolicy(), 2); got != 30*time.Second {
+		t.Fatalf("expected second transient backoff to be 30s, got %s", got)
 	}
-	if got := recoveryBackoff(transientReconnectPolicy, 3); got != 30*time.Second {
-		t.Fatalf("expected third transient backoff to be 30s, got %s", got)
+	if got := recoveryBackoff(platform.transientReconnectPolicy(), 3); got != 60*time.Second {
+		t.Fatalf("expected third transient backoff to be 60s, got %s", got)
 	}
-	if got := recoveryBackoff(kickedReconnectPolicy, 1); got != 20*time.Second {
-		t.Fatalf("expected first kicked backoff to be 20s, got %s", got)
+	if got := recoveryBackoff(platform.kickedReconnectPolicy(), 1); got != 30*time.Second {
+		t.Fatalf("expected first kicked backoff to be 30s, got %s", got)
 	}
-	if got := recoveryBackoff(kickedReconnectPolicy, 2); got != 60*time.Second {
-		t.Fatalf("expected second kicked backoff to be 60s, got %s", got)
+	if got := recoveryBackoff(platform.kickedReconnectPolicy(), 2); got != 120*time.Second {
+		t.Fatalf("expected second kicked backoff to be 120s, got %s", got)
 	}
 }
 
 func TestSignalRuntimeWSProfileForAttemptExpandsReadTimeout(t *testing.T) {
-	if got := signalRuntimeWSProfileForAttempt(0).readTimeout; got != 20*time.Second {
+	platform := NewPlatform(memory.NewStore())
+	platform.SetRuntimePolicy(RuntimePolicy{
+		WSReadStaleTimeoutSeconds: 20,
+	})
+	if got := platform.signalRuntimeWSProfileForAttempt(0).readTimeout; got != 20*time.Second {
 		t.Fatalf("expected initial read timeout to be 20s, got %s", got)
 	}
-	if got := signalRuntimeWSProfileForAttempt(1).readTimeout; got != 30*time.Second {
+	if got := platform.signalRuntimeWSProfileForAttempt(1).readTimeout; got != 30*time.Second {
 		t.Fatalf("expected first reconnect read timeout to be 30s, got %s", got)
 	}
-	if got := signalRuntimeWSProfileForAttempt(2).readTimeout; got != 45*time.Second {
+	if got := platform.signalRuntimeWSProfileForAttempt(2).readTimeout; got != 45*time.Second {
 		t.Fatalf("expected later reconnect read timeout to be 45s, got %s", got)
 	}
 }

@@ -12,9 +12,29 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
-const liveSignalWarmWindow = 400 * 24 * time.Hour
-const liveFastSignalWarmWindow = 7 * 24 * time.Hour
-const liveMinuteWarmWindow = 30 * 24 * time.Hour
+func (p *Platform) liveSignalWarmWindow() time.Duration {
+	days := p.runtimePolicy.LiveSignalWarmWindowDays
+	if days <= 0 {
+		days = 400
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
+func (p *Platform) liveFastSignalWarmWindow() time.Duration {
+	days := p.runtimePolicy.LiveFastSignalWarmWindowDays
+	if days <= 0 {
+		days = 7
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
+func (p *Platform) liveMinuteWarmWindow() time.Duration {
+	days := p.runtimePolicy.LiveMinuteWarmWindowDays
+	if days <= 0 {
+		days = 30
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
 
 var fetchLiveCandleRange = fetchBinanceFuturesCandleRange
 
@@ -98,9 +118,9 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 	logger := p.logger("service.live_market", "symbol", normalizedSymbol)
 	logger.Debug("refreshing live market snapshot")
 	end := time.Now().UTC().Truncate(time.Minute)
-	minuteStart := end.Add(-liveMinuteWarmWindow)
-	signalStart := end.Add(-liveSignalWarmWindow)
-	fastSignalStart := end.Add(-liveFastSignalWarmWindow)
+	minuteStart := end.Add(-p.liveMinuteWarmWindow())
+	signalStart := end.Add(-p.liveSignalWarmWindow())
+	fastSignalStart := end.Add(-p.liveFastSignalWarmWindow())
 	minuteBars, err := fetchLiveCandleRange(normalizedSymbol, "1", minuteStart, end)
 	if err != nil {
 		return err
@@ -161,7 +181,11 @@ func (p *Platform) liveMarketSnapshot(symbol string) (liveMarketSnapshot, error)
 	p.liveMarketMu.RLock()
 	snapshot, ok := p.liveMarketData[normalizedSymbol]
 	p.liveMarketMu.RUnlock()
-	if ok && time.Since(snapshot.UpdatedAt) < 10*time.Minute && len(snapshot.MinuteBars) > 0 {
+	ttl := 10 * time.Minute
+	if p.runtimePolicy.LiveMarketCacheTTLMinutes > 0 {
+		ttl = time.Duration(p.runtimePolicy.LiveMarketCacheTTLMinutes) * time.Minute
+	}
+	if ok && time.Since(snapshot.UpdatedAt) < ttl && len(snapshot.MinuteBars) > 0 {
 		return snapshot, nil
 	}
 	if err := p.refreshLiveMarketSnapshot(normalizedSymbol); err != nil {
@@ -261,7 +285,7 @@ func (p *Platform) ingestLiveSignalBarSummary(summary map[string]any, eventTime 
 	if err := p.store.UpsertMarketBars([]domain.MarketBar{bar}); err != nil {
 		return err
 	}
-	start := eventTime.UTC().Add(-liveSignalWarmWindow)
+	start := eventTime.UTC().Add(-p.liveSignalWarmWindow())
 	storedBars, err := p.store.ListMarketBars("BINANCE", symbol, timeframe, start.Unix(), eventTime.UTC().Unix(), 0)
 	if err != nil {
 		return err
