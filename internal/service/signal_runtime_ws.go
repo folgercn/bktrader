@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -352,6 +353,7 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		session.State = state
 		session.UpdatedAt = time.Now().UTC()
 	})
+	p.tickEvalThrottle.Delete(sessionID)
 }
 
 func (p *Platform) setSessionStopped(sessionID string) {
@@ -374,6 +376,7 @@ func (p *Platform) setSessionStopped(sessionID string) {
 		session.State = state
 		session.UpdatedAt = time.Now().UTC()
 	})
+	p.tickEvalThrottle.Delete(sessionID)
 }
 
 func configuredBinanceFuturesWSURL() string {
@@ -545,9 +548,14 @@ func (p *Platform) runExchangeWebsocketLoop(
 					"timeframe": stringValue(summary["timeframe"]),
 					"price":     stringValue(summary["price"]),
 				})
-				// Validate signal bar continuity after reconnect
 				if stringValue(state["lastDisconnectAt"]) != "" {
 					p.validateSignalBarContinuityAfterReconnect(state, summary)
+				}
+				if throttle, ok := p.tickEvalThrottle.Load(session.ID); ok {
+					ts := throttle.(*tickEvalThrottleState)
+					ts.mu.Lock()
+					state["tickEvalThrottledCount"] = ts.skippedCount
+					ts.mu.Unlock()
 				}
 				session.State = state
 				session.UpdatedAt = now
@@ -653,11 +661,61 @@ func maxInt64(a, b int64) int64 {
 	return b
 }
 
+// tickEvalThrottleState maintains the throttle state for strategy evaluation
+type tickEvalThrottleState struct {
+	mu           sync.Mutex
+	lastPrice    string
+	lastEvalTime time.Time
+	skippedCount int64
+}
+
+const minTickEvalInterval = 100 * time.Millisecond
+
+func (p *Platform) shouldThrottleLiveEvaluation(runtimeSessionID string, summary map[string]any, eventTime time.Time, targetSymbol string) bool {
+	streamType := inferSignalRuntimeStreamType(summary)
+	if streamType != "trade_tick" {
+		return false
+	}
+
+	price := strings.TrimSpace(stringValue(summary["price"]))
+	if price == "" {
+		return false
+	}
+
+	throttleKey := runtimeSessionID
+	if targetSymbol != "" {
+		throttleKey = runtimeSessionID + "|" + targetSymbol
+	}
+
+	val, _ := p.tickEvalThrottle.LoadOrStore(throttleKey, &tickEvalThrottleState{})
+	state := val.(*tickEvalThrottleState)
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if state.lastPrice == price {
+		state.skippedCount++
+		return true
+	}
+
+	if !state.lastEvalTime.IsZero() && eventTime.Sub(state.lastEvalTime) < minTickEvalInterval {
+		state.skippedCount++
+		return true
+	}
+
+	state.lastPrice = price
+	state.lastEvalTime = eventTime
+	return false
+}
+
 func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
 	if !signalRuntimeSummaryShouldTriggerLiveEvaluation(summary) {
 		return nil
 	}
 	targetSymbol := signalRuntimeSummarySymbol(summary)
+	if p.shouldThrottleLiveEvaluation(runtimeSessionID, summary, eventTime, targetSymbol) {
+		return nil
+	}
 	// Reject messages with unknown symbol — never broadcast to all sessions
 	if targetSymbol == "" {
 		return nil

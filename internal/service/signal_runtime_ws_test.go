@@ -1003,3 +1003,181 @@ func TestRunSignalRuntimeWithRecoveryReconnectMarksStaleSyncOnRESTMismatch(t *te
 		t.Fatal("expected stale reconnect mismatch to block close execution")
 	}
 }
+
+func TestShouldThrottleLiveEvaluation_SamePriceSkipped(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+	summary := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68000.5",
+	}
+	eventTime := time.Now()
+
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary, eventTime, "BTCUSDT") {
+		t.Fatal("expected first eval to pass")
+	}
+
+	if !platform.shouldThrottleLiveEvaluation(sessionID, summary, eventTime, "BTCUSDT") {
+		t.Fatal("expected second eval with same price to be throttled")
+	}
+
+	throttle, ok := platform.tickEvalThrottle.Load(sessionID + "|BTCUSDT")
+	if !ok {
+		t.Fatal("expected throttle state to exist")
+	}
+	if throttle.(*tickEvalThrottleState).skippedCount != 1 {
+		t.Fatalf("expected skipped count to be 1, got %d", throttle.(*tickEvalThrottleState).skippedCount)
+	}
+}
+
+func TestShouldThrottleLiveEvaluation_PriceChangePassesThrough(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+	eventTime := time.Now()
+
+	summary1 := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68000.5",
+	}
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary1, eventTime, "BTCUSDT") {
+		t.Fatal("expected first eval to pass")
+	}
+
+	summary2 := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68001.0",
+	}
+	eventTime2 := eventTime.Add(300 * time.Millisecond)
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary2, eventTime2, "BTCUSDT") {
+		t.Fatal("expected second eval with different price to pass")
+	}
+}
+
+func TestShouldThrottleLiveEvaluation_MinIntervalEnforced(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+	eventTime := time.Now()
+
+	summary1 := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68000.5",
+	}
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary1, eventTime, "BTCUSDT") {
+		t.Fatal("expected first eval to pass")
+	}
+
+	summary2 := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68001.0", // Price changed, but interval too short
+	}
+	// Event time is 50ms later, which is < 100ms
+	eventTime2 := eventTime.Add(50 * time.Millisecond)
+	if !platform.shouldThrottleLiveEvaluation(sessionID, summary2, eventTime2, "BTCUSDT") {
+		t.Fatal("expected second eval to be throttled due to min interval")
+	}
+}
+
+func TestShouldThrottleLiveEvaluation_IntervalExpiredPasses(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+	eventTime := time.Now()
+
+	summary1 := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68000.5",
+	}
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary1, eventTime, "BTCUSDT") {
+		t.Fatal("expected first eval to pass")
+	}
+
+	summary2 := map[string]any{
+		"streamType": "trade_tick",
+		"price":      "68001.0", // Price changed, and interval expired
+	}
+	// Event time is 300ms later
+	eventTime2 := eventTime.Add(300 * time.Millisecond)
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary2, eventTime2, "BTCUSDT") {
+		t.Fatal("expected second eval to pass after interval expired")
+	}
+}
+
+func TestShouldThrottleLiveEvaluation_NonTradeTickNotThrottled(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+	eventTime := time.Now()
+
+	// Create throttle state explicitly to test it doesn't block non-trade ticks
+	platform.tickEvalThrottle.Store(sessionID+"|BTCUSDT", &tickEvalThrottleState{
+		lastPrice:    "68000.5",
+		lastEvalTime: eventTime,
+	})
+
+	summary1 := map[string]any{
+		"streamType": "signal_bar",
+		"price":      "68000.5",
+	}
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary1, eventTime, "BTCUSDT") {
+		t.Fatal("expected signal_bar to never be throttled")
+	}
+
+	summary2 := map[string]any{
+		"streamType": "order_book",
+		"price":      "68000.5",
+	}
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary2, eventTime, "BTCUSDT") {
+		t.Fatal("expected order_book to never be throttled")
+	}
+}
+
+func TestShouldThrottleLiveEvaluation_ReplayTickNotThrottled(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+	eventTime := time.Now()
+
+	// Create throttle state explicitly to test it doesn't block
+	platform.tickEvalThrottle.Store(sessionID+"|BTCUSDT", &tickEvalThrottleState{
+		lastPrice:    "68000.5",
+		lastEvalTime: eventTime,
+	})
+
+	summary := map[string]any{
+		"streamType": "replay_tick",
+		"price":      "68000.5",
+	}
+	if platform.shouldThrottleLiveEvaluation(sessionID, summary, eventTime, "BTCUSDT") {
+		t.Fatal("expected replay_tick to never be throttled")
+	}
+}
+
+func TestTickEvalThrottleCleanedOnSessionStop(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	sessionID := "test-session"
+
+	platform.signalSessions[sessionID] = domain.SignalRuntimeSession{
+		ID:     sessionID,
+		Status: "RUNNING",
+		State:  map[string]any{},
+	}
+
+	// Create throttle state
+	platform.tickEvalThrottle.Store(sessionID, &tickEvalThrottleState{
+		lastPrice: "68000.5",
+	})
+
+	platform.setSessionStopped(sessionID)
+
+	if _, ok := platform.tickEvalThrottle.Load(sessionID); ok {
+		t.Fatal("expected throttle state to be cleaned up on setSessionStopped")
+	}
+
+	// Test TerminalError case
+	platform.tickEvalThrottle.Store(sessionID, &tickEvalThrottleState{
+		lastPrice: "68000.5",
+	})
+
+	platform.setSessionTerminalError(sessionID, errors.New("fatal"))
+
+	if _, ok := platform.tickEvalThrottle.Load(sessionID); ok {
+		t.Fatal("expected throttle state to be cleaned up on setSessionTerminalError")
+	}
+}
