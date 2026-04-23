@@ -333,6 +333,21 @@ func (p *Platform) UpdateRuntimePolicy(policy RuntimePolicy) (RuntimePolicy, err
 		StrategyEvaluationQuietSeconds: p.runtimePolicy.StrategyEvaluationQuietSeconds,
 		LiveAccountSyncFreshnessSecs:   p.runtimePolicy.LiveAccountSyncFreshnessSecs,
 		PaperStartReadinessTimeoutSecs: p.runtimePolicy.PaperStartReadinessTimeoutSecs,
+		WSHandshakeTimeoutSeconds:      p.runtimePolicy.WSHandshakeTimeoutSeconds,
+		WSReadStaleTimeoutSeconds:      p.runtimePolicy.WSReadStaleTimeoutSeconds,
+		WSPingIntervalSeconds:          p.runtimePolicy.WSPingIntervalSeconds,
+		WSPassiveCloseTimeoutSeconds:   p.runtimePolicy.WSPassiveCloseTimeoutSeconds,
+		WSReconnectBackoffs:            p.runtimePolicy.WSReconnectBackoffs,
+		WSReconnectRecoveryBackoffs:    p.runtimePolicy.WSReconnectRecoveryBackoffs,
+		RESTLimiterRPS:                 p.runtimePolicy.RESTLimiterRPS,
+		RESTLimiterBurst:               p.runtimePolicy.RESTLimiterBurst,
+		RESTBackoffSeconds:             p.runtimePolicy.RESTBackoffSeconds,
+		LiveMarketCacheTTLMinutes:      p.runtimePolicy.LiveMarketCacheTTLMinutes,
+		TelegramHTTPTimeoutSeconds:     p.runtimePolicy.TelegramHTTPTimeoutSeconds,
+		BinanceRecvWindowMs:            p.runtimePolicy.BinanceRecvWindowMs,
+		LiveSignalWarmWindowDays:       p.runtimePolicy.LiveSignalWarmWindowDays,
+		LiveFastSignalWarmWindowDays:   p.runtimePolicy.LiveFastSignalWarmWindowDays,
+		LiveMinuteWarmWindowDays:       p.runtimePolicy.LiveMinuteWarmWindowDays,
 	})
 	if err != nil {
 		p.logger("service.platform").Error("persist runtime policy failed", "error", err)

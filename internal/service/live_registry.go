@@ -774,6 +774,8 @@ func (p *Platform) UpdateBinanceRESTLimits() {
 	burst := p.runtimePolicy.RESTLimiterBurst
 	backoffSec := p.runtimePolicy.RESTBackoffSeconds
 
+	// 此时修改全局限流参数。注意：由于 binanceRESTRequestsPerSecond 等是 package-level 全局变量，
+	// 此处的修改会影响到所有正在运行的 binance adapter。
 	if rps > 0 {
 		binanceRESTRequestsPerSecond = rps
 	}
@@ -783,10 +785,20 @@ func (p *Platform) UpdateBinanceRESTLimits() {
 	if backoffSec > 0 {
 		binanceRESTBackoffDuration = time.Duration(backoffSec) * time.Second
 	}
-	// 清空 gates，以便使用新的限制参数重新创建
+
+	// 关键：清空 gates 以便使用新的限制参数重新创建。
+	// [IMPORTANT] 这是一个破坏性重置：所有已存在的限流计数器（tokens）将被丢弃，
+	// 导致在参数更新瞬间，各基准 URL 的限流状态被“归零”。
+	// 在高频交易场景下，这可能导致瞬间产生一批超过原限流阈值的请求。
 	binanceRESTLimiterState.mu.Lock()
 	binanceRESTLimiterState.gates = make(map[string]*binanceRESTGate)
 	binanceRESTLimiterState.mu.Unlock()
+
+	p.logger("service.platform").Info("binance rest limits updated and limiter gates reset",
+		"rps", binanceRESTRequestsPerSecond,
+		"burst", binanceRESTBurst,
+		"backoff_duration", binanceRESTBackoffDuration,
+	)
 }
 
 type binanceRESTRequestCategory string

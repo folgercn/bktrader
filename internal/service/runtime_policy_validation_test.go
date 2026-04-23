@@ -93,15 +93,66 @@ func TestRuntimePolicy_RoundTripPersistence(t *testing.T) {
 	s := memory.NewStore()
 	p := NewPlatform(s)
 
+	now := time.Now().UTC().Truncate(time.Second)
 	newPolicy := RuntimePolicy{
 		TradeTickFreshnessSeconds:      99,
 		SignalBarFreshnessSeconds:      88,
 		StrategyEvaluationQuietSeconds: 0, // 显式 0
-		UpdatedAt:                      time.Now().UTC().Truncate(time.Second),
+		RESTLimiterRPS:                 100,
+		UpdatedAt:                      now,
 	}
 
-	// 1. 设置并应用
-	p.SetRuntimePolicy(newPolicy)
+	// 1. 更新并持久化
+	_, err := p.UpdateRuntimePolicy(newPolicy)
+	if err != nil {
+		t.Fatalf("UpdateRuntimePolicy failed: %v", err)
+	}
+
+	// 2. 清空内存状态，模拟重启
+	p2 := NewPlatform(s)
+	err = p2.LoadPersistedRuntimePolicy()
+	if err != nil {
+		t.Fatalf("LoadPersistedRuntimePolicy failed: %v", err)
+	}
+
+	// 3. 验证关键字段一致性
+	p2Policy := p2.RuntimePolicy()
+	if p2Policy.TradeTickFreshnessSeconds != 99 {
+		t.Errorf("expected 99, got %d", p2Policy.TradeTickFreshnessSeconds)
+	}
+	if p2Policy.SignalBarFreshnessSeconds != 88 {
+		t.Errorf("expected 88, got %d", p2Policy.SignalBarFreshnessSeconds)
+	}
+	if p2Policy.StrategyEvaluationQuietSeconds != 0 {
+		t.Errorf("expected 0, got %d", p2Policy.StrategyEvaluationQuietSeconds)
+	}
+	if p2Policy.RESTLimiterRPS != 100 {
+		t.Errorf("expected 100, got %d", p2Policy.RESTLimiterRPS)
+	}
+}
+
+func TestApplyRuntimeConfigOverrides_Granularity(t *testing.T) {
+	p := NewPlatform(memory.NewStore())
+
+	// 初始值
+	p.runtimePolicy.TradeTickFreshnessSeconds = 15
+	p.runtimePolicy.RESTLimiterRPS = 30
+
+	// 模拟环境变量仅设置了 RPS
+	val100 := 100
+	cfg := config.Config{
+		RESTLimiterRPS: &val100,
+		// TradeTickFreshnessSeconds 为 nil
+	}
+
+	p.ApplyRuntimeConfigOverrides(cfg)
+
+	if p.runtimePolicy.RESTLimiterRPS != 100 {
+		t.Errorf("expected RESTLimiterRPS to be 100, got %d", p.runtimePolicy.RESTLimiterRPS)
+	}
+	if p.runtimePolicy.TradeTickFreshnessSeconds != 15 {
+		t.Errorf("expected TradeTickFreshnessSeconds to remain 15, got %d", p.runtimePolicy.TradeTickFreshnessSeconds)
+	}
 }
 
 func TestConfig_IntPtrFromEnv(t *testing.T) {
