@@ -1099,6 +1099,8 @@ export function AccountStage({
           pairs={primaryTradePairs.pairs}
           loading={primaryTradePairs.loading}
           error={primaryTradePairs.error}
+          sessionId={primaryLiveSession?.id}
+          onRefresh={primaryTradePairs.refetch}
         />
       </div>
 

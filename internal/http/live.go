@@ -2,8 +2,10 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/service"
@@ -530,12 +532,112 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		sessionID := parts[0]
+		if len(parts) == 4 && parts[1] == "orders" && parts[3] == "verifications" {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			orderID := parts[2]
+			var payload struct {
+				Notes string `json:"notes"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			// 获取订单详情以补全核验记录所需信息
+			order, err := platform.GetOrder(orderID)
+			if err != nil {
+				writeError(w, http.StatusNotFound, "order not found: "+err.Error())
+				return
+			}
+
+			// 获取会话以补全 StrategyID
+			session, err := platform.GetLiveSession(sessionID)
+			if err != nil {
+				writeError(w, http.StatusNotFound, "live session not found: "+err.Error())
+				return
+			}
+
+			// 安全校验 1：归属确认 (Metadata 标识)
+			// 注意：domain.Order 本身不直接持有 LiveSessionID 字段，关联关系存储在 Metadata 中
+			orderSessionID, _ := order.Metadata["liveSessionId"].(string)
+			if orderSessionID != sessionID {
+				writeError(w, http.StatusForbidden, "order does not belong to this session (metadata mismatch)")
+				return
+			}
+
+			// 业务校验：仅允许复核退出类订单
+			if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+				writeError(w, http.StatusForbidden, "only exit/reduce-only orders can be manually verified")
+				return
+			}
+
+			// 状态校验：仅允许复核 mismatch 或 orphan-exit 状态的交易对
+			pairs, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{LiveSessionID: sessionID})
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to analyze trade pairs: "+err.Error())
+				return
+			}
+
+			var targetPair *domain.LiveTradePair
+			for _, p := range pairs {
+				for _, eid := range p.ExitOrderIDs {
+					if eid == orderID {
+						targetPair = &p
+						break
+					}
+				}
+				if targetPair != nil {
+					break
+				}
+			}
+
+			if targetPair == nil {
+				writeError(w, http.StatusNotFound, "trade pair containing this exit order not found")
+				return
+			}
+
+			verdict := strings.ToLower(targetPair.ExitVerdict)
+			if verdict != "mismatch" && verdict != "orphan-exit" {
+				writeError(w, http.StatusForbidden, fmt.Sprintf("manual verification only allowed for mismatch/orphan-exit states (current: %s)", verdict))
+				return
+			}
+
+			// 创建核验记录
+			verification := domain.OrderCloseVerification{
+				ID:                   fmt.Sprintf("manual-%d", time.Now().UnixNano()),
+				LiveSessionID:        sessionID,
+				OrderID:              orderID,
+				AccountID:            order.AccountID,
+				StrategyID:           session.StrategyID,
+				Symbol:               order.Symbol,
+				VerifiedClosed:       true,
+				RemainingPositionQty: 0,
+				VerificationSource:   "manual-review",
+				EventTime:            time.Now().UTC(),
+				RecordedAt:           time.Now().UTC(),
+				Metadata: map[string]any{
+					"notes": payload.Notes,
+				},
+			}
+
+			if _, err := platform.CreateOrderCloseVerification(verification); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+
+			writeJSON(w, http.StatusCreated, verification)
+			return
+		}
+
 		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "live session route not found")
 			return
 		}
 
-		sessionID := parts[0]
 		action := parts[1]
 		switch action {
 		case "start":

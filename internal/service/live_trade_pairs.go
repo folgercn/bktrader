@@ -65,6 +65,10 @@ type liveTradePairBuilder struct {
 	lastExitOrderID    string
 }
 
+func (p *Platform) CreateOrderCloseVerification(v domain.OrderCloseVerification) (domain.OrderCloseVerification, error) {
+	return p.store.CreateOrderCloseVerification(v)
+}
+
 func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain.LiveTradePair, error) {
 	startTime := time.Now()
 	liveSessionID := strings.TrimSpace(query.LiveSessionID)

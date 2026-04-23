@@ -1,8 +1,19 @@
-import React from 'react';
-import { ArrowRightLeft, Activity } from 'lucide-react';
+import * as React from 'react';
+import { ArrowRightLeft, Activity, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter,
+  DialogClose
+} from '../ui/dialog';
+import { ManualTradeReviewDialog } from './ManualTradeReviewDialog';
+import { toast } from 'sonner';
 import { LiveTradePair } from '../../types/domain';
 import { formatMaybeNumber, formatSigned, formatTime, shrink } from '../../utils/format';
 import { cn } from '../../lib/utils';
@@ -13,6 +24,8 @@ type LiveTradePairsCardProps = {
   pairs: LiveTradePair[];
   loading: boolean;
   error: string | null;
+  sessionId?: string | null;
+  onRefresh?: () => void;
   className?: string;
 };
 
@@ -55,8 +68,12 @@ export function LiveTradePairsCard({
   pairs,
   loading,
   error,
+  sessionId,
+  onRefresh,
   className,
 }: LiveTradePairsCardProps) {
+  const [selectedPairForReview, setSelectedPairForReview] = React.useState<LiveTradePair | null>(null);
+
   return (
     <Card tone="bento" className={cn('rounded-[24px] shadow-[var(--bk-shadow-card)]', className)}>
       <CardHeader className="pb-4">
@@ -112,8 +129,21 @@ export function LiveTradePairsCard({
                           <Badge variant={String(pair.status).toLowerCase() === 'open' ? 'neutral' : 'success'}>
                             {tradePairStatusLabel(pair.status)}
                           </Badge>
-                          <div className={cn('text-[10px] font-black', tradePairVerdictTone(pair.exitVerdict))}>
+                          <div 
+                            className={cn(
+                              'text-[10px] font-black', 
+                              tradePairVerdictTone(pair.exitVerdict),
+                              (String(pair.exitVerdict).toLowerCase() === 'mismatch' || String(pair.exitVerdict).toLowerCase() === 'orphan-exit') && "cursor-pointer hover:underline flex items-center gap-1"
+                            )}
+                            onClick={() => {
+                              const v = String(pair.exitVerdict).toLowerCase();
+                              if (v === 'mismatch' || v === 'orphan-exit') {
+                                setSelectedPairForReview(pair);
+                              }
+                            }}
+                          >
                             {tradePairVerdictLabel(pair.exitVerdict)}
+                            {(String(pair.exitVerdict).toLowerCase() === 'mismatch' || String(pair.exitVerdict).toLowerCase() === 'orphan-exit') && <AlertCircle size={10} />}
                           </div>
                         </div>
                       </TableCell>
@@ -202,6 +232,13 @@ export function LiveTradePairsCard({
           </div>
         )}
       </CardContent>
+
+      <ManualTradeReviewDialog 
+        pair={selectedPairForReview}
+        sessionId={sessionId}
+        onClose={() => setSelectedPairForReview(null)}
+        onSuccess={() => onRefresh?.()}
+      />
     </Card>
   );
 }

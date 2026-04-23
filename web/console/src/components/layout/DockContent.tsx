@@ -23,7 +23,18 @@ import { technicalStatusLabel } from '../../utils/derivation';
 import { useTradingStore } from '../../store/useTradingStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useLiveTradePairs } from '../../hooks/useLiveTradePairs';
-import { ShieldCheck, Loader2, ChevronLeft, ChevronRight, ArrowRightLeft, Activity } from 'lucide-react';
+import { ShieldCheck, Loader2, ChevronLeft, ChevronRight, ArrowRightLeft, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter,
+  DialogClose
+} from '../ui/dialog';
+import { ManualTradeReviewDialog } from '../live/ManualTradeReviewDialog';
+import { toast } from 'sonner';
 
 import { cn } from '../../lib/utils';
 
@@ -303,10 +314,12 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
   const positionCloseAction = useUIStore(s => s.positionCloseAction);
   const liveSyncAction = useUIStore(s => s.liveSyncAction);
   const openConfirmDialog = useUIStore(s => s.openConfirmDialog);
-  const { pairs, loading: pairsLoading, error: pairsError } = useLiveTradePairs(
+  const { pairs, loading: pairsLoading, error: pairsError, refetch: refetchPairs } = useLiveTradePairs(
     dockTab === 'pairs' ? (sessionId ?? null) : null, 
     200
   );
+
+  const [selectedPairForReview, setSelectedPairForReview] = useState<any | null>(null);
 
   // Pagination & Sorting State
   const [pages, setPages] = useState({ pairs: 1, orders: 1, positions: 1, fills: 1, alerts: 1 });
@@ -372,8 +385,21 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
                       <Badge variant={String(pair.status).toLowerCase() === 'open' ? 'neutral' : 'success'}>
                         {tradePairStatusLabel(pair.status)}
                       </Badge>
-                      <div className={cn('text-[10px] font-black', tradePairVerdictTone(pair.exitVerdict))}>
+                      <div 
+                        className={cn(
+                          'text-[10px] font-black', 
+                          tradePairVerdictTone(pair.exitVerdict),
+                          (String(pair.exitVerdict).toLowerCase() === 'mismatch' || String(pair.exitVerdict).toLowerCase() === 'orphan-exit') && "cursor-pointer hover:underline flex items-center gap-1"
+                        )}
+                        onClick={() => {
+                          const v = String(pair.exitVerdict).toLowerCase();
+                          if (v === 'mismatch' || v === 'orphan-exit') {
+                            setSelectedPairForReview(pair);
+                          }
+                        }}
+                      >
                         {tradePairVerdictLabel(pair.exitVerdict)}
+                        {(String(pair.exitVerdict).toLowerCase() === 'mismatch' || String(pair.exitVerdict).toLowerCase() === 'orphan-exit') && <AlertCircle size={10} />}
                       </div>
                     </div>,
                     <div key={`${pair.id}-side`} className="space-y-1">
@@ -569,6 +595,13 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
         pageSize={pageSize}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
+      />
+
+      <ManualTradeReviewDialog 
+        pair={selectedPairForReview}
+        sessionId={sessionId}
+        onClose={() => setSelectedPairForReview(null)}
+        onSuccess={() => refetchPairs?.()}
       />
     </div>
   );
