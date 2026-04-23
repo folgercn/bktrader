@@ -266,6 +266,102 @@ func TestListAlertsShowsAuthoritativeSyncWarningForLocalRecoveryFallback(t *test
 	}
 }
 
+func TestListAlertsShowsCriticalLiveExitDispatchFailure(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.013,
+		EntryPrice:        77830.1,
+		MarkPrice:         78168.3,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["symbol"] = "BTCUSDT"
+	state["lastDispatchedOrderId"] = "order-rejected-exit-1"
+	state["lastDispatchedOrderStatus"] = "REJECTED"
+	state["lastDispatchRejectedStatus"] = "REJECTED"
+	state["lastDispatchRejectedAt"] = time.Date(2026, 4, 23, 6, 11, 54, 0, time.UTC).Format(time.RFC3339)
+	state["lastAutoDispatchError"] = "reduce-only order quantity 0.013000000000 is below minQty 0.000100000000 for BTCUSDT"
+	state["lastDispatchedIntent"] = map[string]any{
+		"role":       "exit",
+		"reason":     "SL",
+		"signalKind": "risk-exit",
+		"symbol":     "BTCUSDT",
+		"reduceOnly": true,
+	}
+	state["lastExecutionDispatch"] = map[string]any{
+		"status":           "REJECTED",
+		"symbol":           "BTCUSDT",
+		"side":             "BUY",
+		"reduceOnly":       true,
+		"reason":           "SL",
+		"signalKind":       "risk-exit",
+		"orderType":        "MARKET",
+		"quantity":         0.013,
+		"price":            78168.3,
+		"failed":           true,
+		"orderId":          "order-rejected-exit-1",
+		"executionProfile": "exit",
+	}
+	session.State = state
+	session.Status = "RUNNING"
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session failed: %v", err)
+	}
+
+	alerts, err := platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list alerts failed: %v", err)
+	}
+
+	found := false
+	for _, alert := range alerts {
+		if alert.ID != "live-exit-dispatch-failure-"+session.ID {
+			continue
+		}
+		found = true
+		if alert.Level != "critical" {
+			t.Fatalf("expected critical alert level, got %s", alert.Level)
+		}
+		if !strings.Contains(alert.Detail, "自动平仓派单失败") || !strings.Contains(alert.Detail, "REJECTED") {
+			t.Fatalf("expected reject failure detail, got %s", alert.Detail)
+		}
+		if stringValue(alert.Metadata["liveSessionId"]) != session.ID {
+			t.Fatalf("expected liveSessionId metadata %s, got %#v", session.ID, alert.Metadata)
+		}
+	}
+	if !found {
+		t.Fatal("expected live exit dispatch failure alert to be present")
+	}
+
+	notifications, err := platform.ListNotifications(false)
+	if err != nil {
+		t.Fatalf("list notifications failed: %v", err)
+	}
+	foundNotification := false
+	for _, item := range notifications {
+		if item.ID != "live-exit-dispatch-failure-"+session.ID {
+			continue
+		}
+		foundNotification = true
+		if got := stringValue(item.Metadata["telegramStatus"]); got != "pending" {
+			t.Fatalf("expected telegramStatus=pending, got %s", got)
+		}
+	}
+	if !foundNotification {
+		t.Fatal("expected live exit dispatch failure notification to be present")
+	}
+}
+
 func TestLoadPersistedRuntimePolicyKeepsDisabledHealthThresholds(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)

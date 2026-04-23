@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -400,6 +401,9 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				EventTime:    eventTime,
 			})
 		}
+		if alert, ok := p.buildLiveExitDispatchFailureAlert(session, state, accountByID[session.AccountID].Name, strategyNameByID[session.StrategyID]); ok {
+			appendAlert(alert)
+		}
 	}
 
 	slices.SortFunc(alerts, func(a, b domain.PlatformAlert) int {
@@ -422,6 +426,112 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		return 1
 	})
 	return alerts, nil
+}
+
+func (p *Platform) buildLiveExitDispatchFailureAlert(session domain.LiveSession, state map[string]any, accountName, strategyName string) (domain.PlatformAlert, bool) {
+	dispatchIntent := cloneMetadata(mapValue(state["lastDispatchedIntent"]))
+	dispatchSummary := cloneMetadata(mapValue(state["lastExecutionDispatch"]))
+	if !liveDispatchRepresentsExit(dispatchIntent, dispatchSummary) {
+		return domain.PlatformAlert{}, false
+	}
+	rejectedStatus := strings.TrimSpace(firstNonEmpty(
+		stringValue(state["lastDispatchRejectedStatus"]),
+		stringValue(state["lastDispatchedOrderStatus"]),
+		stringValue(dispatchSummary["status"]),
+	))
+	dispatchError := strings.TrimSpace(firstNonEmpty(
+		stringValue(state["lastAutoDispatchError"]),
+		stringValue(dispatchSummary["error"]),
+	))
+	if rejectedStatus == "" && dispatchError == "" {
+		return domain.PlatformAlert{}, false
+	}
+	symbol := NormalizeSymbol(firstNonEmpty(
+		stringValue(dispatchIntent["symbol"]),
+		stringValue(dispatchSummary["symbol"]),
+		stringValue(state["symbol"]),
+		stringValue(state["lastSymbol"]),
+		stringValue(mapValue(state["livePositionState"])["symbol"]),
+	))
+	if symbol == "" {
+		return domain.PlatformAlert{}, false
+	}
+	positionSnapshot, _, err := p.resolveLiveSessionPositionSnapshot(session, symbol)
+	if err != nil {
+		return domain.PlatformAlert{}, false
+	}
+	if boolValue(positionSnapshot["virtual"]) || math.Abs(parseFloatValue(positionSnapshot["quantity"])) <= 1e-9 {
+		return domain.PlatformAlert{}, false
+	}
+
+	eventTime := parseOptionalRFC3339(firstNonEmpty(
+		stringValue(state["lastDispatchRejectedAt"]),
+		stringValue(state["lastAutoDispatchAttemptAt"]),
+		stringValue(state["lastDispatchedAt"]),
+	))
+	reason := firstNonEmpty(
+		stringValue(dispatchIntent["reason"]),
+		stringValue(dispatchSummary["reason"]),
+		stringValue(dispatchIntent["signalKind"]),
+		stringValue(dispatchSummary["signalKind"]),
+	)
+	statusLabel := firstNonEmpty(rejectedStatus, "DISPATCH_ERROR")
+	detailParts := []string{fmt.Sprintf("自动平仓派单失败，状态=%s", statusLabel)}
+	if reason != "" {
+		detailParts = append(detailParts, fmt.Sprintf("触发=%s", reason))
+	}
+	if dispatchError != "" {
+		detailParts = append(detailParts, fmt.Sprintf("错误=%s", dispatchError))
+	}
+
+	return domain.PlatformAlert{
+		ID:           fmt.Sprintf("live-exit-dispatch-failure-%s", session.ID),
+		Scope:        "live",
+		Level:        "critical",
+		Title:        "自动平仓失败",
+		Detail:       strings.Join(detailParts, " · "),
+		AccountID:    session.AccountID,
+		AccountName:  accountName,
+		StrategyID:   session.StrategyID,
+		StrategyName: strategyName,
+		Anchor:       "live",
+		EventTime:    eventTime,
+		Metadata: map[string]any{
+			"liveSessionId":   session.ID,
+			"orderId":         stringValue(state["lastDispatchedOrderId"]),
+			"orderStatus":     statusLabel,
+			"error":           dispatchError,
+			"reason":          reason,
+			"signalKind":      firstNonEmpty(stringValue(dispatchIntent["signalKind"]), stringValue(dispatchSummary["signalKind"])),
+			"symbol":          symbol,
+			"positionSide":    stringValue(positionSnapshot["side"]),
+			"positionQty":     parseFloatValue(positionSnapshot["quantity"]),
+			"dispatchMode":    stringValue(state["dispatchMode"]),
+			"reduceOnly":      boolValue(dispatchIntent["reduceOnly"]) || boolValue(dispatchSummary["reduceOnly"]),
+			"currentPosition": positionSnapshot,
+		},
+	}, true
+}
+
+func liveDispatchRepresentsExit(dispatchIntent map[string]any, dispatchSummary map[string]any) bool {
+	if strings.EqualFold(strings.TrimSpace(stringValue(dispatchIntent["role"])), "exit") {
+		return true
+	}
+	if boolValue(dispatchIntent["reduceOnly"]) || boolValue(dispatchSummary["reduceOnly"]) {
+		return true
+	}
+	executionProfile := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		stringValue(dispatchSummary["executionProfile"]),
+		stringValue(dispatchIntent["executionProfile"]),
+	)))
+	if strings.Contains(executionProfile, "exit") || strings.Contains(executionProfile, "close") {
+		return true
+	}
+	signalKind := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		stringValue(dispatchIntent["signalKind"]),
+		stringValue(dispatchSummary["signalKind"]),
+	)))
+	return strings.Contains(signalKind, "exit") || strings.Contains(signalKind, "watchdog")
 }
 
 type liveRuntimeReadiness struct {
