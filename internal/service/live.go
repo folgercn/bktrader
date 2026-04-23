@@ -149,7 +149,7 @@ func (p *Platform) UpdateLiveSession(sessionID, alias, accountID, strategyID str
 	// Always assign alias (trimmed) to support clearing an existing alias by providing an empty string.
 	session.Alias = strings.TrimSpace(alias)
 	state := cloneMetadata(session.State)
-	for key, value := range normalizeLiveSessionOverrides(overrides) {
+	for key, value := range p.canonicalizeLiveSessionOverridesForStrategy(session.StrategyID, overrides) {
 		state[key] = value
 	}
 	session.State = state
@@ -1454,7 +1454,7 @@ func (p *Platform) CreateLiveSession(alias, accountID, strategyID string, overri
 	}
 	if len(overrides) > 0 {
 		state := cloneMetadata(session.State)
-		for key, value := range normalizeLiveSessionOverrides(overrides) {
+		for key, value := range p.canonicalizeLiveSessionOverridesForStrategy(strategyID, overrides) {
 			state[key] = value
 		}
 		session, err = p.store.UpdateLiveSessionState(session.ID, state)
@@ -1798,7 +1798,7 @@ func (p *Platform) ensureLaunchRuntimeSession(accountID, strategyID string) (dom
 }
 
 func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrides map[string]any) (domain.LiveSession, bool, error) {
-	normalizedOverrides := normalizeLiveSessionOverrides(overrides)
+	normalizedOverrides := p.canonicalizeLiveSessionOverridesForStrategy(strategyID, overrides)
 	targetSymbol := NormalizeSymbol(stringValue(normalizedOverrides["symbol"]))
 	targetTimeframe := normalizeSignalBarInterval(stringValue(normalizedOverrides["signalTimeframe"]))
 	sessions, err := p.ListLiveSessions()
@@ -1809,10 +1809,22 @@ func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrid
 		if session.AccountID != accountID || session.StrategyID != strategyID {
 			continue
 		}
-		if targetSymbol != "" && NormalizeSymbol(stringValue(session.State["symbol"])) != targetSymbol {
+		rawSessionSymbol := strings.TrimSpace(firstNonEmpty(stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+		rawSessionTimeframe := strings.TrimSpace(firstNonEmpty(stringValue(session.State["signalTimeframe"]), stringValue(session.State["timeframe"])))
+		sessionSymbol := normalizeOptionalLiveScopeSymbol(rawSessionSymbol)
+		sessionTimeframe := normalizeSignalBarInterval(rawSessionTimeframe)
+		if rawSessionSymbol != "" || rawSessionTimeframe != "" {
+			sessionScope := p.canonicalizeLiveSessionOverridesForStrategy(strategyID, map[string]any{
+				"symbol":          rawSessionSymbol,
+				"signalTimeframe": rawSessionTimeframe,
+			})
+			sessionSymbol = normalizeOptionalLiveScopeSymbol(firstNonEmpty(stringValue(sessionScope["symbol"]), rawSessionSymbol))
+			sessionTimeframe = normalizeSignalBarInterval(firstNonEmpty(stringValue(sessionScope["signalTimeframe"]), rawSessionTimeframe))
+		}
+		if targetSymbol != "" && sessionSymbol != targetSymbol {
 			continue
 		}
-		if targetTimeframe != "" && normalizeSignalBarInterval(stringValue(session.State["signalTimeframe"])) != targetTimeframe {
+		if targetTimeframe != "" && sessionTimeframe != targetTimeframe {
 			continue
 		}
 		if len(normalizedOverrides) == 0 {
@@ -2566,6 +2578,12 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		"executionDataSource": executionContext.ExecutionDataSource,
 		"symbol":              executionContext.Symbol,
 	}
+	if executionContext.SignalTimeframe != "" {
+		state["signalTimeframe"] = executionContext.SignalTimeframe
+	}
+	if executionContext.Symbol != "" {
+		state["symbol"] = executionContext.Symbol
+	}
 	// P0-3: Inject ATR14 from signal bar state for volatility-adjusted sizing
 	if signalBarState := mapValue(decision.Metadata["signalBarState"]); len(signalBarState) > 0 {
 		if atr14 := parseFloatValue(signalBarState["atr14"]); atr14 > 0 {
@@ -2940,7 +2958,9 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 		return updated, err
 	}
 
-	required := len(metadataList(plan["requiredBindings"])) > 0
+	requiredBindings := metadataList(plan["requiredBindings"])
+	state = applyCanonicalLiveSignalScope(state, requiredBindings)
+	required := len(requiredBindings) > 0
 	state["signalRuntimePlan"] = plan
 	state["signalRuntimeMode"] = "linked"
 	state["signalRuntimeRequired"] = required
@@ -3908,8 +3928,147 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 			parameters[key] = value
 		}
 	}
+	parameters = applyCanonicalLiveSignalScope(parameters, resolveStrategySignalBindings(parameters))
 	parameters = applyLiveSafeStopDefaults(parameters)
 	return NormalizeBacktestParameters(parameters)
+}
+
+func (p *Platform) canonicalizeLiveSessionOverridesForStrategy(strategyID string, overrides map[string]any) map[string]any {
+	normalized := normalizeLiveSessionOverrides(overrides)
+	if len(normalized) == 0 || strings.TrimSpace(strategyID) == "" {
+		return normalized
+	}
+	version, err := p.resolveCurrentStrategyVersion(strategyID)
+	if err != nil {
+		return normalized
+	}
+	return applyCanonicalLiveSignalScope(normalized, resolveStrategySignalBindings(version.Parameters))
+}
+
+func applyCanonicalLiveSignalScope(scope map[string]any, bindings []map[string]any) map[string]any {
+	normalized := cloneMetadata(scope)
+	if normalized == nil {
+		normalized = map[string]any{}
+	}
+	symbol, timeframe := resolveCanonicalLiveSignalScope(bindings, normalized)
+	if symbol != "" {
+		normalized["symbol"] = symbol
+	}
+	if timeframe != "" {
+		normalized["signalTimeframe"] = timeframe
+	}
+	return normalized
+}
+
+func resolveCanonicalLiveSignalScope(bindings []map[string]any, scope map[string]any) (string, string) {
+	currentSymbol := normalizeOptionalLiveScopeSymbol(scope["symbol"])
+	currentTimeframe := normalizeSignalBarInterval(stringValue(scope["signalTimeframe"]))
+	candidates := collectLiveSignalBarBindings(bindings)
+	if len(candidates) == 0 {
+		return currentSymbol, currentTimeframe
+	}
+
+	symbolScopeResolved := false
+	if currentSymbol != "" {
+		matched := make([]map[string]any, 0, len(candidates))
+		for _, binding := range candidates {
+			if liveSignalBindingSymbol(binding) == currentSymbol {
+				matched = append(matched, binding)
+			}
+		}
+		if len(matched) > 0 {
+			candidates = matched
+			symbolScopeResolved = true
+		} else {
+			return currentSymbol, currentTimeframe
+		}
+	} else if uniqueSymbol := uniqueLiveSignalBindingValue(candidates, liveSignalBindingSymbol); uniqueSymbol != "" {
+		currentSymbol = uniqueSymbol
+		filtered := make([]map[string]any, 0, len(candidates))
+		for _, binding := range candidates {
+			if liveSignalBindingSymbol(binding) == uniqueSymbol {
+				filtered = append(filtered, binding)
+			}
+		}
+		if len(filtered) > 0 {
+			candidates = filtered
+		}
+		symbolScopeResolved = true
+	}
+
+	if currentTimeframe != "" {
+		matched := false
+		for _, binding := range candidates {
+			if liveSignalBindingTimeframe(binding) == currentTimeframe {
+				matched = true
+				break
+			}
+		}
+		if !matched && symbolScopeResolved {
+			if uniqueTimeframe := uniqueLiveSignalBindingValue(candidates, liveSignalBindingTimeframe); uniqueTimeframe != "" {
+				currentTimeframe = uniqueTimeframe
+			}
+		}
+	} else if uniqueTimeframe := uniqueLiveSignalBindingValue(candidates, liveSignalBindingTimeframe); uniqueTimeframe != "" {
+		currentTimeframe = uniqueTimeframe
+	}
+
+	return currentSymbol, currentTimeframe
+}
+
+func collectLiveSignalBarBindings(bindings []map[string]any) []map[string]any {
+	collected := make([]map[string]any, 0, len(bindings))
+	for _, binding := range bindings {
+		if normalizeSignalSourceRole(stringValue(binding["role"])) != "signal" {
+			continue
+		}
+		streamType := strings.ToLower(strings.TrimSpace(stringValue(binding["streamType"])))
+		if streamType == "" && normalizeSignalSourceKey(stringValue(binding["sourceKey"])) == "binance-kline" {
+			streamType = "signal_bar"
+		}
+		if streamType != "signal_bar" {
+			continue
+		}
+		collected = append(collected, binding)
+	}
+	return collected
+}
+
+func uniqueLiveSignalBindingValue(bindings []map[string]any, extract func(map[string]any) string) string {
+	unique := ""
+	for _, binding := range bindings {
+		value := strings.TrimSpace(extract(binding))
+		if value == "" {
+			continue
+		}
+		if unique == "" {
+			unique = value
+			continue
+		}
+		if unique != value {
+			return ""
+		}
+	}
+	return unique
+}
+
+func liveSignalBindingSymbol(binding map[string]any) string {
+	return normalizeOptionalLiveScopeSymbol(binding["symbol"])
+}
+
+func liveSignalBindingTimeframe(binding map[string]any) string {
+	if timeframe := normalizeSignalBarInterval(stringValue(binding["timeframe"])); timeframe != "" {
+		return timeframe
+	}
+	return signalBindingTimeframe(stringValue(binding["sourceKey"]), metadataValue(binding["options"]))
+}
+
+func normalizeOptionalLiveScopeSymbol(value any) string {
+	symbol := strings.TrimSpace(stringValue(value))
+	if symbol == "" {
+		return ""
+	}
+	return NormalizeSymbol(symbol)
 }
 
 const (

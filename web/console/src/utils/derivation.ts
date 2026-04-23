@@ -538,6 +538,7 @@ function resolveSignalBarEntry(
     }
   }
 
+  let symbolMatch: Record<string, unknown> = {};
   for (const value of Object.values(signalBarStates)) {
     const entry = getRecord(value);
     if (Object.keys(entry).length === 0) {
@@ -548,13 +549,15 @@ function resolveSignalBarEntry(
     if (targetSymbol && entrySymbol && entrySymbol !== targetSymbol) {
       continue;
     }
-    if (targetTimeframe && entryTimeframe && entryTimeframe !== targetTimeframe) {
-      continue;
+    if (Object.keys(symbolMatch).length === 0) {
+      symbolMatch = entry;
     }
-    return entry;
+    if (!targetTimeframe || !entryTimeframe || entryTimeframe === targetTimeframe) {
+      return entry;
+    }
   }
 
-  return {};
+  return symbolMatch;
 }
 
 export function deriveSignalBarCandles(

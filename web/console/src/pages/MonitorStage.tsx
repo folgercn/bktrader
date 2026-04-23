@@ -152,22 +152,41 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const sessionSymbol = String(monitorSession?.state?.symbol ?? "").trim().toUpperCase();
   const monitorSignalContext = getRecord(monitorSessionState.lastStrategyEvaluationContext);
   const monitorDecisionMeta = getRecord(getRecord(monitorSession?.state?.lastStrategyDecision).metadata);
-  const monitorSignalTimeframe = String(
+  const monitorSignalTimeframeHint = String(
     monitorSessionState.signalTimeframe ?? monitorSignalContext.signalTimeframe ?? monitorDecisionMeta.signalTimeframe ?? ""
-  )
-    .trim()
-    .toLowerCase();
+  ).trim().toLowerCase();
   const monitorSignalBarStateKey = String(
     monitorSessionState.lastStrategyEvaluationSignalBarStateKey ?? monitorDecisionMeta.signalBarStateKey ?? ""
   ).trim();
+  const monitorSignalState = derivePrimarySignalBarState(
+    getRecord(highlightedLiveRuntimeState.signalBarStates),
+    {
+      fallbackStates: getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates),
+      targetSymbol: sessionSymbol,
+      targetTimeframe: monitorSignalTimeframeHint,
+      targetStateKey: monitorSignalBarStateKey,
+    }
+  );
+  const monitorSignalSymbol = String(
+    monitorSignalState.symbol ?? getRecord(monitorSignalState.current).symbol ?? sessionSymbol
+  ).trim().toUpperCase();
+  const monitorSignalTimeframe = String(
+    monitorSignalState.timeframe ??
+      getRecord(monitorSignalState.current).timeframe ??
+      monitorSessionState.signalTimeframe ??
+      monitorSignalContext.signalTimeframe ??
+      monitorDecisionMeta.signalTimeframe ??
+      ""
+  ).trim().toLowerCase();
+  const monitorSymbol = monitorSignalSymbol || sessionSymbol;
 
   const monitorBars = useMemo(() => {
     return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), {
-      targetSymbol: sessionSymbol,
+      targetSymbol: monitorSymbol,
       targetTimeframe: monitorSignalTimeframe,
       targetStateKey: monitorSignalBarStateKey,
     });
-  }, [highlightedLiveRuntimeState.sourceStates, sessionSymbol, monitorSignalTimeframe, monitorSignalBarStateKey]);
+  }, [highlightedLiveRuntimeState.sourceStates, monitorSymbol, monitorSignalTimeframe, monitorSignalBarStateKey]);
 
   const fallbackResolution = useMemo(
     () => resolveMonitorFallbackResolution(monitorSignalTimeframe),
@@ -181,7 +200,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
 
   useEffect(() => {
     const monitorSessionId = monitorSession?.id ?? "";
-    if (!monitorSessionId || !sessionSymbol) {
+    if (!monitorSessionId || !monitorSymbol) {
       fallbackRequestKeyRef.current = "";
       setMonitorCandles([]);
       return;
@@ -194,7 +213,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
 
     const requestKey = [
       monitorSessionId,
-      sessionSymbol,
+      monitorSymbol,
       fallbackResolution,
       timeWindow,
       chartOverrideRange?.from ?? "",
@@ -212,7 +231,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
 
     let active = true;
     fetchJSON<{ candles: ChartCandle[] }>(
-      `/api/v1/chart/candles?symbol=${encodeURIComponent(sessionSymbol)}&resolution=${fallbackResolution}&from=${range.from}&to=${range.to}&limit=240`
+      `/api/v1/chart/candles?symbol=${encodeURIComponent(monitorSymbol)}&resolution=${fallbackResolution}&from=${range.from}&to=${range.to}&limit=240`
     )
       .then((payload) => {
         if (!active) {
@@ -238,25 +257,15 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     fallbackResolution,
     monitorBars.length,
     monitorSession,
+    monitorSymbol,
     orders,
-    sessionSymbol,
     setMonitorCandles,
     timeWindow,
   ]);
-
-  const monitorSignalState = derivePrimarySignalBarState(
-    getRecord(highlightedLiveRuntimeState.signalBarStates),
-    {
-      fallbackStates: getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates),
-      targetSymbol: sessionSymbol,
-      targetTimeframe: monitorSignalTimeframe,
-      targetStateKey: monitorSignalBarStateKey,
-    }
-  );
   const monitorMarket = deriveRuntimeMarketSnapshot(
     getRecord(monitorRuntimeState.sourceStates),
     getRecord(monitorRuntimeState.lastEventSummary),
-    sessionSymbol
+    monitorSymbol
   );
   const monitorSummary =
     monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
@@ -289,7 +298,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     : [];
   const monitorRuntimeReadiness = deriveRuntimeReadiness(
     highlightedLiveRuntimeState,
-    deriveRuntimeSourceSummary(getRecord(highlightedLiveRuntimeState.sourceStates), runtimePolicy, sessionSymbol),
+    deriveRuntimeSourceSummary(getRecord(highlightedLiveRuntimeState.sourceStates), runtimePolicy, monitorSymbol),
     { requireTick: true, requireOrderBook: false }
   );
   const monitorIntent = getRecord(monitorSession?.state?.lastStrategyIntent);
@@ -543,7 +552,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
               <CardTitle className="text-lg font-black text-[var(--bk-text-primary)]">行情遥测</CardTitle>
             </div>
             <Badge variant="metal" className="text-[var(--bk-text-muted)]">
-              {sessionSymbol || "NO SIGNAL"}
+              {monitorSymbol || "NO SIGNAL"}
             </Badge>
           </CardHeader>
           <CardContent className="p-5 flex-1 flex flex-col justify-center">
