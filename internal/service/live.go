@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"reflect"
 	"sort"
@@ -599,8 +600,21 @@ func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountRec
 }
 
 func livePositionReconcileGateCanSelfHeal(gate map[string]any) bool {
-	return strings.EqualFold(strings.TrimSpace(stringValue(gate["status"])), livePositionReconcileGateStatusStale) &&
-		strings.EqualFold(strings.TrimSpace(stringValue(gate["scenario"])), "db-position-exchange-missing")
+	status := strings.TrimSpace(stringValue(gate["status"]))
+	scenario := strings.TrimSpace(stringValue(gate["scenario"]))
+	if strings.EqualFold(status, livePositionReconcileGateStatusStale) &&
+		strings.EqualFold(scenario, "db-position-exchange-missing") {
+		return true
+	}
+	if !strings.EqualFold(status, livePositionReconcileGateStatusConflict) {
+		return false
+	}
+	switch scenario {
+	case "quantity-mismatch", "entry-price-mismatch", "multi-field-mismatch":
+		return livePositionReconcileMismatchFieldsCanSelfHeal(livePositionReconcileMismatchFields(gate["mismatchFields"]))
+	default:
+		return false
+	}
 }
 
 func (p *Platform) supportsLiveAccountReconcile(account domain.Account) bool {
@@ -1947,6 +1961,7 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 		return domain.LiveSession{}, fmt.Errorf("live session %s is blocked in %s mode", session.ID, liveRecoveryModeReconcileGateBlocked)
 	}
 
+	p.warmLiveSessionMarketSnapshot(session, logger)
 	session, err = p.syncLiveSessionRuntime(session)
 	if err != nil {
 		logger.Warn("sync live session runtime failed", "error", err)
@@ -2045,6 +2060,7 @@ func (p *Platform) shouldRefreshLiveAccountSync(account domain.Account, eventTim
 }
 
 func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain.LiveSession, error) {
+	logger := p.logger("service.live", "session_id", session.ID)
 	account, err := p.store.GetAccount(session.AccountID)
 	if err != nil {
 		return domain.LiveSession{}, err
@@ -2098,6 +2114,7 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 	if boolValue(gate["blocking"]) {
 		return p.enterRecoveredLiveSessionReconcileGateBlocked(session, recoveredPosition, gate)
 	}
+	p.warmLiveSessionMarketSnapshot(session, logger)
 	session, err = p.syncLiveSessionRuntime(session)
 	if err != nil {
 		if recoveredPosition.Quantity > 0 {
@@ -2138,6 +2155,13 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 	if err != nil {
 		return nil, err
 	}
+	workingOrderSymbols, err := p.liveWorkingOrderSymbols(account.ID)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
+	openOrderSymbols := liveSyncSnapshotOpenOrderSymbols(snapshot)
+	authoritative := liveProtectionSnapshotIsAuthoritative(snapshot)
 
 	syncedAt := time.Now().UTC()
 	symbols := make(map[string]any)
@@ -2156,6 +2180,7 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		}
 		gate = cloneMetadata(gate)
 		gate["symbol"] = symbol
+		gate["authoritative"] = authoritative
 		gate["comparedAt"] = firstNonEmpty(stringValue(gate["comparedAt"]), syncedAt.Format(time.RFC3339))
 		if boolValue(gate["blocking"]) {
 			blockingCount++
@@ -2204,6 +2229,16 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			continue
 		}
 		if position.ID == "" || position.Quantity <= 0 {
+			if !authoritative {
+				recordGate(symbol, map[string]any{
+					"status":           livePositionReconcileGateStatusError,
+					"scenario":         "exchange-truth-unavailable",
+					"blocking":         true,
+					"dbPosition":       buildRecoveredLivePositionStateSnapshot(position),
+					"exchangePosition": exchangeSnapshot,
+				})
+				continue
+			}
 			position.AccountID = account.ID
 			position.StrategyVersionID = firstNonEmpty(strategyVersionID, position.StrategyVersionID)
 			position.Symbol = symbol
@@ -2235,14 +2270,27 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			mismatchFields = append(mismatchFields, "entryPrice")
 		}
 		if len(mismatchFields) > 0 {
-			recordGate(symbol, map[string]any{
+			gate := map[string]any{
 				"status":           livePositionReconcileGateStatusConflict,
 				"scenario":         classifyLivePositionReconcileScenario(mismatchFields),
 				"blocking":         true,
 				"mismatchFields":   mismatchFields,
 				"dbPosition":       dbSnapshot,
 				"exchangePosition": exchangeSnapshot,
-			})
+			}
+			if adopted, adoptGate, adoptErr := p.adoptLivePositionFromExchangeTruth(account, position, exchangeSnapshot, gate, livePositionAdoptGuard{
+				authoritative:             authoritative,
+				pendingSettlement:         symbolInSet(pendingSettlementSymbols, symbol),
+				workingOrders:             symbolInSet(workingOrderSymbols, symbol),
+				exchangeOpenOrders:        symbolInSet(openOrderSymbols, symbol),
+				strategyVersionIDFallback: strategyVersionID,
+			}); adoptErr != nil {
+				return nil, adoptErr
+			} else if adopted {
+				recordGate(symbol, adoptGate)
+				continue
+			}
+			recordGate(symbol, gate)
 			continue
 		}
 		position.AccountID = account.ID
@@ -2300,7 +2348,7 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 	return map[string]any{
 		"source":              "binance-position-reconcile",
 		"syncedAt":            syncedAt.Format(time.RFC3339),
-		"authoritative":       true,
+		"authoritative":       authoritative,
 		"blockingSymbolCount": blockingCount,
 		"symbols":             symbols,
 	}, nil
@@ -2323,6 +2371,136 @@ func (p *Platform) liveSettlementPendingOrderSymbols(accountID string) (map[stri
 	return symbols, nil
 }
 
+type livePositionAdoptGuard struct {
+	authoritative             bool
+	pendingSettlement         bool
+	workingOrders             bool
+	exchangeOpenOrders        bool
+	strategyVersionIDFallback string
+}
+
+func (p *Platform) adoptLivePositionFromExchangeTruth(account domain.Account, position domain.Position, exchangePosition map[string]any, gate map[string]any, guard livePositionAdoptGuard) (bool, map[string]any, error) {
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(exchangePosition["symbol"]), position.Symbol))
+	mismatchFields := livePositionReconcileMismatchFields(gate["mismatchFields"])
+	logger := p.logger("service.live_reconcile", "account_id", account.ID, "symbol", symbol)
+	logContext := []any{
+		"db_qty", position.Quantity,
+		"exchange_qty", parseFloatValue(exchangePosition["quantity"]),
+		"db_side", position.Side,
+		"exchange_side", stringValue(exchangePosition["side"]),
+		"mismatch_fields", mismatchFields,
+	}
+	logger.Info("reconcile_adopt_attempted", logContext...)
+	reject := func(reason string) (bool, map[string]any, error) {
+		logger.Warn("reconcile_adopt_rejected", append(logContext, "rejection_reason", reason)...)
+		return false, nil, nil
+	}
+	if !guard.authoritative {
+		return reject("non-authoritative")
+	}
+	if guard.pendingSettlement {
+		return reject("pending-settlement")
+	}
+	if guard.workingOrders {
+		return reject("working-orders")
+	}
+	if guard.exchangeOpenOrders {
+		return reject("exchange-open-orders")
+	}
+	if livePositionReconcileMismatchIncludes(mismatchFields, "side") {
+		return reject("side-mismatch")
+	}
+	if !strings.EqualFold(strings.TrimSpace(position.Side), strings.TrimSpace(stringValue(exchangePosition["side"]))) {
+		return reject("side-mismatch")
+	}
+	if len(mismatchFields) == 0 {
+		return reject("no-mismatch")
+	}
+	for _, field := range mismatchFields {
+		switch stringValue(field) {
+		case "quantity", "entryPrice":
+		default:
+			return reject("unsupported-mismatch")
+		}
+	}
+
+	dbSnapshot := buildRecoveredLivePositionStateSnapshot(position)
+	position.AccountID = account.ID
+	position.StrategyVersionID = firstNonEmpty(position.StrategyVersionID, guard.strategyVersionIDFallback)
+	position.Symbol = symbol
+	position.Side = strings.ToUpper(strings.TrimSpace(stringValue(exchangePosition["side"])))
+	position.Quantity = math.Abs(parseFloatValue(exchangePosition["quantity"]))
+	position.EntryPrice = parseFloatValue(exchangePosition["entryPrice"])
+	position.MarkPrice = firstPositive(parseFloatValue(exchangePosition["markPrice"]), position.EntryPrice)
+	saved, err := p.store.SavePosition(position)
+	if err != nil {
+		return false, nil, err
+	}
+
+	adoptGate := cloneMetadata(gate)
+	adoptGate["status"] = livePositionReconcileGateStatusAdopted
+	adoptGate["scenario"] = livePositionReconcileAdoptScenario(mismatchFields)
+	adoptGate["authoritative"] = true
+	adoptGate["blocking"] = false
+	adoptGate["dbPosition"] = dbSnapshot
+	adoptGate["adoptedPosition"] = buildRecoveredLivePositionStateSnapshot(saved)
+	adoptGate["exchangePosition"] = cloneMetadata(exchangePosition)
+	logger.Info("reconcile_adopt_applied", append(logContext,
+		"gate_status_before", firstNonEmpty(stringValue(gate["status"]), livePositionReconcileGateStatusConflict),
+		"gate_status_after", livePositionReconcileGateStatusAdopted,
+		"reason", stringValue(adoptGate["scenario"]),
+	)...)
+	return true, adoptGate, nil
+}
+
+func livePositionReconcileAdoptScenario(mismatchFields []string) string {
+	if len(mismatchFields) == 1 {
+		switch mismatchFields[0] {
+		case "quantity":
+			return "exchange-truth-adopted-quantity"
+		case "entryPrice":
+			return "exchange-truth-adopted-entry-price"
+		}
+	}
+	return "exchange-truth-adopted-position"
+}
+
+func (p *Platform) liveWorkingOrderSymbols(accountID string) (map[string]struct{}, error) {
+	orders, err := p.store.ListOrders()
+	if err != nil {
+		return nil, err
+	}
+	symbols := make(map[string]struct{})
+	for _, order := range orders {
+		if order.AccountID != accountID || isTerminalOrderStatus(order.Status) {
+			continue
+		}
+		if symbol := NormalizeSymbol(order.Symbol); symbol != "" {
+			symbols[symbol] = struct{}{}
+		}
+	}
+	return symbols, nil
+}
+
+func liveSyncSnapshotOpenOrderSymbols(snapshot map[string]any) map[string]struct{} {
+	symbols := make(map[string]struct{})
+	for _, item := range metadataList(snapshot["openOrders"]) {
+		status := firstNonEmpty(mapBinanceOrderStatus(stringValue(item["status"])), stringValue(item["status"]))
+		if isTerminalOrderStatus(status) {
+			continue
+		}
+		if symbol := NormalizeSymbol(stringValue(item["symbol"])); symbol != "" {
+			symbols[symbol] = struct{}{}
+		}
+	}
+	return symbols
+}
+
+func symbolInSet(symbols map[string]struct{}, symbol string) bool {
+	_, ok := symbols[NormalizeSymbol(symbol)]
+	return ok
+}
+
 func resolveRecoveredLiveEntryPrice(primary, secondary, fallback float64) float64 {
 	return firstPositive(primary, firstPositive(secondary, fallback))
 }
@@ -2341,8 +2519,80 @@ func classifyLivePositionReconcileScenario(mismatchFields []any) string {
 	return "multi-field-mismatch"
 }
 
+func livePositionReconcileMismatchIncludes(mismatchFields []string, target string) bool {
+	for _, field := range mismatchFields {
+		if strings.EqualFold(strings.TrimSpace(field), target) {
+			return true
+		}
+	}
+	return false
+}
+
+func livePositionReconcileMismatchFieldsCanSelfHeal(mismatchFields []string) bool {
+	if len(mismatchFields) == 0 {
+		return false
+	}
+	for _, field := range mismatchFields {
+		switch strings.TrimSpace(field) {
+		case "quantity", "entryPrice":
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func livePositionReconcileMismatchFields(value any) []string {
+	switch items := value.(type) {
+	case []string:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			if field := strings.TrimSpace(item); field != "" {
+				out = append(out, field)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			if field := strings.TrimSpace(stringValue(item)); field != "" {
+				out = append(out, field)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func (p *Platform) resolveLivePositionStrategyVersionID(accountID, symbol string) string {
 	return p.inferReconcileStrategyVersionID(accountID, symbol)
+}
+
+func (p *Platform) warmLiveSessionMarketSnapshot(session domain.LiveSession, logger *slog.Logger) {
+	symbol := NormalizeSymbol(firstNonEmpty(
+		stringValue(session.State["symbol"]),
+		stringValue(session.State["lastSymbol"]),
+	))
+	if symbol == "" {
+		return
+	}
+	p.liveMarketMu.RLock()
+	cached, cacheHit := p.liveMarketData[symbol]
+	p.liveMarketMu.RUnlock()
+	if err := p.refreshLiveMarketSnapshot(symbol); err != nil {
+		logger.Warn("start_bootstrap_market_warmup", "symbol", symbol, "cache_hit", cacheHit && len(cached.MinuteBars) > 0, "error", err)
+		return
+	}
+	p.liveMarketMu.RLock()
+	snapshot := p.liveMarketData[symbol]
+	p.liveMarketMu.RUnlock()
+	barsCount := len(snapshot.MinuteBars)
+	for _, bars := range snapshot.SignalBars {
+		barsCount += len(bars)
+	}
+	logger.Info("start_bootstrap_market_warmup", "symbol", symbol, "cache_hit", cacheHit && len(cached.MinuteBars) > 0, "bars_count", barsCount)
 }
 
 func (p *Platform) StopLiveSession(sessionID string) (domain.LiveSession, error) {

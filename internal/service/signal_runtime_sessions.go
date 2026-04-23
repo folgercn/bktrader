@@ -289,8 +289,14 @@ func (p *Platform) bootstrapSignalRuntimeSourceStates(subscriptions []map[string
 			continue
 		}
 		snapshot, err := p.liveMarketSnapshot(symbol)
-		if err != nil {
-			continue
+		if err != nil || len(snapshot.SignalBars) == 0 {
+			if refreshErr := p.refreshLiveMarketSnapshot(symbol); refreshErr != nil {
+				continue
+			}
+			snapshot, err = p.liveMarketSnapshot(symbol)
+			if err != nil {
+				continue
+			}
 		}
 		bars := snapshot.SignalBars[strings.ToLower(strings.TrimSpace(timeframe))]
 		if len(bars) == 0 {
