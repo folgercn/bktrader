@@ -11,7 +11,7 @@ import (
 
 func TestApplyRuntimeConfigOverrides_ScenarioA_PartialOverride(t *testing.T) {
 	p := NewPlatform(memory.NewStore())
-	
+
 	// 1. 设置初始持久化策略
 	persisted := RuntimePolicy{
 		TradeTickFreshnessSeconds:      15,
@@ -71,11 +71,11 @@ func TestApplyRuntimeConfigOverrides_ScenarioB_InvalidValues(t *testing.T) {
 
 func TestApplyRuntimeConfigOverrides_ScenarioC_LimiterReset(t *testing.T) {
 	p := NewPlatform(memory.NewStore())
-	
+
 	// 初始状态
 	p.runtimePolicy.RESTLimiterRPS = 30
 	p.UpdateBinanceRESTLimits()
-	
+
 	// 记录旧的 limiter 状态 (这里虽然无法直接访问内部 gate, 但可以通过逻辑间接验证或检查 UpdateBinanceRESTLimits 是否被调用)
 	// 我们主要验证 ApplyRuntimeConfigOverrides 是否最终调用了 UpdateBinanceRESTLimits
 	val100 := 100
@@ -92,14 +92,14 @@ func TestApplyRuntimeConfigOverrides_ScenarioC_LimiterReset(t *testing.T) {
 func TestRuntimePolicy_RoundTripPersistence(t *testing.T) {
 	s := memory.NewStore()
 	p := NewPlatform(s)
-	
+
 	newPolicy := RuntimePolicy{
 		TradeTickFreshnessSeconds:      99,
 		SignalBarFreshnessSeconds:      88,
 		StrategyEvaluationQuietSeconds: 0, // 显式 0
 		UpdatedAt:                      time.Now().UTC().Truncate(time.Second),
 	}
-	
+
 	// 1. 设置并应用
 	p.SetRuntimePolicy(newPolicy)
 }
@@ -107,19 +107,19 @@ func TestRuntimePolicy_RoundTripPersistence(t *testing.T) {
 func TestConfig_IntPtrFromEnv(t *testing.T) {
 	os.Setenv("TEST_INT_PTR", "42")
 	defer os.Unsetenv("TEST_INT_PTR")
-	
+
 	ptr := config.IntPtrFromEnv("TEST_INT_PTR")
 	if ptr == nil || *ptr != 42 {
 		t.Errorf("expected 42, got %v", ptr)
 	}
-	
+
 	os.Setenv("TEST_INT_PTR_ZERO", "0")
 	defer os.Unsetenv("TEST_INT_PTR_ZERO")
 	ptrZero := config.IntPtrFromEnv("TEST_INT_PTR_ZERO")
 	if ptrZero == nil || *ptrZero != 0 {
 		t.Errorf("expected 0, got %v", ptrZero)
 	}
-	
+
 	ptrUnset := config.IntPtrFromEnv("UNSET_KEY")
 	if ptrUnset != nil {
 		t.Errorf("expected nil for unset key, got %v", ptrUnset)

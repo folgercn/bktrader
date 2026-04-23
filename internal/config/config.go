@@ -42,21 +42,21 @@ type Config struct {
 	TelegramBotToken               string // Telegram Bot Token
 	TelegramChatID                 string // Telegram Chat ID
 	TelegramSendLevels             string // Telegram 默认发送等级（逗号分隔）
-	WSHandshakeTimeoutSeconds      *int    // WebSocket 握手超时
-	WSReadStaleTimeoutSeconds      *int    // WebSocket 读取陈旧超时
-	WSPingIntervalSeconds          *int    // WebSocket Ping 间隔
-	WSPassiveCloseTimeoutSeconds   *int    // WebSocket 被动关闭超时
-	WSReconnectBackoffs            []int   // WebSocket 普通重连退避序列
-	WSReconnectRecoveryBackoffs    []int   // WebSocket 恢复模式重连退避序列
-	RESTLimiterRPS                 *int    // Binance REST 每秒请求数限制
-	RESTLimiterBurst               *int    // Binance REST 突发限制
-	RESTBackoffSeconds             *int    // Binance REST 熔断时长
-	LiveMarketCacheTTLMinutes      *int    // 市场快照缓存有效期
-	TelegramHTTPTimeoutSeconds     *int    // Telegram HTTP 请求超时
-	BinanceRecvWindowMs            *int    // Binance 请求 RecvWindow
-	LiveSignalWarmWindowDays       *int    // 实盘信号预热窗口（天）
-	LiveFastSignalWarmWindowDays   *int    // 实盘快速信号预热窗口（天）
-	LiveMinuteWarmWindowDays       *int    // 实盘分钟数据预热窗口（天）
+	WSHandshakeTimeoutSeconds      *int   // WebSocket 握手超时
+	WSReadStaleTimeoutSeconds      *int   // WebSocket 读取陈旧超时
+	WSPingIntervalSeconds          *int   // WebSocket Ping 间隔
+	WSPassiveCloseTimeoutSeconds   *int   // WebSocket 被动关闭超时
+	WSReconnectBackoffs            []int  // WebSocket 普通重连退避序列
+	WSReconnectRecoveryBackoffs    []int  // WebSocket 恢复模式重连退避序列
+	RESTLimiterRPS                 *int   // Binance REST 每秒请求数限制
+	RESTLimiterBurst               *int   // Binance REST 突发限制
+	RESTBackoffSeconds             *int   // Binance REST 熔断时长
+	LiveMarketCacheTTLMinutes      *int   // 市场快照缓存有效期
+	TelegramHTTPTimeoutSeconds     *int   // Telegram HTTP 请求超时
+	BinanceRecvWindowMs            *int   // Binance 请求 RecvWindow
+	LiveSignalWarmWindowDays       *int   // 实盘信号预热窗口（天）
+	LiveFastSignalWarmWindowDays   *int   // 实盘快速信号预热窗口（天）
+	LiveMinuteWarmWindowDays       *int   // 实盘分钟数据预热窗口（天）
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
