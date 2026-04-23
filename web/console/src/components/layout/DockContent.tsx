@@ -344,8 +344,9 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
   const handlePageSizeChange = (size: number) => {
     setPageSize(size);
     setPages({ pairs: 1, positions: 1, alerts: 1 });
-    if (dockTab === 'orders' || dockTab === 'fills') {
+    if (dockTab === 'orders') {
       ordersPageQuery.setCurrentPage(1);
+    } else if (dockTab === 'fills') {
       fillsPageQuery.setCurrentPage(1);
     }
   };

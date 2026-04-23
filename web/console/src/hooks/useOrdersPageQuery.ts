@@ -29,16 +29,9 @@ export function useOrdersPageQuery(pageSize: number, active: boolean) {
   }, [authSession?.token, active, pageSize]);
 
   useEffect(() => {
-    let interval: number;
     if (active) {
       fetchPage(currentPage);
-      interval = window.setInterval(() => {
-        fetchPage(currentPage);
-      }, 5000);
     }
-    return () => {
-      if (interval) window.clearInterval(interval);
-    };
   }, [active, currentPage, fetchPage]);
 
   return { orders, totalCount, currentPage, setCurrentPage, loading };
