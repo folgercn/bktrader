@@ -382,10 +382,15 @@ func (p *Platform) DispatchTelegramPositionReport(deliveryByID map[string]domain
 		return 0, nil
 	}
 
-	// 仅在时间桶开始后的前 2 分钟内允许发起播报，避免“一开仓就播报”的突兀感。
-	if now.UTC().Sub(bucket) > 2*time.Minute {
+	// 仅在时间桶开始后的前 5 分钟内允许发起播报，避免“一开仓就播报”的突兀感。
+	if now.UTC().Sub(bucket) > 5*time.Minute {
+		p.logger("service.telegram").Debug("skipping position report because it is out of the 5-minute scheduling window",
+			"now", now.Format(time.RFC3339),
+			"bucket", bucket.Format(time.RFC3339),
+			"diff", now.Sub(bucket).String())
 		return 0, nil
 	}
+
 	accounts, err := p.store.ListAccounts()
 	if err != nil {
 		return 0, err
