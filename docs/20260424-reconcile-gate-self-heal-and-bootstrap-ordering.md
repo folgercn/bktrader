@@ -290,5 +290,25 @@ workingOrderSymbols, err := p.liveWorkingOrderSymbols(account.ID)
 - PR 1：先合并当前 safe adopt + warmup 前移，解决本次线上卡死主问题。
 - PR 2：补齐剩余边界测试和日志细分，尤其是 entryPrice、working orders、non-authoritative、bootstrap-pending/source-gate-blocked 的可观测性。
 
+### PR 2 执行状态（2026-04-24）
+
+#### 已完成
+
+- 已补 A6 working orders 护栏独立测试：本地存在 non-terminal order 时，即使交易所仓位明确，也不自动 adopt。
+- 已补 B3 / B4 日志细分：
+  - runtime 未写入 `startedAt` 且 source gate 未 ready 时，phase 为 `bootstrap-pending`。
+  - runtime 已启动后仍未 ready 时，phase 为 `source-gate-blocked`。
+  - ready 恢复时记录 `start_source_gate_ready`。
+- `runtimeSourceGateState` 的去重签名已包含 phase，避免 bootstrap-pending 和 source-gate-blocked 被当成同一类日志吞掉。
+- 已通过验证：
+  - `go test ./internal/service`
+  - `go test ./...`
+  - `go build ./cmd/platform-api`
+  - `go build ./cmd/db-migrate`
+
+#### 当前剩余
+
+- 本治理计划内的 PR 2 收尾项已完成。
+
 ### 一句话摘要（给执行 LLM）
 > 只修 authoritative REST 下的 quantity/entryPrice mismatch auto-adopt（收口在 `reconcileLiveAccountPositions`）和 start bootstrap ordering（warmup 前移），不放宽 unresolved recovery gate，不把历史 external orders 当自愈依据，side mismatch 必须继续 block，先补 service-level regression tests 再改逻辑。adopt 核心改动在 `live.go` 的 `reconcileLiveAccountPositions` 和 `livePositionReconcileGateCanSelfHeal` 两处，启动顺序改动在 `StartLiveSession` / `recoverRunningLiveSession` 中增加 `refreshLiveMarketSnapshot` warmup。

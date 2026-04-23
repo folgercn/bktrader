@@ -6964,6 +6964,9 @@ func TestLogRuntimeSourceGateStateTracksBlockedSignatureTransitions(t *testing.T
 	runtimeSession := domain.SignalRuntimeSession{
 		ID:        "runtime-1",
 		AccountID: "live-main",
+		State: map[string]any{
+			"startedAt": "2026-04-22T02:20:30Z",
+		},
 	}
 	blocked := map[string]any{
 		"ready": false,
@@ -6999,6 +7002,49 @@ func TestLogRuntimeSourceGateStateTracksBlockedSignatureTransitions(t *testing.T
 	}, time.Date(2026, 4, 22, 2, 21, 10, 0, time.UTC))
 	if _, ok := platform.runtimeSourceGateState.Load(runtimeSession.ID); ok {
 		t.Fatal("expected ready runtime source gate to clear recorded blocked signature")
+	}
+}
+
+func TestLogRuntimeSourceGateStateSeparatesBootstrapPendingFromBlocked(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	runtimeSession := domain.SignalRuntimeSession{
+		ID:        "runtime-bootstrap",
+		AccountID: "live-main",
+		State:     map[string]any{},
+	}
+	blocked := map[string]any{
+		"ready": false,
+		"missing": []any{
+			map[string]any{
+				"sourceKey":  "binance-kline",
+				"role":       "signal",
+				"streamType": "signal_bar",
+				"symbol":     "BTCUSDT",
+			},
+		},
+		"stale": []any{},
+	}
+
+	if got := runtimeSourceGatePhase(runtimeSession, blocked); got != "bootstrap-pending" {
+		t.Fatalf("expected bootstrap-pending phase, got %s", got)
+	}
+	platform.logRuntimeSourceGateState("strategy-bk-1d", runtimeSession, blocked, time.Date(2026, 4, 22, 2, 21, 0, 0, time.UTC))
+	bootstrapSignature, ok := platform.runtimeSourceGateState.Load(runtimeSession.ID)
+	if !ok || !strings.HasPrefix(stringValue(bootstrapSignature), "bootstrap-pending:") {
+		t.Fatalf("expected bootstrap-pending signature, got %v", bootstrapSignature)
+	}
+
+	runtimeSession.State["startedAt"] = "2026-04-22T02:20:30Z"
+	if got := runtimeSourceGatePhase(runtimeSession, blocked); got != "source-gate-blocked" {
+		t.Fatalf("expected source-gate-blocked phase, got %s", got)
+	}
+	platform.logRuntimeSourceGateState("strategy-bk-1d", runtimeSession, blocked, time.Date(2026, 4, 22, 2, 21, 5, 0, time.UTC))
+	blockedSignature, ok := platform.runtimeSourceGateState.Load(runtimeSession.ID)
+	if !ok || !strings.HasPrefix(stringValue(blockedSignature), "source-gate-blocked:") {
+		t.Fatalf("expected source-gate-blocked signature, got %v", blockedSignature)
+	}
+	if blockedSignature == bootstrapSignature {
+		t.Fatal("expected bootstrap-pending and source-gate-blocked signatures to differ")
 	}
 }
 
@@ -7674,6 +7720,67 @@ func TestRecoverRunningLiveSessionDoesNotAdoptQuantityMismatchWithExchangeOpenOr
 	}
 	if recovered.Status != "BLOCKED" {
 		t.Fatalf("expected exchange open order recovery to stay BLOCKED, got %s", recovered.Status)
+	}
+	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "quantity-mismatch" {
+		t.Fatalf("expected quantity-mismatch scenario, got %s", got)
+	}
+	position, found, err := platform.store.FindPosition(session.AccountID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected local position to remain")
+	}
+	if tradingQuantityDiffers(position.Quantity, 0.013) {
+		t.Fatalf("expected local quantity to remain 0.013, got %v", position.Quantity)
+	}
+}
+
+func TestRecoverRunningLiveSessionDoesNotAdoptQuantityMismatchWithWorkingOrder(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-reconcile-quantity-working-order", []map[string]any{
+		{
+			"symbol":      "BTCUSDT",
+			"positionAmt": 0.0065,
+			"entryPrice":  68000.0,
+			"markPrice":   68100.0,
+		},
+	})
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.013,
+		EntryPrice:        68000,
+		MarkPrice:         68100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	if _, err := platform.store.CreateOrder(domain.Order{
+		AccountID: session.AccountID,
+		Symbol:    "BTCUSDT",
+		Side:      "SELL",
+		Type:      "LIMIT",
+		Status:    "ACCEPTED",
+		Quantity:  0.0065,
+	}); err != nil {
+		t.Fatalf("create working order failed: %v", err)
+	}
+
+	recovered, err := platform.recoverRunningLiveSession(session)
+	if err != nil {
+		t.Fatalf("recover running live session failed: %v", err)
+	}
+	if recovered.Status != "BLOCKED" {
+		t.Fatalf("expected working order recovery to stay BLOCKED, got %s", recovered.Status)
 	}
 	if got := stringValue(recovered.State["positionReconcileGateScenario"]); got != "quantity-mismatch" {
 		t.Fatalf("expected quantity-mismatch scenario, got %s", got)
