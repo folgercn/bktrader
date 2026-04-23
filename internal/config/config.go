@@ -67,13 +67,13 @@ func Load() Config {
 			tickInterval = parsed
 		}
 	}
-	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", 15)
-	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", 10)
-	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", 30)
-	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", 30)
-	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", 15)
-	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", 60)
-	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", 5)
+	tradeTickFreshness := intFromEnv("TRADE_TICK_FRESHNESS_SECONDS", 0)
+	orderBookFreshness := intFromEnv("ORDER_BOOK_FRESHNESS_SECONDS", 0)
+	signalBarFreshness := intFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS", 0)
+	runtimeQuiet := intFromEnv("RUNTIME_QUIET_SECONDS", 0)
+	strategyEvaluationQuiet := intFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS", 0)
+	liveAccountSyncFreshness := intFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS", 0)
+	paperReadinessTimeout := intFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS", 0)
 
 	authTokenTTL := 720
 	if v := os.Getenv("AUTH_TOKEN_TTL_MINUTES"); v != "" {
@@ -116,21 +116,21 @@ func Load() Config {
 		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
 		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
-		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", 10),
-		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", 60),
-		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", 20),
-		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", 2),
-		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", []int{10, 30, 60}),
-		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", []int{30, 120}),
-		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", 30),
-		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", 50),
-		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", 60),
-		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", 10),
-		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", 8),
-		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", 5000),
-		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", 400),
-		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", 7),
-		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", 30),
+		WSHandshakeTimeoutSeconds:      intFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS", 0),
+		WSReadStaleTimeoutSeconds:      intFromEnv("WS_READ_STALE_TIMEOUT_SECONDS", 0),
+		WSPingIntervalSeconds:          intFromEnv("WS_PING_INTERVAL_SECONDS", 0),
+		WSPassiveCloseTimeoutSeconds:   intFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS", 0),
+		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", nil),
+		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", nil),
+		RESTLimiterRPS:                 intFromEnv("REST_LIMITER_RPS", 0),
+		RESTLimiterBurst:               intFromEnv("REST_LIMITER_BURST", 0),
+		RESTBackoffSeconds:             intFromEnv("REST_BACKOFF_SECONDS", 0),
+		LiveMarketCacheTTLMinutes:      intFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES", 0),
+		TelegramHTTPTimeoutSeconds:     intFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS", 0),
+		BinanceRecvWindowMs:            intFromEnv("BINANCE_REST_RECV_WINDOW_MS", 0),
+		LiveSignalWarmWindowDays:       intFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS", 0),
+		LiveFastSignalWarmWindowDays:   intFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS", 0),
+		LiveMinuteWarmWindowDays:       intFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS", 0),
 	}
 }
 
@@ -221,7 +221,7 @@ func intSliceFromEnv(key string, fallback []int) []int {
 	parts := strings.Split(value, ",")
 	out := make([]int, 0, len(parts))
 	for _, part := range parts {
-		if p, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
+		if p, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && p > 0 {
 			out = append(out, p)
 		}
 	}

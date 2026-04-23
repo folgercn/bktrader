@@ -173,10 +173,10 @@ func (p *Platform) SetRuntimePolicy(policy RuntimePolicy) {
 	if policy.RuntimeQuietSeconds > 0 {
 		p.runtimePolicy.RuntimeQuietSeconds = policy.RuntimeQuietSeconds
 	}
-	if policy.StrategyEvaluationQuietSeconds >= 0 {
+	if policy.StrategyEvaluationQuietSeconds > 0 {
 		p.runtimePolicy.StrategyEvaluationQuietSeconds = policy.StrategyEvaluationQuietSeconds
 	}
-	if policy.LiveAccountSyncFreshnessSecs >= 0 {
+	if policy.LiveAccountSyncFreshnessSecs > 0 {
 		p.runtimePolicy.LiveAccountSyncFreshnessSecs = policy.LiveAccountSyncFreshnessSecs
 	}
 	if policy.PaperStartReadinessTimeoutSecs > 0 {
