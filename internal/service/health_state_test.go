@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -359,6 +360,99 @@ func TestListAlertsShowsCriticalLiveExitDispatchFailure(t *testing.T) {
 	}
 	if !foundNotification {
 		t.Fatal("expected live exit dispatch failure notification to be present")
+	}
+}
+
+func TestListAlertsIgnoresPendingLiveExitDispatch(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.013,
+		EntryPrice:        77830.1,
+		MarkPrice:         78168.3,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["symbol"] = "BTCUSDT"
+	state["lastDispatchedOrderId"] = "order-pending-exit-1"
+	state["lastDispatchedOrderStatus"] = "ACCEPTED"
+	state["lastDispatchedIntent"] = map[string]any{
+		"role":       "exit",
+		"reason":     "SL",
+		"signalKind": "risk-exit",
+		"symbol":     "BTCUSDT",
+		"reduceOnly": true,
+	}
+	state["lastExecutionDispatch"] = map[string]any{
+		"status":           "ACCEPTED",
+		"symbol":           "BTCUSDT",
+		"side":             "BUY",
+		"reduceOnly":       true,
+		"reason":           "SL",
+		"signalKind":       "risk-exit",
+		"orderType":        "MARKET",
+		"quantity":         0.013,
+		"price":            78168.3,
+		"failed":           false,
+		"orderId":          "order-pending-exit-1",
+		"executionProfile": "exit",
+	}
+	session.State = state
+	session.Status = "RUNNING"
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session failed: %v", err)
+	}
+
+	alerts, err := platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list alerts failed: %v", err)
+	}
+	for _, alert := range alerts {
+		if alert.ID == "live-exit-dispatch-failure-"+session.ID {
+			t.Fatalf("expected pending accepted exit dispatch not to raise failure alert: %#v", alert)
+		}
+	}
+}
+
+func TestLiveExitDispatchFailureLogDedupeIsBounded(t *testing.T) {
+	liveExitDispatchFailureLogDedupe.Lock()
+	liveExitDispatchFailureLogDedupe.entries = map[string]time.Time{}
+	liveExitDispatchFailureLogDedupe.Unlock()
+
+	base := time.Date(2026, 4, 23, 7, 55, 0, 0, time.UTC)
+	if !shouldLogLiveExitDispatchFailure("same-failure", base) {
+		t.Fatal("expected first failure signature to log")
+	}
+	if shouldLogLiveExitDispatchFailure("same-failure", base.Add(time.Minute)) {
+		t.Fatal("expected duplicate failure signature inside TTL to be suppressed")
+	}
+	if !shouldLogLiveExitDispatchFailure("same-failure", base.Add(liveExitDispatchFailureLogDedupeTTL+time.Second)) {
+		t.Fatal("expected failure signature to log again after TTL")
+	}
+
+	liveExitDispatchFailureLogDedupe.Lock()
+	liveExitDispatchFailureLogDedupe.entries = map[string]time.Time{}
+	liveExitDispatchFailureLogDedupe.Unlock()
+
+	for i := 0; i < liveExitDispatchFailureLogDedupeMaxEntries+25; i++ {
+		if !shouldLogLiveExitDispatchFailure(fmt.Sprintf("failure-%03d", i), base.Add(time.Duration(i)*time.Second)) {
+			t.Fatalf("expected unique signature %d to log", i)
+		}
+	}
+	liveExitDispatchFailureLogDedupe.Lock()
+	entryCount := len(liveExitDispatchFailureLogDedupe.entries)
+	liveExitDispatchFailureLogDedupe.Unlock()
+	if entryCount > liveExitDispatchFailureLogDedupeMaxEntries {
+		t.Fatalf("expected bounded dedupe cache <= %d entries, got %d", liveExitDispatchFailureLogDedupeMaxEntries, entryCount)
 	}
 }
 

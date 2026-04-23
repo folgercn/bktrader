@@ -10,7 +10,17 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
-var liveExitDispatchFailureLogCache sync.Map
+const (
+	liveExitDispatchFailureLogDedupeTTL        = 6 * time.Hour
+	liveExitDispatchFailureLogDedupeMaxEntries = 512
+)
+
+var liveExitDispatchFailureLogDedupe = struct {
+	sync.Mutex
+	entries map[string]time.Time
+}{
+	entries: map[string]time.Time{},
+}
 
 type runtimeSourceSummary struct {
 	tradeTickCount int
@@ -436,11 +446,7 @@ func (p *Platform) buildLiveExitDispatchFailureAlert(session domain.LiveSession,
 	if !liveDispatchRepresentsExit(dispatchIntent, dispatchSummary) {
 		return domain.PlatformAlert{}, false
 	}
-	rejectedStatus := strings.TrimSpace(firstNonEmpty(
-		stringValue(state["lastDispatchRejectedStatus"]),
-		stringValue(state["lastDispatchedOrderStatus"]),
-		stringValue(dispatchSummary["status"]),
-	))
+	rejectedStatus := liveExitDispatchFailureStatus(state, dispatchSummary)
 	dispatchError := strings.TrimSpace(firstNonEmpty(
 		stringValue(state["lastAutoDispatchError"]),
 		stringValue(dispatchSummary["error"]),
@@ -528,7 +534,7 @@ func (p *Platform) logLiveExitDispatchFailureAlert(alert domain.PlatformAlert) {
 		stringValue(metadata["signalKind"]),
 		fmt.Sprintf("%.12f", parseFloatValue(metadata["positionQty"])),
 	}, "|")
-	if _, loaded := liveExitDispatchFailureLogCache.LoadOrStore(logSignature, struct{}{}); loaded {
+	if !shouldLogLiveExitDispatchFailure(logSignature, time.Now().UTC()) {
 		return
 	}
 	p.logger("service.alerts",
@@ -543,6 +549,82 @@ func (p *Platform) logLiveExitDispatchFailureAlert(alert domain.PlatformAlert) {
 		"dispatch_mode", stringValue(metadata["dispatchMode"]),
 		"reduce_only", boolValue(metadata["reduceOnly"]),
 	).Error("critical live exit dispatch failure", "detail", alert.Detail, "error", stringValue(metadata["error"]))
+}
+
+func liveExitDispatchFailureStatus(state map[string]any, dispatchSummary map[string]any) string {
+	if status := strings.TrimSpace(stringValue(state["lastDispatchRejectedStatus"])); status != "" {
+		return status
+	}
+	if boolValue(dispatchSummary["failed"]) {
+		for _, raw := range []string{
+			stringValue(dispatchSummary["status"]),
+			stringValue(state["lastDispatchedOrderStatus"]),
+		} {
+			status := strings.ToUpper(strings.TrimSpace(raw))
+			if liveOrderStatusIndicatesDispatchFailure(status) {
+				return status
+			}
+		}
+		return "FAILED"
+	}
+	for _, raw := range []string{
+		stringValue(dispatchSummary["status"]),
+		stringValue(state["lastDispatchedOrderStatus"]),
+	} {
+		status := strings.ToUpper(strings.TrimSpace(raw))
+		if liveOrderStatusIndicatesDispatchFailure(status) {
+			return status
+		}
+	}
+	return ""
+}
+
+func liveOrderStatusIndicatesDispatchFailure(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "REJECTED", "FAILED", "ERROR", "CANCELLED", "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldLogLiveExitDispatchFailure(signature string, now time.Time) bool {
+	signature = strings.TrimSpace(signature)
+	if signature == "" {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	liveExitDispatchFailureLogDedupe.Lock()
+	defer liveExitDispatchFailureLogDedupe.Unlock()
+	if liveExitDispatchFailureLogDedupe.entries == nil {
+		liveExitDispatchFailureLogDedupe.entries = map[string]time.Time{}
+	}
+	for key, lastSeen := range liveExitDispatchFailureLogDedupe.entries {
+		if now.Sub(lastSeen) > liveExitDispatchFailureLogDedupeTTL {
+			delete(liveExitDispatchFailureLogDedupe.entries, key)
+		}
+	}
+	if _, ok := liveExitDispatchFailureLogDedupe.entries[signature]; ok {
+		return false
+	}
+	for len(liveExitDispatchFailureLogDedupe.entries) >= liveExitDispatchFailureLogDedupeMaxEntries {
+		oldestKey := ""
+		var oldestSeen time.Time
+		for key, lastSeen := range liveExitDispatchFailureLogDedupe.entries {
+			if oldestKey == "" || lastSeen.Before(oldestSeen) {
+				oldestKey = key
+				oldestSeen = lastSeen
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		delete(liveExitDispatchFailureLogDedupe.entries, oldestKey)
+	}
+	liveExitDispatchFailureLogDedupe.entries[signature] = now
+	return true
 }
 
 func liveDispatchRepresentsExit(dispatchIntent map[string]any, dispatchSummary map[string]any) bool {

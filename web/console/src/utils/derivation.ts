@@ -1337,18 +1337,15 @@ export function deriveLiveSessionFlow(session: LiveSession, summary: LiveSession
 function resolveLiveExitDispatchFailure(session: LiveSession, summary: LiveSessionExecutionSummary): { detail: string; shortDetail: string } | null {
   const dispatchIntent = getRecord(session.state?.lastDispatchedIntent);
   const dispatchSummary = getRecord(session.state?.lastExecutionDispatch);
-  const rejectedStatus = String(
-    session.state?.lastDispatchRejectedStatus ??
-    session.state?.lastDispatchedOrderStatus ??
-    dispatchSummary.status ??
-    ""
-  ).trim();
+  const explicitRejectedStatus = String(session.state?.lastDispatchRejectedStatus ?? "").trim();
+  const failedDispatchStatus = liveExitDispatchFailureStatus(dispatchSummary.status) || liveExitDispatchFailureStatus(session.state?.lastDispatchedOrderStatus);
+  const rejectedStatus = explicitRejectedStatus || (liveRecordFlagEnabled(dispatchSummary.failed) ? failedDispatchStatus || "FAILED" : failedDispatchStatus);
   const dispatchError = String(session.state?.lastAutoDispatchError ?? dispatchSummary.error ?? "").trim();
   const hasOpenPosition = !!summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0;
   const role = String(dispatchIntent.role ?? dispatchSummary.role ?? "").trim().toLowerCase();
   const executionProfile = String(dispatchSummary.executionProfile ?? dispatchIntent.executionProfile ?? "").trim().toLowerCase();
   const signalKind = String(dispatchIntent.signalKind ?? dispatchSummary.signalKind ?? "").trim().toLowerCase();
-  const reduceOnly = Boolean(dispatchIntent.reduceOnly ?? dispatchSummary.reduceOnly);
+  const reduceOnly = liveRecordFlagEnabled(dispatchIntent.reduceOnly ?? dispatchSummary.reduceOnly);
   const isExit = role === "exit" || reduceOnly || executionProfile.includes("exit") || executionProfile.includes("close") || signalKind.includes("exit") || signalKind.includes("watchdog");
 
   if (!hasOpenPosition || !isExit || (!rejectedStatus && !dispatchError)) {
@@ -1371,6 +1368,32 @@ function resolveLiveExitDispatchFailure(session: LiveSession, summary: LiveSessi
     detail: detailParts.join(" · "),
     shortDetail: rejectedStatus ? `平仓失败 · ${rejectedStatus}` : "平仓失败",
   };
+}
+
+function liveRecordFlagEnabled(value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+  if (value === false || value == null) {
+    return false;
+  }
+  return ["true", "1", "yes", "y"].includes(String(value).trim().toLowerCase());
+}
+
+function liveExitDispatchFailureStatus(value: unknown): string {
+  const status = String(value ?? "").trim().toUpperCase();
+  switch (status) {
+    case "REJECTED":
+    case "FAILED":
+    case "ERROR":
+    case "CANCELLED":
+    case "CANCELED":
+    case "EXPIRED":
+    case "EXPIRED_IN_MATCH":
+      return status;
+    default:
+      return "";
+  }
 }
 
 export function liveSessionHealthPriority(status: string) {
