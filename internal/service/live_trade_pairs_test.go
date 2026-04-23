@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -145,6 +146,52 @@ func TestListLiveTradePairsReturnsOpenTradeWithUnrealizedPnLAndAggregatedEntries
 	assertTradePairFloat(t, pair.NetPnL, pair.UnrealizedPnL-0.03)
 }
 
+func TestListLiveTradePairsUsesTargetedDecisionAndSnapshotQueries(t *testing.T) {
+	store := &liveTradePairTargetedQueryStore{Store: memory.NewStore()}
+	platform := NewPlatform(store)
+
+	account, err := platform.CreateAccount("Live Trade Pair", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", account.ID, "strategy-bk-1d", map[string]any{
+		"symbol": "BTCUSDT",
+	})
+	if err != nil {
+		t.Fatalf("create live session: %v", err)
+	}
+
+	pair := createClosedLiveTradePairFixture(t, platform, session, liveTradeFixture{
+		entryPrice:        100,
+		exitPrice:         112,
+		quantity:          2,
+		entryFee:          0.2,
+		exitFee:           0.3,
+		exitReason:        "SL",
+		targetPriceSource: "trailing-stop",
+	})
+	if pair.ID == "" {
+		t.Fatal("expected trade pair fixture to be created")
+	}
+
+	if got := len(store.decisionQueries); got != 1 {
+		t.Fatalf("expected exactly 1 targeted decision query, got %d", got)
+	}
+	decisionQuery := store.decisionQueries[0]
+	if decisionQuery.LiveSessionID != session.ID || decisionQuery.DecisionEventID == "" || decisionQuery.Limit != 1 {
+		t.Fatalf("expected targeted decision query, got %+v", decisionQuery)
+	}
+
+	if got := len(store.snapshotQueries); got != 2 {
+		t.Fatalf("expected targeted snapshot queries per order, got %d", got)
+	}
+	for _, query := range store.snapshotQueries {
+		if query.LiveSessionID != session.ID || query.OrderID == "" || query.Limit != 1 {
+			t.Fatalf("expected targeted snapshot query, got %+v", query)
+		}
+	}
+}
+
 type liveTradeFixture struct {
 	entryPrice        float64
 	exitPrice         float64
@@ -166,6 +213,28 @@ type tradePairOrderFixture struct {
 	reduceOnly        bool
 	decisionEventID   string
 	targetPriceSource string
+}
+
+type liveTradePairTargetedQueryStore struct {
+	*memory.Store
+	decisionQueries []domain.StrategyDecisionEventQuery
+	snapshotQueries []domain.PositionAccountSnapshotQuery
+}
+
+func (s *liveTradePairTargetedQueryStore) QueryStrategyDecisionEvents(query domain.StrategyDecisionEventQuery) ([]domain.StrategyDecisionEvent, error) {
+	s.decisionQueries = append(s.decisionQueries, query)
+	if query.DecisionEventID == "" {
+		return nil, fmt.Errorf("expected targeted decision event query")
+	}
+	return s.Store.QueryStrategyDecisionEvents(query)
+}
+
+func (s *liveTradePairTargetedQueryStore) QueryPositionAccountSnapshots(query domain.PositionAccountSnapshotQuery) ([]domain.PositionAccountSnapshot, error) {
+	s.snapshotQueries = append(s.snapshotQueries, query)
+	if query.OrderID == "" {
+		return nil, fmt.Errorf("expected targeted position snapshot query")
+	}
+	return s.Store.QueryPositionAccountSnapshots(query)
 }
 
 func newLiveTradePairTestPlatform(t *testing.T) (*Platform, domain.LiveSession) {
