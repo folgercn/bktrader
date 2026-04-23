@@ -129,9 +129,6 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	state["hasRecoveredVirtualPosition"] = hasVirtualPosition
 	state["lastRecoveredPositionAt"] = eventTime.UTC().Format(time.RFC3339)
 	state["positionRecoverySource"] = firstNonEmpty(source, "live-position-refresh")
-	if hasRealPositionContext {
-		clearLivePendingZeroInitialWindow(state, eventTime, "real-position-confirmed")
-	}
 	if !hasRealPositionContext && !hasVirtualPosition {
 		clearLiveWatchdogExitState(state)
 		clearLivePositionWatermarks(state)

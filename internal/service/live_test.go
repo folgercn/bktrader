@@ -5235,21 +5235,14 @@ func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T
 	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "protected-open-position" {
 		t.Fatalf("expected protected-open-position, got %s", got)
 	}
-	if pending := mapValue(updated.State[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
-		t.Fatalf("expected real position refresh to consume pending zero initial window, got %+v", pending)
+	if pending := mapValue(updated.State[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
+		t.Fatalf("expected real position refresh to preserve pending zero initial window, got %+v", pending)
 	}
-	var consumed map[string]any
 	for _, item := range metadataList(updated.State["timeline"]) {
-		if stringValue(item["title"]) == "zero-initial-window-consumed" {
-			consumed = item
-			break
+		if stringValue(item["title"]) == "zero-initial-window-consumed" &&
+			stringValue(mapValue(item["metadata"])["reason"]) == "real-position-confirmed" {
+			t.Fatalf("expected active real position refresh to stop consuming pending zero initial window, got %+v", item)
 		}
-	}
-	if consumed == nil {
-		t.Fatalf("expected zero initial window consumed timeline event, got %+v", metadataList(updated.State["timeline"]))
-	}
-	if got := stringValue(mapValue(consumed["metadata"])["reason"]); got != "real-position-confirmed" {
-		t.Fatalf("expected real-position-confirmed consume reason, got %s", got)
 	}
 }
 
