@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -354,6 +355,72 @@ func TestCollectLiveAccountReconcileSymbolsExcludesHistoricalTerminalOrdersWitho
 	}
 }
 
+func TestReconcileLiveAccountPositionsUsesScopedQueries(t *testing.T) {
+	store := &testHotPathQueryStore{Store: memory.NewStore()}
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":     "binance-rest-account-v3",
+		"openOrders": []map[string]any{},
+		"positions": []map[string]any{{
+			"symbol":      "BTCUSDT",
+			"positionAmt": 0.002,
+			"entryPrice":  50000.0,
+			"markPrice":   50100.0,
+		}},
+	}
+	account, err = store.UpdateAccount(account)
+	if err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        50000.0,
+		MarkPrice:         50100.0,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	if _, err := store.CreateOrder(domain.Order{
+		AccountID: "paper-main",
+		Symbol:    "ETHUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  1,
+		Price:     3000,
+		Metadata: map[string]any{
+			liveSettlementSyncRequiredKey: true,
+		},
+	}); err != nil {
+		t.Fatalf("create unrelated order failed: %v", err)
+	}
+
+	gate, err := platform.reconcileLiveAccountPositions(account, []map[string]any{{
+		"symbol":      "BTCUSDT",
+		"positionAmt": 0.002,
+		"entryPrice":  50000.0,
+		"markPrice":   50100.0,
+	}})
+	if err != nil {
+		t.Fatalf("reconcile live account positions failed: %v", err)
+	}
+	symbolGate := mapValue(mapValue(gate["symbols"])["BTCUSDT"])
+	if got := stringValue(symbolGate["status"]); got != livePositionReconcileGateStatusVerified {
+		t.Fatalf("expected scoped-query reconcile to verify BTCUSDT, got %s", got)
+	}
+	if boolValue(symbolGate["blocking"]) {
+		t.Fatal("expected scoped-query reconcile gate to be non-blocking")
+	}
+}
+
 func TestReconcileLiveAccountDefersPositionAdoptForPendingImmediateFilledSettlement(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
@@ -653,6 +720,18 @@ func configureTestLiveRESTReconcileHistoryAdapter(
 	if _, err := platform.store.UpdateAccount(account); err != nil {
 		t.Fatalf("update live account failed: %v", err)
 	}
+}
+
+type testHotPathQueryStore struct {
+	*memory.Store
+}
+
+func (s *testHotPathQueryStore) ListOrders() ([]domain.Order, error) {
+	return nil, errors.New("unexpected full order scan")
+}
+
+func (s *testHotPathQueryStore) ListPositions() ([]domain.Position, error) {
+	return nil, errors.New("unexpected full position scan")
 }
 
 type testLiveAccountReconcileAdapter struct {

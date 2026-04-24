@@ -565,7 +565,7 @@ func (p *Platform) ReconcileLiveAccount(accountID string, options LiveAccountRec
 		return result, nil
 	}
 
-	orders, err := p.store.ListOrders()
+	orders, err := p.store.QueryOrders(domain.OrderQuery{AccountID: account.ID})
 	if err != nil {
 		return result, err
 	}
@@ -769,7 +769,7 @@ func normalizeLiveAccountReconcileOptions(options LiveAccountReconcileOptions) L
 func (p *Platform) collectLiveAccountReconcileSymbols(account domain.Account, lookbackHours int) ([]string, error) {
 	symbolSet := make(map[string]struct{})
 
-	positions, err := p.store.ListPositions()
+	positions, err := p.store.QueryPositions(domain.PositionQuery{AccountID: account.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -2164,7 +2164,7 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 }
 
 func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchangePositions []map[string]any) (map[string]any, error) {
-	existing, err := p.store.ListPositions()
+	existing, err := p.store.QueryPositions(domain.PositionQuery{AccountID: account.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -2379,7 +2379,12 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 }
 
 func (p *Platform) liveSettlementPendingOrderSymbols(accountID string) (map[string]struct{}, error) {
-	orders, err := p.store.ListOrders()
+	orders, err := p.store.QueryOrders(domain.OrderQuery{
+		AccountID: accountID,
+		MetadataBoolEquals: map[string]bool{
+			liveSettlementSyncRequiredKey: true,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -2490,7 +2495,10 @@ func livePositionReconcileAdoptScenario(mismatchFields []string) string {
 }
 
 func (p *Platform) liveWorkingOrderSymbols(accountID string) (map[string]struct{}, error) {
-	orders, err := p.store.ListOrders()
+	orders, err := p.store.QueryOrders(domain.OrderQuery{
+		AccountID:       accountID,
+		ExcludeStatuses: terminalLiveOrderStatuses(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -2504,6 +2512,16 @@ func (p *Platform) liveWorkingOrderSymbols(accountID string) (map[string]struct{
 		}
 	}
 	return symbols, nil
+}
+
+func terminalLiveOrderStatuses() []string {
+	return []string{
+		"FILLED",
+		"CANCELLED",
+		"REJECTED",
+		liveOrderStatusVirtualInitial,
+		liveOrderStatusVirtualExit,
+	}
 }
 
 func liveSyncSnapshotOpenOrderSymbols(snapshot map[string]any) map[string]struct{} {

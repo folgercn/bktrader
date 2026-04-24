@@ -190,9 +190,14 @@ type Order struct {
 
 // OrderQuery 定义订单查询条件。
 type OrderQuery struct {
-	LiveSessionID string
-	Limit         int
-	Offset        int
+	LiveSessionID      string
+	AccountID          string
+	Symbols            []string
+	Statuses           []string
+	ExcludeStatuses    []string
+	MetadataBoolEquals map[string]bool
+	Limit              int
+	Offset             int
 }
 
 // Fill 成交记录，每笔成交关联一个订单。
@@ -244,6 +249,7 @@ type Position struct {
 // PositionQuery 定义持仓查询条件。
 type PositionQuery struct {
 	AccountID string
+	Symbol    string
 }
 
 // BacktestRun 回测运行记录，保存参数和结果摘要。
