@@ -497,8 +497,11 @@ func liveProposalSignalBarStateKey(proposalMap map[string]any) string {
 }
 
 const (
-	liveDispatchRejectedEntrySlippageExceeded = "ENTRY_SLIPPAGE_EXCEEDED"
-	liveEntrySubmissionSlippageGuardKey       = "entrySubmissionSlippageGuard"
+	liveDispatchRejectedEntrySubmissionGuard         = "ENTRY_SUBMISSION_GUARD_BLOCKED"
+	liveEntrySubmissionSlippageGuardKey              = "entrySubmissionSlippageGuard"
+	liveEntrySubmissionDefaultMaxBookAge             = 500 * time.Millisecond
+	liveEntrySubmissionDefaultMinTopBookCoverage     = 0.5
+	liveEntrySubmissionDefaultMaxSourceDivergenceBps = 8.0
 )
 
 func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSession, proposalMap map[string]any, eventTime time.Time) (map[string]any, error) {
@@ -519,7 +522,7 @@ func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSess
 	expectedPrice := firstPositive(parseFloatValue(checked["limitPrice"]), parseFloatValue(checked["priceHint"]))
 	guard := map[string]any{
 		"status":         "evaluating",
-		"checkedAt":      eventTime.UTC().Format(time.RFC3339),
+		"checkedAt":      eventTime.UTC().Format(time.RFC3339Nano),
 		"maxSlippageBps": maxSlippageBps,
 		"side":           side,
 		"expectedPrice":  expectedPrice,
@@ -542,9 +545,29 @@ func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSess
 	if !ok {
 		return block("missing-current-order-book")
 	}
+	maxBookAge := liveEntrySubmissionMaxBookAge(session, checked)
+	if maxBookAge > 0 {
+		bookAt := parseOptionalRFC3339(stringValue(bookMetadata["lastEventAt"]))
+		if bookAt.IsZero() {
+			guard["currentBook"] = bookMetadata
+			return block("missing-current-order-book-timestamp")
+		}
+		bookAge := time.Duration(0)
+		if eventTime.After(bookAt) {
+			bookAge = eventTime.Sub(bookAt)
+		}
+		guard["bookAgeMs"] = float64(bookAge) / float64(time.Millisecond)
+		guard["maxBookAgeMs"] = float64(maxBookAge) / float64(time.Millisecond)
+		if bookAge > maxBookAge {
+			guard["currentBook"] = bookMetadata
+			return block("stale-current-order-book")
+		}
+	}
 	currentPrice := book.bestAsk
+	topDepthQty := book.bestAskQty
 	if side == "SELL" {
 		currentPrice = book.bestBid
+		topDepthQty = book.bestBidQty
 	}
 	guard["currentPrice"] = currentPrice
 	guard["currentBook"] = bookMetadata
@@ -552,10 +575,41 @@ func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSess
 	if currentPrice <= 0 {
 		return block("missing-current-executable-price")
 	}
+	quantity := parseFloatValue(checked["quantity"])
+	guard["quantity"] = quantity
+	guard["topDepthQty"] = topDepthQty
+	if quantity <= 0 {
+		return block("missing-entry-quantity")
+	}
+	if minCoverage := liveEntrySubmissionMinTopBookCoverage(session, checked); minCoverage > 0 {
+		coverage := 0.0
+		if topDepthQty > 0 {
+			coverage = topDepthQty / quantity
+		}
+		guard["topDepthCoverage"] = coverage
+		guard["minTopDepthCoverage"] = minCoverage
+		if topDepthQty <= 0 {
+			return block("missing-top-book-depth")
+		}
+		if executionGuardBelow(coverage, minCoverage) {
+			return block("top-book-coverage-too-thin")
+		}
+	}
+	if maxDivergenceBps := liveEntrySubmissionMaxSourceDivergenceBps(session, checked); maxDivergenceBps > 0 {
+		sourceDivergences, maxDivergence := liveEntrySubmissionSourceDivergences(currentPrice, bookMetadata, eventTime, maxBookAge)
+		if len(sourceDivergences) > 0 {
+			guard["sourceDivergences"] = sourceDivergences
+			guard["sourceDivergenceBps"] = maxDivergence
+			guard["maxSourceDivergenceBps"] = maxDivergenceBps
+			if executionGuardExceeds(maxDivergence, maxDivergenceBps) {
+				return block("market-source-divergence-too-wide")
+			}
+		}
+	}
 
 	adverseDriftBps := liveEntryAdverseSubmissionDriftBps(side, expectedPrice, currentPrice)
 	guard["adverseDriftBps"] = adverseDriftBps
-	if (precisionToleranceSpec{absolute: 1e-9}).exceeds(adverseDriftBps, maxSlippageBps) {
+	if executionGuardExceeds(adverseDriftBps, maxSlippageBps) {
 		guard["status"] = "blocked"
 		guard["reason"] = "slippage-too-wide"
 		metadata[liveEntrySubmissionSlippageGuardKey] = guard
@@ -572,6 +626,85 @@ func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSess
 	metadata[liveEntrySubmissionSlippageGuardKey] = guard
 	checked["metadata"] = metadata
 	return checked, nil
+}
+
+func liveEntrySubmissionMaxBookAge(session domain.LiveSession, proposalMap map[string]any) time.Duration {
+	maxAgeMs := liveEntrySubmissionGuardConfigValue(session, proposalMap, "executionEntryMaxBookAgeMs")
+	if maxAgeMs <= 0 {
+		return liveEntrySubmissionDefaultMaxBookAge
+	}
+	return time.Duration(maxAgeMs * float64(time.Millisecond))
+}
+
+func liveEntrySubmissionMinTopBookCoverage(session domain.LiveSession, proposalMap map[string]any) float64 {
+	coverage := liveEntrySubmissionGuardConfigValue(session, proposalMap, "executionEntryMinTopBookCoverage")
+	if coverage <= 0 {
+		return liveEntrySubmissionDefaultMinTopBookCoverage
+	}
+	return coverage
+}
+
+func liveEntrySubmissionMaxSourceDivergenceBps(session domain.LiveSession, proposalMap map[string]any) float64 {
+	divergence := liveEntrySubmissionGuardConfigValue(session, proposalMap, "executionEntryMaxSourceDivergenceBps")
+	if divergence <= 0 {
+		return liveEntrySubmissionDefaultMaxSourceDivergenceBps
+	}
+	return divergence
+}
+
+func liveEntrySubmissionGuardConfigValue(session domain.LiveSession, proposalMap map[string]any, key string) float64 {
+	metadata := mapValue(proposalMap["metadata"])
+	executionContext := mapValue(metadata["executionContext"])
+	return firstPositive(
+		parseFloatValue(session.State[key]),
+		firstPositive(
+			parseFloatValue(executionContext[key]),
+			parseFloatValue(metadata[key]),
+		),
+	)
+}
+
+func liveEntrySubmissionSourceDivergences(currentPrice float64, bookMetadata map[string]any, eventTime time.Time, maxSourceAge time.Duration) ([]map[string]any, float64) {
+	if currentPrice <= 0 {
+		return nil, 0
+	}
+	sources := []struct {
+		name     string
+		priceKey string
+		timeKey  string
+	}{
+		{name: "trade_tick", priceKey: "tradeTickPrice", timeKey: "tradeTickLastEventAt"},
+		{name: "signal_bar", priceKey: "signalBarPrice", timeKey: "signalBarLastEventAt"},
+	}
+	out := make([]map[string]any, 0, len(sources))
+	maxDivergence := 0.0
+	for _, source := range sources {
+		price := parseFloatValue(bookMetadata[source.priceKey])
+		if price <= 0 {
+			continue
+		}
+		sourceAtRaw := stringValue(bookMetadata[source.timeKey])
+		sourceAt := parseOptionalRFC3339(sourceAtRaw)
+		sourceAge := time.Duration(0)
+		if !sourceAt.IsZero() && eventTime.After(sourceAt) {
+			sourceAge = eventTime.Sub(sourceAt)
+		}
+		if maxSourceAge > 0 && (sourceAt.IsZero() || sourceAge > maxSourceAge) {
+			continue
+		}
+		divergence := math.Abs(currentPrice/price-1) * 10000
+		if divergence > maxDivergence {
+			maxDivergence = divergence
+		}
+		out = append(out, map[string]any{
+			"source":        source.name,
+			"price":         price,
+			"lastEventAt":   sourceAtRaw,
+			"sourceAgeMs":   float64(sourceAge) / float64(time.Millisecond),
+			"divergenceBps": divergence,
+		})
+	}
+	return out, maxDivergence
 }
 
 func liveEntrySubmissionSlippageGuardApplies(proposalMap map[string]any) bool {
@@ -676,7 +809,67 @@ func latestOrderBookStatsFromSourceStates(runtimeSessionID, symbol string, sourc
 		selectedAt = eventAt
 		found = true
 	}
+	if found {
+		enrichLiveOrderBookMetadataWithSourcePrices(selectedMeta, symbol, sourceStates)
+	}
 	return selected, selectedMeta, found
+}
+
+type liveSourcePriceSnapshot struct {
+	source      string
+	price       float64
+	lastEventAt string
+}
+
+func enrichLiveOrderBookMetadataWithSourcePrices(metadata map[string]any, symbol string, sourceStates map[string]any) {
+	if len(metadata) == 0 {
+		return
+	}
+	if trade := latestLiveSourcePriceSnapshot(sourceStates, symbol, "trade_tick"); trade.price > 0 {
+		metadata["tradeTickPrice"] = trade.price
+		metadata["tradeTickLastEventAt"] = trade.lastEventAt
+	}
+	if signal := latestLiveSourcePriceSnapshot(sourceStates, symbol, "signal_bar"); signal.price > 0 {
+		metadata["signalBarPrice"] = signal.price
+		metadata["signalBarLastEventAt"] = signal.lastEventAt
+	}
+}
+
+func latestLiveSourcePriceSnapshot(sourceStates map[string]any, symbol, streamType string) liveSourcePriceSnapshot {
+	var selected liveSourcePriceSnapshot
+	var selectedAt time.Time
+	for _, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(stringValue(entry["streamType"]))) != streamType {
+			continue
+		}
+		if symbol != "" && NormalizeSymbol(stringValue(entry["symbol"])) != symbol {
+			continue
+		}
+		eventAtRaw := stringValue(entry["lastEventAt"])
+		eventAt := parseOptionalRFC3339(eventAtRaw)
+		if eventAt.IsZero() {
+			continue
+		}
+		if selected.price > 0 && !eventAt.After(selectedAt) {
+			continue
+		}
+		summary := mapValue(entry["summary"])
+		price := firstPositive(parseFloatValue(summary["price"]), parseFloatValue(summary["close"]))
+		if price <= 0 {
+			continue
+		}
+		selected = liveSourcePriceSnapshot{
+			source:      streamType,
+			price:       price,
+			lastEventAt: eventAtRaw,
+		}
+		selectedAt = eventAt
+	}
+	return selected
 }
 
 func liveEntryAdverseSubmissionDriftBps(side string, expectedPrice, currentPrice float64) float64 {
@@ -761,7 +954,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	proposal = executionProposalFromMap(proposalMap)
 	proposalMap, err = p.applyLiveEntrySubmissionSlippageGuard(session, proposalMap, dispatchStartedAt)
 	if err != nil {
-		p.recordLiveDispatchPreflightRejection(session, proposalMap, liveDispatchRejectedEntrySlippageExceeded, err, dispatchStartedAt)
+		p.recordLiveDispatchPreflightRejection(session, proposalMap, liveDispatchRejectedEntrySubmissionGuard, err, dispatchStartedAt)
 		return domain.Order{}, err
 	}
 	proposal = executionProposalFromMap(proposalMap)

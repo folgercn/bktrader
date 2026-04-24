@@ -257,7 +257,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 		return proposal, nil
 	}
 	if profile.ReduceOnly && reasonTag == "sl" {
-		slMaxSlippageBps := firstPositive(profile.SLMaxSlippageBps, 50)
+		slMaxSlippageBps := firstPositive(profile.SLMaxSlippageBps, 8)
 		if spreadBps > 0 && slMaxSlippageBps > 0 && spreadBps > slMaxSlippageBps {
 			slProtection := resolveAggressiveSLProtectionDecision(intent.Side, proposal.Quantity, bestBid, bestAsk, bestBidQty, bestAskQty, priceHint, slMaxSlippageBps)
 			cappedPrice := slProtection.Price
@@ -285,6 +285,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 				map[string]any{
 					"slProtectionBranch":    true,
 					"slProtectionMode":      "spread-capped-limit",
+					"slMaxSlippageBps":      slMaxSlippageBps,
 					"slProtectionDepthMode": slProtection.DepthMode,
 					"topDepthQty":           slProtection.TopDepthQty,
 					"topDepthNotional":      slProtection.TopDepthNotional,
@@ -300,6 +301,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 			map[string]any{
 				"slProtectionBranch": true,
 				"slProtectionMode":   "direct-dispatch",
+				"slMaxSlippageBps":   slMaxSlippageBps,
 			},
 		)
 		return proposal, nil
@@ -559,7 +561,7 @@ func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) exe
 		if profile.TimeoutFallbackType == "" {
 			profile.TimeoutFallbackType = "MARKET"
 		}
-		profile.SLMaxSlippageBps = firstPositive(parseFloatValue(parameters["executionSLMaxSlippageBps"]), 50)
+		profile.SLMaxSlippageBps = resolveExecutionSLMaxSlippageBps(parameters)
 	case role == "exit" && reasonTag == "pt":
 		overrideExecutionProfile(&profile, parameters, "executionPTExit")
 		profile.ReduceOnly = true
@@ -585,6 +587,16 @@ func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) exe
 		profile.OrderType = "MARKET"
 	}
 	return profile
+}
+
+func resolveExecutionSLMaxSlippageBps(parameters map[string]any) float64 {
+	return firstPositive(
+		parseFloatValue(parameters["executionSLMaxSlippageBps"]),
+		firstPositive(
+			parseFloatValue(parameters["executionSLExitMaxSlippageBps"]),
+			8,
+		),
+	)
 }
 
 func overrideExecutionProfile(profile *executionProfile, parameters map[string]any, prefix string) {

@@ -92,6 +92,21 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["executionEntryMaxSlippageBps"]); got != 8 {
 			t.Fatalf("expected executionEntryMaxSlippageBps=8 for %s, got %v", item.Key, got)
 		}
+		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["executionEntryMaxBookAgeMs"]); got != 500 {
+			t.Fatalf("expected executionEntryMaxBookAgeMs=500 for %s, got %v", item.Key, got)
+		}
+		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["executionEntryMinTopBookCoverage"]); got != 0.5 {
+			t.Fatalf("expected executionEntryMinTopBookCoverage=0.5 for %s, got %v", item.Key, got)
+		}
+		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["executionEntryMaxSourceDivergenceBps"]); got != 8 {
+			t.Fatalf("expected executionEntryMaxSourceDivergenceBps=8 for %s, got %v", item.Key, got)
+		}
+		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["executionSLExitMaxSpreadBps"]); got != 8 {
+			t.Fatalf("expected executionSLExitMaxSpreadBps=8 for %s, got %v", item.Key, got)
+		}
+		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["executionSLMaxSlippageBps"]); got != 8 {
+			t.Fatalf("expected executionSLMaxSlippageBps=8 for %s, got %v", item.Key, got)
+		}
 		if _, ok := item.LaunchPayload.LiveSessionOverrides["dispatchMode"]; ok {
 			t.Fatalf("expected dispatchMode to stay configurable and not be hardcoded in launch payload: %#v", item.LaunchPayload.LiveSessionOverrides)
 		}

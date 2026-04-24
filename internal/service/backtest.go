@@ -1669,7 +1669,10 @@ func parseOptionalRFC3339(value string) time.Time {
 	if trimmed == "" {
 		return time.Time{}
 	}
-	parsed, err := time.Parse(time.RFC3339, trimmed)
+	parsed, err := time.Parse(time.RFC3339Nano, trimmed)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339, trimmed)
+	}
 	if err != nil {
 		return time.Time{}
 	}

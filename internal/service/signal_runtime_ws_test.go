@@ -404,6 +404,28 @@ func TestEnrichSignalRuntimeSummaryKeepsKlineEventsScopedByTimeframe(t *testing.
 	}
 }
 
+func TestMergeSignalSourceStatePreservesSubsecondLastEventAt(t *testing.T) {
+	eventTime := time.Date(2026, 4, 24, 9, 22, 46, 191578000, time.UTC)
+	sourceStates := mergeSignalSourceState(nil, map[string]any{
+		"sourceKey":          "binance-order-book",
+		"role":               "feature",
+		"symbol":             "BTCUSDT",
+		"subscriptionSymbol": "BTCUSDT",
+		"streamType":         "order_book",
+		"event":              "depthUpdate",
+		"bestBid":            "77522.20",
+		"bestAsk":            "77680.00",
+	}, eventTime)
+	key := signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT")
+	entry := mapValue(sourceStates[key])
+	if entry == nil {
+		t.Fatalf("expected order book source state, got %#v", sourceStates)
+	}
+	if got := stringValue(entry["lastEventAt"]); got != eventTime.Format(time.RFC3339Nano) {
+		t.Fatalf("expected nanosecond lastEventAt, got %s", got)
+	}
+}
+
 func TestEnrichSignalRuntimeSummaryInfersOKXTradesChannelAsTrigger(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{

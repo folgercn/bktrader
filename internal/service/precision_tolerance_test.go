@@ -26,6 +26,21 @@ func TestTradingPricePrecisionTolerance(t *testing.T) {
 	}
 }
 
+func TestExecutionGuardPrecisionTolerance(t *testing.T) {
+	if executionGuardBelow(0.49999999999999994, 0.5) {
+		t.Fatalf("expected execution guard ratio helper to tolerate float64 tail drift")
+	}
+	if !executionGuardBelow(0.499999, 0.5) {
+		t.Fatalf("expected material execution guard ratio shortfall to stay detectable")
+	}
+	if executionGuardExceeds(8.0000000001, 8) {
+		t.Fatalf("expected execution guard bps helper to tolerate float64 tail drift")
+	}
+	if !executionGuardExceeds(8.00001, 8) {
+		t.Fatalf("expected material execution guard bps excess to stay detectable")
+	}
+}
+
 func TestExchangeIncrementPrecisionTolerance(t *testing.T) {
 	if exchangeIncrementDiffers(78168.3, 78168.30000000002, 0.1) {
 		t.Fatalf("expected tick helper to tolerate float64 tail drift")
