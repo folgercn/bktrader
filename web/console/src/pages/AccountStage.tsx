@@ -200,7 +200,9 @@ export function AccountStage({
   const confirmActionPending = liveSessionDeleteAction !== null || liveFlowAction !== null;
 
   const activeLiveSession = liveSessions.find(s => s.accountId === quickLiveAccountId);
-  const activeTemplateKey = (activeLiveSession?.metadata as any)?.launchTemplateKey;
+  const activeTemplateKey = String(
+    activeLiveSession?.state?.launchTemplateKey ?? (activeLiveSession?.metadata as any)?.launchTemplateKey ?? ""
+  );
 
   const openConfirm = (title: string, description: string, onConfirm: () => Promise<void> | void) => {
     setConfirmConfig({ open: true, title, description, onConfirm });
