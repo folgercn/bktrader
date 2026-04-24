@@ -2921,6 +2921,12 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			executionProposal = nil
 		}
 	}
+	recordedSignalIntent := cloneMetadata(mapValue(state["lastSignalIntent"]))
+	decisionEventFingerprint := buildStrategyDecisionEventFingerprint(executionContext, decision, sourceGate, recordedSignalIntent, executionProposal)
+	decisionEventIntentSignature := buildLiveIntentSignature(executionProposal)
+	if decisionEventIntentSignature == "" {
+		decisionEventIntentSignature = buildLiveIntentSignature(recordedSignalIntent)
+	}
 	decisionEvent, decisionEventErr := p.recordStrategyDecisionEvent(
 		session,
 		firstNonEmpty(runtimeSessionID, stringValue(state["signalRuntimeSessionId"])),
@@ -2931,7 +2937,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		sourceGate,
 		executionContext,
 		decision,
-		cloneMetadata(mapValue(state["lastSignalIntent"])),
+		recordedSignalIntent,
 		executionProposal,
 	)
 	if decisionEventErr != nil {
@@ -2939,6 +2945,8 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	} else {
 		delete(state, "lastStrategyDecisionEventError")
 		state["lastStrategyDecisionEventId"] = decisionEvent.ID
+		state["lastStrategyDecisionEventFingerprint"] = decisionEventFingerprint
+		state["lastStrategyDecisionEventIntentSignature"] = decisionEventIntentSignature
 		if len(executionProposal) > 0 {
 			executionProposal["decisionEventId"] = decisionEvent.ID
 			proposalMetadata := cloneMetadata(mapValue(executionProposal["metadata"]))
@@ -3050,6 +3058,9 @@ func liveSessionNonRegressiveFactKeys() []string {
 		"lastSignalBarStateKey",
 		"sessionReentryCount",
 		"lastCountedReentryOrderId",
+		"lastStrategyDecisionEventId",
+		"lastStrategyDecisionEventFingerprint",
+		"lastStrategyDecisionEventIntentSignature",
 	}
 }
 
@@ -4159,19 +4170,7 @@ func livePositionStateMatchesPositionSnapshot(positionSnapshot map[string]any, l
 func mergeLivePositionRiskState(positionSnapshot map[string]any, livePositionState map[string]any) map[string]any {
 	mergedPosition := cloneMetadata(positionSnapshot)
 	for _, key := range []string{
-		"baseStopLoss",
-		"stopLoss",
-		"stopLossSource",
-		"trailingStopConfigured",
-		"trailingStopActive",
-		"trailingActivationArmed",
-		"trailingStopCandidate",
 		"protected",
-		"protectionTrigger",
-		"prevHigh1",
-		"prevLow1",
-		"atr14",
-		"profitProtectATR",
 		"hwm",
 		"lwm",
 		"watermarkPositionKey",

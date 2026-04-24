@@ -3187,6 +3187,9 @@ func TestLiveSessionNonRegressiveFactKeysIncludeSignalBarTradeLimitFacts(t *test
 		"lastSignalBarStateKey",
 		"sessionReentryCount",
 		"lastCountedReentryOrderId",
+		"lastStrategyDecisionEventId",
+		"lastStrategyDecisionEventFingerprint",
+		"lastStrategyDecisionEventIntentSignature",
 	} {
 		found := false
 		for _, key := range keys {
@@ -3315,6 +3318,67 @@ func TestDispatchLiveSessionIntentRejectsEntryAfterMaxTradesPerSignalBar(t *test
 	}
 }
 
+func TestDispatchLiveSessionIntentRejectsThirdEntryAfterInterveningExitOnSameSignalBar(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "30m",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	barKey := "BTCUSDT|30m|2026-04-23T14:00:00Z"
+	exitIntentSignature := buildLiveIntentSignature(map[string]any{
+		"action":            "exit",
+		"side":              "SELL",
+		"symbol":            "BTCUSDT",
+		"signalKind":        "risk-exit",
+		"signalBarStateKey": "binance-kline|signal|BTCUSDT|30m",
+	})
+	state := cloneMetadata(session.State)
+	state["max_trades_per_bar"] = 2
+	state["lastSignalBarStateKey"] = barKey
+	state["sessionReentryCount"] = 2.0
+	state["signalRuntimeSessionId"] = "runtime-1"
+	state["lastDispatchedIntentSignature"] = exitIntentSignature
+	state["lastDispatchedAt"] = time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	state["lastDispatchedOrderStatus"] = "FILLED"
+	state["lastSyncedOrderStatus"] = "FILLED"
+	state["lastExecutionProposal"] = map[string]any{
+		"action":            "entry",
+		"role":              "entry",
+		"reason":            "Zero-Initial-Reentry",
+		"side":              "BUY",
+		"symbol":            "BTCUSDT",
+		"type":              "MARKET",
+		"quantity":          0.0065,
+		"priceHint":         77855.8,
+		"reduceOnly":        false,
+		"signalKind":        "zero-initial-reentry",
+		"signalBarStateKey": "binance-kline|signal|BTCUSDT|30m",
+		"status":            "dispatchable",
+		"metadata": map[string]any{
+			"executionMode": "live",
+			"executionContext": map[string]any{
+				"symbol":              "BTCUSDT",
+				"signalTimeframe":     "30m",
+				"executionDataSource": "tick",
+				"executionMode":       "live",
+			},
+			liveSignalBarTradeLimitKeyField: barKey,
+		},
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	_, err = platform.dispatchLiveSessionIntent(session)
+	if err == nil || !strings.Contains(err.Error(), "max_trades_per_bar=2") {
+		t.Fatalf("expected third same-bar entry to stay blocked after intervening exit, got %v", err)
+	}
+}
+
 func TestResolveLiveSessionPositionSnapshotDoesNotMergeStaleLivePositionState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.store.SavePosition(domain.Position{
@@ -3360,7 +3424,7 @@ func TestResolveLiveSessionPositionSnapshotDoesNotMergeStaleLivePositionState(t 
 	}
 }
 
-func TestResolveLiveSessionPositionSnapshotMergesMatchingRiskStateOnly(t *testing.T) {
+func TestResolveLiveSessionPositionSnapshotMergesMatchingPersistentRiskFactsOnly(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.store.SavePosition(domain.Position{
 		ID:                "position-1",
@@ -3396,11 +3460,14 @@ func TestResolveLiveSessionPositionSnapshotMergesMatchingRiskStateOnly(t *testin
 	if !found {
 		t.Fatal("expected real position to be found")
 	}
-	if got := parseFloatValue(snapshot["stopLoss"]); got != 76241.6 {
-		t.Fatalf("expected matching risk stopLoss to be merged, got %v", got)
+	if got := parseFloatValue(snapshot["stopLoss"]); got != 0 {
+		t.Fatalf("expected derived stopLoss to stay out of factual snapshot merge, got %v", got)
 	}
 	if got := stringValue(snapshot["watermarkPositionKey"]); got != key {
 		t.Fatalf("expected matching watermark key to be merged, got %s", got)
+	}
+	if !boolValue(snapshot["protected"]) {
+		t.Fatal("expected protected flag to be merged as a persistent risk fact")
 	}
 	if got := parseFloatValue(snapshot["quantity"]); got != 0.001 {
 		t.Fatalf("expected factual quantity to remain authoritative, got %v", got)

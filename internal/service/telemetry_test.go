@@ -53,6 +53,192 @@ func TestEvaluateLiveSessionOnSignalPersistsStrategyDecisionEvent(t *testing.T) 
 	}
 }
 
+func TestRecordStrategyDecisionEventPrefersFreshCurrentPositionSnapshot(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session := domain.LiveSession{
+		ID:         "live-session-main",
+		AccountID:  "live-main",
+		StrategyID: "strategy-main",
+		State: map[string]any{
+			"recoveredPosition": map[string]any{
+				"symbol":     "BTCUSDT",
+				"side":       "SHORT",
+				"entryPrice": 78025.6,
+				"stopLoss":   77986.4,
+			},
+		},
+	}
+	decision := StrategySignalDecision{
+		Action: "advance-plan",
+		Reason: "trigger-source-ready",
+		Metadata: map[string]any{
+			"signalKind":    "risk-exit",
+			"decisionState": "exit-ready",
+			"currentPosition": map[string]any{
+				"symbol":     "BTCUSDT",
+				"side":       "SHORT",
+				"entryPrice": 78112.8,
+				"stopLoss":   78168.5,
+			},
+		},
+	}
+	event, err := platform.recordStrategyDecisionEvent(
+		session,
+		"runtime-1",
+		time.Unix(0, 0).UTC(),
+		map[string]any{"event": "trade_tick"},
+		nil,
+		nil,
+		map[string]any{"ready": true},
+		StrategyExecutionContext{
+			StrategyEngineKey:   "bk-default",
+			StrategyVersionID:   "strategy-version-1",
+			SignalTimeframe:     "30m",
+			ExecutionDataSource: "tick",
+			Symbol:              "BTCUSDT",
+		},
+		decision,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("record strategy decision event failed: %v", err)
+	}
+	if got := parseFloatValue(event.PositionSnapshot["entryPrice"]); got != 78112.8 {
+		t.Fatalf("expected fresh current position entry price in event snapshot, got %v", got)
+	}
+	if got := parseFloatValue(event.PositionSnapshot["stopLoss"]); got != 78168.5 {
+		t.Fatalf("expected fresh current position stopLoss in event snapshot, got %v", got)
+	}
+}
+
+func TestEvaluateLiveSessionOnSignalReusesDuplicateStrategyDecisionEvent(t *testing.T) {
+	platform, session, runtimeSessionID, summary, eventTime := prepareLiveDecisionTelemetryFixture(t)
+
+	if err := platform.evaluateLiveSessionOnSignal(session, runtimeSessionID, summary, eventTime); err != nil {
+		t.Fatalf("first live session evaluation failed: %v", err)
+	}
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	firstDecisionEventID := stringValue(updated.State["lastStrategyDecisionEventId"])
+	if firstDecisionEventID == "" {
+		t.Fatal("expected first decision event id to be recorded")
+	}
+	if got := stringValue(updated.State["lastStrategyDecisionEventFingerprint"]); got == "" {
+		t.Fatal("expected decision event fingerprint to be recorded")
+	}
+
+	if err := platform.evaluateLiveSessionOnSignal(updated, runtimeSessionID, summary, eventTime.Add(2*time.Second)); err != nil {
+		t.Fatalf("second live session evaluation failed: %v", err)
+	}
+	updated, err = platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get deduplicated live session failed: %v", err)
+	}
+	events, err := platform.store.ListStrategyDecisionEvents(session.ID)
+	if err != nil {
+		t.Fatalf("list strategy decision events failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected duplicate evaluation to reuse the prior decision event, got %d events", len(events))
+	}
+	if got := stringValue(updated.State["lastStrategyDecisionEventId"]); got != firstDecisionEventID {
+		t.Fatalf("expected duplicate evaluation to keep decision event id %s, got %s", firstDecisionEventID, got)
+	}
+}
+
+func TestRecordStrategyDecisionEventDoesNotReuseDifferentQuantityIntent(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session := domain.LiveSession{
+		ID:         "live-session-main",
+		AccountID:  "live-main",
+		StrategyID: "strategy-main",
+		State:      map[string]any{},
+	}
+	executionContext := StrategyExecutionContext{
+		StrategyEngineKey:   "bk-default",
+		StrategyVersionID:   "strategy-version-1",
+		SignalTimeframe:     "30m",
+		ExecutionDataSource: "tick",
+		Symbol:              "BTCUSDT",
+	}
+	decision := StrategySignalDecision{
+		Action: "advance-plan",
+		Reason: "trigger-source-ready",
+		Metadata: map[string]any{
+			"signalKind":    "zero-initial-reentry",
+			"decisionState": "entry-ready",
+		},
+	}
+	sourceGate := map[string]any{"ready": true}
+	firstProposal := map[string]any{
+		"action":            "entry",
+		"role":              "entry",
+		"reason":            "Zero-Initial-Reentry",
+		"side":              "BUY",
+		"symbol":            "BTCUSDT",
+		"type":              "MARKET",
+		"quantity":          0.013,
+		"signalKind":        "zero-initial-reentry",
+		"signalBarStateKey": "binance-kline|signal|BTCUSDT|30m",
+		"status":            "dispatchable",
+		"metadata": map[string]any{
+			"executionDecision":             "direct-dispatch",
+			liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-24T01:30:00Z",
+		},
+	}
+	firstEvent, err := platform.recordStrategyDecisionEvent(
+		session,
+		"runtime-1",
+		time.Unix(0, 0).UTC(),
+		map[string]any{"event": "trade_tick"},
+		nil,
+		nil,
+		sourceGate,
+		executionContext,
+		decision,
+		nil,
+		firstProposal,
+	)
+	if err != nil {
+		t.Fatalf("record first strategy decision event failed: %v", err)
+	}
+	session.State["lastStrategyDecisionEventId"] = firstEvent.ID
+	session.State["lastStrategyDecisionEventFingerprint"] = buildStrategyDecisionEventFingerprint(executionContext, decision, sourceGate, nil, firstProposal)
+	session.State["lastStrategyDecisionEventIntentSignature"] = buildLiveIntentSignature(firstProposal)
+
+	secondProposal := cloneMetadata(firstProposal)
+	secondProposal["quantity"] = 0.0065
+	secondEvent, err := platform.recordStrategyDecisionEvent(
+		session,
+		"runtime-1",
+		time.Unix(1, 0).UTC(),
+		map[string]any{"event": "trade_tick"},
+		nil,
+		nil,
+		sourceGate,
+		executionContext,
+		decision,
+		nil,
+		secondProposal,
+	)
+	if err != nil {
+		t.Fatalf("record second strategy decision event failed: %v", err)
+	}
+	if secondEvent.ID == firstEvent.ID {
+		t.Fatalf("expected different quantity intent to create a new decision event, got reused id %s", secondEvent.ID)
+	}
+	events, err := platform.store.ListStrategyDecisionEvents(session.ID)
+	if err != nil {
+		t.Fatalf("list strategy decision events failed: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected two distinct strategy decision events, got %d", len(events))
+	}
+}
+
 func TestEvaluateLiveSessionOnSignalPersistsBreakoutHistory(t *testing.T) {
 	platform, session, runtimeSessionID, summary, eventTime := prepareLiveDecisionTelemetryFixture(t)
 	signalKey := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT")

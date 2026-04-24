@@ -609,6 +609,43 @@ func TestDeriveLivePositionStateUsesProvidedWatermarksForShort(t *testing.T) {
 	}
 }
 
+func TestDeriveLivePositionStateDoesNotReuseCachedTrailingStopWhenTrailingInactive(t *testing.T) {
+	parameters := map[string]any{
+		"trailing_stop_atr":               0.3,
+		"delayed_trailing_activation_atr": 0.5,
+		"stop_loss_atr":                   0.3,
+		"stop_mode":                       "atr",
+	}
+	signalBarState := map[string]any{
+		"atr14":    185.67857142857454,
+		"current":  map[string]any{"close": 78112.8},
+		"prevBar1": map[string]any{"high": 78415.6, "low": 78005.1},
+		"prevBar2": map[string]any{"high": 78580.0, "low": 77920.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"side":       "SHORT",
+		"entryPrice": 78112.8,
+		"stopLoss":   77993.63571428572,
+		"quantity":   0.0013,
+	}
+	watermarks := livePositionWatermarks{
+		PositionKey: "position-1|BTCUSDT|SHORT|78112.8",
+		HWM:         78112.8,
+		LWM:         78112.8,
+	}
+	state := deriveLivePositionState(parameters, currentPosition, signalBarState, 78112.8, watermarks)
+	if boolValue(state["trailingStopActive"]) {
+		t.Fatal("expected trailing stop to remain inactive before delayed activation is reached")
+	}
+	if got := stringValue(state["stopLossSource"]); got != "initial-stop" {
+		t.Fatalf("expected initial-stop source while trailing is inactive, got %s", got)
+	}
+	if got := parseFloatValue(state["stopLoss"]); tradingPriceDiffers(got, 78168.50357142858) {
+		t.Fatalf("expected base stop loss 78168.50357142858, got %v", got)
+	}
+}
+
 func TestResolveLivePositionWatermarksReturnsEmptyForInactiveSnapshot(t *testing.T) {
 	sessionState := map[string]any{
 		"hwm":                  52000.0,
