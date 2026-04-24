@@ -27,3 +27,15 @@ export function normalizeChartData(candles: SignalBarCandle[]) {
     (a, b) => (a.time as number) - (b.time as number)
   );
 }
+
+export function normalizeLineSeriesRange(startTime: string, endTime: string, value: number) {
+  const start = Math.floor(new Date(startTime).getTime() / 1000);
+  const end = Math.floor(new Date(endTime).getTime() / 1000);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return [];
+  }
+  return [
+    { time: start as Time, value },
+    { time: end as Time, value },
+  ];
+}
