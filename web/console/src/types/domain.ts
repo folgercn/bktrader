@@ -63,12 +63,15 @@ export type AccountEquitySnapshot = {
 export type Order = {
   id: string;
   accountId: string;
+  strategyVersionId?: string;
   symbol: string;
   side: string;
   type: string;
   status: string;
   quantity: number;
   price: number;
+  reduceOnly?: boolean;
+  closePosition?: boolean;
   metadata?: Record<string, unknown>;
   bindings?: any;
   createdAt: string;

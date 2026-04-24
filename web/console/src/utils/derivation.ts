@@ -310,7 +310,27 @@ export function markerColor(item: ChartAnnotation, highlighted = false) {
 }
 
 export function markerText(item: ChartAnnotation, highlighted = false) {
-  return highlighted ? `★ ${item.label}` : item.label;
+  const text = annotationMarkerText(item);
+  return highlighted ? `★ ${text}` : text;
+}
+
+function annotationMarkerText(item: ChartAnnotation): string {
+  const type = String(item.type ?? "").trim().toLowerCase();
+  const metadata = getRecord(item.metadata);
+  const metadataSide = String(metadata.orderSide ?? metadata.side ?? metadata.eventType ?? "").trim().toUpperCase();
+  const isEntry = type.includes("entry");
+  const isExit = type.includes("exit");
+  const positionSide =
+    type.includes("short") ? "SHORT" :
+    type.includes("long") ? "LONG" :
+    executionOrderPositionSide(metadataSide, isExit);
+  const actionLabel = isEntry ? "开" : isExit ? "平" : "";
+  const sideLabel = positionSide === "SHORT" ? "空" : positionSide === "LONG" ? "多" : "";
+  const reasonLabel = compactExecutionReasonLabel(
+    String(metadata.reason ?? item.label ?? type).trim()
+  ) || compactExecutionReasonLabel(type);
+  const directionalText = actionLabel || sideLabel ? [actionLabel + sideLabel, reasonLabel].filter(Boolean).join(" ") : "";
+  return directionalText || item.label;
 }
 
 export function annotationTone(item: ChartAnnotation) {
@@ -1051,14 +1071,90 @@ export function deriveSessionMarkers(session: LiveSession | PaperSession | null,
     const fill = fillByOrderId.get(order.id);
     const side = String(order.side ?? "").toUpperCase();
     const isBuy = side === "BUY";
+    const markerText = executionOrderMarkerText(order);
     return {
       time: fill?.createdAt || order.createdAt,
       position: isBuy ? "belowBar" : "aboveBar",
       color: isBuy ? "#0e6d60" : "#b04a37",
       shape: isBuy ? "arrowUp" : "arrowDown",
-      text: `${isBuy ? "开" : "平"} ${formatMaybeNumber(order.price)}`,
+      text: `${markerText} ${formatMaybeNumber(order.price)}`,
     };
   });
+}
+
+function executionOrderMarkerText(order: Order): string {
+  const side = String(order.side ?? "").trim().toUpperCase();
+  const isExit = isExitOrderMarker(order);
+  const positionSide = executionOrderPositionSide(side, isExit);
+  const action = isExit ? "平" : "开";
+  const sideLabel = positionSide === "SHORT" ? "空" : positionSide === "LONG" ? "多" : "";
+  const reasonLabel = compactExecutionReasonLabel(executionOrderReason(order));
+  return [action + sideLabel, reasonLabel].filter(Boolean).join(" ");
+}
+
+function isExitOrderMarker(order: Order): boolean {
+  const metadata = getRecord(order.metadata);
+  const proposal = getRecord(metadata.executionProposal ?? metadata.intent);
+  const role = String(metadata.orderRole ?? proposal.role ?? "").trim().toLowerCase();
+  const reason = normalizeExecutionReasonTag(executionOrderReason(order));
+  return (
+    order.reduceOnly === true ||
+    order.closePosition === true ||
+    metadata.reduceOnly === true ||
+    metadata.closePosition === true ||
+    proposal.reduceOnly === true ||
+    proposal.closePosition === true ||
+    role === "exit" ||
+    reason === "sl" ||
+    reason === "pt" ||
+    reason === "tp"
+  );
+}
+
+function executionOrderReason(order: Order): string {
+  const metadata = getRecord(order.metadata);
+  const proposal = getRecord(metadata.executionProposal ?? metadata.intent);
+  return String(metadata.reason ?? proposal.reason ?? order.type ?? "").trim();
+}
+
+function executionOrderPositionSide(side: string, isExit: boolean): "LONG" | "SHORT" | "" {
+  if (side === "BUY") {
+    return isExit ? "SHORT" : "LONG";
+  }
+  if (side === "SELL") {
+    return isExit ? "LONG" : "SHORT";
+  }
+  return "";
+}
+
+function normalizeExecutionReasonTag(reason: string): string {
+  return reason.trim().toLowerCase().replace(/_/g, "-");
+}
+
+function compactExecutionReasonLabel(reason: string): string {
+  const normalized = normalizeExecutionReasonTag(reason);
+  if (normalized === "pt" || normalized === "tp" || normalized === "take-profit") {
+    return "TP";
+  }
+  if (normalized === "sl" || normalized === "stop-loss") {
+    return "SL";
+  }
+  if (normalized === "tsl" || normalized === "trailing-stop") {
+    return "TSL";
+  }
+  if (normalized.includes("zero-initial-reentry")) {
+    return "ZIR";
+  }
+  if (normalized.includes("sl-reentry")) {
+    return "SLR";
+  }
+  if (normalized.includes("pt-reentry") || normalized.includes("tp-reentry")) {
+    return "TPR";
+  }
+  if (normalized === "initial") {
+    return "INI";
+  }
+  return "";
 }
 
 function resolveSessionOrders(session: LiveSession | PaperSession | null, orders: Order[]) {
@@ -1140,7 +1236,7 @@ export function deriveSignalMonitorDecorations(
       position: breakoutSide === "SELL" ? "aboveBar" : "belowBar",
       color: breakoutColor,
       shape: "circle",
-      text: "BO",
+      text: `${breakoutSide === "SELL" ? "空" : "多"} BO`,
     });
   }
 
@@ -1187,7 +1283,7 @@ export function deriveSignalMonitorDecorations(
     position: stopMarkerPosition,
     color: stopMarkerColor,
     shape: "square",
-    text: trailingActive ? "TSL" : "SL",
+    text: `${normalizedSide === "SHORT" ? "空" : "多"} ${trailingActive ? "TSL" : "SL"}`,
   });
 
   return { markers, overlays };
