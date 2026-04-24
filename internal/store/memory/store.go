@@ -104,8 +104,8 @@ func NewStore() *Store {
 		ExecutionTimeframe: "1m",
 		Parameters: map[string]any{
 			"strategyEngine":                  "bk-default",
-			"max_trades_per_bar":              3,
-			"reentry_size_schedule":           []float64{0.20, 0.10},
+			"max_trades_per_bar":              domain.ResearchBaselineMaxTradesPerBar,
+			"reentry_size_schedule":           domain.ResearchBaselineReentrySizeSchedule(),
 			"stop_mode":                       "atr",
 			"stop_loss_atr":                   0.05,
 			"profit_protect_atr":              1.0,
