@@ -32,7 +32,7 @@ export function useDashboardState() {
     ] = await Promise.all([
       fetchJSON<AccountSummary[]>("/api/v1/account-summaries"),
       fetchJSON<AccountRecord[]>("/api/v1/accounts"),
-      fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions"),
+      fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions?view=summary"),
     ]);
 
     const normalizedSummaries = Array.isArray(summaryData) ? summaryData : [];

@@ -326,6 +326,21 @@ func (p *Platform) ListAccountSummaries() ([]domain.AccountSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	var liveSummaries []domain.AccountSummary
+	var paperAccounts []domain.Account
+	for _, account := range accounts {
+		if liveSummary, ok := buildLiveAccountSummaryFromSnapshot(account); ok {
+			liveSummaries = append(liveSummaries, liveSummary)
+		} else {
+			paperAccounts = append(paperAccounts, account)
+		}
+	}
+
+	if len(paperAccounts) == 0 {
+		return liveSummaries, nil
+	}
+
 	orders, err := p.store.ListOrders()
 	if err != nil {
 		return nil, err
@@ -374,11 +389,8 @@ func (p *Platform) ListAccountSummaries() ([]domain.AccountSummary, error) {
 	}
 
 	summaries := make([]domain.AccountSummary, 0, len(accounts))
-	for _, account := range accounts {
-		if liveSummary, ok := buildLiveAccountSummaryFromSnapshot(account); ok {
-			summaries = append(summaries, liveSummary)
-			continue
-		}
+	summaries = append(summaries, liveSummaries...)
+	for _, account := range paperAccounts {
 		summaries = append(summaries, buildAccountSummary(account, positions, startEquityByAccount, states, feesByAccount))
 	}
 	return summaries, nil

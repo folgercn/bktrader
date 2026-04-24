@@ -34,7 +34,7 @@ export function useDashboardRealtime() {
       notificationData,
       monitorHealthData,
     ] = await Promise.all([
-      fetchJSON<LiveSession[]>("/api/v1/live/sessions"),
+      fetchJSON<LiveSession[]>("/api/v1/live/sessions?view=summary"),
       fetchJSON<Position[]>("/api/v1/positions"),
       fetchJSON<Order[]>("/api/v1/orders?limit=50"),
       fetchJSON<Fill[]>("/api/v1/fills?limit=50"),
