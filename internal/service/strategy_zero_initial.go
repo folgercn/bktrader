@@ -1,10 +1,14 @@
 package service
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/wuyaocheng/bktrader/internal/domain"
+)
 
 const (
 	strategyZeroInitialModePosition      = "position"
-	strategyZeroInitialModeReentryWindow = "reentry_window"
+	strategyZeroInitialModeReentryWindow = domain.ResearchBaselineZeroInitialMode
 )
 
 func normalizeStrategyZeroInitialMode(value string) string {
@@ -32,7 +36,7 @@ func resolveStrategyZeroInitialMode(enabled bool, raw any) string {
 }
 
 func strategyZeroInitialReentryWindowEnabled(parameters map[string]any) bool {
-	enabled := true
+	enabled := domain.ResearchBaselineDir2ZeroInitial
 	if _, ok := parameters["dir2_zero_initial"]; ok {
 		enabled = boolValue(parameters["dir2_zero_initial"])
 	}

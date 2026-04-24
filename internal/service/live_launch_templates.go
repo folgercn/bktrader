@@ -118,8 +118,8 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		if applyResearchBaseline {
 			liveOverrides["strategyEngine"] = firstNonEmpty(strategyEngine, "bk-default")
 			liveOverrides["positionSizingMode"] = "reentry_size_schedule"
-			liveOverrides["dir2_zero_initial"] = true
-			liveOverrides["zero_initial_mode"] = "reentry_window"
+			liveOverrides["dir2_zero_initial"] = domain.ResearchBaselineDir2ZeroInitial
+			liveOverrides["zero_initial_mode"] = domain.ResearchBaselineZeroInitialMode
 			liveOverrides["stop_mode"] = "atr"
 			liveOverrides["stop_loss_atr"] = 0.3
 			liveOverrides["profit_protect_atr"] = 1.0
@@ -127,8 +127,8 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			liveOverrides["delayed_trailing_activation_atr"] = 0.5
 			liveOverrides["long_reentry_atr"] = 0.1
 			liveOverrides["short_reentry_atr"] = 0.0
-			liveOverrides["max_trades_per_bar"] = 2
-			liveOverrides["reentry_size_schedule"] = []float64{0.20, 0.10}
+			liveOverrides["max_trades_per_bar"] = domain.ResearchBaselineMaxTradesPerBar
+			liveOverrides["reentry_size_schedule"] = domain.ResearchBaselineReentrySizeSchedule()
 			baselineNotes = append(baselineNotes,
 				"该模板已显式固化 intraday research baseline：dir2 zero initial + reentry_window + reentry_size_schedule=[0.20, 0.10] + max_trades_per_bar=2。",
 				"非 1d 周期默认使用 canonical SMA5 hard filter；止损与移动止损参数分别固定为 stop_loss_atr=0.3、trailing_stop_atr=0.3、profit_protect_atr=1.0、delayed_trailing_activation_atr=0.5。",

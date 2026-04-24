@@ -649,14 +649,14 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["executionDataSource"] = executionDataSource
 	normalized["symbol"] = symbol
 	normalized["strategyEngine"] = normalizeStrategyEngineKey(stringValue(normalized["strategyEngine"]))
-	dir2ZeroInitial := true
+	dir2ZeroInitial := domain.ResearchBaselineDir2ZeroInitial
 	if _, ok := normalized["dir2_zero_initial"]; ok {
 		dir2ZeroInitial = boolValue(normalized["dir2_zero_initial"])
 	}
 	normalized["dir2_zero_initial"] = dir2ZeroInitial
 	normalized["zero_initial_mode"] = resolveStrategyZeroInitialMode(dir2ZeroInitial, normalized["zero_initial_mode"])
-	normalized["max_trades_per_bar"] = maxIntValue(normalized["max_trades_per_bar"], 3)
-	normalized["reentry_size_schedule"] = normalizeBacktestFloatSlice(normalized["reentry_size_schedule"], []float64{0.20, 0.10})
+	normalized["max_trades_per_bar"] = maxIntValue(normalized["max_trades_per_bar"], domain.ResearchBaselineMaxTradesPerBar)
+	normalized["reentry_size_schedule"] = normalizeBacktestFloatSlice(normalized["reentry_size_schedule"], domain.ResearchBaselineReentrySizeSchedule())
 	stopLossATR := parseFloatValue(normalized["stop_loss_atr"])
 	if stopLossATR <= 0 {
 		stopLossATR = 0.05

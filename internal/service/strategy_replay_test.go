@@ -86,6 +86,13 @@ func TestNormalizeBacktestParametersDefaultsZeroInitialToReentryWindow(t *testin
 	if got := stringValue(normalized["zero_initial_mode"]); got != strategyZeroInitialModeReentryWindow {
 		t.Fatalf("expected zero_initial_mode=%s, got %s", strategyZeroInitialModeReentryWindow, got)
 	}
+	if got := maxIntValue(normalized["max_trades_per_bar"], 0); got != domain.ResearchBaselineMaxTradesPerBar {
+		t.Fatalf("expected max_trades_per_bar=%d, got %d", domain.ResearchBaselineMaxTradesPerBar, got)
+	}
+	schedule := normalizeBacktestFloatSlice(normalized["reentry_size_schedule"], nil)
+	if len(schedule) != 2 || schedule[0] != 0.20 || schedule[1] != 0.10 {
+		t.Fatalf("expected default schedule [0.20, 0.10], got %v", schedule)
+	}
 }
 
 func TestBuildSignalBarsSupportsFiveMinuteAggregation(t *testing.T) {
@@ -132,8 +139,8 @@ func TestBuildStrategyReplayConfigUsesUpdatedBaselineDefaults(t *testing.T) {
 			FundingIntervalHours: 8,
 		},
 	})
-	if cfg.MaxTradesPerBar != 3 {
-		t.Fatalf("expected max trades per bar 3, got %d", cfg.MaxTradesPerBar)
+	if cfg.MaxTradesPerBar != domain.ResearchBaselineMaxTradesPerBar {
+		t.Fatalf("expected max trades per bar %d, got %d", domain.ResearchBaselineMaxTradesPerBar, cfg.MaxTradesPerBar)
 	}
 	if len(cfg.ReentrySizeSchedule) != 2 || cfg.ReentrySizeSchedule[0] != 0.20 || cfg.ReentrySizeSchedule[1] != 0.10 {
 		t.Fatalf("expected default schedule [0.20, 0.10], got %v", cfg.ReentrySizeSchedule)

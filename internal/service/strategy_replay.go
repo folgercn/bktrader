@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
 type strategySignalBar struct {
@@ -1039,12 +1041,12 @@ func (e *strategyReplayEngine) summary(signals []strategySignalBar) map[string]a
 
 func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayConfig {
 	parameters := context.Parameters
-	reentrySizes := normalizeBacktestFloatSlice(parameters["reentry_size_schedule"], []float64{0.20, 0.10})
+	reentrySizes := normalizeBacktestFloatSlice(parameters["reentry_size_schedule"], domain.ResearchBaselineReentrySizeSchedule())
 	stopMode := stringValue(parameters["stop_mode"])
 	if stopMode == "" {
 		stopMode = "atr"
 	}
-	dir2ZeroInitial := true
+	dir2ZeroInitial := domain.ResearchBaselineDir2ZeroInitial
 	if _, ok := parameters["dir2_zero_initial"]; ok {
 		dir2ZeroInitial = boolValue(parameters["dir2_zero_initial"])
 	}
@@ -1064,7 +1066,7 @@ func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayC
 		ZeroInitialMode:      resolveStrategyZeroInitialMode(dir2ZeroInitial, parameters["zero_initial_mode"]),
 		FixedSlippage:        strategyReplaySlippage(context, parameters),
 		StopLossATR:          stopLossATR,
-		MaxTradesPerBar:      maxIntValue(parameters["max_trades_per_bar"], 3),
+		MaxTradesPerBar:      maxIntValue(parameters["max_trades_per_bar"], domain.ResearchBaselineMaxTradesPerBar),
 		ReentrySizeSchedule:  reentrySizes,
 		LongReentryATR:       parseFloatValue(firstNonNil(parameters["long_reentry_atr"], 0.1)),
 		ShortReentryATR:      parseFloatValue(firstNonNil(parameters["short_reentry_atr"], 0.0)),
