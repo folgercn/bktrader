@@ -1141,10 +1141,7 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 		stopLossATR = 0.05
 	}
 	baseStopLoss := resolveStopPrice(side, entryPrice, sig, stopMode, stopLossATR)
-	stopLoss := parseFloatValue(currentPosition["stopLoss"])
-	if stopLoss <= 0 {
-		stopLoss = baseStopLoss
-	}
+	stopLoss := baseStopLoss
 	stopLossSource := "initial-stop"
 	if baseStopLoss > 0 {
 		switch side {

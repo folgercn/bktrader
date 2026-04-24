@@ -28,6 +28,17 @@ func (p *Platform) recordStrategyDecisionEvent(
 	if intentSignature == "" && len(signalIntent) > 0 {
 		intentSignature = buildLiveIntentSignature(signalIntent)
 	}
+	fingerprint := buildStrategyDecisionEventFingerprint(executionContext, decision, sourceGate, signalIntent, executionProposal)
+	lastDecisionEventID := strings.TrimSpace(stringValue(session.State["lastStrategyDecisionEventId"]))
+	if lastDecisionEventID != "" {
+		existing, found, err := p.getStrategyDecisionEvent(session.ID, lastDecisionEventID)
+		if err != nil {
+			return domain.StrategyDecisionEvent{}, err
+		}
+		if found && strategyDecisionEventFingerprintFromRecorded(existing) == fingerprint && existing.IntentSignature == intentSignature {
+			return existing, nil
+		}
+	}
 
 	event := domain.StrategyDecisionEvent{
 		LiveSessionID:     session.ID,
@@ -41,21 +52,25 @@ func (p *Platform) recordStrategyDecisionEvent(
 			NormalizeSymbol(stringValue(signalIntent["symbol"])),
 			NormalizeSymbol(stringValue(session.State["symbol"])),
 		),
-		TriggerType:       firstNonEmpty(stringValue(triggerSummary["event"]), stringValue(triggerSummary["type"])),
-		Action:            firstNonEmpty(decision.Action, "wait"),
-		Reason:            firstNonEmpty(decision.Reason, "unspecified"),
-		SignalKind:        firstNonEmpty(stringValue(decision.Metadata["signalKind"]), stringValue(executionProposal["signalKind"])),
-		DecisionState:     firstNonEmpty(stringValue(decision.Metadata["decisionState"]), stringValue(executionProposal["decisionState"])),
-		IntentSignature:   intentSignature,
-		SourceGateReady:   boolValue(sourceGate["ready"]),
-		MissingCount:      len(metadataList(sourceGate["missing"])),
-		StaleCount:        len(metadataList(sourceGate["stale"])),
-		EventTime:         eventTime.UTC(),
-		TriggerSummary:    cloneMetadata(triggerSummary),
-		SourceGate:        cloneMetadata(sourceGate),
-		SourceStates:      cloneMetadata(sourceStates),
-		SignalBarStates:   cloneMetadata(signalBarStates),
-		PositionSnapshot:  cloneMetadata(mapValue(session.State["recoveredPosition"])),
+		TriggerType:     firstNonEmpty(stringValue(triggerSummary["event"]), stringValue(triggerSummary["type"])),
+		Action:          firstNonEmpty(decision.Action, "wait"),
+		Reason:          firstNonEmpty(decision.Reason, "unspecified"),
+		SignalKind:      firstNonEmpty(stringValue(decision.Metadata["signalKind"]), stringValue(executionProposal["signalKind"])),
+		DecisionState:   firstNonEmpty(stringValue(decision.Metadata["decisionState"]), stringValue(executionProposal["decisionState"])),
+		IntentSignature: intentSignature,
+		SourceGateReady: boolValue(sourceGate["ready"]),
+		MissingCount:    len(metadataList(sourceGate["missing"])),
+		StaleCount:      len(metadataList(sourceGate["stale"])),
+		EventTime:       eventTime.UTC(),
+		TriggerSummary:  cloneMetadata(triggerSummary),
+		SourceGate:      cloneMetadata(sourceGate),
+		SourceStates:    cloneMetadata(sourceStates),
+		SignalBarStates: cloneMetadata(signalBarStates),
+		PositionSnapshot: cloneMetadata(firstNonEmptyMapValue(
+			decision.Metadata["currentPosition"],
+			session.State["recoveredPosition"],
+			session.State["livePositionState"],
+		)),
 		DecisionMetadata:  cloneMetadata(decision.Metadata),
 		SignalIntent:      cloneMetadata(signalIntent),
 		ExecutionProposal: cloneMetadata(executionProposal),
@@ -77,6 +92,89 @@ func (p *Platform) recordStrategyDecisionEvent(
 		p.publishLogEvent(strategyDecisionToUnifiedLogEvent(recorded))
 	}
 	return recorded, err
+}
+
+func buildStrategyDecisionEventFingerprint(
+	executionContext StrategyExecutionContext,
+	decision StrategySignalDecision,
+	sourceGate map[string]any,
+	signalIntent map[string]any,
+	executionProposal map[string]any,
+) string {
+	subject := executionProposal
+	if len(subject) == 0 {
+		subject = signalIntent
+	}
+	metadata := mapValue(subject["metadata"])
+	return strings.Join([]string{
+		firstNonEmpty(decision.Action, "wait"),
+		firstNonEmpty(decision.Reason, "unspecified"),
+		firstNonEmpty(stringValue(decision.Metadata["signalKind"]), stringValue(subject["signalKind"])),
+		firstNonEmpty(stringValue(decision.Metadata["decisionState"]), stringValue(subject["decisionState"])),
+		fmt.Sprintf("%t", boolValue(sourceGate["ready"])),
+		fmt.Sprintf("%d", len(metadataList(sourceGate["missing"]))),
+		fmt.Sprintf("%d", len(metadataList(sourceGate["stale"]))),
+		NormalizeSymbol(firstNonEmpty(executionContext.Symbol, stringValue(subject["symbol"]))),
+		firstNonEmpty(executionContext.SignalTimeframe, stringValue(mapValue(metadata["executionContext"])["signalTimeframe"])),
+		firstNonEmpty(executionContext.ExecutionDataSource, stringValue(mapValue(metadata["executionContext"])["executionDataSource"])),
+		buildLiveIntentSignature(subject),
+		strings.ToLower(strings.TrimSpace(firstNonEmpty(stringValue(subject["status"]), "none"))),
+		normalizeExecutionStrategyKey(firstNonEmpty(stringValue(subject["executionStrategy"]), stringValue(metadata["executionStrategy"]))),
+		strings.ToLower(strings.TrimSpace(stringValue(metadata["executionDecision"]))),
+		fmt.Sprintf("%.8f", parseFloatValue(subject["quantity"])),
+		fmt.Sprintf("%t", boolValue(subject["reduceOnly"])),
+		fmt.Sprintf("%t", boolValue(metadata["fallbackFromTimeout"])),
+	}, "|")
+}
+
+func strategyDecisionEventFingerprintFromRecorded(event domain.StrategyDecisionEvent) string {
+	return buildStrategyDecisionEventFingerprint(
+		StrategyExecutionContext{
+			StrategyVersionID:   stringValue(event.EvaluationContext["strategyVersionId"]),
+			SignalTimeframe:     stringValue(event.EvaluationContext["signalTimeframe"]),
+			ExecutionDataSource: stringValue(event.EvaluationContext["executionDataSource"]),
+			Symbol:              stringValue(event.EvaluationContext["symbol"]),
+		},
+		StrategySignalDecision{
+			Action:   event.Action,
+			Reason:   event.Reason,
+			Metadata: cloneMetadata(event.DecisionMetadata),
+		},
+		event.SourceGate,
+		event.SignalIntent,
+		event.ExecutionProposal,
+	)
+}
+
+func (p *Platform) getStrategyDecisionEvent(liveSessionID, decisionEventID string) (domain.StrategyDecisionEvent, bool, error) {
+	decisionEventID = strings.TrimSpace(decisionEventID)
+	if decisionEventID == "" {
+		return domain.StrategyDecisionEvent{}, false, nil
+	}
+	if reader, ok := p.store.(strategyDecisionEventQueryReader); ok {
+		items, err := reader.QueryStrategyDecisionEvents(domain.StrategyDecisionEventQuery{
+			LiveSessionID:   strings.TrimSpace(liveSessionID),
+			DecisionEventID: decisionEventID,
+			Limit:           1,
+		})
+		if err != nil {
+			return domain.StrategyDecisionEvent{}, false, err
+		}
+		if len(items) > 0 {
+			return items[0], true, nil
+		}
+		return domain.StrategyDecisionEvent{}, false, nil
+	}
+	items, err := p.store.ListStrategyDecisionEvents(strings.TrimSpace(liveSessionID))
+	if err != nil {
+		return domain.StrategyDecisionEvent{}, false, err
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item.ID) == decisionEventID {
+			return item, true, nil
+		}
+	}
+	return domain.StrategyDecisionEvent{}, false, nil
 }
 
 func (p *Platform) ensureStrategyDecisionEventForExecutionProposal(session domain.LiveSession, strategyVersionID string, proposalMap map[string]any, eventTime time.Time, trigger string) (map[string]any, error) {
