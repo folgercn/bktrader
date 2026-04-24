@@ -1789,8 +1789,8 @@ func TestBookAwareExecutionStrategyUsesAggressiveReduceOnlyProfileForSLExit(t *t
 			PriceSource:   "order_book.bestBid",
 			Metadata: map[string]any{
 				"bestBid":           68900.0,
-				"bestAsk":           68902.0,
-				"spreadBps":         25.0,
+				"bestAsk":           68900.5,
+				"spreadBps":         0.08,
 				"signalBarStateKey": "state-exit-sl",
 			},
 		},
@@ -1808,7 +1808,7 @@ func TestBookAwareExecutionStrategyUsesAggressiveReduceOnlyProfileForSLExit(t *t
 		t.Fatal("expected SL exit proposal to be reduceOnly")
 	}
 	if proposal.Status != "dispatchable" {
-		t.Fatalf("expected SL exit to stay dispatchable despite wide spread, got %s", proposal.Status)
+		t.Fatalf("expected SL exit to stay dispatchable on tight spread, got %s", proposal.Status)
 	}
 	if got := stringValue(proposal.Metadata["executionDecision"]); got != "direct-dispatch" {
 		t.Fatalf("expected explicit SL direct dispatch path, got %s", got)
@@ -1947,6 +1947,46 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 	}
 	if got := stringValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionDepthMode"]); got != "spread-capped-fallback" {
 		t.Fatalf("expected fallback SL depth mode without qty data, got %s", got)
+	}
+}
+
+func TestBookAwareExecutionStrategyUsesTightDefaultForSLProtection(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	eventTime := time.Date(2026, 4, 24, 9, 22, 46, 0, time.UTC)
+	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{},
+		Execution: StrategyExecutionContext{
+			Parameters: map[string]any{},
+		},
+		EventTime: eventTime,
+		Intent: SignalIntent{
+			Action:      "exit",
+			Role:        "exit",
+			Reason:      "SL",
+			Side:        "BUY",
+			Symbol:      "BTCUSDT",
+			PriceHint:   77680,
+			PriceSource: "order_book.bestAsk",
+			Quantity:    0.013,
+			Metadata: map[string]any{
+				"bestBid":   77522.2,
+				"bestAsk":   77680.0,
+				"spreadBps": 20.334763295881487,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := proposal.Type; got != "LIMIT" {
+		t.Fatalf("expected default SL protection to switch to LIMIT on 20bps spread, got %s", got)
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "sl-slippage-protected" {
+		t.Fatalf("expected sl-slippage-protected, got %s", got)
+	}
+	context := mapValue(proposal.Metadata["executionDecisionContext"])
+	if got := parseFloatValue(context["slMaxSlippageBps"]); got != 8 {
+		t.Fatalf("expected default slMaxSlippageBps=8, got %v", got)
 	}
 }
 
@@ -2269,7 +2309,7 @@ func TestDispatchLiveSessionIntentRejectsEntryWhenSubmissionSlippageTooWide(t *t
 			"role":        "feature",
 			"symbol":      "BTCUSDT",
 			"streamType":  "order_book",
-			"lastEventAt": eventTime.Format(time.RFC3339),
+			"lastEventAt": eventTime.Format(time.RFC3339Nano),
 			"summary": map[string]any{
 				"bestBid":    99.90,
 				"bestAsk":    100.20,
@@ -2340,8 +2380,8 @@ func TestDispatchLiveSessionIntentRejectsEntryWhenSubmissionSlippageTooWide(t *t
 	if err != nil {
 		t.Fatalf("get updated live session failed: %v", err)
 	}
-	if got := stringValue(updatedSession.State["lastDispatchRejectedStatus"]); got != liveDispatchRejectedEntrySlippageExceeded {
-		t.Fatalf("expected rejected status %s, got %s", liveDispatchRejectedEntrySlippageExceeded, got)
+	if got := stringValue(updatedSession.State["lastDispatchRejectedStatus"]); got != liveDispatchRejectedEntrySubmissionGuard {
+		t.Fatalf("expected rejected status %s, got %s", liveDispatchRejectedEntrySubmissionGuard, got)
 	}
 	guard := mapValue(updatedSession.State["lastExecutionSubmissionGuard"])
 	if got := stringValue(guard["status"]); got != "blocked" {
@@ -2352,6 +2392,172 @@ func TestDispatchLiveSessionIntentRejectsEntryWhenSubmissionSlippageTooWide(t *t
 	}
 	if got := parseFloatValue(guard["adverseDriftBps"]); got <= 8.0 {
 		t.Fatalf("expected adverse drift above 8bps, got %v", got)
+	}
+}
+
+func TestLiveEntrySubmissionSlippageGuardBlocksStaleOrderBook(t *testing.T) {
+	platform, session, runtimeSessionID, _, eventTime := prepareLiveDecisionTelemetryFixture(t)
+	eventTime = eventTime.Add(250 * time.Millisecond)
+	bookKey := signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT")
+	updateRuntimeSourceStatesForEntryGuard(t, platform, runtimeSessionID, map[string]any{
+		bookKey: map[string]any{
+			"sourceKey":   "binance-order-book",
+			"role":        "feature",
+			"symbol":      "BTCUSDT",
+			"streamType":  "order_book",
+			"lastEventAt": eventTime.Add(-750 * time.Millisecond).Format(time.RFC3339Nano),
+			"summary": map[string]any{
+				"bestBid":    99.98,
+				"bestAsk":    100.0,
+				"bestBidQty": 1.0,
+				"bestAskQty": 1.0,
+			},
+		},
+	})
+	state := cloneMetadata(session.State)
+	state["executionEntryMaxSlippageBps"] = 8.0
+	state["executionEntryMaxBookAgeMs"] = 250.0
+	session, err := platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	checked, err := platform.applyLiveEntrySubmissionSlippageGuard(session, entryGuardProposal("BUY", 0.1, 100.0, runtimeSessionID), eventTime)
+	if err == nil {
+		t.Fatal("expected stale order book to block entry submission")
+	}
+	guard := mapValue(mapValue(checked["metadata"])[liveEntrySubmissionSlippageGuardKey])
+	if got := stringValue(guard["reason"]); got != "stale-current-order-book" {
+		t.Fatalf("expected stale-current-order-book guard reason, got %#v", guard)
+	}
+	if got := parseFloatValue(guard["bookAgeMs"]); got < 700 {
+		t.Fatalf("expected book age telemetry above 700ms, got %#v", guard)
+	}
+}
+
+func TestLiveEntrySubmissionSlippageGuardBlocksThinTopBookCoverage(t *testing.T) {
+	platform, session, runtimeSessionID, _, eventTime := prepareLiveDecisionTelemetryFixture(t)
+	bookKey := signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT")
+	updateRuntimeSourceStatesForEntryGuard(t, platform, runtimeSessionID, map[string]any{
+		bookKey: map[string]any{
+			"sourceKey":   "binance-order-book",
+			"role":        "feature",
+			"symbol":      "BTCUSDT",
+			"streamType":  "order_book",
+			"lastEventAt": eventTime.Format(time.RFC3339Nano),
+			"summary": map[string]any{
+				"bestBid":    77522.2,
+				"bestAsk":    77680.0,
+				"bestBidQty": 0.0013,
+				"bestAskQty": 1.0,
+			},
+		},
+	})
+	state := cloneMetadata(session.State)
+	state["executionEntryMaxSlippageBps"] = 8.0
+	state["executionEntryMinTopBookCoverage"] = 0.5
+	session, err := platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	checked, err := platform.applyLiveEntrySubmissionSlippageGuard(session, entryGuardProposal("SELL", 0.013, 77522.2, runtimeSessionID), eventTime)
+	if err == nil {
+		t.Fatal("expected thin top book coverage to block entry submission")
+	}
+	guard := mapValue(mapValue(checked["metadata"])[liveEntrySubmissionSlippageGuardKey])
+	if got := stringValue(guard["reason"]); got != "top-book-coverage-too-thin" {
+		t.Fatalf("expected top-book-coverage-too-thin guard reason, got %#v", guard)
+	}
+	if got := parseFloatValue(guard["topDepthCoverage"]); got >= 0.5 {
+		t.Fatalf("expected top depth coverage below threshold, got %#v", guard)
+	}
+}
+
+func TestLiveEntrySubmissionSlippageGuardBlocksMarketSourceDivergence(t *testing.T) {
+	platform, session, runtimeSessionID, _, eventTime := prepareLiveDecisionTelemetryFixture(t)
+	bookKey := signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT")
+	triggerKey := signalBindingMatchKey("binance-trade-tick", "trigger", "BTCUSDT")
+	signalKey := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "1d"})
+	updateRuntimeSourceStatesForEntryGuard(t, platform, runtimeSessionID, map[string]any{
+		bookKey: map[string]any{
+			"sourceKey":   "binance-order-book",
+			"role":        "feature",
+			"symbol":      "BTCUSDT",
+			"streamType":  "order_book",
+			"lastEventAt": eventTime.Format(time.RFC3339Nano),
+			"summary": map[string]any{
+				"bestBid":    77654.9,
+				"bestAsk":    77680.0,
+				"bestBidQty": 1.0,
+				"bestAskQty": 1.0,
+			},
+		},
+		triggerKey: map[string]any{
+			"sourceKey":   "binance-trade-tick",
+			"role":        "trigger",
+			"symbol":      "BTCUSDT",
+			"streamType":  "trade_tick",
+			"lastEventAt": eventTime.Format(time.RFC3339Nano),
+			"summary": map[string]any{
+				"price": 77654.9,
+			},
+		},
+		signalKey: map[string]any{
+			"sourceKey":   "binance-kline",
+			"role":        "signal",
+			"symbol":      "BTCUSDT",
+			"timeframe":   "1d",
+			"streamType":  "signal_bar",
+			"lastEventAt": eventTime.Format(time.RFC3339Nano),
+			"summary": map[string]any{
+				"price": 77522.2,
+			},
+		},
+	})
+	state := cloneMetadata(session.State)
+	state["executionEntryMaxSlippageBps"] = 8.0
+	state["executionEntryMaxSourceDivergenceBps"] = 8.0
+	session, err := platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	checked, err := platform.applyLiveEntrySubmissionSlippageGuard(session, entryGuardProposal("SELL", 0.013, 77654.9, runtimeSessionID), eventTime)
+	if err == nil {
+		t.Fatal("expected source divergence to block entry submission")
+	}
+	guard := mapValue(mapValue(checked["metadata"])[liveEntrySubmissionSlippageGuardKey])
+	if got := stringValue(guard["reason"]); got != "market-source-divergence-too-wide" {
+		t.Fatalf("expected market-source-divergence-too-wide guard reason, got %#v", guard)
+	}
+	if got := parseFloatValue(guard["sourceDivergenceBps"]); got <= 8 {
+		t.Fatalf("expected source divergence above threshold, got %#v", guard)
+	}
+}
+
+func updateRuntimeSourceStatesForEntryGuard(t *testing.T, platform *Platform, runtimeSessionID string, sourceStates map[string]any) {
+	t.Helper()
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		state["sourceStates"] = sourceStates
+		runtimeSession.State = state
+	}); err != nil {
+		t.Fatalf("update runtime source states failed: %v", err)
+	}
+}
+
+func entryGuardProposal(side string, quantity, priceHint float64, runtimeSessionID string) map[string]any {
+	return map[string]any{
+		"role":      "entry",
+		"side":      side,
+		"symbol":    "BTCUSDT",
+		"type":      "MARKET",
+		"quantity":  quantity,
+		"priceHint": priceHint,
+		"metadata": map[string]any{
+			"runtimeSessionId": runtimeSessionID,
+		},
 	}
 }
 
@@ -2403,6 +2609,7 @@ func TestLiveEntrySubmissionSlippageGuardPrefersActiveRuntimeOverProposalMetadat
 		"side":      "BUY",
 		"symbol":    "BTCUSDT",
 		"type":      "MARKET",
+		"quantity":  0.1,
 		"priceHint": 100.0,
 		"metadata": map[string]any{
 			"runtimeSessionId": staleRuntimeSessionID,
@@ -2829,21 +3036,25 @@ func TestIsRecoveryTriggeredPassiveCloseProposalRequiresExplicitRecoverySignal(t
 
 func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
-		"executionStrategy":                   "book-aware-v1",
-		"executionOrderType":                  "limit",
-		"executionTimeInForce":                "ioc",
-		"executionPostOnly":                   true,
-		"executionMaxSpreadBps":               6.5,
-		"executionEntryMaxSlippageBps":        8.0,
-		"executionWideSpreadMode":             "limit-maker",
-		"executionRestingTimeoutSeconds":      25,
-		"executionTimeoutFallbackOrderType":   "market",
-		"executionTimeoutFallbackTimeInForce": "fok",
-		"executionPTExitOrderType":            "limit",
-		"executionPTExitPostOnly":             true,
-		"executionPTExitTimeInForce":          "gtx",
-		"executionSLExitOrderType":            "market",
-		"executionSLExitMaxSpreadBps":         999.0,
+		"executionStrategy":                    "book-aware-v1",
+		"executionOrderType":                   "limit",
+		"executionTimeInForce":                 "ioc",
+		"executionPostOnly":                    true,
+		"executionMaxSpreadBps":                6.5,
+		"executionEntryMaxSlippageBps":         8.0,
+		"executionEntryMaxBookAgeMs":           500.0,
+		"executionEntryMinTopBookCoverage":     0.5,
+		"executionEntryMaxSourceDivergenceBps": 8.0,
+		"executionWideSpreadMode":              "limit-maker",
+		"executionRestingTimeoutSeconds":       25,
+		"executionTimeoutFallbackOrderType":    "market",
+		"executionTimeoutFallbackTimeInForce":  "fok",
+		"executionPTExitOrderType":             "limit",
+		"executionPTExitPostOnly":              true,
+		"executionPTExitTimeInForce":           "gtx",
+		"executionSLExitOrderType":             "market",
+		"executionSLExitMaxSpreadBps":          999.0,
+		"executionSLMaxSlippageBps":            8.0,
 	})
 	if got := stringValue(overrides["executionStrategy"]); got != "book-aware-v1" {
 		t.Fatalf("expected execution strategy override, got %s", got)
@@ -2862,6 +3073,15 @@ func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	}
 	if got := parseFloatValue(overrides["executionEntryMaxSlippageBps"]); got != 8.0 {
 		t.Fatalf("expected execution entry max slippage override, got %v", got)
+	}
+	if got := parseFloatValue(overrides["executionEntryMaxBookAgeMs"]); got != 500.0 {
+		t.Fatalf("expected execution entry max book age override, got %v", got)
+	}
+	if got := parseFloatValue(overrides["executionEntryMinTopBookCoverage"]); got != 0.5 {
+		t.Fatalf("expected execution entry min top book coverage override, got %v", got)
+	}
+	if got := parseFloatValue(overrides["executionEntryMaxSourceDivergenceBps"]); got != 8.0 {
+		t.Fatalf("expected execution entry max source divergence override, got %v", got)
 	}
 	if got := stringValue(overrides["executionWideSpreadMode"]); got != "limit-maker" {
 		t.Fatalf("expected wide spread mode override, got %s", got)
@@ -2889,6 +3109,9 @@ func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	}
 	if got := parseFloatValue(overrides["executionSLExitMaxSpreadBps"]); got != 999.0 {
 		t.Fatalf("expected SL exit max spread override, got %v", got)
+	}
+	if got := parseFloatValue(overrides["executionSLMaxSlippageBps"]); got != 8.0 {
+		t.Fatalf("expected SL max slippage override, got %v", got)
 	}
 }
 
@@ -2943,20 +3166,24 @@ func TestNormalizeLiveSessionOverridesIncludesZeroInitialControls(t *testing.T) 
 func TestCreateLiveSessionAppliesExecutionOverrides(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
-		"symbol":                              "BTCUSDT",
-		"executionStrategy":                   "book-aware-v1",
-		"executionOrderType":                  "LIMIT",
-		"executionTimeInForce":                "IOC",
-		"executionPostOnly":                   true,
-		"executionWideSpreadMode":             "limit-maker",
-		"executionRestingTimeoutSeconds":      30,
-		"executionTimeoutFallbackOrderType":   "MARKET",
-		"executionTimeoutFallbackTimeInForce": "FOK",
-		"executionPTExitOrderType":            "LIMIT",
-		"executionPTExitPostOnly":             true,
-		"executionPTExitTimeInForce":          "GTX",
-		"executionSLExitOrderType":            "MARKET",
-		"executionSLExitMaxSpreadBps":         999.0,
+		"symbol":                               "BTCUSDT",
+		"executionStrategy":                    "book-aware-v1",
+		"executionOrderType":                   "LIMIT",
+		"executionTimeInForce":                 "IOC",
+		"executionPostOnly":                    true,
+		"executionWideSpreadMode":              "limit-maker",
+		"executionEntryMaxBookAgeMs":           500.0,
+		"executionEntryMinTopBookCoverage":     0.5,
+		"executionEntryMaxSourceDivergenceBps": 8.0,
+		"executionRestingTimeoutSeconds":       30,
+		"executionTimeoutFallbackOrderType":    "MARKET",
+		"executionTimeoutFallbackTimeInForce":  "FOK",
+		"executionPTExitOrderType":             "LIMIT",
+		"executionPTExitPostOnly":              true,
+		"executionPTExitTimeInForce":           "GTX",
+		"executionSLExitOrderType":             "MARKET",
+		"executionSLExitMaxSpreadBps":          999.0,
+		"executionSLMaxSlippageBps":            8.0,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2975,6 +3202,15 @@ func TestCreateLiveSessionAppliesExecutionOverrides(t *testing.T) {
 	}
 	if got := stringValue(session.State["executionWideSpreadMode"]); got != "limit-maker" {
 		t.Fatalf("expected executionWideSpreadMode in session state, got %s", got)
+	}
+	if got := parseFloatValue(session.State["executionEntryMaxBookAgeMs"]); got != 500.0 {
+		t.Fatalf("expected executionEntryMaxBookAgeMs in session state, got %v", got)
+	}
+	if got := parseFloatValue(session.State["executionEntryMinTopBookCoverage"]); got != 0.5 {
+		t.Fatalf("expected executionEntryMinTopBookCoverage in session state, got %v", got)
+	}
+	if got := parseFloatValue(session.State["executionEntryMaxSourceDivergenceBps"]); got != 8.0 {
+		t.Fatalf("expected executionEntryMaxSourceDivergenceBps in session state, got %v", got)
 	}
 	if got := maxIntValue(session.State["executionRestingTimeoutSeconds"], 0); got != 30 {
 		t.Fatalf("expected resting timeout in session state, got %d", got)
@@ -2996,6 +3232,9 @@ func TestCreateLiveSessionAppliesExecutionOverrides(t *testing.T) {
 	}
 	if got := parseFloatValue(session.State["executionSLExitMaxSpreadBps"]); got != 999.0 {
 		t.Fatalf("expected SL exit max spread in session state, got %v", got)
+	}
+	if got := parseFloatValue(session.State["executionSLMaxSlippageBps"]); got != 8.0 {
+		t.Fatalf("expected SL max slippage in session state, got %v", got)
 	}
 }
 

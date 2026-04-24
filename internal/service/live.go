@@ -4749,6 +4749,18 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	if maxSpread := parseFloatValue(overrides["executionMaxSpreadBps"]); maxSpread > 0 {
 		normalized["executionMaxSpreadBps"] = maxSpread
 	}
+	if maxAgeMs := parseFloatValue(overrides["executionEntryMaxBookAgeMs"]); maxAgeMs > 0 {
+		normalized["executionEntryMaxBookAgeMs"] = maxAgeMs
+	}
+	if coverage := parseFloatValue(overrides["executionEntryMinTopBookCoverage"]); coverage > 0 {
+		normalized["executionEntryMinTopBookCoverage"] = coverage
+	}
+	if divergenceBps := parseFloatValue(overrides["executionEntryMaxSourceDivergenceBps"]); divergenceBps > 0 {
+		normalized["executionEntryMaxSourceDivergenceBps"] = divergenceBps
+	}
+	if slippageBps := parseFloatValue(overrides["executionSLMaxSlippageBps"]); slippageBps > 0 {
+		normalized["executionSLMaxSlippageBps"] = slippageBps
+	}
 	normalizeExecutionProfileOverrides("executionEntry")
 	normalizeExecutionProfileOverrides("executionPTExit")
 	normalizeExecutionProfileOverrides("executionSLExit")

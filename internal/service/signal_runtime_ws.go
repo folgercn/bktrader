@@ -1086,7 +1086,7 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 		"symbol":      NormalizeSymbol(firstNonEmpty(stringValue(summary["subscriptionSymbol"]), stringValue(summary["symbol"]))),
 		"timeframe":   timeframe,
 		"event":       stringValue(summary["event"]),
-		"lastEventAt": eventTime.UTC().Format(time.RFC3339),
+		"lastEventAt": eventTime.UTC().Format(time.RFC3339Nano),
 		"summary":     cloneMetadata(summary),
 	}
 	if strings.EqualFold(stringValue(summary["streamType"]), "signal_bar") {
@@ -1112,7 +1112,7 @@ func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.
 		"close":     stringValue(summary["close"]),
 		"volume":    stringValue(summary["volume"]),
 		"isClosed":  summary["isClosed"],
-		"updatedAt": eventTime.UTC().Format(time.RFC3339),
+		"updatedAt": eventTime.UTC().Format(time.RFC3339Nano),
 	})
 
 	matchIndex := -1
