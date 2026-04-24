@@ -482,6 +482,9 @@ func (s *Store) QueryOrders(query domain.OrderQuery) ([]domain.Order, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.Order, 0, len(s.orders))
+	symbolSet := stringSet(query.Symbols)
+	statusSet := upperStringSet(query.Statuses)
+	excludeStatusSet := upperStringSet(query.ExcludeStatuses)
 	for _, item := range s.orders {
 		if query.LiveSessionID != "" {
 			val, ok := item.Metadata["liveSessionId"].(string)
@@ -489,10 +492,41 @@ func (s *Store) QueryOrders(query domain.OrderQuery) ([]domain.Order, error) {
 				continue
 			}
 		}
+		if query.AccountID != "" && item.AccountID != query.AccountID {
+			continue
+		}
+		if len(symbolSet) > 0 {
+			if _, ok := symbolSet[strings.ToUpper(strings.TrimSpace(item.Symbol))]; !ok {
+				continue
+			}
+		}
+		status := strings.ToUpper(strings.TrimSpace(item.Status))
+		if len(statusSet) > 0 {
+			if _, ok := statusSet[status]; !ok {
+				continue
+			}
+		}
+		if len(excludeStatusSet) > 0 {
+			if _, blocked := excludeStatusSet[status]; blocked {
+				continue
+			}
+		}
+		if !metadataBoolMatches(item.Metadata, query.MetadataBoolEquals) {
+			continue
+		}
 		item.NormalizeExecutionFlags()
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	if query.Offset > 0 {
+		if query.Offset >= len(items) {
+			return []domain.Order{}, nil
+		}
+		items = items[query.Offset:]
+	}
+	if query.Limit > 0 && len(items) > query.Limit {
+		items = items[:query.Limit]
+	}
 	return items, nil
 }
 
@@ -655,10 +689,54 @@ func (s *Store) QueryPositions(query domain.PositionQuery) ([]domain.Position, e
 		if query.AccountID != "" && item.AccountID != query.AccountID {
 			continue
 		}
+		if query.Symbol != "" && !strings.EqualFold(strings.TrimSpace(item.Symbol), strings.TrimSpace(query.Symbol)) {
+			continue
+		}
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.Before(items[j].UpdatedAt) })
 	return items, nil
+}
+
+func stringSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := strings.ToUpper(strings.TrimSpace(value))
+		if normalized != "" {
+			out[normalized] = struct{}{}
+		}
+	}
+	return out
+}
+
+func upperStringSet(values []string) map[string]struct{} {
+	return stringSet(values)
+}
+
+func metadataBoolMatches(metadata map[string]any, expected map[string]bool) bool {
+	if len(expected) == 0 {
+		return true
+	}
+	for key, want := range expected {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		if metadataBoolValue(metadata[key]) != want {
+			return false
+		}
+	}
+	return true
+}
+
+func metadataBoolValue(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), "true")
+	default:
+		return false
+	}
 }
 
 func (s *Store) FindPosition(accountID, symbol string) (domain.Position, bool, error) {

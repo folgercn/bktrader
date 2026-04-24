@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -613,18 +615,23 @@ func (s *Store) GetOrderByID(orderID string) (domain.Order, error) {
 }
 
 func (s *Store) QueryOrders(query domain.OrderQuery) ([]domain.Order, error) {
-	sqlQuery := `
-		select id, account_id, strategy_version_id, symbol, side, type, status, quantity, price, metadata, created_at
-		from orders
-	`
-	args := []any{}
-	if query.LiveSessionID != "" {
-		sqlQuery += ` where metadata->>'liveSessionId' = $1 `
-		args = append(args, query.LiveSessionID)
-	}
-	sqlQuery += ` order by created_at asc `
+	var builder strings.Builder
+	builder.WriteString(`
+			select id, account_id, strategy_version_id, symbol, side, type, status, quantity, price, metadata, created_at
+			from orders
+			where 1=1
+		`)
+	var args []any
+	appendQueryCondition(&builder, &args, "metadata->>'liveSessionId' = %s", strings.TrimSpace(query.LiveSessionID))
+	appendQueryCondition(&builder, &args, "account_id = %s", strings.TrimSpace(query.AccountID))
+	appendStringListCondition(&builder, &args, "upper(symbol)", normalizedUpperList(query.Symbols), true)
+	appendStringListCondition(&builder, &args, "upper(status)", normalizedUpperList(query.Statuses), true)
+	appendStringListCondition(&builder, &args, "upper(status)", normalizedUpperList(query.ExcludeStatuses), false)
+	appendMetadataBoolConditions(&builder, &args, query.MetadataBoolEquals)
+	builder.WriteString(` order by created_at asc `)
+	appendLimitOffsetCondition(&builder, &args, query.Limit, query.Offset)
 
-	rows, err := s.db.Query(sqlQuery, args...)
+	rows, err := s.db.Query(builder.String(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -934,18 +941,18 @@ func (s *Store) ListPositions() ([]domain.Position, error) {
 }
 
 func (s *Store) QueryPositions(query domain.PositionQuery) ([]domain.Position, error) {
-	sqlQuery := `
-		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
-		from positions
-	`
-	args := []any{}
-	if query.AccountID != "" {
-		sqlQuery += ` where account_id = $1 `
-		args = append(args, query.AccountID)
-	}
-	sqlQuery += ` order by updated_at asc `
+	var builder strings.Builder
+	builder.WriteString(`
+			select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
+			from positions
+			where 1=1
+		`)
+	var args []any
+	appendQueryCondition(&builder, &args, "account_id = %s", strings.TrimSpace(query.AccountID))
+	appendQueryCondition(&builder, &args, "upper(symbol) = %s", strings.ToUpper(strings.TrimSpace(query.Symbol)))
+	builder.WriteString(` order by updated_at asc `)
 
-	rows, err := s.db.Query(sqlQuery, args...)
+	rows, err := s.db.Query(builder.String(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1817,6 +1824,61 @@ func appendQueryTimeCondition(builder *strings.Builder, args *[]any, clause stri
 	builder.WriteString(fmt.Sprintf(" and "+clause, fmt.Sprintf("$%d", len(*args))))
 }
 
+func normalizedUpperList(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := strings.ToUpper(strings.TrimSpace(value))
+		if normalized == "" {
+			continue
+		}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func appendStringListCondition(builder *strings.Builder, args *[]any, expression string, values []string, include bool) {
+	if len(values) == 0 {
+		return
+	}
+	placeholders := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		*args = append(*args, value)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", len(*args)))
+	}
+	if len(placeholders) == 0 {
+		return
+	}
+	operator := "in"
+	if !include {
+		operator = "not in"
+	}
+	builder.WriteString(fmt.Sprintf(" and %s %s (%s)", expression, operator, strings.Join(placeholders, ", ")))
+}
+
+func appendMetadataBoolConditions(builder *strings.Builder, args *[]any, values map[string]bool) {
+	if len(values) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if strings.TrimSpace(key) != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		builder.WriteString(fmt.Sprintf(" and metadata->>%s = %s", sqlStringLiteral(key), sqlStringLiteral(strconv.FormatBool(values[key]))))
+	}
+}
+
+func sqlStringLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
 func appendEventCursorCondition(builder *strings.Builder, args *[]any, cursor *domain.EventCursor) {
 	if cursor == nil {
 		return
@@ -1837,6 +1899,15 @@ func appendLimitCondition(builder *strings.Builder, args *[]any, limit int) {
 	}
 	*args = append(*args, limit)
 	builder.WriteString(fmt.Sprintf(" limit $%d", len(*args)))
+}
+
+func appendLimitOffsetCondition(builder *strings.Builder, args *[]any, limit, offset int) {
+	appendLimitCondition(builder, args, limit)
+	if offset <= 0 {
+		return
+	}
+	*args = append(*args, offset)
+	builder.WriteString(fmt.Sprintf(" offset $%d", len(*args)))
 }
 
 func (s *Store) CreatePositionAccountSnapshot(snapshot domain.PositionAccountSnapshot) (domain.PositionAccountSnapshot, error) {
