@@ -58,6 +58,13 @@ func loadSimpleEnvFile(path string) error {
 			continue
 		}
 		value = strings.TrimSpace(value)
+		if idx := strings.Index(value, "#"); idx != -1 {
+			// 如果不是在引号内，则截断
+			if !((strings.HasPrefix(value, "\"") && strings.Index(value[1:], "\"") > idx) ||
+				(strings.HasPrefix(value, "'") && strings.Index(value[1:], "'") > idx)) {
+				value = strings.TrimSpace(value[:idx])
+			}
+		}
 		if len(value) >= 2 {
 			if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) || (strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
 				value = value[1 : len(value)-1]

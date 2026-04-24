@@ -63,6 +63,7 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	platform.StartTelegramDispatcher(context.Background())
 	go platform.RecoverLiveTradingOnStartup(context.Background())
 	go platform.StartLiveSyncDispatcher(context.Background())
+	platform.StartDashboardBroker(context.Background())
 	logger.Info("background workers started")
 
 	return &http.Server{

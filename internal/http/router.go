@@ -33,6 +33,7 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 
 	registerAuthRoutes(mux, cfg)
 	registerLogRoutes(mux, platform)
+	registerStreamRoutes(mux, platform)
 
 	// 系统概览端点
 	mux.HandleFunc("/api/v1/overview", func(w http.ResponseWriter, _ *http.Request) {
@@ -110,6 +111,12 @@ func (sr *statusRecorder) Write(payload []byte) (int, error) {
 	size, err := sr.ResponseWriter.Write(payload)
 	sr.bytesWrite += size
 	return size, err
+}
+
+func (sr *statusRecorder) Flush() {
+	if flusher, ok := sr.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 // requestLogMiddleware 记录每个 HTTP 请求的方法、路径、状态码和耗时。
