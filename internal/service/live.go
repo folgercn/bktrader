@@ -1797,6 +1797,43 @@ func applyLaunchTemplateContext(state map[string]any, context liveLaunchTemplate
 	state["launchTemplateAppliedAt"] = time.Now().UTC().Format(time.RFC3339)
 }
 
+func applyLaunchTemplateBaselineState(state map[string]any) map[string]any {
+	if !liveIntradayResearchBaselineStateMatchesTemplate(state) {
+		return state
+	}
+	normalized := cloneMetadata(state)
+	for key, value := range liveIntradayResearchBaselineOverrides(stringValue(normalized["strategyEngine"])) {
+		normalized[key] = value
+	}
+	normalized["launchTemplateBaseline"] = "intraday-research"
+	return normalized
+}
+
+func liveIntradayResearchBaselineStateMatchesTemplate(state map[string]any) bool {
+	key := strings.ToLower(strings.TrimSpace(stringValue(state["launchTemplateKey"])))
+	if !liveIntradayResearchBaselineTemplateKey(key) {
+		return false
+	}
+	symbol := NormalizeSymbol(firstNonEmpty(
+		stringValue(state["launchTemplateSymbol"]),
+		stringValue(state["symbol"]),
+		stringValue(state["lastSymbol"]),
+	))
+	timeframe := normalizeSignalBarInterval(firstNonEmpty(
+		stringValue(state["launchTemplateTimeframe"]),
+		stringValue(state["signalTimeframe"]),
+		stringValue(state["timeframe"]),
+	))
+	switch key {
+	case "binance-testnet-btc-15m":
+		return symbol == "BTCUSDT" && timeframe == "15m"
+	case "binance-testnet-btc-30m":
+		return symbol == "BTCUSDT" && timeframe == "30m"
+	default:
+		return false
+	}
+}
+
 func (p *Platform) updateSignalRuntimeLaunchTemplateContext(sessionID string, context liveLaunchTemplateContext) (domain.SignalRuntimeSession, error) {
 	if strings.TrimSpace(sessionID) == "" || !context.hasMetadata() {
 		return domain.SignalRuntimeSession{}, nil
@@ -3293,6 +3330,7 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 
 	requiredBindings := metadataList(plan["requiredBindings"])
 	state = applyCanonicalLiveSignalScope(state, requiredBindings)
+	state = applyLaunchTemplateBaselineState(state)
 	required := len(requiredBindings) > 0
 	state["signalRuntimePlan"] = plan
 	state["signalRuntimeMode"] = "linked"
@@ -4656,6 +4694,9 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 		}
 		if maxSpread := parseFloatValue(overrides[prefix+"MaxSpreadBps"]); maxSpread > 0 {
 			normalized[prefix+"MaxSpreadBps"] = maxSpread
+		}
+		if maxSlippage := parseFloatValue(overrides[prefix+"MaxSlippageBps"]); maxSlippage > 0 {
+			normalized[prefix+"MaxSlippageBps"] = maxSlippage
 		}
 		if mode := strings.TrimSpace(stringValue(overrides[prefix+"WideSpreadMode"])); mode != "" {
 			normalized[prefix+"WideSpreadMode"] = mode

@@ -101,6 +101,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			"executionStrategy":                       "book-aware-v1",
 			"executionEntryOrderType":                 "MARKET",
 			"executionEntryMaxSpreadBps":              8,
+			"executionEntryMaxSlippageBps":            8,
 			"executionEntryWideSpreadMode":            "limit-maker",
 			"executionEntryRestingTimeoutSeconds":     15,
 			"executionEntryTimeoutFallbackOrderType":  "MARKET",
@@ -116,21 +117,11 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		}
 		baselineNotes := []string{}
 		if applyResearchBaseline {
-			liveOverrides["strategyEngine"] = firstNonEmpty(strategyEngine, "bk-default")
-			liveOverrides["positionSizingMode"] = "reentry_size_schedule"
-			liveOverrides["dir2_zero_initial"] = domain.ResearchBaselineDir2ZeroInitial
-			liveOverrides["zero_initial_mode"] = domain.ResearchBaselineZeroInitialMode
-			liveOverrides["stop_mode"] = "atr"
-			liveOverrides["stop_loss_atr"] = 0.3
-			liveOverrides["profit_protect_atr"] = 1.0
-			liveOverrides["trailing_stop_atr"] = 0.3
-			liveOverrides["delayed_trailing_activation_atr"] = 0.5
-			liveOverrides["long_reentry_atr"] = 0.1
-			liveOverrides["short_reentry_atr"] = 0.0
-			liveOverrides["max_trades_per_bar"] = domain.ResearchBaselineMaxTradesPerBar
-			liveOverrides["reentry_size_schedule"] = domain.ResearchBaselineReentrySizeSchedule()
+			for key, value := range liveIntradayResearchBaselineOverrides(strategyEngine) {
+				liveOverrides[key] = value
+			}
 			baselineNotes = append(baselineNotes,
-				"该模板已显式固化 intraday research baseline：dir2 zero initial + reentry_window + reentry_size_schedule=[0.20, 0.10] + max_trades_per_bar=2。",
+				"该模板已显式固化 intraday research baseline：dir2 zero initial + reentry_window + reentry_size_schedule=[0.20, 0.10] + max_trades_per_bar=1。",
 				"非 1d 周期默认使用 canonical SMA5 hard filter；止损与移动止损参数分别固定为 stop_loss_atr=0.3、trailing_stop_atr=0.3、profit_protect_atr=1.0、delayed_trailing_activation_atr=0.5。",
 				"当前 research baseline 只提升 BTCUSDT 15m/30m；BTCUSDT 5m 暂保留为通用模板，因为现阶段 5m 对执行摩擦更敏感，尚不作为默认 intraday baseline 候选。",
 			)
@@ -200,6 +191,34 @@ func liveLaunchTemplateDispatchModeOptions() []string {
 
 func liveLaunchTemplateAutoDispatchMode() string {
 	return strings.Join([]string{"auto", "dispatch"}, "-")
+}
+
+func liveIntradayResearchBaselineTemplateKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "binance-testnet-btc-15m", "binance-testnet-btc-30m":
+		return true
+	default:
+		return false
+	}
+}
+
+func liveIntradayResearchBaselineOverrides(strategyEngine string) map[string]any {
+	return map[string]any{
+		"strategyEngine":                  firstNonEmpty(strategyEngine, "bk-default"),
+		"positionSizingMode":              "reentry_size_schedule",
+		"dir2_zero_initial":               domain.ResearchBaselineDir2ZeroInitial,
+		"zero_initial_mode":               domain.ResearchBaselineZeroInitialMode,
+		"stop_mode":                       "atr",
+		"stop_loss_atr":                   0.3,
+		"profit_protect_atr":              1.0,
+		"trailing_stop_atr":               0.3,
+		"delayed_trailing_activation_atr": 0.5,
+		"long_reentry_atr":                0.1,
+		"short_reentry_atr":               0.0,
+		"max_trades_per_bar":              1,
+		"reentry_size_schedule":           domain.ResearchBaselineReentrySizeSchedule(),
+		"executionEntryMaxSlippageBps":    8,
+	}
 }
 
 func (p *Platform) resolvePrimaryLiveTemplateStrategy() (string, string, string, string, error) {

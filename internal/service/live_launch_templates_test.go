@@ -89,6 +89,9 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 		if got := stringValue(item.LaunchPayload.LiveSessionOverrides["executionStrategy"]); got != "book-aware-v1" {
 			t.Fatalf("expected executionStrategy=book-aware-v1, got %s", got)
 		}
+		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["executionEntryMaxSlippageBps"]); got != 8 {
+			t.Fatalf("expected executionEntryMaxSlippageBps=8 for %s, got %v", item.Key, got)
+		}
 		if _, ok := item.LaunchPayload.LiveSessionOverrides["dispatchMode"]; ok {
 			t.Fatalf("expected dispatchMode to stay configurable and not be hardcoded in launch payload: %#v", item.LaunchPayload.LiveSessionOverrides)
 		}
@@ -129,8 +132,8 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["short_reentry_atr"]); got != 0.0 {
 				t.Fatalf("expected short_reentry_atr=0.0 for %s, got %v", item.Key, got)
 			}
-			if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["max_trades_per_bar"], 0); got != 2 {
-				t.Fatalf("expected max_trades_per_bar=2 for %s, got %d", item.Key, got)
+			if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["max_trades_per_bar"], 0); got != 1 {
+				t.Fatalf("expected max_trades_per_bar=1 for %s, got %d", item.Key, got)
 			}
 			schedule := normalizeBacktestFloatSlice(item.LaunchPayload.LiveSessionOverrides["reentry_size_schedule"], nil)
 			if len(schedule) != 2 || schedule[0] != 0.20 || schedule[1] != 0.10 {

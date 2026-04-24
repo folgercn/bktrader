@@ -204,6 +204,95 @@ func TestLaunchLiveFlowTemplateSwitchReplacesBindingsAndRefreshesRuntimePlan(t *
 	}
 }
 
+func TestSyncLiveSessionRuntimeReconcilesIntradayLaunchTemplateBaseline(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	for _, payload := range []map[string]any{
+		{
+			"sourceKey": "binance-kline",
+			"role":      "signal",
+			"symbol":    "BTCUSDT",
+			"options":   map[string]any{"timeframe": "30m"},
+		},
+		{
+			"sourceKey": "binance-trade-tick",
+			"role":      "trigger",
+			"symbol":    "BTCUSDT",
+		},
+		{
+			"sourceKey": "binance-order-book",
+			"role":      "feature",
+			"symbol":    "BTCUSDT",
+		},
+	} {
+		if _, err := platform.BindStrategySignalSource("strategy-bk-1d", payload); err != nil {
+			t.Fatalf("bind strategy source failed: %v", err)
+		}
+	}
+
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":               "BTCUSDT",
+		"signalTimeframe":      "30m",
+		"positionSizingMode":   "fixed_quantity",
+		"defaultOrderQuantity": 0.001,
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["launchTemplateKey"] = "binance-testnet-btc-30m"
+	state["launchTemplateName"] = "Binance Testnet BTCUSDT 30m"
+	state["positionSizingMode"] = "fixed_quantity"
+	state["reentry_size_schedule"] = []any{0.20, 0.10}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("seed stale template state failed: %v", err)
+	}
+
+	synced, err := platform.syncLiveSessionRuntime(session)
+	if err != nil {
+		t.Fatalf("sync live session runtime failed: %v", err)
+	}
+	if got := stringValue(synced.State["positionSizingMode"]); got != "reentry_size_schedule" {
+		t.Fatalf("expected template baseline positionSizingMode=reentry_size_schedule, got %s", got)
+	}
+	schedule := normalizeBacktestFloatSlice(synced.State["reentry_size_schedule"], nil)
+	if len(schedule) != 2 || schedule[0] != 0.20 || schedule[1] != 0.10 {
+		t.Fatalf("expected template baseline schedule [0.20, 0.10], got %#v", synced.State["reentry_size_schedule"])
+	}
+	if !boolValue(synced.State["dir2_zero_initial"]) {
+		t.Fatal("expected template baseline dir2_zero_initial=true")
+	}
+	if got := stringValue(synced.State["zero_initial_mode"]); got != "reentry_window" {
+		t.Fatalf("expected template baseline zero_initial_mode=reentry_window, got %s", got)
+	}
+	if got := maxIntValue(synced.State["max_trades_per_bar"], 0); got != 1 {
+		t.Fatalf("expected template baseline max_trades_per_bar=1, got %d", got)
+	}
+	if got := stringValue(synced.State["launchTemplateBaseline"]); got != "intraday-research" {
+		t.Fatalf("expected intraday research baseline marker, got %s", got)
+	}
+	if got := stringValue(synced.State["dispatchMode"]); got != "manual-review" {
+		t.Fatalf("expected dispatchMode to remain manual-review, got %s", got)
+	}
+}
+
+func TestLaunchTemplateBaselineRequiresMatchingScope(t *testing.T) {
+	state := map[string]any{
+		"launchTemplateKey":  "binance-testnet-btc-30m",
+		"symbol":             "BTCUSDT",
+		"signalTimeframe":    "4h",
+		"positionSizingMode": "fixed_quantity",
+	}
+	updated := applyLaunchTemplateBaselineState(state)
+	if got := stringValue(updated["positionSizingMode"]); got != "fixed_quantity" {
+		t.Fatalf("expected mismatched template scope to keep fixed_quantity, got %s", got)
+	}
+	if _, ok := updated["launchTemplateBaseline"]; ok {
+		t.Fatalf("expected mismatched template scope not to mark baseline, got %#v", updated["launchTemplateBaseline"])
+	}
+}
+
 func TestSyncSignalRuntimeSessionPlanRefreshesStateWithoutStartingRuntime(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 

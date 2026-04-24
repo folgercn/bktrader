@@ -2257,6 +2257,128 @@ func TestDispatchLiveSessionIntentRejectsNonDispatchableProposal(t *testing.T) {
 	}
 }
 
+func TestDispatchLiveSessionIntentRejectsEntryWhenSubmissionSlippageTooWide(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	eventTime := time.Now().UTC()
+	bookKey := signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT")
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		sourceStates[bookKey] = map[string]any{
+			"sourceKey":   "binance-order-book",
+			"role":        "feature",
+			"symbol":      "BTCUSDT",
+			"streamType":  "order_book",
+			"lastEventAt": eventTime.Format(time.RFC3339),
+			"summary": map[string]any{
+				"bestBid":    99.90,
+				"bestAsk":    100.20,
+				"bestBidQty": 1.0,
+				"bestAskQty": 1.0,
+			},
+		}
+		state["sourceStates"] = sourceStates
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = eventTime
+	}); err != nil {
+		t.Fatalf("update runtime source states failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["executionEntryMaxSlippageBps"] = 8.0
+	state["lastExecutionProposal"] = executionProposalToMap(ExecutionProposal{
+		Action:            "entry",
+		Role:              "entry",
+		Reason:            "Zero-Initial-Reentry",
+		Side:              "BUY",
+		Symbol:            "BTCUSDT",
+		Type:              "MARKET",
+		Quantity:          0.001,
+		PriceHint:         100.0,
+		PriceSource:       "order_book.bestAsk",
+		SignalKind:        "zero-initial-reentry",
+		DecisionState:     "entry-ready",
+		SignalBarStateKey: "bar-1",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"runtimeSessionId":  runtimeSessionID,
+			"executionMode":     "live",
+			"executionDecision": "direct-dispatch",
+			"executionContext": map[string]any{
+				"strategyVersionId":   "strategy-version-bk-1d-v010",
+				"symbol":              "BTCUSDT",
+				"signalTimeframe":     "1d",
+				"executionDataSource": "tick",
+				"executionMode":       "live",
+			},
+		},
+	})
+	session, err := platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	order, err := platform.dispatchLiveSessionIntent(session)
+	if err == nil {
+		t.Fatal("expected entry dispatch to be blocked by submission slippage guard")
+	}
+	if order.ID != "" {
+		t.Fatalf("expected no order to be created after preflight rejection, got %s", order.ID)
+	}
+	if !strings.Contains(err.Error(), "entry submission slippage") {
+		t.Fatalf("expected entry submission slippage error, got %v", err)
+	}
+	orders, err := platform.ListOrders()
+	if err != nil {
+		t.Fatalf("list orders failed: %v", err)
+	}
+	if len(orders) != 0 {
+		t.Fatalf("expected no persisted orders after slippage preflight rejection, got %#v", orders)
+	}
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get updated live session failed: %v", err)
+	}
+	if got := stringValue(updatedSession.State["lastDispatchRejectedStatus"]); got != liveDispatchRejectedEntrySlippageExceeded {
+		t.Fatalf("expected rejected status %s, got %s", liveDispatchRejectedEntrySlippageExceeded, got)
+	}
+	guard := mapValue(updatedSession.State["lastExecutionSubmissionGuard"])
+	if got := stringValue(guard["status"]); got != "blocked" {
+		t.Fatalf("expected blocked guard status, got %#v", guard)
+	}
+	if got := stringValue(guard["reason"]); got != "slippage-too-wide" {
+		t.Fatalf("expected slippage-too-wide guard reason, got %#v", guard)
+	}
+	if got := parseFloatValue(guard["adverseDriftBps"]); got <= 8.0 {
+		t.Fatalf("expected adverse drift above 8bps, got %v", got)
+	}
+}
+
+func TestLiveEntrySubmissionSlippageGuardSkipsReduceOnlyExit(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session := domain.LiveSession{
+		ID: "live-session-1",
+		State: map[string]any{
+			"executionEntryMaxSlippageBps": 1.0,
+		},
+	}
+	proposal := map[string]any{
+		"role":       "exit",
+		"side":       "SELL",
+		"type":       "MARKET",
+		"reduceOnly": true,
+		"priceHint":  100.0,
+	}
+	checked, err := platform.applyLiveEntrySubmissionSlippageGuard(session, proposal, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("expected reduce-only exit to skip entry slippage guard, got %v", err)
+	}
+	if guard := mapValue(mapValue(checked["metadata"])[liveEntrySubmissionSlippageGuardKey]); len(guard) > 0 {
+		t.Fatalf("expected reduce-only exit not to carry entry slippage guard, got %#v", guard)
+	}
+}
+
 func TestDispatchLiveSessionIntentBackfillsMissingDecisionEventReference(t *testing.T) {
 	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
 	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-decision-event-backfill"})
@@ -2616,6 +2738,7 @@ func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 		"executionTimeInForce":                "ioc",
 		"executionPostOnly":                   true,
 		"executionMaxSpreadBps":               6.5,
+		"executionEntryMaxSlippageBps":        8.0,
 		"executionWideSpreadMode":             "limit-maker",
 		"executionRestingTimeoutSeconds":      25,
 		"executionTimeoutFallbackOrderType":   "market",
@@ -2640,6 +2763,9 @@ func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	}
 	if got := parseFloatValue(overrides["executionMaxSpreadBps"]); got != 6.5 {
 		t.Fatalf("expected execution max spread override, got %v", got)
+	}
+	if got := parseFloatValue(overrides["executionEntryMaxSlippageBps"]); got != 8.0 {
+		t.Fatalf("expected execution entry max slippage override, got %v", got)
 	}
 	if got := stringValue(overrides["executionWideSpreadMode"]); got != "limit-maker" {
 		t.Fatalf("expected wide spread mode override, got %s", got)

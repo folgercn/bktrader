@@ -496,6 +496,227 @@ func liveProposalSignalBarStateKey(proposalMap map[string]any) string {
 	return strings.TrimSpace(stringValue(mapValue(proposalMap["metadata"])["signalBarStateKey"]))
 }
 
+const (
+	liveDispatchRejectedEntrySlippageExceeded = "ENTRY_SLIPPAGE_EXCEEDED"
+	liveEntrySubmissionSlippageGuardKey       = "entrySubmissionSlippageGuard"
+)
+
+func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSession, proposalMap map[string]any, eventTime time.Time) (map[string]any, error) {
+	if !liveEntrySubmissionSlippageGuardApplies(proposalMap) {
+		return proposalMap, nil
+	}
+	maxSlippageBps := liveEntrySubmissionMaxSlippageBps(session, proposalMap)
+	if maxSlippageBps <= 0 {
+		return proposalMap, nil
+	}
+
+	checked := cloneMetadata(proposalMap)
+	metadata := cloneMetadata(mapValue(checked["metadata"]))
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	side := strings.ToUpper(strings.TrimSpace(stringValue(checked["side"])))
+	expectedPrice := firstPositive(parseFloatValue(checked["limitPrice"]), parseFloatValue(checked["priceHint"]))
+	guard := map[string]any{
+		"status":         "evaluating",
+		"checkedAt":      eventTime.UTC().Format(time.RFC3339),
+		"maxSlippageBps": maxSlippageBps,
+		"side":           side,
+		"expectedPrice":  expectedPrice,
+	}
+	block := func(reason string) (map[string]any, error) {
+		guard["status"] = "blocked"
+		guard["reason"] = reason
+		metadata[liveEntrySubmissionSlippageGuardKey] = guard
+		checked["metadata"] = metadata
+		return checked, fmt.Errorf("live session %s entry submission slippage guard blocked: %s", session.ID, reason)
+	}
+
+	if expectedPrice <= 0 {
+		return block("missing-expected-price")
+	}
+	if side != "BUY" && side != "SELL" {
+		return block("unsupported-entry-side")
+	}
+	book, bookMetadata, ok := p.latestLiveOrderBookStatsForProposal(session, checked)
+	if !ok {
+		return block("missing-current-order-book")
+	}
+	currentPrice := book.bestAsk
+	if side == "SELL" {
+		currentPrice = book.bestBid
+	}
+	guard["currentPrice"] = currentPrice
+	guard["currentBook"] = bookMetadata
+	guard["currentSpreadBps"] = book.spreadBps
+	if currentPrice <= 0 {
+		return block("missing-current-executable-price")
+	}
+
+	adverseDriftBps := liveEntryAdverseSubmissionDriftBps(side, expectedPrice, currentPrice)
+	guard["adverseDriftBps"] = adverseDriftBps
+	if (precisionToleranceSpec{absolute: 1e-9}).exceeds(adverseDriftBps, maxSlippageBps) {
+		guard["status"] = "blocked"
+		guard["reason"] = "slippage-too-wide"
+		metadata[liveEntrySubmissionSlippageGuardKey] = guard
+		checked["metadata"] = metadata
+		return checked, fmt.Errorf(
+			"live session %s entry submission slippage %.4fbps exceeds max %.4fbps",
+			session.ID,
+			adverseDriftBps,
+			maxSlippageBps,
+		)
+	}
+
+	guard["status"] = "passed"
+	metadata[liveEntrySubmissionSlippageGuardKey] = guard
+	checked["metadata"] = metadata
+	return checked, nil
+}
+
+func liveEntrySubmissionSlippageGuardApplies(proposalMap map[string]any) bool {
+	if !strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["role"])), "entry") {
+		return false
+	}
+	metadata := mapValue(proposalMap["metadata"])
+	if boolValue(proposalMap["reduceOnly"]) || boolValue(metadata["reduceOnly"]) {
+		return false
+	}
+	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(proposalMap["type"]), "MARKET")))
+	return orderType == "MARKET"
+}
+
+func liveEntrySubmissionMaxSlippageBps(session domain.LiveSession, proposalMap map[string]any) float64 {
+	metadata := mapValue(proposalMap["metadata"])
+	executionContext := mapValue(metadata["executionContext"])
+	return firstPositive(
+		parseFloatValue(session.State["executionEntryMaxSlippageBps"]),
+		firstPositive(
+			parseFloatValue(executionContext["executionEntryMaxSlippageBps"]),
+			parseFloatValue(metadata["executionEntryMaxSlippageBps"]),
+		),
+	)
+}
+
+func (p *Platform) latestLiveOrderBookStatsForProposal(session domain.LiveSession, proposalMap map[string]any) (orderBookDecisionStats, map[string]any, bool) {
+	metadata := mapValue(proposalMap["metadata"])
+	runtimeSessionID := firstNonEmpty(
+		stringValue(metadata["runtimeSessionId"]),
+		stringValue(session.State["signalRuntimeSessionId"]),
+		stringValue(session.State["lastSignalRuntimeSessionId"]),
+	)
+	if strings.TrimSpace(runtimeSessionID) == "" {
+		return orderBookDecisionStats{}, nil, false
+	}
+	runtimeSession, err := p.GetSignalRuntimeSession(runtimeSessionID)
+	if err != nil {
+		return orderBookDecisionStats{}, nil, false
+	}
+	sourceStates := mapValue(runtimeSession.State["sourceStates"])
+	symbol := NormalizeSymbol(firstNonEmpty(stringValue(proposalMap["symbol"]), stringValue(session.State["symbol"]), stringValue(session.State["lastSymbol"])))
+	return latestOrderBookStatsFromSourceStates(runtimeSessionID, symbol, sourceStates)
+}
+
+func latestOrderBookStatsFromSourceStates(runtimeSessionID, symbol string, sourceStates map[string]any) (orderBookDecisionStats, map[string]any, bool) {
+	var selected orderBookDecisionStats
+	var selectedMeta map[string]any
+	var selectedAt time.Time
+	found := false
+	for _, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(stringValue(entry["streamType"]))) != "order_book" {
+			continue
+		}
+		if symbol != "" && NormalizeSymbol(stringValue(entry["symbol"])) != symbol {
+			continue
+		}
+		summary := mapValue(entry["summary"])
+		bestBid := parseFloatValue(summary["bestBid"])
+		bestAsk := parseFloatValue(summary["bestAsk"])
+		if bestBid <= 0 && bestAsk <= 0 {
+			continue
+		}
+		eventAt := parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
+		if found && !eventAt.IsZero() && !selectedAt.IsZero() && !eventAt.After(selectedAt) {
+			continue
+		}
+		spreadBps := parseFloatValue(summary["spreadBps"])
+		if spreadBps <= 0 && bestBid > 0 && bestAsk > 0 {
+			mid := (bestBid + bestAsk) / 2
+			if mid > 0 {
+				spreadBps = (bestAsk - bestBid) / mid * 10000
+			}
+		}
+		selected = orderBookDecisionStats{
+			bestBid:    bestBid,
+			bestAsk:    bestAsk,
+			bestBidQty: parseFloatValue(summary["bestBidQty"]),
+			bestAskQty: parseFloatValue(summary["bestAskQty"]),
+			spreadBps:  spreadBps,
+			imbalance:  parseFloatValue(summary["bookImbalance"]),
+			bias:       stringValue(summary["liquidityBias"]),
+		}
+		selectedMeta = map[string]any{
+			"runtimeSessionId": runtimeSessionID,
+			"sourceKey":        stringValue(entry["sourceKey"]),
+			"symbol":           NormalizeSymbol(stringValue(entry["symbol"])),
+			"lastEventAt":      stringValue(entry["lastEventAt"]),
+			"bestBid":          bestBid,
+			"bestAsk":          bestAsk,
+			"bestBidQty":       selected.bestBidQty,
+			"bestAskQty":       selected.bestAskQty,
+			"spreadBps":        spreadBps,
+		}
+		selectedAt = eventAt
+		found = true
+	}
+	return selected, selectedMeta, found
+}
+
+func liveEntryAdverseSubmissionDriftBps(side string, expectedPrice, currentPrice float64) float64 {
+	if expectedPrice <= 0 || currentPrice <= 0 {
+		return 0
+	}
+	switch strings.ToUpper(strings.TrimSpace(side)) {
+	case "BUY":
+		if currentPrice <= expectedPrice {
+			return 0
+		}
+		return (currentPrice/expectedPrice - 1) * 10000
+	case "SELL":
+		if currentPrice >= expectedPrice {
+			return 0
+		}
+		return (expectedPrice - currentPrice) / expectedPrice * 10000
+	default:
+		return 0
+	}
+}
+
+func (p *Platform) recordLiveDispatchPreflightRejection(session domain.LiveSession, proposalMap map[string]any, status string, rejectionErr error, eventTime time.Time) {
+	state := cloneMetadata(session.State)
+	if eventTime.IsZero() {
+		eventTime = time.Now().UTC()
+	}
+	state["lastDispatchRejectedAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastDispatchRejectedStatus"] = status
+	state["lastAutoDispatchError"] = rejectionErr.Error()
+	state["lastAutoDispatchAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastExecutionProposal"] = cloneMetadata(proposalMap)
+	if guard := cloneMetadata(mapValue(mapValue(proposalMap["metadata"])[liveEntrySubmissionSlippageGuardKey])); len(guard) > 0 {
+		state["lastExecutionSubmissionGuard"] = guard
+	}
+	appendTimelineEvent(state, "order", eventTime, "live-dispatch-preflight-rejected", map[string]any{
+		"status": status,
+		"error":  rejectionErr.Error(),
+		"guard":  cloneMetadata(mapValue(state["lastExecutionSubmissionGuard"])),
+	})
+	_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+}
+
 func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain.Order, error) {
 	if !strings.EqualFold(session.Status, "RUNNING") && !strings.EqualFold(session.Status, "READY") {
 		return domain.Order{}, fmt.Errorf("live session %s is not dispatchable in status %s", session.ID, session.Status)
@@ -532,6 +753,12 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	dispatchStartedAt := time.Now().UTC()
 	proposalMap, err = p.ensureStrategyDecisionEventForExecutionProposal(session, version.ID, proposalMap, dispatchStartedAt, "dispatch-preflight")
 	if err != nil {
+		return domain.Order{}, err
+	}
+	proposal = executionProposalFromMap(proposalMap)
+	proposalMap, err = p.applyLiveEntrySubmissionSlippageGuard(session, proposalMap, dispatchStartedAt)
+	if err != nil {
+		p.recordLiveDispatchPreflightRejection(session, proposalMap, liveDispatchRejectedEntrySlippageExceeded, err, dispatchStartedAt)
 		return domain.Order{}, err
 	}
 	proposal = executionProposalFromMap(proposalMap)
