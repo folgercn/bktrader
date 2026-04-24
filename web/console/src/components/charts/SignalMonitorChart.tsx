@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Time, CandlestickSeries, LineSeries, ColorType, CrosshairMode, LineStyle, createChart, createSeriesMarkers } from 'lightweight-charts';
 import { SignalBarCandle, SessionMarker, SignalMonitorOverlay } from '../../types/domain';
 import { applyDefaultChartWindow } from '../../utils/derivation';
-import { normalizeChartData } from '../../utils/chart';
+import { normalizeChartData, normalizeLineSeriesRange } from '../../utils/chart';
 
 export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: SessionMarker[]; overlays?: SignalMonitorOverlay[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -87,6 +87,10 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
       if (!overlay.startTime || !overlay.endTime || !Number.isFinite(overlay.price) || overlay.price <= 0) {
         continue;
       }
+      const lineData = normalizeLineSeriesRange(overlay.startTime, overlay.endTime, overlay.price);
+      if (lineData.length === 0) {
+        continue;
+      }
       const lineSeries = chart.addSeries(LineSeries, {
         color: overlay.color,
         lineWidth: 2,
@@ -101,16 +105,7 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
         crosshairMarkerVisible: false,
         pointMarkersVisible: false,
       });
-      lineSeries.setData([
-        {
-          time: Math.floor(new Date(overlay.startTime).getTime() / 1000) as Time,
-          value: overlay.price,
-        },
-        {
-          time: Math.floor(new Date(overlay.endTime).getTime() / 1000) as Time,
-          value: overlay.price,
-        },
-      ]);
+      lineSeries.setData(lineData);
       overlaySeriesRefs.current.push(lineSeries);
     }
 

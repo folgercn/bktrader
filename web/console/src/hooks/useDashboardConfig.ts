@@ -3,11 +3,12 @@ import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { fetchJSON } from '../utils/api';
 import { writeStoredAuthSession } from '../utils/auth';
-import { 
-  StrategyRecord, BacktestRun, BacktestOptions, LiveAdapter, 
-  SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, 
-  RuntimePolicy, TelegramConfig, SignalBinding 
+import {
+  StrategyRecord, BacktestRun, BacktestOptions, LiveAdapter,
+  SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter,
+  RuntimePolicy, TelegramConfig, SignalBinding
 } from '../types/domain';
+import { fetchDashboardConfigItem, fetchDashboardConfigList, isUnauthorizedDashboardError } from './dashboardConfigFetch';
 
 export function useDashboardConfig() {
   const setError = useUIStore(s => s.setError);
@@ -17,11 +18,11 @@ export function useDashboardConfig() {
   const activeSettingsModal = useUIStore(s => s.activeSettingsModal);
   const authSession = useUIStore(s => s.authSession);
   const setBacktestForm = useUIStore(s => s.setBacktestForm);
+  const setSelectedBacktestId = useUIStore(s => s.setSelectedBacktestId);
 
   const setStrategies = useTradingStore(s => s.setStrategies);
   const setSelectedStrategyId = useTradingStore(s => s.setSelectedStrategyId);
   const setBacktests = useTradingStore(s => s.setBacktests);
-  const setSelectedBacktestId = useTradingStore(s => s.setSelectedBacktestId);
   const setBacktestOptions = useTradingStore(s => s.setBacktestOptions);
   const setLiveAdapters = useTradingStore(s => s.setLiveAdapters);
   const setSignalCatalog = useTradingStore(s => s.setSignalCatalog);
@@ -45,22 +46,25 @@ export function useDashboardConfig() {
       telegramConfigData,
       launchTemplateData,
     ] = await Promise.all([
-      fetchJSON<StrategyRecord[]>("/api/v1/strategies"),
-      fetchJSON<BacktestRun[]>("/api/v1/backtests"),
-      fetchJSON<BacktestOptions>("/api/v1/backtests/options"),
-      fetchJSON<LiveAdapter[]>("/api/v1/live-adapters"),
-      fetchJSON<SignalSourceCatalog>("/api/v1/signal-sources"),
-      fetchJSON<SignalSourceType[]>("/api/v1/signal-source-types"),
-      fetchJSON<SignalRuntimeAdapter[]>("/api/v1/signal-runtime/adapters"),
-      fetchJSON<RuntimePolicy>("/api/v1/runtime-policy"),
-      fetchJSON<TelegramConfig>("/api/v1/telegram/config"),
-      fetchJSON<any[]>("/api/v1/live/launch-templates").catch(() => []),
+      fetchDashboardConfigList<StrategyRecord>("strategies", () => fetchJSON<StrategyRecord[]>("/api/v1/strategies")),
+      fetchDashboardConfigList<BacktestRun>("backtests", () => fetchJSON<BacktestRun[]>("/api/v1/backtests")),
+      fetchDashboardConfigItem<BacktestOptions | null>("backtest-options", () => fetchJSON<BacktestOptions>("/api/v1/backtests/options"), null),
+      fetchDashboardConfigList<LiveAdapter>("live-adapters", () => fetchJSON<LiveAdapter[]>("/api/v1/live-adapters")),
+      fetchDashboardConfigItem<SignalSourceCatalog>("signal-sources", () => fetchJSON<SignalSourceCatalog>("/api/v1/signal-sources"), { sources: [], notes: [] }),
+      fetchDashboardConfigList<SignalSourceType>("signal-source-types", () => fetchJSON<SignalSourceType[]>("/api/v1/signal-source-types")),
+      fetchDashboardConfigList<SignalRuntimeAdapter>("signal-runtime-adapters", () => fetchJSON<SignalRuntimeAdapter[]>("/api/v1/signal-runtime/adapters")),
+      fetchDashboardConfigItem<RuntimePolicy | null>("runtime-policy", () => fetchJSON<RuntimePolicy>("/api/v1/runtime-policy"), null),
+      fetchDashboardConfigItem<TelegramConfig | null>("telegram-config", () => fetchJSON<TelegramConfig>("/api/v1/telegram/config"), null),
+      fetchDashboardConfigList<any>("launch-templates", () => fetchJSON<any[]>("/api/v1/live/launch-templates")),
     ]);
 
     const strategyBindingEntries = await Promise.all(
       strategyData.map(async (strategy) => [
         strategy.id,
-        await fetchJSON<SignalBinding[]>(`/api/v1/strategies/${strategy.id}/signal-bindings`),
+        await fetchDashboardConfigList<SignalBinding>(
+          `strategy-signal-bindings:${strategy.id}`,
+          () => fetchJSON<SignalBinding[]>(`/api/v1/strategies/${strategy.id}/signal-bindings`)
+        ),
       ] as const)
     );
 
@@ -91,8 +95,8 @@ export function useDashboardConfig() {
     setRuntimePolicy(runtimePolicyData);
     setTelegramConfig(telegramConfigData);
     setLaunchTemplates(normalizedLaunchTemplates);
-    
-    if (activeSettingsModal !== "telegram") {
+
+    if (telegramConfigData && activeSettingsModal !== "telegram") {
       setTelegramForm({
         enabled: Boolean(telegramConfigData.enabled),
         botToken: "",
@@ -103,16 +107,18 @@ export function useDashboardConfig() {
         positionReportIntervalMinutes: String(telegramConfigData.positionReportIntervalMinutes ?? 30),
       });
     }
-    setRuntimePolicyForm({
-      tradeTickFreshnessSeconds: String(runtimePolicyData.tradeTickFreshnessSeconds ?? 15),
-      orderBookFreshnessSeconds: String(runtimePolicyData.orderBookFreshnessSeconds ?? 10),
-      signalBarFreshnessSeconds: String(runtimePolicyData.signalBarFreshnessSeconds ?? 30),
-      runtimeQuietSeconds: String(runtimePolicyData.runtimeQuietSeconds ?? 30),
-      strategyEvaluationQuietSeconds: String(runtimePolicyData.strategyEvaluationQuietSeconds ?? 0),
-      liveAccountSyncFreshnessSeconds: String(runtimePolicyData.liveAccountSyncFreshnessSeconds ?? 0),
-      paperStartReadinessTimeoutSeconds: String(runtimePolicyData.paperStartReadinessTimeoutSeconds ?? 5),
-      dispatchMode: String(runtimePolicyData.dispatchMode ?? "manual-review"),
-    });
+    if (runtimePolicyData) {
+      setRuntimePolicyForm({
+        tradeTickFreshnessSeconds: String(runtimePolicyData.tradeTickFreshnessSeconds ?? 15),
+        orderBookFreshnessSeconds: String(runtimePolicyData.orderBookFreshnessSeconds ?? 10),
+        signalBarFreshnessSeconds: String(runtimePolicyData.signalBarFreshnessSeconds ?? 30),
+        runtimeQuietSeconds: String(runtimePolicyData.runtimeQuietSeconds ?? 30),
+        strategyEvaluationQuietSeconds: String(runtimePolicyData.strategyEvaluationQuietSeconds ?? 0),
+        liveAccountSyncFreshnessSeconds: String(runtimePolicyData.liveAccountSyncFreshnessSeconds ?? 0),
+        paperStartReadinessTimeoutSeconds: String(runtimePolicyData.paperStartReadinessTimeoutSeconds ?? 5),
+        dispatchMode: String(runtimePolicyData.dispatchMode ?? "manual-review"),
+      });
+    }
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
     setStrategySignalBindings(strategyBindingEntries.flatMap((e) => e[1]));
     setBacktestForm((current: any) => ({
@@ -136,7 +142,7 @@ export function useDashboardConfig() {
         setError(null);
       } catch (err) {
         if (!active) return;
-        if (typeof err === "object" && err && "status" in err && (err as { status?: number }).status === 401) {
+        if (isUnauthorizedDashboardError(err)) {
           writeStoredAuthSession(null);
           setAuthSession(null);
           setError("登录已失效，请重新登录");
