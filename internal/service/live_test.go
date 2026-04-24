@@ -983,6 +983,75 @@ func TestResolveLiveSessionParametersDefaultsMissingStopsToTrailingForLive(t *te
 	}
 }
 
+func TestResolveLiveSessionParametersPropagatesExecutionProfileOverrides(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":                                  "BTCUSDT",
+		"executionSLMaxSlippageBps":               25.0,
+		"executionSLExitMaxSlippageBps":           25.0,
+		"executionEntryMaxBookAgeMs":              750.0,
+		"executionEntryWideSpreadMode":            "limit-maker",
+		"executionPTExitMaxSpreadBps":             4.0,
+		"executionSLExitTimeoutFallbackOrderType": "MARKET",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	version, err := platform.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		t.Fatalf("resolve strategy version failed: %v", err)
+	}
+	parameters, err := platform.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		t.Fatalf("resolve live session parameters failed: %v", err)
+	}
+	if got := parseFloatValue(parameters["executionSLMaxSlippageBps"]); got != 25.0 {
+		t.Fatalf("expected executionSLMaxSlippageBps to reach execution parameters, got %v", got)
+	}
+	if got := parseFloatValue(parameters["executionSLExitMaxSlippageBps"]); got != 25.0 {
+		t.Fatalf("expected executionSLExitMaxSlippageBps to reach execution parameters, got %v", got)
+	}
+	if got := parseFloatValue(parameters["executionEntryMaxBookAgeMs"]); got != 750.0 {
+		t.Fatalf("expected executionEntryMaxBookAgeMs to reach execution parameters, got %v", got)
+	}
+	if got := stringValue(parameters["executionEntryWideSpreadMode"]); got != "limit-maker" {
+		t.Fatalf("expected executionEntryWideSpreadMode to reach execution parameters, got %s", got)
+	}
+	if got := parseFloatValue(parameters["executionPTExitMaxSpreadBps"]); got != 4.0 {
+		t.Fatalf("expected executionPTExitMaxSpreadBps to reach execution parameters, got %v", got)
+	}
+
+	proposal, err := (bookAwareExecutionStrategy{}).BuildProposal(ExecutionPlanningContext{
+		Session:   session,
+		Execution: StrategyExecutionContext{Parameters: parameters},
+		Intent: SignalIntent{
+			Action:      "exit",
+			Role:        "exit",
+			Reason:      "SL",
+			Side:        "BUY",
+			Symbol:      "BTCUSDT",
+			PriceHint:   77680,
+			PriceSource: "order_book.bestAsk",
+			Quantity:    0.013,
+			Metadata: map[string]any{
+				"bestBid":   77522.2,
+				"bestAsk":   77680.0,
+				"spreadBps": 20.334763295881487,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("build proposal failed: %v", err)
+	}
+	if proposal.Type != "MARKET" {
+		t.Fatalf("expected non-default SL slippage override to keep MARKET below 25bps, got %s", proposal.Type)
+	}
+	context := mapValue(proposal.Metadata["executionDecisionContext"])
+	if got := parseFloatValue(context["slMaxSlippageBps"]); got != 25.0 {
+		t.Fatalf("expected proposal to use session slMaxSlippageBps=25, got %v", got)
+	}
+}
+
 func TestResolveLiveSessionParametersPrefersSignalBindingTimeframeOverStaleSessionState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{

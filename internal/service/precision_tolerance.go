@@ -5,6 +5,7 @@ import "math"
 const (
 	tradingQuantityAbsTolerance = 1e-9
 	tradingPriceAbsTolerance    = 1e-6
+	executionGuardAbsTolerance  = 1e-9
 
 	exchangeIncrementAbsTolerance = 1e-12
 	exchangeIncrementRelTolerance = 1e-9
@@ -77,6 +78,18 @@ func tradingPricePrecision() precisionToleranceSpec {
 
 func tradingPriceDiffers(left, right float64) bool {
 	return tradingPricePrecision().differs(left, right)
+}
+
+func executionGuardPrecision() precisionToleranceSpec {
+	return precisionToleranceSpec{absolute: executionGuardAbsTolerance}
+}
+
+func executionGuardBelow(left, right float64) bool {
+	return executionGuardPrecision().below(left, right)
+}
+
+func executionGuardExceeds(left, right float64) bool {
+	return executionGuardPrecision().exceeds(left, right)
 }
 
 func exchangeIncrementPrecision(increment float64) precisionToleranceSpec {

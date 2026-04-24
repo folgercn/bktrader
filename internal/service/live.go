@@ -4253,7 +4253,7 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		parameters["symbol"] = resolvePaperPlanSymbol(version)
 	}
 	state := cloneMetadata(session.State)
-	for _, key := range []string{
+	sessionParameterKeys := []string{
 		"signalTimeframe",
 		"executionDataSource",
 		"executionStrategy",
@@ -4282,7 +4282,9 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"max_trades_per_bar",
 		"dir2_zero_initial",
 		"zero_initial_mode",
-	} {
+	}
+	sessionParameterKeys = append(sessionParameterKeys, liveExecutionParameterOverrideKeys()...)
+	for _, key := range sessionParameterKeys {
 		if value, ok := state[key]; ok {
 			parameters[key] = value
 		}
@@ -4290,6 +4292,29 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 	parameters = applyCanonicalLiveSignalScope(parameters, resolveStrategySignalBindings(parameters))
 	parameters = applyLiveSafeStopDefaults(parameters)
 	return NormalizeBacktestParameters(parameters)
+}
+
+func liveExecutionParameterOverrideKeys() []string {
+	keys := []string{
+		"executionEntryMaxBookAgeMs",
+		"executionEntryMinTopBookCoverage",
+		"executionEntryMaxSourceDivergenceBps",
+		"executionSLMaxSlippageBps",
+	}
+	for _, prefix := range []string{"executionEntry", "executionPTExit", "executionSLExit"} {
+		keys = append(keys,
+			prefix+"OrderType",
+			prefix+"TimeInForce",
+			prefix+"PostOnly",
+			prefix+"MaxSpreadBps",
+			prefix+"MaxSlippageBps",
+			prefix+"WideSpreadMode",
+			prefix+"RestingTimeoutSeconds",
+			prefix+"TimeoutFallbackOrderType",
+			prefix+"TimeoutFallbackTimeInForce",
+		)
+	}
+	return keys
 }
 
 func (p *Platform) canonicalizeLiveSessionOverridesForStrategy(strategyID string, overrides map[string]any) map[string]any {

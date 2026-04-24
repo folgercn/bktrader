@@ -591,7 +591,7 @@ func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSess
 		if topDepthQty <= 0 {
 			return block("missing-top-book-depth")
 		}
-		if (precisionToleranceSpec{absolute: 1e-9}).below(coverage, minCoverage) {
+		if executionGuardBelow(coverage, minCoverage) {
 			return block("top-book-coverage-too-thin")
 		}
 	}
@@ -601,7 +601,7 @@ func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSess
 			guard["sourceDivergences"] = sourceDivergences
 			guard["sourceDivergenceBps"] = maxDivergence
 			guard["maxSourceDivergenceBps"] = maxDivergenceBps
-			if (precisionToleranceSpec{absolute: 1e-9}).exceeds(maxDivergence, maxDivergenceBps) {
+			if executionGuardExceeds(maxDivergence, maxDivergenceBps) {
 				return block("market-source-divergence-too-wide")
 			}
 		}
@@ -609,7 +609,7 @@ func (p *Platform) applyLiveEntrySubmissionSlippageGuard(session domain.LiveSess
 
 	adverseDriftBps := liveEntryAdverseSubmissionDriftBps(side, expectedPrice, currentPrice)
 	guard["adverseDriftBps"] = adverseDriftBps
-	if (precisionToleranceSpec{absolute: 1e-9}).exceeds(adverseDriftBps, maxSlippageBps) {
+	if executionGuardExceeds(adverseDriftBps, maxSlippageBps) {
 		guard["status"] = "blocked"
 		guard["reason"] = "slippage-too-wide"
 		metadata[liveEntrySubmissionSlippageGuardKey] = guard
