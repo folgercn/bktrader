@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
@@ -243,7 +244,12 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/signal-runtime/sessions", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			writeJSON(w, http.StatusOK, platform.ListSignalRuntimeSessions())
+			view := r.URL.Query().Get("view")
+			items := platform.ListSignalRuntimeSessions()
+			if view == "summary" {
+				items = stripRuntimeSessionHeavyState(items)
+			}
+			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
 			var payload struct {
 				AccountID  string `json:"accountId"`
@@ -324,4 +330,23 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeError(w, http.StatusNotFound, "signal runtime session action not found")
 		}
 	})
+}
+
+func stripRuntimeSessionHeavyState(items []domain.SignalRuntimeSession) []domain.SignalRuntimeSession {
+	stripped := make([]domain.SignalRuntimeSession, len(items))
+	for i, item := range items {
+		newItem := item
+		if item.State != nil {
+			newState := make(map[string]any, len(item.State))
+			for k, v := range item.State {
+				if k == "sourceStates" || k == "signalBarStates" {
+					continue
+				}
+				newState[k] = v
+			}
+			newItem.State = newState
+		}
+		stripped[i] = newItem
+	}
+	return stripped
 }
