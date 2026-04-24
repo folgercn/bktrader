@@ -2355,6 +2355,102 @@ func TestDispatchLiveSessionIntentRejectsEntryWhenSubmissionSlippageTooWide(t *t
 	}
 }
 
+func TestLiveEntrySubmissionSlippageGuardPrefersActiveRuntimeOverProposalMetadata(t *testing.T) {
+	platform, session, staleRuntimeSessionID, _, eventTime := prepareLiveDecisionTelemetryFixture(t)
+	activeRuntime, err := platform.CreateSignalRuntimeSession(session.AccountID, session.StrategyID)
+	if err != nil {
+		t.Fatalf("create replacement runtime failed: %v", err)
+	}
+	activeRuntimeAt := eventTime.Add(time.Second)
+	bookKey := signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT")
+	if err := platform.updateSignalRuntimeSessionState(activeRuntime.ID, func(runtimeSession *domain.SignalRuntimeSession) {
+		runtimeSession.Status = "RUNNING"
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = activeRuntimeAt.Format(time.RFC3339)
+		state["lastHeartbeatAt"] = activeRuntimeAt.Format(time.RFC3339)
+		state["sourceStates"] = map[string]any{
+			bookKey: map[string]any{
+				"sourceKey":   "binance-order-book",
+				"role":        "feature",
+				"symbol":      "BTCUSDT",
+				"streamType":  "order_book",
+				"lastEventAt": activeRuntimeAt.Format(time.RFC3339),
+				"summary": map[string]any{
+					"bestBid":    99.98,
+					"bestAsk":    100.04,
+					"bestBidQty": 1.0,
+					"bestAskQty": 1.0,
+				},
+			},
+		}
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = activeRuntimeAt
+	}); err != nil {
+		t.Fatalf("refresh active runtime source states failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["signalRuntimeSessionId"] = activeRuntime.ID
+	state["lastSignalRuntimeSessionId"] = staleRuntimeSessionID
+	state["executionEntryMaxSlippageBps"] = 8.0
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	proposal := map[string]any{
+		"role":      "entry",
+		"side":      "BUY",
+		"symbol":    "BTCUSDT",
+		"type":      "MARKET",
+		"priceHint": 100.0,
+		"metadata": map[string]any{
+			"runtimeSessionId": staleRuntimeSessionID,
+		},
+	}
+	checked, err := platform.applyLiveEntrySubmissionSlippageGuard(session, proposal, activeRuntimeAt)
+	if err != nil {
+		t.Fatalf("expected active runtime order book to pass guard, got %v", err)
+	}
+	guard := mapValue(mapValue(checked["metadata"])[liveEntrySubmissionSlippageGuardKey])
+	if got := stringValue(guard["status"]); got != "passed" {
+		t.Fatalf("expected passed guard status, got %#v", guard)
+	}
+	currentBook := mapValue(guard["currentBook"])
+	if got := stringValue(currentBook["runtimeSessionId"]); got != activeRuntime.ID {
+		t.Fatalf("expected guard to use active runtime %s, got %s", activeRuntime.ID, got)
+	}
+}
+
+func TestLatestOrderBookStatsFromSourceStatesSkipsUntimestampedBooks(t *testing.T) {
+	sourceStates := map[string]any{
+		"empty-time": map[string]any{
+			"sourceKey":  "binance-order-book",
+			"role":       "feature",
+			"symbol":     "BTCUSDT",
+			"streamType": "order_book",
+			"summary": map[string]any{
+				"bestBid": 99.90,
+				"bestAsk": 100.10,
+			},
+		},
+		"invalid-time": map[string]any{
+			"sourceKey":   "binance-order-book",
+			"role":        "feature",
+			"symbol":      "BTCUSDT",
+			"streamType":  "order_book",
+			"lastEventAt": "not-a-timestamp",
+			"summary": map[string]any{
+				"bestBid": 99.95,
+				"bestAsk": 100.05,
+			},
+		},
+	}
+	if stats, metadata, found := latestOrderBookStatsFromSourceStates("runtime-1", "BTCUSDT", sourceStates); found {
+		t.Fatalf("expected untimestamped order books to be skipped, got stats=%#v metadata=%#v", stats, metadata)
+	}
+}
+
 func TestLiveEntrySubmissionSlippageGuardSkipsReduceOnlyExit(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session := domain.LiveSession{

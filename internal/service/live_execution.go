@@ -601,8 +601,8 @@ func liveEntrySubmissionMaxSlippageBps(session domain.LiveSession, proposalMap m
 func (p *Platform) latestLiveOrderBookStatsForProposal(session domain.LiveSession, proposalMap map[string]any) (orderBookDecisionStats, map[string]any, bool) {
 	metadata := mapValue(proposalMap["metadata"])
 	runtimeSessionID := firstNonEmpty(
-		stringValue(metadata["runtimeSessionId"]),
 		stringValue(session.State["signalRuntimeSessionId"]),
+		stringValue(metadata["runtimeSessionId"]),
 		stringValue(session.State["lastSignalRuntimeSessionId"]),
 	)
 	if strings.TrimSpace(runtimeSessionID) == "" {
@@ -640,7 +640,10 @@ func latestOrderBookStatsFromSourceStates(runtimeSessionID, symbol string, sourc
 			continue
 		}
 		eventAt := parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
-		if found && !eventAt.IsZero() && !selectedAt.IsZero() && !eventAt.After(selectedAt) {
+		if eventAt.IsZero() {
+			continue
+		}
+		if found && !eventAt.After(selectedAt) {
 			continue
 		}
 		spreadBps := parseFloatValue(summary["spreadBps"])
