@@ -689,7 +689,7 @@ func stripLiveSessionHeavyState(items []domain.LiveSession) []domain.LiveSession
 		if item.State != nil {
 			newState := make(map[string]any, len(item.State))
 			for k, v := range item.State {
-				if k == "sourceStates" || k == "signalBarStates" || k == "livePositionState" {
+				if k == "sourceStates" || k == "signalBarStates" {
 					continue
 				}
 				newState[k] = v

@@ -339,7 +339,7 @@ func stripRuntimeSessionHeavyState(items []domain.SignalRuntimeSession) []domain
 		if item.State != nil {
 			newState := make(map[string]any, len(item.State))
 			for k, v := range item.State {
-				if k == "sourceStates" || k == "signalBarStates" || k == "triggerSummary" {
+				if k == "sourceStates" || k == "signalBarStates" {
 					continue
 				}
 				newState[k] = v
