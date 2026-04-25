@@ -1516,6 +1516,82 @@ func (s *Store) ListOrderExecutionEvents(orderID string) ([]domain.OrderExecutio
 	return items, rows.Err()
 }
 
+func (s *Store) ListTelegramTradeEventCandidates(from time.Time, limit int) ([]domain.OrderExecutionEvent, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if from.IsZero() {
+		from = time.Now().UTC().Add(-24 * time.Hour)
+	}
+	rows, err := s.db.Query(`
+		select
+			e.id, e.order_id, e.exchange_order_id, e.live_session_id, e.decision_event_id, e.runtime_session_id, e.account_id,
+			e.strategy_version_id, e.symbol, e.side, e.order_type, e.event_type, e.status,
+			e.execution_strategy, e.execution_decision, e.execution_mode,
+			e.quantity, e.price, e.expected_price, e.price_drift_bps, e.raw_quantity, e.normalized_quantity,
+			e.raw_price_reference, e.normalized_price, e.spread_bps, e.book_imbalance,
+			e.submit_latency_ms, e.sync_latency_ms, e.fill_latency_ms, e.event_time, e.recorded_at,
+			e.fallback, e.post_only, e.reduce_only, e.failed, e.error,
+			e.runtime_preflight, e.dispatch_summary, e.adapter_submission, e.adapter_sync, e.normalization, e.symbol_rules, e.metadata
+		from order_execution_events e
+		where e.event_type = 'filled'
+			and e.failed = false
+			and coalesce(e.error, '') = ''
+			and e.event_time >= $1
+			and not exists (
+				select 1
+				from notification_deliveries d
+				where d.channel = 'telegram'
+					and d.metadata->>'kind' = 'trade-event'
+					and d.metadata->>'eventId' = e.id
+			)
+		order by e.event_time asc, e.recorded_at asc, e.id asc
+		limit $2
+	`, from.UTC(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.OrderExecutionEvent, 0, limit)
+	for rows.Next() {
+		var item domain.OrderExecutionEvent
+		var exchangeOrderID, liveSessionID, decisionEventID, runtimeSessionID, strategyVersionID sql.NullString
+		var executionStrategy, executionDecision, executionMode, errText sql.NullString
+		var runtimePreflightRaw, dispatchSummaryRaw, adapterSubmissionRaw, adapterSyncRaw, normalizationRaw, symbolRulesRaw, metadataRaw []byte
+		if err := rows.Scan(
+			&item.ID, &item.OrderID, &exchangeOrderID, &liveSessionID, &decisionEventID, &runtimeSessionID, &item.AccountID,
+			&strategyVersionID, &item.Symbol, &item.Side, &item.OrderType, &item.EventType, &item.Status,
+			&executionStrategy, &executionDecision, &executionMode,
+			&item.Quantity, &item.Price, &item.ExpectedPrice, &item.PriceDriftBps, &item.RawQuantity, &item.NormalizedQty,
+			&item.RawPriceReference, &item.NormalizedPrice, &item.SpreadBps, &item.BookImbalance,
+			&item.SubmitLatencyMs, &item.SyncLatencyMs, &item.FillLatencyMs, &item.EventTime, &item.RecordedAt,
+			&item.Fallback, &item.PostOnly, &item.ReduceOnly, &item.Failed, &errText,
+			&runtimePreflightRaw, &dispatchSummaryRaw, &adapterSubmissionRaw, &adapterSyncRaw, &normalizationRaw, &symbolRulesRaw, &metadataRaw,
+		); err != nil {
+			return nil, err
+		}
+		item.ExchangeOrderID = exchangeOrderID.String
+		item.LiveSessionID = liveSessionID.String
+		item.DecisionEventID = decisionEventID.String
+		item.RuntimeSessionID = runtimeSessionID.String
+		item.StrategyVersionID = strategyVersionID.String
+		item.ExecutionStrategy = executionStrategy.String
+		item.ExecutionDecision = executionDecision.String
+		item.ExecutionMode = executionMode.String
+		item.Error = errText.String
+		item.RuntimePreflight = unmarshalJSONMap(runtimePreflightRaw)
+		item.DispatchSummary = unmarshalJSONMap(dispatchSummaryRaw)
+		item.AdapterSubmission = unmarshalJSONMap(adapterSubmissionRaw)
+		item.AdapterSync = unmarshalJSONMap(adapterSyncRaw)
+		item.Normalization = unmarshalJSONMap(normalizationRaw)
+		item.SymbolRules = unmarshalJSONMap(symbolRulesRaw)
+		item.Metadata = unmarshalJSONMap(metadataRaw)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) CreateOrderExecutionEvent(event domain.OrderExecutionEvent) (domain.OrderExecutionEvent, error) {
 	if event.ID == "" {
 		event.ID = fmt.Sprintf("order-execution-event-%d", time.Now().UTC().UnixNano())

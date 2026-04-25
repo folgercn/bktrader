@@ -2,7 +2,11 @@
 // 所有具体实现（内存/PostgreSQL）必须实现 Repository 接口。
 package store
 
-import "github.com/wuyaocheng/bktrader/internal/domain"
+import (
+	"time"
+
+	"github.com/wuyaocheng/bktrader/internal/domain"
+)
 
 // Repository 定义平台的数据持久化接口。
 // 支持可插拔的后端实现（memory/postgres），通过 STORE_BACKEND 配置切换。
@@ -126,6 +130,8 @@ type Repository interface {
 	CreateStrategyDecisionEvent(event domain.StrategyDecisionEvent) (domain.StrategyDecisionEvent, error)
 	// ListOrderExecutionEvents 获取指定订单的执行事件；orderID 为空时返回全部。
 	ListOrderExecutionEvents(orderID string) ([]domain.OrderExecutionEvent, error)
+	// ListTelegramTradeEventCandidates 获取 Telegram 开平事件通知候选，必须由底层存储限制扫描范围和返回条数。
+	ListTelegramTradeEventCandidates(from time.Time, limit int) ([]domain.OrderExecutionEvent, error)
 	// CreateOrderExecutionEvent 创建新的订单执行事件。
 	CreateOrderExecutionEvent(event domain.OrderExecutionEvent) (domain.OrderExecutionEvent, error)
 	// ListPositionAccountSnapshots 获取指定账户的仓位/账户快照；accountID 为空时返回全部。
