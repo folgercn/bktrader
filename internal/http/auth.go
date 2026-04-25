@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/wuyaocheng/bktrader/internal/config"
 )
 
@@ -66,7 +67,7 @@ func registerAuthRoutes(mux *http.ServeMux, cfg config.Config) {
 			return
 		}
 
-		jti := fmt.Sprintf("%d-%s", time.Now().UnixNano(), claims.Username)
+		jti := uuid.NewString()
 		token, expiresAt, err := issueToken(cfg, claims.Username, "dashboard_stream", jti, 1*time.Minute)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())

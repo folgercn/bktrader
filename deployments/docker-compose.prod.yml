@@ -1,7 +1,7 @@
 x-app-image: &app-image
     image: ${IMAGE_REPO:-ghcr.io/folgercn/bktrader-app}:${IMAGE_TAG:-latest}
-    mem_limit: ${APP_MEM_LIMIT:-512m}
-    memswap_limit: ${APP_MEMSWAP_LIMIT:-512m}
+    mem_limit: ${APP_MEM_LIMIT:-1536m}
+    memswap_limit: ${APP_MEMSWAP_LIMIT:-2g}
     restart: unless-stopped
     env_file:
       - ${APP_ENV_FILE:-./.env}
