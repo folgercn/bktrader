@@ -1129,6 +1129,7 @@ func TestApplyLiveSyncResultSettlesClippedReduceOnlyFallbackClose(t *testing.T) 
 			"binanceStatus":    "FILLED",
 			"exchangeOrderId":  "exchange-market-fallback",
 			"executedQty":      0.0091,
+			"origQty":          0.0129,
 			"tradeReportCount": 1,
 			"updateTime":       "2026-04-24T21:41:10Z",
 		},

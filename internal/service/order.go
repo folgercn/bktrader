@@ -880,26 +880,24 @@ func adoptTerminalReduceOnlyFilledQuantity(order *domain.Order, syncResult LiveO
 func terminalFilledSyncQuantity(syncResult LiveOrderSync) float64 {
 	metadata := mapValue(syncResult.Metadata)
 	quantity := firstPositive(
-		parseFloatValue(metadata["origQty"]),
+		parseFloatValue(metadata["executedQty"]),
 		firstPositive(
-			parseFloatValue(metadata["executedQty"]),
+			parseFloatValue(metadata["cumQty"]),
 			firstPositive(
-				parseFloatValue(metadata["cumQty"]),
 				parseFloatValue(metadata["filledQuantity"]),
+				sumLiveFillReportQuantity(syncResult.Fills),
 			),
 		),
 	)
-	if tradingQuantityPositive(quantity) {
-		return quantity
-	}
+	return firstPositive(quantity, parseFloatValue(metadata["origQty"]))
+}
+
+func sumLiveFillReportQuantity(fills []LiveFillReport) float64 {
 	total := 0.0
-	for _, fill := range syncResult.Fills {
+	for _, fill := range fills {
 		total += fill.Quantity
 	}
-	if tradingQuantityPositive(total) {
-		return total
-	}
-	return 0
+	return total
 }
 
 func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]domain.Fill, float64, float64) {
