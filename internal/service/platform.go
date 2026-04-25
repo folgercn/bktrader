@@ -585,5 +585,3 @@ func maskTelegramToken(token string) string {
 	}
 	return token[:4] + "..." + token[len(token)-4:]
 }
-
-

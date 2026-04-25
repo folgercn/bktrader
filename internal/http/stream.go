@@ -51,8 +51,6 @@ func registerStreamRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 
-
-
 		subID, ch := broker.Subscribe(64)
 		defer broker.Unsubscribe(subID)
 
