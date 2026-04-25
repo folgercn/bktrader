@@ -820,6 +820,7 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 		"lastExchangeUpdateAt": firstNonEmpty(syncResult.SyncedAt, time.Now().UTC().Format(time.RFC3339)),
 	})
 	order.Status = firstNonEmpty(syncResult.Status, order.Status)
+	adoptTerminalReduceOnlyFilledQuantity(&order, syncResult)
 	if strings.EqualFold(order.Status, "CANCELLED") || strings.EqualFold(order.Status, "REJECTED") {
 		markOrderLifecycle(order.Metadata, "filled", false)
 	}
@@ -851,6 +852,54 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 		logger.Warn("record live order sync event failed", "error", telemetryErr)
 	}
 	return updatedOrder, nil
+}
+
+func adoptTerminalReduceOnlyFilledQuantity(order *domain.Order, syncResult LiveOrderSync) {
+	if order == nil || !strings.EqualFold(strings.TrimSpace(syncResult.Status), "FILLED") {
+		return
+	}
+	if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+		return
+	}
+	terminalQuantity := terminalFilledSyncQuantity(syncResult)
+	if !tradingQuantityPositive(terminalQuantity) {
+		return
+	}
+	if order.Quantity <= 0 || !tradingQuantityBelow(terminalQuantity, order.Quantity) {
+		return
+	}
+	if order.Metadata == nil {
+		order.Metadata = map[string]any{}
+	}
+	order.Metadata["terminalSyncOriginalQuantity"] = order.Quantity
+	order.Metadata["terminalSyncFilledQuantity"] = terminalQuantity
+	order.Metadata["terminalSyncQuantityAdjusted"] = true
+	order.Quantity = terminalQuantity
+}
+
+func terminalFilledSyncQuantity(syncResult LiveOrderSync) float64 {
+	metadata := mapValue(syncResult.Metadata)
+	quantity := firstPositive(
+		parseFloatValue(metadata["origQty"]),
+		firstPositive(
+			parseFloatValue(metadata["executedQty"]),
+			firstPositive(
+				parseFloatValue(metadata["cumQty"]),
+				parseFloatValue(metadata["filledQuantity"]),
+			),
+		),
+	)
+	if tradingQuantityPositive(quantity) {
+		return quantity
+	}
+	total := 0.0
+	for _, fill := range syncResult.Fills {
+		total += fill.Quantity
+	}
+	if tradingQuantityPositive(total) {
+		return total
+	}
+	return 0
 }
 
 func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]domain.Fill, float64, float64) {
@@ -1005,6 +1054,9 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	orderCompletelyFilled := !tradingQuantityBelow(filledQuantity, order.Quantity)
 	if orderCompletelyFilled {
 		order.Status = "FILLED"
+		delete(order.Metadata, liveSettlementSyncRequiredKey)
+		delete(order.Metadata, liveSettlementSyncErrorKey)
+	} else if isTerminalOrderStatus(order.Status) && !strings.EqualFold(order.Status, "FILLED") {
 		delete(order.Metadata, liveSettlementSyncRequiredKey)
 		delete(order.Metadata, liveSettlementSyncErrorKey)
 	} else if filledQuantity > 0 {
