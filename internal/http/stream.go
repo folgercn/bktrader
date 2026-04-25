@@ -3,7 +3,10 @@ package http
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -53,6 +56,13 @@ func registerStreamRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 
 		subID, ch := broker.Subscribe(64)
 		defer broker.Unsubscribe(subID)
+		streamLogger := slog.Default().With(
+			"component", "http.dashboard_stream",
+			"subscriber_id", subID,
+			"remote_addr", r.RemoteAddr,
+		)
+		streamStats := newDashboardStreamStats()
+		defer streamStats.logSummary(streamLogger, "closed", true)
 
 		_, _ = fmt.Fprint(w, ": connected\n\n")
 		flusher.Flush()
@@ -71,9 +81,12 @@ func registerStreamRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 				if !ok {
 					return
 				}
-				if err := writeDashboardSSEMessage(w, flusher, event); err != nil {
+				payloadBytes, wireBytes, err := writeDashboardSSEMessage(w, flusher, event)
+				if err != nil {
 					return
 				}
+				streamStats.record(event, payloadBytes, wireBytes)
+				streamStats.logSummary(streamLogger, "interval", false)
 			case <-ticker.C:
 				if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
 					return
@@ -84,14 +97,116 @@ func registerStreamRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 	})
 }
 
-func writeDashboardSSEMessage(w http.ResponseWriter, flusher http.Flusher, event service.DashboardEvent) error {
+func writeDashboardSSEMessage(w http.ResponseWriter, flusher http.Flusher, event service.DashboardEvent) (int, int, error) {
 	payload, err := json.Marshal(event)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, payload); err != nil {
-		return err
+	message := fmt.Sprintf("event: %s\ndata: %s\n\n", event.Type, payload)
+	written, err := fmt.Fprint(w, message)
+	if err != nil {
+		return len(payload), written, err
 	}
 	flusher.Flush()
-	return nil
+	return len(payload), written, nil
+}
+
+type dashboardStreamEventStats struct {
+	Events       int64
+	PayloadBytes int64
+	WireBytes    int64
+	PayloadItems int64
+}
+
+type dashboardStreamStats struct {
+	startedAt time.Time
+	lastLogAt time.Time
+	interval  map[string]dashboardStreamEventStats
+	total     map[string]dashboardStreamEventStats
+}
+
+func newDashboardStreamStats() *dashboardStreamStats {
+	now := time.Now()
+	return &dashboardStreamStats{
+		startedAt: now,
+		lastLogAt: now,
+		interval:  make(map[string]dashboardStreamEventStats),
+		total:     make(map[string]dashboardStreamEventStats),
+	}
+}
+
+func (s *dashboardStreamStats) record(event service.DashboardEvent, payloadBytes, wireBytes int) {
+	key := strings.TrimSpace(event.Type)
+	if key == "" {
+		key = "unknown"
+	}
+	itemCount := dashboardPayloadItemCount(event.Payload)
+	incrementDashboardStreamStats(s.interval, key, payloadBytes, wireBytes, itemCount)
+	incrementDashboardStreamStats(s.total, key, payloadBytes, wireBytes, itemCount)
+}
+
+func incrementDashboardStreamStats(stats map[string]dashboardStreamEventStats, key string, payloadBytes, wireBytes, itemCount int) {
+	item := stats[key]
+	item.Events++
+	item.PayloadBytes += int64(payloadBytes)
+	item.WireBytes += int64(wireBytes)
+	item.PayloadItems += int64(itemCount)
+	stats[key] = item
+}
+
+func (s *dashboardStreamStats) logSummary(logger *slog.Logger, reason string, force bool) {
+	now := time.Now()
+	if !force && now.Sub(s.lastLogAt) < 15*time.Second {
+		return
+	}
+	target := s.interval
+	if force {
+		target = s.total
+	}
+	if len(target) == 0 {
+		s.lastLogAt = now
+		return
+	}
+	for _, eventType := range sortedDashboardStreamEventTypes(target) {
+		item := target[eventType]
+		logger.Info("dashboard stream payload summary",
+			"reason", reason,
+			"event_type", eventType,
+			"events", item.Events,
+			"payload_bytes", item.PayloadBytes,
+			"wire_bytes", item.WireBytes,
+			"payload_items", item.PayloadItems,
+			"elapsed_ms", now.Sub(s.startedAt).Milliseconds(),
+		)
+	}
+	s.interval = make(map[string]dashboardStreamEventStats)
+	s.lastLogAt = now
+}
+
+func sortedDashboardStreamEventTypes(stats map[string]dashboardStreamEventStats) []string {
+	items := make([]string, 0, len(stats))
+	for key := range stats {
+		items = append(items, key)
+	}
+	sort.Strings(items)
+	return items
+}
+
+func dashboardPayloadItemCount(payload any) int {
+	if payload == nil {
+		return 0
+	}
+	value := reflect.ValueOf(payload)
+	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
+		if value.IsNil() {
+			return 0
+		}
+		value = value.Elem()
+	}
+	switch value.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return value.Len()
+	default:
+		return 1
+	}
 }
