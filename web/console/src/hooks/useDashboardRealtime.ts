@@ -99,13 +99,24 @@ export function useDashboardRealtime() {
     const rawInterval = parseInt(import.meta.env.VITE_DASHBOARD_REALTIME_POLL_MS || "5000", 10);
     const pollInterval = isNaN(rawInterval) ? 5000 : Math.max(1000, rawInterval);
     
+    let fallbackTimeout: number | undefined;
+    let fallbackInterval: number | undefined;
+
     if (isFirstLoad) {
       load();
+      fallbackInterval = window.setInterval(load, pollInterval);
+    } else {
+      fallbackTimeout = window.setTimeout(() => {
+        if (!active) return;
+        load();
+        fallbackInterval = window.setInterval(load, pollInterval);
+      }, pollInterval);
     }
-    const timer = window.setInterval(load, pollInterval);
+
     return () => {
       active = false;
-      window.clearInterval(timer);
+      if (fallbackTimeout) window.clearTimeout(fallbackTimeout);
+      if (fallbackInterval) window.clearInterval(fallbackInterval);
     };
   }, [authSession?.token, isStreamEnabled, isStreamConnected]);
 
