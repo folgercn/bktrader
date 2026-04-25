@@ -42,16 +42,7 @@ func (p *Platform) ListSignalRuntimeSessionsSummary() []domain.SignalRuntimeSess
 	stripped := make([]domain.SignalRuntimeSession, len(items))
 	for i, item := range items {
 		newItem := item
-		if item.State != nil {
-			newState := make(map[string]any, len(item.State))
-			for k, v := range item.State {
-				if k == "sourceStates" || k == "signalBarStates" {
-					continue
-				}
-				newState[k] = v
-			}
-			newItem.State = newState
-		}
+		newItem.State = stripHeavyState(item.State)
 		stripped[i] = newItem
 	}
 	return stripped
