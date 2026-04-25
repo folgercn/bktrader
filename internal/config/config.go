@@ -57,6 +57,13 @@ type Config struct {
 	LiveSignalWarmWindowDays       *int   // 实盘信号预热窗口（天）
 	LiveFastSignalWarmWindowDays   *int   // 实盘快速信号预热窗口（天）
 	LiveMinuteWarmWindowDays       *int   // 实盘分钟数据预热窗口（天）
+	DashboardLiveSessionsPollMs    int    // 仪表盘 Live Sessions 轮询间隔 (ms)
+	DashboardPositionsPollMs       int    // 仪表盘 Positions 轮询间隔 (ms)
+	DashboardOrdersPollMs          int    // 仪表盘 Orders 轮询间隔 (ms)
+	DashboardFillsPollMs           int    // 仪表盘 Fills 轮询间隔 (ms)
+	DashboardAlertsPollMs          int    // 仪表盘 Alerts 轮询间隔 (ms)
+	DashboardNotificationsPollMs   int    // 仪表盘 Notifications 轮询间隔 (ms)
+	DashboardMonitorHealthPollMs   int    // 仪表盘 Monitor Health 轮询间隔 (ms)
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -124,6 +131,13 @@ func Load() Config {
 		LiveSignalWarmWindowDays:       IntPtrFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS"),
 		LiveFastSignalWarmWindowDays:   IntPtrFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS"),
 		LiveMinuteWarmWindowDays:       IntPtrFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS"),
+		DashboardLiveSessionsPollMs:    intFromEnvWithMin("DASHBOARD_LIVE_SESSIONS_POLL_MS", 2000, 1000),
+		DashboardPositionsPollMs:       intFromEnvWithMin("DASHBOARD_POSITIONS_POLL_MS", 2000, 1000),
+		DashboardOrdersPollMs:          intFromEnvWithMin("DASHBOARD_ORDERS_POLL_MS", 2000, 1000),
+		DashboardFillsPollMs:           intFromEnvWithMin("DASHBOARD_FILLS_POLL_MS", 2000, 1000),
+		DashboardAlertsPollMs:          intFromEnvWithMin("DASHBOARD_ALERTS_POLL_MS", 2000, 1000),
+		DashboardNotificationsPollMs:   intFromEnvWithMin("DASHBOARD_NOTIFICATIONS_POLL_MS", 2000, 1000),
+		DashboardMonitorHealthPollMs:   intFromEnvWithMin("DASHBOARD_MONITOR_HEALTH_POLL_MS", 2000, 1000),
 	}
 }
 
@@ -197,6 +211,18 @@ func getenv(key, fallback string) string {
 func intFromEnv(key string, fallback int) int {
 	if value := os.Getenv(key); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func intFromEnvWithMin(key string, fallback, min int) int {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			if parsed < min {
+				return fallback
+			}
 			return parsed
 		}
 	}

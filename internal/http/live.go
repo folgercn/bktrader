@@ -16,13 +16,16 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 		switch r.Method {
 		case http.MethodGet:
 			view := r.URL.Query().Get("view")
-			items, err := platform.ListLiveSessions()
+			var items []domain.LiveSession
+			var err error
+			if view == "summary" {
+				items, err = platform.ListLiveSessionsSummary()
+			} else {
+				items, err = platform.ListLiveSessions()
+			}
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
-			}
-			if view == "summary" {
-				items = stripLiveSessionHeavyState(items)
 			}
 			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
@@ -680,23 +683,4 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeError(w, http.StatusNotFound, "unsupported live session action")
 		}
 	})
-}
-
-func stripLiveSessionHeavyState(items []domain.LiveSession) []domain.LiveSession {
-	stripped := make([]domain.LiveSession, len(items))
-	for i, item := range items {
-		newItem := item
-		if item.State != nil {
-			newState := make(map[string]any, len(item.State))
-			for k, v := range item.State {
-				if k == "sourceStates" || k == "signalBarStates" {
-					continue
-				}
-				newState[k] = v
-			}
-			newItem.State = newState
-		}
-		stripped[i] = newItem
-	}
-	return stripped
 }

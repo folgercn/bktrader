@@ -14,6 +14,8 @@ import (
 
 type authClaims struct {
 	Username string `json:"username"`
+	Scope    string `json:"scope,omitempty"`
+	Jti      string `json:"jti,omitempty"`
 	IssuedAt int64  `json:"iat"`
 	Expiry   int64  `json:"exp"`
 }
@@ -38,7 +40,7 @@ func registerAuthRoutes(mux *http.ServeMux, cfg config.Config) {
 			return
 		}
 
-		token, expiresAt, err := issueAuthToken(cfg, strings.TrimSpace(payload.Username))
+		token, expiresAt, err := issueToken(cfg, strings.TrimSpace(payload.Username), "api", "", time.Duration(cfg.AuthTokenTTLMinutes)*time.Minute)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -50,6 +52,31 @@ func registerAuthRoutes(mux *http.ServeMux, cfg config.Config) {
 			"expiresAt":   expiresAt.UTC().Format(time.RFC3339),
 			"username":    strings.TrimSpace(payload.Username),
 			"environment": cfg.Environment,
+		})
+	})
+
+	mux.HandleFunc("/api/v1/auth/stream-token", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		claims, ok := authClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		jti := fmt.Sprintf("%d-%s", time.Now().UnixNano(), claims.Username)
+		token, expiresAt, err := issueToken(cfg, claims.Username, "dashboard_stream", jti, 1*time.Minute)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"token":     token,
+			"tokenType": "Bearer",
+			"expiresAt": expiresAt.UTC().Format(time.RFC3339),
 		})
 	})
 
@@ -84,11 +111,13 @@ func validateCredentials(cfg config.Config, username, password string) error {
 	return nil
 }
 
-func issueAuthToken(cfg config.Config, username string) (string, time.Time, error) {
+func issueToken(cfg config.Config, username, scope, jti string, ttl time.Duration) (string, time.Time, error) {
 	now := time.Now().UTC()
-	expiresAt := now.Add(time.Duration(cfg.AuthTokenTTLMinutes) * time.Minute)
+	expiresAt := now.Add(ttl)
 	claims := authClaims{
 		Username: username,
+		Scope:    scope,
+		Jti:      jti,
 		IssuedAt: now.Unix(),
 		Expiry:   expiresAt.Unix(),
 	}

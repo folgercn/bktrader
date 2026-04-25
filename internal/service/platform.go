@@ -58,6 +58,7 @@ type Platform struct {
 	telegramSentAlertCache sync.Map // notificationID -> alertTitle
 	tickEvalThrottle       sync.Map // runtimeSessionID or runtimeSessionID|symbol -> *tickEvalThrottleState
 	logBroker              *logging.Broker
+	dashboardBroker        *DashboardBroker
 }
 
 type RuntimePolicy struct {
@@ -140,6 +141,7 @@ func NewPlatform(store store.Repository) *Platform {
 	platform.registerBuiltInSignalSources()
 	platform.registerBuiltInSignalRuntimeAdapters()
 	platform.registerBuiltInExecutionStrategies()
+	platform.dashboardBroker = NewDashboardBroker(platform)
 	platform.logger("service.platform").Info("platform initialized",
 		"strategy_engine_count", len(platform.strategyEngines),
 		"live_adapter_count", len(platform.liveAdapters),
@@ -148,6 +150,17 @@ func NewPlatform(store store.Repository) *Platform {
 		"execution_strategy_count", len(platform.executionStrategies),
 	)
 	return platform
+}
+
+// StartDashboardBroker 启动仪表盘实时数据轮询检测
+func (p *Platform) StartDashboardBroker(ctx context.Context, cfg config.Config) {
+	p.logger("service.platform").Info("starting dashboard broker polling")
+	go p.dashboardBroker.StartPolling(ctx, cfg)
+}
+
+// DashboardBroker 返回内部仪表盘事件分发器
+func (p *Platform) DashboardBroker() *DashboardBroker {
+	return p.dashboardBroker
 }
 
 func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {

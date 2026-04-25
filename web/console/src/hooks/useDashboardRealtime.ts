@@ -7,6 +7,7 @@ import {
   LiveSession, Position, Order, Fill, PlatformAlert, 
   PlatformNotification, PlatformHealthSnapshot
 } from '../types/domain';
+import { useDashboardStream } from './useDashboardStream';
 
 export function useDashboardRealtime() {
   const setError = useUIStore(s => s.setError);
@@ -23,6 +24,9 @@ export function useDashboardRealtime() {
   const setMonitorHealth = useTradingStore(s => s.setMonitorHealth);
 
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+
+  const isStreamEnabled = import.meta.env.VITE_DASHBOARD_STREAM_ENABLED === 'true';
+  const { isConnected: isStreamConnected } = useDashboardStream(isStreamEnabled);
 
   async function loadRealtime() {
     const [
@@ -88,6 +92,11 @@ export function useDashboardRealtime() {
       }
     }
 
+    // If stream is enabled and connected, we don't need to poll HTTP
+    if (isStreamEnabled && isStreamConnected) {
+      return () => { active = false; };
+    }
+
     load();
     const rawInterval = parseInt(import.meta.env.VITE_DASHBOARD_REALTIME_POLL_MS || "5000", 10);
     const pollInterval = isNaN(rawInterval) ? 5000 : Math.max(1000, rawInterval);
@@ -96,7 +105,7 @@ export function useDashboardRealtime() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [authSession?.token]);
+  }, [authSession?.token, isStreamEnabled, isStreamConnected]);
 
   return { loadRealtime };
 }

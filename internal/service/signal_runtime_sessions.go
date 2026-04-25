@@ -37,6 +37,26 @@ func (p *Platform) ListSignalRuntimeSessions() []domain.SignalRuntimeSession {
 	return items
 }
 
+func (p *Platform) ListSignalRuntimeSessionsSummary() []domain.SignalRuntimeSession {
+	items := p.ListSignalRuntimeSessions()
+	stripped := make([]domain.SignalRuntimeSession, len(items))
+	for i, item := range items {
+		newItem := item
+		if item.State != nil {
+			newState := make(map[string]any, len(item.State))
+			for k, v := range item.State {
+				if k == "sourceStates" || k == "signalBarStates" {
+					continue
+				}
+				newState[k] = v
+			}
+			newItem.State = newState
+		}
+		stripped[i] = newItem
+	}
+	return stripped
+}
+
 func (p *Platform) GetSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -24,18 +24,30 @@ func authMiddleware(cfg config.Config, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/api/v1/stream/dashboard" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !cfg.AuthEnabled {
 			next.ServeHTTP(w, r)
 			return
 		}
 
+		var token string
 		authorization := strings.TrimSpace(r.Header.Get("Authorization"))
-		if !strings.HasPrefix(strings.ToLower(authorization), "bearer ") {
+		if authorization != "" {
+			if !strings.HasPrefix(strings.ToLower(authorization), "bearer ") {
+				writeError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			token = strings.TrimSpace(authorization[len("Bearer "):])
+		}
+
+		if token == "" {
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
-		token := strings.TrimSpace(authorization[len("Bearer "):])
 		claims, err := parseAuthToken(cfg, token)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())

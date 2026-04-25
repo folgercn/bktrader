@@ -245,9 +245,11 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 		switch r.Method {
 		case http.MethodGet:
 			view := r.URL.Query().Get("view")
-			items := platform.ListSignalRuntimeSessions()
+			var items []domain.SignalRuntimeSession
 			if view == "summary" {
-				items = stripRuntimeSessionHeavyState(items)
+				items = platform.ListSignalRuntimeSessionsSummary()
+			} else {
+				items = platform.ListSignalRuntimeSessions()
 			}
 			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
@@ -330,23 +332,4 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeError(w, http.StatusNotFound, "signal runtime session action not found")
 		}
 	})
-}
-
-func stripRuntimeSessionHeavyState(items []domain.SignalRuntimeSession) []domain.SignalRuntimeSession {
-	stripped := make([]domain.SignalRuntimeSession, len(items))
-	for i, item := range items {
-		newItem := item
-		if item.State != nil {
-			newState := make(map[string]any, len(item.State))
-			for k, v := range item.State {
-				if k == "sourceStates" || k == "signalBarStates" {
-					continue
-				}
-				newState[k] = v
-			}
-			newItem.State = newState
-		}
-		stripped[i] = newItem
-	}
-	return stripped
 }
