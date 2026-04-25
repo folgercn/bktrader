@@ -983,6 +983,202 @@ func TestApplyLiveSyncResultHealsStoredQuantityFromNormalizedSubmission(t *testi
 	}
 }
 
+func TestApplyLiveSyncResultSettlesClippedReduceOnlyFallbackClose(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get live account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.0129,
+		EntryPrice:        77620,
+		MarkPrice:         77597.7,
+	}); err != nil {
+		t.Fatalf("save live position failed: %v", err)
+	}
+
+	limitOrder, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "LIMIT",
+		Status:            "ACCEPTED",
+		Quantity:          0.0129,
+		Price:             77597.7,
+		ReduceOnly:        true,
+		Metadata: map[string]any{
+			"exchangeOrderId": "exchange-limit-exit",
+			"executionProposal": map[string]any{
+				"role":       "exit",
+				"reason":     "PT",
+				"reduceOnly": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create limit close order failed: %v", err)
+	}
+	limitOrder, err = platform.applyLiveSyncResult(account, limitOrder, LiveOrderSync{
+		Status:   "CANCELLED",
+		SyncedAt: "2026-04-24T21:41:10Z",
+		Fills: []LiveFillReport{
+			{
+				Price:    77597.7,
+				Quantity: 0.001,
+				Fee:      0.01551954,
+				Metadata: map[string]any{
+					"exchangeOrderId": "exchange-limit-exit",
+					"tradeId":         "trade-limit-1",
+					"tradeTime":       "2026-04-24T21:41:06Z",
+				},
+			},
+			{
+				Price:    77597.7,
+				Quantity: 0.0014,
+				Fee:      0.02172735,
+				Metadata: map[string]any{
+					"exchangeOrderId": "exchange-limit-exit",
+					"tradeId":         "trade-limit-2",
+					"tradeTime":       "2026-04-24T21:41:08Z",
+				},
+			},
+			{
+				Price:    77597.7,
+				Quantity: 0.0014,
+				Fee:      0.02172735,
+				Metadata: map[string]any{
+					"exchangeOrderId": "exchange-limit-exit",
+					"tradeId":         "trade-limit-3",
+					"tradeTime":       "2026-04-24T21:41:09Z",
+				},
+			},
+		},
+		Metadata: map[string]any{
+			"binanceStatus":    "CANCELED",
+			"exchangeOrderId":  "exchange-limit-exit",
+			"executedQty":      0.0038,
+			"origQty":          0.0129,
+			"tradeReportCount": 3,
+			"updateTime":       "2026-04-24T21:41:10Z",
+		},
+		Terminal: true,
+	})
+	if err != nil {
+		t.Fatalf("settle cancelled limit close failed: %v", err)
+	}
+	if got := limitOrder.Status; got != "CANCELLED" {
+		t.Fatalf("expected partially-filled cancelled limit order to stay terminal, got %s", got)
+	}
+	if got := parseFloatValue(limitOrder.Metadata["filledQuantity"]); !tradingQuantityEqual(got, 0.0038) {
+		t.Fatalf("expected limit filledQuantity 0.0038, got %v", got)
+	}
+	position, found, err := store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position after limit close failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected remaining position after cancelled partial close")
+	}
+	if !tradingQuantityEqual(position.Quantity, 0.0091) {
+		t.Fatalf("expected remaining position quantity 0.0091, got %v", position.Quantity)
+	}
+
+	fallbackOrder, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Status:            "FILLED",
+		Quantity:          0.0129,
+		Price:             77593.4,
+		ReduceOnly:        true,
+		Metadata: map[string]any{
+			"exchangeOrderId": "exchange-market-fallback",
+			"executionProposal": map[string]any{
+				"role":       "exit",
+				"reason":     "PT-timeout-fallback",
+				"reduceOnly": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create fallback close order failed: %v", err)
+	}
+	fallbackSync := LiveOrderSync{
+		Status:   "FILLED",
+		SyncedAt: "2026-04-24T21:41:10Z",
+		Fills: []LiveFillReport{{
+			Price:    77593.4,
+			Quantity: 0.0091,
+			Fee:      0.28243997,
+			Metadata: map[string]any{
+				"exchangeOrderId": "exchange-market-fallback",
+				"tradeId":         "trade-market-1",
+				"tradeTime":       "2026-04-24T21:41:10Z",
+			},
+		}},
+		Metadata: map[string]any{
+			"binanceStatus":    "FILLED",
+			"exchangeOrderId":  "exchange-market-fallback",
+			"executedQty":      0.0091,
+			"origQty":          0.0129,
+			"tradeReportCount": 1,
+			"updateTime":       "2026-04-24T21:41:10Z",
+		},
+		Terminal: true,
+	}
+	fallbackOrder, err = platform.applyLiveSyncResult(account, fallbackOrder, fallbackSync)
+	if err != nil {
+		t.Fatalf("settle market fallback close failed: %v", err)
+	}
+	if got := fallbackOrder.Status; got != "FILLED" {
+		t.Fatalf("expected clipped reduce-only fallback to settle FILLED, got %s", got)
+	}
+	if !tradingQuantityEqual(fallbackOrder.Quantity, 0.0091) {
+		t.Fatalf("expected fallback order quantity to heal to 0.0091, got %v", fallbackOrder.Quantity)
+	}
+	if got := parseFloatValue(fallbackOrder.Metadata["remainingQuantity"]); got != 0 {
+		t.Fatalf("expected fallback remainingQuantity 0, got %v", got)
+	}
+	if !boolValue(fallbackOrder.Metadata["terminalSyncQuantityAdjusted"]) {
+		t.Fatal("expected terminal sync quantity adjustment marker")
+	}
+	if _, found, err := store.FindPosition(account.ID, "BTCUSDT"); err != nil {
+		t.Fatalf("find position after fallback close failed: %v", err)
+	} else if found {
+		t.Fatal("expected fallback close to clear the remaining position")
+	}
+
+	fallbackOrder, err = platform.applyLiveSyncResult(account, fallbackOrder, fallbackSync)
+	if err != nil {
+		t.Fatalf("repeat fallback sync failed: %v", err)
+	}
+	if got := fallbackOrder.Status; got != "FILLED" {
+		t.Fatalf("expected repeated fallback sync to keep FILLED, got %s", got)
+	}
+	fills, err := store.ListFills()
+	if err != nil {
+		t.Fatalf("list fills failed: %v", err)
+	}
+	fallbackFillCount := 0
+	for _, fill := range fills {
+		if fill.OrderID == fallbackOrder.ID {
+			fallbackFillCount++
+		}
+	}
+	if fallbackFillCount != 1 {
+		t.Fatalf("expected repeated fallback sync to keep one fill, got %d", fallbackFillCount)
+	}
+}
+
 func TestClosePositionImmediatelySettlesFilledLiveManualClose(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
