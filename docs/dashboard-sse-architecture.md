@@ -9,7 +9,7 @@ Dashboard realtime data currently supports two transport modes:
 
 The intent of the SSE path is to reduce high-frequency Dashboard API polling pressure while keeping the UI resilient. When SSE is unavailable, the frontend must fall back to HTTP polling automatically.
 
-This document describes the current design introduced around PR #187 and the follow-up stabilization tasks tracked by #194.
+This document describes the current design introduced around PR #187, the follow-up stabilization tasks tracked by #194, and the longer-term evolution path from polling-based SSE to event-driven realtime delivery.
 
 ## 2. High-level Data Flow
 
@@ -278,7 +278,167 @@ Possible future work:
 - Move broker from polling-diff to event-driven publishing where possible.
 - Add per-domain error events for frontend visibility.
 
-## 13. Design Principles
+## 13. Transport Evolution: HTTP Polling -> SSE -> WebSocket -> Event-driven
+
+The current SSE design is a good middle step. It reduces browser-driven polling pressure without requiring a full duplex protocol. Future evolution should be staged instead of jumping directly to WebSocket.
+
+### 13.1 Stage 0: HTTP polling
+
+Status: existing fallback.
+
+Characteristics:
+
+- Client periodically pulls data.
+- Simple and reliable.
+- Expensive when many tabs or users are open.
+- Latency is bounded by polling interval.
+
+Keep this path permanently as a fallback.
+
+### 13.2 Stage 1: SSE snapshot stream
+
+Status: current design from PR #187.
+
+Characteristics:
+
+- Server pushes snapshot events over one-way stream.
+- Frontend applies idempotent state replacement.
+- HTTP polling remains fallback.
+- Broker still internally polls and hashes payloads.
+
+This stage is intentionally conservative. It improves user-perceived latency and reduces repeated browser requests while avoiding complicated client-side reconcile logic.
+
+### 13.3 Stage 2: SSE incremental events
+
+Target: after snapshot stream stabilizes.
+
+Possible actions:
+
+- `snapshot`: replace full slice.
+- `upsert`: insert or update one record.
+- `delete`: remove one record.
+- `patch`: update selected fields.
+- `error`: report per-domain data fetch problem.
+
+Recommended approach:
+
+1. Keep snapshot as the authoritative recovery mechanism.
+2. Introduce incremental events per domain, starting with low-risk data such as notifications or alerts.
+3. Add frontend reducer tests before enabling incremental mode for trading-sensitive panels.
+4. Periodically send snapshot events to repair drift.
+
+Do not remove snapshot support when incremental events are introduced.
+
+### 13.4 Stage 3: SSE replay and resume
+
+Target: improve reconnect correctness.
+
+Possible additions:
+
+- Respect `Last-Event-ID` from EventSource.
+- Keep a bounded ring buffer of recent events per domain.
+- Resume from last acknowledged event when possible.
+- Fall back to initial snapshots if the requested event is too old.
+
+This requires `seq` and event IDs to be stable and monotonic. PR #187 already keeps `seq` monotonic, which is a useful foundation.
+
+### 13.5 Stage 4: Event-driven broker
+
+Target: remove internal polling-diff where the backend already knows something changed.
+
+Possible data sources:
+
+- order created / status changed
+- fill persisted
+- position updated
+- live session state changed
+- alert emitted
+- notification created / acked
+- health state changed
+
+Design direction:
+
+```text
+Domain write path
+  -> domain event
+  -> DashboardBroker.Publish(...)
+  -> SSE subscribers
+```
+
+Polling can remain only for data sources that do not have reliable write-path events.
+
+This is the main path to reduce backend CPU/GC cost further, because it avoids periodic marshal/hash for unchanged data.
+
+### 13.6 Stage 5: WebSocket, only if bidirectional control is required
+
+WebSocket is not automatically better than SSE for Dashboard telemetry.
+
+Prefer staying on SSE while the Dashboard only needs server-to-client updates.
+
+Consider WebSocket only if the product requires:
+
+- browser-to-server interactive subscriptions;
+- per-panel dynamic topic selection without reopening streams;
+- client acknowledgements;
+- low-latency command/control flows;
+- multiplexing many logical streams over one connection;
+- collaborative or multi-operator realtime interactions.
+
+If WebSocket is introduced, trading command execution must remain carefully separated from telemetry. Do not mix trading actions and passive Dashboard updates in the same unreviewed protocol path.
+
+## 14. Operational Observability Roadmap
+
+To operate the SSE path safely, add broker and stream metrics before relying on it as the only realtime path.
+
+Recommended metrics:
+
+- active SSE subscribers
+- subscriber connect/disconnect count
+- stream token issue count
+- stream token auth failure count
+- per-domain publish count
+- per-domain dropped event count
+- per-domain marshal/hash duration
+- per-domain payload size
+- reconnect count on frontend
+- fallback polling activation count
+
+Recommended logs:
+
+- stream connection accepted
+- stream auth rejected with reason class, without logging token
+- subscriber removed due to client disconnect
+- dropped event due to full channel
+- broker fetch failure by domain
+
+Avoid logging stream tokens, API tokens, or full SSE URLs containing query tokens.
+
+## 15. Safety Boundaries
+
+Dashboard SSE is a telemetry channel. It must not become an execution path.
+
+Rules:
+
+- Do not send trading commands through Dashboard SSE.
+- Do not add write actions to the SSE endpoint.
+- Keep stream tokens scoped to `dashboard_stream`.
+- Keep normal API tokens out of query strings.
+- Keep HTTP polling fallback until SSE has enough production soak time.
+- Keep summary payloads lightweight by default.
+
+## 16. Decision Matrix: When to Change Transport
+
+| Need | Recommended transport |
+|---|---|
+| Simple dashboard updates | SSE |
+| One-way server push | SSE |
+| Must support legacy fallback | SSE + HTTP polling |
+| Client sends frequent realtime commands | WebSocket |
+| Need ack/replay only | SSE with `Last-Event-ID` first |
+| Need topic subscription changes at high frequency | WebSocket may be justified |
+| Need trading actions | Normal reviewed API path, not SSE |
+
+## 17. Design Principles
 
 - Keep trade execution paths untouched.
 - Keep SSE payloads lightweight by default.
@@ -286,3 +446,5 @@ Possible future work:
 - Keep HTTP polling as a reliable fallback.
 - Avoid exposing high-privilege API tokens in URLs.
 - Keep summary field boundaries centralized and consistent.
+- Move from polling-diff to event-driven publishing incrementally.
+- Use WebSocket only when bidirectional realtime requirements clearly justify it.
