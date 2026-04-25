@@ -24,6 +24,13 @@ let equitySnapshotCache: {
 };
 let equitySnapshotInFlight: { key: string; promise: Promise<AccountEquitySnapshot[]> } | null = null;
 
+function serializeTimeParam(value: number | string | Date) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return String(value);
+}
+
 async function fetchCachedEquitySnapshots(queryKey: string) {
   const now = Date.now();
   if (
@@ -95,8 +102,8 @@ export function useDashboardState() {
 
     const snapshotQuery = new URLSearchParams({
       accountId: normalizedSummaries[0]?.accountId ?? "",
-      from: String(from),
-      to: String(to),
+      from: serializeTimeParam(from),
+      to: serializeTimeParam(to),
       limit: EQUITY_SNAPSHOT_LIMIT,
     });
     const snapshotQueryKey = snapshotQuery.toString();
