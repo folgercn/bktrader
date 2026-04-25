@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
-func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
+func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg config.Config) {
 	mux.HandleFunc("/api/v1/live/sessions", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -648,6 +649,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 		action := parts[1]
 		switch action {
 		case "start":
+			if !cfg.RuntimeActionsEnabled() {
+				writeError(w, http.StatusConflict, "runtime action start is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+				return
+			}
 			item, err := platform.StartLiveSession(sessionID)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
@@ -655,6 +660,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			writeJSON(w, http.StatusOK, item)
 		case "stop":
+			if !cfg.RuntimeActionsEnabled() {
+				writeError(w, http.StatusConflict, "runtime action stop is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+				return
+			}
 			item, err := platform.StopLiveSessionWithForce(sessionID, queryFlagEnabled(r, "force"))
 			if err != nil {
 				if errors.Is(err, service.ErrActivePositionsOrOrders) {
@@ -666,6 +675,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			writeJSON(w, http.StatusOK, item)
 		case "dispatch":
+			if !cfg.RuntimeActionsEnabled() {
+				writeError(w, http.StatusConflict, "runtime action dispatch is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+				return
+			}
 			item, err := platform.DispatchLiveSessionIntent(sessionID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -673,6 +686,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			writeJSON(w, http.StatusOK, item)
 		case "sync":
+			if !cfg.RuntimeActionsEnabled() {
+				writeError(w, http.StatusConflict, "runtime action sync is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+				return
+			}
 			item, err := platform.SyncLiveSession(sessionID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())

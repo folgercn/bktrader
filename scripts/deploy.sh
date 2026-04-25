@@ -9,6 +9,7 @@ APP_ENV_FILE=${APP_ENV_FILE:-$DEPLOY_PATH/.env}
 IMAGE_REPO=${IMAGE_REPO:-ghcr.io/folgercn/bktrader-app}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 DOCKER_CONFIG_DIR=${DOCKER_CONFIG_DIR:-$DEPLOY_PATH/.docker-ci}
+DEPLOY_SERVICES=${DEPLOY_SERVICES:-}
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker command not found; install Docker Desktop or another Docker runtime on this Mac." >&2
@@ -47,9 +48,31 @@ fi
 
 export IMAGE_REPO IMAGE_TAG APP_ENV_FILE
 
-docker-compose -f "$COMPOSE_FILE" pull
+deploy_args=()
+if [[ -n "$DEPLOY_SERVICES" ]]; then
+  for service in $DEPLOY_SERVICES; do
+    case "$service" in
+      platform-api|live-runner|notification-worker)
+        deploy_args+=("$service")
+        ;;
+      *)
+        echo "Unsupported DEPLOY_SERVICES entry: $service" >&2
+        echo "Allowed services: platform-api live-runner notification-worker" >&2
+        exit 2
+        ;;
+    esac
+  done
+fi
 
-docker-compose -f "$COMPOSE_FILE" up -d
+if [[ ${#deploy_args[@]} -eq 0 ]]; then
+  echo "Deploying all compose services"
+  docker-compose -f "$COMPOSE_FILE" pull
+  docker-compose -f "$COMPOSE_FILE" up -d --remove-orphans
+else
+  echo "Deploying compose services: ${deploy_args[*]}"
+  docker-compose -f "$COMPOSE_FILE" pull "${deploy_args[@]}"
+  docker-compose -f "$COMPOSE_FILE" up -d --remove-orphans "${deploy_args[@]}"
+fi
 
 docker image prune -f >/dev/null 2>&1 || true
 

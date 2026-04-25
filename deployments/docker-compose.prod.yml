@@ -1,9 +1,7 @@
-services:
-  app:
+x-app-image: &app-image
     image: ${IMAGE_REPO:-ghcr.io/folgercn/bktrader-app}:${IMAGE_TAG:-latest}
-    container_name: bktrader-app
-    mem_limit: ${APP_MEM_LIMIT:-1536m}
-    memswap_limit: ${APP_MEMSWAP_LIMIT:-2g}
+    mem_limit: ${APP_MEM_LIMIT:-768m}
+    memswap_limit: ${APP_MEMSWAP_LIMIT:-1g}
     restart: unless-stopped
     env_file:
       - ${APP_ENV_FILE:-./.env}
@@ -11,14 +9,52 @@ services:
       LOG_DIR: ${LOG_DIR:-/app/logs}
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
       LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-100}
-    ports:
-      - "8080:8080"
     volumes:
       - ../logs:/app/logs
     depends_on:
       - postgres
       - redis
       - nats
+
+services:
+  platform-api:
+    <<: *app-image
+    container_name: bktrader-platform-api
+    command: ["platform-api"]
+    environment:
+      BKTRADER_ROLE: api
+      AUTO_MIGRATE: ${API_AUTO_MIGRATE:-true}
+      LOG_DIR: ${LOG_DIR:-/app/logs}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
+      LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-100}
+    ports:
+      - "8080:8080"
+
+  live-runner:
+    <<: *app-image
+    container_name: bktrader-live-runner
+    command: ["platform-worker"]
+    mem_limit: ${LIVE_RUNNER_MEM_LIMIT:-1536m}
+    memswap_limit: ${LIVE_RUNNER_MEMSWAP_LIMIT:-2g}
+    environment:
+      BKTRADER_ROLE: live-runner
+      AUTO_MIGRATE: "false"
+      LOG_DIR: ${LOG_DIR:-/app/logs}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
+      LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-100}
+
+  notification-worker:
+    <<: *app-image
+    container_name: bktrader-notification-worker
+    command: ["platform-worker"]
+    mem_limit: ${NOTIFICATION_WORKER_MEM_LIMIT:-256m}
+    memswap_limit: ${NOTIFICATION_WORKER_MEMSWAP_LIMIT:-512m}
+    environment:
+      BKTRADER_ROLE: notification-worker
+      AUTO_MIGRATE: "false"
+      LOG_DIR: ${LOG_DIR:-/app/logs}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
+      LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-100}
 
   postgres:
     image: postgres:16

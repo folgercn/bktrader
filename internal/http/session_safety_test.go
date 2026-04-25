@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/service"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
@@ -27,7 +28,7 @@ func TestLiveSessionStopRouteRespectsForceQuery(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	registerLiveRoutes(mux, platform)
+	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "monolith"})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/stop", nil)
@@ -41,6 +42,29 @@ func TestLiveSessionStopRouteRespectsForceQuery(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for forced stop, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLiveSessionRuntimeActionsDisabledForAPIRole(t *testing.T) {
+	cases := []string{
+		"/api/v1/live/sessions/live-session-main/start",
+		"/api/v1/live/sessions/live-session-main/stop",
+		"/api/v1/live/sessions/live-session-main/dispatch",
+		"/api/v1/live/sessions/live-session-main/sync",
+	}
+	for _, path := range cases {
+		t.Run(path, func(t *testing.T) {
+			platform := service.NewPlatform(memory.NewStore())
+			mux := http.NewServeMux()
+			registerLiveRoutes(mux, platform, config.Config{ProcessRole: "api"})
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, path, nil)
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("expected 409 for api role runtime action, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

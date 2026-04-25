@@ -18,6 +18,7 @@ type Config struct {
 	LogRetentionDays               int    // 日志保留天数
 	LogMaxSizeMB                   int    // 单个日志文件滚动前的最大体积（MB）
 	HTTPAddr                       string // HTTP 监听地址
+	ProcessRole                    string // 进程角色：monolith / api / live-runner / notification-worker
 	StoreBackend                   string // 存储后端类型（memory / postgres）
 	AutoMigrate                    bool   // 是否在启动时自动执行数据库迁移
 	PostgresDSN                    string // PostgreSQL 连接字符串
@@ -92,6 +93,7 @@ func Load() Config {
 		LogRetentionDays:               intFromEnv("LOG_RETENTION_DAYS", 7),
 		LogMaxSizeMB:                   intFromEnv("LOG_MAX_SIZE_MB", 100),
 		HTTPAddr:                       getenv("HTTP_ADDR", ":8080"),
+		ProcessRole:                    strings.ToLower(strings.TrimSpace(getenv("BKTRADER_ROLE", "monolith"))),
 		StoreBackend:                   getenv("STORE_BACKEND", "memory"),
 		AutoMigrate:                    boolFromEnv("AUTO_MIGRATE", true),
 		PostgresDSN:                    getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
@@ -175,6 +177,11 @@ func (c Config) Validate() error {
 	if c.HTTPAddr == "" {
 		return fmt.Errorf("HTTP_ADDR 不能为空")
 	}
+	switch strings.ToLower(strings.TrimSpace(c.ProcessRole)) {
+	case "", "monolith", "api", "live-runner", "notification-worker":
+	default:
+		return fmt.Errorf("不支持的 BKTRADER_ROLE: %s（可选: monolith, api, live-runner, notification-worker）", c.ProcessRole)
+	}
 	if c.StoreBackend == "postgres" && c.PostgresDSN == "" {
 		return fmt.Errorf("STORE_BACKEND=postgres 时 POSTGRES_DSN 不能为空")
 	}
@@ -198,6 +205,17 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+// RuntimeActionsEnabled reports whether this process is allowed to execute
+// live runtime mutations such as start, dispatch, and explicit sync.
+func (c Config) RuntimeActionsEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(c.ProcessRole)) {
+	case "", "monolith", "live-runner":
+		return true
+	default:
+		return false
+	}
 }
 
 // getenv 读取环境变量，未设置时返回 fallback 默认值。

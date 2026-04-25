@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
@@ -20,7 +21,7 @@ type runtimePolicyPatch struct {
 }
 
 // registerSignalRoutes 注册信号源相关路由。
-func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
+func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform, cfg config.Config) {
 	// GET /api/v1/signal-sources — 获取信号源列表
 	mux.HandleFunc("/api/v1/signal-sources", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, platform.SignalSourceCatalog())
@@ -315,6 +316,10 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 		}
 		switch action {
 		case "start":
+			if !cfg.RuntimeActionsEnabled() {
+				writeError(w, http.StatusConflict, "runtime action start is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+				return
+			}
 			item, err := platform.StartSignalRuntimeSession(sessionID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -322,6 +327,10 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			writeJSON(w, http.StatusOK, item)
 		case "stop":
+			if !cfg.RuntimeActionsEnabled() {
+				writeError(w, http.StatusConflict, "runtime action stop is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+				return
+			}
 			item, err := platform.StopSignalRuntimeSessionWithForce(sessionID, queryFlagEnabled(r, "force"))
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())

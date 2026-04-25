@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/service"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
@@ -13,7 +14,7 @@ import (
 func TestRuntimePolicyPatchPreservesOmittedFieldsAndAllowsZeroHealthThresholds(t *testing.T) {
 	platform := service.NewPlatform(memory.NewStore())
 	mux := http.NewServeMux()
-	registerSignalRoutes(mux, platform)
+	registerSignalRoutes(mux, platform, config.Config{ProcessRole: "monolith"})
 
 	updateRequest := func(body string) {
 		t.Helper()
@@ -48,5 +49,26 @@ func TestRuntimePolicyPatchPreservesOmittedFieldsAndAllowsZeroHealthThresholds(t
 	}
 	if current.LiveAccountSyncFreshnessSecs != 0 {
 		t.Fatalf("expected live account sync freshness threshold to allow explicit zero, got %d", current.LiveAccountSyncFreshnessSecs)
+	}
+}
+
+func TestSignalRuntimeActionsDisabledForAPIRole(t *testing.T) {
+	cases := []string{
+		"/api/v1/signal-runtime/sessions/runtime-1/start",
+		"/api/v1/signal-runtime/sessions/runtime-1/stop",
+	}
+	for _, path := range cases {
+		t.Run(path, func(t *testing.T) {
+			platform := service.NewPlatform(memory.NewStore())
+			mux := http.NewServeMux()
+			registerSignalRoutes(mux, platform, config.Config{ProcessRole: "api"})
+
+			req := httptest.NewRequest(http.MethodPost, path, nil)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("expected 409 for api role runtime action, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }

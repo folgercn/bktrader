@@ -2,6 +2,11 @@ name: CD
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_services:
+        description: 'Space-separated compose services to deploy. Empty uses safe defaults.'
+        required: false
+        default: ''
   push:
     branches: [main]
     paths:
@@ -22,6 +27,8 @@ jobs:
     outputs:
       frontend_changed: ${{ steps.filter.outputs.frontend_changed }}
       backend_changed: ${{ steps.filter.outputs.backend_changed }}
+      deploy_services: ${{ steps.filter.outputs.deploy_services }}
+      live_runner_changed: ${{ steps.filter.outputs.live_runner_changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,10 +41,49 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
           CURRENT_SHA: ${{ github.sha }}
+          INPUT_DEPLOY_SERVICES: ${{ inputs.deploy_services }}
         run: |
+          add_service() {
+            service="$1"
+            case " $deploy_services " in
+              *" $service "*) ;;
+              *) deploy_services="${deploy_services:+$deploy_services }$service" ;;
+            esac
+          }
+
+          add_all_backend_services() {
+            add_service platform-api
+            add_service live-runner
+            add_service notification-worker
+          }
+
+          validate_deploy_services() {
+            for service in $1; do
+              case "$service" in
+                platform-api|live-runner|notification-worker) ;;
+                *)
+                  echo "Unsupported deploy_services entry: $service" >&2
+                  echo "Allowed services: platform-api live-runner notification-worker" >&2
+                  exit 2
+                  ;;
+              esac
+            done
+          }
+
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
             echo "backend_changed=true" >> "$GITHUB_OUTPUT"
+            if [ -n "${INPUT_DEPLOY_SERVICES:-}" ]; then
+              validate_deploy_services "$INPUT_DEPLOY_SERVICES"
+              deploy_services="$INPUT_DEPLOY_SERVICES"
+            else
+              deploy_services="platform-api notification-worker live-runner"
+            fi
+            echo "deploy_services=$deploy_services" >> "$GITHUB_OUTPUT"
+            case " $deploy_services " in
+              *" live-runner "*) echo "live_runner_changed=true" >> "$GITHUB_OUTPUT" ;;
+              *) echo "live_runner_changed=false" >> "$GITHUB_OUTPUT" ;;
+            esac
             exit 0
           fi
 
@@ -49,6 +95,8 @@ jobs:
 
           frontend_changed=false
           backend_changed=false
+          deploy_services=""
+          live_runner_changed=false
 
           while IFS= read -r file; do
             [ -z "$file" ] && continue
@@ -63,12 +111,49 @@ jobs:
                 backend_changed=true
                 ;;
             esac
+
+            case "$file" in
+              Dockerfile|.dockerignore|deployments/docker-compose.prod.yml|scripts/deploy.sh|internal/app/*|internal/config/*|internal/store/*|internal/domain/*|db/*)
+                add_all_backend_services
+                ;;
+            esac
+
+            case "$file" in
+              cmd/platform-api/*|internal/http/*)
+                add_service platform-api
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/telegram*|internal/service/alerts.go|internal/http/signals.go|internal/domain/*|internal/store/*|db/*)
+                add_service notification-worker
+                ;;
+            esac
+
+            case "$file" in
+              cmd/platform-worker/*|internal/service/live*|internal/service/signal_runtime*|internal/service/order*|internal/service/execution_strategy.go|internal/service/precision_tolerance.go|internal/service/strategy_registry.go|internal/service/signal_source_registry.go|internal/service/signal_runtime_registry.go|internal/service/live_account_flow.go|internal/service/live_launch*|internal/service/live_trade*|internal/service/telemetry.go)
+                live_runner_changed=true
+                add_service live-runner
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/*)
+                add_all_backend_services
+                ;;
+            esac
           done <<EOF
           $changed_files
           EOF
 
+          if [ "$backend_changed" = "true" ] && [ -z "$deploy_services" ]; then
+            add_all_backend_services
+          fi
+
           echo "frontend_changed=$frontend_changed" >> "$GITHUB_OUTPUT"
           echo "backend_changed=$backend_changed" >> "$GITHUB_OUTPUT"
+          echo "deploy_services=$deploy_services" >> "$GITHUB_OUTPUT"
+          echo "live_runner_changed=$live_runner_changed" >> "$GITHUB_OUTPUT"
 
   docker:
     name: Build and publish image
@@ -152,7 +237,7 @@ jobs:
   deploy:
     name: Deploy on Macmini runner
     needs: [changes, docker]
-    if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend_changed == 'true' && needs.docker.result == 'success'
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend_changed == 'true' && needs.changes.outputs.deploy_services != '' && needs.docker.result == 'success'
     runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
@@ -180,7 +265,12 @@ jobs:
           IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/bktrader-app
           IMAGE_TAG: latest
           APP_ENV_FILE: /Users/fujun/services/bktrader/.env
+          DEPLOY_SERVICES: ${{ needs.changes.outputs.deploy_services }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
         run: |
+          echo "Deploying services: $DEPLOY_SERVICES"
+          if [ "${{ needs.changes.outputs.live_runner_changed }}" = "true" ]; then
+            echo "live-runner related changes were detected; live-runner will be deployed automatically."
+          fi
           bash /Users/fujun/services/bktrader/scripts/deploy.sh
