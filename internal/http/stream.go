@@ -92,6 +92,7 @@ func registerStreamRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 					return
 				}
 				flusher.Flush()
+				streamStats.logSummary(streamLogger, "interval", false)
 			}
 		}
 	})
@@ -164,6 +165,15 @@ func (s *dashboardStreamStats) logSummary(logger *slog.Logger, reason string, fo
 		target = s.total
 	}
 	if len(target) == 0 {
+		logger.Info("dashboard stream payload summary",
+			"reason", reason,
+			"event_type", "none",
+			"events", 0,
+			"payload_bytes", 0,
+			"wire_bytes", 0,
+			"payload_items", 0,
+			"elapsed_ms", now.Sub(s.startedAt).Milliseconds(),
+		)
 		s.lastLogAt = now
 		return
 	}
@@ -204,7 +214,7 @@ func dashboardPayloadItemCount(payload any) int {
 		value = value.Elem()
 	}
 	switch value.Kind() {
-	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+	case reflect.Array, reflect.Map, reflect.Slice:
 		return value.Len()
 	default:
 		return 1
