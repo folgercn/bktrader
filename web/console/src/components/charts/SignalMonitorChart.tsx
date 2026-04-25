@@ -4,13 +4,31 @@ import { SignalBarCandle, SessionMarker, SignalMonitorOverlay } from '../../type
 import { applyDefaultChartWindow } from '../../utils/derivation';
 import { normalizeChartData, normalizeLineSeriesRange } from '../../utils/chart';
 
-export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers: SessionMarker[]; overlays?: SignalMonitorOverlay[] }) {
+type VisibleLogicalRange = {
+  from: number;
+  to: number;
+  barCount: number;
+};
+
+export function SignalMonitorChart(props: {
+  candles: SignalBarCandle[];
+  markers: SessionMarker[];
+  overlays?: SignalMonitorOverlay[];
+  onVisibleLogicalRangeChange?: (range: VisibleLogicalRange) => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const seriesRef = useRef<ReturnType<any> | null>(null);
   const markersRef = useRef<ReturnType<any> | null>(null);
   const overlaySeriesRefs = useRef<Array<ReturnType<any>>>([]);
   const isInitialRender = useRef(true);
+  const candleCountRef = useRef(props.candles.length);
+  const onVisibleLogicalRangeChangeRef = useRef(props.onVisibleLogicalRangeChange);
+
+  useEffect(() => {
+    candleCountRef.current = props.candles.length;
+    onVisibleLogicalRangeChangeRef.current = props.onVisibleLogicalRangeChange;
+  }, [props.candles.length, props.onVisibleLogicalRangeChange]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -51,7 +69,21 @@ export function SignalMonitorChart(props: { candles: SignalBarCandle[]; markers:
     seriesRef.current = series;
     markersRef.current = createSeriesMarkers(series, []);
 
+    const handleLogicalRangeChange = (range: { from: number; to: number } | null) => {
+      const barCount = candleCountRef.current;
+      if (!range || barCount <= 0) {
+        return;
+      }
+      onVisibleLogicalRangeChangeRef.current?.({
+        from: range.from,
+        to: range.to,
+        barCount,
+      });
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleLogicalRangeChange);
+
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleLogicalRangeChange);
       overlaySeriesRefs.current = [];
       chart.remove();
       chartRef.current = null;

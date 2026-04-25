@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { SignalMonitorChart } from '../components/charts/SignalMonitorChart';
@@ -43,7 +43,11 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
 import { cn } from '../lib/utils';
-import type { ChartCandle } from '../types/domain';
+import type { ChartCandle, SignalBarCandle } from '../types/domain';
+
+const MONITOR_HISTORY_CANDLE_LIMIT = 240;
+const MONITOR_CANDLE_EDGE_THRESHOLD = 24;
+const MONITOR_CANDLE_CACHE_LIMIT = 1500;
 
 function resolveMonitorFallbackResolution(timeframe: string) {
   const normalized = String(timeframe ?? "").trim().toLowerCase();
@@ -57,6 +61,69 @@ function resolveMonitorFallbackResolution(timeframe: string) {
     "1d": "1D",
   };
   return supported[normalized] ?? "5";
+}
+
+function monitorResolutionSeconds(resolution: string) {
+  const normalized = String(resolution ?? "").trim().toUpperCase();
+  if (normalized === "1D") {
+    return 24 * 60 * 60;
+  }
+  const minutes = Number.parseInt(normalized, 10);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : 5 * 60;
+}
+
+function buildMonitorCandleRange(
+  anchorDate: Date,
+  resolution: string,
+  limit: number,
+  requestedRange: { from: number; to: number }
+) {
+  const anchor = Math.floor(anchorDate.getTime() / 1000);
+  const seconds = monitorResolutionSeconds(resolution);
+  const historyRange = {
+    from: anchor - seconds * Math.max(limit - 5, 1),
+    to: anchor + seconds * 5,
+  };
+  return {
+    from: Math.min(requestedRange.from, historyRange.from),
+    to: Math.max(requestedRange.to, historyRange.to),
+  };
+}
+
+function mergeMonitorCandles(existing: ChartCandle[], incoming: ChartCandle[], direction: "older" | "newer") {
+  const byTime = new Map<string, ChartCandle>();
+  for (const item of existing) {
+    if (item.time) {
+      byTime.set(item.time, item);
+    }
+  }
+  for (const item of incoming) {
+    if (item.time) {
+      byTime.set(item.time, item);
+    }
+  }
+  const merged = Array.from(byTime.values()).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+  if (merged.length <= MONITOR_CANDLE_CACHE_LIMIT) {
+    return merged;
+  }
+  return direction === "older"
+    ? merged.slice(0, MONITOR_CANDLE_CACHE_LIMIT)
+    : merged.slice(merged.length - MONITOR_CANDLE_CACHE_LIMIT);
+}
+
+function mergeSignalBars(fallbackBars: SignalBarCandle[], runtimeBars: SignalBarCandle[]) {
+  const byTime = new Map<string, SignalBarCandle>();
+  for (const item of fallbackBars) {
+    if (item.time) {
+      byTime.set(item.time, item);
+    }
+  }
+  for (const item of runtimeBars) {
+    if (item.time) {
+      byTime.set(item.time, item);
+    }
+  }
+  return Array.from(byTime.values()).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
 }
 
 type MonitorStageProps = {
@@ -87,6 +154,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const timelineConfig = useUIStore(s => s.timelineConfig);
   const setTimelineConfig = useUIStore(s => s.setTimelineConfig);
   const fallbackRequestKeyRef = useRef<string>("");
+  const candleExpansionRequestKeyRef = useRef<string>("");
 
 
   // 1. 高亮会话选择逻辑
@@ -196,16 +264,14 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     () => mapChartCandlesToSignalBarCandles(monitorCandles, fallbackResolution),
     [monitorCandles, fallbackResolution]
   );
-  const displayMonitorBars = monitorBars.length > 0 ? monitorBars : fallbackMonitorBars;
+  const displayMonitorBars = useMemo(
+    () => mergeSignalBars(fallbackMonitorBars, monitorBars),
+    [fallbackMonitorBars, monitorBars]
+  );
 
   useEffect(() => {
     const monitorSessionId = monitorSession?.id ?? "";
     if (!monitorSessionId || !monitorSymbol) {
-      fallbackRequestKeyRef.current = "";
-      setMonitorCandles([]);
-      return;
-    }
-    if (monitorBars.length > 0) {
       fallbackRequestKeyRef.current = "";
       setMonitorCandles([]);
       return;
@@ -227,11 +293,12 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     setMonitorCandles([]);
 
     const anchorDate = resolveChartAnchor(monitorSession, orders);
-    const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
+    const requestedRange = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
+    const range = buildMonitorCandleRange(anchorDate, fallbackResolution, MONITOR_HISTORY_CANDLE_LIMIT, requestedRange);
 
     let active = true;
     fetchJSON<{ candles: ChartCandle[] }>(
-      `/api/v1/chart/candles?symbol=${encodeURIComponent(monitorSymbol)}&resolution=${fallbackResolution}&from=${range.from}&to=${range.to}&limit=240`
+      `/api/v1/chart/candles?symbol=${encodeURIComponent(monitorSymbol)}&resolution=${fallbackResolution}&from=${range.from}&to=${range.to}&limit=${MONITOR_HISTORY_CANDLE_LIMIT}`
     )
       .then((payload) => {
         if (!active) {
@@ -255,13 +322,80 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   }, [
     chartOverrideRange,
     fallbackResolution,
-    monitorBars.length,
     monitorSession,
     monitorSymbol,
     orders,
     setMonitorCandles,
     timeWindow,
   ]);
+
+  const expandMonitorCandles = useCallback(
+    (direction: "older" | "newer") => {
+      if (!monitorSymbol || monitorCandles.length === 0) {
+        return;
+      }
+      const ordered = [...monitorCandles].sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+      const firstTime = Date.parse(ordered[0]?.time ?? "");
+      const lastTime = Date.parse(ordered[ordered.length - 1]?.time ?? "");
+      if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime)) {
+        return;
+      }
+      const stepSeconds = monitorResolutionSeconds(fallbackResolution);
+      const stepMs = stepSeconds * 1000;
+      const fromMs =
+        direction === "older"
+          ? firstTime - stepMs * MONITOR_HISTORY_CANDLE_LIMIT
+          : lastTime + stepMs;
+      const toMs =
+        direction === "older"
+          ? firstTime - stepMs
+          : lastTime + stepMs * MONITOR_HISTORY_CANDLE_LIMIT;
+      const from = Math.floor(fromMs / 1000);
+      const to = Math.floor(toMs / 1000);
+      const requestKey = [monitorSymbol, fallbackResolution, direction, from, to].join(":");
+      if (candleExpansionRequestKeyRef.current === requestKey) {
+        return;
+      }
+      candleExpansionRequestKeyRef.current = requestKey;
+
+      fetchJSON<{ candles: ChartCandle[] }>(
+        `/api/v1/chart/candles?symbol=${encodeURIComponent(monitorSymbol)}&resolution=${fallbackResolution}&from=${from}&to=${to}&limit=${MONITOR_HISTORY_CANDLE_LIMIT}`
+      )
+        .then((payload) => {
+          const candles = Array.isArray(payload?.candles) ? payload.candles : [];
+          if (candles.length === 0) {
+            return;
+          }
+          setMonitorCandles((current) => mergeMonitorCandles(current, candles, direction));
+        })
+        .catch((error) => {
+          console.warn(`Failed to expand monitor ${direction} candles`, error);
+        })
+        .finally(() => {
+          if (candleExpansionRequestKeyRef.current === requestKey) {
+            candleExpansionRequestKeyRef.current = "";
+          }
+        });
+    },
+    [fallbackResolution, monitorCandles, monitorSymbol, setMonitorCandles]
+  );
+
+  const handleMonitorVisibleRangeChange = useCallback(
+    (range: { from: number; to: number; barCount: number }) => {
+      if (range.barCount <= 0) {
+        return;
+      }
+      if (range.from <= MONITOR_CANDLE_EDGE_THRESHOLD) {
+        expandMonitorCandles("older");
+        return;
+      }
+      if (range.to >= range.barCount - MONITOR_CANDLE_EDGE_THRESHOLD) {
+        expandMonitorCandles("newer");
+      }
+    },
+    [expandMonitorCandles]
+  );
+
   const monitorMarket = deriveRuntimeMarketSnapshot(
     getRecord(monitorRuntimeState.sourceStates),
     getRecord(monitorRuntimeState.lastEventSummary),
@@ -387,6 +521,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                     candles={displayMonitorBars}
                     markers={monitorChartMarkers}
                     overlays={monitorDecorations.overlays}
+                    onVisibleLogicalRangeChange={handleMonitorVisibleRangeChange}
                   />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center space-y-3 opacity-30">
