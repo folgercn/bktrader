@@ -43,7 +43,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
 import { cn } from '../lib/utils';
-import type { ChartCandle } from '../types/domain';
+import type { ChartCandle, SignalBarCandle } from '../types/domain';
 
 const MONITOR_HISTORY_CANDLE_LIMIT = 240;
 const MONITOR_CANDLE_EDGE_THRESHOLD = 24;
@@ -109,6 +109,21 @@ function mergeMonitorCandles(existing: ChartCandle[], incoming: ChartCandle[], d
   return direction === "older"
     ? merged.slice(0, MONITOR_CANDLE_CACHE_LIMIT)
     : merged.slice(merged.length - MONITOR_CANDLE_CACHE_LIMIT);
+}
+
+function mergeSignalBars(fallbackBars: SignalBarCandle[], runtimeBars: SignalBarCandle[]) {
+  const byTime = new Map<string, SignalBarCandle>();
+  for (const item of fallbackBars) {
+    if (item.time) {
+      byTime.set(item.time, item);
+    }
+  }
+  for (const item of runtimeBars) {
+    if (item.time) {
+      byTime.set(item.time, item);
+    }
+  }
+  return Array.from(byTime.values()).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
 }
 
 type MonitorStageProps = {
@@ -249,7 +264,10 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     () => mapChartCandlesToSignalBarCandles(monitorCandles, fallbackResolution),
     [monitorCandles, fallbackResolution]
   );
-  const displayMonitorBars = fallbackMonitorBars.length > 0 ? fallbackMonitorBars : monitorBars;
+  const displayMonitorBars = useMemo(
+    () => mergeSignalBars(fallbackMonitorBars, monitorBars),
+    [fallbackMonitorBars, monitorBars]
+  );
 
   useEffect(() => {
     const monitorSessionId = monitorSession?.id ?? "";
@@ -352,7 +370,11 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
         })
         .catch((error) => {
           console.warn(`Failed to expand monitor ${direction} candles`, error);
-          candleExpansionRequestKeyRef.current = "";
+        })
+        .finally(() => {
+          if (candleExpansionRequestKeyRef.current === requestKey) {
+            candleExpansionRequestKeyRef.current = "";
+          }
         });
     },
     [fallbackResolution, monitorCandles, monitorSymbol, setMonitorCandles]
