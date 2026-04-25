@@ -92,14 +92,16 @@ export function useDashboardRealtime() {
       }
     }
 
-    // If stream is enabled and connected, we don't need to poll HTTP
     if (isStreamEnabled && isStreamConnected) {
       return () => { active = false; };
     }
 
-    load();
     const rawInterval = parseInt(import.meta.env.VITE_DASHBOARD_REALTIME_POLL_MS || "5000", 10);
     const pollInterval = isNaN(rawInterval) ? 5000 : Math.max(1000, rawInterval);
+    
+    if (isFirstLoad) {
+      load();
+    }
     const timer = window.setInterval(load, pollInterval);
     return () => {
       active = false;
