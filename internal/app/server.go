@@ -19,13 +19,72 @@ import (
 
 // NewServer 根据配置创建 HTTP 服务实例，初始化存储层和平台服务。
 func NewServer(cfg config.Config) (*http.Server, error) {
+	return NewServerWithRuntimeOptions(cfg, RuntimeOptionsForRole(cfg.ProcessRole))
+}
+
+type RuntimeOptions struct {
+	WarmLiveMarketData bool
+	StartTelegram      bool
+	RecoverLiveTrading bool
+	StartLiveSync      bool
+	StartDashboard     bool
+}
+
+func RuntimeOptionsForRole(role string) RuntimeOptions {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "api":
+		return RuntimeOptions{StartDashboard: true}
+	case "live-runner":
+		return RuntimeOptions{
+			WarmLiveMarketData: true,
+			RecoverLiveTrading: true,
+			StartLiveSync:      true,
+		}
+	case "notification-worker":
+		return RuntimeOptions{StartTelegram: true}
+	default:
+		return RuntimeOptions{
+			WarmLiveMarketData: true,
+			StartTelegram:      true,
+			RecoverLiveTrading: true,
+			StartLiveSync:      true,
+			StartDashboard:     true,
+		}
+	}
+}
+
+// NewServerWithRuntimeOptions 创建 HTTP 服务，并按进程角色启动后台组件。
+func NewServerWithRuntimeOptions(cfg config.Config, runtime RuntimeOptions) (*http.Server, error) {
 	logger := slog.Default().With("component", "app.server")
 	logger.Info("initializing server",
 		"store_backend", cfg.StoreBackend,
 		"auto_migrate", cfg.AutoMigrate,
 		"paper_tick_interval_seconds", cfg.PaperTickInterval,
+		"process_role", cfg.ProcessRole,
 	)
 
+	platform, err := NewPlatform(cfg)
+	if err != nil {
+		return nil, err
+	}
+	StartRuntimeComponents(context.Background(), platform, cfg, runtime)
+	logger.Info("background workers configured",
+		"warm_live_market_data", runtime.WarmLiveMarketData,
+		"telegram", runtime.StartTelegram,
+		"live_recovery", runtime.RecoverLiveTrading,
+		"live_sync", runtime.StartLiveSync,
+		"dashboard", runtime.StartDashboard,
+	)
+
+	return &http.Server{
+		Addr:    cfg.HTTPAddr,
+		Handler: apihttp.NewRouter(cfg, platform),
+	}, nil
+}
+
+// NewPlatform initializes the shared service facade without starting HTTP.
+func NewPlatform(cfg config.Config) (*service.Platform, error) {
+	logger := slog.Default().With("component", "app.platform")
 	repository, err := buildRepository(cfg)
 	if err != nil {
 		logger.Error("build repository failed", "error", err)
@@ -53,23 +112,32 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	// ApplyRuntimeConfigOverrides 会根据字段业务语义进行严格校验 (>0 vs >=0)，
 	// 并且仅当环境变量明确设置时（指针非 nil）才执行覆盖。
 	platform.ApplyRuntimeConfigOverrides(cfg)
-	warmCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	if err := platform.WarmLiveMarketData(warmCtx); err != nil {
-		logger.Warn("warm live market data completed with errors", "error", err)
-	} else {
-		logger.Info("live market data warmed successfully")
-	}
-	cancel()
-	platform.StartTelegramDispatcher(context.Background())
-	go platform.RecoverLiveTradingOnStartup(context.Background())
-	go platform.StartLiveSyncDispatcher(context.Background())
-	platform.StartDashboardBroker(context.Background(), cfg)
-	logger.Info("background workers started")
+	return platform, nil
+}
 
-	return &http.Server{
-		Addr:    cfg.HTTPAddr,
-		Handler: apihttp.NewRouter(cfg, platform),
-	}, nil
+func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg config.Config, runtime RuntimeOptions) {
+	logger := slog.Default().With("component", "app.runtime", "process_role", cfg.ProcessRole)
+	if runtime.WarmLiveMarketData {
+		warmCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		if err := platform.WarmLiveMarketData(warmCtx); err != nil {
+			logger.Warn("warm live market data completed with errors", "error", err)
+		} else {
+			logger.Info("live market data warmed successfully")
+		}
+		cancel()
+	}
+	if runtime.StartTelegram {
+		platform.StartTelegramDispatcher(ctx)
+	}
+	if runtime.RecoverLiveTrading {
+		go platform.RecoverLiveTradingOnStartup(ctx)
+	}
+	if runtime.StartLiveSync {
+		go platform.StartLiveSyncDispatcher(ctx)
+	}
+	if runtime.StartDashboard {
+		platform.StartDashboardBroker(ctx, cfg)
+	}
 }
 
 // buildRepository 根据配置选择并初始化存储后端。

@@ -53,10 +53,10 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 	})
 
 	// 注册各模块路由
-	registerSignalRoutes(mux, platform)
+	registerSignalRoutes(mux, platform, cfg)
 	registerStrategyRoutes(mux, platform)
 	registerAccountRoutes(mux, platform)
-	registerLiveRoutes(mux, platform)
+	registerLiveRoutes(mux, platform, cfg)
 	registerOrderRoutes(mux, platform)
 	registerBacktestRoutes(mux, platform)
 	registerChartRoutes(mux, platform)
