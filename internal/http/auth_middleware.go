@@ -37,8 +37,6 @@ func authMiddleware(cfg config.Config, next http.Handler) http.Handler {
 				return
 			}
 			token = strings.TrimSpace(authorization[len("Bearer "):])
-		} else {
-			token = strings.TrimSpace(r.URL.Query().Get("token"))
 		}
 
 		if token == "" {

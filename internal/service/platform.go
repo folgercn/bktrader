@@ -153,9 +153,9 @@ func NewPlatform(store store.Repository) *Platform {
 }
 
 // StartDashboardBroker 启动仪表盘实时数据轮询检测
-func (p *Platform) StartDashboardBroker(ctx context.Context) {
+func (p *Platform) StartDashboardBroker(ctx context.Context, cfg config.Config) {
 	p.logger("service.platform").Info("starting dashboard broker polling")
-	go p.dashboardBroker.StartPolling(ctx, 2*time.Second)
+	go p.dashboardBroker.StartPolling(ctx, cfg)
 }
 
 // DashboardBroker 返回内部仪表盘事件分发器
@@ -585,3 +585,5 @@ func maskTelegramToken(token string) string {
 	}
 	return token[:4] + "..." + token[len(token)-4:]
 }
+
+

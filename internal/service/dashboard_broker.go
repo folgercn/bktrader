@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"sync"
 	"time"
+
+	"github.com/wuyaocheng/bktrader/internal/config"
 )
 
 // DashboardEvent 代表推送到仪表盘的 SSE 事件
@@ -93,6 +95,14 @@ func hashPayload(payload any) string {
 
 // checkAndPublish 检测数据变更并推送
 func (b *DashboardBroker) checkAndPublish(eventType string, fetchData func() (any, error)) {
+	b.mu.RLock()
+	hasSubscribers := len(b.subscribers) > 0
+	b.mu.RUnlock()
+
+	if !hasSubscribers {
+		return
+	}
+
 	data, err := fetchData()
 	if err != nil {
 		return
@@ -104,18 +114,7 @@ func (b *DashboardBroker) checkAndPublish(eventType string, fetchData func() (an
 
 	b.mu.RLock()
 	lastHash := b.lastHashes[eventType]
-	hasSubscribers := len(b.subscribers) > 0
 	b.mu.RUnlock()
-
-	if !hasSubscribers {
-		// 无订阅者时也更新 hash 避免订阅后发送老数据
-		if lastHash != hash {
-			b.mu.Lock()
-			b.lastHashes[eventType] = hash
-			b.mu.Unlock()
-		}
-		return
-	}
 
 	if lastHash != hash {
 		b.publish(eventType, "snapshot", data)
@@ -126,45 +125,44 @@ func (b *DashboardBroker) checkAndPublish(eventType string, fetchData func() (an
 }
 
 // StartPolling 启动轮询检查
-func (b *DashboardBroker) StartPolling(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			// Live Sessions
-			b.checkAndPublish("live-sessions", func() (any, error) {
-				return b.platform.ListLiveSessions()
-			})
-			// Positions
-			b.checkAndPublish("positions", func() (any, error) {
-				return b.platform.ListPositions()
-			})
-			// Orders (limit 50)
-			b.checkAndPublish("orders", func() (any, error) {
-				return b.platform.ListOrdersWithLimit(50, 0)
-			})
-			// Fills (limit 50)
-			b.checkAndPublish("fills", func() (any, error) {
-				return b.platform.ListFillsWithLimit(50, 0)
-			})
-			// Alerts
-			b.checkAndPublish("alerts", func() (any, error) {
-				return b.platform.ListAlerts()
-			})
-			// Notifications
-			b.checkAndPublish("notifications", func() (any, error) {
-				return b.platform.ListNotifications(true)
-			})
-			// Monitor Health
-			b.checkAndPublish("monitor-health", func() (any, error) {
-				return b.platform.HealthSnapshot()
-			})
-		}
+func (b *DashboardBroker) StartPolling(ctx context.Context, cfg config.Config) {
+	startTicker := func(intervalMs int, eventType string, fetchData func() (any, error)) {
+		interval := time.Duration(intervalMs) * time.Millisecond
+		ticker := time.NewTicker(interval)
+		go func() {
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					b.checkAndPublish(eventType, fetchData)
+				}
+			}
+		}()
 	}
+
+	startTicker(cfg.DashboardLiveSessionsPollMs, "live-sessions", func() (any, error) {
+		return b.platform.ListLiveSessionsSummary()
+	})
+	startTicker(cfg.DashboardPositionsPollMs, "positions", func() (any, error) {
+		return b.platform.ListPositions()
+	})
+	startTicker(cfg.DashboardOrdersPollMs, "orders", func() (any, error) {
+		return b.platform.ListOrdersWithLimit(50, 0)
+	})
+	startTicker(cfg.DashboardFillsPollMs, "fills", func() (any, error) {
+		return b.platform.ListFillsWithLimit(50, 0)
+	})
+	startTicker(cfg.DashboardAlertsPollMs, "alerts", func() (any, error) {
+		return b.platform.ListAlerts()
+	})
+	startTicker(cfg.DashboardNotificationsPollMs, "notifications", func() (any, error) {
+		return b.platform.ListNotifications(true)
+	})
+	startTicker(cfg.DashboardMonitorHealthPollMs, "monitor-health", func() (any, error) {
+		return b.platform.HealthSnapshot()
+	})
 }
 
 // PushInitialSnapshot 手动为某个连接推送当前最新数据
@@ -178,7 +176,7 @@ func (b *DashboardBroker) PushInitialSnapshot(id int) {
 
 	// Push latest state to new subscriber
 	// This ensures they don't have to wait for the next change
-	b.pushLatestIfAvailable("live-sessions", func() (any, error) { return b.platform.ListLiveSessions() }, ch)
+	b.pushLatestIfAvailable("live-sessions", func() (any, error) { return b.platform.ListLiveSessionsSummary() }, ch)
 	b.pushLatestIfAvailable("positions", func() (any, error) { return b.platform.ListPositions() }, ch)
 	b.pushLatestIfAvailable("orders", func() (any, error) { return b.platform.ListOrdersWithLimit(50, 0) }, ch)
 	b.pushLatestIfAvailable("fills", func() (any, error) { return b.platform.ListFillsWithLimit(50, 0) }, ch)
@@ -193,9 +191,15 @@ func (b *DashboardBroker) pushLatestIfAvailable(eventType string, fetchData func
 		return
 	}
 
-	b.mu.RLock()
+	hash := hashPayload(data)
+
+	b.mu.Lock()
+	b.seq++
 	seq := b.seq
-	b.mu.RUnlock()
+	if hash != "" {
+		b.lastHashes[eventType] = hash
+	}
+	b.mu.Unlock()
 
 	event := DashboardEvent{
 		Seq:       seq,

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { fetchJSON } from '../utils/api';
 import { useTradingStore } from '../store/useTradingStore';
 import { useUIStore } from '../store/useUIStore';
 import { writeStoredAuthSession } from '../utils/auth';
@@ -37,15 +38,38 @@ export function useDashboardStream(enabled: boolean) {
 
     let active = true;
 
-    function connect() {
+    async function connect() {
       if (!active) return;
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
 
       setLoading(true);
-      const token = authSession?.token || '';
-      const url = `${import.meta.env.VITE_API_BASE || ''}/api/v1/stream/dashboard?token=${encodeURIComponent(token)}`;
+      
+      let streamToken = '';
+      try {
+        const res = await fetchJSON<{token: string}>('/api/v1/auth/stream-token', {
+          method: 'POST'
+        });
+        streamToken = res.token;
+      } catch (err) {
+        if (!active) return;
+        console.error("Failed to fetch stream token:", err);
+        setError("Failed to authenticate stream");
+        setLoading(false);
+        setIsConnected(false);
+        
+        retryCount.current += 1;
+        const delay = Math.min(10000, 1000 * Math.pow(2, retryCount.current));
+        setTimeout(() => {
+          if (active) connect();
+        }, delay);
+        return;
+      }
+
+      if (!active) return;
+
+      const url = `${import.meta.env.VITE_API_BASE || ''}/api/v1/stream/dashboard?token=${encodeURIComponent(streamToken)}`;
       const es = new EventSource(url);
       eventSourceRef.current = es;
 

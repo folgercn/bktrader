@@ -109,6 +109,30 @@ func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 	return p.store.ListLiveSessions()
 }
 
+// ListLiveSessionsSummary 返回剥离了重状态 (sourceStates, signalBarStates) 的简要会话列表
+func (p *Platform) ListLiveSessionsSummary() ([]domain.LiveSession, error) {
+	items, err := p.store.ListLiveSessions()
+	if err != nil {
+		return nil, err
+	}
+	stripped := make([]domain.LiveSession, len(items))
+	for i, item := range items {
+		newItem := item
+		if item.State != nil {
+			newState := make(map[string]any, len(item.State))
+			for k, v := range item.State {
+				if k == "sourceStates" || k == "signalBarStates" {
+					continue
+				}
+				newState[k] = v
+			}
+			newItem.State = newState
+		}
+		stripped[i] = newItem
+	}
+	return stripped, nil
+}
+
 func (p *Platform) DeleteLiveSession(sessionID string) error {
 	return p.DeleteLiveSessionWithForce(sessionID, false)
 }

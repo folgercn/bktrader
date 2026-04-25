@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
-func registerStreamRoutes(mux *http.ServeMux, platform *service.Platform) {
+func registerStreamRoutes(mux *http.ServeMux, platform *service.Platform, cfg config.Config) {
 	mux.HandleFunc("/api/v1/stream/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -21,16 +23,35 @@ func registerStreamRoutes(mux *http.ServeMux, platform *service.Platform) {
 			return
 		}
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("X-Accel-Buffering", "no")
+		if cfg.AuthEnabled {
+			token := strings.TrimSpace(r.URL.Query().Get("token"))
+			if token == "" {
+				writeError(w, http.StatusUnauthorized, "stream token required")
+				return
+			}
+			claims, err := parseAuthToken(cfg, token)
+			if err != nil {
+				writeError(w, http.StatusUnauthorized, "invalid stream token")
+				return
+			}
+			if claims.Scope != "dashboard_stream" {
+				writeError(w, http.StatusForbidden, "invalid token scope")
+				return
+			}
+		}
 
 		broker := platform.DashboardBroker()
 		if broker == nil {
 			writeError(w, http.StatusInternalServerError, "dashboard broker not initialized")
 			return
 		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+
+
 
 		subID, ch := broker.Subscribe(64)
 		defer broker.Unsubscribe(subID)
