@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -156,6 +157,9 @@ func TestTelegramDispatchSendsFilledTradeEventsWithPnLAndDedup(t *testing.T) {
 
 	store := memory.NewStore()
 	now := time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)
+	oldNow := telegramNow
+	telegramNow = func() time.Time { return now.Add(2 * time.Minute) }
+	defer func() { telegramNow = oldNow }()
 	_, err := store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
 		ID:              "open-event-1",
 		OrderID:         "order-open-1",
@@ -252,6 +256,9 @@ func TestTelegramDispatchDedupesSemanticDuplicateTradeEvents(t *testing.T) {
 
 	store := memory.NewStore()
 	now := time.Date(2026, 4, 22, 10, 0, 36, 0, time.UTC)
+	oldNow := telegramNow
+	telegramNow = func() time.Time { return now.Add(2 * time.Minute) }
+	defer func() { telegramNow = oldNow }()
 	baseEvent := domain.OrderExecutionEvent{
 		OrderID:         "order-dup-1",
 		ExchangeOrderID: "exchange-dup-1",
@@ -291,6 +298,156 @@ func TestTelegramDispatchDedupesSemanticDuplicateTradeEvents(t *testing.T) {
 	}
 	if len(messages) != 1 {
 		t.Fatalf("expected semantic duplicate trade events to send once, got %d: %#v", len(messages), messages)
+	}
+}
+
+func TestTelegramDispatchTradeEventsUsesBoundedRecentCandidates(t *testing.T) {
+	messages := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	base := time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC)
+	oldNow := telegramNow
+	telegramNow = func() time.Time { return base.Add(2 * time.Hour) }
+	defer func() { telegramNow = oldNow }()
+
+	store := memory.NewStore()
+	_, err := store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+		ID:        "old-event",
+		OrderID:   "old-order",
+		AccountID: "account-live-1",
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		EventType: "filled",
+		Status:    "FILLED",
+		Quantity:  1,
+		Price:     64000,
+		EventTime: base.Add(-25 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("create old event failed: %v", err)
+	}
+	_, err = store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+		ID:        "failed-event",
+		OrderID:   "failed-order",
+		AccountID: "account-live-1",
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		EventType: "filled",
+		Status:    "FILLED",
+		Quantity:  1,
+		Price:     64000,
+		EventTime: base,
+		Failed:    true,
+	})
+	if err != nil {
+		t.Fatalf("create failed event failed: %v", err)
+	}
+	_, err = store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+		ID:        "error-event",
+		OrderID:   "error-order",
+		AccountID: "account-live-1",
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		EventType: "filled",
+		Status:    "FILLED",
+		Quantity:  1,
+		Price:     64000,
+		EventTime: base,
+		Error:     "adapter failed",
+	})
+	if err != nil {
+		t.Fatalf("create error event failed: %v", err)
+	}
+	_, err = store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+		ID:        "already-sent-event",
+		OrderID:   "already-sent-order",
+		AccountID: "account-live-1",
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		EventType: "filled",
+		Status:    "FILLED",
+		Quantity:  1,
+		Price:     64000,
+		EventTime: base,
+	})
+	if err != nil {
+		t.Fatalf("create sent event failed: %v", err)
+	}
+	_, _ = store.UpsertNotificationDelivery("trade-event:already-sent", "telegram", "sent", "", map[string]any{
+		"kind":    "trade-event",
+		"eventId": "already-sent-event",
+	})
+	_, err = store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+		ID:        "already-failed-event",
+		OrderID:   "already-failed-order",
+		AccountID: "account-live-1",
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		EventType: "filled",
+		Status:    "FILLED",
+		Quantity:  1,
+		Price:     64000,
+		EventTime: base,
+	})
+	if err != nil {
+		t.Fatalf("create delivery-failed event failed: %v", err)
+	}
+	_, _ = store.UpsertNotificationDelivery("trade-event:already-failed", "telegram", "failed", "telegram send failed", map[string]any{
+		"kind":    "trade-event",
+		"eventId": "already-failed-event",
+	})
+	for i := 0; i < telegramTradeEventLimit+5; i++ {
+		_, err := store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+			ID:        fmt.Sprintf("candidate-event-%02d", i),
+			OrderID:   fmt.Sprintf("candidate-order-%02d", i),
+			AccountID: "account-live-1",
+			Symbol:    "BTCUSDT",
+			Side:      "BUY",
+			EventType: "filled",
+			Status:    "FILLED",
+			Quantity:  1,
+			Price:     64000,
+			EventTime: base.Add(time.Duration(i) * time.Second),
+		})
+		if err != nil {
+			t.Fatalf("create candidate event %d failed: %v", i, err)
+		}
+	}
+
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:            true,
+			BotToken:           "test-token",
+			ChatID:             "123",
+			SendLevels:         []string{},
+			TradeEventsEnabled: true,
+		},
+	}
+
+	if err := p.DispatchTelegramNotifications(); err != nil {
+		t.Fatalf("dispatch failed: %v", err)
+	}
+	if len(messages) != telegramTradeEventLimit {
+		t.Fatalf("expected bounded trade dispatch count %d, got %d", telegramTradeEventLimit, len(messages))
+	}
+	joined := strings.Join(messages, "\n")
+	for _, unexpected := range []string{"old-order", "failed-order", "error-order", "already-sent-order", "already-failed-order", "candidate-order-50"} {
+		if strings.Contains(joined, unexpected) {
+			t.Fatalf("unexpected trade event %s was sent: %s", unexpected, joined)
+		}
 	}
 }
 

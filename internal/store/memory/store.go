@@ -1034,6 +1034,46 @@ func (s *Store) ListOrderExecutionEvents(orderID string) ([]domain.OrderExecutio
 	return items, nil
 }
 
+func (s *Store) ListTelegramTradeEventCandidates(from time.Time, limit int) ([]domain.OrderExecutionEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.OrderExecutionEvent, 0, limit)
+	deliveredEventIDs := make(map[string]struct{}, len(s.deliveries))
+	for _, delivery := range s.deliveries {
+		if !strings.EqualFold(delivery.Channel, "telegram") {
+			continue
+		}
+		if stringValue(delivery.Metadata["kind"]) != "trade-event" {
+			continue
+		}
+		if eventID := strings.TrimSpace(stringValue(delivery.Metadata["eventId"])); eventID != "" {
+			deliveredEventIDs[eventID] = struct{}{}
+		}
+	}
+	for _, item := range s.executionEvents {
+		if !from.IsZero() && item.EventTime.Before(from.UTC()) {
+			continue
+		}
+		if !strings.EqualFold(item.EventType, "filled") {
+			continue
+		}
+		if item.Failed || strings.TrimSpace(item.Error) != "" {
+			continue
+		}
+		if _, delivered := deliveredEventIDs[item.ID]; delivered {
+			continue
+		}
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return domain.EventLessAsc(items[i].EventTime, items[i].RecordedAt, items[i].ID, items[j].EventTime, items[j].RecordedAt, items[j].ID)
+	})
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return items, nil
+}
+
 func (s *Store) CreateOrderExecutionEvent(event domain.OrderExecutionEvent) (domain.OrderExecutionEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

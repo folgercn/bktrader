@@ -25,6 +25,8 @@ var telegramBeijingLocation = func() *time.Location {
 const (
 	telegramFlapSendGrace    = 45 * time.Second
 	telegramFlapRecoverGrace = 60 * time.Second
+	telegramTradeEventLimit  = 50
+	telegramTradeEventWindow = 24 * time.Hour
 )
 
 func (p *Platform) SendNotificationToTelegram(notificationID string) error {
@@ -309,7 +311,7 @@ func (p *Platform) DispatchTelegramTradeEvents(deliveryByID map[string]domain.No
 	if !config.Enabled || !config.TradeEventsEnabled || strings.TrimSpace(config.BotToken) == "" || strings.TrimSpace(config.ChatID) == "" {
 		return 0, nil
 	}
-	events, err := p.store.ListOrderExecutionEvents("")
+	events, err := p.store.ListTelegramTradeEventCandidates(telegramNow().Add(-telegramTradeEventWindow), telegramTradeEventLimit)
 	if err != nil {
 		return 0, err
 	}
