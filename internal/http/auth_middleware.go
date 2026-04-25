@@ -24,6 +24,10 @@ func authMiddleware(cfg config.Config, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/api/v1/stream/dashboard" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !cfg.AuthEnabled {
 			next.ServeHTTP(w, r)
 			return

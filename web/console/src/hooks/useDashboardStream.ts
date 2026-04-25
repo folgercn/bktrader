@@ -2,16 +2,10 @@ import { useEffect, useState, useRef } from 'react';
 import { fetchJSON } from '../utils/api';
 import { useTradingStore } from '../store/useTradingStore';
 import { useUIStore } from '../store/useUIStore';
-import { writeStoredAuthSession } from '../utils/auth';
-import { 
-  LiveSession, Position, Order, Fill, PlatformAlert, 
-  PlatformNotification, PlatformHealthSnapshot
-} from '../types/domain';
 
 export function useDashboardStream(enabled: boolean) {
   const setError = useUIStore(s => s.setError);
   const setLoading = useUIStore(s => s.setLoading);
-  const setAuthSession = useUIStore(s => s.setAuthSession);
   const authSession = useUIStore(s => s.authSession);
 
   const setLiveSessions = useTradingStore(s => s.setLiveSessions);
