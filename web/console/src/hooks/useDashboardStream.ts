@@ -19,9 +19,14 @@ export function useDashboardStream(enabled: boolean) {
   const [isConnected, setIsConnected] = useState(false);
   const retryCount = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!enabled || !authSession?.token) {
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -55,7 +60,11 @@ export function useDashboardStream(enabled: boolean) {
         
         retryCount.current += 1;
         const delay = Math.min(10000, 1000 * Math.pow(2, retryCount.current));
-        setTimeout(() => {
+        if (retryTimerRef.current !== null) {
+          window.clearTimeout(retryTimerRef.current);
+        }
+        retryTimerRef.current = window.setTimeout(() => {
+          retryTimerRef.current = null;
           if (active) connect();
         }, delay);
         return;
@@ -84,7 +93,11 @@ export function useDashboardStream(enabled: boolean) {
         // Increment retry and reconnect with backoff
         retryCount.current += 1;
         const delay = Math.min(10000, 1000 * Math.pow(2, retryCount.current)); // max 10s backoff
-        setTimeout(() => {
+        if (retryTimerRef.current !== null) {
+          window.clearTimeout(retryTimerRef.current);
+        }
+        retryTimerRef.current = window.setTimeout(() => {
+          retryTimerRef.current = null;
           if (active) connect();
         }, delay);
       };
@@ -118,6 +131,10 @@ export function useDashboardStream(enabled: boolean) {
 
     return () => {
       active = false;
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
