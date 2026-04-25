@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { fetchJSON } from '../utils/api';
@@ -9,12 +9,64 @@ import {
 } from '../types/domain';
 import { resolveChartAnchor, buildTimeRange } from '../utils/derivation';
 
+const EQUITY_SNAPSHOT_LIMIT = "1000";
+const EQUITY_SNAPSHOT_REFRESH_MS = 5 * 60 * 1000;
+const DASHBOARD_STATE_REFRESH_MS = 5 * 60 * 1000;
+
+let equitySnapshotCache: {
+  key: string;
+  fetchedAt: number;
+  data: AccountEquitySnapshot[];
+} = {
+  key: "",
+  fetchedAt: 0,
+  data: [],
+};
+let equitySnapshotInFlight: { key: string; promise: Promise<AccountEquitySnapshot[]> } | null = null;
+
+function serializeTimeParam(value: number | string | Date) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return String(value);
+}
+
+async function fetchCachedEquitySnapshots(queryKey: string) {
+  const now = Date.now();
+  if (
+    equitySnapshotCache.key === queryKey &&
+    now - equitySnapshotCache.fetchedAt < EQUITY_SNAPSHOT_REFRESH_MS
+  ) {
+    return equitySnapshotCache.data;
+  }
+  if (equitySnapshotInFlight?.key === queryKey) {
+    return equitySnapshotInFlight.promise;
+  }
+  const promise = fetchJSON<AccountEquitySnapshot[]>(`/api/v1/account-equity-snapshots?${queryKey}`).then((data) => {
+    const normalized = Array.isArray(data) ? data : [];
+    equitySnapshotCache = {
+      key: queryKey,
+      fetchedAt: Date.now(),
+      data: normalized,
+    };
+    return normalized;
+  }).finally(() => {
+    if (equitySnapshotInFlight?.key === queryKey) {
+      equitySnapshotInFlight = null;
+    }
+  });
+  equitySnapshotInFlight = { key: queryKey, promise };
+  return promise;
+}
+
 export function useDashboardState() {
   const setError = useUIStore(s => s.setError);
   const setAuthSession = useUIStore(s => s.setAuthSession);
   const authSession = useUIStore(s => s.authSession);
   const timeWindow = useUIStore(s => s.timeWindow);
   const chartOverrideRange = useUIStore(s => s.chartOverrideRange);
+  const signalRuntimeFormAccountId = useUIStore(s => s.signalRuntimeForm.accountId);
+  const signalRuntimeFormStrategyId = useUIStore(s => s.signalRuntimeForm.strategyId);
 
   const setSummaries = useTradingStore(s => s.setSummaries);
   const setAccounts = useTradingStore(s => s.setAccounts);
@@ -23,8 +75,10 @@ export function useDashboardState() {
   const setAnnotations = useTradingStore(s => s.setAnnotations);
   const setSelectedSignalRuntimeId = useTradingStore(s => s.setSelectedSignalRuntimeId);
   const setSignalRuntimePlan = useTradingStore(s => s.setSignalRuntimePlan);
+  const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
+  const stateLoadInFlightRef = useRef<Promise<void> | null>(null);
 
-  async function loadState() {
+  async function performStateLoad() {
     const [
       summaryData,
       accountData,
@@ -46,11 +100,16 @@ export function useDashboardState() {
     const range = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
     const { from, to } = range;
 
+    const snapshotQuery = new URLSearchParams({
+      accountId: normalizedSummaries[0]?.accountId ?? "",
+      from: serializeTimeParam(from),
+      to: serializeTimeParam(to),
+      limit: EQUITY_SNAPSHOT_LIMIT,
+    });
+    const snapshotQueryKey = snapshotQuery.toString();
     const [snapshotData, annotationData] = await Promise.all([
       normalizedSummaries[0]?.accountId
-        ? fetchJSON<AccountEquitySnapshot[]>(
-            `/api/v1/account-equity-snapshots?accountId=${encodeURIComponent(normalizedSummaries[0].accountId)}`
-          )
+        ? fetchCachedEquitySnapshots(snapshotQueryKey)
         : Promise.resolve([]),
       fetchJSON<ChartAnnotation[]>(
         `/api/v1/chart/annotations?symbol=BTCUSDT&from=${from}&to=${to}&limit=300`
@@ -110,6 +169,19 @@ export function useDashboardState() {
     });
   }
 
+  async function loadState() {
+    if (stateLoadInFlightRef.current) {
+      return stateLoadInFlightRef.current;
+    }
+    const promise = performStateLoad().finally(() => {
+      if (stateLoadInFlightRef.current === promise) {
+        stateLoadInFlightRef.current = null;
+      }
+    });
+    stateLoadInFlightRef.current = promise;
+    return promise;
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -132,14 +204,24 @@ export function useDashboardState() {
     }
 
     load();
-    const rawInterval = parseInt(import.meta.env.VITE_DASHBOARD_STATE_POLL_MS || "15000", 10);
-    const pollInterval = isNaN(rawInterval) ? 15000 : Math.max(5000, rawInterval);
-    const timer = window.setInterval(load, pollInterval);
+    const rawInterval = parseInt(import.meta.env.VITE_DASHBOARD_STATE_REFRESH_MS || "", 10);
+    const refreshInterval = isNaN(rawInterval)
+      ? DASHBOARD_STATE_REFRESH_MS
+      : Math.max(DASHBOARD_STATE_REFRESH_MS, rawInterval);
+    const timer = window.setInterval(load, refreshInterval);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, [authSession?.token, timeWindow, chartOverrideRange]);
+  }, [
+    authSession?.token,
+    timeWindow,
+    chartOverrideRange?.from,
+    chartOverrideRange?.to,
+    selectedSignalRuntimeId,
+    signalRuntimeFormAccountId,
+    signalRuntimeFormStrategyId,
+  ]);
 
   return { loadState };
 }

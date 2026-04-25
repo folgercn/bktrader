@@ -956,11 +956,23 @@ func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (
 	return item, nil
 }
 
-func (s *Store) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
+func (s *Store) ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	items := append([]domain.AccountEquitySnapshot(nil), s.equitySnapshots[accountID]...)
+	items := make([]domain.AccountEquitySnapshot, 0, len(s.equitySnapshots[query.AccountID]))
+	for _, item := range s.equitySnapshots[query.AccountID] {
+		if !query.From.IsZero() && item.CreatedAt.Before(query.From) {
+			continue
+		}
+		if !query.To.IsZero() && item.CreatedAt.After(query.To) {
+			continue
+		}
+		items = append(items, item)
+	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	if query.Limit > 0 && len(items) > query.Limit {
+		items = append([]domain.AccountEquitySnapshot(nil), items[len(items)-query.Limit:]...)
+	}
 	return items, nil
 }
 

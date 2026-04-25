@@ -344,7 +344,8 @@
 建议至少引入：
 
 - `VITE_DASHBOARD_REALTIME_POLL_MS`
-- `VITE_DASHBOARD_STATE_POLL_MS`
+- `VITE_DASHBOARD_REALTIME_SYNC_MS`
+- `VITE_DASHBOARD_STATE_REFRESH_MS`
 - `VITE_DASHBOARD_CONFIG_POLL_MS`
 - `VITE_ORDERS_POLL_MS`
 - `VITE_FILLS_POLL_MS`
@@ -588,4 +589,3 @@
 这次事件的根因判断，应统一表述为：
 
 > 生产问题核心是 Orders 查询链路设计不合理：前端全局高频轮询、后端无分页全量返回、单条订单 metadata 过重，三者叠加导致 API 卡死并最终引发容器内存风险。
-

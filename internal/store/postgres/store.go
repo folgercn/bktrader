@@ -1317,13 +1317,28 @@ func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (
 	return s.GetLiveSession(sessionID)
 }
 
-func (s *Store) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
-	rows, err := s.db.Query(`
+func (s *Store) ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error) {
+	args := []any{query.AccountID}
+	filters := []string{"account_id = $1"}
+	if !query.From.IsZero() {
+		args = append(args, query.From)
+		filters = append(filters, fmt.Sprintf("created_at >= $%d", len(args)))
+	}
+	if !query.To.IsZero() {
+		args = append(args, query.To)
+		filters = append(filters, fmt.Sprintf("created_at <= $%d", len(args)))
+	}
+	sqlQuery := `
 		select id, account_id, start_equity, realized_pnl, unrealized_pnl, fees, net_equity, exposure_notional, open_position_count, created_at
 		from account_equity_snapshots
-		where account_id = $1
-		order by created_at asc
-	`, accountID)
+		where ` + strings.Join(filters, " and ")
+	if query.Limit > 0 {
+		args = append(args, query.Limit)
+		sqlQuery = `select * from (` + sqlQuery + fmt.Sprintf(` order by created_at desc limit $%d`, len(args)) + `) limited_snapshots order by created_at asc`
+	} else {
+		sqlQuery += ` order by created_at asc`
+	}
+	rows, err := s.db.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
