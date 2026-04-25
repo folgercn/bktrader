@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { fetchJSON } from '../utils/api';
@@ -8,6 +8,16 @@ import {
   PlatformNotification, PlatformHealthSnapshot
 } from '../types/domain';
 import { useDashboardStream } from './useDashboardStream';
+
+const DEFAULT_REALTIME_POLL_MS = 5000;
+const MIN_REALTIME_POLL_MS = 1000;
+const DEFAULT_STREAM_SYNC_MS = 60000;
+const MIN_STREAM_SYNC_MS = 60000;
+
+function intervalFromEnv(raw: string | undefined, fallback: number, minimum: number) {
+  const parsed = parseInt(raw || "", 10);
+  return isNaN(parsed) ? fallback : Math.max(minimum, parsed);
+}
 
 export function useDashboardRealtime() {
   const setError = useUIStore(s => s.setError);
@@ -24,6 +34,7 @@ export function useDashboardRealtime() {
   const setMonitorHealth = useTradingStore(s => s.setMonitorHealth);
 
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+  const realtimeLoadInFlightRef = useRef<Promise<void> | null>(null);
 
   const isStreamEnabled = import.meta.env.VITE_DASHBOARD_STREAM_ENABLED === 'true';
   const { isConnected: isStreamConnected } = useDashboardStream(isStreamEnabled);
@@ -63,6 +74,19 @@ export function useDashboardRealtime() {
     setMonitorHealth(monitorHealthData);
   }
 
+  async function loadRealtimeOnce() {
+    if (realtimeLoadInFlightRef.current) {
+      return realtimeLoadInFlightRef.current;
+    }
+    const promise = loadRealtime().finally(() => {
+      if (realtimeLoadInFlightRef.current === promise) {
+        realtimeLoadInFlightRef.current = null;
+      }
+    });
+    realtimeLoadInFlightRef.current = promise;
+    return promise;
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -72,7 +96,7 @@ export function useDashboardRealtime() {
         return;
       }
       try {
-        await loadRealtime();
+        await loadRealtimeOnce();
         if (!active) return;
         setError(null);
       } catch (err) {
@@ -92,18 +116,31 @@ export function useDashboardRealtime() {
       }
     }
 
-    if (isStreamEnabled && isStreamConnected) {
-      return () => { active = false; };
-    }
-
-    const rawInterval = parseInt(import.meta.env.VITE_DASHBOARD_REALTIME_POLL_MS || "5000", 10);
-    const pollInterval = isNaN(rawInterval) ? 5000 : Math.max(1000, rawInterval);
-    
+    const pollInterval = intervalFromEnv(
+      import.meta.env.VITE_DASHBOARD_REALTIME_POLL_MS,
+      DEFAULT_REALTIME_POLL_MS,
+      MIN_REALTIME_POLL_MS
+    );
+    const streamSyncInterval = intervalFromEnv(
+      import.meta.env.VITE_DASHBOARD_REALTIME_SYNC_MS,
+      DEFAULT_STREAM_SYNC_MS,
+      MIN_STREAM_SYNC_MS
+    );
     let fallbackTimeout: number | undefined;
     let fallbackInterval: number | undefined;
+    let streamSyncTimer: number | undefined;
+
+    load();
+
+    if (isStreamEnabled && isStreamConnected) {
+      streamSyncTimer = window.setInterval(load, streamSyncInterval);
+      return () => {
+        active = false;
+        if (streamSyncTimer) window.clearInterval(streamSyncTimer);
+      };
+    }
 
     if (isFirstLoad) {
-      load();
       fallbackInterval = window.setInterval(load, pollInterval);
     } else {
       fallbackTimeout = window.setTimeout(() => {
