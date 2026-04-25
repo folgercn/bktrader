@@ -1,7 +1,7 @@
 x-app-image: &app-image
     image: ${IMAGE_REPO:-ghcr.io/folgercn/bktrader-app}:${IMAGE_TAG:-latest}
-    mem_limit: ${APP_MEM_LIMIT:-1536m}
-    memswap_limit: ${APP_MEMSWAP_LIMIT:-2g}
+    mem_limit: ${APP_MEM_LIMIT:-768m}
+    memswap_limit: ${APP_MEMSWAP_LIMIT:-1g}
     restart: unless-stopped
     env_file:
       - ${APP_ENV_FILE:-./.env}
@@ -34,6 +34,8 @@ services:
     <<: *app-image
     container_name: bktrader-live-runner
     command: ["platform-worker"]
+    mem_limit: ${LIVE_RUNNER_MEM_LIMIT:-1536m}
+    memswap_limit: ${LIVE_RUNNER_MEMSWAP_LIMIT:-2g}
     environment:
       BKTRADER_ROLE: live-runner
       AUTO_MIGRATE: "false"
@@ -45,6 +47,8 @@ services:
     <<: *app-image
     container_name: bktrader-notification-worker
     command: ["platform-worker"]
+    mem_limit: ${NOTIFICATION_WORKER_MEM_LIMIT:-256m}
+    memswap_limit: ${NOTIFICATION_WORKER_MEMSWAP_LIMIT:-512m}
     environment:
       BKTRADER_ROLE: notification-worker
       AUTO_MIGRATE: "false"
