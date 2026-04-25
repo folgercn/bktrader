@@ -153,6 +153,14 @@ type AccountEquitySnapshot struct {
 	CreatedAt         time.Time `json:"createdAt"`
 }
 
+// AccountEquitySnapshotQuery limits account equity time-series reads.
+type AccountEquitySnapshotQuery struct {
+	AccountID string
+	From      time.Time
+	To        time.Time
+	Limit     int
+}
+
 // MarketBar 市场 K 线缓存，按交易所/交易对/周期/开盘时间唯一。
 type MarketBar struct {
 	ID        string    `json:"id"`

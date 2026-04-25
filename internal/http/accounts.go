@@ -5,7 +5,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/service"
+)
+
+const (
+	defaultAccountEquitySnapshotLimit = 1000
+	maxAccountEquitySnapshotLimit     = 5000
 )
 
 // registerAccountRoutes 注册账户管理、账户汇总、净值快照和持仓相关路由。
@@ -241,7 +247,12 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeError(w, http.StatusBadRequest, "accountId is required")
 			return
 		}
-		items, err := platform.ListAccountEquitySnapshots(accountID)
+		query, err := parseAccountEquitySnapshotQuery(r, accountID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		items, err := platform.ListAccountEquitySnapshots(query)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -282,4 +293,31 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, item)
 	})
 
+}
+
+func parseAccountEquitySnapshotQuery(r *http.Request, accountID string) (domain.AccountEquitySnapshotQuery, error) {
+	from, err := parseOptionalTimeValue(r.URL.Query().Get("from"))
+	if err != nil {
+		return domain.AccountEquitySnapshotQuery{}, errors.New("invalid from")
+	}
+	to, err := parseOptionalTimeValue(r.URL.Query().Get("to"))
+	if err != nil {
+		return domain.AccountEquitySnapshotQuery{}, errors.New("invalid to")
+	}
+	limit, err := parseOptionalPositiveInt(r.URL.Query().Get("limit"))
+	if err != nil {
+		return domain.AccountEquitySnapshotQuery{}, errors.New("invalid limit")
+	}
+	if limit == 0 {
+		limit = defaultAccountEquitySnapshotLimit
+	}
+	if limit > maxAccountEquitySnapshotLimit {
+		return domain.AccountEquitySnapshotQuery{}, errors.New("limit exceeds maximum")
+	}
+	return domain.AccountEquitySnapshotQuery{
+		AccountID: accountID,
+		From:      from,
+		To:        to,
+		Limit:     limit,
+	}, nil
 }

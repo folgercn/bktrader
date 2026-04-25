@@ -445,8 +445,8 @@ func sumSnapshotPositionNotional(value any) float64 {
 }
 
 // ListAccountEquitySnapshots 获取指定账户的净值快照时间序列。
-func (p *Platform) ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error) {
-	return p.store.ListAccountEquitySnapshots(accountID)
+func (p *Platform) ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error) {
+	return p.store.ListAccountEquitySnapshots(query)
 }
 
 // captureAccountSnapshot 捕获指定账户的当前净值快照并持久化。

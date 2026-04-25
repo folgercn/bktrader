@@ -114,7 +114,7 @@ type Repository interface {
 	// --- 净值快照 ---
 
 	// ListAccountEquitySnapshots 获取指定账户的净值快照序列。
-	ListAccountEquitySnapshots(accountID string) ([]domain.AccountEquitySnapshot, error)
+	ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error)
 	// CreateAccountEquitySnapshot 创建新的净值快照。
 	CreateAccountEquitySnapshot(snapshot domain.AccountEquitySnapshot) (domain.AccountEquitySnapshot, error)
 
