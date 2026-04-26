@@ -37,6 +37,7 @@
 - 不把 lease owner 当作交易事实源。
 - REST 仍是启动、恢复、接管和关键执行边界的权威校验入口。
 - JetStream 是 at-least-once 消费模型，业务层必须做 idempotency。
+- Runtime event bus 是可回放事件日志 / 广播总线语义，stream retention 使用 `LimitsPolicy`，避免 runner、audit、dashboard、debug replay 等 durable consumer 互相抢消息。
 - 每个 PR 必须独立合并、独立回滚。
 - 每个 PR 必须保持当前 monolith / 当前拆分形态可运行。
 
@@ -84,6 +85,13 @@ Issue: [#200](https://github.com/folgercn/bktrader/issues/200)
 ### Step 2: #201 增加 NATS JetStream runtime event bus
 
 Issue: [#201](https://github.com/folgercn/bktrader/issues/201)
+
+状态：
+
+- 🟡 **进行中（2026-04-26）**：已新开分支 `codex/issue-201-runtime-event-bus`。
+- ✅ 已完成：runtime event envelope、stable `id` / `fingerprint`、in-memory fake publisher、NATS JetStream publisher、`BKT_RUNTIME_EVENTS` stream/subject 配置（`LimitsPolicy` 广播/日志流语义）、WebSocket 路径 side-publish、publish 失败日志/状态记录、tick event 每 symbol 每秒节流。
+- ✅ 已覆盖测试：envelope 字段完整、signal bar fingerprint 不含 receive/create time、duplicate idempotency、stream/subject 配置、publish 失败不阻塞并记录状态。
+- 🟡 待 review：本 PR 不改 deployments；`RUNTIME_EVENT_BUS` 默认 `nats`，NATS 不可用时自动降级为 noop，显式设置 `disabled` 可关闭 side-publish。
 
 目标：
 
