@@ -48,15 +48,26 @@ type LiveRecoveryActionCandidate struct {
 	Payload     map[string]any `json:"payload,omitempty"` // 执行动作所需的参数
 }
 
+// LiveRecoveryDiagnosticError records the failing diagnostic stage without
+// hiding partial DB/exchange evidence that was already collected.
+type LiveRecoveryDiagnosticError struct {
+	Stage     string `json:"stage"`
+	Message   string `json:"message"`
+	Retryable bool   `json:"retryable"`
+}
+
 // LiveRecoveryDiagnoseResult 诊断结果
 type LiveRecoveryDiagnoseResult struct {
 	AccountID     string                        `json:"accountId"`
 	Symbol        string                        `json:"symbol"`
+	Status        string                        `json:"status"`  // "ok", "warning", "error"
+	Summary       string                        `json:"summary"` // operator-facing summary
 	ExchangeFact  LiveRecoveryFact              `json:"exchangeFact"`
 	DBFact        LiveRecoveryFact              `json:"dbFact"`
 	Mismatches    []LiveRecoveryMismatch        `json:"mismatches"`
 	Actions       []LiveRecoveryActionCandidate `json:"actions"`
 	Authoritative bool                          `json:"authoritative"`
+	Error         *LiveRecoveryDiagnosticError  `json:"error,omitempty"`
 	RuntimeRole   string                        `json:"runtimeRole"` // BKTRADER_ROLE
 	DiagnosedAt   time.Time                     `json:"diagnosedAt"`
 }
@@ -77,6 +88,8 @@ func (p *Platform) DiagnoseLiveRecovery(ctx context.Context, options LiveRecover
 	result := LiveRecoveryDiagnoseResult{
 		AccountID:   account.ID,
 		Symbol:      symbol,
+		Status:      "ok",
+		Summary:     "诊断完成，未发现状态不一致。",
 		RuntimeRole: p.processRole,
 		DiagnosedAt: time.Now().UTC(),
 	}
@@ -84,22 +97,48 @@ func (p *Platform) DiagnoseLiveRecovery(ctx context.Context, options LiveRecover
 	// 1. 获取本地数据库事实
 	dbFact, err := p.fetchDBFact(account.ID, symbol, lookback)
 	if err != nil {
-		return result, fmt.Errorf("fetch db fact failed: %w", err)
+		result.Status = "error"
+		result.Summary = "本地数据库事实获取失败，无法完成恢复诊断。"
+		result.Error = &LiveRecoveryDiagnosticError{
+			Stage:     "fetch-db-fact",
+			Message:   err.Error(),
+			Retryable: true,
+		}
+		result.Authoritative = false
+		return result, nil
 	}
 	result.DBFact = dbFact
 
 	// 2. 获取交易所权威事实
 	exchangeFact, err := p.fetchExchangeFact(account, symbol, lookback)
 	if err != nil {
-		// 如果获取交易所事实失败，标记权威性为 false
+		// 如果获取交易所事实失败，返回一份非权威诊断报告，保留已采集到的 DB fact。
 		result.Authoritative = false
-		return result, fmt.Errorf("fetch exchange fact failed: %w", err)
+		result.Status = "error"
+		result.Summary = "交易所 REST 权威事实获取失败，诊断结果不可用于破坏性修复。"
+		result.Error = &LiveRecoveryDiagnosticError{
+			Stage:     "fetch-exchange-fact",
+			Message:   err.Error(),
+			Retryable: true,
+		}
+		result.ExchangeFact = exchangeFact
+		result.Mismatches = []LiveRecoveryMismatch{{
+			Scenario: "non-authoritative",
+			Level:    "critical",
+			Message:  fmt.Sprintf("未能获取交易所权威事实：%s。", err.Error()),
+		}}
+		result.Actions = blockLiveRecoveryActions(p.generateRecoveryActions(account, symbol, result.DBFact, result.ExchangeFact, result.Mismatches), "non-authoritative-diagnosis")
+		return result, nil
 	}
 	result.ExchangeFact = exchangeFact
 	result.Authoritative = true // 成功获取 REST 事实即视为权威
 
 	// 3. 评估差异与分类
 	result.Mismatches = p.classifyRecoveryMismatches(result.DBFact, result.ExchangeFact)
+	if len(result.Mismatches) > 0 {
+		result.Status = "warning"
+		result.Summary = fmt.Sprintf("诊断完成，发现 %d 个状态差异。", len(result.Mismatches))
+	}
 
 	// 4. 生成可选修复动作
 	result.Actions = p.generateRecoveryActions(account, symbol, result.DBFact, result.ExchangeFact, result.Mismatches)
@@ -198,10 +237,8 @@ func (p *Platform) fetchExchangeFact(account domain.Account, symbol string, look
 		}
 		snapshot := mapValue(synced.Metadata["liveSyncSnapshot"])
 		exchangePositions := metadataList(snapshot["positions"])
-		foundSymbol := false
 		for _, item := range exchangePositions {
 			if NormalizeSymbol(stringValue(item["symbol"])) == symbol {
-				foundSymbol = true
 				positionAmt := parseFloatValue(item["positionAmt"])
 				if positionAmt != 0 {
 					side := "LONG"
@@ -218,10 +255,6 @@ func (p *Platform) fetchExchangeFact(account domain.Account, symbol string, look
 				}
 				break
 			}
-		}
-		if !foundSymbol && symbol != "" {
-			// 如果指定了 symbol 但在快照中完全没找到该 symbol (即使是 0 仓位也应该有记录)，视作异常
-			return fact, fmt.Errorf("symbol %s not found in exchange account snapshot", symbol)
 		}
 	}
 	if fact.Position == nil {
@@ -430,6 +463,14 @@ func (p *Platform) generateRecoveryActions(account domain.Account, symbol string
 	return actions
 }
 
+func blockLiveRecoveryActions(actions []LiveRecoveryActionCandidate, reason string) []LiveRecoveryActionCandidate {
+	for i := range actions {
+		actions[i].Allowed = false
+		actions[i].BlockedBy = reason
+	}
+	return actions
+}
+
 // ExecuteLiveRecoveryAction 执行特定的修复动作（安全版）
 func (p *Platform) ExecuteLiveRecoveryAction(ctx context.Context, accountID, action string, payload map[string]any) (map[string]any, error) {
 	account, err := p.store.GetAccount(accountID)
@@ -446,6 +487,9 @@ func (p *Platform) ExecuteLiveRecoveryAction(ctx context.Context, accountID, act
 	})
 	if err != nil {
 		return nil, fmt.Errorf("pre-check diagnose failed: %w", err)
+	}
+	if !diag.Authoritative || strings.EqualFold(diag.Status, "error") {
+		return nil, fmt.Errorf("action %s blocked: non-authoritative diagnosis", action)
 	}
 
 	allowed := false
