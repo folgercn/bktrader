@@ -1,6 +1,6 @@
 import { readStoredAuthSession } from './auth';
 
-export const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").replace(/\/$/, "");
+export const API_BASE = (((import.meta as any).env.VITE_API_BASE as string | undefined) ?? "").replace(/\/$/, "");
 
 export async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const authSession = readStoredAuthSession();

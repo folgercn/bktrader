@@ -62,6 +62,7 @@ type Platform struct {
 	tickEvalThrottle       sync.Map // runtimeSessionID or runtimeSessionID|symbol -> *tickEvalThrottleState
 	logBroker              *logging.Broker
 	dashboardBroker        *DashboardBroker
+	processRole            string
 }
 
 type RuntimePolicy struct {
@@ -154,6 +155,10 @@ func NewPlatform(store store.Repository) *Platform {
 		"execution_strategy_count", len(platform.executionStrategies),
 	)
 	return platform
+}
+
+func (p *Platform) SetProcessRole(role string) {
+	p.processRole = role
 }
 
 // StartDashboardBroker 启动仪表盘实时数据轮询检测

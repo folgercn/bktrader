@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { HelpCircle, Zap, Edit3, Square, Trash2, Play, ArrowRight, ShieldCheck, Activity, RotateCw, AlertTriangle } from 'lucide-react';
+import { HelpCircle, Zap, Edit3, Square, Trash2, Play, ArrowRight, ShieldCheck, Activity, RotateCw, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { SignalBarChart } from '../components/charts/SignalBarChart';
@@ -411,6 +411,16 @@ export function AccountStage({
                    }}
                 >
                   创建会话
+                </Button>
+                <Separator orientation="vertical" className="mx-1 h-4 bg-[color-mix(in_srgb,var(--bk-border)_30%,transparent)]" />
+                <Button 
+                   variant="bento-ghost" 
+                   size="sm" 
+                   className="h-8 rounded-lg px-4 text-[10px] font-black shadow-none hover:bg-[var(--bk-surface-faint)] text-[var(--bk-accent)]"
+                   onClick={() => useUIStore.getState().setSidebarTab('recovery')}
+                >
+                  <ShieldAlert className="w-3 h-3 mr-1.5" />
+                  恢复向导
                 </Button>
               </div>
            </div>
