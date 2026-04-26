@@ -2463,12 +2463,20 @@ func (p *Platform) clearVerifiedClosedExchangeMissingPosition(account domain.Acc
 	if !guard.authoritative || guard.pendingSettlement || guard.workingOrders || guard.exchangeOpenOrders {
 		return false, nil, nil
 	}
-	verification, found, err := p.latestOrderCloseVerificationForPosition(account.ID, symbol)
+	strategyID, err := p.resolveStrategyIDFromVersionID(position.StrategyVersionID)
+	if err != nil || strings.TrimSpace(strategyID) == "" {
+		return false, nil, nil
+	}
+	verification, found, err := p.latestOrderCloseVerificationForPosition(account.ID, symbol, strategyID)
 	if err != nil {
 		return false, nil, err
 	}
 	if !found || !verification.VerifiedClosed || tradingQuantityPositive(verification.RemainingPositionQty) {
 		return false, nil, nil
+	}
+	matches, err := p.closeVerificationMatchesPosition(account.ID, symbol, strategyID, position, verification)
+	if err != nil || !matches {
+		return false, nil, err
 	}
 	dbSnapshot := buildRecoveredLivePositionStateSnapshot(position)
 	if err := p.store.DeletePosition(position.ID); err != nil {
@@ -2482,8 +2490,10 @@ func (p *Platform) clearVerifiedClosedExchangeMissingPosition(account domain.Acc
 		"exchangePosition": map[string]any{},
 		"closeVerification": map[string]any{
 			"id":                   verification.ID,
+			"liveSessionId":        verification.LiveSessionID,
 			"orderId":              verification.OrderID,
 			"decisionEventId":      verification.DecisionEventID,
+			"strategyId":           verification.StrategyID,
 			"verifiedClosed":       verification.VerifiedClosed,
 			"remainingPositionQty": verification.RemainingPositionQty,
 			"verificationSource":   verification.VerificationSource,
@@ -2492,11 +2502,71 @@ func (p *Platform) clearVerifiedClosedExchangeMissingPosition(account domain.Acc
 	}, nil
 }
 
-func (p *Platform) latestOrderCloseVerificationForPosition(accountID string, symbol string) (domain.OrderCloseVerification, bool, error) {
+func (p *Platform) closeVerificationMatchesPosition(accountID string, symbol string, strategyID string, position domain.Position, verification domain.OrderCloseVerification) (bool, error) {
+	if !strings.EqualFold(strings.TrimSpace(verification.AccountID), strings.TrimSpace(accountID)) {
+		return false, nil
+	}
+	if NormalizeSymbol(verification.Symbol) != NormalizeSymbol(symbol) {
+		return false, nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(verification.StrategyID), strings.TrimSpace(strategyID)) {
+		return false, nil
+	}
+	if strings.TrimSpace(verification.OrderID) == "" {
+		return false, nil
+	}
+	order, err := p.store.GetOrderByID(verification.OrderID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "order not found") {
+			return false, nil
+		}
+		return false, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.AccountID), strings.TrimSpace(accountID)) || NormalizeSymbol(order.Symbol) != NormalizeSymbol(symbol) {
+		return false, nil
+	}
+	if position.StrategyVersionID != "" && order.StrategyVersionID != "" && !strings.EqualFold(strings.TrimSpace(position.StrategyVersionID), strings.TrimSpace(order.StrategyVersionID)) {
+		return false, nil
+	}
+	expectedSide := "SELL"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		expectedSide = "BUY"
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.Side), expectedSide) {
+		return false, nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.Status), "FILLED") {
+		return false, nil
+	}
+	if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+		return false, nil
+	}
+	if !liveOrderRepresentsSystemExit(order) {
+		return false, nil
+	}
+	filledQuantity := firstPositive(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity)
+	if tradingQuantityBelow(filledQuantity, position.Quantity) {
+		return false, nil
+	}
+	if verification.LiveSessionID != "" {
+		if orderLiveSessionID := stringValue(order.Metadata["liveSessionId"]); orderLiveSessionID != "" && orderLiveSessionID != verification.LiveSessionID {
+			return false, nil
+		}
+	}
+	if verification.DecisionEventID != "" {
+		if orderDecisionEventID := stringValue(order.Metadata["decisionEventId"]); orderDecisionEventID != "" && orderDecisionEventID != verification.DecisionEventID {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (p *Platform) latestOrderCloseVerificationForPosition(accountID string, symbol string, strategyID string) (domain.OrderCloseVerification, bool, error) {
 	items, err := p.store.QueryOrderCloseVerifications(domain.OrderCloseVerificationQuery{
-		AccountID: strings.TrimSpace(accountID),
-		Symbol:    NormalizeSymbol(symbol),
-		Limit:     1,
+		AccountID:  strings.TrimSpace(accountID),
+		StrategyID: strings.TrimSpace(strategyID),
+		Symbol:     NormalizeSymbol(symbol),
+		Limit:      1,
 	})
 	if err != nil {
 		return domain.OrderCloseVerification{}, false, err

@@ -981,9 +981,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	}
 	if decisionEventID := stringValue(proposalMap["decisionEventId"]); decisionEventID != "" {
 		state["lastStrategyDecisionEventId"] = decisionEventID
-		if shouldAdvanceLivePlanForOrderStatus(created.Status) {
-			state["lastDispatchedDecisionEventId"] = decisionEventID
-		}
+		state["lastDispatchedDecisionEventId"] = decisionEventID
 	}
 	state["lastDispatchedOrderId"] = created.ID
 	state["lastDispatchedOrderStatus"] = created.Status

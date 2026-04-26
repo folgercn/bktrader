@@ -2450,6 +2450,96 @@ func TestValidateLiveDispatchIdempotencyRejectsPreviouslyDispatchedDecisionEvent
 	}
 }
 
+func TestDispatchLiveSessionIntentRecordsDecisionIDForRejectedDispatch(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-rejected-dispatch-idempotency",
+		submitOrderFunc: func(domain.Account, domain.Order, map[string]any) (LiveOrderSubmission, error) {
+			return LiveOrderSubmission{}, errors.New("exchange rejected order")
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-rejected-dispatch-idempotency",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	freshRuntimeAt := time.Now().UTC()
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+		state["lastHeartbeatAt"] = freshRuntimeAt.Format(time.RFC3339)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		for key, item := range sourceStates {
+			sourceState := cloneMetadata(mapValue(item))
+			sourceState["lastEventAt"] = freshRuntimeAt.Format(time.RFC3339)
+			sourceStates[key] = sourceState
+		}
+		state["sourceStates"] = sourceStates
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = freshRuntimeAt
+	}); err != nil {
+		t.Fatalf("refresh runtime state failed: %v", err)
+	}
+
+	decisionEventID := "strategy-decision-event-rejected-dispatch"
+	state := cloneMetadata(session.State)
+	proposal := executionProposalToMap(ExecutionProposal{
+		Action:            "entry",
+		Role:              "entry",
+		Reason:            "SL-Reentry",
+		Side:              "SELL",
+		Symbol:            "BTCUSDT",
+		Type:              "MARKET",
+		Quantity:          0.001,
+		PriceHint:         75600.0,
+		SignalKind:        "sl-reentry",
+		DecisionState:     "entry-ready",
+		SignalBarStateKey: "bar-1",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"executionDecision": "direct-dispatch",
+			"executionMode":     "live",
+			"skipRuntimeCheck":  true,
+		},
+	})
+	proposal = setExecutionProposalDecisionEventID(proposal, decisionEventID)
+	state["lastExecutionProposal"] = proposal
+	state["lastStrategyIntent"] = proposal
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update session state failed: %v", err)
+	}
+
+	order, err := platform.dispatchLiveSessionIntent(session)
+	if err == nil {
+		t.Fatal("expected dispatch to return exchange rejection")
+	}
+	if order.ID == "" || !strings.EqualFold(order.Status, "REJECTED") {
+		t.Fatalf("expected rejected order to be persisted, got order=%+v err=%v", order, err)
+	}
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastDispatchedDecisionEventId"]); got != decisionEventID {
+		t.Fatalf("expected rejected dispatch to persist decision id %s, got %s", decisionEventID, got)
+	}
+	if err := validateLiveDispatchIdempotency(updated.State, proposal); err == nil {
+		t.Fatal("expected persisted rejected dispatch decision id to block a duplicate dispatch")
+	}
+}
+
 func TestDispatchLiveSessionIntentRejectsEntryWhenSubmissionSlippageTooWide(t *testing.T) {
 	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
 	eventTime := time.Now().UTC()

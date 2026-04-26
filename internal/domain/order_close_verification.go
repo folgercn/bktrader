@@ -25,6 +25,7 @@ type OrderCloseVerificationQuery struct {
 	OrderID       string
 	OrderIDs      []string
 	AccountID     string
+	StrategyID    string
 	Symbol        string
 	Limit         int
 }
