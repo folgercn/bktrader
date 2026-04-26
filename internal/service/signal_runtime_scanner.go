@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -9,14 +10,14 @@ import (
 
 const signalRuntimeScannerInterval = 5 * time.Second
 
-type signalRuntimeSessionStarter func(string) (domain.SignalRuntimeSession, error)
+type signalRuntimeSessionStarter func(context.Context, string) (domain.SignalRuntimeSession, error)
 
 func (p *Platform) StartSignalRuntimeScanner(ctx context.Context) {
 	logger := p.logger("service.signal_runtime_scanner")
 	logger.Info("signal runtime scanner started")
 	go func() {
 		defer logger.Info("signal runtime scanner stopped")
-		p.scanSignalRuntimeSessions(ctx, p.StartSignalRuntimeSession)
+		p.scanSignalRuntimeSessions(ctx, p.startSignalRuntimeSession)
 		ticker := time.NewTicker(signalRuntimeScannerInterval)
 		defer ticker.Stop()
 		for {
@@ -24,7 +25,7 @@ func (p *Platform) StartSignalRuntimeScanner(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				p.scanSignalRuntimeSessions(ctx, p.StartSignalRuntimeSession)
+				p.scanSignalRuntimeSessions(ctx, p.startSignalRuntimeSession)
 			}
 		}
 	}()
@@ -45,12 +46,16 @@ func (p *Platform) scanSignalRuntimeSessions(ctx context.Context, starter signal
 		if p.signalRuntimeSessionRunningOrStarting(session.ID) {
 			continue
 		}
-		if _, err := starter(session.ID); err != nil {
+		if _, err := starter(ctx, session.ID); err != nil {
+			if errors.Is(err, ErrRuntimeLeaseNotAcquired) {
+				continue
+			}
 			p.logger("service.signal_runtime_scanner",
 				"session_id", session.ID,
 				"account_id", session.AccountID,
 				"strategy_id", session.StrategyID,
 			).Warn("signal runtime scanner failed to start session", "error", err)
+			continue
 		}
 	}
 }

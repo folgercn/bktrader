@@ -36,7 +36,7 @@ func TestScanSignalRuntimeSessionsStartsDesiredRunningSessions(t *testing.T) {
 	})
 
 	started := make([]string, 0)
-	platform.scanSignalRuntimeSessions(context.Background(), func(sessionID string) (domain.SignalRuntimeSession, error) {
+	platform.scanSignalRuntimeSessions(context.Background(), func(_ context.Context, sessionID string) (domain.SignalRuntimeSession, error) {
 		started = append(started, sessionID)
 		return desired, nil
 	})
@@ -62,7 +62,7 @@ func TestScanSignalRuntimeSessionsSkipsLocalRunningSession(t *testing.T) {
 	platform.mu.Unlock()
 
 	started := 0
-	platform.scanSignalRuntimeSessions(context.Background(), func(sessionID string) (domain.SignalRuntimeSession, error) {
+	platform.scanSignalRuntimeSessions(context.Background(), func(_ context.Context, sessionID string) (domain.SignalRuntimeSession, error) {
 		started++
 		return session, nil
 	})
@@ -88,12 +88,51 @@ func TestScanSignalRuntimeSessionsSkipsErroredDesiredRunningSession(t *testing.T
 	})
 
 	started := 0
-	platform.scanSignalRuntimeSessions(context.Background(), func(sessionID string) (domain.SignalRuntimeSession, error) {
+	platform.scanSignalRuntimeSessions(context.Background(), func(_ context.Context, sessionID string) (domain.SignalRuntimeSession, error) {
 		started++
 		return session, nil
 	})
 	if started != 0 {
 		t.Fatalf("expected scanner to leave errored desired-running session stopped for manual restart, got %d starts", started)
+	}
+}
+
+func TestScanSignalRuntimeSessionsSkipsSessionOwnedByActiveLease(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	platform.setRuntimeLeaseOwnerIDForTest("runner-local")
+	session, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
+	}
+	session.Status = "STOPPED"
+	session.State = cloneMetadata(session.State)
+	session.State["desiredStatus"] = "RUNNING"
+	session.State["actualStatus"] = "STOPPED"
+	updated, err := store.UpdateSignalRuntimeSession(session)
+	if err != nil {
+		t.Fatalf("UpdateSignalRuntimeSession failed: %v", err)
+	}
+	platform.cacheSignalRuntimeSession(updated)
+	if _, ok, err := store.AcquireRuntimeLease(domain.RuntimeLeaseAcquireRequest{
+		ResourceType: domain.RuntimeLeaseResourceSignalRuntimeSession,
+		ResourceID:   updated.ID,
+		OwnerID:      "runner-other",
+		TTL:          time.Minute,
+	}); err != nil || !ok {
+		t.Fatalf("pre-acquire runtime lease failed: ok=%v err=%v", ok, err)
+	}
+
+	started := 0
+	platform.scanSignalRuntimeSessions(context.Background(), func(ctx context.Context, sessionID string) (domain.SignalRuntimeSession, error) {
+		startedSession, err := platform.startSignalRuntimeSession(ctx, sessionID)
+		if err == nil {
+			started++
+		}
+		return startedSession, err
+	})
+	if started != 0 {
+		t.Fatalf("expected scanner to skip session owned by another active runner, got %d starts", started)
 	}
 }
 

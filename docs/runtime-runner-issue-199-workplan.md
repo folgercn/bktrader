@@ -211,6 +211,16 @@ Issue: [#203](https://github.com/folgercn/bktrader/issues/203)
 
 Issue: [#204](https://github.com/folgercn/bktrader/issues/204)
 
+状态：✅ **已实现（2026-04-26，待 PR review）**
+
+当前完成：
+
+- 已新增 `runtime_leases` 持久化表，使用 `(resource_type, resource_id)` 作为 ownership 主键。
+- 已在 store 层实现 acquire / heartbeat / release / expired takeover，resource type 覆盖 `signal-runtime-session`、`live-session`、`account-sync`。
+- `StartSignalRuntimeSession` 启动路径已在处理 resource 前 acquire lease；未拿到 lease 时 scanner 跳过该 session。
+- signal runtime runner 的 lease heartbeat 与业务 context 绑定；heartbeat 丢失 ownership 会 cancel 本地 runner，stop/delete/runner exit 会按 owner release。
+- 已补 memory store、Postgres store 和 scanner 单元测试；Postgres 测试在 `BKTRADER_TEST_POSTGRES_DSN` 存在时验证真实 SQL。
+
 目标：
 
 - 防止同一类 runner 多实例同时处理同一 resource。

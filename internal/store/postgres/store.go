@@ -1440,6 +1440,89 @@ func (s *Store) DeleteSignalRuntimeSession(sessionID string) error {
 	return nil
 }
 
+func (s *Store) AcquireRuntimeLease(req domain.RuntimeLeaseAcquireRequest) (domain.RuntimeLease, bool, error) {
+	if strings.TrimSpace(req.ResourceType) == "" || strings.TrimSpace(req.ResourceID) == "" || strings.TrimSpace(req.OwnerID) == "" {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	if req.TTL <= 0 {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease ttl must be positive")
+	}
+	row := s.db.QueryRow(`
+		with upsert as (
+			insert into runtime_leases (
+				resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at
+			)
+			values ($1, $2, $3, now() + ($4::bigint * interval '1 millisecond'), now(), now())
+			on conflict (resource_type, resource_id) do update set
+				owner_id = excluded.owner_id,
+				expires_at = excluded.expires_at,
+				acquired_at = case
+					when runtime_leases.owner_id = excluded.owner_id then runtime_leases.acquired_at
+					else now()
+				end,
+				updated_at = now()
+			where runtime_leases.owner_id = excluded.owner_id
+				or runtime_leases.expires_at <= now()
+			returning resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at, true as acquired
+		)
+		select resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at, acquired
+		from upsert
+		union all
+		select resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at, false as acquired
+		from runtime_leases
+		where resource_type = $1
+			and resource_id = $2
+			and not exists (select 1 from upsert)
+	`, strings.TrimSpace(req.ResourceType), strings.TrimSpace(req.ResourceID), strings.TrimSpace(req.OwnerID), req.TTL.Milliseconds())
+	return scanRuntimeLeaseWithAcquired(row)
+}
+
+func (s *Store) HeartbeatRuntimeLease(resourceType, resourceID, ownerID string, ttl time.Duration) (domain.RuntimeLease, bool, error) {
+	if strings.TrimSpace(resourceType) == "" || strings.TrimSpace(resourceID) == "" || strings.TrimSpace(ownerID) == "" {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	if ttl <= 0 {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease ttl must be positive")
+	}
+	row := s.db.QueryRow(`
+		update runtime_leases
+		set expires_at = now() + ($4::bigint * interval '1 millisecond'),
+			updated_at = now()
+		where resource_type = $1
+			and resource_id = $2
+			and owner_id = $3
+		returning resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at
+	`, strings.TrimSpace(resourceType), strings.TrimSpace(resourceID), strings.TrimSpace(ownerID), ttl.Milliseconds())
+	lease, err := scanRuntimeLease(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.RuntimeLease{}, false, nil
+		}
+		return domain.RuntimeLease{}, false, err
+	}
+	return lease, true, nil
+}
+
+func (s *Store) ReleaseRuntimeLease(resourceType, resourceID, ownerID string) (bool, error) {
+	if strings.TrimSpace(resourceType) == "" || strings.TrimSpace(resourceID) == "" || strings.TrimSpace(ownerID) == "" {
+		return false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	result, err := s.db.Exec(`
+		delete from runtime_leases
+		where resource_type = $1
+			and resource_id = $2
+			and owner_id = $3
+	`, strings.TrimSpace(resourceType), strings.TrimSpace(resourceID), strings.TrimSpace(ownerID))
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
 func (s *Store) ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error) {
 	args := []any{query.AccountID}
 	filters := []string{"account_id = $1"}
@@ -2370,6 +2453,10 @@ type signalRuntimeScanner interface {
 	Scan(dest ...any) error
 }
 
+type runtimeLeaseScanner interface {
+	Scan(dest ...any) error
+}
+
 func scanSignalRuntimeSession(scanner signalRuntimeScanner) (domain.SignalRuntimeSession, error) {
 	var item domain.SignalRuntimeSession
 	var stateRaw []byte
@@ -2390,6 +2477,40 @@ func scanSignalRuntimeSession(scanner signalRuntimeScanner) (domain.SignalRuntim
 	}
 	item.State = unmarshalJSONMap(stateRaw)
 	return item, nil
+}
+
+func scanRuntimeLease(scanner runtimeLeaseScanner) (domain.RuntimeLease, error) {
+	var item domain.RuntimeLease
+	err := scanner.Scan(
+		&item.ResourceType,
+		&item.ResourceID,
+		&item.OwnerID,
+		&item.ExpiresAt,
+		&item.AcquiredAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return domain.RuntimeLease{}, err
+	}
+	return item, nil
+}
+
+func scanRuntimeLeaseWithAcquired(scanner runtimeLeaseScanner) (domain.RuntimeLease, bool, error) {
+	var item domain.RuntimeLease
+	var acquired bool
+	err := scanner.Scan(
+		&item.ResourceType,
+		&item.ResourceID,
+		&item.OwnerID,
+		&item.ExpiresAt,
+		&item.AcquiredAt,
+		&item.UpdatedAt,
+		&acquired,
+	)
+	if err != nil {
+		return domain.RuntimeLease{}, false, err
+	}
+	return item, acquired, nil
 }
 
 func marshalJSONValue(value any) []byte {

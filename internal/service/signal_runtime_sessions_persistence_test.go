@@ -118,7 +118,7 @@ func TestDeleteSignalRuntimeSessionKeepsRunnerWhenStoreDeleteFails(t *testing.T)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	run := &signalRuntimeRun{ctx: ctx, cancel: cancel}
+	run := &signalRuntimeRun{ctx: ctx, cancelRunner: cancel}
 	platform.mu.Lock()
 	platform.signalRun[runtimeSession.ID] = run
 	platform.signalSessions[runtimeSession.ID] = runtimeSession
@@ -136,6 +136,61 @@ func TestDeleteSignalRuntimeSessionKeepsRunnerWhenStoreDeleteFails(t *testing.T)
 	}
 	if ctx.Err() != nil {
 		t.Fatalf("expected runner context to remain active, got %v", ctx.Err())
+	}
+}
+
+func TestStopSignalRuntimeSessionCancelsRunnerAndReleasesLeaseOnce(t *testing.T) {
+	store := &countingRuntimeLeaseStore{Store: memory.NewStore()}
+	platform := NewPlatform(store)
+	platform.setRuntimeLeaseOwnerIDForTest("runner-local")
+	runtimeSession, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
+	}
+	if _, ok, err := store.AcquireRuntimeLease(domain.RuntimeLeaseAcquireRequest{
+		ResourceType: domain.RuntimeLeaseResourceSignalRuntimeSession,
+		ResourceID:   runtimeSession.ID,
+		OwnerID:      "runner-local",
+		TTL:          runtimeLeaseTTL,
+	}); err != nil || !ok {
+		t.Fatalf("AcquireRuntimeLease failed: ok=%v err=%v", ok, err)
+	}
+
+	ctx, cancelRunner := context.WithCancel(context.Background())
+	run := &signalRuntimeRun{
+		ctx:          ctx,
+		cancelRunner: cancelRunner,
+		releaseLease: func() {
+			_, _ = store.ReleaseRuntimeLease(domain.RuntimeLeaseResourceSignalRuntimeSession, runtimeSession.ID, "runner-local")
+		},
+	}
+	platform.mu.Lock()
+	platform.signalRun[runtimeSession.ID] = run
+	platform.signalSessions[runtimeSession.ID] = runtimeSession
+	platform.mu.Unlock()
+
+	if _, err := platform.StopSignalRuntimeSessionWithForce(runtimeSession.ID, true); err != nil {
+		t.Fatalf("StopSignalRuntimeSessionWithForce failed: %v", err)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("expected stop to cancel runner context")
+	}
+	if got := store.releaseCalls.Load(); got != 1 {
+		t.Fatalf("expected one owner release after stop, got %d", got)
+	}
+	if lease, ok, err := store.AcquireRuntimeLease(domain.RuntimeLeaseAcquireRequest{
+		ResourceType: domain.RuntimeLeaseResourceSignalRuntimeSession,
+		ResourceID:   runtimeSession.ID,
+		OwnerID:      "runner-other",
+		TTL:          runtimeLeaseTTL,
+	}); err != nil || !ok || lease.OwnerID != "runner-other" {
+		t.Fatalf("expected lease to be available after stop release, ok=%v lease=%#v err=%v", ok, lease, err)
+	}
+	if err := platform.DeleteSignalRuntimeSessionWithForce(runtimeSession.ID, true); err != nil {
+		t.Fatalf("DeleteSignalRuntimeSessionWithForce failed: %v", err)
+	}
+	if got := store.releaseCalls.Load(); got != 1 {
+		t.Fatalf("expected delete after stop not to double release, got %d", got)
 	}
 }
 
@@ -162,4 +217,14 @@ type deleteFailSignalRuntimeStore struct {
 
 func (s *deleteFailSignalRuntimeStore) DeleteSignalRuntimeSession(string) error {
 	return errors.New("delete failed")
+}
+
+type countingRuntimeLeaseStore struct {
+	*memory.Store
+	releaseCalls atomic.Int32
+}
+
+func (s *countingRuntimeLeaseStore) ReleaseRuntimeLease(resourceType, resourceID, ownerID string) (bool, error) {
+	s.releaseCalls.Add(1)
+	return s.Store.ReleaseRuntimeLease(resourceType, resourceID, ownerID)
 }
