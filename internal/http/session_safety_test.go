@@ -109,6 +109,20 @@ func TestLiveSessionDetailRouteFiltersStateFields(t *testing.T) {
 	if len(detail.State) != 2 {
 		t.Fatalf("expected only 2 requested fields, got %#v", detail.State)
 	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/live/sessions/live-session-main/detail", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when fields are missing, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/live/sessions/live-session-main/detail?fields=sourceStates", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unsupported detail field, got %d body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestLiveAccountStopRouteStopsRunningFlow(t *testing.T) {

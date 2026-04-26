@@ -271,16 +271,18 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 					writeError(w, http.StatusNotFound, err.Error())
 					return
 				}
-				fields := parseLiveSessionDetailFields(r.URL.Query().Get("fields"))
-				if len(fields) > 0 {
-					filtered := make(map[string]any, len(fields))
-					for _, field := range fields {
-						if value, ok := item.State[field]; ok {
-							filtered[field] = value
-						}
-					}
-					item.State = filtered
+				fields, fieldErr := parseLiveSessionDetailFields(r.URL.Query().Get("fields"))
+				if fieldErr != "" {
+					writeError(w, http.StatusBadRequest, fieldErr)
+					return
 				}
+				filtered := make(map[string]any, len(fields))
+				for _, field := range fields {
+					if value, ok := item.State[field]; ok {
+						filtered[field] = value
+					}
+				}
+				item.State = filtered
 				writeJSON(w, http.StatusOK, item)
 				return
 			}
@@ -721,7 +723,19 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 	})
 }
 
-func parseLiveSessionDetailFields(raw string) []string {
+var allowedLiveSessionDetailFields = map[string]struct{}{
+	"timeline":                              {},
+	"breakoutHistory":                       {},
+	"lastStrategyEvaluationSignalBarStates": {},
+	"lastStrategyEvaluationSourceStates":    {},
+	"signalRuntimePlan":                     {},
+	"lastStrategyDecision":                  {},
+	"lastDispatchedIntent":                  {},
+	"lastExecutionDispatch":                 {},
+	"lastExecutionTelemetry":                {},
+}
+
+func parseLiveSessionDetailFields(raw string) ([]string, string) {
 	seen := make(map[string]struct{})
 	fields := make([]string, 0)
 	for _, item := range strings.Split(raw, ",") {
@@ -729,11 +743,17 @@ func parseLiveSessionDetailFields(raw string) []string {
 		if field == "" {
 			continue
 		}
+		if _, ok := allowedLiveSessionDetailFields[field]; !ok {
+			return nil, "unsupported live session detail field: " + field
+		}
 		if _, ok := seen[field]; ok {
 			continue
 		}
 		seen[field] = struct{}{}
 		fields = append(fields, field)
 	}
-	return fields
+	if len(fields) == 0 {
+		return nil, "live session detail fields are required"
+	}
+	return fields, ""
 }

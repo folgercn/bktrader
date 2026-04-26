@@ -28,6 +28,27 @@ function withDetailFields(session: LiveSession, fields: string[]): LiveSession {
   };
 }
 
+function mergeStateList(existing: unknown, snapshot: unknown): unknown {
+  if (!Array.isArray(existing) || !Array.isArray(snapshot)) {
+    return snapshot ?? existing;
+  }
+  const byKey = new Map<string, unknown>();
+  for (const item of existing) {
+    byKey.set(JSON.stringify(item), item);
+  }
+  for (const item of snapshot) {
+    byKey.set(JSON.stringify(item), item);
+  }
+  return Array.from(byKey.values());
+}
+
+function mergeDetailField(field: string, existingValue: unknown, snapshotValue: unknown): unknown {
+  if (field === "timeline" || field === "breakoutHistory") {
+    return mergeStateList(existingValue, snapshotValue);
+  }
+  return snapshotValue === undefined ? existingValue : snapshotValue;
+}
+
 export function mergeLiveSessionSnapshot(current: LiveSession[], snapshot: LiveSession[]): LiveSession[] {
   const currentById = new Map(current.map((item) => [item.id, item] as const));
   return snapshot.map((item) => {
@@ -43,7 +64,7 @@ export function mergeLiveSessionSnapshot(current: LiveSession[], snapshot: LiveS
     const existingState = existing.state ?? {};
     for (const field of loadedFields) {
       if (field in existingState) {
-        state[field] = existingState[field];
+        state[field] = mergeDetailField(field, existingState[field], state[field]);
       }
     }
     return withDetailFields(
