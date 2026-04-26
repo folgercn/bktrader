@@ -3,6 +3,8 @@
 > Parent issue: [#199 拆分 live-runner 与 signal-runtime-runner](https://github.com/folgercn/bktrader/issues/199)
 >
 > Core protocol: [runtime-runner-decomposition-protocol.md](runtime-runner-decomposition-protocol.md)
+>
+> Risk & Testing: [runtime-runner-issue-199-risk-and-testing.md](runtime-runner-issue-199-risk-and-testing.md)
 
 ## 1. 目标
 
@@ -156,7 +158,7 @@ Issue: [#203](https://github.com/folgercn/bktrader/issues/203)
 
 - 扩展 config role validation。
 - 扩展 `platform-worker` role。
-- 扩展 `RuntimeOptionsForRole`。
+- 扩展 `RuntimeOptionsForRole`：`signal-runtime-runner` 启用 `WarmLiveMarketData`，`live-runner` 去掉 `WarmLiveMarketData`（行情预热随 WS 归属迁移）。
 - 新增 runner scanner。
 - 更新 compose / CD 部署范围。
 - API start/stop 语义逐步转为 desired state。
@@ -213,11 +215,11 @@ Issue: [#204](https://github.com/folgercn/bktrader/issues/204)
 
 ## 4. GitHub Issue 描述同步
 
-当前 #201 / #202 的 issue 文案仍可能保留 “Postgres event inbox” 口径。开始代码前应先同步 issue 描述或补充评论，明确：
+✅ **已完成（2026-04-26）**：#200–#204 的标题与描述已按本规划同步更新。
 
-- #201 目标改为 NATS JetStream runtime event bus。
+- #201 目标已改为 NATS JetStream runtime event bus。
 - Postgres 只保留业务事实状态和可选 audit archive。
-- #202 消费对象是 JetStream durable consumer，不是 DB polling inbox。
+- #202 消费对象已明确为 JetStream durable consumer。
 
 ## 5. 推荐分支与 PR 策略
 
