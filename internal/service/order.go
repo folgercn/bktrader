@@ -572,7 +572,7 @@ func (p *Platform) applyLiveSubmissionResult(
 				"exchange_order_id", submission.ExchangeOrderID,
 				"error", settleErr,
 			)
-			return persistedOrder, settleErr
+			return persistedOrder, nil
 		}
 		return settledOrder, nil
 	}
@@ -626,6 +626,21 @@ func liveOrderFillSettlementComplete(order domain.Order) bool {
 }
 
 func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.Order, error) {
+	account, accountErr := p.store.GetAccount(order.AccountID)
+	if accountErr == nil {
+		if settledOrder, attempted, err := p.settleLiveOrderFromSubmission(account, order); attempted {
+			if err != nil {
+				return order, fmt.Errorf("live order %s submitted as FILLED but submission settlement failed: %w", order.ID, err)
+			}
+			if _, syncErr := p.requestLiveAccountSync(order.AccountID, "live-immediate-fill-settlement"); syncErr != nil {
+				if errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
+					return settledOrder, nil
+				}
+				return settledOrder, fmt.Errorf("live order %s settled but account/session refresh failed: %w", order.ID, syncErr)
+			}
+			return settledOrder, nil
+		}
+	}
 	settledOrder, err := p.SyncLiveOrder(order.ID)
 	if err != nil {
 		return order, fmt.Errorf("live order %s submitted as FILLED but settlement sync failed: %w", order.ID, err)
@@ -637,6 +652,63 @@ func (p *Platform) settleImmediatelyFilledLiveOrder(order domain.Order) (domain.
 		return settledOrder, fmt.Errorf("live order %s settled but account/session refresh failed: %w", order.ID, syncErr)
 	}
 	return settledOrder, nil
+}
+
+func (p *Platform) settleLiveOrderFromSubmission(account domain.Account, order domain.Order) (domain.Order, bool, error) {
+	syncResult, ok := liveOrderSubmissionSettlementSync(order)
+	if !ok {
+		return order, false, nil
+	}
+	settledOrder, err := p.applyLiveSyncResult(account, order, syncResult)
+	if err != nil {
+		return order, true, err
+	}
+	return settledOrder, true, nil
+}
+
+func liveOrderSubmissionSettlementSync(order domain.Order) (LiveOrderSync, bool) {
+	submission := cloneMetadata(mapValue(order.Metadata["adapterSubmission"]))
+	if len(submission) == 0 {
+		return LiveOrderSync{}, false
+	}
+	status := firstNonEmpty(
+		mapBinanceOrderStatus(stringValue(submission["binanceStatus"])),
+		stringValue(submission["status"]),
+		stringValue(order.Metadata["lastExchangeStatus"]),
+		order.Status,
+	)
+	if !strings.EqualFold(strings.TrimSpace(status), "FILLED") {
+		return LiveOrderSync{}, false
+	}
+	filledQty := firstPositive(
+		parseFloatValue(submission["executedQty"]),
+		firstPositive(
+			parseFloatValue(submission["cumQty"]),
+			parseFloatValue(submission["filledQuantity"]),
+		),
+	)
+	if !tradingQuantityPositive(filledQty) {
+		return LiveOrderSync{}, false
+	}
+	submission["source"] = firstNonEmpty(stringValue(submission["source"]), "live-submission-result")
+	submission["exchangeOrderId"] = firstNonEmpty(stringValue(submission["exchangeOrderId"]), stringValue(order.Metadata["exchangeOrderId"]))
+	submission["clientOrderId"] = firstNonEmpty(stringValue(submission["clientOrderId"]), order.ID)
+	submission["executedQty"] = filledQty
+	submission["cumQty"] = firstPositive(parseFloatValue(submission["cumQty"]), filledQty)
+	syncedAt := firstNonEmpty(
+		stringValue(submission["updateTime"]),
+		stringValue(order.Metadata["lastExchangeUpdateAt"]),
+		stringValue(order.Metadata["acceptedAt"]),
+		time.Now().UTC().Format(time.RFC3339),
+	)
+	return LiveOrderSync{
+		Status:     "FILLED",
+		SyncedAt:   syncedAt,
+		Metadata:   submission,
+		Terminal:   true,
+		FeeSource:  firstNonEmpty(stringValue(submission["feeSource"]), "exchange"),
+		FundingSrc: firstNonEmpty(stringValue(submission["fundingSource"]), "exchange"),
+	}, true
 }
 
 func (p *Platform) ensureLiveRuntimeReady(account domain.Account, order domain.Order) (domain.SignalRuntimeSession, map[string]any, error) {
