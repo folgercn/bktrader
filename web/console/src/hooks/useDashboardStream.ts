@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { fetchJSON } from '../utils/api';
 import { useTradingStore } from '../store/useTradingStore';
 import { useUIStore } from '../store/useUIStore';
+import { mergeLiveSessionSnapshot } from '../utils/liveSessionDetail';
 
 export function useDashboardStream(enabled: boolean) {
   const setError = useUIStore(s => s.setError);
@@ -118,7 +119,10 @@ export function useDashboardStream(enabled: boolean) {
         }
       };
 
-      es.addEventListener('live-sessions', handleEvent('live-sessions', setLiveSessions));
+      es.addEventListener('live-sessions', handleEvent('live-sessions', (data) => {
+        const snapshot = Array.isArray(data) ? data : [];
+        setLiveSessions((current) => mergeLiveSessionSnapshot(current, snapshot));
+      }));
       es.addEventListener('positions', handleEvent('positions', setPositions));
       es.addEventListener('orders', handleEvent('orders', setOrders));
       es.addEventListener('fills', handleEvent('fills', setFills));
