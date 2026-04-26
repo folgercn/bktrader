@@ -3,16 +3,13 @@ import {
   ShieldAlert, 
   Search, 
   CheckCircle2, 
-  AlertCircle, 
-  ArrowRight, 
-  ArrowLeft, 
-  RefreshCw, 
-  History,
-  Activity,
-  Database,
-  Globe,
   Zap,
-  Info
+  Info,
+  ArrowLeft,
+  Activity,
+  ArrowRight,
+  Database,
+  RefreshCw
 } from 'lucide-react';
 import { useTradingStore } from '../store/useTradingStore';
 import { useUIStore } from '../store/useUIStore';
@@ -35,7 +32,6 @@ import {
   SelectValue 
 } from "../components/ui/select";
 import { Separator } from "../components/ui/separator";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { fetchJSON } from '../utils/api';
 import { cn } from "../lib/utils";
 import { formatMaybeNumber } from '../utils/format';
@@ -105,7 +101,7 @@ export function RecoveryStage() {
       if (selectedSessionId !== "all") {
         const session = sessions.find(s => s.id === selectedSessionId);
         if (session) {
-          symbol = String(getRecord(session.state).symbol || "");
+          symbol = String(getRecord(session.state)["symbol"] || "");
         }
       }
 
@@ -215,7 +211,7 @@ export function RecoveryStage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">实盘账户</label>
-                  <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                  <Select value={selectedAccountId} onValueChange={(val) => setSelectedAccountId(val || "")}>
                     <SelectTrigger className="h-12 rounded-xl bg-[var(--bk-surface-faint)] border-[var(--bk-border)]">
                       <SelectValue placeholder="选择账户..." />
                     </SelectTrigger>
@@ -229,14 +225,14 @@ export function RecoveryStage() {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-wider text-[var(--bk-text-muted)]">目标会话 (可选)</label>
-                  <Select value={selectedSessionId} onValueChange={setSelectedSessionId} disabled={!selectedAccountId}>
+                  <Select value={selectedSessionId} onValueChange={(val) => setSelectedSessionId(val || "all")} disabled={!selectedAccountId}>
                     <SelectTrigger className="h-12 rounded-xl bg-[var(--bk-surface-faint)] border-[var(--bk-border)]">
                       <SelectValue placeholder="所有会话" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">所有活跃会话</SelectItem>
                       {filteredSessions.map(s => (
-                        <SelectItem key={s.id} value={s.id}>{String(getRecord(s.state).symbol || s.id)} - {s.strategyId}</SelectItem>
+                        <SelectItem key={s.id} value={s.id}>{String(getRecord(s.state)["symbol"] || s.id)} - {s.strategyId}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
