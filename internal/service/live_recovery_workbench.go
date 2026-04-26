@@ -468,7 +468,12 @@ func (p *Platform) ExecuteLiveRecoveryAction(ctx context.Context, accountID, act
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"result": result}, nil
+		return map[string]any{
+			"actionType":   action,
+			"targetSymbol": symbol,
+			"traceId":      fmt.Sprintf("rec_%d", time.Now().Unix()),
+			"result":       result,
+		}, nil
 
 	case "sync-orders":
 		if symbol == "" {
@@ -490,7 +495,12 @@ func (p *Platform) ExecuteLiveRecoveryAction(ctx context.Context, accountID, act
 				}
 			}
 		}
-		return map[string]any{"syncedCount": count}, nil
+		return map[string]any{
+			"actionType":   action,
+			"targetSymbol": symbol,
+			"traceId":      fmt.Sprintf("rec_%d", time.Now().Unix()),
+			"syncedCount":  count,
+		}, nil
 
 	case "clear-stale-position":
 		return p.executeClearStalePosition(account, symbol, payload)
@@ -506,7 +516,12 @@ func (p *Platform) ExecuteLiveRecoveryAction(ctx context.Context, accountID, act
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"account": updated}, nil
+		return map[string]any{
+			"actionType":   action,
+			"targetSymbol": symbol,
+			"traceId":      fmt.Sprintf("rec_%d", time.Now().Unix()),
+			"account":      updated,
+		}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown recovery action: %s", action)
@@ -544,7 +559,12 @@ func (p *Platform) executeClearStalePosition(account domain.Account, symbol stri
 
 	// 自动刷新对账门
 	p.refreshLiveAccountPositionReconcileGate(account)
-	return map[string]any{"action": "clear-stale-position", "symbol": symbol, "status": "deleted"}, nil
+	return map[string]any{
+		"actionType":   "clear-stale-position",
+		"targetSymbol": symbol,
+		"traceId":      fmt.Sprintf("rec_%d", time.Now().Unix()),
+		"status":       "deleted",
+	}, nil
 }
 
 func (p *Platform) executeAdoptExchangePosition(account domain.Account, symbol string, payload map[string]any) (map[string]any, error) {
@@ -556,5 +576,11 @@ func (p *Platform) executeAdoptExchangePosition(account domain.Account, symbol s
 
 	p.logger("service.live_recovery_workbench", "account_id", account.ID, "symbol", symbol).Info("exchange position adopted via reconcile")
 
-	return map[string]any{"adopted": true, "reconcileResult": result}, nil
+	return map[string]any{
+		"actionType":      "adopt-exchange-position",
+		"targetSymbol":    symbol,
+		"traceId":         fmt.Sprintf("rec_%d", time.Now().Unix()),
+		"adopted":         true,
+		"reconcileResult": result,
+	}, nil
 }
