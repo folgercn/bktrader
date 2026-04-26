@@ -856,13 +856,14 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 			returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
 		`, fill.ID, fill.OrderID, nullIfEmpty(fill.ExchangeTradeID), fill.ExchangeTradeTime, fill.DedupFingerprint, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
 		var (
+			exchangeTradeID     sql.NullString
 			exchangeTradeTime   sql.NullTime
 			fallbackFingerprint sql.NullString
 		)
 		err := row.Scan(
 			&fill.ID,
 			&fill.OrderID,
-			&fill.ExchangeTradeID,
+			&exchangeTradeID,
 			&exchangeTradeTime,
 			&fallbackFingerprint,
 			&fill.Price,
@@ -870,6 +871,7 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 			&fill.Fee,
 			&fill.CreatedAt,
 		)
+		fill.ExchangeTradeID = exchangeTradeID.String
 		fill.DedupFingerprint = fallbackFingerprint.String
 		if exchangeTradeTime.Valid {
 			parsed := exchangeTradeTime.Time.UTC()
@@ -891,13 +893,14 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 		returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
 	`, fill.ID, fill.OrderID, fill.ExchangeTradeID, fill.ExchangeTradeTime, nil, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
 	var (
+		exchangeTradeID     sql.NullString
 		exchangeTradeTime   sql.NullTime
 		fallbackFingerprint sql.NullString
 	)
 	err := row.Scan(
 		&fill.ID,
 		&fill.OrderID,
-		&fill.ExchangeTradeID,
+		&exchangeTradeID,
 		&exchangeTradeTime,
 		&fallbackFingerprint,
 		&fill.Price,
@@ -905,6 +908,7 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 		&fill.Fee,
 		&fill.CreatedAt,
 	)
+	fill.ExchangeTradeID = exchangeTradeID.String
 	fill.DedupFingerprint = fallbackFingerprint.String
 	if exchangeTradeTime.Valid {
 		parsed := exchangeTradeTime.Time.UTC()
