@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  ShieldAlert, 
-  Search, 
-  CheckCircle2, 
+import {
+  ShieldAlert,
+  Search,
+  CheckCircle2,
+  AlertCircle,
   Zap,
   Info,
   ArrowLeft,
@@ -11,6 +12,7 @@ import {
   Database,
   RefreshCw
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTradingStore } from '../store/useTradingStore';
 import { useUIStore } from '../store/useUIStore';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/card";
@@ -58,11 +60,18 @@ interface RecoveryAction {
 interface DiagnosisResult {
   accountId: string;
   symbol: string;
+  status?: 'ok' | 'warning' | 'error';
+  summary?: string;
   exchangeFact: any;
   dbFact: any;
   mismatches: RecoveryMismatch[];
   actions: RecoveryAction[];
   authoritative: boolean;
+  error?: {
+    stage: string;
+    message: string;
+    retryable: boolean;
+  };
   runtimeRole: string;
   diagnosedAt: string;
 }
@@ -92,6 +101,7 @@ export function RecoveryStage() {
     if (!selectedAccountId) return [];
     return sessions.filter(s => s.accountId === selectedAccountId);
   }, [sessions, selectedAccountId]);
+  const diagnosisActionBlocked = !!diagnosis && (!diagnosis.authoritative || diagnosis.status === 'error');
 
   const handleDiagnose = async () => {
     if (!selectedAccountId) return;
@@ -113,8 +123,20 @@ export function RecoveryStage() {
       const result = await fetchJSON<DiagnosisResult>(url);
       setDiagnosis(result);
       setStep('diagnose');
+      if (result.status === 'error') {
+        toast.error(result.summary || "诊断完成，但未能获取权威事实", {
+          description: result.error?.message,
+        });
+      } else if (result.mismatches.length > 0) {
+        toast.info(result.summary || `诊断完成，发现 ${result.mismatches.length} 个状态差异`);
+      } else {
+        toast.success(result.summary || "诊断完成，未发现状态不一致");
+      }
     } catch (err: any) {
       console.error("Diagnosis failed:", err);
+      toast.error("状态诊断请求失败", {
+        description: err instanceof Error ? err.message : "请稍后重试",
+      });
     } finally {
       setIsDiagnosing(false);
     }
@@ -133,8 +155,14 @@ export function RecoveryStage() {
       });
       setVerificationResult(result);
       setStep('verify');
+      toast.success("修复动作已执行", {
+        description: `${action.label} 返回成功`,
+      });
     } catch (err: any) {
       console.error("Action execution failed:", err);
+      toast.error("修复动作执行失败", {
+        description: err instanceof Error ? err.message : "请重新诊断后再试",
+      });
     } finally {
       setExecutingActionId(null);
     }
@@ -303,6 +331,35 @@ export function RecoveryStage() {
               </Card>
             </div>
 
+            {(diagnosis.summary || diagnosis.error) && (
+              <Card tone="bento" className={cn(
+                "rounded-2xl border",
+                diagnosis.status === 'error' ? "border-[var(--bk-status-danger)]" : "border-[var(--bk-border)]"
+              )}>
+                <CardContent className="p-5 flex items-start gap-4">
+                  {diagnosis.status === 'error' ? (
+                    <AlertCircle className="w-5 h-5 text-[var(--bk-status-danger)] shrink-0 mt-0.5" />
+                  ) : (
+                    <Info className="w-5 h-5 text-[var(--bk-accent)] shrink-0 mt-0.5" />
+                  )}
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={diagnosis.authoritative ? "outline" : "destructive"}>
+                        {diagnosis.authoritative ? "authoritative" : "non-authoritative"}
+                      </Badge>
+                      {diagnosis.error?.stage && (
+                        <Badge variant="metal" className="font-mono text-[9px]">{diagnosis.error.stage}</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm font-bold text-[var(--bk-text-primary)]">{diagnosis.summary}</p>
+                    {diagnosis.error?.message && (
+                      <p className="font-mono text-xs text-[var(--bk-text-muted)] break-words">{diagnosis.error.message}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card tone="bento" className="rounded-[32px] border border-[var(--bk-border-strong)] overflow-hidden">
               <div className="bg-[var(--bk-surface-strong)] px-8 py-4 border-b border-[var(--bk-border)] flex items-center justify-between">
                 <h3 className="font-black flex items-center gap-2">
@@ -359,7 +416,7 @@ export function RecoveryStage() {
               <Button 
                 variant="bento-primary" 
                 onClick={() => setStep('action')}
-                disabled={diagnosis.actions.length === 0}
+                disabled={diagnosis.actions.length === 0 || diagnosisActionBlocked}
                 className="rounded-xl px-10 h-12 font-black"
               >
                 进入修复阶段
@@ -402,9 +459,9 @@ export function RecoveryStage() {
                                 <span className="text-[10px] font-black uppercase text-[var(--bk-text-muted)]">是否可用:</span>
                                 <span className={cn(
                                   "text-[10px] font-black uppercase",
-                                  action.allowed ? "text-[var(--bk-status-success)]" : "text-[var(--bk-status-danger)]"
+                                  action.allowed && !diagnosisActionBlocked ? "text-[var(--bk-status-success)]" : "text-[var(--bk-status-danger)]"
                                 )}>
-                                  {action.allowed ? "ALLOWED" : "BLOCKED"}
+                                  {action.allowed && !diagnosisActionBlocked ? "ALLOWED" : "BLOCKED"}
                                 </span>
                               </div>
                               {action.blockedBy && (
@@ -419,11 +476,11 @@ export function RecoveryStage() {
                           </div>
 
                           <Button 
-                            variant={!action.allowed ? "secondary" : (action.action.includes('clear') || action.action.includes('adopt') ? "bento-destructive" : "bento-primary")}
+                            variant={!action.allowed || diagnosisActionBlocked ? "secondary" : (action.action.includes('clear') || action.action.includes('adopt') ? "bento-destructive" : "bento-primary")}
                             size="lg"
                             className="rounded-2xl h-16 px-8 font-black shadow-lg shrink-0"
                             onClick={() => handleExecuteAction(action)}
-                            disabled={executingActionId !== null || !action.allowed}
+                            disabled={executingActionId !== null || diagnosisActionBlocked || !action.allowed}
                           >
                             {executingActionId === action.action ? (
                               <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
