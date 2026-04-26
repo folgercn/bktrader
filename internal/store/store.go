@@ -131,6 +131,15 @@ type Repository interface {
 	// DeleteSignalRuntimeSession 删除 signal runtime 会话。
 	DeleteSignalRuntimeSession(sessionID string) error
 
+	// --- Runtime lease ownership ---
+
+	// AcquireRuntimeLease acquires a runtime resource lease when absent, expired, or already owned by the caller.
+	AcquireRuntimeLease(req domain.RuntimeLeaseAcquireRequest) (domain.RuntimeLease, bool, error)
+	// HeartbeatRuntimeLease extends a lease only when the caller still owns it.
+	HeartbeatRuntimeLease(resourceType, resourceID, ownerID string, ttl time.Duration) (domain.RuntimeLease, bool, error)
+	// ReleaseRuntimeLease releases a lease only when the caller still owns it.
+	ReleaseRuntimeLease(resourceType, resourceID, ownerID string) (bool, error)
+
 	// --- 净值快照 ---
 
 	// ListAccountEquitySnapshots 获取指定账户的净值快照序列。

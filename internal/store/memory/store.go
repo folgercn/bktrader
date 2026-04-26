@@ -25,6 +25,7 @@ type Store struct {
 	paperSessions      map[string]domain.PaperSession
 	liveSessions       map[string]domain.LiveSession
 	signalRuntime      map[string]domain.SignalRuntimeSession
+	runtimeLeases      map[string]domain.RuntimeLease
 	equitySnapshots    map[string][]domain.AccountEquitySnapshot
 	decisionEvents     []domain.StrategyDecisionEvent
 	executionEvents    []domain.OrderExecutionEvent
@@ -54,6 +55,7 @@ func NewStore() *Store {
 		paperSessions:      make(map[string]domain.PaperSession),
 		liveSessions:       make(map[string]domain.LiveSession),
 		signalRuntime:      make(map[string]domain.SignalRuntimeSession),
+		runtimeLeases:      make(map[string]domain.RuntimeLease),
 		equitySnapshots:    make(map[string][]domain.AccountEquitySnapshot),
 		liveSnapshots:      make([]domain.PositionAccountSnapshot, 0),
 		marketBars:         make(map[string]domain.MarketBar),
@@ -1042,6 +1044,80 @@ func (s *Store) DeleteSignalRuntimeSession(sessionID string) error {
 	}
 	delete(s.signalRuntime, sessionID)
 	return nil
+}
+
+func runtimeLeaseKey(resourceType, resourceID string) string {
+	return strings.TrimSpace(resourceType) + "|" + strings.TrimSpace(resourceID)
+}
+
+func (s *Store) AcquireRuntimeLease(req domain.RuntimeLeaseAcquireRequest) (domain.RuntimeLease, bool, error) {
+	if strings.TrimSpace(req.ResourceType) == "" || strings.TrimSpace(req.ResourceID) == "" || strings.TrimSpace(req.OwnerID) == "" {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	if req.TTL <= 0 {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease ttl must be positive")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	key := runtimeLeaseKey(req.ResourceType, req.ResourceID)
+	current, exists := s.runtimeLeases[key]
+	if exists && current.OwnerID != req.OwnerID && current.ExpiresAt.After(now) {
+		return current, false, nil
+	}
+	acquiredAt := now
+	if exists && current.OwnerID == req.OwnerID {
+		acquiredAt = current.AcquiredAt
+	}
+	lease := domain.RuntimeLease{
+		ResourceType: strings.TrimSpace(req.ResourceType),
+		ResourceID:   strings.TrimSpace(req.ResourceID),
+		OwnerID:      strings.TrimSpace(req.OwnerID),
+		ExpiresAt:    now.Add(req.TTL),
+		AcquiredAt:   acquiredAt,
+		UpdatedAt:    now,
+	}
+	s.runtimeLeases[key] = lease
+	return lease, true, nil
+}
+
+func (s *Store) HeartbeatRuntimeLease(resourceType, resourceID, ownerID string, ttl time.Duration) (domain.RuntimeLease, bool, error) {
+	if strings.TrimSpace(resourceType) == "" || strings.TrimSpace(resourceID) == "" || strings.TrimSpace(ownerID) == "" {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	if ttl <= 0 {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease ttl must be positive")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := runtimeLeaseKey(resourceType, resourceID)
+	current, exists := s.runtimeLeases[key]
+	if !exists || current.OwnerID != strings.TrimSpace(ownerID) {
+		return current, false, nil
+	}
+	now := time.Now().UTC()
+	current.ExpiresAt = now.Add(ttl)
+	current.UpdatedAt = now
+	s.runtimeLeases[key] = current
+	return current, true, nil
+}
+
+func (s *Store) ReleaseRuntimeLease(resourceType, resourceID, ownerID string) (bool, error) {
+	if strings.TrimSpace(resourceType) == "" || strings.TrimSpace(resourceID) == "" || strings.TrimSpace(ownerID) == "" {
+		return false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := runtimeLeaseKey(resourceType, resourceID)
+	current, exists := s.runtimeLeases[key]
+	if !exists || current.OwnerID != strings.TrimSpace(ownerID) {
+		return false, nil
+	}
+	delete(s.runtimeLeases, key)
+	return true, nil
 }
 
 func (s *Store) ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error) {

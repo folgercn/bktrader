@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,7 @@ type Platform struct {
 	runtimeEventPublisher  RuntimeEventPublisher
 	runtimeEventConsumerOn bool
 	runtimeEventThrottle   sync.Map // runtimeSessionID|symbol|streamType -> *runtimeEventPublishThrottleState
+	runtimeLeaseOwnerID    string
 	manifestMu             sync.Mutex
 	once                   sync.Once             // 确保 CSV ledger 只加载一次
 	ledger                 []strategyReplayEvent // 缓存的策略回放账本
@@ -105,6 +107,7 @@ func NewPlatform(store store.Repository) *Platform {
 		executionStrategies:   make(map[string]ExecutionStrategy),
 		signalSessions:        make(map[string]domain.SignalRuntimeSession),
 		runtimeEventPublisher: NoopRuntimeEventPublisher{},
+		runtimeLeaseOwnerID:   defaultRuntimeLeaseOwnerID(),
 		liveMarketData:        make(map[string]liveMarketSnapshot),
 		logBroker:             logging.NewBroker(),
 		telegramConfig: domain.TelegramConfig{
@@ -154,6 +157,14 @@ func NewPlatform(store store.Repository) *Platform {
 		"execution_strategy_count", len(platform.executionStrategies),
 	)
 	return platform
+}
+
+func defaultRuntimeLeaseOwnerID() string {
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		host = "unknown-host"
+	}
+	return fmt.Sprintf("%s-%d-%d", host, os.Getpid(), time.Now().UnixNano())
 }
 
 // StartDashboardBroker 启动仪表盘实时数据轮询检测
