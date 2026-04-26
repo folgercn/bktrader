@@ -61,3 +61,37 @@ func TestRuntimeLeaseHeartbeatLossCancelsLeaseContext(t *testing.T) {
 		t.Fatalf("expected heartbeat loss not to release takeover owner, ok=%v lease=%#v", ok, lease)
 	}
 }
+
+func TestRuntimeLeaseReleaseCancelsLeaseContextWithoutWaitingForHeartbeat(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	platform.setRuntimeLeaseOwnerIDForTest("runner-local")
+	resourceID := "runtime-release-cancels-context"
+
+	leaseCtx, release, acquired, err := platform.acquireRuntimeLeaseWithTiming(
+		context.Background(),
+		domain.RuntimeLeaseResourceSignalRuntimeSession,
+		resourceID,
+		time.Minute,
+		time.Hour,
+	)
+	if err != nil || !acquired {
+		t.Fatalf("acquireRuntimeLeaseWithTiming failed: acquired=%v err=%v", acquired, err)
+	}
+
+	release()
+
+	select {
+	case <-leaseCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("expected explicit release to cancel lease context immediately")
+	}
+	if lease, ok, err := store.AcquireRuntimeLease(domain.RuntimeLeaseAcquireRequest{
+		ResourceType: domain.RuntimeLeaseResourceSignalRuntimeSession,
+		ResourceID:   resourceID,
+		OwnerID:      "runner-other",
+		TTL:          time.Minute,
+	}); err != nil || !ok || lease.OwnerID != "runner-other" {
+		t.Fatalf("expected explicit release to free lease, ok=%v lease=%#v err=%v", ok, lease, err)
+	}
+}

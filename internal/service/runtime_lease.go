@@ -53,6 +53,7 @@ func (p *Platform) acquireRuntimeLeaseWithTiming(ctx context.Context, resourceTy
 	var ownershipLost atomic.Bool
 	release := func() {
 		once.Do(func() {
+			cancel()
 			if ownershipLost.Load() {
 				logger.Debug("runtime lease release skipped after ownership loss")
 				return
