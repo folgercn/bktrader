@@ -6,15 +6,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/service"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
+
+func TestNewRouterWithLiveRecoveryDoesNotPanic(t *testing.T) {
+	platform := service.NewPlatform(memory.NewStore())
+	_ = NewRouter(config.Config{AppName: "test", Environment: "test"}, platform)
+}
 
 func TestLiveRecoveryRoutes(t *testing.T) {
 	s := memory.NewStore()
 	platform := service.NewPlatform(s)
 	mux := http.NewServeMux()
-	registerLiveRecoveryRoutes(mux, platform)
+	registerAccountRoutes(mux, platform)
 
 	// 1. 不完整 recovery URL 不 panic
 	t.Run("incomplete URL no panic", func(t *testing.T) {
