@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -914,6 +915,11 @@ func (p *Platform) recordLiveDispatchPreflightRejection(session domain.LiveSessi
 }
 
 func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain.Order, error) {
+	releaseDispatch := p.lockLiveSessionDispatch(session.ID)
+	defer releaseDispatch()
+	if latestSession, latestErr := p.store.GetLiveSession(session.ID); latestErr == nil {
+		session = latestSession
+	}
 	if !strings.EqualFold(session.Status, "RUNNING") && !strings.EqualFold(session.Status, "READY") {
 		return domain.Order{}, fmt.Errorf("live session %s is not dispatchable in status %s", session.ID, session.Status)
 	}
@@ -946,6 +952,9 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	if err := validateLiveSignalBarEntryTradeLimit(session, proposalMap); err != nil {
 		return domain.Order{}, err
 	}
+	if err := validateLiveDispatchIdempotency(session.State, proposalMap); err != nil {
+		return domain.Order{}, err
+	}
 	dispatchStartedAt := time.Now().UTC()
 	proposalMap, err = p.ensureStrategyDecisionEventForExecutionProposal(session, version.ID, proposalMap, dispatchStartedAt, "dispatch-preflight")
 	if err != nil {
@@ -972,6 +981,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	}
 	if decisionEventID := stringValue(proposalMap["decisionEventId"]); decisionEventID != "" {
 		state["lastStrategyDecisionEventId"] = decisionEventID
+		state["lastDispatchedDecisionEventId"] = decisionEventID
 	}
 	state["lastDispatchedOrderId"] = created.ID
 	state["lastDispatchedOrderStatus"] = created.Status
@@ -1052,6 +1062,44 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 		"quantity", created.Quantity,
 	)
 	return created, nil
+}
+
+func (p *Platform) lockLiveSessionDispatch(sessionID string) func() {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return func() {}
+	}
+	actual, _ := p.liveDispatchMu.LoadOrStore(sessionID, &sync.Mutex{})
+	mu, _ := actual.(*sync.Mutex)
+	if mu == nil {
+		return func() {}
+	}
+	mu.Lock()
+	return mu.Unlock
+}
+
+func validateLiveDispatchIdempotency(state map[string]any, proposalMap map[string]any) error {
+	if state == nil || len(proposalMap) == 0 {
+		return nil
+	}
+	decisionEventID := firstNonEmpty(
+		stringValue(proposalMap["decisionEventId"]),
+		stringValue(mapValue(proposalMap["metadata"])["decisionEventId"]),
+	)
+	if strings.TrimSpace(decisionEventID) == "" {
+		return nil
+	}
+	if decisionEventID == stringValue(state["lastDispatchedDecisionEventId"]) {
+		return fmt.Errorf("live execution proposal already dispatched for decision event %s", decisionEventID)
+	}
+	dispatchedIntent := mapValue(state["lastDispatchedIntent"])
+	if decisionEventID == firstNonEmpty(
+		stringValue(dispatchedIntent["decisionEventId"]),
+		stringValue(mapValue(dispatchedIntent["metadata"])["decisionEventId"]),
+	) {
+		return fmt.Errorf("live execution proposal already dispatched for decision event %s", decisionEventID)
+	}
+	return nil
 }
 
 func buildLiveOrderFromExecutionProposal(session domain.LiveSession, strategyVersionID string, proposal ExecutionProposal, proposalMap map[string]any) domain.Order {
@@ -1430,7 +1478,7 @@ func shouldBackfillTerminalFilledLiveOrder(order domain.Order, state map[string]
 	if strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "" {
 		return true
 	}
-	return isLiveSessionBlockedByPositionReconcileGate(state)
+	return false
 }
 
 func shouldSyncLiveAccountAfterTerminalFilledOrder(order domain.Order, state map[string]any, eventTime time.Time) bool {

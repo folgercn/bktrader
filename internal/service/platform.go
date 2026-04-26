@@ -42,6 +42,7 @@ type Platform struct {
 	liveMarketData         map[string]liveMarketSnapshot
 	liveAccountOpMu        sync.Map // accountID -> *sync.Mutex
 	liveAccountSyncState   sync.Map // accountID -> *liveAccountSyncState
+	liveDispatchMu         sync.Map // liveSessionID -> *sync.Mutex; process-local guard, not distributed idempotency.
 	runtimeSourceGateState sync.Map // runtimeSessionID -> last blocked source gate signature
 	runtimeEventPublisher  RuntimeEventPublisher
 	runtimeEventConsumerOn bool
