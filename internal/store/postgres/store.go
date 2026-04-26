@@ -2206,6 +2206,14 @@ func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerification
 		args = append(args, strings.TrimSpace(query.OrderID))
 		builder.WriteString(fmt.Sprintf(" and order_id = $%d", len(args)))
 	}
+	if strings.TrimSpace(query.AccountID) != "" {
+		args = append(args, strings.TrimSpace(query.AccountID))
+		builder.WriteString(fmt.Sprintf(" and account_id = $%d", len(args)))
+	}
+	if strings.TrimSpace(query.Symbol) != "" {
+		args = append(args, strings.ToUpper(strings.TrimSpace(query.Symbol)))
+		builder.WriteString(fmt.Sprintf(" and upper(symbol) = upper($%d)", len(args)))
+	}
 	if len(query.OrderIDs) > 0 {
 		placeholders := make([]string, 0, len(query.OrderIDs))
 		for _, id := range query.OrderIDs {
@@ -2220,7 +2228,7 @@ func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerification
 		}
 	}
 
-	builder.WriteString(" order by recorded_at desc")
+	builder.WriteString(" order by event_time desc, recorded_at desc, id desc")
 
 	if query.Limit > 0 {
 		args = append(args, query.Limit)

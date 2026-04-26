@@ -24,5 +24,7 @@ type OrderCloseVerificationQuery struct {
 	LiveSessionID string
 	OrderID       string
 	OrderIDs      []string
+	AccountID     string
+	Symbol        string
 	Limit         int
 }

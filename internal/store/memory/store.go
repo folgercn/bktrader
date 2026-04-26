@@ -1246,6 +1246,13 @@ func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerification
 		if strings.TrimSpace(query.OrderID) != "" && item.OrderID != strings.TrimSpace(query.OrderID) {
 			continue
 		}
+		if strings.TrimSpace(query.AccountID) != "" && item.AccountID != strings.TrimSpace(query.AccountID) {
+			continue
+		}
+		querySymbol := strings.ToUpper(strings.TrimSpace(query.Symbol))
+		if querySymbol != "" && strings.ToUpper(strings.TrimSpace(item.Symbol)) != querySymbol {
+			continue
+		}
 		if len(query.OrderIDs) > 0 {
 			if _, ok := orderIDMap[item.OrderID]; !ok {
 				continue

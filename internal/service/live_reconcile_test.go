@@ -851,6 +851,153 @@ func TestReconcileLiveAccountRefreshClearsStaleRecoveryCache(t *testing.T) {
 	}
 }
 
+func TestRefreshLiveAccountPositionReconcileGateClearsVerifiedClosedExchangeMissingPosition(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	eventTime := time.Date(2026, 4, 26, 3, 36, 23, 0, time.UTC)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":        "binance-rest-account-v3",
+		"executionMode": "rest",
+		"syncStatus":    "SYNCED",
+		"positions":     []map[string]any{},
+		"openOrders":    []map[string]any{},
+	}
+	if _, err := store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.0013,
+		EntryPrice:        0,
+		MarkPrice:         77313.3,
+	}); err != nil {
+		t.Fatalf("save ghost position failed: %v", err)
+	}
+	if _, err := store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+		LiveSessionID:        "live-session-1",
+		OrderID:              "order-close-1",
+		AccountID:            "live-main",
+		StrategyID:           "strategy-bk-1d",
+		Symbol:               "BTCUSDT",
+		VerifiedClosed:       true,
+		RemainingPositionQty: 0,
+		VerificationSource:   "ws-sync",
+		EventTime:            eventTime,
+	}); err != nil {
+		t.Fatalf("create close verification failed: %v", err)
+	}
+
+	account, err = store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	updated, err := platform.refreshLiveAccountPositionReconcileGate(account)
+	if err != nil {
+		t.Fatalf("refresh reconcile gate failed: %v", err)
+	}
+	if _, found, err := store.FindPosition("live-main", "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected verified closed exchange-missing position to be cleared")
+	}
+	gate := mapValue(mapValue(mapValue(updated.Metadata["livePositionReconcileGate"])["symbols"])["BTCUSDT"])
+	if got := stringValue(gate["status"]); got != livePositionReconcileGateStatusVerified {
+		t.Fatalf("expected verified gate after clearing ghost position, got %#v", gate)
+	}
+	if got := stringValue(gate["scenario"]); got != "verified-closed-db-position-cleared" {
+		t.Fatalf("expected verified-closed cleanup scenario, got %#v", gate)
+	}
+}
+
+func TestRefreshLiveAccountPositionReconcileGateKeepsExchangeMissingPositionWhenLatestCloseVerificationIsResidual(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	eventTime := time.Date(2026, 4, 26, 3, 36, 23, 0, time.UTC)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":        "binance-rest-account-v3",
+		"executionMode": "rest",
+		"syncStatus":    "SYNCED",
+		"positions":     []map[string]any{},
+		"openOrders":    []map[string]any{},
+	}
+	if _, err := store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.0013,
+		EntryPrice:        77401.3,
+		MarkPrice:         77313.3,
+	}); err != nil {
+		t.Fatalf("save stale position failed: %v", err)
+	}
+	if _, err := store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+		LiveSessionID:        "live-session-1",
+		OrderID:              "order-close-old",
+		AccountID:            "live-main",
+		StrategyID:           "strategy-bk-1d",
+		Symbol:               "BTCUSDT",
+		VerifiedClosed:       true,
+		RemainingPositionQty: 0,
+		VerificationSource:   "ws-sync",
+		EventTime:            eventTime,
+	}); err != nil {
+		t.Fatalf("create old close verification failed: %v", err)
+	}
+	if _, err := store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+		LiveSessionID:        "live-session-1",
+		OrderID:              "order-close-new",
+		AccountID:            "live-main",
+		StrategyID:           "strategy-bk-1d",
+		Symbol:               "BTCUSDT",
+		VerifiedClosed:       false,
+		RemainingPositionQty: 0.0013,
+		VerificationSource:   "reconcile",
+		EventTime:            eventTime.Add(time.Second),
+	}); err != nil {
+		t.Fatalf("create residual close verification failed: %v", err)
+	}
+
+	account, err = store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	updated, err := platform.refreshLiveAccountPositionReconcileGate(account)
+	if err != nil {
+		t.Fatalf("refresh reconcile gate failed: %v", err)
+	}
+	if _, found, err := store.FindPosition("live-main", "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if !found {
+		t.Fatal("expected residual close verification to keep stale position for manual review")
+	}
+	gate := mapValue(mapValue(mapValue(updated.Metadata["livePositionReconcileGate"])["symbols"])["BTCUSDT"])
+	if got := stringValue(gate["scenario"]); got != "db-position-exchange-missing" {
+		t.Fatalf("expected stale exchange-missing gate to remain, got %#v", gate)
+	}
+	if !boolValue(gate["blocking"]) {
+		t.Fatalf("expected stale gate to remain blocking, got %#v", gate)
+	}
+}
+
 func configureTestLiveRESTReconcileHistoryAdapter(
 	t *testing.T,
 	platform *Platform,

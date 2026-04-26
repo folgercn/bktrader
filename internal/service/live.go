@@ -2395,12 +2395,19 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		if position.Quantity <= 0 {
 			continue
 		}
-		if cleared, gate, clearErr := p.clearStaleLivePositionAfterTerminalExit(account, position, livePositionFlatCleanupGuard{
+		cleanupGuard := livePositionFlatCleanupGuard{
 			authoritative:      authoritative,
 			pendingSettlement:  symbolInSet(pendingSettlementSymbols, symbol),
 			workingOrders:      symbolInSet(workingOrderSymbols, symbol),
 			exchangeOpenOrders: symbolInSet(openOrderSymbols, symbol),
-		}); clearErr != nil {
+		}
+		if cleared, gate, clearErr := p.clearVerifiedClosedExchangeMissingPosition(account, position, symbol, cleanupGuard); clearErr != nil {
+			return nil, clearErr
+		} else if cleared {
+			recordGate(symbol, gate)
+			continue
+		}
+		if cleared, gate, clearErr := p.clearStaleLivePositionAfterTerminalExit(account, position, cleanupGuard); clearErr != nil {
 			return nil, clearErr
 		} else if cleared {
 			recordGate(symbol, gate)
@@ -2446,6 +2453,58 @@ type livePositionFlatCleanupGuard struct {
 	pendingSettlement  bool
 	workingOrders      bool
 	exchangeOpenOrders bool
+}
+
+func (p *Platform) clearVerifiedClosedExchangeMissingPosition(account domain.Account, position domain.Position, symbol string, guard livePositionFlatCleanupGuard) (bool, map[string]any, error) {
+	symbol = NormalizeSymbol(symbol)
+	if symbol == "" || position.ID == "" || position.Quantity <= 0 {
+		return false, nil, nil
+	}
+	if !guard.authoritative || guard.pendingSettlement || guard.workingOrders || guard.exchangeOpenOrders {
+		return false, nil, nil
+	}
+	verification, found, err := p.latestOrderCloseVerificationForPosition(account.ID, symbol)
+	if err != nil {
+		return false, nil, err
+	}
+	if !found || !verification.VerifiedClosed || tradingQuantityPositive(verification.RemainingPositionQty) {
+		return false, nil, nil
+	}
+	dbSnapshot := buildRecoveredLivePositionStateSnapshot(position)
+	if err := p.store.DeletePosition(position.ID); err != nil {
+		return false, nil, err
+	}
+	return true, map[string]any{
+		"status":           livePositionReconcileGateStatusVerified,
+		"scenario":         "verified-closed-db-position-cleared",
+		"blocking":         false,
+		"dbPosition":       dbSnapshot,
+		"exchangePosition": map[string]any{},
+		"closeVerification": map[string]any{
+			"id":                   verification.ID,
+			"orderId":              verification.OrderID,
+			"decisionEventId":      verification.DecisionEventID,
+			"verifiedClosed":       verification.VerifiedClosed,
+			"remainingPositionQty": verification.RemainingPositionQty,
+			"verificationSource":   verification.VerificationSource,
+			"eventTime":            verification.EventTime.UTC().Format(time.RFC3339),
+		},
+	}, nil
+}
+
+func (p *Platform) latestOrderCloseVerificationForPosition(accountID string, symbol string) (domain.OrderCloseVerification, bool, error) {
+	items, err := p.store.QueryOrderCloseVerifications(domain.OrderCloseVerificationQuery{
+		AccountID: strings.TrimSpace(accountID),
+		Symbol:    NormalizeSymbol(symbol),
+		Limit:     1,
+	})
+	if err != nil {
+		return domain.OrderCloseVerification{}, false, err
+	}
+	if len(items) == 0 {
+		return domain.OrderCloseVerification{}, false, nil
+	}
+	return items[0], true, nil
 }
 
 func (p *Platform) clearStaleLivePositionAfterTerminalExit(account domain.Account, position domain.Position, guard livePositionFlatCleanupGuard) (bool, map[string]any, error) {
@@ -3249,6 +3308,7 @@ func liveSessionNonRegressiveFactKeys() []string {
 		"lastStrategyDecisionEventId",
 		"lastStrategyDecisionEventFingerprint",
 		"lastStrategyDecisionEventIntentSignature",
+		"lastDispatchedDecisionEventId",
 	}
 }
 

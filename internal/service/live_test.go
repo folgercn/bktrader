@@ -2366,6 +2366,90 @@ func TestDispatchLiveSessionIntentRejectsNonDispatchableProposal(t *testing.T) {
 	}
 }
 
+func TestDispatchLiveSessionIntentReloadsLatestStateBeforeDispatch(t *testing.T) {
+	platform, session, _, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-dispatch-reload"})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-dispatch-reload",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	staleSession := session
+	staleState := cloneMetadata(session.State)
+	staleProposal := executionProposalToMap(ExecutionProposal{
+		Action:            "entry",
+		Role:              "entry",
+		Reason:            "SL-Reentry",
+		Side:              "SELL",
+		Symbol:            "BTCUSDT",
+		Type:              "MARKET",
+		Quantity:          0.001,
+		PriceHint:         75600.0,
+		SignalKind:        "sl-reentry",
+		DecisionState:     "entry-ready",
+		SignalBarStateKey: "bar-1",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"executionDecision": "direct-dispatch",
+			"executionMode":     "live",
+			"skipRuntimeCheck":  true,
+		},
+	})
+	staleProposal = setExecutionProposalDecisionEventID(staleProposal, "strategy-decision-event-stale-dispatch")
+	staleState["lastExecutionProposal"] = staleProposal
+	staleState["lastStrategyIntent"] = staleProposal
+	staleSession.State = staleState
+
+	latestState := cloneMetadata(session.State)
+	delete(latestState, "lastExecutionProposal")
+	delete(latestState, "lastStrategyIntent")
+	if _, err := platform.store.UpdateLiveSessionState(session.ID, latestState); err != nil {
+		t.Fatalf("update latest session state failed: %v", err)
+	}
+
+	order, err := platform.dispatchLiveSessionIntent(staleSession)
+	if err == nil || !strings.Contains(err.Error(), "has no execution proposal") {
+		t.Fatalf("expected stale dispatch snapshot to reload latest empty proposal, got order=%+v err=%v", order, err)
+	}
+	orders, err := platform.ListOrders()
+	if err != nil {
+		t.Fatalf("list orders failed: %v", err)
+	}
+	if len(orders) != 0 {
+		t.Fatalf("expected stale snapshot not to create orders, got %#v", orders)
+	}
+}
+
+func TestValidateLiveDispatchIdempotencyRejectsPreviouslyDispatchedDecisionEvent(t *testing.T) {
+	state := map[string]any{
+		"lastDispatchedDecisionEventId": "strategy-decision-event-1",
+	}
+	proposal := map[string]any{
+		"decisionEventId": "strategy-decision-event-1",
+		"role":            "entry",
+		"symbol":          "BTCUSDT",
+	}
+	if err := validateLiveDispatchIdempotency(state, proposal); err == nil {
+		t.Fatal("expected duplicate decision event dispatch to be rejected")
+	}
+	proposal["decisionEventId"] = "strategy-decision-event-2"
+	if err := validateLiveDispatchIdempotency(state, proposal); err != nil {
+		t.Fatalf("expected a different decision event to pass idempotency check, got %v", err)
+	}
+}
+
 func TestDispatchLiveSessionIntentRejectsEntryWhenSubmissionSlippageTooWide(t *testing.T) {
 	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
 	eventTime := time.Now().UTC()
@@ -3669,12 +3753,13 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestCountedBar
 		t.Fatalf("create live session failed: %v", err)
 	}
 	session, err = platform.store.UpdateLiveSessionState(session.ID, map[string]any{
-		"symbol":                    "BTCUSDT",
-		"signalTimeframe":           "30m",
-		"max_trades_per_bar":        2,
-		"lastSignalBarStateKey":     "BTCUSDT|30m|2026-04-22T03:00:00Z",
-		"sessionReentryCount":       2.0,
-		"lastCountedReentryOrderId": "order-2",
+		"symbol":                        "BTCUSDT",
+		"signalTimeframe":               "30m",
+		"max_trades_per_bar":            2,
+		"lastSignalBarStateKey":         "BTCUSDT|30m|2026-04-22T03:00:00Z",
+		"sessionReentryCount":           2.0,
+		"lastCountedReentryOrderId":     "order-2",
+		"lastDispatchedDecisionEventId": "strategy-decision-event-counted",
 	})
 	if err != nil {
 		t.Fatalf("seed live session state failed: %v", err)
@@ -3684,6 +3769,7 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestCountedBar
 	delete(staleEvaluationState, "lastSignalBarStateKey")
 	delete(staleEvaluationState, "sessionReentryCount")
 	delete(staleEvaluationState, "lastCountedReentryOrderId")
+	delete(staleEvaluationState, "lastDispatchedDecisionEventId")
 	staleEvaluationState["lastStrategyEvaluationStatus"] = "intent-ready"
 
 	updated, err := platform.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, staleEvaluationState)
@@ -3698,6 +3784,9 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestCountedBar
 	}
 	if got := stringValue(updated.State["lastCountedReentryOrderId"]); got != "order-2" {
 		t.Fatalf("expected last counted reentry order id to survive stale evaluation write, got %q", got)
+	}
+	if got := stringValue(updated.State["lastDispatchedDecisionEventId"]); got != "strategy-decision-event-counted" {
+		t.Fatalf("expected last dispatched decision event id to survive stale evaluation write, got %q", got)
 	}
 	proposal := map[string]any{
 		"role":   "entry",
@@ -3720,6 +3809,7 @@ func TestLiveSessionNonRegressiveFactKeysIncludeSignalBarTradeLimitFacts(t *test
 		"lastStrategyDecisionEventId",
 		"lastStrategyDecisionEventFingerprint",
 		"lastStrategyDecisionEventIntentSignature",
+		"lastDispatchedDecisionEventId",
 	} {
 		found := false
 		for _, key := range keys {
@@ -7602,6 +7692,26 @@ func TestSyncLatestLiveSessionOrderDoesNotRepeatTerminalAccountSync(t *testing.T
 	}
 	if got := stringValue(session.State["lastTerminalAccountSyncedOrderId"]); got != order.ID {
 		t.Fatalf("expected terminal account sync marker for order %s, got %s", order.ID, got)
+	}
+}
+
+func TestShouldBackfillTerminalFilledLiveOrderSkipsCompleteFillWhenGateBlocked(t *testing.T) {
+	order := domain.Order{
+		ID:       "order-terminal-complete",
+		Status:   "FILLED",
+		Quantity: 0.01,
+		Metadata: map[string]any{
+			"filledQuantity": 0.01,
+			"lastFilledAt":   time.Date(2026, 4, 26, 3, 36, 23, 0, time.UTC).Format(time.RFC3339),
+		},
+	}
+	state := map[string]any{
+		"positionReconcileGateStatus":   livePositionReconcileGateStatusStale,
+		"positionReconcileGateBlocking": true,
+		"positionReconcileGateScenario": "db-position-exchange-missing",
+	}
+	if shouldBackfillTerminalFilledLiveOrder(order, state) {
+		t.Fatal("expected complete terminal fill not to be repeatedly backfilled while reconcile gate is blocked")
 	}
 }
 
