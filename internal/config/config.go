@@ -18,7 +18,7 @@ type Config struct {
 	LogRetentionDays               int    // 日志保留天数
 	LogMaxSizeMB                   int    // 单个日志文件滚动前的最大体积（MB）
 	HTTPAddr                       string // HTTP 监听地址
-	ProcessRole                    string // 进程角色：monolith / api / live-runner / notification-worker
+	ProcessRole                    string // 进程角色：monolith / api / live-runner / signal-runtime-runner / notification-worker
 	StoreBackend                   string // 存储后端类型（memory / postgres）
 	AutoMigrate                    bool   // 是否在启动时自动执行数据库迁移
 	PostgresDSN                    string // PostgreSQL 连接字符串
@@ -180,9 +180,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("HTTP_ADDR 不能为空")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.ProcessRole)) {
-	case "", "monolith", "api", "live-runner", "notification-worker":
+	case "", "monolith", "api", "live-runner", "signal-runtime-runner", "notification-worker":
 	default:
-		return fmt.Errorf("不支持的 BKTRADER_ROLE: %s（可选: monolith, api, live-runner, notification-worker）", c.ProcessRole)
+		return fmt.Errorf("不支持的 BKTRADER_ROLE: %s（可选: monolith, api, live-runner, signal-runtime-runner, notification-worker）", c.ProcessRole)
 	}
 	if c.StoreBackend == "postgres" && c.PostgresDSN == "" {
 		return fmt.Errorf("STORE_BACKEND=postgres 时 POSTGRES_DSN 不能为空")

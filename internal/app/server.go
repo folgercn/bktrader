@@ -29,6 +29,7 @@ type RuntimeOptions struct {
 	StartLiveSync             bool
 	StartDashboard            bool
 	StartRuntimeEventConsumer bool
+	StartSignalRuntimeScanner bool
 }
 
 func RuntimeOptionsForRole(role string) RuntimeOptions {
@@ -37,10 +38,14 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 		return RuntimeOptions{StartDashboard: true}
 	case "live-runner":
 		return RuntimeOptions{
-			WarmLiveMarketData:        true,
 			RecoverLiveTrading:        true,
 			StartLiveSync:             true,
 			StartRuntimeEventConsumer: true,
+		}
+	case "signal-runtime-runner":
+		return RuntimeOptions{
+			WarmLiveMarketData:        true,
+			StartSignalRuntimeScanner: true,
 		}
 	case "notification-worker":
 		return RuntimeOptions{StartTelegram: true}
@@ -52,6 +57,7 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 			StartLiveSync:             true,
 			StartDashboard:            true,
 			StartRuntimeEventConsumer: true,
+			StartSignalRuntimeScanner: true,
 		}
 	}
 }
@@ -78,6 +84,7 @@ func NewServerWithRuntimeOptions(cfg config.Config, runtime RuntimeOptions) (*ht
 		"live_sync", runtime.StartLiveSync,
 		"dashboard", runtime.StartDashboard,
 		"runtime_event_consumer", runtime.StartRuntimeEventConsumer,
+		"signal_runtime_scanner", runtime.StartSignalRuntimeScanner,
 	)
 
 	return &http.Server{
@@ -166,6 +173,9 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 			return
 		}
 		platform.SetRuntimeEventConsumerEnabled(true)
+	}
+	if runtime.StartSignalRuntimeScanner {
+		platform.StartSignalRuntimeScanner(ctx)
 	}
 }
 

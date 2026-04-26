@@ -432,6 +432,7 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		session.Status = "ERROR"
 		state := cloneMetadata(session.State)
 		state["health"] = "error"
+		state["actualStatus"] = "ERROR"
 		state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
 		state["lastEventSummary"] = map[string]any{
 			"type":    "runtime_error",
@@ -458,6 +459,7 @@ func (p *Platform) setSessionStopped(sessionID string) {
 		session.Status = "STOPPED"
 		state := cloneMetadata(session.State)
 		state["health"] = "stopped"
+		state["actualStatus"] = "STOPPED"
 		state["stoppedAt"] = time.Now().UTC().Format(time.RFC3339)
 		state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
 		state["lastEventSummary"] = map[string]any{
@@ -583,6 +585,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 		session.Status = "RUNNING"
 		state := cloneMetadata(session.State)
 		state["health"] = "healthy"
+		state["actualStatus"] = "RUNNING"
 		state["connectedAt"] = now.Format(time.RFC3339)
 		state["wsURL"] = wsURL
 		state["lastHeartbeatAt"] = now.Format(time.RFC3339)
