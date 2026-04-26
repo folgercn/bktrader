@@ -92,6 +92,7 @@ func NewPlatform(cfg config.Config) (*service.Platform, error) {
 	}
 
 	platform := service.NewPlatform(repository)
+	platform.SetProcessRole(cfg.ProcessRole)
 	platform.SetTickInterval(cfg.PaperTickInterval)
 	platform.SetBacktestDataDirs(cfg.MinuteDataDir, cfg.TickDataDir)
 	platform.SetTelegramConfig(domain.TelegramConfig{

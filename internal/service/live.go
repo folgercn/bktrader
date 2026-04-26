@@ -2395,6 +2395,17 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		if position.Quantity <= 0 {
 			continue
 		}
+		if cleared, gate, clearErr := p.clearStaleLivePositionAfterTerminalExit(account, position, livePositionFlatCleanupGuard{
+			authoritative:      authoritative,
+			pendingSettlement:  symbolInSet(pendingSettlementSymbols, symbol),
+			workingOrders:      symbolInSet(workingOrderSymbols, symbol),
+			exchangeOpenOrders: symbolInSet(openOrderSymbols, symbol),
+		}); clearErr != nil {
+			return nil, clearErr
+		} else if cleared {
+			recordGate(symbol, gate)
+			continue
+		}
 		recordGate(symbol, map[string]any{
 			"status":           livePositionReconcileGateStatusStale,
 			"scenario":         "db-position-exchange-missing",
@@ -2428,6 +2439,98 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		"blockingSymbolCount": blockingCount,
 		"symbols":             symbols,
 	}, nil
+}
+
+type livePositionFlatCleanupGuard struct {
+	authoritative      bool
+	pendingSettlement  bool
+	workingOrders      bool
+	exchangeOpenOrders bool
+}
+
+func (p *Platform) clearStaleLivePositionAfterTerminalExit(account domain.Account, position domain.Position, guard livePositionFlatCleanupGuard) (bool, map[string]any, error) {
+	symbol := NormalizeSymbol(position.Symbol)
+	if symbol == "" || position.Quantity <= 0 {
+		return false, nil, nil
+	}
+	if !guard.authoritative || guard.pendingSettlement || guard.workingOrders || guard.exchangeOpenOrders {
+		return false, nil, nil
+	}
+	exitOrder, ok, err := p.findTerminalFlatExitOrder(account.ID, position)
+	if err != nil || !ok {
+		return false, nil, err
+	}
+	if err := p.store.DeletePosition(position.ID); err != nil {
+		return false, nil, err
+	}
+	p.logger("service.live_reconcile",
+		"account_id", account.ID,
+		"symbol", symbol,
+		"position_id", position.ID,
+		"order_id", exitOrder.ID,
+	).Info("cleared stale live position after terminal exit")
+	return true, map[string]any{
+		"status":                 livePositionReconcileGateStatusVerified,
+		"scenario":               "exchange-flat-terminal-exit",
+		"blocking":               false,
+		"dbPosition":             buildRecoveredLivePositionStateSnapshot(position),
+		"exchangePosition":       map[string]any{},
+		"clearedStalePositionId": position.ID,
+		"terminalExitOrderId":    exitOrder.ID,
+	}, nil
+}
+
+func (p *Platform) findTerminalFlatExitOrder(accountID string, position domain.Position) (domain.Order, bool, error) {
+	symbol := NormalizeSymbol(position.Symbol)
+	if symbol == "" || position.Quantity <= 0 {
+		return domain.Order{}, false, nil
+	}
+	orders, err := p.store.QueryOrders(domain.OrderQuery{
+		AccountID: accountID,
+		Symbols:   []string{symbol},
+		Statuses:  []string{"FILLED"},
+	})
+	if err != nil {
+		return domain.Order{}, false, err
+	}
+	expectedSide := "SELL"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		expectedSide = "BUY"
+	}
+	for i := len(orders) - 1; i >= 0; i-- {
+		order := orders[i]
+		if !strings.EqualFold(strings.TrimSpace(order.Side), expectedSide) {
+			continue
+		}
+		if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+			continue
+		}
+		if !liveOrderRepresentsSystemExit(order) {
+			continue
+		}
+		filledQuantity := firstPositive(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity)
+		if tradingQuantityBelow(filledQuantity, position.Quantity) {
+			continue
+		}
+		return order, true, nil
+	}
+	return domain.Order{}, false, nil
+}
+
+func liveOrderRepresentsSystemExit(order domain.Order) bool {
+	if strings.TrimSpace(order.ID) == "" {
+		return false
+	}
+	if strings.HasPrefix(strings.TrimSpace(order.ID), "order-") {
+		return true
+	}
+	source := strings.TrimSpace(stringValue(order.Metadata["source"]))
+	switch source {
+	case "live-session-intent", "manual-position-close", "recovered-passive-close":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Platform) liveSettlementPendingOrderSymbols(accountID string) (map[string]struct{}, error) {
