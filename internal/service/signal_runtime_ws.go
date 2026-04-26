@@ -662,7 +662,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 				session.UpdatedAt = now
 			})
 			p.publishRuntimeSignalEvent(session, summary, now)
-			if err := p.handleSignalRuntimeMessage(session.ID, summary, now); err != nil {
+			if err := p.handleSignalRuntimeMessageFromWebsocket(session.ID, summary, now); err != nil {
 				p.logger("service.signal_runtime",
 					"session_id", session.ID,
 					"symbol", signalRuntimeSummarySymbol(summary),
@@ -858,6 +858,14 @@ func (p *Platform) shouldThrottleLiveEvaluation(runtimeSessionID string, summary
 }
 
 func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
+	return p.handleSignalRuntimeMessageWithOptions(runtimeSessionID, summary, eventTime, signalRuntimeFanoutOptions{})
+}
+
+type signalRuntimeFanoutOptions struct {
+	returnTriggerErrors bool
+}
+
+func (p *Platform) handleSignalRuntimeMessageWithOptions(runtimeSessionID string, summary map[string]any, eventTime time.Time, options signalRuntimeFanoutOptions) error {
 	if !signalRuntimeSummaryShouldTriggerLiveEvaluation(summary) {
 		return nil
 	}
@@ -917,6 +925,9 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 				"runtime_session_id", runtimeSessionID,
 				"symbol", targetSymbol,
 			).Warn("trigger live session from signal failed", "error", err)
+			if options.returnTriggerErrors {
+				return err
+			}
 		}
 	}
 	return nil

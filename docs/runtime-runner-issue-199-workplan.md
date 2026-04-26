@@ -129,6 +129,13 @@ Issue: [#201](https://github.com/folgercn/bktrader/issues/201)
 
 Issue: [#202](https://github.com/folgercn/bktrader/issues/202)
 
+状态：
+
+- 🟡 **进行中（2026-04-26）**：已新开 worktree `/Users/fujun/node/bktrader-issue-202`，分支 `codex/issue-202-live-runner-jetstream-consumer`。
+- ✅ 已完成：`SignalRuntimeEventConsumer` handler、NATS pull durable consumer `live-evaluation`、success ack / failure nak、stale event drop、live-runner / monolith 启动 consumer、consumer 启用后关闭 WS direct live evaluation、复用现有 live evaluation fanout。
+- ✅ 已覆盖测试：consumer config、event 触发 live evaluation happy path、duplicate delivery 幂等、WS direct + consumer 双入口防护、stale event ack/drop、failure 不 ack。
+- 🟡 待 review：本 PR 不改 dispatch/reconcile/recovery gate，不新增独立 `signal-runtime-runner`，不改 deployments。
+
 目标：
 
 - `live-runner` 通过 JetStream durable consumer 消费 runtime event。

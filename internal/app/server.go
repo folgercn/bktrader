@@ -23,11 +23,12 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 }
 
 type RuntimeOptions struct {
-	WarmLiveMarketData bool
-	StartTelegram      bool
-	RecoverLiveTrading bool
-	StartLiveSync      bool
-	StartDashboard     bool
+	WarmLiveMarketData        bool
+	StartTelegram             bool
+	RecoverLiveTrading        bool
+	StartLiveSync             bool
+	StartDashboard            bool
+	StartRuntimeEventConsumer bool
 }
 
 func RuntimeOptionsForRole(role string) RuntimeOptions {
@@ -36,19 +37,21 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 		return RuntimeOptions{StartDashboard: true}
 	case "live-runner":
 		return RuntimeOptions{
-			WarmLiveMarketData: true,
-			RecoverLiveTrading: true,
-			StartLiveSync:      true,
+			WarmLiveMarketData:        true,
+			RecoverLiveTrading:        true,
+			StartLiveSync:             true,
+			StartRuntimeEventConsumer: true,
 		}
 	case "notification-worker":
 		return RuntimeOptions{StartTelegram: true}
 	default:
 		return RuntimeOptions{
-			WarmLiveMarketData: true,
-			StartTelegram:      true,
-			RecoverLiveTrading: true,
-			StartLiveSync:      true,
-			StartDashboard:     true,
+			WarmLiveMarketData:        true,
+			StartTelegram:             true,
+			RecoverLiveTrading:        true,
+			StartLiveSync:             true,
+			StartDashboard:            true,
+			StartRuntimeEventConsumer: true,
 		}
 	}
 }
@@ -74,6 +77,7 @@ func NewServerWithRuntimeOptions(cfg config.Config, runtime RuntimeOptions) (*ht
 		"live_recovery", runtime.RecoverLiveTrading,
 		"live_sync", runtime.StartLiveSync,
 		"dashboard", runtime.StartDashboard,
+		"runtime_event_consumer", runtime.StartRuntimeEventConsumer,
 	)
 
 	return &http.Server{
@@ -149,6 +153,19 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 	}
 	if runtime.StartDashboard {
 		platform.StartDashboardBroker(ctx, cfg)
+	}
+	if runtime.StartRuntimeEventConsumer && strings.EqualFold(strings.TrimSpace(cfg.RuntimeEventBus), "nats") {
+		consumer, err := service.NewNATSRuntimeEventConsumer(cfg.NATSURL, platform)
+		if err != nil {
+			logger.Warn("runtime event consumer unavailable; continuing without JetStream consume", "error", err)
+			return
+		}
+		if err := consumer.Start(ctx); err != nil {
+			consumer.Close()
+			logger.Warn("runtime event consumer failed to start", "error", err)
+			return
+		}
+		platform.SetRuntimeEventConsumerEnabled(true)
 	}
 }
 
