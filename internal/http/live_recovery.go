@@ -48,6 +48,10 @@ func handleLiveAccountRecoveryRoute(w http.ResponseWriter, r *http.Request, plat
 
 		result, err := platform.DiagnoseLiveRecovery(r.Context(), options)
 		if err != nil {
+			if strings.Contains(err.Error(), "account not found:") {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
