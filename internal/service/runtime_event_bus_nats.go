@@ -57,7 +57,7 @@ func RuntimeEventStreamConfig() *nats.StreamConfig {
 	return &nats.StreamConfig{
 		Name:      RuntimeEventStreamName,
 		Subjects:  []string{RuntimeEventSubjectPattern},
-		Retention: nats.WorkQueuePolicy,
+		Retention: nats.LimitsPolicy,
 		Storage:   nats.FileStorage,
 		MaxAge:    7 * 24 * time.Hour,
 	}

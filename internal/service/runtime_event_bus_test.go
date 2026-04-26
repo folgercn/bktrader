@@ -92,7 +92,7 @@ func TestRuntimeEventStreamConfig(t *testing.T) {
 	if len(cfg.Subjects) != 1 || cfg.Subjects[0] != RuntimeEventSubjectPattern {
 		t.Fatalf("unexpected subjects: %#v", cfg.Subjects)
 	}
-	if cfg.Retention != nats.WorkQueuePolicy {
+	if cfg.Retention != nats.LimitsPolicy {
 		t.Fatalf("unexpected retention policy: %v", cfg.Retention)
 	}
 	if cfg.MaxAge != 7*24*time.Hour {
