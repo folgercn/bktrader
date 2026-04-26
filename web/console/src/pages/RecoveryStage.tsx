@@ -44,30 +44,31 @@ import { getRecord } from '../utils/derivation';
 type Step = 'scope' | 'diagnose' | 'action' | 'verify';
 
 interface RecoveryMismatch {
-  type: string;
-  severity: string;
-  symbol: string;
-  dbValue: any;
-  exchangeValue: any;
-  description: string;
+  scenario: string;
+  level: string;
+  message: string;
+  mismatchFields?: string[];
 }
 
 interface RecoveryAction {
-  id: string;
-  type: string;
-  title: string;
+  action: string;
+  label: string;
   description: string;
-  impact: string;
-  requiresManualReview: boolean;
-  payload: Record<string, any>;
+  allowed: boolean;
+  blockedBy?: string;
+  payload?: Record<string, any>;
 }
 
 interface DiagnosisResult {
   accountId: string;
-  sessionId: string;
+  symbol: string;
+  exchangeFact: any;
+  dbFact: any;
   mismatches: RecoveryMismatch[];
-  suggestedActions: RecoveryAction[];
-  timestamp: string;
+  actions: RecoveryAction[];
+  authoritative: boolean;
+  runtimeRole: string;
+  diagnosedAt: string;
 }
 
 export function RecoveryStage() {
@@ -105,15 +106,14 @@ export function RecoveryStage() {
   };
 
   const handleExecuteAction = async (action: RecoveryAction) => {
-    setExecutingActionId(action.id);
+    setExecutingActionId(action.action);
     try {
       const url = `/api/v1/live/accounts/${selectedAccountId}/recovery/execute`;
       const result = await fetchJSON<any>(url, {
         method: 'POST',
         body: JSON.stringify({
-          actionId: action.id,
-          type: action.type,
-          payload: action.payload
+          action: action.action,
+          payload: action.payload || {}
         })
       });
       setVerificationResult(result);
@@ -284,9 +284,9 @@ export function RecoveryStage() {
                 <CardContent className="p-6">
                   <p className="text-[10px] font-black uppercase text-[var(--bk-text-muted)] mb-1">建议修复动作</p>
                   <div className="flex items-end gap-2">
-                    <span className="text-4xl font-black tracking-tighter">{diagnosis.suggestedActions.length}</span>
+                    <span className="text-4xl font-black tracking-tighter">{diagnosis.actions.length}</span>
                     <Badge variant="outline" className="text-[var(--bk-accent)] border-[var(--bk-accent)]">
-                      Pending
+                      {diagnosis.actions.filter(a => a.allowed).length} 可用
                     </Badge>
                   </div>
                 </CardContent>
@@ -295,7 +295,7 @@ export function RecoveryStage() {
                 <CardContent className="p-6">
                   <p className="text-[10px] font-black uppercase text-[var(--bk-text-muted)] mb-1">诊断时间</p>
                   <div className="text-xl font-black mt-2">
-                    {new Date(diagnosis.timestamp).toLocaleTimeString()}
+                    {new Date(diagnosis.diagnosedAt).toLocaleTimeString()}
                   </div>
                 </CardContent>
               </Card>
@@ -330,16 +330,16 @@ export function RecoveryStage() {
                     ) : (
                       diagnosis.mismatches.map((m, i) => (
                         <TableRow key={i} className="hover:bg-[var(--bk-surface-faint)] border-b-[var(--bk-border)]">
-                          <TableCell className="font-black text-sm">{m.symbol}</TableCell>
+                          <TableCell className="font-black text-sm">{diagnosis.symbol || '-'}</TableCell>
                           <TableCell>
-                            <div className="text-xs font-bold mb-1">{m.description}</div>
-                            <div className="text-[9px] font-mono text-[var(--bk-text-muted)] uppercase">{m.type}</div>
+                            <div className="text-xs font-bold mb-1">{m.message}</div>
+                            <div className="text-[9px] font-mono text-[var(--bk-text-muted)] uppercase">{m.scenario}</div>
                           </TableCell>
-                          <TableCell className="font-mono text-xs">{JSON.stringify(m.dbValue)}</TableCell>
-                          <TableCell className="font-mono text-xs text-[var(--bk-status-success)]">{JSON.stringify(m.exchangeValue)}</TableCell>
+                          <TableCell className="font-mono text-xs max-w-[200px] truncate">{JSON.stringify(diagnosis.dbFact.position)}</TableCell>
+                          <TableCell className="font-mono text-xs text-[var(--bk-status-success)] max-w-[200px] truncate">{JSON.stringify(diagnosis.exchangeFact.position)}</TableCell>
                           <TableCell>
-                            <Badge variant={m.severity === 'critical' ? 'destructive' : 'outline'} className="capitalize">
-                              {m.severity}
+                            <Badge variant={m.level === 'critical' ? 'destructive' : 'outline'} className="capitalize">
+                              {m.level}
                             </Badge>
                           </TableCell>
                         </TableRow>
@@ -357,7 +357,7 @@ export function RecoveryStage() {
               <Button 
                 variant="bento-primary" 
                 onClick={() => setStep('action')}
-                disabled={diagnosis.suggestedActions.length === 0}
+                disabled={diagnosis.actions.length === 0}
                 className="rounded-xl px-10 h-12 font-black"
               >
                 进入修复阶段
@@ -379,44 +379,51 @@ export function RecoveryStage() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y divide-[var(--bk-border)]">
-                  {diagnosis.suggestedActions.length === 0 ? (
+                  {diagnosis.actions.length === 0 ? (
                     <div className="p-12 text-center text-[var(--bk-text-muted)] font-black">
                       没有需要执行的修复动作。
                     </div>
                   ) : (
-                    diagnosis.suggestedActions.map((action) => (
-                      <div key={action.id} className="p-8 hover:bg-[var(--bk-surface)] transition-all">
+                    diagnosis.actions.map((action) => (
+                      <div key={action.action} className="p-8 hover:bg-[var(--bk-surface)] transition-all">
                         <div className="flex items-start justify-between gap-6">
                           <div className="space-y-3">
                             <div className="flex items-center gap-3">
-                              <h4 className="text-lg font-black tracking-tight">{action.title}</h4>
-                              <Badge variant="metal" className="text-[9px] uppercase">{action.type}</Badge>
+                              <h4 className="text-lg font-black tracking-tight">{action.label}</h4>
+                              <Badge variant="metal" className="text-[9px] uppercase">{action.action}</Badge>
                             </div>
                             <p className="text-sm text-[var(--bk-text-muted)] leading-relaxed max-w-2xl">{action.description}</p>
                             
                             <div className="flex items-center gap-6 mt-4">
                               <div className="flex items-center gap-2">
                                 <Activity className="w-4 h-4 text-[var(--bk-accent)]" />
-                                <span className="text-[10px] font-black uppercase text-[var(--bk-text-muted)]">预期影响:</span>
-                                <span className="text-[10px] font-black text-[var(--bk-accent)] uppercase">{action.impact}</span>
+                                <span className="text-[10px] font-black uppercase text-[var(--bk-text-muted)]">是否可用:</span>
+                                <span className={cn(
+                                  "text-[10px] font-black uppercase",
+                                  action.allowed ? "text-[var(--bk-status-success)]" : "text-[var(--bk-status-danger)]"
+                                )}>
+                                  {action.allowed ? "ALLOWED" : "BLOCKED"}
+                                </span>
                               </div>
-                              {action.requiresManualReview && (
+                              {action.blockedBy && (
                                 <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bk-status-warning-soft)] border border-[var(--bk-status-warning-soft)]">
                                   <ShieldAlert className="w-3 h-3 text-[var(--bk-status-warning)]" />
-                                  <span className="text-[9px] font-black uppercase text-[var(--bk-status-warning)]">需要二次确认</span>
+                                  <span className="text-[9px] font-black uppercase text-[var(--bk-status-warning)]">
+                                    阻塞原因: {action.blockedBy}
+                                  </span>
                                 </div>
                               )}
                             </div>
                           </div>
 
                           <Button 
-                            variant={action.requiresManualReview ? "bento-destructive" : "bento-primary"}
+                            variant={!action.allowed ? "secondary" : (action.action.includes('clear') || action.action.includes('adopt') ? "bento-destructive" : "bento-primary")}
                             size="lg"
                             className="rounded-2xl h-16 px-8 font-black shadow-lg shrink-0"
                             onClick={() => handleExecuteAction(action)}
-                            disabled={executingActionId !== null}
+                            disabled={executingActionId !== null || !action.allowed}
                           >
-                            {executingActionId === action.id ? (
+                            {executingActionId === action.action ? (
                               <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
                             ) : (
                               <Zap className="w-5 h-5 mr-2" />

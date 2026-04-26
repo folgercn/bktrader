@@ -50,3 +50,21 @@ func TestClassifyRecoveryMismatches(t *testing.T) {
 		t.Errorf("expected scenario quantity-mismatch, got %s", mismatches3[0].Scenario)
 	}
 }
+
+func TestScenarioClassification(t *testing.T) {
+	p := &Platform{}
+
+	// Scenario 4: Side Conflict
+	dbFact4 := LiveRecoveryFact{
+		Position: map[string]any{"side": "LONG", "quantity": 0.1},
+	}
+	exFact4 := LiveRecoveryFact{
+		Position: map[string]any{"side": "SHORT", "quantity": 0.1},
+	}
+	mismatches4 := p.classifyRecoveryMismatches(dbFact4, exFact4)
+	if len(mismatches4) != 1 {
+		t.Errorf("expected 1 mismatch, got %d", len(mismatches4))
+	} else if mismatches4[0].Scenario != "side-conflict" {
+		t.Errorf("expected scenario side-conflict, got %s", mismatches4[0].Scenario)
+	}
+}
