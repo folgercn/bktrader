@@ -790,8 +790,8 @@ func TestCreateLiveOrderImmediateFilledSubmissionSettlesReduceOnlyExit(t *testin
 		t.Fatalf("create order failed: %v", err)
 	}
 
-	if syncCalls != 1 {
-		t.Fatalf("expected immediate FILLED submission to force one sync, got %d", syncCalls)
+	if syncCalls != 0 {
+		t.Fatalf("expected immediate FILLED submission to settle from submission result without order sync, got %d", syncCalls)
 	}
 	if got := order.Status; got != "FILLED" {
 		t.Fatalf("expected order to stay FILLED after settlement, got %s", got)
@@ -814,8 +814,8 @@ func TestCreateLiveOrderImmediateFilledSubmissionSettlesReduceOnlyExit(t *testin
 			continue
 		}
 		orderFillCount++
-		if item.Fee != 0.06 {
-			t.Fatalf("expected synced fee 0.06, got %v", item.Fee)
+		if item.Fee != 0 {
+			t.Fatalf("expected submission-result synthetic fill fee 0, got %v", item.Fee)
 		}
 	}
 	if orderFillCount != 1 {
@@ -1580,6 +1580,75 @@ func TestImmediateFilledLiveOrderPartialSettlementKeepsRetryMarker(t *testing.T)
 	}
 	if !liveOrderSettlementSyncPending(settled) {
 		t.Fatal("expected partial settlement to remain pending")
+	}
+}
+
+func TestCreateImmediateFilledLiveOrderSettlesFromSubmissionResult(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	adapter := &recordingLiveExecutionAdapter{
+		key:     "test-submission-filled-settlement",
+		syncErr: errors.New("order endpoint should not be used"),
+		submitResult: LiveOrderSubmission{
+			Status:          "FILLED",
+			ExchangeOrderID: "exchange-order-submission-filled",
+			AcceptedAt:      "2026-04-26T00:21:23Z",
+			Metadata: map[string]any{
+				"binanceStatus":   "FILLED",
+				"executedQty":     0.0013,
+				"cumQty":          0.0013,
+				"avgPrice":        77468.3,
+				"updateTime":      "2026-04-26T00:21:23Z",
+				"exchangeOrderId": "exchange-order-submission-filled",
+				"clientOrderId":   "order-submission-filled",
+			},
+		},
+	}
+	platform.registerLiveAdapter(adapter)
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey": adapter.key,
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	order, err := platform.CreateOrder(domain.Order{
+		ID:                "order-submission-filled",
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Quantity:          0.0013,
+		Price:             77468.3,
+		Metadata: map[string]any{
+			"skipRuntimeCheck": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create immediate filled order failed: %v", err)
+	}
+	if adapter.syncCount != 0 {
+		t.Fatalf("expected submission settlement to avoid order sync, got sync count %d", adapter.syncCount)
+	}
+	if boolValue(order.Metadata[liveSettlementSyncRequiredKey]) {
+		t.Fatal("expected immediate submission settlement to clear retry marker")
+	}
+	if got := parseFloatValue(order.Metadata["filledQuantity"]); !tradingQuantityEqual(got, 0.0013) {
+		t.Fatalf("expected filled quantity 0.0013, got %v", got)
+	}
+	position, found, err := store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected submission settlement to create position")
+	}
+	if got := position.Quantity; !tradingQuantityEqual(got, 0.0013) {
+		t.Fatalf("expected position quantity 0.0013, got %v", got)
+	}
+	if got := position.Side; got != "SHORT" {
+		t.Fatalf("expected position side SHORT, got %s", got)
 	}
 }
 

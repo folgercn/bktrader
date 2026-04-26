@@ -2216,6 +2216,10 @@ func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain
 }
 
 func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchangePositions []map[string]any) (map[string]any, error) {
+	pendingSettlementSymbols, err := p.liveSettlementPendingOrderSymbols(account.ID)
+	if err != nil {
+		return nil, err
+	}
 	existing, err := p.store.QueryPositions(domain.PositionQuery{AccountID: account.ID})
 	if err != nil {
 		return nil, err
@@ -2226,10 +2230,6 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			continue
 		}
 		existingBySymbol[NormalizeSymbol(position.Symbol)] = position
-	}
-	pendingSettlementSymbols, err := p.liveSettlementPendingOrderSymbols(account.ID)
-	if err != nil {
-		return nil, err
 	}
 	workingOrderSymbols, err := p.liveWorkingOrderSymbols(account.ID)
 	if err != nil {
@@ -2440,10 +2440,25 @@ func (p *Platform) liveSettlementPendingOrderSymbols(accountID string) (map[stri
 	if err != nil {
 		return nil, err
 	}
+	account, accountErr := p.store.GetAccount(accountID)
 	symbols := make(map[string]struct{})
 	for _, order := range orders {
 		if order.AccountID != accountID || !liveOrderSettlementSyncPending(order) {
 			continue
+		}
+		if accountErr == nil {
+			if settledOrder, attempted, settleErr := p.settleLiveOrderFromSubmission(account, order); settleErr != nil {
+				p.logger("service.live_reconcile",
+					"account_id", accountID,
+					"order_id", order.ID,
+					"symbol", NormalizeSymbol(order.Symbol),
+				).Warn("pending live settlement submission recovery failed", "error", settleErr)
+			} else if attempted {
+				order = settledOrder
+				if !liveOrderSettlementSyncPending(order) {
+					continue
+				}
+			}
 		}
 		if symbol := NormalizeSymbol(order.Symbol); symbol != "" {
 			symbols[symbol] = struct{}{}

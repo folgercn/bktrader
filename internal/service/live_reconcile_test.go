@@ -564,6 +564,115 @@ func TestReconcileLiveAccountDefersPositionAdoptForPendingImmediateFilledSettlem
 	}
 }
 
+func TestReconcileLiveAccountSettlesPendingImmediateFilledFromSubmission(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	syncedAt := time.Date(2026, 4, 26, 0, 30, 0, 0, time.UTC)
+	platform.registerLiveAdapter(testLiveAccountReconcileAdapter{
+		key: "test-pending-submission-settlement",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":   "test-pending-submission-settlement",
+				"syncedAt": syncedAt.Format(time.RFC3339),
+				"positions": []map[string]any{{
+					"symbol":         "BTCUSDT",
+					"positionAmt":    -0.0039,
+					"entryPrice":     77468.3,
+					"breakEvenPrice": 77468.3,
+					"markPrice":      77524.7,
+				}},
+				"openOrders":    []map[string]any{},
+				"bindingMode":   stringValue(binding["connectionMode"]),
+				"executionMode": stringValue(binding["executionMode"]),
+			}
+			account.Metadata["lastLiveSyncAt"] = syncedAt.Format(time.RFC3339)
+			updated, err := p.store.UpdateAccount(account)
+			if err != nil {
+				return domain.Account{}, err
+			}
+			return p.refreshLiveAccountPositionReconcileGate(updated)
+		},
+	})
+
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-pending-submission-settlement",
+		"connectionMode": "rest",
+		"executionMode":  "rest",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+	orderIDs := []string{"order-pending-1", "order-pending-2", "order-pending-3"}
+	exchangeOrderIDs := []string{"13076746847", "13076746868", "13076746799"}
+	for i, orderID := range orderIDs {
+		if _, err := store.CreateOrder(domain.Order{
+			ID:                orderID,
+			AccountID:         account.ID,
+			StrategyVersionID: "strategy-version-bk-1d-v010",
+			Symbol:            "BTCUSDT",
+			Side:              "SELL",
+			Type:              "MARKET",
+			Quantity:          0.0013,
+			Price:             77468.3,
+			Status:            "FILLED",
+			Metadata: map[string]any{
+				"exchangeOrderId":             exchangeOrderIDs[i],
+				liveSettlementSyncErrorKey:    "live order submitted as FILLED but settlement sync failed: Order does not exist",
+				liveSettlementSyncRequiredKey: true,
+				"adapterSubmission": map[string]any{
+					"binanceStatus":   "FILLED",
+					"executedQty":     0.0013,
+					"cumQty":          0.0013,
+					"avgPrice":        77468.3,
+					"updateTime":      syncedAt.Add(-time.Minute).Format(time.RFC3339),
+					"exchangeOrderId": exchangeOrderIDs[i],
+					"clientOrderId":   orderID,
+				},
+			},
+		}); err != nil {
+			t.Fatalf("create pending order failed: %v", err)
+		}
+	}
+
+	syncedAccount, err := platform.SyncLiveAccount(account.ID)
+	if err != nil {
+		t.Fatalf("sync live account failed: %v", err)
+	}
+	position, found, err := store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected submission settlement recovery to create position")
+	}
+	if got := position.Quantity; !tradingQuantityEqual(got, 0.0039) {
+		t.Fatalf("expected recovered position quantity 0.0039, got %v", got)
+	}
+	if got := position.Side; got != "SHORT" {
+		t.Fatalf("expected recovered position side SHORT, got %s", got)
+	}
+	gate := resolveLivePositionReconcileGate(syncedAccount, "BTCUSDT", true)
+	if got := stringValue(gate["status"]); got != livePositionReconcileGateStatusVerified {
+		t.Fatalf("expected reconcile gate to verify after submission settlement, got %s", got)
+	}
+	if boolValue(gate["blocking"]) {
+		t.Fatal("expected reconcile gate to unblock after submission settlement")
+	}
+	orders, err := store.QueryOrders(domain.OrderQuery{
+		AccountID: account.ID,
+		MetadataBoolEquals: map[string]bool{
+			liveSettlementSyncRequiredKey: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("query pending orders failed: %v", err)
+	}
+	if len(orders) != 0 {
+		t.Fatalf("expected pending settlement markers to clear, got %d", len(orders))
+	}
+}
+
 func TestReconcileLiveAccountRefreshClearsStaleRecoveryCache(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
