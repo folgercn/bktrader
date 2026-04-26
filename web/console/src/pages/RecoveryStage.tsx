@@ -93,7 +93,19 @@ export function RecoveryStage() {
     if (!selectedAccountId) return;
     setIsDiagnosing(true);
     try {
-      const url = `/api/v1/live/accounts/${selectedAccountId}/recovery/diagnose${selectedSessionId !== "all" ? `?sessionId=${selectedSessionId}` : ""}`;
+      let symbol = "";
+      if (selectedSessionId !== "all") {
+        const session = sessions.find(s => s.id === selectedSessionId);
+        if (session) {
+          symbol = String(getRecord(session.state).symbol || "");
+        }
+      }
+
+      const params = new URLSearchParams();
+      if (selectedSessionId !== "all") params.append("sessionId", selectedSessionId);
+      if (symbol) params.append("symbol", symbol);
+
+      const url = `/api/v1/live/accounts/${selectedAccountId}/recovery/diagnose?${params.toString()}`;
       const result = await fetchJSON<DiagnosisResult>(url);
       setDiagnosis(result);
       setStep('diagnose');

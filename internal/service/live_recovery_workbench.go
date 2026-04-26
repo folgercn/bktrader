@@ -334,11 +334,17 @@ func (p *Platform) generateRecoveryActions(account domain.Account, symbol string
 	})
 
 	// 通用动作：同步终端订单
+	syncAllowed := symbol != ""
+	syncBlockedBy := ""
+	if !syncAllowed {
+		syncBlockedBy = "symbol-required"
+	}
 	actions = append(actions, LiveRecoveryActionCandidate{
 		Action:      "sync-orders",
 		Label:       "同步终端订单",
 		Description: "同步该交易对下所有非终端状态的订单。",
-		Allowed:     true,
+		Allowed:     syncAllowed,
+		BlockedBy:   syncBlockedBy,
 	})
 
 	// 特殊动作：清除陈旧仓位
@@ -408,11 +414,17 @@ func (p *Platform) generateRecoveryActions(account domain.Account, symbol string
 	})
 
 	// 特殊动作：重置对账门
+	gateAllowed := len(mismatches) == 0
+	gateBlockedBy := ""
+	if !gateAllowed {
+		gateBlockedBy = "mismatches-still-present"
+	}
 	actions = append(actions, LiveRecoveryActionCandidate{
 		Action:      "reset-reconcile-gate",
 		Label:       "重置对账门状态",
 		Description: "在完成上述修复后，强制刷新账户的对账门状态，使其恢复为就绪（Verified）。",
-		Allowed:     true,
+		Allowed:     gateAllowed,
+		BlockedBy:   gateBlockedBy,
 	})
 
 	return actions
