@@ -71,6 +71,13 @@ interface DiagnosisResult {
   diagnosedAt: string;
 }
 
+const STEPS: { id: Step; label: string; icon: any }[] = [
+  { id: 'scope', label: '范围选择', icon: Search },
+  { id: 'diagnose', label: '诊断报告', icon: Activity },
+  { id: 'action', label: '修复动作', icon: Zap },
+  { id: 'verify', label: '结果验证', icon: CheckCircle2 },
+];
+
 export function RecoveryStage() {
   const [step, setStep] = useState<Step>('scope');
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
@@ -80,7 +87,8 @@ export function RecoveryStage() {
   const [executingActionId, setExecutingActionId] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<any>(null);
 
-  const accounts = useTradingStore(s => s.accounts.filter(a => a.mode === "LIVE"));
+  const rawAccounts = useTradingStore(s => s.accounts);
+  const accounts = useMemo(() => rawAccounts.filter(a => a.mode === "LIVE"), [rawAccounts]);
   const sessions = useTradingStore(s => s.liveSessions);
   const setSidebarTab = useUIStore(s => s.setSidebarTab);
 
@@ -111,7 +119,6 @@ export function RecoveryStage() {
       setStep('diagnose');
     } catch (err: any) {
       console.error("Diagnosis failed:", err);
-      // TODO: toast error
     } finally {
       setIsDiagnosing(false);
     }
@@ -132,56 +139,9 @@ export function RecoveryStage() {
       setStep('verify');
     } catch (err: any) {
       console.error("Action execution failed:", err);
-      // TODO: toast error
     } finally {
       setExecutingActionId(null);
     }
-  };
-
-  const renderStepper = () => {
-    const steps = [
-      { id: 'scope', label: '范围选择', icon: Search },
-      { id: 'diagnose', label: '诊断报告', icon: Activity },
-      { id: 'action', label: '修复动作', icon: Zap },
-      { id: 'verify', label: '结果验证', icon: CheckCircle2 },
-    ];
-
-    return (
-      <div className="flex items-center justify-center mb-8">
-        {steps.map((s, i) => {
-          const Icon = s.icon;
-          const isActive = step === s.id;
-          const isDone = i < ['scope', 'diagnose', 'action', 'verify'].indexOf(step);
-          
-          return (
-            <React.Fragment key={s.id}>
-              <div className="flex flex-col items-center relative">
-                <div className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 border-2",
-                  isActive ? "bg-[var(--bk-accent)] border-[var(--bk-accent)] text-white shadow-lg scale-110" : 
-                  isDone ? "bg-[var(--bk-status-success)] border-[var(--bk-status-success)] text-white" : 
-                  "bg-[var(--bk-surface-strong)] border-[var(--bk-border)] text-[var(--bk-text-muted)]"
-                )}>
-                  {isDone ? <CheckCircle2 className="w-6 h-6" /> : <Icon className="w-5 h-5" />}
-                </div>
-                <span className={cn(
-                  "absolute -bottom-6 whitespace-nowrap text-[10px] font-black uppercase tracking-wider",
-                  isActive ? "text-[var(--bk-accent)]" : "text-[var(--bk-text-muted)]"
-                )}>
-                  {s.label}
-                </span>
-              </div>
-              {i < steps.length - 1 && (
-                <div className={cn(
-                  "w-20 h-0.5 mx-2 transition-all duration-500",
-                  isDone ? "bg-[var(--bk-status-success)]" : "bg-[var(--bk-border)]"
-                )} />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </div>
-    );
   };
 
   return (
@@ -208,7 +168,41 @@ export function RecoveryStage() {
 
       <Separator className="bg-[var(--bk-border-strong)] opacity-50" />
 
-      {renderStepper()}
+      {/* Stepper */}
+      <div className="flex items-center justify-center mb-8">
+        {STEPS.map((s, i) => {
+          const Icon = s.icon;
+          const isActive = step === s.id;
+          const isDone = i < STEPS.findIndex(x => x.id === step);
+          
+          return (
+            <React.Fragment key={s.id}>
+              <div className="flex flex-col items-center relative">
+                <div className={cn(
+                  "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 border-2",
+                  isActive ? "bg-[var(--bk-accent)] border-[var(--bk-accent)] text-white shadow-lg scale-110" : 
+                  isDone ? "bg-[var(--bk-status-success)] border-[var(--bk-status-success)] text-white" : 
+                  "bg-[var(--bk-surface-strong)] border-[var(--bk-border)] text-[var(--bk-text-muted)]"
+                )}>
+                  {isDone ? <CheckCircle2 className="w-6 h-6" /> : <Icon className="w-5 h-5" />}
+                </div>
+                <span className={cn(
+                  "absolute -bottom-6 whitespace-nowrap text-[10px] font-black uppercase tracking-wider",
+                  isActive ? "text-[var(--bk-accent)]" : "text-[var(--bk-text-muted)]"
+                )}>
+                  {s.label}
+                </span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={cn(
+                  "w-20 h-0.5 mx-2 transition-all duration-500",
+                  isDone ? "bg-[var(--bk-status-success)]" : "bg-[var(--bk-border)]"
+                )} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
 
       <div className="max-w-5xl mx-auto">
         {step === 'scope' && (
