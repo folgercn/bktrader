@@ -64,6 +64,7 @@ type Platform struct {
 	tickEvalThrottle       sync.Map // runtimeSessionID or runtimeSessionID|symbol -> *tickEvalThrottleState
 	logBroker              *logging.Broker
 	dashboardBroker        *DashboardBroker
+	processRole            string
 }
 
 type RuntimePolicy struct {
@@ -165,6 +166,10 @@ func defaultRuntimeLeaseOwnerID() string {
 		host = "unknown-host"
 	}
 	return fmt.Sprintf("%s-%d-%d", host, os.Getpid(), time.Now().UnixNano())
+}
+
+func (p *Platform) SetProcessRole(role string) {
+	p.processRole = role
 }
 
 // StartDashboardBroker 启动仪表盘实时数据轮询检测

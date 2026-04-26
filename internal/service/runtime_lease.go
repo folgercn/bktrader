@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -49,9 +50,13 @@ func (p *Platform) acquireRuntimeLeaseWithTiming(ctx context.Context, resourceTy
 	logger.Debug("runtime lease acquired", "expires_at", lease.ExpiresAt)
 
 	var once sync.Once
+	var ownershipLost atomic.Bool
 	release := func() {
 		once.Do(func() {
-			cancel()
+			if ownershipLost.Load() {
+				logger.Debug("runtime lease release skipped after ownership loss")
+				return
+			}
 			if released, err := p.store.ReleaseRuntimeLease(resourceType, resourceID, ownerID); err != nil {
 				logger.Warn("release runtime lease failed", "error", err)
 			} else if released {
@@ -75,6 +80,7 @@ func (p *Platform) acquireRuntimeLeaseWithTiming(ctx context.Context, resourceTy
 					} else {
 						logger.Warn("runtime lease ownership lost; cancelling owned runner")
 					}
+					ownershipLost.Store(true)
 					cancel()
 					return
 				}

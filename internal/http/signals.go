@@ -322,6 +322,10 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 			}
 			item, err := platform.StartSignalRuntimeSession(sessionID)
 			if err != nil {
+				if errors.Is(err, service.ErrRuntimeLeaseNotAcquired) {
+					writeError(w, http.StatusConflict, "signal runtime session is already owned by another runner")
+					return
+				}
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}

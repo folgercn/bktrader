@@ -15,18 +15,18 @@ import (
 )
 
 type signalRuntimeRun struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	starting    bool
-	release     func()
-	releaseOnce sync.Once
+	ctx          context.Context
+	cancelRunner context.CancelFunc
+	starting     bool
+	releaseLease func()
+	releaseOnce  sync.Once
 }
 
-func (r *signalRuntimeRun) releaseLease() {
-	if r == nil || r.release == nil {
+func (r *signalRuntimeRun) releaseRuntimeLease() {
+	if r == nil || r.releaseLease == nil {
 		return
 	}
-	r.releaseOnce.Do(r.release)
+	r.releaseOnce.Do(r.releaseLease)
 }
 
 func (p *Platform) ListSignalRuntimeSessions() []domain.SignalRuntimeSession {
@@ -243,39 +243,37 @@ func (p *Platform) startSignalRuntimeSession(parent context.Context, sessionID s
 		logger.Debug("signal runtime session already running", "starting", run.starting)
 		return session, nil
 	}
-	ctx, cancel := context.WithCancel(parent)
-	run := &signalRuntimeRun{ctx: ctx, cancel: cancel, starting: true}
+	baseCtx, cancelRunner := context.WithCancel(parent)
+	run := &signalRuntimeRun{ctx: baseCtx, cancelRunner: cancelRunner, starting: true}
 	p.signalRun[sessionID] = run
 	p.mu.Unlock()
-	leaseCtx, release, acquired, err := p.acquireSignalRuntimeSessionLease(parent, sessionID)
+	leaseCtx, releaseLease, acquired, err := p.acquireSignalRuntimeSessionLease(baseCtx, sessionID)
 	if err != nil {
+		cancelRunner()
 		p.clearSignalRuntimeRun(sessionID, run)
-		cancel()
 		logger.Warn("acquire signal runtime session lease failed", "error", err)
 		return domain.SignalRuntimeSession{}, err
 	}
 	if !acquired {
+		cancelRunner()
 		p.clearSignalRuntimeRun(sessionID, run)
-		cancel()
 		logger.Debug("signal runtime session lease held by another runner")
 		return domain.SignalRuntimeSession{}, ErrRuntimeLeaseNotAcquired
 	}
-	ctx = leaseCtx
-	cancel = release
+	ctx := leaseCtx
 	run.ctx = ctx
-	run.cancel = cancel
-	run.release = release
+	run.releaseLease = releaseLease
 	session, err := p.GetSignalRuntimeSession(sessionID)
 	if err != nil {
+		cancelRunner()
 		p.clearSignalRuntimeRun(sessionID, run)
-		cancel()
 		logger.Warn("signal runtime session not found")
 		return domain.SignalRuntimeSession{}, err
 	}
 	plan, err := p.BuildSignalRuntimePlan(session.AccountID, session.StrategyID)
 	if err != nil {
+		cancelRunner()
 		p.clearSignalRuntimeRun(sessionID, run)
-		cancel()
 		logger.Warn("build signal runtime plan failed", "error", err)
 		return domain.SignalRuntimeSession{}, err
 	}
@@ -319,8 +317,8 @@ func (p *Platform) startSignalRuntimeSession(parent context.Context, sessionID s
 	updatedSession, updateErr := p.store.UpdateSignalRuntimeSession(session)
 	if updateErr != nil {
 		if !isSignalRuntimeSessionNotFoundError(updateErr) {
+			cancelRunner()
 			p.clearSignalRuntimeRun(sessionID, run)
-			cancel()
 			logger.Warn("persist signal runtime session start failed", "error", updateErr)
 			return domain.SignalRuntimeSession{}, updateErr
 		}
@@ -336,8 +334,8 @@ func (p *Platform) startSignalRuntimeSession(parent context.Context, sessionID s
 	p.mu.Lock()
 	if current := p.signalRun[sessionID]; current != run {
 		p.mu.Unlock()
-		cancel()
-		run.releaseLease()
+		cancelRunner()
+		run.releaseRuntimeLease()
 		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session start superseded: %s", sessionID)
 	}
 	run.starting = false
@@ -408,8 +406,8 @@ func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force boo
 	p.signalSessions[session.ID] = session
 	p.mu.Unlock()
 	if running {
-		run.cancel()
-		run.releaseLease()
+		run.cancelRunner()
+		run.releaseRuntimeLease()
 	}
 	p.logger("service.signal_runtime",
 		"session_id", session.ID,
@@ -527,8 +525,8 @@ func (p *Platform) DeleteSignalRuntimeSessionWithForce(sessionID string, force b
 	delete(p.signalSessions, sessionID)
 	p.mu.Unlock()
 	if running {
-		run.cancel()
-		run.releaseLease()
+		run.cancelRunner()
+		run.releaseRuntimeLease()
 	}
 	return nil
 }
@@ -567,7 +565,7 @@ func (p *Platform) clearSignalRuntimeRun(sessionID string, run *signalRuntimeRun
 	if current := p.signalRun[sessionID]; current == run {
 		delete(p.signalRun, sessionID)
 		p.mu.Unlock()
-		run.releaseLease()
+		run.releaseRuntimeLease()
 		return true
 	}
 	p.mu.Unlock()
@@ -602,7 +600,7 @@ func (p *Platform) removeSignalRuntimeRunner(sessionID string) {
 	run := p.signalRun[sessionID]
 	delete(p.signalRun, sessionID)
 	p.mu.Unlock()
-	run.releaseLease()
+	run.releaseRuntimeLease()
 }
 
 func inferSignalRuntimeTransport(subscriptions []map[string]any) string {

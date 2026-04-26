@@ -212,6 +212,86 @@ func TestReconcileLiveAccountSkipsHistoricalTerminalOrderWithoutLocalMatchAndWit
 	}
 }
 
+func TestReconcileLiveAccountClearsStaleDBPositionAfterTerminalExit(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	syncedAt := time.Date(2026, 4, 26, 10, 19, 0, 0, time.UTC)
+
+	configureTestLiveRESTReconcileHistoryAdapter(t, platform, "test-flat-terminal-exit-cleanup", []map[string]any{}, map[string][]map[string]any{}, nil)
+
+	position, err := store.SavePosition(domain.Position{
+		ID:                "position-stale-flat",
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SHORT",
+		Quantity:          0.0013,
+		EntryPrice:        77401.3,
+		MarkPrice:         77453.9,
+		UpdatedAt:         syncedAt.Add(-time.Second),
+	})
+	if err != nil {
+		t.Fatalf("save stale position failed: %v", err)
+	}
+	exitOrder, err := store.CreateOrder(domain.Order{
+		ID:                "order-terminal-exit",
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Status:            "FILLED",
+		Quantity:          0.0013,
+		Price:             77453.9,
+		ReduceOnly:        true,
+		Metadata: map[string]any{
+			"source":             "live-session-intent",
+			"liveSessionId":      "live-session-flat-cleanup",
+			"exchangeOrderId":    "13077208501",
+			"filledQuantity":     0.0013,
+			"lastExchangeStatus": "FILLED",
+			"executionProposal": map[string]any{
+				"role":       "exit",
+				"side":       "BUY",
+				"symbol":     "BTCUSDT",
+				"quantity":   0.0013,
+				"reduceOnly": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create terminal exit order failed: %v", err)
+	}
+	exitOrder.Status = "FILLED"
+	exitOrder.Metadata["source"] = "live-session-intent"
+	exitOrder.Metadata["exchangeOrderId"] = "13077208501"
+	exitOrder.Metadata["filledQuantity"] = 0.0013
+	exitOrder.Metadata["lastExchangeStatus"] = "FILLED"
+	if _, err := store.UpdateOrder(exitOrder); err != nil {
+		t.Fatalf("update terminal exit order failed: %v", err)
+	}
+
+	result, err := platform.ReconcileLiveAccount("live-main", LiveAccountReconcileOptions{LookbackHours: 4})
+	if err != nil {
+		t.Fatalf("reconcile live account failed: %v", err)
+	}
+	if _, found, err := store.FindPosition("live-main", "BTCUSDT"); err != nil {
+		t.Fatalf("find position failed: %v", err)
+	} else if found {
+		t.Fatal("expected stale DB position to be cleared after terminal exit")
+	}
+	gate := resolveLivePositionReconcileGate(result.Account, "BTCUSDT", true)
+	if boolValue(gate["blocking"]) {
+		t.Fatalf("expected terminal-exit cleanup gate to be non-blocking, got %#v", gate)
+	}
+	if got := stringValue(gate["scenario"]); got != "exchange-flat-terminal-exit" {
+		t.Fatalf("expected exchange-flat-terminal-exit scenario, got %s", got)
+	}
+	if got := stringValue(gate["clearedStalePositionId"]); got != position.ID {
+		t.Fatalf("expected cleared position id %s, got %s", position.ID, got)
+	}
+}
+
 func TestReconcileLiveAccountReusesExistingOrderByExchangeOrderIDInsteadOfCreatingRecoveredDuplicate(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
