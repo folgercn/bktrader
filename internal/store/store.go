@@ -3,10 +3,13 @@
 package store
 
 import (
+	"errors"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
+
+var ErrSignalRuntimeSessionNotFound = errors.New("signal runtime session not found")
 
 // Repository 定义平台的数据持久化接口。
 // 支持可插拔的后端实现（memory/postgres），通过 STORE_BACKEND 配置切换。
@@ -114,6 +117,19 @@ type Repository interface {
 	UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error)
 	// UpdateLiveSessionState 更新实盘策略会话运行时状态。
 	UpdateLiveSessionState(sessionID string, state map[string]any) (domain.LiveSession, error)
+
+	// --- Signal runtime 会话 ---
+
+	// ListSignalRuntimeSessions 获取所有 signal runtime 会话。
+	ListSignalRuntimeSessions() ([]domain.SignalRuntimeSession, error)
+	// GetSignalRuntimeSession 根据 ID 获取单个 signal runtime 会话。
+	GetSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error)
+	// CreateSignalRuntimeSession 创建 signal runtime 会话；同一 account+strategy 已存在时返回现有会话。
+	CreateSignalRuntimeSession(session domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error)
+	// UpdateSignalRuntimeSession 更新 signal runtime 会话。
+	UpdateSignalRuntimeSession(session domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error)
+	// DeleteSignalRuntimeSession 删除 signal runtime 会话。
+	DeleteSignalRuntimeSession(sessionID string) error
 
 	// --- 净值快照 ---
 

@@ -13,6 +13,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
+	storepkg "github.com/wuyaocheng/bktrader/internal/store"
 )
 
 type Store struct {
@@ -1321,6 +1322,124 @@ func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (
 	return s.GetLiveSession(sessionID)
 }
 
+func (s *Store) ListSignalRuntimeSessions() ([]domain.SignalRuntimeSession, error) {
+	rows, err := s.db.Query(`
+		select id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+		from signal_runtime_sessions
+		order by updated_at desc, id asc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.SignalRuntimeSession{}
+	for rows.Next() {
+		item, err := scanSignalRuntimeSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) GetSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	row := s.db.QueryRow(`
+		select id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+		from signal_runtime_sessions
+		where id = $1
+	`, sessionID)
+	item, err := scanSignalRuntimeSession(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.SignalRuntimeSession{}, fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, sessionID)
+		}
+		return domain.SignalRuntimeSession{}, err
+	}
+	return item, nil
+}
+
+func (s *Store) CreateSignalRuntimeSession(item domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error) {
+	if strings.TrimSpace(item.Status) == "" {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session status is required")
+	}
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = time.Now().UTC()
+	}
+	if item.UpdatedAt.IsZero() {
+		item.UpdatedAt = item.CreatedAt
+	}
+	stateRaw, err := json.Marshal(item.State)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("failed to marshal signal runtime session state: %w", err)
+	}
+	row := s.db.QueryRow(`
+		insert into signal_runtime_sessions (
+			id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+		)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		on conflict (account_id, strategy_id) do update set
+			status = excluded.status,
+			runtime_adapter = excluded.runtime_adapter,
+			transport = excluded.transport,
+			subscription_count = excluded.subscription_count,
+			state = excluded.state,
+			updated_at = excluded.updated_at
+		returning id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, item.RuntimeAdapter, item.Transport, item.SubscriptionCnt, stateRaw, item.CreatedAt, item.UpdatedAt)
+	return scanSignalRuntimeSession(row)
+}
+
+func (s *Store) UpdateSignalRuntimeSession(item domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error) {
+	if strings.TrimSpace(item.Status) == "" {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session status is required")
+	}
+	if item.UpdatedAt.IsZero() {
+		item.UpdatedAt = time.Now().UTC()
+	}
+	stateRaw, err := json.Marshal(item.State)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("failed to marshal signal runtime session state: %w", err)
+	}
+	row := s.db.QueryRow(`
+		update signal_runtime_sessions
+		set account_id = $2,
+			strategy_id = $3,
+			status = $4,
+			runtime_adapter = $5,
+			transport = $6,
+			subscription_count = $7,
+			state = $8,
+			updated_at = $9
+		where id = $1
+		returning id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, item.RuntimeAdapter, item.Transport, item.SubscriptionCnt, stateRaw, item.UpdatedAt)
+	updated, err := scanSignalRuntimeSession(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.SignalRuntimeSession{}, fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, item.ID)
+		}
+		return domain.SignalRuntimeSession{}, err
+	}
+	return updated, nil
+}
+
+func (s *Store) DeleteSignalRuntimeSession(sessionID string) error {
+	result, err := s.db.Exec(`delete from signal_runtime_sessions where id = $1`, sessionID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, sessionID)
+	}
+	return nil
+}
+
 func (s *Store) ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error) {
 	args := []any{query.AccountID}
 	filters := []string{"account_id = $1"}
@@ -2245,6 +2364,32 @@ func nullIfEmpty(v string) any {
 		return nil
 	}
 	return v
+}
+
+type signalRuntimeScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanSignalRuntimeSession(scanner signalRuntimeScanner) (domain.SignalRuntimeSession, error) {
+	var item domain.SignalRuntimeSession
+	var stateRaw []byte
+	err := scanner.Scan(
+		&item.ID,
+		&item.AccountID,
+		&item.StrategyID,
+		&item.Status,
+		&item.RuntimeAdapter,
+		&item.Transport,
+		&item.SubscriptionCnt,
+		&stateRaw,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	item.State = unmarshalJSONMap(stateRaw)
+	return item, nil
 }
 
 func marshalJSONValue(value any) []byte {

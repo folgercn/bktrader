@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
+	storepkg "github.com/wuyaocheng/bktrader/internal/store"
 )
 
 type Store struct {
@@ -23,6 +24,7 @@ type Store struct {
 	backtests          map[string]domain.BacktestRun
 	paperSessions      map[string]domain.PaperSession
 	liveSessions       map[string]domain.LiveSession
+	signalRuntime      map[string]domain.SignalRuntimeSession
 	equitySnapshots    map[string][]domain.AccountEquitySnapshot
 	decisionEvents     []domain.StrategyDecisionEvent
 	executionEvents    []domain.OrderExecutionEvent
@@ -51,6 +53,7 @@ func NewStore() *Store {
 		backtests:          make(map[string]domain.BacktestRun),
 		paperSessions:      make(map[string]domain.PaperSession),
 		liveSessions:       make(map[string]domain.LiveSession),
+		signalRuntime:      make(map[string]domain.SignalRuntimeSession),
 		equitySnapshots:    make(map[string][]domain.AccountEquitySnapshot),
 		liveSnapshots:      make([]domain.PositionAccountSnapshot, 0),
 		marketBars:         make(map[string]domain.MarketBar),
@@ -954,6 +957,91 @@ func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (
 	item.State = state
 	s.liveSessions[sessionID] = item
 	return item, nil
+}
+
+func (s *Store) ListSignalRuntimeSessions() ([]domain.SignalRuntimeSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domain.SignalRuntimeSession, 0, len(s.signalRuntime))
+	for _, item := range s.signalRuntime {
+		items = append(items, cloneJSONValue(item))
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].UpdatedAt.Equal(items[j].UpdatedAt) {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].UpdatedAt.After(items[j].UpdatedAt)
+	})
+	return items, nil
+}
+
+func (s *Store) GetSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.signalRuntime[sessionID]
+	if !ok {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, sessionID)
+	}
+	return cloneJSONValue(item), nil
+}
+
+func (s *Store) CreateSignalRuntimeSession(session domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.TrimSpace(session.Status) == "" {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session status is required")
+	}
+	for _, existing := range s.signalRuntime {
+		if existing.AccountID == session.AccountID && existing.StrategyID == session.StrategyID {
+			session.ID = existing.ID
+			session.CreatedAt = existing.CreatedAt
+			if session.UpdatedAt.IsZero() {
+				session.UpdatedAt = time.Now().UTC()
+			}
+			session = cloneJSONValue(session)
+			s.signalRuntime[session.ID] = session
+			return cloneJSONValue(session), nil
+		}
+	}
+	if _, err := json.Marshal(session.State); err != nil {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("failed to marshal signal runtime session state: %w", err)
+	}
+	if session.CreatedAt.IsZero() {
+		session.CreatedAt = time.Now().UTC()
+	}
+	if session.UpdatedAt.IsZero() {
+		session.UpdatedAt = session.CreatedAt
+	}
+	session = cloneJSONValue(session)
+	s.signalRuntime[session.ID] = session
+	return cloneJSONValue(session), nil
+}
+
+func (s *Store) UpdateSignalRuntimeSession(session domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.TrimSpace(session.Status) == "" {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session status is required")
+	}
+	if _, ok := s.signalRuntime[session.ID]; !ok {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, session.ID)
+	}
+	if _, err := json.Marshal(session.State); err != nil {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("failed to marshal signal runtime session state: %w", err)
+	}
+	session = cloneJSONValue(session)
+	s.signalRuntime[session.ID] = session
+	return cloneJSONValue(session), nil
+}
+
+func (s *Store) DeleteSignalRuntimeSession(sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.signalRuntime[sessionID]; !ok {
+		return fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, sessionID)
+	}
+	delete(s.signalRuntime, sessionID)
+	return nil
 }
 
 func (s *Store) ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error) {

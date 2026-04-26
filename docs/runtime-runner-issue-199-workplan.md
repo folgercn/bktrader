@@ -46,6 +46,13 @@
 
 Issue: [#200](https://github.com/folgercn/bktrader/issues/200)
 
+状态：
+
+- ✅ **PR 已提交（2026-04-26）**：[#220 Persist signal runtime sessions (#200)](https://github.com/folgercn/bktrader/pull/220)
+- ✅ 已完成：`signal_runtime_sessions` migration、store CRUD、memory/postgres 实现、service cache miss → store restore、`syncLiveSessionRuntime` 复用旧 runtime ID。
+- ✅ 已按 review 修正：Create 语义改为真 upsert（同一 account+strategy 保留 runtime identity 但刷新 status/adapter/transport/subscription/state）、Start 使用运行占位避免并发双启动、Delete 改为 DB 删除成功后再取消本地 runner、not-found 改为 typed error。
+- 🟡 待 review/merge：#220 合并后才能开始 #201。
+
 目标：
 
 - 将 `SignalRuntimeSession` identity / state / subscription plan 从 `Platform.signalSessions` 内存 map 中持久化到 store。
@@ -70,7 +77,7 @@ Issue: [#200](https://github.com/folgercn/bktrader/issues/200)
 最低测试：
 
 - memory store runtime session CRUD。
-- postgres store runtime session CRUD。
+- postgres store runtime session CRUD / upsert 语义测试。
 - `syncLiveSessionRuntime` 在内存缓存为空但 store 存在时复用旧 ID。
 - stop/delete 状态持久化正确。
 
@@ -246,4 +253,3 @@ Review / merge 必须串行。后续 step 只能基于已合并的前序 step。
 - 是否影响 final submit payload。
 - 是否影响 reconcile / recovery gate。
 - 是否有 failure path 测试。
-
