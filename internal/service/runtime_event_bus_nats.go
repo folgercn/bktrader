@@ -27,22 +27,8 @@ type NATSRuntimeEventPublisher struct {
 }
 
 func NewNATSRuntimeEventPublisher(natsURL string) (*NATSRuntimeEventPublisher, error) {
-	natsURL = strings.TrimSpace(natsURL)
-	if natsURL == "" {
-		return nil, errors.New("nats url is required")
-	}
-	nc, err := nats.Connect(
-		natsURL,
-		nats.Name("bktrader-runtime-event-publisher"),
-		nats.Timeout(runtimeEventNATSConnectTimeout),
-		nats.MaxReconnects(runtimeEventNATSMaxReconnects),
-	)
+	nc, js, err := newNATSRuntimeEventJetStream(natsURL, "bktrader-runtime-event-publisher")
 	if err != nil {
-		return nil, err
-	}
-	js, err := nc.JetStream()
-	if err != nil {
-		nc.Close()
 		return nil, err
 	}
 	publisher := &NATSRuntimeEventPublisher{nc: nc, js: js}
@@ -51,6 +37,28 @@ func NewNATSRuntimeEventPublisher(natsURL string) (*NATSRuntimeEventPublisher, e
 		return nil, err
 	}
 	return publisher, nil
+}
+
+func newNATSRuntimeEventJetStream(natsURL, name string) (*nats.Conn, nats.JetStreamContext, error) {
+	natsURL = strings.TrimSpace(natsURL)
+	if natsURL == "" {
+		return nil, nil, errors.New("nats url is required")
+	}
+	nc, err := nats.Connect(
+		natsURL,
+		nats.Name(name),
+		nats.Timeout(runtimeEventNATSConnectTimeout),
+		nats.MaxReconnects(runtimeEventNATSMaxReconnects),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	js, err := nc.JetStream()
+	if err != nil {
+		nc.Close()
+		return nil, nil, err
+	}
+	return nc, js, nil
 }
 
 func RuntimeEventStreamConfig() *nats.StreamConfig {

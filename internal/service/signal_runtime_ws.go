@@ -858,6 +858,14 @@ func (p *Platform) shouldThrottleLiveEvaluation(runtimeSessionID string, summary
 }
 
 func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
+	return p.handleSignalRuntimeMessageWithOptions(runtimeSessionID, summary, eventTime, signalRuntimeFanoutOptions{})
+}
+
+type signalRuntimeFanoutOptions struct {
+	returnTriggerErrors bool
+}
+
+func (p *Platform) handleSignalRuntimeMessageWithOptions(runtimeSessionID string, summary map[string]any, eventTime time.Time, options signalRuntimeFanoutOptions) error {
 	if !signalRuntimeSummaryShouldTriggerLiveEvaluation(summary) {
 		return nil
 	}
@@ -917,6 +925,9 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 				"runtime_session_id", runtimeSessionID,
 				"symbol", targetSymbol,
 			).Warn("trigger live session from signal failed", "error", err)
+			if options.returnTriggerErrors {
+				return err
+			}
 		}
 	}
 	return nil
