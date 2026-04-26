@@ -79,6 +79,10 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 	mux.HandleFunc("/api/v1/live/accounts/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/live/accounts/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) >= 2 && parts[1] == "recovery" {
+			handleLiveAccountRecoveryRoute(w, r, platform, parts)
+			return
+		}
 		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "live account route not found")
 			return
