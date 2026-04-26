@@ -71,6 +71,64 @@ func TestScanSignalRuntimeSessionsSkipsLocalRunningSession(t *testing.T) {
 	}
 }
 
+func TestScanSignalRuntimeSessionsSkipsErroredDesiredRunningSession(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	now := time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC)
+	session := mustCreateScannerRuntimeSession(t, platform, domain.SignalRuntimeSession{
+		ID:         "runtime-error",
+		AccountID:  "account-1",
+		StrategyID: "strategy-1",
+		Status:     "ERROR",
+		State: map[string]any{
+			"desiredStatus": "RUNNING",
+			"actualStatus":  "ERROR",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+
+	started := 0
+	platform.scanSignalRuntimeSessions(context.Background(), func(sessionID string) (domain.SignalRuntimeSession, error) {
+		started++
+		return session, nil
+	})
+	if started != 0 {
+		t.Fatalf("expected scanner to leave errored desired-running session stopped for manual restart, got %d starts", started)
+	}
+}
+
+func TestPersistSignalRuntimeStoppedAfterStartCancelClearsDesiredAndActual(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	now := time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC)
+	session := mustCreateScannerRuntimeSession(t, platform, domain.SignalRuntimeSession{
+		ID:         "runtime-cancelled",
+		AccountID:  "account-1",
+		StrategyID: "strategy-1",
+		Status:     "RUNNING",
+		State: map[string]any{
+			"desiredStatus": "RUNNING",
+			"actualStatus":  "STARTING",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+
+	platform.persistSignalRuntimeStoppedAfterStartCancel(session)
+	updated, err := platform.GetSignalRuntimeSession(session.ID)
+	if err != nil {
+		t.Fatalf("get runtime session failed: %v", err)
+	}
+	if updated.Status != "STOPPED" {
+		t.Fatalf("expected status STOPPED after start cancel, got %s", updated.Status)
+	}
+	if got := stringValue(updated.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected desiredStatus STOPPED after start cancel, got %s", got)
+	}
+	if got := stringValue(updated.State["actualStatus"]); got != "STOPPED" {
+		t.Fatalf("expected actualStatus STOPPED after start cancel, got %s", got)
+	}
+}
+
 func mustCreateScannerRuntimeSession(t *testing.T, platform *Platform, session domain.SignalRuntimeSession) domain.SignalRuntimeSession {
 	t.Helper()
 	created, err := platform.store.CreateSignalRuntimeSession(session)

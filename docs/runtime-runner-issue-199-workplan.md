@@ -173,8 +173,8 @@ Issue: [#203](https://github.com/folgercn/bktrader/issues/203)
 状态：
 
 - 🟡 **进行中（2026-04-26）**：分支 `codex/issue-203-signal-runtime-runner`，复用 worktree `/Users/fujun/node/bktrader-issue-202`。
-- ✅ 已完成：新增 `BKTRADER_ROLE=signal-runtime-runner` 校验、`platform-worker` role 支持、runtime option 映射、signal runtime scanner、`desiredStatus` / `actualStatus` 轻量状态标记。
-- ✅ 已覆盖测试：role option mapping、`signal-runtime-runner` 不启动 live recovery/sync/consumer、`live-runner` 不启动 WS scanner/market warmup、config validation、`RuntimeActionsEnabled=false`、scanner 只启动 desired running session。
+- ✅ 已完成：新增 `BKTRADER_ROLE=signal-runtime-runner` 校验、`platform-worker` role 支持、runtime option 映射、signal runtime scanner、`desiredStatus` / `actualStatus` 轻量状态标记、ERROR 会话自动重启熔断。
+- ✅ 已覆盖测试：role option mapping、`signal-runtime-runner` 不启动 live recovery/sync/consumer、`live-runner` 不启动 WS scanner/market warmup、config validation、`RuntimeActionsEnabled=false`、scanner 只启动 desired running session、scanner 不重启 ERROR 会话、start cancel 清理 desired/actual。
 - 🟡 待 review：本 PR 不改 deployments / compose；Step 5 lease 前仍要求单实例部署 `signal-runtime-runner`。
 
 目标：

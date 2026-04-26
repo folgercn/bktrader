@@ -56,6 +56,9 @@ func (p *Platform) scanSignalRuntimeSessions(ctx context.Context, starter signal
 }
 
 func signalRuntimeSessionDesiredRunning(session domain.SignalRuntimeSession) bool {
+	if session.Status == "ERROR" || stringValue(session.State["actualStatus"]) == "ERROR" {
+		return false
+	}
 	desired := stringValue(session.State["desiredStatus"])
 	if desired != "" {
 		return desired == "RUNNING"
