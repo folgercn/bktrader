@@ -42,12 +42,12 @@ func trimStateList(value any, limit int) any {
 	switch items := value.(type) {
 	case []any:
 		if len(items) <= limit {
-			return items
+			return append([]any(nil), items...)
 		}
 		return append([]any(nil), items[len(items)-limit:]...)
 	case []map[string]any:
 		if len(items) <= limit {
-			return items
+			return append([]map[string]any(nil), items...)
 		}
 		return append([]map[string]any(nil), items[len(items)-limit:]...)
 	default:

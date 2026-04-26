@@ -97,4 +97,33 @@ func TestStripHeavyState(t *testing.T) {
 			t.Fatalf("expected original slices to stay unchanged, got timeline=%d breakoutHistory=%d", len(timeline), len(breakoutHistory))
 		}
 	})
+
+	t.Run("copies untrimmed slices", func(t *testing.T) {
+		timeline := []any{
+			map[string]any{"idx": 1},
+			map[string]any{"idx": 2},
+		}
+		breakoutHistory := []map[string]any{
+			{"idx": 1},
+			{"idx": 2},
+		}
+		input := map[string]any{
+			"timeline":        timeline,
+			"breakoutHistory": breakoutHistory,
+		}
+
+		got := stripHeavyState(input)
+
+		gotTimeline := got["timeline"].([]any)
+		gotTimeline[0] = map[string]any{"idx": "changed"}
+		if first := timeline[0].(map[string]any)["idx"]; first != 1 {
+			t.Fatalf("expected original timeline backing array to stay unchanged, got %v", first)
+		}
+
+		gotBreakoutHistory := got["breakoutHistory"].([]map[string]any)
+		gotBreakoutHistory[0] = map[string]any{"idx": "changed"}
+		if first := breakoutHistory[0]["idx"]; first != 1 {
+			t.Fatalf("expected original breakoutHistory backing array to stay unchanged, got %v", first)
+		}
+	})
 }
