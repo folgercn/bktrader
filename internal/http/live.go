@@ -265,6 +265,27 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/live/sessions/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
 		if r.Method == http.MethodGet {
+			if len(parts) == 2 && parts[0] != "" && parts[1] == "detail" {
+				item, err := platform.GetLiveSession(parts[0])
+				if err != nil {
+					writeError(w, http.StatusNotFound, err.Error())
+					return
+				}
+				fields, fieldErr := parseLiveSessionDetailFields(r.URL.Query().Get("fields"))
+				if fieldErr != "" {
+					writeError(w, http.StatusBadRequest, fieldErr)
+					return
+				}
+				filtered := make(map[string]any, len(fields))
+				for _, field := range fields {
+					if value, ok := item.State[field]; ok {
+						filtered[field] = value
+					}
+				}
+				item.State = filtered
+				writeJSON(w, http.StatusOK, item)
+				return
+			}
 			if len(parts) == 2 && parts[0] != "" && parts[1] == "trade-pairs" {
 				limit, err := parseOptionalPositiveInt(r.URL.Query().Get("limit"))
 				if err != nil {
@@ -700,4 +721,39 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 			writeError(w, http.StatusNotFound, "unsupported live session action")
 		}
 	})
+}
+
+var allowedLiveSessionDetailFields = map[string]struct{}{
+	"timeline":                              {},
+	"breakoutHistory":                       {},
+	"lastStrategyEvaluationSignalBarStates": {},
+	"lastStrategyEvaluationSourceStates":    {},
+	"signalRuntimePlan":                     {},
+	"lastStrategyDecision":                  {},
+	"lastDispatchedIntent":                  {},
+	"lastExecutionDispatch":                 {},
+	"lastExecutionTelemetry":                {},
+}
+
+func parseLiveSessionDetailFields(raw string) ([]string, string) {
+	seen := make(map[string]struct{})
+	fields := make([]string, 0)
+	for _, item := range strings.Split(raw, ",") {
+		field := strings.TrimSpace(item)
+		if field == "" {
+			continue
+		}
+		if _, ok := allowedLiveSessionDetailFields[field]; !ok {
+			return nil, "unsupported live session detail field: " + field
+		}
+		if _, ok := seen[field]; ok {
+			continue
+		}
+		seen[field] = struct{}{}
+		fields = append(fields, field)
+	}
+	if len(fields) == 0 {
+		return nil, "live session detail fields are required"
+	}
+	return fields, ""
 }

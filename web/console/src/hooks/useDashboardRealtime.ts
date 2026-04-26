@@ -8,6 +8,7 @@ import {
   PlatformNotification, PlatformHealthSnapshot
 } from '../types/domain';
 import { useDashboardStream } from './useDashboardStream';
+import { mergeLiveSessionSnapshot } from '../utils/liveSessionDetail';
 
 const DEFAULT_REALTIME_POLL_MS = 5000;
 const MIN_REALTIME_POLL_MS = 1000;
@@ -65,7 +66,7 @@ export function useDashboardRealtime() {
     const normalizedAlerts = Array.isArray(alertData) ? alertData : [];
     const normalizedNotifications = Array.isArray(notificationData) ? notificationData : [];
 
-    setLiveSessions(normalizedLiveSessions);
+    setLiveSessions((current) => mergeLiveSessionSnapshot(current, normalizedLiveSessions));
     setPositions(normalizedPositions);
     setOrders(normalizedOrders);
     setFills(normalizedFills);

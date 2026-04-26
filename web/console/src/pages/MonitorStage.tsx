@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { SignalMonitorChart } from '../components/charts/SignalMonitorChart';
@@ -30,6 +30,7 @@ import {
   technicalStatusLabel
 } from '../utils/derivation';
 import { fetchJSON } from '../utils/api';
+import { hasLiveSessionDetailFields, mergeLiveSessionDetail } from '../utils/liveSessionDetail';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '../components/ui/table';
@@ -43,11 +44,16 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
 import { cn } from '../lib/utils';
-import type { ChartCandle, SignalBarCandle } from '../types/domain';
+import type { ChartCandle, LiveSession, SignalBarCandle } from '../types/domain';
 
 const MONITOR_HISTORY_CANDLE_LIMIT = 240;
 const MONITOR_CANDLE_EDGE_THRESHOLD = 24;
 const MONITOR_CANDLE_CACHE_LIMIT = 1500;
+const MONITOR_LIVE_SESSION_DETAIL_FIELDS = [
+  "timeline",
+  "breakoutHistory",
+  "lastStrategyEvaluationSignalBarStates",
+];
 
 function resolveMonitorFallbackResolution(timeframe: string) {
   const normalized = String(timeframe ?? "").trim().toLowerCase();
@@ -135,6 +141,7 @@ type MonitorStageProps = {
 
 export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockContent }: MonitorStageProps) {
   const liveSessions = useTradingStore(s => s.liveSessions);
+  const setLiveSessions = useTradingStore(s => s.setLiveSessions);
   const orders = useTradingStore(s => s.orders);
   const fills = useTradingStore(s => s.fills);
   const positions = useTradingStore(s => s.positions);
@@ -155,6 +162,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const setTimelineConfig = useUIStore(s => s.setTimelineConfig);
   const fallbackRequestKeyRef = useRef<string>("");
   const candleExpansionRequestKeyRef = useRef<string>("");
+  const [liveSessionDetailStatus, setLiveSessionDetailStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
 
 
   // 1. 高亮会话选择逻辑
@@ -217,6 +225,42 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorExecutionSummary = highlightedLiveSession?.execution ?? derivePaperSessionExecutionSummary(null, orders, fills, positions);
   const monitorRuntimeState = highlightedLiveSession?.session ? highlightedLiveRuntimeState : {};
   const monitorSessionState = getRecord(monitorSession?.state);
+
+  useEffect(() => {
+    if (!monitorSession?.id) {
+      setLiveSessionDetailStatus("idle");
+      return;
+    }
+    if (hasLiveSessionDetailFields(monitorSession, MONITOR_LIVE_SESSION_DETAIL_FIELDS)) {
+      setLiveSessionDetailStatus("loaded");
+      return;
+    }
+
+    let active = true;
+    setLiveSessionDetailStatus("loading");
+    fetchJSON<LiveSession>(
+      `/api/v1/live/sessions/${encodeURIComponent(monitorSession.id)}/detail?fields=${MONITOR_LIVE_SESSION_DETAIL_FIELDS.map(encodeURIComponent).join(",")}`
+    )
+      .then((detail) => {
+        if (!active) {
+          return;
+        }
+        setLiveSessions((current) => mergeLiveSessionDetail(current, detail, MONITOR_LIVE_SESSION_DETAIL_FIELDS));
+        setLiveSessionDetailStatus("loaded");
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+        console.warn("Failed to load live session detail", error);
+        setLiveSessionDetailStatus("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [monitorSession, setLiveSessions]);
+
   const sessionSymbol = String(monitorSession?.state?.symbol ?? "").trim().toUpperCase();
   const monitorSignalContext = getRecord(monitorSessionState.lastStrategyEvaluationContext);
   const monitorDecisionMeta = getRecord(getRecord(monitorSession?.state?.lastStrategyDecision).metadata);
@@ -819,7 +863,11 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
                     </PopoverContent>
                   </Popover>
                   <div className="rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface)] px-2 py-1 font-mono text-[9px] font-black uppercase shadow-sm text-[var(--bk-text-muted)]">
-                    AUTO_SCROLL_MONITOR
+                    {liveSessionDetailStatus === "loading"
+                      ? "DETAIL_LOADING"
+                      : liveSessionDetailStatus === "error"
+                        ? "DETAIL_ERROR"
+                        : "AUTO_SCROLL_MONITOR"}
                   </div>
                 </div>
              </div>

@@ -1,8 +1,10 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useTradingStore } from '../store/useTradingStore';
 import { useUIStore } from '../store/useUIStore';
 import { formatFullLogTime, shrink } from '../utils/format';
 import { getList } from '../utils/derivation';
+import { fetchJSON } from '../utils/api';
+import { hasLiveSessionDetailFields, mergeLiveSessionDetail } from '../utils/liveSessionDetail';
 import { 
   Terminal, 
   AlertCircle, 
@@ -30,9 +32,11 @@ import {
   SelectValue 
 } from '../components/ui/select';
 import { Separator } from '../components/ui/separator';
+import type { LiveSession } from '../types/domain';
 
 type LogSource = "alert" | "notification" | "timeline" | "system";
 type LogLevel = "critical" | "warning" | "info" | "debug";
+const LOG_LIVE_SESSION_DETAIL_FIELDS = ["timeline"];
 
 interface ConsoleLogEvent {
   id: string;
@@ -53,8 +57,55 @@ export function LogStage() {
   const alerts = useTradingStore(s => s.alerts);
   const notifications = useTradingStore(s => s.notifications);
   const liveSessions = useTradingStore(s => s.liveSessions);
+  const setLiveSessions = useTradingStore(s => s.setLiveSessions);
   const signalRuntimeSessions = useTradingStore(s => s.signalRuntimeSessions);
   const systemLogs = useUIStore(s => s.systemLogs);
+  const detailRequestsRef = useRef<Set<string>>(new Set());
+  const [timelineDetailStatus, setTimelineDetailStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+
+  useEffect(() => {
+    if (logType !== "all" && logType !== "timeline") {
+      setTimelineDetailStatus("idle");
+      return;
+    }
+    const missing = liveSessions.filter(
+      (session) =>
+        !hasLiveSessionDetailFields(session, LOG_LIVE_SESSION_DETAIL_FIELDS) &&
+        !detailRequestsRef.current.has(session.id)
+    );
+    if (missing.length === 0) {
+      setTimelineDetailStatus(liveSessions.length > 0 ? "loaded" : "idle");
+      return;
+    }
+
+    let active = true;
+    setTimelineDetailStatus("loading");
+    for (const session of missing) {
+      detailRequestsRef.current.add(session.id);
+      fetchJSON<LiveSession>(
+        `/api/v1/live/sessions/${encodeURIComponent(session.id)}/detail?fields=${LOG_LIVE_SESSION_DETAIL_FIELDS.map(encodeURIComponent).join(",")}`
+      )
+        .then((detail) => {
+          if (!active) {
+            return;
+          }
+          setLiveSessions((current) => mergeLiveSessionDetail(current, detail, LOG_LIVE_SESSION_DETAIL_FIELDS));
+          setTimelineDetailStatus("loaded");
+        })
+        .catch((error) => {
+          detailRequestsRef.current.delete(session.id);
+          if (!active) {
+            return;
+          }
+          console.warn("Failed to load live session timeline detail", error);
+          setTimelineDetailStatus("error");
+        });
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [liveSessions, logType, setLiveSessions]);
 
   const processedEvents = useMemo(() => {
     const events: ConsoleLogEvent[] = [];
@@ -214,6 +265,11 @@ export function LogStage() {
             {autoRefresh ? <Pause size={12} /> : <Play size={12} />}
             {autoRefresh ? '自动刷新' : '已暂停'}
           </Button>
+          {(logType === "all" || logType === "timeline") && timelineDetailStatus !== "idle" ? (
+            <Badge variant={timelineDetailStatus === "error" ? "destructive" : "neutral"} className="h-8 px-3 text-[10px] font-black uppercase">
+              {timelineDetailStatus === "loading" ? "Timeline Loading" : timelineDetailStatus === "error" ? "Timeline Error" : "Timeline Ready"}
+            </Badge>
+          ) : null}
           
           <Button
              variant="bento-ghost"

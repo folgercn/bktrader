@@ -68,6 +68,63 @@ func TestLiveSessionRuntimeActionsDisabledForAPIRole(t *testing.T) {
 	}
 }
 
+func TestLiveSessionDetailRouteFiltersStateFields(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+	if _, err := store.UpdateLiveSessionState("live-session-main", map[string]any{
+		"timeline":                             []any{map[string]any{"title": "first"}},
+		"breakoutHistory":                      []any{map[string]any{"side": "BUY"}},
+		"lastStrategyEvaluationSourceStates":   map[string]any{"heavy": true},
+		"lastStrategyEvaluationSignalBarState": "keep-out",
+	}); err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "monolith"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/live/sessions/live-session-main/detail?fields=timeline,breakoutHistory,timeline", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for detail route, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var detail domain.LiveSession
+	if err := json.NewDecoder(rec.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode live session detail failed: %v", err)
+	}
+	if detail.ID != "live-session-main" {
+		t.Fatalf("expected live-session-main, got %s", detail.ID)
+	}
+	if _, ok := detail.State["timeline"]; !ok {
+		t.Fatalf("expected timeline in filtered state, got %#v", detail.State)
+	}
+	if _, ok := detail.State["breakoutHistory"]; !ok {
+		t.Fatalf("expected breakoutHistory in filtered state, got %#v", detail.State)
+	}
+	if _, ok := detail.State["lastStrategyEvaluationSourceStates"]; ok {
+		t.Fatalf("did not expect unrequested source states, got %#v", detail.State)
+	}
+	if len(detail.State) != 2 {
+		t.Fatalf("expected only 2 requested fields, got %#v", detail.State)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/live/sessions/live-session-main/detail", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when fields are missing, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/live/sessions/live-session-main/detail?fields=sourceStates", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unsupported detail field, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLiveAccountStopRouteStopsRunningFlow(t *testing.T) {
 	store := memory.NewStore()
 	platform := service.NewPlatform(store)
