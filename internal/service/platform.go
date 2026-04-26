@@ -42,6 +42,8 @@ type Platform struct {
 	liveAccountOpMu        sync.Map // accountID -> *sync.Mutex
 	liveAccountSyncState   sync.Map // accountID -> *liveAccountSyncState
 	runtimeSourceGateState sync.Map // runtimeSessionID -> last blocked source gate signature
+	runtimeEventPublisher  RuntimeEventPublisher
+	runtimeEventThrottle   sync.Map // runtimeSessionID|symbol|streamType -> *runtimeEventPublishThrottleState
 	manifestMu             sync.Mutex
 	once                   sync.Once             // 确保 CSV ledger 只加载一次
 	ledger                 []strategyReplayEvent // 缓存的策略回放账本
@@ -90,19 +92,20 @@ type RuntimePolicy struct {
 // NewPlatform 创建并初始化平台服务实例。
 func NewPlatform(store store.Repository) *Platform {
 	platform := &Platform{
-		store:               store,
-		run:                 make(map[string]context.CancelFunc),
-		signalRun:           make(map[string]*signalRuntimeRun),
-		paperPlans:          make(map[string][]paperPlannedOrder),
-		livePlans:           make(map[string][]paperPlannedOrder),
-		strategyEngines:     make(map[string]StrategyEngine),
-		liveAdapters:        make(map[string]LiveExecutionAdapter),
-		signalSources:       make(map[string]SignalSourceProvider),
-		signalAdapters:      make(map[string]SignalRuntimeAdapter),
-		executionStrategies: make(map[string]ExecutionStrategy),
-		signalSessions:      make(map[string]domain.SignalRuntimeSession),
-		liveMarketData:      make(map[string]liveMarketSnapshot),
-		logBroker:           logging.NewBroker(),
+		store:                 store,
+		run:                   make(map[string]context.CancelFunc),
+		signalRun:             make(map[string]*signalRuntimeRun),
+		paperPlans:            make(map[string][]paperPlannedOrder),
+		livePlans:             make(map[string][]paperPlannedOrder),
+		strategyEngines:       make(map[string]StrategyEngine),
+		liveAdapters:          make(map[string]LiveExecutionAdapter),
+		signalSources:         make(map[string]SignalSourceProvider),
+		signalAdapters:        make(map[string]SignalRuntimeAdapter),
+		executionStrategies:   make(map[string]ExecutionStrategy),
+		signalSessions:        make(map[string]domain.SignalRuntimeSession),
+		runtimeEventPublisher: NoopRuntimeEventPublisher{},
+		liveMarketData:        make(map[string]liveMarketSnapshot),
+		logBroker:             logging.NewBroker(),
 		telegramConfig: domain.TelegramConfig{
 			SendLevels:                    []string{"critical", "warning"},
 			TradeEventsEnabled:            true,

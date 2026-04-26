@@ -450,6 +450,7 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		session.UpdatedAt = time.Now().UTC()
 	})
 	p.clearTickEvalThrottleSession(sessionID)
+	p.clearRuntimeEventPublishThrottleSession(sessionID)
 }
 
 func (p *Platform) setSessionStopped(sessionID string) {
@@ -473,6 +474,7 @@ func (p *Platform) setSessionStopped(sessionID string) {
 		session.UpdatedAt = time.Now().UTC()
 	})
 	p.clearTickEvalThrottleSession(sessionID)
+	p.clearRuntimeEventPublishThrottleSession(sessionID)
 }
 
 func configuredBinanceFuturesWSURL() string {
@@ -659,6 +661,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 				session.State = state
 				session.UpdatedAt = now
 			})
+			p.publishRuntimeSignalEvent(session, summary, now)
 			if err := p.handleSignalRuntimeMessage(session.ID, summary, now); err != nil {
 				p.logger("service.signal_runtime",
 					"session_id", session.ID,

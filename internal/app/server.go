@@ -100,6 +100,18 @@ func NewPlatform(cfg config.Config) (*service.Platform, error) {
 		ChatID:     cfg.TelegramChatID,
 		SendLevels: strings.Split(cfg.TelegramSendLevels, ","),
 	})
+	if strings.EqualFold(strings.TrimSpace(cfg.RuntimeEventBus), "nats") {
+		publisher, err := service.NewNATSRuntimeEventPublisher(cfg.NATSURL)
+		if err != nil {
+			logger.Warn("runtime event bus unavailable; continuing without JetStream publish", "error", err)
+		} else {
+			platform.SetRuntimeEventPublisher(publisher)
+			logger.Info("runtime event bus publisher configured",
+				"stream", service.RuntimeEventStreamName,
+				"subject_pattern", service.RuntimeEventSubjectPattern,
+			)
+		}
+	}
 	if err := platform.LoadPersistedRuntimePolicy(); err != nil {
 		logger.Error("load persisted runtime policy failed", "error", err)
 		return nil, err

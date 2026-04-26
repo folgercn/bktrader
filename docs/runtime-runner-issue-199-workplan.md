@@ -85,6 +85,13 @@ Issue: [#200](https://github.com/folgercn/bktrader/issues/200)
 
 Issue: [#201](https://github.com/folgercn/bktrader/issues/201)
 
+状态：
+
+- 🟡 **进行中（2026-04-26）**：已新开分支 `codex/issue-201-runtime-event-bus`。
+- ✅ 已完成：runtime event envelope、stable `id` / `fingerprint`、in-memory fake publisher、NATS JetStream publisher、`BKT_RUNTIME_EVENTS` stream/subject 配置、WebSocket 路径 side-publish、publish 失败日志/状态记录、tick event 每 symbol 每秒节流。
+- ✅ 已覆盖测试：envelope 字段完整、signal bar fingerprint 不含 receive/create time、duplicate idempotency、stream/subject 配置、publish 失败不阻塞并记录状态。
+- 🟡 待 review：本 PR 不改 deployments；`RUNTIME_EVENT_BUS` 默认 `nats`，NATS 不可用时自动降级为 noop，显式设置 `disabled` 可关闭 side-publish。
+
 目标：
 
 - 增加 runtime event bus interface。
