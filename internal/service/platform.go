@@ -43,6 +43,7 @@ type Platform struct {
 	liveAccountSyncState   sync.Map // accountID -> *liveAccountSyncState
 	runtimeSourceGateState sync.Map // runtimeSessionID -> last blocked source gate signature
 	runtimeEventPublisher  RuntimeEventPublisher
+	runtimeEventConsumerOn bool
 	runtimeEventThrottle   sync.Map // runtimeSessionID|symbol|streamType -> *runtimeEventPublishThrottleState
 	manifestMu             sync.Mutex
 	once                   sync.Once             // 确保 CSV ledger 只加载一次

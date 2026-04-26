@@ -662,7 +662,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 				session.UpdatedAt = now
 			})
 			p.publishRuntimeSignalEvent(session, summary, now)
-			if err := p.handleSignalRuntimeMessage(session.ID, summary, now); err != nil {
+			if err := p.handleSignalRuntimeMessageFromWebsocket(session.ID, summary, now); err != nil {
 				p.logger("service.signal_runtime",
 					"session_id", session.ID,
 					"symbol", signalRuntimeSummarySymbol(summary),

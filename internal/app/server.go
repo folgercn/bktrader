@@ -165,6 +165,7 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 			logger.Warn("runtime event consumer failed to start", "error", err)
 			return
 		}
+		platform.SetRuntimeEventConsumerEnabled(true)
 	}
 }
 

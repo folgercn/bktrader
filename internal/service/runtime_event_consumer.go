@@ -22,6 +22,18 @@ func (p *Platform) HandleRuntimeEventMessage(ctx context.Context, msg RuntimeEve
 	return p.handleRuntimeEventMessage(ctx, msg, time.Now().UTC())
 }
 
+func (p *Platform) SetRuntimeEventConsumerEnabled(enabled bool) {
+	p.mu.Lock()
+	p.runtimeEventConsumerOn = enabled
+	p.mu.Unlock()
+}
+
+func (p *Platform) RuntimeEventConsumerEnabled() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.runtimeEventConsumerOn
+}
+
 func (p *Platform) handleRuntimeEventMessage(ctx context.Context, msg RuntimeEventMessage, now time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -110,4 +122,11 @@ func (p *Platform) handleSignalRuntimeMessageForConsumer(runtimeSessionID string
 	return p.handleSignalRuntimeMessageWithOptions(runtimeSessionID, summary, eventTime, signalRuntimeFanoutOptions{
 		returnTriggerErrors: true,
 	})
+}
+
+func (p *Platform) handleSignalRuntimeMessageFromWebsocket(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
+	if p.RuntimeEventConsumerEnabled() {
+		return nil
+	}
+	return p.handleSignalRuntimeMessage(runtimeSessionID, summary, eventTime)
 }

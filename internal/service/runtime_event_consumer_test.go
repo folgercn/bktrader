@@ -91,6 +91,44 @@ func TestHandleRuntimeEventMessageDuplicateIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestWebsocketFanoutSkipsDirectEvaluationWhenConsumerEnabled(t *testing.T) {
+	platform, session, runtimeSessionID, summary, eventTime := prepareLiveDecisionTelemetryFixture(t)
+	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
+		t.Fatalf("mark live session running failed: %v", err)
+	}
+	platform.SetRuntimeEventConsumerEnabled(true)
+
+	if err := platform.handleSignalRuntimeMessageFromWebsocket(runtimeSessionID, summary, eventTime); err != nil {
+		t.Fatalf("websocket fanout gate failed: %v", err)
+	}
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session after websocket path failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSignalRuntimeEventAt"]); got != "" {
+		t.Fatalf("expected consumer-enabled websocket path to skip direct evaluation, got lastSignalRuntimeEventAt=%s", got)
+	}
+
+	ack := &testRuntimeEventAck{}
+	if err := platform.handleRuntimeEventMessage(context.Background(), RuntimeEventMessage{
+		Event: testLiveRuntimeEvent(runtimeSessionID, summary, eventTime),
+		Ack:   ack.Ack,
+		Nak:   ack.Nak,
+	}, eventTime.Add(time.Second)); err != nil {
+		t.Fatalf("consumer event handling failed: %v", err)
+	}
+	if ack.ackCount != 1 || ack.nakCount != 0 {
+		t.Fatalf("expected consumer event to ack once and never nak, got ack=%d nak=%d", ack.ackCount, ack.nakCount)
+	}
+	events, err := platform.store.ListStrategyDecisionEvents(session.ID)
+	if err != nil {
+		t.Fatalf("list decision events failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected only consumer path to create one decision event, got %d", len(events))
+	}
+}
+
 func TestHandleRuntimeEventMessageStaleEventAcksWithoutEvaluation(t *testing.T) {
 	platform, session, runtimeSessionID, summary, eventTime := prepareLiveDecisionTelemetryFixture(t)
 	if _, err := platform.store.UpdateLiveSessionStatus(session.ID, "RUNNING"); err != nil {
