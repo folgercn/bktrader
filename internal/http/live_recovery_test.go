@@ -11,9 +11,31 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
 
-func TestNewRouterWithLiveRecoveryDoesNotPanic(t *testing.T) {
+func TestNewRouterRegistersCoreRoutesWithoutPanic(t *testing.T) {
 	platform := service.NewPlatform(memory.NewStore())
-	_ = NewRouter(config.Config{AppName: "test", Environment: "test"}, platform)
+	router := NewRouter(config.Config{AppName: "test", Environment: "test"}, platform)
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantStatus int
+	}{
+		{name: "healthz", method: http.MethodGet, path: "/healthz", wantStatus: http.StatusOK},
+		{name: "overview", method: http.MethodGet, path: "/api/v1/overview", wantStatus: http.StatusOK},
+		{name: "live account positions", method: http.MethodGet, path: "/api/v1/live/accounts/live-main/positions", wantStatus: http.StatusOK},
+		{name: "live recovery diagnose missing account", method: http.MethodGet, path: "/api/v1/live/accounts/missing-account/recovery/diagnose?symbol=BTCUSDT", wantStatus: http.StatusNotFound},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			rr := httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+			if rr.Code != tc.wantStatus {
+				t.Fatalf("expected status %d, got %d: %s", tc.wantStatus, rr.Code, rr.Body.String())
+			}
+		})
+	}
 }
 
 func TestLiveRecoveryRoutes(t *testing.T) {
@@ -32,14 +54,13 @@ func TestLiveRecoveryRoutes(t *testing.T) {
 		}
 	})
 
-	// 2. GET diagnose 正常 (虽然因为没数据会报 500/error，但路由应该通)
+	// 2. GET diagnose 正常处理缺失 account，不应冒泡为 500
 	t.Run("GET diagnose route", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/v1/live/accounts/acc1/recovery/diagnose?symbol=BTCUSDT", nil)
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
-		// 应该因为找不到 account 而报错 500 (目前的逻辑)
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected 500 (account not found), got %d", rr.Code)
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 (account not found), got %d", rr.Code)
 		}
 	})
 
