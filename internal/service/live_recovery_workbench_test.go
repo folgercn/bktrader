@@ -3,9 +3,10 @@ package service
 import (
 	"testing"
 )
+
 func TestClassifyRecoveryMismatches(t *testing.T) {
 	p := &Platform{}
-	
+
 	// Scenario 1: Stale Position
 	dbFact := LiveRecoveryFact{
 		Position: map[string]any{"side": "LONG", "quantity": 0.1},
@@ -13,14 +14,14 @@ func TestClassifyRecoveryMismatches(t *testing.T) {
 	exFact := LiveRecoveryFact{
 		Position: map[string]any{"side": "BOTH", "quantity": 0.0},
 	}
-	
+
 	mismatches := p.classifyRecoveryMismatches(dbFact, exFact)
 	if len(mismatches) != 1 {
 		t.Errorf("expected 1 mismatch, got %d", len(mismatches))
 	} else if mismatches[0].Scenario != "exchange-flat-db-position-present" {
 		t.Errorf("expected scenario exchange-flat-db-position-present, got %s", mismatches[0].Scenario)
 	}
-	
+
 	// Scenario 2: Missing Position
 	dbFact2 := LiveRecoveryFact{
 		Position: map[string]any{"side": "BOTH", "quantity": 0.0},

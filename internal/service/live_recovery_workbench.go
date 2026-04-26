@@ -342,7 +342,7 @@ func (p *Platform) generateRecoveryActions(account domain.Account, symbol string
 			break
 		}
 	}
-	
+
 	clearAllowed := hasStale
 	clearBlockedBy := ""
 	if clearAllowed {
