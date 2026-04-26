@@ -266,6 +266,8 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 	}
 	state["sourceStates"] = sourceStates
 	state["signalBarStates"] = deriveSignalBarStates(sourceStates)
+	state["desiredStatus"] = "RUNNING"
+	state["actualStatus"] = "STARTING"
 	session.RuntimeAdapter = adapterKey
 	session.Transport = inferSignalRuntimeTransport(subscriptions)
 	session.SubscriptionCnt = len(subscriptions)
@@ -344,6 +346,8 @@ func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force boo
 	now := time.Now().UTC()
 	state := cloneMetadata(session.State)
 	state["health"] = "stopped"
+	state["desiredStatus"] = "STOPPED"
+	state["actualStatus"] = "STOPPED"
 	state["stoppedAt"] = now.Format(time.RFC3339)
 	state["lastHeartbeatAt"] = now.Format(time.RFC3339)
 	state["lastEventAt"] = now.Format(time.RFC3339)
@@ -537,6 +541,8 @@ func (p *Platform) persistSignalRuntimeStoppedAfterStartCancel(session domain.Si
 	now := time.Now().UTC()
 	state := cloneMetadata(session.State)
 	state["health"] = "stopped"
+	state["desiredStatus"] = "STOPPED"
+	state["actualStatus"] = "STOPPED"
 	state["stoppedAt"] = now.Format(time.RFC3339)
 	state["lastHeartbeatAt"] = now.Format(time.RFC3339)
 	state["lastEventAt"] = now.Format(time.RFC3339)

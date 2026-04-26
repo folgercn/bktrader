@@ -88,10 +88,10 @@ Issue: [#201](https://github.com/folgercn/bktrader/issues/201)
 
 状态：
 
-- 🟡 **进行中（2026-04-26）**：已新开分支 `codex/issue-201-runtime-event-bus`。
+- ✅ **PR 已合并（2026-04-26）**：[#221 Add runtime event bus publisher (#201)](https://github.com/folgercn/bktrader/pull/221)。
 - ✅ 已完成：runtime event envelope、stable `id` / `fingerprint`、in-memory fake publisher、NATS JetStream publisher、`BKT_RUNTIME_EVENTS` stream/subject 配置（`LimitsPolicy` 广播/日志流语义）、WebSocket 路径 side-publish、publish 失败日志/状态记录、tick event 每 symbol 每秒节流。
 - ✅ 已覆盖测试：envelope 字段完整、signal bar fingerprint 不含 receive/create time、duplicate idempotency、stream/subject 配置、publish 失败不阻塞并记录状态。
-- 🟡 待 review：本 PR 不改 deployments；`RUNTIME_EVENT_BUS` 默认 `nats`，NATS 不可用时自动降级为 noop，显式设置 `disabled` 可关闭 side-publish。
+- ✅ 已 review：本 PR 不改 deployments；`RUNTIME_EVENT_BUS` 默认 `nats`，NATS 不可用时自动降级为 noop，显式设置 `disabled` 可关闭 side-publish。
 
 目标：
 
@@ -131,10 +131,10 @@ Issue: [#202](https://github.com/folgercn/bktrader/issues/202)
 
 状态：
 
-- 🟡 **进行中（2026-04-26）**：已新开 worktree `/Users/fujun/node/bktrader-issue-202`，分支 `codex/issue-202-live-runner-jetstream-consumer`。
+- ✅ **PR 已合并（2026-04-26）**：[#222 Consume runtime events for live evaluation (#202)](https://github.com/folgercn/bktrader/pull/222)。
 - ✅ 已完成：`SignalRuntimeEventConsumer` handler、NATS pull durable consumer `live-evaluation`、success ack / failure nak、stale event drop、live-runner / monolith 启动 consumer、consumer 启用后关闭 WS direct live evaluation、复用现有 live evaluation fanout。
 - ✅ 已覆盖测试：consumer config、event 触发 live evaluation happy path、duplicate delivery 幂等、WS direct + consumer 双入口防护、stale event ack/drop、failure 不 ack。
-- 🟡 待 review：本 PR 不改 dispatch/reconcile/recovery gate，不新增独立 `signal-runtime-runner`，不改 deployments。
+- ✅ 已 review：本 PR 不改 dispatch/reconcile/recovery gate，不新增独立 `signal-runtime-runner`，不改 deployments。
 
 目标：
 
@@ -169,6 +169,13 @@ Issue: [#202](https://github.com/folgercn/bktrader/issues/202)
 ### Step 4: #203 新增独立 signal-runtime-runner 进程
 
 Issue: [#203](https://github.com/folgercn/bktrader/issues/203)
+
+状态：
+
+- 🟡 **进行中（2026-04-26）**：分支 `codex/issue-203-signal-runtime-runner`，复用 worktree `/Users/fujun/node/bktrader-issue-202`。
+- ✅ 已完成：新增 `BKTRADER_ROLE=signal-runtime-runner` 校验、`platform-worker` role 支持、runtime option 映射、signal runtime scanner、`desiredStatus` / `actualStatus` 轻量状态标记、ERROR 会话自动重启熔断。
+- ✅ 已覆盖测试：role option mapping、`signal-runtime-runner` 不启动 live recovery/sync/consumer、`live-runner` 不启动 WS scanner/market warmup、config validation、`RuntimeActionsEnabled=false`、scanner 只启动 desired running session、scanner 不重启 ERROR 会话、start cancel 清理 desired/actual。
+- 🟡 待 review：本 PR 不改 deployments / compose；Step 5 lease 前仍要求单实例部署 `signal-runtime-runner`。
 
 目标：
 
