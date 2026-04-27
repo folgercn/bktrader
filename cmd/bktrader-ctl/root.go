@@ -38,7 +38,7 @@ var rootCmd = &cobra.Command{
 
 // Execute 执行根命令
 func Execute() {
-	// 只有非 gendocs 且非 update 命令时才尝试静默更新
+	// 静默更新检查失败不阻塞主命令执行。
 	go SilentUpdateCheck()
 
 	if err := rootCmd.Execute(); err != nil {

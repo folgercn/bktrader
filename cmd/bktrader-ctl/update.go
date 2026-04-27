@@ -35,48 +35,27 @@ func SilentUpdateCheck() {
 		if time.Since(config.LastUpdateCheck) < checkInterval {
 			return
 		}
+	} else {
+		config = &ctlclient.Config{}
 	}
 
-	// 并发锁：防止多个命令同时触发更新导致文件冲突。
-	// 这里使用 os.TempDir() 是跨进程运行时锁，不是仓库内开发临时文件。
-	lockPath := filepath.Join(os.TempDir(), "bktrader-ctl-update.lock")
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		// 如果锁文件已存在且未超过 5 分钟，说明已有更新在运行
-		if info, err := os.Stat(lockPath); err == nil && time.Since(info.ModTime()) < 5*time.Minute {
-			return
-		}
-		// 否则尝试清理旧锁 (强制接管)
-		_ = os.Remove(lockPath)
-		lockFile, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0600)
+	_ = withUpdateLock(func() error {
+		// 执行检查
+		latestTag, err := getLatestTag()
 		if err != nil {
-			return
+			return nil // 静默失败，不干扰主流程
 		}
-	}
-	defer func() {
-		lockFile.Close()
-		_ = os.Remove(lockPath)
-	}()
 
-	// 执行检查
-	latestTag, err := getLatestTag()
-	if err != nil {
-		return // 静默失败，不干扰主流程
-	}
-
-	// 更新检查时间
-	if config != nil {
 		config.LastUpdateCheck = time.Now()
 		_ = ctlclient.SaveConfig(config)
-	}
 
-	if latestTag == "v"+Version || latestTag == Version {
-		return
-	}
+		if latestTag == "v"+Version || latestTag == Version {
+			return nil
+		}
 
-	// 发现新版本，静默下载并替换
-	downloadURL := getBinaryURL(latestTag)
-	_ = downloadAndReplace(latestTag, downloadURL)
+		// 发现新版本，静默下载并替换
+		return downloadAndReplace(latestTag, getBinaryURL(latestTag))
+	})
 }
 
 var updateCmd = &cobra.Command{
@@ -106,7 +85,9 @@ var updateCmd = &cobra.Command{
 			fmt.Printf("[Dry-run] would download %s\n", getBinaryURL(latestTag))
 			return nil
 		}
-		if err := downloadAndReplace(latestTag, getBinaryURL(latestTag)); err != nil {
+		if err := withUpdateLock(func() error {
+			return downloadAndReplace(latestTag, getBinaryURL(latestTag))
+		}); err != nil {
 			return err
 		}
 		fmt.Println("✅ 更新成功！")
@@ -152,6 +133,31 @@ func getBinaryURL(tag string) string {
 func getChecksumURL(tag string) string {
 	return fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/checksums.txt",
 		repoOwner, repoName, tag)
+}
+
+func withUpdateLock(fn func() error) error {
+	// 并发锁：防止多个命令同时触发更新导致文件冲突。
+	// 这里使用 os.TempDir() 是跨进程运行时锁，不是仓库内开发临时文件。
+	lockPath := filepath.Join(os.TempDir(), "bktrader-ctl-update.lock")
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		// 如果锁文件已存在且未超过 5 分钟，说明已有更新在运行
+		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) < 5*time.Minute {
+			return nil
+		}
+		// 否则尝试清理旧锁 (强制接管)
+		_ = os.Remove(lockPath)
+		lockFile, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			return err
+		}
+	}
+	defer func() {
+		lockFile.Close()
+		_ = os.Remove(lockPath)
+	}()
+
+	return fn()
 }
 
 func downloadAndReplace(tag, url string) error {
