@@ -31,3 +31,30 @@ func TestDeleteLiveSessionSoftDeletesAndListHidesDeleted(t *testing.T) {
 		}
 	}
 }
+
+func TestListLiveSessionsKeepsNonDeletedSessionWithLegacyDeletedAtState(t *testing.T) {
+	store := NewStore()
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("GetLiveSession failed: %v", err)
+	}
+	session.Status = "READY"
+	session.State = map[string]any{
+		"deletedAt":    "legacy-non-soft-delete-marker",
+		"dispatchMode": "manual-review",
+	}
+	if _, err := store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("UpdateLiveSession failed: %v", err)
+	}
+
+	items, err := store.ListLiveSessions()
+	if err != nil {
+		t.Fatalf("ListLiveSessions failed: %v", err)
+	}
+	for _, item := range items {
+		if item.ID == session.ID {
+			return
+		}
+	}
+	t.Fatalf("expected non-DELETED live session %s with legacy deletedAt state to remain listed", session.ID)
+}

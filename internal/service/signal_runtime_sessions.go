@@ -235,7 +235,12 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 			StrategyID:       session.StrategyID,
 			RuntimeSessionID: session.ID,
 		}
-		current := p.currentLiveControlOperation(liveControlOperationKey(session.AccountID, session.StrategyID))
+		var lockErr error
+		requested, lockErr = normalizeLiveControlOperationInfo(requested)
+		if lockErr != nil {
+			return domain.SignalRuntimeSession{}, lockErr
+		}
+		current := p.currentLiveControlOperation(liveControlOperationKey(requested.AccountID, requested.StrategyID))
 		if current.Operation != "" &&
 			(current.Operation != liveControlOperationSignalRuntimeStart || current.RuntimeSessionID != session.ID) {
 			return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
@@ -248,7 +253,10 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 		StrategyID:       session.StrategyID,
 		RuntimeSessionID: session.ID,
 	}
-	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		return domain.SignalRuntimeSession{}, lockErr
+	}
 	if !acquired {
 		return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
 	}
@@ -399,7 +407,10 @@ func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force boo
 		StrategyID:       existing.StrategyID,
 		RuntimeSessionID: existing.ID,
 	}
-	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		return domain.SignalRuntimeSession{}, lockErr
+	}
 	if !acquired {
 		return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
 	}
@@ -560,7 +571,10 @@ func (p *Platform) DeleteSignalRuntimeSessionWithForce(sessionID string, force b
 		StrategyID:       existing.StrategyID,
 		RuntimeSessionID: existing.ID,
 	}
-	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		return lockErr
+	}
 	if !acquired {
 		return liveControlOperationInProgressError(requested, current)
 	}

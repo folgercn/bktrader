@@ -57,3 +57,52 @@ func TestDeleteLiveSessionSoftDeletesAndListHidesDeleted(t *testing.T) {
 		}
 	}
 }
+
+func TestListLiveSessionsKeepsNonDeletedSessionWithLegacyDeletedAtState(t *testing.T) {
+	dsn := os.Getenv("BKTRADER_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("BKTRADER_TEST_POSTGRES_DSN is not set")
+	}
+	if err := Migrate(dsn); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	store, err := New(dsn)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer store.Close()
+
+	account, err := store.CreateAccount("Live Legacy DeletedAt Test", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("CreateAccount failed: %v", err)
+	}
+	strategy, err := store.CreateStrategy("live-legacy-deleted-at-test", "live legacy deletedAt test", map[string]any{
+		"strategyEngine": "bk-default",
+	})
+	if err != nil {
+		t.Fatalf("CreateStrategy failed: %v", err)
+	}
+	session, err := store.CreateLiveSession(account.ID, strategy["id"].(string))
+	if err != nil {
+		t.Fatalf("CreateLiveSession failed: %v", err)
+	}
+	session.Status = "READY"
+	session.State = map[string]any{
+		"deletedAt":    "legacy-non-soft-delete-marker",
+		"dispatchMode": "manual-review",
+	}
+	if _, err := store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("UpdateLiveSession failed: %v", err)
+	}
+
+	items, err := store.ListLiveSessions()
+	if err != nil {
+		t.Fatalf("ListLiveSessions failed: %v", err)
+	}
+	for _, item := range items {
+		if item.ID == session.ID {
+			return
+		}
+	}
+	t.Fatalf("expected non-DELETED live session %s with legacy deletedAt state to remain listed", session.ID)
+}

@@ -75,7 +75,10 @@ func (p *Platform) StopLiveFlowWithForce(accountID string, force bool) (StopLive
 			StrategyID: strategyID,
 		})
 	}
-	release, acquired, current := p.tryStartLiveControlOperations(lockRequests)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperations(lockRequests)
+	if lockErr != nil {
+		return StopLiveFlowResult{}, lockErr
+	}
 	if !acquired {
 		return StopLiveFlowResult{}, liveControlOperationInProgressError(liveControlOperationInfo{
 			Operation: liveControlOperationAccountStop,

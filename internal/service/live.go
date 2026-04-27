@@ -89,6 +89,7 @@ const (
 
 var ErrLiveAccountOperationInProgress = errors.New("live account operation already in progress")
 var ErrLiveControlOperationInProgress = errors.New("live control operation already in progress")
+var ErrLiveControlOperationKeyMissing = errors.New("live control operation key missing")
 
 type liveAccountOperationKind string
 
@@ -172,7 +173,10 @@ func (p *Platform) DeleteLiveSessionWithForce(sessionID string, force bool) erro
 		StrategyID:    session.StrategyID,
 		LiveSessionID: session.ID,
 	}
-	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		return lockErr
+	}
 	if !acquired {
 		return liveControlOperationInProgressError(requested, current)
 	}
@@ -529,20 +533,28 @@ func (p *Platform) tryStartLiveAccountOperation(accountID string, kind liveAccou
 	return mu.Unlock, true
 }
 
-func (p *Platform) tryStartLiveControlOperation(info liveControlOperationInfo) (func(), bool, liveControlOperationInfo) {
+func normalizeLiveControlOperationInfo(info liveControlOperationInfo) (liveControlOperationInfo, error) {
 	info.AccountID = strings.TrimSpace(info.AccountID)
 	info.StrategyID = strings.TrimSpace(info.StrategyID)
 	if info.AccountID == "" || info.StrategyID == "" {
-		return func() {}, false, liveControlOperationInfo{}
+		return info, liveControlOperationKeyMissingError(info)
 	}
 	if info.StartedAt.IsZero() {
 		info.StartedAt = time.Now().UTC()
+	}
+	return info, nil
+}
+
+func (p *Platform) tryStartLiveControlOperation(info liveControlOperationInfo) (func(), bool, liveControlOperationInfo, error) {
+	info, err := normalizeLiveControlOperationInfo(info)
+	if err != nil {
+		return func() {}, false, liveControlOperationInfo{}, err
 	}
 	key := liveControlOperationKey(info.AccountID, info.StrategyID)
 	actual, _ := p.liveControlOpState.LoadOrStore(key, &liveControlOperationState{})
 	state, _ := actual.(*liveControlOperationState)
 	if state == nil || !state.lock.TryLock() {
-		return func() {}, false, p.currentLiveControlOperation(key)
+		return func() {}, false, p.currentLiveControlOperation(key), nil
 	}
 	state.metaMu.Lock()
 	state.current = info
@@ -553,24 +565,20 @@ func (p *Platform) tryStartLiveControlOperation(info liveControlOperationInfo) (
 		state.metaMu.Unlock()
 		state.lock.Unlock()
 	}
-	return release, true, liveControlOperationInfo{}
+	return release, true, liveControlOperationInfo{}, nil
 }
 
-func (p *Platform) tryStartLiveControlOperations(infos []liveControlOperationInfo) (func(), bool, liveControlOperationInfo) {
+func (p *Platform) tryStartLiveControlOperations(infos []liveControlOperationInfo) (func(), bool, liveControlOperationInfo, error) {
 	if len(infos) == 0 {
-		return func() {}, true, liveControlOperationInfo{}
+		return func() {}, true, liveControlOperationInfo{}, nil
 	}
 	byKey := make(map[string]liveControlOperationInfo, len(infos))
 	for _, info := range infos {
-		info.AccountID = strings.TrimSpace(info.AccountID)
-		info.StrategyID = strings.TrimSpace(info.StrategyID)
-		if info.AccountID == "" || info.StrategyID == "" {
-			continue
+		normalized, err := normalizeLiveControlOperationInfo(info)
+		if err != nil {
+			return func() {}, false, liveControlOperationInfo{}, err
 		}
-		if info.StartedAt.IsZero() {
-			info.StartedAt = time.Now().UTC()
-		}
-		byKey[liveControlOperationKey(info.AccountID, info.StrategyID)] = info
+		byKey[liveControlOperationKey(normalized.AccountID, normalized.StrategyID)] = normalized
 	}
 	keys := make([]string, 0, len(byKey))
 	for key := range byKey {
@@ -579,7 +587,13 @@ func (p *Platform) tryStartLiveControlOperations(infos []liveControlOperationInf
 	sort.Strings(keys)
 	releases := make([]func(), 0, len(keys))
 	for _, key := range keys {
-		release, acquired, current := p.tryStartLiveControlOperation(byKey[key])
+		release, acquired, current, err := p.tryStartLiveControlOperation(byKey[key])
+		if err != nil {
+			for i := len(releases) - 1; i >= 0; i-- {
+				releases[i]()
+			}
+			return func() {}, false, liveControlOperationInfo{}, err
+		}
 		if acquired {
 			releases = append(releases, release)
 			continue
@@ -587,13 +601,13 @@ func (p *Platform) tryStartLiveControlOperations(infos []liveControlOperationInf
 		for i := len(releases) - 1; i >= 0; i-- {
 			releases[i]()
 		}
-		return func() {}, false, current
+		return func() {}, false, current, nil
 	}
 	return func() {
 		for i := len(releases) - 1; i >= 0; i-- {
 			releases[i]()
 		}
-	}, true, liveControlOperationInfo{}
+	}, true, liveControlOperationInfo{}, nil
 }
 
 func liveControlOperationKey(accountID, strategyID string) string {
@@ -632,6 +646,17 @@ func liveControlOperationInProgressError(requested, current liveControlOperation
 		startedAt,
 		current.LiveSessionID,
 		current.RuntimeSessionID,
+	)
+}
+
+func liveControlOperationKeyMissingError(info liveControlOperationInfo) error {
+	return fmt.Errorf("%w: operation=%s account=%s strategy=%s liveSession=%s runtimeSession=%s",
+		ErrLiveControlOperationKeyMissing,
+		info.Operation,
+		info.AccountID,
+		info.StrategyID,
+		info.LiveSessionID,
+		info.RuntimeSessionID,
 	)
 }
 
@@ -1400,7 +1425,11 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 			StrategyID:    session.StrategyID,
 			LiveSessionID: session.ID,
 		}
-		release, acquired, current := p.tryStartLiveControlOperation(requested)
+		release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+		if lockErr != nil {
+			p.logger("service.live", "session_id", session.ID).Warn("skip live session recovery because control operation key is invalid", "error", lockErr)
+			continue
+		}
 		if !acquired {
 			p.logger("service.live", "session_id", session.ID).Warn("skip live session recovery because control operation is already in progress", "error", liveControlOperationInProgressError(requested, current))
 			continue
@@ -1737,7 +1766,10 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 		AccountID:  account.ID,
 		StrategyID: strategyID,
 	}
-	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		return LiveLaunchResult{}, lockErr
+	}
 	if !acquired {
 		return LiveLaunchResult{}, liveControlOperationInProgressError(requested, current)
 	}
@@ -2145,7 +2177,10 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 		StrategyID:    session.StrategyID,
 		LiveSessionID: session.ID,
 	}
-	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		return domain.LiveSession{}, lockErr
+	}
 	if !acquired {
 		return domain.LiveSession{}, liveControlOperationInProgressError(requested, current)
 	}
@@ -3169,7 +3204,10 @@ func (p *Platform) StopLiveSessionWithForce(sessionID string, force bool) (domai
 		StrategyID:    existing.StrategyID,
 		LiveSessionID: existing.ID,
 	}
-	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		return domain.LiveSession{}, lockErr
+	}
 	if !acquired {
 		return domain.LiveSession{}, liveControlOperationInProgressError(requested, current)
 	}

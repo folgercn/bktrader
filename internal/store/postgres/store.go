@@ -1199,7 +1199,6 @@ func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
 			select id, alias, account_id, strategy_id, status, state, created_at
 			from live_sessions
 			where upper(status) <> 'DELETED'
-				and not (state ? 'deletedAt')
 			order by created_at asc
 		`)
 	if err != nil {

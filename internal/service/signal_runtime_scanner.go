@@ -94,7 +94,16 @@ func (p *Platform) stopSignalRuntimeLinkedToStoppedLiveSession(runtimeSession do
 		LiveSessionID:    liveSession.ID,
 		RuntimeSessionID: runtimeSession.ID,
 	}
-	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		p.logger("service.signal_runtime_scanner",
+			"session_id", runtimeSession.ID,
+			"live_session_id", liveSession.ID,
+			"account_id", runtimeSession.AccountID,
+			"strategy_id", runtimeSession.StrategyID,
+		).Warn("skip stopped-live runtime cleanup because control operation key is invalid", "error", lockErr)
+		return true
+	}
 	if !acquired {
 		p.logger("service.signal_runtime_scanner",
 			"session_id", runtimeSession.ID,

@@ -1576,17 +1576,7 @@ func cloneJSONValue[T any](value T) T {
 }
 
 func liveSessionDeleted(session domain.LiveSession) bool {
-	if strings.EqualFold(strings.TrimSpace(session.Status), "DELETED") {
-		return true
-	}
-	if session.State == nil {
-		return false
-	}
-	deletedAt, ok := session.State["deletedAt"]
-	if !ok || deletedAt == nil {
-		return false
-	}
-	return strings.TrimSpace(fmt.Sprint(deletedAt)) != ""
+	return strings.EqualFold(strings.TrimSpace(session.Status), "DELETED")
 }
 
 func accountStatusForMode(mode string) string {

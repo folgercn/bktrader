@@ -103,6 +103,31 @@ func TestLiveSessionDeleteRouteReturnsConflictDuringSamePairOperation(t *testing
 	}
 }
 
+func TestLiveSessionStartRouteDoesNotReportMissingControlKeyAsConflict(t *testing.T) {
+	store := memory.NewStore()
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	session.StrategyID = ""
+	if _, err := store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("corrupt live session strategy id failed: %v", err)
+	}
+	platform := service.NewPlatform(store)
+	mux := http.NewServeMux()
+	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "monolith"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/start", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code == http.StatusConflict {
+		t.Fatalf("missing live control key must not be reported as 409 conflict, body=%s", rec.Body.String())
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for corrupted live session control key, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLiveSessionDetailRouteFiltersStateFields(t *testing.T) {
 	store := memory.NewStore()
 	platform := service.NewPlatform(store)

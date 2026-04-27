@@ -330,7 +330,10 @@ func TestSignalRuntimeStartReturnsConflictDuringLiveControlOperation(t *testing.
 		StrategyID:    session.StrategyID,
 		LiveSessionID: session.ID,
 	}
-	release, acquired, current := platform.tryStartLiveControlOperation(requested)
+	release, acquired, current, lockErr := platform.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		t.Fatalf("acquire live control operation failed: %v", lockErr)
+	}
 	if !acquired {
 		t.Fatalf("acquire live control operation failed: %v", liveControlOperationInProgressError(requested, current))
 	}
@@ -342,6 +345,67 @@ func TestSignalRuntimeStartReturnsConflictDuringLiveControlOperation(t *testing.
 	if _, stopErr := platform.StopSignalRuntimeSessionWithForce(runtime.ID, true); stopErr != nil {
 		t.Fatalf("cleanup runtime failed: %v", stopErr)
 	}
+}
+
+func TestLiveControlOperationMissingKeyIsNotConflict(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	_, acquired, _, err := platform.tryStartLiveControlOperation(liveControlOperationInfo{
+		Operation: liveControlOperationStart,
+		AccountID: "live-main",
+	})
+	if acquired {
+		t.Fatal("expected missing strategy key to prevent lock acquisition")
+	}
+	if !errors.Is(err, ErrLiveControlOperationKeyMissing) {
+		t.Fatalf("expected missing key error, got %v", err)
+	}
+	if errors.Is(err, ErrLiveControlOperationInProgress) {
+		t.Fatalf("missing key must not be reported as control conflict: %v", err)
+	}
+}
+
+func TestStopLiveFlowWithForceReleasesBatchLocksWhenLaterLockFails(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	const accountID = "live-main"
+	const firstStrategyID = "strategy-bk-1d"
+	const secondStrategyID = "zz-review-strategy"
+	if _, err := platform.store.CreateLiveSession(accountID, secondStrategyID); err != nil {
+		t.Fatalf("create second live session failed: %v", err)
+	}
+
+	secondRelease, acquired, current, lockErr := platform.tryStartLiveControlOperation(liveControlOperationInfo{
+		Operation:  liveControlOperationStart,
+		AccountID:  accountID,
+		StrategyID: secondStrategyID,
+	})
+	if lockErr != nil {
+		t.Fatalf("pre-acquire second strategy lock failed: %v", lockErr)
+	}
+	if !acquired {
+		t.Fatalf("pre-acquire second strategy lock conflict: %v", liveControlOperationInProgressError(liveControlOperationInfo{
+			Operation:  liveControlOperationStart,
+			AccountID:  accountID,
+			StrategyID: secondStrategyID,
+		}, current))
+	}
+	defer secondRelease()
+
+	if _, err := platform.StopLiveFlowWithForce(accountID, true); !errors.Is(err, ErrLiveControlOperationInProgress) {
+		t.Fatalf("expected account stop to hit later strategy lock conflict, got %v", err)
+	}
+
+	firstRelease, acquired, current, lockErr := platform.tryStartLiveControlOperation(liveControlOperationInfo{
+		Operation:  liveControlOperationStart,
+		AccountID:  accountID,
+		StrategyID: firstStrategyID,
+	})
+	if lockErr != nil {
+		t.Fatalf("acquire first strategy lock after failed batch failed: %v", lockErr)
+	}
+	if !acquired {
+		t.Fatalf("expected failed batch to release first strategy lock, still blocked by %v", current)
+	}
+	firstRelease()
 }
 
 func TestSignalRuntimeSessionForceActionsRespectSafetyLock(t *testing.T) {
