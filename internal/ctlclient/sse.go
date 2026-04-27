@@ -83,6 +83,9 @@ func (c *Client) StreamSSE(method, path string, handler func(SSEEvent)) error {
 		case "event":
 			currentEvent.Event = value
 		case "data":
+			if dataBuffer.Len() > 0 {
+				dataBuffer.WriteByte('\n')
+			}
 			dataBuffer.WriteString(value)
 		case "id":
 			currentEvent.ID = value

@@ -84,7 +84,9 @@ var logsStreamCmd = &cobra.Command{
 		client := getClient()
 		path := "/api/v1/logs/stream"
 		if source != "" {
-			path += "?source=" + source
+			v := url.Values{}
+			v.Set("source", source)
+			path += "?" + v.Encode()
 		}
 
 		fmt.Printf("Connecting to log stream (source: %s)...\n", source)
@@ -121,12 +123,14 @@ var logsTraceCmd = &cobra.Command{
 		var traceErrors []string
 
 		// 1. 获取业务事件
-		eventsData, err := client.Request("GET", "/api/v1/logs/events?orderId="+orderId, nil)
+		eventQuery := url.Values{}
+		eventQuery.Set("orderId", orderId)
+		eventsData, err := client.Request("GET", "/api/v1/logs/events?"+eventQuery.Encode(), nil)
 		if err != nil {
 			traceErrors = append(traceErrors, "events: "+err.Error())
 		}
 		// 2. 获取订单详情
-		orderData, err := client.Request("GET", "/api/v1/orders/"+orderId, nil)
+		orderData, err := client.Request("GET", "/api/v1/orders/"+url.PathEscape(orderId), nil)
 		if err != nil {
 			traceErrors = append(traceErrors, "order: "+err.Error())
 		}

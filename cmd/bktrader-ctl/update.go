@@ -37,7 +37,8 @@ func SilentUpdateCheck() {
 		}
 	}
 
-	// 并发锁：防止多个命令同时触发更新导致文件冲突
+	// 并发锁：防止多个命令同时触发更新导致文件冲突。
+	// 这里使用 os.TempDir() 是跨进程运行时锁，不是仓库内开发临时文件。
 	lockPath := filepath.Join(os.TempDir(), "bktrader-ctl-update.lock")
 	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
@@ -48,7 +49,9 @@ func SilentUpdateCheck() {
 		// 否则尝试清理旧锁 (强制接管)
 		_ = os.Remove(lockPath)
 		lockFile, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0600)
-		if err != nil { return }
+		if err != nil {
+			return
+		}
 	}
 	defer func() {
 		lockFile.Close()
@@ -80,6 +83,11 @@ var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "检查并更新 bktrader-ctl [MUTATING]",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		confirm, _ := cmd.Flags().GetBool("confirm")
+		if !confirm && !dryRun {
+			return fmt.Errorf("操作需要 --confirm 确认")
+		}
+
 		fmt.Printf("当前版本: %s\n", Version)
 		fmt.Println("正在手动检查更新...")
 
@@ -94,6 +102,10 @@ var updateCmd = &cobra.Command{
 		}
 
 		fmt.Printf("发现新版本: %s，准备更新...\n", latestTag)
+		if dryRun {
+			fmt.Printf("[Dry-run] would download %s\n", getBinaryURL(latestTag))
+			return nil
+		}
 		if err := downloadAndReplace(latestTag, getBinaryURL(latestTag)); err != nil {
 			return err
 		}
@@ -176,6 +188,8 @@ func downloadAndReplace(tag, url string) error {
 	}
 
 	tmpPath := exePath + ".next"
+	// Clear any partial .next left by a previous short-lived process before O_TRUNC opens a fresh file.
+	_ = os.Remove(tmpPath)
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
@@ -256,4 +270,8 @@ func getExpectedHash(ctx context.Context, tag string) (string, error) {
 	}
 
 	return "", fmt.Errorf("在 checksums.txt 中未找到 %s", targetName)
+}
+
+func init() {
+	updateCmd.Flags().Bool("confirm", false, "确认执行更新操作")
 }

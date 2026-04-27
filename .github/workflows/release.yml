@@ -31,15 +31,14 @@ jobs:
             GOARCH=${platform_split[1]}
             
             output_name="bktrader-ctl-$GOOS-$GOARCH"
-            if [ $GOOS = "windows" ]; then
-              output_name+='.exe'
-            fi
             
             echo "Building $output_name..."
-            env GOOS=$GOOS GOARCH=$GOARCH go build -o "dist/$output_name" ./cmd/bktrader-ctl
+            env GOOS=$GOOS GOARCH=$GOARCH go build \
+              -ldflags "-X main.Version=${GITHUB_REF_NAME} -X main.Commit=${GITHUB_SHA} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "dist/$output_name" ./cmd/bktrader-ctl
           done
 
-          # 生成校验和
+          # ubuntu-latest intentionally provides sha256sum for release checksums.
           cd dist && sha256sum * > checksums.txt && cd ..
 
       - name: Create Release

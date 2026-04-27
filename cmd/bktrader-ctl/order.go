@@ -87,7 +87,7 @@ var orderSyncCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/orders/"+args[0]+"/sync", nil)
+		resp, err := client.Request("POST", "/api/v1/orders/"+url.PathEscape(args[0])+"/sync", nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -120,7 +120,7 @@ var positionCloseCmd = &cobra.Command{
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/positions/"+args[0]+"/close", nil)
+		resp, err := client.Request("POST", "/api/v1/positions/"+url.PathEscape(args[0])+"/close", nil)
 		handleResponse(resp, err)
 		return nil
 	},

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net/url"
+
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +52,9 @@ var accountEquityCmd = &cobra.Command{
 		client := getClient()
 		path := "/api/v1/account-equity-snapshots"
 		if accountId != "" {
-			path += "?accountId=" + accountId
+			v := url.Values{}
+			v.Set("accountId", accountId)
+			path += "?" + v.Encode()
 		}
 		resp, err := client.Request("GET", path, nil)
 		handleResponse(resp, err)
@@ -64,7 +68,7 @@ var accountSyncCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/live/accounts/"+args[0]+"/sync", nil)
+		resp, err := client.Request("POST", "/api/v1/live/accounts/"+url.PathEscape(args[0])+"/sync", nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -80,7 +84,7 @@ var accountReconcileCmd = &cobra.Command{
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/live/accounts/"+args[0]+"/reconcile", nil)
+		resp, err := client.Request("POST", "/api/v1/live/accounts/"+url.PathEscape(args[0])+"/reconcile", nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -110,7 +114,7 @@ var accountBindCmd = &cobra.Command{
 		}
 
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/live/accounts/"+args[0]+"/binding", payload)
+		resp, err := client.Request("POST", "/api/v1/live/accounts/"+url.PathEscape(args[0])+"/binding", payload)
 		handleResponse(resp, err)
 		return nil
 	},
