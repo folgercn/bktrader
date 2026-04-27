@@ -910,9 +910,10 @@ func (p *Platform) persistLiveAccountSyncFailure(account domain.Account, attempt
 func (p *Platform) persistLiveAccountSyncSuccess(account domain.Account, binding map[string]any, previousSuccessAt time.Time) (domain.Account, error) {
 	account.Metadata = cloneMetadata(account.Metadata)
 	snapshot := cloneMetadata(mapValue(account.Metadata["liveSyncSnapshot"]))
-	syncedAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
-	if syncedAt.IsZero() {
-		syncedAt = parseOptionalRFC3339(stringValue(snapshot["syncedAt"]))
+	syncedAt := parseOptionalRFC3339(stringValue(snapshot["syncedAt"]))
+	lastLiveSyncAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+	if syncedAt.IsZero() || (!lastLiveSyncAt.IsZero() && lastLiveSyncAt.After(syncedAt)) {
+		syncedAt = lastLiveSyncAt
 	}
 	if syncedAt.IsZero() {
 		syncedAt = time.Now().UTC()
