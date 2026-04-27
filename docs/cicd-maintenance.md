@@ -109,7 +109,7 @@ gofmt -w .
 
 - 普通 push 会根据 diff 自动计算 `DEPLOY_SERVICES`，只重启需要更新的 compose 服务。
 - API / 配置 / 查询 / store / db 等改动默认部署 `platform-api`。
-- Dockerfile / compose / deploy script / app / config / store / domain / db 等共享层改动默认部署三类后端服务。
+- Dockerfile / compose / deploy script / app / config / store / domain / db 等共享层改动默认部署四类后端服务。
 - Telegram / alerts / notifications 相关改动默认部署 `notification-worker`。
 - `live-runner` 相关改动默认部署 `live-runner`，会自动重启交易运行时。
 - 如需手动指定部署范围，可使用 `workflow_dispatch` 填写 `deploy_services`，例如 `platform-api` 或 `live-runner`。
