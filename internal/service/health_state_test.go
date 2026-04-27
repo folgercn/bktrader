@@ -262,6 +262,32 @@ func TestLiveAccountSyncStaleAlertGraceSuppressesThresholdFlap(t *testing.T) {
 	}
 }
 
+func TestLiveAccountSyncNeverSucceededIsHardStale(t *testing.T) {
+	platform := &Platform{
+		runtimePolicy: RuntimePolicy{
+			LiveAccountSyncFreshnessSecs: 60,
+		},
+	}
+	now := time.Now().UTC()
+	account := domain.Account{
+		ID:        "live-1",
+		CreatedAt: now.Add(-5 * time.Second),
+		Metadata:  map[string]any{},
+	}
+
+	staleness, ageSeconds := platform.liveAccountSyncStaleness(account, now)
+	if staleness != liveAccountSyncHardStale {
+		t.Fatalf("expected never-synced account to be hard stale, got %s", staleness)
+	}
+	if ageSeconds < 5 {
+		t.Fatalf("expected age to use account creation time, got %d", ageSeconds)
+	}
+	alertStale, _ := platform.liveAccountSyncStaleForAlert(account, now)
+	if !alertStale {
+		t.Fatal("expected never-synced account to alert immediately")
+	}
+}
+
 func TestUpdateRuntimePolicyAllowsDisablingHealthThresholds(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
