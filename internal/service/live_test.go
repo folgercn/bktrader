@@ -1710,6 +1710,68 @@ func TestBookAwareExecutionStrategyUsesReentrySizeScheduleForLiveEntry(t *testin
 	}
 }
 
+func TestBookAwareExecutionStrategyStartsSLReentryAtSecondScheduleSlot(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	account := domain.Account{
+		Metadata: map[string]any{
+			"liveSyncSnapshot": map[string]any{
+				"availableBalance": 1000.0,
+			},
+		},
+	}
+	execution := StrategyExecutionContext{
+		Parameters: map[string]any{
+			"executionMaxSpreadBps": 8.0,
+			"reentry_size_schedule": []float64{0.20, 0.10},
+		},
+	}
+	intent := SignalIntent{
+		Action:        "entry",
+		Role:          "entry",
+		Reason:        "SL-Reentry",
+		Side:          "BUY",
+		Symbol:        "BTCUSDT",
+		SignalKind:    "sl-reentry",
+		DecisionState: "entry-ready",
+		PriceHint:     25000,
+		PriceSource:   "trade_tick.price",
+		Metadata: map[string]any{
+			"bestBid":                       24999.5,
+			"bestAsk":                       25000.0,
+			"spreadBps":                     0.1,
+			"signalBarStateKey":             "state-schedule",
+			liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-22T06:30:00Z",
+		},
+	}
+
+	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{
+			State: map[string]any{
+				"positionSizingMode":    "reentry_size_schedule",
+				"defaultOrderQuantity":  0.002,
+				"lastSignalBarStateKey": "BTCUSDT|30m|2026-04-22T06:00:00Z",
+				"sessionReentryCount":   1.0,
+				"max_trades_per_bar":    2,
+			},
+		},
+		Account:   account,
+		Execution: execution,
+		Intent:    intent,
+	})
+	if err != nil {
+		t.Fatalf("unexpected proposal error: %v", err)
+	}
+	if proposal.Quantity != 0.004 {
+		t.Fatalf("expected SL-Reentry to use 10%% schedule slot after stop, got %v", proposal.Quantity)
+	}
+	if got := parseFloatValue(proposal.Metadata["sizingReentryScheduleIndex"]); got != 1 {
+		t.Fatalf("expected SL-Reentry schedule index 1, got %v", got)
+	}
+	if got := parseFloatValue(proposal.Metadata["sizingReentryFraction"]); got != 0.10 {
+		t.Fatalf("expected SL-Reentry fraction 0.10, got %v", got)
+	}
+}
+
 func TestBookAwareExecutionStrategyUsesPositionQuantityForScheduledReentryExits(t *testing.T) {
 	strategy := bookAwareExecutionStrategy{}
 	for _, tc := range []struct {
