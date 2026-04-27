@@ -197,14 +197,14 @@ export function AccountStage({
     onConfirm: () => Promise<void> | void;
   }>({ open: false, title: "", description: "", onConfirm: () => {} });
 
-  const liveControlActionPending =
+  const confirmActionPending =
     liveSessionAction !== null ||
     liveSessionDeleteAction !== null ||
     liveFlowAction !== null ||
     liveSessionLaunchAction ||
     signalRuntimeAction !== null ||
-    launchingTemplate !== null;
-  const confirmActionPending = liveControlActionPending || liveBindAction;
+    launchingTemplate !== null ||
+    liveBindAction;
 
   const activeLiveSession = liveSessions.find(s => s.accountId === quickLiveAccountId);
   const activeTemplateKey = String(
@@ -213,6 +213,25 @@ export function AccountStage({
 
   const openConfirm = (title: string, description: string, onConfirm: () => Promise<void> | void) => {
     setConfirmConfig({ open: true, title, description, onConfirm });
+  };
+
+  const liveSessionActionTargets = (sessionId: string) =>
+    liveSessionAction === sessionId || liveSessionAction?.startsWith(`${sessionId}:`) || liveSessionDeleteAction === sessionId;
+
+  const signalRuntimeActionTargets = (runtimeId: string) =>
+    signalRuntimeAction === runtimeId || signalRuntimeAction?.startsWith(`${runtimeId}:`);
+
+  const liveControlActionPendingForAccount = (accountId: string) => {
+    if (!accountId) return false;
+    const sessionPending = validLiveSessions.some(
+      (item) => item.accountId === accountId && liveSessionActionTargets(item.id)
+    );
+    const runtimePending =
+      signalRuntimeSessions.some((item) => item.accountId === accountId && signalRuntimeActionTargets(item.id)) ||
+      (signalRuntimeAction === "create" && signalRuntimeForm.accountId === accountId);
+    const launchPending =
+      (liveSessionLaunchAction || launchingTemplate !== null || liveBindAction) && quickLiveAccountId === accountId;
+    return liveFlowAction === accountId || sessionPending || runtimePending || launchPending;
   };
 
   const activeOrderStatuses = useMemo(() => new Set(["NEW", "PARTIALLY_FILLED", "ACCEPTED"]), []);
@@ -228,6 +247,9 @@ export function AccountStage({
     () => liveSessions.filter((item) => strategyIds.has(item.strategyId)),
     [liveSessions, strategyIds]
   );
+  const quickLiveControlActionPending = quickLiveAccountId
+    ? liveControlActionPendingForAccount(quickLiveAccountId)
+    : liveSessionLaunchAction || launchingTemplate !== null;
 
   const primaryLiveSession = highlightedLiveSession?.session ?? null;
   const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
@@ -551,7 +573,7 @@ export function AccountStage({
                 const liveNextAction = deriveLiveNextAction(livePreflight);
                 const liveAlerts = deriveLiveAlerts(account, activeRuntimeState, activeRuntimeSourceSummary, activeRuntimeReadiness, activeSignalAction, runtimePolicy);
                 const accountDetailOpen = expandedAccountId === account.id;
-                const accountControlPending = liveControlActionPending || liveBindAction;
+                const accountControlPending = liveControlActionPendingForAccount(account.id);
                 const handleStopLiveFlow = () => {
                   if (!hasOpenExposure) {
                     openConfirm(
@@ -801,7 +823,7 @@ export function AccountStage({
                         <Button 
                           variant="bento-outline"
                           className="h-8 w-full rounded-lg bg-[var(--bk-surface)] text-[10px] font-black transition-all hover:border-transparent hover:bg-[var(--bk-surface-inverse)] hover:text-[var(--bk-text-contrast)]"
-                          disabled={liveControlActionPending}
+                          disabled={quickLiveControlActionPending}
                           onClick={() => {
                             const isSwitching = activeLiveSession && activeTemplateKey !== tpl.key;
                             setConfirmConfig({
@@ -1094,6 +1116,11 @@ export function AccountStage({
                      (linkedRuntimeStatus === "RUNNING" ||
                        linkedRuntimeStatus === "STARTING" ||
                        linkedRuntimeDesiredStatus === "RUNNING");
+                   const sessionControlPending =
+                     liveFlowAction === session.accountId ||
+                     liveSessionActionTargets(session.id) ||
+                     (linkedRuntimeSession ? signalRuntimeActionTargets(linkedRuntimeSession.id) : false) ||
+                     ((liveSessionLaunchAction || launchingTemplate !== null) && quickLiveAccountId === session.accountId);
                    return (
                      <div key={session.id} className="group flex items-center justify-between rounded-[20px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-4 transition-all hover:bg-[var(--bk-surface)]">
                         <div className="space-y-1">
@@ -1118,7 +1145,7 @@ export function AccountStage({
                               variant="bento-ghost" 
                               size="icon" 
                               className={`h-8 w-8 ${isRunning ? 'text-[var(--bk-status-danger)]' : 'text-[var(--bk-status-success)]'}`}
-                              disabled={liveControlActionPending}
+                              disabled={sessionControlPending}
                               onClick={() => runLiveSessionAction(session.id, isRunning ? "stop" : "start")}
                             >
                               {isRunning ? <Square size={14} /> : <Play size={14} fill="currentColor" />}
@@ -1135,7 +1162,7 @@ export function AccountStage({
                               variant="bento-ghost" 
                               size="icon" 
                               className="h-8 w-8 text-[var(--bk-status-danger)] opacity-0 group-hover:opacity-100 transition-opacity"
-                              disabled={liveControlActionPending}
+                              disabled={sessionControlPending}
                               onClick={() => openConfirm("删除会话？", "系统会将该实盘会话标记为删除并从默认列表隐藏；订单、成交与审计记录会继续保留。", () => deleteLiveSession(session.id))}
                             >
                              <Trash2 size={14} />

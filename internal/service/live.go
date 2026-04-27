@@ -533,6 +533,10 @@ func (p *Platform) tryStartLiveAccountOperation(accountID string, kind liveAccou
 	return mu.Unlock, true
 }
 
+// Live control operations are intentionally process-local only. They prevent
+// in-process start/stop/delete/launch interleaving for one account+strategy,
+// but distributed deployments must still rely on runtime leases and persisted
+// session state for cross-process convergence.
 func normalizeLiveControlOperationInfo(info liveControlOperationInfo) (liveControlOperationInfo, error) {
 	info.AccountID = strings.TrimSpace(info.AccountID)
 	info.StrategyID = strings.TrimSpace(info.StrategyID)
