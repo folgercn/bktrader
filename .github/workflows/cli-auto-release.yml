@@ -13,6 +13,7 @@ on:
       - 'go.sum'
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -50,3 +51,14 @@ jobs:
             git tag "$tag" "$GITHUB_SHA"
             git push origin "$tag"
           fi
+
+      - name: Dispatch release workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; skipping dispatch."
+            exit 0
+          fi
+          gh workflow run release.yml --ref "$RELEASE_TAG" -f release_tag="$RELEASE_TAG"
