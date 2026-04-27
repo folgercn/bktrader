@@ -8017,6 +8017,68 @@ func TestSyncLiveAccountNormalizesAdapterSuccessHealthState(t *testing.T) {
 	}
 }
 
+func TestSyncLiveAccountPersistsNewSnapshotTimeOverStaleLastLiveSyncAt(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	oldSyncedAt := time.Date(2026, 4, 14, 7, 19, 29, 0, time.UTC)
+	newSyncedAt := time.Date(2026, 4, 27, 5, 32, 56, 0, time.UTC)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-new-snapshot-time",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":          "test-sync-new-snapshot-time",
+				"adapterKey":      normalizeLiveAdapterKey(stringValue(binding["adapterKey"])),
+				"syncedAt":        newSyncedAt.Format(time.RFC3339),
+				"bindingMode":     stringValue(binding["connectionMode"]),
+				"executionMode":   stringValue(binding["executionMode"]),
+				"syncStatus":      "SYNCED",
+				"accountExchange": account.Exchange,
+			}
+			return account, nil
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["lastLiveSyncAt"] = oldSyncedAt.Format(time.RFC3339)
+	account.Metadata["healthSummary"] = map[string]any{
+		"accountSync": map[string]any{
+			"lastSuccessAt": oldSyncedAt.Format(time.RFC3339),
+		},
+	}
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-sync-new-snapshot-time",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	synced, err := platform.SyncLiveAccount("live-main")
+	if err != nil {
+		t.Fatalf("expected adapter sync success, got %v", err)
+	}
+	if got := stringValue(synced.Metadata["lastLiveSyncAt"]); got != newSyncedAt.Format(time.RFC3339) {
+		t.Fatalf("expected new snapshot time to replace stale lastLiveSyncAt, got %s", got)
+	}
+	snapshot := mapValue(synced.Metadata["liveSyncSnapshot"])
+	if got := stringValue(snapshot["syncedAt"]); got != newSyncedAt.Format(time.RFC3339) {
+		t.Fatalf("expected liveSyncSnapshot.syncedAt to stay fresh, got %s", got)
+	}
+	accountSync := mapValue(mapValue(synced.Metadata["healthSummary"])["accountSync"])
+	if got := stringValue(accountSync["lastSuccessAt"]); got != newSyncedAt.Format(time.RFC3339) {
+		t.Fatalf("expected accountSync.lastSuccessAt to use fresh snapshot time, got %s", got)
+	}
+	if platform.shouldRefreshLiveAccountSync(synced, newSyncedAt.Add(10*time.Second)) {
+		t.Fatal("expected fresh snapshot time to suppress immediate refresh")
+	}
+}
+
 func TestSyncLiveAccountDoesNotDoubleCountPersistedAdapterSuccessHealth(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60

@@ -58,12 +58,14 @@ jobs:
               go.mod|go.sum)
                 backend_changed=true
                 ctl_changed=true
+                docker_changed=true
                 ;;
               cmd/bktrader-ctl/*|internal/ctlclient/*|internal/http/registry.go|scripts/check-ctl-coverage/*|scripts/gen-ctl-command/*|docs/bktrader-ctl-reference.md|.github/workflows/release.yml)
                 ctl_changed=true
                 ;;
               cmd/*|internal/*|db/*)
                 backend_changed=true
+                docker_changed=true
                 ;;
               web/console/*)
                 frontend_changed=true
@@ -72,7 +74,10 @@ jobs:
                 docker_changed=true
                 ;;
               .github/workflows/ci.yml)
+                backend_changed=true
                 ctl_changed=true
+                frontend_changed=true
+                docker_changed=true
                 ;;
             esac
           done <<EOF
