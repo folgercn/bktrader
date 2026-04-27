@@ -56,11 +56,9 @@ jobs:
             [ -z "$file" ] && continue
             case "$file" in
               go.mod|go.sum)
-                backend_changed=true
                 ctl_changed=true
-                docker_changed=true
                 ;;
-              cmd/bktrader-ctl/*|internal/ctlclient/*|scripts/check-ctl-coverage/*|docs/bktrader-ctl-reference.md|.github/workflows/release.yml)
+              cmd/bktrader-ctl/*|internal/ctlclient/*|internal/http/registry.go|scripts/check-ctl-coverage/*|scripts/gen-ctl-command/*|docs/bktrader-ctl-reference.md|.github/workflows/release.yml)
                 ctl_changed=true
                 ;;
               cmd/*|internal/*|db/*)
