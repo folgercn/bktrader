@@ -161,8 +161,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const timelineConfig = useUIStore(s => s.timelineConfig);
   const setTimelineConfig = useUIStore(s => s.setTimelineConfig);
   const fallbackRequestKeyRef = useRef<string>("");
-  const lastFetchAtRef = useRef<number>(0);
-  const candleCacheRef = useRef<Record<string, ChartCandle[]>>({});
+  const candleCacheRef = useRef<Record<string, { candles: ChartCandle[]; fetchedAt: number }>>({});
   const candleExpansionRequestKeyRef = useRef<string>("");
   const [liveSessionDetailStatus, setLiveSessionDetailStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
 
@@ -339,21 +338,21 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     ].join(":");
 
     const now = Date.now();
+    const cached = candleCacheRef.current[requestKey];
     const isSameKey = fallbackRequestKeyRef.current === requestKey;
-    const isExpired = now - lastFetchAtRef.current > 30000;
+    const isExpired = !cached || now - cached.fetchedAt > 30000;
 
     if (isSameKey && !isExpired) {
       return;
     }
 
-    if (candleCacheRef.current[requestKey] && !isExpired) {
-      setMonitorCandles(candleCacheRef.current[requestKey]);
+    if (cached && !isExpired) {
+      setMonitorCandles(cached.candles);
       fallbackRequestKeyRef.current = requestKey;
       return;
     }
 
     fallbackRequestKeyRef.current = requestKey;
-    lastFetchAtRef.current = now;
 
     fetchJSON<{ candles: ChartCandle[] }>(
       `/api/v1/chart/candles?symbol=${encodeURIComponent(monitorSymbol)}&resolution=${fallbackResolution}&from=${range.from}&to=${range.to}&limit=${MONITOR_HISTORY_CANDLE_LIMIT}`
@@ -363,7 +362,10 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
           return;
         }
         const candles = Array.isArray(payload?.candles) ? payload.candles : [];
-        candleCacheRef.current[requestKey] = candles;
+        candleCacheRef.current[requestKey] = {
+          candles,
+          fetchedAt: Date.now(),
+        };
         setMonitorCandles(candles);
       })
       .catch((error) => {
