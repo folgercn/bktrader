@@ -14,6 +14,11 @@ type StopLiveFlowResult struct {
 	StoppedRuntimeSessionIDs []string `json:"stoppedRuntimeSessionIds"`
 }
 
+// StopLiveFlowWithForce is a process-local account stop helper. It closes the
+// live/runtime sessions visible to this process and coordinates them with the
+// account+strategy control lock, but it is not a distributed global stop
+// barrier; multi-writer deployments still rely on runtime leases and persisted
+// session state convergence outside this call.
 func (p *Platform) StopLiveFlowWithForce(accountID string, force bool) (StopLiveFlowResult, error) {
 	accountID = strings.TrimSpace(accountID)
 	if accountID == "" {
