@@ -127,6 +127,48 @@ func NewStore() *Store {
 	store.strategies[strategy.ID] = strategy
 	store.strategyVersion[version.ID] = version
 
+	enhancedStrategy := domain.Strategy{
+		ID:          "strategy-bk-btc-30m-enhanced",
+		Name:        "BK BTCUSDT 30m Enhanced",
+		Status:      "ACTIVE",
+		Description: "BTCUSDT 30m live intrabar SMA5 baseline plus t3 breakout with sep_0p25.",
+		CreatedAt:   now,
+	}
+	enhancedVersion := domain.StrategyVersion{
+		ID:                 "strategy-version-bk-btc-30m-enhanced-v010",
+		StrategyID:         enhancedStrategy.ID,
+		Version:            "v0.1.0",
+		SignalTimeframe:    "30m",
+		ExecutionTimeframe: "tick",
+		Parameters: map[string]any{
+			"strategyEngine":                  "bk-live-intrabar-sma5-t3-sep",
+			"symbol":                          "BTCUSDT",
+			"signalTimeframe":                 "30m",
+			"executionDataSource":             "tick",
+			"positionSizingMode":              "reentry_size_schedule",
+			"dir2_zero_initial":               domain.ResearchBaselineDir2ZeroInitial,
+			"zero_initial_mode":               domain.ResearchBaselineZeroInitialMode,
+			"max_trades_per_bar":              domain.ResearchBaselineMaxTradesPerBar,
+			"reentry_size_schedule":           domain.ResearchBaselineReentrySizeSchedule(),
+			"breakout_shape":                  "baseline_plus_t3",
+			"t3_min_sma_atr_separation":       0.25,
+			"use_sma5_intraday_structure":     true,
+			"stop_mode":                       "atr",
+			"stop_loss_atr":                   0.05,
+			"profit_protect_atr":              1.0,
+			"trailing_stop_atr":               0.3,
+			"delayed_trailing_activation_atr": 0.5,
+			"long_reentry_atr":                0.1,
+			"short_reentry_atr":               0.0,
+			"tradingFeeBps":                   10.0,
+			"fundingRateBps":                  0.0,
+			"fundingIntervalHours":            8,
+		},
+		CreatedAt: now,
+	}
+	store.strategies[enhancedStrategy.ID] = enhancedStrategy
+	store.strategyVersion[enhancedVersion.ID] = enhancedVersion
+
 	live := domain.Account{
 		ID:       "live-main",
 		Name:     "Live Main",

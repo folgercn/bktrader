@@ -482,6 +482,58 @@ func TestEvaluateSignalBarGateTracksCurrentPriceBreakoutPattern(t *testing.T) {
 	}
 }
 
+func TestEvaluateSignalBarGateAllowsT3BreakoutWithSeparation(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"timeframe": "30m",
+		"sma5":      68200.0,
+		"ma20":      68000.0,
+		"atr14":     800.0,
+		"current": map[string]any{
+			"close": 68600.0,
+			"high":  69050.0,
+			"low":   68100.0,
+		},
+		"prevBar1": map[string]any{"high": 68800.0, "low": 68100.0},
+		"prevBar2": map[string]any{"high": 68600.0, "low": 68000.0},
+		"prevBar3": map[string]any{"high": 69000.0, "low": 67900.0},
+	}, "BUY", "entry", "", 69010.0, "trade_tick.price", signalBarGateOptions{
+		BreakoutShape:         "baseline_plus_t3",
+		T3MinSMAATRSeparation: 0.25,
+	})
+	if !boolValue(gate["longBreakoutPatternReady"]) || !boolValue(gate["longReady"]) {
+		t.Fatalf("expected t3 breakout with sep_0p25 to pass, got %#v", gate)
+	}
+	if got := stringValue(gate["longBreakoutShapeName"]); got != "t3_swing" {
+		t.Fatalf("expected t3_swing shape, got %s in %#v", got, gate)
+	}
+}
+
+func TestEvaluateSignalBarGateBlocksT3BreakoutInsideSeparation(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"timeframe": "30m",
+		"sma5":      68850.0,
+		"ma20":      68000.0,
+		"atr14":     800.0,
+		"current": map[string]any{
+			"close": 69020.0,
+			"high":  69050.0,
+			"low":   68100.0,
+		},
+		"prevBar1": map[string]any{"high": 68800.0, "low": 68100.0},
+		"prevBar2": map[string]any{"high": 68600.0, "low": 68000.0},
+		"prevBar3": map[string]any{"high": 69000.0, "low": 67900.0},
+	}, "BUY", "entry", "", 69010.0, "trade_tick.price", signalBarGateOptions{
+		BreakoutShape:         "baseline_plus_t3",
+		T3MinSMAATRSeparation: 0.25,
+	})
+	if boolValue(gate["longBreakoutPatternReady"]) || boolValue(gate["longReady"]) {
+		t.Fatalf("expected t3 breakout inside sep_0p25 to be blocked, got %#v", gate)
+	}
+	if boolValue(gate["longBreakoutQualityReady"]) {
+		t.Fatalf("expected t3 quality gate to fail, got %#v", gate)
+	}
+}
+
 func TestEvaluateSignalBarGateDoesNotRequireOppositeBreakoutForExit(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"ma20":  68000.0,
@@ -539,6 +591,7 @@ func TestAlignLivePlanStepToCurrentMarketKeepsExitForVirtualPosition(t *testing.
 	}
 
 	gotEvent, gotPrice, gotSide, gotRole, gotReason := alignLivePlanStepToCurrentMarket(
+		map[string]any{},
 		signalStates,
 		"1d",
 		currentPosition,

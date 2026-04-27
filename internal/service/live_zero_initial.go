@@ -28,6 +28,7 @@ func prepareLivePlanStepForSignalEvaluation(
 	hasActivePosition := hasActiveLivePositionSnapshot(currentPosition)
 	if !strategyZeroInitialReentryWindowEnabled(parameters) {
 		alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason := alignLivePlanStepToCurrentMarket(
+			parameters,
 			signalBarStates,
 			signalTimeframe,
 			currentPosition,
@@ -78,7 +79,7 @@ func prepareLivePlanStepForSignalEvaluation(
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
 	alignmentMode := ""
-	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource)
+	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource, signalBarGateOptionsFromParameters(parameters))
 	longReady := boolValue(gate["longReady"])
 	shortReady := boolValue(gate["shortReady"])
 	if longReady != shortReady {
@@ -131,8 +132,12 @@ func prepareLivePlanStepForSignalEvaluation(
 		"shortBreakoutPriceReady":   boolValue(gate["shortBreakoutPriceReady"]),
 		"longBreakoutShapeReady":    boolValue(gate["longBreakoutShapeReady"]),
 		"shortBreakoutShapeReady":   boolValue(gate["shortBreakoutShapeReady"]),
+		"longBreakoutQualityReady":  boolValue(gate["longBreakoutQualityReady"]),
+		"shortBreakoutQualityReady": boolValue(gate["shortBreakoutQualityReady"]),
 		"longBreakoutPatternReady":  boolValue(gate["longBreakoutPatternReady"]),
 		"shortBreakoutPatternReady": boolValue(gate["shortBreakoutPatternReady"]),
+		"longBreakoutShapeName":     stringValue(gate["longBreakoutShapeName"]),
+		"shortBreakoutShapeName":    stringValue(gate["shortBreakoutShapeName"]),
 	}
 	updatedState[livePendingZeroInitialWindowStateKey] = pendingWindow
 	timelineMetadata := map[string]any{

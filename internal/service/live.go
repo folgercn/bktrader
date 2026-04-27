@@ -4153,6 +4153,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 }
 
 func alignLivePlanStepToCurrentMarket(
+	parameters map[string]any,
 	signalBarStates map[string]any,
 	signalTimeframe string,
 	currentPosition map[string]any,
@@ -4173,7 +4174,7 @@ func alignLivePlanStepToCurrentMarket(
 	if signalBarState == nil {
 		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
-	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource)
+	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource, signalBarGateOptionsFromParameters(parameters))
 	longReady := boolValue(gate["longReady"])
 	shortReady := boolValue(gate["shortReady"])
 	if longReady == shortReady {
