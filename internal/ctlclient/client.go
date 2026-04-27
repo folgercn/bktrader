@@ -22,8 +22,9 @@ type Client struct {
 
 // Config 存储本地 token 和配置
 type Config struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	Token           string    `json:"token"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+	LastUpdateCheck time.Time `json:"lastUpdateCheck"`
 }
 
 func NewClient(baseURL, token string) *Client {
