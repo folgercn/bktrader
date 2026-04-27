@@ -14,22 +14,19 @@
 ## 2. 架构与工程设计
 - [llm-project-index.md](llm-project-index.md) - **推荐阅读：深入解读代码目录结构的索引层**。
 - [system-design.md](system-design.md) - 项目早期整体抽象架构。
-- [20260403改进计划_plan.md](20260403改进计划_plan.md) - 记录了平台重构与组件拆解的核心思考。
-- [20260418-live-plan-exhausted-troubleshooting.md](20260418-live-plan-exhausted-troubleshooting.md) - `live session` 长时间不下单且持续 `plan-exhausted` 时的定位手册。
-- [20260420-runtime-recovery-source-of-truth-map.md](20260420-runtime-recovery-source-of-truth-map.md) - Issue #84 的恢复事实源梳理、函数级 mapping、时序图与风险点清单。
-- [20260420-live-reconcile-manual-close-state-closure-bug-spec.md](20260420-live-reconcile-manual-close-state-closure-bug-spec.md) - 手动平仓、成交回写、reconcile gate 与 session 刷新闭环缺失问题说明与修复范围。
-- [20260422-binance-rest-rate-limit-and-live-sync-storm-plan.md](20260422-binance-rest-rate-limit-and-live-sync-storm-plan.md) - Binance REST 统一限流、`SyncLiveAccount` 风暴治理、stale source 观测与前端 K 线降载专项记录。
-- [20260423-live-trade-pairs-implementation-plan.md](20260423-live-trade-pairs-implementation-plan.md) - `Trade Pairs` 重构落地方案：订单/成交主链路、Decision Event 标签增强、订单级平仓核验新结构设计。
-- [runtime-runner-decomposition-protocol.md](runtime-runner-decomposition-protocol.md) - `live-runner` / `signal-runtime-runner` 拆分协议基线：runtime session identity、NATS JetStream event bus、consumer ack、desired state、lease / ownership 与未来细拆边界。
-- [production-log-troubleshooting.md](production-log-troubleshooting.md) - 生产服务器日志 SSH 入口、日志目录、stale/source gate、Binance REST 限流与前端 K 线请求排查起手式。
+- [bktrader-ctl-install-deploy.md](bktrader-ctl-install-deploy.md) - **bktrader-ctl 安装与发布说明**。
+- [bktrader-ctl-reference.md](bktrader-ctl-reference.md) - **bktrader-ctl 命令手册**。
+- [dashboard-sse-architecture.md](dashboard-sse-architecture.md) - 基于 SSE 的实时仪表盘架构设计。
+- [bento-ui-modernization-guidelines.md](bento-ui-modernization-guidelines.md) - Bento 风格 UI 现代化指南。
+- [runtime-runner-decomposition-protocol.md](runtime-runner-decomposition-protocol.md) - `live-runner` / `signal-runtime-runner` 拆分协议基线。
+- [production-log-troubleshooting.md](production-log-troubleshooting.md) - 生产服务器日志排障起手式。
 - [部署与网络架构.md](部署与网络架构.md) - 包含有关容器/负载路由的信息。
 - [cicd-maintenance.md](cicd-maintenance.md) - GitHub Actions 维保说明。
 - [frontend-live-reconcile-collab.md](frontend-live-reconcile-collab.md) - Live 账户全量对账的前端协作文档与 API 接入约定。
 - [frontend-live-launch-template-isolation-collab.md](frontend-live-launch-template-isolation-collab.md) - Live launch template 独占切换语义的前端协作文档。
 
 ## 3. 金融与投研文档
-- [STRATEGY_ANALYSIS.md](STRATEGY_ANALYSIS.md) - BK体系策略逻辑分析。
+- [STRATEGY_ANALYSIS.md](STRATEGY_ANALYSIS.md) - BK体系策略逻辑 analysis。
 - [tick-data-spec.md](tick-data-spec.md) - 行情 tick 与 Bar 数据规范。
-- [20260407-ma-filter-research.md](20260407-ma-filter-research.md) / [20260407-testnet-最小闭环进度.md](20260407-testnet-最小闭环进度.md) - 相关投研实验备忘。
 
 > `Smoke Test`: 若需要部署回测，请手动执行 `scripts/testnet_live_session_smoke.sh`。对于本项目的自动化防御，依靠 `ci.yml` 中的风险拦截脚本。
