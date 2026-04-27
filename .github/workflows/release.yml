@@ -4,11 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+      - 'ctl-v*'
 
 jobs:
   build:
     name: Build and Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,5 +48,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          make_latest: ${{ startsWith(github.ref_name, 'v') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

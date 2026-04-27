@@ -1,0 +1,52 @@
+name: Auto Release CLI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/bktrader-ctl/**'
+      - 'internal/ctlclient/**'
+      - 'internal/http/registry.go'
+      - 'scripts/check-ctl-coverage/**'
+      - 'scripts/gen-ctl-command/**'
+      - 'go.mod'
+      - 'go.sum'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag bktrader-ctl release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run CLI tests
+        run: go test ./cmd/bktrader-ctl ./internal/ctlclient ./scripts/check-ctl-coverage
+
+      - name: Check CLI coverage
+        run: go run scripts/check-ctl-coverage/main.go
+
+      - name: Create release tag
+        id: tag
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          commit_ts="$(git show -s --format=%ct "$GITHUB_SHA")"
+          tag="ctl-v$(date -u -d "@$commit_ts" +%Y%m%d%H%M%S)-$short_sha"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists."
+          else
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "$tag"
+          fi
