@@ -7446,6 +7446,18 @@ func TestSyncLiveAccountRecordsAdapterResolutionFailuresInHealthSummary(t *testi
 	if !strings.Contains(stringValue(accountSync["lastError"]), "live adapter not registered") {
 		t.Fatalf("expected recorded adapter resolution failure, got %s", stringValue(accountSync["lastError"]))
 	}
+	if got := stringValue(accountSync["lastTrigger"]); got != "direct" {
+		t.Fatalf("expected sync observation trigger direct, got %s", got)
+	}
+	if got := boolValue(accountSync["lastResultError"]); !got {
+		t.Fatal("expected sync observation to record result error")
+	}
+	if got := parseFloatValue(accountSync["todayFailureRate"]); got != 1 {
+		t.Fatalf("expected failure rate 1 after one failed sync, got %v", got)
+	}
+	if got := stringValue(accountSync["lastGateWaitBucket"]); got == "" {
+		t.Fatal("expected gate wait bucket to be recorded")
+	}
 }
 
 func TestSyncActiveLiveAccountsReturnsPerAccountSyncErrors(t *testing.T) {
@@ -7796,11 +7808,22 @@ func TestSyncLiveAccountGlobalConcurrencyGateTimeoutReturnsError(t *testing.T) {
 	}
 
 	<-platform.liveAccountSyncGate
-	if _, err := platform.requestLiveAccountSync(account.ID, "direct"); err != nil {
+	synced, err := platform.requestLiveAccountSync(account.ID, "direct")
+	if err != nil {
 		t.Fatalf("expected sync to work after gate slot is available, got %v", err)
 	}
 	if got := syncCalls.Load(); got != 1 {
 		t.Fatalf("expected adapter to run after gate slot is available, got %d calls", got)
+	}
+	accountSync := mapValue(mapValue(synced.Metadata["healthSummary"])["accountSync"])
+	if got := stringValue(accountSync["lastTrigger"]); got != "direct" {
+		t.Fatalf("expected sync observation trigger direct, got %s", got)
+	}
+	if got := boolValue(accountSync["lastResultError"]); got {
+		t.Fatal("expected successful sync observation to clear result error")
+	}
+	if got := maxIntValue(accountSync["globalMaxConcurrent"], 0); got != liveAccountSyncMaxConcurrent {
+		t.Fatalf("expected global max concurrent observation %d, got %d", liveAccountSyncMaxConcurrent, got)
 	}
 }
 

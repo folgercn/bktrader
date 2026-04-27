@@ -137,6 +137,22 @@ type liveAccountSyncState struct {
 	completedAt time.Time
 }
 
+type liveAccountSyncGateObservation struct {
+	QueueDepth int64
+	Running    int64
+	WaitMS     int64
+	TimeoutMS  int64
+}
+
+type liveAccountSyncObservation struct {
+	Trigger        string
+	Gate           liveAccountSyncGateObservation
+	StartedAt      time.Time
+	CompletedAt    time.Time
+	SyncDurationMS int64
+	Err            error
+}
+
 const (
 	liveAccountSyncMaxConcurrent        = 2
 	defaultLiveAccountSyncGateTimeout   = 15 * time.Second
@@ -305,9 +321,8 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 	state.done = done
 	state.mu.Unlock()
 
-	gateWaitStartedAt := time.Now()
-	releaseSyncSlot, acquiredSlot := p.acquireLiveAccountSyncSlot()
-	gateWaitMS := time.Since(gateWaitStartedAt).Milliseconds()
+	syncRequestStartedAt := time.Now().UTC()
+	releaseSyncSlot, gateObservation, acquiredSlot := p.acquireLiveAccountSyncSlot()
 	if !acquiredSlot {
 		err := fmt.Errorf("%s: account=%s", liveAccountSyncGateTimeoutErrorText, accountID)
 		state.mu.Lock()
@@ -317,11 +332,20 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 		state.done = nil
 		close(done)
 		state.mu.Unlock()
+		p.persistLiveAccountSyncSchedulerFailure(accountID, syncRequestStartedAt, liveAccountSyncObservation{
+			Trigger:     normalizedTrigger,
+			Gate:        gateObservation,
+			StartedAt:   syncRequestStartedAt,
+			CompletedAt: time.Now().UTC(),
+			Err:         err,
+		})
 		logger.Warn("live account sync request rejected by global gate timeout",
 			"coalesced", false,
 			"waited_for_inflight", false,
 			"reused_recent_result", false,
-			"global_gate_wait_ms", gateWaitMS,
+			"sync_queue_length", gateObservation.QueueDepth,
+			"global_running", gateObservation.Running,
+			"global_gate_wait_ms", gateObservation.WaitMS,
 			"global_gate_timeout_ms", p.liveAccountSyncGateTimeout().Milliseconds(),
 			"max_concurrent", liveAccountSyncMaxConcurrent,
 		)
@@ -346,14 +370,31 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 		"coalesced", false,
 		"waited_for_inflight", false,
 		"reused_recent_result", false,
-		"global_gate_wait_ms", gateWaitMS,
+		"sync_queue_length", gateObservation.QueueDepth,
+		"global_running", gateObservation.Running,
+		"global_gate_wait_ms", gateObservation.WaitMS,
 		"max_concurrent", liveAccountSyncMaxConcurrent,
 	)
+	syncStartedAt := time.Now().UTC()
 	result, err := p.syncLiveAccountWithoutGate(accountID)
+	completedAt := time.Now().UTC()
+	syncDurationMS := completedAt.Sub(syncStartedAt).Milliseconds()
+	if observed, observeErr := p.persistLiveAccountSyncObservation(accountID, liveAccountSyncObservation{
+		Trigger:        normalizedTrigger,
+		Gate:           gateObservation,
+		StartedAt:      syncStartedAt,
+		CompletedAt:    completedAt,
+		SyncDurationMS: syncDurationMS,
+		Err:            err,
+	}); observeErr == nil && observed.ID != "" {
+		result = observed
+	} else if observeErr != nil {
+		logger.Warn("persist live account sync observation failed", "error", observeErr)
+	}
 	state.mu.Lock()
 	state.result = result
 	state.err = err
-	state.completedAt = time.Now().UTC()
+	state.completedAt = completedAt
 	state.running = false
 	state.done = nil
 	close(done)
@@ -364,24 +405,43 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 		"reused_recent_result", false,
 		"result_error", err != nil,
 		"completed_at", state.completedAt.Format(time.RFC3339),
-		"global_gate_wait_ms", gateWaitMS,
+		"sync_duration_ms", syncDurationMS,
+		"sync_duration_bucket", liveAccountSyncDurationBucket(syncDurationMS),
+		"sync_queue_length", gateObservation.QueueDepth,
+		"global_running", gateObservation.Running,
+		"global_gate_wait_ms", gateObservation.WaitMS,
+		"global_gate_wait_bucket", liveAccountSyncDurationBucket(gateObservation.WaitMS),
 	)
 	return result, err
 }
 
-func (p *Platform) acquireLiveAccountSyncSlot() (func(), bool) {
+func (p *Platform) acquireLiveAccountSyncSlot() (func(), liveAccountSyncGateObservation, bool) {
 	if p == nil || p.liveAccountSyncGate == nil {
-		return func() {}, true
+		return func() {}, liveAccountSyncGateObservation{}, true
+	}
+	waitStartedAt := time.Now()
+	waiting := p.liveAccountSyncWaiting.Add(1)
+	observe := liveAccountSyncGateObservation{
+		QueueDepth: maxInt64Value(waiting-1, 0),
+		Running:    p.liveAccountSyncRunning.Load(),
+		TimeoutMS:  p.liveAccountSyncGateTimeout().Milliseconds(),
 	}
 	timer := time.NewTimer(p.liveAccountSyncGateTimeout())
 	defer timer.Stop()
 	select {
 	case p.liveAccountSyncGate <- struct{}{}:
+		p.liveAccountSyncWaiting.Add(-1)
+		observe.WaitMS = time.Since(waitStartedAt).Milliseconds()
+		observe.Running = p.liveAccountSyncRunning.Add(1)
 		return func() {
 			<-p.liveAccountSyncGate
-		}, true
+			p.liveAccountSyncRunning.Add(-1)
+		}, observe, true
 	case <-timer.C:
-		return func() {}, false
+		p.liveAccountSyncWaiting.Add(-1)
+		observe.WaitMS = time.Since(waitStartedAt).Milliseconds()
+		observe.Running = p.liveAccountSyncRunning.Load()
+		return func() {}, observe, false
 	}
 }
 
@@ -390,6 +450,31 @@ func (p *Platform) liveAccountSyncGateTimeout() time.Duration {
 		return defaultLiveAccountSyncGateTimeout
 	}
 	return p.liveAccountSyncGateTTL
+}
+
+func (p *Platform) persistLiveAccountSyncSchedulerFailure(accountID string, attemptedAt time.Time, observation liveAccountSyncObservation) {
+	if observation.Err == nil {
+		return
+	}
+	account, err := p.store.GetAccount(accountID)
+	if err != nil {
+		p.logger("service.live", "account_id", accountID).Warn("load live account for sync scheduler failure failed", "error", err)
+		return
+	}
+	updateAccountSyncFailureHealth(&account, attemptedAt, observation.Err)
+	applyLiveAccountSyncObservation(&account, observation)
+	if _, err := p.store.UpdateAccount(account); err != nil {
+		p.logger("service.live", "account_id", accountID).Warn("persist live account sync scheduler failure failed", "error", err)
+	}
+}
+
+func (p *Platform) persistLiveAccountSyncObservation(accountID string, observation liveAccountSyncObservation) (domain.Account, error) {
+	account, err := p.store.GetAccount(accountID)
+	if err != nil {
+		return domain.Account{}, err
+	}
+	applyLiveAccountSyncObservation(&account, observation)
+	return p.store.UpdateAccount(account)
 }
 
 func (p *Platform) liveAccountSyncEntry(accountID string) *liveAccountSyncState {
@@ -435,6 +520,66 @@ func (p *Platform) liveAccountSyncRefreshInterval() time.Duration {
 		return threshold
 	}
 	return interval
+}
+
+func applyLiveAccountSyncObservation(account *domain.Account, observation liveAccountSyncObservation) {
+	if account == nil {
+		return
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	section := ensureHealthSection(account.Metadata, "accountSync")
+	if !observation.CompletedAt.IsZero() {
+		section["lastObservedAt"] = observation.CompletedAt.UTC().Format(time.RFC3339)
+	}
+	if strings.TrimSpace(observation.Trigger) != "" {
+		section["lastTrigger"] = strings.TrimSpace(observation.Trigger)
+	}
+	if observation.SyncDurationMS > 0 {
+		section["lastSyncDurationMs"] = observation.SyncDurationMS
+		section["lastSyncDurationBucket"] = liveAccountSyncDurationBucket(observation.SyncDurationMS)
+	}
+	section["lastGateWaitMs"] = observation.Gate.WaitMS
+	section["lastGateWaitBucket"] = liveAccountSyncDurationBucket(observation.Gate.WaitMS)
+	section["lastQueueLength"] = observation.Gate.QueueDepth
+	section["lastGlobalRunning"] = observation.Gate.Running
+	section["globalMaxConcurrent"] = liveAccountSyncMaxConcurrent
+	section["lastResultError"] = observation.Err != nil
+	if observation.Err != nil {
+		section["lastObservedError"] = observation.Err.Error()
+	} else {
+		delete(section, "lastObservedError")
+	}
+	syncCount := parseFloatValue(mapValue(section["today"])["syncCount"])
+	errorCount := parseFloatValue(mapValue(section["today"])["errorCount"])
+	if total := syncCount + errorCount; total > 0 {
+		section["todayFailureRate"] = errorCount / total
+	}
+}
+
+func liveAccountSyncDurationBucket(ms int64) string {
+	switch {
+	case ms <= 0:
+		return "0ms"
+	case ms < 100:
+		return "lt_100ms"
+	case ms < 500:
+		return "lt_500ms"
+	case ms < 1000:
+		return "lt_1s"
+	case ms < 5000:
+		return "lt_5s"
+	case ms < 15000:
+		return "lt_15s"
+	default:
+		return "gte_15s"
+	}
+}
+
+func maxInt64Value(value, fallback int64) int64 {
+	if value > fallback {
+		return value
+	}
+	return fallback
 }
 
 func (p *Platform) liveAccountSyncAllowsRecentReuse(trigger string) bool {

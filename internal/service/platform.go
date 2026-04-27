@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
@@ -44,6 +45,8 @@ type Platform struct {
 	liveAccountSyncState   sync.Map // accountID -> *liveAccountSyncState
 	liveAccountSyncGate    chan struct{}
 	liveAccountSyncGateTTL time.Duration
+	liveAccountSyncWaiting atomic.Int64
+	liveAccountSyncRunning atomic.Int64
 	liveControlOpState     sync.Map // accountID|strategyID -> *liveControlOperationState
 	liveDispatchMu         sync.Map // liveSessionID -> *sync.Mutex; process-local guard, not distributed idempotency.
 	runtimeSourceGateState sync.Map // runtimeSessionID -> last blocked source gate signature
