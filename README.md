@@ -38,6 +38,19 @@
     - `scripts/check_env_safety.sh`: 环境安全检查。
 - **验证矩阵**: 详见 `docs/test-matrix.md`，定义了不同风险等级改动所需的验证深度。
 
+## 🛠️ bktrader-ctl 命令行工具
+
+`bktrader-ctl` 是专为 LLM/Agent 和高级用户设计的生产环境控制平面工具。它提供了比 Web 控制台更精细、更高效的资源管理能力：
+
+- **安装与配置**: 详见 [bktrader-ctl 安装指南](docs/bktrader-ctl-install-deploy.md)。
+- **核心功能**:
+    - **状态概览**: `bktrader-ctl status` 查看系统整体运行健康度。
+    - **账户管理**: `bktrader-ctl account list/summary` 查看账户权益与 PnL。
+    - **信号监控**: `bktrader-ctl live list` 查看所有实盘会话状态。
+    - **订单/持仓**: `bktrader-ctl order/position list` 管理活跃订单与仓位。
+    - **日志溯源**: `bktrader-ctl logs system/events/trace` 实时跟踪系统事件与特定订单链路。
+- **Agent 友好**: 所有命令均支持 `--json` 输出，便于 AI Agent 进行结构化分析与自动化操作。
+
 ## 🧠 知识图谱 (Knowledge Graph)
 
 本项目通过 `graphify` 维护着一套自动更新的知识图谱：
@@ -113,6 +126,9 @@ go run ./cmd/platform-api
 - `POST /api/v1/live/sessions/{id}/start` — 启动实盘策略会话
 - `POST /api/v1/live/sessions/{id}/stop` — 停止实盘策略会话
 - `POST /api/v1/live/sessions/{id}/dispatch` — 手动确认并派发当前实盘策略意图
+- `GET /api/v1/live/sessions/{id}/recovery/diagnosis` — 实盘恢复诊断（检查对账状态、事实源匹配度）
+- `POST /api/v1/live/sessions/{id}/recovery/reconcile` — 执行实盘恢复对账（self-heal）
+- `GET /api/v1/signal-runtime/summary` — 信号运行时全局健康摘要
 
 - `GET /api/v1/chart/annotations` — 图表标注数据
 - `GET /api/v1/chart/candles` — K 线数据
@@ -131,12 +147,12 @@ go run ./cmd/platform-api
 - 策略绑定解决“策略依赖哪些输入”
 - 账户绑定解决“这个账户实际接收哪些市场流”
 - 这两层分离后，后续做双市场交易和跨市场套利时不需要改模型
-- `signal-runtime plan` 会把策略需要的源和账户实际绑定的源做匹配，直接告诉你：
+- `signal-runtime plan` 会把策略需要的源 and 账户实际绑定的源做匹配，直接告诉你：
   - 哪些源已经 READY
   - 哪些 trigger/feature 还缺失
   - 这些源后面应由哪个 runtime adapter 驱动
 - `signal-runtime session` 会把一组绑定转换成可启动的运行时骨架，当前会记录：
-  - 订阅数和订阅 channel
+  - 订阅数 and 订阅 channel
   - runtime adapter
   - 健康状态
   - 最近心跳
@@ -203,7 +219,7 @@ go run ./cmd/platform-api
 
 当前 `live session` 也已经接入主交易链路：
 - `live session` 绑定 `LIVE account + strategy`
-- 启动前会检查 live adapter、signal runtime plan、runtime health 和 source freshness
+- 启动前会检查 live adapter、signal runtime plan、runtime health and source freshness
 - 启动后会随 linked runtime 的真实事件更新策略评估状态
 - 当前默认 `dispatchMode=manual-review`
 - 会在 session state 中记录：
@@ -213,7 +229,7 @@ go run ./cmd/platform-api
   - `timeline`
 - 当前可以对 `lastStrategyIntent` 执行人工确认派单：
   - 只有当 live session 产出了 ready intent 时才允许 dispatch
-  - dispatch 会复用现有 live preflight 和 live adapter 提交流程
+  - dispatch 会复用现有 live preflight and live adapter 提交流程
 - 这一步先把“实盘策略会话”和“实盘自动派单”拆开，方便先把 runtime/策略评估链路跑稳
 
 实盘账户当前支持：
@@ -249,10 +265,10 @@ npm run dev
 
 当前推荐的前端生产部署方式不是 Docker，而是：
 
-1. GitHub Actions 在 `web/console` 下执行 `npm ci` 和 `npm run build`
+1. GitHub Actions 在 `web/console` 下执行 `npm ci` and `npm run build`
 2. 产出静态文件 `web/console/dist`
 3. 通过 `rsync` 直接覆盖远端 Nginx 静态目录，例如 `/var/www/bktrader`
-4. 由 Nginx 提供前端页面，并把 `/api/` 和 `/healthz` 反代到后端
+4. 由 Nginx 提供前端页面，并把 `/api/` and `/healthz` 反代到后端
 
 推荐的 Nginx 路由结构如下：
 
@@ -277,7 +293,7 @@ npm run dev
 
 - 前端是 Vite 静态站点，没有必要再套一层容器
 - 回滚和排障更直接，核心就是 `dist/` 目录内容
-- Nginx 可以同时处理静态资源、TLS 和 `/api` 反代
+- Nginx 可以同时处理静态资源、TLS and `/api` 反代
 
 ## 回测执行数据源
 
@@ -305,7 +321,7 @@ TICK_DATA_DIR=./dataset/archive
 - [data/tick/BTC_tick.sample.template](/Users/wuyaocheng/Downloads/bkTrader/data/tick/BTC_tick.sample.template)
 - [docs/tick-data-spec.md](/Users/wuyaocheng/Downloads/bkTrader/docs/tick-data-spec.md)
 
-前端回测面板和 `GET /api/v1/backtests/options` 会展示：
+前端回测面板 and `GET /api/v1/backtests/options` 会展示：
 
 - 当前目录下实际发现的数据文件
 - 每种执行数据源支持的标的列表
@@ -316,7 +332,7 @@ TICK_DATA_DIR=./dataset/archive
 - `from`：RFC3339 起始时间
 - `to`：RFC3339 结束时间
 
-当前 `tick` runner 已接入按时间窗口挑选月分片和流式预览，不会默认把整个 archive 全量扫完。
+当前 `tick` runner 已接入按时间窗口挑选月分片 and 流式预览，不会默认把整个 archive 全量扫完。
 当前平台的主回测入口是 `Strategy Replay`：
 
 - 选择 `4h` 或 `1d` 作为信号周期
@@ -342,7 +358,7 @@ TICK_DATA_DIR=./dataset/archive
 
 `replayLedger=true` 仍然保留为可选内部审计能力，用于排查历史账本和执行层之间的差异，但它不是当前平台推荐的主回测入口。
 
-当前仓库还提供了一个对齐脚本，用于校验 Go 策略回放和 Python 研究版在 `1d -> 1min` 场景下的一致性：
+当前仓库还提供了一个对齐脚本，用于校验 Go 策略回放 and Python 研究版在 `1d -> 1min` 场景下的一致性：
 
 ```bash
 python3 scripts/check_1d_1min_parity.py
@@ -427,11 +443,11 @@ python3 scripts/check_1d_1min_parity.py
 - GitHub Actions runner 到目标机的 SSH 可达性
 - `rsync`
 
-如果前端和 Nginx 在同一台机器，建议额外确认：
+如果前端 and Nginx 在同一台机器，建议额外确认：
 
 - 防火墙已放行站点监听端口，例如 `3088`
-- 站点证书和 `server_name` 已配置
-- `/api/` 和 `/healthz` 已反代到后端入口
+- 站点证书 and `server_name` 已配置
+- `/api/` and `/healthz` 已反代到后端入口
 
 并准备好 `.env` 文件，例如：
 
@@ -469,27 +485,27 @@ OKX_PUBLIC_WS_URL=wss://ws.okx.com:8443/ws/v5/public
 
 - 现有的研究文件已整理至 `research/` 目录，避免干扰策略研究工作。
 - 平台脚手架采用模块化设计，初期以可部署的单体架构启动，便于快速迭代，后续可按需拆分。
-- Phase 1 支持内存存储和 PostgreSQL 两种存储后端，通过 `STORE_BACKEND` 环境变量切换。
-- PostgreSQL 持久化目前覆盖策略、账户、订单、持仓、回测记录和 live 运行状态。
+- Phase 1 支持内存存储 and PostgreSQL 两种存储后端，通过 `STORE_BACKEND` 环境变量切换。
+- PostgreSQL 持久化目前覆盖策略、账户、订单、持仓、回测记录 and live 运行状态。
 - `cmd/db-migrate` 执行嵌入式 SQL 迁移，并在 `schema_migrations` 表中记录迁移历史。
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
 - 当前推荐的“模拟交易”已经切到 Binance Futures testnet，凭据默认从 `.env` 读取。
 - live session 现在支持两种下单仓位模式：
   - `positionSizingMode=fixed_quantity`：使用 `defaultOrderQuantity`
   - `positionSizingMode=fixed_fraction`：使用 `defaultOrderFraction` 按账户可用余额/权益换算数量
-- 固定比例模式算出的数量在实际提交到 Binance 前，仍会走交易所 `stepSize / minQty / minNotional` 归一化，避免小数位和最小名义价值不符合要求。
+- 固定比例模式算出的数量在实际提交到 Binance 前，仍会走交易所 `stepSize / minQty / minNotional` 归一化，避免小数位 and 最小名义价值不符合要求。
 - 行情数据接入当前也已经配置化：
-  - `BINANCE_FUTURES_KLINE_BASE_URL`：启动预热和图表历史 K 线读取地址
+  - `BINANCE_FUTURES_KLINE_BASE_URL`：启动预热 and 图表历史 K 线读取地址
   - `BINANCE_FUTURES_WS_URL`：`binance-market-ws` signal runtime 的公共 WebSocket 地址
   - `OKX_PUBLIC_WS_URL`：`okx-market-ws` 的公共 WebSocket 地址
   - 未配置时会分别回退到 Binance Futures / OKX 官方公共地址
 - 服务启动时会从行情源主动预热 `1m / 4h / 1d` bars，并计算 `SMA5 / MA20 / ATR14`，后续 `live / testnet / 实盘` 的策略评估直接复用这批缓存。
 - live/testnet 当前默认建议使用 `defaultOrderQuantity=0.002` 跑 BTCUSDT smoke test，`0.001` 可能低于 testnet 最小名义价值限制。
 - `scripts/testnet_live_session_smoke.sh` 现在会同时校验退出侧 execution profile 默认值：`PT exit => LIMIT / GTX / postOnly / reduceOnly`，`SL exit => MARKET / reduceOnly`。
-- 给 `EXPECT_EXIT_PROFILE=pt-exit` 或 `EXPECT_EXIT_PROFILE=sl-exit` 后，脚本会轮询 live session 的 `lastExecutionProfile / lastExecutionDispatch`，用于等待真实 testnet 退出信号并校验最终执行策略是否按预期落地。
-- `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警和 live/runtime preflight 共享同一套 freshness / quiet / readiness timeout 配置。
+- 给 `EXPECT_EXIT_PROFILE=pt-exit` 或 `EXPECT_EXIT_PROFILE=sl-exit` 后，脚本会轮询 live session 的 `lastExecutionProfile / lastExecutionDispatch`，用于等待真实 testnet 退出信号 and 校验最终执行策略是否按预期落地。
+- `GET /api/v1/runtime-policy` 返回统一运行阈值，前端告警 and live/runtime preflight 共享同一套 freshness / quiet / readiness timeout 配置。
 - `POST /api/v1/runtime-policy` 支持热更新运行阈值；当前会持久化到平台配置表，服务重启后仍然保留，控制台 `Signals` 页面已提供对应配置面板。
-- `GET /api/v1/alerts` 统一聚合 `live / runtime` 两类运行告警，作为控制台告警面板和后续外部通知通道的统一源头。
+- `GET /api/v1/alerts` 统一聚合 `live / runtime` 两类运行告警，作为控制台告警面板 and 后续外部通知通道的统一源头。
 - `GET /api/v1/notifications` 基于当前活跃告警生成平台内通知 Inbox；支持 `ack / unack`，当前确认状态已持久化。
 - Telegram 通知当前只接这一条通道：
   - 可在控制台保存 `bot token / chat id / send levels`
