@@ -13,6 +13,15 @@ import (
 const (
 	liveExitDispatchFailureLogDedupeTTL        = 6 * time.Hour
 	liveExitDispatchFailureLogDedupeMaxEntries = 512
+	liveAccountSyncStaleAlertGrace             = 30 * time.Second
+)
+
+type liveAccountSyncStaleness string
+
+const (
+	liveAccountSyncFresh     liveAccountSyncStaleness = "fresh"
+	liveAccountSyncSoftStale liveAccountSyncStaleness = "soft-stale"
+	liveAccountSyncHardStale liveAccountSyncStaleness = "hard-stale"
 )
 
 var liveExitDispatchFailureLogDedupe = struct {
@@ -225,7 +234,7 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 				EventTime:   parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"])),
 			})
 		}
-		if stale, ageSeconds := p.liveAccountSyncStale(account, time.Now().UTC()); stale {
+		if stale, ageSeconds := p.liveAccountSyncStaleForAlert(account, time.Now().UTC()); stale {
 			level := "warning"
 			if openPositionCount > 0 || len(runningLiveSessionsForAccount) > 0 {
 				level = "critical"
@@ -786,23 +795,48 @@ func (p *Platform) liveSessionEvaluationQuiet(mode, status string, sessionState 
 }
 
 func (p *Platform) liveAccountSyncStale(account domain.Account, referenceTime time.Time) (bool, int) {
+	staleness, ageSeconds := p.liveAccountSyncStaleness(account, referenceTime)
+	return staleness != liveAccountSyncFresh, ageSeconds
+}
+
+func (p *Platform) liveAccountSyncStaleForAlert(account domain.Account, referenceTime time.Time) (bool, int) {
+	staleness, ageSeconds := p.liveAccountSyncStaleness(account, referenceTime)
+	return staleness == liveAccountSyncHardStale, ageSeconds
+}
+
+func (p *Platform) liveAccountSyncStaleness(account domain.Account, referenceTime time.Time) (liveAccountSyncStaleness, int) {
 	threshold := time.Duration(p.runtimePolicy.LiveAccountSyncFreshnessSecs) * time.Second
 	if threshold <= 0 {
-		return false, 0
+		return liveAccountSyncFresh, 0
 	}
-	lastSuccessAt := parseOptionalRFC3339(firstNonEmpty(
-		stringValue(mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"])["lastSuccessAt"]),
-		stringValue(account.Metadata["lastLiveSyncAt"]),
-	))
+	lastSuccessAt := liveAccountSyncLastSuccessAt(account)
 	if lastSuccessAt.IsZero() {
 		age := 0
 		if !account.CreatedAt.IsZero() {
 			age = int(referenceTime.Sub(account.CreatedAt).Seconds())
 		}
-		return true, age
+		return liveAccountSyncHardStale, age
 	}
-	age := int(referenceTime.Sub(lastSuccessAt).Seconds())
-	return referenceTime.Sub(lastSuccessAt) > threshold, age
+	elapsed := referenceTime.Sub(lastSuccessAt)
+	age := int(elapsed.Seconds())
+	if elapsed <= threshold {
+		return liveAccountSyncFresh, age
+	}
+	accountSync := mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"])
+	if lastAttemptAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"])); lastAttemptAt.After(lastSuccessAt) && referenceTime.Sub(lastAttemptAt) <= liveAccountSyncStaleAlertGrace {
+		return liveAccountSyncSoftStale, age
+	}
+	if elapsed <= threshold+liveAccountSyncStaleAlertGrace {
+		return liveAccountSyncSoftStale, age
+	}
+	return liveAccountSyncHardStale, age
+}
+
+func liveAccountSyncLastSuccessAt(account domain.Account) time.Time {
+	return parseOptionalRFC3339(firstNonEmpty(
+		stringValue(mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"])["lastSuccessAt"]),
+		stringValue(account.Metadata["lastLiveSyncAt"]),
+	))
 }
 
 func summarizeSourceGate(sourceGate map[string]any) string {
