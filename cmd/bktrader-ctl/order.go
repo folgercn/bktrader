@@ -47,7 +47,7 @@ var orderGetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := getClient()
-		resp, err := client.Request("GET", "/api/v1/orders/"+args[0], nil)
+		resp, err := client.Request("GET", "/api/v1/orders/"+url.PathEscape(args[0]), nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -74,7 +74,7 @@ var orderCancelCmd = &cobra.Command{
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/orders/"+args[0]+"/cancel", nil)
+		resp, err := client.Request("POST", "/api/v1/orders/"+url.PathEscape(args[0])+"/cancel", nil)
 		handleResponse(resp, err)
 		return nil
 	},

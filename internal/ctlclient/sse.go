@@ -2,76 +2,80 @@ package ctlclient
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
 
-// SSEEvent 代表一个 SSE 事件
-type SSEEvent struct {
-	Event string
-	Data  string
-}
+// Stream 发起 SSE 请求并流式处理事件 (支持多行数据和 1MB Buffer)
+func (c *Client) Stream(method, path string, payload any, callback func([]byte)) error {
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
 
-// StreamSSE 发起 SSE 请求并流式处理事件
-func (c *Client) StreamSSE(method, path string, handler func(SSEEvent)) error {
-	url := fmt.Sprintf("%s%s", c.BaseURL, path)
-	req, err := http.NewRequest(method, url, nil)
+	var body io.Reader
+	if payload != nil {
+		b, _ := json.Marshal(payload)
+		body = bytes.NewReader(b)
+	}
+
+	req, err := http.NewRequest(method, c.BaseURL+path, body)
 	if err != nil {
 		return err
 	}
 
+	c.signRequest(req, payload)
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
-	}
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("SSE request failed with status %d", resp.StatusCode)
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	var currentEvent SSEEvent
+	// 使用 1MB 的 Reader 规避默认 Scanner 的 64K 限制
+	reader := bufio.NewReaderSize(resp.Body, 1024*1024)
+	var dataBuffer bytes.Buffer
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			// 空行表示事件结束，分发事件
-			if currentEvent.Data != "" {
-				handler(currentEvent)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
 			}
-			currentEvent = SSEEvent{}
+			return err
+		}
+
+		// 去掉换行符
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimSuffix(line, "\r")
+
+		// SSE 协议中，空行表示一个事件的结束
+		if line == "" {
+			if dataBuffer.Len() > 0 {
+				callback(dataBuffer.Bytes())
+				dataBuffer.Reset()
+			}
 			continue
 		}
 
-		if strings.HasPrefix(line, ":") {
-			// 注释行/keepalive
-			continue
+		// 处理 data 字段，支持多行聚合
+		if strings.HasPrefix(line, "data:") {
+			data := strings.TrimPrefix(line, "data:")
+			data = strings.TrimSpace(data)
+			dataBuffer.WriteString(data)
 		}
-
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) < 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		switch key {
-		case "event":
-			currentEvent.Event = value
-		case "data":
-			currentEvent.Data = value
-		}
+		// 忽略 event:, id:, retry: 和注释行
 	}
 
-	return scanner.Err()
+	return nil
 }

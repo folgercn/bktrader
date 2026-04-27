@@ -36,6 +36,16 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+// Execute 执行根命令
+func Execute() {
+	// 只有非 gendocs 且非 update 命令时才尝试静默更新
+	go SilentUpdateCheck()
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
 func init() {
 	cobra.OnInitialize(initConfig)
 

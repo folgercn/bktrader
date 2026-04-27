@@ -45,7 +45,7 @@ var liveGetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := getClient()
-		resp, err := client.Request("GET", "/api/v1/live/sessions/"+args[0]+"/detail", nil)
+		resp, err := client.Request("GET", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/detail", nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -61,7 +61,7 @@ var liveStartCmd = &cobra.Command{
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/live/sessions/"+args[0]+"/start", nil)
+		resp, err := client.Request("POST", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/start", nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -78,7 +78,7 @@ var liveStopCmd = &cobra.Command{
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
 		client := getClient()
-		path := "/api/v1/live/sessions/" + args[0] + "/stop"
+		path := "/api/v1/live/sessions/" + url.PathEscape(args[0]) + "/stop"
 		if force {
 			path += "?force=true"
 		}
@@ -98,7 +98,7 @@ var liveDispatchCmd = &cobra.Command{
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/live/sessions/"+args[0]+"/dispatch", nil)
+		resp, err := client.Request("POST", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/dispatch", nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -110,7 +110,7 @@ var liveSyncCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/live/sessions/"+args[0]+"/sync", nil)
+		resp, err := client.Request("POST", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/sync", nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -126,7 +126,7 @@ var liveDeleteCmd = &cobra.Command{
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
 		client := getClient()
-		resp, err := client.Request("DELETE", "/api/v1/live/sessions/"+args[0], nil)
+		resp, err := client.Request("DELETE", "/api/v1/live/sessions/"+url.PathEscape(args[0]), nil)
 		handleResponse(resp, err)
 		return nil
 	},

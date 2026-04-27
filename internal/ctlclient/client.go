@@ -135,18 +135,4 @@ func LoadToken() (string, error) {
 }
 
 // SaveToken 保存 token 到本地
-func SaveToken(token string, ttl time.Duration) error {
-	path := GetTokenCachePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	cfg := Config{
-		Token:     token,
-		ExpiresAt: time.Now().Add(ttl),
-	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0600)
 }

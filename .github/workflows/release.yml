@@ -39,6 +39,9 @@ jobs:
             env GOOS=$GOOS GOARCH=$GOARCH go build -o "dist/$output_name" ./cmd/bktrader-ctl
           done
 
+          # 生成校验和
+          cd dist && sha256sum * > checksums.txt && cd ..
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:

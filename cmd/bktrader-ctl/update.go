@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -113,27 +116,111 @@ func getBinaryURL(tag string) string {
 		repoOwner, repoName, tag, runtime.GOOS, runtime.GOARCH)
 }
 
-func downloadAndReplace(url string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func getChecksumURL(tag string) string {
+	return fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/checksums.txt", 
+		repoOwner, repoName, tag)
+}
+
+func downloadAndReplace(tag, url string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
+	// 1. 获取预期的哈希值
+	expectedHash, err := getExpectedHash(ctx, tag)
+	if err != nil {
+		return fmt.Errorf("无法获取校验和: %w", err)
+	}
+
+	// 2. 发起下载请求
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil { return err }
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 { return fmt.Errorf("HTTP %d", resp.StatusCode) }
+	if resp.StatusCode != 200 { return fmt.Errorf("下载失败: HTTP %d", resp.StatusCode) }
+	
+	// 尺寸预检
+	if resp.ContentLength <= 0 {
+		return fmt.Errorf("异常的 Content-Length: %d", resp.ContentLength)
+	}
 
+	// 3. 准备临时文件
 	exePath, err := os.Executable()
 	if err != nil { return err }
 	
-	tmpPath := exePath + ".tmp"
+	tmpPath := exePath + ".next"
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil { return err }
-	defer f.Close()
+	
+	// 4. 流式下载并计算哈希
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(f, hasher)
+	
+	copied, err := io.Copy(multiWriter, resp.Body)
+	if err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	
+	if copied != resp.ContentLength && resp.ContentLength > 0 {
+		f.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("下载不完整: expected %d, got %d", resp.ContentLength, copied)
+	}
 
-	_, err = io.Copy(f, resp.Body)
-	if err != nil { return err }
+	// 5. 校验哈希
+	actualHash := hex.EncodeToString(hasher.Sum(nil))
+	if actualHash != expectedHash {
+		f.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("校验失败! 预期: %s, 实际: %s", expectedHash, actualHash)
+	}
 
-	return os.Rename(tmpPath, exePath)
+	// 6. 确保落盘并关闭
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	// 7. 原子替换策略 (Unix-friendly)
+	// 先将当前的重命名为 .old，再把 .next 换过来
+	oldPath := exePath + ".old"
+	_ = os.Remove(oldPath) // 清理上次的备份
+	
+	if err := os.Rename(exePath, oldPath); err != nil {
+		return fmt.Errorf("备份当前程序失败: %w", err)
+	}
+	
+	if err := os.Rename(tmpPath, exePath); err != nil {
+		// 尝试回滚
+		_ = os.Rename(oldPath, exePath)
+		return fmt.Errorf("替换新版本失败: %w", err)
+	}
+
+	return nil
+}
+
+func getExpectedHash(ctx context.Context, tag string) (string, error) {
+	url := getChecksumURL(tag)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil { return "", err }
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 { return "", fmt.Errorf("HTTP %d", resp.StatusCode) }
+	
+	body, _ := io.ReadAll(resp.Body)
+	lines := strings.Split(string(body), "\n")
+	
+	targetName := fmt.Sprintf("bktrader-ctl-%s-%s", runtime.GOOS, runtime.GOARCH)
+	for _, line := range lines {
+		parts := strings.Fields(line)
+		if len(parts) >= 2 && parts[1] == targetName {
+			return parts[0], nil
+		}
+	}
+	
+	return "", fmt.Errorf("在 checksums.txt 中未找到 %s", targetName)
 }
