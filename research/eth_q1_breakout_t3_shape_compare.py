@@ -59,16 +59,7 @@ SCENARIOS = [
         "t3_quality_filters": {},
     },
     {
-        "scenario": "t3_sma5_trend_and_atr_pct30",
-        "breakout_shape": "baseline_plus_t3",
-        "replay_mode": "live_intrabar_sma5",
-        "t3_reentry_size_schedule": [0.20, 0.10],
-        "t3_cooldown_bars": 0,
-        "timeframes": ["30min"],
-        "t3_quality_filters": {"trend": True, "min_atr_percentile": 30.0},
-    },
-    {
-        "scenario": "t3_sma5_sma_atr_sep_0p25",
+        "scenario": "A_sep_0p25",
         "breakout_shape": "baseline_plus_t3",
         "replay_mode": "live_intrabar_sma5",
         "t3_reentry_size_schedule": [0.20, 0.10],
@@ -77,13 +68,35 @@ SCENARIOS = [
         "t3_quality_filters": {"min_sma_atr_separation": 0.25},
     },
     {
-        "scenario": "t3_sma5_sma_atr_sep_0p50",
+        "scenario": "B_trend_sep_0p25",
         "breakout_shape": "baseline_plus_t3",
         "replay_mode": "live_intrabar_sma5",
         "t3_reentry_size_schedule": [0.20, 0.10],
         "t3_cooldown_bars": 0,
         "timeframes": ["30min"],
-        "t3_quality_filters": {"min_sma_atr_separation": 0.50},
+        "t3_quality_filters": {"trend": True, "min_sma_atr_separation": 0.25},
+    },
+    {
+        "scenario": "C_atr_pct30_sep_0p25",
+        "breakout_shape": "baseline_plus_t3",
+        "replay_mode": "live_intrabar_sma5",
+        "t3_reentry_size_schedule": [0.20, 0.10],
+        "t3_cooldown_bars": 0,
+        "timeframes": ["30min"],
+        "t3_quality_filters": {"min_atr_percentile": 30.0, "min_sma_atr_separation": 0.25},
+    },
+    {
+        "scenario": "D_trend_atr_pct30_sep_0p25",
+        "breakout_shape": "baseline_plus_t3",
+        "replay_mode": "live_intrabar_sma5",
+        "t3_reentry_size_schedule": [0.20, 0.10],
+        "t3_cooldown_bars": 0,
+        "timeframes": ["30min"],
+        "t3_quality_filters": {
+            "trend": True,
+            "min_atr_percentile": 30.0,
+            "min_sma_atr_separation": 0.25,
+        },
     },
 ]
 
@@ -907,9 +920,10 @@ def write_markdown(summary: dict, output_path: Path):
         "",
         "## Optimization Variants",
         "",
-        "- `t3_sma5_trend_and_atr_pct30`: combines the trend filter with ATR percentile >= `30%`.",
-        "- `t3_sma5_sma_atr_sep_0p25`: t3 requires `abs(breakout_level - sma5) >= 0.25 * atr`.",
-        "- `t3_sma5_sma_atr_sep_0p50`: t3 requires `abs(breakout_level - sma5) >= 0.50 * atr`.",
+        "- `A_sep_0p25`: t3 requires `abs(breakout_level - sma5) >= 0.25 * atr`.",
+        "- `B_trend_sep_0p25`: A plus trend direction filter.",
+        "- `C_atr_pct30_sep_0p25`: A plus ATR percentile >= `30%`.",
+        "- `D_trend_atr_pct30_sep_0p25`: A plus trend direction and ATR percentile >= `30%`.",
         "",
         "## Results",
         "",
@@ -972,11 +986,12 @@ def write_markdown(summary: dict, output_path: Path):
             "",
             "## Conclusion",
             "",
-            "- `t3_sma5_sma_atr_sep_0p25` is the best candidate in this run. It improves return by `+4.22 pp`, MaxDD by `0.06 pp`, Sharpe by `+0.07`, win rate by `+0.32 pp`, and reduces trades by `25`.",
-            "- `t3_sma5_trend_and_atr_pct30` is a defensive filter. It improves MaxDD by `0.25 pp`, Sharpe by `+0.22`, and reduces trades by `239`, but gives back `26.59 pp` return.",
-            "- `t3_sma5_sma_atr_sep_0p50` is too strict for a primary 30min setting. It improves MaxDD by `0.23 pp`, Sharpe by `+0.19`, and win rate by `+1.00 pp`, but gives back `55.67 pp` return.",
+            "- A (`sep_0p25`) is still the best primary candidate: return improves `+4.22 pp`, MaxDD improves `0.06 pp`, Sharpe improves `+0.07`, and trades drop `25`.",
+            "- Adding trend on top of A is defensive but gives back too much return: B improves Sharpe more (`+0.15`) and cuts `115` trades, but return falls `16.61 pp` vs baseline and `20.83 pp` vs A.",
+            "- Adding ATR percentile on top of A is the better defensive overlay: C improves MaxDD `0.31 pp`, Sharpe `+0.19`, win rate `+0.72 pp`, and cuts `214` trades, while giving back `12.24 pp` vs baseline and `16.46 pp` vs A.",
+            "- Adding both filters on top of A over-constrains the signal: D has the highest Sharpe delta (`+0.23`) and lowest trade count, but loses `31.67 pp` return vs baseline.",
             "",
-            "Recommended next candidate for live-aligned research is `t3_sma5_sma_atr_sep_0p25`, because it is the only tested filter that improves return and risk metrics together against `t3_sma5_baseline`.",
+            "Recommended ranking: A for primary 30min candidate; C as the risk-off candidate when drawdown/trade count matters more than raw return.",
             "",
         ]
     )
@@ -993,11 +1008,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunksize", type=int, default=2_000_000)
     parser.add_argument(
         "--summary-json",
-        default="research/eth_2026_q1_30min_t3_sma5_combo_separation_summary.json",
+        default="research/eth_2026_q1_30min_t3_sma5_sep_0p25_marginal_summary.json",
     )
     parser.add_argument(
         "--markdown",
-        default="research/20260427_eth_q1_30min_t3_sma5_combo_separation.md",
+        default="research/20260427_eth_q1_30min_t3_sma5_sep_0p25_marginal.md",
     )
     return parser.parse_args()
 
