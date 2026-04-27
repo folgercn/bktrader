@@ -7827,6 +7827,66 @@ func TestSyncLiveAccountGlobalConcurrencyGateTimeoutReturnsError(t *testing.T) {
 	}
 }
 
+func TestSyncLiveAccountObservationPreservesAdapterResultMetadata(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-observation-preserves-result",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["adapterResultMarker"] = "preserved"
+			account.Metadata["liveSyncSnapshot"] = map[string]any{
+				"source":     "test-sync-observation-preserves-result",
+				"adapterKey": "test-sync-observation-preserves-result",
+				"syncedAt":   time.Now().UTC().Format(time.RFC3339),
+			}
+			health := cloneMetadata(mapValue(account.Metadata["healthSummary"]))
+			accountSync := cloneMetadata(mapValue(health["accountSync"]))
+			accountSync["adapterHealthMarker"] = "preserved"
+			health["accountSync"] = accountSync
+			account.Metadata["healthSummary"] = health
+			return account, nil
+		},
+	})
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-sync-observation-preserves-result",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	synced, err := platform.requestLiveAccountSync(account.ID, "direct")
+	if err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+	if got := stringValue(synced.Metadata["adapterResultMarker"]); got != "preserved" {
+		t.Fatalf("expected returned account to preserve adapter result metadata, got %s", got)
+	}
+	accountSync := mapValue(mapValue(synced.Metadata["healthSummary"])["accountSync"])
+	if got := stringValue(accountSync["adapterHealthMarker"]); got != "preserved" {
+		t.Fatalf("expected returned account to preserve adapter health metadata, got %s", got)
+	}
+	if got := stringValue(accountSync["lastTrigger"]); got != "direct" {
+		t.Fatalf("expected observation trigger to be applied on returned account, got %s", got)
+	}
+
+	stored, err := platform.store.GetAccount(account.ID)
+	if err != nil {
+		t.Fatalf("reload account failed: %v", err)
+	}
+	if got := stringValue(stored.Metadata["adapterResultMarker"]); got != "preserved" {
+		t.Fatalf("expected stored account to preserve adapter result metadata, got %s", got)
+	}
+	storedAccountSync := mapValue(mapValue(stored.Metadata["healthSummary"])["accountSync"])
+	if got := stringValue(storedAccountSync["adapterHealthMarker"]); got != "preserved" {
+		t.Fatalf("expected stored account to preserve adapter health metadata, got %s", got)
+	}
+	if got := stringValue(storedAccountSync["lastTrigger"]); got != "direct" {
+		t.Fatalf("expected stored observation trigger direct, got %s", got)
+	}
+}
+
 func TestSyncLiveAccountAuthoritativeReconcileBypassesRecentReuseWindow(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60

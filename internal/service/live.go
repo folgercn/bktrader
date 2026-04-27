@@ -379,7 +379,7 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 	result, err := p.syncLiveAccountWithoutGate(accountID)
 	completedAt := time.Now().UTC()
 	syncDurationMS := completedAt.Sub(syncStartedAt).Milliseconds()
-	if observed, observeErr := p.persistLiveAccountSyncObservation(accountID, liveAccountSyncObservation{
+	if observed, observeErr := p.persistLiveAccountSyncObservation(result, liveAccountSyncObservation{
 		Trigger:        normalizedTrigger,
 		Gate:           gateObservation,
 		StartedAt:      syncStartedAt,
@@ -468,10 +468,9 @@ func (p *Platform) persistLiveAccountSyncSchedulerFailure(accountID string, atte
 	}
 }
 
-func (p *Platform) persistLiveAccountSyncObservation(accountID string, observation liveAccountSyncObservation) (domain.Account, error) {
-	account, err := p.store.GetAccount(accountID)
-	if err != nil {
-		return domain.Account{}, err
+func (p *Platform) persistLiveAccountSyncObservation(account domain.Account, observation liveAccountSyncObservation) (domain.Account, error) {
+	if strings.TrimSpace(account.ID) == "" {
+		return domain.Account{}, fmt.Errorf("live account sync observation requires account result")
 	}
 	applyLiveAccountSyncObservation(&account, observation)
 	return p.store.UpdateAccount(account)
