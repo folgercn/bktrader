@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -35,6 +36,24 @@ func SilentUpdateCheck() {
 			return
 		}
 	}
+
+	// 并发锁：防止多个命令同时触发更新导致文件冲突
+	lockPath := filepath.Join(os.TempDir(), "bktrader-ctl-update.lock")
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		// 如果锁文件已存在且未超过 5 分钟，说明已有更新在运行
+		if info, err := os.Stat(lockPath); err == nil && time.Since(info.ModTime()) < 5*time.Minute {
+			return
+		}
+		// 否则尝试清理旧锁 (强制接管)
+		_ = os.Remove(lockPath)
+		lockFile, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil { return }
+	}
+	defer func() {
+		lockFile.Close()
+		_ = os.Remove(lockPath)
+	}()
 
 	// 执行检查
 	latestTag, err := getLatestTag()
