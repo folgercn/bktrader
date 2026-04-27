@@ -1989,7 +1989,7 @@ func TestSubmitRESTOrderRecoveredPassiveClosePayloadMatchesBinanceModes(t *testi
 			binanceSymbolRulesCacheMu.Unlock()
 
 			adapter := binanceFuturesLiveAdapter{}
-			_, err := adapter.submitRESTOrder(domain.Account{Exchange: "binance-futures"}, domain.Order{
+			submission, err := adapter.submitRESTOrder(domain.Account{Exchange: "binance-futures"}, domain.Order{
 				ID:         "order-test",
 				AccountID:  "live-main",
 				Symbol:     "BTCUSDT",
@@ -2022,6 +2022,9 @@ func TestSubmitRESTOrderRecoveredPassiveClosePayloadMatchesBinanceModes(t *testi
 			_, hasReduceOnly := capturedForm["reduceOnly"]
 			if hasReduceOnly != tt.wantReduceOnlyPresent {
 				t.Fatalf("expected reduceOnly present=%t, form=%v", tt.wantReduceOnlyPresent, capturedForm)
+			}
+			if _, exists := submission.Metadata["requestQuery"]; exists {
+				t.Fatalf("did not expect signed request metadata to record stale requestQuery, got %v", submission.Metadata["requestQuery"])
 			}
 		})
 	}
