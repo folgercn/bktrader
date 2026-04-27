@@ -137,6 +137,12 @@ type liveAccountSyncState struct {
 	completedAt time.Time
 }
 
+const (
+	liveAccountSyncMaxConcurrent        = 2
+	defaultLiveAccountSyncGateTimeout   = 15 * time.Second
+	liveAccountSyncGateTimeoutErrorText = "live account sync global gate timeout"
+)
+
 func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 	return p.store.ListLiveSessions()
 }
@@ -299,6 +305,30 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 	state.done = done
 	state.mu.Unlock()
 
+	gateWaitStartedAt := time.Now()
+	releaseSyncSlot, acquiredSlot := p.acquireLiveAccountSyncSlot()
+	gateWaitMS := time.Since(gateWaitStartedAt).Milliseconds()
+	if !acquiredSlot {
+		err := fmt.Errorf("%s: account=%s", liveAccountSyncGateTimeoutErrorText, accountID)
+		state.mu.Lock()
+		state.result = domain.Account{}
+		state.err = err
+		state.running = false
+		state.done = nil
+		close(done)
+		state.mu.Unlock()
+		logger.Warn("live account sync request rejected by global gate timeout",
+			"coalesced", false,
+			"waited_for_inflight", false,
+			"reused_recent_result", false,
+			"global_gate_wait_ms", gateWaitMS,
+			"global_gate_timeout_ms", p.liveAccountSyncGateTimeout().Milliseconds(),
+			"max_concurrent", liveAccountSyncMaxConcurrent,
+		)
+		return domain.Account{}, err
+	}
+	defer releaseSyncSlot()
+
 	release, acquired := p.tryStartLiveAccountOperation(accountID, liveAccountOperationSync)
 	if !acquired {
 		err := fmt.Errorf("%w: sync account=%s", ErrLiveAccountOperationInProgress, accountID)
@@ -316,6 +346,8 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 		"coalesced", false,
 		"waited_for_inflight", false,
 		"reused_recent_result", false,
+		"global_gate_wait_ms", gateWaitMS,
+		"max_concurrent", liveAccountSyncMaxConcurrent,
 	)
 	result, err := p.syncLiveAccountWithoutGate(accountID)
 	state.mu.Lock()
@@ -332,8 +364,32 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 		"reused_recent_result", false,
 		"result_error", err != nil,
 		"completed_at", state.completedAt.Format(time.RFC3339),
+		"global_gate_wait_ms", gateWaitMS,
 	)
 	return result, err
+}
+
+func (p *Platform) acquireLiveAccountSyncSlot() (func(), bool) {
+	if p == nil || p.liveAccountSyncGate == nil {
+		return func() {}, true
+	}
+	timer := time.NewTimer(p.liveAccountSyncGateTimeout())
+	defer timer.Stop()
+	select {
+	case p.liveAccountSyncGate <- struct{}{}:
+		return func() {
+			<-p.liveAccountSyncGate
+		}, true
+	case <-timer.C:
+		return func() {}, false
+	}
+}
+
+func (p *Platform) liveAccountSyncGateTimeout() time.Duration {
+	if p == nil || p.liveAccountSyncGateTTL <= 0 {
+		return defaultLiveAccountSyncGateTimeout
+	}
+	return p.liveAccountSyncGateTTL
 }
 
 func (p *Platform) liveAccountSyncEntry(accountID string) *liveAccountSyncState {
@@ -347,6 +403,10 @@ func (p *Platform) liveAccountSyncEntry(accountID string) *liveAccountSyncState 
 }
 
 func (p *Platform) liveAccountSyncReuseWindow() time.Duration {
+	return p.liveAccountSyncMinimumInterval()
+}
+
+func (p *Platform) liveAccountSyncMinimumInterval() time.Duration {
 	threshold := time.Duration(p.runtimePolicy.LiveAccountSyncFreshnessSecs) * time.Second
 	switch {
 	case threshold <= 0:
@@ -354,15 +414,27 @@ func (p *Platform) liveAccountSyncReuseWindow() time.Duration {
 	case threshold < 4*time.Second:
 		return threshold
 	default:
-		window := threshold / 4
-		if window > 5*time.Second {
-			window = 5 * time.Second
+		window := threshold / 12
+		if window > 10*time.Second {
+			window = 10 * time.Second
 		}
 		if window < time.Second {
 			window = time.Second
 		}
 		return window
 	}
+}
+
+func (p *Platform) liveAccountSyncRefreshInterval() time.Duration {
+	threshold := time.Duration(p.runtimePolicy.LiveAccountSyncFreshnessSecs) * time.Second
+	if threshold <= 0 {
+		return 0
+	}
+	interval := threshold * 4 / 5
+	if interval < time.Second {
+		return threshold
+	}
+	return interval
 }
 
 func (p *Platform) liveAccountSyncAllowsRecentReuse(trigger string) bool {
@@ -2380,15 +2452,27 @@ func (p *Platform) shouldRefreshLiveAccountSync(account domain.Account, eventTim
 	if threshold <= 0 {
 		return false
 	}
-	lastSyncActivityAt := parseOptionalRFC3339(stringValue(account.Metadata["lastLiveSyncAt"]))
+	lastSuccessfulSyncAt := liveAccountSyncLastSuccessAt(account)
 	accountSync := mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"])
-	if attemptedAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"])); attemptedAt.After(lastSyncActivityAt) {
-		lastSyncActivityAt = attemptedAt
-	}
-	if lastSyncActivityAt.IsZero() {
+	lastAttemptAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"]))
+	if lastAttemptAt.After(lastSuccessfulSyncAt) {
+		if eventTime.Sub(lastAttemptAt) < threshold {
+			return false
+		}
 		return true
 	}
-	return eventTime.Sub(lastSyncActivityAt) >= threshold
+	if lastSuccessfulSyncAt.IsZero() {
+		return true
+	}
+	minimumInterval := p.liveAccountSyncMinimumInterval()
+	if !lastAttemptAt.IsZero() && eventTime.Sub(lastAttemptAt) < minimumInterval {
+		return false
+	}
+	refreshInterval := p.liveAccountSyncRefreshInterval()
+	if refreshInterval <= 0 {
+		return false
+	}
+	return eventTime.Sub(lastSuccessfulSyncAt) >= refreshInterval
 }
 
 func (p *Platform) recoverRunningLiveSession(session domain.LiveSession) (domain.LiveSession, error) {

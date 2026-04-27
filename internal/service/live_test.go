@@ -7536,6 +7536,44 @@ func TestSyncActiveLiveAccountsThrottlesFailedRetriesUntilFreshnessWindow(t *tes
 	}
 }
 
+func TestShouldRefreshLiveAccountSyncUsesEarlyRefreshWindow(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	lastSyncedAt := time.Date(2026, 4, 27, 8, 0, 0, 0, time.UTC)
+	account := domain.Account{
+		ID: "live-main",
+		Metadata: map[string]any{
+			"lastLiveSyncAt": lastSyncedAt.Format(time.RFC3339),
+			"healthSummary": map[string]any{
+				"accountSync": map[string]any{
+					"lastSuccessAt": lastSyncedAt.Format(time.RFC3339),
+					"lastAttemptAt": lastSyncedAt.Format(time.RFC3339),
+				},
+			},
+		},
+	}
+
+	if platform.shouldRefreshLiveAccountSync(account, lastSyncedAt.Add(47*time.Second)) {
+		t.Fatal("did not expect refresh before early refresh window")
+	}
+	if !platform.shouldRefreshLiveAccountSync(account, lastSyncedAt.Add(48*time.Second)) {
+		t.Fatal("expected refresh at 80 percent of freshness threshold")
+	}
+}
+
+func TestLiveAccountSyncMinimumIntervalScalesWithFreshness(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
+	if got := platform.liveAccountSyncMinimumInterval(); got != 5*time.Second {
+		t.Fatalf("expected 60s freshness to produce 5s minimum interval, got %s", got)
+	}
+
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 120
+	if got := platform.liveAccountSyncMinimumInterval(); got != 10*time.Second {
+		t.Fatalf("expected 120s freshness to cap minimum interval at 10s, got %s", got)
+	}
+}
+
 func TestSyncLiveAccountCoalescesConcurrentAdapterSyncForSameAccount(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	blockSync := make(chan struct{})
@@ -7646,6 +7684,123 @@ func TestSyncLiveAccountReusesRecentResultWithinReuseWindow(t *testing.T) {
 	}
 	if got := syncCalls.Load(); got != 1 {
 		t.Fatalf("expected recent follow-up sync to reuse prior result, got %d adapter calls", got)
+	}
+}
+
+func TestSyncLiveAccountGlobalConcurrencyGateLimitsParallelAccounts(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.liveAccountSyncGate = make(chan struct{}, 1)
+	blockSync := make(chan struct{})
+	enteredSync := make(chan string, 2)
+	var syncCalls atomic.Int32
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-global-gate",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			syncCalls.Add(1)
+			enteredSync <- account.ID
+			<-blockSync
+			account.Metadata = cloneMetadata(account.Metadata)
+			now := time.Now().UTC().Format(time.RFC3339)
+			account.Metadata["lastLiveSyncAt"] = now
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	first, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-sync-global-gate",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	})
+	if err != nil {
+		t.Fatalf("bind first live account failed: %v", err)
+	}
+	second, err := platform.CreateAccount("Second Live", "LIVE", "BINANCE")
+	if err != nil {
+		t.Fatalf("create second live account failed: %v", err)
+	}
+	second, err = platform.BindLiveAccount(second.ID, map[string]any{
+		"adapterKey":     "test-sync-global-gate",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	})
+	if err != nil {
+		t.Fatalf("bind second live account failed: %v", err)
+	}
+
+	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := platform.requestLiveAccountSync(first.ID, "direct")
+		firstDone <- err
+	}()
+	select {
+	case <-enteredSync:
+	case <-time.After(time.Second):
+		t.Fatal("first sync did not enter adapter")
+	}
+	go func() {
+		_, err := platform.requestLiveAccountSync(second.ID, "direct")
+		secondDone <- err
+	}()
+	select {
+	case accountID := <-enteredSync:
+		t.Fatalf("expected second sync to wait for global gate, entered adapter for %s", accountID)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(blockSync)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first sync failed: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second sync failed: %v", err)
+	}
+	if got := syncCalls.Load(); got != 2 {
+		t.Fatalf("expected both syncs to eventually run, got %d", got)
+	}
+}
+
+func TestSyncLiveAccountGlobalConcurrencyGateTimeoutReturnsError(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.liveAccountSyncGate = make(chan struct{}, 1)
+	platform.liveAccountSyncGateTTL = 20 * time.Millisecond
+	var syncCalls atomic.Int32
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-global-gate-timeout",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			syncCalls.Add(1)
+			return account, nil
+		},
+	})
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-sync-global-gate-timeout",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	platform.liveAccountSyncGate <- struct{}{}
+	_, err = platform.requestLiveAccountSync(account.ID, "direct")
+	if err == nil {
+		t.Fatal("expected global gate timeout")
+	}
+	if !strings.Contains(err.Error(), liveAccountSyncGateTimeoutErrorText) {
+		t.Fatalf("expected global gate timeout error, got %v", err)
+	}
+	if got := syncCalls.Load(); got != 0 {
+		t.Fatalf("expected adapter not to run when global gate times out, got %d calls", got)
+	}
+
+	<-platform.liveAccountSyncGate
+	if _, err := platform.requestLiveAccountSync(account.ID, "direct"); err != nil {
+		t.Fatalf("expected sync to work after gate slot is available, got %v", err)
+	}
+	if got := syncCalls.Load(); got != 1 {
+		t.Fatalf("expected adapter to run after gate slot is available, got %d calls", got)
 	}
 }
 
