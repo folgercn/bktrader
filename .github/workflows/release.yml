@@ -1,6 +1,11 @@
 name: Release CLI
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to build, for example ctl-v20260427123000-abcdef0.'
+        required: true
   push:
     tags:
       - 'v*'
@@ -12,9 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -37,7 +46,7 @@ jobs:
             
             echo "Building $output_name..."
             env GOOS=$GOOS GOARCH=$GOARCH go build \
-              -ldflags "-X main.Version=${GITHUB_REF_NAME} -X main.Commit=${GITHUB_SHA} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -ldflags "-X main.Version=${RELEASE_TAG} -X main.Commit=${GITHUB_SHA} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               -o "dist/$output_name" ./cmd/bktrader-ctl
           done
 
@@ -47,7 +56,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist/*
-          make_latest: ${{ startsWith(github.ref_name, 'v') }}
+          make_latest: ${{ startsWith(env.RELEASE_TAG, 'v') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
