@@ -321,6 +321,10 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
       return;
     }
 
+    const anchorDate = resolveChartAnchor(monitorSession, orders);
+    const requestedRange = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
+    const range = buildMonitorCandleRange(anchorDate, fallbackResolution, MONITOR_HISTORY_CANDLE_LIMIT, requestedRange);
+
     const requestKey = [
       monitorSessionId,
       monitorSymbol,
@@ -328,6 +332,8 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
       timeWindow,
       chartOverrideRange?.from ?? "",
       chartOverrideRange?.to ?? "",
+      range.from,
+      range.to
     ].join(":");
 
     if (fallbackRequestKeyRef.current === requestKey) {
@@ -336,23 +342,18 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     fallbackRequestKeyRef.current = requestKey;
     setMonitorCandles([]);
 
-    const anchorDate = resolveChartAnchor(monitorSession, orders);
-    const requestedRange = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
-    const range = buildMonitorCandleRange(anchorDate, fallbackResolution, MONITOR_HISTORY_CANDLE_LIMIT, requestedRange);
-
-    let active = true;
     fetchJSON<{ candles: ChartCandle[] }>(
       `/api/v1/chart/candles?symbol=${encodeURIComponent(monitorSymbol)}&resolution=${fallbackResolution}&from=${range.from}&to=${range.to}&limit=${MONITOR_HISTORY_CANDLE_LIMIT}`
     )
       .then((payload) => {
-        if (!active) {
+        if (fallbackRequestKeyRef.current !== requestKey) {
           return;
         }
         const candles = Array.isArray(payload?.candles) ? payload.candles : [];
         setMonitorCandles(candles);
       })
       .catch((error) => {
-        if (!active) {
+        if (fallbackRequestKeyRef.current !== requestKey) {
           return;
         }
         console.warn("Failed to load monitor fallback candles", error);
@@ -360,9 +361,6 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
         setMonitorCandles([]);
       });
 
-    return () => {
-      active = false;
-    };
   }, [
     chartOverrideRange,
     fallbackResolution,
