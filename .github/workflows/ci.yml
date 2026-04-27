@@ -49,6 +49,12 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Build platform API
+        run: go build ./cmd/platform-api
+
+      - name: Build db migrate
+        run: go build ./cmd/db-migrate
+
       - name: Build bktrader-ctl
         run: go build ./cmd/bktrader-ctl
 
