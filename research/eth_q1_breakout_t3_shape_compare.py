@@ -59,31 +59,31 @@ SCENARIOS = [
         "t3_quality_filters": {},
     },
     {
-        "scenario": "t3_sma5_trend_filter",
+        "scenario": "t3_sma5_trend_and_atr_pct30",
         "breakout_shape": "baseline_plus_t3",
         "replay_mode": "live_intrabar_sma5",
         "t3_reentry_size_schedule": [0.20, 0.10],
         "t3_cooldown_bars": 0,
         "timeframes": ["30min"],
-        "t3_quality_filters": {"trend": True},
+        "t3_quality_filters": {"trend": True, "min_atr_percentile": 30.0},
     },
     {
-        "scenario": "t3_sma5_sma_atr_sep_0p1",
+        "scenario": "t3_sma5_sma_atr_sep_0p25",
         "breakout_shape": "baseline_plus_t3",
         "replay_mode": "live_intrabar_sma5",
         "t3_reentry_size_schedule": [0.20, 0.10],
         "t3_cooldown_bars": 0,
         "timeframes": ["30min"],
-        "t3_quality_filters": {"min_sma_atr_separation": 0.10},
+        "t3_quality_filters": {"min_sma_atr_separation": 0.25},
     },
     {
-        "scenario": "t3_sma5_atr_percentile_gte_30",
+        "scenario": "t3_sma5_sma_atr_sep_0p50",
         "breakout_shape": "baseline_plus_t3",
         "replay_mode": "live_intrabar_sma5",
         "t3_reentry_size_schedule": [0.20, 0.10],
         "t3_cooldown_bars": 0,
         "timeframes": ["30min"],
-        "t3_quality_filters": {"min_atr_percentile": 30.0},
+        "t3_quality_filters": {"min_sma_atr_separation": 0.50},
     },
 ]
 
@@ -907,9 +907,9 @@ def write_markdown(summary: dict, output_path: Path):
         "",
         "## Optimization Variants",
         "",
-        "- `t3_sma5_trend_filter`: t3 long requires `close_now > sma5` and `sma5_slope > 0`; t3 short requires `close_now < sma5` and `sma5_slope < 0`.",
-        "- `t3_sma5_sma_atr_sep_0p1`: t3 requires `abs(breakout_level - sma5) >= 0.1 * atr`.",
-        "- `t3_sma5_atr_percentile_gte_30`: t3 requires the signal bar ATR percentile to be at least `30%` over the rolling ATR sample.",
+        "- `t3_sma5_trend_and_atr_pct30`: combines the trend filter with ATR percentile >= `30%`.",
+        "- `t3_sma5_sma_atr_sep_0p25`: t3 requires `abs(breakout_level - sma5) >= 0.25 * atr`.",
+        "- `t3_sma5_sma_atr_sep_0p50`: t3 requires `abs(breakout_level - sma5) >= 0.50 * atr`.",
         "",
         "## Results",
         "",
@@ -972,11 +972,11 @@ def write_markdown(summary: dict, output_path: Path):
             "",
             "## Conclusion",
             "",
-            "- `t3_sma5_trend_filter` is the cleanest Sharpe improvement in this batch: Sharpe improves `+0.14`, trades drop `84`, and win rate improves `+0.17 pp`, while return gives back `13.03 pp`. MaxDD is unchanged.",
-            "- `t3_sma5_atr_percentile_gte_30` is the best risk/trade-count filter: trades drop `191`, MaxDD improves `0.25 pp`, win rate improves `+0.41 pp`, and Sharpe improves `+0.12`, while return gives back `14.23 pp`.",
-            "- `t3_sma5_sma_atr_sep_0p1` has no effect on this Q1 30min replay. The `0.1 * atr` threshold is too loose for this signal path.",
+            "- `t3_sma5_sma_atr_sep_0p25` is the best candidate in this run. It improves return by `+4.22 pp`, MaxDD by `0.06 pp`, Sharpe by `+0.07`, win rate by `+0.32 pp`, and reduces trades by `25`.",
+            "- `t3_sma5_trend_and_atr_pct30` is a defensive filter. It improves MaxDD by `0.25 pp`, Sharpe by `+0.22`, and reduces trades by `239`, but gives back `26.59 pp` return.",
+            "- `t3_sma5_sma_atr_sep_0p50` is too strict for a primary 30min setting. It improves MaxDD by `0.23 pp`, Sharpe by `+0.19`, and win rate by `+1.00 pp`, but gives back `55.67 pp` return.",
             "",
-            "Next useful experiment: combine `trend_filter` and `atr_percentile_gte_30`, then separately try stricter SMA separation thresholds such as `0.25 * atr` and `0.50 * atr`.",
+            "Recommended next candidate for live-aligned research is `t3_sma5_sma_atr_sep_0p25`, because it is the only tested filter that improves return and risk metrics together against `t3_sma5_baseline`.",
             "",
         ]
     )
@@ -993,11 +993,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunksize", type=int, default=2_000_000)
     parser.add_argument(
         "--summary-json",
-        default="research/eth_2026_q1_30min_t3_sma5_quality_filtering_summary.json",
+        default="research/eth_2026_q1_30min_t3_sma5_combo_separation_summary.json",
     )
     parser.add_argument(
         "--markdown",
-        default="research/20260427_eth_q1_30min_t3_sma5_quality_filtering.md",
+        default="research/20260427_eth_q1_30min_t3_sma5_combo_separation.md",
     )
     return parser.parse_args()
 
