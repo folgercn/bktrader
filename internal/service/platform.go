@@ -42,6 +42,7 @@ type Platform struct {
 	liveMarketData         map[string]liveMarketSnapshot
 	liveAccountOpMu        sync.Map // accountID -> *sync.Mutex
 	liveAccountSyncState   sync.Map // accountID -> *liveAccountSyncState
+	liveAccountSyncGate    chan struct{}
 	liveControlOpState     sync.Map // accountID|strategyID -> *liveControlOperationState
 	liveDispatchMu         sync.Map // liveSessionID -> *sync.Mutex; process-local guard, not distributed idempotency.
 	runtimeSourceGateState sync.Map // runtimeSessionID -> last blocked source gate signature
@@ -112,6 +113,7 @@ func NewPlatform(store store.Repository) *Platform {
 		runtimeEventPublisher: NoopRuntimeEventPublisher{},
 		runtimeLeaseOwnerID:   defaultRuntimeLeaseOwnerID(),
 		liveMarketData:        make(map[string]liveMarketSnapshot),
+		liveAccountSyncGate:   make(chan struct{}, liveAccountSyncMaxConcurrent),
 		logBroker:             logging.NewBroker(),
 		telegramConfig: domain.TelegramConfig{
 			SendLevels:                    []string{"critical", "warning"},
