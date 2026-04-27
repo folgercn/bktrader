@@ -153,6 +153,17 @@ type liveAccountSyncObservation struct {
 	Err            error
 }
 
+type liveAccountSyncCandidate struct {
+	Account           domain.Account
+	Score             int64
+	PositionCount     int
+	OpenOrderCount    int
+	AgeSeconds        int64
+	SecondsUntilStale int64
+	AttemptAgeSeconds int64
+	ReconcilePending  bool
+}
+
 const (
 	liveAccountSyncMaxConcurrent        = 2
 	defaultLiveAccountSyncGateTimeout   = 15 * time.Second
@@ -2565,6 +2576,7 @@ func (p *Platform) syncActiveLiveAccounts(eventTime time.Time) error {
 		return err
 	}
 	seen := make(map[string]struct{})
+	candidates := make([]liveAccountSyncCandidate, 0)
 	var syncErrs []error
 	for _, session := range sessions {
 		if !strings.EqualFold(session.Status, "RUNNING") {
@@ -2581,11 +2593,120 @@ func (p *Platform) syncActiveLiveAccounts(eventTime time.Time) error {
 		if !p.shouldRefreshLiveAccountSync(account, eventTime) {
 			continue
 		}
-		if _, syncErr := p.requestLiveAccountSync(account.ID, "sync-active-live-accounts"); syncErr != nil {
-			syncErrs = append(syncErrs, fmt.Errorf("live account %s sync failed: %w", account.ID, syncErr))
+		candidates = append(candidates, p.liveAccountSyncCandidate(account, eventTime))
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return liveAccountSyncCandidateLess(candidates[i], candidates[j])
+	})
+	for index, candidate := range candidates {
+		p.logger("service.live",
+			"account_id", candidate.Account.ID,
+			"trigger", "sync-active-live-accounts",
+		).Info("live account sync candidate selected",
+			"rank", index+1,
+			"candidate_count", len(candidates),
+			"score", candidate.Score,
+			"position_count", candidate.PositionCount,
+			"open_order_count", candidate.OpenOrderCount,
+			"age_seconds", candidate.AgeSeconds,
+			"seconds_until_stale", candidate.SecondsUntilStale,
+			"attempt_age_seconds", candidate.AttemptAgeSeconds,
+			"reconcile_pending", candidate.ReconcilePending,
+		)
+		if _, syncErr := p.requestLiveAccountSync(candidate.Account.ID, "sync-active-live-accounts"); syncErr != nil {
+			syncErrs = append(syncErrs, fmt.Errorf("live account %s sync failed: %w", candidate.Account.ID, syncErr))
 		}
 	}
 	return errors.Join(syncErrs...)
+}
+
+func (p *Platform) liveAccountSyncCandidate(account domain.Account, eventTime time.Time) liveAccountSyncCandidate {
+	threshold := time.Duration(p.runtimePolicy.LiveAccountSyncFreshnessSecs) * time.Second
+	lastSuccessAt := liveAccountSyncLastSuccessAt(account)
+	accountSync := mapValue(mapValue(account.Metadata["healthSummary"])["accountSync"])
+	lastAttemptAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"]))
+	ageSeconds := int64(0)
+	secondsUntilStale := int64(0)
+	if lastSuccessAt.IsZero() {
+		ageSeconds = math.MaxInt32
+		secondsUntilStale = 0
+	} else {
+		age := eventTime.Sub(lastSuccessAt)
+		ageSeconds = int64(age.Seconds())
+		secondsUntilStale = int64((threshold - age).Seconds())
+		if secondsUntilStale < 0 {
+			secondsUntilStale = 0
+		}
+	}
+	attemptAgeSeconds := int64(math.MaxInt32)
+	if !lastAttemptAt.IsZero() {
+		attemptAgeSeconds = int64(eventTime.Sub(lastAttemptAt).Seconds())
+		if attemptAgeSeconds < 0 {
+			attemptAgeSeconds = 0
+		}
+	}
+	snapshot := mapValue(account.Metadata["liveSyncSnapshot"])
+	positionCount := firstPositiveIntValue(snapshot["positionCount"], accountSync["positionCount"])
+	openOrderCount := firstPositiveIntValue(snapshot["openOrderCount"], accountSync["openOrderCount"])
+	reconcilePending := liveAccountPositionReconcilePending(account)
+
+	score := ageSeconds
+	if score > 100000 {
+		score = 100000
+	}
+	if reconcilePending {
+		score += 1000000
+	}
+	if positionCount > 0 {
+		score += 500000
+	}
+	if openOrderCount > 0 {
+		score += 250000
+	}
+	if secondsUntilStale == 0 {
+		score += 100000
+	} else if threshold > 0 {
+		score += int64((threshold.Seconds() - float64(secondsUntilStale)) * 100)
+	}
+	if attemptAgeSeconds > 0 {
+		starvation := attemptAgeSeconds
+		if starvation > 10000 {
+			starvation = 10000
+		}
+		score += starvation
+	}
+	return liveAccountSyncCandidate{
+		Account:           account,
+		Score:             score,
+		PositionCount:     positionCount,
+		OpenOrderCount:    openOrderCount,
+		AgeSeconds:        ageSeconds,
+		SecondsUntilStale: secondsUntilStale,
+		AttemptAgeSeconds: attemptAgeSeconds,
+		ReconcilePending:  reconcilePending,
+	}
+}
+
+func liveAccountSyncCandidateLess(a, b liveAccountSyncCandidate) bool {
+	if a.Score != b.Score {
+		return a.Score > b.Score
+	}
+	if a.SecondsUntilStale != b.SecondsUntilStale {
+		return a.SecondsUntilStale < b.SecondsUntilStale
+	}
+	if a.AttemptAgeSeconds != b.AttemptAgeSeconds {
+		return a.AttemptAgeSeconds > b.AttemptAgeSeconds
+	}
+	return a.Account.ID < b.Account.ID
+}
+
+func firstPositiveIntValue(values ...any) int {
+	for _, value := range values {
+		if parsed := maxIntValue(value, 0); parsed > 0 {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func (p *Platform) shouldRefreshLiveAccountSync(account domain.Account, eventTime time.Time) bool {

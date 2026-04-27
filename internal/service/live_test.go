@@ -7573,6 +7573,136 @@ func TestShouldRefreshLiveAccountSyncUsesEarlyRefreshWindow(t *testing.T) {
 	}
 }
 
+func TestLiveAccountSyncCandidatePrioritizesPositionDeadlineAndStarvation(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 120
+	now := time.Date(2026, 4, 27, 8, 0, 0, 0, time.UTC)
+	accountWithState := func(id string, lastSuccessAt, lastAttemptAt time.Time, positionCount int) domain.Account {
+		accountSync := map[string]any{
+			"lastSuccessAt": lastSuccessAt.Format(time.RFC3339),
+			"lastAttemptAt": lastAttemptAt.Format(time.RFC3339),
+		}
+		if positionCount > 0 {
+			accountSync["positionCount"] = positionCount
+		}
+		return domain.Account{
+			ID: id,
+			Metadata: map[string]any{
+				"lastLiveSyncAt": lastSuccessAt.Format(time.RFC3339),
+				"healthSummary": map[string]any{
+					"accountSync": accountSync,
+				},
+			},
+		}
+	}
+
+	noPosition := platform.liveAccountSyncCandidate(accountWithState("no-position", now.Add(-119*time.Second), now.Add(-119*time.Second), 0), now)
+	withPosition := platform.liveAccountSyncCandidate(accountWithState("with-position", now.Add(-100*time.Second), now.Add(-100*time.Second), 1), now)
+	if !liveAccountSyncCandidateLess(withPosition, noPosition) {
+		t.Fatal("expected account with position to outrank account that is only closer to stale")
+	}
+
+	closerToStale := platform.liveAccountSyncCandidate(accountWithState("closer", now.Add(-119*time.Second), now.Add(-119*time.Second), 0), now)
+	fartherFromStale := platform.liveAccountSyncCandidate(accountWithState("farther", now.Add(-100*time.Second), now.Add(-100*time.Second), 0), now)
+	if !liveAccountSyncCandidateLess(closerToStale, fartherFromStale) {
+		t.Fatal("expected account closer to stale deadline to outrank lower urgency account")
+	}
+
+	starved := platform.liveAccountSyncCandidate(accountWithState("starved", now.Add(-100*time.Second), now.Add(-1000*time.Second), 0), now)
+	recentAttempt := platform.liveAccountSyncCandidate(accountWithState("recent", now.Add(-100*time.Second), now.Add(-100*time.Second), 0), now)
+	if !liveAccountSyncCandidateLess(starved, recentAttempt) {
+		t.Fatal("expected account with older attempt to outrank equally urgent recent attempt")
+	}
+}
+
+func TestSyncActiveLiveAccountsUsesCandidatePriorityOrder(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 120
+	now := time.Date(2026, 4, 27, 8, 0, 0, 0, time.UTC)
+	var syncOrder []string
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-priority-order",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			syncOrder = append(syncOrder, account.ID)
+			account.Metadata = cloneMetadata(account.Metadata)
+			account.Metadata["lastLiveSyncAt"] = now.Format(time.RFC3339)
+			return p.store.UpdateAccount(account)
+		},
+	})
+
+	first, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-sync-priority-order",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	})
+	if err != nil {
+		t.Fatalf("bind first live account failed: %v", err)
+	}
+	first.Metadata = cloneMetadata(first.Metadata)
+	first.Metadata["lastLiveSyncAt"] = now.Add(-119 * time.Second).Format(time.RFC3339)
+	first.Metadata["healthSummary"] = map[string]any{
+		"accountSync": map[string]any{
+			"lastSuccessAt": now.Add(-119 * time.Second).Format(time.RFC3339),
+			"lastAttemptAt": now.Add(-119 * time.Second).Format(time.RFC3339),
+		},
+	}
+	if _, err := platform.store.UpdateAccount(first); err != nil {
+		t.Fatalf("update first account failed: %v", err)
+	}
+
+	second, err := platform.CreateAccount("Second Live", "LIVE", "BINANCE")
+	if err != nil {
+		t.Fatalf("create second live account failed: %v", err)
+	}
+	second, err = platform.BindLiveAccount(second.ID, map[string]any{
+		"adapterKey":     "test-sync-priority-order",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	})
+	if err != nil {
+		t.Fatalf("bind second live account failed: %v", err)
+	}
+	second.Metadata = cloneMetadata(second.Metadata)
+	second.Metadata["lastLiveSyncAt"] = now.Add(-100 * time.Second).Format(time.RFC3339)
+	second.Metadata["liveSyncSnapshot"] = map[string]any{"positionCount": 1}
+	second.Metadata["healthSummary"] = map[string]any{
+		"accountSync": map[string]any{
+			"lastSuccessAt": now.Add(-100 * time.Second).Format(time.RFC3339),
+			"lastAttemptAt": now.Add(-100 * time.Second).Format(time.RFC3339),
+			"positionCount": 1,
+		},
+	}
+	if _, err := platform.store.UpdateAccount(second); err != nil {
+		t.Fatalf("update second account failed: %v", err)
+	}
+
+	firstSession, err := platform.CreateLiveSession("", first.ID, "strategy-bk-1d", map[string]any{"symbol": "BTCUSDT"})
+	if err != nil {
+		t.Fatalf("create first live session failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(firstSession.ID, "RUNNING"); err != nil {
+		t.Fatalf("run first live session failed: %v", err)
+	}
+	secondSession, err := platform.CreateLiveSession("", second.ID, "strategy-bk-1d", map[string]any{"symbol": "ETHUSDT"})
+	if err != nil {
+		t.Fatalf("create second live session failed: %v", err)
+	}
+	if _, err := platform.store.UpdateLiveSessionStatus(secondSession.ID, "RUNNING"); err != nil {
+		t.Fatalf("run second live session failed: %v", err)
+	}
+
+	if err := platform.syncActiveLiveAccounts(now); err != nil {
+		t.Fatalf("sync active live accounts failed: %v", err)
+	}
+	if len(syncOrder) != 2 {
+		t.Fatalf("expected two account syncs, got %v", syncOrder)
+	}
+	if syncOrder[0] != second.ID {
+		t.Fatalf("expected account with position to sync first, got order %v", syncOrder)
+	}
+}
+
 func TestLiveAccountSyncMinimumIntervalScalesWithFreshness(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60
