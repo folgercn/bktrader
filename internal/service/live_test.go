@@ -7761,6 +7761,49 @@ func TestSyncLiveAccountGlobalConcurrencyGateLimitsParallelAccounts(t *testing.T
 	}
 }
 
+func TestSyncLiveAccountGlobalConcurrencyGateTimeoutReturnsError(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.liveAccountSyncGate = make(chan struct{}, 1)
+	platform.liveAccountSyncGateTTL = 20 * time.Millisecond
+	var syncCalls atomic.Int32
+
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-sync-global-gate-timeout",
+		syncSnapshotFunc: func(p *Platform, account domain.Account, binding map[string]any) (domain.Account, error) {
+			syncCalls.Add(1)
+			return account, nil
+		},
+	})
+	account, err := platform.BindLiveAccount("live-main", map[string]any{
+		"adapterKey":     "test-sync-global-gate-timeout",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	})
+	if err != nil {
+		t.Fatalf("bind live account failed: %v", err)
+	}
+
+	platform.liveAccountSyncGate <- struct{}{}
+	_, err = platform.requestLiveAccountSync(account.ID, "direct")
+	if err == nil {
+		t.Fatal("expected global gate timeout")
+	}
+	if !strings.Contains(err.Error(), liveAccountSyncGateTimeoutErrorText) {
+		t.Fatalf("expected global gate timeout error, got %v", err)
+	}
+	if got := syncCalls.Load(); got != 0 {
+		t.Fatalf("expected adapter not to run when global gate times out, got %d calls", got)
+	}
+
+	<-platform.liveAccountSyncGate
+	if _, err := platform.requestLiveAccountSync(account.ID, "direct"); err != nil {
+		t.Fatalf("expected sync to work after gate slot is available, got %v", err)
+	}
+	if got := syncCalls.Load(); got != 1 {
+		t.Fatalf("expected adapter to run after gate slot is available, got %d calls", got)
+	}
+}
+
 func TestSyncLiveAccountAuthoritativeReconcileBypassesRecentReuseWindow(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	platform.runtimePolicy.LiveAccountSyncFreshnessSecs = 60

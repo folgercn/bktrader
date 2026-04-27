@@ -137,7 +137,11 @@ type liveAccountSyncState struct {
 	completedAt time.Time
 }
 
-const liveAccountSyncMaxConcurrent = 2
+const (
+	liveAccountSyncMaxConcurrent        = 2
+	defaultLiveAccountSyncGateTimeout   = 15 * time.Second
+	liveAccountSyncGateTimeoutErrorText = "live account sync global gate timeout"
+)
 
 func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
 	return p.store.ListLiveSessions()
@@ -302,9 +306,28 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 	state.mu.Unlock()
 
 	gateWaitStartedAt := time.Now()
-	releaseSyncSlot := p.acquireLiveAccountSyncSlot()
-	defer releaseSyncSlot()
+	releaseSyncSlot, acquiredSlot := p.acquireLiveAccountSyncSlot()
 	gateWaitMS := time.Since(gateWaitStartedAt).Milliseconds()
+	if !acquiredSlot {
+		err := fmt.Errorf("%s: account=%s", liveAccountSyncGateTimeoutErrorText, accountID)
+		state.mu.Lock()
+		state.result = domain.Account{}
+		state.err = err
+		state.running = false
+		state.done = nil
+		close(done)
+		state.mu.Unlock()
+		logger.Warn("live account sync request rejected by global gate timeout",
+			"coalesced", false,
+			"waited_for_inflight", false,
+			"reused_recent_result", false,
+			"global_gate_wait_ms", gateWaitMS,
+			"global_gate_timeout_ms", p.liveAccountSyncGateTimeout().Milliseconds(),
+			"max_concurrent", liveAccountSyncMaxConcurrent,
+		)
+		return domain.Account{}, err
+	}
+	defer releaseSyncSlot()
 
 	release, acquired := p.tryStartLiveAccountOperation(accountID, liveAccountOperationSync)
 	if !acquired {
@@ -346,14 +369,27 @@ func (p *Platform) requestLiveAccountSync(accountID, trigger string) (domain.Acc
 	return result, err
 }
 
-func (p *Platform) acquireLiveAccountSyncSlot() func() {
+func (p *Platform) acquireLiveAccountSyncSlot() (func(), bool) {
 	if p == nil || p.liveAccountSyncGate == nil {
-		return func() {}
+		return func() {}, true
 	}
-	p.liveAccountSyncGate <- struct{}{}
-	return func() {
-		<-p.liveAccountSyncGate
+	timer := time.NewTimer(p.liveAccountSyncGateTimeout())
+	defer timer.Stop()
+	select {
+	case p.liveAccountSyncGate <- struct{}{}:
+		return func() {
+			<-p.liveAccountSyncGate
+		}, true
+	case <-timer.C:
+		return func() {}, false
 	}
+}
+
+func (p *Platform) liveAccountSyncGateTimeout() time.Duration {
+	if p == nil || p.liveAccountSyncGateTTL <= 0 {
+		return defaultLiveAccountSyncGateTimeout
+	}
+	return p.liveAccountSyncGateTTL
 }
 
 func (p *Platform) liveAccountSyncEntry(accountID string) *liveAccountSyncState {
