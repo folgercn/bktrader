@@ -157,6 +157,10 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			item, err := platform.LaunchLiveFlow(accountID, payload)
 			if err != nil {
+				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -164,6 +168,10 @@ func registerAccountRoutes(mux *http.ServeMux, platform *service.Platform) {
 		case "stop":
 			item, err := platform.StopLiveFlowWithForce(accountID, queryFlagEnabled(r, "force"))
 			if err != nil {
+				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				if errors.Is(err, service.ErrActivePositionsOrOrders) {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return

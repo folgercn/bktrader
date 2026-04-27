@@ -547,6 +547,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 				return
 			}
 			if err := platform.DeleteLiveSessionWithForce(parts[0], queryFlagEnabled(r, "force")); err != nil {
+				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				if errors.Is(err, service.ErrActivePositionsOrOrders) {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
@@ -676,6 +680,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 			}
 			item, err := platform.StartLiveSession(sessionID)
 			if err != nil {
+				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -687,6 +695,10 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 			}
 			item, err := platform.StopLiveSessionWithForce(sessionID, queryFlagEnabled(r, "force"))
 			if err != nil {
+				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				if errors.Is(err, service.ErrActivePositionsOrOrders) {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return

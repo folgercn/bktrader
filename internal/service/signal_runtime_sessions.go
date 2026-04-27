@@ -224,6 +224,35 @@ func (p *Platform) syncSignalRuntimeSessionPlan(sessionID string) (domain.Signal
 }
 
 func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	session, err := p.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	if p.signalRuntimeSessionRunningOrStarting(sessionID) {
+		requested := liveControlOperationInfo{
+			Operation:        liveControlOperationSignalRuntimeStart,
+			AccountID:        session.AccountID,
+			StrategyID:       session.StrategyID,
+			RuntimeSessionID: session.ID,
+		}
+		current := p.currentLiveControlOperation(liveControlOperationKey(session.AccountID, session.StrategyID))
+		if current.Operation != "" &&
+			(current.Operation != liveControlOperationSignalRuntimeStart || current.RuntimeSessionID != session.ID) {
+			return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
+		}
+		return p.startSignalRuntimeSession(context.Background(), sessionID)
+	}
+	requested := liveControlOperationInfo{
+		Operation:        liveControlOperationSignalRuntimeStart,
+		AccountID:        session.AccountID,
+		StrategyID:       session.StrategyID,
+		RuntimeSessionID: session.ID,
+	}
+	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	if !acquired {
+		return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
+	}
+	defer release()
 	return p.startSignalRuntimeSession(context.Background(), sessionID)
 }
 
@@ -364,6 +393,22 @@ func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force boo
 		logger.Warn("signal runtime session not found")
 		return domain.SignalRuntimeSession{}, err
 	}
+	requested := liveControlOperationInfo{
+		Operation:        liveControlOperationSignalRuntimeStop,
+		AccountID:        existing.AccountID,
+		StrategyID:       existing.StrategyID,
+		RuntimeSessionID: existing.ID,
+	}
+	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	if !acquired {
+		return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
+	}
+	defer release()
+	return p.stopSignalRuntimeSessionWithForceLocked(existing, force)
+}
+
+func (p *Platform) stopSignalRuntimeSessionWithForceLocked(existing domain.SignalRuntimeSession, force bool) (domain.SignalRuntimeSession, error) {
+	logger := p.logger("service.signal_runtime", "session_id", existing.ID)
 	if !force {
 		if err := p.ensureNoActivePositionsOrOrders(existing.AccountID, existing.StrategyID); err != nil {
 			logger.Warn("stop signal runtime session blocked by active positions or orders", "error", err)
@@ -371,7 +416,7 @@ func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force boo
 		}
 	}
 	p.mu.Lock()
-	run, running := p.signalRun[sessionID]
+	run, running := p.signalRun[existing.ID]
 	p.mu.Unlock()
 	session := existing
 	now := time.Now().UTC()
@@ -401,7 +446,7 @@ func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force boo
 	}
 	p.mu.Lock()
 	if running {
-		delete(p.signalRun, sessionID)
+		delete(p.signalRun, existing.ID)
 	}
 	p.signalSessions[session.ID] = session
 	p.mu.Unlock()
@@ -509,20 +554,35 @@ func (p *Platform) DeleteSignalRuntimeSessionWithForce(sessionID string, force b
 	if err != nil {
 		return err
 	}
+	requested := liveControlOperationInfo{
+		Operation:        liveControlOperationSignalRuntimeDelete,
+		AccountID:        existing.AccountID,
+		StrategyID:       existing.StrategyID,
+		RuntimeSessionID: existing.ID,
+	}
+	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	if !acquired {
+		return liveControlOperationInProgressError(requested, current)
+	}
+	defer release()
+	return p.deleteSignalRuntimeSessionWithForceLocked(existing, force)
+}
+
+func (p *Platform) deleteSignalRuntimeSessionWithForceLocked(existing domain.SignalRuntimeSession, force bool) error {
 	if !force {
 		if err := p.ensureNoActivePositionsOrOrders(existing.AccountID, existing.StrategyID); err != nil {
 			return err
 		}
 	}
-	if err := p.store.DeleteSignalRuntimeSession(sessionID); err != nil && !isSignalRuntimeSessionNotFoundError(err) {
+	if err := p.store.DeleteSignalRuntimeSession(existing.ID); err != nil && !isSignalRuntimeSessionNotFoundError(err) {
 		return err
 	}
 	p.mu.Lock()
-	run, running := p.signalRun[sessionID]
+	run, running := p.signalRun[existing.ID]
 	if running {
-		delete(p.signalRun, sessionID)
+		delete(p.signalRun, existing.ID)
 	}
-	delete(p.signalSessions, sessionID)
+	delete(p.signalSessions, existing.ID)
 	p.mu.Unlock()
 	if running {
 		run.cancelRunner()

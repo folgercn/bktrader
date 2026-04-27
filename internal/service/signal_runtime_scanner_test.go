@@ -136,6 +136,59 @@ func TestScanSignalRuntimeSessionsSkipsSessionOwnedByActiveLease(t *testing.T) {
 	}
 }
 
+func TestScanSignalRuntimeSessionsStopsDesiredRunningRuntimeLinkedToStoppedLiveSession(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	now := time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC)
+	runtime := mustCreateScannerRuntimeSession(t, platform, domain.SignalRuntimeSession{
+		ID:         "runtime-linked-stopped-live",
+		AccountID:  "live-main",
+		StrategyID: "strategy-bk-1d",
+		Status:     "RUNNING",
+		State: map[string]any{
+			"desiredStatus": "RUNNING",
+			"actualStatus":  "RUNNING",
+			"health":        "healthy",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	liveSession, err := platform.store.UpdateLiveSessionStatus("live-session-main", "STOPPED")
+	if err != nil {
+		t.Fatalf("set live session stopped failed: %v", err)
+	}
+	liveState := cloneMetadata(liveSession.State)
+	liveState["signalRuntimeSessionId"] = runtime.ID
+	if _, err := platform.store.UpdateLiveSessionState(liveSession.ID, liveState); err != nil {
+		t.Fatalf("link live session to runtime failed: %v", err)
+	}
+
+	started := 0
+	platform.scanSignalRuntimeSessions(context.Background(), func(_ context.Context, sessionID string) (domain.SignalRuntimeSession, error) {
+		started++
+		return runtime, nil
+	})
+	if started != 0 {
+		t.Fatalf("expected scanner not to start runtime linked to stopped live session, got %d starts", started)
+	}
+	updatedRuntime, err := platform.GetSignalRuntimeSession(runtime.ID)
+	if err != nil {
+		t.Fatalf("reload runtime failed: %v", err)
+	}
+	if updatedRuntime.Status != "STOPPED" {
+		t.Fatalf("expected runtime STOPPED, got %s", updatedRuntime.Status)
+	}
+	if got := stringValue(updatedRuntime.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected desiredStatus STOPPED, got %s", got)
+	}
+	updatedLiveSession, err := platform.store.GetLiveSession(liveSession.ID)
+	if err != nil {
+		t.Fatalf("reload live session failed: %v", err)
+	}
+	if got := stringValue(updatedLiveSession.State["signalRuntimeStatus"]); got != "STOPPED" {
+		t.Fatalf("expected live signalRuntimeStatus STOPPED, got %s", got)
+	}
+}
+
 func TestPersistSignalRuntimeStoppedAfterStartCancelClearsDesiredAndActual(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	now := time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC)

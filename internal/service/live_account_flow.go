@@ -2,7 +2,10 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+
+	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
 type StopLiveFlowResult struct {
@@ -26,8 +29,8 @@ func (p *Platform) StopLiveFlowWithForce(accountID string, force bool) (StopLive
 	}
 	runtimeSessions := p.ListSignalRuntimeSessions()
 
-	runningLiveSessions := make([]string, 0)
-	runningRuntimeSessions := make([]string, 0)
+	runningLiveSessions := make([]domain.LiveSession, 0)
+	runningRuntimeSessions := make([]domain.SignalRuntimeSession, 0)
 	strategyIDs := make(map[string]struct{})
 	seenRuntimeIDs := make(map[string]struct{})
 
@@ -36,7 +39,7 @@ func (p *Platform) StopLiveFlowWithForce(accountID string, force bool) (StopLive
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(session.Status), "RUNNING") {
-			runningLiveSessions = append(runningLiveSessions, session.ID)
+			runningLiveSessions = append(runningLiveSessions, session)
 		}
 		if strategyID := strings.TrimSpace(session.StrategyID); strategyID != "" {
 			strategyIDs[strategyID] = struct{}{}
@@ -56,11 +59,33 @@ func (p *Platform) StopLiveFlowWithForce(accountID string, force bool) (StopLive
 			continue
 		}
 		seenRuntimeIDs[session.ID] = struct{}{}
-		runningRuntimeSessions = append(runningRuntimeSessions, session.ID)
+		runningRuntimeSessions = append(runningRuntimeSessions, session)
 	}
 
+	strategyList := make([]string, 0, len(strategyIDs))
+	for strategyID := range strategyIDs {
+		strategyList = append(strategyList, strategyID)
+	}
+	sort.Strings(strategyList)
+	lockRequests := make([]liveControlOperationInfo, 0, len(strategyList))
+	for _, strategyID := range strategyList {
+		lockRequests = append(lockRequests, liveControlOperationInfo{
+			Operation:  liveControlOperationAccountStop,
+			AccountID:  accountID,
+			StrategyID: strategyID,
+		})
+	}
+	release, acquired, current := p.tryStartLiveControlOperations(lockRequests)
+	if !acquired {
+		return StopLiveFlowResult{}, liveControlOperationInProgressError(liveControlOperationInfo{
+			Operation: liveControlOperationAccountStop,
+			AccountID: accountID,
+		}, current)
+	}
+	defer release()
+
 	if !force {
-		for strategyID := range strategyIDs {
+		for _, strategyID := range strategyList {
 			if err := p.ensureNoActivePositionsOrOrders(accountID, strategyID); err != nil {
 				return StopLiveFlowResult{}, err
 			}
@@ -72,17 +97,17 @@ func (p *Platform) StopLiveFlowWithForce(accountID string, force bool) (StopLive
 		StoppedLiveSessionIDs:    make([]string, 0, len(runningLiveSessions)),
 		StoppedRuntimeSessionIDs: make([]string, 0, len(runningRuntimeSessions)),
 	}
-	for _, sessionID := range runningLiveSessions {
-		if _, err := p.StopLiveSessionWithForce(sessionID, true); err != nil {
+	for _, session := range runningLiveSessions {
+		if _, err := p.stopLiveSessionWithForceLocked(session, true); err != nil {
 			return StopLiveFlowResult{}, err
 		}
-		result.StoppedLiveSessionIDs = append(result.StoppedLiveSessionIDs, sessionID)
+		result.StoppedLiveSessionIDs = append(result.StoppedLiveSessionIDs, session.ID)
 	}
-	for _, sessionID := range runningRuntimeSessions {
-		if _, err := p.StopSignalRuntimeSessionWithForce(sessionID, true); err != nil {
+	for _, session := range runningRuntimeSessions {
+		if _, err := p.stopSignalRuntimeSessionWithForceLocked(session, true); err != nil {
 			return StopLiveFlowResult{}, err
 		}
-		result.StoppedRuntimeSessionIDs = append(result.StoppedRuntimeSessionIDs, sessionID)
+		result.StoppedRuntimeSessionIDs = append(result.StoppedRuntimeSessionIDs, session.ID)
 	}
 	return result, nil
 }

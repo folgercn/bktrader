@@ -88,6 +88,7 @@ const (
 )
 
 var ErrLiveAccountOperationInProgress = errors.New("live account operation already in progress")
+var ErrLiveControlOperationInProgress = errors.New("live control operation already in progress")
 
 type liveAccountOperationKind string
 
@@ -95,6 +96,36 @@ const (
 	liveAccountOperationSync      liveAccountOperationKind = "sync"
 	liveAccountOperationReconcile liveAccountOperationKind = "reconcile"
 )
+
+type liveControlOperationKind string
+
+const (
+	liveControlOperationLaunch              liveControlOperationKind = "launch"
+	liveControlOperationStart               liveControlOperationKind = "start"
+	liveControlOperationStop                liveControlOperationKind = "stop"
+	liveControlOperationDelete              liveControlOperationKind = "delete"
+	liveControlOperationAccountStop         liveControlOperationKind = "account-stop"
+	liveControlOperationStartupRecovery     liveControlOperationKind = "startup-recovery"
+	liveControlOperationSignalRuntimeStart  liveControlOperationKind = "signal-runtime-start"
+	liveControlOperationSignalRuntimeStop   liveControlOperationKind = "signal-runtime-stop"
+	liveControlOperationSignalRuntimeDelete liveControlOperationKind = "signal-runtime-delete"
+	liveControlOperationScannerStop         liveControlOperationKind = "scanner-stop"
+)
+
+type liveControlOperationInfo struct {
+	Operation        liveControlOperationKind
+	AccountID        string
+	StrategyID       string
+	LiveSessionID    string
+	RuntimeSessionID string
+	StartedAt        time.Time
+}
+
+type liveControlOperationState struct {
+	lock    sync.Mutex
+	metaMu  sync.Mutex
+	current liveControlOperationInfo
+}
 
 type liveAccountSyncState struct {
 	mu          sync.Mutex
@@ -129,17 +160,38 @@ func (p *Platform) DeleteLiveSession(sessionID string) error {
 }
 
 func (p *Platform) DeleteLiveSessionWithForce(sessionID string, force bool) error {
-	p.logger("service.live", "session_id", sessionID).Info("deleting live session")
+	logger := p.logger("service.live", "session_id", sessionID)
+	logger.Info("deleting live session")
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
 		return err
 	}
+	requested := liveControlOperationInfo{
+		Operation:     liveControlOperationDelete,
+		AccountID:     session.AccountID,
+		StrategyID:    session.StrategyID,
+		LiveSessionID: session.ID,
+	}
+	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	if !acquired {
+		return liveControlOperationInProgressError(requested, current)
+	}
+	defer release()
+	return p.deleteLiveSessionWithForceLocked(session, force)
+}
+
+func (p *Platform) deleteLiveSessionWithForceLocked(session domain.LiveSession, force bool) error {
+	logger := p.logger("service.live", "session_id", session.ID)
 	if !force {
 		if err := p.ensureNoActivePositionsOrOrders(session.AccountID, session.StrategyID); err != nil {
 			return err
 		}
 	}
-	return p.store.DeleteLiveSession(sessionID)
+	if _, err := p.stopLinkedLiveSignalRuntime(session); err != nil {
+		logger.Warn("stop linked signal runtime before live session delete failed", "error", err)
+		return err
+	}
+	return p.store.DeleteLiveSession(session.ID)
 }
 
 func (p *Platform) UpdateLiveSession(sessionID, alias, accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
@@ -475,6 +527,112 @@ func (p *Platform) tryStartLiveAccountOperation(accountID string, kind liveAccou
 		return func() {}, false
 	}
 	return mu.Unlock, true
+}
+
+func (p *Platform) tryStartLiveControlOperation(info liveControlOperationInfo) (func(), bool, liveControlOperationInfo) {
+	info.AccountID = strings.TrimSpace(info.AccountID)
+	info.StrategyID = strings.TrimSpace(info.StrategyID)
+	if info.AccountID == "" || info.StrategyID == "" {
+		return func() {}, false, liveControlOperationInfo{}
+	}
+	if info.StartedAt.IsZero() {
+		info.StartedAt = time.Now().UTC()
+	}
+	key := liveControlOperationKey(info.AccountID, info.StrategyID)
+	actual, _ := p.liveControlOpState.LoadOrStore(key, &liveControlOperationState{})
+	state, _ := actual.(*liveControlOperationState)
+	if state == nil || !state.lock.TryLock() {
+		return func() {}, false, p.currentLiveControlOperation(key)
+	}
+	state.metaMu.Lock()
+	state.current = info
+	state.metaMu.Unlock()
+	release := func() {
+		state.metaMu.Lock()
+		state.current = liveControlOperationInfo{}
+		state.metaMu.Unlock()
+		state.lock.Unlock()
+	}
+	return release, true, liveControlOperationInfo{}
+}
+
+func (p *Platform) tryStartLiveControlOperations(infos []liveControlOperationInfo) (func(), bool, liveControlOperationInfo) {
+	if len(infos) == 0 {
+		return func() {}, true, liveControlOperationInfo{}
+	}
+	byKey := make(map[string]liveControlOperationInfo, len(infos))
+	for _, info := range infos {
+		info.AccountID = strings.TrimSpace(info.AccountID)
+		info.StrategyID = strings.TrimSpace(info.StrategyID)
+		if info.AccountID == "" || info.StrategyID == "" {
+			continue
+		}
+		if info.StartedAt.IsZero() {
+			info.StartedAt = time.Now().UTC()
+		}
+		byKey[liveControlOperationKey(info.AccountID, info.StrategyID)] = info
+	}
+	keys := make([]string, 0, len(byKey))
+	for key := range byKey {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	releases := make([]func(), 0, len(keys))
+	for _, key := range keys {
+		release, acquired, current := p.tryStartLiveControlOperation(byKey[key])
+		if acquired {
+			releases = append(releases, release)
+			continue
+		}
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+		return func() {}, false, current
+	}
+	return func() {
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+	}, true, liveControlOperationInfo{}
+}
+
+func liveControlOperationKey(accountID, strategyID string) string {
+	return strings.TrimSpace(accountID) + ":" + strings.TrimSpace(strategyID)
+}
+
+func (p *Platform) currentLiveControlOperation(key string) liveControlOperationInfo {
+	actual, ok := p.liveControlOpState.Load(key)
+	if !ok {
+		return liveControlOperationInfo{}
+	}
+	state, _ := actual.(*liveControlOperationState)
+	if state == nil {
+		return liveControlOperationInfo{}
+	}
+	state.metaMu.Lock()
+	defer state.metaMu.Unlock()
+	return state.current
+}
+
+func liveControlOperationInProgressError(requested, current liveControlOperationInfo) error {
+	operation := string(current.Operation)
+	if operation == "" {
+		operation = "unknown"
+	}
+	startedAt := ""
+	if !current.StartedAt.IsZero() {
+		startedAt = current.StartedAt.UTC().Format(time.RFC3339)
+	}
+	return fmt.Errorf("%w: requested=%s current=%s account=%s strategy=%s startedAt=%s liveSession=%s runtimeSession=%s",
+		ErrLiveControlOperationInProgress,
+		requested.Operation,
+		operation,
+		firstNonEmpty(current.AccountID, requested.AccountID),
+		firstNonEmpty(current.StrategyID, requested.StrategyID),
+		startedAt,
+		current.LiveSessionID,
+		current.RuntimeSessionID,
+	)
 }
 
 func liveAccountPositionReconcilePending(account domain.Account) bool {
@@ -1236,13 +1394,43 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 		if !strings.EqualFold(session.Status, "RUNNING") {
 			continue
 		}
+		requested := liveControlOperationInfo{
+			Operation:     liveControlOperationStartupRecovery,
+			AccountID:     session.AccountID,
+			StrategyID:    session.StrategyID,
+			LiveSessionID: session.ID,
+		}
+		release, acquired, current := p.tryStartLiveControlOperation(requested)
+		if !acquired {
+			p.logger("service.live", "session_id", session.ID).Warn("skip live session recovery because control operation is already in progress", "error", liveControlOperationInProgressError(requested, current))
+			continue
+		}
+		if p.liveSessionLinkedRuntimeDesiredStopped(session) {
+			state := cloneMetadata(session.State)
+			delete(state, "lastRecoveryError")
+			state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
+			state["lastRecoveryStatus"] = "skipped-runtime-desired-stopped"
+			_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+			p.logger("service.live", "session_id", session.ID).Warn("skip live session recovery because linked signal runtime desiredStatus is STOPPED")
+			release()
+			continue
+		}
 		recovered, recoverErr := p.recoverRunningLiveSession(session)
 		if recoverErr != nil {
 			p.logger("service.live", "session_id", session.ID).Warn("recover running live session failed", "error", recoverErr)
 			state := cloneMetadata(session.State)
+			if errors.Is(recoverErr, ErrRuntimeLeaseNotAcquired) {
+				delete(state, "lastRecoveryError")
+				state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
+				state["lastRecoveryStatus"] = "lease-not-acquired"
+				_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+				release()
+				continue
+			}
 			state["lastRecoveryError"] = recoverErr.Error()
 			state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
 			_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+			release()
 			continue
 		}
 		recoveredSessions++
@@ -1255,6 +1443,7 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 			state["lastRecoveryStatus"] = "recovered"
 		}
 		_, _ = p.store.UpdateLiveSessionState(recovered.ID, state)
+		release()
 	}
 	logger.Info("live trading recovery completed",
 		"synced_account_count", syncedAccounts,
@@ -1543,6 +1732,16 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	if strategyID == "" {
 		return LiveLaunchResult{}, fmt.Errorf("strategyId is required")
 	}
+	requested := liveControlOperationInfo{
+		Operation:  liveControlOperationLaunch,
+		AccountID:  account.ID,
+		StrategyID: strategyID,
+	}
+	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	if !acquired {
+		return LiveLaunchResult{}, liveControlOperationInProgressError(requested, current)
+	}
+	defer release()
 	if !options.MirrorStrategySignals {
 		options.MirrorStrategySignals = true
 	}
@@ -1631,7 +1830,7 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	result.RuntimeSession = runtimeSession
 	result.RuntimeSessionCreated = runtimeCreated
 	if options.StartRuntime && !strings.EqualFold(runtimeSession.Status, "RUNNING") {
-		runtimeSession, err = p.StartSignalRuntimeSession(runtimeSession.ID)
+		runtimeSession, err = p.startSignalRuntimeSession(context.Background(), runtimeSession.ID)
 		if err != nil {
 			return LiveLaunchResult{}, err
 		}
@@ -1646,7 +1845,7 @@ func (p *Platform) LaunchLiveFlow(accountID string, options LiveLaunchOptions) (
 	result.LiveSession = liveSession
 	result.LiveSessionCreated = liveCreated
 	if options.StartSession && !strings.EqualFold(liveSession.Status, "RUNNING") {
-		liveSession, err = p.StartLiveSession(liveSession.ID)
+		liveSession, err = p.startLiveSessionLocked(liveSession)
 		if err != nil {
 			return LiveLaunchResult{}, err
 		}
@@ -1936,11 +2135,28 @@ func (p *Platform) ensureLaunchLiveSession(accountID, strategyID string, overrid
 }
 
 func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error) {
-	logger := p.logger("service.live", "session_id", sessionID)
 	session, err := p.store.GetLiveSession(sessionID)
 	if err != nil {
-		logger.Warn("load live session failed", "error", err)
 		return domain.LiveSession{}, err
+	}
+	requested := liveControlOperationInfo{
+		Operation:     liveControlOperationStart,
+		AccountID:     session.AccountID,
+		StrategyID:    session.StrategyID,
+		LiveSessionID: session.ID,
+	}
+	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	if !acquired {
+		return domain.LiveSession{}, liveControlOperationInProgressError(requested, current)
+	}
+	defer release()
+	return p.startLiveSessionLocked(session)
+}
+
+func (p *Platform) startLiveSessionLocked(session domain.LiveSession) (domain.LiveSession, error) {
+	logger := p.logger("service.live", "session_id", session.ID)
+	if strings.EqualFold(session.Status, "DELETED") {
+		return domain.LiveSession{}, fmt.Errorf("live session %s is deleted", session.ID)
 	}
 	account, err := p.store.GetAccount(session.AccountID)
 	if err != nil {
@@ -2048,7 +2264,7 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 		logger.Warn("ensure live signal runtime failed", "error", err)
 		return domain.LiveSession{}, err
 	}
-	session, err = p.store.UpdateLiveSessionStatus(sessionID, "RUNNING")
+	session, err = p.store.UpdateLiveSessionStatus(session.ID, "RUNNING")
 	if err != nil {
 		logger.Error("mark live session running failed", "error", err)
 		return domain.LiveSession{}, err
@@ -2947,13 +3163,33 @@ func (p *Platform) StopLiveSessionWithForce(sessionID string, force bool) (domai
 		logger.Error("load live session before stop failed", "error", err)
 		return domain.LiveSession{}, err
 	}
+	requested := liveControlOperationInfo{
+		Operation:     liveControlOperationStop,
+		AccountID:     existing.AccountID,
+		StrategyID:    existing.StrategyID,
+		LiveSessionID: existing.ID,
+	}
+	release, acquired, current := p.tryStartLiveControlOperation(requested)
+	if !acquired {
+		return domain.LiveSession{}, liveControlOperationInProgressError(requested, current)
+	}
+	defer release()
+	return p.stopLiveSessionWithForceLocked(existing, force)
+}
+
+func (p *Platform) stopLiveSessionWithForceLocked(existing domain.LiveSession, force bool) (domain.LiveSession, error) {
+	logger := p.logger("service.live", "session_id", existing.ID)
 	if !force {
 		if err := p.ensureNoActivePositionsOrOrders(existing.AccountID, existing.StrategyID); err != nil {
 			logger.Warn("stop live session blocked by active positions or orders", "error", err)
 			return domain.LiveSession{}, err
 		}
 	}
-	session, err := p.store.UpdateLiveSessionStatus(sessionID, "STOPPED")
+	if _, err := p.stopLinkedLiveSignalRuntime(existing); err != nil {
+		logger.Warn("stop linked signal runtime failed", "error", err)
+		return domain.LiveSession{}, err
+	}
+	session, err := p.store.UpdateLiveSessionStatus(existing.ID, "STOPPED")
 	if err != nil {
 		logger.Error("stop live session failed", "error", err)
 		return domain.LiveSession{}, err
@@ -2961,7 +3197,6 @@ func (p *Platform) StopLiveSessionWithForce(sessionID string, force bool) (domai
 	p.mu.Lock()
 	delete(p.livePlans, session.ID)
 	p.mu.Unlock()
-	_, _ = p.stopLinkedLiveSignalRuntime(session)
 	p.logger("service.live",
 		"session_id", session.ID,
 		"account_id", session.AccountID,
@@ -3658,7 +3893,7 @@ func (p *Platform) ensureLiveSessionSignalRuntimeStarted(session domain.LiveSess
 	if runtimeSessionID == "" {
 		return domain.LiveSession{}, fmt.Errorf("live session %s has no linked signal runtime session", session.ID)
 	}
-	runtimeSession, err := p.StartSignalRuntimeSession(runtimeSessionID)
+	runtimeSession, err := p.startSignalRuntimeSession(context.Background(), runtimeSessionID)
 	if err != nil {
 		return domain.LiveSession{}, err
 	}
@@ -3701,18 +3936,42 @@ func (p *Platform) awaitLiveSignalRuntimeReadiness(session domain.LiveSession, r
 }
 
 func (p *Platform) stopLinkedLiveSignalRuntime(session domain.LiveSession) (domain.SignalRuntimeSession, error) {
-	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
+	runtimeSessionID := firstNonEmpty(
+		stringValue(session.State["signalRuntimeSessionId"]),
+		stringValue(session.State["lastSignalRuntimeSessionId"]),
+	)
 	if runtimeSessionID == "" {
-		return domain.SignalRuntimeSession{}, fmt.Errorf("live session %s has no linked signal runtime session", session.ID)
+		return domain.SignalRuntimeSession{}, nil
 	}
-	runtimeSession, err := p.StopSignalRuntimeSession(runtimeSessionID)
+	runtimeSession, err := p.GetSignalRuntimeSession(runtimeSessionID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	runtimeSession, err = p.stopSignalRuntimeSessionWithForceLocked(runtimeSession, true)
 	if err != nil {
 		return domain.SignalRuntimeSession{}, err
 	}
 	state := cloneMetadata(session.State)
 	state["signalRuntimeStatus"] = runtimeSession.Status
-	_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+	if _, err := p.store.UpdateLiveSessionState(session.ID, state); err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
 	return runtimeSession, nil
+}
+
+func (p *Platform) liveSessionLinkedRuntimeDesiredStopped(session domain.LiveSession) bool {
+	runtimeSessionID := strings.TrimSpace(firstNonEmpty(
+		stringValue(session.State["signalRuntimeSessionId"]),
+		stringValue(session.State["lastSignalRuntimeSessionId"]),
+	))
+	if runtimeSessionID == "" {
+		return false
+	}
+	runtimeSession, err := p.GetSignalRuntimeSession(runtimeSessionID)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(stringValue(runtimeSession.State["desiredStatus"]), "STOPPED")
 }
 
 func (p *Platform) ensureLiveExecutionPlan(session domain.LiveSession) (domain.LiveSession, []paperPlannedOrder, error) {

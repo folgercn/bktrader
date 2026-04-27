@@ -1196,9 +1196,12 @@ func (s *Store) UpdatePaperSessionState(sessionID string, state map[string]any) 
 
 func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
 	rows, err := s.db.Query(`
-		select id, alias, account_id, strategy_id, status, state, created_at
-		from live_sessions order by created_at asc
-	`)
+			select id, alias, account_id, strategy_id, status, state, created_at
+			from live_sessions
+			where upper(status) <> 'DELETED'
+				and not (state ? 'deletedAt')
+			order by created_at asc
+		`)
 	if err != nil {
 		return nil, err
 	}
@@ -1288,7 +1291,13 @@ func (s *Store) UpdateLiveSession(item domain.LiveSession) (domain.LiveSession, 
 }
 
 func (s *Store) DeleteLiveSession(sessionID string) error {
-	result, err := s.db.Exec(`delete from live_sessions where id = $1`, sessionID)
+	deletedAt := time.Now().UTC().Format(time.RFC3339)
+	result, err := s.db.Exec(`
+		update live_sessions
+		set status = 'DELETED',
+			state = coalesce(state, '{}'::jsonb) || jsonb_build_object('deletedAt', $2)
+		where id = $1
+	`, sessionID, deletedAt)
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
@@ -68,6 +70,39 @@ func TestLiveSessionRuntimeActionsDisabledForAPIRole(t *testing.T) {
 	}
 }
 
+func TestLiveSessionDeleteRouteReturnsConflictDuringSamePairOperation(t *testing.T) {
+	store := &blockingLiveSessionStatusStore{
+		Store:       memory.NewStore(),
+		blockStatus: "STOPPED",
+		entered:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	platform := service.NewPlatform(store)
+	mux := http.NewServeMux()
+	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "monolith"})
+
+	stopDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/stop", nil)
+		mux.ServeHTTP(rec, req)
+		stopDone <- rec
+	}()
+	<-store.entered
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/live/sessions/live-session-main?force=true", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		close(store.release)
+		t.Fatalf("expected 409 for concurrent delete, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	close(store.release)
+	if stopRec := <-stopDone; stopRec.Code != http.StatusOK {
+		t.Fatalf("expected original stop to complete with 200, got %d body=%s", stopRec.Code, stopRec.Body.String())
+	}
+}
+
 func TestLiveSessionDetailRouteFiltersStateFields(t *testing.T) {
 	store := memory.NewStore()
 	platform := service.NewPlatform(store)
@@ -123,6 +158,22 @@ func TestLiveSessionDetailRouteFiltersStateFields(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for unsupported detail field, got %d body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+type blockingLiveSessionStatusStore struct {
+	*memory.Store
+	blockStatus string
+	entered     chan struct{}
+	release     chan struct{}
+	once        sync.Once
+}
+
+func (s *blockingLiveSessionStatusStore) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
+	if strings.EqualFold(status, s.blockStatus) {
+		s.once.Do(func() { close(s.entered) })
+		<-s.release
+	}
+	return s.Store.UpdateLiveSessionStatus(sessionID, status)
 }
 
 func TestLiveAccountStopRouteStopsRunningFlow(t *testing.T) {
