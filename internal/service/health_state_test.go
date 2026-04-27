@@ -201,6 +201,67 @@ func TestLiveAccountSyncStaleAndRefreshThreshold(t *testing.T) {
 	}
 }
 
+func TestLiveAccountSyncStaleAlertGraceSuppressesThresholdFlap(t *testing.T) {
+	platform := &Platform{
+		runtimePolicy: RuntimePolicy{
+			LiveAccountSyncFreshnessSecs: 60,
+		},
+	}
+	now := time.Now().UTC()
+	account := domain.Account{
+		ID: "live-1",
+		Metadata: map[string]any{
+			"healthSummary": map[string]any{
+				"accountSync": map[string]any{
+					"lastSuccessAt": now.Add(-61 * time.Second).Format(time.RFC3339),
+				},
+			},
+			"lastLiveSyncAt": now.Add(-61 * time.Second).Format(time.RFC3339),
+		},
+	}
+
+	stale, ageSeconds := platform.liveAccountSyncStale(account, now)
+	if !stale {
+		t.Fatal("expected health stale state once freshness threshold is exceeded")
+	}
+	if staleness, _ := platform.liveAccountSyncStaleness(account, now); staleness != liveAccountSyncSoftStale {
+		t.Fatalf("expected soft stale inside alert grace, got %s", staleness)
+	}
+	alertStale, alertAgeSeconds := platform.liveAccountSyncStaleForAlert(account, now)
+	if alertStale {
+		t.Fatalf("expected alert grace to suppress threshold flap, age=%d", alertAgeSeconds)
+	}
+	if alertAgeSeconds != ageSeconds {
+		t.Fatalf("expected alert age to preserve stale age, got %d want %d", alertAgeSeconds, ageSeconds)
+	}
+
+	account.Metadata["healthSummary"] = map[string]any{
+		"accountSync": map[string]any{
+			"lastSuccessAt": now.Add(-91 * time.Second).Format(time.RFC3339),
+			"lastAttemptAt": now.Add(-5 * time.Second).Format(time.RFC3339),
+		},
+	}
+	account.Metadata["lastLiveSyncAt"] = now.Add(-91 * time.Second).Format(time.RFC3339)
+	alertStale, alertAgeSeconds = platform.liveAccountSyncStaleForAlert(account, now)
+	if alertStale {
+		t.Fatalf("expected recent sync attempt to suppress hard stale alert, age=%d", alertAgeSeconds)
+	}
+
+	account.Metadata["healthSummary"] = map[string]any{
+		"accountSync": map[string]any{
+			"lastSuccessAt": now.Add(-91 * time.Second).Format(time.RFC3339),
+			"lastAttemptAt": now.Add(-45 * time.Second).Format(time.RFC3339),
+		},
+	}
+	alertStale, alertAgeSeconds = platform.liveAccountSyncStaleForAlert(account, now)
+	if !alertStale {
+		t.Fatalf("expected alert after grace elapses, age=%d", alertAgeSeconds)
+	}
+	if staleness, _ := platform.liveAccountSyncStaleness(account, now); staleness != liveAccountSyncHardStale {
+		t.Fatalf("expected hard stale after alert grace elapses, got %s", staleness)
+	}
+}
+
 func TestUpdateRuntimePolicyAllowsDisablingHealthThresholds(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
