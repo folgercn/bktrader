@@ -148,8 +148,22 @@ jobs:
             esac
 
             case "$file" in
-              internal/service/signal_runtime*|internal/service/runtime_event_bus*|internal/service/runtime_event_consumer*|internal/service/runtime_lease*)
+              internal/service/signal_runtime*|internal/service/runtime_lease*)
                 add_service signal-runtime-runner
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/runtime_event_consumer*)
+                live_runner_changed=true
+                add_service live-runner
+                add_service signal-runtime-runner
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/runtime_event_bus*)
+                add_all_backend_services
                 ;;
             esac
 
