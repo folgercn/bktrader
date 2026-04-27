@@ -8,6 +8,82 @@ on:
     branches: [main]
 
 jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      backend_changed: ${{ steps.filter.outputs.backend_changed }}
+      ctl_changed: ${{ steps.filter.outputs.ctl_changed }}
+      frontend_changed: ${{ steps.filter.outputs.frontend_changed }}
+      docker_changed: ${{ steps.filter.outputs.docker_changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "backend_changed=true" >> "$GITHUB_OUTPUT"
+            echo "ctl_changed=true" >> "$GITHUB_OUTPUT"
+            echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
+            echo "docker_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF" --depth=1
+            changed_files="$(git diff --name-only "origin/$BASE_REF"...HEAD)"
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            changed_files="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")"
+          else
+            changed_files="$(git ls-tree -r --name-only "$CURRENT_SHA")"
+          fi
+
+          backend_changed=false
+          ctl_changed=false
+          frontend_changed=false
+          docker_changed=false
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              go.mod|go.sum)
+                backend_changed=true
+                ctl_changed=true
+                ;;
+              cmd/bktrader-ctl/*|internal/ctlclient/*|internal/http/registry.go|scripts/check-ctl-coverage/*|scripts/gen-ctl-command/*|docs/bktrader-ctl-reference.md|.github/workflows/release.yml)
+                ctl_changed=true
+                ;;
+              cmd/*|internal/*|db/*)
+                backend_changed=true
+                ;;
+              web/console/*)
+                frontend_changed=true
+                ;;
+              Dockerfile|.dockerignore|deployments/*)
+                docker_changed=true
+                ;;
+              .github/workflows/ci.yml)
+                ctl_changed=true
+                ;;
+            esac
+          done <<EOF
+          $changed_files
+          EOF
+
+          echo "backend_changed=$backend_changed" >> "$GITHUB_OUTPUT"
+          echo "ctl_changed=$ctl_changed" >> "$GITHUB_OUTPUT"
+          echo "frontend_changed=$frontend_changed" >> "$GITHUB_OUTPUT"
+          echo "docker_changed=$docker_changed" >> "$GITHUB_OUTPUT"
+
   risk-checks:
     name: High Risk Defenses
     runs-on: ubuntu-latest
@@ -26,6 +102,8 @@ jobs:
 
   backend:
     name: Backend (Go)
+    needs: changes
+    if: needs.changes.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -47,7 +125,12 @@ jobs:
           fi
 
       - name: Run tests
-        run: go test ./...
+        run: |
+          go list ./... \
+            | grep -v '/cmd/bktrader-ctl$' \
+            | grep -v '/internal/ctlclient$' \
+            | grep -v '/scripts/check-ctl-coverage$' \
+            | xargs go test
 
       - name: Build platform API
         run: go build ./cmd/platform-api
@@ -55,8 +138,43 @@ jobs:
       - name: Build db migrate
         run: go build ./cmd/db-migrate
 
+  ctl:
+    name: bktrader-ctl (Go)
+    needs: changes
+    if: needs.changes.outputs.ctl_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify formatting
+        run: |
+          unformatted=$(gofmt -l cmd/bktrader-ctl internal/ctlclient scripts/check-ctl-coverage)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run CLI tests
+        run: go test ./cmd/bktrader-ctl ./internal/ctlclient ./scripts/check-ctl-coverage
+
+      - name: Build bktrader-ctl
+        run: go build ./cmd/bktrader-ctl
+
+      - name: Check CLI coverage
+        run: go run scripts/check-ctl-coverage/main.go
+
   frontend:
     name: Frontend (Vite)
+    needs: changes
+    if: needs.changes.outputs.frontend_changed == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -80,6 +198,8 @@ jobs:
 
   docker:
     name: Docker build validation
+    needs: changes
+    if: needs.changes.outputs.docker_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

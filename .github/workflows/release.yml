@@ -1,0 +1,49 @@
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Matrix
+        run: |
+          mkdir -p dist
+          platforms=(
+            "darwin/arm64"
+          )
+
+          for platform in "${platforms[@]}"; do
+            platform_split=(${platform//\// })
+            GOOS=${platform_split[0]}
+            GOARCH=${platform_split[1]}
+            
+            output_name="bktrader-ctl-$GOOS-$GOARCH"
+            
+            echo "Building $output_name..."
+            env GOOS=$GOOS GOARCH=$GOARCH go build \
+              -ldflags "-X main.Version=${GITHUB_REF_NAME} -X main.Commit=${GITHUB_SHA} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "dist/$output_name" ./cmd/bktrader-ctl
+          done
+
+          # ubuntu-latest intentionally provides sha256sum for release checksums.
+          cd dist && sha256sum * > checksums.txt && cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
