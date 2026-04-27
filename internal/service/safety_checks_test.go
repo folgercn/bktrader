@@ -1,9 +1,11 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"math"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -100,9 +102,310 @@ func TestDeleteLiveSessionWithForceRequiresForceWhenExposureExists(t *testing.T)
 	if err := platform.DeleteLiveSessionWithForce("live-session-main", true); err != nil {
 		t.Fatalf("force delete live session failed: %v", err)
 	}
-	if _, err := platform.store.GetLiveSession("live-session-main"); err == nil {
-		t.Fatal("expected live session to be deleted after force delete")
+	deleted, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("expected soft-deleted live session to remain loadable, got %v", err)
 	}
+	if deleted.Status != "DELETED" {
+		t.Fatalf("expected live session status DELETED after force delete, got %s", deleted.Status)
+	}
+	if got := stringValue(deleted.State["deletedAt"]); got == "" {
+		t.Fatal("expected soft-deleted live session to record deletedAt")
+	}
+	items, err := platform.ListLiveSessions()
+	if err != nil {
+		t.Fatalf("list live sessions failed: %v", err)
+	}
+	for _, item := range items {
+		if item.ID == deleted.ID {
+			t.Fatalf("expected deleted live session %s to be hidden from default list", deleted.ID)
+		}
+	}
+}
+
+func TestStopLiveSessionWithForceStopsLinkedRuntimeWhenLiveAlreadyStopped(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.UpdateLiveSessionStatus("live-session-main", "STOPPED")
+	if err != nil {
+		t.Fatalf("set live session stopped failed: %v", err)
+	}
+	runtime := mustCreateLinkedLiveRuntime(t, platform, session, "RUNNING", "RUNNING")
+
+	stopped, err := platform.StopLiveSessionWithForce(session.ID, false)
+	if err != nil {
+		t.Fatalf("stop already-stopped live session failed: %v", err)
+	}
+	if stopped.Status != "STOPPED" {
+		t.Fatalf("expected live session to remain STOPPED, got %s", stopped.Status)
+	}
+	updatedRuntime, err := platform.GetSignalRuntimeSession(runtime.ID)
+	if err != nil {
+		t.Fatalf("reload runtime failed: %v", err)
+	}
+	if updatedRuntime.Status != "STOPPED" {
+		t.Fatalf("expected linked runtime STOPPED, got %s", updatedRuntime.Status)
+	}
+	if got := stringValue(updatedRuntime.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected linked runtime desiredStatus STOPPED, got %s", got)
+	}
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session failed: %v", err)
+	}
+	if got := stringValue(updatedSession.State["signalRuntimeStatus"]); got != "STOPPED" {
+		t.Fatalf("expected live session signalRuntimeStatus STOPPED, got %s", got)
+	}
+}
+
+func TestDeleteLiveSessionWithForceStopsLinkedRuntimeBeforeDelete(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	runtime := mustCreateLinkedLiveRuntime(t, platform, session, "RUNNING", "RUNNING")
+
+	if err := platform.DeleteLiveSessionWithForce(session.ID, false); err != nil {
+		t.Fatalf("delete live session failed: %v", err)
+	}
+	deleted, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("expected soft-deleted live session to remain loadable, got %v", err)
+	}
+	if deleted.Status != "DELETED" {
+		t.Fatalf("expected live session status DELETED, got %s", deleted.Status)
+	}
+	if got := stringValue(deleted.State["deletedAt"]); got == "" {
+		t.Fatal("expected deletedAt to be set")
+	}
+	updatedRuntime, err := platform.GetSignalRuntimeSession(runtime.ID)
+	if err != nil {
+		t.Fatalf("reload runtime failed: %v", err)
+	}
+	if updatedRuntime.Status != "STOPPED" {
+		t.Fatalf("expected linked runtime STOPPED before live delete, got %s", updatedRuntime.Status)
+	}
+	if got := stringValue(updatedRuntime.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected linked runtime desiredStatus STOPPED, got %s", got)
+	}
+}
+
+func TestDeleteLiveSessionWithForceKeepsSessionWhenLinkedRuntimeStopFails(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["signalRuntimeSessionId"] = "signal-runtime-missing"
+	if _, err := platform.store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("seed linked runtime id failed: %v", err)
+	}
+
+	if err := platform.DeleteLiveSessionWithForce(session.ID, true); err == nil {
+		t.Fatal("expected delete to fail when linked runtime stop fails")
+	}
+	if _, err := platform.store.GetLiveSession(session.ID); err != nil {
+		t.Fatalf("expected live session to remain after failed linked runtime stop, got %v", err)
+	}
+}
+
+func TestRecoverLiveTradingOnStartupSkipsLinkedRuntimeDesiredStopped(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	runtime := mustCreateLinkedLiveRuntime(t, platform, session, "STOPPED", "STOPPED")
+
+	platform.RecoverLiveTradingOnStartup(context.Background())
+
+	updatedRuntime, err := platform.GetSignalRuntimeSession(runtime.ID)
+	if err != nil {
+		t.Fatalf("reload runtime failed: %v", err)
+	}
+	if updatedRuntime.Status != "STOPPED" {
+		t.Fatalf("expected runtime to stay STOPPED, got %s", updatedRuntime.Status)
+	}
+	if got := stringValue(updatedRuntime.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected desiredStatus STOPPED, got %s", got)
+	}
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session failed: %v", err)
+	}
+	if got := stringValue(updatedSession.State["lastRecoveryError"]); got != "" {
+		t.Fatalf("expected no lastRecoveryError for skipped desired-stopped runtime, got %s", got)
+	}
+	if got := stringValue(updatedSession.State["lastRecoveryStatus"]); got != "skipped-runtime-desired-stopped" {
+		t.Fatalf("expected skipped recovery status, got %s", got)
+	}
+}
+
+func TestRecoverLiveTradingOnStartupTreatsRuntimeLeaseRaceAsTransient(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	platform.setRuntimeLeaseOwnerIDForTest("runner-local")
+	session, err := platform.store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	runtime := mustCreateLinkedLiveRuntime(t, platform, session, "STOPPED", "RUNNING")
+	state := cloneMetadata(session.State)
+	state["signalRuntimeSessionId"] = runtime.ID
+	state["lastRecoveryError"] = "old critical error"
+	if _, err := platform.store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("seed live recovery state failed: %v", err)
+	}
+	if _, ok, err := store.AcquireRuntimeLease(domain.RuntimeLeaseAcquireRequest{
+		ResourceType: domain.RuntimeLeaseResourceSignalRuntimeSession,
+		ResourceID:   runtime.ID,
+		OwnerID:      "runner-other",
+		TTL:          time.Minute,
+	}); err != nil || !ok {
+		t.Fatalf("pre-acquire runtime lease failed: ok=%v err=%v", ok, err)
+	}
+
+	platform.RecoverLiveTradingOnStartup(context.Background())
+
+	updatedSession, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload live session failed: %v", err)
+	}
+	if got := stringValue(updatedSession.State["lastRecoveryError"]); got != "" {
+		t.Fatalf("expected transient lease race to clear lastRecoveryError, got %s", got)
+	}
+	if got := stringValue(updatedSession.State["lastRecoveryStatus"]); got != "lease-not-acquired" {
+		t.Fatalf("expected lease-not-acquired recovery status, got %s", got)
+	}
+	updatedRuntime, err := platform.GetSignalRuntimeSession(runtime.ID)
+	if err != nil {
+		t.Fatalf("reload runtime failed: %v", err)
+	}
+	if updatedRuntime.Status != "STOPPED" {
+		t.Fatalf("expected runtime to remain STOPPED after lease race, got %s", updatedRuntime.Status)
+	}
+}
+
+func TestLiveSessionControlRejectsConcurrentSameAccountStrategyOperations(t *testing.T) {
+	store := &blockingLiveSessionStatusStore{
+		Store:       memory.NewStore(),
+		blockStatus: "STOPPED",
+		entered:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	platform := NewPlatform(store)
+
+	stopDone := make(chan error, 1)
+	go func() {
+		_, err := platform.StopLiveSessionWithForce("live-session-main", false)
+		stopDone <- err
+	}()
+	<-store.entered
+
+	if err := platform.DeleteLiveSessionWithForce("live-session-main", true); !errors.Is(err, ErrLiveControlOperationInProgress) {
+		close(store.release)
+		t.Fatalf("expected concurrent delete to return control operation error, got %v", err)
+	}
+	close(store.release)
+	if err := <-stopDone; err != nil {
+		t.Fatalf("stop operation should complete after release: %v", err)
+	}
+}
+
+func TestSignalRuntimeStartReturnsConflictDuringLiveControlOperation(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	runtime := mustCreateLinkedLiveRuntime(t, platform, session, "STOPPED", "RUNNING")
+	if _, err := platform.StartSignalRuntimeSession(runtime.ID); err != nil {
+		t.Fatalf("start runtime failed: %v", err)
+	}
+
+	requested := liveControlOperationInfo{
+		Operation:     liveControlOperationStop,
+		AccountID:     session.AccountID,
+		StrategyID:    session.StrategyID,
+		LiveSessionID: session.ID,
+	}
+	release, acquired, current, lockErr := platform.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		t.Fatalf("acquire live control operation failed: %v", lockErr)
+	}
+	if !acquired {
+		t.Fatalf("acquire live control operation failed: %v", liveControlOperationInProgressError(requested, current))
+	}
+	_, err = platform.StartSignalRuntimeSession(runtime.ID)
+	release()
+	if !errors.Is(err, ErrLiveControlOperationInProgress) {
+		t.Fatalf("expected runtime start to return live control conflict, got %v", err)
+	}
+	if _, stopErr := platform.StopSignalRuntimeSessionWithForce(runtime.ID, true); stopErr != nil {
+		t.Fatalf("cleanup runtime failed: %v", stopErr)
+	}
+}
+
+func TestLiveControlOperationMissingKeyIsNotConflict(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	_, acquired, _, err := platform.tryStartLiveControlOperation(liveControlOperationInfo{
+		Operation: liveControlOperationStart,
+		AccountID: "live-main",
+	})
+	if acquired {
+		t.Fatal("expected missing strategy key to prevent lock acquisition")
+	}
+	if !errors.Is(err, ErrLiveControlOperationKeyMissing) {
+		t.Fatalf("expected missing key error, got %v", err)
+	}
+	if errors.Is(err, ErrLiveControlOperationInProgress) {
+		t.Fatalf("missing key must not be reported as control conflict: %v", err)
+	}
+}
+
+func TestStopLiveFlowWithForceReleasesBatchLocksWhenLaterLockFails(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	const accountID = "live-main"
+	const firstStrategyID = "strategy-bk-1d"
+	const secondStrategyID = "zz-review-strategy"
+	if _, err := platform.store.CreateLiveSession(accountID, secondStrategyID); err != nil {
+		t.Fatalf("create second live session failed: %v", err)
+	}
+
+	secondRelease, acquired, current, lockErr := platform.tryStartLiveControlOperation(liveControlOperationInfo{
+		Operation:  liveControlOperationStart,
+		AccountID:  accountID,
+		StrategyID: secondStrategyID,
+	})
+	if lockErr != nil {
+		t.Fatalf("pre-acquire second strategy lock failed: %v", lockErr)
+	}
+	if !acquired {
+		t.Fatalf("pre-acquire second strategy lock conflict: %v", liveControlOperationInProgressError(liveControlOperationInfo{
+			Operation:  liveControlOperationStart,
+			AccountID:  accountID,
+			StrategyID: secondStrategyID,
+		}, current))
+	}
+	defer secondRelease()
+
+	if _, err := platform.StopLiveFlowWithForce(accountID, true); !errors.Is(err, ErrLiveControlOperationInProgress) {
+		t.Fatalf("expected account stop to hit later strategy lock conflict, got %v", err)
+	}
+
+	firstRelease, acquired, current, lockErr := platform.tryStartLiveControlOperation(liveControlOperationInfo{
+		Operation:  liveControlOperationStart,
+		AccountID:  accountID,
+		StrategyID: firstStrategyID,
+	})
+	if lockErr != nil {
+		t.Fatalf("acquire first strategy lock after failed batch failed: %v", lockErr)
+	}
+	if !acquired {
+		t.Fatalf("expected failed batch to release first strategy lock, still blocked by %v", current)
+	}
+	firstRelease()
 }
 
 func TestSignalRuntimeSessionForceActionsRespectSafetyLock(t *testing.T) {
@@ -205,6 +508,57 @@ func TestStopLiveFlowWithForceSucceedsWhenLiveStopAlreadyStoppedLinkedRuntime(t 
 	if updatedRuntime.Status != "STOPPED" {
 		t.Fatalf("expected runtime STOPPED, got %s", updatedRuntime.Status)
 	}
+}
+
+func mustCreateLinkedLiveRuntime(t *testing.T, platform *Platform, session domain.LiveSession, status, desiredStatus string) domain.SignalRuntimeSession {
+	t.Helper()
+	if _, err := platform.BindStrategySignalSource(session.StrategyID, map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "BTCUSDT",
+		"options":   map[string]any{"timeframe": "1d"},
+	}); err != nil {
+		t.Fatalf("bind strategy signal failed: %v", err)
+	}
+	runtime, err := platform.CreateSignalRuntimeSession(session.AccountID, session.StrategyID)
+	if err != nil {
+		t.Fatalf("create runtime failed: %v", err)
+	}
+	now := time.Now().UTC()
+	runtime.Status = status
+	runtime.State = cloneMetadata(runtime.State)
+	runtime.State["desiredStatus"] = desiredStatus
+	runtime.State["actualStatus"] = status
+	runtime.State["health"] = strings.ToLower(status)
+	runtime.UpdatedAt = now
+	updatedRuntime, err := platform.store.UpdateSignalRuntimeSession(runtime)
+	if err != nil {
+		t.Fatalf("update runtime failed: %v", err)
+	}
+	platform.cacheSignalRuntimeSession(updatedRuntime)
+	state := cloneMetadata(session.State)
+	state["signalRuntimeSessionId"] = updatedRuntime.ID
+	state["signalRuntimeStatus"] = updatedRuntime.Status
+	if _, err := platform.store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("link runtime into live session failed: %v", err)
+	}
+	return updatedRuntime
+}
+
+type blockingLiveSessionStatusStore struct {
+	*memory.Store
+	blockStatus string
+	entered     chan struct{}
+	release     chan struct{}
+	once        sync.Once
+}
+
+func (s *blockingLiveSessionStatusStore) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
+	if strings.EqualFold(status, s.blockStatus) {
+		s.once.Do(func() { close(s.entered) })
+		<-s.release
+	}
+	return s.Store.UpdateLiveSessionStatus(sessionID, status)
 }
 
 func TestClosePositionCreatesReduceOnlyMarketOrder(t *testing.T) {

@@ -111,7 +111,7 @@ type Repository interface {
 	CreateLiveSession(accountID, strategyID string) (domain.LiveSession, error)
 	// UpdateLiveSession 更新指定实盘策略会话的账户、策略或状态载荷。
 	UpdateLiveSession(session domain.LiveSession) (domain.LiveSession, error)
-	// DeleteLiveSession 删除指定实盘策略会话。
+	// DeleteLiveSession marks a live session as deleted; default list queries hide deleted sessions.
 	DeleteLiveSession(sessionID string) error
 	// UpdateLiveSessionStatus 更新实盘策略会话状态。
 	UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error)

@@ -197,7 +197,14 @@ export function AccountStage({
     onConfirm: () => Promise<void> | void;
   }>({ open: false, title: "", description: "", onConfirm: () => {} });
 
-  const confirmActionPending = liveSessionDeleteAction !== null || liveFlowAction !== null;
+  const confirmActionPending =
+    liveSessionAction !== null ||
+    liveSessionDeleteAction !== null ||
+    liveFlowAction !== null ||
+    liveSessionLaunchAction ||
+    signalRuntimeAction !== null ||
+    launchingTemplate !== null ||
+    liveBindAction;
 
   const activeLiveSession = liveSessions.find(s => s.accountId === quickLiveAccountId);
   const activeTemplateKey = String(
@@ -206,6 +213,25 @@ export function AccountStage({
 
   const openConfirm = (title: string, description: string, onConfirm: () => Promise<void> | void) => {
     setConfirmConfig({ open: true, title, description, onConfirm });
+  };
+
+  const liveSessionActionTargets = (sessionId: string) =>
+    liveSessionAction === sessionId || liveSessionAction?.startsWith(`${sessionId}:`) || liveSessionDeleteAction === sessionId;
+
+  const signalRuntimeActionTargets = (runtimeId: string) =>
+    signalRuntimeAction === runtimeId || signalRuntimeAction?.startsWith(`${runtimeId}:`);
+
+  const liveControlActionPendingForAccount = (accountId: string) => {
+    if (!accountId) return false;
+    const sessionPending = validLiveSessions.some(
+      (item) => item.accountId === accountId && liveSessionActionTargets(item.id)
+    );
+    const runtimePending =
+      signalRuntimeSessions.some((item) => item.accountId === accountId && signalRuntimeActionTargets(item.id)) ||
+      (signalRuntimeAction === "create" && signalRuntimeForm.accountId === accountId);
+    const launchPending =
+      (liveSessionLaunchAction || launchingTemplate !== null || liveBindAction) && quickLiveAccountId === accountId;
+    return liveFlowAction === accountId || sessionPending || runtimePending || launchPending;
   };
 
   const activeOrderStatuses = useMemo(() => new Set(["NEW", "PARTIALLY_FILLED", "ACCEPTED"]), []);
@@ -221,6 +247,9 @@ export function AccountStage({
     () => liveSessions.filter((item) => strategyIds.has(item.strategyId)),
     [liveSessions, strategyIds]
   );
+  const quickLiveControlActionPending = quickLiveAccountId
+    ? liveControlActionPendingForAccount(quickLiveAccountId)
+    : liveSessionLaunchAction || launchingTemplate !== null;
 
   const primaryLiveSession = highlightedLiveSession?.session ?? null;
   const primaryLiveSessionIntent = getRecord(primaryLiveSession?.state?.lastStrategyIntent);
@@ -544,6 +573,7 @@ export function AccountStage({
                 const liveNextAction = deriveLiveNextAction(livePreflight);
                 const liveAlerts = deriveLiveAlerts(account, activeRuntimeState, activeRuntimeSourceSummary, activeRuntimeReadiness, activeSignalAction, runtimePolicy);
                 const accountDetailOpen = expandedAccountId === account.id;
+                const accountControlPending = liveControlActionPendingForAccount(account.id);
                 const handleStopLiveFlow = () => {
                   if (!hasOpenExposure) {
                     openConfirm(
@@ -642,10 +672,12 @@ export function AccountStage({
                           <Button 
                             variant={isLiveFlowRunning ? "bento-danger" : "bento"}
                             className="h-11 w-full rounded-xl text-xs font-black shadow-md transition-transform active:scale-95"
-                            disabled={liveFlowAction !== null || liveBindAction || signalRuntimeAction !== null}
+                            disabled={accountControlPending}
                             onClick={() => isLiveFlowRunning ? handleStopLiveFlow() : launchLiveFlow(account)}
                           >
-                             {isLiveFlowRunning ? (
+                             {liveFlowAction === account.id ? (
+                               <div className="flex items-center gap-2"><RotateCw size={14} className="animate-spin" /> 处理中...</div>
+                             ) : isLiveFlowRunning ? (
                                <div className="flex items-center gap-2"><Square size={14} fill="currentColor" /> 停止实盘流程</div>
                              ) : (
                                <div className="flex items-center gap-2"><Play size={14} fill="currentColor" /> 启动实盘流程</div>
@@ -791,7 +823,7 @@ export function AccountStage({
                         <Button 
                           variant="bento-outline"
                           className="h-8 w-full rounded-lg bg-[var(--bk-surface)] text-[10px] font-black transition-all hover:border-transparent hover:bg-[var(--bk-surface-inverse)] hover:text-[var(--bk-text-contrast)]"
-                          disabled={launchingTemplate !== null}
+                          disabled={quickLiveControlActionPending}
                           onClick={() => {
                             const isSwitching = activeLiveSession && activeTemplateKey !== tpl.key;
                             setConfirmConfig({
@@ -1064,7 +1096,31 @@ export function AccountStage({
              <div className="space-y-3">
                {validLiveSessions.length > 0 ? (
                  validLiveSessions.map((session) => {
-                   const isRunning = session.status === "RUNNING";
+                   const sessionState = getRecord(session.state);
+                   const isRunning = String(session.status).toUpperCase() === "RUNNING";
+                   const linkedRuntimeSessionId = String(
+                     sessionState.signalRuntimeSessionId ?? sessionState.lastSignalRuntimeSessionId ?? ""
+                   ).trim();
+                   const linkedRuntimeSession = linkedRuntimeSessionId
+                     ? signalRuntimeSessions.find((item) => item.id === linkedRuntimeSessionId) ?? null
+                     : null;
+                   const linkedRuntimeState = getRecord(linkedRuntimeSession?.state);
+                   const linkedRuntimeStatus = String(
+                     linkedRuntimeSession?.status ?? sessionState.signalRuntimeStatus ?? ""
+                   ).trim().toUpperCase();
+                   const linkedRuntimeDesiredStatus = String(
+                     linkedRuntimeState.desiredStatus ?? sessionState.signalRuntimeDesiredStatus ?? ""
+                   ).trim().toUpperCase();
+                   const linkedRuntimeStillActive =
+                     !isRunning &&
+                     (linkedRuntimeStatus === "RUNNING" ||
+                       linkedRuntimeStatus === "STARTING" ||
+                       linkedRuntimeDesiredStatus === "RUNNING");
+                   const sessionControlPending =
+                     liveFlowAction === session.accountId ||
+                     liveSessionActionTargets(session.id) ||
+                     (linkedRuntimeSession ? signalRuntimeActionTargets(linkedRuntimeSession.id) : false) ||
+                     ((liveSessionLaunchAction || launchingTemplate !== null) && quickLiveAccountId === session.accountId);
                    return (
                      <div key={session.id} className="group flex items-center justify-between rounded-[20px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-4 transition-all hover:bg-[var(--bk-surface)]">
                         <div className="space-y-1">
@@ -1076,14 +1132,20 @@ export function AccountStage({
                                 {session.status}
                               </Badge>
                            </div>
-                           <p className="text-[10px] font-mono text-[var(--bk-text-muted)]">{String(getRecord(session.state).symbol || "--")} · {session.strategyId}</p>
+                           <p className="text-[10px] font-mono text-[var(--bk-text-muted)]">{String(sessionState.symbol || "--")} · {session.strategyId}</p>
+                           {linkedRuntimeStillActive && (
+                             <p className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--bk-status-warning)]">
+                               <AlertTriangle size={12} />
+                               Live 已停止，但关联 runtime 仍处于 {linkedRuntimeStatus || linkedRuntimeDesiredStatus}，请先停止 runtime 或等待修复。
+                             </p>
+                           )}
                         </div>
                         <div className="flex items-center gap-1">
                            <Button 
                               variant="bento-ghost" 
                               size="icon" 
                               className={`h-8 w-8 ${isRunning ? 'text-[var(--bk-status-danger)]' : 'text-[var(--bk-status-success)]'}`}
-                              disabled={liveSessionAction !== null}
+                              disabled={sessionControlPending}
                               onClick={() => runLiveSessionAction(session.id, isRunning ? "stop" : "start")}
                             >
                               {isRunning ? <Square size={14} /> : <Play size={14} fill="currentColor" />}
@@ -1100,8 +1162,8 @@ export function AccountStage({
                               variant="bento-ghost" 
                               size="icon" 
                               className="h-8 w-8 text-[var(--bk-status-danger)] opacity-0 group-hover:opacity-100 transition-opacity"
-                              disabled={liveSessionDeleteAction !== null}
-                              onClick={() => openConfirm("删除会话？", "确定要彻底删除该实盘会话吗？删除后相关监控快照将无法恢复。", () => deleteLiveSession(session.id))}
+                              disabled={sessionControlPending}
+                              onClick={() => openConfirm("删除会话？", "系统会将该实盘会话标记为删除并从默认列表隐藏；订单、成交与审计记录会继续保留。", () => deleteLiveSession(session.id))}
                             >
                              <Trash2 size={14} />
                            </Button>

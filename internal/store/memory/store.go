@@ -881,6 +881,9 @@ func (s *Store) ListLiveSessions() ([]domain.LiveSession, error) {
 	defer s.mu.RUnlock()
 	items := make([]domain.LiveSession, 0, len(s.liveSessions))
 	for _, item := range s.liveSessions {
+		if liveSessionDeleted(item) {
+			continue
+		}
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
@@ -930,10 +933,15 @@ func (s *Store) UpdateLiveSession(session domain.LiveSession) (domain.LiveSessio
 func (s *Store) DeleteLiveSession(sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.liveSessions[sessionID]; !ok {
+	item, ok := s.liveSessions[sessionID]
+	if !ok {
 		return fmt.Errorf("live session not found: %s", sessionID)
 	}
-	delete(s.liveSessions, sessionID)
+	item.Status = "DELETED"
+	state := cloneJSONValue(item.State)
+	state["deletedAt"] = time.Now().UTC().Format(time.RFC3339)
+	item.State = state
+	s.liveSessions[sessionID] = item
 	return nil
 }
 
@@ -1565,6 +1573,10 @@ func cloneJSONValue[T any](value T) T {
 		return value
 	}
 	return cloned
+}
+
+func liveSessionDeleted(session domain.LiveSession) bool {
+	return strings.EqualFold(strings.TrimSpace(session.Status), "DELETED")
 }
 
 func accountStatusForMode(mode string) string {

@@ -291,6 +291,10 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 				writeJSON(w, http.StatusOK, item)
 			case http.MethodDelete:
 				if err := platform.DeleteSignalRuntimeSessionWithForce(parts[0], queryFlagEnabled(r, "force")); err != nil {
+					if errors.Is(err, service.ErrLiveControlOperationInProgress) {
+						writeError(w, http.StatusConflict, err.Error())
+						return
+					}
 					if errors.Is(err, service.ErrActivePositionsOrOrders) {
 						writeError(w, http.StatusBadRequest, err.Error())
 						return
@@ -322,6 +326,10 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 			}
 			item, err := platform.StartSignalRuntimeSession(sessionID)
 			if err != nil {
+				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				if errors.Is(err, service.ErrRuntimeLeaseNotAcquired) {
 					writeError(w, http.StatusConflict, "signal runtime session is already owned by another runner")
 					return
@@ -337,6 +345,10 @@ func registerSignalRoutes(mux *http.ServeMux, platform *service.Platform, cfg co
 			}
 			item, err := platform.StopSignalRuntimeSessionWithForce(sessionID, queryFlagEnabled(r, "force"))
 			if err != nil {
+				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
