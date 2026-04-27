@@ -49,8 +49,10 @@ DEFAULT_TICK_FILES = [
 ]
 
 SCENARIOS = [
-    ("baseline", "baseline_original_breakout"),
-    ("baseline_plus_t3", "baseline_plus_t3_breakout"),
+    ("baseline", "same_bar_parity", "baseline_original_breakout"),
+    ("baseline_plus_t3", "same_bar_parity", "baseline_plus_t3_breakout"),
+    ("baseline", "live_intrabar_sma5", "live_intrabar_sma5_baseline_original_breakout"),
+    ("baseline_plus_t3", "live_intrabar_sma5", "live_intrabar_sma5_baseline_plus_t3_breakout"),
 ]
 
 
@@ -176,8 +178,11 @@ def build_signal_frame(second_bars: pd.DataFrame, timeframe: str):
         ],
         axis=1,
     ).max(axis=1)
-    signal["ma20"] = signal["close"].rolling(20).mean()
+    signal["sma5"] = signal["close"].rolling(5).mean()
+    signal["ma5"] = signal["sma5"]
     signal["atr"] = true_range.rolling(14).mean()
+    for n in range(1, 5):
+        signal[f"prev_close_{n}"] = signal["close"].shift(n)
     signal = apply_breakout_levels(signal, "wick")
     signal["prev_high_3"] = signal["high"].shift(3)
     signal["prev_low_3"] = signal["low"].shift(3)
@@ -229,13 +234,50 @@ def _open_position(balance, sig, side, entry_price, notional_share, reason, stop
     return balance, position
 
 
+def _intrabar_signal(sig: dict, high_so_far: float, low_so_far: float, close_now: float) -> dict:
+    sig["high"] = float(high_so_far)
+    sig["low"] = float(low_so_far)
+    sig["close"] = float(close_now)
+
+    prev_closes = []
+    for n in range(1, 5):
+        value = sig.get(f"prev_close_{n}", np.nan)
+        if pd.notna(value):
+            prev_closes.append(float(value))
+
+    if len(prev_closes) >= 4:
+        sig["sma5"] = float(np.mean(prev_closes[:4] + [float(close_now)]))
+        sig["ma5"] = sig["sma5"]
+
+    prev_close_1 = sig.get("prev_close_1", np.nan)
+    if pd.notna(prev_close_1):
+        prev_close_1 = float(prev_close_1)
+    else:
+        prev_close_1 = float(close_now)
+    live_tr = max(
+        float(high_so_far) - float(low_so_far),
+        abs(float(high_so_far) - prev_close_1),
+        abs(float(low_so_far) - prev_close_1),
+    )
+
+    closed_atr = sig.get("_closed_atr", sig.get("atr", np.nan))
+    if pd.notna(closed_atr):
+        sig["atr"] = ((float(closed_atr) * 13.0) + live_tr) / 14.0
+
+    return sig
+
+
 def run_second_bar_replay(
     df_seconds: pd.DataFrame,
     signal: pd.DataFrame,
     *,
     initial_balance: float,
     breakout_shape: str,
+    replay_mode: str,
 ):
+    if replay_mode not in {"same_bar_parity", "live_intrabar_sma5"}:
+        raise ValueError(f"unknown replay mode: {replay_mode}")
+
     balance = initial_balance
     position = None
     trade_logs = []
@@ -275,14 +317,22 @@ def run_second_bar_replay(
         if start_pos >= end_pos:
             continue
 
-        sig = signal.iloc[i]
-        if pd.isna(sig["atr"]):
+        base_sig = signal.iloc[i]
+        if pd.isna(base_sig["atr"]):
             continue
-        long_regime_ready, short_regime_ready = _resolve_regime_ready(sig, "1d" if "ma5" in signal.columns else "4h")
 
         trades_in_bar = 0
         current_pos = start_pos
         breakout_locked_this_bar = False
+        bar_high_so_far = -np.inf
+        bar_low_so_far = np.inf
+        sig = base_sig
+        live_sig = None
+        if replay_mode == "live_intrabar_sma5":
+            live_sig = base_sig.to_dict()
+            live_sig["_closed_atr"] = float(base_sig["atr"])
+        else:
+            long_regime_ready, short_regime_ready = _resolve_regime_ready(sig, "1d")
 
         if i - last_exit_bar_index > reentry_timeout:
             last_exit_side = None
@@ -295,6 +345,11 @@ def run_second_bar_replay(
             low_value = low_values[current_pos]
             close_value = close_values[current_pos]
             prev_close = close_values[current_pos - 1] if current_pos > start_pos else None
+            if replay_mode == "live_intrabar_sma5":
+                bar_high_so_far = max(bar_high_so_far, high_value)
+                bar_low_so_far = min(bar_low_so_far, low_value)
+                sig = _intrabar_signal(live_sig, bar_high_so_far, bar_low_so_far, close_value)
+                long_regime_ready, short_regime_ready = _resolve_regime_ready(sig, "1d")
 
             if position is None:
                 if long_regime_ready:
@@ -578,6 +633,11 @@ def write_markdown(summary: dict, output_path: Path):
         "- Baseline sizing: `dir2_zero_initial=true`, `zero_initial_mode=reentry_window`, `reentry_size_schedule=[0.20, 0.10]`, `max_trades_per_bar=2`",
         "- Shared risk params: `stop_mode=atr`, `stop_loss_atr=0.05`, `trailing_stop_atr=0.3`, `delayed_trailing_activation=0.5`",
         "",
+        "## Replay Modes",
+        "",
+        "- `same_bar_parity`: parity mode against the corrected runner. Signal-frame fields are reused inside each replayed signal bar, so this mode is for apples-to-apples research comparison only.",
+        "- `live_intrabar_sma5`: live-safe intrabar mode. Each replayed second updates the current signal bar close/high/low from data seen so far and computes `sma5/ma5` from four closed signal bars plus the current realtime close.",
+        "",
         "## Breakout Shapes",
         "",
         "- Baseline long: `prev_t2.high > prev_t1.high` and current price crosses `prev_t2.high`.",
@@ -586,8 +646,8 @@ def write_markdown(summary: dict, output_path: Path):
         "",
         "## Results",
         "",
-        "| Timeframe | Scenario | Final Balance | Return | Max DD | Trades | Win Rate | Sharpe | Entry Mix | Breakout Locks |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---|---|",
+        "| Timeframe | Replay Mode | Scenario | Final Balance | Return | Max DD | Trades | Win Rate | Sharpe | Entry Mix | Breakout Locks |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for result in summary["results"]:
         timeframe = result["timeframe"]
@@ -601,25 +661,28 @@ def write_markdown(summary: dict, output_path: Path):
                     lock_parts.append(f"{side} " + "/".join(f"{k}:{v}" for k, v in counts.items()))
             lock_text = "; ".join(lock_parts)
             lines.append(
-                f"| `{timeframe}` | `{scenario['scenario']}` | {s['final_balance']:,.2f} | "
+                f"| `{timeframe}` | `{scenario['replay_mode']}` | `{scenario['scenario']}` | {s['final_balance']:,.2f} | "
                 f"{s['return_pct']:.2f}% | {s['max_dd_pct']:.2f}% | {s['trades']} | "
                 f"{s['win_rate_pct']:.2f}% | {s['sharpe']:.2f} | `{entry_mix}` | `{lock_text}` |"
             )
     lines.extend(["", "## Delta vs Baseline", ""])
-    lines.append("| Timeframe | Final Balance Delta | Return Delta | Max DD Delta | Trades Delta | Win Rate Delta | Sharpe Delta |")
-    lines.append("|---|---:|---:|---:|---:|---:|---:|")
+    lines.append("| Timeframe | Replay Mode | Final Balance Delta | Return Delta | Max DD Delta | Trades Delta | Win Rate Delta | Sharpe Delta |")
+    lines.append("|---|---|---:|---:|---:|---:|---:|---:|")
     for result in summary["results"]:
-        d = result["delta_vs_baseline"]
-        lines.append(
-            f"| `{result['timeframe']}` | {d['final_balance_delta']:,.2f} | {d['return_pct_delta']:.2f} pp | "
-            f"{d['max_dd_pct_delta']:.2f} pp | {d['trades_delta']} | {d['win_rate_pct_delta']:.2f} pp | {d['sharpe_delta']:.2f} |"
-        )
+        for replay_mode, d in result["delta_vs_baseline_by_mode"].items():
+            lines.append(
+                f"| `{result['timeframe']}` | `{replay_mode}` | {d['final_balance_delta']:,.2f} | "
+                f"{d['return_pct_delta']:.2f} pp | {d['max_dd_pct_delta']:.2f} pp | "
+                f"{d['trades_delta']} | {d['win_rate_pct_delta']:.2f} pp | {d['sharpe_delta']:.2f} |"
+            )
     lines.extend(
         [
             "",
             "## Read",
             "",
             "The variant keeps the baseline logic and only broadens the initial breakout lock shape. Because `dir2_zero_initial=true`, the lock itself remains a proof gate; real sizing still starts from the reentry window as `20%` then `10%` inside the same signal bar.",
+            "",
+            "The key read is the `live_intrabar_sma5` delta, because that mode avoids using final current-bar signal high/low/close/ATR before those values are available in replay time.",
             "",
         ]
     )
@@ -636,7 +699,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunksize", type=int, default=2_000_000)
     parser.add_argument(
         "--summary-json",
-        default="research/tmp_eth_2026_q1_1s_breakout_t3_shape_vs_baseline_summary.json",
+        default="research/eth_2026_q1_1s_breakout_t3_shape_vs_baseline_summary.json",
     )
     parser.add_argument(
         "--markdown",
@@ -662,30 +725,31 @@ def main():
                 "signal_rows": int(len(signal)),
                 "signal_start": signal.index[0].isoformat() if not signal.empty else "",
                 "signal_end": signal.index[-1].isoformat() if not signal.empty else "",
-                "valid_ma20_rows": int(signal["ma20"].notna().sum()),
+                "valid_sma5_rows": int(signal["sma5"].notna().sum()),
                 "valid_atr_rows": int(signal["atr"].notna().sum()),
             },
             "scenarios": [],
         }
-        baseline_summary = None
-        variant_summary = None
-        for breakout_shape, scenario_name in SCENARIOS:
+        summaries_by_mode = {}
+        for breakout_shape, replay_mode, scenario_name in SCENARIOS:
             started = time.time()
             ledger, diagnostics = run_second_bar_replay(
                 second_bars,
                 signal,
                 initial_balance=args.initial_balance,
                 breakout_shape=breakout_shape,
+                replay_mode=replay_mode,
             )
             elapsed = round(time.time() - started, 2)
             ledger_path = Path(
-                f"research/tmp_eth_2026_q1_{timeframe}_1s_{scenario_name}_ledger.csv"
+                f"research/tmp_eth_2026_q1_{timeframe}_1s_{replay_mode}_{scenario_name}_ledger.csv"
             )
             ledger.to_csv(ledger_path, index=False)
             summary = summarize_run(ledger, args.initial_balance)
             scenario = {
                 "scenario": scenario_name,
                 "breakout_shape": breakout_shape,
+                "replay_mode": replay_mode,
                 "params": COMMON_REPLAY_KWARGS,
                 "summary": summary,
                 "diagnostics": diagnostics,
@@ -694,25 +758,27 @@ def main():
             }
             result["scenarios"].append(scenario)
             print(
-                f"  {scenario_name}: return={summary['return_pct']:.2f}% "
+                f"  {replay_mode}/{scenario_name}: return={summary['return_pct']:.2f}% "
                 f"trades={summary['trades']} final={summary['final_balance']:.2f} elapsed={elapsed}s",
                 flush=True,
             )
-            if breakout_shape == "baseline":
-                baseline_summary = summary
-            else:
-                variant_summary = summary
-        result["delta_vs_baseline"] = _scenario_delta(baseline_summary, variant_summary)
+            summaries_by_mode[(replay_mode, breakout_shape)] = summary
+        result["delta_vs_baseline_by_mode"] = {}
+        for replay_mode in sorted({scenario[1] for scenario in SCENARIOS}):
+            result["delta_vs_baseline_by_mode"][replay_mode] = _scenario_delta(
+                summaries_by_mode[(replay_mode, "baseline")],
+                summaries_by_mode[(replay_mode, "baseline_plus_t3")],
+            )
         all_results.append(result)
 
     summary = {
         "window": {"start": start.isoformat(), "end": end.isoformat()},
         "build_stats": {**build_stats, "derived_one_min_rows": derived_one_min_rows},
         "results": all_results,
-        "note": "Research-only comparison. Variant adds the t-3 breakout shape while keeping baseline sizing/risk parameters.",
+        "note": "Research-only comparison. Variant adds the t-3 breakout shape while keeping baseline sizing/risk parameters and compares same-bar parity with live intrabar SMA5 replay.",
     }
     summary_path = Path(args.summary_json)
-    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     write_markdown(summary, Path(args.markdown))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
