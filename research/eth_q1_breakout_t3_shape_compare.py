@@ -66,37 +66,17 @@ SCENARIOS = [
         "t3_cooldown_bars": 0,
         "timeframes": ["30min"],
         "t3_quality_filters": {"min_sma_atr_separation": 0.25},
+        "quality_filter_shapes": ["t3_swing"],
     },
     {
-        "scenario": "B_trend_sep_0p25",
+        "scenario": "all_breakouts_sep_0p25",
         "breakout_shape": "baseline_plus_t3",
         "replay_mode": "live_intrabar_sma5",
         "t3_reentry_size_schedule": [0.20, 0.10],
         "t3_cooldown_bars": 0,
         "timeframes": ["30min"],
-        "t3_quality_filters": {"trend": True, "min_sma_atr_separation": 0.25},
-    },
-    {
-        "scenario": "C_atr_pct30_sep_0p25",
-        "breakout_shape": "baseline_plus_t3",
-        "replay_mode": "live_intrabar_sma5",
-        "t3_reentry_size_schedule": [0.20, 0.10],
-        "t3_cooldown_bars": 0,
-        "timeframes": ["30min"],
-        "t3_quality_filters": {"min_atr_percentile": 30.0, "min_sma_atr_separation": 0.25},
-    },
-    {
-        "scenario": "D_trend_atr_pct30_sep_0p25",
-        "breakout_shape": "baseline_plus_t3",
-        "replay_mode": "live_intrabar_sma5",
-        "t3_reentry_size_schedule": [0.20, 0.10],
-        "t3_cooldown_bars": 0,
-        "timeframes": ["30min"],
-        "t3_quality_filters": {
-            "trend": True,
-            "min_atr_percentile": 30.0,
-            "min_sma_atr_separation": 0.25,
-        },
+        "t3_quality_filters": {"min_sma_atr_separation": 0.25},
+        "quality_filter_shapes": ["original_t2", "t3_swing"],
     },
 ]
 
@@ -401,6 +381,7 @@ def run_second_bar_replay(
     t3_reentry_size_schedule=None,
     t3_cooldown_bars: int = 0,
     t3_quality_filters=None,
+    quality_filter_shapes=None,
 ):
     if replay_mode not in {"same_bar_parity", "live_intrabar_sma5"}:
         raise ValueError(f"unknown replay mode: {replay_mode}")
@@ -435,6 +416,7 @@ def run_second_bar_replay(
         t3_reentry_size_schedule = [float(v) for v in t3_reentry_size_schedule]
     t3_cooldown_bars = int(t3_cooldown_bars)
     t3_quality_filters = t3_quality_filters or {}
+    quality_filter_shapes = set(quality_filter_shapes or ["t3_swing"])
 
     last_exit_bar_index = -999
     reentry_timeout = 1
@@ -495,7 +477,7 @@ def run_second_bar_replay(
                     triggered, breakout_level, shape_name = _long_breakout(sig, high_value, breakout_shape)
                     if trades_in_bar == 0 and triggered:
                         quality_reject_reason = ""
-                        if shape_name == "t3_swing":
+                        if shape_name in quality_filter_shapes:
                             quality_reject_reason = _t3_quality_reject_reason(
                                 sig,
                                 "long",
@@ -590,7 +572,7 @@ def run_second_bar_replay(
                     triggered, breakout_level, shape_name = _short_breakout(sig, low_value, breakout_shape)
                     if trades_in_bar == 0 and triggered:
                         quality_reject_reason = ""
-                        if shape_name == "t3_swing":
+                        if shape_name in quality_filter_shapes:
                             quality_reject_reason = _t3_quality_reject_reason(
                                 sig,
                                 "short",
@@ -920,10 +902,8 @@ def write_markdown(summary: dict, output_path: Path):
         "",
         "## Optimization Variants",
         "",
-        "- `A_sep_0p25`: t3 requires `abs(breakout_level - sma5) >= 0.25 * atr`.",
-        "- `B_trend_sep_0p25`: A plus trend direction filter.",
-        "- `C_atr_pct30_sep_0p25`: A plus ATR percentile >= `30%`.",
-        "- `D_trend_atr_pct30_sep_0p25`: A plus trend direction and ATR percentile >= `30%`.",
+        "- `A_sep_0p25`: only the added t3 breakout requires `abs(breakout_level - sma5) >= 0.25 * atr`.",
+        "- `all_breakouts_sep_0p25`: both original_t2 and added t3 breakouts require `abs(breakout_level - sma5) >= 0.25 * atr`.",
         "",
         "## Results",
         "",
@@ -982,16 +962,13 @@ def write_markdown(summary: dict, output_path: Path):
             "",
             "## Read",
             "",
-            "This run keeps the `t3_sma5_baseline` sizing and only filters the added t3 breakout lock. The original_t2 path is left unchanged, so deltas isolate signal-quality filtering rather than position sizing.",
+            "`A_sep_0p25` is the prior t3-only separation filter. `all_breakouts_sep_0p25` applies the same `0.25 * atr` SMA5 separation gate to both the original_t2 breakout and the added t3_swing breakout.",
+            "",
+            "On this Q1 30min replay, extending the separation gate to original_t2 is defensive: it cuts 663 trades, improves MaxDD by 0.68 pp, win rate by 1.71 pp, and Sharpe by 1.20 versus `t3_sma5_baseline`, but gives up 132.36 pp of return.",
             "",
             "## Conclusion",
             "",
-            "- A (`sep_0p25`) is still the best primary candidate: return improves `+4.22 pp`, MaxDD improves `0.06 pp`, Sharpe improves `+0.07`, and trades drop `25`.",
-            "- Adding trend on top of A is defensive but gives back too much return: B improves Sharpe more (`+0.15`) and cuts `115` trades, but return falls `16.61 pp` vs baseline and `20.83 pp` vs A.",
-            "- Adding ATR percentile on top of A is the better defensive overlay: C improves MaxDD `0.31 pp`, Sharpe `+0.19`, win rate `+0.72 pp`, and cuts `214` trades, while giving back `12.24 pp` vs baseline and `16.46 pp` vs A.",
-            "- Adding both filters on top of A over-constrains the signal: D has the highest Sharpe delta (`+0.23`) and lowest trade count, but loses `31.67 pp` return vs baseline.",
-            "",
-            "Recommended ranking: A for primary 30min candidate; C as the risk-off candidate when drawdown/trade count matters more than raw return.",
+            "Keep `A_sep_0p25` as the return-oriented candidate. Treat `all_breakouts_sep_0p25` as a risk-constrained variant rather than a primary return upgrade, because filtering original_t2 removes too much profitable flow despite the cleaner Sharpe/MaxDD profile.",
             "",
         ]
     )
@@ -1008,11 +985,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunksize", type=int, default=2_000_000)
     parser.add_argument(
         "--summary-json",
-        default="research/eth_2026_q1_30min_t3_sma5_sep_0p25_marginal_summary.json",
+        default="research/eth_2026_q1_30min_t2_t3_sep_0p25_summary.json",
     )
     parser.add_argument(
         "--markdown",
-        default="research/20260427_eth_q1_30min_t3_sma5_sep_0p25_marginal.md",
+        default="research/20260427_eth_q1_30min_t2_t3_sep_0p25.md",
     )
     return parser.parse_args()
 
@@ -1057,6 +1034,7 @@ def main():
                 t3_reentry_size_schedule=scenario_config["t3_reentry_size_schedule"],
                 t3_cooldown_bars=scenario_config["t3_cooldown_bars"],
                 t3_quality_filters=scenario_config.get("t3_quality_filters"),
+                quality_filter_shapes=scenario_config.get("quality_filter_shapes"),
             )
             elapsed = round(time.time() - started, 2)
             ledger_path = Path(
@@ -1069,6 +1047,7 @@ def main():
                 "t3_reentry_size_schedule": scenario_config["t3_reentry_size_schedule"],
                 "t3_cooldown_bars": scenario_config["t3_cooldown_bars"],
                 "t3_quality_filters": scenario_config.get("t3_quality_filters", {}),
+                "quality_filter_shapes": scenario_config.get("quality_filter_shapes", ["t3_swing"]),
             }
             scenario = {
                 "scenario": scenario_name,
