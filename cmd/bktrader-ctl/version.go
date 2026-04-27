@@ -12,7 +12,7 @@ func init() {
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "显示 bktrader-ctl 版本 [IDEMPOTENT]",
+	Short: "显示 bktrader-ctl 构建版本 [IDEMPOTENT]",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if outputJSON {
 			fmt.Printf(`{"version":%q,"commit":%q,"buildDate":%q}`+"\n", Version, Commit, BuildDate)
