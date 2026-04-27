@@ -7613,6 +7613,24 @@ func TestLiveAccountSyncCandidatePrioritizesPositionDeadlineAndStarvation(t *tes
 	if !liveAccountSyncCandidateLess(starved, recentAttempt) {
 		t.Fatal("expected account with older attempt to outrank equally urgent recent attempt")
 	}
+
+	neverAttempted := platform.liveAccountSyncCandidate(domain.Account{
+		ID:        "never",
+		CreatedAt: now.Add(-5 * time.Second),
+		Metadata:  map[string]any{},
+	}, now)
+	if !neverAttempted.NeverAttempted || !neverAttempted.NeverSynced {
+		t.Fatalf("expected never-attempted account to be modeled explicitly, got %+v", neverAttempted)
+	}
+	if neverAttempted.AttemptAgeSeconds != 0 {
+		t.Fatalf("expected never-attempted account to avoid starvation age bonus, got %d", neverAttempted.AttemptAgeSeconds)
+	}
+	if liveAccountSyncCandidateLess(neverAttempted, withPosition) {
+		t.Fatal("did not expect never-attempted empty account to outrank account with position")
+	}
+	if liveAccountSyncCandidateLess(neverAttempted, closerToStale) {
+		t.Fatal("did not expect never-attempted empty account to outrank account closer to stale deadline")
+	}
 }
 
 func TestSyncActiveLiveAccountsUsesCandidatePriorityOrder(t *testing.T) {

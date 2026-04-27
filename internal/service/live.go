@@ -162,6 +162,8 @@ type liveAccountSyncCandidate struct {
 	SecondsUntilStale int64
 	AttemptAgeSeconds int64
 	ReconcilePending  bool
+	NeverSynced       bool
+	NeverAttempted    bool
 }
 
 const (
@@ -2612,6 +2614,8 @@ func (p *Platform) syncActiveLiveAccounts(eventTime time.Time) error {
 			"seconds_until_stale", candidate.SecondsUntilStale,
 			"attempt_age_seconds", candidate.AttemptAgeSeconds,
 			"reconcile_pending", candidate.ReconcilePending,
+			"never_synced", candidate.NeverSynced,
+			"never_attempted", candidate.NeverAttempted,
 		)
 		if _, syncErr := p.requestLiveAccountSync(candidate.Account.ID, "sync-active-live-accounts"); syncErr != nil {
 			syncErrs = append(syncErrs, fmt.Errorf("live account %s sync failed: %w", candidate.Account.ID, syncErr))
@@ -2627,8 +2631,8 @@ func (p *Platform) liveAccountSyncCandidate(account domain.Account, eventTime ti
 	lastAttemptAt := parseOptionalRFC3339(stringValue(accountSync["lastAttemptAt"]))
 	ageSeconds := int64(0)
 	secondsUntilStale := int64(0)
+	neverSynced := lastSuccessAt.IsZero()
 	if lastSuccessAt.IsZero() {
-		ageSeconds = math.MaxInt32
 		secondsUntilStale = 0
 	} else {
 		age := eventTime.Sub(lastSuccessAt)
@@ -2638,7 +2642,8 @@ func (p *Platform) liveAccountSyncCandidate(account domain.Account, eventTime ti
 			secondsUntilStale = 0
 		}
 	}
-	attemptAgeSeconds := int64(math.MaxInt32)
+	neverAttempted := lastAttemptAt.IsZero()
+	attemptAgeSeconds := int64(0)
 	if !lastAttemptAt.IsZero() {
 		attemptAgeSeconds = int64(eventTime.Sub(lastAttemptAt).Seconds())
 		if attemptAgeSeconds < 0 {
@@ -2663,7 +2668,9 @@ func (p *Platform) liveAccountSyncCandidate(account domain.Account, eventTime ti
 	if openOrderCount > 0 {
 		score += 250000
 	}
-	if secondsUntilStale == 0 {
+	if neverSynced {
+		score += 1000
+	} else if secondsUntilStale == 0 {
 		score += 100000
 	} else if threshold > 0 {
 		score += int64((threshold.Seconds() - float64(secondsUntilStale)) * 100)
@@ -2684,6 +2691,8 @@ func (p *Platform) liveAccountSyncCandidate(account domain.Account, eventTime ti
 		SecondsUntilStale: secondsUntilStale,
 		AttemptAgeSeconds: attemptAgeSeconds,
 		ReconcilePending:  reconcilePending,
+		NeverSynced:       neverSynced,
+		NeverAttempted:    neverAttempted,
 	}
 }
 
