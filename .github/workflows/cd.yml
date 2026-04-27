@@ -61,6 +61,22 @@ jobs:
             add_service notification-worker
           }
 
+          add_worker_services() {
+            add_service live-runner
+            add_service signal-runtime-runner
+            add_service notification-worker
+          }
+
+          add_live_services() {
+            add_service platform-api
+            add_service live-runner
+          }
+
+          add_signal_runtime_services() {
+            add_service platform-api
+            add_service signal-runtime-runner
+          }
+
           validate_deploy_services() {
             for service in $1; do
               case "$service" in
@@ -129,27 +145,34 @@ jobs:
             esac
 
             case "$file" in
-              cmd/platform-api/*|internal/http/*)
+              cmd/platform-api/*|internal/http/*|internal/service/state_util*|internal/service/logs.go|internal/service/dashboard_broker*|internal/service/backtest*|internal/service/chart*|internal/service/paper*|internal/service/pnl*|internal/service/strategy_replay*)
                 add_service platform-api
                 ;;
             esac
 
             case "$file" in
-              internal/service/telegram*|internal/service/alerts.go|internal/http/signals.go|internal/domain/*|internal/store/*|db/*)
+              cmd/platform-worker/*)
+                add_worker_services
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/telegram*|internal/service/alerts.go|internal/service/notifications*)
+                add_service platform-api
                 add_service notification-worker
                 ;;
             esac
 
             case "$file" in
-              cmd/platform-worker/*|internal/service/live*|internal/service/order*|internal/service/execution_strategy.go|internal/service/precision_tolerance.go|internal/service/strategy_registry.go|internal/service/signal_source_registry.go|internal/service/live_account_flow.go|internal/service/live_launch*|internal/service/live_trade*)
+              internal/service/live*|internal/service/order*|internal/service/execution_strategy.go|internal/service/precision_tolerance.go|internal/service/strategy_registry.go|internal/service/live_account_flow.go|internal/service/live_launch*|internal/service/live_trade*|internal/service/telemetry*)
                 live_runner_changed=true
-                add_service live-runner
+                add_live_services
                 ;;
             esac
 
             case "$file" in
-              internal/service/signal_runtime*|internal/service/runtime_lease*)
-                add_service signal-runtime-runner
+              internal/service/live_market_data.go|internal/service/signal_runtime*|internal/service/runtime_lease*)
+                add_signal_runtime_services
                 ;;
             esac
 
@@ -163,13 +186,22 @@ jobs:
 
             case "$file" in
               internal/service/runtime_event_bus*)
+                add_service live-runner
+                add_service signal-runtime-runner
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/platform.go|internal/service/strategy.go|internal/service/signal_source_registry.go)
                 add_all_backend_services
                 ;;
             esac
 
             case "$file" in
-              internal/service/platform.go|internal/service/telemetry*|internal/service/health*|internal/service/safety_checks*|internal/service/state_util*|internal/service/logs.go|internal/service/notifications*|internal/service/paper*|internal/service/pnl*|internal/service/strategy.go|internal/service/strategy_replay*|internal/service/strategy_zero_initial*|internal/service/backtest*|internal/service/chart*|internal/service/dashboard_broker*)
-                add_all_backend_services
+              internal/service/health*|internal/service/safety_checks*)
+                add_service platform-api
+                add_service live-runner
+                add_service signal-runtime-runner
                 ;;
             esac
           done <<EOF
