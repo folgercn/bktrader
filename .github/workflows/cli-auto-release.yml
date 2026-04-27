@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   release:
-    name: Build and release bktrader-ctl
+    name: Tag bktrader-ctl release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,42 +50,3 @@ jobs:
             git tag "$tag" "$GITHUB_SHA"
             git push origin "$tag"
           fi
-
-      - name: Build Matrix
-        env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          mkdir -p dist
-          platforms=(
-            "darwin/arm64"
-          )
-
-          for platform in "${platforms[@]}"; do
-            platform_split=(${platform//\// })
-            GOOS=${platform_split[0]}
-            GOARCH=${platform_split[1]}
-
-            output_name="bktrader-ctl-$GOOS-$GOARCH"
-
-            echo "Building $output_name..."
-            env GOOS=$GOOS GOARCH=$GOARCH go build \
-              -ldflags "-X main.Version=${RELEASE_TAG} -X main.Commit=${GITHUB_SHA} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              -o "dist/$output_name" ./cmd/bktrader-ctl
-          done
-
-          # ubuntu-latest intentionally provides sha256sum for release checksums.
-          cd dist && sha256sum * > checksums.txt && cd ..
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: bktrader-ctl ${{ steps.tag.outputs.tag }}
-          files: dist/*
-          make_latest: true
-          body: |
-            Automated bktrader-ctl release from main.
-
-            Commit: ${{ github.sha }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
