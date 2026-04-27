@@ -43,6 +43,19 @@ services:
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
       LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-100}
 
+  signal-runtime-runner:
+    <<: *app-image
+    container_name: bktrader-signal-runtime-runner
+    command: ["platform-worker"]
+    mem_limit: ${SIGNAL_RUNTIME_MEM_LIMIT:-1024m}
+    memswap_limit: ${SIGNAL_RUNTIME_MEMSWAP_LIMIT:-1536m}
+    environment:
+      BKTRADER_ROLE: signal-runtime-runner
+      AUTO_MIGRATE: "false"
+      LOG_DIR: ${LOG_DIR:-/app/logs}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
+      LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-100}
+
   notification-worker:
     <<: *app-image
     container_name: bktrader-notification-worker

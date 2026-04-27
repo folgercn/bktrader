@@ -1,6 +1,56 @@
 version: "3.9"
 
+x-app-image: &app-image
+    image: ${IMAGE_REPO:-ghcr.io/folgercn/bktrader-app}:${IMAGE_TAG:-latest}
+    mem_limit: ${APP_MEM_LIMIT:-512m}
+    memswap_limit: ${APP_MEMSWAP_LIMIT:-1g}
+    restart: "no"
+    env_file:
+      - ${APP_ENV_FILE:-../configs/app.env}
+    environment:
+      LOG_DIR: ${LOG_DIR:-/app/logs}
+    volumes:
+      - ../logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+      - nats
+
 services:
+  platform-api:
+    <<: *app-image
+    container_name: bktrader-platform-api
+    command: ["platform-api"]
+    environment:
+      BKTRADER_ROLE: api
+      AUTO_MIGRATE: ${API_AUTO_MIGRATE:-true}
+    ports:
+      - "8080:8080"
+
+  live-runner:
+    <<: *app-image
+    container_name: bktrader-live-runner
+    command: ["platform-worker"]
+    environment:
+      BKTRADER_ROLE: live-runner
+      AUTO_MIGRATE: "false"
+
+  signal-runtime-runner:
+    <<: *app-image
+    container_name: bktrader-signal-runtime-runner
+    command: ["platform-worker"]
+    environment:
+      BKTRADER_ROLE: signal-runtime-runner
+      AUTO_MIGRATE: "false"
+
+  notification-worker:
+    <<: *app-image
+    container_name: bktrader-notification-worker
+    command: ["platform-worker"]
+    environment:
+      BKTRADER_ROLE: notification-worker
+      AUTO_MIGRATE: "false"
+
   postgres:
     image: postgres:16
     environment:
@@ -24,4 +74,3 @@ services:
 
 volumes:
   postgres_data:
-
