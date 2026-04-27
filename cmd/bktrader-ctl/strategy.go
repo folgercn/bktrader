@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"github.com/spf13/cobra"
+	"net/url"
 )
 
 func init() {
@@ -85,7 +85,7 @@ var strategyUpdateCmd = &cobra.Command{
 		}
 
 		client := getClient()
-		resp, err := client.Request("POST", "/api/v1/strategies/"+args[0]+"/parameters", payload)
+		resp, err := client.Request("POST", "/api/v1/strategies/"+url.PathEscape(args[0])+"/parameters", payload)
 		handleResponse(resp, err)
 		return nil
 	},

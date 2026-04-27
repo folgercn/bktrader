@@ -52,7 +52,7 @@ var authLoginCmd = &cobra.Command{
 		}
 
 		// 缓存 Token，假设 TTL 为 24 小时
-		if err := ctlclient.SaveToken(data.Token, 24*time.Hour); err != nil {
+		if err := ctlclient.SaveToken(data.Token, time.Now().Add(24*time.Hour)); err != nil {
 			fmt.Fprintf(os.Stderr, "警告: 无法保存 Token 缓存: %v\n", err)
 		}
 

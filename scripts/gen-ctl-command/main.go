@@ -33,7 +33,7 @@ var %sCmd = &cobra.Command{
 	// 转换为 camelCase 用于变量名
 	varName := strings.ReplaceAll(*cmdName, "-", "")
 	varName = strings.ReplaceAll(varName, "_", "")
-	
+
 	idempotent := "MUTATING"
 	if *method == "GET" {
 		idempotent = "IDEMPOTENT"

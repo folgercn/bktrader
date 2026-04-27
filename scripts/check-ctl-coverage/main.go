@@ -12,7 +12,7 @@ import (
 
 func main() {
 	fmt.Println("Checking CLI command coverage...")
-	
+
 	// 1. 获取所有 CLI 代码文件内容
 	cliDir := "cmd/bktrader-ctl"
 	var allCliContent string
@@ -39,11 +39,12 @@ func main() {
 		// 简单起见，这里检查 CLICommand 的最后一个单词是否出现在代码中
 		parts := strings.Fields(entry.CLICommand)
 		lastPart := parts[len(parts)-1]
-		
-		// 更加严格的检查：搜索 Use: "command"
-		searchStr := fmt.Sprintf(`Use:   "%s"`, lastPart)
-		if !strings.Contains(allCliContent, searchStr) {
-			fmt.Printf("❌ Missing CLI command for API: %s %s (Expected: %s)\n", 
+
+		// 更加严格的检查：搜索 Use: "command" 或 Use: "command <arg>"
+		searchStrNormal := fmt.Sprintf(`Use:   "%s"`, lastPart)
+		searchStrWithArgs := fmt.Sprintf(`Use:   "%s `, lastPart) // 后面带空格，说明有参数
+		if !strings.Contains(allCliContent, searchStrNormal) && !strings.Contains(allCliContent, searchStrWithArgs) {
+			fmt.Printf("❌ Missing CLI command for API: %s %s (Expected: %s)\n",
 				strings.Join(entry.Methods, ","), entry.Path, entry.CLICommand)
 			missingCount++
 		}

@@ -22,8 +22,8 @@ func init() {
 }
 
 const (
-	repoOwner = "folgercn"
-	repoName  = "bktrader"
+	repoOwner     = "folgercn"
+	repoName      = "bktrader"
 	checkInterval = 6 * time.Hour // 每 6 小时检查一次
 )
 
@@ -54,7 +54,7 @@ func SilentUpdateCheck() {
 
 	// 发现新版本，静默下载并替换
 	downloadURL := getBinaryURL(latestTag)
-	_ = downloadAndReplace(downloadURL)
+	_ = downloadAndReplace(latestTag, downloadURL)
 }
 
 var updateCmd = &cobra.Command{
@@ -63,7 +63,7 @@ var updateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("当前版本: %s\n", Version)
 		fmt.Println("正在手动检查更新...")
-		
+
 		latestTag, err := getLatestTag()
 		if err != nil {
 			return fmt.Errorf("检查更新失败: %w", err)
@@ -75,7 +75,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		fmt.Printf("发现新版本: %s，准备更新...\n", latestTag)
-		if err := downloadAndReplace(getBinaryURL(latestTag)); err != nil {
+		if err := downloadAndReplace(latestTag, getBinaryURL(latestTag)); err != nil {
 			return err
 		}
 		fmt.Println("✅ 更新成功！")
@@ -90,7 +90,9 @@ func getLatestTag() (string, error) {
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -112,12 +114,12 @@ func readAll(r io.Reader) string {
 }
 
 func getBinaryURL(tag string) string {
-	return fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/bktrader-ctl-%s-%s", 
+	return fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/bktrader-ctl-%s-%s",
 		repoOwner, repoName, tag, runtime.GOOS, runtime.GOARCH)
 }
 
 func getChecksumURL(tag string) string {
-	return fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/checksums.txt", 
+	return fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/checksums.txt",
 		repoOwner, repoName, tag)
 }
 
@@ -134,11 +136,15 @@ func downloadAndReplace(tag, url string) error {
 	// 2. 发起下载请求
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 { return fmt.Errorf("下载失败: HTTP %d", resp.StatusCode) }
-	
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("下载失败: HTTP %d", resp.StatusCode)
+	}
+
 	// 尺寸预检
 	if resp.ContentLength <= 0 {
 		return fmt.Errorf("异常的 Content-Length: %d", resp.ContentLength)
@@ -146,23 +152,27 @@ func downloadAndReplace(tag, url string) error {
 
 	// 3. 准备临时文件
 	exePath, err := os.Executable()
-	if err != nil { return err }
-	
+	if err != nil {
+		return err
+	}
+
 	tmpPath := exePath + ".next"
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
-	if err != nil { return err }
-	
+	if err != nil {
+		return err
+	}
+
 	// 4. 流式下载并计算哈希
 	hasher := sha256.New()
 	multiWriter := io.MultiWriter(f, hasher)
-	
+
 	copied, err := io.Copy(multiWriter, resp.Body)
 	if err != nil {
 		f.Close()
 		os.Remove(tmpPath)
 		return err
 	}
-	
+
 	if copied != resp.ContentLength && resp.ContentLength > 0 {
 		f.Close()
 		os.Remove(tmpPath)
@@ -188,11 +198,11 @@ func downloadAndReplace(tag, url string) error {
 	// 先将当前的重命名为 .old，再把 .next 换过来
 	oldPath := exePath + ".old"
 	_ = os.Remove(oldPath) // 清理上次的备份
-	
+
 	if err := os.Rename(exePath, oldPath); err != nil {
 		return fmt.Errorf("备份当前程序失败: %w", err)
 	}
-	
+
 	if err := os.Rename(tmpPath, exePath); err != nil {
 		// 尝试回滚
 		_ = os.Rename(oldPath, exePath)
@@ -206,14 +216,18 @@ func getExpectedHash(ctx context.Context, tag string) (string, error) {
 	url := getChecksumURL(tag)
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 { return "", fmt.Errorf("HTTP %d", resp.StatusCode) }
-	
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
 	body, _ := io.ReadAll(resp.Body)
 	lines := strings.Split(string(body), "\n")
-	
+
 	targetName := fmt.Sprintf("bktrader-ctl-%s-%s", runtime.GOOS, runtime.GOARCH)
 	for _, line := range lines {
 		parts := strings.Fields(line)
@@ -221,6 +235,6 @@ func getExpectedHash(ctx context.Context, tag string) (string, error) {
 			return parts[0], nil
 		}
 	}
-	
+
 	return "", fmt.Errorf("在 checksums.txt 中未找到 %s", targetName)
 }
