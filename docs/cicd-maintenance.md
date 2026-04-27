@@ -6,7 +6,7 @@
 
 项目目前包含两个主要的 GitHub Actions 工作流：
 - **CI (`ci.yml`)**: 自动执行后端 (Go) 格式检查、编译、前端 (Vite) 构建以及 Docker 镜像构建验证。
-- **CD (`cd.yml`)**: 自动构建并推送后端 Docker 镜像，在自托管 (Self-hosted) 的 Macmini 节点上执行后端部署脚本，并构建前端静态文件后同步到远端 Nginx 目录。生产 compose 将后端镜像拆成 `platform-api`、`live-runner`、`notification-worker` 三类进程。
+- **CD (`cd.yml`)**: 自动构建并推送后端 Docker 镜像，在自托管 (Self-hosted) 的 Macmini 节点上执行后端部署脚本，并构建前端静态文件后同步到远端 Nginx 目录。生产 compose 将后端镜像拆成 `platform-api`、`live-runner`、`signal-runtime-runner`、`notification-worker` 四类进程。
 - **AI PR Review (`ai-review.yml`)**: 在自托管 Macmini runner 上调用已登录的 Codex CLI，按文件审查 PR diff，并把通过校验的结果写成 PR 行级评论。
 
 ---
@@ -100,15 +100,16 @@ gofmt -w .
 **当前后端进程角色**：
 
 - `platform-api`: 对外 HTTP API、控制台查询、配置与只读监控入口，监听 `8080`。
-- `live-runner`: 实盘 session 恢复、signal runtime、live sync / reconcile，不暴露 HTTP 端口。
+- `live-runner`: 实盘 session 恢复、live sync / reconcile / 策略评估，不暴露 HTTP 端口。
+- `signal-runtime-runner`: 行情数据管线（预热 + WebSocket 建连 + NATS 发布），不暴露 HTTP 端口。
 - `notification-worker`: Telegram 通知投递，不暴露 HTTP 端口。
-- `platform-api` 不设置 `BKTRADER_ROLE` 时仍为旧的 `monolith` 行为，便于本地开发和紧急回退；`platform-worker` 只接受 `live-runner` / `notification-worker`，避免生产误配出重复后台 worker。
+- `platform-api` 不设置 `BKTRADER_ROLE` 时仍为旧的 `monolith` 行为，便于本地开发和紧急回退；`platform-worker` 只接受 `live-runner` / `signal-runtime-runner` / `notification-worker`，避免生产误配出重复后台 worker。
 
 **后端选择性部署约定**：
 
 - 普通 push 会根据 diff 自动计算 `DEPLOY_SERVICES`，只重启需要更新的 compose 服务。
 - API / 配置 / 查询 / store / db 等改动默认部署 `platform-api`。
-- Dockerfile / compose / deploy script / app / config / store / domain / db 等共享层改动默认部署三类后端服务。
+- Dockerfile / compose / deploy script / app / config / store / domain / db 等共享层改动默认部署四类后端服务。
 - Telegram / alerts / notifications 相关改动默认部署 `notification-worker`。
 - `live-runner` 相关改动默认部署 `live-runner`，会自动重启交易运行时。
 - 如需手动指定部署范围，可使用 `workflow_dispatch` 填写 `deploy_services`，例如 `platform-api` 或 `live-runner`。

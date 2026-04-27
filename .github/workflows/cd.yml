@@ -57,16 +57,17 @@ jobs:
           add_all_backend_services() {
             add_service platform-api
             add_service live-runner
+            add_service signal-runtime-runner
             add_service notification-worker
           }
 
           validate_deploy_services() {
             for service in $1; do
               case "$service" in
-                platform-api|live-runner|notification-worker) ;;
+                platform-api|live-runner|signal-runtime-runner|notification-worker) ;;
                 *)
                   echo "Unsupported deploy_services entry: $service" >&2
-                  echo "Allowed services: platform-api live-runner notification-worker" >&2
+                  echo "Allowed services: platform-api live-runner signal-runtime-runner notification-worker" >&2
                   exit 2
                   ;;
               esac
@@ -80,7 +81,7 @@ jobs:
               validate_deploy_services "$INPUT_DEPLOY_SERVICES"
               deploy_services="$INPUT_DEPLOY_SERVICES"
             else
-              deploy_services="platform-api notification-worker live-runner"
+              deploy_services="platform-api notification-worker signal-runtime-runner live-runner"
             fi
             echo "deploy_services=$deploy_services" >> "$GITHUB_OUTPUT"
             case " $deploy_services " in
@@ -140,14 +141,34 @@ jobs:
             esac
 
             case "$file" in
-              cmd/platform-worker/*|internal/service/live*|internal/service/signal_runtime*|internal/service/order*|internal/service/execution_strategy.go|internal/service/precision_tolerance.go|internal/service/strategy_registry.go|internal/service/signal_source_registry.go|internal/service/signal_runtime_registry.go|internal/service/live_account_flow.go|internal/service/live_launch*|internal/service/live_trade*|internal/service/telemetry.go)
+              cmd/platform-worker/*|internal/service/live*|internal/service/order*|internal/service/execution_strategy.go|internal/service/precision_tolerance.go|internal/service/strategy_registry.go|internal/service/signal_source_registry.go|internal/service/live_account_flow.go|internal/service/live_launch*|internal/service/live_trade*)
                 live_runner_changed=true
                 add_service live-runner
                 ;;
             esac
 
             case "$file" in
-              internal/service/*)
+              internal/service/signal_runtime*|internal/service/runtime_lease*)
+                add_service signal-runtime-runner
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/runtime_event_consumer*)
+                live_runner_changed=true
+                add_service live-runner
+                add_service signal-runtime-runner
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/runtime_event_bus*)
+                add_all_backend_services
+                ;;
+            esac
+
+            case "$file" in
+              internal/service/platform.go|internal/service/telemetry*|internal/service/health*|internal/service/safety_checks*|internal/service/state_util*|internal/service/logs.go|internal/service/notifications*|internal/service/paper*|internal/service/pnl*|internal/service/strategy.go|internal/service/strategy_replay*|internal/service/strategy_zero_initial*|internal/service/backtest*|internal/service/chart*|internal/service/dashboard_broker*)
                 add_all_backend_services
                 ;;
             esac
