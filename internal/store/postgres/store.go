@@ -13,6 +13,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
+	storepkg "github.com/wuyaocheng/bktrader/internal/store"
 )
 
 type Store struct {
@@ -1321,6 +1322,207 @@ func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (
 	return s.GetLiveSession(sessionID)
 }
 
+func (s *Store) ListSignalRuntimeSessions() ([]domain.SignalRuntimeSession, error) {
+	rows, err := s.db.Query(`
+		select id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+		from signal_runtime_sessions
+		order by updated_at desc, id asc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []domain.SignalRuntimeSession{}
+	for rows.Next() {
+		item, err := scanSignalRuntimeSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) GetSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	row := s.db.QueryRow(`
+		select id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+		from signal_runtime_sessions
+		where id = $1
+	`, sessionID)
+	item, err := scanSignalRuntimeSession(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.SignalRuntimeSession{}, fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, sessionID)
+		}
+		return domain.SignalRuntimeSession{}, err
+	}
+	return item, nil
+}
+
+func (s *Store) CreateSignalRuntimeSession(item domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error) {
+	if strings.TrimSpace(item.Status) == "" {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session status is required")
+	}
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = time.Now().UTC()
+	}
+	if item.UpdatedAt.IsZero() {
+		item.UpdatedAt = item.CreatedAt
+	}
+	stateRaw, err := json.Marshal(item.State)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("failed to marshal signal runtime session state: %w", err)
+	}
+	row := s.db.QueryRow(`
+		insert into signal_runtime_sessions (
+			id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+		)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		on conflict (account_id, strategy_id) do update set
+			status = excluded.status,
+			runtime_adapter = excluded.runtime_adapter,
+			transport = excluded.transport,
+			subscription_count = excluded.subscription_count,
+			state = excluded.state,
+			updated_at = excluded.updated_at
+		returning id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, item.RuntimeAdapter, item.Transport, item.SubscriptionCnt, stateRaw, item.CreatedAt, item.UpdatedAt)
+	return scanSignalRuntimeSession(row)
+}
+
+func (s *Store) UpdateSignalRuntimeSession(item domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error) {
+	if strings.TrimSpace(item.Status) == "" {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("signal runtime session status is required")
+	}
+	if item.UpdatedAt.IsZero() {
+		item.UpdatedAt = time.Now().UTC()
+	}
+	stateRaw, err := json.Marshal(item.State)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, fmt.Errorf("failed to marshal signal runtime session state: %w", err)
+	}
+	row := s.db.QueryRow(`
+		update signal_runtime_sessions
+		set account_id = $2,
+			strategy_id = $3,
+			status = $4,
+			runtime_adapter = $5,
+			transport = $6,
+			subscription_count = $7,
+			state = $8,
+			updated_at = $9
+		where id = $1
+		returning id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
+	`, item.ID, item.AccountID, item.StrategyID, item.Status, item.RuntimeAdapter, item.Transport, item.SubscriptionCnt, stateRaw, item.UpdatedAt)
+	updated, err := scanSignalRuntimeSession(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.SignalRuntimeSession{}, fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, item.ID)
+		}
+		return domain.SignalRuntimeSession{}, err
+	}
+	return updated, nil
+}
+
+func (s *Store) DeleteSignalRuntimeSession(sessionID string) error {
+	result, err := s.db.Exec(`delete from signal_runtime_sessions where id = $1`, sessionID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: %s", storepkg.ErrSignalRuntimeSessionNotFound, sessionID)
+	}
+	return nil
+}
+
+func (s *Store) AcquireRuntimeLease(req domain.RuntimeLeaseAcquireRequest) (domain.RuntimeLease, bool, error) {
+	if strings.TrimSpace(req.ResourceType) == "" || strings.TrimSpace(req.ResourceID) == "" || strings.TrimSpace(req.OwnerID) == "" {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	if req.TTL <= 0 {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease ttl must be positive")
+	}
+	row := s.db.QueryRow(`
+		with upsert as (
+			insert into runtime_leases (
+				resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at
+			)
+			values ($1, $2, $3, now() + ($4::bigint * interval '1 millisecond'), now(), now())
+			on conflict (resource_type, resource_id) do update set
+				owner_id = excluded.owner_id,
+				expires_at = excluded.expires_at,
+				acquired_at = case
+					when runtime_leases.owner_id = excluded.owner_id then runtime_leases.acquired_at
+					else now()
+				end,
+				updated_at = now()
+			where runtime_leases.owner_id = excluded.owner_id
+				or runtime_leases.expires_at <= now()
+			returning resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at, true as acquired
+		)
+		select resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at, acquired
+		from upsert
+		union all
+		select resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at, false as acquired
+		from runtime_leases
+		where resource_type = $1
+			and resource_id = $2
+			and not exists (select 1 from upsert)
+	`, strings.TrimSpace(req.ResourceType), strings.TrimSpace(req.ResourceID), strings.TrimSpace(req.OwnerID), req.TTL.Milliseconds())
+	return scanRuntimeLeaseWithAcquired(row)
+}
+
+func (s *Store) HeartbeatRuntimeLease(resourceType, resourceID, ownerID string, ttl time.Duration) (domain.RuntimeLease, bool, error) {
+	if strings.TrimSpace(resourceType) == "" || strings.TrimSpace(resourceID) == "" || strings.TrimSpace(ownerID) == "" {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	if ttl <= 0 {
+		return domain.RuntimeLease{}, false, fmt.Errorf("runtime lease ttl must be positive")
+	}
+	row := s.db.QueryRow(`
+		update runtime_leases
+		set expires_at = now() + ($4::bigint * interval '1 millisecond'),
+			updated_at = now()
+		where resource_type = $1
+			and resource_id = $2
+			and owner_id = $3
+		returning resource_type, resource_id, owner_id, expires_at, acquired_at, updated_at
+	`, strings.TrimSpace(resourceType), strings.TrimSpace(resourceID), strings.TrimSpace(ownerID), ttl.Milliseconds())
+	lease, err := scanRuntimeLease(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.RuntimeLease{}, false, nil
+		}
+		return domain.RuntimeLease{}, false, err
+	}
+	return lease, true, nil
+}
+
+func (s *Store) ReleaseRuntimeLease(resourceType, resourceID, ownerID string) (bool, error) {
+	if strings.TrimSpace(resourceType) == "" || strings.TrimSpace(resourceID) == "" || strings.TrimSpace(ownerID) == "" {
+		return false, fmt.Errorf("runtime lease resource type, resource id, and owner id are required")
+	}
+	result, err := s.db.Exec(`
+		delete from runtime_leases
+		where resource_type = $1
+			and resource_id = $2
+			and owner_id = $3
+	`, strings.TrimSpace(resourceType), strings.TrimSpace(resourceID), strings.TrimSpace(ownerID))
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
 func (s *Store) ListAccountEquitySnapshots(query domain.AccountEquitySnapshotQuery) ([]domain.AccountEquitySnapshot, error) {
 	args := []any{query.AccountID}
 	filters := []string{"account_id = $1"}
@@ -2043,6 +2245,7 @@ func (s *Store) CreateOrderCloseVerification(item domain.OrderCloseVerification)
 	if item.ID == "" {
 		item.ID = fmt.Sprintf("order-close-verification-%d", time.Now().UTC().UnixNano())
 	}
+	item.Symbol = strings.ToUpper(strings.TrimSpace(item.Symbol))
 	if item.EventTime.IsZero() {
 		item.EventTime = time.Now().UTC()
 	}
@@ -2087,6 +2290,18 @@ func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerification
 		args = append(args, strings.TrimSpace(query.OrderID))
 		builder.WriteString(fmt.Sprintf(" and order_id = $%d", len(args)))
 	}
+	if strings.TrimSpace(query.AccountID) != "" {
+		args = append(args, strings.TrimSpace(query.AccountID))
+		builder.WriteString(fmt.Sprintf(" and account_id = $%d", len(args)))
+	}
+	if strings.TrimSpace(query.StrategyID) != "" {
+		args = append(args, strings.TrimSpace(query.StrategyID))
+		builder.WriteString(fmt.Sprintf(" and strategy_id = $%d", len(args)))
+	}
+	if strings.TrimSpace(query.Symbol) != "" {
+		args = append(args, strings.ToUpper(strings.TrimSpace(query.Symbol)))
+		builder.WriteString(fmt.Sprintf(" and symbol = $%d", len(args)))
+	}
 	if len(query.OrderIDs) > 0 {
 		placeholders := make([]string, 0, len(query.OrderIDs))
 		for _, id := range query.OrderIDs {
@@ -2101,7 +2316,7 @@ func (s *Store) QueryOrderCloseVerifications(query domain.OrderCloseVerification
 		}
 	}
 
-	builder.WriteString(" order by recorded_at desc")
+	builder.WriteString(" order by event_time desc, recorded_at desc, id desc")
 
 	if query.Limit > 0 {
 		args = append(args, query.Limit)
@@ -2245,6 +2460,70 @@ func nullIfEmpty(v string) any {
 		return nil
 	}
 	return v
+}
+
+type signalRuntimeScanner interface {
+	Scan(dest ...any) error
+}
+
+type runtimeLeaseScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanSignalRuntimeSession(scanner signalRuntimeScanner) (domain.SignalRuntimeSession, error) {
+	var item domain.SignalRuntimeSession
+	var stateRaw []byte
+	err := scanner.Scan(
+		&item.ID,
+		&item.AccountID,
+		&item.StrategyID,
+		&item.Status,
+		&item.RuntimeAdapter,
+		&item.Transport,
+		&item.SubscriptionCnt,
+		&stateRaw,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	item.State = unmarshalJSONMap(stateRaw)
+	return item, nil
+}
+
+func scanRuntimeLease(scanner runtimeLeaseScanner) (domain.RuntimeLease, error) {
+	var item domain.RuntimeLease
+	err := scanner.Scan(
+		&item.ResourceType,
+		&item.ResourceID,
+		&item.OwnerID,
+		&item.ExpiresAt,
+		&item.AcquiredAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return domain.RuntimeLease{}, err
+	}
+	return item, nil
+}
+
+func scanRuntimeLeaseWithAcquired(scanner runtimeLeaseScanner) (domain.RuntimeLease, bool, error) {
+	var item domain.RuntimeLease
+	var acquired bool
+	err := scanner.Scan(
+		&item.ResourceType,
+		&item.ResourceID,
+		&item.OwnerID,
+		&item.ExpiresAt,
+		&item.AcquiredAt,
+		&item.UpdatedAt,
+		&acquired,
+	)
+	if err != nil {
+		return domain.RuntimeLease{}, false, err
+	}
+	return item, acquired, nil
 }
 
 func marshalJSONValue(value any) []byte {

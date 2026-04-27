@@ -432,6 +432,7 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		session.Status = "ERROR"
 		state := cloneMetadata(session.State)
 		state["health"] = "error"
+		state["actualStatus"] = "ERROR"
 		state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
 		state["lastEventSummary"] = map[string]any{
 			"type":    "runtime_error",
@@ -450,6 +451,7 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		session.UpdatedAt = time.Now().UTC()
 	})
 	p.clearTickEvalThrottleSession(sessionID)
+	p.clearRuntimeEventPublishThrottleSession(sessionID)
 }
 
 func (p *Platform) setSessionStopped(sessionID string) {
@@ -457,6 +459,7 @@ func (p *Platform) setSessionStopped(sessionID string) {
 		session.Status = "STOPPED"
 		state := cloneMetadata(session.State)
 		state["health"] = "stopped"
+		state["actualStatus"] = "STOPPED"
 		state["stoppedAt"] = time.Now().UTC().Format(time.RFC3339)
 		state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
 		state["lastEventSummary"] = map[string]any{
@@ -473,6 +476,7 @@ func (p *Platform) setSessionStopped(sessionID string) {
 		session.UpdatedAt = time.Now().UTC()
 	})
 	p.clearTickEvalThrottleSession(sessionID)
+	p.clearRuntimeEventPublishThrottleSession(sessionID)
 }
 
 func configuredBinanceFuturesWSURL() string {
@@ -581,6 +585,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 		session.Status = "RUNNING"
 		state := cloneMetadata(session.State)
 		state["health"] = "healthy"
+		state["actualStatus"] = "RUNNING"
 		state["connectedAt"] = now.Format(time.RFC3339)
 		state["wsURL"] = wsURL
 		state["lastHeartbeatAt"] = now.Format(time.RFC3339)
@@ -659,7 +664,8 @@ func (p *Platform) runExchangeWebsocketLoop(
 				session.State = state
 				session.UpdatedAt = now
 			})
-			if err := p.handleSignalRuntimeMessage(session.ID, summary, now); err != nil {
+			p.publishRuntimeSignalEvent(session, summary, now)
+			if err := p.handleSignalRuntimeMessageFromWebsocket(session.ID, summary, now); err != nil {
 				p.logger("service.signal_runtime",
 					"session_id", session.ID,
 					"symbol", signalRuntimeSummarySymbol(summary),
@@ -855,6 +861,14 @@ func (p *Platform) shouldThrottleLiveEvaluation(runtimeSessionID string, summary
 }
 
 func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary map[string]any, eventTime time.Time) error {
+	return p.handleSignalRuntimeMessageWithOptions(runtimeSessionID, summary, eventTime, signalRuntimeFanoutOptions{})
+}
+
+type signalRuntimeFanoutOptions struct {
+	returnTriggerErrors bool
+}
+
+func (p *Platform) handleSignalRuntimeMessageWithOptions(runtimeSessionID string, summary map[string]any, eventTime time.Time, options signalRuntimeFanoutOptions) error {
 	if !signalRuntimeSummaryShouldTriggerLiveEvaluation(summary) {
 		return nil
 	}
@@ -914,6 +928,9 @@ func (p *Platform) handleSignalRuntimeMessage(runtimeSessionID string, summary m
 				"runtime_session_id", runtimeSessionID,
 				"symbol", targetSymbol,
 			).Warn("trigger live session from signal failed", "error", err)
+			if options.returnTriggerErrors {
+				return err
+			}
 		}
 	}
 	return nil

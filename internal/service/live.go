@@ -2395,6 +2395,24 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		if position.Quantity <= 0 {
 			continue
 		}
+		cleanupGuard := livePositionFlatCleanupGuard{
+			authoritative:      authoritative,
+			pendingSettlement:  symbolInSet(pendingSettlementSymbols, symbol),
+			workingOrders:      symbolInSet(workingOrderSymbols, symbol),
+			exchangeOpenOrders: symbolInSet(openOrderSymbols, symbol),
+		}
+		if cleared, gate, clearErr := p.clearVerifiedClosedExchangeMissingPosition(account, position, symbol, cleanupGuard); clearErr != nil {
+			return nil, clearErr
+		} else if cleared {
+			recordGate(symbol, gate)
+			continue
+		}
+		if cleared, gate, clearErr := p.clearStaleLivePositionAfterTerminalExit(account, position, cleanupGuard); clearErr != nil {
+			return nil, clearErr
+		} else if cleared {
+			recordGate(symbol, gate)
+			continue
+		}
 		recordGate(symbol, map[string]any{
 			"status":           livePositionReconcileGateStatusStale,
 			"scenario":         "db-position-exchange-missing",
@@ -2428,6 +2446,220 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 		"blockingSymbolCount": blockingCount,
 		"symbols":             symbols,
 	}, nil
+}
+
+type livePositionFlatCleanupGuard struct {
+	authoritative      bool
+	pendingSettlement  bool
+	workingOrders      bool
+	exchangeOpenOrders bool
+}
+
+func (p *Platform) clearVerifiedClosedExchangeMissingPosition(account domain.Account, position domain.Position, symbol string, guard livePositionFlatCleanupGuard) (bool, map[string]any, error) {
+	symbol = NormalizeSymbol(symbol)
+	if symbol == "" || position.ID == "" || position.Quantity <= 0 {
+		return false, nil, nil
+	}
+	if !guard.authoritative || guard.pendingSettlement || guard.workingOrders || guard.exchangeOpenOrders {
+		return false, nil, nil
+	}
+	strategyID, err := p.resolveStrategyIDFromVersionID(position.StrategyVersionID)
+	if err != nil || strings.TrimSpace(strategyID) == "" {
+		return false, nil, nil
+	}
+	verification, found, err := p.latestOrderCloseVerificationForPosition(account.ID, symbol, strategyID)
+	if err != nil {
+		return false, nil, err
+	}
+	if !found || !verification.VerifiedClosed || tradingQuantityPositive(verification.RemainingPositionQty) {
+		return false, nil, nil
+	}
+	matches, err := p.closeVerificationMatchesPosition(account.ID, symbol, strategyID, position, verification)
+	if err != nil || !matches {
+		return false, nil, err
+	}
+	dbSnapshot := buildRecoveredLivePositionStateSnapshot(position)
+	if err := p.store.DeletePosition(position.ID); err != nil {
+		return false, nil, err
+	}
+	return true, map[string]any{
+		"status":           livePositionReconcileGateStatusVerified,
+		"scenario":         "verified-closed-db-position-cleared",
+		"blocking":         false,
+		"dbPosition":       dbSnapshot,
+		"exchangePosition": map[string]any{},
+		"closeVerification": map[string]any{
+			"id":                   verification.ID,
+			"liveSessionId":        verification.LiveSessionID,
+			"orderId":              verification.OrderID,
+			"decisionEventId":      verification.DecisionEventID,
+			"strategyId":           verification.StrategyID,
+			"verifiedClosed":       verification.VerifiedClosed,
+			"remainingPositionQty": verification.RemainingPositionQty,
+			"verificationSource":   verification.VerificationSource,
+			"eventTime":            verification.EventTime.UTC().Format(time.RFC3339),
+		},
+	}, nil
+}
+
+func (p *Platform) closeVerificationMatchesPosition(accountID string, symbol string, strategyID string, position domain.Position, verification domain.OrderCloseVerification) (bool, error) {
+	if !strings.EqualFold(strings.TrimSpace(verification.AccountID), strings.TrimSpace(accountID)) {
+		return false, nil
+	}
+	if NormalizeSymbol(verification.Symbol) != NormalizeSymbol(symbol) {
+		return false, nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(verification.StrategyID), strings.TrimSpace(strategyID)) {
+		return false, nil
+	}
+	if strings.TrimSpace(verification.OrderID) == "" {
+		return false, nil
+	}
+	order, err := p.store.GetOrderByID(verification.OrderID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "order not found") {
+			return false, nil
+		}
+		return false, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.AccountID), strings.TrimSpace(accountID)) || NormalizeSymbol(order.Symbol) != NormalizeSymbol(symbol) {
+		return false, nil
+	}
+	if position.StrategyVersionID != "" && order.StrategyVersionID != "" && !strings.EqualFold(strings.TrimSpace(position.StrategyVersionID), strings.TrimSpace(order.StrategyVersionID)) {
+		return false, nil
+	}
+	expectedSide := "SELL"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		expectedSide = "BUY"
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.Side), expectedSide) {
+		return false, nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.Status), "FILLED") {
+		return false, nil
+	}
+	if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+		return false, nil
+	}
+	if !liveOrderRepresentsSystemExit(order) {
+		return false, nil
+	}
+	filledQuantity := firstPositive(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity)
+	if tradingQuantityBelow(filledQuantity, position.Quantity) {
+		return false, nil
+	}
+	if verification.LiveSessionID != "" {
+		if orderLiveSessionID := stringValue(order.Metadata["liveSessionId"]); orderLiveSessionID != "" && orderLiveSessionID != verification.LiveSessionID {
+			return false, nil
+		}
+	}
+	if verification.DecisionEventID != "" {
+		if orderDecisionEventID := stringValue(order.Metadata["decisionEventId"]); orderDecisionEventID != "" && orderDecisionEventID != verification.DecisionEventID {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (p *Platform) latestOrderCloseVerificationForPosition(accountID string, symbol string, strategyID string) (domain.OrderCloseVerification, bool, error) {
+	items, err := p.store.QueryOrderCloseVerifications(domain.OrderCloseVerificationQuery{
+		AccountID:  strings.TrimSpace(accountID),
+		StrategyID: strings.TrimSpace(strategyID),
+		Symbol:     NormalizeSymbol(symbol),
+		Limit:      1,
+	})
+	if err != nil {
+		return domain.OrderCloseVerification{}, false, err
+	}
+	if len(items) == 0 {
+		return domain.OrderCloseVerification{}, false, nil
+	}
+	return items[0], true, nil
+}
+
+func (p *Platform) clearStaleLivePositionAfterTerminalExit(account domain.Account, position domain.Position, guard livePositionFlatCleanupGuard) (bool, map[string]any, error) {
+	symbol := NormalizeSymbol(position.Symbol)
+	if symbol == "" || position.Quantity <= 0 {
+		return false, nil, nil
+	}
+	if !guard.authoritative || guard.pendingSettlement || guard.workingOrders || guard.exchangeOpenOrders {
+		return false, nil, nil
+	}
+	exitOrder, ok, err := p.findTerminalFlatExitOrder(account.ID, position)
+	if err != nil || !ok {
+		return false, nil, err
+	}
+	if err := p.store.DeletePosition(position.ID); err != nil {
+		return false, nil, err
+	}
+	p.logger("service.live_reconcile",
+		"account_id", account.ID,
+		"symbol", symbol,
+		"position_id", position.ID,
+		"order_id", exitOrder.ID,
+	).Info("cleared stale live position after terminal exit")
+	return true, map[string]any{
+		"status":                 livePositionReconcileGateStatusVerified,
+		"scenario":               "exchange-flat-terminal-exit",
+		"blocking":               false,
+		"dbPosition":             buildRecoveredLivePositionStateSnapshot(position),
+		"exchangePosition":       map[string]any{},
+		"clearedStalePositionId": position.ID,
+		"terminalExitOrderId":    exitOrder.ID,
+	}, nil
+}
+
+func (p *Platform) findTerminalFlatExitOrder(accountID string, position domain.Position) (domain.Order, bool, error) {
+	symbol := NormalizeSymbol(position.Symbol)
+	if symbol == "" || position.Quantity <= 0 {
+		return domain.Order{}, false, nil
+	}
+	orders, err := p.store.QueryOrders(domain.OrderQuery{
+		AccountID: accountID,
+		Symbols:   []string{symbol},
+		Statuses:  []string{"FILLED"},
+	})
+	if err != nil {
+		return domain.Order{}, false, err
+	}
+	expectedSide := "SELL"
+	if strings.EqualFold(strings.TrimSpace(position.Side), "SHORT") {
+		expectedSide = "BUY"
+	}
+	for i := len(orders) - 1; i >= 0; i-- {
+		order := orders[i]
+		if !strings.EqualFold(strings.TrimSpace(order.Side), expectedSide) {
+			continue
+		}
+		if !order.EffectiveReduceOnly() && !order.EffectiveClosePosition() {
+			continue
+		}
+		if !liveOrderRepresentsSystemExit(order) {
+			continue
+		}
+		filledQuantity := firstPositive(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity)
+		if tradingQuantityBelow(filledQuantity, position.Quantity) {
+			continue
+		}
+		return order, true, nil
+	}
+	return domain.Order{}, false, nil
+}
+
+func liveOrderRepresentsSystemExit(order domain.Order) bool {
+	if strings.TrimSpace(order.ID) == "" {
+		return false
+	}
+	if strings.HasPrefix(strings.TrimSpace(order.ID), "order-") {
+		return true
+	}
+	source := strings.TrimSpace(stringValue(order.Metadata["source"]))
+	switch source {
+	case "live-session-intent", "manual-position-close", "recovered-passive-close":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Platform) liveSettlementPendingOrderSymbols(accountID string) (map[string]struct{}, error) {
@@ -3146,6 +3378,7 @@ func liveSessionNonRegressiveFactKeys() []string {
 		"lastStrategyDecisionEventId",
 		"lastStrategyDecisionEventFingerprint",
 		"lastStrategyDecisionEventIntentSignature",
+		"lastDispatchedDecisionEventId",
 	}
 }
 
@@ -3379,8 +3612,8 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 		if getErr == nil {
 			state["signalRuntimeStatus"] = runtimeSession.Status
 		} else {
-			// 如果在内存中找不到该 signalRuntimeSession（例如系统发生重启后内存缓存被清空），
-			// 则立刻抹除这个失效的 state ID，阻止崩溃向后传播，并在下方的必须条件分支中触发重新创建。
+			// Persisted runtime session identity is the source of truth. Only clear
+			// the linked ID after both hot cache and store lookup fail.
 			runtimeSessionID = ""
 			delete(state, "signalRuntimeSessionId")
 			delete(state, "signalRuntimeStatus")

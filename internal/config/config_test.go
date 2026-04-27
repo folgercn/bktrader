@@ -82,6 +82,16 @@ func TestLoadReadsLogPersistenceEnv(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAcceptsSignalRuntimeRunnerRole(t *testing.T) {
+	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", ProcessRole: "signal-runtime-runner"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected signal-runtime-runner role to validate, got %v", err)
+	}
+	if cfg.RuntimeActionsEnabled() {
+		t.Fatal("expected signal-runtime-runner to reject live runtime mutations")
+	}
+}
+
 func TestBoolFromEnvRecognizesTruthyAndFalsyValues(t *testing.T) {
 	t.Setenv("BOOL_TRUE", "yes")
 	if !boolFromEnv("BOOL_TRUE", false) {

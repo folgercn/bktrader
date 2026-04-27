@@ -18,12 +18,13 @@ type Config struct {
 	LogRetentionDays               int    // 日志保留天数
 	LogMaxSizeMB                   int    // 单个日志文件滚动前的最大体积（MB）
 	HTTPAddr                       string // HTTP 监听地址
-	ProcessRole                    string // 进程角色：monolith / api / live-runner / notification-worker
+	ProcessRole                    string // 进程角色：monolith / api / live-runner / signal-runtime-runner / notification-worker
 	StoreBackend                   string // 存储后端类型（memory / postgres）
 	AutoMigrate                    bool   // 是否在启动时自动执行数据库迁移
 	PostgresDSN                    string // PostgreSQL 连接字符串
 	RedisAddr                      string // Redis 地址
 	NATSURL                        string // NATS 消息队列地址
+	RuntimeEventBus                string // runtime event bus: nats / disabled
 	PaperTickInterval              int    // 模拟盘 Ticker 间隔（秒），默认 15
 	MinuteDataDir                  string // 1min 数据目录
 	TickDataDir                    string // tick 数据目录
@@ -99,6 +100,7 @@ func Load() Config {
 		PostgresDSN:                    getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
 		RedisAddr:                      getenv("REDIS_ADDR", "localhost:6379"),
 		NATSURL:                        getenv("NATS_URL", "nats://localhost:4222"),
+		RuntimeEventBus:                strings.ToLower(strings.TrimSpace(getenv("RUNTIME_EVENT_BUS", "nats"))),
 		PaperTickInterval:              tickInterval,
 		MinuteDataDir:                  getenv("MINUTE_DATA_DIR", "."),
 		TickDataDir:                    getenv("TICK_DATA_DIR", "./dataset/archive"),
@@ -178,9 +180,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("HTTP_ADDR 不能为空")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.ProcessRole)) {
-	case "", "monolith", "api", "live-runner", "notification-worker":
+	case "", "monolith", "api", "live-runner", "signal-runtime-runner", "notification-worker":
 	default:
-		return fmt.Errorf("不支持的 BKTRADER_ROLE: %s（可选: monolith, api, live-runner, notification-worker）", c.ProcessRole)
+		return fmt.Errorf("不支持的 BKTRADER_ROLE: %s（可选: monolith, api, live-runner, signal-runtime-runner, notification-worker）", c.ProcessRole)
 	}
 	if c.StoreBackend == "postgres" && c.PostgresDSN == "" {
 		return fmt.Errorf("STORE_BACKEND=postgres 时 POSTGRES_DSN 不能为空")
@@ -203,6 +205,11 @@ func (c Config) Validate() error {
 		if c.AuthTokenTTLMinutes <= 0 {
 			return fmt.Errorf("AUTH_TOKEN_TTL_MINUTES 必须大于 0")
 		}
+	}
+	switch strings.ToLower(strings.TrimSpace(c.RuntimeEventBus)) {
+	case "", "nats", "disabled":
+	default:
+		return fmt.Errorf("不支持的 RUNTIME_EVENT_BUS: %s（可选: nats, disabled）", c.RuntimeEventBus)
 	}
 	return nil
 }

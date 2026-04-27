@@ -86,6 +86,29 @@ type SignalRuntimeSession struct {
 	UpdatedAt       time.Time      `json:"updatedAt"`
 }
 
+const (
+	RuntimeLeaseResourceSignalRuntimeSession = "signal-runtime-session"
+	RuntimeLeaseResourceLiveSession          = "live-session"
+	RuntimeLeaseResourceAccountSync          = "account-sync"
+)
+
+// RuntimeLease records which runner currently owns a runtime resource.
+type RuntimeLease struct {
+	ResourceType string    `json:"resourceType"`
+	ResourceID   string    `json:"resourceId"`
+	OwnerID      string    `json:"ownerId"`
+	ExpiresAt    time.Time `json:"expiresAt"`
+	AcquiredAt   time.Time `json:"acquiredAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+type RuntimeLeaseAcquireRequest struct {
+	ResourceType string
+	ResourceID   string
+	OwnerID      string
+	TTL          time.Duration
+}
+
 // Account 交易账户，支持 LIVE（实盘）和 PAPER（模拟盘）两种模式。
 type Account struct {
 	ID        string         `json:"id"`

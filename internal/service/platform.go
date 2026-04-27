@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,7 @@ type Platform struct {
 	store                  store.Repository              // 存储层接口（内存 / PostgreSQL）
 	mu                     sync.Mutex                    // 保护 run map 的并发访问
 	run                    map[string]context.CancelFunc // 运行中的 paper session -> cancel 函数
-	signalRun              map[string]context.CancelFunc // 运行中的 signal runtime session -> cancel 函数
+	signalRun              map[string]*signalRuntimeRun  // 运行中的 signal runtime session -> run handle
 	paperPlans             map[string][]paperPlannedOrder
 	livePlans              map[string][]paperPlannedOrder
 	strategyEngines        map[string]StrategyEngine
@@ -41,7 +42,12 @@ type Platform struct {
 	liveMarketData         map[string]liveMarketSnapshot
 	liveAccountOpMu        sync.Map // accountID -> *sync.Mutex
 	liveAccountSyncState   sync.Map // accountID -> *liveAccountSyncState
+	liveDispatchMu         sync.Map // liveSessionID -> *sync.Mutex; process-local guard, not distributed idempotency.
 	runtimeSourceGateState sync.Map // runtimeSessionID -> last blocked source gate signature
+	runtimeEventPublisher  RuntimeEventPublisher
+	runtimeEventConsumerOn bool
+	runtimeEventThrottle   sync.Map // runtimeSessionID|symbol|streamType -> *runtimeEventPublishThrottleState
+	runtimeLeaseOwnerID    string
 	manifestMu             sync.Mutex
 	once                   sync.Once             // 确保 CSV ledger 只加载一次
 	ledger                 []strategyReplayEvent // 缓存的策略回放账本
@@ -59,6 +65,7 @@ type Platform struct {
 	tickEvalThrottle       sync.Map // runtimeSessionID or runtimeSessionID|symbol -> *tickEvalThrottleState
 	logBroker              *logging.Broker
 	dashboardBroker        *DashboardBroker
+	processRole            string
 }
 
 type RuntimePolicy struct {
@@ -90,19 +97,21 @@ type RuntimePolicy struct {
 // NewPlatform 创建并初始化平台服务实例。
 func NewPlatform(store store.Repository) *Platform {
 	platform := &Platform{
-		store:               store,
-		run:                 make(map[string]context.CancelFunc),
-		signalRun:           make(map[string]context.CancelFunc),
-		paperPlans:          make(map[string][]paperPlannedOrder),
-		livePlans:           make(map[string][]paperPlannedOrder),
-		strategyEngines:     make(map[string]StrategyEngine),
-		liveAdapters:        make(map[string]LiveExecutionAdapter),
-		signalSources:       make(map[string]SignalSourceProvider),
-		signalAdapters:      make(map[string]SignalRuntimeAdapter),
-		executionStrategies: make(map[string]ExecutionStrategy),
-		signalSessions:      make(map[string]domain.SignalRuntimeSession),
-		liveMarketData:      make(map[string]liveMarketSnapshot),
-		logBroker:           logging.NewBroker(),
+		store:                 store,
+		run:                   make(map[string]context.CancelFunc),
+		signalRun:             make(map[string]*signalRuntimeRun),
+		paperPlans:            make(map[string][]paperPlannedOrder),
+		livePlans:             make(map[string][]paperPlannedOrder),
+		strategyEngines:       make(map[string]StrategyEngine),
+		liveAdapters:          make(map[string]LiveExecutionAdapter),
+		signalSources:         make(map[string]SignalSourceProvider),
+		signalAdapters:        make(map[string]SignalRuntimeAdapter),
+		executionStrategies:   make(map[string]ExecutionStrategy),
+		signalSessions:        make(map[string]domain.SignalRuntimeSession),
+		runtimeEventPublisher: NoopRuntimeEventPublisher{},
+		runtimeLeaseOwnerID:   defaultRuntimeLeaseOwnerID(),
+		liveMarketData:        make(map[string]liveMarketSnapshot),
+		logBroker:             logging.NewBroker(),
 		telegramConfig: domain.TelegramConfig{
 			SendLevels:                    []string{"critical", "warning"},
 			TradeEventsEnabled:            true,
@@ -150,6 +159,18 @@ func NewPlatform(store store.Repository) *Platform {
 		"execution_strategy_count", len(platform.executionStrategies),
 	)
 	return platform
+}
+
+func defaultRuntimeLeaseOwnerID() string {
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		host = "unknown-host"
+	}
+	return fmt.Sprintf("%s-%d-%d", host, os.Getpid(), time.Now().UnixNano())
+}
+
+func (p *Platform) SetProcessRole(role string) {
+	p.processRole = role
 }
 
 // StartDashboardBroker 启动仪表盘实时数据轮询检测

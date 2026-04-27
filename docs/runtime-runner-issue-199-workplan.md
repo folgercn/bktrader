@@ -37,6 +37,7 @@
 - 不把 lease owner 当作交易事实源。
 - REST 仍是启动、恢复、接管和关键执行边界的权威校验入口。
 - JetStream 是 at-least-once 消费模型，业务层必须做 idempotency。
+- Runtime event bus 是可回放事件日志 / 广播总线语义，stream retention 使用 `LimitsPolicy`，避免 runner、audit、dashboard、debug replay 等 durable consumer 互相抢消息。
 - 每个 PR 必须独立合并、独立回滚。
 - 每个 PR 必须保持当前 monolith / 当前拆分形态可运行。
 
@@ -45,6 +46,13 @@
 ### Step 1: #200 持久化 signal runtime session 状态
 
 Issue: [#200](https://github.com/folgercn/bktrader/issues/200)
+
+状态：
+
+- ✅ **PR 已提交（2026-04-26）**：[#220 Persist signal runtime sessions (#200)](https://github.com/folgercn/bktrader/pull/220)
+- ✅ 已完成：`signal_runtime_sessions` migration、store CRUD、memory/postgres 实现、service cache miss → store restore、`syncLiveSessionRuntime` 复用旧 runtime ID。
+- ✅ 已按 review 修正：Create 语义改为真 upsert（同一 account+strategy 保留 runtime identity 但刷新 status/adapter/transport/subscription/state）、Start 使用运行占位避免并发双启动、Delete 改为 DB 删除成功后再取消本地 runner、not-found 改为 typed error。
+- 🟡 待 review/merge：#220 合并后才能开始 #201。
 
 目标：
 
@@ -70,13 +78,20 @@ Issue: [#200](https://github.com/folgercn/bktrader/issues/200)
 最低测试：
 
 - memory store runtime session CRUD。
-- postgres store runtime session CRUD。
+- postgres store runtime session CRUD / upsert 语义测试。
 - `syncLiveSessionRuntime` 在内存缓存为空但 store 存在时复用旧 ID。
 - stop/delete 状态持久化正确。
 
 ### Step 2: #201 增加 NATS JetStream runtime event bus
 
 Issue: [#201](https://github.com/folgercn/bktrader/issues/201)
+
+状态：
+
+- ✅ **PR 已合并（2026-04-26）**：[#221 Add runtime event bus publisher (#201)](https://github.com/folgercn/bktrader/pull/221)。
+- ✅ 已完成：runtime event envelope、stable `id` / `fingerprint`、in-memory fake publisher、NATS JetStream publisher、`BKT_RUNTIME_EVENTS` stream/subject 配置（`LimitsPolicy` 广播/日志流语义）、WebSocket 路径 side-publish、publish 失败日志/状态记录、tick event 每 symbol 每秒节流。
+- ✅ 已覆盖测试：envelope 字段完整、signal bar fingerprint 不含 receive/create time、duplicate idempotency、stream/subject 配置、publish 失败不阻塞并记录状态。
+- ✅ 已 review：本 PR 不改 deployments；`RUNTIME_EVENT_BUS` 默认 `nats`，NATS 不可用时自动降级为 noop，显式设置 `disabled` 可关闭 side-publish。
 
 目标：
 
@@ -114,6 +129,13 @@ Issue: [#201](https://github.com/folgercn/bktrader/issues/201)
 
 Issue: [#202](https://github.com/folgercn/bktrader/issues/202)
 
+状态：
+
+- ✅ **PR 已合并（2026-04-26）**：[#222 Consume runtime events for live evaluation (#202)](https://github.com/folgercn/bktrader/pull/222)。
+- ✅ 已完成：`SignalRuntimeEventConsumer` handler、NATS pull durable consumer `live-evaluation`、success ack / failure nak、stale event drop、live-runner / monolith 启动 consumer、consumer 启用后关闭 WS direct live evaluation、复用现有 live evaluation fanout。
+- ✅ 已覆盖测试：consumer config、event 触发 live evaluation happy path、duplicate delivery 幂等、WS direct + consumer 双入口防护、stale event ack/drop、failure 不 ack。
+- ✅ 已 review：本 PR 不改 dispatch/reconcile/recovery gate，不新增独立 `signal-runtime-runner`，不改 deployments。
+
 目标：
 
 - `live-runner` 通过 JetStream durable consumer 消费 runtime event。
@@ -148,6 +170,13 @@ Issue: [#202](https://github.com/folgercn/bktrader/issues/202)
 
 Issue: [#203](https://github.com/folgercn/bktrader/issues/203)
 
+状态：
+
+- 🟡 **进行中（2026-04-26）**：分支 `codex/issue-203-signal-runtime-runner`，复用 worktree `/Users/fujun/node/bktrader-issue-202`。
+- ✅ 已完成：新增 `BKTRADER_ROLE=signal-runtime-runner` 校验、`platform-worker` role 支持、runtime option 映射、signal runtime scanner、`desiredStatus` / `actualStatus` 轻量状态标记、ERROR 会话自动重启熔断。
+- ✅ 已覆盖测试：role option mapping、`signal-runtime-runner` 不启动 live recovery/sync/consumer、`live-runner` 不启动 WS scanner/market warmup、config validation、`RuntimeActionsEnabled=false`、scanner 只启动 desired running session、scanner 不重启 ERROR 会话、start cancel 清理 desired/actual。
+- 🟡 待 review：本 PR 不改 deployments / compose；Step 5 lease 前仍要求单实例部署 `signal-runtime-runner`。
+
 目标：
 
 - 新增 `BKTRADER_ROLE=signal-runtime-runner`。
@@ -181,6 +210,16 @@ Issue: [#203](https://github.com/folgercn/bktrader/issues/203)
 ### Step 5: #204 runner lease / ownership 防双活
 
 Issue: [#204](https://github.com/folgercn/bktrader/issues/204)
+
+状态：✅ **已实现（2026-04-26，待 PR review）**
+
+当前完成：
+
+- 已新增 `runtime_leases` 持久化表，使用 `(resource_type, resource_id)` 作为 ownership 主键。
+- 已在 store 层实现 acquire / heartbeat / release / expired takeover，resource type 覆盖 `signal-runtime-session`、`live-session`、`account-sync`。
+- `StartSignalRuntimeSession` 启动路径已在处理 resource 前 acquire lease；未拿到 lease 时 scanner 跳过该 session。
+- signal runtime runner 的 lease heartbeat 与业务 context 绑定；heartbeat 丢失 ownership 会 cancel 本地 runner，stop/delete/runner exit 会按 owner release。
+- 已补 memory store、Postgres store 和 scanner 单元测试；Postgres 测试在 `BKTRADER_TEST_POSTGRES_DSN` 存在时验证真实 SQL。
 
 目标：
 
@@ -246,4 +285,3 @@ Review / merge 必须串行。后续 step 只能基于已合并的前序 step。
 - 是否影响 final submit payload。
 - 是否影响 reconcile / recovery gate。
 - 是否有 failure path 测试。
-

@@ -3,6 +3,7 @@ import { MonitorStage } from '../../pages/MonitorStage';
 import { StrategyStage } from '../../pages/StrategyStage';
 import { AccountStage } from '../../pages/AccountStage';
 import { LogStage } from '../../pages/LogStage';
+import { RecoveryStage } from '../../pages/RecoveryStage';
 import { useUIStore } from '../../store/useUIStore';
 
 interface MainContentProps {
@@ -62,6 +63,9 @@ export function MainContent({ actions, dockContent, strategies, quickLiveAccount
       )}
       {sidebarTab === 'log' && (
         <LogStage />
+      )}
+      {sidebarTab === 'recovery' && (
+        <RecoveryStage />
       )}
     </div>
   );

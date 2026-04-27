@@ -36,7 +36,7 @@ func main() {
 	}
 
 	switch role {
-	case "live-runner", "notification-worker":
+	case "live-runner", "signal-runtime-runner", "notification-worker":
 	default:
 		_, _ = fmt.Fprintf(os.Stderr, "platform-worker 不支持 BKTRADER_ROLE=%s\n", role)
 		os.Exit(1)
