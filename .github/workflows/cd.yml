@@ -13,8 +13,11 @@ on:
       - '.github/workflows/cd.yml'
       - '.dockerignore'
       - 'Dockerfile'
-      - 'cmd/**'
+      - 'cmd/platform-api/**'
+      - 'cmd/platform-worker/**'
       - 'internal/**'
+      - '!internal/ctlclient/**'
+      - '!internal/http/registry.go'
       - 'db/**'
       - 'deployments/**'
       - 'scripts/deploy.sh'
@@ -101,13 +104,19 @@ jobs:
           while IFS= read -r file; do
             [ -z "$file" ] && continue
             case "$file" in
+              cmd/bktrader-ctl/*|internal/ctlclient/*|internal/http/registry.go|scripts/check-ctl-coverage/*|scripts/gen-ctl-command/*|docs/bktrader-ctl-reference.md|.github/workflows/release.yml|.gitignore)
+                continue
+                ;;
+            esac
+
+            case "$file" in
               web/console/*)
                 frontend_changed=true
                 ;;
             esac
 
             case "$file" in
-              cmd/*|internal/*|db/*|deployments/*|scripts/deploy.sh|Dockerfile|.dockerignore)
+              cmd/platform-api/*|cmd/platform-worker/*|internal/*|db/*|deployments/*|scripts/deploy.sh|Dockerfile|.dockerignore)
                 backend_changed=true
                 ;;
             esac
