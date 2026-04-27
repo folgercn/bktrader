@@ -811,9 +811,14 @@ type binanceRESTLimiter struct {
 }
 
 type binanceRESTGate struct {
-	tokens chan struct{}
-	mu     sync.Mutex
-	block  time.Time
+	requests chan binanceRESTAcquireRequest
+	mu       sync.Mutex
+	block    time.Time
+}
+
+type binanceRESTAcquireRequest struct {
+	category binanceRESTRequestCategory
+	ready    chan struct{}
 }
 
 func newBinanceRESTLimiter() *binanceRESTLimiter {
@@ -832,35 +837,98 @@ func (l *binanceRESTLimiter) gate(key string) *binanceRESTGate {
 }
 
 func newBinanceRESTGate(requestsPerSecond, burst int) *binanceRESTGate {
-	gate := &binanceRESTGate{tokens: make(chan struct{}, burst)}
-	for i := 0; i < burst; i++ {
-		gate.tokens <- struct{}{}
-	}
+	gate := &binanceRESTGate{requests: make(chan binanceRESTAcquireRequest)}
 	interval := time.Second
 	if requestsPerSecond > 0 {
 		interval = time.Second / time.Duration(requestsPerSecond)
 	}
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for range ticker.C {
-			select {
-			case gate.tokens <- struct{}{}:
-			default:
-			}
-		}
-	}()
+	go gate.run(maxInt(burst, 1), interval)
 	return gate
 }
 
-func (g *binanceRESTGate) acquire() error {
+func (g *binanceRESTGate) run(burst int, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	tokens := burst
+	queues := make(map[binanceRESTRequestCategory][]chan struct{})
+	drain := func() {
+		g.mu.Lock()
+		blockedUntil := g.block
+		g.mu.Unlock()
+		if time.Now().UTC().Before(blockedUntil) {
+			return
+		}
+		for tokens > 0 {
+			category, ok := nextBinanceRESTQueueCategory(queues)
+			if !ok {
+				return
+			}
+			queue := queues[category]
+			ready := queue[0]
+			if len(queue) == 1 {
+				delete(queues, category)
+			} else {
+				queues[category] = queue[1:]
+			}
+			tokens--
+			close(ready)
+		}
+	}
+	for {
+		select {
+		case request := <-g.requests:
+			category := normalizeBinanceRESTRequestCategory(request.category)
+			queues[category] = append(queues[category], request.ready)
+			drain()
+		case <-ticker.C:
+			if tokens < burst {
+				tokens++
+			}
+			drain()
+		}
+	}
+}
+
+func nextBinanceRESTQueueCategory(queues map[binanceRESTRequestCategory][]chan struct{}) (binanceRESTRequestCategory, bool) {
+	for _, category := range binanceRESTCategoryPriorityOrder {
+		if len(queues[category]) > 0 {
+			return category, true
+		}
+	}
+	return "", false
+}
+
+var binanceRESTCategoryPriorityOrder = []binanceRESTRequestCategory{
+	binanceRESTCategoryTradeCritical,
+	binanceRESTCategoryAccountSync,
+	binanceRESTCategoryReconcile,
+	binanceRESTCategoryHistoryRead,
+	binanceRESTCategoryMetadataRead,
+	binanceRESTCategoryMarketData,
+}
+
+func normalizeBinanceRESTRequestCategory(category binanceRESTRequestCategory) binanceRESTRequestCategory {
+	for _, known := range binanceRESTCategoryPriorityOrder {
+		if category == known {
+			return category
+		}
+	}
+	return binanceRESTCategoryMarketData
+}
+
+func (g *binanceRESTGate) acquire(category binanceRESTRequestCategory) error {
 	g.mu.Lock()
 	blockedUntil := g.block
 	g.mu.Unlock()
 	if time.Now().UTC().Before(blockedUntil) {
 		return fmt.Errorf("binance rest temporarily rate-limited until %s", blockedUntil.Format(time.RFC3339))
 	}
-	<-g.tokens
+	ready := make(chan struct{})
+	g.requests <- binanceRESTAcquireRequest{
+		category: category,
+		ready:    ready,
+	}
+	<-ready
 	g.mu.Lock()
 	blockedUntil = g.block
 	g.mu.Unlock()
@@ -1245,7 +1313,7 @@ func doBinancePublicGET(baseURL, path string, params map[string]string, category
 
 func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path string, params map[string]string, category binanceRESTRequestCategory) ([]byte, error) {
 	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(creds.BaseURL))
-	if err := gate.acquire(); err != nil {
+	if err := gate.acquire(category); err != nil {
 		return nil, err
 	}
 	params = cloneStringMap(params)
@@ -1267,20 +1335,14 @@ func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path st
 }
 
 func doBinanceRESTRequest(method, baseURL, path, query string, headers map[string]string, body io.Reader, category binanceRESTRequestCategory) ([]byte, http.Header, error) {
-	// Categories are tracked now so later PRs can add per-class scheduling without
-	// changing call sites again; this pass only unifies enforcement under one gate.
-	_ = category
 	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(baseURL))
-	if err := gate.acquire(); err != nil {
+	if err := gate.acquire(category); err != nil {
 		return nil, nil, err
 	}
 	return doBinanceRESTRequestAfterAcquire(method, baseURL, path, query, headers, body, category, gate)
 }
 
 func doBinanceRESTRequestAfterAcquire(method, baseURL, path, query string, headers map[string]string, body io.Reader, category binanceRESTRequestCategory, gate *binanceRESTGate) ([]byte, http.Header, error) {
-	// Categories are tracked now so later PRs can add per-class scheduling without
-	// changing call sites again; this pass only unifies enforcement under one gate.
-	_ = category
 	requestURL := strings.TrimRight(baseURL, "/") + path
 	if (method == http.MethodGet || method == http.MethodDelete) && query != "" {
 		requestURL += "?" + query

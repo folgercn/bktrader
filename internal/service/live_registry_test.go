@@ -187,3 +187,78 @@ func TestDoBinanceSignedRequestRefreshesTimestampAfterLimiterWait(t *testing.T) 
 		t.Fatalf("expected signature to match refreshed timestamp, got %s want %s", secondSignature, expected)
 	}
 }
+
+func TestBinanceRESTGatePrioritizesTradeCriticalOverQueuedAccountSync(t *testing.T) {
+	gate := newBinanceRESTGate(20, 1)
+	if err := gate.acquire(binanceRESTCategoryAccountSync); err != nil {
+		t.Fatalf("initial acquire failed: %v", err)
+	}
+
+	completed := make(chan binanceRESTRequestCategory, 2)
+	go func() {
+		if err := gate.acquire(binanceRESTCategoryAccountSync); err != nil {
+			t.Errorf("account-sync acquire failed: %v", err)
+			return
+		}
+		completed <- binanceRESTCategoryAccountSync
+	}()
+	time.Sleep(10 * time.Millisecond)
+	go func() {
+		if err := gate.acquire(binanceRESTCategoryTradeCritical); err != nil {
+			t.Errorf("trade-critical acquire failed: %v", err)
+			return
+		}
+		completed <- binanceRESTCategoryTradeCritical
+	}()
+
+	select {
+	case got := <-completed:
+		if got != binanceRESTCategoryTradeCritical {
+			t.Fatalf("expected trade-critical to bypass queued account-sync request, got %s", got)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for prioritized acquire")
+	}
+	select {
+	case got := <-completed:
+		if got != binanceRESTCategoryAccountSync {
+			t.Fatalf("expected account-sync to acquire next, got %s", got)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for account-sync acquire")
+	}
+}
+
+func TestBinanceRESTGateDoesNotConsumeTokensDuringBackoff(t *testing.T) {
+	gate := newBinanceRESTGate(20, 1)
+	if err := gate.acquire(binanceRESTCategoryTradeCritical); err != nil {
+		t.Fatalf("initial acquire failed: %v", err)
+	}
+
+	completed := make(chan error, 1)
+	go func() {
+		completed <- gate.acquire(binanceRESTCategoryTradeCritical)
+	}()
+	time.Sleep(10 * time.Millisecond)
+	gate.markBackoff(80 * time.Millisecond)
+
+	select {
+	case err := <-completed:
+		t.Fatalf("expected queued request to wait during backoff without consuming token, got err=%v", err)
+	case <-time.After(60 * time.Millisecond):
+	}
+	select {
+	case err := <-completed:
+		if err != nil {
+			t.Fatalf("expected queued request to acquire after backoff without consuming token early, got %v", err)
+		}
+	case <-time.After(160 * time.Millisecond):
+		t.Fatal("timed out waiting for queued request after backoff")
+	}
+}
+
+func TestBinanceRESTGateUnknownCategoryDefaultsToLowestPriority(t *testing.T) {
+	if got := normalizeBinanceRESTRequestCategory(binanceRESTRequestCategory("new-background-class")); got != binanceRESTCategoryMarketData {
+		t.Fatalf("expected unknown category to default to lowest priority, got %s", got)
+	}
+}
