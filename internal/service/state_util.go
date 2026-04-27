@@ -6,10 +6,32 @@ const (
 )
 
 var liveSessionSummaryOmittedStateKeys = map[string]struct{}{
-	"sourceStates":                          {},
-	"signalBarStates":                       {},
 	"lastStrategyEvaluationSourceStates":    {},
 	"lastStrategyEvaluationSignalBarStates": {},
+}
+
+var sourceStateAllowedKeys = map[string]struct{}{
+	"sourceKey":   {},
+	"role":        {},
+	"streamType":  {},
+	"symbol":      {},
+	"timeframe":   {},
+	"event":       {},
+	"lastEventAt": {},
+}
+
+var signalBarStateAllowedKeys = map[string]struct{}{
+	"symbol":         {},
+	"timeframe":      {},
+	"barCount":       {},
+	"closedBarCount": {},
+	"currentClosed":  {},
+	"current":        {},
+	"prevBar1":       {},
+	"prevBar2":       {},
+	"sma5":           {},
+	"ma20":           {},
+	"atr14":          {},
 }
 
 // stripHeavyState removes large objects from a session state map to reduce the
@@ -29,10 +51,37 @@ func stripHeavyState(state map[string]any) map[string]any {
 			v = trimStateList(v, liveSessionSummaryTimelineLimit)
 		case "breakoutHistory":
 			v = trimStateList(v, liveSessionSummaryBreakoutHistoryLimit)
+		case "sourceStates":
+			v = stripMapEntriesByWhitelist(v, sourceStateAllowedKeys)
+		case "signalBarStates":
+			v = stripMapEntriesByWhitelist(v, signalBarStateAllowedKeys)
 		}
 		newState[k] = v
 	}
 	return newState
+}
+
+func stripMapEntriesByWhitelist(v any, whitelist map[string]struct{}) any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	newM := make(map[string]any, len(m))
+	for k, entry := range m {
+		e, ok := entry.(map[string]any)
+		if !ok {
+			newM[k] = entry
+			continue
+		}
+		newE := make(map[string]any, len(whitelist))
+		for ek, ev := range e {
+			if _, allowed := whitelist[ek]; allowed {
+				newE[ek] = ev
+			}
+		}
+		newM[k] = newE
+	}
+	return newM
 }
 
 func trimStateList(value any, limit int) any {

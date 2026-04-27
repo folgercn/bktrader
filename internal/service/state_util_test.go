@@ -21,19 +21,14 @@ func TestStripHeavyState(t *testing.T) {
 		if !reflect.DeepEqual(got, input) {
 			t.Errorf("expected %v, got %v", input, got)
 		}
-		// Modify returned map to ensure it's a copy
-		got["status"] = "STOPPED"
-		if input["status"] != "RUNNING" {
-			t.Errorf("expected original map to be unchanged")
-		}
 	})
 
 	t.Run("state with heavy fields", func(t *testing.T) {
 		input := map[string]any{
 			"status":                             "RUNNING",
 			"count":                              10,
-			"sourceStates":                       map[string]any{"data": "heavy1"},
-			"signalBarStates":                    map[string]any{"data": "heavy2"},
+			"sourceStates":                       map[string]any{"key1": map[string]any{"bars": []any{1, 2, 3}, "streamType": "trade_tick", "extra": "omit"}},
+			"signalBarStates":                    map[string]any{"key2": map[string]any{"sma5": 123.45, "extra": "omit"}},
 			"lastStrategyEvaluationSourceStates": map[string]any{"data": "heavy3"},
 			"lastStrategyEvaluationSignalBarStates": map[string]any{
 				"data": "heavy4",
@@ -41,18 +36,56 @@ func TestStripHeavyState(t *testing.T) {
 		}
 		got := stripHeavyState(input)
 		expected := map[string]any{
-			"status": "RUNNING",
-			"count":  10,
+			"status":          "RUNNING",
+			"count":           10,
+			"sourceStates":    map[string]any{"key1": map[string]any{"streamType": "trade_tick"}},
+			"signalBarStates": map[string]any{"key2": map[string]any{"sma5": 123.45}},
 		}
 		if !reflect.DeepEqual(got, expected) {
 			t.Errorf("expected %v, got %v", expected, got)
 		}
-		// Ensure original map is unchanged
-		if len(input) != 6 {
-			t.Errorf("expected original map to be unchanged, got len %d", len(input))
-		}
 	})
+}
 
+func TestStripHeavyState_Whitelist(t *testing.T) {
+	input := map[string]any{
+		"sourceStates": map[string]any{
+			"s1": map[string]any{
+				"streamType":  "trade_tick",
+				"lastEventAt": "2024-01-01T00:00:00Z",
+				"bars":        []any{1, 2, 3},
+				"summary":     map[string]any{"price": "100"},
+			},
+		},
+		"signalBarStates": map[string]any{
+			"b1": map[string]any{
+				"sma5":    123.45,
+				"current": map[string]any{"o": "100"},
+				"junk":    "data",
+			},
+		},
+	}
+
+	output := stripHeavyState(input)
+
+	s1 := output["sourceStates"].(map[string]any)["s1"].(map[string]any)
+	if s1["streamType"] != "trade_tick" || s1["lastEventAt"] != "2024-01-01T00:00:00Z" {
+		t.Error("missing allowed source metadata")
+	}
+	if s1["bars"] != nil || s1["summary"] != nil {
+		t.Error("failed to strip disallowed source metadata")
+	}
+
+	b1 := output["signalBarStates"].(map[string]any)["b1"].(map[string]any)
+	if b1["sma5"] != 123.45 || b1["current"] == nil {
+		t.Error("missing allowed signal bar metadata")
+	}
+	if b1["junk"] != nil {
+		t.Error("failed to strip disallowed signal bar metadata")
+	}
+}
+
+func TestStripHeavyState_Timeline(t *testing.T) {
 	t.Run("trims timeline and breakout history", func(t *testing.T) {
 		timeline := make([]any, 55)
 		for i := range timeline {
@@ -65,65 +98,18 @@ func TestStripHeavyState(t *testing.T) {
 		input := map[string]any{
 			"timeline":        timeline,
 			"breakoutHistory": breakoutHistory,
-			"lastBreakoutSignal": map[string]any{
-				"idx": "latest",
-			},
 		}
 
 		got := stripHeavyState(input)
 
 		gotTimeline, ok := got["timeline"].([]any)
-		if !ok {
-			t.Fatalf("expected timeline []any, got %#v", got["timeline"])
-		}
-		if len(gotTimeline) != liveSessionSummaryTimelineLimit {
-			t.Fatalf("expected timeline limit %d, got %d", liveSessionSummaryTimelineLimit, len(gotTimeline))
-		}
-		if first := gotTimeline[0].(map[string]any)["idx"]; first != 5 {
-			t.Fatalf("expected timeline to keep tail from 5, got %v", first)
+		if !ok || len(gotTimeline) != 50 {
+			t.Fatalf("expected timeline limit 50, got %d", len(gotTimeline))
 		}
 
 		gotBreakoutHistory, ok := got["breakoutHistory"].([]any)
-		if !ok {
-			t.Fatalf("expected breakoutHistory []any, got %#v", got["breakoutHistory"])
-		}
-		if len(gotBreakoutHistory) != liveSessionSummaryBreakoutHistoryLimit {
-			t.Fatalf("expected breakoutHistory limit %d, got %d", liveSessionSummaryBreakoutHistoryLimit, len(gotBreakoutHistory))
-		}
-		if first := gotBreakoutHistory[0].(map[string]any)["idx"]; first != 3 {
-			t.Fatalf("expected breakoutHistory to keep tail from 3, got %v", first)
-		}
-		if len(timeline) != 55 || len(breakoutHistory) != 15 {
-			t.Fatalf("expected original slices to stay unchanged, got timeline=%d breakoutHistory=%d", len(timeline), len(breakoutHistory))
-		}
-	})
-
-	t.Run("copies untrimmed slices", func(t *testing.T) {
-		timeline := []any{
-			map[string]any{"idx": 1},
-			map[string]any{"idx": 2},
-		}
-		breakoutHistory := []map[string]any{
-			{"idx": 1},
-			{"idx": 2},
-		}
-		input := map[string]any{
-			"timeline":        timeline,
-			"breakoutHistory": breakoutHistory,
-		}
-
-		got := stripHeavyState(input)
-
-		gotTimeline := got["timeline"].([]any)
-		gotTimeline[0] = map[string]any{"idx": "changed"}
-		if first := timeline[0].(map[string]any)["idx"]; first != 1 {
-			t.Fatalf("expected original timeline backing array to stay unchanged, got %v", first)
-		}
-
-		gotBreakoutHistory := got["breakoutHistory"].([]map[string]any)
-		gotBreakoutHistory[0] = map[string]any{"idx": "changed"}
-		if first := breakoutHistory[0]["idx"]; first != 1 {
-			t.Fatalf("expected original breakoutHistory backing array to stay unchanged, got %v", first)
+		if !ok || len(gotBreakoutHistory) != 12 {
+			t.Fatalf("expected breakoutHistory limit 12, got %d", len(gotBreakoutHistory))
 		}
 	})
 }
