@@ -161,6 +161,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const timelineConfig = useUIStore(s => s.timelineConfig);
   const setTimelineConfig = useUIStore(s => s.setTimelineConfig);
   const fallbackRequestKeyRef = useRef<string>("");
+  const candleCacheRef = useRef<Record<string, { candles: ChartCandle[]; fetchedAt: number }>>({});
   const candleExpansionRequestKeyRef = useRef<string>("");
   const [liveSessionDetailStatus, setLiveSessionDetailStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
 
@@ -321,7 +322,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
       return;
     }
 
-    const anchorDate = resolveChartAnchor(monitorSession, orders);
+    const anchorDate = resolveChartAnchor(monitorSession);
     const requestedRange = chartOverrideRange ?? buildTimeRange(anchorDate, timeWindow);
     const range = buildMonitorCandleRange(anchorDate, fallbackResolution, MONITOR_HISTORY_CANDLE_LIMIT, requestedRange);
 
@@ -336,11 +337,22 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
       range.to
     ].join(":");
 
-    if (fallbackRequestKeyRef.current === requestKey) {
+    const now = Date.now();
+    const cached = candleCacheRef.current[requestKey];
+    const isSameKey = fallbackRequestKeyRef.current === requestKey;
+    const isExpired = !cached || now - cached.fetchedAt > 30000;
+
+    if (isSameKey && !isExpired) {
       return;
     }
+
+    if (cached && !isExpired) {
+      setMonitorCandles(cached.candles);
+      fallbackRequestKeyRef.current = requestKey;
+      return;
+    }
+
     fallbackRequestKeyRef.current = requestKey;
-    setMonitorCandles([]);
 
     fetchJSON<{ candles: ChartCandle[] }>(
       `/api/v1/chart/candles?symbol=${encodeURIComponent(monitorSymbol)}&resolution=${fallbackResolution}&from=${range.from}&to=${range.to}&limit=${MONITOR_HISTORY_CANDLE_LIMIT}`
@@ -350,6 +362,10 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
           return;
         }
         const candles = Array.isArray(payload?.candles) ? payload.candles : [];
+        candleCacheRef.current[requestKey] = {
+          candles,
+          fetchedAt: Date.now(),
+        };
         setMonitorCandles(candles);
       })
       .catch((error) => {
@@ -366,7 +382,6 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     fallbackResolution,
     monitorSession,
     monitorSymbol,
-    orders,
     setMonitorCandles,
     timeWindow,
   ]);
