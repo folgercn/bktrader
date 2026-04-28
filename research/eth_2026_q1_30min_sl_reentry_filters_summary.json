@@ -1,0 +1,679 @@
+{
+  "window": {
+    "start": "2026-01-01T00:00:00+00:00",
+    "end": "2026-03-31T23:59:59+00:00"
+  },
+  "timeframe": "30min",
+  "replay_mode": "live_intrabar_sma5",
+  "breakout_shape": "baseline_plus_t3",
+  "common_params": {
+    "dir2_zero_initial": true,
+    "zero_initial_mode": "reentry_window",
+    "fixed_slippage": 0.0005,
+    "stop_loss_atr": 0.05,
+    "stop_mode": "atr",
+    "max_trades_per_bar": 2,
+    "reentry_size_schedule": [
+      0.2,
+      0.1
+    ],
+    "long_reentry_atr": 0.1,
+    "short_reentry_atr": 0.0,
+    "profit_protect_atr": 1.0,
+    "trailing_stop_atr": 0.3,
+    "delayed_trailing_activation": 0.5,
+    "reentry_anchor_levels": "wick",
+    "reentry_trigger_mode": "reclaim"
+  },
+  "build_stats": {
+    "raw_tick_rows": 748747244,
+    "kept_tick_rows": 748747172,
+    "sparse_second_rows": 7596268,
+    "continuous_second_rows": 7776000,
+    "first_second": "2026-01-01T00:00:00+00:00",
+    "last_second": "2026-03-31T23:59:59+00:00"
+  },
+  "signal_stats": {
+    "signal_rows": 4320,
+    "signal_start": "2026-01-01T00:00:00+00:00",
+    "signal_end": "2026-03-31T23:30:00+00:00",
+    "valid_sma5_rows": 4316,
+    "valid_atr_rows": 4307
+  },
+  "results": [
+    {
+      "variant": "baseline_sl_slot2",
+      "description": "PR #261 sizing semantics only: SL-Reentry starts at schedule slot 2.",
+      "params": {
+        "name": "baseline_sl_slot2",
+        "description": "PR #261 sizing semantics only: SL-Reentry starts at schedule slot 2."
+      },
+      "summary": {
+        "final_balance": 409088.73,
+        "return_pct": 309.09,
+        "max_dd_pct": -2.93,
+        "trades": 6077,
+        "win_rate_pct": 65.94,
+        "sharpe": 10.96,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:10:28+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5551,
+          "Zero-Initial-Reentry": 526
+        },
+        "exit_reasons": {
+          "SL": 6077
+        },
+        "entry_types": {
+          "BUY": 3041,
+          "SHORT": 3036
+        },
+        "integrity": {
+          "rows": 12154,
+          "entries": 6077,
+          "exits": 6077,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5551,
+        "fast_reentry_le_10s": 2943,
+        "fast_reentry_le_30s": 3032,
+        "fast_reentry_le_60s": 3097,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": 82.3
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 189,
+            "t3_swing": 79
+          },
+          "short": {
+            "original_t2": 228,
+            "t3_swing": 61
+          }
+        },
+        "variant": {
+          "name": "baseline_sl_slot2",
+          "description": "PR #261 sizing semantics only: SL-Reentry starts at schedule slot 2."
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_baseline_sl_slot2_ledger.csv",
+      "elapsed_seconds": 176.0
+    },
+    {
+      "variant": "close_confirm",
+      "description": "SL-Reentry requires reclaim by current 1s close.",
+      "params": {
+        "name": "close_confirm",
+        "description": "SL-Reentry requires reclaim by current 1s close.",
+        "confirm": "close"
+      },
+      "summary": {
+        "final_balance": 27418.26,
+        "return_pct": -72.58,
+        "max_dd_pct": -72.58,
+        "trades": 6475,
+        "win_rate_pct": 7.38,
+        "sharpe": -1.93,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:00:03+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5977,
+          "Zero-Initial-Reentry": 498
+        },
+        "exit_reasons": {
+          "SL": 6475
+        },
+        "entry_types": {
+          "BUY": 3394,
+          "SHORT": 3081
+        },
+        "integrity": {
+          "rows": 12950,
+          "entries": 6475,
+          "exits": 6475,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5977,
+        "fast_reentry_le_10s": 3162,
+        "fast_reentry_le_30s": 3193,
+        "fast_reentry_le_60s": 3228,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": -4.41
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 172,
+            "t3_swing": 73
+          },
+          "short": {
+            "original_t2": 196,
+            "t3_swing": 58
+          }
+        },
+        "variant": {
+          "name": "close_confirm",
+          "description": "SL-Reentry requires reclaim by current 1s close.",
+          "confirm": "close"
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_close_confirm_ledger.csv",
+      "elapsed_seconds": 246.0
+    },
+    {
+      "variant": "close_confirm_buffer_0p02atr",
+      "description": "SL-Reentry requires current 1s close reclaim with 0.02 ATR buffer.",
+      "params": {
+        "name": "close_confirm_buffer_0p02atr",
+        "description": "SL-Reentry requires current 1s close reclaim with 0.02 ATR buffer.",
+        "confirm": "close",
+        "buffer_atr": 0.02
+      },
+      "summary": {
+        "final_balance": 27376.57,
+        "return_pct": -72.62,
+        "max_dd_pct": -72.62,
+        "trades": 6473,
+        "win_rate_pct": 7.35,
+        "sharpe": -1.95,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:00:03+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5975,
+          "Zero-Initial-Reentry": 498
+        },
+        "exit_reasons": {
+          "SL": 6473
+        },
+        "entry_types": {
+          "BUY": 3366,
+          "SHORT": 3107
+        },
+        "integrity": {
+          "rows": 12946,
+          "entries": 6473,
+          "exits": 6473,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5975,
+        "fast_reentry_le_10s": 3159,
+        "fast_reentry_le_30s": 3194,
+        "fast_reentry_le_60s": 3230,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": -4.42
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 173,
+            "t3_swing": 72
+          },
+          "short": {
+            "original_t2": 196,
+            "t3_swing": 58
+          }
+        },
+        "variant": {
+          "name": "close_confirm_buffer_0p02atr",
+          "description": "SL-Reentry requires current 1s close reclaim with 0.02 ATR buffer.",
+          "confirm": "close",
+          "buffer_atr": 0.02
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_close_confirm_buffer_0p02atr_ledger.csv",
+      "elapsed_seconds": 248.39
+    },
+    {
+      "variant": "delay_10s",
+      "description": "SL-Reentry and Zero-Initial-Reentry wait at least 10s after the SL exit.",
+      "params": {
+        "name": "delay_10s",
+        "description": "SL-Reentry and Zero-Initial-Reentry wait at least 10s after the SL exit.",
+        "delay_seconds": 10
+      },
+      "summary": {
+        "final_balance": 414838.08,
+        "return_pct": 314.84,
+        "max_dd_pct": -2.96,
+        "trades": 6066,
+        "win_rate_pct": 66.27,
+        "sharpe": 10.96,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:10:28+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5536,
+          "Zero-Initial-Reentry": 530
+        },
+        "exit_reasons": {
+          "SL": 6066
+        },
+        "entry_types": {
+          "SHORT": 3050,
+          "BUY": 3016
+        },
+        "integrity": {
+          "rows": 12132,
+          "entries": 6066,
+          "exits": 6066,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5536,
+        "fast_reentry_le_10s": 2787,
+        "fast_reentry_le_30s": 2957,
+        "fast_reentry_le_60s": 3041,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": 83.49
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 190,
+            "t3_swing": 79
+          },
+          "short": {
+            "original_t2": 231,
+            "t3_swing": 63
+          }
+        },
+        "variant": {
+          "name": "delay_10s",
+          "description": "SL-Reentry and Zero-Initial-Reentry wait at least 10s after the SL exit.",
+          "delay_seconds": 10
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_delay_10s_ledger.csv",
+      "elapsed_seconds": 228.31
+    },
+    {
+      "variant": "delay_20s",
+      "description": "SL-Reentry and Zero-Initial-Reentry wait at least 20s after the SL exit.",
+      "params": {
+        "name": "delay_20s",
+        "description": "SL-Reentry and Zero-Initial-Reentry wait at least 20s after the SL exit.",
+        "delay_seconds": 20
+      },
+      "summary": {
+        "final_balance": 417185.42,
+        "return_pct": 317.19,
+        "max_dd_pct": -2.95,
+        "trades": 6049,
+        "win_rate_pct": 66.57,
+        "sharpe": 11.0,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:17:36+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5521,
+          "Zero-Initial-Reentry": 528
+        },
+        "exit_reasons": {
+          "SL": 6049
+        },
+        "entry_types": {
+          "SHORT": 3050,
+          "BUY": 2999
+        },
+        "integrity": {
+          "rows": 12098,
+          "entries": 6049,
+          "exits": 6049,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5521,
+        "fast_reentry_le_10s": 0,
+        "fast_reentry_le_30s": 2889,
+        "fast_reentry_le_60s": 2993,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": 84.15
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 191,
+            "t3_swing": 80
+          },
+          "short": {
+            "original_t2": 231,
+            "t3_swing": 63
+          }
+        },
+        "variant": {
+          "name": "delay_20s",
+          "description": "SL-Reentry and Zero-Initial-Reentry wait at least 20s after the SL exit.",
+          "delay_seconds": 20
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_delay_20s_ledger.csv",
+      "elapsed_seconds": 223.64
+    },
+    {
+      "variant": "delay_30s",
+      "description": "SL-Reentry and Zero-Initial-Reentry wait at least 30s after the SL exit.",
+      "params": {
+        "name": "delay_30s",
+        "description": "SL-Reentry and Zero-Initial-Reentry wait at least 30s after the SL exit.",
+        "delay_seconds": 30
+      },
+      "summary": {
+        "final_balance": 417396.17,
+        "return_pct": 317.4,
+        "max_dd_pct": -2.83,
+        "trades": 6029,
+        "win_rate_pct": 66.63,
+        "sharpe": 11.01,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:17:36+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5501,
+          "Zero-Initial-Reentry": 528
+        },
+        "exit_reasons": {
+          "SL": 6029
+        },
+        "entry_types": {
+          "SHORT": 3045,
+          "BUY": 2984
+        },
+        "integrity": {
+          "rows": 12058,
+          "entries": 6029,
+          "exits": 6029,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5501,
+        "fast_reentry_le_10s": 0,
+        "fast_reentry_le_30s": 2788,
+        "fast_reentry_le_60s": 2944,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": 84.31
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 191,
+            "t3_swing": 81
+          },
+          "short": {
+            "original_t2": 231,
+            "t3_swing": 63
+          }
+        },
+        "variant": {
+          "name": "delay_30s",
+          "description": "SL-Reentry and Zero-Initial-Reentry wait at least 30s after the SL exit.",
+          "delay_seconds": 30
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_delay_30s_ledger.csv",
+      "elapsed_seconds": 223.48
+    },
+    {
+      "variant": "delay_60s",
+      "description": "SL-Reentry and Zero-Initial-Reentry wait at least 60s after the SL exit.",
+      "params": {
+        "name": "delay_60s",
+        "description": "SL-Reentry and Zero-Initial-Reentry wait at least 60s after the SL exit.",
+        "delay_seconds": 60
+      },
+      "summary": {
+        "final_balance": 434869.12,
+        "return_pct": 334.87,
+        "max_dd_pct": -2.75,
+        "trades": 5987,
+        "win_rate_pct": 67.18,
+        "sharpe": 11.07,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:17:36+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5450,
+          "Zero-Initial-Reentry": 537
+        },
+        "exit_reasons": {
+          "SL": 5987
+        },
+        "entry_types": {
+          "SHORT": 3033,
+          "BUY": 2954
+        },
+        "integrity": {
+          "rows": 11974,
+          "entries": 5987,
+          "exits": 5987,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5450,
+        "fast_reentry_le_10s": 0,
+        "fast_reentry_le_30s": 0,
+        "fast_reentry_le_60s": 2762,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": 88.27
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 198,
+            "t3_swing": 83
+          },
+          "short": {
+            "original_t2": 234,
+            "t3_swing": 64
+          }
+        },
+        "variant": {
+          "name": "delay_60s",
+          "description": "SL-Reentry and Zero-Initial-Reentry wait at least 60s after the SL exit.",
+          "delay_seconds": 60
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_delay_60s_ledger.csv",
+      "elapsed_seconds": 223.48
+    },
+    {
+      "variant": "cooldown_1bar",
+      "description": "SL-Reentry waits until the next signal bar after an SL exit.",
+      "params": {
+        "name": "cooldown_1bar",
+        "description": "SL-Reentry waits until the next signal bar after an SL exit.",
+        "cooldown_bars": 1
+      },
+      "summary": {
+        "final_balance": 215122.78,
+        "return_pct": 115.12,
+        "max_dd_pct": -1.69,
+        "trades": 3191,
+        "win_rate_pct": 65.5,
+        "sharpe": 10.87,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:09:24+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 2643,
+          "Zero-Initial-Reentry": 548
+        },
+        "exit_reasons": {
+          "SL": 3191
+        },
+        "entry_types": {
+          "BUY": 1628,
+          "SHORT": 1563
+        },
+        "integrity": {
+          "rows": 6382,
+          "entries": 3191,
+          "exits": 3191,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 2643,
+        "fast_reentry_le_10s": 4,
+        "fast_reentry_le_30s": 5,
+        "fast_reentry_le_60s": 15,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": 48.73
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 190,
+            "t3_swing": 80
+          },
+          "short": {
+            "original_t2": 218,
+            "t3_swing": 61
+          }
+        },
+        "variant": {
+          "name": "cooldown_1bar",
+          "description": "SL-Reentry waits until the next signal bar after an SL exit.",
+          "cooldown_bars": 1
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_cooldown_1bar_ledger.csv",
+      "elapsed_seconds": 216.05
+    },
+    {
+      "variant": "close_confirm_delay_10s",
+      "description": "SL-Reentry requires current 1s close reclaim and at least 10s delay.",
+      "params": {
+        "name": "close_confirm_delay_10s",
+        "description": "SL-Reentry requires current 1s close reclaim and at least 10s delay.",
+        "confirm": "close",
+        "delay_seconds": 10
+      },
+      "summary": {
+        "final_balance": 27672.28,
+        "return_pct": -72.33,
+        "max_dd_pct": -72.32,
+        "trades": 6456,
+        "win_rate_pct": 7.42,
+        "sharpe": -1.89,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:00:12+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5957,
+          "Zero-Initial-Reentry": 499
+        },
+        "exit_reasons": {
+          "SL": 6456
+        },
+        "entry_types": {
+          "BUY": 3386,
+          "SHORT": 3070
+        },
+        "integrity": {
+          "rows": 12912,
+          "entries": 6456,
+          "exits": 6456,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5957,
+        "fast_reentry_le_10s": 2925,
+        "fast_reentry_le_30s": 3068,
+        "fast_reentry_le_60s": 3138,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": -4.45
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 173,
+            "t3_swing": 73
+          },
+          "short": {
+            "original_t2": 196,
+            "t3_swing": 58
+          }
+        },
+        "variant": {
+          "name": "close_confirm_delay_10s",
+          "description": "SL-Reentry requires current 1s close reclaim and at least 10s delay.",
+          "confirm": "close",
+          "delay_seconds": 10
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_close_confirm_delay_10s_ledger.csv",
+      "elapsed_seconds": 239.0
+    },
+    {
+      "variant": "close_confirm_delay_30s",
+      "description": "SL-Reentry requires current 1s close reclaim and at least 30s delay.",
+      "params": {
+        "name": "close_confirm_delay_30s",
+        "description": "SL-Reentry requires current 1s close reclaim and at least 30s delay.",
+        "confirm": "close",
+        "delay_seconds": 30
+      },
+      "summary": {
+        "final_balance": 27805.53,
+        "return_pct": -72.19,
+        "max_dd_pct": -72.19,
+        "trades": 6423,
+        "win_rate_pct": 7.43,
+        "sharpe": -1.94,
+        "first_entry": "2026-01-01T10:22:41+00:00",
+        "last_exit": "2026-03-31T23:00:32+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 5924,
+          "Zero-Initial-Reentry": 499
+        },
+        "exit_reasons": {
+          "SL": 6423
+        },
+        "entry_types": {
+          "BUY": 3359,
+          "SHORT": 3064
+        },
+        "integrity": {
+          "rows": 12846,
+          "entries": 6423,
+          "exits": 6423,
+          "zero_notional_entries": 0
+        }
+      },
+      "sl_reentry_diagnostics": {
+        "sl_reentry_count": 5924,
+        "fast_reentry_le_10s": 0,
+        "fast_reentry_le_30s": 2839,
+        "fast_reentry_le_60s": 3012,
+        "sl_reentry_exit_sl_rate_pct": 100.0,
+        "sl_reentry_avg_pnl": -4.5
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 173,
+            "t3_swing": 73
+          },
+          "short": {
+            "original_t2": 197,
+            "t3_swing": 57
+          }
+        },
+        "variant": {
+          "name": "close_confirm_delay_30s",
+          "description": "SL-Reentry requires current 1s close reclaim and at least 30s delay.",
+          "confirm": "close",
+          "delay_seconds": 30
+        }
+      },
+      "ledger_path": "research/tmp_eth_2026_q1_30min_1s_sl_reentry_close_confirm_delay_30s_ledger.csv",
+      "elapsed_seconds": 239.21
+    }
+  ]
+}

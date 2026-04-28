@@ -1979,8 +1979,8 @@ func TestBookAwareExecutionStrategyDelaysSLReentryAfterStopLossFill(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected zero-initial proposal error: %v", err)
 	}
-	if unaffected.Status != "dispatchable" {
-		t.Fatalf("expected zero-initial reentry to ignore SL delay, got %s", unaffected.Status)
+	if unaffected.Status != "waiting-sl-reentry-delay" {
+		t.Fatalf("expected zero-initial reentry to wait for SL delay, got %s", unaffected.Status)
 	}
 }
 

@@ -350,7 +350,10 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 }
 
 func applySLReentryMinDelay(ctx ExecutionPlanningContext, proposal ExecutionProposal, reasonTag string) ExecutionProposal {
-	if !strings.EqualFold(strings.TrimSpace(proposal.Role), "entry") || reasonTag != "sl-reentry" {
+	if !strings.EqualFold(strings.TrimSpace(proposal.Role), "entry") {
+		return proposal
+	}
+	if reasonTag != "sl-reentry" && reasonTag != "zero-initial-reentry" && reasonTag != "pt-reentry" {
 		return proposal
 	}
 	delaySeconds := maxIntValue(firstNonZeroAny(ctx.Execution.Parameters["sl_reentry_min_delay_seconds"], ctx.Session.State["sl_reentry_min_delay_seconds"]), 0)
@@ -635,6 +638,18 @@ func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) exe
 		}
 		if !profile.PostOnly {
 			profile.PostOnly = true
+		}
+		if profile.WideSpreadMode == "" {
+			profile.WideSpreadMode = "limit-maker"
+		}
+		if profile.TimeoutFallbackType == "" {
+			profile.TimeoutFallbackType = "MARKET"
+		}
+	case role == "entry" && reasonTag == "zero-initial-reentry":
+		overrideExecutionProfile(&profile, parameters, "executionEntry")
+		overrideExecutionProfile(&profile, parameters, "executionZeroInitialReentry")
+		if profile.MaxSpreadBps <= 0 {
+			profile.MaxSpreadBps = 3.0
 		}
 		if profile.WideSpreadMode == "" {
 			profile.WideSpreadMode = "limit-maker"
