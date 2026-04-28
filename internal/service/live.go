@@ -2476,21 +2476,21 @@ func (p *Platform) StartLiveSession(sessionID string) (domain.LiveSession, error
 func (p *Platform) startLiveSessionLocked(session domain.LiveSession) (domain.LiveSession, error) {
 	logger := p.logger("service.live", "session_id", session.ID)
 	if strings.EqualFold(session.Status, "DELETED") {
-		return domain.LiveSession{}, fmt.Errorf("live session %s is deleted", session.ID)
+		return domain.LiveSession{}, liveControlConfigErrorf("live session %s is deleted", session.ID)
 	}
 	account, err := p.store.GetAccount(session.AccountID)
 	if err != nil {
-		return domain.LiveSession{}, err
+		return domain.LiveSession{}, wrapLiveControlConfigError(err)
 	}
 	if !strings.EqualFold(account.Mode, "LIVE") {
-		return domain.LiveSession{}, fmt.Errorf("live session %s is not bound to a LIVE account", session.ID)
+		return domain.LiveSession{}, liveControlConfigErrorf("live session %s is not bound to a LIVE account", session.ID)
 	}
 	if account.Status != "CONFIGURED" && account.Status != "READY" {
-		return domain.LiveSession{}, fmt.Errorf("live account %s is not configured", account.ID)
+		return domain.LiveSession{}, liveControlConfigErrorf("live account %s is not configured", account.ID)
 	}
 	if _, _, err := p.resolveLiveAdapterForAccount(account); err != nil {
 		logger.Warn("resolve live adapter failed", "error", err)
-		return domain.LiveSession{}, err
+		return domain.LiveSession{}, wrapLiveControlConfigError(err)
 	}
 	if syncedAccount, reconcileErr := p.triggerAuthoritativeLiveAccountReconcile(account.ID, "historical-takeover-activation", time.Now().UTC()); reconcileErr == nil {
 		account = syncedAccount
@@ -4318,7 +4318,7 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 		if updateErr != nil {
 			return domain.LiveSession{}, updateErr
 		}
-		return updated, err
+		return updated, wrapLiveControlConfigError(err)
 	}
 
 	requiredBindings := metadataList(plan["requiredBindings"])
@@ -4362,7 +4362,7 @@ func (p *Platform) syncLiveSessionRuntime(session domain.LiveSession) (domain.Li
 				if updateErr != nil {
 					return domain.LiveSession{}, updateErr
 				}
-				return updated, createErr
+				return updated, wrapLiveControlConfigError(createErr)
 			}
 		}
 		runtimeSessionID = runtimeSession.ID
@@ -4382,11 +4382,11 @@ func (p *Platform) ensureLiveSessionSignalRuntimeStarted(session domain.LiveSess
 		return session, nil
 	}
 	if !boolValue(session.State["signalRuntimeReady"]) {
-		return session, fmt.Errorf("live session %s signal runtime plan is not ready", session.ID)
+		return session, liveControlConfigErrorf("live session %s signal runtime plan is not ready", session.ID)
 	}
 	runtimeSessionID := stringValue(session.State["signalRuntimeSessionId"])
 	if runtimeSessionID == "" {
-		return domain.LiveSession{}, fmt.Errorf("live session %s has no linked signal runtime session", session.ID)
+		return domain.LiveSession{}, liveControlConfigErrorf("live session %s has no linked signal runtime session", session.ID)
 	}
 	runtimeSession, err := p.startSignalRuntimeSession(context.Background(), runtimeSessionID)
 	if err != nil {

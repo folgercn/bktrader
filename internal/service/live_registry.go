@@ -1204,7 +1204,7 @@ func fetchBinanceSymbolRules(creds binanceRESTCredentials, symbol string) (binan
 			return binanceSymbolRules{}, err
 		}
 		if strings.HasPrefix(err.Error(), "binance request failed:") {
-			return binanceSymbolRules{}, fmt.Errorf("binance exchangeInfo failed: %s", strings.TrimPrefix(err.Error(), "binance request failed: "))
+			return binanceSymbolRules{}, liveControlAdapterErrorf("binance exchangeInfo failed: %s", strings.TrimPrefix(err.Error(), "binance request failed: "))
 		}
 		return binanceSymbolRules{}, err
 	}
@@ -1386,7 +1386,7 @@ func doBinancePublicGET(baseURL, path string, params map[string]string, category
 func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path string, params map[string]string, category binanceRESTRequestCategory) ([]byte, error) {
 	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(creds.BaseURL))
 	if err := gate.acquire(category); err != nil {
-		return nil, err
+		return nil, wrapLiveControlAdapterError(err)
 	}
 	params = cloneStringMap(params)
 	delete(params, "signature")
@@ -1409,7 +1409,7 @@ func doBinanceSignedRequest(method string, creds binanceRESTCredentials, path st
 func doBinanceRESTRequest(method, baseURL, path, query string, headers map[string]string, body io.Reader, category binanceRESTRequestCategory) ([]byte, http.Header, error) {
 	gate := binanceRESTLimiterState.gate(binanceRESTLimiterKey(baseURL))
 	if err := gate.acquire(category); err != nil {
-		return nil, nil, err
+		return nil, nil, wrapLiveControlAdapterError(err)
 	}
 	return doBinanceRESTRequestAfterAcquire(method, baseURL, path, query, headers, body, category, gate)
 }
@@ -1428,12 +1428,12 @@ func doBinanceRESTRequestAfterAcquire(method, baseURL, path, query string, heade
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, wrapLiveControlAdapterError(err)
 	}
 	defer response.Body.Close()
 	responseBody, readErr := io.ReadAll(response.Body)
 	if readErr != nil {
-		return nil, response.Header, readErr
+		return nil, response.Header, wrapLiveControlAdapterError(readErr)
 	}
 	if response.StatusCode == http.StatusTooManyRequests {
 		if gate != nil {
@@ -1441,7 +1441,7 @@ func doBinanceRESTRequestAfterAcquire(method, baseURL, path, query string, heade
 		}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, response.Header, fmt.Errorf("binance request failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
+		return nil, response.Header, liveControlAdapterErrorf("binance request failed: %s %s", response.Status, strings.TrimSpace(string(responseBody)))
 	}
 	return responseBody, response.Header, nil
 }
