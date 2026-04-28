@@ -4058,6 +4058,9 @@ func preserveLiveSessionNonRegressiveFacts(state map[string]any, latest map[stri
 		}
 	}
 	preserveLatestSLExitFillFact(state, latest)
+	if liveSLReentryWindowConsumed(state) {
+		delete(state, "lastSLExitReentrySide")
+	}
 }
 
 func liveSessionNonRegressiveFactKeys() []string {
@@ -4069,6 +4072,9 @@ func liveSessionNonRegressiveFactKeys() []string {
 		"lastStrategyDecisionEventFingerprint",
 		"lastStrategyDecisionEventIntentSignature",
 		"lastDispatchedDecisionEventId",
+		"lastSLExitReentryConsumedOrderId",
+		"lastSLExitReentryConsumedAt",
+		"lastSLExitReentryConsumedReason",
 	}
 }
 
@@ -4086,6 +4092,7 @@ func preserveLatestSLExitFillFact(state map[string]any, latest map[string]any) {
 		"lastSLExitOrderId",
 		"lastSLExitStatus",
 		"lastSLExitSignalBarStateKey",
+		"lastSLExitReentrySide",
 	} {
 		if value, ok := latest[key]; ok {
 			state[key] = value

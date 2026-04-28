@@ -4730,6 +4730,7 @@ func TestSyncLatestLiveSessionOrderReturnsFallbackSyncErrorAfterUnknownOrderCanc
 }
 
 func TestMaybeIncrementLiveSessionReentryCountOnlyCountsFilledReentries(t *testing.T) {
+	eventTime := time.Date(2026, 4, 22, 3, 0, 10, 0, time.UTC)
 	state := map[string]any{
 		"sessionReentryCount": 0.0,
 	}
@@ -4737,36 +4738,59 @@ func TestMaybeIncrementLiveSessionReentryCountOnlyCountsFilledReentries(t *testi
 		"reason":            "SL-Reentry",
 		"signalBarStateKey": "bar-1",
 	}
-	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "NEW")
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "NEW", eventTime)
 	if got := parseFloatValue(state["sessionReentryCount"]); got != 0 {
 		t.Fatalf("expected no increment for NEW order, got %v", got)
 	}
-	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED")
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED", eventTime)
 	if got := parseFloatValue(state["sessionReentryCount"]); got != 1 {
 		t.Fatalf("expected increment on FILLED reentry, got %v", got)
 	}
-	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED")
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED", eventTime)
 	if got := parseFloatValue(state["sessionReentryCount"]); got != 1 {
 		t.Fatalf("expected duplicate FILLED sync to be ignored, got %v", got)
 	}
 }
 
 func TestMaybeIncrementLiveSessionReentryCountCountsZeroInitialWindowEntry(t *testing.T) {
-	state := map[string]any{}
+	eventTime := time.Date(2026, 4, 22, 3, 0, 10, 0, time.UTC)
+	state := map[string]any{
+		livePendingZeroInitialWindowStateKey: map[string]any{
+			"side":            "BUY",
+			"symbol":          "BTCUSDT",
+			"signalTimeframe": "30m",
+			"armedAt":         eventTime.Format(time.RFC3339),
+			"signalBarStart":  time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"expiresAt":       time.Date(2026, 4, 22, 4, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"breakoutBacked":  true,
+			"openReason":      liveZeroInitialWindowOpenReasonBreakoutLocked,
+		},
+	}
 	proposal := map[string]any{
 		"reason":            "Zero-Initial-Reentry",
 		"signalBarStateKey": "bar-1",
 	}
-	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED")
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-1", "FILLED", eventTime)
 	if got := parseFloatValue(state["sessionReentryCount"]); got != 1 {
 		t.Fatalf("expected zero-initial window entry to count as first bar trade, got %v", got)
 	}
 	if got := stringValue(state["lastSignalBarStateKey"]); got != "bar-1" {
 		t.Fatalf("expected signal bar key to be recorded, got %s", got)
 	}
+	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected filled zero-initial entry to consume pending window, got %+v", pending)
+	}
+	timeline := metadataList(state["timeline"])
+	if len(timeline) != 1 || stringValue(timeline[0]["title"]) != "zero-initial-window-consumed" {
+		t.Fatalf("expected zero window consumed timeline event, got %+v", timeline)
+	}
+	if got := stringValue(mapValue(timeline[0]["metadata"])["reason"]); got != "zero-initial-reentry-filled" {
+		t.Fatalf("expected zero-initial-reentry-filled consume reason, got %s", got)
+	}
 }
 
 func TestMaybeIncrementLiveSessionReentryCountUsesPerBarIdentity(t *testing.T) {
+	eventTime := time.Date(2026, 4, 22, 3, 30, 10, 0, time.UTC)
 	state := map[string]any{
 		"lastSignalBarStateKey": "BTCUSDT|30m|2026-04-22T03:00:00Z",
 		"sessionReentryCount":   2.0,
@@ -4778,7 +4802,7 @@ func TestMaybeIncrementLiveSessionReentryCountUsesPerBarIdentity(t *testing.T) {
 			liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-22T03:30:00Z",
 		},
 	}
-	maybeIncrementLiveSessionReentryCount(state, proposal, "order-2", "FILLED")
+	maybeIncrementLiveSessionReentryCount(state, proposal, "order-2", "FILLED", eventTime)
 	if got := parseFloatValue(state["sessionReentryCount"]); got != 1 {
 		t.Fatalf("expected new per-bar identity to reset reentry count before increment, got %v", got)
 	}
@@ -4793,6 +4817,7 @@ func TestRecordLiveSessionStopLossExitFillUsesExchangeFillTime(t *testing.T) {
 	proposal := map[string]any{
 		"role":   "exit",
 		"reason": "SL",
+		"side":   "BUY",
 		"metadata": map[string]any{
 			liveSignalBarTradeLimitKeyField: "BTCUSDT|30m|2026-04-28T01:30:00Z",
 		},
@@ -4813,6 +4838,9 @@ func TestRecordLiveSessionStopLossExitFillUsesExchangeFillTime(t *testing.T) {
 	}
 	if got := stringValue(state["lastSLExitSignalBarStateKey"]); got != "BTCUSDT|30m|2026-04-28T01:30:00Z" {
 		t.Fatalf("expected SL exit bar identity to be recorded, got %q", got)
+	}
+	if got := stringValue(state["lastSLExitReentrySide"]); got != "SELL" {
+		t.Fatalf("expected SL exit BUY side to arm SELL reentry side, got %q", got)
 	}
 
 	recordLiveSessionStopLossExitFill(state, map[string]any{"role": "exit", "reason": "PT"}, domain.Order{
@@ -4912,6 +4940,7 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestSLExitFill
 		"lastSLExitOrderId":            "order-sl-latest",
 		"lastSLExitStatus":             "FILLED",
 		"lastSLExitSignalBarStateKey":  "BTCUSDT|30m|2026-04-28T01:30:00Z",
+		"lastSLExitReentrySide":        "SELL",
 		"lastStrategyEvaluationStatus": "intent-ready",
 	})
 	if err != nil {
@@ -4921,6 +4950,7 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestSLExitFill
 	staleState := cloneMetadata(session.State)
 	staleState["lastSLExitFilledAt"] = latestFill.Add(-1 * time.Minute).Format(time.RFC3339)
 	staleState["lastSLExitOrderId"] = "order-sl-older"
+	delete(staleState, "lastSLExitReentrySide")
 
 	updated, err := platform.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, staleState)
 	if err != nil {
@@ -4931,6 +4961,9 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestSLExitFill
 	}
 	if got := stringValue(updated.State["lastSLExitOrderId"]); got != "order-sl-latest" {
 		t.Fatalf("expected latest SL exit order id to survive stale write, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSLExitReentrySide"]); got != "SELL" {
+		t.Fatalf("expected latest SL exit reentry side to survive stale write, got %q", got)
 	}
 
 	newerFill := latestFill.Add(2 * time.Minute)
@@ -4946,6 +4979,55 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestSLExitFill
 	}
 	if got := stringValue(updated.State["lastSLExitOrderId"]); got != "order-sl-newer" {
 		t.Fatalf("expected newer SL exit order id to win, got %q", got)
+	}
+}
+
+func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsSLReentryConsumptionGuard(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "30m",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	fillTime := time.Date(2026, 4, 28, 1, 55, 18, 0, time.UTC)
+	consumedAt := fillTime.Add(90 * time.Second)
+	session, err = platform.store.UpdateLiveSessionState(session.ID, map[string]any{
+		"symbol":                               "BTCUSDT",
+		"signalTimeframe":                      "30m",
+		"lastSLExitFilledAt":                   fillTime.Format(time.RFC3339),
+		"lastSLExitOrderId":                    "order-sl-latest",
+		"lastSLExitStatus":                     "FILLED",
+		"lastSLExitSignalBarStateKey":          "BTCUSDT|30m|2026-04-28T01:30:00Z",
+		"lastSLExitReentryConsumedOrderId":     "order-sl-latest",
+		"lastSLExitReentryConsumedAt":          consumedAt.Format(time.RFC3339),
+		"lastSLExitReentryConsumedReason":      "consumed-on-derive",
+		"lastDispatchedDecisionEventId":        "strategy-decision-event-consumed",
+		"lastStrategyDecisionEventFingerprint": "fingerprint-consumed",
+	})
+	if err != nil {
+		t.Fatalf("seed live session state failed: %v", err)
+	}
+
+	staleState := cloneMetadata(session.State)
+	staleState["lastSLExitReentrySide"] = "SELL"
+	delete(staleState, "lastSLExitReentryConsumedOrderId")
+	delete(staleState, "lastSLExitReentryConsumedAt")
+	delete(staleState, "lastSLExitReentryConsumedReason")
+
+	updated, err := platform.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, staleState)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSLExitReentryConsumedOrderId"]); got != "order-sl-latest" {
+		t.Fatalf("expected consumed SL reentry order id to survive stale write, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSLExitReentryConsumedReason"]); got != "consumed-on-derive" {
+		t.Fatalf("expected consumed reason to survive stale write, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSLExitReentrySide"]); got != "" {
+		t.Fatalf("expected consumed guard to prevent stale reentry side resurrection, got %q", got)
 	}
 }
 
