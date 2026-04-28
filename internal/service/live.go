@@ -226,11 +226,20 @@ func (p *Platform) deleteLiveSessionWithForceLocked(session domain.LiveSession, 
 			return err
 		}
 	}
-	if _, err := p.stopLinkedLiveSignalRuntime(session); err != nil {
+	runtimeSession, err := p.stopLinkedLiveSignalRuntime(session)
+	if err != nil {
 		logger.Warn("stop linked signal runtime before live session delete failed", "error", err)
 		return err
 	}
-	return p.store.DeleteLiveSession(session.ID)
+	if err := p.store.DeleteLiveSession(session.ID); err != nil {
+		return err
+	}
+	if runtimeSession.ID != "" &&
+		strings.EqualFold(runtimeSession.Status, "STOPPED") &&
+		!p.runtimeReferencedByActiveLiveSession(runtimeSession.ID, session.ID) {
+		return p.deleteSignalRuntimeSessionWithForceLocked(runtimeSession, true)
+	}
+	return nil
 }
 
 func (p *Platform) UpdateLiveSession(sessionID, alias, accountID, strategyID string, overrides map[string]any) (domain.LiveSession, error) {
@@ -4402,6 +4411,29 @@ func (p *Platform) stopLinkedLiveSignalRuntime(session domain.LiveSession) (doma
 		return domain.SignalRuntimeSession{}, err
 	}
 	return runtimeSession, nil
+}
+
+func (p *Platform) runtimeReferencedByActiveLiveSession(runtimeID, excludeLiveSessionID string) bool {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return false
+	}
+	sessions, err := p.ListLiveSessions()
+	if err != nil {
+		return true
+	}
+	for _, session := range sessions {
+		if session.ID == excludeLiveSessionID {
+			continue
+		}
+		if strings.EqualFold(session.Status, "DELETED") || strings.EqualFold(session.Status, "STOPPED") {
+			continue
+		}
+		if liveSessionReferencesRuntime(session, runtimeID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Platform) liveSessionLinkedRuntimeDesiredStopped(session domain.LiveSession) bool {
