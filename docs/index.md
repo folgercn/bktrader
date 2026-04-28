@@ -35,6 +35,7 @@
 - [dashboard-sse-architecture.md](dashboard-sse-architecture.md) — SSE 实时仪表盘架构
 - [bento-ui-modernization-guidelines.md](bento-ui-modernization-guidelines.md) — Bento 风格 UI 现代化指南
 - [runtime-runner-decomposition-protocol.md](runtime-runner-decomposition-protocol.md) — `live-runner` / `signal-runtime-runner` 拆分协议
+- [runtime-supervisor.md](runtime-supervisor.md) — Runtime Supervisor / Service Supervisor 分层规划
 
 ### CLI 工具
 - [bktrader-ctl-reference.md](bktrader-ctl-reference.md) — bktrader-ctl 命令手册

@@ -611,7 +611,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
 		delete(state, "reconnectAttemptStartedAtMs")
-		clearSignalRuntimeSupervisorRestartState(state)
+		ClearRestartState(state, signalRuntimeSupervisorRestartStateKeys)
 		appendSignalRuntimeTimeline(state, now, "runtime", "subscribed", map[string]any{
 			"subscriptionCount": len(subscriptions),
 			"subscriptions":     subscriptionSummary,
@@ -711,16 +711,6 @@ func (p *Platform) runExchangeWebsocketLoop(
 			})
 		}
 	}
-}
-
-func clearSignalRuntimeSupervisorRestartState(state map[string]any) {
-	delete(state, "supervisorRestartAttempt")
-	delete(state, "nextAutoRestartAt")
-	delete(state, "supervisorRestartBackoff")
-	delete(state, "supervisorRestartReason")
-	delete(state, "supervisorRestartSeverity")
-	delete(state, "lastSupervisorError")
-	delete(state, "autoRestartSuppressed")
 }
 
 // validateSignalBarContinuityAfterReconnect checks if a signal bar close was missed

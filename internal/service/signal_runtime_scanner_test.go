@@ -147,10 +147,10 @@ func TestSetSessionTerminalErrorSchedulesOneThenRepeatingThreeMinuteSupervisorBa
 	if err != nil {
 		t.Fatalf("reload first terminal error failed: %v", err)
 	}
-	if got := signalRuntimeSupervisorRestartAttempt(first.State); got != 1 {
+	if got := RestartAttempt(first.State, "supervisorRestartAttempt"); got != 1 {
 		t.Fatalf("expected first supervisor attempt 1, got %d", got)
 	}
-	firstNext, ok := parseSignalRuntimeSupervisorTime(first.State["nextAutoRestartAt"])
+	firstNext, ok := ParseRestartTime(first.State, "nextAutoRestartAt")
 	if !ok {
 		t.Fatalf("expected first nextAutoRestartAt")
 	}
@@ -163,10 +163,10 @@ func TestSetSessionTerminalErrorSchedulesOneThenRepeatingThreeMinuteSupervisorBa
 	if err != nil {
 		t.Fatalf("reload second terminal error failed: %v", err)
 	}
-	if got := signalRuntimeSupervisorRestartAttempt(second.State); got != 2 {
+	if got := RestartAttempt(second.State, "supervisorRestartAttempt"); got != 2 {
 		t.Fatalf("expected second supervisor attempt 2, got %d", got)
 	}
-	secondNext, ok := parseSignalRuntimeSupervisorTime(second.State["nextAutoRestartAt"])
+	secondNext, ok := ParseRestartTime(second.State, "nextAutoRestartAt")
 	if !ok {
 		t.Fatalf("expected second nextAutoRestartAt")
 	}
@@ -179,10 +179,10 @@ func TestSetSessionTerminalErrorSchedulesOneThenRepeatingThreeMinuteSupervisorBa
 	if err != nil {
 		t.Fatalf("reload third terminal error failed: %v", err)
 	}
-	if got := signalRuntimeSupervisorRestartAttempt(third.State); got != 3 {
+	if got := RestartAttempt(third.State, "supervisorRestartAttempt"); got != 3 {
 		t.Fatalf("expected third supervisor attempt 3, got %d", got)
 	}
-	thirdNext, ok := parseSignalRuntimeSupervisorTime(third.State["nextAutoRestartAt"])
+	thirdNext, ok := ParseRestartTime(third.State, "nextAutoRestartAt")
 	if !ok {
 		t.Fatalf("expected third nextAutoRestartAt")
 	}
