@@ -9,7 +9,7 @@ Dashboard realtime data currently supports two transport modes:
 
 The intent of the SSE path is to reduce high-frequency Dashboard API polling pressure while keeping the UI resilient. When SSE is unavailable, the frontend must fall back to HTTP polling automatically.
 
-This document describes the current design introduced around PR #187, the follow-up stabilization tasks tracked by #194, and the longer-term evolution path from polling-based SSE to event-driven realtime delivery.
+This document describes the current design introduced around PR #187, and the longer-term evolution path from polling-based SSE to event-driven realtime delivery tracked by #195.
 
 ## 2. High-level Data Flow
 
@@ -122,7 +122,7 @@ The short-lived stream token limits this risk:
 - It expires quickly.
 - It is only useful for the SSE stream endpoint.
 
-Follow-up improvement for stronger JTI uniqueness is tracked by #193.
+Stronger JTI uniqueness with UUID has been implemented in PR #198 (Issue #193).
 
 ## 6. DashboardBroker Design
 
@@ -193,7 +193,7 @@ Fallback is used when:
 - EventSource cannot connect;
 - the stream disconnects for a sustained period.
 
-Short disconnects should eventually be handled with a debounce before polling resumes. That improvement is tracked by #191.
+Short disconnects are handled with a debounce before polling resumes.
 
 ## 9. Configuration
 
@@ -259,16 +259,12 @@ Expected behavior:
 2. No replay or resume from `Last-Event-ID` yet.
 3. Subscriber drops are silent.
 4. Error aggregation between SSE and polling is still basic.
-5. Frontend polling fallback still needs debounce refinement.
-6. Summary state field stripping currently has duplicated logic between live and runtime session summary helpers.
 
 ## 12. Follow-up Roadmap
 
-Tracked by epic #194:
+Tracked by issue #195:
 
-- #191: add debounce and retry timer cleanup for SSE / polling switching.
-- #192: extract common summary heavy-state stripping helper.
-- #193: improve stream token JTI uniqueness with random factor or UUID.
+- #195: Event-driven DashboardBroker design and phased implementation.
 
 Possible future work:
 
