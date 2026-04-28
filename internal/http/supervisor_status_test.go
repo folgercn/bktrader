@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +41,7 @@ func TestSupervisorStatusRouteReturnsLastSnapshot(t *testing.T) {
 		Name:    "api",
 		BaseURL: targetServer.URL,
 	}}, targetServer.Client())
-	supervisor.Collect(t.Context())
+	supervisor.Collect(context.Background())
 	platform.SetRuntimeSupervisor(supervisor)
 
 	mux := http.NewServeMux()
