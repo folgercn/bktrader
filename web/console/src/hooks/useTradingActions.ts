@@ -666,9 +666,9 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
       await fetchJSON(`/api/v1/live/sessions/${sessionId}/${action}${force ? '?force=true' : ''}`, { method: "POST" });
       await loadDashboard();
       if (action === "stop") {
-        setNotification({ type: 'success', message: `已提交停用意图: ${sessionId}` });
+        setNotification({ type: 'info', message: `停用意图已提交，等待 runner 收敛: ${sessionId}` });
       } else {
-        setNotification({ type: 'success', message: `已提交启动意图: ${sessionId}` });
+        setNotification({ type: 'info', message: `启动意图已提交，等待 runner 收敛: ${sessionId}` });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to execute live session action";

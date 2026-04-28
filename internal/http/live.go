@@ -676,29 +676,17 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 		case "start":
 			item, err := platform.RequestLiveSessionStart(sessionID)
 			if err != nil {
-				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
-					writeError(w, http.StatusConflict, err.Error())
-					return
-				}
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusAccepted, item)
+			writeJSON(w, http.StatusAccepted, liveSessionControlAcceptedPayload(item))
 		case "stop":
 			item, err := platform.RequestLiveSessionStopWithForce(sessionID, queryFlagEnabled(r, "force"))
 			if err != nil {
-				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
-					writeError(w, http.StatusConflict, err.Error())
-					return
-				}
-				if errors.Is(err, service.ErrActivePositionsOrOrders) {
-					writeError(w, http.StatusBadRequest, err.Error())
-					return
-				}
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusAccepted, item)
+			writeJSON(w, http.StatusAccepted, liveSessionControlAcceptedPayload(item))
 		case "dispatch":
 			if !cfg.RuntimeActionsEnabled() {
 				writeError(w, http.StatusConflict, "runtime action dispatch is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
@@ -725,6 +713,22 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 			writeError(w, http.StatusNotFound, "unsupported live session action")
 		}
 	})
+}
+
+func liveSessionControlAcceptedPayload(session domain.LiveSession) map[string]any {
+	state := session.State
+	if state == nil {
+		state = map[string]any{}
+	}
+	return map[string]any{
+		"status":           "accepted",
+		"message":          "control intent accepted; execution is asynchronous and must be confirmed through actualStatus",
+		"sessionId":        session.ID,
+		"desiredStatus":    state["desiredStatus"],
+		"actualStatus":     state["actualStatus"],
+		"lastControlError": state["lastControlError"],
+		"session":          session,
+	}
 }
 
 var allowedLiveSessionDetailFields = map[string]struct{}{

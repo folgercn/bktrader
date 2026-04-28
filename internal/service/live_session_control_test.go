@@ -98,6 +98,72 @@ func TestScanLiveSessionControlRequestsPreservesStopSafetyUntilForceRequested(t 
 	}
 }
 
+func TestLiveSessionControlForceStopRecoversFromPreviousError(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	session, err := store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	if _, err := store.SavePosition(domain.Position{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.002,
+		EntryPrice:        69000,
+		MarkPrice:         69100,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	if _, err := platform.RequestLiveSessionStopWithForce(session.ID, false); err != nil {
+		t.Fatalf("request non-force stop failed: %v", err)
+	}
+
+	platform.scanLiveSessionControlRequests(context.Background())
+
+	failed, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get failed live session failed: %v", err)
+	}
+	if failed.Status != "RUNNING" {
+		t.Fatalf("expected non-force stop to leave session RUNNING, got %s", failed.Status)
+	}
+	if got := stringValue(failed.State["actualStatus"]); got != "ERROR" {
+		t.Fatalf("expected actualStatus ERROR after blocked stop, got %s", got)
+	}
+	if got := stringValue(failed.State["lastControlError"]); got == "" {
+		t.Fatal("expected lastControlError after blocked stop")
+	}
+
+	if _, err := platform.RequestLiveSessionStopWithForce(session.ID, true); err != nil {
+		t.Fatalf("request force stop retry failed: %v", err)
+	}
+	retry, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get retry live session failed: %v", err)
+	}
+	if got := stringValue(retry.State["actualStatus"]); got == "ERROR" {
+		t.Fatal("expected force stop request to clear previous ERROR actualStatus")
+	}
+
+	platform.scanLiveSessionControlRequests(context.Background())
+
+	stopped, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get stopped live session failed: %v", err)
+	}
+	if stopped.Status != "STOPPED" {
+		t.Fatalf("expected force stop retry to stop session, got %s", stopped.Status)
+	}
+	if got := stringValue(stopped.State["actualStatus"]); got != "STOPPED" {
+		t.Fatalf("expected actualStatus STOPPED after force stop recovery, got %s", got)
+	}
+	if got := stringValue(stopped.State["lastControlError"]); got != "" {
+		t.Fatalf("expected lastControlError cleared after recovery, got %s", got)
+	}
+}
+
 func TestScanLiveSessionControlRequestsWritesErrorWithoutRetryingStart(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)

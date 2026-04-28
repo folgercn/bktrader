@@ -1098,8 +1098,16 @@ export function AccountStage({
                  validLiveSessions.map((session) => {
                    const sessionState = getRecord(session.state);
                    const isRunning = String(session.status).toUpperCase() === "RUNNING";
-                   const desiredStatus = String(sessionState.desiredStatus ?? "").trim().toUpperCase();
-                   const actualStatus = String(sessionState.actualStatus ?? "").trim().toUpperCase();
+                   const liveDesiredStatus = String(sessionState.desiredStatus ?? "").trim().toUpperCase();
+                   const liveActualStatus = String(sessionState.actualStatus ?? "").trim().toUpperCase();
+                   const liveControlConverging =
+                     liveDesiredStatus !== "" &&
+                     liveActualStatus !== "" &&
+                     liveActualStatus !== "ERROR" &&
+                     liveDesiredStatus !== liveActualStatus;
+                   const liveControlError = liveActualStatus === "ERROR"
+                     ? String(sessionState.lastControlError ?? "runner 执行失败").trim()
+                     : "";
                    const linkedRuntimeSessionId = String(
                      sessionState.signalRuntimeSessionId ?? sessionState.lastSignalRuntimeSessionId ?? ""
                    ).trim();
@@ -1121,6 +1129,7 @@ export function AccountStage({
                    const sessionControlPending =
                      liveFlowAction === session.accountId ||
                      liveSessionActionTargets(session.id) ||
+                     liveControlConverging ||
                      (linkedRuntimeSession ? signalRuntimeActionTargets(linkedRuntimeSession.id) : false) ||
                      ((liveSessionLaunchAction || launchingTemplate !== null) && quickLiveAccountId === session.accountId);
                    return (
@@ -1135,15 +1144,27 @@ export function AccountStage({
                               </Badge>
                            </div>
                            <p className="text-[10px] font-mono text-[var(--bk-text-muted)]">{String(sessionState.symbol || "--")} · {session.strategyId}</p>
-                           {(desiredStatus || actualStatus) && desiredStatus !== actualStatus && (
+                           {(liveDesiredStatus || liveActualStatus) && liveDesiredStatus !== liveActualStatus && (
                              <p className="text-[10px] font-bold text-[var(--bk-status-warning)]">
-                               {desiredStatus || "--"} / {actualStatus || session.status}
+                               {liveDesiredStatus || "--"} / {liveActualStatus || session.status}
                              </p>
                            )}
                            {linkedRuntimeStillActive && (
                              <p className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--bk-status-warning)]">
                                <AlertTriangle size={12} />
                                Live 已停止，但关联 runtime 仍处于 {linkedRuntimeStatus || linkedRuntimeDesiredStatus}，请先停止 runtime 或等待修复。
+                             </p>
+                           )}
+                           {liveControlConverging && (
+                             <p className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--bk-status-warning)]">
+                               <AlertTriangle size={12} />
+                               控制意图 {liveDesiredStatus} 等待 runner 收敛，当前 {liveActualStatus}
+                             </p>
+                           )}
+                           {liveControlError && (
+                             <p className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--bk-status-danger)]">
+                               <AlertTriangle size={12} />
+                               控制失败：{liveControlError}
                              </p>
                            )}
                         </div>
