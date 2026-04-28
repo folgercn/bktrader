@@ -920,6 +920,25 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	return fill, err
 }
 
+func (s *Store) DeleteSyntheticFillsForOrder(orderID string) (float64, error) {
+	var totalQty sql.NullFloat64
+	err := s.db.QueryRow(`
+		with deleted as (
+			delete from fills
+			where order_id = $1
+			and (exchange_trade_id is null or exchange_trade_id = '')
+			and dedup_fallback_fingerprint is not null
+			returning quantity
+		)
+		select sum(quantity) from deleted
+	`, orderID).Scan(&totalQty)
+
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	return totalQty.Float64, nil
+}
+
 func (s *Store) ListPositions() ([]domain.Position, error) {
 	rows, err := s.db.Query(`
 		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at

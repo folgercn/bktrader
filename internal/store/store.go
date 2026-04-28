@@ -65,6 +65,8 @@ type Repository interface {
 	TotalFilledQuantityForOrder(orderID string) (float64, error)
 	// CreateFill 创建新成交记录。
 	CreateFill(fill domain.Fill) (domain.Fill, error)
+	// DeleteSyntheticFillsForOrder 删除指定订单的合成成交记录（没有 exchange_trade_id 的记录），并返回被删除的总数量。
+	DeleteSyntheticFillsForOrder(orderID string) (float64, error)
 
 	// --- 持仓管理 ---
 
