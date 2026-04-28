@@ -482,6 +482,32 @@ func TestEvaluateSignalBarGateTracksCurrentPriceBreakoutPattern(t *testing.T) {
 	}
 }
 
+func TestEvaluateSignalBarGateAllowsBreakoutBoundaryEquality(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"ma20":  68000.0,
+		"atr14": 900.0,
+		"current": map[string]any{
+			"close": 68100.0,
+			"high":  69000.0,
+			"low":   67800.0,
+		},
+		"prevBar1": map[string]any{
+			"high": 68850.0,
+			"low":  67750.0,
+		},
+		"prevBar2": map[string]any{
+			"high": 69000.0,
+			"low":  67600.0,
+		},
+	}, "BUY", "entry", "", 69000.0, "trade_tick.price")
+	if !boolValue(gate["longBreakoutPriceReady"]) || !boolValue(gate["longBreakoutPatternReady"]) {
+		t.Fatalf("expected equality at original_t2 breakout boundary to pass, got %#v", gate)
+	}
+	if got := stringValue(gate["longBreakoutShapeName"]); got != "original_t2" {
+		t.Fatalf("expected original_t2 shape, got %s in %#v", got, gate)
+	}
+}
+
 func TestEvaluateSignalBarGateAllowsT3BreakoutWithSeparation(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "30m",
@@ -505,6 +531,32 @@ func TestEvaluateSignalBarGateAllowsT3BreakoutWithSeparation(t *testing.T) {
 	}
 	if got := stringValue(gate["longBreakoutShapeName"]); got != "t3_swing" {
 		t.Fatalf("expected t3_swing shape, got %s in %#v", got, gate)
+	}
+}
+
+func TestEvaluateSignalBarGateKeepsOriginalT2WhenT3Enabled(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"timeframe": "30m",
+		"sma5":      68200.0,
+		"ma20":      68000.0,
+		"atr14":     800.0,
+		"current": map[string]any{
+			"close": 68900.0,
+			"high":  69050.0,
+			"low":   68100.0,
+		},
+		"prevBar1": map[string]any{"high": 68800.0, "low": 68100.0},
+		"prevBar2": map[string]any{"high": 69000.0, "low": 68000.0},
+		"prevBar3": map[string]any{"high": 68700.0, "low": 67900.0},
+	}, "BUY", "entry", "", 69000.0, "trade_tick.price", signalBarGateOptions{
+		BreakoutShape:         "baseline_plus_t3",
+		T3MinSMAATRSeparation: 0.25,
+	})
+	if !boolValue(gate["longBreakoutPatternReady"]) || !boolValue(gate["longReady"]) {
+		t.Fatalf("expected original_t2 breakout to pass with t3 enabled, got %#v", gate)
+	}
+	if got := stringValue(gate["longBreakoutShapeName"]); got != "original_t2" {
+		t.Fatalf("expected original_t2 to remain selected, got %s in %#v", got, gate)
 	}
 }
 
@@ -3518,6 +3570,27 @@ func TestNormalizeLiveSessionOverridesIncludesZeroInitialControls(t *testing.T) 
 	}
 	if got := parseFloatValue(overrides["delayed_trailing_activation_atr"]); got != 0.5 {
 		t.Fatalf("expected delayed_trailing_activation_atr=0.5, got %v", got)
+	}
+}
+
+func TestNormalizeLiveSessionOverridesIncludesT3BreakoutControls(t *testing.T) {
+	overrides := normalizeLiveSessionOverrides(map[string]any{
+		"breakout_shape":                    "baseline_plus_t3",
+		"t3_min_sma_atr_separation":         0.25,
+		"use_sma5_intraday_structure":       true,
+		"ignored_t3_min_sma_atr_separation": 0.50,
+	})
+	if got := stringValue(overrides["breakout_shape"]); got != "baseline_plus_t3" {
+		t.Fatalf("expected breakout_shape=baseline_plus_t3, got %s", got)
+	}
+	if got := parseFloatValue(overrides["t3_min_sma_atr_separation"]); got != 0.25 {
+		t.Fatalf("expected t3_min_sma_atr_separation=0.25, got %v", got)
+	}
+	if !boolValue(overrides["use_sma5_intraday_structure"]) {
+		t.Fatal("expected use_sma5_intraday_structure override")
+	}
+	if _, ok := overrides["ignored_t3_min_sma_atr_separation"]; ok {
+		t.Fatalf("expected unknown t3 override key to be dropped, got %#v", overrides)
 	}
 }
 

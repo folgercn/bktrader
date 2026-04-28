@@ -873,8 +873,8 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	}
 	longBreakoutShapeReady := longBreakoutShapeName != "" && longBreakoutLevel > 0
 	shortBreakoutShapeReady := shortBreakoutShapeName != "" && shortBreakoutLevel > 0
-	longBreakoutPriceReady := breakoutPrice > longBreakoutLevel && longBreakoutLevel > 0
-	shortBreakoutPriceReady := breakoutPrice < shortBreakoutLevel && shortBreakoutLevel > 0
+	longBreakoutPriceReady := breakoutPrice >= longBreakoutLevel && longBreakoutLevel > 0
+	shortBreakoutPriceReady := breakoutPrice <= shortBreakoutLevel && shortBreakoutLevel > 0
 	longBreakoutQualityReady := breakoutQualityReady(longBreakoutShapeName, longBreakoutLevel, sma5, atr14, gateOptions)
 	shortBreakoutQualityReady := breakoutQualityReady(shortBreakoutShapeName, shortBreakoutLevel, sma5, atr14, gateOptions)
 	longBreakoutReady := longBreakoutShapeReady && longBreakoutPriceReady && longBreakoutQualityReady

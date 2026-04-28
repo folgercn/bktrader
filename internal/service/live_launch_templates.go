@@ -41,9 +41,15 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 	if err != nil {
 		return nil, err
 	}
-	enhancedStrategyID, enhancedStrategyName, enhancedStrategyVersionID, _, err := p.resolveLiveTemplateStrategy("strategy-bk-btc-30m-enhanced")
-	if err != nil {
-		return nil, err
+	enhancedStrategyID := ""
+	enhancedStrategyName := ""
+	enhancedStrategyVersionID := ""
+	hasEnhancedTemplate := false
+	if id, name, versionID, _, err := p.resolveLiveTemplateStrategy("strategy-bk-btc-30m-enhanced"); err == nil {
+		enhancedStrategyID = id
+		enhancedStrategyName = name
+		enhancedStrategyVersionID = versionID
+		hasEnhancedTemplate = true
 	}
 
 	baseBinding := map[string]any{
@@ -202,17 +208,22 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		return item
 	}
 
-	return []LiveLaunchTemplate{
+	templates := []LiveLaunchTemplate{
 		buildTemplate("BTCUSDT", "5m", 0.002, false),
 		buildTemplate("BTCUSDT", "15m", 0.002, true),
 		buildTemplate("BTCUSDT", "30m", 0.002, true),
-		buildEnhancedTemplate(),
+	}
+	if hasEnhancedTemplate {
+		templates = append(templates, buildEnhancedTemplate())
+	}
+	templates = append(templates,
 		buildTemplate("BTCUSDT", "4h", 0.002, false),
 		buildTemplate("BTCUSDT", "1d", 0.002, false),
 		buildTemplate("ETHUSDT", "5m", 0.100, false),
 		buildTemplate("ETHUSDT", "4h", 0.100, false),
 		buildTemplate("ETHUSDT", "1d", 0.100, false),
-	}, nil
+	)
+	return templates, nil
 }
 
 func liveLaunchTemplateDispatchModeOptions() []string {

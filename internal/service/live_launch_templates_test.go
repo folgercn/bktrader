@@ -3,8 +3,28 @@ package service
 import (
 	"testing"
 
+	storepkg "github.com/wuyaocheng/bktrader/internal/store"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
+
+type hiddenEnhancedStrategyStore struct {
+	storepkg.Repository
+}
+
+func (s hiddenEnhancedStrategyStore) ListStrategies() ([]map[string]any, error) {
+	items, err := s.Repository.ListStrategies()
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if stringValue(item["id"]) == "strategy-bk-btc-30m-enhanced" {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered, nil
+}
 
 func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
@@ -185,6 +205,23 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		}
 		if item.LaunchPayload.LaunchTemplateKey != item.Key {
 			t.Fatalf("expected launch template key %s, got %s", item.Key, item.LaunchPayload.LaunchTemplateKey)
+		}
+	}
+}
+
+func TestLiveLaunchTemplatesSkipEnhancedWhenStrategyMissing(t *testing.T) {
+	platform := NewPlatform(hiddenEnhancedStrategyStore{Repository: memory.NewStore()})
+
+	templates, err := platform.LiveLaunchTemplates()
+	if err != nil {
+		t.Fatalf("list live launch templates failed: %v", err)
+	}
+	if len(templates) != 8 {
+		t.Fatalf("expected original 8 launch templates when enhanced strategy is missing, got %d", len(templates))
+	}
+	for _, item := range templates {
+		if item.Key == "binance-testnet-btc-30m-enhanced" {
+			t.Fatalf("expected enhanced template to be skipped when strategy is missing: %#v", templates)
 		}
 	}
 }
