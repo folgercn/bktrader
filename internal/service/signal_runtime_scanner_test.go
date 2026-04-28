@@ -71,7 +71,7 @@ func TestScanSignalRuntimeSessionsSkipsLocalRunningSession(t *testing.T) {
 	}
 }
 
-func TestScanSignalRuntimeSessionsSkipsErroredDesiredRunningSession(t *testing.T) {
+func TestScanSignalRuntimeSessionsDefersErroredDesiredRunningSessionUntilBackoff(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	now := time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC)
 	session := mustCreateScannerRuntimeSession(t, platform, domain.SignalRuntimeSession{
@@ -80,8 +80,9 @@ func TestScanSignalRuntimeSessionsSkipsErroredDesiredRunningSession(t *testing.T
 		StrategyID: "strategy-1",
 		Status:     "ERROR",
 		State: map[string]any{
-			"desiredStatus": "RUNNING",
-			"actualStatus":  "ERROR",
+			"desiredStatus":     "RUNNING",
+			"actualStatus":      "ERROR",
+			"nextAutoRestartAt": time.Now().UTC().Add(time.Hour).Format(time.RFC3339),
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -93,7 +94,100 @@ func TestScanSignalRuntimeSessionsSkipsErroredDesiredRunningSession(t *testing.T
 		return session, nil
 	})
 	if started != 0 {
-		t.Fatalf("expected scanner to leave errored desired-running session stopped for manual restart, got %d starts", started)
+		t.Fatalf("expected scanner to wait for supervisor backoff, got %d starts", started)
+	}
+}
+
+func TestScanSignalRuntimeSessionsRestartsErroredDesiredRunningSessionAfterBackoff(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	now := time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC)
+	session := mustCreateScannerRuntimeSession(t, platform, domain.SignalRuntimeSession{
+		ID:         "runtime-error-due",
+		AccountID:  "account-1",
+		StrategyID: "strategy-1",
+		Status:     "ERROR",
+		State: map[string]any{
+			"desiredStatus":            "RUNNING",
+			"actualStatus":             "ERROR",
+			"supervisorRestartAttempt": 1,
+			"nextAutoRestartAt":        time.Now().UTC().Add(-time.Second).Format(time.RFC3339),
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+
+	started := make([]string, 0)
+	platform.scanSignalRuntimeSessions(context.Background(), func(_ context.Context, sessionID string) (domain.SignalRuntimeSession, error) {
+		started = append(started, sessionID)
+		return session, nil
+	})
+	if len(started) != 1 || started[0] != session.ID {
+		t.Fatalf("expected scanner to restart errored desired-running session after backoff, got %#v", started)
+	}
+}
+
+func TestSetSessionTerminalErrorSchedulesOneThenRepeatingThreeMinuteSupervisorBackoff(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	now := time.Now().UTC()
+	session := mustCreateScannerRuntimeSession(t, platform, domain.SignalRuntimeSession{
+		ID:         "runtime-supervisor-backoff",
+		AccountID:  "account-1",
+		StrategyID: "strategy-1",
+		Status:     "RUNNING",
+		State: map[string]any{
+			"desiredStatus": "RUNNING",
+			"actualStatus":  "RUNNING",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+
+	platform.setSessionTerminalError(session.ID, context.DeadlineExceeded)
+	first, err := platform.GetSignalRuntimeSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload first terminal error failed: %v", err)
+	}
+	if got := signalRuntimeSupervisorRestartAttempt(first.State); got != 1 {
+		t.Fatalf("expected first supervisor attempt 1, got %d", got)
+	}
+	firstNext, ok := parseSignalRuntimeSupervisorTime(first.State["nextAutoRestartAt"])
+	if !ok {
+		t.Fatalf("expected first nextAutoRestartAt")
+	}
+	if delta := time.Until(firstNext); delta < 55*time.Second || delta > 65*time.Second {
+		t.Fatalf("expected first backoff about 1m, got %s", delta)
+	}
+
+	platform.setSessionTerminalError(session.ID, context.DeadlineExceeded)
+	second, err := platform.GetSignalRuntimeSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload second terminal error failed: %v", err)
+	}
+	if got := signalRuntimeSupervisorRestartAttempt(second.State); got != 2 {
+		t.Fatalf("expected second supervisor attempt 2, got %d", got)
+	}
+	secondNext, ok := parseSignalRuntimeSupervisorTime(second.State["nextAutoRestartAt"])
+	if !ok {
+		t.Fatalf("expected second nextAutoRestartAt")
+	}
+	if delta := time.Until(secondNext); delta < 175*time.Second || delta > 185*time.Second {
+		t.Fatalf("expected second backoff about 3m, got %s", delta)
+	}
+
+	platform.setSessionTerminalError(session.ID, context.DeadlineExceeded)
+	third, err := platform.GetSignalRuntimeSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload third terminal error failed: %v", err)
+	}
+	if got := signalRuntimeSupervisorRestartAttempt(third.State); got != 3 {
+		t.Fatalf("expected third supervisor attempt 3, got %d", got)
+	}
+	thirdNext, ok := parseSignalRuntimeSupervisorTime(third.State["nextAutoRestartAt"])
+	if !ok {
+		t.Fatalf("expected third nextAutoRestartAt")
+	}
+	if delta := time.Until(thirdNext); delta < 175*time.Second || delta > 185*time.Second {
+		t.Fatalf("expected third backoff to keep repeating about 3m, got %s", delta)
 	}
 }
 

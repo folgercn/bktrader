@@ -228,6 +228,13 @@ func TestRunExchangeWebsocketLoopRecordsReconnectObservability(t *testing.T) {
 			"reconnectAttempt":            2,
 			"reconnectAttemptStartedAtMs": now.Add(-1500 * time.Millisecond).UnixMilli(),
 			"lastDisconnectAt":            now.Add(-2 * time.Second).Format(time.RFC3339),
+			"supervisorRestartAttempt":    3,
+			"nextAutoRestartAt":           now.Add(time.Minute).Format(time.RFC3339),
+			"supervisorRestartBackoff":    "3m0s",
+			"supervisorRestartReason":     "runtime-error",
+			"supervisorRestartSeverity":   "transient",
+			"lastSupervisorError":         "previous websocket timeout",
+			"autoRestartSuppressed":       false,
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -286,6 +293,19 @@ func TestRunExchangeWebsocketLoopRecordsReconnectObservability(t *testing.T) {
 	}
 	if stringValue(stored.State["reconnectAttemptStartedAtMs"]) != "" {
 		t.Fatalf("expected reconnect attempt marker to be cleared, got %#v", stored.State)
+	}
+	for _, key := range []string{
+		"supervisorRestartAttempt",
+		"nextAutoRestartAt",
+		"supervisorRestartBackoff",
+		"supervisorRestartReason",
+		"supervisorRestartSeverity",
+		"lastSupervisorError",
+		"autoRestartSuppressed",
+	} {
+		if _, exists := stored.State[key]; exists {
+			t.Fatalf("expected supervisor restart field %s to be cleared after websocket subscribe success, got %#v", key, stored.State[key])
+		}
 	}
 }
 

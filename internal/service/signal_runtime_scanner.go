@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -10,6 +11,11 @@ import (
 )
 
 const signalRuntimeScannerInterval = 5 * time.Second
+
+var signalRuntimeSupervisorRestartBackoffs = []time.Duration{
+	time.Minute,
+	3 * time.Minute,
+}
 
 type signalRuntimeSessionStarter func(context.Context, string) (domain.SignalRuntimeSession, error)
 
@@ -44,6 +50,9 @@ func (p *Platform) scanSignalRuntimeSessions(ctx context.Context, starter signal
 		if !signalRuntimeSessionDesiredRunning(session) {
 			continue
 		}
+		if p.signalRuntimeSupervisorRestartDeferred(session, time.Now().UTC()) {
+			continue
+		}
 		if p.stopSignalRuntimeLinkedToStoppedLiveSession(session) {
 			continue
 		}
@@ -65,14 +74,109 @@ func (p *Platform) scanSignalRuntimeSessions(ctx context.Context, starter signal
 }
 
 func signalRuntimeSessionDesiredRunning(session domain.SignalRuntimeSession) bool {
-	if session.Status == "ERROR" || stringValue(session.State["actualStatus"]) == "ERROR" {
-		return false
-	}
 	desired := stringValue(session.State["desiredStatus"])
 	if desired != "" {
 		return desired == "RUNNING"
 	}
+	if session.Status == "ERROR" || stringValue(session.State["actualStatus"]) == "ERROR" {
+		return false
+	}
 	return session.Status == "RUNNING"
+}
+
+func (p *Platform) signalRuntimeSupervisorRestartDeferred(session domain.SignalRuntimeSession, now time.Time) bool {
+	if !strings.EqualFold(session.Status, "ERROR") && !strings.EqualFold(stringValue(session.State["actualStatus"]), "ERROR") {
+		return false
+	}
+	state := cloneMetadata(session.State)
+	if boolValue(state["autoRestartSuppressed"]) {
+		return true
+	}
+	if strings.EqualFold(stringValue(state["supervisorRestartSeverity"]), disconnectFatal.String()) {
+		return true
+	}
+	nextAt, ok := parseSignalRuntimeSupervisorTime(state["nextAutoRestartAt"])
+	if !ok {
+		p.scheduleSignalRuntimeSupervisorRestart(session, now)
+		return true
+	}
+	return now.Before(nextAt)
+}
+
+func (p *Platform) scheduleSignalRuntimeSupervisorRestart(session domain.SignalRuntimeSession, now time.Time) {
+	_ = p.updateSignalRuntimeSessionState(session.ID, func(updated *domain.SignalRuntimeSession) {
+		state := cloneMetadata(updated.State)
+		attempt := signalRuntimeSupervisorRestartAttempt(state)
+		if attempt <= 0 {
+			attempt = 1
+			state["supervisorRestartAttempt"] = attempt
+		}
+		backoff := signalRuntimeSupervisorRestartBackoff(attempt)
+		state["nextAutoRestartAt"] = now.Add(backoff).UTC().Format(time.RFC3339)
+		state["supervisorRestartBackoff"] = backoff.String()
+		state["supervisorRestartReason"] = "runtime-error"
+		updated.State = state
+		updated.UpdatedAt = now
+	})
+}
+
+func scheduleSignalRuntimeSupervisorRestartAfterTerminalError(state map[string]any, err error, now time.Time) {
+	severity := classifyDisconnectSeverity(err)
+	state["supervisorRestartSeverity"] = severity.String()
+	if severity == disconnectFatal {
+		state["autoRestartSuppressed"] = true
+		delete(state, "nextAutoRestartAt")
+		delete(state, "supervisorRestartBackoff")
+		return
+	}
+	if !strings.EqualFold(stringValue(state["desiredStatus"]), "RUNNING") {
+		delete(state, "nextAutoRestartAt")
+		delete(state, "supervisorRestartBackoff")
+		return
+	}
+	attempt := signalRuntimeSupervisorRestartAttempt(state) + 1
+	state["supervisorRestartAttempt"] = attempt
+	backoff := signalRuntimeSupervisorRestartBackoff(attempt)
+	state["nextAutoRestartAt"] = now.Add(backoff).UTC().Format(time.RFC3339)
+	state["supervisorRestartBackoff"] = backoff.String()
+	state["lastSupervisorError"] = err.Error()
+	delete(state, "autoRestartSuppressed")
+}
+
+func signalRuntimeSupervisorRestartBackoff(attempt int) time.Duration {
+	if attempt <= 1 {
+		return signalRuntimeSupervisorRestartBackoffs[0]
+	}
+	return signalRuntimeSupervisorRestartBackoffs[len(signalRuntimeSupervisorRestartBackoffs)-1]
+}
+
+func signalRuntimeSupervisorRestartAttempt(state map[string]any) int {
+	switch value := state["supervisorRestartAttempt"].(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case string:
+		var parsed int
+		if _, err := fmt.Sscanf(strings.TrimSpace(value), "%d", &parsed); err == nil {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func parseSignalRuntimeSupervisorTime(value any) (time.Time, bool) {
+	raw := stringValue(value)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 func (p *Platform) signalRuntimeSessionRunningOrStarting(sessionID string) bool {
