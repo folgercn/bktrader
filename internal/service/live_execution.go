@@ -1357,7 +1357,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 			recordExecutionSyncResultHealth(state, eventTime, order.Status, nil)
 		}
 		proposalMap := mapValue(order.Metadata["executionProposal"])
-		maybeIncrementLiveSessionReentryCount(state, proposalMap, order.ID, order.Status)
+		maybeIncrementLiveSessionReentryCount(state, proposalMap, order.ID, order.Status, eventTime)
 		recordLiveSessionStopLossExitFill(state, proposalMap, order, eventTime)
 		state["lastSyncedOrderId"] = order.ID
 		state["lastSyncedOrderStatus"] = order.Status
@@ -1402,7 +1402,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 					delete(state, "lastSyncError")
 					delete(state, "lastCancelFallbackSyncError")
 					proposalMap := mapValue(order.Metadata["executionProposal"])
-					maybeIncrementLiveSessionReentryCount(state, proposalMap, syncedOrder.ID, syncedOrder.Status)
+					maybeIncrementLiveSessionReentryCount(state, proposalMap, syncedOrder.ID, syncedOrder.Status, eventTime)
 					recordLiveSessionStopLossExitFill(state, proposalMap, syncedOrder, eventTime)
 					state["lastSyncedOrderId"] = syncedOrder.ID
 					state["lastSyncedOrderStatus"] = syncedOrder.Status
@@ -1497,7 +1497,7 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	}
 	delete(state, "lastSyncError")
 	proposalMap := mapValue(order.Metadata["executionProposal"])
-	maybeIncrementLiveSessionReentryCount(state, proposalMap, syncedOrder.ID, syncedOrder.Status)
+	maybeIncrementLiveSessionReentryCount(state, proposalMap, syncedOrder.ID, syncedOrder.Status, eventTime)
 	recordLiveSessionStopLossExitFill(state, proposalMap, syncedOrder, eventTime)
 	state["lastSyncedOrderId"] = syncedOrder.ID
 	state["lastSyncedOrderStatus"] = syncedOrder.Status
@@ -1610,13 +1610,16 @@ func shouldAdvanceLivePlanForOrderStatus(status string) bool {
 	}
 }
 
-func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map[string]any, orderID, status string) {
+func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map[string]any, orderID, status string, eventTime time.Time) {
 	if state == nil || !strings.EqualFold(strings.TrimSpace(status), "FILLED") {
 		return
 	}
 	reasonTag := normalizeStrategyReasonTag(stringValue(proposalMap["reason"]))
 	if reasonTag != "zero-initial-reentry" && reasonTag != "sl-reentry" && reasonTag != "pt-reentry" {
 		return
+	}
+	if reasonTag == "zero-initial-reentry" {
+		clearLivePendingZeroInitialWindow(state, eventTime, "zero-initial-reentry-filled")
 	}
 	if orderID != "" && stringValue(state["lastCountedReentryOrderId"]) == orderID {
 		return
@@ -1658,8 +1661,22 @@ func recordLiveSessionStopLossExitFill(state map[string]any, proposalMap map[str
 	state["lastSLExitFilledAt"] = filledAt.UTC().Format(time.RFC3339)
 	state["lastSLExitOrderId"] = order.ID
 	state["lastSLExitStatus"] = order.Status
+	if side := liveEntrySideAfterExitSide(stringValue(proposalMap["side"])); side != "" {
+		state["lastSLExitReentrySide"] = side
+	}
 	if key := liveProposalSignalBarTradeLimitKey(proposalMap); key != "" {
 		state["lastSLExitSignalBarStateKey"] = key
+	}
+}
+
+func liveEntrySideAfterExitSide(exitSide string) string {
+	switch strings.ToUpper(strings.TrimSpace(exitSide)) {
+	case "BUY":
+		return "SELL"
+	case "SELL", "SHORT":
+		return "BUY"
+	default:
+		return ""
 	}
 }
 

@@ -60,6 +60,17 @@ func prepareLivePlanStepForSignalEvaluation(
 	if hasActivePosition {
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
+	if updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, ok := liveSLReentryWindowPlanStep(
+		updatedState,
+		parameters,
+		signalBarStates,
+		symbol,
+		signalTimeframe,
+		eventTime,
+	); ok {
+		clearLivePendingZeroInitialWindow(updatedState, eventTime, "sl-exit-reentry-priority")
+		return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason
+	}
 	if updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, ok := liveZeroInitialWindowPlanStep(
 		updatedState,
 		parameters,
@@ -104,15 +115,8 @@ func prepareLivePlanStepForSignalEvaluation(
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
 
-	current := mapValue(signalBarState["current"])
-	currentBarStart := parseOptionalRFC3339(stringValue(current["barStart"]))
-	if currentBarStart.IsZero() {
-		currentBarStart = eventTime.UTC()
-	}
-	step := resolutionToDuration(liveSignalResolution(signalTimeframe))
-	if step <= 0 {
-		step = 4 * time.Hour
-	}
+	currentBarStart := liveCurrentSignalBarStart(signalBarState, eventTime)
+	expiresAt := liveZeroInitialWindowExpiresAt(currentBarStart, signalTimeframe)
 	side := "BUY"
 	if shortReady {
 		side = "SELL"
@@ -123,7 +127,7 @@ func prepareLivePlanStepForSignalEvaluation(
 		"signalTimeframe":           strings.ToLower(strings.TrimSpace(signalTimeframe)),
 		"armedAt":                   eventTime.UTC().Format(time.RFC3339),
 		"signalBarStart":            currentBarStart.UTC().Format(time.RFC3339),
-		"expiresAt":                 currentBarStart.UTC().Add(2 * step).Format(time.RFC3339),
+		"expiresAt":                 expiresAt.UTC().Format(time.RFC3339),
 		"breakoutBacked":            true,
 		"openReason":                liveZeroInitialWindowOpenReasonBreakoutLocked,
 		"breakoutPrice":             breakoutPrice,
@@ -200,14 +204,14 @@ func refreshLiveZeroInitialWindowState(
 		delete(state, livePendingZeroInitialWindowStateKey)
 		return state
 	}
+	pending = normalizeLiveZeroInitialWindowTiming(pending, signalTimeframe)
 	expiresAt := parseOptionalRFC3339(stringValue(pending["expiresAt"]))
 	if !expiresAt.IsZero() && !eventTime.UTC().Before(expiresAt.UTC()) {
 		delete(state, livePendingZeroInitialWindowStateKey)
 		return state
 	}
 	if signalBarState, _ := pickSignalBarState(signalBarStates, symbol, signalTimeframe); signalBarState != nil {
-		current := mapValue(signalBarState["current"])
-		if currentBarStart := parseOptionalRFC3339(stringValue(current["barStart"])); !currentBarStart.IsZero() {
+		if currentBarStart := liveCurrentSignalBarStart(signalBarState, time.Time{}); !currentBarStart.IsZero() {
 			pendingBarStart := parseOptionalRFC3339(stringValue(pending["signalBarStart"]))
 			if !pendingBarStart.IsZero() && currentBarStart.UTC().Before(pendingBarStart.UTC()) {
 				delete(state, livePendingZeroInitialWindowStateKey)
@@ -274,11 +278,108 @@ func livePendingZeroInitialWindowOpen(sessionState map[string]any, symbol, signa
 		pendingTimeframe != strings.ToLower(strings.TrimSpace(signalTimeframe)) {
 		return false
 	}
+	pending = normalizeLiveZeroInitialWindowTiming(pending, signalTimeframe)
 	expiresAt := parseOptionalRFC3339(stringValue(pending["expiresAt"]))
 	if !expiresAt.IsZero() && !eventTime.UTC().Before(expiresAt.UTC()) {
 		return false
 	}
 	return true
+}
+
+func normalizeLiveZeroInitialWindowTiming(pending map[string]any, signalTimeframe string) map[string]any {
+	normalized := cloneMetadata(pending)
+	barStart := parseOptionalRFC3339(stringValue(normalized["signalBarStart"]))
+	if barStart.IsZero() {
+		return normalized
+	}
+	barStart = liveCanonicalSignalBarStart(barStart, signalTimeframe)
+	if barStart.IsZero() {
+		return normalized
+	}
+	normalized["signalBarStart"] = barStart.UTC().Format(time.RFC3339)
+	expiresAt := liveZeroInitialWindowExpiresAt(barStart, signalTimeframe)
+	if !expiresAt.IsZero() {
+		normalized["expiresAt"] = expiresAt.UTC().Format(time.RFC3339)
+	}
+	return normalized
+}
+
+func liveCurrentSignalBarStart(signalBarState map[string]any, fallback time.Time) time.Time {
+	current := mapValue(signalBarState["current"])
+	if current == nil {
+		return fallback.UTC()
+	}
+	return liveCanonicalSignalBarStart(resolveBreakoutSignalTime(current["barStart"], fallback), firstNonEmpty(
+		stringValue(signalBarState["timeframe"]),
+		stringValue(current["timeframe"]),
+	))
+}
+
+func liveCanonicalSignalBarStart(value time.Time, signalTimeframe string) time.Time {
+	if value.IsZero() {
+		return time.Time{}
+	}
+	step := liveSignalBarStep(signalTimeframe)
+	if step <= 0 {
+		return value.UTC()
+	}
+	utc := value.UTC()
+	nanos := utc.UnixNano()
+	stepNanos := int64(step)
+	return time.Unix(0, nanos-(nanos%stepNanos)).UTC()
+}
+
+func liveZeroInitialWindowExpiresAt(barStart time.Time, signalTimeframe string) time.Time {
+	if barStart.IsZero() {
+		return time.Time{}
+	}
+	step := liveSignalBarStep(signalTimeframe)
+	if step <= 0 {
+		return barStart.UTC()
+	}
+	return barStart.UTC().Add(2 * step)
+}
+
+func liveSignalBarStep(signalTimeframe string) time.Duration {
+	step := resolutionToDuration(liveSignalResolution(signalTimeframe))
+	if step <= 0 {
+		return 4 * time.Hour
+	}
+	return step
+}
+
+func liveSignalBarKeyWithinReentryWindow(lastKey, currentKey, signalTimeframe string) bool {
+	lastSymbol, lastTimeframe, lastStart, ok := parseLiveSignalBarTradeLimitKey(lastKey)
+	if !ok {
+		return false
+	}
+	currentSymbol, currentTimeframe, currentStart, ok := parseLiveSignalBarTradeLimitKey(currentKey)
+	if !ok {
+		return false
+	}
+	if lastSymbol != "" && currentSymbol != "" && lastSymbol != currentSymbol {
+		return false
+	}
+	if lastTimeframe != "" && currentTimeframe != "" && lastTimeframe != currentTimeframe {
+		return false
+	}
+	step := liveSignalBarStep(firstNonEmpty(signalTimeframe, currentTimeframe, lastTimeframe))
+	if step <= 0 || currentStart.Before(lastStart) {
+		return false
+	}
+	return currentStart.Sub(lastStart) <= step
+}
+
+func parseLiveSignalBarTradeLimitKey(key string) (string, string, time.Time, bool) {
+	parts := strings.Split(strings.TrimSpace(key), "|")
+	if len(parts) != 3 {
+		return "", "", time.Time{}, false
+	}
+	barStart := parseOptionalRFC3339(parts[2])
+	if barStart.IsZero() {
+		return "", "", time.Time{}, false
+	}
+	return NormalizeSymbol(parts[0]), strings.ToLower(strings.TrimSpace(parts[1])), barStart.UTC(), true
 }
 
 func liveBootstrapPlanStepFromSignalBar(
@@ -291,10 +392,7 @@ func liveBootstrapPlanStepFromSignalBar(
 		return time.Time{}, 0, "", false
 	}
 	current := mapValue(signalBarState["current"])
-	plannedEvent := parseOptionalRFC3339(stringValue(current["barStart"]))
-	if plannedEvent.IsZero() {
-		plannedEvent = eventTime.UTC()
-	}
+	plannedEvent := liveCurrentSignalBarStart(signalBarState, eventTime)
 	price := parseFloatValue(current["close"])
 	if price <= 0 {
 		price = fallbackPrice
@@ -342,7 +440,7 @@ func liveStaleExitReentryContext(
 	if currentClose > 0 {
 		context["currentClose"] = currentClose
 	}
-	if currentBarStart := parseOptionalRFC3339(stringValue(current["barStart"])); !currentBarStart.IsZero() {
+	if currentBarStart := liveCurrentSignalBarStart(signalBarState, time.Time{}); !currentBarStart.IsZero() {
 		context["currentBarStart"] = currentBarStart.UTC().Format(time.RFC3339)
 	}
 	if nextPlannedPrice > 0 && currentClose > 0 {
@@ -384,12 +482,44 @@ func liveZeroInitialWindowPlanStep(
 	if price <= 0 {
 		return state, time.Time{}, 0, "", "", "", false
 	}
-	current := mapValue(signalBarState["current"])
-	plannedEvent := parseOptionalRFC3339(stringValue(current["barStart"]))
-	if plannedEvent.IsZero() {
-		plannedEvent = eventTime.UTC()
-	}
+	plannedEvent := liveCurrentSignalBarStart(signalBarState, eventTime)
 	return state, plannedEvent.UTC(), price, side, "entry", "Zero-Initial-Reentry", true
+}
+
+func liveSLReentryWindowPlanStep(
+	sessionState map[string]any,
+	parameters map[string]any,
+	signalBarStates map[string]any,
+	symbol string,
+	signalTimeframe string,
+	eventTime time.Time,
+) (map[string]any, time.Time, float64, string, string, string, bool) {
+	state := cloneMetadata(sessionState)
+	if parseFloatValue(state["sessionReentryCount"]) <= 0 {
+		return state, time.Time{}, 0, "", "", "", false
+	}
+	side := strings.ToUpper(strings.TrimSpace(stringValue(state["lastSLExitReentrySide"])))
+	if side == "" {
+		return state, time.Time{}, 0, "", "", "", false
+	}
+	lastSLExitAt := parseOptionalRFC3339(stringValue(state["lastSLExitFilledAt"]))
+	if lastSLExitAt.IsZero() || lastSLExitAt.UTC().After(eventTime.UTC()) {
+		return state, time.Time{}, 0, "", "", "", false
+	}
+	signalBarState, _ := pickSignalBarState(signalBarStates, symbol, signalTimeframe)
+	if signalBarState == nil {
+		return state, time.Time{}, 0, "", "", "", false
+	}
+	currentBarKey := resolveSignalBarTradeLimitKey(signalBarState, symbol, signalTimeframe)
+	lastSLBarKey := strings.TrimSpace(stringValue(state["lastSLExitSignalBarStateKey"]))
+	if !liveSignalBarKeyWithinReentryWindow(lastSLBarKey, currentBarKey, signalTimeframe) {
+		return state, time.Time{}, 0, "", "", "", false
+	}
+	price := resolveLiveReentryPlanPrice(parameters, signalBarState, side)
+	if price <= 0 {
+		return state, time.Time{}, 0, "", "", "", false
+	}
+	return state, liveCurrentSignalBarStart(signalBarState, eventTime), price, side, "entry", "SL-Reentry", true
 }
 
 func livePendingZeroInitialWindowShouldYieldSLReentry(

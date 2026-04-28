@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -77,6 +78,101 @@ func TestPrepareLivePlanStepForSignalEvaluationExpiresStaleExitReentryWindow(t *
 	}
 	if parseFloatValue(context["staleAgeSeconds"]) <= parseFloatValue(context["staleWindowSeconds"]) {
 		t.Fatalf("expected stale age to exceed stale window in context, got %+v", context)
+	}
+}
+
+func TestPrepareLivePlanStepForSignalEvaluationUsesSignalBarBoundaryForMillisBarStart(t *testing.T) {
+	barStart := time.Date(2026, 4, 28, 11, 0, 0, 0, time.UTC)
+	eventTime := barStart.Add(12*time.Minute + 14*time.Second)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      76561.0,
+			"atr14":     230.0,
+			"current": map[string]any{
+				"barStart": strconv.FormatInt(barStart.UnixMilli(), 10),
+				"close":    76440.0,
+				"high":     76483.7,
+				"low":      76440.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 76564.2,
+				"low":  76470.2,
+			},
+			"prevBar2": map[string]any{
+				"high": 76565.7,
+				"low":  76444.6,
+			},
+		},
+	}
+
+	state, gotEvent, _, _, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		map[string]any{},
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"short_reentry_atr": 0.0,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		eventTime,
+		76444.5,
+		"trigger.price",
+		barStart.Add(-2*time.Hour),
+		76444.6,
+		"SELL",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" {
+		t.Fatalf("expected breakout-backed zero window entry, got role=%s reason=%s", gotRole, gotReason)
+	}
+	if !gotEvent.Equal(barStart) {
+		t.Fatalf("expected planned event to use signal bar boundary %s, got %s", barStart, gotEvent)
+	}
+	pending := mapValue(state[livePendingZeroInitialWindowStateKey])
+	if got := stringValue(pending["signalBarStart"]); got != barStart.Format(time.RFC3339) {
+		t.Fatalf("expected pending signal bar start at bar boundary, got %s", got)
+	}
+	if got := stringValue(pending["expiresAt"]); got != barStart.Add(time.Hour).Format(time.RFC3339) {
+		t.Fatalf("expected 30m zero window to expire after current+next bar, got %s", got)
+	}
+}
+
+func TestRefreshLiveZeroInitialWindowStateExpiresLegacyEventTimeWindowAtBarBoundary(t *testing.T) {
+	barStart := time.Date(2026, 4, 28, 11, 0, 0, 0, time.UTC)
+	eventTime := barStart.Add(time.Hour + 7*time.Second)
+	state := map[string]any{
+		livePendingZeroInitialWindowStateKey: map[string]any{
+			"side":            "SELL",
+			"symbol":          "BTCUSDT",
+			"signalTimeframe": "30m",
+			"armedAt":         barStart.Add(12*time.Minute + 14*time.Second).Format(time.RFC3339),
+			"signalBarStart":  barStart.Add(12*time.Minute + 14*time.Second).Format(time.RFC3339),
+			"expiresAt":       barStart.Add(72*time.Minute + 14*time.Second).Format(time.RFC3339),
+			"breakoutBacked":  true,
+			"openReason":      liveZeroInitialWindowOpenReasonBreakoutLocked,
+		},
+	}
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"current": map[string]any{
+				"barStart": strconv.FormatInt(barStart.Add(time.Hour).UnixMilli(), 10),
+				"close":    76170.4,
+				"high":     76206.3,
+				"low":      76170.4,
+			},
+		},
+	}
+
+	updated := refreshLiveZeroInitialWindowState(state, signalStates, "BTCUSDT", "30m", map[string]any{}, eventTime)
+	if pending := mapValue(updated[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected legacy event-time zero window to expire at signal bar boundary, got %+v", pending)
 	}
 }
 
@@ -315,5 +411,69 @@ func TestPrepareLivePlanStepForSignalEvaluationKeepsPendingWindowLatentWhilePosi
 	}
 	if pending := mapValue(reactivated[livePendingZeroInitialWindowStateKey]); stringValue(pending["side"]) != "BUY" {
 		t.Fatalf("expected pending zero initial window to remain available until a real reentry consumes it, got %+v", pending)
+	}
+}
+
+func TestPrepareLivePlanStepForSignalEvaluationUsesRecordedSLReentryWindow(t *testing.T) {
+	slBarStart := time.Date(2026, 4, 28, 11, 30, 0, 0, time.UTC)
+	currentBarStart := slBarStart.Add(30 * time.Minute)
+	eventTime := currentBarStart.Add(7 * time.Second)
+	state := map[string]any{
+		"sessionReentryCount":         2.0,
+		"lastSLExitFilledAt":          slBarStart.Add(12*time.Minute + 57*time.Second).Format(time.RFC3339),
+		"lastSLExitOrderId":           "order-sl",
+		"lastSLExitSignalBarStateKey": "BTCUSDT|30m|" + slBarStart.Format(time.RFC3339),
+		"lastSLExitReentrySide":       "SELL",
+	}
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      76344.76,
+			"atr14":     231.3,
+			"current": map[string]any{
+				"barStart": strconv.FormatInt(currentBarStart.UnixMilli(), 10),
+				"close":    76170.4,
+				"high":     76206.3,
+				"low":      76170.4,
+			},
+			"prevBar1": map[string]any{
+				"high": 76483.7,
+				"low":  76157.7,
+			},
+		},
+	}
+
+	updated, gotEvent, gotPrice, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"short_reentry_atr": 0.0,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		eventTime,
+		76170.4,
+		"trigger.price",
+		currentBarStart.Add(-2*time.Hour),
+		76444.6,
+		"SELL",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "SL-Reentry" || gotSide != "SELL" {
+		t.Fatalf("expected recorded SL exit to arm SL-Reentry, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if !gotEvent.Equal(currentBarStart) {
+		t.Fatalf("expected current signal bar event %s, got %s", currentBarStart, gotEvent)
+	}
+	if gotPrice != 76483.7 {
+		t.Fatalf("expected short reentry price from prev high, got %v", gotPrice)
+	}
+	if pending := mapValue(updated[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected no pending zero window for recorded SL reentry, got %+v", pending)
 	}
 }

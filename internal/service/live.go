@@ -4086,6 +4086,7 @@ func preserveLatestSLExitFillFact(state map[string]any, latest map[string]any) {
 		"lastSLExitOrderId",
 		"lastSLExitStatus",
 		"lastSLExitSignalBarStateKey",
+		"lastSLExitReentrySide",
 	} {
 		if value, ok := latest[key]; ok {
 			state[key] = value
