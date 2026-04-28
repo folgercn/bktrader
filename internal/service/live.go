@@ -1536,8 +1536,10 @@ func buildLiveReconcileSyncResult(order domain.Order, payload map[string]any, tr
 			Price:    avgPrice,
 			Quantity: filledQty,
 			Fee:      0,
+			Source:   FillSourceSynthetic,
 			Metadata: map[string]any{
 				"source":          "binance-all-orders",
+				"reportSource":    "binance-all-orders",
 				"exchangeOrderId": exchangeOrderID,
 				"clientOrderId":   clientOrderID,
 				"tradeTime":       syncedAt,

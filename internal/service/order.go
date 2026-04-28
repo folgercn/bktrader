@@ -1004,6 +1004,7 @@ func buildLiveSyncSettlement(order domain.Order, syncResult LiveOrderSync) ([]do
 			ExchangeTradeID:   resolveLiveFillTradeID(report),
 			ExchangeTradeTime: resolveLiveFillTradeTime(report),
 			DedupFingerprint:  strings.TrimSpace(stringValue(mapValue(report.Metadata)["dedupFingerprint"])),
+			Source:            string(resolveLiveFillSource(report)),
 			Price:             price,
 			Quantity:          report.Quantity,
 			Fee:               report.Fee - report.FundingPnL,
@@ -1062,7 +1063,9 @@ func buildTerminalFilledFallbackReport(order domain.Order, syncResult LiveOrderS
 		stringValue(metadata["exchangeOrderId"]),
 		stringValue(order.Metadata["exchangeOrderId"]),
 	)
-	metadata["source"] = firstNonEmpty(stringValue(metadata["source"]), "terminal-filled-order-fallback")
+	reportSource := firstNonEmpty(stringValue(metadata["reportSource"]), stringValue(metadata["source"]), "terminal-filled-order-fallback")
+	metadata["source"] = firstNonEmpty(stringValue(metadata["source"]), reportSource)
+	metadata["reportSource"] = reportSource
 	metadata["exchangeOrderId"] = exchangeOrderID
 	metadata["clientOrderId"] = firstNonEmpty(stringValue(metadata["clientOrderId"]), order.ID)
 	metadata["tradeTime"] = tradeTime
@@ -1072,6 +1075,7 @@ func buildTerminalFilledFallbackReport(order domain.Order, syncResult LiveOrderS
 		Price:    price,
 		Quantity: fallbackQty,
 		Fee:      0,
+		Source:   FillSourceSynthetic,
 		Metadata: metadata,
 	}, true
 }
@@ -1237,7 +1241,9 @@ func fillReconciliationInputsFromIncomingFills(order domain.Order, fills []domai
 			fill.OrderID = order.ID
 		}
 		source := FillSourceReal
-		if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+		if strings.TrimSpace(fill.Source) != "" {
+			source = FillSource(strings.TrimSpace(fill.Source))
+		} else if strings.TrimSpace(fill.ExchangeTradeID) == "" {
 			fill.DedupFingerprint = strings.TrimSpace(fill.DedupFingerprint)
 			if fill.DedupFingerprint == "" {
 				fill.DedupFingerprint = fill.FallbackFingerprint()
@@ -1360,6 +1366,23 @@ func resolveLiveFillTradeID(report LiveFillReport) string {
 		stringifyBinanceID(metadata["tradeId"]),
 		stringifyBinanceID(metadata["exchangeTradeId"]),
 	))
+}
+
+func resolveLiveFillSource(report LiveFillReport) FillSource {
+	if report.Source != "" {
+		return report.Source
+	}
+	metadata := mapValue(report.Metadata)
+	if boolValue(metadata["syntheticFill"]) {
+		return FillSourceSynthetic
+	}
+	if strings.TrimSpace(stringValue(metadata["dedupFingerprint"])) != "" {
+		return FillSourceSynthetic
+	}
+	if resolveLiveFillTradeID(report) != "" {
+		return FillSourceReal
+	}
+	return ""
 }
 
 func resolveLiveFillTradeTime(report LiveFillReport) *time.Time {

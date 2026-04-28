@@ -113,6 +113,62 @@ func TestBuildLiveSyncSettlementKeepsExchangeTradeIDEmptyWithoutRealTradeID(t *t
 	}
 }
 
+func TestBuildLiveSyncSettlementPropagatesExplicitFillSource(t *testing.T) {
+	order := domain.Order{ID: "order-1", Symbol: "BTCUSDT"}
+
+	fills, _, _ := buildLiveSyncSettlement(order, LiveOrderSync{
+		Status: "FILLED",
+		Fills: []LiveFillReport{{
+			Price:    68000,
+			Quantity: 0.1,
+			Fee:      1.23,
+			Source:   FillSourceReal,
+			Metadata: map[string]any{
+				"exchangeOrderId": "exchange-order-1",
+				"tradeId":         "trade-1",
+				"tradeTime":       "2026-04-17T12:36:00Z",
+			},
+		}},
+	})
+
+	if len(fills) != 1 {
+		t.Fatalf("expected one fill, got %d", len(fills))
+	}
+	if got := fills[0].Source; got != string(FillSourceReal) {
+		t.Fatalf("expected real fill source, got %q", got)
+	}
+}
+
+func TestBinanceTradeReportsSetRealFillSource(t *testing.T) {
+	adapter := binanceFuturesLiveAdapter{}
+	reports := adapter.tradeReportsFromBinanceTrades(domain.Account{
+		ID:       "live-main",
+		Exchange: "binance-futures",
+	}, []map[string]any{{
+		"id":              "12345",
+		"orderId":         "67890",
+		"price":           "68000",
+		"qty":             "0.1",
+		"commission":      "1.23",
+		"commissionAsset": "USDT",
+		"realizedPnl":     "2.34",
+		"time":            float64(time.Date(2026, 4, 17, 12, 36, 0, 0, time.UTC).UnixMilli()),
+	}}, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected one report, got %d", len(reports))
+	}
+	if reports[0].Source != FillSourceReal {
+		t.Fatalf("expected real report source, got %q", reports[0].Source)
+	}
+	if got := stringValue(reports[0].Metadata["reportSource"]); got != "binance-user-trades" {
+		t.Fatalf("expected report source binance-user-trades, got %q", got)
+	}
+	if got := stringValue(reports[0].Metadata["tradeId"]); got != "12345" {
+		t.Fatalf("expected trade id 12345, got %q", got)
+	}
+}
+
 func TestFinalizeExecutedOrderSkipsDuplicateExchangeTradeIDFills(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
