@@ -272,7 +272,7 @@ func TestSyntheticUpgrade_PartialRealFills(t *testing.T) {
 	})
 
 	tradeTime := time.Now().UTC()
-	
+
 	syntheticFill := domain.Fill{
 		OrderID:           order.ID,
 		Price:             68000,
@@ -311,7 +311,7 @@ func TestSyntheticUpgrade_PartialRealFills(t *testing.T) {
 			remainderFills++
 		}
 	}
-	
+
 	if realFills != 1 {
 		t.Fatalf("expected 1 real fill, got %d", realFills)
 	}
@@ -321,7 +321,7 @@ func TestSyntheticUpgrade_PartialRealFills(t *testing.T) {
 	if math.Abs(totalQty-1.0) > 1e-9 {
 		t.Fatalf("expected total fill quantity to be 1.0, got %v", totalQty)
 	}
-	
+
 	if val := parseFloatValue(finalOrder.Metadata["filledQuantity"]); math.Abs(val-1.0) > 1e-9 {
 		t.Fatalf("expected order filledQuantity to remain 1.0, got %v", val)
 	}
@@ -341,20 +341,20 @@ func TestSyntheticUpgrade_RetryCleanup(t *testing.T) {
 		Price:     68000,
 		Status:    "FILLED",
 		Metadata: map[string]any{
-			"emptyTradeRetryRequired": true,
+			"emptyTradeRetryRequired":   true,
 			"immediateFillSyncRequired": true,
 		},
 	})
 
 	realFill := domain.Fill{
-		OrderID:           order.ID,
-		ExchangeTradeID:   "real-trade-1",
-		Price:             68000,
-		Quantity:          1.0,
+		OrderID:         order.ID,
+		ExchangeTradeID: "real-trade-1",
+		Price:           68000,
+		Quantity:        1.0,
 	}
-	
+
 	order.Metadata["emptyTradeRetryRequired"] = false
-	
+
 	finalOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{realFill})
 	if err != nil {
 		t.Fatalf("finalize failed: %v", err)
