@@ -156,9 +156,6 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 				t.Fatalf("expected stop_mode=atr for %s, got %s", item.Key, got)
 			}
 			expectedStopLossATR := 0.3
-			if want.enhanced {
-				expectedStopLossATR = 0.05
-			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["stop_loss_atr"]); got != expectedStopLossATR {
 				t.Fatalf("expected stop_loss_atr=%v for %s, got %v", expectedStopLossATR, item.Key, got)
 			}

@@ -154,7 +154,7 @@ func NewStore() *Store {
 			"t3_min_sma_atr_separation":       0.25,
 			"use_sma5_intraday_structure":     true,
 			"stop_mode":                       "atr",
-			"stop_loss_atr":                   0.05,
+			"stop_loss_atr":                   0.3,
 			"profit_protect_atr":              1.0,
 			"trailing_stop_atr":               0.3,
 			"delayed_trailing_activation_atr": 0.5,
