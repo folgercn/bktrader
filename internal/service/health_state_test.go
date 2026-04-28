@@ -354,6 +354,48 @@ func TestListAlertsShowsAuthoritativeSyncWarningForLocalRecoveryFallback(t *test
 	}
 }
 
+func TestListAlertsUsesStableLiveUnprotectedPositionID(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+
+	state := cloneMetadata(session.State)
+	state["symbol"] = "BTCUSDT"
+	state["protectionRecoveryStatus"] = "unprotected-open-position"
+	state["positionRecoveryStatus"] = "unprotected-open-position"
+	state["protectionRecoveryAuthoritative"] = true
+	state["lastProtectionRecoveryAt"] = time.Date(2026, 4, 28, 1, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	session.State = state
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session failed: %v", err)
+	}
+
+	alerts, err := platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list alerts failed: %v", err)
+	}
+
+	expectedID := "live-unprotected-position-" + session.ID
+	found := false
+	for _, alert := range alerts {
+		if alert.Title != "恢复持仓无保护" {
+			continue
+		}
+		found = true
+		if alert.ID != expectedID {
+			t.Fatalf("expected stable session-scoped alert ID %s, got %s", expectedID, alert.ID)
+		}
+		if strings.Contains(alert.ID, "BTCUSDT") {
+			t.Fatalf("expected alert ID not to include symbol, got %s", alert.ID)
+		}
+	}
+	if !found {
+		t.Fatal("expected unprotected-position alert to be present")
+	}
+}
+
 func TestListAlertsShowsCriticalLiveExitDispatchFailure(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.store.GetLiveSession("live-session-main")
