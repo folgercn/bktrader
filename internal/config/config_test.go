@@ -107,6 +107,7 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_BEARER_TOKEN", " supervisor-token ")
 	t.Setenv("SUPERVISOR_POLL_INTERVAL_SECONDS", "45")
 	t.Setenv("SUPERVISOR_HTTP_TIMEOUT_SECONDS", "3")
+	t.Setenv("SUPERVISOR_APPLICATION_RESTART_ENABLED", "true")
 
 	cfg := Load()
 	if len(cfg.SupervisorTargets) != 2 {
@@ -123,6 +124,9 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	}
 	if cfg.SupervisorHTTPTimeoutSeconds != 3 {
 		t.Fatalf("expected supervisor HTTP timeout 3, got %d", cfg.SupervisorHTTPTimeoutSeconds)
+	}
+	if !cfg.SupervisorAppRestartEnabled {
+		t.Fatal("expected supervisor application restart to be enabled")
 	}
 }
 

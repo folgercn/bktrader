@@ -1,9 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -13,6 +15,10 @@ import (
 )
 
 const defaultRuntimeSupervisorHTTPTimeout = 5 * time.Second
+
+type RuntimeSupervisorOptions struct {
+	EnableApplicationRestart bool
+}
 
 type RuntimeSupervisorTarget struct {
 	Name        string `json:"name"`
@@ -29,12 +35,13 @@ type RuntimeSupervisorProbe struct {
 }
 
 type RuntimeSupervisorTargetSnapshot struct {
-	Name          string                 `json:"name"`
-	BaseURL       string                 `json:"baseUrl"`
-	CheckedAt     time.Time              `json:"checkedAt"`
-	Healthz       RuntimeSupervisorProbe `json:"healthz"`
-	RuntimeStatus RuntimeSupervisorProbe `json:"runtimeStatus"`
-	Status        *RuntimeStatusSnapshot `json:"status,omitempty"`
+	Name           string                           `json:"name"`
+	BaseURL        string                           `json:"baseUrl"`
+	CheckedAt      time.Time                        `json:"checkedAt"`
+	Healthz        RuntimeSupervisorProbe           `json:"healthz"`
+	RuntimeStatus  RuntimeSupervisorProbe           `json:"runtimeStatus"`
+	Status         *RuntimeStatusSnapshot           `json:"status,omitempty"`
+	ControlActions []RuntimeSupervisorControlAction `json:"controlActions,omitempty"`
 }
 
 type RuntimeSupervisorSnapshot struct {
@@ -42,12 +49,26 @@ type RuntimeSupervisorSnapshot struct {
 	Targets   []RuntimeSupervisorTargetSnapshot `json:"targets"`
 }
 
+type RuntimeSupervisorControlAction struct {
+	Action      string    `json:"action"`
+	Path        string    `json:"path"`
+	RuntimeID   string    `json:"runtimeId"`
+	RuntimeKind string    `json:"runtimeKind"`
+	Reason      string    `json:"reason,omitempty"`
+	Submitted   bool      `json:"submitted"`
+	StatusCode  int       `json:"statusCode,omitempty"`
+	Error       string    `json:"error,omitempty"`
+	RequestedAt time.Time `json:"requestedAt"`
+}
+
 type RuntimeSupervisor struct {
 	targets []RuntimeSupervisorTarget
 	client  *http.Client
+	options RuntimeSupervisorOptions
 
-	mu       sync.RWMutex
-	snapshot RuntimeSupervisorSnapshot
+	mu                sync.RWMutex
+	snapshot          RuntimeSupervisorSnapshot
+	submittedRestarts map[string]string
 }
 
 func (p *Platform) SetRuntimeSupervisor(supervisor *RuntimeSupervisor) {
@@ -67,6 +88,10 @@ func (p *Platform) RuntimeSupervisorSnapshot() (RuntimeSupervisorSnapshot, bool)
 }
 
 func NewRuntimeSupervisor(targets []RuntimeSupervisorTarget, client *http.Client) *RuntimeSupervisor {
+	return NewRuntimeSupervisorWithOptions(targets, client, RuntimeSupervisorOptions{})
+}
+
+func NewRuntimeSupervisorWithOptions(targets []RuntimeSupervisorTarget, client *http.Client, options RuntimeSupervisorOptions) *RuntimeSupervisor {
 	normalized := make([]RuntimeSupervisorTarget, 0, len(targets))
 	for i, target := range targets {
 		baseURL := strings.TrimRight(strings.TrimSpace(target.BaseURL), "/")
@@ -85,8 +110,10 @@ func NewRuntimeSupervisor(targets []RuntimeSupervisorTarget, client *http.Client
 		client = &http.Client{Timeout: defaultRuntimeSupervisorHTTPTimeout}
 	}
 	return &RuntimeSupervisor{
-		targets: normalized,
-		client:  client,
+		targets:           normalized,
+		client:            client,
+		options:           options,
+		submittedRestarts: make(map[string]string),
 	}
 }
 
@@ -141,6 +168,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 		targetSnapshot.RuntimeStatus = s.fetchJSON(ctx, target, "/api/v1/runtime/status", &status)
 		if targetSnapshot.RuntimeStatus.Error == "" && targetSnapshot.RuntimeStatus.Reachable {
 			targetSnapshot.Status = &status
+			targetSnapshot.ControlActions = s.submitApplicationRestarts(ctx, target, status, targetSnapshot.Healthz, now)
 		}
 		snapshot.Targets = append(snapshot.Targets, targetSnapshot)
 	}
@@ -190,6 +218,7 @@ func (s *RuntimeSupervisor) collectAndLog(ctx context.Context, logger *slog.Logg
 	snapshot := s.Collect(ctx)
 	unreachable := 0
 	runtimeErrors := 0
+	controlActions := 0
 	for _, target := range snapshot.Targets {
 		if !target.Healthz.Reachable || target.Healthz.Error != "" {
 			unreachable++
@@ -197,12 +226,138 @@ func (s *RuntimeSupervisor) collectAndLog(ctx context.Context, logger *slog.Logg
 		if target.RuntimeStatus.Error != "" {
 			runtimeErrors++
 		}
+		controlActions += len(target.ControlActions)
 	}
-	logger.Info("read-only runtime supervisor snapshot collected",
+	logger.Info("runtime supervisor snapshot collected",
 		"target_count", len(snapshot.Targets),
 		"unreachable_count", unreachable,
 		"runtime_error_count", runtimeErrors,
+		"control_action_count", controlActions,
+		"application_restart_enabled", s.options.EnableApplicationRestart,
 	)
+}
+
+func (s *RuntimeSupervisor) submitApplicationRestarts(ctx context.Context, target RuntimeSupervisorTarget, status RuntimeStatusSnapshot, healthz RuntimeSupervisorProbe, now time.Time) []RuntimeSupervisorControlAction {
+	if s == nil || !s.options.EnableApplicationRestart {
+		return nil
+	}
+	if !healthz.Reachable || healthz.Error != "" {
+		return nil
+	}
+	actions := make([]RuntimeSupervisorControlAction, 0)
+	for _, runtime := range status.Runtimes {
+		if !runtimeSupervisorRestartDue(runtime, now) {
+			continue
+		}
+		if s.runtimeRestartAlreadySubmitted(target, runtime) {
+			continue
+		}
+		action := s.submitRuntimeRestart(ctx, target, runtime, now)
+		if action.Submitted {
+			s.markRuntimeRestartSubmitted(target, runtime)
+		}
+		actions = append(actions, action)
+	}
+	return actions
+}
+
+func (s *RuntimeSupervisor) runtimeRestartAlreadySubmitted(target RuntimeSupervisorTarget, runtime RuntimeStatus) bool {
+	if s == nil {
+		return false
+	}
+	nextRestartAt := strings.TrimSpace(runtime.NextRestartAt)
+	if nextRestartAt == "" {
+		return false
+	}
+	key := runtimeSupervisorRestartKey(target, runtime)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.submittedRestarts[key] == nextRestartAt
+}
+
+func (s *RuntimeSupervisor) markRuntimeRestartSubmitted(target RuntimeSupervisorTarget, runtime RuntimeStatus) {
+	if s == nil {
+		return
+	}
+	nextRestartAt := strings.TrimSpace(runtime.NextRestartAt)
+	if nextRestartAt == "" {
+		return
+	}
+	key := runtimeSupervisorRestartKey(target, runtime)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.submittedRestarts == nil {
+		s.submittedRestarts = make(map[string]string)
+	}
+	s.submittedRestarts[key] = nextRestartAt
+}
+
+func runtimeSupervisorRestartKey(target RuntimeSupervisorTarget, runtime RuntimeStatus) string {
+	return strings.TrimSpace(target.Name) + "|" + strings.TrimSpace(target.BaseURL) + "|" + strings.TrimSpace(runtime.RuntimeKind) + "|" + strings.TrimSpace(runtime.RuntimeID)
+}
+
+func runtimeSupervisorRestartDue(runtime RuntimeStatus, now time.Time) bool {
+	if strings.TrimSpace(runtime.RuntimeID) == "" {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(runtime.RuntimeKind), "signal") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(runtime.DesiredStatus), "RUNNING") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(runtime.ActualStatus), "ERROR") {
+		return false
+	}
+	if runtime.AutoRestartSuppressed {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(runtime.RestartSeverity), "fatal") {
+		return false
+	}
+	nextRestartAt, ok := ParseRestartTime(map[string]any{"nextRestartAt": runtime.NextRestartAt}, "nextRestartAt")
+	if !ok {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	return !nextRestartAt.After(now.UTC())
+}
+
+func (s *RuntimeSupervisor) submitRuntimeRestart(ctx context.Context, target RuntimeSupervisorTarget, runtime RuntimeStatus, now time.Time) RuntimeSupervisorControlAction {
+	reason := runtimeSupervisorRestartReason(target, runtime)
+	action := RuntimeSupervisorControlAction{
+		Action:      "restart",
+		Path:        "/api/v1/runtime/restart",
+		RuntimeID:   runtime.RuntimeID,
+		RuntimeKind: runtime.RuntimeKind,
+		Reason:      reason,
+		RequestedAt: now.UTC(),
+	}
+	payload := map[string]any{
+		"runtimeId":   runtime.RuntimeID,
+		"runtimeKind": runtime.RuntimeKind,
+		"confirm":     true,
+		"force":       false,
+		"reason":      reason,
+	}
+	statusCode, err := s.postJSON(ctx, target, action.Path, payload)
+	action.StatusCode = statusCode
+	if err != nil {
+		action.Error = err.Error()
+		return action
+	}
+	action.Submitted = true
+	return action
+}
+
+func runtimeSupervisorRestartReason(target RuntimeSupervisorTarget, runtime RuntimeStatus) string {
+	reason := strings.TrimSpace(runtime.RestartReason)
+	if reason == "" {
+		reason = "runtime-error"
+	}
+	return fmt.Sprintf("supervisor scheduled application restart: target=%s runtime=%s reason=%s", strings.TrimSpace(target.Name), runtime.RuntimeID, reason)
 }
 
 func (s *RuntimeSupervisor) fetchJSON(ctx context.Context, target RuntimeSupervisorTarget, path string, out any) RuntimeSupervisorProbe {
@@ -239,6 +394,35 @@ func (s *RuntimeSupervisor) fetchJSON(ctx context.Context, target RuntimeSupervi
 		probe.Error = err.Error()
 	}
 	return probe
+}
+
+func (s *RuntimeSupervisor) postJSON(ctx context.Context, target RuntimeSupervisorTarget, path string, payload any) (int, error) {
+	endpoint, err := runtimeSupervisorEndpoint(target.BaseURL, path)
+	if err != nil {
+		return 0, err
+	}
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(payload); err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &body)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token := strings.TrimSpace(target.BearerToken); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return resp.StatusCode, fmt.Errorf("http status %d: %s", resp.StatusCode, strings.TrimSpace(string(message)))
+	}
+	return resp.StatusCode, nil
 }
 
 func runtimeSupervisorEndpoint(baseURL, path string) (string, error) {

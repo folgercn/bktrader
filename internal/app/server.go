@@ -194,13 +194,16 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 		if len(targets) == 0 {
 			logger.Warn("read-only runtime supervisor disabled because SUPERVISOR_TARGETS is empty")
 		} else {
-			supervisor := service.NewRuntimeSupervisor(targets, &http.Client{Timeout: time.Duration(cfg.SupervisorHTTPTimeoutSeconds) * time.Second})
+			supervisor := service.NewRuntimeSupervisorWithOptions(targets, &http.Client{Timeout: time.Duration(cfg.SupervisorHTTPTimeoutSeconds) * time.Second}, service.RuntimeSupervisorOptions{
+				EnableApplicationRestart: cfg.SupervisorAppRestartEnabled,
+			})
 			platform.SetRuntimeSupervisor(supervisor)
 			supervisor.Start(ctx, time.Duration(cfg.SupervisorPollIntervalSeconds)*time.Second)
-			logger.Info("read-only runtime supervisor started",
+			logger.Info("runtime supervisor started",
 				"target_count", len(supervisor.Targets()),
 				"poll_interval_seconds", cfg.SupervisorPollIntervalSeconds,
 				"http_timeout_seconds", cfg.SupervisorHTTPTimeoutSeconds,
+				"application_restart_enabled", cfg.SupervisorAppRestartEnabled,
 			)
 		}
 	}

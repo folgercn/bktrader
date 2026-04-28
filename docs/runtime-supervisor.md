@@ -319,9 +319,17 @@ func ClearRestartState(state map[string]any, keys []string)
 - `BKTRADER_ROLE=supervisor` 只启动 read-only supervisor，不启动 live / signal / dashboard / notification 业务组件。
 - `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL。
 - `SUPERVISOR_BEARER_TOKEN` 可选；设置后 read-only collector 会对所有 targets 的 `/healthz` 与 `/api/v1/runtime/status` 请求附加 `Authorization: Bearer <token>`，用于采集受鉴权保护的内网 runtime API。
-- 当前只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
+- 默认只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
 - `GET /api/v1/supervisor/status` 返回最近一次 read-only supervisor 采集快照。
 - `bktrader-ctl runtime status --json` 和 `bktrader-ctl supervisor status --json` 提供 CLI 只读巡检入口。
+- `SUPERVISOR_APPLICATION_RESTART_ENABLED=false` 为默认值；只有显式设为 `true` 时，supervisor 才会对满足全部条件的 signal runtime 提交应用内 `POST /api/v1/runtime/restart`：
+  - 目标服务 `/healthz` 可达且成功。
+  - `/api/v1/runtime/status` 可读。
+  - runtimeKind 为 `signal`。
+  - `desiredStatus=RUNNING` 且 `actualStatus=ERROR`。
+  - `autoRestartSuppressed=false` 且 `restartSeverity` 不是 `fatal`。
+  - `nextRestartAt` 存在且已经到期。
+  - 提交 restart 时固定 `force=false`、`confirm=true`，并带上 supervisor reason；同一个 target/runtime/`nextRestartAt` 只提交一次。
 
 验收标准：
 
