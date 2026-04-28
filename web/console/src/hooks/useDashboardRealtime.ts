@@ -20,10 +20,63 @@ function intervalFromEnv(raw: string | undefined, fallback: number, minimum: num
   return isNaN(parsed) ? fallback : Math.max(minimum, parsed);
 }
 
+type ConsoleNotification = { type: 'success' | 'error' | 'info'; message: string };
+
+function liveSessionControlStatus(session: LiveSession) {
+  const state = session.state ?? {};
+  const desired = String(state.desiredStatus ?? "").trim().toUpperCase();
+  const actual = String(state.actualStatus ?? "").trim().toUpperCase();
+  const error = String(state.lastControlError ?? "").trim();
+  return {
+    desired,
+    actual,
+    error,
+    key: `${desired}|${actual}|${error}`,
+  };
+}
+
+function notifyLiveSessionControlTransitions(
+  previousByID: Map<string, string>,
+  sessions: LiveSession[],
+  setNotification: (notification: ConsoleNotification | null) => void
+) {
+  const seen = new Set<string>();
+  for (const session of sessions) {
+    seen.add(session.id);
+    const current = liveSessionControlStatus(session);
+    const previousKey = previousByID.get(session.id);
+    previousByID.set(session.id, current.key);
+    if (!previousKey || previousKey === current.key || !current.desired) {
+      continue;
+    }
+    const [previousDesired, previousActual] = previousKey.split("|");
+    const wasPending = previousDesired !== "" && previousDesired !== previousActual;
+    if (current.actual === "ERROR") {
+      setNotification({
+        type: 'error',
+        message: `会话控制失败：${current.error || session.id}`,
+      });
+      continue;
+    }
+    if (wasPending && current.desired === current.actual) {
+      setNotification({
+        type: 'success',
+        message: current.actual === "RUNNING" ? `会话已启动完成：${session.id}` : `会话已停止完成：${session.id}`,
+      });
+    }
+  }
+  for (const id of Array.from(previousByID.keys())) {
+    if (!seen.has(id)) {
+      previousByID.delete(id);
+    }
+  }
+}
+
 export function useDashboardRealtime() {
   const setError = useUIStore(s => s.setError);
   const setLoading = useUIStore(s => s.setLoading);
   const setAuthSession = useUIStore(s => s.setAuthSession);
+  const setNotification = useUIStore(s => s.setNotification);
   const authSession = useUIStore(s => s.authSession);
 
   const setLiveSessions = useTradingStore(s => s.setLiveSessions);
@@ -36,6 +89,7 @@ export function useDashboardRealtime() {
 
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const realtimeLoadInFlightRef = useRef<Promise<void> | null>(null);
+  const liveSessionControlRef = useRef<Map<string, string>>(new Map());
 
   const isStreamEnabled = import.meta.env.VITE_DASHBOARD_STREAM_ENABLED === 'true';
   const { isConnected: isStreamConnected } = useDashboardStream(isStreamEnabled);
@@ -66,7 +120,9 @@ export function useDashboardRealtime() {
     const normalizedAlerts = Array.isArray(alertData) ? alertData : [];
     const normalizedNotifications = Array.isArray(notificationData) ? notificationData : [];
 
-    setLiveSessions((current) => mergeLiveSessionSnapshot(current, normalizedLiveSessions));
+    const mergedLiveSessions = mergeLiveSessionSnapshot(useTradingStore.getState().liveSessions, normalizedLiveSessions);
+    notifyLiveSessionControlTransitions(liveSessionControlRef.current, mergedLiveSessions, setNotification);
+    setLiveSessions(mergedLiveSessions);
     setPositions(normalizedPositions);
     setOrders(normalizedOrders);
     setFills(normalizedFills);

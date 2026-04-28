@@ -479,8 +479,8 @@ export function LiveSessionModal({
           }}
         >
           {liveSessionLaunchAction
-            ? editingLiveSessionId ? "保存并启动中..." : "启动中..."
-            : editingLiveSessionId ? "保存并启动会话" : "立即创建并启动"}
+            ? editingLiveSessionId ? "保存并提交中..." : "提交中..."
+            : editingLiveSessionId ? "保存并提交启动" : "创建并提交启动"}
         </Button>
       </ModalActions>
     </SettingsModalFrame>

@@ -674,11 +674,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 		action := parts[1]
 		switch action {
 		case "start":
-			if !cfg.RuntimeActionsEnabled() {
-				writeError(w, http.StatusConflict, "runtime action start is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
-				return
-			}
-			item, err := platform.StartLiveSession(sessionID)
+			item, err := platform.RequestLiveSessionStart(sessionID)
 			if err != nil {
 				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
 					writeError(w, http.StatusConflict, err.Error())
@@ -687,13 +683,9 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusOK, item)
+			writeJSON(w, http.StatusAccepted, item)
 		case "stop":
-			if !cfg.RuntimeActionsEnabled() {
-				writeError(w, http.StatusConflict, "runtime action stop is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
-				return
-			}
-			item, err := platform.StopLiveSessionWithForce(sessionID, queryFlagEnabled(r, "force"))
+			item, err := platform.RequestLiveSessionStopWithForce(sessionID, queryFlagEnabled(r, "force"))
 			if err != nil {
 				if errors.Is(err, service.ErrLiveControlOperationInProgress) {
 					writeError(w, http.StatusConflict, err.Error())
@@ -706,7 +698,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusOK, item)
+			writeJSON(w, http.StatusAccepted, item)
 		case "dispatch":
 			if !cfg.RuntimeActionsEnabled() {
 				writeError(w, http.StatusConflict, "runtime action dispatch is disabled for BKTRADER_ROLE="+cfg.ProcessRole)

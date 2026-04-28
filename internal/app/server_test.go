@@ -23,7 +23,7 @@ func TestRuntimeOptionsForLiveRunnerDoesNotStartSignalRuntimeScanner(t *testing.
 	if options.StartSignalRuntimeScanner {
 		t.Fatal("expected live-runner not to start signal runtime scanner")
 	}
-	if !options.RecoverLiveTrading || !options.StartLiveSync || !options.StartRuntimeEventConsumer {
+	if !options.RecoverLiveTrading || !options.StartLiveSync || !options.StartRuntimeEventConsumer || !options.StartLiveSessionControlScanner {
 		t.Fatalf("expected live-runner to keep live recovery/sync/event consumer, got %+v", options)
 	}
 }
@@ -36,7 +36,8 @@ func TestRuntimeOptionsForMonolithStartAllRuntimeComponents(t *testing.T) {
 		!options.StartLiveSync ||
 		!options.StartDashboard ||
 		!options.StartRuntimeEventConsumer ||
-		!options.StartSignalRuntimeScanner {
+		!options.StartSignalRuntimeScanner ||
+		!options.StartLiveSessionControlScanner {
 		t.Fatalf("expected monolith to start all runtime components, got %+v", options)
 	}
 }

@@ -1661,6 +1661,15 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 		if !strings.EqualFold(session.Status, "RUNNING") {
 			continue
 		}
+		if strings.EqualFold(stringValue(session.State["desiredStatus"]), "STOPPED") {
+			state := cloneMetadata(session.State)
+			delete(state, "lastRecoveryError")
+			state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
+			state["lastRecoveryStatus"] = "skipped-live-desired-stopped"
+			_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+			p.logger("service.live", "session_id", session.ID).Warn("skip live session recovery because live desiredStatus is STOPPED")
+			continue
+		}
 		requested := liveControlOperationInfo{
 			Operation:     liveControlOperationStartupRecovery,
 			AccountID:     session.AccountID,
