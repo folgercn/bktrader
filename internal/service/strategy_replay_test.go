@@ -159,6 +159,45 @@ func TestBuildStrategyReplayConfigUsesUpdatedBaselineDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveReplayInitialBreakoutAllowsT3WithSep(t *testing.T) {
+	cfg := strategyReplayConfig{
+		BreakoutShape:         "baseline_plus_t3",
+		T3MinSMAATRSeparation: 0.25,
+	}
+	sig := strategySignalBar{
+		MA5:       68200,
+		ATR:       800,
+		PrevHigh1: 68800,
+		PrevHigh2: 68600,
+		PrevHigh3: 69000,
+		PrevLow1:  68100,
+		PrevLow2:  68000,
+		PrevLow3:  67900,
+	}
+	breakout := resolveReplayInitialBreakout(sig, "long", 69010, cfg)
+	if !breakout.Ready || breakout.Level != 69000 || breakout.Shape != "t3_swing" {
+		t.Fatalf("expected t3 breakout to pass sep filter, got %#v", breakout)
+	}
+}
+
+func TestResolveReplayInitialBreakoutBlocksT3InsideSep(t *testing.T) {
+	cfg := strategyReplayConfig{
+		BreakoutShape:         "baseline_plus_t3",
+		T3MinSMAATRSeparation: 0.25,
+	}
+	sig := strategySignalBar{
+		MA5:       68850,
+		ATR:       800,
+		PrevHigh1: 68800,
+		PrevHigh2: 68600,
+		PrevHigh3: 69000,
+	}
+	breakout := resolveReplayInitialBreakout(sig, "long", 69010, cfg)
+	if breakout.Ready {
+		t.Fatalf("expected t3 breakout inside sep filter to be blocked, got %#v", breakout)
+	}
+}
+
 func TestRunStrategyReplayOnMinuteBarsUsesZeroInitialReentryWindowForLongEntries(t *testing.T) {
 	start := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	signals := []strategySignalBar{

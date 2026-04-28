@@ -41,6 +41,16 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 	if err != nil {
 		return nil, err
 	}
+	enhancedStrategyID := ""
+	enhancedStrategyName := ""
+	enhancedStrategyVersionID := ""
+	hasEnhancedTemplate := false
+	if id, name, versionID, _, err := p.resolveLiveTemplateStrategy("strategy-bk-btc-30m-enhanced"); err == nil {
+		enhancedStrategyID = id
+		enhancedStrategyName = name
+		enhancedStrategyVersionID = versionID
+		hasEnhancedTemplate = true
+	}
 
 	baseBinding := map[string]any{
 		"adapterKey":    "binance-futures",
@@ -176,17 +186,44 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			Notes: notes,
 		}
 	}
+	buildEnhancedTemplate := func() LiveLaunchTemplate {
+		item := buildTemplate("BTCUSDT", "30m", 0.002, false)
+		item.Key = "binance-testnet-btc-30m-enhanced"
+		item.Name = "Binance Testnet BTCUSDT 30m Enhanced"
+		item.Description = "BTCUSDT 30m 增强策略：live_intrabar_sma5_baseline_plus_t3_breakout + t3 sep_0p25。"
+		item.StrategyID = enhancedStrategyID
+		item.StrategyName = enhancedStrategyName
+		item.StrategyVersionID = enhancedStrategyVersionID
+		for key, value := range liveBTC30mEnhancedOverrides() {
+			item.LaunchPayload.LiveSessionOverrides[key] = value
+		}
+		item.LaunchPayload.StrategyID = enhancedStrategyID
+		item.LaunchPayload.LaunchTemplateKey = item.Key
+		item.LaunchPayload.LaunchTemplateName = item.Name
+		item.Notes = append([]string{
+			fmt.Sprintf("增强模板单独使用 %s（strategyEngine=%s），不改变原 BTCUSDT 30m 模板。", enhancedStrategyName, "bk-live-intrabar-sma5-t3-sep"),
+			"策略口径对齐 research `live_intrabar_sma5_baseline_plus_t3_breakout+sep_0p25`：SMA5 intrabar hard filter + original_t2/t3_swing breakout，其中 sep_0p25 只过滤 t3_swing。",
+			"模板仍保持 dispatchMode 由前端提交前选择，默认展示为 manual-review。",
+		}, item.Notes...)
+		return item
+	}
 
-	return []LiveLaunchTemplate{
+	templates := []LiveLaunchTemplate{
 		buildTemplate("BTCUSDT", "5m", 0.002, false),
 		buildTemplate("BTCUSDT", "15m", 0.002, true),
 		buildTemplate("BTCUSDT", "30m", 0.002, true),
+	}
+	if hasEnhancedTemplate {
+		templates = append(templates, buildEnhancedTemplate())
+	}
+	templates = append(templates,
 		buildTemplate("BTCUSDT", "4h", 0.002, false),
 		buildTemplate("BTCUSDT", "1d", 0.002, false),
 		buildTemplate("ETHUSDT", "5m", 0.100, false),
 		buildTemplate("ETHUSDT", "4h", 0.100, false),
 		buildTemplate("ETHUSDT", "1d", 0.100, false),
-	}, nil
+	)
+	return templates, nil
 }
 
 func liveLaunchTemplateDispatchModeOptions() []string {
@@ -230,14 +267,22 @@ func liveIntradayResearchBaselineOverrides(strategyEngine string) map[string]any
 	}
 }
 
+func liveBTC30mEnhancedOverrides() map[string]any {
+	overrides := liveIntradayResearchBaselineOverrides("bk-live-intrabar-sma5-t3-sep")
+	overrides["max_trades_per_bar"] = domain.ResearchBaselineMaxTradesPerBar
+	overrides["stop_loss_atr"] = 0.05
+	overrides["breakout_shape"] = "baseline_plus_t3"
+	overrides["t3_min_sma_atr_separation"] = 0.25
+	overrides["use_sma5_intraday_structure"] = true
+	return overrides
+}
+
 func (p *Platform) resolvePrimaryLiveTemplateStrategy() (string, string, string, string, error) {
 	preferred := []string{"strategy-bk-1d"}
 	for _, strategyID := range preferred {
-		strategy, err := p.GetStrategy(strategyID)
-		if err != nil {
-			continue
+		if strategyID, strategyName, versionID, strategyEngine, err := p.resolveLiveTemplateStrategy(strategyID); err == nil {
+			return strategyID, strategyName, versionID, strategyEngine, nil
 		}
-		return liveTemplateStrategyMetadata(strategy)
 	}
 	strategies, err := p.ListStrategies()
 	if err != nil {
@@ -252,6 +297,14 @@ func (p *Platform) resolvePrimaryLiveTemplateStrategy() (string, string, string,
 		return liveTemplateStrategyMetadata(strategies[0])
 	}
 	return "", "", "", "", fmt.Errorf("no strategy available for live launch templates")
+}
+
+func (p *Platform) resolveLiveTemplateStrategy(strategyID string) (string, string, string, string, error) {
+	strategy, err := p.GetStrategy(strategyID)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return liveTemplateStrategyMetadata(strategy)
 }
 
 func liveTemplateStrategyMetadata(strategy map[string]any) (string, string, string, string, error) {

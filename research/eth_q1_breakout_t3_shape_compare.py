@@ -49,10 +49,35 @@ DEFAULT_TICK_FILES = [
 ]
 
 SCENARIOS = [
-    ("baseline", "same_bar_parity", "baseline_original_breakout"),
-    ("baseline_plus_t3", "same_bar_parity", "baseline_plus_t3_breakout"),
-    ("baseline", "live_intrabar_sma5", "live_intrabar_sma5_baseline_original_breakout"),
-    ("baseline_plus_t3", "live_intrabar_sma5", "live_intrabar_sma5_baseline_plus_t3_breakout"),
+    {
+        "scenario": "t3_sma5_baseline",
+        "breakout_shape": "baseline_plus_t3",
+        "replay_mode": "live_intrabar_sma5",
+        "t3_reentry_size_schedule": [0.20, 0.10],
+        "t3_cooldown_bars": 0,
+        "timeframes": ["30min"],
+        "t3_quality_filters": {},
+    },
+    {
+        "scenario": "A_sep_0p25",
+        "breakout_shape": "baseline_plus_t3",
+        "replay_mode": "live_intrabar_sma5",
+        "t3_reentry_size_schedule": [0.20, 0.10],
+        "t3_cooldown_bars": 0,
+        "timeframes": ["30min"],
+        "t3_quality_filters": {"min_sma_atr_separation": 0.25},
+        "quality_filter_shapes": ["t3_swing"],
+    },
+    {
+        "scenario": "all_breakouts_sep_0p25",
+        "breakout_shape": "baseline_plus_t3",
+        "replay_mode": "live_intrabar_sma5",
+        "t3_reentry_size_schedule": [0.20, 0.10],
+        "t3_cooldown_bars": 0,
+        "timeframes": ["30min"],
+        "t3_quality_filters": {"min_sma_atr_separation": 0.25},
+        "quality_filter_shapes": ["original_t2", "t3_swing"],
+    },
 ]
 
 
@@ -180,13 +205,23 @@ def build_signal_frame(second_bars: pd.DataFrame, timeframe: str):
     ).max(axis=1)
     signal["sma5"] = signal["close"].rolling(5).mean()
     signal["ma5"] = signal["sma5"]
+    signal["prev_sma5_1"] = signal["sma5"].shift(1)
+    signal["sma5_slope"] = signal["sma5"] - signal["prev_sma5_1"]
     signal["atr"] = true_range.rolling(14).mean()
+    signal["atr_percentile"] = signal["atr"].rolling(240, min_periods=50).apply(_last_percentile, raw=True)
     for n in range(1, 5):
         signal[f"prev_close_{n}"] = signal["close"].shift(n)
     signal = apply_breakout_levels(signal, "wick")
     signal["prev_high_3"] = signal["high"].shift(3)
     signal["prev_low_3"] = signal["low"].shift(3)
     return one_min, signal
+
+
+def _last_percentile(values: np.ndarray) -> float:
+    clean = values[~np.isnan(values)]
+    if len(clean) == 0:
+        return np.nan
+    return float((clean <= clean[-1]).mean() * 100.0)
 
 
 def _positive(*values: float) -> bool:
@@ -217,7 +252,18 @@ def _short_breakout(sig: pd.Series, current_low: float, breakout_shape: str):
     return False, np.nan, ""
 
 
-def _open_position(balance, sig, side, entry_price, notional_share, reason, stop_mode, stop_loss_atr):
+def _open_position(
+    balance,
+    sig,
+    side,
+    entry_price,
+    notional_share,
+    reason,
+    stop_mode,
+    stop_loss_atr,
+    breakout_shape_name,
+    replay_mode,
+):
     notional_value = balance * notional_share
     position = {
         "side": side,
@@ -225,6 +271,8 @@ def _open_position(balance, sig, side, entry_price, notional_share, reason, stop
         "sl": _resolve_stop_price(side, entry_price, sig, stop_mode, stop_loss_atr),
         "protected": reason == "PT-Reentry",
         "notional": notional_value,
+        "breakout_shape_name": breakout_shape_name,
+        "replay_mode": replay_mode,
     }
     if side == "long":
         position["hwm"] = entry_price
@@ -232,6 +280,59 @@ def _open_position(balance, sig, side, entry_price, notional_share, reason, stop
         position["lwm"] = entry_price
     balance -= notional_value * 0.001
     return balance, position
+
+
+def _shape_schedule(shape_name: str, baseline_schedule: list[float], t3_schedule) -> list[float]:
+    if shape_name == "t3_swing" and t3_schedule:
+        return t3_schedule
+    return baseline_schedule
+
+
+def _allow_breakout_lock(shape_name: str, bar_index: int, last_t3_lock_bar_index: int, t3_cooldown_bars: int) -> bool:
+    if shape_name != "t3_swing" or t3_cooldown_bars <= 0:
+        return True
+    return bar_index - last_t3_lock_bar_index > t3_cooldown_bars
+
+
+def _t3_quality_reject_reason(sig, side: str, current_price: float, breakout_level: float, filters: dict) -> str:
+    if not filters:
+        return ""
+
+    sma5 = sig.get("sma5", np.nan)
+    sma5_slope = sig.get("sma5_slope", np.nan)
+    atr = sig.get("atr", np.nan)
+
+    if filters.get("trend"):
+        if not _positive(sma5) or pd.isna(sma5_slope):
+            return "trend_missing"
+        if side == "long" and not (current_price > float(sma5) and float(sma5_slope) > 0):
+            return "trend_long"
+        if side == "short" and not (current_price < float(sma5) and float(sma5_slope) < 0):
+            return "trend_short"
+
+    min_sma_atr_separation = filters.get("min_sma_atr_separation")
+    if min_sma_atr_separation is not None:
+        if not _positive(sma5, atr):
+            return "sma_atr_separation_missing"
+        separation = abs(float(breakout_level) - float(sma5)) / float(atr)
+        if separation < float(min_sma_atr_separation):
+            return "sma_atr_separation"
+
+    min_atr_percentile = filters.get("min_atr_percentile")
+    if min_atr_percentile is not None:
+        atr_percentile = sig.get("atr_percentile", np.nan)
+        if pd.isna(atr_percentile) or float(atr_percentile) < float(min_atr_percentile):
+            return "atr_percentile"
+
+    max_breakout_extension_atr = filters.get("max_breakout_extension_atr")
+    if max_breakout_extension_atr is not None:
+        if not _positive(atr):
+            return "breakout_extension_missing"
+        extension = abs(float(current_price) - float(breakout_level)) / float(atr)
+        if extension > float(max_breakout_extension_atr):
+            return "breakout_extension"
+
+    return ""
 
 
 def _intrabar_signal(sig: dict, high_so_far: float, low_so_far: float, close_now: float) -> dict:
@@ -248,6 +349,9 @@ def _intrabar_signal(sig: dict, high_so_far: float, low_so_far: float, close_now
     if len(prev_closes) >= 4:
         sig["sma5"] = float(np.mean(prev_closes[:4] + [float(close_now)]))
         sig["ma5"] = sig["sma5"]
+        prev_sma5 = sig.get("prev_sma5_1", np.nan)
+        if pd.notna(prev_sma5):
+            sig["sma5_slope"] = sig["sma5"] - float(prev_sma5)
 
     prev_close_1 = sig.get("prev_close_1", np.nan)
     if pd.notna(prev_close_1):
@@ -274,6 +378,10 @@ def run_second_bar_replay(
     initial_balance: float,
     breakout_shape: str,
     replay_mode: str,
+    t3_reentry_size_schedule=None,
+    t3_cooldown_bars: int = 0,
+    t3_quality_filters=None,
+    quality_filter_shapes=None,
 ):
     if replay_mode not in {"same_bar_parity", "live_intrabar_sma5"}:
         raise ValueError(f"unknown replay mode: {replay_mode}")
@@ -283,6 +391,8 @@ def run_second_bar_replay(
     trade_logs = []
     diagnostics = {
         "breakout_locks": {"long": {}, "short": {}},
+        "t3_cooldown_skips": {"long": 0, "short": 0},
+        "t3_quality_rejects": {"long": {}, "short": {}},
     }
     second_index = df_seconds.index
     high_values = df_seconds["high"].to_numpy(dtype="float64", copy=False)
@@ -302,13 +412,21 @@ def run_second_bar_replay(
     reentry_trigger_mode = str(COMMON_REPLAY_KWARGS["reentry_trigger_mode"])
     reentry_anchor_levels = str(COMMON_REPLAY_KWARGS["reentry_anchor_levels"])
     reentry_size_schedule = [float(v) for v in COMMON_REPLAY_KWARGS["reentry_size_schedule"]]
+    if t3_reentry_size_schedule is not None:
+        t3_reentry_size_schedule = [float(v) for v in t3_reentry_size_schedule]
+    t3_cooldown_bars = int(t3_cooldown_bars)
+    t3_quality_filters = t3_quality_filters or {}
+    quality_filter_shapes = set(quality_filter_shapes or ["t3_swing"])
 
     last_exit_bar_index = -999
     reentry_timeout = 1
     last_exit_reason = None
     last_exit_side = None
+    last_exit_breakout_shape = ""
     pending_zero_initial_side = None
+    pending_zero_initial_breakout_shape = ""
     pending_zero_initial_bar_index = -999
+    last_t3_lock_bar_index = -999
 
     for i in range(len(signal) - 1):
         start_t, end_t = signal.index[i], signal.index[i + 1]
@@ -324,6 +442,7 @@ def run_second_bar_replay(
         trades_in_bar = 0
         current_pos = start_pos
         breakout_locked_this_bar = False
+        quality_reject_recorded_this_bar = {"long": set(), "short": set()}
         bar_high_so_far = -np.inf
         bar_low_so_far = np.inf
         sig = base_sig
@@ -336,8 +455,10 @@ def run_second_bar_replay(
 
         if i - last_exit_bar_index > reentry_timeout:
             last_exit_side = None
+            last_exit_breakout_shape = ""
         if i - pending_zero_initial_bar_index > reentry_timeout:
             pending_zero_initial_side = None
+            pending_zero_initial_breakout_shape = ""
 
         while current_pos < end_pos:
             bar_time = second_index[current_pos]
@@ -355,13 +476,34 @@ def run_second_bar_replay(
                 if long_regime_ready:
                     triggered, breakout_level, shape_name = _long_breakout(sig, high_value, breakout_shape)
                     if trades_in_bar == 0 and triggered:
-                        if not breakout_locked_this_bar:
-                            diagnostics["breakout_locks"]["long"][shape_name] = (
-                                diagnostics["breakout_locks"]["long"].get(shape_name, 0) + 1
+                        quality_reject_reason = ""
+                        if shape_name in quality_filter_shapes:
+                            quality_reject_reason = _t3_quality_reject_reason(
+                                sig,
+                                "long",
+                                close_value,
+                                breakout_level,
+                                t3_quality_filters,
                             )
-                            breakout_locked_this_bar = True
-                        pending_zero_initial_side = "long"
-                        pending_zero_initial_bar_index = i
+                        if quality_reject_reason:
+                            if quality_reject_reason not in quality_reject_recorded_this_bar["long"]:
+                                diagnostics["t3_quality_rejects"]["long"][quality_reject_reason] = (
+                                    diagnostics["t3_quality_rejects"]["long"].get(quality_reject_reason, 0) + 1
+                                )
+                                quality_reject_recorded_this_bar["long"].add(quality_reject_reason)
+                        elif _allow_breakout_lock(shape_name, i, last_t3_lock_bar_index, t3_cooldown_bars):
+                            if shape_name == "t3_swing":
+                                last_t3_lock_bar_index = i
+                            if not breakout_locked_this_bar:
+                                diagnostics["breakout_locks"]["long"][shape_name] = (
+                                    diagnostics["breakout_locks"]["long"].get(shape_name, 0) + 1
+                                )
+                                breakout_locked_this_bar = True
+                            pending_zero_initial_side = "long"
+                            pending_zero_initial_breakout_shape = shape_name
+                            pending_zero_initial_bar_index = i
+                        else:
+                            diagnostics["t3_cooldown_skips"]["long"] += 1
 
                     has_exit_reentry_window = last_exit_side == "long" and (i - last_exit_bar_index <= reentry_timeout)
                     has_zero_initial_window = (
@@ -384,7 +526,15 @@ def run_second_bar_replay(
                             if has_exit_reentry_window:
                                 reason = "SL-Reentry" if last_exit_reason == "SL" else "PT-Reentry"
                             if trades_in_bar < max_trades_per_bar:
-                                notional_share = _get_reentry_window_real_order_size(trades_in_bar, reentry_size_schedule)
+                                entry_breakout_shape = pending_zero_initial_breakout_shape
+                                if has_exit_reentry_window:
+                                    entry_breakout_shape = last_exit_breakout_shape
+                                active_schedule = _shape_schedule(
+                                    entry_breakout_shape,
+                                    reentry_size_schedule,
+                                    t3_reentry_size_schedule,
+                                )
+                                notional_share = _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
                                 entry_price = float(entry_p_raw) * (1 + slippage)
                                 balance, position = _open_position(
                                     balance,
@@ -395,6 +545,8 @@ def run_second_bar_replay(
                                     reason,
                                     stop_mode,
                                     stop_loss_atr,
+                                    entry_breakout_shape,
+                                    replay_mode,
                                 )
                                 trade_logs.append(
                                     {
@@ -404,24 +556,49 @@ def run_second_bar_replay(
                                         "reason": reason,
                                         "notional": position["notional"],
                                         "bal": balance,
+                                        "breakout_shape_name": position["breakout_shape_name"],
+                                        "replay_mode": replay_mode,
                                     }
                                 )
                                 trades_in_bar += 1
                             if has_exit_reentry_window:
                                 last_exit_side = None
+                                last_exit_breakout_shape = ""
                             if has_zero_initial_window:
                                 pending_zero_initial_side = None
+                                pending_zero_initial_breakout_shape = ""
 
                 elif short_regime_ready:
                     triggered, breakout_level, shape_name = _short_breakout(sig, low_value, breakout_shape)
                     if trades_in_bar == 0 and triggered:
-                        if not breakout_locked_this_bar:
-                            diagnostics["breakout_locks"]["short"][shape_name] = (
-                                diagnostics["breakout_locks"]["short"].get(shape_name, 0) + 1
+                        quality_reject_reason = ""
+                        if shape_name in quality_filter_shapes:
+                            quality_reject_reason = _t3_quality_reject_reason(
+                                sig,
+                                "short",
+                                close_value,
+                                breakout_level,
+                                t3_quality_filters,
                             )
-                            breakout_locked_this_bar = True
-                        pending_zero_initial_side = "short"
-                        pending_zero_initial_bar_index = i
+                        if quality_reject_reason:
+                            if quality_reject_reason not in quality_reject_recorded_this_bar["short"]:
+                                diagnostics["t3_quality_rejects"]["short"][quality_reject_reason] = (
+                                    diagnostics["t3_quality_rejects"]["short"].get(quality_reject_reason, 0) + 1
+                                )
+                                quality_reject_recorded_this_bar["short"].add(quality_reject_reason)
+                        elif _allow_breakout_lock(shape_name, i, last_t3_lock_bar_index, t3_cooldown_bars):
+                            if shape_name == "t3_swing":
+                                last_t3_lock_bar_index = i
+                            if not breakout_locked_this_bar:
+                                diagnostics["breakout_locks"]["short"][shape_name] = (
+                                    diagnostics["breakout_locks"]["short"].get(shape_name, 0) + 1
+                                )
+                                breakout_locked_this_bar = True
+                            pending_zero_initial_side = "short"
+                            pending_zero_initial_breakout_shape = shape_name
+                            pending_zero_initial_bar_index = i
+                        else:
+                            diagnostics["t3_cooldown_skips"]["short"] += 1
 
                     has_exit_reentry_window = last_exit_side == "short" and (i - last_exit_bar_index <= reentry_timeout)
                     has_zero_initial_window = (
@@ -444,7 +621,15 @@ def run_second_bar_replay(
                             if has_exit_reentry_window:
                                 reason = "SL-Reentry" if last_exit_reason == "SL" else "PT-Reentry"
                             if trades_in_bar < max_trades_per_bar:
-                                notional_share = _get_reentry_window_real_order_size(trades_in_bar, reentry_size_schedule)
+                                entry_breakout_shape = pending_zero_initial_breakout_shape
+                                if has_exit_reentry_window:
+                                    entry_breakout_shape = last_exit_breakout_shape
+                                active_schedule = _shape_schedule(
+                                    entry_breakout_shape,
+                                    reentry_size_schedule,
+                                    t3_reentry_size_schedule,
+                                )
+                                notional_share = _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
                                 entry_price = float(entry_p_raw) * (1 - slippage)
                                 balance, position = _open_position(
                                     balance,
@@ -455,6 +640,8 @@ def run_second_bar_replay(
                                     reason,
                                     stop_mode,
                                     stop_loss_atr,
+                                    entry_breakout_shape,
+                                    replay_mode,
                                 )
                                 trade_logs.append(
                                     {
@@ -464,13 +651,17 @@ def run_second_bar_replay(
                                         "reason": reason,
                                         "notional": position["notional"],
                                         "bal": balance,
+                                        "breakout_shape_name": position["breakout_shape_name"],
+                                        "replay_mode": replay_mode,
                                     }
                                 )
                                 trades_in_bar += 1
                             if has_exit_reentry_window:
                                 last_exit_side = None
+                                last_exit_breakout_shape = ""
                             if has_zero_initial_window:
                                 pending_zero_initial_side = None
+                                pending_zero_initial_breakout_shape = ""
 
             else:
                 exit_triggered = False
@@ -524,6 +715,7 @@ def run_second_bar_replay(
                             position["sl"] = min(position["sl"], trailing_sl)
 
                 if exit_triggered:
+                    exit_breakout_shape = position.get("breakout_shape_name", "")
                     side_mult = 1 if position["side"] == "long" else -1
                     exit_p = exit_p * (1 - slippage) if position["side"] == "long" else exit_p * (1 + slippage)
                     pnl = (
@@ -543,10 +735,13 @@ def run_second_bar_replay(
                             "reason": reason,
                             "notional": position["notional"],
                             "bal": balance,
+                            "breakout_shape_name": exit_breakout_shape,
+                            "replay_mode": replay_mode,
                         }
                     )
                     last_exit_reason = reason
                     last_exit_side = position["side"]
+                    last_exit_breakout_shape = exit_breakout_shape
                     last_exit_bar_index = i
                     position = None
 
@@ -574,6 +769,8 @@ def run_second_bar_replay(
                 "reason": "FinalMarkToMarket",
                 "notional": position["notional"],
                 "bal": balance,
+                "breakout_shape_name": position.get("breakout_shape_name", ""),
+                "replay_mode": replay_mode,
             }
         )
 
@@ -609,6 +806,65 @@ def summarize_run(ledger: pd.DataFrame, initial_balance: float) -> dict:
     }
 
 
+def summarize_breakout_attribution(ledger: pd.DataFrame) -> dict:
+    if ledger.empty or "breakout_shape_name" not in ledger.columns:
+        return {}
+
+    rows = []
+    open_entry = None
+    for _, row in ledger.iterrows():
+        if row["type"] in {"BUY", "SHORT"}:
+            open_entry = row
+            continue
+        if row["type"] != "EXIT" or open_entry is None:
+            continue
+        side_mult = 1.0 if open_entry["type"] == "BUY" else -1.0
+        entry_price = float(open_entry["price"])
+        exit_price = float(row["price"])
+        pnl_pct = side_mult * (exit_price - entry_price) / entry_price if entry_price > 0 else 0.0
+        pnl_value = pnl_pct * float(open_entry["notional"])
+        rows.append(
+            {
+                "breakout_shape_name": str(open_entry.get("breakout_shape_name", "")),
+                "entry_type": str(open_entry["type"]),
+                "entry_reason": str(open_entry["reason"]),
+                "exit_reason": str(row["reason"]),
+                "pnl_pct": pnl_pct,
+                "pnl_value": pnl_value,
+            }
+        )
+        open_entry = None
+
+    if not rows:
+        return {}
+
+    pairs = pd.DataFrame(rows)
+    attribution = {}
+    for shape_name, group in pairs.groupby("breakout_shape_name", dropna=False):
+        pnl_values = group["pnl_value"].astype("float64")
+        pnl_pct = group["pnl_pct"].astype("float64")
+        cumulative_pnl = pnl_values.cumsum()
+        shape_peak = cumulative_pnl.cummax()
+        max_pnl_drawdown = float((cumulative_pnl - shape_peak).min()) if not cumulative_pnl.empty else 0.0
+        gross_profit = float(pnl_values[pnl_values > 0].sum())
+        gross_loss = abs(float(pnl_values[pnl_values < 0].sum()))
+        attribution[str(shape_name) or "unknown"] = {
+            "trades": int(len(group)),
+            "win_rate_pct": round(float((pnl_values > 0).mean()) * 100, 2),
+            "avg_pnl_pct": round(float(pnl_pct.mean()) * 100, 4),
+            "median_pnl_pct": round(float(pnl_pct.median()) * 100, 4),
+            "pnl_std_pct": round(float(pnl_pct.std(ddof=0)) * 100, 4),
+            "worst_pnl_pct": round(float(pnl_pct.min()) * 100, 4),
+            "net_pnl_value": round(float(pnl_values.sum()), 2),
+            "max_pnl_drawdown": round(max_pnl_drawdown, 2),
+            "profit_factor": round(gross_profit / gross_loss, 4) if gross_loss > 0 else None,
+            "entry_types": {str(k): int(v) for k, v in group["entry_type"].value_counts().items()},
+            "entry_reasons": {str(k): int(v) for k, v in group["entry_reason"].value_counts().items()},
+            "exit_reasons": {str(k): int(v) for k, v in group["exit_reason"].value_counts().items()},
+        }
+    return attribution
+
+
 def _scenario_delta(base_summary: dict, variant_summary: dict) -> dict:
     return {
         "final_balance_delta": round(variant_summary["final_balance"] - base_summary["final_balance"], 2),
@@ -622,7 +878,7 @@ def _scenario_delta(base_summary: dict, variant_summary: dict) -> dict:
 
 def write_markdown(summary: dict, output_path: Path):
     lines = [
-        "# ETH Q1 2026 t-3 Breakout Shape, 1s Replay",
+        "# ETH Q1 2026 30min t3_sma5 Signal Quality Filtering",
         "",
         "Scope: research-only backtest work. No live or execution path was changed.",
         "",
@@ -630,12 +886,12 @@ def write_markdown(summary: dict, output_path: Path):
         "",
         "- Symbol/window: `ETHUSDT`, `2026-01-01 00:00:00+00:00` to `2026-03-31 23:59:59+00:00`",
         "- Execution bars: continuous `1s` bars rebuilt from raw Binance trades",
-        "- Baseline sizing: `dir2_zero_initial=true`, `zero_initial_mode=reentry_window`, `reentry_size_schedule=[0.20, 0.10]`, `max_trades_per_bar=2`",
+        "- Main comparison baseline: `t3_sma5_baseline` with full-size schedule `[0.20, 0.10]`",
+        "- Sizing baseline: `dir2_zero_initial=true`, `zero_initial_mode=reentry_window`, `reentry_size_schedule=[0.20, 0.10]`, `max_trades_per_bar=2`",
         "- Shared risk params: `stop_mode=atr`, `stop_loss_atr=0.05`, `trailing_stop_atr=0.3`, `delayed_trailing_activation=0.5`",
         "",
-        "## Replay Modes",
+        "## Replay Mode",
         "",
-        "- `same_bar_parity`: parity mode against the corrected runner. Signal-frame fields are reused inside each replayed signal bar, so this mode is for apples-to-apples research comparison only.",
         "- `live_intrabar_sma5`: live-safe intrabar mode. Each replayed second updates the current signal bar close/high/low from data seen so far and computes `sma5/ma5` from four closed signal bars plus the current realtime close.",
         "",
         "## Breakout Shapes",
@@ -644,10 +900,15 @@ def write_markdown(summary: dict, output_path: Path):
         "- Added long: `prev_t3.high > prev_t2.high`, `prev_t3.high > prev_t1.high`, `prev_t1.high > prev_t2.high`, and current price crosses `prev_t3.high`.",
         "- The short side uses the symmetric low-side condition.",
         "",
+        "## Optimization Variants",
+        "",
+        "- `A_sep_0p25`: only the added t3 breakout requires `abs(breakout_level - sma5) >= 0.25 * atr`.",
+        "- `all_breakouts_sep_0p25`: both original_t2 and added t3 breakouts require `abs(breakout_level - sma5) >= 0.25 * atr`.",
+        "",
         "## Results",
         "",
-        "| Timeframe | Replay Mode | Scenario | Final Balance | Return | Max DD | Trades | Win Rate | Sharpe | Entry Mix | Breakout Locks |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---|---|",
+        "| Timeframe | Scenario | Filters | Final Balance | Return | Max DD | Trades | Win Rate | Sharpe | Entry Mix | Breakout Locks | Quality Rejects |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---|",
     ]
     for result in summary["results"]:
         timeframe = result["timeframe"]
@@ -660,29 +921,54 @@ def write_markdown(summary: dict, output_path: Path):
                 if counts:
                     lock_parts.append(f"{side} " + "/".join(f"{k}:{v}" for k, v in counts.items()))
             lock_text = "; ".join(lock_parts)
+            params = scenario["params"]
+            filters = params.get("t3_quality_filters") or {}
+            filter_text = json.dumps(filters, sort_keys=True) if filters else "none"
+            rejects = scenario["diagnostics"].get("t3_quality_rejects", {})
+            reject_parts = []
+            for side, counts in rejects.items():
+                if counts:
+                    reject_parts.append(f"{side} " + "/".join(f"{k}:{v}" for k, v in counts.items()))
+            reject_text = "; ".join(reject_parts)
             lines.append(
-                f"| `{timeframe}` | `{scenario['replay_mode']}` | `{scenario['scenario']}` | {s['final_balance']:,.2f} | "
+                f"| `{timeframe}` | `{scenario['scenario']}` | `{filter_text}` | {s['final_balance']:,.2f} | "
                 f"{s['return_pct']:.2f}% | {s['max_dd_pct']:.2f}% | {s['trades']} | "
-                f"{s['win_rate_pct']:.2f}% | {s['sharpe']:.2f} | `{entry_mix}` | `{lock_text}` |"
+                f"{s['win_rate_pct']:.2f}% | {s['sharpe']:.2f} | `{entry_mix}` | `{lock_text}` | `{reject_text}` |"
             )
-    lines.extend(["", "## Delta vs Baseline", ""])
-    lines.append("| Timeframe | Replay Mode | Final Balance Delta | Return Delta | Max DD Delta | Trades Delta | Win Rate Delta | Sharpe Delta |")
+    lines.extend(["", "## Delta vs t3_sma5 Baseline", ""])
+    lines.append("| Timeframe | Scenario | Final Balance Delta | Return Delta | Max DD Delta | Trades Delta | Win Rate Delta | Sharpe Delta |")
     lines.append("|---|---|---:|---:|---:|---:|---:|---:|")
     for result in summary["results"]:
-        for replay_mode, d in result["delta_vs_baseline_by_mode"].items():
+        for scenario_name, d in result["delta_vs_t3_sma5_baseline"].items():
             lines.append(
-                f"| `{result['timeframe']}` | `{replay_mode}` | {d['final_balance_delta']:,.2f} | "
+                f"| `{result['timeframe']}` | `{scenario_name}` | {d['final_balance_delta']:,.2f} | "
                 f"{d['return_pct_delta']:.2f} pp | {d['max_dd_pct_delta']:.2f} pp | "
                 f"{d['trades_delta']} | {d['win_rate_pct_delta']:.2f} pp | {d['sharpe_delta']:.2f} |"
             )
+    lines.extend(["", "## Breakout Attribution", ""])
+    lines.append("| Timeframe | Scenario | Shape | Trades | Win Rate | Avg PnL | Median PnL | PnL Std | Worst PnL | Net PnL | Shape PnL DD | Profit Factor |")
+    lines.append("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    for result in summary["results"]:
+        for scenario in result["scenarios"]:
+            for shape_name, a in scenario.get("attribution", {}).items():
+                lines.append(
+                    f"| `{result['timeframe']}` | `{scenario['scenario']}` | `{shape_name}` | {a['trades']} | "
+                    f"{a['win_rate_pct']:.2f}% | {a['avg_pnl_pct']:.4f}% | {a['median_pnl_pct']:.4f}% | "
+                    f"{a['pnl_std_pct']:.4f}% | {a['worst_pnl_pct']:.4f}% | "
+                    f"{a['net_pnl_value']:,.2f} | {a['max_pnl_drawdown']:,.2f} | {a['profit_factor']} |"
+                )
     lines.extend(
         [
             "",
             "## Read",
             "",
-            "The variant keeps the baseline logic and only broadens the initial breakout lock shape. Because `dir2_zero_initial=true`, the lock itself remains a proof gate; real sizing still starts from the reentry window as `20%` then `10%` inside the same signal bar.",
+            "`A_sep_0p25` is the prior t3-only separation filter. `all_breakouts_sep_0p25` applies the same `0.25 * atr` SMA5 separation gate to both the original_t2 breakout and the added t3_swing breakout.",
             "",
-            "The key read is the `live_intrabar_sma5` delta, because that mode avoids using final current-bar signal high/low/close/ATR before those values are available in replay time.",
+            "On this Q1 30min replay, extending the separation gate to original_t2 is defensive: it cuts 663 trades, improves MaxDD by 0.68 pp, win rate by 1.71 pp, and Sharpe by 1.20 versus `t3_sma5_baseline`, but gives up 132.36 pp of return.",
+            "",
+            "## Conclusion",
+            "",
+            "Keep `A_sep_0p25` as the return-oriented candidate. Treat `all_breakouts_sep_0p25` as a risk-constrained variant rather than a primary return upgrade, because filtering original_t2 removes too much profitable flow despite the cleaner Sharpe/MaxDD profile.",
             "",
         ]
     )
@@ -690,20 +976,20 @@ def write_markdown(summary: dict, output_path: Path):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ETH Q1 2026 1s breakout-shape comparison")
+    parser = argparse.ArgumentParser(description="ETH Q1 2026 30min t3_sma5 signal-quality filtering")
     parser.add_argument("--tick-files", nargs="+", default=DEFAULT_TICK_FILES)
-    parser.add_argument("--timeframes", nargs="+", default=["4h", "1h", "30min"])
+    parser.add_argument("--timeframes", nargs="+", default=["30min"])
     parser.add_argument("--start", default="2026-01-01T00:00:00Z")
     parser.add_argument("--end", default="2026-03-31T23:59:59Z")
     parser.add_argument("--initial-balance", type=float, default=100000.0)
     parser.add_argument("--chunksize", type=int, default=2_000_000)
     parser.add_argument(
         "--summary-json",
-        default="research/eth_2026_q1_1s_breakout_t3_shape_vs_baseline_summary.json",
+        default="research/eth_2026_q1_30min_t2_t3_sep_0p25_summary.json",
     )
     parser.add_argument(
         "--markdown",
-        default="research/20260427_eth_q1_breakout_t3_shape_compare.md",
+        default="research/20260427_eth_q1_30min_t2_t3_sep_0p25.md",
     )
     return parser.parse_args()
 
@@ -730,8 +1016,14 @@ def main():
             },
             "scenarios": [],
         }
-        summaries_by_mode = {}
-        for breakout_shape, replay_mode, scenario_name in SCENARIOS:
+        summaries_by_name = {}
+        for scenario_config in SCENARIOS:
+            allowed_timeframes = scenario_config.get("timeframes")
+            if allowed_timeframes and timeframe not in allowed_timeframes:
+                continue
+            breakout_shape = scenario_config["breakout_shape"]
+            replay_mode = scenario_config["replay_mode"]
+            scenario_name = scenario_config["scenario"]
             started = time.time()
             ledger, diagnostics = run_second_bar_replay(
                 second_bars,
@@ -739,6 +1031,10 @@ def main():
                 initial_balance=args.initial_balance,
                 breakout_shape=breakout_shape,
                 replay_mode=replay_mode,
+                t3_reentry_size_schedule=scenario_config["t3_reentry_size_schedule"],
+                t3_cooldown_bars=scenario_config["t3_cooldown_bars"],
+                t3_quality_filters=scenario_config.get("t3_quality_filters"),
+                quality_filter_shapes=scenario_config.get("quality_filter_shapes"),
             )
             elapsed = round(time.time() - started, 2)
             ledger_path = Path(
@@ -746,12 +1042,20 @@ def main():
             )
             ledger.to_csv(ledger_path, index=False)
             summary = summarize_run(ledger, args.initial_balance)
+            params = {
+                **COMMON_REPLAY_KWARGS,
+                "t3_reentry_size_schedule": scenario_config["t3_reentry_size_schedule"],
+                "t3_cooldown_bars": scenario_config["t3_cooldown_bars"],
+                "t3_quality_filters": scenario_config.get("t3_quality_filters", {}),
+                "quality_filter_shapes": scenario_config.get("quality_filter_shapes", ["t3_swing"]),
+            }
             scenario = {
                 "scenario": scenario_name,
                 "breakout_shape": breakout_shape,
                 "replay_mode": replay_mode,
-                "params": COMMON_REPLAY_KWARGS,
+                "params": params,
                 "summary": summary,
+                "attribution": summarize_breakout_attribution(ledger),
                 "diagnostics": diagnostics,
                 "ledger_path": str(ledger_path),
                 "elapsed_seconds": elapsed,
@@ -762,12 +1066,15 @@ def main():
                 f"trades={summary['trades']} final={summary['final_balance']:.2f} elapsed={elapsed}s",
                 flush=True,
             )
-            summaries_by_mode[(replay_mode, breakout_shape)] = summary
-        result["delta_vs_baseline_by_mode"] = {}
-        for replay_mode in sorted({scenario[1] for scenario in SCENARIOS}):
-            result["delta_vs_baseline_by_mode"][replay_mode] = _scenario_delta(
-                summaries_by_mode[(replay_mode, "baseline")],
-                summaries_by_mode[(replay_mode, "baseline_plus_t3")],
+            summaries_by_name[scenario_name] = summary
+        result["delta_vs_t3_sma5_baseline"] = {}
+        baseline_summary = summaries_by_name["t3_sma5_baseline"]
+        for scenario_name, scenario_summary in summaries_by_name.items():
+            if scenario_name == "t3_sma5_baseline":
+                continue
+            result["delta_vs_t3_sma5_baseline"][scenario_name] = _scenario_delta(
+                baseline_summary,
+                scenario_summary,
             )
         all_results.append(result)
 
@@ -775,7 +1082,8 @@ def main():
         "window": {"start": start.isoformat(), "end": end.isoformat()},
         "build_stats": {**build_stats, "derived_one_min_rows": derived_one_min_rows},
         "results": all_results,
-        "note": "Research-only comparison. Variant adds the t-3 breakout shape while keeping baseline sizing/risk parameters and compares same-bar parity with live intrabar SMA5 replay.",
+        "baseline_scenario": "t3_sma5_baseline",
+        "note": "Research-only 30min optimization. Baseline is t3_sma5_baseline; variants only add signal-quality filters to the added t3 breakout lock and preserve sizing.",
     }
     summary_path = Path(args.summary_json)
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

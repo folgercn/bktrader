@@ -3,18 +3,38 @@ package service
 import (
 	"testing"
 
+	storepkg "github.com/wuyaocheng/bktrader/internal/store"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
 
-func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
+type hiddenEnhancedStrategyStore struct {
+	storepkg.Repository
+}
+
+func (s hiddenEnhancedStrategyStore) ListStrategies() ([]map[string]any, error) {
+	items, err := s.Repository.ListStrategies()
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if stringValue(item["id"]) == "strategy-bk-btc-30m-enhanced" {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered, nil
+}
+
+func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
 	templates, err := platform.LiveLaunchTemplates()
 	if err != nil {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
-	if len(templates) != 8 {
-		t.Fatalf("expected 8 launch templates, got %d", len(templates))
+	if len(templates) != 9 {
+		t.Fatalf("expected 9 launch templates, got %d", len(templates))
 	}
 
 	expected := map[string]struct {
@@ -22,15 +42,17 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 		timeframe        string
 		quantity         float64
 		researchBaseline bool
+		enhanced         bool
 	}{
-		"binance-testnet-btc-5m":  {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
-		"binance-testnet-btc-15m": {symbol: "BTCUSDT", timeframe: "15m", quantity: 0.002, researchBaseline: true},
-		"binance-testnet-btc-30m": {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, researchBaseline: true},
-		"binance-testnet-btc-4h":  {symbol: "BTCUSDT", timeframe: "4h", quantity: 0.002},
-		"binance-testnet-btc-1d":  {symbol: "BTCUSDT", timeframe: "1d", quantity: 0.002},
-		"binance-testnet-eth-5m":  {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
-		"binance-testnet-eth-4h":  {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
-		"binance-testnet-eth-1d":  {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
+		"binance-testnet-btc-5m":           {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
+		"binance-testnet-btc-15m":          {symbol: "BTCUSDT", timeframe: "15m", quantity: 0.002, researchBaseline: true},
+		"binance-testnet-btc-30m":          {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, researchBaseline: true},
+		"binance-testnet-btc-30m-enhanced": {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, enhanced: true},
+		"binance-testnet-btc-4h":           {symbol: "BTCUSDT", timeframe: "4h", quantity: 0.002},
+		"binance-testnet-btc-1d":           {symbol: "BTCUSDT", timeframe: "1d", quantity: 0.002},
+		"binance-testnet-eth-5m":           {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
+		"binance-testnet-eth-4h":           {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
+		"binance-testnet-eth-1d":           {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
 	}
 
 	for _, item := range templates {
@@ -38,8 +60,12 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 		if !ok {
 			t.Fatalf("unexpected template key %s", item.Key)
 		}
-		if item.StrategyID != "strategy-bk-1d" {
-			t.Fatalf("expected strategy-bk-1d, got %s", item.StrategyID)
+		expectedStrategyID := "strategy-bk-1d"
+		if want.enhanced {
+			expectedStrategyID = "strategy-bk-btc-30m-enhanced"
+		}
+		if item.StrategyID != expectedStrategyID {
+			t.Fatalf("expected %s, got %s", expectedStrategyID, item.StrategyID)
 		}
 		if item.Symbol != want.symbol {
 			t.Fatalf("expected symbol %s for %s, got %s", want.symbol, item.Key, item.Symbol)
@@ -113,7 +139,7 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["defaultOrderQuantity"]); got != want.quantity {
 			t.Fatalf("expected defaultOrderQuantity=%v, got %v", want.quantity, got)
 		}
-		if want.researchBaseline {
+		if want.researchBaseline || want.enhanced {
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "reentry_size_schedule" {
 				t.Fatalf("expected positionSizingMode=reentry_size_schedule for %s, got %s", item.Key, got)
 			}
@@ -129,8 +155,12 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["stop_mode"]); got != "atr" {
 				t.Fatalf("expected stop_mode=atr for %s, got %s", item.Key, got)
 			}
-			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["stop_loss_atr"]); got != 0.3 {
-				t.Fatalf("expected stop_loss_atr=0.3 for %s, got %v", item.Key, got)
+			expectedStopLossATR := 0.3
+			if want.enhanced {
+				expectedStopLossATR = 0.05
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["stop_loss_atr"]); got != expectedStopLossATR {
+				t.Fatalf("expected stop_loss_atr=%v for %s, got %v", expectedStopLossATR, item.Key, got)
 			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["profit_protect_atr"]); got != 1.0 {
 				t.Fatalf("expected profit_protect_atr=1.0 for %s, got %v", item.Key, got)
@@ -147,16 +177,51 @@ func TestLiveLaunchTemplatesExposeEightBinanceTestnetVariants(t *testing.T) {
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["short_reentry_atr"]); got != 0.0 {
 				t.Fatalf("expected short_reentry_atr=0.0 for %s, got %v", item.Key, got)
 			}
-			if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["max_trades_per_bar"], 0); got != 1 {
-				t.Fatalf("expected max_trades_per_bar=1 for %s, got %d", item.Key, got)
+			expectedMaxTradesPerBar := 1
+			if want.enhanced {
+				expectedMaxTradesPerBar = 2
+			}
+			if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["max_trades_per_bar"], 0); got != expectedMaxTradesPerBar {
+				t.Fatalf("expected max_trades_per_bar=%d for %s, got %d", expectedMaxTradesPerBar, item.Key, got)
 			}
 			schedule := normalizeBacktestFloatSlice(item.LaunchPayload.LiveSessionOverrides["reentry_size_schedule"], nil)
 			if len(schedule) != 2 || schedule[0] != 0.20 || schedule[1] != 0.10 {
 				t.Fatalf("expected reentry_size_schedule [0.20, 0.10] for %s, got %#v", item.Key, item.LaunchPayload.LiveSessionOverrides["reentry_size_schedule"])
 			}
+			if want.enhanced {
+				if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got != "bk-live-intrabar-sma5-t3-sep" {
+					t.Fatalf("expected enhanced strategy engine, got %s", got)
+				}
+				if got := stringValue(item.LaunchPayload.LiveSessionOverrides["breakout_shape"]); got != "baseline_plus_t3" {
+					t.Fatalf("expected baseline_plus_t3 breakout shape, got %s", got)
+				}
+				if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["t3_min_sma_atr_separation"]); got != 0.25 {
+					t.Fatalf("expected t3 sep 0.25, got %v", got)
+				}
+				if !boolValue(item.LaunchPayload.LiveSessionOverrides["use_sma5_intraday_structure"]) {
+					t.Fatalf("expected enhanced template to use SMA5 intraday structure")
+				}
+			}
 		}
 		if item.LaunchPayload.LaunchTemplateKey != item.Key {
 			t.Fatalf("expected launch template key %s, got %s", item.Key, item.LaunchPayload.LaunchTemplateKey)
+		}
+	}
+}
+
+func TestLiveLaunchTemplatesSkipEnhancedWhenStrategyMissing(t *testing.T) {
+	platform := NewPlatform(hiddenEnhancedStrategyStore{Repository: memory.NewStore()})
+
+	templates, err := platform.LiveLaunchTemplates()
+	if err != nil {
+		t.Fatalf("list live launch templates failed: %v", err)
+	}
+	if len(templates) != 8 {
+		t.Fatalf("expected original 8 launch templates when enhanced strategy is missing, got %d", len(templates))
+	}
+	for _, item := range templates {
+		if item.Key == "binance-testnet-btc-30m-enhanced" {
+			t.Fatalf("expected enhanced template to be skipped when strategy is missing: %#v", templates)
 		}
 	}
 }

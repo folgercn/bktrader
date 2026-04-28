@@ -84,7 +84,7 @@ func (p *Platform) registerBuiltInSignalSources() {
 		Roles:        []string{"signal"},
 		Environments: []string{"paper", "live"},
 		SymbolScope:  "multi_symbol",
-		Description:  "交易所原生 5m/15m/30m/4h/1d K 线流，用于实时策略信号计算、SMA5/MA20 和前两根 OHLC 状态。",
+		Description:  "交易所原生 5m/15m/30m/4h/1d K 线流，用于实时策略信号计算、SMA5/MA20 和前三根 OHLC 状态。",
 		Metadata: map[string]any{
 			"stream":               "kline",
 			"supportedTimeframes":  []string{"5m", "15m", "30m", "4h", "1d"},

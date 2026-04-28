@@ -619,11 +619,15 @@ func TestDeriveSignalBarStatesUsesOpenCurrentBarWithClosedHistory(t *testing.T) 
 	}
 	prevBar1 := mapValue(state["prevBar1"])
 	prevBar2 := mapValue(state["prevBar2"])
+	prevBar3 := mapValue(state["prevBar3"])
 	if stringValue(prevBar1["barStart"]) != base.Add(19*5*time.Minute).Format(time.RFC3339) {
 		t.Fatalf("expected prevBar1 to be latest closed bar, got %#v", prevBar1)
 	}
 	if stringValue(prevBar2["barStart"]) != base.Add(18*5*time.Minute).Format(time.RFC3339) {
 		t.Fatalf("expected prevBar2 to be second latest closed bar, got %#v", prevBar2)
+	}
+	if stringValue(prevBar3["barStart"]) != base.Add(17*5*time.Minute).Format(time.RFC3339) {
+		t.Fatalf("expected prevBar3 to be third latest closed bar, got %#v", prevBar3)
 	}
 	gate := evaluateSignalBarGate(state, "BUY", "entry", "", parseFloatValue(current["high"]), "signal-bar.high")
 	if boolValue(gate["ready"]) || boolValue(gate["longReady"]) {

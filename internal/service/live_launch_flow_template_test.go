@@ -204,6 +204,58 @@ func TestLaunchLiveFlowTemplateSwitchReplacesBindingsAndRefreshesRuntimePlan(t *
 	}
 }
 
+func TestLaunchLiveFlowEnhancedTemplateUsesEnhancedStrategyAndEngine(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	templates, err := platform.LiveLaunchTemplates()
+	if err != nil {
+		t.Fatalf("list live launch templates failed: %v", err)
+	}
+	var enhanced LiveLaunchTemplate
+	for _, item := range templates {
+		if item.Key == "binance-testnet-btc-30m-enhanced" {
+			enhanced = item
+			break
+		}
+	}
+	if enhanced.Key == "" {
+		t.Fatal("expected enhanced BTCUSDT 30m launch template")
+	}
+
+	result, err := platform.LaunchLiveFlow("live-main", enhanced.LaunchPayload)
+	if err != nil {
+		t.Fatalf("launch enhanced live flow failed: %v", err)
+	}
+	if result.LiveSession.StrategyID != "strategy-bk-btc-30m-enhanced" {
+		t.Fatalf("expected enhanced live session strategy, got %s", result.LiveSession.StrategyID)
+	}
+	if result.RuntimeSession.StrategyID != "strategy-bk-btc-30m-enhanced" {
+		t.Fatalf("expected enhanced runtime strategy, got %s", result.RuntimeSession.StrategyID)
+	}
+	if got := stringValue(result.LiveSession.State["strategyEngine"]); got != "bk-live-intrabar-sma5-t3-sep" {
+		t.Fatalf("expected enhanced strategy engine, got %s", got)
+	}
+	if got := stringValue(result.LiveSession.State["breakout_shape"]); got != "baseline_plus_t3" {
+		t.Fatalf("expected baseline_plus_t3 breakout shape, got %s", got)
+	}
+	if got := parseFloatValue(result.LiveSession.State["t3_min_sma_atr_separation"]); got != 0.25 {
+		t.Fatalf("expected t3 sep_0p25, got %v", got)
+	}
+
+	bindings, err := platform.ListStrategySignalBindings("strategy-bk-btc-30m-enhanced")
+	if err != nil {
+		t.Fatalf("list enhanced strategy bindings failed: %v", err)
+	}
+	if len(bindings) != 3 {
+		t.Fatalf("expected enhanced launch to bind exactly three sources, got %#v", bindings)
+	}
+	for _, binding := range bindings {
+		if binding.Symbol != "BTCUSDT" {
+			t.Fatalf("expected BTCUSDT-only enhanced bindings, got %#v", bindings)
+		}
+	}
+}
+
 func TestSyncLiveSessionRuntimeReconcilesIntradayLaunchTemplateBaseline(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 

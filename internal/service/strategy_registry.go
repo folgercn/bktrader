@@ -117,6 +117,7 @@ func (p *Platform) registerStrategyEngine(engine StrategyEngine) {
 
 func (p *Platform) registerBuiltInStrategyEngines() {
 	p.registerStrategyEngine(bkStrategyEngine{platform: p})
+	p.registerStrategyEngine(bkLiveIntrabarSMA5T3SepEngine{platform: p})
 }
 
 func (p *Platform) resolveStrategyEngine(strategyVersionID string, parameters map[string]any) (StrategyEngine, string, error) {
@@ -179,6 +180,45 @@ func (e bkStrategyEngine) Run(context StrategyExecutionContext) (map[string]any,
 	return e.platform.runStrategyReplay(context)
 }
 
+type bkLiveIntrabarSMA5T3SepEngine struct {
+	platform *Platform
+}
+
+func (e bkLiveIntrabarSMA5T3SepEngine) Key() string {
+	return "bk-live-intrabar-sma5-t3-sep"
+}
+
+func (e bkLiveIntrabarSMA5T3SepEngine) Describe() map[string]any {
+	return map[string]any{
+		"key":                  e.Key(),
+		"name":                 "BK Live Intrabar SMA5 T3 Sep",
+		"supportedSignalBars":  []string{"30m"},
+		"supportedExecutions":  []string{"tick", "1min"},
+		"runtimeConsistency":   "live-intrabar-sma5-baseline-plus-t3-breakout-sep-0p25",
+		"backtestSlippageOnly": true,
+	}
+}
+
+func (e bkLiveIntrabarSMA5T3SepEngine) Run(context StrategyExecutionContext) (map[string]any, error) {
+	return e.platform.runStrategyReplay(context)
+}
+
+func (e bkLiveIntrabarSMA5T3SepEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
+	return bkStrategyEngine{platform: e.platform}.EvaluateSignal(context)
+}
+
+type signalBarGateOptions struct {
+	BreakoutShape         string
+	T3MinSMAATRSeparation float64
+}
+
+func signalBarGateOptionsFromParameters(parameters map[string]any) signalBarGateOptions {
+	return signalBarGateOptions{
+		BreakoutShape:         strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
+		T3MinSMAATRSeparation: parseFloatValue(parameters["t3_min_sma_atr_separation"]),
+	}
+}
+
 func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
 	trigger := cloneMetadata(context.TriggerSummary)
 	sourceStates := cloneMetadata(context.SourceStates)
@@ -221,6 +261,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			context.NextPlannedReason,
 			breakoutPrice,
 			breakoutPriceSource,
+			signalBarGateOptionsFromParameters(context.ExecutionContext.Parameters),
 		)
 		if value, ok := signalBarDecision["ready"].(bool); ok {
 			signalFilterReady = value
@@ -720,7 +761,11 @@ func pickSignalBarState(signalBarStates map[string]any, symbol, timeframe string
 	return nil, ""
 }
 
-func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, nextReason string, breakoutPrice float64, breakoutPriceSource string) map[string]any {
+func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, nextReason string, breakoutPrice float64, breakoutPriceSource string, options ...signalBarGateOptions) map[string]any {
+	gateOptions := signalBarGateOptions{}
+	if len(options) > 0 {
+		gateOptions = options[0]
+	}
 	role := strings.ToLower(strings.TrimSpace(nextRole))
 	reasonTag := normalizeStrategyReasonTag(nextReason)
 	timeframe := strings.ToLower(strings.TrimSpace(stringValue(signalBarState["timeframe"])))
@@ -739,10 +784,12 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		"current":   cloneMetadata(mapValue(signalBarState["current"])),
 		"prevBar1":  cloneMetadata(mapValue(signalBarState["prevBar1"])),
 		"prevBar2":  cloneMetadata(mapValue(signalBarState["prevBar2"])),
+		"prevBar3":  cloneMetadata(mapValue(signalBarState["prevBar3"])),
 	}
 	current := mapValue(signalBarState["current"])
 	prevBar1 := mapValue(signalBarState["prevBar1"])
 	prevBar2 := mapValue(signalBarState["prevBar2"])
+	prevBar3 := mapValue(signalBarState["prevBar3"])
 	ma20 := parseFloatValue(signalBarState["ma20"])
 	sma5 := parseFloatValue(signalBarState["sma5"])
 	atr14 := parseFloatValue(signalBarState["atr14"])
@@ -754,8 +801,10 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	closePrice := parseFloatValue(current["close"])
 	prevHigh1 := parseFloatValue(prevBar1["high"])
 	prevHigh2 := parseFloatValue(prevBar2["high"])
+	prevHigh3 := parseFloatValue(prevBar3["high"])
 	prevLow1 := parseFloatValue(prevBar1["low"])
 	prevLow2 := parseFloatValue(prevBar2["low"])
+	prevLow3 := parseFloatValue(prevBar3["low"])
 	longStructureReady := false
 	shortStructureReady := false
 	longEarlyReversalReady := false
@@ -800,12 +849,36 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		longStructureReady = closePrice > ma20
 		shortStructureReady = closePrice < ma20
 	}
-	longBreakoutShapeReady := prevHigh2 > prevHigh1 && prevHigh2 > 0
-	shortBreakoutShapeReady := prevLow2 < prevLow1 && prevLow2 > 0
-	longBreakoutPriceReady := breakoutPrice > prevHigh2 && prevHigh2 > 0
-	shortBreakoutPriceReady := breakoutPrice < prevLow2 && prevLow2 > 0
-	longBreakoutReady := longBreakoutShapeReady && longBreakoutPriceReady
-	shortBreakoutReady := shortBreakoutShapeReady && shortBreakoutPriceReady
+	longBreakoutShapeName := ""
+	longBreakoutLevel := 0.0
+	if prevHigh2 > prevHigh1 && prevHigh2 > 0 {
+		longBreakoutShapeName = "original_t2"
+		longBreakoutLevel = prevHigh2
+	}
+	if gateOptions.BreakoutShape == "baseline_plus_t3" &&
+		prevHigh3 > prevHigh2 && prevHigh3 > prevHigh1 && prevHigh1 > prevHigh2 && prevHigh3 > 0 {
+		longBreakoutShapeName = "t3_swing"
+		longBreakoutLevel = prevHigh3
+	}
+	shortBreakoutShapeName := ""
+	shortBreakoutLevel := 0.0
+	if prevLow2 < prevLow1 && prevLow2 > 0 {
+		shortBreakoutShapeName = "original_t2"
+		shortBreakoutLevel = prevLow2
+	}
+	if gateOptions.BreakoutShape == "baseline_plus_t3" &&
+		prevLow3 < prevLow2 && prevLow3 < prevLow1 && prevLow1 < prevLow2 && prevLow3 > 0 {
+		shortBreakoutShapeName = "t3_swing"
+		shortBreakoutLevel = prevLow3
+	}
+	longBreakoutShapeReady := longBreakoutShapeName != "" && longBreakoutLevel > 0
+	shortBreakoutShapeReady := shortBreakoutShapeName != "" && shortBreakoutLevel > 0
+	longBreakoutPriceReady := breakoutPrice >= longBreakoutLevel && longBreakoutLevel > 0
+	shortBreakoutPriceReady := breakoutPrice <= shortBreakoutLevel && shortBreakoutLevel > 0
+	longBreakoutQualityReady := breakoutQualityReady(longBreakoutShapeName, longBreakoutLevel, sma5, atr14, gateOptions)
+	shortBreakoutQualityReady := breakoutQualityReady(shortBreakoutShapeName, shortBreakoutLevel, sma5, atr14, gateOptions)
+	longBreakoutReady := longBreakoutShapeReady && longBreakoutPriceReady && longBreakoutQualityReady
+	shortBreakoutReady := shortBreakoutShapeReady && shortBreakoutPriceReady && shortBreakoutQualityReady
 	longReady := longStructureReady && longBreakoutReady
 	shortReady := shortStructureReady && shortBreakoutReady
 	if role == "entry" && (reasonTag == "zero-initial-reentry" || reasonTag == "sl-reentry" || reasonTag == "pt-reentry") {
@@ -822,6 +895,12 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	result["shortBreakoutShapeReady"] = shortBreakoutShapeReady
 	result["longBreakoutPriceReady"] = longBreakoutPriceReady
 	result["shortBreakoutPriceReady"] = shortBreakoutPriceReady
+	result["longBreakoutQualityReady"] = longBreakoutQualityReady
+	result["shortBreakoutQualityReady"] = shortBreakoutQualityReady
+	result["longBreakoutShapeName"] = longBreakoutShapeName
+	result["shortBreakoutShapeName"] = shortBreakoutShapeName
+	result["longBreakoutLevel"] = longBreakoutLevel
+	result["shortBreakoutLevel"] = shortBreakoutLevel
 	result["longBreakoutReady"] = longBreakoutReady
 	result["shortBreakoutReady"] = shortBreakoutReady
 	result["longBreakoutPatternReady"] = longBreakoutReady
@@ -844,6 +923,16 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		}
 	}
 	return result
+}
+
+func breakoutQualityReady(shapeName string, breakoutLevel, sma5, atr14 float64, options signalBarGateOptions) bool {
+	if shapeName != "t3_swing" || options.T3MinSMAATRSeparation <= 0 {
+		return true
+	}
+	if breakoutLevel <= 0 || sma5 <= 0 || atr14 <= 0 {
+		return false
+	}
+	return math.Abs(breakoutLevel-sma5) >= options.T3MinSMAATRSeparation*atr14
 }
 
 func isFavorableBiasForPlan(nextRole, nextReason, liquidityBias string) bool {

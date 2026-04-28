@@ -4153,6 +4153,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 }
 
 func alignLivePlanStepToCurrentMarket(
+	parameters map[string]any,
 	signalBarStates map[string]any,
 	signalTimeframe string,
 	currentPosition map[string]any,
@@ -4173,7 +4174,7 @@ func alignLivePlanStepToCurrentMarket(
 	if signalBarState == nil {
 		return nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
-	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource)
+	gate := evaluateSignalBarGate(signalBarState, "", "entry", "", breakoutPrice, breakoutPriceSource, signalBarGateOptionsFromParameters(parameters))
 	longReady := boolValue(gate["longReady"])
 	shortReady := boolValue(gate["shortReady"])
 	if longReady == shortReady {
@@ -5205,6 +5206,9 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"max_trades_per_bar",
 		"dir2_zero_initial",
 		"zero_initial_mode",
+		"breakout_shape",
+		"t3_min_sma_atr_separation",
+		"use_sma5_intraday_structure",
 	}
 	sessionParameterKeys = append(sessionParameterKeys, liveExecutionParameterOverrideKeys()...)
 	for _, key := range sessionParameterKeys {
@@ -5717,6 +5721,15 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if seconds := maxIntValue(overrides["dispatchCooldownSeconds"], 0); seconds > 0 {
 		normalized["dispatchCooldownSeconds"] = seconds
+	}
+	if shape := strings.ToLower(strings.TrimSpace(stringValue(overrides["breakout_shape"]))); shape != "" {
+		normalized["breakout_shape"] = shape
+	}
+	if separation := parseFloatValue(overrides["t3_min_sma_atr_separation"]); separation > 0 {
+		normalized["t3_min_sma_atr_separation"] = separation
+	}
+	if _, ok := overrides["use_sma5_intraday_structure"]; ok {
+		normalized["use_sma5_intraday_structure"] = boolValue(overrides["use_sma5_intraday_structure"])
 	}
 	return normalized
 }

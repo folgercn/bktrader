@@ -1227,6 +1227,9 @@ func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
 		if len(previousClosed) >= 2 {
 			entry["prevBar2"] = cloneMetadata(previousClosed[len(previousClosed)-2])
 		}
+		if len(previousClosed) >= 3 {
+			entry["prevBar3"] = cloneMetadata(previousClosed[len(previousClosed)-3])
+		}
 		out[key] = entry
 	}
 	return out

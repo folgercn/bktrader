@@ -244,6 +244,9 @@ func (p *Platform) liveSignalBarStates(symbol, timeframe string) (map[string]any
 	if index >= 2 {
 		entry["prevBar2"] = strategySignalBarToStateEntry(bars[index-2], symbol, timeframe)
 	}
+	if index >= 3 {
+		entry["prevBar3"] = strategySignalBarToStateEntry(bars[index-3], symbol, timeframe)
+	}
 	return map[string]any{
 		fmt.Sprintf("market-cache|%s|signal|%s", NormalizeSymbol(symbol), strings.ToLower(strings.TrimSpace(timeframe))): entry,
 	}, nil
@@ -425,6 +428,13 @@ func buildStrategySignalBarsFromCandles(bars []candleBar) ([]strategySignalBar, 
 		} else {
 			signals[i].PrevHigh2 = math.NaN()
 			signals[i].PrevLow2 = math.NaN()
+		}
+		if i >= 3 {
+			signals[i].PrevHigh3 = bars[i-3].High
+			signals[i].PrevLow3 = bars[i-3].Low
+		} else {
+			signals[i].PrevHigh3 = math.NaN()
+			signals[i].PrevLow3 = math.NaN()
 		}
 	}
 	return signals, nil

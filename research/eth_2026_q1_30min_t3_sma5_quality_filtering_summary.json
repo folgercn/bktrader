@@ -1,0 +1,571 @@
+{
+  "window": {
+    "start": "2026-01-01T00:00:00+00:00",
+    "end": "2026-03-31T23:59:59+00:00"
+  },
+  "build_stats": {
+    "raw_tick_rows": 748747244,
+    "kept_tick_rows": 748747172,
+    "sparse_second_rows": 7596268,
+    "continuous_second_rows": 7776000,
+    "first_second": "2026-01-01T00:00:00+00:00",
+    "last_second": "2026-03-31T23:59:59+00:00",
+    "derived_one_min_rows": 129600
+  },
+  "results": [
+    {
+      "timeframe": "30min",
+      "signal_stats": {
+        "signal_rows": 4320,
+        "signal_start": "2026-01-01T00:00:00+00:00",
+        "signal_end": "2026-03-31T23:30:00+00:00",
+        "valid_sma5_rows": 4316,
+        "valid_atr_rows": 4307
+      },
+      "scenarios": [
+        {
+          "scenario": "t3_sma5_baseline",
+          "breakout_shape": "baseline_plus_t3",
+          "replay_mode": "live_intrabar_sma5",
+          "params": {
+            "dir2_zero_initial": true,
+            "zero_initial_mode": "reentry_window",
+            "fixed_slippage": 0.0005,
+            "stop_loss_atr": 0.05,
+            "stop_mode": "atr",
+            "max_trades_per_bar": 2,
+            "reentry_size_schedule": [
+              0.2,
+              0.1
+            ],
+            "long_reentry_atr": 0.1,
+            "short_reentry_atr": 0.0,
+            "profit_protect_atr": 1.0,
+            "trailing_stop_atr": 0.3,
+            "delayed_trailing_activation": 0.5,
+            "reentry_anchor_levels": "wick",
+            "reentry_trigger_mode": "reclaim",
+            "t3_reentry_size_schedule": [
+              0.2,
+              0.1
+            ],
+            "t3_cooldown_bars": 0,
+            "t3_quality_filters": {}
+          },
+          "summary": {
+            "final_balance": 531886.72,
+            "return_pct": 431.89,
+            "max_dd_pct": -2.1,
+            "trades": 3251,
+            "win_rate_pct": 80.28,
+            "sharpe": 13.42,
+            "first_entry": "2026-01-01T10:22:41+00:00",
+            "last_exit": "2026-03-31T23:10:28+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 2101,
+              "Zero-Initial-Reentry": 1150
+            },
+            "exit_reasons": {
+              "SL": 3251
+            },
+            "entry_types": {
+              "BUY": 1642,
+              "SHORT": 1609
+            },
+            "integrity": {
+              "rows": 6502,
+              "entries": 3251,
+              "exits": 3251,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 2576,
+              "win_rate_pct": 87.97,
+              "avg_pnl_pct": 0.5411,
+              "median_pnl_pct": 0.4008,
+              "pnl_std_pct": 0.6352,
+              "worst_pnl_pct": -0.1811,
+              "net_pnl_value": 553447.23,
+              "max_pnl_drawdown": -219.54,
+              "profit_factor": 61.5178,
+              "entry_types": {
+                "SHORT": 1304,
+                "BUY": 1272
+              },
+              "entry_reasons": {
+                "SL-Reentry": 1665,
+                "Zero-Initial-Reentry": 911
+              },
+              "exit_reasons": {
+                "SL": 2576
+              }
+            },
+            "t3_swing": {
+              "trades": 675,
+              "win_rate_pct": 85.33,
+              "avg_pnl_pct": 0.5157,
+              "median_pnl_pct": 0.3537,
+              "pnl_std_pct": 0.628,
+              "worst_pnl_pct": -0.1188,
+              "net_pnl_value": 136907.94,
+              "max_pnl_drawdown": -215.84,
+              "profit_factor": 51.2283,
+              "entry_types": {
+                "BUY": 370,
+                "SHORT": 305
+              },
+              "entry_reasons": {
+                "SL-Reentry": 436,
+                "Zero-Initial-Reentry": 239
+              },
+              "exit_reasons": {
+                "SL": 675
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 447,
+                "t3_swing": 127
+              },
+              "short": {
+                "original_t2": 471,
+                "t3_swing": 113
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            }
+          },
+          "ledger_path": "research/tmp_eth_2026_q1_30min_1s_live_intrabar_sma5_t3_sma5_baseline_ledger.csv",
+          "elapsed_seconds": 168.04
+        },
+        {
+          "scenario": "t3_sma5_trend_filter",
+          "breakout_shape": "baseline_plus_t3",
+          "replay_mode": "live_intrabar_sma5",
+          "params": {
+            "dir2_zero_initial": true,
+            "zero_initial_mode": "reentry_window",
+            "fixed_slippage": 0.0005,
+            "stop_loss_atr": 0.05,
+            "stop_mode": "atr",
+            "max_trades_per_bar": 2,
+            "reentry_size_schedule": [
+              0.2,
+              0.1
+            ],
+            "long_reentry_atr": 0.1,
+            "short_reentry_atr": 0.0,
+            "profit_protect_atr": 1.0,
+            "trailing_stop_atr": 0.3,
+            "delayed_trailing_activation": 0.5,
+            "reentry_anchor_levels": "wick",
+            "reentry_trigger_mode": "reclaim",
+            "t3_reentry_size_schedule": [
+              0.2,
+              0.1
+            ],
+            "t3_cooldown_bars": 0,
+            "t3_quality_filters": {
+              "trend": true
+            }
+          },
+          "summary": {
+            "final_balance": 518859.46,
+            "return_pct": 418.86,
+            "max_dd_pct": -2.1,
+            "trades": 3167,
+            "win_rate_pct": 80.45,
+            "sharpe": 13.56,
+            "first_entry": "2026-01-01T10:22:41+00:00",
+            "last_exit": "2026-03-31T23:10:28+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 2049,
+              "Zero-Initial-Reentry": 1118
+            },
+            "exit_reasons": {
+              "SL": 3167
+            },
+            "entry_types": {
+              "BUY": 1600,
+              "SHORT": 1567
+            },
+            "integrity": {
+              "rows": 6334,
+              "entries": 3167,
+              "exits": 3167,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 2583,
+              "win_rate_pct": 88.0,
+              "avg_pnl_pct": 0.54,
+              "median_pnl_pct": 0.4008,
+              "pnl_std_pct": 0.6342,
+              "worst_pnl_pct": -0.1811,
+              "net_pnl_value": 544069.92,
+              "max_pnl_drawdown": -215.19,
+              "profit_factor": 61.5424,
+              "entry_types": {
+                "SHORT": 1313,
+                "BUY": 1270
+              },
+              "entry_reasons": {
+                "SL-Reentry": 1670,
+                "Zero-Initial-Reentry": 913
+              },
+              "exit_reasons": {
+                "SL": 2583
+              }
+            },
+            "t3_swing": {
+              "trades": 584,
+              "win_rate_pct": 85.27,
+              "avg_pnl_pct": 0.5377,
+              "median_pnl_pct": 0.3796,
+              "pnl_std_pct": 0.6214,
+              "worst_pnl_pct": -0.1365,
+              "net_pnl_value": 121978.46,
+              "max_pnl_drawdown": -211.41,
+              "profit_factor": 54.3655,
+              "entry_types": {
+                "BUY": 330,
+                "SHORT": 254
+              },
+              "entry_reasons": {
+                "SL-Reentry": 379,
+                "Zero-Initial-Reentry": 205
+              },
+              "exit_reasons": {
+                "SL": 584
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 446,
+                "t3_swing": 113
+              },
+              "short": {
+                "original_t2": 474,
+                "t3_swing": 93
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {
+                "trend_long": 34
+              },
+              "short": {
+                "trend_short": 30
+              }
+            }
+          },
+          "ledger_path": "research/tmp_eth_2026_q1_30min_1s_live_intrabar_sma5_t3_sma5_trend_filter_ledger.csv",
+          "elapsed_seconds": 170.12
+        },
+        {
+          "scenario": "t3_sma5_sma_atr_sep_0p1",
+          "breakout_shape": "baseline_plus_t3",
+          "replay_mode": "live_intrabar_sma5",
+          "params": {
+            "dir2_zero_initial": true,
+            "zero_initial_mode": "reentry_window",
+            "fixed_slippage": 0.0005,
+            "stop_loss_atr": 0.05,
+            "stop_mode": "atr",
+            "max_trades_per_bar": 2,
+            "reentry_size_schedule": [
+              0.2,
+              0.1
+            ],
+            "long_reentry_atr": 0.1,
+            "short_reentry_atr": 0.0,
+            "profit_protect_atr": 1.0,
+            "trailing_stop_atr": 0.3,
+            "delayed_trailing_activation": 0.5,
+            "reentry_anchor_levels": "wick",
+            "reentry_trigger_mode": "reclaim",
+            "t3_reentry_size_schedule": [
+              0.2,
+              0.1
+            ],
+            "t3_cooldown_bars": 0,
+            "t3_quality_filters": {
+              "min_sma_atr_separation": 0.1
+            }
+          },
+          "summary": {
+            "final_balance": 531886.72,
+            "return_pct": 431.89,
+            "max_dd_pct": -2.1,
+            "trades": 3251,
+            "win_rate_pct": 80.28,
+            "sharpe": 13.42,
+            "first_entry": "2026-01-01T10:22:41+00:00",
+            "last_exit": "2026-03-31T23:10:28+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 2101,
+              "Zero-Initial-Reentry": 1150
+            },
+            "exit_reasons": {
+              "SL": 3251
+            },
+            "entry_types": {
+              "BUY": 1642,
+              "SHORT": 1609
+            },
+            "integrity": {
+              "rows": 6502,
+              "entries": 3251,
+              "exits": 3251,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 2576,
+              "win_rate_pct": 87.97,
+              "avg_pnl_pct": 0.5411,
+              "median_pnl_pct": 0.4008,
+              "pnl_std_pct": 0.6352,
+              "worst_pnl_pct": -0.1811,
+              "net_pnl_value": 553447.23,
+              "max_pnl_drawdown": -219.54,
+              "profit_factor": 61.5178,
+              "entry_types": {
+                "SHORT": 1304,
+                "BUY": 1272
+              },
+              "entry_reasons": {
+                "SL-Reentry": 1665,
+                "Zero-Initial-Reentry": 911
+              },
+              "exit_reasons": {
+                "SL": 2576
+              }
+            },
+            "t3_swing": {
+              "trades": 675,
+              "win_rate_pct": 85.33,
+              "avg_pnl_pct": 0.5157,
+              "median_pnl_pct": 0.3537,
+              "pnl_std_pct": 0.628,
+              "worst_pnl_pct": -0.1188,
+              "net_pnl_value": 136907.94,
+              "max_pnl_drawdown": -215.84,
+              "profit_factor": 51.2283,
+              "entry_types": {
+                "BUY": 370,
+                "SHORT": 305
+              },
+              "entry_reasons": {
+                "SL-Reentry": 436,
+                "Zero-Initial-Reentry": 239
+              },
+              "exit_reasons": {
+                "SL": 675
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 447,
+                "t3_swing": 127
+              },
+              "short": {
+                "original_t2": 471,
+                "t3_swing": 113
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            }
+          },
+          "ledger_path": "research/tmp_eth_2026_q1_30min_1s_live_intrabar_sma5_t3_sma5_sma_atr_sep_0p1_ledger.csv",
+          "elapsed_seconds": 189.83
+        },
+        {
+          "scenario": "t3_sma5_atr_percentile_gte_30",
+          "breakout_shape": "baseline_plus_t3",
+          "replay_mode": "live_intrabar_sma5",
+          "params": {
+            "dir2_zero_initial": true,
+            "zero_initial_mode": "reentry_window",
+            "fixed_slippage": 0.0005,
+            "stop_loss_atr": 0.05,
+            "stop_mode": "atr",
+            "max_trades_per_bar": 2,
+            "reentry_size_schedule": [
+              0.2,
+              0.1
+            ],
+            "long_reentry_atr": 0.1,
+            "short_reentry_atr": 0.0,
+            "profit_protect_atr": 1.0,
+            "trailing_stop_atr": 0.3,
+            "delayed_trailing_activation": 0.5,
+            "reentry_anchor_levels": "wick",
+            "reentry_trigger_mode": "reclaim",
+            "t3_reentry_size_schedule": [
+              0.2,
+              0.1
+            ],
+            "t3_cooldown_bars": 0,
+            "t3_quality_filters": {
+              "min_atr_percentile": 30.0
+            }
+          },
+          "summary": {
+            "final_balance": 517661.93,
+            "return_pct": 417.66,
+            "max_dd_pct": -1.85,
+            "trades": 3060,
+            "win_rate_pct": 80.69,
+            "sharpe": 13.54,
+            "first_entry": "2026-01-01T10:22:41+00:00",
+            "last_exit": "2026-03-31T23:10:28+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 1984,
+              "Zero-Initial-Reentry": 1076
+            },
+            "exit_reasons": {
+              "SL": 3060
+            },
+            "entry_types": {
+              "SHORT": 1533,
+              "BUY": 1527
+            },
+            "integrity": {
+              "rows": 6120,
+              "entries": 3060,
+              "exits": 3060,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 2597,
+              "win_rate_pct": 87.95,
+              "avg_pnl_pct": 0.5385,
+              "median_pnl_pct": 0.3962,
+              "pnl_std_pct": 0.6335,
+              "worst_pnl_pct": -0.1811,
+              "net_pnl_value": 549011.7,
+              "max_pnl_drawdown": -214.26,
+              "profit_factor": 61.2655,
+              "entry_types": {
+                "SHORT": 1322,
+                "BUY": 1275
+              },
+              "entry_reasons": {
+                "SL-Reentry": 1680,
+                "Zero-Initial-Reentry": 917
+              },
+              "exit_reasons": {
+                "SL": 2597
+              }
+            },
+            "t3_swing": {
+              "trades": 463,
+              "win_rate_pct": 85.31,
+              "avg_pnl_pct": 0.6192,
+              "median_pnl_pct": 0.4428,
+              "pnl_std_pct": 0.7049,
+              "worst_pnl_pct": -0.1143,
+              "net_pnl_value": 108775.5,
+              "max_pnl_drawdown": -213.12,
+              "profit_factor": 54.2307,
+              "entry_types": {
+                "BUY": 252,
+                "SHORT": 211
+              },
+              "entry_reasons": {
+                "SL-Reentry": 304,
+                "Zero-Initial-Reentry": 159
+              },
+              "exit_reasons": {
+                "SL": 463
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 447,
+                "t3_swing": 85
+              },
+              "short": {
+                "original_t2": 477,
+                "t3_swing": 74
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {
+                "atr_percentile": 42
+              },
+              "short": {
+                "atr_percentile": 39
+              }
+            }
+          },
+          "ledger_path": "research/tmp_eth_2026_q1_30min_1s_live_intrabar_sma5_t3_sma5_atr_percentile_gte_30_ledger.csv",
+          "elapsed_seconds": 220.63
+        }
+      ],
+      "delta_vs_t3_sma5_baseline": {
+        "t3_sma5_trend_filter": {
+          "final_balance_delta": -13027.26,
+          "return_pct_delta": -13.03,
+          "max_dd_pct_delta": 0.0,
+          "trades_delta": -84,
+          "win_rate_pct_delta": 0.17,
+          "sharpe_delta": 0.14
+        },
+        "t3_sma5_sma_atr_sep_0p1": {
+          "final_balance_delta": 0.0,
+          "return_pct_delta": 0.0,
+          "max_dd_pct_delta": 0.0,
+          "trades_delta": 0,
+          "win_rate_pct_delta": 0.0,
+          "sharpe_delta": 0.0
+        },
+        "t3_sma5_atr_percentile_gte_30": {
+          "final_balance_delta": -14224.79,
+          "return_pct_delta": -14.23,
+          "max_dd_pct_delta": 0.25,
+          "trades_delta": -191,
+          "win_rate_pct_delta": 0.41,
+          "sharpe_delta": 0.12
+        }
+      }
+    }
+  ],
+  "baseline_scenario": "t3_sma5_baseline",
+  "note": "Research-only 30min optimization. Baseline is t3_sma5_baseline; variants only add signal-quality filters to the added t3 breakout lock and preserve sizing."
+}
