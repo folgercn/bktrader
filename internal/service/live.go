@@ -4004,6 +4004,7 @@ func preserveLiveSessionNonRegressiveFacts(state map[string]any, latest map[stri
 			state[key] = value
 		}
 	}
+	preserveLatestSLExitFillFact(state, latest)
 }
 
 func liveSessionNonRegressiveFactKeys() []string {
@@ -4015,6 +4016,27 @@ func liveSessionNonRegressiveFactKeys() []string {
 		"lastStrategyDecisionEventFingerprint",
 		"lastStrategyDecisionEventIntentSignature",
 		"lastDispatchedDecisionEventId",
+	}
+}
+
+func preserveLatestSLExitFillFact(state map[string]any, latest map[string]any) {
+	latestFilledAt := parseOptionalRFC3339(stringValue(latest["lastSLExitFilledAt"]))
+	if latestFilledAt.IsZero() {
+		return
+	}
+	stateFilledAt := parseOptionalRFC3339(stringValue(state["lastSLExitFilledAt"]))
+	if !stateFilledAt.IsZero() && !latestFilledAt.After(stateFilledAt) {
+		return
+	}
+	for _, key := range []string{
+		"lastSLExitFilledAt",
+		"lastSLExitOrderId",
+		"lastSLExitStatus",
+		"lastSLExitSignalBarStateKey",
+	} {
+		if value, ok := latest[key]; ok {
+			state[key] = value
+		}
 	}
 }
 
@@ -5206,6 +5228,7 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"max_trades_per_bar",
 		"dir2_zero_initial",
 		"zero_initial_mode",
+		"sl_reentry_min_delay_seconds",
 		"breakout_shape",
 		"t3_min_sma_atr_separation",
 		"use_sma5_intraday_structure",
@@ -5721,6 +5744,9 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if seconds := maxIntValue(overrides["dispatchCooldownSeconds"], 0); seconds > 0 {
 		normalized["dispatchCooldownSeconds"] = seconds
+	}
+	if seconds := maxIntValue(overrides["sl_reentry_min_delay_seconds"], 0); seconds > 0 {
+		normalized["sl_reentry_min_delay_seconds"] = seconds
 	}
 	if shape := strings.ToLower(strings.TrimSpace(stringValue(overrides["breakout_shape"]))); shape != "" {
 		normalized["breakout_shape"] = shape

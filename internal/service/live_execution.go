@@ -1356,12 +1356,14 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 			state["lastSyncedAt"] = eventTime.UTC().Format(time.RFC3339)
 			recordExecutionSyncResultHealth(state, eventTime, order.Status, nil)
 		}
-		maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), order.ID, order.Status)
+		proposalMap := mapValue(order.Metadata["executionProposal"])
+		maybeIncrementLiveSessionReentryCount(state, proposalMap, order.ID, order.Status)
+		recordLiveSessionStopLossExitFill(state, proposalMap, order, eventTime)
 		state["lastSyncedOrderId"] = order.ID
 		state["lastSyncedOrderStatus"] = order.Status
 		state["lastDispatchedOrderStatus"] = order.Status
-		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), order, false)
-		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
+		state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, order, false)
+		updateExecutionEventStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 		if shouldSyncLiveAccountAfterTerminalFilledOrder(order, state, eventTime) {
 			state["lastTerminalAccountSyncAttemptOrderId"] = order.ID
 			state["lastTerminalAccountSyncAttemptOrderStatus"] = order.Status
@@ -1399,7 +1401,9 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 				if syncErr == nil {
 					delete(state, "lastSyncError")
 					delete(state, "lastCancelFallbackSyncError")
-					maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), syncedOrder.ID, syncedOrder.Status)
+					proposalMap := mapValue(order.Metadata["executionProposal"])
+					maybeIncrementLiveSessionReentryCount(state, proposalMap, syncedOrder.ID, syncedOrder.Status)
+					recordLiveSessionStopLossExitFill(state, proposalMap, syncedOrder, eventTime)
 					state["lastSyncedOrderId"] = syncedOrder.ID
 					state["lastSyncedOrderStatus"] = syncedOrder.Status
 					state["lastDispatchedOrderStatus"] = syncedOrder.Status
@@ -1410,8 +1414,8 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 						recordLiveExecutionTimeoutMetadata(state, eventTime, order)
 						dispatchOrder = withExecutionSubmissionFallback(syncedOrder, order)
 					}
-					state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), dispatchOrder, false)
-					updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
+					state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, dispatchOrder, false)
+					updateExecutionEventStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 					appendTimelineEvent(state, "order", eventTime, "live-order-cancel-fallback-synced", map[string]any{
 						"orderId":     order.ID,
 						"cancelError": cancelErr.Error(),
@@ -1492,20 +1496,22 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		return updated, err
 	}
 	delete(state, "lastSyncError")
-	maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), syncedOrder.ID, syncedOrder.Status)
+	proposalMap := mapValue(order.Metadata["executionProposal"])
+	maybeIncrementLiveSessionReentryCount(state, proposalMap, syncedOrder.ID, syncedOrder.Status)
+	recordLiveSessionStopLossExitFill(state, proposalMap, syncedOrder, eventTime)
 	state["lastSyncedOrderId"] = syncedOrder.ID
 	state["lastSyncedOrderStatus"] = syncedOrder.Status
 	state["lastDispatchedOrderStatus"] = syncedOrder.Status
 	state["lastSyncedAt"] = time.Now().UTC().Format(time.RFC3339)
 	recordExecutionSyncResultHealth(state, eventTime, syncedOrder.Status, nil)
-	state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), syncedOrder, false)
-	updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
+	state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, syncedOrder, false)
+	updateExecutionEventStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
 	if strings.EqualFold(syncedOrder.Status, "FILLED") {
 		if _, syncErr := p.requestLiveAccountSync(session.AccountID, "live-filled-order-sync"); syncErr != nil && !errors.Is(syncErr, ErrLiveAccountOperationInProgress) {
 			p.logger("service.live_execution", "session_id", session.ID, "account_id", session.AccountID).Warn("live account sync failed after filled order sync", "error", syncErr)
 		}
 	}
-	appendTimelineEvent(state, "order", eventTime, "live-order-synced", executionDispatchTimelineMetadata(mapValue(order.Metadata["executionProposal"]), syncedOrder, false))
+	appendTimelineEvent(state, "order", eventTime, "live-order-synced", executionDispatchTimelineMetadata(proposalMap, syncedOrder, false))
 	updated, err := p.store.UpdateLiveSessionState(session.ID, state)
 	if err != nil {
 		return domain.LiveSession{}, err
@@ -1628,6 +1634,32 @@ func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map
 	state["sessionReentryCount"] = reentryCount
 	if orderID != "" {
 		state["lastCountedReentryOrderId"] = orderID
+	}
+}
+
+func recordLiveSessionStopLossExitFill(state map[string]any, proposalMap map[string]any, order domain.Order, eventTime time.Time) {
+	if state == nil || !strings.EqualFold(strings.TrimSpace(order.Status), "FILLED") {
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["role"])), "exit") {
+		return
+	}
+	if normalizeStrategyReasonTag(stringValue(proposalMap["reason"])) != "sl" {
+		return
+	}
+	filledAt := parseOptionalRFC3339(stringValue(order.Metadata["lastFilledAt"]))
+	if filledAt.IsZero() {
+		filledAt = eventTime.UTC()
+	}
+	existingFilledAt := parseOptionalRFC3339(stringValue(state["lastSLExitFilledAt"]))
+	if !existingFilledAt.IsZero() && !filledAt.UTC().After(existingFilledAt.UTC()) {
+		return
+	}
+	state["lastSLExitFilledAt"] = filledAt.UTC().Format(time.RFC3339)
+	state["lastSLExitOrderId"] = order.ID
+	state["lastSLExitStatus"] = order.Status
+	if key := liveProposalSignalBarTradeLimitKey(proposalMap); key != "" {
+		state["lastSLExitSignalBarStateKey"] = key
 	}
 }
 

@@ -256,6 +256,9 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 		proposal.Metadata["executionDecision"] = "wait-market-price-unavailable"
 		return proposal, nil
 	}
+	if delayed := applySLReentryMinDelay(ctx, proposal, reasonTag); delayed.Status != proposal.Status {
+		return delayed, nil
+	}
 	if profile.ReduceOnly && reasonTag == "sl" {
 		slMaxSlippageBps := firstPositive(profile.SLMaxSlippageBps, 8)
 		if spreadBps > 0 && slMaxSlippageBps > 0 && spreadBps > slMaxSlippageBps {
@@ -344,6 +347,62 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	}
 	proposal.Metadata["executionDecision"] = "direct-dispatch"
 	return proposal, nil
+}
+
+func applySLReentryMinDelay(ctx ExecutionPlanningContext, proposal ExecutionProposal, reasonTag string) ExecutionProposal {
+	if !strings.EqualFold(strings.TrimSpace(proposal.Role), "entry") || reasonTag != "sl-reentry" {
+		return proposal
+	}
+	delaySeconds := maxIntValue(firstNonZeroAny(ctx.Execution.Parameters["sl_reentry_min_delay_seconds"], ctx.Session.State["sl_reentry_min_delay_seconds"]), 0)
+	if delaySeconds <= 0 {
+		return proposal
+	}
+	lastExitAt := parseOptionalRFC3339(firstNonEmpty(
+		stringValue(ctx.Session.State["lastSLExitFilledAt"]),
+		stringValue(ctx.Session.State["lastStopLossExitFilledAt"]),
+	))
+	if lastExitAt.IsZero() {
+		return proposal
+	}
+	eventTime := ctx.EventTime.UTC()
+	if eventTime.IsZero() {
+		eventTime = time.Now().UTC()
+	}
+	elapsed := eventTime.Sub(lastExitAt.UTC())
+	required := time.Duration(delaySeconds) * time.Second
+	if elapsed >= required {
+		return proposal
+	}
+	remaining := required - elapsed
+	proposal.Status = "waiting-sl-reentry-delay"
+	proposal.Reason = "sl-reentry-delay"
+	proposal.Metadata = cloneMetadata(proposal.Metadata)
+	proposal.Metadata["executionDecision"] = "wait-sl-reentry-delay"
+	proposal.Metadata["slReentryMinDelaySeconds"] = delaySeconds
+	proposal.Metadata["slReentryDelayElapsedSeconds"] = math.Max(0, elapsed.Seconds())
+	proposal.Metadata["slReentryDelayRemainingSeconds"] = math.Ceil(remaining.Seconds())
+	proposal.Metadata["lastSLExitFilledAt"] = lastExitAt.UTC().Format(time.RFC3339)
+	proposal.Metadata["slReentryDelayReadyAt"] = lastExitAt.UTC().Add(required).Format(time.RFC3339)
+	proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
+		mapValue(proposal.Metadata["executionDecisionContext"]),
+		map[string]any{
+			"slReentryDelayBranch":           true,
+			"slReentryMinDelaySeconds":       delaySeconds,
+			"slReentryDelayElapsedSeconds":   math.Max(0, elapsed.Seconds()),
+			"slReentryDelayRemainingSeconds": math.Ceil(remaining.Seconds()),
+			"lastSLExitFilledAt":             lastExitAt.UTC().Format(time.RFC3339),
+		},
+	)
+	return proposal
+}
+
+func firstNonZeroAny(values ...any) any {
+	for _, value := range values {
+		if parseFloatValue(value) > 0 {
+			return value
+		}
+	}
+	return nil
 }
 
 func normalizePositionSizingMode(raw any) string {
