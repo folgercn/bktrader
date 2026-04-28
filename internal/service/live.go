@@ -5722,6 +5722,9 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	if seconds := maxIntValue(overrides["dispatchCooldownSeconds"], 0); seconds > 0 {
 		normalized["dispatchCooldownSeconds"] = seconds
 	}
+	if seconds := maxIntValue(overrides["sl_reentry_min_delay_seconds"], 0); seconds > 0 {
+		normalized["sl_reentry_min_delay_seconds"] = seconds
+	}
 	if shape := strings.ToLower(strings.TrimSpace(stringValue(overrides["breakout_shape"]))); shape != "" {
 		normalized["breakout_shape"] = shape
 	}
