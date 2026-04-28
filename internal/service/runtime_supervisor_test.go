@@ -240,6 +240,125 @@ func TestRuntimeSupervisorSubmitsDueSignalRestartWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestRuntimeSupervisorRetriesRestartAfterFailedPost(t *testing.T) {
+	now := time.Now().UTC()
+	requested := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/healthz":
+			writeRuntimeSupervisorTestJSON(t, w, map[string]any{"status": "ok"})
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{
+				Service:   "platform-api",
+				CheckedAt: now,
+				Runtimes: []RuntimeStatus{{
+					RuntimeID:       "signal-runtime-1",
+					RuntimeKind:     "signal",
+					DesiredStatus:   "RUNNING",
+					ActualStatus:    "ERROR",
+					RestartReason:   "runtime-error",
+					RestartSeverity: "transient",
+					NextRestartAt:   now.Add(-time.Second).Format(time.RFC3339),
+				}},
+			})
+		case "/api/v1/runtime/restart":
+			if requested["POST /api/v1/runtime/restart"] == 1 {
+				http.Error(w, "temporary restart failure", http.StatusInternalServerError)
+				return
+			}
+			writeRuntimeSupervisorTestJSONStatus(t, w, http.StatusAccepted, map[string]any{"status": "accepted"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{EnableApplicationRestart: true},
+	)
+
+	first := supervisor.Collect(context.Background())
+	if requested["POST /api/v1/runtime/restart"] != 1 {
+		t.Fatalf("expected first restart POST, got %#v", requested)
+	}
+	if len(first.Targets) != 1 || len(first.Targets[0].ControlActions) != 1 {
+		t.Fatalf("expected first failed action to be recorded, got %#v", first.Targets)
+	}
+	firstAction := first.Targets[0].ControlActions[0]
+	if firstAction.Submitted || firstAction.StatusCode != http.StatusInternalServerError || firstAction.Error == "" {
+		t.Fatalf("expected failed restart action with error, got %+v", firstAction)
+	}
+
+	second := supervisor.Collect(context.Background())
+	if requested["POST /api/v1/runtime/restart"] != 2 {
+		t.Fatalf("expected failed restart plan to be retried, got %#v", requested)
+	}
+	if len(second.Targets) != 1 || len(second.Targets[0].ControlActions) != 1 {
+		t.Fatalf("expected second action to be recorded, got %#v", second.Targets)
+	}
+	secondAction := second.Targets[0].ControlActions[0]
+	if !secondAction.Submitted || secondAction.StatusCode != http.StatusAccepted || secondAction.Error != "" {
+		t.Fatalf("expected successful retry action, got %+v", secondAction)
+	}
+
+	third := supervisor.Collect(context.Background())
+	if requested["POST /api/v1/runtime/restart"] != 2 {
+		t.Fatalf("expected successful restart plan to be deduplicated, got %#v", requested)
+	}
+	if len(third.Targets) != 1 || len(third.Targets[0].ControlActions) != 0 {
+		t.Fatalf("expected no action after successful submit, got %#v", third.Targets)
+	}
+}
+
+func TestRuntimeSupervisorSkipsApplicationRestartWhenHealthzFails(t *testing.T) {
+	now := time.Now().UTC()
+	requested := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{
+				Service:   "platform-api",
+				CheckedAt: now,
+				Runtimes: []RuntimeStatus{{
+					RuntimeID:       "signal-runtime-1",
+					RuntimeKind:     "signal",
+					DesiredStatus:   "RUNNING",
+					ActualStatus:    "ERROR",
+					RestartSeverity: "transient",
+					NextRestartAt:   now.Add(-time.Second).Format(time.RFC3339),
+				}},
+			})
+		case "/api/v1/runtime/restart":
+			t.Errorf("expected supervisor to skip restart when healthz fails")
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{EnableApplicationRestart: true},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	if requested["POST /api/v1/runtime/restart"] != 0 {
+		t.Fatalf("expected no restart POST when healthz fails, got %#v", requested)
+	}
+	if len(snapshot.Targets) != 1 || len(snapshot.Targets[0].ControlActions) != 0 {
+		t.Fatalf("expected no recorded control actions when healthz fails, got %#v", snapshot.Targets)
+	}
+}
+
 func TestRuntimeSupervisorSkipsApplicationRestartWhenSuppressedOrNotDue(t *testing.T) {
 	now := time.Now().UTC()
 	requested := make(map[string]int)
@@ -365,7 +484,13 @@ func TestParseRuntimeSupervisorTargetsSupportsNamedTargets(t *testing.T) {
 
 func writeRuntimeSupervisorTestJSON(t *testing.T, w http.ResponseWriter, payload any) {
 	t.Helper()
+	writeRuntimeSupervisorTestJSONStatus(t, w, http.StatusOK, payload)
+}
+
+func writeRuntimeSupervisorTestJSONStatus(t *testing.T, w http.ResponseWriter, status int, payload any) {
+	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		t.Errorf("write json failed: %v", err)
 	}

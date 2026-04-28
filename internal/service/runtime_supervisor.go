@@ -249,16 +249,19 @@ func (s *RuntimeSupervisor) submitApplicationRestarts(ctx context.Context, targe
 		if !runtimeSupervisorRestartDue(runtime, now) {
 			continue
 		}
-		if !s.markRuntimeRestartSubmitted(target, runtime) {
+		if s.runtimeRestartAlreadySubmitted(target, runtime) {
 			continue
 		}
 		action := s.submitRuntimeRestart(ctx, target, runtime, now)
+		if action.Submitted {
+			s.markRuntimeRestartSubmitted(target, runtime)
+		}
 		actions = append(actions, action)
 	}
 	return actions
 }
 
-func (s *RuntimeSupervisor) markRuntimeRestartSubmitted(target RuntimeSupervisorTarget, runtime RuntimeStatus) bool {
+func (s *RuntimeSupervisor) runtimeRestartAlreadySubmitted(target RuntimeSupervisorTarget, runtime RuntimeStatus) bool {
 	if s == nil {
 		return false
 	}
@@ -267,16 +270,26 @@ func (s *RuntimeSupervisor) markRuntimeRestartSubmitted(target RuntimeSupervisor
 		return false
 	}
 	key := runtimeSupervisorRestartKey(target, runtime)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.submittedRestarts[key] == nextRestartAt
+}
+
+func (s *RuntimeSupervisor) markRuntimeRestartSubmitted(target RuntimeSupervisorTarget, runtime RuntimeStatus) {
+	if s == nil {
+		return
+	}
+	nextRestartAt := strings.TrimSpace(runtime.NextRestartAt)
+	if nextRestartAt == "" {
+		return
+	}
+	key := runtimeSupervisorRestartKey(target, runtime)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.submittedRestarts == nil {
 		s.submittedRestarts = make(map[string]string)
 	}
-	if s.submittedRestarts[key] == nextRestartAt {
-		return false
-	}
 	s.submittedRestarts[key] = nextRestartAt
-	return true
 }
 
 func runtimeSupervisorRestartKey(target RuntimeSupervisorTarget, runtime RuntimeStatus) string {
