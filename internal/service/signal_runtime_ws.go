@@ -429,11 +429,12 @@ func (p *Platform) setSessionRecovering(sessionID string, lastErr error, attempt
 
 func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 	_ = p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
+		now := time.Now().UTC()
 		session.Status = "ERROR"
 		state := cloneMetadata(session.State)
 		state["health"] = "error"
 		state["actualStatus"] = "ERROR"
-		state["lastEventAt"] = time.Now().UTC().Format(time.RFC3339)
+		state["lastEventAt"] = now.Format(time.RFC3339)
 		state["lastEventSummary"] = map[string]any{
 			"type":    "runtime_error",
 			"message": err.Error(),
@@ -443,12 +444,13 @@ func (p *Platform) setSessionTerminalError(sessionID string, err error) {
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
 		delete(state, "reconnectAttemptStartedAtMs")
+		scheduleSignalRuntimeSupervisorRestartAfterTerminalError(state, err, now)
 		appendSignalRuntimeError(state, err.Error())
-		appendSignalRuntimeTimeline(state, time.Now().UTC(), "runtime", "error", map[string]any{
+		appendSignalRuntimeTimeline(state, now, "runtime", "error", map[string]any{
 			"message": err.Error(),
 		})
 		session.State = state
-		session.UpdatedAt = time.Now().UTC()
+		session.UpdatedAt = now
 	})
 	p.clearTickEvalThrottleSession(sessionID)
 	p.clearRuntimeEventPublishThrottleSession(sessionID)
@@ -609,6 +611,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 		delete(state, "reconnectNextBackoff")
 		delete(state, "reconnectSeverity")
 		delete(state, "reconnectAttemptStartedAtMs")
+		clearSignalRuntimeSupervisorRestartState(state)
 		appendSignalRuntimeTimeline(state, now, "runtime", "subscribed", map[string]any{
 			"subscriptionCount": len(subscriptions),
 			"subscriptions":     subscriptionSummary,
@@ -708,6 +711,16 @@ func (p *Platform) runExchangeWebsocketLoop(
 			})
 		}
 	}
+}
+
+func clearSignalRuntimeSupervisorRestartState(state map[string]any) {
+	delete(state, "supervisorRestartAttempt")
+	delete(state, "nextAutoRestartAt")
+	delete(state, "supervisorRestartBackoff")
+	delete(state, "supervisorRestartReason")
+	delete(state, "supervisorRestartSeverity")
+	delete(state, "lastSupervisorError")
+	delete(state, "autoRestartSuppressed")
 }
 
 // validateSignalBarContinuityAfterReconnect checks if a signal bar close was missed
