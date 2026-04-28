@@ -721,15 +721,16 @@ func liveSessionControlAcceptedPayload(session domain.LiveSession) map[string]an
 		state = map[string]any{}
 	}
 	return map[string]any{
-		"status":           "accepted",
-		"message":          "control intent accepted; execution is asynchronous and must be confirmed through actualStatus",
-		"sessionId":        session.ID,
-		"desiredStatus":    state["desiredStatus"],
-		"actualStatus":     state["actualStatus"],
-		"controlRequestId": state["controlRequestId"],
-		"controlVersion":   state["controlVersion"],
-		"lastControlError": state["lastControlError"],
-		"session":          session,
+		"status":               "accepted",
+		"message":              "control intent accepted; execution is asynchronous and must be confirmed through actualStatus",
+		"sessionId":            session.ID,
+		"desiredStatus":        state["desiredStatus"],
+		"actualStatus":         state["actualStatus"],
+		"controlRequestId":     state["controlRequestId"],
+		"controlVersion":       state["controlVersion"],
+		"lastControlError":     state["lastControlError"],
+		"lastControlErrorCode": state["lastControlErrorCode"],
+		"session":              session,
 	}
 }
 

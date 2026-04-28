@@ -227,7 +227,14 @@ func waitLiveSessionActualStatus(client *ctlclient.Client, sessionID, target str
 			return nil
 		}
 		if actual == "ERROR" {
-			return fmt.Errorf("live session control failed: desiredStatus=%s actualStatus=%s error=%s", liveSessionControlString(session.State["desiredStatus"]), actual, liveSessionControlString(session.State["lastControlError"]))
+			errorCode := liveSessionControlString(session.State["lastControlErrorCode"])
+			return fmt.Errorf("live session control failed: desiredStatus=%s actualStatus=%s errorCode=%s error=%s hint=%s",
+				liveSessionControlString(session.State["desiredStatus"]),
+				actual,
+				errorCode,
+				liveSessionControlString(session.State["lastControlError"]),
+				liveSessionControlErrorHint(errorCode),
+			)
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out waiting for live session %s actualStatus=%s, last actualStatus=%s desiredStatus=%s", sessionID, target, actual, liveSessionControlString(session.State["desiredStatus"]))
@@ -241,6 +248,21 @@ func liveSessionControlString(value any) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func liveSessionControlErrorHint(code string) string {
+	switch strings.ToUpper(strings.TrimSpace(code)) {
+	case "ACTIVE_POSITIONS_OR_ORDERS":
+		return "close positions/orders first or retry stop with --force"
+	case "RUNTIME_LEASE_NOT_ACQUIRED", "CONTROL_OPERATION_IN_PROGRESS":
+		return "retry after the current runner/control operation finishes"
+	case "CONFIG_ERROR":
+		return "check live session/account/runtime configuration"
+	case "ADAPTER_ERROR":
+		return "check exchange adapter connectivity and logs"
+	default:
+		return "check live-runner logs"
+	}
 }
 
 func fetchLiveSessionControlView(client *ctlclient.Client, sessionID string) (liveSessionControlView, error) {

@@ -121,6 +121,24 @@ function statusLabelZh(status: string): string {
   }
 }
 
+function liveControlErrorMessage(code: string, error: string): string {
+  const normalized = String(code).trim().toUpperCase();
+  const detail = error || "runner 执行失败";
+  switch (normalized) {
+    case "ACTIVE_POSITIONS_OR_ORDERS":
+      return `${detail}。请先平仓/撤单，或确认风险后使用 force stop。`;
+    case "RUNTIME_LEASE_NOT_ACQUIRED":
+    case "CONTROL_OPERATION_IN_PROGRESS":
+      return `${detail}。当前 runner/control 操作占用中，稍后重试。`;
+    case "CONFIG_ERROR":
+      return `${detail}。请检查 live session、账户和 runtime 配置。`;
+    case "ADAPTER_ERROR":
+      return `${detail}。请检查交易所适配器连接和 runner 日志。`;
+    default:
+      return detail;
+  }
+}
+
 export function AccountStage({
   logout,
   openLiveAccountModal,
@@ -1105,8 +1123,9 @@ export function AccountStage({
                      liveActualStatus !== "" &&
                      liveActualStatus !== "ERROR" &&
                      liveDesiredStatus !== liveActualStatus;
+                   const liveControlErrorCode = String(sessionState.lastControlErrorCode ?? "").trim().toUpperCase();
                    const liveControlError = liveActualStatus === "ERROR"
-                     ? String(sessionState.lastControlError ?? "runner 执行失败").trim()
+                     ? liveControlErrorMessage(liveControlErrorCode, String(sessionState.lastControlError ?? "").trim())
                      : "";
                    const linkedRuntimeSessionId = String(
                      sessionState.signalRuntimeSessionId ?? sessionState.lastSignalRuntimeSessionId ?? ""
@@ -1164,7 +1183,7 @@ export function AccountStage({
                            {liveControlError && (
                              <p className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--bk-status-danger)]">
                                <AlertTriangle size={12} />
-                               控制失败：{liveControlError}
+                               控制失败{liveControlErrorCode ? ` (${liveControlErrorCode})` : ""}：{liveControlError}
                              </p>
                            )}
                         </div>
