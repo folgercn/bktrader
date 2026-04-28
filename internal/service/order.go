@@ -1148,6 +1148,21 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 			}
 		}
 	}
+
+	if syntheticQty > 0 {
+		remainderFill := domain.Fill{
+			OrderID:          order.ID,
+			Price:            lastPrice,
+			Quantity:         syntheticQty,
+			Fee:              0,
+			DedupFingerprint: fmt.Sprintf("synthetic-remainder|%s|%.12f|%d", order.ID, syntheticQty, time.Now().UTC().UnixNano()),
+		}
+		if _, err := p.store.CreateFill(remainderFill); err != nil {
+			return domain.Order{}, fmt.Errorf("failed to create synthetic remainder fill: %w", err)
+		}
+		// NOTE: We do not call applyExecutionFill for the remainder because its quantity 
+		// was already applied to the position when the original synthetic fill was processed.
+	}
 	filledQuantity, err := p.store.TotalFilledQuantityForOrder(order.ID)
 	if err != nil {
 		return domain.Order{}, err

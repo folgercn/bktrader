@@ -255,6 +255,119 @@ func TestFinalizeExecutedOrderSkipsDuplicateFallbackFillsWithoutExchangeTradeID(
 	}
 }
 
+func TestSyntheticUpgrade_PartialRealFills(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, _ := store.GetAccount("live-main")
+	order, _ := store.CreateOrder(domain.Order{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  1.0,
+		Price:     68000,
+		Status:    "FILLED",
+		Metadata:  map[string]any{},
+	})
+
+	tradeTime := time.Now().UTC()
+	
+	syntheticFill := domain.Fill{
+		OrderID:           order.ID,
+		Price:             68000,
+		Quantity:          1.0,
+		DedupFingerprint:  "synthetic-1.0",
+		ExchangeTradeTime: &tradeTime,
+	}
+	filledOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{syntheticFill})
+	if err != nil {
+		t.Fatalf("first finalize failed: %v", err)
+	}
+
+	realFill := domain.Fill{
+		OrderID:           order.ID,
+		ExchangeTradeID:   "real-trade-1",
+		Price:             68000,
+		Quantity:          0.4,
+		ExchangeTradeTime: &tradeTime,
+	}
+	finalOrder, err := platform.finalizeExecutedOrder(account, filledOrder, []domain.Fill{realFill})
+	if err != nil {
+		t.Fatalf("second finalize failed: %v", err)
+	}
+
+	fills, _ := store.ListFills()
+	var realFills, remainderFills int
+	var totalQty float64
+	for _, f := range fills {
+		if f.OrderID != order.ID {
+			continue
+		}
+		totalQty += f.Quantity
+		if f.ExchangeTradeID != "" {
+			realFills++
+		} else if strings.HasPrefix(f.DedupFingerprint, "synthetic-remainder") {
+			remainderFills++
+		}
+	}
+	
+	if realFills != 1 {
+		t.Fatalf("expected 1 real fill, got %d", realFills)
+	}
+	if remainderFills != 1 {
+		t.Fatalf("expected 1 synthetic remainder fill, got %d", remainderFills)
+	}
+	if math.Abs(totalQty-1.0) > 1e-9 {
+		t.Fatalf("expected total fill quantity to be 1.0, got %v", totalQty)
+	}
+	
+	if val := parseFloatValue(finalOrder.Metadata["filledQuantity"]); math.Abs(val-1.0) > 1e-9 {
+		t.Fatalf("expected order filledQuantity to remain 1.0, got %v", val)
+	}
+}
+
+func TestSyntheticUpgrade_RetryCleanup(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, _ := store.GetAccount("live-main")
+	order, _ := store.CreateOrder(domain.Order{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  1.0,
+		Price:     68000,
+		Status:    "FILLED",
+		Metadata: map[string]any{
+			"emptyTradeRetryRequired": true,
+			"immediateFillSyncRequired": true,
+		},
+	})
+
+	realFill := domain.Fill{
+		OrderID:           order.ID,
+		ExchangeTradeID:   "real-trade-1",
+		Price:             68000,
+		Quantity:          1.0,
+	}
+	
+	order.Metadata["emptyTradeRetryRequired"] = false
+	
+	finalOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{realFill})
+	if err != nil {
+		t.Fatalf("finalize failed: %v", err)
+	}
+
+	if boolValue(finalOrder.Metadata["emptyTradeRetryRequired"]) {
+		t.Fatalf("expected emptyTradeRetryRequired to be cleared")
+	}
+	if boolValue(finalOrder.Metadata["immediateFillSyncRequired"]) {
+		t.Fatalf("expected immediateFillSyncRequired to be cleared")
+	}
+}
+
 func TestFilledExitWithoutFillReportsDoesNotLeaveStaleShortPosition(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
