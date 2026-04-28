@@ -1157,6 +1157,28 @@ func TestResolveLiveSessionParametersPropagatesExecutionProfileOverrides(t *test
 	}
 }
 
+func TestResolveLiveSessionParametersPropagatesSLReentryDelay(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":                       "BTCUSDT",
+		"sl_reentry_min_delay_seconds": 60,
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	version, err := platform.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		t.Fatalf("resolve strategy version failed: %v", err)
+	}
+	parameters, err := platform.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		t.Fatalf("resolve live session parameters failed: %v", err)
+	}
+	if got := maxIntValue(parameters["sl_reentry_min_delay_seconds"], 0); got != 60 {
+		t.Fatalf("expected SL-Reentry delay to reach execution parameters, got %d", got)
+	}
+}
+
 func TestResolveLiveSessionParametersPrefersSignalBindingTimeframeOverStaleSessionState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
@@ -4450,6 +4472,17 @@ func TestRecordLiveSessionStopLossExitFillUsesExchangeFillTime(t *testing.T) {
 	if got := stringValue(state["lastSLExitOrderId"]); got != "order-sl-1" {
 		t.Fatalf("expected PT fill not to overwrite SL exit fact, got %q", got)
 	}
+
+	newerFillTime := fillTime.Add(2 * time.Minute)
+	state["lastSLExitFilledAt"] = newerFillTime.Format(time.RFC3339)
+	state["lastSLExitOrderId"] = "order-sl-newer"
+	recordLiveSessionStopLossExitFill(state, proposal, order, fillTime.Add(5*time.Second))
+	if got := stringValue(state["lastSLExitFilledAt"]); got != newerFillTime.Format(time.RFC3339) {
+		t.Fatalf("expected older SL fill not to regress last SL exit time, got %q", got)
+	}
+	if got := stringValue(state["lastSLExitOrderId"]); got != "order-sl-newer" {
+		t.Fatalf("expected older SL fill not to regress last SL exit order id, got %q", got)
+	}
 }
 
 func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestCountedBar(t *testing.T) {
@@ -4506,6 +4539,60 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestCountedBar
 	}
 	if err := validateLiveSignalBarEntryTradeLimit(updated, proposal); err == nil {
 		t.Fatal("expected preserved per-bar reentry count to keep blocking same-bar entry")
+	}
+}
+
+func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestSLExitFill(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "30m",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	latestFill := time.Date(2026, 4, 28, 1, 55, 18, 0, time.UTC)
+	session, err = platform.store.UpdateLiveSessionState(session.ID, map[string]any{
+		"symbol":                       "BTCUSDT",
+		"signalTimeframe":              "30m",
+		"lastSLExitFilledAt":           latestFill.Format(time.RFC3339),
+		"lastSLExitOrderId":            "order-sl-latest",
+		"lastSLExitStatus":             "FILLED",
+		"lastSLExitSignalBarStateKey":  "BTCUSDT|30m|2026-04-28T01:30:00Z",
+		"lastStrategyEvaluationStatus": "intent-ready",
+	})
+	if err != nil {
+		t.Fatalf("seed live session state failed: %v", err)
+	}
+
+	staleState := cloneMetadata(session.State)
+	staleState["lastSLExitFilledAt"] = latestFill.Add(-1 * time.Minute).Format(time.RFC3339)
+	staleState["lastSLExitOrderId"] = "order-sl-older"
+
+	updated, err := platform.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, staleState)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSLExitFilledAt"]); got != latestFill.Format(time.RFC3339) {
+		t.Fatalf("expected latest SL exit fill time to survive stale write, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSLExitOrderId"]); got != "order-sl-latest" {
+		t.Fatalf("expected latest SL exit order id to survive stale write, got %q", got)
+	}
+
+	newerFill := latestFill.Add(2 * time.Minute)
+	newerState := cloneMetadata(updated.State)
+	newerState["lastSLExitFilledAt"] = newerFill.Format(time.RFC3339)
+	newerState["lastSLExitOrderId"] = "order-sl-newer"
+	updated, err = platform.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, newerState)
+	if err != nil {
+		t.Fatalf("update newer live session state failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSLExitFilledAt"]); got != newerFill.Format(time.RFC3339) {
+		t.Fatalf("expected newer SL exit fill time to win, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSLExitOrderId"]); got != "order-sl-newer" {
+		t.Fatalf("expected newer SL exit order id to win, got %q", got)
 	}
 }
 

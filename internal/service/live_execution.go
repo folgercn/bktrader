@@ -1651,6 +1651,10 @@ func recordLiveSessionStopLossExitFill(state map[string]any, proposalMap map[str
 	if filledAt.IsZero() {
 		filledAt = eventTime.UTC()
 	}
+	existingFilledAt := parseOptionalRFC3339(stringValue(state["lastSLExitFilledAt"]))
+	if !existingFilledAt.IsZero() && !filledAt.UTC().After(existingFilledAt.UTC()) {
+		return
+	}
 	state["lastSLExitFilledAt"] = filledAt.UTC().Format(time.RFC3339)
 	state["lastSLExitOrderId"] = order.ID
 	state["lastSLExitStatus"] = order.Status
