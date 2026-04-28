@@ -115,6 +115,20 @@ func TestBuildFillReconciliationPlanSkipsDuplicateRealTradeID(t *testing.T) {
 	requireFillReconcileQuantity(t, metadataFloat(plan, "filledQuantity"), 1)
 }
 
+func TestBuildFillReconciliationPlanClampsIncomingRealToRemainingQuantity(t *testing.T) {
+	order := fillReconcileTestOrder(1)
+	incoming := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 1.2), FillSourceReal)}
+
+	plan, err := BuildFillReconciliationPlan(order, nil, incoming, FillReconcilePolicy{})
+	if err != nil {
+		t.Fatalf("BuildFillReconciliationPlan failed: %v", err)
+	}
+
+	requireFillReconcileQuantity(t, sumRealQty(plan.CreateFills), 1)
+	requireFillReconcileQuantity(t, sumFillQty(plan.ApplyPositionFills), 1)
+	requireFillReconcileQuantity(t, metadataFloat(plan, "remainingQuantity"), 0)
+}
+
 func TestBuildFillReconciliationPlanRejectsInvalidQuantity(t *testing.T) {
 	order := fillReconcileTestOrder(1)
 	_, err := BuildFillReconciliationPlan(order, nil, []FillReconciliationInput{fillReconcileInput(domain.Fill{

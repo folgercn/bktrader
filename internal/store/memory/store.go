@@ -718,6 +718,43 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	return fill, nil
 }
 
+func (s *Store) DeleteFillsByID(fillIDs []string) (float64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	totalQty := 0.0
+	for _, id := range fillIDs {
+		item, ok := s.fills[id]
+		if !ok {
+			continue
+		}
+		totalQty += item.Quantity
+		delete(s.fills, id)
+	}
+	return totalQty, nil
+}
+
+func (s *Store) WithFillSettlementTx(fn func(storepkg.FillSettlementStore) error) error {
+	s.mu.RLock()
+	orders := cloneJSONValue(s.orders)
+	fills := cloneJSONValue(s.fills)
+	positions := cloneJSONValue(s.positions)
+	closeVerifications := cloneJSONValue(s.closeVerifications)
+	sequence := s.sequence
+	s.mu.RUnlock()
+
+	if err := fn(s); err != nil {
+		s.mu.Lock()
+		s.orders = orders
+		s.fills = fills
+		s.positions = positions
+		s.closeVerifications = closeVerifications
+		s.sequence = sequence
+		s.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
 func (s *Store) DeleteSyntheticFillsForOrder(orderID string) (float64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -11,6 +11,17 @@ import (
 
 var ErrSignalRuntimeSessionNotFound = errors.New("signal runtime session not found")
 
+type FillSettlementStore interface {
+	DeleteFillsByID(fillIDs []string) (float64, error)
+	CreateFill(fill domain.Fill) (domain.Fill, error)
+	TotalFilledQuantityForOrder(orderID string) (float64, error)
+	FindPosition(accountID, symbol string) (domain.Position, bool, error)
+	SavePosition(position domain.Position) (domain.Position, error)
+	DeletePosition(positionID string) error
+	UpdateOrder(order domain.Order) (domain.Order, error)
+	CreateOrderCloseVerification(item domain.OrderCloseVerification) (domain.OrderCloseVerification, error)
+}
+
 // Repository 定义平台的数据持久化接口。
 // 支持可插拔的后端实现（memory/postgres），通过 STORE_BACKEND 配置切换。
 type Repository interface {
@@ -65,6 +76,10 @@ type Repository interface {
 	TotalFilledQuantityForOrder(orderID string) (float64, error)
 	// CreateFill 创建新成交记录。
 	CreateFill(fill domain.Fill) (domain.Fill, error)
+	// DeleteFillsByID 删除指定成交记录，并返回被删除的总数量。
+	DeleteFillsByID(fillIDs []string) (float64, error)
+	// WithFillSettlementTx 在同一个事务边界内执行 fill/order/position settlement。
+	WithFillSettlementTx(fn func(FillSettlementStore) error) error
 	// DeleteSyntheticFillsForOrder 删除指定订单的合成成交记录（没有 exchange_trade_id 的记录），并返回被删除的总数量。
 	DeleteSyntheticFillsForOrder(orderID string) (float64, error)
 

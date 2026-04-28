@@ -920,6 +920,272 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	return fill, err
 }
 
+func (s *Store) DeleteFillsByID(fillIDs []string) (float64, error) {
+	if len(fillIDs) == 0 {
+		return 0, nil
+	}
+	placeholders := make([]string, 0, len(fillIDs))
+	args := make([]any, 0, len(fillIDs))
+	for i, id := range fillIDs {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, id)
+	}
+	var totalQty sql.NullFloat64
+	err := s.db.QueryRow(fmt.Sprintf(`
+		with deleted as (
+			delete from fills
+			where id in (%s)
+			returning quantity
+		)
+		select sum(quantity) from deleted
+	`, strings.Join(placeholders, ",")), args...).Scan(&totalQty)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if !totalQty.Valid {
+		return 0, nil
+	}
+	return totalQty.Float64, nil
+}
+
+func (s *Store) WithFillSettlementTx(fn func(storepkg.FillSettlementStore) error) error {
+	tx, err := s.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	if err := fn(fillSettlementTxStore{tx: tx}); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+type fillSettlementTxStore struct {
+	tx *sql.Tx
+}
+
+type fillScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanFill(row fillScanner, fill domain.Fill) (domain.Fill, error) {
+	var (
+		exchangeTradeID     sql.NullString
+		exchangeTradeTime   sql.NullTime
+		fallbackFingerprint sql.NullString
+	)
+	err := row.Scan(
+		&fill.ID,
+		&fill.OrderID,
+		&exchangeTradeID,
+		&exchangeTradeTime,
+		&fallbackFingerprint,
+		&fill.Price,
+		&fill.Quantity,
+		&fill.Fee,
+		&fill.CreatedAt,
+	)
+	fill.ExchangeTradeID = exchangeTradeID.String
+	fill.DedupFingerprint = fallbackFingerprint.String
+	if exchangeTradeTime.Valid {
+		parsed := exchangeTradeTime.Time.UTC()
+		fill.ExchangeTradeTime = &parsed
+	} else {
+		fill.ExchangeTradeTime = nil
+	}
+	return fill, err
+}
+
+func (s fillSettlementTxStore) DeleteFillsByID(fillIDs []string) (float64, error) {
+	if len(fillIDs) == 0 {
+		return 0, nil
+	}
+	placeholders := make([]string, 0, len(fillIDs))
+	args := make([]any, 0, len(fillIDs))
+	for i, id := range fillIDs {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, id)
+	}
+	var totalQty sql.NullFloat64
+	err := s.tx.QueryRow(fmt.Sprintf(`
+		with deleted as (
+			delete from fills
+			where id in (%s)
+			returning quantity
+		)
+		select sum(quantity) from deleted
+	`, strings.Join(placeholders, ",")), args...).Scan(&totalQty)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if !totalQty.Valid {
+		return 0, nil
+	}
+	return totalQty.Float64, nil
+}
+
+func (s fillSettlementTxStore) CreateFill(fill domain.Fill) (domain.Fill, error) {
+	now := time.Now().UTC()
+	fill.ID = fmt.Sprintf("fill-%d", now.UnixNano())
+	fill.CreatedAt = now
+	if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+		fill.DedupFingerprint = strings.TrimSpace(fill.DedupFingerprint)
+		if fill.DedupFingerprint == "" {
+			fill.DedupFingerprint = fill.FallbackFingerprint()
+		}
+	}
+
+	if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+		row := s.tx.QueryRow(`
+			insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			on conflict (order_id, dedup_fallback_fingerprint) do update set
+				price = fills.price,
+				quantity = fills.quantity,
+				fee = fills.fee,
+				exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
+			returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
+		`, fill.ID, fill.OrderID, nullIfEmpty(fill.ExchangeTradeID), fill.ExchangeTradeTime, fill.DedupFingerprint, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+		return scanFill(row, fill)
+	}
+
+	row := s.tx.QueryRow(`
+		insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		on conflict (order_id, exchange_trade_id) do update set
+			price = fills.price,
+			quantity = fills.quantity,
+			fee = fills.fee,
+			exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
+		returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
+	`, fill.ID, fill.OrderID, fill.ExchangeTradeID, fill.ExchangeTradeTime, nil, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+	return scanFill(row, fill)
+}
+
+func (s fillSettlementTxStore) TotalFilledQuantityForOrder(orderID string) (float64, error) {
+	var total sql.NullFloat64
+	if err := s.tx.QueryRow(`
+		select coalesce(sum(quantity), 0)
+		from fills
+		where order_id = $1
+	`, orderID).Scan(&total); err != nil {
+		return 0, err
+	}
+	if !total.Valid {
+		return 0, nil
+	}
+	return total.Float64, nil
+}
+
+func (s fillSettlementTxStore) FindPosition(accountID, symbol string) (domain.Position, bool, error) {
+	var item domain.Position
+	var strategyVersionID sql.NullString
+	err := s.tx.QueryRow(`
+		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
+		from positions
+		where account_id = $1 and symbol = $2
+		order by updated_at desc
+		limit 1
+	`, accountID, symbol).Scan(&item.ID, &item.AccountID, &strategyVersionID, &item.Symbol, &item.Side, &item.Quantity, &item.EntryPrice, &item.MarkPrice, &item.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.Position{}, false, nil
+		}
+		return domain.Position{}, false, err
+	}
+	item.StrategyVersionID = strategyVersionID.String
+	return item, true, nil
+}
+
+func (s fillSettlementTxStore) SavePosition(position domain.Position) (domain.Position, error) {
+	if position.Quantity <= 0 {
+		if strings.TrimSpace(position.ID) == "" {
+			return position, nil
+		}
+		return position, s.DeletePosition(position.ID)
+	}
+	now := time.Now().UTC()
+	position.UpdatedAt = now
+	if position.ID == "" {
+		position.ID = fmt.Sprintf("position-%d", now.UnixNano())
+		_, err := s.tx.Exec(`
+			insert into positions (id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, position.ID, position.AccountID, nullIfEmpty(position.StrategyVersionID), position.Symbol, position.Side, position.Quantity, position.EntryPrice, position.MarkPrice, position.UpdatedAt)
+		return position, err
+	}
+	_, err := s.tx.Exec(`
+		update positions
+		set account_id = $2,
+			strategy_version_id = $3,
+			symbol = $4,
+			side = $5,
+			quantity = $6,
+			entry_price = $7,
+			mark_price = $8,
+			updated_at = $9
+		where id = $1
+	`, position.ID, position.AccountID, nullIfEmpty(position.StrategyVersionID), position.Symbol, position.Side, position.Quantity, position.EntryPrice, position.MarkPrice, position.UpdatedAt)
+	return position, err
+}
+
+func (s fillSettlementTxStore) DeletePosition(positionID string) error {
+	_, err := s.tx.Exec(`delete from positions where id = $1`, positionID)
+	return err
+}
+
+func (s fillSettlementTxStore) UpdateOrder(order domain.Order) (domain.Order, error) {
+	order.NormalizeExecutionFlags()
+	if order.Metadata == nil {
+		order.Metadata = map[string]any{}
+	}
+	raw, _ := json.Marshal(order.Metadata)
+	_, err := s.tx.Exec(`
+		update orders
+		set account_id = $2,
+			strategy_version_id = $3,
+			symbol = $4,
+			side = $5,
+			type = $6,
+			status = $7,
+			quantity = $8,
+			price = $9,
+			metadata = $10
+		where id = $1
+	`, order.ID, order.AccountID, nullIfEmpty(order.StrategyVersionID), order.Symbol, order.Side, order.Type, order.Status, order.Quantity, order.Price, raw)
+	return order, err
+}
+
+func (s fillSettlementTxStore) CreateOrderCloseVerification(item domain.OrderCloseVerification) (domain.OrderCloseVerification, error) {
+	if item.ID == "" {
+		item.ID = fmt.Sprintf("order-close-verification-%d", time.Now().UTC().UnixNano())
+	}
+	item.Symbol = strings.ToUpper(strings.TrimSpace(item.Symbol))
+	if item.EventTime.IsZero() {
+		item.EventTime = time.Now().UTC()
+	}
+	if item.RecordedAt.IsZero() {
+		item.RecordedAt = time.Now().UTC()
+	}
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	metadataRaw, _ := json.Marshal(item.Metadata)
+	_, err := s.tx.Exec(`
+		insert into order_close_verifications (
+			id, live_session_id, order_id, decision_event_id, account_id, strategy_id, symbol,
+			verified_closed, remaining_position_qty, verification_source, event_time, recorded_at, metadata
+		) values (
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11, $12, $13
+		)
+	`,
+		item.ID, item.LiveSessionID, item.OrderID, nullIfEmpty(item.DecisionEventID), item.AccountID, item.StrategyID, item.Symbol,
+		item.VerifiedClosed, item.RemainingPositionQty, item.VerificationSource, item.EventTime, item.RecordedAt, metadataRaw,
+	)
+	return item, err
+}
+
 func (s *Store) DeleteSyntheticFillsForOrder(orderID string) (float64, error) {
 	var totalQty sql.NullFloat64
 	err := s.db.QueryRow(`
