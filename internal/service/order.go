@@ -605,7 +605,7 @@ func adoptNormalizedLiveSubmissionValues(order *domain.Order, submissionMetadata
 func markLiveSettlementSyncRetry(order domain.Order, err error) domain.Order {
 	order.Metadata = cloneMetadata(order.Metadata)
 	order.Metadata[liveSettlementSyncErrorKey] = err.Error()
-	if liveOrderFillSettlementComplete(order) {
+	if liveOrderFillSettlementComplete(order) && !boolValue(order.Metadata["emptyTradeRetryRequired"]) {
 		delete(order.Metadata, liveSettlementSyncRequiredKey)
 	} else {
 		order.Metadata[liveSettlementSyncRequiredKey] = true
@@ -891,6 +891,12 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 		"lastExchangeStatus":   firstNonEmpty(syncResult.Status, order.Status),
 		"lastExchangeUpdateAt": firstNonEmpty(syncResult.SyncedAt, time.Now().UTC().Format(time.RFC3339)),
 	})
+	if val, ok := syncResult.Metadata["emptyTradeSyncAttempts"]; ok {
+		order.Metadata["emptyTradeSyncAttempts"] = val
+	}
+	if val, ok := syncResult.Metadata["emptyTradeRetryRequired"]; ok {
+		order.Metadata["emptyTradeRetryRequired"] = val
+	}
 	order.Status = firstNonEmpty(syncResult.Status, order.Status)
 	adoptTerminalReduceOnlyFilledQuantity(&order, syncResult)
 	if strings.EqualFold(order.Status, "CANCELLED") || strings.EqualFold(order.Status, "REJECTED") {
@@ -1013,6 +1019,9 @@ func buildTerminalFilledFallbackReport(order domain.Order, syncResult LiveOrderS
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
+	if boolValue(metadata["emptyTradeRetryRequired"]) {
+		return LiveFillReport{}, false
+	}
 	totalFilledQty := firstPositive(
 		parseFloatValue(metadata["executedQty"]),
 		firstPositive(
@@ -1084,6 +1093,23 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	if err != nil {
 		return domain.Order{}, err
 	}
+	
+	hasRealFill := false
+	for _, f := range newFills {
+		if strings.TrimSpace(f.ExchangeTradeID) != "" {
+			hasRealFill = true
+			break
+		}
+	}
+	syntheticQty := 0.0
+	if hasRealFill {
+		deletedQty, err := p.store.DeleteSyntheticFillsForOrder(order.ID)
+		if err != nil {
+			return domain.Order{}, fmt.Errorf("failed to delete synthetic fills before upgrade: %w", err)
+		}
+		syntheticQty = deletedQty
+	}
+
 	existingFilledQuantity, err := p.store.TotalFilledQuantityForOrder(order.ID)
 	if err != nil {
 		return domain.Order{}, err
@@ -1095,16 +1121,31 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		if err != nil {
 			return domain.Order{}, err
 		}
+		
+		applyQty := createdFill.Quantity
+		if syntheticQty > 0 {
+			if syntheticQty >= applyQty {
+				syntheticQty -= applyQty
+				applyQty = 0
+			} else {
+				applyQty -= syntheticQty
+				syntheticQty = 0
+			}
+		}
+
 		executionPrice := createdFill.Price
 		if executionPrice <= 0 {
 			executionPrice = resolveExecutionPrice(order)
 		}
 		lastPrice = executionPrice
-		execOrder := order
-		execOrder.Quantity = createdFill.Quantity
-		execOrder.Price = executionPrice
-		if err := p.applyExecutionFill(account, execOrder, executionPrice); err != nil {
-			return domain.Order{}, err
+		
+		if applyQty > 0 {
+			execOrder := order
+			execOrder.Quantity = applyQty
+			execOrder.Price = executionPrice
+			if err := p.applyExecutionFill(account, execOrder, executionPrice); err != nil {
+				return domain.Order{}, err
+			}
 		}
 	}
 	filledQuantity, err := p.store.TotalFilledQuantityForOrder(order.ID)
@@ -1124,10 +1165,14 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	orderCompletelyFilled := !tradingQuantityBelow(filledQuantity, order.Quantity)
 	if orderCompletelyFilled {
 		order.Status = "FILLED"
-		delete(order.Metadata, liveSettlementSyncRequiredKey)
+		if !boolValue(order.Metadata["emptyTradeRetryRequired"]) {
+			delete(order.Metadata, liveSettlementSyncRequiredKey)
+		}
 		delete(order.Metadata, liveSettlementSyncErrorKey)
 	} else if isTerminalOrderStatus(order.Status) && !strings.EqualFold(order.Status, "FILLED") {
-		delete(order.Metadata, liveSettlementSyncRequiredKey)
+		if !boolValue(order.Metadata["emptyTradeRetryRequired"]) {
+			delete(order.Metadata, liveSettlementSyncRequiredKey)
+		}
 		delete(order.Metadata, liveSettlementSyncErrorKey)
 	} else if filledQuantity > 0 {
 		order.Status = "PARTIALLY_FILLED"

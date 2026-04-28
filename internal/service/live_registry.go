@@ -514,23 +514,41 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 	fills := []LiveFillReport{}
 	tradeReports, tradeErr := a.fetchRESTTradeReports(account, order, binding, resolved)
 	terminal := status == "FILLED" || status == "CANCELLED" || status == "REJECTED"
+	emptyTradeRetryRequired := false
+	attempts := 0
+	if val, ok := order.Metadata["emptyTradeSyncAttempts"]; ok {
+		if num, ok := toFloat64(val); ok {
+			attempts = int(num)
+		}
+	}
 	if tradeErr == nil && len(tradeReports) > 0 && terminal {
 		fills = tradeReports
 	} else if filledQty > 0 && strings.EqualFold(status, "FILLED") {
-		fills = append(fills, LiveFillReport{
-			Price:    avgPrice,
-			Quantity: filledQty,
-			Fee:      0,
-			Metadata: map[string]any{
-				"source":          "binance-order-query",
-				"exchange":        account.Exchange,
-				"adapterKey":      a.Key(),
-				"exchangeOrderId": normalizeBinanceOrderID(payload["orderId"], order.Metadata["exchangeOrderId"]),
-				"clientOrderId":   stringValue(payload["clientOrderId"]),
-				"tradeTime":       firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339)),
-				"executionMode":   "rest",
-			},
-		})
+		if tradeErr == nil && len(tradeReports) == 0 {
+			if attempts < 3 {
+				emptyTradeRetryRequired = true
+			}
+		} else if tradeErr != nil {
+			emptyTradeRetryRequired = true
+		}
+
+		if !emptyTradeRetryRequired {
+			fills = append(fills, LiveFillReport{
+				Price:    avgPrice,
+				Quantity: filledQty,
+				Fee:      0,
+				Metadata: map[string]any{
+					"source":          "binance-order-query",
+					"exchange":        account.Exchange,
+					"adapterKey":      a.Key(),
+					"exchangeOrderId": normalizeBinanceOrderID(payload["orderId"], order.Metadata["exchangeOrderId"]),
+					"clientOrderId":   stringValue(payload["clientOrderId"]),
+					"tradeTime":       firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339)),
+					"executionMode":   "rest",
+					"syntheticFill":   true,
+				},
+			})
+		}
 	}
 	resolvedSyncAt := firstNonEmpty(parseBinanceMillisToRFC3339(payload["updateTime"]), time.Now().UTC().Format(time.RFC3339))
 	totalFee := 0.0
@@ -561,9 +579,11 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 			"executedQty":      filledQty,
 			"avgPrice":         avgPrice,
 			"tradeReportCount": len(fills),
-			"totalFee":         totalFee,
-			"totalRealizedPnl": totalRealizedPnL,
-			"updateTime":       resolvedSyncAt,
+			"totalFee":               totalFee,
+			"totalRealizedPnl":       totalRealizedPnL,
+			"updateTime":             resolvedSyncAt,
+			"emptyTradeRetryRequired": emptyTradeRetryRequired,
+			"emptyTradeSyncAttempts":  attempts + 1,
 		},
 		Terminal:   terminal,
 		FeeSource:  "exchange",

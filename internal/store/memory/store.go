@@ -717,6 +717,19 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	return fill, nil
 }
 
+func (s *Store) DeleteSyntheticFillsForOrder(orderID string) (float64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	totalQty := 0.0
+	for id, item := range s.fills {
+		if item.OrderID == orderID && (strings.TrimSpace(item.ExchangeTradeID) == "") && item.DedupFingerprint != "" {
+			totalQty += item.Quantity
+			delete(s.fills, id)
+		}
+	}
+	return totalQty, nil
+}
+
 func (s *Store) ListPositions() ([]domain.Position, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
