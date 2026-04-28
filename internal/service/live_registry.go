@@ -50,7 +50,55 @@ type LiveFillReport struct {
 	Quantity   float64        `json:"quantity"`
 	Fee        float64        `json:"fee"`
 	FundingPnL float64        `json:"fundingPnl"`
+	Source     FillSource     `json:"source,omitempty"`
 	Metadata   map[string]any `json:"metadata,omitempty"`
+}
+
+type ExchangeFillReport struct {
+	Exchange        string         `json:"exchange,omitempty"`
+	AdapterKey      string         `json:"adapterKey,omitempty"`
+	AccountID       string         `json:"accountId,omitempty"`
+	OrderID         string         `json:"orderId,omitempty"`
+	ExchangeOrderID string         `json:"exchangeOrderId,omitempty"`
+	ExchangeTradeID string         `json:"exchangeTradeId,omitempty"`
+	Symbol          string         `json:"symbol,omitempty"`
+	Side            string         `json:"side,omitempty"`
+	Price           float64        `json:"price"`
+	Quantity        float64        `json:"quantity"`
+	Fee             float64        `json:"fee"`
+	FeeAsset        string         `json:"feeAsset,omitempty"`
+	RealizedPnL     float64        `json:"realizedPnl,omitempty"`
+	FundingPnL      float64        `json:"fundingPnl,omitempty"`
+	TradeTime       string         `json:"tradeTime,omitempty"`
+	Source          FillSource     `json:"source"`
+	Raw             map[string]any `json:"raw,omitempty"`
+}
+
+func (report ExchangeFillReport) LiveFillReport() LiveFillReport {
+	metadata := map[string]any{
+		"source":          "exchange-fill-report",
+		"reportSource":    "exchange-fill-report",
+		"exchange":        report.Exchange,
+		"adapterKey":      report.AdapterKey,
+		"accountId":       report.AccountID,
+		"orderId":         report.OrderID,
+		"exchangeOrderId": report.ExchangeOrderID,
+		"tradeId":         report.ExchangeTradeID,
+		"commissionAsset": report.FeeAsset,
+		"realizedPnl":     report.RealizedPnL,
+		"tradeTime":       report.TradeTime,
+	}
+	if report.Raw != nil {
+		metadata["raw"] = report.Raw
+	}
+	return LiveFillReport{
+		Price:      report.Price,
+		Quantity:   report.Quantity,
+		Fee:        report.Fee,
+		FundingPnL: report.FundingPnL,
+		Source:     report.Source,
+		Metadata:   metadata,
+	}
 }
 
 type LiveOrderSync struct {
@@ -537,8 +585,10 @@ func (a binanceFuturesLiveAdapter) syncRESTOrder(account domain.Account, order d
 				Price:    avgPrice,
 				Quantity: filledQty,
 				Fee:      0,
+				Source:   FillSourceSynthetic,
 				Metadata: map[string]any{
 					"source":          "binance-order-query",
+					"reportSource":    "binance-order-query",
 					"exchange":        account.Exchange,
 					"adapterKey":      a.Key(),
 					"exchangeOrderId": normalizeBinanceOrderID(payload["orderId"], order.Metadata["exchangeOrderId"]),
@@ -691,25 +741,27 @@ func (a binanceFuturesLiveAdapter) tradeReportsFromBinanceTrades(account domain.
 		if qty <= 0 {
 			continue
 		}
-		reports = append(reports, LiveFillReport{
-			Price:      parseFloatValue(trade["price"]),
-			Quantity:   qty,
-			Fee:        parseFloatValue(trade["commission"]),
-			FundingPnL: 0,
-			Metadata: map[string]any{
-				"source":          "binance-user-trades",
-				"exchange":        account.Exchange,
-				"adapterKey":      a.Key(),
-				"exchangeOrderId": normalizeBinanceOrderID(trade["orderId"], fallbackOrderID),
-				"tradeId":         stringifyBinanceID(trade["id"]),
-				"commissionAsset": stringValue(trade["commissionAsset"]),
-				"realizedPnl":     parseFloatValue(trade["realizedPnl"]),
-				"maker":           trade["maker"],
-				"buyer":           trade["buyer"],
-				"tradeTime":       parseBinanceMillisToRFC3339(trade["time"]),
-				"executionMode":   "rest",
-			},
-		})
+		reports = append(reports, ExchangeFillReport{
+			Exchange:        account.Exchange,
+			AdapterKey:      a.Key(),
+			AccountID:       account.ID,
+			ExchangeOrderID: normalizeBinanceOrderID(trade["orderId"], fallbackOrderID),
+			ExchangeTradeID: stringifyBinanceID(trade["id"]),
+			Price:           parseFloatValue(trade["price"]),
+			Quantity:        qty,
+			Fee:             parseFloatValue(trade["commission"]),
+			FeeAsset:        stringValue(trade["commissionAsset"]),
+			RealizedPnL:     parseFloatValue(trade["realizedPnl"]),
+			TradeTime:       parseBinanceMillisToRFC3339(trade["time"]),
+			Source:          FillSourceReal,
+			Raw:             trade,
+		}.LiveFillReport())
+		metadata := reports[len(reports)-1].Metadata
+		metadata["source"] = "binance-user-trades"
+		metadata["reportSource"] = "binance-user-trades"
+		metadata["maker"] = trade["maker"]
+		metadata["buyer"] = trade["buyer"]
+		metadata["executionMode"] = "rest"
 	}
 	return reports
 }

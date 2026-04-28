@@ -238,10 +238,12 @@ type Fill struct {
 	ExchangeTradeID   string     `json:"exchangeTradeId,omitempty"`
 	ExchangeTradeTime *time.Time `json:"exchangeTradeTime,omitempty"`
 	DedupFingerprint  string     `json:"-"`
-	Price             float64    `json:"price"`
-	Quantity          float64    `json:"quantity"`
-	Fee               float64    `json:"fee"` // 手续费
-	CreatedAt         time.Time  `json:"createdAt"`
+	// Source is a transient reconciliation hint, not persisted.
+	Source    string    `json:"-"`
+	Price     float64   `json:"price"`
+	Quantity  float64   `json:"quantity"`
+	Fee       float64   `json:"fee"` // 手续费
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 func (f Fill) FallbackFingerprint() string {
