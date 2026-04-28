@@ -1392,8 +1392,63 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastSyncAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
 		recordExecutionSyncAttemptHealth(state, eventTime)
 		if cancelErr != nil {
+			syncAfterCancelError := shouldSyncLiveOrderAfterCancelError(cancelErr)
+			var fallbackSyncErr error
+			if syncAfterCancelError {
+				syncedOrder, syncErr := p.SyncLiveOrder(order.ID)
+				if syncErr == nil {
+					delete(state, "lastSyncError")
+					delete(state, "lastCancelFallbackSyncError")
+					maybeIncrementLiveSessionReentryCount(state, mapValue(order.Metadata["executionProposal"]), syncedOrder.ID, syncedOrder.Status)
+					state["lastSyncedOrderId"] = syncedOrder.ID
+					state["lastSyncedOrderStatus"] = syncedOrder.Status
+					state["lastDispatchedOrderStatus"] = syncedOrder.Status
+					state["lastSyncedAt"] = eventTime.UTC().Format(time.RFC3339)
+					recordExecutionSyncResultHealth(state, eventTime, syncedOrder.Status, nil)
+					dispatchOrder := syncedOrder
+					if strings.EqualFold(syncedOrder.Status, "CANCELLED") {
+						recordLiveExecutionTimeoutMetadata(state, eventTime, order)
+						dispatchOrder = withExecutionSubmissionFallback(syncedOrder, order)
+					}
+					state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), dispatchOrder, false)
+					updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
+					appendTimelineEvent(state, "order", eventTime, "live-order-cancel-fallback-synced", map[string]any{
+						"orderId":     order.ID,
+						"cancelError": cancelErr.Error(),
+						"status":      syncedOrder.Status,
+					})
+					if strings.EqualFold(syncedOrder.Status, "CANCELLED") {
+						appendTimelineEvent(state, "order", eventTime, "live-order-cancelled-timeout", executionTimeoutTimelineMetadata(order, dispatchOrder))
+					}
+					if strings.EqualFold(syncedOrder.Status, "FILLED") {
+						if _, accountSyncErr := p.requestLiveAccountSync(session.AccountID, "live-filled-order-sync"); accountSyncErr != nil && !errors.Is(accountSyncErr, ErrLiveAccountOperationInProgress) {
+							p.logger("service.live_execution", "session_id", session.ID, "account_id", session.AccountID).Warn("live account sync failed after cancel fallback order sync", "error", accountSyncErr)
+						}
+					}
+					updated, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
+					if updateErr != nil {
+						return domain.LiveSession{}, updateErr
+					}
+					if strings.EqualFold(syncedOrder.Status, "FILLED") {
+						if refreshed, refreshErr := p.refreshLiveSessionPositionContext(updated, eventTime, "live-order-cancel-fallback-sync"); refreshErr == nil {
+							return refreshed, nil
+						}
+					}
+					return updated, nil
+				}
+				fallbackSyncErr = syncErr
+				state["lastCancelFallbackSyncError"] = syncErr.Error()
+				recordExecutionSyncResultHealth(state, eventTime, order.Status, syncErr)
+				appendTimelineEvent(state, "order", eventTime, "live-order-cancel-fallback-sync-error", map[string]any{
+					"orderId":     order.ID,
+					"cancelError": cancelErr.Error(),
+					"syncError":   syncErr.Error(),
+				})
+			}
 			state["lastSyncError"] = cancelErr.Error()
-			recordExecutionSyncResultHealth(state, eventTime, order.Status, cancelErr)
+			if !syncAfterCancelError {
+				recordExecutionSyncResultHealth(state, eventTime, order.Status, cancelErr)
+			}
 			appendTimelineEvent(state, "order", eventTime, "live-order-cancel-error", map[string]any{
 				"orderId": order.ID,
 				"error":   cancelErr.Error(),
@@ -1401,6 +1456,9 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 			updated, updateErr := p.store.UpdateLiveSessionState(session.ID, state)
 			if updateErr != nil {
 				return domain.LiveSession{}, updateErr
+			}
+			if fallbackSyncErr != nil {
+				return updated, fallbackSyncErr
 			}
 			return updated, cancelErr
 		}
@@ -1410,18 +1468,10 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 		state["lastDispatchedOrderStatus"] = cancelledOrder.Status
 		state["lastSyncedAt"] = eventTime.UTC().Format(time.RFC3339)
 		recordExecutionSyncResultHealth(state, eventTime, cancelledOrder.Status, nil)
-		state["lastExecutionTimeoutAt"] = eventTime.UTC().Format(time.RFC3339)
-		state["lastExecutionTimeoutReason"] = "resting-order-expired"
+		recordLiveExecutionTimeoutMetadata(state, eventTime, order)
 		timeoutOrder := withExecutionSubmissionFallback(cancelledOrder, order)
 		state["lastExecutionDispatch"] = executionDispatchSummary(mapValue(order.Metadata["executionProposal"]), timeoutOrder, false)
 		updateExecutionEventStats(state, mapValue(order.Metadata["executionProposal"]), mapValue(state["lastExecutionDispatch"]))
-		timeoutSignature := buildLiveIntentSignature(mapValue(order.Metadata["executionProposal"]))
-		if timeoutSignature == "" {
-			timeoutSignature = buildLiveIntentSignature(mapValue(order.Metadata["intent"]))
-		}
-		if timeoutSignature != "" {
-			state["lastExecutionTimeoutIntentSignature"] = timeoutSignature
-		}
 		appendTimelineEvent(state, "order", eventTime, "live-order-cancelled-timeout", executionTimeoutTimelineMetadata(order, timeoutOrder))
 		return p.store.UpdateLiveSessionState(session.ID, state)
 	}
@@ -1517,6 +1567,32 @@ func shouldCancelLiveOrderForExecutionTimeout(order domain.Order, eventTime time
 		return false
 	}
 	return !eventTime.UTC().Before(expiresAt.UTC())
+}
+
+func recordLiveExecutionTimeoutMetadata(state map[string]any, eventTime time.Time, order domain.Order) {
+	if state == nil {
+		return
+	}
+	state["lastExecutionTimeoutAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastExecutionTimeoutReason"] = "resting-order-expired"
+	timeoutSignature := buildLiveIntentSignature(mapValue(order.Metadata["executionProposal"]))
+	if timeoutSignature == "" {
+		timeoutSignature = buildLiveIntentSignature(mapValue(order.Metadata["intent"]))
+	}
+	if timeoutSignature != "" {
+		state["lastExecutionTimeoutIntentSignature"] = timeoutSignature
+	}
+}
+
+func shouldSyncLiveOrderAfterCancelError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unknown order sent") ||
+		strings.Contains(message, `"code":-2011`) ||
+		strings.Contains(message, `"code": -2011`) ||
+		strings.Contains(message, "code=-2011")
 }
 
 func shouldAdvanceLivePlanForOrderStatus(status string) bool {
