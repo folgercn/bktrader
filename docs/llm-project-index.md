@@ -1,10 +1,6 @@
 # BKTrader LLM 快速引导与文件索引
 
-> **提示给后续的 LLM Agent：** 
-> 当你介入本项目时，请**务必按顺序**阅读以下文件：
-> 1. **[AGENTS.md](file:///Users/fujun/node/bktrader/AGENTS.md)**: **最高优先级规范**，包含风险约束、Baseline 参数与协作纪律。
-> 2. **本文件 (docs/llm-project-index.md)**: 建立系统架构和文件目录的全局上下文。
-> 3. **[docs/index.md](file:///Users/fujun/node/bktrader/docs/index.md)**: 详细的项目级 Harness 与文档清单。
+> **阅读顺序：** [AGENTS.md](../AGENTS.md)（全局规则）→ 本文件（目录结构）→ [docs/index.md](index.md)（分级文档导航）
 
 ## 1. 项目定位
 **BKTrader** 是一个加密货币自动化交易与回测平台。
@@ -14,14 +10,16 @@
 
 ### ⚙️ 后端 (Go)
 后端采用经典的领域驱动设计（DDD）分层架构：
-- **`cmd/`**: 服务的启动入口。
-  - `platform-api/main.go`: API 服务主进程。
-  - `db-migrate/main.go`: 数据库迁移工具。
+- **`cmd/`**: 服务启动入口（`platform-api`、`platform-worker`、`db-migrate`、`bktrader-ctl`）。
 - **`internal/`**: 业务核心代码。
-  - `domain/`: 定义核心实体模型 (Models) 和错误类型。
-  - `service/`: 业务逻辑层（涵盖实盘 Live、回测 Backtest、信号 Signal、引擎适配器等）。
+  - `domain/`: 核心实体模型 (Models) 和错误类型。
+  - `service/`: 业务逻辑层（实盘 Live、回测 Backtest、信号 Signal、引擎适配器等）。
   - `http/`: REST API 路由控制和 Handlers。
-  - `store/`: 持久化层（主要使用 PostgreSQL）。
+  - `store/`: 持久化层（PostgreSQL）。
+  - `app/`: 应用启动与依赖注入。
+  - `config/`: 配置加载。
+  - `logging/`: 结构化日志。
+  - `ctlclient/`: bktrader-ctl 的 API 客户端。
 - **`db/migrations/`**: PostgreSQL 数据库的建表和变更 SQL 脚本。
 - **`data/tick/`**: 存放 Tick 级行情数据的示例或规范。
 - **`graphify-out/`**: **知识图谱资产**，包含 `GRAPH_REPORT.md`，用于理解系统核心组件的依赖拓扑。
@@ -32,9 +30,10 @@
 - **`src/layouts/`**: 全局布局容器 (如 `WorkbenchLayout`)。
 - **`src/modals/`**: 复杂的业务弹窗 (登录、创建实盘、绑定适配器等)。
 - **`src/pages/`**: 主舞台页面 (MonitorStage 监控、StrategyStage 策略管理、AccountStage 账户主控)。
-- **`src/panels/`**: 侧边栏配置面板和底部数据面板 (订单、告警、持仓等)。
+- **`src/hooks/`**: 自定义 React Hooks（Dashboard 配置、点击外部关闭等）。
 - **`src/store/`**: 全局状态中心 (`useTradingStore.ts` 负责业务数据, `useUIStore.ts` 负责交互状态)。
 - **`src/utils/`**: 工具集合 (`api.ts` 网络请求, `derivation.ts` 复杂状态派生, `format.ts` 格式化)。
+- **`src/lib/`**: 通用工具库。
 - **`src/types/domain.ts`**: 前端使用的所有 TypeScript 类型定义（需与后端 Domain 保持对齐）。
 
 ### 🔬 投研与运维 (Python & Shell)
@@ -47,10 +46,10 @@
 ### 📚 文档与智能体资产
 - **`docs/`**: 人类可读的系统设计文档。
   - **`test-matrix.md`**: 定义各风险等级改动所需的验证深度。
-  - **`pr-lessons-learned.md`**: **必读！** 从 155 个 PR 提炼的实战踩坑模式与 Review 黄金规则。
+  - **`pr-lessons-learned.md`**: **必读！** 从 167 个 PR 提炼的实战踩坑模式与 Review 黄金规则。
   - **`agent-risk-model.md`**: L0 到 L3 的风险定级说明。
   - **`production-log-troubleshooting.md`**: 生产环境排障与 SSH/日志路径说明。
-- **`docs/AGENT_PATHS.md`**: **重要！** 工具链绝对路径导览。
+- **`docs/AGENT_PATHS.md`**: 工具链路径导览（本地具体路径以 `AGENTS.local.md` 为准）。
 - **`.skills/`**: 注入给 LLM 的特定技能库（如前端规范、shadcn 使用规范）。
 
 ## 3. 最近的重大重构记录

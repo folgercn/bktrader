@@ -1,32 +1,55 @@
 # bktrader 项目文档导航
 
-本文档是本项目的所有核心说明文件的索引与导航系统。
+本文档是项目所有核心文档的分级索引。**按优先级分三层，LLM 首次进入只需读 🔴 必读层**。
 
-## 1. AI 与 Harness 核心文档
-这些文档用于规范 AI Coding Agent 以及 CI/CD 对代码操作的安全防线：
-- [AGENTS.md](../AGENTS.md) - **入口**：全局禁区、常用验证命令集合。
-- [agent-risk-model.md](agent-risk-model.md) - Agent 及人工改动风险分级表 (L0~L3)。
-- [live-safety-invariants.md](live-safety-invariants.md) - 实盘关键不变量定性和边界约束。
-- [test-matrix.md](test-matrix.md) - 各相关组件所需的最低自测/回归验证矩阵。
-- [harness-engineering-部署方案.md](harness-engineering-部署方案.md) - Harness Engineering 建设方案、PR 实战踩坑模式、Review 黄金规则与 AI Agent 协作纪律。
-- [pr-lessons-learned.md](pr-lessons-learned.md) - **从 155 个 PR 提炼的实战踩坑模式、review 黄金规则与 AI Agent 协作纪律**。
+---
 
-## 2. 架构与工程设计
-- [llm-project-index.md](llm-project-index.md) - **推荐阅读：深入解读代码目录结构的索引层**。
-- [system-design.md](system-design.md) - 项目早期整体抽象架构。
-- [bktrader-ctl-install-deploy.md](bktrader-ctl-install-deploy.md) - **bktrader-ctl 安装与发布说明**。
-- [bktrader-ctl-reference.md](bktrader-ctl-reference.md) - **bktrader-ctl 命令手册**。
-- [dashboard-sse-architecture.md](dashboard-sse-architecture.md) - 基于 SSE 的实时仪表盘架构设计。
-- [bento-ui-modernization-guidelines.md](bento-ui-modernization-guidelines.md) - Bento 风格 UI 现代化指南。
-- [runtime-runner-decomposition-protocol.md](runtime-runner-decomposition-protocol.md) - `live-runner` / `signal-runtime-runner` 拆分协议基线。
-- [production-log-troubleshooting.md](production-log-troubleshooting.md) - 生产服务器日志排障起手式。
-- [部署与网络架构.md](部署与网络架构.md) - 包含有关容器/负载路由的信息。
-- [cicd-maintenance.md](cicd-maintenance.md) - GitHub Actions 维保说明。
-- [frontend-live-reconcile-collab.md](frontend-live-reconcile-collab.md) - Live 账户全量对账的前端协作文档与 API 接入约定。
-- [frontend-live-launch-template-isolation-collab.md](frontend-live-launch-template-isolation-collab.md) - Live launch template 独占切换语义的前端协作文档。
+## 🔴 必读（首次进入项目）
 
-## 3. 金融与投研文档
-- [STRATEGY_ANALYSIS.md](STRATEGY_ANALYSIS.md) - BK体系策略逻辑 analysis。
-- [tick-data-spec.md](tick-data-spec.md) - 行情 tick 与 Bar 数据规范。
+| 文档 | 说明 |
+|------|------|
+| [AGENTS.md](../AGENTS.md) | **入口**：全局禁区、验证命令、Review 黄金规则、Agent 协作纪律 |
+| [llm-project-index.md](llm-project-index.md) | 代码目录结构与模块边界（先理解代码再查文档） |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | 角色分工（wuyaocheng / folgercn）、分支策略、PR 审查权属 |
 
-> `Smoke Test`: 若需要部署回测，请手动执行 `scripts/testnet_live_session_smoke.sh`。对于本项目的自动化防御，依靠 `ci.yml` 中的风险拦截脚本。
+---
+
+## 🟡 按需读取（改代码前查）
+
+| 文档 | 适用场景 |
+|------|----------|
+| [pr-lessons-learned.md](pr-lessons-learned.md) | 修改 `internal/` 前必读：155+ PR 的实战踩坑案例与 Review 规则 |
+| [agent-risk-model.md](agent-risk-model.md) | 判断改动风险等级 (L0~L3) |
+| [test-matrix.md](test-matrix.md) | 确定改动需要哪些验证项 |
+| [live-safety-invariants.md](live-safety-invariants.md) | 实盘关键不变量与边界约束 |
+| [runtime-recovery-extension-coding-rules.md](runtime-recovery-extension-coding-rules.md) | 恢复/接管/被动平仓专项编码规则 |
+| [runtime-recovery-stabilization-summary.md](runtime-recovery-stabilization-summary.md) | 运行时恢复稳定性改造历史总结 |
+| [production-log-troubleshooting.md](production-log-troubleshooting.md) | 线上告警/stale-source/429限流排障起手式 |
+| [AGENT_PATHS.md](AGENT_PATHS.md) | 工具链绝对路径导览（本地路径以 `AGENTS.local.md` 为准） |
+
+---
+
+## 🟢 参考文档（需要时查阅）
+
+### 架构与工程设计
+- [dashboard-sse-architecture.md](dashboard-sse-architecture.md) — SSE 实时仪表盘架构
+- [bento-ui-modernization-guidelines.md](bento-ui-modernization-guidelines.md) — Bento 风格 UI 现代化指南
+- [runtime-runner-decomposition-protocol.md](runtime-runner-decomposition-protocol.md) — `live-runner` / `signal-runtime-runner` 拆分协议
+
+### CLI 工具
+- [bktrader-ctl-reference.md](bktrader-ctl-reference.md) — bktrader-ctl 命令手册
+- [bktrader-ctl-install-deploy.md](bktrader-ctl-install-deploy.md) — bktrader-ctl 安装与发布说明
+
+### 部署与运维
+- [部署与网络架构.md](部署与网络架构.md) — 容器/负载路由
+- [cicd-maintenance.md](cicd-maintenance.md) — GitHub Actions 维保
+- [cd-service-routing.md](cd-service-routing.md) — CD 服务路由
+
+### 投研
+- [量化交易与CTA扩展说明.md](量化交易与CTA扩展说明.md) — 量化交易扩展说明
+
+---
+
+> **归档文档**在 [docs/归档/](归档/) 目录下，包含历史规划和已完成的实施方案。
+>
+> **Smoke Test**: 若需要部署回测，请手动执行 `scripts/testnet_live_session_smoke.sh`。
