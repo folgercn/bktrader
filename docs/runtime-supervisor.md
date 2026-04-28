@@ -318,6 +318,7 @@ func ClearRestartState(state map[string]any, keys []string)
 - `BKTRADER_ROLE=supervisor` 只启动 read-only supervisor，不启动 live / signal / dashboard / notification 业务组件。
 - `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL。
 - 当前只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
+- `GET /api/v1/supervisor/status` 返回最近一次 read-only supervisor 采集快照。
 
 验收标准：
 

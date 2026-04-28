@@ -16,6 +16,7 @@ var APIRegistry = []RouteEntry{
 	{Path: "/healthz", Methods: []string{"GET"}, Module: "system", CLICommand: "status", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/overview", Methods: []string{"GET"}, Module: "system", CLICommand: "status", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/runtime/status", Methods: []string{"GET"}, Module: "runtime", CLICommand: "runtime status", Idempotent: true, RiskLevel: "L0"},
+	{Path: "/api/v1/supervisor/status", Methods: []string{"GET"}, Module: "supervisor", CLICommand: "supervisor status", Idempotent: true, RiskLevel: "L0"},
 
 	// Auth
 	{Path: "/api/v1/auth/login", Methods: []string{"POST"}, Module: "auth", CLICommand: "auth login", Idempotent: false, RiskLevel: "L1"},

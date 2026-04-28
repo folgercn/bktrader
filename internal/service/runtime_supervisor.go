@@ -56,6 +56,16 @@ func (p *Platform) SetRuntimeSupervisor(supervisor *RuntimeSupervisor) {
 	p.runtimeSupervisor = supervisor
 }
 
+func (p *Platform) RuntimeSupervisorSnapshot() (RuntimeSupervisorSnapshot, bool) {
+	p.mu.Lock()
+	supervisor := p.runtimeSupervisor
+	p.mu.Unlock()
+	if supervisor == nil {
+		return RuntimeSupervisorSnapshot{}, false
+	}
+	return supervisor.LastSnapshot(), true
+}
+
 func NewRuntimeSupervisor(targets []RuntimeSupervisorTarget, client *http.Client) *RuntimeSupervisor {
 	normalized := make([]RuntimeSupervisorTarget, 0, len(targets))
 	for i, target := range targets {
