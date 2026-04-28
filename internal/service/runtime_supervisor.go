@@ -90,7 +90,11 @@ func NewRuntimeSupervisor(targets []RuntimeSupervisorTarget, client *http.Client
 	}
 }
 
-func ParseRuntimeSupervisorTargets(rawTargets []string) []RuntimeSupervisorTarget {
+func ParseRuntimeSupervisorTargets(rawTargets []string, bearerToken ...string) []RuntimeSupervisorTarget {
+	token := ""
+	if len(bearerToken) > 0 {
+		token = strings.TrimSpace(bearerToken[0])
+	}
 	targets := make([]RuntimeSupervisorTarget, 0, len(rawTargets))
 	for _, raw := range rawTargets {
 		raw = strings.TrimSpace(raw)
@@ -102,6 +106,7 @@ func ParseRuntimeSupervisorTargets(rawTargets []string) []RuntimeSupervisorTarge
 			target.Name = strings.TrimSpace(name)
 			target.BaseURL = strings.TrimSpace(baseURL)
 		}
+		target.BearerToken = token
 		targets = append(targets, target)
 	}
 	return targets

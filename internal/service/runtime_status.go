@@ -14,24 +14,34 @@ type RuntimeStatusSnapshot struct {
 }
 
 type RuntimeStatus struct {
-	Service               string    `json:"service"`
-	RuntimeID             string    `json:"runtimeId"`
-	RuntimeKind           string    `json:"runtimeKind"`
-	AccountID             string    `json:"accountId,omitempty"`
-	StrategyID            string    `json:"strategyId,omitempty"`
-	DesiredStatus         string    `json:"desiredStatus,omitempty"`
-	ActualStatus          string    `json:"actualStatus,omitempty"`
-	Health                string    `json:"health,omitempty"`
-	RestartAttempt        int       `json:"restartAttempt"`
-	NextRestartAt         string    `json:"nextRestartAt,omitempty"`
-	RestartBackoff        string    `json:"restartBackoff,omitempty"`
-	RestartReason         string    `json:"restartReason,omitempty"`
-	RestartSeverity       string    `json:"restartSeverity,omitempty"`
-	LastRestartError      string    `json:"lastRestartError,omitempty"`
-	AutoRestartSuppressed bool      `json:"autoRestartSuppressed"`
-	LastHealthyAt         string    `json:"lastHealthyAt,omitempty"`
-	LastCheckedAt         string    `json:"lastCheckedAt"`
-	UpdatedAt             time.Time `json:"updatedAt,omitempty"`
+	Service               string     `json:"service"`
+	RuntimeID             string     `json:"runtimeId"`
+	RuntimeKind           string     `json:"runtimeKind"`
+	AccountID             string     `json:"accountId,omitempty"`
+	StrategyID            string     `json:"strategyId,omitempty"`
+	DesiredStatus         string     `json:"desiredStatus,omitempty"`
+	ActualStatus          string     `json:"actualStatus,omitempty"`
+	Health                string     `json:"health,omitempty"`
+	RestartAttempt        int        `json:"restartAttempt"`
+	NextRestartAt         string     `json:"nextRestartAt,omitempty"`
+	RestartBackoff        string     `json:"restartBackoff,omitempty"`
+	RestartReason         string     `json:"restartReason,omitempty"`
+	RestartSeverity       string     `json:"restartSeverity,omitempty"`
+	LastRestartError      string     `json:"lastRestartError,omitempty"`
+	AutoRestartSuppressed bool       `json:"autoRestartSuppressed"`
+	LastHealthyAt         string     `json:"lastHealthyAt,omitempty"`
+	LastCheckedAt         string     `json:"lastCheckedAt"`
+	UpdatedAt             *time.Time `json:"updatedAt,omitempty"`
+}
+
+var liveRuntimeStatusUpdatedAtKeys = []string{
+	"lastStrategyEvaluationAt",
+	"lastSignalRuntimeEventAt",
+	"lastSyncedAt",
+	"lastDispatchedAt",
+	"lastEventAt",
+	"lastHeartbeatAt",
+	"lastRuntimeEventPublishedAt",
 }
 
 func (p *Platform) RuntimeStatusSnapshot(serviceName string, checkedAt time.Time) (RuntimeStatusSnapshot, error) {
@@ -64,7 +74,7 @@ func runtimeStatusFromSignalSession(serviceName string, checkedAt time.Time, ses
 	status := runtimeStatusFromState(serviceName, "signal", session.ID, session.Status, session.State, checkedAt)
 	status.AccountID = session.AccountID
 	status.StrategyID = session.StrategyID
-	status.UpdatedAt = session.UpdatedAt
+	setRuntimeStatusUpdatedAt(&status, session.UpdatedAt)
 	return status
 }
 
@@ -72,8 +82,31 @@ func runtimeStatusFromLiveSession(serviceName string, checkedAt time.Time, sessi
 	status := runtimeStatusFromState(serviceName, "live-session", session.ID, session.Status, session.State, checkedAt)
 	status.AccountID = session.AccountID
 	status.StrategyID = session.StrategyID
-	status.UpdatedAt = session.CreatedAt
+	setRuntimeStatusUpdatedAt(&status, runtimeStatusLatestStateTime(session.State, liveRuntimeStatusUpdatedAtKeys...))
 	return status
+}
+
+func setRuntimeStatusUpdatedAt(status *RuntimeStatus, updatedAt time.Time) {
+	if status == nil || updatedAt.IsZero() {
+		return
+	}
+	normalized := updatedAt.UTC()
+	status.UpdatedAt = &normalized
+}
+
+func runtimeStatusLatestStateTime(state map[string]any, keys ...string) time.Time {
+	var latest time.Time
+	for _, key := range keys {
+		candidate := parseOptionalRFC3339(stringValue(state[key]))
+		if candidate.IsZero() {
+			continue
+		}
+		candidate = candidate.UTC()
+		if latest.IsZero() || candidate.After(latest) {
+			latest = candidate
+		}
+	}
+	return latest
 }
 
 func runtimeStatusFromState(serviceName, runtimeKind, runtimeID, status string, state map[string]any, checkedAt time.Time) RuntimeStatus {

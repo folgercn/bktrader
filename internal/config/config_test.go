@@ -104,6 +104,7 @@ func TestConfigValidateAcceptsSupervisorRole(t *testing.T) {
 
 func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_TARGETS", "api=http://127.0.0.1:8080, http://127.0.0.1:8081")
+	t.Setenv("SUPERVISOR_BEARER_TOKEN", " supervisor-token ")
 	t.Setenv("SUPERVISOR_POLL_INTERVAL_SECONDS", "45")
 	t.Setenv("SUPERVISOR_HTTP_TIMEOUT_SECONDS", "3")
 
@@ -113,6 +114,9 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	}
 	if cfg.SupervisorTargets[0] != "api=http://127.0.0.1:8080" || cfg.SupervisorTargets[1] != "http://127.0.0.1:8081" {
 		t.Fatalf("unexpected supervisor targets %#v", cfg.SupervisorTargets)
+	}
+	if cfg.SupervisorBearerToken != "supervisor-token" {
+		t.Fatalf("expected trimmed supervisor bearer token, got %q", cfg.SupervisorBearerToken)
 	}
 	if cfg.SupervisorPollIntervalSeconds != 45 {
 		t.Fatalf("expected supervisor poll interval 45, got %d", cfg.SupervisorPollIntervalSeconds)

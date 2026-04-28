@@ -190,7 +190,7 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 		platform.StartLiveSessionControlScanner(ctx)
 	}
 	if runtime.StartReadOnlyRuntimeSupervisor {
-		targets := service.ParseRuntimeSupervisorTargets(cfg.SupervisorTargets)
+		targets := service.ParseRuntimeSupervisorTargets(cfg.SupervisorTargets, cfg.SupervisorBearerToken)
 		if len(targets) == 0 {
 			logger.Warn("read-only runtime supervisor disabled because SUPERVISOR_TARGETS is empty")
 		} else {

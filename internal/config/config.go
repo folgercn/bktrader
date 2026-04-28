@@ -68,6 +68,7 @@ type Config struct {
 	DashboardMonitorHealthPollMs   int    // 仪表盘 Monitor Health 轮询间隔 (ms)
 
 	SupervisorTargets             []string // 只读 supervisor 采集目标，支持 name=url 或 base URL
+	SupervisorBearerToken         string   // 只读 supervisor 请求目标服务时使用的全局 Bearer token
 	SupervisorPollIntervalSeconds int      // 只读 supervisor 轮询间隔（秒）
 	SupervisorHTTPTimeoutSeconds  int      // 只读 supervisor HTTP 超时（秒）
 }
@@ -147,6 +148,7 @@ func Load() Config {
 		DashboardNotificationsPollMs:   intFromEnvWithMin("DASHBOARD_NOTIFICATIONS_POLL_MS", 2000, 1000),
 		DashboardMonitorHealthPollMs:   intFromEnvWithMin("DASHBOARD_MONITOR_HEALTH_POLL_MS", 2000, 1000),
 		SupervisorTargets:              stringSliceFromEnv("SUPERVISOR_TARGETS", nil),
+		SupervisorBearerToken:          strings.TrimSpace(os.Getenv("SUPERVISOR_BEARER_TOKEN")),
 		SupervisorPollIntervalSeconds:  intFromEnvWithMin("SUPERVISOR_POLL_INTERVAL_SECONDS", 30, 5),
 		SupervisorHTTPTimeoutSeconds:   intFromEnvWithMin("SUPERVISOR_HTTP_TIMEOUT_SECONDS", 5, 1),
 	}

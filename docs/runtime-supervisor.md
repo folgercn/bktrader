@@ -317,6 +317,7 @@ func ClearRestartState(state map[string]any, keys []string)
 - `internal/service/runtime_supervisor.go` 提供 read-only collector。
 - `BKTRADER_ROLE=supervisor` 只启动 read-only supervisor，不启动 live / signal / dashboard / notification 业务组件。
 - `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL。
+- `SUPERVISOR_BEARER_TOKEN` 可选；设置后 read-only collector 会对所有 targets 的 `/healthz` 与 `/api/v1/runtime/status` 请求附加 `Authorization: Bearer <token>`，用于采集受鉴权保护的内网 runtime API。
 - 当前只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
 - `GET /api/v1/supervisor/status` 返回最近一次 read-only supervisor 采集快照。
 - `bktrader-ctl runtime status --json` 和 `bktrader-ctl supervisor status --json` 提供 CLI 只读巡检入口。

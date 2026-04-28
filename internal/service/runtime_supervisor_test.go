@@ -120,6 +120,43 @@ func TestRuntimeSupervisorRecordsProbeFailuresWithoutControlActions(t *testing.T
 	}
 }
 
+func TestRuntimeSupervisorBearerTokenAllowsProtectedTargets(t *testing.T) {
+	const token = "supervisor-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/healthz":
+			writeRuntimeSupervisorTestJSON(t, w, map[string]any{"status": "ok"})
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{
+				Service:   "platform-api",
+				CheckedAt: time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	withoutToken := NewRuntimeSupervisor(ParseRuntimeSupervisorTargets([]string{"api=" + server.URL}), server.Client())
+	unauthorized := withoutToken.Collect(context.Background()).Targets[0]
+	if unauthorized.RuntimeStatus.StatusCode != http.StatusUnauthorized || unauthorized.RuntimeStatus.Error == "" {
+		t.Fatalf("expected protected runtime status to reject missing token, got %+v", unauthorized.RuntimeStatus)
+	}
+
+	withToken := NewRuntimeSupervisor(ParseRuntimeSupervisorTargets([]string{"api=" + server.URL}, " "+token+" "), server.Client())
+	authorized := withToken.Collect(context.Background()).Targets[0]
+	if !authorized.Healthz.Reachable || authorized.Healthz.StatusCode != http.StatusOK {
+		t.Fatalf("expected authorized healthz probe, got %+v", authorized.Healthz)
+	}
+	if !authorized.RuntimeStatus.Reachable || authorized.RuntimeStatus.StatusCode != http.StatusOK || authorized.RuntimeStatus.Error != "" {
+		t.Fatalf("expected authorized runtime status probe, got %+v", authorized.RuntimeStatus)
+	}
+}
+
 func TestParseRuntimeSupervisorTargetsSupportsNamedTargets(t *testing.T) {
 	targets := ParseRuntimeSupervisorTargets([]string{"api=http://127.0.0.1:8080", " http://127.0.0.1:8081/ "})
 	supervisor := NewRuntimeSupervisor(targets, nil)
