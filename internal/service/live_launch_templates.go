@@ -270,7 +270,7 @@ func liveIntradayResearchBaselineOverrides(strategyEngine string) map[string]any
 func liveBTC30mEnhancedOverrides() map[string]any {
 	overrides := liveIntradayResearchBaselineOverrides("bk-live-intrabar-sma5-t3-sep")
 	overrides["max_trades_per_bar"] = domain.ResearchBaselineMaxTradesPerBar
-	overrides["stop_loss_atr"] = 0.05
+	overrides["stop_loss_atr"] = 0.3
 	overrides["sl_reentry_min_delay_seconds"] = 60
 	overrides["breakout_shape"] = "baseline_plus_t3"
 	overrides["t3_min_sma_atr_separation"] = 0.25
