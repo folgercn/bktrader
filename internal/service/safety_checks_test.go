@@ -157,7 +157,7 @@ func TestStopLiveSessionWithForceStopsLinkedRuntimeWhenLiveAlreadyStopped(t *tes
 	}
 }
 
-func TestDeleteLiveSessionWithForceStopsLinkedRuntimeBeforeDelete(t *testing.T) {
+func TestDeleteLiveSessionWithForceDeletesStoppedLinkedRuntimeWhenUnreferenced(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.store.GetLiveSession("live-session-main")
 	if err != nil {
@@ -178,15 +178,89 @@ func TestDeleteLiveSessionWithForceStopsLinkedRuntimeBeforeDelete(t *testing.T) 
 	if got := stringValue(deleted.State["deletedAt"]); got == "" {
 		t.Fatal("expected deletedAt to be set")
 	}
+	if got := stringValue(deleted.State["signalRuntimeStatus"]); got != "STOPPED" {
+		t.Fatalf("expected live session signalRuntimeStatus STOPPED before delete, got %s", got)
+	}
+	if _, err := platform.GetSignalRuntimeSession(runtime.ID); !isSignalRuntimeSessionNotFoundError(err) {
+		t.Fatalf("expected unreferenced linked runtime to be deleted, got %v", err)
+	}
+}
+
+func TestDeleteLiveSessionWithForceKeepsLinkedRuntimeReferencedByActiveLiveSession(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	runtime := mustCreateLinkedLiveRuntime(t, platform, session, "RUNNING", "RUNNING")
+	other, err := platform.store.CreateLiveSession(session.AccountID, session.StrategyID)
+	if err != nil {
+		t.Fatalf("create second live session failed: %v", err)
+	}
+	other, err = platform.store.UpdateLiveSessionStatus(other.ID, "RUNNING")
+	if err != nil {
+		t.Fatalf("mark second live session running failed: %v", err)
+	}
+	otherState := cloneMetadata(other.State)
+	otherState["signalRuntimeSessionId"] = runtime.ID
+	if _, err := platform.store.UpdateLiveSessionState(other.ID, otherState); err != nil {
+		t.Fatalf("link runtime into second live session failed: %v", err)
+	}
+
+	if err := platform.DeleteLiveSessionWithForce(session.ID, false); err != nil {
+		t.Fatalf("delete live session failed: %v", err)
+	}
 	updatedRuntime, err := platform.GetSignalRuntimeSession(runtime.ID)
 	if err != nil {
-		t.Fatalf("reload runtime failed: %v", err)
+		t.Fatalf("expected linked runtime to remain while referenced by active live session, got %v", err)
 	}
 	if updatedRuntime.Status != "STOPPED" {
-		t.Fatalf("expected linked runtime STOPPED before live delete, got %s", updatedRuntime.Status)
+		t.Fatalf("expected linked runtime STOPPED, got %s", updatedRuntime.Status)
 	}
 	if got := stringValue(updatedRuntime.State["desiredStatus"]); got != "STOPPED" {
 		t.Fatalf("expected linked runtime desiredStatus STOPPED, got %s", got)
+	}
+}
+
+func TestStartStoppedLiveSessionRecreatesMissingRuntime(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	configureTestLiveRESTReconcileAdapter(t, platform, "test-start-recreates-runtime", []map[string]any{})
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	oldRuntime := mustCreateLinkedLiveRuntime(t, platform, session, "STOPPED", "STOPPED")
+	session, err = platform.store.UpdateLiveSessionStatus(session.ID, "STOPPED")
+	if err != nil {
+		t.Fatalf("mark live session stopped failed: %v", err)
+	}
+	if err := platform.deleteSignalRuntimeSessionWithForceLocked(oldRuntime, true); err != nil {
+		t.Fatalf("delete old runtime failed: %v", err)
+	}
+
+	started, err := platform.StartLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("StartLiveSession failed to recreate missing runtime: %v", err)
+	}
+	if started.Status != "RUNNING" {
+		t.Fatalf("expected live session RUNNING after start, got %s", started.Status)
+	}
+	newRuntimeID := stringValue(started.State["signalRuntimeSessionId"])
+	if newRuntimeID == "" {
+		t.Fatal("expected start to link a recreated runtime")
+	}
+	if newRuntimeID == oldRuntime.ID {
+		t.Fatalf("expected recreated runtime id to differ from deleted runtime %s", oldRuntime.ID)
+	}
+	if _, err := platform.GetSignalRuntimeSession(oldRuntime.ID); !isSignalRuntimeSessionNotFoundError(err) {
+		t.Fatalf("expected old runtime to remain deleted, got %v", err)
+	}
+	newRuntime, err := platform.GetSignalRuntimeSession(newRuntimeID)
+	if err != nil {
+		t.Fatalf("load recreated runtime failed: %v", err)
+	}
+	if newRuntime.Status != "RUNNING" {
+		t.Fatalf("expected recreated runtime RUNNING, got %s", newRuntime.Status)
 	}
 }
 
