@@ -1322,7 +1322,7 @@ func (s *Store) DeleteLiveSession(sessionID string) error {
 	result, err := s.db.Exec(`
 		update live_sessions
 		set status = 'DELETED',
-			state = coalesce(state, '{}'::jsonb) || jsonb_build_object('deletedAt', $2)
+			state = coalesce(state, '{}'::jsonb) || jsonb_build_object('deletedAt', $2::text)
 		where id = $1
 	`, sessionID, deletedAt)
 	if err != nil {
