@@ -17,7 +17,7 @@ func boolValue(value any) bool {
 	return ok && v
 }
 
-func TestLiveSessionStopRouteRespectsForceQuery(t *testing.T) {
+func TestLiveSessionStopRoutePersistsDesiredStopIntent(t *testing.T) {
 	store := memory.NewStore()
 	platform := service.NewPlatform(store)
 	if _, err := store.SavePosition(domain.Position{
@@ -41,29 +41,80 @@ func TestLiveSessionStopRouteRespectsForceQuery(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected 202 for accepted stop intent, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	session, err := store.GetLiveSession("live-session-main")
-	if err != nil {
-		t.Fatalf("get live session failed: %v", err)
+	var stopped struct {
+		DesiredStatus    string             `json:"desiredStatus"`
+		ActualStatus     string             `json:"actualStatus"`
+		LastControlError any                `json:"lastControlError"`
+		Session          domain.LiveSession `json:"session"`
 	}
-	if got := stringValue(session.State["desiredStatus"]); got != "STOPPED" {
-		t.Fatalf("expected desiredStatus STOPPED, got %s", got)
+	if err := json.NewDecoder(rec.Body).Decode(&stopped); err != nil {
+		t.Fatalf("decode stop intent failed: %v", err)
 	}
-	if boolValue(session.State["desiredStopForce"]) {
-		t.Fatalf("did not expect desiredStopForce for normal stop")
+	if stopped.DesiredStatus != "STOPPED" {
+		t.Fatalf("expected top-level desiredStatus STOPPED, got %s", stopped.DesiredStatus)
+	}
+	if stopped.ActualStatus != "STOPPED" {
+		t.Fatalf("expected top-level actualStatus STOPPED, got %s", stopped.ActualStatus)
+	}
+	if got := stopped.Session.State["desiredStatus"]; got != "STOPPED" {
+		t.Fatalf("expected desiredStatus STOPPED, got %#v", got)
+	}
+	if got := stopped.Session.State["desiredStopForce"]; got != false {
+		t.Fatalf("expected desiredStopForce false, got %#v", got)
 	}
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/stop?force=true", nil)
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for accepted forced stop intent, got %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("expected 202 for forced stop intent, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	session, err = store.GetLiveSession("live-session-main")
-	if err != nil {
-		t.Fatalf("get live session failed: %v", err)
+	var forced struct {
+		Session domain.LiveSession `json:"session"`
 	}
-	if !boolValue(session.State["desiredStopForce"]) {
-		t.Fatalf("expected desiredStopForce for forced stop")
+	if err := json.NewDecoder(rec.Body).Decode(&forced); err != nil {
+		t.Fatalf("decode forced stop intent failed: %v", err)
+	}
+	if got := forced.Session.State["desiredStopForce"]; got != true {
+		t.Fatalf("expected desiredStopForce true, got %#v", got)
+	}
+}
+
+func TestLiveSessionControlIntentAcceptedForAPIRole(t *testing.T) {
+	cases := map[string]string{
+		"/api/v1/live/sessions/live-session-main/start": "RUNNING",
+		"/api/v1/live/sessions/live-session-main/stop":  "STOPPED",
+	}
+	for path, desired := range cases {
+		t.Run(path, func(t *testing.T) {
+			platform := service.NewPlatform(memory.NewStore())
+			mux := http.NewServeMux()
+			registerLiveRoutes(mux, platform, config.Config{ProcessRole: "api"})
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, path, nil)
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusAccepted {
+				t.Fatalf("expected 202 for api role control intent, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			var payload struct {
+				DesiredStatus string             `json:"desiredStatus"`
+				ActualStatus  string             `json:"actualStatus"`
+				Session       domain.LiveSession `json:"session"`
+			}
+			if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode live session failed: %v", err)
+			}
+			if payload.DesiredStatus != desired {
+				t.Fatalf("expected top-level desiredStatus %s, got %s", desired, payload.DesiredStatus)
+			}
+			if payload.ActualStatus == "" {
+				t.Fatal("expected top-level actualStatus")
+			}
+			if got := payload.Session.State["desiredStatus"]; got != desired {
+				t.Fatalf("expected desiredStatus %s, got %#v", desired, got)
+			}
+		})
 	}
 }
 
@@ -85,44 +136,6 @@ func TestLiveSessionRuntimeActionsDisabledForAPIRole(t *testing.T) {
 				t.Fatalf("expected 409 for api role runtime action, got %d body=%s", rec.Code, rec.Body.String())
 			}
 		})
-	}
-}
-
-func TestLiveSessionStartStopRoutesAcceptedForAPIRole(t *testing.T) {
-	store := memory.NewStore()
-	platform := service.NewPlatform(store)
-	mux := http.NewServeMux()
-	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "api"})
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/start", nil)
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for api role start intent, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	session, err := store.GetLiveSession("live-session-main")
-	if err != nil {
-		t.Fatalf("get live session failed: %v", err)
-	}
-	if got := stringValue(session.State["desiredStatus"]); got != "RUNNING" {
-		t.Fatalf("expected desiredStatus RUNNING, got %s", got)
-	}
-
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/stop?force=true", nil)
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for api role stop intent, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	session, err = store.GetLiveSession("live-session-main")
-	if err != nil {
-		t.Fatalf("get live session failed: %v", err)
-	}
-	if got := stringValue(session.State["desiredStatus"]); got != "STOPPED" {
-		t.Fatalf("expected desiredStatus STOPPED, got %s", got)
-	}
-	if !boolValue(session.State["desiredStopForce"]) {
-		t.Fatalf("expected desiredStopForce")
 	}
 }
 
@@ -171,7 +184,7 @@ func TestLiveSessionDeleteCancelsPendingDesiredControlIntent(t *testing.T) {
 	}
 }
 
-func TestLiveSessionStartRouteWritesDesiredStateForCorruptedControlKey(t *testing.T) {
+func TestLiveSessionStartRoutePersistsDesiredStartIntentWithCorruptControlKey(t *testing.T) {
 	store := memory.NewStore()
 	session, err := store.GetLiveSession("live-session-main")
 	if err != nil {
@@ -189,7 +202,7 @@ func TestLiveSessionStartRouteWritesDesiredStateForCorruptedControlKey(t *testin
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/start", nil)
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for desired start despite corrupted control key, got %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("expected 202 for desired start intent, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	updated, err := store.GetLiveSession("live-session-main")
 	if err != nil {

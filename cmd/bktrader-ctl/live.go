@@ -71,6 +71,9 @@ var liveStartCmd = &cobra.Command{
 		client := getClient()
 		resp, err := client.Request("POST", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/start", nil)
 		if err != nil || !wait || dryRun {
+			if err == nil && !wait && !dryRun {
+				fmt.Fprintln(os.Stderr, "accepted: control intent submitted only; use --wait to confirm actualStatus convergence")
+			}
 			handleResponse(resp, err)
 			return nil
 		}
@@ -101,6 +104,9 @@ var liveStopCmd = &cobra.Command{
 		}
 		resp, err := client.Request("POST", path, nil)
 		if err != nil || !wait || dryRun {
+			if err == nil && !wait && !dryRun {
+				fmt.Fprintln(os.Stderr, "accepted: control intent submitted only; use --wait to confirm actualStatus convergence")
+			}
 			handleResponse(resp, err)
 			return nil
 		}

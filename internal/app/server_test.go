@@ -28,6 +28,16 @@ func TestRuntimeOptionsForLiveRunnerDoesNotStartSignalRuntimeScanner(t *testing.
 	}
 }
 
+func TestRuntimeOptionsForAPIDoesNotStartLiveSessionScanner(t *testing.T) {
+	options := RuntimeOptionsForRole("api")
+	if options.StartLiveSessionControlScanner {
+		t.Fatal("expected api role not to start live session scanner")
+	}
+	if !options.StartDashboard {
+		t.Fatal("expected api role to start dashboard")
+	}
+}
+
 func TestRuntimeOptionsForMonolithStartAllRuntimeComponents(t *testing.T) {
 	options := RuntimeOptionsForRole("monolith")
 	if !options.WarmLiveMarketData ||
