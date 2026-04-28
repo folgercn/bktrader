@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
@@ -25,7 +25,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { useLiveTradePairs } from '../../hooks/useLiveTradePairs';
 import { useOrdersPageQuery } from '../../hooks/useOrdersPageQuery';
 import { useFillsPageQuery } from '../../hooks/useFillsPageQuery';
-import { ShieldCheck, Loader2, ChevronLeft, ChevronRight, ArrowRightLeft, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Loader2, ChevronLeft, ChevronRight, Activity, AlertCircle, FileSearch } from 'lucide-react';
 import { 
   Dialog, 
   DialogContent, 
@@ -36,15 +36,66 @@ import {
   DialogClose
 } from '../ui/dialog';
 import { ManualTradeReviewDialog } from '../live/ManualTradeReviewDialog';
-import { toast } from 'sonner';
 
 import { cn } from '../../lib/utils';
+import { fetchJSON } from '../../utils/api';
+import type { Order } from '../../types/domain';
 
 interface DockContentProps {
   dockTab: 'pairs' | 'orders' | 'positions' | 'fills' | 'alerts';
   actions: any;
   sessionId?: string | null;
 }
+
+type UnifiedLogEvent = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  eventTime: string;
+  recordedAt?: string;
+  liveSessionId?: string;
+  runtimeSessionId?: string;
+  decisionEventId?: string;
+  metadata?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+};
+
+type UnifiedLogEventPage = {
+  items?: UnifiedLogEvent[];
+  nextCursor?: string;
+};
+
+type DecisionTraceStatus = "idle" | "loading" | "loaded" | "missing" | "error";
+
+type DecisionTrace = {
+  event: UnifiedLogEvent;
+  payload: Record<string, unknown>;
+  decisionMetadata: Record<string, unknown>;
+  signalBarDecision: Record<string, unknown>;
+  signalBarState: Record<string, unknown> | null;
+  signalBarStateKey: string;
+  breakoutProof: BreakoutProof | null;
+};
+
+type BreakoutProof = {
+  barTime?: string;
+  close?: number;
+  eventAt?: string;
+  level?: number;
+  price?: number;
+  priceSource?: string;
+  side?: string;
+  signalBarStateKey?: string;
+  source?: string;
+  timeframe?: string;
+};
+
+type LiveSessionBreakoutDetail = {
+  state?: {
+    breakoutHistory?: unknown[];
+  };
+};
 
 function tradePairStatusLabel(status: string) {
   return String(status).toLowerCase() === 'open' ? '持仓中' : '已平仓';
@@ -77,6 +128,255 @@ function tradePairVerdictTone(verdict: string) {
     default:
       return 'text-[var(--bk-text-muted)]';
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text !== "") {
+      return text;
+    }
+  }
+  return "";
+}
+
+function nestedRecord(root: Record<string, unknown> | null | undefined, key: string) {
+  return asRecord(root?.[key]);
+}
+
+function formatDecisionValue(value: unknown, maxDigits = 8) {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return formatMaybeNumber(value, maxDigits);
+  }
+  const text = String(value ?? "").trim();
+  if (text === "") {
+    return "--";
+  }
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && text !== "") {
+    return formatMaybeNumber(numeric, maxDigits);
+  }
+  return text;
+}
+
+function finiteNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number(String(value ?? "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function differenceValue(left: unknown, right: unknown) {
+  const leftNumber = finiteNumber(left);
+  const rightNumber = finiteNumber(right);
+  if (leftNumber == null || rightNumber == null) {
+    return null;
+  }
+  return leftNumber - rightNumber;
+}
+
+function samePrice(left: unknown, right: unknown) {
+  const leftNumber = finiteNumber(left);
+  const rightNumber = finiteNumber(right);
+  if (leftNumber == null || rightNumber == null) {
+    return false;
+  }
+  return Math.abs(leftNumber - rightNumber) < 0.0000001;
+}
+
+function formatBarTimestamp(value: unknown) {
+  const text = firstText(value);
+  if (!text) {
+    return "--";
+  }
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const millis = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+    return formatTime(new Date(millis).toISOString());
+  }
+  const formatted = formatTime(text);
+  return formatted === "--" ? text : formatted;
+}
+
+function timestampMillis(value: unknown) {
+  const text = firstText(value);
+  if (!text) {
+    return null;
+  }
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function orderExecutionProposal(order: Order | null | undefined) {
+  return nestedRecord(asRecord(order?.metadata), "executionProposal");
+}
+
+function orderDecisionEventId(order: Order | null | undefined) {
+  const metadata = asRecord(order?.metadata);
+  const proposal = orderExecutionProposal(order);
+  const proposalMetadata = nestedRecord(proposal, "metadata");
+  const bindings = asRecord(order?.bindings);
+  return firstText(
+    metadata?.decisionEventId,
+    proposal?.decisionEventId,
+    proposalMetadata?.decisionEventId,
+    bindings?.decisionEventId
+  );
+}
+
+function orderSignalSummary(order: Order | null | undefined) {
+  const metadata = asRecord(order?.metadata);
+  const proposal = orderExecutionProposal(order);
+  const proposalMetadata = nestedRecord(proposal, "metadata");
+  return {
+    role: firstText(proposal?.role, proposalMetadata?.nextPlannedRole),
+    reason: firstText(proposal?.reason, metadata?.reason, metadata?.signalKind),
+    signalKind: firstText(proposal?.signalKind, metadata?.signalKind),
+  };
+}
+
+function normalizeBreakoutProof(value: unknown): BreakoutProof | null {
+  const item = asRecord(value);
+  if (!item) {
+    return null;
+  }
+  return {
+    barTime: firstText(item.barTime),
+    close: finiteNumber(item.close) ?? undefined,
+    eventAt: firstText(item.eventAt),
+    level: finiteNumber(item.level) ?? undefined,
+    price: finiteNumber(item.price) ?? undefined,
+    priceSource: firstText(item.priceSource),
+    side: firstText(item.side),
+    signalBarStateKey: firstText(item.signalBarStateKey),
+    source: firstText(item.source),
+    timeframe: firstText(item.timeframe),
+  };
+}
+
+function findBreakoutProof(
+  event: UnifiedLogEvent,
+  trace: Omit<DecisionTrace, "breakoutProof">,
+  history: unknown[] | undefined
+) {
+  if (!history?.length) {
+    return null;
+  }
+  const proposal = nestedRecord(trace.payload, "executionProposal");
+  const current = nestedRecord(trace.signalBarDecision, "current");
+  const eventMillis = timestampMillis(event.eventTime) ?? Number.POSITIVE_INFINITY;
+  const side = firstText(proposal?.side, trace.decisionMetadata.nextPlannedSide).toUpperCase();
+  const level = trace.signalBarDecision.longBreakoutLevel;
+  const barStartMillis = timestampMillis(current?.barStart);
+  const signalBarKey = trace.signalBarStateKey;
+
+  const candidates = history
+    .map(normalizeBreakoutProof)
+    .filter((proof): proof is BreakoutProof => {
+      if (!proof) {
+        return false;
+      }
+      const proofMillis = timestampMillis(proof.eventAt);
+      if (proofMillis != null && proofMillis > eventMillis + 1000) {
+        return false;
+      }
+      if (side && firstText(proof.side).toUpperCase() !== side) {
+        return false;
+      }
+      if (signalBarKey && proof.signalBarStateKey && proof.signalBarStateKey !== signalBarKey) {
+        return false;
+      }
+      if (finiteNumber(level) != null && !samePrice(proof.level, level)) {
+        return false;
+      }
+      const proofBarMillis = timestampMillis(proof.barTime);
+      if (barStartMillis != null && proofBarMillis != null && proofBarMillis !== barStartMillis) {
+        return false;
+      }
+      return true;
+    })
+    .sort((left, right) => (timestampMillis(right.eventAt) ?? 0) - (timestampMillis(left.eventAt) ?? 0));
+
+  return candidates[0] ?? null;
+}
+
+function resolveSignalBarState(
+  payload: Record<string, unknown>,
+  decisionMetadata: Record<string, unknown>
+) {
+  const directState = asRecord(decisionMetadata.signalBarState);
+  const proposal = nestedRecord(payload, "executionProposal");
+  const proposalMetadata = nestedRecord(proposal, "metadata");
+  const signalBarStateKey = firstText(
+    decisionMetadata.signalBarStateKey,
+    proposal?.signalBarStateKey,
+    proposalMetadata?.signalBarStateKey
+  );
+
+  if (directState) {
+    return { state: directState, key: signalBarStateKey };
+  }
+
+  const signalBarStates = nestedRecord(payload, "signalBarStates");
+  if (!signalBarStates) {
+    return { state: null, key: signalBarStateKey };
+  }
+
+  if (signalBarStateKey) {
+    const keyedState = asRecord(signalBarStates[signalBarStateKey]);
+    if (keyedState) {
+      return { state: keyedState, key: signalBarStateKey };
+    }
+  }
+
+  const evaluationContext = nestedRecord(payload, "evaluationContext");
+  const symbol = firstText(payload.symbol, decisionMetadata.symbol).toUpperCase();
+  const timeframe = firstText(evaluationContext?.signalTimeframe, proposal?.signalTimeframe).toLowerCase();
+  for (const [key, value] of Object.entries(signalBarStates)) {
+    const state = asRecord(value);
+    if (!state) {
+      continue;
+    }
+    const stateSymbol = firstText(state.symbol).toUpperCase();
+    const stateTimeframe = firstText(state.timeframe).toLowerCase();
+    if ((!symbol || stateSymbol === symbol) && (!timeframe || stateTimeframe === timeframe)) {
+      return { state, key };
+    }
+  }
+
+  const [firstKey, firstValue] = Object.entries(signalBarStates)[0] ?? [];
+  return { state: asRecord(firstValue), key: firstText(firstKey) };
+}
+
+function buildDecisionTrace(event: UnifiedLogEvent, breakoutProof: BreakoutProof | null = null): DecisionTrace {
+  const payload = asRecord(event.payload) ?? {};
+  const decisionMetadata = nestedRecord(payload, "decisionMetadata") ?? {};
+  const signalBarDecision = nestedRecord(decisionMetadata, "signalBarDecision") ?? {};
+  const { state, key } = resolveSignalBarState(payload, decisionMetadata);
+  return {
+    event,
+    payload,
+    decisionMetadata,
+    signalBarDecision,
+    signalBarState: state,
+    signalBarStateKey: key,
+    breakoutProof,
+  };
 }
 
 function TruncatedValue({ value, display, noShrink }: { value: string; display?: string; noShrink?: boolean }) {
@@ -147,6 +447,249 @@ function DockActionButton({
     >
       {label}
     </Button>
+  );
+}
+
+function DecisionMetricGrid({ items }: { items: Array<[string, unknown, number?]> }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      {items.map(([label, value, digits]) => (
+        <div
+          key={label}
+          className="min-w-0 rounded-xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-faint)]/60 px-3 py-2"
+        >
+          <div className="truncate text-[9px] font-black uppercase tracking-wide text-[var(--bk-text-muted)] opacity-70">
+            {label}
+          </div>
+          <div className="mt-1 truncate font-mono text-[11px] font-black text-[var(--bk-text-primary)]">
+            {formatDecisionValue(value, digits)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DecisionBarTable({ signalBarState }: { signalBarState: Record<string, unknown> | null }) {
+  const rows: Array<[string, Record<string, unknown> | null]> = [
+    ["T-3", nestedRecord(signalBarState, "prevBar3")],
+    ["T-2", nestedRecord(signalBarState, "prevBar2")],
+    ["T-1", nestedRecord(signalBarState, "prevBar1")],
+    ["T", nestedRecord(signalBarState, "current")],
+  ];
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[var(--bk-border-soft)] bg-[var(--bk-surface-strong)]">
+      <Table tone="bento">
+        <TableHeader className="bg-[var(--bk-surface-muted)]/40">
+          <TableRow className="border-[var(--bk-border-soft)] hover:bg-transparent">
+            {["Bar", "Start", "Open", "High", "Low", "Close", "Closed"].map((column) => (
+              <TableHead
+                key={column}
+                className="h-8 px-3 text-[9px] font-black uppercase tracking-wide text-[var(--bk-text-secondary)]"
+              >
+                {column}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map(([label, bar]) => (
+            <TableRow key={label} className="border-[var(--bk-border-soft)]">
+              <TableCell className="px-3 py-2 font-mono text-[11px] font-black text-[var(--bk-text-primary)]">
+                {label}
+              </TableCell>
+              <TableCell className="px-3 py-2 font-mono text-[10px] text-[var(--bk-text-secondary)]">
+                {formatBarTimestamp(bar?.barStart)}
+              </TableCell>
+              <TableCell className="px-3 py-2 font-mono text-[11px]">{formatDecisionValue(bar?.open)}</TableCell>
+              <TableCell className="px-3 py-2 font-mono text-[11px]">{formatDecisionValue(bar?.high)}</TableCell>
+              <TableCell className="px-3 py-2 font-mono text-[11px]">{formatDecisionValue(bar?.low)}</TableCell>
+              <TableCell className="px-3 py-2 font-mono text-[11px]">{formatDecisionValue(bar?.close)}</TableCell>
+              <TableCell className="px-3 py-2 font-mono text-[11px]">{formatDecisionValue(bar?.isClosed)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function DecisionTraceDialog({
+  order,
+  status,
+  trace,
+  error,
+  onClose,
+}: {
+  order: Order | null;
+  status: DecisionTraceStatus;
+  trace: DecisionTrace | null;
+  error: string;
+  onClose: () => void;
+}) {
+  const decisionEventId = orderDecisionEventId(order);
+  const metadata = trace?.decisionMetadata ?? {};
+  const signalBarDecision = trace?.signalBarDecision ?? {};
+  const signalBarState = trace?.signalBarState ?? null;
+  const breakoutProof = trace?.breakoutProof ?? null;
+  const proposal = nestedRecord(trace?.payload, "executionProposal");
+  const role = firstText(proposal?.role, metadata.nextPlannedRole).toLowerCase();
+  const proposalReason = firstText(proposal?.reason, metadata.nextPlannedReason, trace?.event.message);
+  const signalKind = firstText(trace?.payload.signalKind, trace?.event.metadata?.signalKind);
+  const isExit = role === "exit" || signalKind.toLowerCase().includes("exit");
+  const prevBar1 = nestedRecord(signalBarState, "prevBar1");
+  const prevBar2 = nestedRecord(signalBarState, "prevBar2");
+  const breakoutPrice = signalBarDecision.breakoutPrice ?? metadata.breakoutPrice;
+  const breakoutLevel = signalBarDecision.longBreakoutLevel;
+
+  return (
+    <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent tone="bento" className="max-h-[88vh] max-w-5xl overflow-hidden rounded-[28px] border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-0 shadow-2xl">
+        <div className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)]/30 px-6 py-5">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex size-8 items-center justify-center rounded-xl bg-[color:color-mix(in_srgb,var(--bk-status-success)_12%,transparent)] text-[var(--bk-status-success)]">
+                <FileSearch size={17} />
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="truncate text-lg font-black text-[var(--bk-text-primary)]">订单决策快照</DialogTitle>
+                <DialogDescription className="mt-1 truncate font-mono text-[11px] text-[var(--bk-text-muted)]">
+                  {order?.id ?? "--"} · {decisionEventId || "no-decision-event"}
+                </DialogDescription>
+              </div>
+              {role && (
+                <DockBadge tone={isExit ? "watch" : "ready"}>{role.toUpperCase()}</DockBadge>
+              )}
+            </div>
+          </DialogHeader>
+        </div>
+
+        <div className="max-h-[calc(88vh-142px)] space-y-4 overflow-y-auto p-6">
+          {status === "loading" && (
+            <div className="flex items-center justify-center gap-3 py-16 text-[var(--bk-text-muted)]">
+              <Loader2 className="size-4 animate-spin" />
+              <span className="text-[11px] font-black uppercase tracking-widest">Loading decision trace</span>
+            </div>
+          )}
+
+          {status === "missing" && (
+            <div className="rounded-2xl border border-dashed border-[var(--bk-border)] bg-[var(--bk-surface-faint)] p-6 text-center text-[12px] font-bold text-[var(--bk-text-muted)]">
+              未找到该订单关联的 decision event
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="rounded-2xl border border-[var(--bk-status-danger)]/25 bg-[color:color-mix(in_srgb,var(--bk-status-danger)_8%,transparent)] p-4 text-[12px] font-bold text-[var(--bk-status-danger)]">
+              {error || "加载决策快照失败"}
+            </div>
+          )}
+
+          {status === "loaded" && trace && (
+            <>
+              <DecisionMetricGrid
+                items={[
+                  ["Action", trace.payload.action ?? trace.event.title],
+                  ["Reason", trace.payload.reason ?? trace.event.message],
+                  ["Role", role],
+                  ["Proposal", proposalReason],
+                  ["Signal", trace.payload.signalKind ?? trace.event.metadata?.signalKind],
+                  ["State", trace.payload.decisionState ?? trace.event.metadata?.decisionState],
+                  ["Event Time", trace.event.eventTime ? formatTime(trace.event.eventTime) : "--"],
+                  ["Trigger", trace.payload.triggerType ?? trace.event.metadata?.triggerType],
+                  ["Symbol", trace.payload.symbol ?? trace.event.metadata?.symbol],
+                  ["Runtime", trace.payload.runtimeSessionId],
+                ]}
+              />
+
+              {breakoutProof && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">
+                      Window Proof
+                    </h3>
+                    <span className="truncate font-mono text-[10px] text-[var(--bk-text-muted)]">
+                      {breakoutProof.source || "--"}
+                    </span>
+                  </div>
+                  <DecisionMetricGrid
+                    items={[
+                      ["Proof At", breakoutProof.eventAt ? formatTime(breakoutProof.eventAt) : "--"],
+                      ["Side", breakoutProof.side],
+                      ["Level", breakoutProof.level],
+                      ["Price", breakoutProof.price],
+                      ["Proof Δ", differenceValue(breakoutProof.price, breakoutProof.level)],
+                      ["Price Src", breakoutProof.priceSource],
+                      ["Bar", breakoutProof.barTime ? formatTime(breakoutProof.barTime) : "--"],
+                      ["Close", breakoutProof.close],
+                    ]}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">
+                    {isExit ? "Exit Signal Snapshot" : "Breakout / Reentry"}
+                  </h3>
+                  <span className="truncate font-mono text-[10px] text-[var(--bk-text-muted)]">
+                    {trace.signalBarStateKey || "--"}
+                  </span>
+                </div>
+                {isExit && (
+                  <div className="rounded-2xl border border-[var(--bk-status-warning)]/25 bg-[color:color-mix(in_srgb,var(--bk-status-warning)_8%,transparent)] px-4 py-3 text-[11px] font-bold text-[var(--bk-status-warning)]">
+                    EXIT / {proposalReason || signalKind || "--"} · breakout fields are diagnostic
+                  </div>
+                )}
+                <DecisionMetricGrid
+                  items={[
+                    ["Long Shape", signalBarDecision.longBreakoutShapeName],
+                    ["Long Level", signalBarDecision.longBreakoutLevel],
+                    ["T2 High Δ", differenceValue(prevBar2?.high, prevBar1?.high)],
+                    ["Breakout Δ", differenceValue(breakoutPrice, breakoutLevel)],
+                    ["Pattern", signalBarDecision.longBreakoutPatternReady],
+                    ["Price Ready", signalBarDecision.longBreakoutPriceReady],
+                    ["Quality", signalBarDecision.longBreakoutQualityReady],
+                    ["Structure", signalBarDecision.longStructureReady],
+                    ["Long Ready", signalBarDecision.longReady],
+                    ["Breakout Px", signalBarDecision.breakoutPrice ?? metadata.breakoutPrice],
+                    ["Breakout Src", signalBarDecision.breakoutPriceSource ?? metadata.breakoutPriceSource],
+                    ["Reentry Window", metadata.reentryWindowOpen],
+                    ["Reentry Trigger", metadata.reentryTriggerReady],
+                    ["Reentry Price", metadata.reentryTriggerPrice],
+                  ]}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-[11px] font-black uppercase tracking-widest text-[var(--bk-text-muted)]">
+                  Runtime Signal Bars
+                </h3>
+                <DecisionMetricGrid
+                  items={[
+                    ["Timeframe", signalBarState?.timeframe],
+                    ["SMA5", signalBarState?.sma5],
+                    ["MA20", signalBarState?.ma20],
+                    ["ATR14", signalBarState?.atr14],
+                  ]}
+                />
+                <DecisionBarTable signalBarState={signalBarState} />
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter className="flex items-center justify-end gap-3 border-t border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)]/30 px-6 py-4">
+          <DialogClose
+            render={
+              <Button variant="bento-outline" className="h-9 rounded-xl px-4 text-[12px] font-black" />
+            }
+          >
+            关闭
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -322,6 +865,10 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
   );
 
   const [selectedPairForReview, setSelectedPairForReview] = useState<any | null>(null);
+  const [selectedDecisionOrder, setSelectedDecisionOrder] = useState<Order | null>(null);
+  const [decisionTraceStatus, setDecisionTraceStatus] = useState<DecisionTraceStatus>("idle");
+  const [decisionTrace, setDecisionTrace] = useState<DecisionTrace | null>(null);
+  const [decisionTraceError, setDecisionTraceError] = useState("");
 
   // Pagination & Sorting State
   const [pages, setPages] = useState({ pairs: 1, positions: 1, alerts: 1 });
@@ -354,6 +901,83 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
   const sortedPositions = useMemo(() => [...positions].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), [positions]);
   const sortedAlerts = useMemo(() => [...alerts].sort((a, b) => Date.parse(b.eventTime ?? "") - Date.parse(a.eventTime ?? "")), [alerts]);
   const sortedPairs = useMemo(() => [...pairs].sort((a, b) => Date.parse(b.entryAt) - Date.parse(a.entryAt)), [pairs]);
+
+  useEffect(() => {
+    if (!selectedDecisionOrder) {
+      setDecisionTraceStatus("idle");
+      setDecisionTrace(null);
+      setDecisionTraceError("");
+      return;
+    }
+
+    const decisionEventId = orderDecisionEventId(selectedDecisionOrder);
+    if (!decisionEventId) {
+      setDecisionTraceStatus("missing");
+      setDecisionTrace(null);
+      setDecisionTraceError("");
+      return;
+    }
+
+    let active = true;
+    const params = new URLSearchParams({
+      type: "strategy-decision",
+      decisionEventId,
+      limit: "1",
+    });
+    setDecisionTraceStatus("loading");
+    setDecisionTrace(null);
+    setDecisionTraceError("");
+
+    fetchJSON<UnifiedLogEventPage>(`/api/v1/logs/events?${params.toString()}`)
+      .then((page) => {
+        if (!active) {
+          return;
+        }
+        const event = page.items?.[0];
+        if (!event) {
+          setDecisionTraceStatus("missing");
+          return;
+        }
+        const baseTrace = buildDecisionTrace(event);
+        const liveSessionId = firstText(event.liveSessionId, baseTrace.payload.liveSessionId);
+        if (!liveSessionId) {
+          setDecisionTrace(baseTrace);
+          setDecisionTraceStatus("loaded");
+          return;
+        }
+        fetchJSON<LiveSessionBreakoutDetail>(
+          `/api/v1/live/sessions/${encodeURIComponent(liveSessionId)}/detail?fields=breakoutHistory`
+        )
+          .then((detail) => {
+            if (!active) {
+              return;
+            }
+            const breakoutProof = findBreakoutProof(event, baseTrace, detail.state?.breakoutHistory);
+            setDecisionTrace(buildDecisionTrace(event, breakoutProof));
+            setDecisionTraceStatus("loaded");
+          })
+          .catch((error) => {
+            if (!active) {
+              return;
+            }
+            console.warn("Failed to load breakout proof", error);
+            setDecisionTrace(baseTrace);
+            setDecisionTraceStatus("loaded");
+          });
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+        console.warn("Failed to load order decision trace", error);
+        setDecisionTraceError(error instanceof Error ? error.message : "加载决策快照失败");
+        setDecisionTraceStatus("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedDecisionOrder]);
 
   const pagedOrders = ordersPageQuery.orders;
   const pagedFills = fillsPageQuery.fills;
@@ -474,11 +1098,13 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
         )}
         {dockTab === 'orders' && (
           <DockTable
-            columns={["ID", "策略版本", "Symbol", "Side", "Type", "数量", "价格", "交易所订单ID", "状态", "创建时间", "操作"]}
+            columns={["ID", "策略版本", "Symbol", "Side", "Type", "信号", "数量", "价格", "交易所订单ID", "状态", "创建时间", "操作"]}
             rows={pagedOrders.map((order) => {
               const exchangeId = String(order.metadata?.exchangeOrderId ?? "--");
               const isReconciled = !!(order.metadata?.orderLifecycle as any)?.synced;
               const isOrphan = order.status === "ACCEPTED" && (order.metadata?.orderLifecycle as any)?.reconciliationState === "orphaned";
+              const decisionEventId = orderDecisionEventId(order);
+              const signalSummary = orderSignalSummary(order);
 
               return [
                 <TruncatedValue key={`${order.id}-id`} value={order.id} display={order.id.replace('order-', '')} />,
@@ -486,6 +1112,14 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
                 order.symbol,
                 <DockBadge key={`${order.id}-side`} tone={order.side === "buy" ? "ready" : "neutral"}>{order.side}</DockBadge>,
                 order.type,
+                <div key={`${order.id}-signal`} className="max-w-[150px] space-y-0.5">
+                  <div className="truncate text-[11px] font-black text-[var(--bk-text-primary)]">
+                    {signalSummary.reason || "--"}
+                  </div>
+                  <div className="truncate font-mono text-[9px] font-bold uppercase text-[var(--bk-text-muted)]">
+                    {signalSummary.role || signalSummary.signalKind || "--"}
+                  </div>
+                </div>,
                 formatMaybeNumber(order.quantity),
                 formatMaybeNumber(order.price),
                 <div key={`${order.id}-exid`} className="flex items-center gap-1.5 min-w-[120px]">
@@ -502,7 +1136,27 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
                   </DockBadge>
                 </div>,
                 formatTime(order.createdAt),
-                <div key={`${order.id}-actions`} className="inline-actions relative">
+                <div key={`${order.id}-actions`} className="inline-flex items-center justify-end gap-1.5 relative">
+                  <Tooltip>
+                    <TooltipTrigger
+                      className={cn(
+                        "inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--bk-border)] bg-[var(--bk-surface-overlay)] text-[var(--bk-text-muted)] transition-colors hover:bg-[var(--bk-surface-strong)] hover:text-[var(--bk-text-primary)]",
+                        !decisionEventId && "opacity-45"
+                      )}
+                      aria-label="查看决策快照"
+                      aria-disabled={!decisionEventId}
+                      onClick={() => {
+                        if (decisionEventId) {
+                          setSelectedDecisionOrder(order);
+                        }
+                      }}
+                    >
+                      <FileSearch className="size-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent className="rounded-xl border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] px-3 py-2 text-[11px] text-[var(--bk-text-primary)] shadow-xl">
+                      {decisionEventId ? "决策快照" : "无决策事件"}
+                    </TooltipContent>
+                  </Tooltip>
                   <DockActionButton 
                     label={liveSyncAction === order.id ? "Syncing..." : "Sync"} 
                     disabled={liveSyncAction !== null}
@@ -609,6 +1263,14 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
         pageSize={pageSize}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
+      />
+
+      <DecisionTraceDialog
+        order={selectedDecisionOrder}
+        status={decisionTraceStatus}
+        trace={decisionTrace}
+        error={decisionTraceError}
+        onClose={() => setSelectedDecisionOrder(null)}
       />
 
       <ManualTradeReviewDialog 
