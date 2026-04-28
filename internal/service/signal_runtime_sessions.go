@@ -22,6 +22,8 @@ type signalRuntimeRun struct {
 	releaseOnce  sync.Once
 }
 
+const liveControlOperationSignalRuntimeRestart liveControlOperationKind = "signal-runtime-restart"
+
 func (r *signalRuntimeRun) releaseRuntimeLease() {
 	if r == nil || r.releaseLease == nil {
 		return
@@ -392,6 +394,35 @@ func (p *Platform) startSignalRuntimeSession(parent context.Context, sessionID s
 
 func (p *Platform) StopSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
 	return p.StopSignalRuntimeSessionWithForce(sessionID, false)
+}
+
+func (p *Platform) RestartSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	return p.RestartSignalRuntimeSessionWithForce(sessionID, false)
+}
+
+func (p *Platform) RestartSignalRuntimeSessionWithForce(sessionID string, force bool) (domain.SignalRuntimeSession, error) {
+	existing, err := p.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	requested := liveControlOperationInfo{
+		Operation:        liveControlOperationSignalRuntimeRestart,
+		AccountID:        existing.AccountID,
+		StrategyID:       existing.StrategyID,
+		RuntimeSessionID: existing.ID,
+	}
+	release, acquired, current, lockErr := p.tryStartLiveControlOperation(requested)
+	if lockErr != nil {
+		return domain.SignalRuntimeSession{}, lockErr
+	}
+	if !acquired {
+		return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
+	}
+	defer release()
+	if _, err := p.stopSignalRuntimeSessionWithForceLocked(existing, force); err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	return p.startSignalRuntimeSession(context.Background(), existing.ID)
 }
 
 func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force bool) (domain.SignalRuntimeSession, error) {

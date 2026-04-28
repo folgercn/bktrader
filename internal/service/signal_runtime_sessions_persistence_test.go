@@ -194,6 +194,73 @@ func TestStopSignalRuntimeSessionCancelsRunnerAndReleasesLeaseOnce(t *testing.T)
 	}
 }
 
+func TestRestartSignalRuntimeSessionStopsThenStarts(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	runtimeSession, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
+	}
+	if _, err := platform.StartSignalRuntimeSession(runtimeSession.ID); err != nil {
+		t.Fatalf("StartSignalRuntimeSession failed: %v", err)
+	}
+
+	restarted, err := platform.RestartSignalRuntimeSessionWithForce(runtimeSession.ID, true)
+	if err != nil {
+		t.Fatalf("RestartSignalRuntimeSessionWithForce failed: %v", err)
+	}
+	if restarted.Status != "RUNNING" {
+		t.Fatalf("expected restarted runtime status RUNNING, got %s", restarted.Status)
+	}
+	if got := stringValue(restarted.State["desiredStatus"]); got != "RUNNING" {
+		t.Fatalf("expected desiredStatus RUNNING, got %s", got)
+	}
+	if actual := stringValue(restarted.State["actualStatus"]); actual != "STARTING" && actual != "RUNNING" {
+		t.Fatalf("expected actualStatus STARTING/RUNNING, got %s", actual)
+	}
+	if _, err := platform.StopSignalRuntimeSessionWithForce(runtimeSession.ID, true); err != nil {
+		t.Fatalf("cleanup runtime failed: %v", err)
+	}
+}
+
+func TestRestartSignalRuntimeSessionWithoutForceKeepsRunningWhenExposureExists(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	runtimeSession, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
+	}
+	if _, err := platform.StartSignalRuntimeSession(runtimeSession.ID); err != nil {
+		t.Fatalf("StartSignalRuntimeSession failed: %v", err)
+	}
+	if _, err := platform.store.CreateOrder(domain.Order{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "LIMIT",
+		Quantity:          0.002,
+		Price:             70000,
+	}); err != nil {
+		t.Fatalf("seed order failed: %v", err)
+	}
+
+	if _, err := platform.RestartSignalRuntimeSession(runtimeSession.ID); !errors.Is(err, ErrActivePositionsOrOrders) {
+		t.Fatalf("expected active exposure error, got %v", err)
+	}
+	stored, err := platform.GetSignalRuntimeSession(runtimeSession.ID)
+	if err != nil {
+		t.Fatalf("GetSignalRuntimeSession failed: %v", err)
+	}
+	if stored.Status != "RUNNING" {
+		t.Fatalf("expected blocked restart to keep runtime RUNNING, got %s", stored.Status)
+	}
+	if got := stringValue(stored.State["desiredStatus"]); got != "RUNNING" {
+		t.Fatalf("expected blocked restart to keep desiredStatus RUNNING, got %s", got)
+	}
+	if _, err := platform.StopSignalRuntimeSessionWithForce(runtimeSession.ID, true); err != nil {
+		t.Fatalf("cleanup runtime failed: %v", err)
+	}
+}
+
 type blockingSignalRuntimeStore struct {
 	*memory.Store
 	entered        chan struct{}
