@@ -241,6 +241,9 @@ func TestLaunchLiveFlowEnhancedTemplateUsesEnhancedStrategyAndEngine(t *testing.
 	if got := parseFloatValue(result.LiveSession.State["t3_min_sma_atr_separation"]); got != 0.25 {
 		t.Fatalf("expected t3 sep_0p25, got %v", got)
 	}
+	if got := maxIntValue(result.LiveSession.State["sl_reentry_min_delay_seconds"], 0); got != 60 {
+		t.Fatalf("expected enhanced live session SL-Reentry delay 60s, got %d", got)
+	}
 
 	bindings, err := platform.ListStrategySignalBindings("strategy-bk-btc-30m-enhanced")
 	if err != nil {

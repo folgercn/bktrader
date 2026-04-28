@@ -198,6 +198,9 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 				if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["t3_min_sma_atr_separation"]); got != 0.25 {
 					t.Fatalf("expected t3 sep 0.25, got %v", got)
 				}
+				if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["sl_reentry_min_delay_seconds"], 0); got != 60 {
+					t.Fatalf("expected enhanced template SL-Reentry delay 60s, got %d", got)
+				}
 				if !boolValue(item.LaunchPayload.LiveSessionOverrides["use_sma5_intraday_structure"]) {
 					t.Fatalf("expected enhanced template to use SMA5 intraday structure")
 				}

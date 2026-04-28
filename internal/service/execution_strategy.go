@@ -210,6 +210,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	proposal.Metadata["executionProfileTimeInForce"] = profile.TimeInForce
 	proposal.Metadata["executionProfilePostOnly"] = profile.PostOnly
 	proposal.Metadata["executionProfileReduceOnly"] = profile.ReduceOnly
+	proposal.Metadata["executionProfileMaxSpreadBps"] = maxSpreadBps
 	proposal.Metadata["executionProfileWideSpreadMode"] = profile.WideSpreadMode
 	proposal.Metadata["executionStrategy"] = proposal.ExecutionStrategy
 	proposal.Metadata["signalSignature"] = signalSignature
@@ -350,7 +351,10 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 }
 
 func applySLReentryMinDelay(ctx ExecutionPlanningContext, proposal ExecutionProposal, reasonTag string) ExecutionProposal {
-	if !strings.EqualFold(strings.TrimSpace(proposal.Role), "entry") || reasonTag != "sl-reentry" {
+	if !strings.EqualFold(strings.TrimSpace(proposal.Role), "entry") {
+		return proposal
+	}
+	if reasonTag != "sl-reentry" && reasonTag != "zero-initial-reentry" && reasonTag != "pt-reentry" {
 		return proposal
 	}
 	delaySeconds := maxIntValue(firstNonZeroAny(ctx.Execution.Parameters["sl_reentry_min_delay_seconds"], ctx.Session.State["sl_reentry_min_delay_seconds"]), 0)
@@ -378,6 +382,8 @@ func applySLReentryMinDelay(ctx ExecutionPlanningContext, proposal ExecutionProp
 	proposal.Reason = "sl-reentry-delay"
 	proposal.Metadata = cloneMetadata(proposal.Metadata)
 	proposal.Metadata["executionDecision"] = "wait-sl-reentry-delay"
+	proposal.Metadata["reentryDelayReasonTag"] = reasonTag
+	proposal.Metadata["reentryDelaySource"] = "last-sl-exit-fill"
 	proposal.Metadata["slReentryMinDelaySeconds"] = delaySeconds
 	proposal.Metadata["slReentryDelayElapsedSeconds"] = math.Max(0, elapsed.Seconds())
 	proposal.Metadata["slReentryDelayRemainingSeconds"] = math.Ceil(remaining.Seconds())
@@ -637,6 +643,18 @@ func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) exe
 			profile.PostOnly = true
 		}
 		if profile.WideSpreadMode == "" {
+			profile.WideSpreadMode = "limit-maker"
+		}
+		if profile.TimeoutFallbackType == "" {
+			profile.TimeoutFallbackType = "MARKET"
+		}
+	case role == "entry" && reasonTag == "zero-initial-reentry":
+		overrideExecutionProfile(&profile, parameters, "executionEntry")
+		overrideExecutionProfile(&profile, parameters, "executionZeroInitialReentry")
+		if parseFloatValue(parameters["executionZeroInitialReentryMaxSpreadBps"]) <= 0 {
+			profile.MaxSpreadBps = 3.0
+		}
+		if strings.TrimSpace(stringValue(parameters["executionZeroInitialReentryWideSpreadMode"])) == "" {
 			profile.WideSpreadMode = "limit-maker"
 		}
 		if profile.TimeoutFallbackType == "" {

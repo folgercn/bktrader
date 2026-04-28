@@ -1,0 +1,29 @@
+## bktrader-ctl 使用
+
+- 查看当前 CLI 版本：`bktrader-ctl version --json`
+- 登录并缓存 token：`bktrader-ctl auth login --json`
+- 检查当前身份：`bktrader-ctl auth me --json`
+- 查看平台状态：`bktrader-ctl status --json`
+- 告警：`bktrader-ctl alert list --json`
+- 系统日志：`bktrader-ctl logs system --json --limit 100`
+- 业务事件日志：`bktrader-ctl logs event --json`
+- HTTP 请求日志：`bktrader-ctl logs http --json`
+- 实时日志流：`bktrader-ctl logs stream --source system`
+- 订单全链路追踪：`bktrader-ctl logs trace --json --order-id <orderId>`
+- 账户列表 / 摘要 / 权益：`bktrader-ctl account list --json`、`bktrader-ctl account summary --json`、`bktrader-ctl account equity --json`
+- 账户同步 / 对账：`bktrader-ctl account sync <accountId> --confirm`、`bktrader-ctl account reconcile <accountId> --confirm`
+- 实盘会话列表 / 详情：`bktrader-ctl live list --json`、`bktrader-ctl live get <sessionId> --json`
+- 实盘启停 / 同步 / 删除：`bktrader-ctl live start|stop|sync|delete <sessionId> --confirm`
+- 实盘手动派单：`bktrader-ctl live dispatch <sessionId> --confirm`
+- 订单列表 / 详情 / 总数：`bktrader-ctl order list --json`、`bktrader-ctl order get <orderId> --json`、`bktrader-ctl order count --json`
+- 订单取消 / 同步：`bktrader-ctl order cancel <orderId> --confirm`、`bktrader-ctl order sync <orderId>`
+- 成交流水：`bktrader-ctl fill list --json`
+- 持仓列表 / 平仓：`bktrader-ctl position list --json`、`bktrader-ctl position close <positionId> --confirm`
+- 策略列表 / 引擎：`bktrader-ctl strategy list --json`、`bktrader-ctl strategy engines --json`
+- 信号源：`bktrader-ctl signal list --json`、`bktrader-ctl signal types --json`
+- 图表数据：`bktrader-ctl chart candles --json`、`bktrader-ctl chart indicators --json`
+- 回测：`bktrader-ctl backtest list --json`、`bktrader-ctl backtest options --json`、`bktrader-ctl backtest run --confirm`
+- 通知：`bktrader-ctl notify list --json`
+- 手动检查并更新 CLI：`bktrader-ctl update --confirm`
+- 变更类命令先用 --dry-run 预览；真正执行必须带 `--confirm`。
+- 具体参数不确定时先跑：`bktrader-ctl <command> --help`。
