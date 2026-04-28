@@ -156,15 +156,23 @@ func TestTelegramDispatchSendsFilledTradeEventsWithPnLAndDedup(t *testing.T) {
 	defer func() { telegramBaseURL = oldURL }()
 
 	store := memory.NewStore()
+	session, err := store.CreateLiveSession("account-live-1", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	session.Alias = "BTC 1m testnet"
+	if _, err := store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session alias failed: %v", err)
+	}
 	now := time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)
 	oldNow := telegramNow
 	telegramNow = func() time.Time { return now.Add(2 * time.Minute) }
 	defer func() { telegramNow = oldNow }()
-	_, err := store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
+	_, err = store.CreateOrderExecutionEvent(domain.OrderExecutionEvent{
 		ID:              "open-event-1",
 		OrderID:         "order-open-1",
 		AccountID:       "account-live-1",
-		LiveSessionID:   "live-session-1",
+		LiveSessionID:   session.ID,
 		Symbol:          "BTCUSDT",
 		Side:            "BUY",
 		EventType:       "filled",
@@ -182,7 +190,7 @@ func TestTelegramDispatchSendsFilledTradeEventsWithPnLAndDedup(t *testing.T) {
 		ID:              "close-event-1",
 		OrderID:         "order-close-1",
 		AccountID:       "account-live-1",
-		LiveSessionID:   "live-session-1",
+		LiveSessionID:   session.ID,
 		Symbol:          "BTCUSDT",
 		Side:            "SELL",
 		EventType:       "filled",
@@ -223,6 +231,14 @@ func TestTelegramDispatchSendsFilledTradeEventsWithPnLAndDedup(t *testing.T) {
 	}
 	if !strings.Contains(joined, "数量: 0.2") || !strings.Contains(joined, "价格: 64000") {
 		t.Fatalf("expected open qty and price, got: %s", joined)
+	}
+	if !strings.Contains(joined, "实盘会话: BTC 1m testnet") {
+		t.Fatalf("expected live session alias in trade messages, got: %s", joined)
+	}
+	for _, removed := range []string{"订单: order-open-1", "交易所订单:", "账户: account-live-1"} {
+		if strings.Contains(joined, removed) {
+			t.Fatalf("expected concise trade message without %q, got: %s", removed, joined)
+		}
 	}
 	if !strings.Contains(joined, "北京时间: 2026-04-22 18:00:00") || !strings.Contains(joined, "北京时间: 2026-04-22 18:01:00") {
 		t.Fatalf("expected Beijing time in trade messages, got: %s", joined)
@@ -641,6 +657,115 @@ func TestTelegramPositionReportSkipsEmptyPositions(t *testing.T) {
 	}
 }
 
+func TestTelegramPositionReportSkipsRecentTradeEvents(t *testing.T) {
+	messages := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	now := time.Date(2026, 4, 22, 10, 1, 0, 0, time.UTC)
+	store := memory.NewStore()
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = map[string]any{
+		"liveSyncSnapshot": map[string]any{
+			"syncStatus": "SYNCED",
+			"syncedAt":   now.Format(time.RFC3339),
+			"positions": []map[string]any{{
+				"symbol":           "BTCUSDT",
+				"positionAmt":      0.0129,
+				"entryPrice":       77342.3,
+				"markPrice":        77359.3,
+				"positionSide":     "LONG",
+				"unrealizedProfit": 0.22,
+			}},
+		},
+	}
+	if _, err := store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	p := &Platform{
+		store: store,
+		telegramConfig: domain.TelegramConfig{
+			Enabled:                       true,
+			BotToken:                      "test-token",
+			ChatID:                        "123",
+			PositionReportEnabled:         true,
+			PositionReportIntervalMinutes: 30,
+		},
+	}
+	recentTradeDeliveries := map[string]domain.NotificationDelivery{
+		"trade-event:recent": {
+			NotificationID: "trade-event:recent",
+			Channel:        "telegram",
+			Status:         "sent",
+			Metadata: map[string]any{
+				"kind":      "trade-event",
+				"eventTime": now.Add(-2 * time.Minute).Format(time.RFC3339),
+			},
+		},
+	}
+	count, err := p.DispatchTelegramPositionReport(recentTradeDeliveries, now)
+	if err != nil {
+		t.Fatalf("dispatch recent trade position report failed: %v", err)
+	}
+	if count != 0 || len(messages) != 0 {
+		t.Fatalf("expected recent trade event to suppress position report, count=%d messages=%#v", count, messages)
+	}
+
+	delayedTradeDeliveries := map[string]domain.NotificationDelivery{
+		"trade-event:delayed": {
+			NotificationID: "trade-event:delayed",
+			Channel:        "telegram",
+			Status:         "sent",
+			Metadata: map[string]any{
+				"kind":      "trade-event",
+				"eventTime": now.Add(-20 * time.Minute).Format(time.RFC3339),
+				"sentAt":    now.Add(-2 * time.Minute).Format(time.RFC3339),
+			},
+		},
+	}
+	count, err = p.DispatchTelegramPositionReport(delayedTradeDeliveries, now)
+	if err != nil {
+		t.Fatalf("dispatch delayed trade position report failed: %v", err)
+	}
+	if count != 0 || len(messages) != 0 {
+		t.Fatalf("expected delayed sentAt to suppress position report, count=%d messages=%#v", count, messages)
+	}
+
+	oldTradeDeliveries := map[string]domain.NotificationDelivery{
+		"trade-event:old": {
+			NotificationID: "trade-event:old",
+			Channel:        "telegram",
+			Status:         "sent",
+			Metadata: map[string]any{
+				"kind":      "trade-event",
+				"eventTime": now.Add(-16 * time.Minute).Format(time.RFC3339),
+			},
+		},
+	}
+	count, err = p.DispatchTelegramPositionReport(oldTradeDeliveries, now)
+	if err != nil {
+		t.Fatalf("dispatch old trade position report failed: %v", err)
+	}
+	if count != 1 || len(messages) != 1 {
+		t.Fatalf("expected old trade event to allow position report, count=%d messages=%#v", count, messages)
+	}
+}
+
 func TestTelegramDispatchSuppressesFlappingRuntimeStaleAlerts(t *testing.T) {
 	var messages []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -921,6 +1046,7 @@ func TestTelegramAlertNeedsFlapSuppressionForTransientRuntimeRecoveryIDs(t *test
 	cases := []domain.PlatformAlert{
 		{ID: "runtime-recovering-signal-runtime-1", Scope: "runtime"},
 		{ID: "live-preflight-runtime-error-account-1", Scope: "live"},
+		{ID: "live-unprotected-position-live-session-1", Scope: "live"},
 	}
 	for _, alert := range cases {
 		if !telegramAlertNeedsFlapSuppression(alert) {
@@ -931,5 +1057,99 @@ func TestTelegramAlertNeedsFlapSuppressionForTransientRuntimeRecoveryIDs(t *test
 	nonSuppressed := domain.PlatformAlert{ID: "live-preflight-account-1", Scope: "live"}
 	if telegramAlertNeedsFlapSuppression(nonSuppressed) {
 		t.Fatal("expected generic live preflight alert not to enable flap suppression")
+	}
+}
+
+func TestTelegramUnprotectedPositionUsesLongerFlapGrace(t *testing.T) {
+	alert := domain.PlatformAlert{ID: "live-unprotected-position-live-session-1", Scope: "live"}
+	if got := telegramFlapSendGraceForAlert(alert); got != telegramUnprotectedPositionGrace {
+		t.Fatalf("expected unprotected position grace %s, got %s", telegramUnprotectedPositionGrace, got)
+	}
+
+	runtimeAlert := domain.PlatformAlert{ID: "runtime-recovering-signal-runtime-1", Scope: "runtime"}
+	if got := telegramFlapSendGraceForAlert(runtimeAlert); got != telegramFlapSendGrace {
+		t.Fatalf("expected default flap grace %s, got %s", telegramFlapSendGrace, got)
+	}
+}
+
+func TestTelegramUnprotectedPositionFlapLifecycle(t *testing.T) {
+	messages := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p map[string]any
+		json.Unmarshal(body, &p)
+		messages = append(messages, p["text"].(string))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	oldURL := telegramBaseURL
+	telegramBaseURL = server.URL
+	defer func() { telegramBaseURL = oldURL }()
+
+	platform := &Platform{
+		store: memory.NewStore(),
+		telegramConfig: domain.TelegramConfig{
+			Enabled:    true,
+			BotToken:   "test-token",
+			ChatID:     "123",
+			SendLevels: []string{"critical"},
+		},
+	}
+	base := time.Date(2026, 4, 28, 1, 0, 0, 0, time.UTC)
+	item := domain.PlatformNotification{
+		ID: "live-unprotected-position-live-session-1",
+		Alert: domain.PlatformAlert{
+			ID:        "live-unprotected-position-live-session-1",
+			Scope:     "live",
+			Level:     "critical",
+			Title:     "恢复持仓无保护",
+			Detail:    "已恢复持仓但未发现对应的止损/止盈保护订单",
+			EventTime: base,
+		},
+	}
+
+	delivery, shouldSend, err := platform.advanceTelegramFlapSuppressedActiveDelivery(item, domain.NotificationDelivery{}, false, base)
+	if err != nil {
+		t.Fatalf("initial unprotected delivery failed: %v", err)
+	}
+	if shouldSend || !strings.EqualFold(delivery.Status, "pending") || len(messages) != 0 {
+		t.Fatalf("expected 0min pending without send, status=%s send=%v messages=%#v", delivery.Status, shouldSend, messages)
+	}
+
+	delivery, shouldSend, err = platform.advanceTelegramFlapSuppressedActiveDelivery(item, delivery, true, base.Add(14*time.Minute))
+	if err != nil {
+		t.Fatalf("14min unprotected delivery failed: %v", err)
+	}
+	if shouldSend || !strings.EqualFold(delivery.Status, "pending") || len(messages) != 0 {
+		t.Fatalf("expected 14min pending without send, status=%s send=%v messages=%#v", delivery.Status, shouldSend, messages)
+	}
+
+	delivery, shouldSend, err = platform.advanceTelegramFlapSuppressedActiveDelivery(item, delivery, true, base.Add(15*time.Minute))
+	if err != nil {
+		t.Fatalf("15min unprotected delivery failed: %v", err)
+	}
+	if !shouldSend || !strings.EqualFold(delivery.Status, "sent") || len(messages) != 1 {
+		t.Fatalf("expected 15min send, status=%s send=%v messages=%#v", delivery.Status, shouldSend, messages)
+	}
+
+	resolvePending, recovered, err := platform.advanceTelegramFlapSuppressedRecoveredDelivery(delivery, base.Add(15*time.Minute+30*time.Second))
+	if err != nil {
+		t.Fatalf("30s recovery delivery failed: %v", err)
+	}
+	if recovered || !strings.EqualFold(resolvePending.Status, "resolve_pending") || len(messages) != 1 {
+		t.Fatalf("expected recovery grace pending, status=%s recovered=%v messages=%#v", resolvePending.Status, recovered, messages)
+	}
+
+	recoveredDelivery, recovered, err := platform.advanceTelegramFlapSuppressedRecoveredDelivery(resolvePending, base.Add(16*time.Minute+31*time.Second))
+	if err != nil {
+		t.Fatalf("91s recovery delivery failed: %v", err)
+	}
+	if !recovered || !strings.EqualFold(recoveredDelivery.Status, "recovered") || len(messages) != 2 {
+		t.Fatalf("expected recovery send after grace, status=%s recovered=%v messages=%#v", recoveredDelivery.Status, recovered, messages)
+	}
+	if !strings.Contains(messages[1], "✅ *[已恢复]* 恢复持仓无保护") {
+		t.Fatalf("expected recovered message, got: %s", messages[1])
 	}
 }
