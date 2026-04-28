@@ -303,11 +303,19 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   async function stopLiveFlow(accountId: string, force = false) {
     setLiveFlowAction(accountId);
     try {
-      await fetchJSON(`/api/v1/live/accounts/${accountId}/stop${force ? '?force=true' : ''}`, { method: "POST" });
+      const sessions = validLiveSessions.filter((session: LiveSession) =>
+        session.accountId === accountId && String(session.status ?? "").toUpperCase() !== "STOPPED"
+      );
+      if (sessions.length === 0) {
+        throw new Error("No active live session found for this account");
+      }
+      await Promise.all(sessions.map((session: LiveSession) =>
+        fetchJSON(`/api/v1/live/sessions/${session.id}/stop${force ? '?force=true' : ''}`, { method: "POST" })
+      ));
       await loadDashboard();
       setNotification({
         type: 'success',
-        message: force ? "已强制停止账户实盘流程" : "已安全停止账户实盘流程",
+        message: force ? "已提交强制停止实盘流程意图" : "已提交停止实盘流程意图",
       });
       setError(null);
     } catch (err) {
@@ -589,6 +597,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     setLiveFlowAction(account.id);
     setError(null);
     selectQuickLiveAccount(account.id);
+    let launchResult: LiveLaunchResult | null = null;
     
     try {
       const strategyBindings = strategySignalBindingMap[strategyId] ?? [];
@@ -596,7 +605,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         window.location.hash = "signals";
         throw new Error("Launch live flow needs strategy signal bindings before it can continue");
       }
-      await fetchJSON(`/api/v1/live/accounts/${account.id}/launch`, {
+      launchResult = await fetchJSON<LiveLaunchResult>(`/api/v1/live/accounts/${account.id}/launch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -612,8 +621,8 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
             },
           },
           mirrorStrategySignals: true,
-          startRuntime: true,
-          startSession: true,
+          startRuntime: false,
+          startSession: false,
           liveSessionOverrides: {
             alias: liveSessionForm.alias,
             signalTimeframe: liveSessionForm.signalTimeframe,
@@ -625,11 +634,25 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
           },
         }),
       });
+      if (launchResult.liveSession?.id) {
+        await fetchJSON(`/api/v1/live/sessions/${launchResult.liveSession.id}/start`, { method: "POST" });
+      }
 
       await loadDashboard();
+      setNotification({ type: 'success', message: "已提交实盘流程启动意图" });
       window.location.hash = "live";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to launch live flow");
+      const message = err instanceof Error ? err.message : "Failed to launch live flow";
+      const sessionId = launchResult?.liveSession?.id;
+      if (sessionId) {
+        await loadDashboard().catch(() => undefined);
+        const partialMessage = `会话已创建但启动意图未提交：${sessionId}。${message}`;
+        setError(partialMessage);
+        setNotification({ type: 'error', message: partialMessage });
+        window.location.hash = "live";
+        return;
+      }
+      setError(message);
     } finally {
       setLiveFlowAction(null);
     }
@@ -643,9 +666,9 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
       await fetchJSON(`/api/v1/live/sessions/${sessionId}/${action}${force ? '?force=true' : ''}`, { method: "POST" });
       await loadDashboard();
       if (action === "stop") {
-        setNotification({ type: 'success', message: `已停用会话: ${sessionId}` });
+        setNotification({ type: 'success', message: `已提交停用意图: ${sessionId}` });
       } else {
-        setNotification({ type: 'success', message: `已启动会话: ${sessionId}` });
+        setNotification({ type: 'success', message: `已提交启动意图: ${sessionId}` });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to execute live session action";

@@ -203,7 +203,7 @@ type blockingSignalRuntimeStore struct {
 }
 
 func (s *blockingSignalRuntimeStore) UpdateSignalRuntimeSession(session domain.SignalRuntimeSession) (domain.SignalRuntimeSession, error) {
-	if session.Status == "RUNNING" {
+	if session.Status == "RUNNING" && stringValue(mapValue(session.State["lastEventSummary"])["type"]) == "runtime_started" {
 		s.runningUpdates.Add(1)
 		s.enteredOnce.Do(func() { close(s.entered) })
 		<-s.release

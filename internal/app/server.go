@@ -23,13 +23,14 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 }
 
 type RuntimeOptions struct {
-	WarmLiveMarketData        bool
-	StartTelegram             bool
-	RecoverLiveTrading        bool
-	StartLiveSync             bool
-	StartDashboard            bool
-	StartRuntimeEventConsumer bool
-	StartSignalRuntimeScanner bool
+	WarmLiveMarketData             bool
+	StartTelegram                  bool
+	RecoverLiveTrading             bool
+	StartLiveSync                  bool
+	StartDashboard                 bool
+	StartRuntimeEventConsumer      bool
+	StartSignalRuntimeScanner      bool
+	StartLiveSessionControlScanner bool
 }
 
 func RuntimeOptionsForRole(role string) RuntimeOptions {
@@ -38,9 +39,10 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 		return RuntimeOptions{StartDashboard: true}
 	case "live-runner":
 		return RuntimeOptions{
-			RecoverLiveTrading:        true,
-			StartLiveSync:             true,
-			StartRuntimeEventConsumer: true,
+			RecoverLiveTrading:             true,
+			StartLiveSync:                  true,
+			StartRuntimeEventConsumer:      true,
+			StartLiveSessionControlScanner: true,
 		}
 	case "signal-runtime-runner":
 		return RuntimeOptions{
@@ -51,13 +53,14 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 		return RuntimeOptions{StartTelegram: true}
 	default:
 		return RuntimeOptions{
-			WarmLiveMarketData:        true,
-			StartTelegram:             true,
-			RecoverLiveTrading:        true,
-			StartLiveSync:             true,
-			StartDashboard:            true,
-			StartRuntimeEventConsumer: true,
-			StartSignalRuntimeScanner: true,
+			WarmLiveMarketData:             true,
+			StartTelegram:                  true,
+			RecoverLiveTrading:             true,
+			StartLiveSync:                  true,
+			StartDashboard:                 true,
+			StartRuntimeEventConsumer:      true,
+			StartSignalRuntimeScanner:      true,
+			StartLiveSessionControlScanner: true,
 		}
 	}
 }
@@ -85,6 +88,7 @@ func NewServerWithRuntimeOptions(cfg config.Config, runtime RuntimeOptions) (*ht
 		"dashboard", runtime.StartDashboard,
 		"runtime_event_consumer", runtime.StartRuntimeEventConsumer,
 		"signal_runtime_scanner", runtime.StartSignalRuntimeScanner,
+		"live_session_control_scanner", runtime.StartLiveSessionControlScanner,
 	)
 
 	return &http.Server{
@@ -177,6 +181,9 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 	}
 	if runtime.StartSignalRuntimeScanner {
 		platform.StartSignalRuntimeScanner(ctx)
+	}
+	if runtime.StartLiveSessionControlScanner {
+		platform.StartLiveSessionControlScanner(ctx)
 	}
 }
 

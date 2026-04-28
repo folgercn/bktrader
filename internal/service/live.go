@@ -231,6 +231,20 @@ func (p *Platform) deleteLiveSessionWithForceLocked(session domain.LiveSession, 
 		logger.Warn("stop linked signal runtime before live session delete failed", "error", err)
 		return err
 	}
+	updatedSession, err := p.store.GetLiveSession(session.ID)
+	if err != nil {
+		return err
+	}
+	state := cloneMetadata(updatedSession.State)
+	state["desiredStatus"] = "STOPPED"
+	state["actualStatus"] = "STOPPED"
+	state["controlDeletedAt"] = time.Now().UTC().Format(time.RFC3339)
+	delete(state, "desiredStopForce")
+	delete(state, "lastControlError")
+	delete(state, "lastControlErrorAt")
+	if _, err := p.store.UpdateLiveSessionState(session.ID, state); err != nil {
+		return err
+	}
 	if err := p.store.DeleteLiveSession(session.ID); err != nil {
 		return err
 	}
@@ -1668,6 +1682,15 @@ func (p *Platform) RecoverLiveTradingOnStartup(ctx context.Context) {
 			}
 		}
 		if !strings.EqualFold(session.Status, "RUNNING") {
+			continue
+		}
+		if strings.EqualFold(stringValue(session.State["desiredStatus"]), "STOPPED") {
+			state := cloneMetadata(session.State)
+			delete(state, "lastRecoveryError")
+			state["lastRecoveryAttemptAt"] = time.Now().UTC().Format(time.RFC3339)
+			state["lastRecoveryStatus"] = "skipped-live-desired-stopped"
+			_, _ = p.store.UpdateLiveSessionState(session.ID, state)
+			p.logger("service.live", "session_id", session.ID).Warn("skip live session recovery because live desiredStatus is STOPPED")
 			continue
 		}
 		requested := liveControlOperationInfo{

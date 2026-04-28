@@ -1,9 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/wuyaocheng/bktrader/internal/ctlclient"
 	"net/url"
+	"os"
+	"strings"
+	"time"
 )
 
 func init() {
@@ -58,12 +63,21 @@ var liveStartCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		confirm, _ := cmd.Flags().GetBool("confirm")
+		wait, _ := cmd.Flags().GetBool("wait")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
 		if !confirm && !dryRun {
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
 		client := getClient()
 		resp, err := client.Request("POST", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/start", nil)
-		handleResponse(resp, err)
+		if err != nil || !wait || dryRun {
+			handleResponse(resp, err)
+			return nil
+		}
+		handleResponse(resp, nil)
+		if err := waitLiveSessionActualStatus(client, args[0], "RUNNING", timeout); err != nil {
+			return err
+		}
 		return nil
 	},
 }
@@ -75,6 +89,8 @@ var liveStopCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		confirm, _ := cmd.Flags().GetBool("confirm")
 		force, _ := cmd.Flags().GetBool("force")
+		wait, _ := cmd.Flags().GetBool("wait")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
 		if !confirm && !dryRun {
 			return fmt.Errorf("操作需要 --confirm 确认")
 		}
@@ -84,7 +100,14 @@ var liveStopCmd = &cobra.Command{
 			path += "?force=true"
 		}
 		resp, err := client.Request("POST", path, nil)
-		handleResponse(resp, err)
+		if err != nil || !wait || dryRun {
+			handleResponse(resp, err)
+			return nil
+		}
+		handleResponse(resp, nil)
+		if err := waitLiveSessionActualStatus(client, args[0], "STOPPED", timeout); err != nil {
+			return err
+		}
 		return nil
 	},
 }
@@ -157,8 +180,79 @@ func init() {
 
 	// 安全确认标志
 	liveStartCmd.Flags().Bool("confirm", false, "确认执行启动操作")
+	liveStartCmd.Flags().Bool("wait", false, "等待 actualStatus 收敛")
+	liveStartCmd.Flags().Duration("timeout", 60*time.Second, "等待超时时间")
 	liveStopCmd.Flags().Bool("confirm", false, "确认执行停止操作")
 	liveStopCmd.Flags().Bool("force", false, "强制停止")
+	liveStopCmd.Flags().Bool("wait", false, "等待 actualStatus 收敛")
+	liveStopCmd.Flags().Duration("timeout", 60*time.Second, "等待超时时间")
 	liveDispatchCmd.Flags().Bool("confirm", false, "确认执行下单操作")
 	liveDeleteCmd.Flags().Bool("confirm", false, "确认执行删除操作")
+}
+
+type liveSessionControlView struct {
+	ID     string         `json:"id"`
+	Status string         `json:"status"`
+	State  map[string]any `json:"state"`
+}
+
+func waitLiveSessionActualStatus(client *ctlclient.Client, sessionID, target string, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	deadline := time.Now().Add(timeout)
+	target = strings.ToUpper(strings.TrimSpace(target))
+	for {
+		session, err := fetchLiveSessionControlView(client, sessionID)
+		if err != nil {
+			return err
+		}
+		actual := strings.ToUpper(liveSessionControlString(session.State["actualStatus"]))
+		if actual == "" {
+			actual = strings.ToUpper(strings.TrimSpace(session.Status))
+		}
+		if actual == target {
+			if outputJSON {
+				data, _ := json.Marshal(session)
+				fmt.Println(string(data))
+			} else {
+				fmt.Fprintf(os.Stderr, "actualStatus converged: %s\n", target)
+			}
+			return nil
+		}
+		if actual == "ERROR" {
+			return fmt.Errorf("live session control failed: desiredStatus=%s actualStatus=%s error=%s", liveSessionControlString(session.State["desiredStatus"]), actual, liveSessionControlString(session.State["lastControlError"]))
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for live session %s actualStatus=%s, last actualStatus=%s desiredStatus=%s", sessionID, target, actual, liveSessionControlString(session.State["desiredStatus"]))
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+func liveSessionControlString(value any) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func fetchLiveSessionControlView(client *ctlclient.Client, sessionID string) (liveSessionControlView, error) {
+	data, err := client.Request("GET", "/api/v1/live/sessions?view=summary", nil)
+	if err != nil {
+		return liveSessionControlView{}, err
+	}
+	var sessions []liveSessionControlView
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		return liveSessionControlView{}, err
+	}
+	for _, session := range sessions {
+		if session.ID == sessionID {
+			if session.State == nil {
+				session.State = map[string]any{}
+			}
+			return session, nil
+		}
+	}
+	return liveSessionControlView{}, fmt.Errorf("live session not found: %s", sessionID)
 }

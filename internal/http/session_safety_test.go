@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
-	"sync"
 	"testing"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
@@ -13,6 +11,11 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
+
+func boolValue(value any) bool {
+	v, ok := value.(bool)
+	return ok && v
+}
 
 func TestLiveSessionStopRouteRespectsForceQuery(t *testing.T) {
 	store := memory.NewStore()
@@ -35,22 +38,37 @@ func TestLiveSessionStopRouteRespectsForceQuery(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/stop", nil)
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for blocked stop, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for accepted stop intent, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(session.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected desiredStatus STOPPED, got %s", got)
+	}
+	if boolValue(session.State["desiredStopForce"]) {
+		t.Fatalf("did not expect desiredStopForce for normal stop")
 	}
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/stop?force=true", nil)
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for forced stop, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for accepted forced stop intent, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	session, err = store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if !boolValue(session.State["desiredStopForce"]) {
+		t.Fatalf("expected desiredStopForce for forced stop")
 	}
 }
 
 func TestLiveSessionRuntimeActionsDisabledForAPIRole(t *testing.T) {
 	cases := []string{
-		"/api/v1/live/sessions/live-session-main/start",
-		"/api/v1/live/sessions/live-session-main/stop",
 		"/api/v1/live/sessions/live-session-main/dispatch",
 		"/api/v1/live/sessions/live-session-main/sync",
 	}
@@ -70,40 +88,90 @@ func TestLiveSessionRuntimeActionsDisabledForAPIRole(t *testing.T) {
 	}
 }
 
-func TestLiveSessionDeleteRouteReturnsConflictDuringSamePairOperation(t *testing.T) {
-	store := &blockingLiveSessionStatusStore{
-		Store:       memory.NewStore(),
-		blockStatus: "STOPPED",
-		entered:     make(chan struct{}),
-		release:     make(chan struct{}),
-	}
+func TestLiveSessionStartStopRoutesAcceptedForAPIRole(t *testing.T) {
+	store := memory.NewStore()
 	platform := service.NewPlatform(store)
 	mux := http.NewServeMux()
-	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "monolith"})
-
-	stopDone := make(chan *httptest.ResponseRecorder, 1)
-	go func() {
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/stop", nil)
-		mux.ServeHTTP(rec, req)
-		stopDone <- rec
-	}()
-	<-store.entered
+	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "api"})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/live/sessions/live-session-main?force=true", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/start", nil)
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusConflict {
-		close(store.release)
-		t.Fatalf("expected 409 for concurrent delete, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for api role start intent, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	close(store.release)
-	if stopRec := <-stopDone; stopRec.Code != http.StatusOK {
-		t.Fatalf("expected original stop to complete with 200, got %d body=%s", stopRec.Code, stopRec.Body.String())
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(session.State["desiredStatus"]); got != "RUNNING" {
+		t.Fatalf("expected desiredStatus RUNNING, got %s", got)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/stop?force=true", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for api role stop intent, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	session, err = store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(session.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected desiredStatus STOPPED, got %s", got)
+	}
+	if !boolValue(session.State["desiredStopForce"]) {
+		t.Fatalf("expected desiredStopForce")
 	}
 }
 
-func TestLiveSessionStartRouteDoesNotReportMissingControlKeyAsConflict(t *testing.T) {
+func TestLiveSessionDeleteCancelsPendingDesiredControlIntent(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+	mux := http.NewServeMux()
+	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "api"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/start", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for pending start intent, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/live/sessions/live-session-main?force=true", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for delete after pending intent, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	deleted, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if deleted.Status != "DELETED" {
+		t.Fatalf("expected DELETED status, got %s", deleted.Status)
+	}
+	if got := stringValue(deleted.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected delete to cancel desiredStatus as STOPPED, got %s", got)
+	}
+	if got := stringValue(deleted.State["actualStatus"]); got != "STOPPED" {
+		t.Fatalf("expected delete to mark actualStatus STOPPED, got %s", got)
+	}
+
+	listed, err := store.ListLiveSessions()
+	if err != nil {
+		t.Fatalf("list live sessions failed: %v", err)
+	}
+	for _, item := range listed {
+		if item.ID == deleted.ID {
+			t.Fatalf("expected deleted session to be hidden from live session list")
+		}
+	}
+}
+
+func TestLiveSessionStartRouteWritesDesiredStateForCorruptedControlKey(t *testing.T) {
 	store := memory.NewStore()
 	session, err := store.GetLiveSession("live-session-main")
 	if err != nil {
@@ -120,11 +188,15 @@ func TestLiveSessionStartRouteDoesNotReportMissingControlKeyAsConflict(t *testin
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/start", nil)
 	mux.ServeHTTP(rec, req)
-	if rec.Code == http.StatusConflict {
-		t.Fatalf("missing live control key must not be reported as 409 conflict, body=%s", rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for desired start despite corrupted control key, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 for corrupted live session control key, got %d body=%s", rec.Code, rec.Body.String())
+	updated, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(updated.State["desiredStatus"]); got != "RUNNING" {
+		t.Fatalf("expected desiredStatus RUNNING, got %s", got)
 	}
 }
 
@@ -183,22 +255,6 @@ func TestLiveSessionDetailRouteFiltersStateFields(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for unsupported detail field, got %d body=%s", rec.Code, rec.Body.String())
 	}
-}
-
-type blockingLiveSessionStatusStore struct {
-	*memory.Store
-	blockStatus string
-	entered     chan struct{}
-	release     chan struct{}
-	once        sync.Once
-}
-
-func (s *blockingLiveSessionStatusStore) UpdateLiveSessionStatus(sessionID, status string) (domain.LiveSession, error) {
-	if strings.EqualFold(status, s.blockStatus) {
-		s.once.Do(func() { close(s.entered) })
-		<-s.release
-	}
-	return s.Store.UpdateLiveSessionStatus(sessionID, status)
 }
 
 func TestLiveAccountStopRouteStopsRunningFlow(t *testing.T) {

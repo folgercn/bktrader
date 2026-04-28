@@ -678,9 +678,9 @@ export function AccountStage({
                              {liveFlowAction === account.id ? (
                                <div className="flex items-center gap-2"><RotateCw size={14} className="animate-spin" /> 处理中...</div>
                              ) : isLiveFlowRunning ? (
-                               <div className="flex items-center gap-2"><Square size={14} fill="currentColor" /> 停止实盘流程</div>
+                               <div className="flex items-center gap-2"><Square size={14} fill="currentColor" /> 提交停止意图</div>
                              ) : (
-                               <div className="flex items-center gap-2"><Play size={14} fill="currentColor" /> 启动实盘流程</div>
+                               <div className="flex items-center gap-2"><Play size={14} fill="currentColor" /> 提交启动意图</div>
                              )}
                           </Button>
                           <div className="grid grid-cols-2 gap-2">
@@ -1098,6 +1098,8 @@ export function AccountStage({
                  validLiveSessions.map((session) => {
                    const sessionState = getRecord(session.state);
                    const isRunning = String(session.status).toUpperCase() === "RUNNING";
+                   const desiredStatus = String(sessionState.desiredStatus ?? "").trim().toUpperCase();
+                   const actualStatus = String(sessionState.actualStatus ?? "").trim().toUpperCase();
                    const linkedRuntimeSessionId = String(
                      sessionState.signalRuntimeSessionId ?? sessionState.lastSignalRuntimeSessionId ?? ""
                    ).trim();
@@ -1133,6 +1135,11 @@ export function AccountStage({
                               </Badge>
                            </div>
                            <p className="text-[10px] font-mono text-[var(--bk-text-muted)]">{String(sessionState.symbol || "--")} · {session.strategyId}</p>
+                           {(desiredStatus || actualStatus) && desiredStatus !== actualStatus && (
+                             <p className="text-[10px] font-bold text-[var(--bk-status-warning)]">
+                               {desiredStatus || "--"} / {actualStatus || session.status}
+                             </p>
+                           )}
                            {linkedRuntimeStillActive && (
                              <p className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--bk-status-warning)]">
                                <AlertTriangle size={12} />
