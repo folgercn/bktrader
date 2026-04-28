@@ -3886,6 +3886,112 @@ func TestSyncLatestLiveSessionOrderSyncsAfterUnknownOrderCancelRace(t *testing.T
 	}
 }
 
+func TestSyncLatestLiveSessionOrderMarksTimeoutAfterUnknownOrderCancelRaceCancelled(t *testing.T) {
+	platform, session, _, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	var syncCount int64
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-cancel-unknown-sync-cancelled",
+		cancelOrderFunc: func(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+			return LiveOrderSync{}, fmt.Errorf(`binance request failed: 400 Bad Request {"code":-2011,"msg":"Unknown order sent."}`)
+		},
+		syncOrderFunc: func(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+			atomic.AddInt64(&syncCount, 1)
+			return LiveOrderSync{
+				Status:   "CANCELLED",
+				SyncedAt: "2026-04-27T13:09:46Z",
+				Metadata: map[string]any{
+					"updateTime": "2026-04-27T13:09:46Z",
+				},
+				Terminal: true,
+			}, nil
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-cancel-unknown-sync-cancelled",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	eventTime := time.Date(2026, 4, 27, 13, 9, 46, 0, time.UTC)
+	intent := map[string]any{
+		"action":            "entry",
+		"side":              "BUY",
+		"symbol":            "BTCUSDT",
+		"signalKind":        "initial-entry",
+		"signalBarStateKey": "state-1",
+	}
+	signature := buildLiveIntentSignature(intent)
+	proposal := cloneMetadata(intent)
+	proposal["role"] = "entry"
+	proposal["reason"] = "Initial"
+	proposal["type"] = "LIMIT"
+	proposal["quantity"] = 0.002
+	order, err := platform.store.CreateOrder(domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "LIMIT",
+		Status:            "PARTIALLY_FILLED",
+		Quantity:          0.002,
+		Price:             69000.0,
+		Metadata: map[string]any{
+			"source":             "live-session-intent",
+			"liveSessionId":      session.ID,
+			"executionExpiresAt": eventTime.Format(time.RFC3339),
+			"executionProposal":  proposal,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create live order failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["dispatchMode"] = "auto-dispatch"
+	state["dispatchCooldownSeconds"] = 300
+	state["lastDispatchedAt"] = eventTime.Format(time.RFC3339)
+	state["lastDispatchedIntentSignature"] = signature
+	state["lastDispatchedOrderId"] = order.ID
+	state["lastDispatchedOrderStatus"] = "PARTIALLY_FILLED"
+	state["lastSyncedOrderStatus"] = "PARTIALLY_FILLED"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.syncLatestLiveSessionOrder(session, eventTime)
+	if err != nil {
+		t.Fatalf("expected unknown-order cancel race to fall back to cancelled order sync, got %v", err)
+	}
+	if got := atomic.LoadInt64(&syncCount); got != 1 {
+		t.Fatalf("expected one fallback order sync, got %d", got)
+	}
+	if got := stringValue(updated.State["lastSyncedOrderStatus"]); got != "CANCELLED" {
+		t.Fatalf("expected synced CANCELLED status, got %s", got)
+	}
+	if got := stringValue(updated.State["lastExecutionTimeoutReason"]); got != "resting-order-expired" {
+		t.Fatalf("expected timeout reason to be recorded, got %q", got)
+	}
+	if got := stringValue(updated.State["lastExecutionTimeoutIntentSignature"]); got != signature {
+		t.Fatalf("expected timeout signature %q, got %q", signature, got)
+	}
+	if got := stringValue(updated.State["lastExecutionTimeoutAt"]); got != eventTime.Format(time.RFC3339) {
+		t.Fatalf("expected timeout timestamp %s, got %q", eventTime.Format(time.RFC3339), got)
+	}
+	if !shouldAutoDispatchLiveIntent(updated, intent, eventTime) {
+		t.Fatal("expected cancel-race timeout to allow immediate retry for the same intent")
+	}
+}
+
 func TestSyncLatestLiveSessionOrderReturnsFallbackSyncErrorAfterUnknownOrderCancel(t *testing.T) {
 	platform, session, _, _, _ := prepareLiveDecisionTelemetryFixture(t)
 	var syncCount int64
