@@ -1402,7 +1402,18 @@ func resolvePaperFillFee(order domain.Order, executionPrice float64) float64 {
 
 // ListPositions 获取所有持仓列表。
 func (p *Platform) ListPositions() ([]domain.Position, error) {
-	return p.store.ListPositions()
+	positions, err := p.store.ListPositions()
+	if err != nil {
+		return nil, err
+	}
+	active := make([]domain.Position, 0, len(positions))
+	for _, position := range positions {
+		if position.Quantity <= 0 {
+			continue
+		}
+		active = append(active, position)
+	}
+	return active, nil
 }
 
 // ListFills 获取所有成交记录列表。
@@ -1473,6 +1484,9 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 	// 反方向 → 部分平仓
 	if tradingQuantityBelow(order.Quantity, position.Quantity) {
 		position.Quantity = position.Quantity - order.Quantity
+		if position.Quantity <= 0 {
+			return p.store.DeletePosition(position.ID)
+		}
 		position.MarkPrice = executionPrice
 		_, err := p.store.SavePosition(position)
 		return err

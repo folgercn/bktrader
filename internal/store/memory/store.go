@@ -735,6 +735,9 @@ func (s *Store) ListPositions() ([]domain.Position, error) {
 	defer s.mu.RUnlock()
 	items := make([]domain.Position, 0, len(s.positions))
 	for _, item := range s.positions {
+		if item.Quantity <= 0 {
+			continue
+		}
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.Before(items[j].UpdatedAt) })
@@ -746,6 +749,9 @@ func (s *Store) QueryPositions(query domain.PositionQuery) ([]domain.Position, e
 	defer s.mu.RUnlock()
 	items := make([]domain.Position, 0, len(s.positions))
 	for _, item := range s.positions {
+		if item.Quantity <= 0 {
+			continue
+		}
 		if query.AccountID != "" && item.AccountID != query.AccountID {
 			continue
 		}
@@ -813,6 +819,12 @@ func (s *Store) FindPosition(accountID, symbol string) (domain.Position, bool, e
 func (s *Store) SavePosition(position domain.Position) (domain.Position, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if position.Quantity <= 0 {
+		if strings.TrimSpace(position.ID) != "" {
+			delete(s.positions, position.ID)
+		}
+		return position, nil
+	}
 	if position.ID == "" {
 		position.ID = s.nextID("position")
 	}
