@@ -3775,6 +3775,195 @@ func TestShouldCancelLiveOrderForExecutionTimeout(t *testing.T) {
 	}
 }
 
+func TestSyncLatestLiveSessionOrderSyncsAfterUnknownOrderCancelRace(t *testing.T) {
+	platform, session, _, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	var cancelCount int64
+	var syncCount int64
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-cancel-unknown-sync",
+		cancelOrderFunc: func(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+			atomic.AddInt64(&cancelCount, 1)
+			return LiveOrderSync{}, fmt.Errorf(`binance request failed: 400 Bad Request {"code":-2011,"msg":"Unknown order sent."}`)
+		},
+		syncOrderFunc: func(_ domain.Account, order domain.Order, _ map[string]any) (LiveOrderSync, error) {
+			atomic.AddInt64(&syncCount, 1)
+			return LiveOrderSync{
+				Status:   "FILLED",
+				SyncedAt: "2026-04-27T13:09:46Z",
+				Fills: []LiveFillReport{{
+					Quantity: order.Quantity,
+					Price:    69000.0,
+					Metadata: map[string]any{"tradeTime": "2026-04-27T13:09:46Z"},
+				}},
+				Metadata: map[string]any{
+					"executedQty": order.Quantity,
+					"avgPrice":    69000.0,
+					"updateTime":  "2026-04-27T13:09:46Z",
+				},
+				Terminal: true,
+			}, nil
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-cancel-unknown-sync",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	eventTime := time.Date(2026, 4, 27, 13, 9, 46, 0, time.UTC)
+	proposal := map[string]any{
+		"role":     "entry",
+		"reason":   "Initial",
+		"side":     "BUY",
+		"symbol":   "BTCUSDT",
+		"type":     "LIMIT",
+		"quantity": 0.002,
+	}
+	order, err := platform.store.CreateOrder(domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "LIMIT",
+		Status:            "PARTIALLY_FILLED",
+		Quantity:          0.002,
+		Price:             69000.0,
+		Metadata: map[string]any{
+			"source":             "live-session-intent",
+			"liveSessionId":      session.ID,
+			"executionExpiresAt": eventTime.Format(time.RFC3339),
+			"executionProposal":  proposal,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create live order failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastDispatchedOrderId"] = order.ID
+	state["lastDispatchedOrderStatus"] = "PARTIALLY_FILLED"
+	state["lastSyncedOrderStatus"] = "PARTIALLY_FILLED"
+	state["lastSyncError"] = "previous stale sync error"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.syncLatestLiveSessionOrder(session, eventTime)
+	if err != nil {
+		t.Fatalf("expected unknown-order cancel race to fall back to order sync, got %v", err)
+	}
+	if got := atomic.LoadInt64(&cancelCount); got != 1 {
+		t.Fatalf("expected one cancel attempt, got %d", got)
+	}
+	if got := atomic.LoadInt64(&syncCount); got != 1 {
+		t.Fatalf("expected one fallback order sync, got %d", got)
+	}
+	if got := stringValue(updated.State["lastSyncError"]); got != "" {
+		t.Fatalf("expected fallback sync to clear lastSyncError, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSyncedOrderStatus"]); got != "FILLED" {
+		t.Fatalf("expected synced FILLED status, got %s", got)
+	}
+	syncedOrder, err := platform.GetOrder(order.ID)
+	if err != nil {
+		t.Fatalf("get synced order failed: %v", err)
+	}
+	if got := syncedOrder.Status; got != "FILLED" {
+		t.Fatalf("expected persisted order status FILLED, got %s", got)
+	}
+	if got := parseFloatValue(syncedOrder.Metadata["filledQuantity"]); got != 0.002 {
+		t.Fatalf("expected filled quantity 0.002, got %v", got)
+	}
+}
+
+func TestSyncLatestLiveSessionOrderReturnsFallbackSyncErrorAfterUnknownOrderCancel(t *testing.T) {
+	platform, session, _, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	var syncCount int64
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-cancel-unknown-sync-failure",
+		cancelOrderFunc: func(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+			return LiveOrderSync{}, fmt.Errorf(`binance request failed: 400 Bad Request {"code":-2011,"msg":"Unknown order sent."}`)
+		},
+		syncOrderFunc: func(domain.Account, domain.Order, map[string]any) (LiveOrderSync, error) {
+			atomic.AddInt64(&syncCount, 1)
+			return LiveOrderSync{}, fmt.Errorf("fallback order sync failed")
+		},
+	})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-cancel-unknown-sync-failure",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	eventTime := time.Date(2026, 4, 27, 13, 9, 46, 0, time.UTC)
+	order, err := platform.store.CreateOrder(domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "LIMIT",
+		Status:            "PARTIALLY_FILLED",
+		Quantity:          0.002,
+		Price:             69000.0,
+		Metadata: map[string]any{
+			"source":             "live-session-intent",
+			"liveSessionId":      session.ID,
+			"executionExpiresAt": eventTime.Format(time.RFC3339),
+			"executionProposal": map[string]any{
+				"role":     "entry",
+				"reason":   "Initial",
+				"side":     "BUY",
+				"symbol":   "BTCUSDT",
+				"type":     "LIMIT",
+				"quantity": 0.002,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create live order failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastDispatchedOrderId"] = order.ID
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.syncLatestLiveSessionOrder(session, eventTime)
+	if err == nil || !strings.Contains(err.Error(), "fallback order sync failed") {
+		t.Fatalf("expected fallback sync failure to be returned, got %v", err)
+	}
+	if got := atomic.LoadInt64(&syncCount); got != 1 {
+		t.Fatalf("expected fallback order sync attempt, got %d", got)
+	}
+	if got := stringValue(updated.State["lastCancelFallbackSyncError"]); got != "fallback order sync failed" {
+		t.Fatalf("expected fallback sync error in state, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSyncedOrderStatus"]); got == "FILLED" {
+		t.Fatal("expected failed fallback sync not to mark order filled")
+	}
+}
+
 func TestMaybeIncrementLiveSessionReentryCountOnlyCountsFilledReentries(t *testing.T) {
 	state := map[string]any{
 		"sessionReentryCount": 0.0,
