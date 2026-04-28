@@ -68,6 +68,10 @@ func prepareLivePlanStepForSignalEvaluation(
 		signalTimeframe,
 		eventTime,
 	); ok {
+		if livePendingZeroInitialWindowShouldYieldSLReentry(updatedState, signalBarStates, symbol, signalTimeframe, eventTime) {
+			clearLivePendingZeroInitialWindow(updatedState, eventTime, "sl-exit-reentry-priority")
+			return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, "SL-Reentry"
+		}
 		return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason
 	}
 	if hasActiveLivePositionSnapshot(currentPosition) || !isLivePlanStepStale(nextPlannedEvent, signalTimeframe, eventTime) {
@@ -386,6 +390,43 @@ func liveZeroInitialWindowPlanStep(
 		plannedEvent = eventTime.UTC()
 	}
 	return state, plannedEvent.UTC(), price, side, "entry", "Zero-Initial-Reentry", true
+}
+
+func livePendingZeroInitialWindowShouldYieldSLReentry(
+	sessionState map[string]any,
+	signalBarStates map[string]any,
+	symbol string,
+	signalTimeframe string,
+	eventTime time.Time,
+) bool {
+	pending := cloneMetadata(mapValue(sessionState[livePendingZeroInitialWindowStateKey]))
+	if len(pending) == 0 || !liveZeroInitialWindowHasBreakoutProof(pending) {
+		return false
+	}
+	if parseFloatValue(sessionState["sessionReentryCount"]) <= 0 {
+		return false
+	}
+	lastSLExitAt := parseOptionalRFC3339(stringValue(sessionState["lastSLExitFilledAt"]))
+	if lastSLExitAt.IsZero() || lastSLExitAt.UTC().After(eventTime.UTC()) {
+		return false
+	}
+	if armedAt := parseOptionalRFC3339(stringValue(pending["armedAt"])); !armedAt.IsZero() && lastSLExitAt.UTC().Before(armedAt.UTC()) {
+		return false
+	}
+	if pendingSymbol := NormalizeSymbol(stringValue(pending["symbol"])); pendingSymbol != "" && pendingSymbol != NormalizeSymbol(symbol) {
+		return false
+	}
+	if pendingTimeframe := strings.ToLower(strings.TrimSpace(stringValue(pending["signalTimeframe"]))); pendingTimeframe != "" &&
+		pendingTimeframe != strings.ToLower(strings.TrimSpace(signalTimeframe)) {
+		return false
+	}
+	signalBarState, _ := pickSignalBarState(signalBarStates, symbol, signalTimeframe)
+	currentBarKey := resolveSignalBarTradeLimitKey(signalBarState, symbol, signalTimeframe)
+	lastSLBarKey := strings.TrimSpace(stringValue(sessionState["lastSLExitSignalBarStateKey"]))
+	if currentBarKey == "" || lastSLBarKey == "" || currentBarKey != lastSLBarKey {
+		return false
+	}
+	return true
 }
 
 func resolveLiveReentryPlanPrice(parameters map[string]any, signalBarState map[string]any, side string) float64 {
