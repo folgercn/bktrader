@@ -23,17 +23,22 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 
 	// 健康检查端点
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		now := time.Now().UTC()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "ok",
-			"app":    cfg.AppName,
-			"env":    cfg.Environment,
-			"time":   time.Now().UTC(),
+			"status":    "ok",
+			"service":   runtimeStatusServiceName(cfg),
+			"checkedAt": now,
+			"app":       cfg.AppName,
+			"env":       cfg.Environment,
+			"time":      now,
 		})
 	})
 
 	registerAuthRoutes(mux, cfg)
 	registerLogRoutes(mux, platform)
 	registerStreamRoutes(mux, platform, cfg)
+	registerRuntimeStatusRoutes(mux, platform, cfg)
+	registerSupervisorStatusRoutes(mux, platform)
 
 	// 系统概览端点
 	mux.HandleFunc("/api/v1/overview", func(w http.ResponseWriter, _ *http.Request) {

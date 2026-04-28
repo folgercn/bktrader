@@ -1,0 +1,181 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
+
+func TestRuntimeSupervisorCollectsHealthAndRuntimeStatus(t *testing.T) {
+	requested := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/healthz":
+			writeRuntimeSupervisorTestJSON(t, w, map[string]any{
+				"service":   "platform-api",
+				"status":    "ok",
+				"checkedAt": "2026-04-28T12:30:00Z",
+			})
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{
+				Service:   "platform-api",
+				CheckedAt: time.Date(2026, 4, 28, 12, 30, 0, 0, time.UTC),
+				Runtimes: []RuntimeStatus{{
+					Service:       "platform-api",
+					RuntimeID:     "runtime-1",
+					RuntimeKind:   "signal",
+					DesiredStatus: "RUNNING",
+					ActualStatus:  "RUNNING",
+					Health:        "healthy",
+				}},
+			})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisor([]RuntimeSupervisorTarget{{
+		Name:    "api",
+		BaseURL: server.URL + "/",
+	}}, server.Client())
+	snapshot := supervisor.Collect(context.Background())
+	if len(snapshot.Targets) != 1 {
+		t.Fatalf("expected one target snapshot, got %#v", snapshot.Targets)
+	}
+	target := snapshot.Targets[0]
+	if target.Name != "api" {
+		t.Fatalf("expected target name api, got %s", target.Name)
+	}
+	if !target.Healthz.Reachable || target.Healthz.StatusCode != http.StatusOK {
+		t.Fatalf("expected reachable healthz 200, got %+v", target.Healthz)
+	}
+	if got := target.Healthz.Payload["status"]; got != "ok" {
+		t.Fatalf("expected healthz status ok, got %#v", got)
+	}
+	if !target.RuntimeStatus.Reachable || target.RuntimeStatus.StatusCode != http.StatusOK {
+		t.Fatalf("expected reachable runtime status 200, got %+v", target.RuntimeStatus)
+	}
+	if target.Status == nil || len(target.Status.Runtimes) != 1 {
+		t.Fatalf("expected decoded runtime status, got %+v", target.Status)
+	}
+	if target.Status.Runtimes[0].RuntimeID != "runtime-1" {
+		t.Fatalf("expected runtime-1, got %+v", target.Status.Runtimes[0])
+	}
+	if requested["GET /healthz"] != 1 || requested["GET /api/v1/runtime/status"] != 1 {
+		t.Fatalf("expected one GET per read-only endpoint, got %#v", requested)
+	}
+}
+
+func TestRuntimeSupervisorRecordsProbeFailuresWithoutControlActions(t *testing.T) {
+	requested := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		if r.Method != http.MethodGet {
+			t.Errorf("read-only supervisor must not issue %s", r.Method)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{"))
+		case "/api/v1/runtime/restart", "/api/v1/runtime/start", "/api/v1/runtime/stop":
+			t.Errorf("read-only supervisor must not call control path %s", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisor([]RuntimeSupervisorTarget{{BaseURL: server.URL}}, server.Client())
+	snapshot := supervisor.Collect(context.Background())
+	if len(snapshot.Targets) != 1 {
+		t.Fatalf("expected one target, got %#v", snapshot.Targets)
+	}
+	target := snapshot.Targets[0]
+	if !target.Healthz.Reachable || target.Healthz.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected reachable 503 healthz, got %+v", target.Healthz)
+	}
+	if target.Healthz.Error == "" {
+		t.Fatal("expected healthz error for non-2xx status")
+	}
+	if !target.RuntimeStatus.Reachable || target.RuntimeStatus.StatusCode != http.StatusOK {
+		t.Fatalf("expected runtime status response to be reachable, got %+v", target.RuntimeStatus)
+	}
+	if target.RuntimeStatus.Error == "" {
+		t.Fatal("expected runtime status decode error")
+	}
+	if requested["GET /api/v1/runtime/restart"] != 0 || requested["GET /api/v1/runtime/start"] != 0 || requested["GET /api/v1/runtime/stop"] != 0 {
+		t.Fatalf("unexpected control endpoint requests: %#v", requested)
+	}
+}
+
+func TestRuntimeSupervisorBearerTokenAllowsProtectedTargets(t *testing.T) {
+	const token = "supervisor-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/healthz":
+			writeRuntimeSupervisorTestJSON(t, w, map[string]any{"status": "ok"})
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{
+				Service:   "platform-api",
+				CheckedAt: time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	withoutToken := NewRuntimeSupervisor(ParseRuntimeSupervisorTargets([]string{"api=" + server.URL}), server.Client())
+	unauthorized := withoutToken.Collect(context.Background()).Targets[0]
+	if unauthorized.RuntimeStatus.StatusCode != http.StatusUnauthorized || unauthorized.RuntimeStatus.Error == "" {
+		t.Fatalf("expected protected runtime status to reject missing token, got %+v", unauthorized.RuntimeStatus)
+	}
+
+	withToken := NewRuntimeSupervisor(ParseRuntimeSupervisorTargets([]string{"api=" + server.URL}, " "+token+" "), server.Client())
+	authorized := withToken.Collect(context.Background()).Targets[0]
+	if !authorized.Healthz.Reachable || authorized.Healthz.StatusCode != http.StatusOK {
+		t.Fatalf("expected authorized healthz probe, got %+v", authorized.Healthz)
+	}
+	if !authorized.RuntimeStatus.Reachable || authorized.RuntimeStatus.StatusCode != http.StatusOK || authorized.RuntimeStatus.Error != "" {
+		t.Fatalf("expected authorized runtime status probe, got %+v", authorized.RuntimeStatus)
+	}
+}
+
+func TestParseRuntimeSupervisorTargetsSupportsNamedTargets(t *testing.T) {
+	targets := ParseRuntimeSupervisorTargets([]string{"api=http://127.0.0.1:8080", " http://127.0.0.1:8081/ "})
+	supervisor := NewRuntimeSupervisor(targets, nil)
+	normalized := supervisor.Targets()
+	if len(normalized) != 2 {
+		t.Fatalf("expected two targets, got %#v", normalized)
+	}
+	if normalized[0].Name != "api" || normalized[0].BaseURL != "http://127.0.0.1:8080" {
+		t.Fatalf("unexpected named target: %+v", normalized[0])
+	}
+	if normalized[1].Name != "127.0.0.1:8081" || normalized[1].BaseURL != "http://127.0.0.1:8081" {
+		t.Fatalf("unexpected inferred target: %+v", normalized[1])
+	}
+}
+
+func writeRuntimeSupervisorTestJSON(t *testing.T, w http.ResponseWriter, payload any) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		t.Errorf("write json failed: %v", err)
+	}
+}

@@ -66,6 +66,11 @@ type Config struct {
 	DashboardAlertsPollMs          int    // 仪表盘 Alerts 轮询间隔 (ms)
 	DashboardNotificationsPollMs   int    // 仪表盘 Notifications 轮询间隔 (ms)
 	DashboardMonitorHealthPollMs   int    // 仪表盘 Monitor Health 轮询间隔 (ms)
+
+	SupervisorTargets             []string // 只读 supervisor 采集目标，支持 name=url 或 base URL
+	SupervisorBearerToken         string   // 只读 supervisor 请求目标服务时使用的全局 Bearer token
+	SupervisorPollIntervalSeconds int      // 只读 supervisor 轮询间隔（秒）
+	SupervisorHTTPTimeoutSeconds  int      // 只读 supervisor HTTP 超时（秒）
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -142,6 +147,10 @@ func Load() Config {
 		DashboardAlertsPollMs:          intFromEnvWithMin("DASHBOARD_ALERTS_POLL_MS", 2000, 1000),
 		DashboardNotificationsPollMs:   intFromEnvWithMin("DASHBOARD_NOTIFICATIONS_POLL_MS", 2000, 1000),
 		DashboardMonitorHealthPollMs:   intFromEnvWithMin("DASHBOARD_MONITOR_HEALTH_POLL_MS", 2000, 1000),
+		SupervisorTargets:              stringSliceFromEnv("SUPERVISOR_TARGETS", nil),
+		SupervisorBearerToken:          strings.TrimSpace(os.Getenv("SUPERVISOR_BEARER_TOKEN")),
+		SupervisorPollIntervalSeconds:  intFromEnvWithMin("SUPERVISOR_POLL_INTERVAL_SECONDS", 30, 5),
+		SupervisorHTTPTimeoutSeconds:   intFromEnvWithMin("SUPERVISOR_HTTP_TIMEOUT_SECONDS", 5, 1),
 	}
 }
 
@@ -180,9 +189,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("HTTP_ADDR 不能为空")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.ProcessRole)) {
-	case "", "monolith", "api", "live-runner", "signal-runtime-runner", "notification-worker":
+	case "", "monolith", "api", "live-runner", "signal-runtime-runner", "notification-worker", "supervisor":
 	default:
-		return fmt.Errorf("不支持的 BKTRADER_ROLE: %s（可选: monolith, api, live-runner, signal-runtime-runner, notification-worker）", c.ProcessRole)
+		return fmt.Errorf("不支持的 BKTRADER_ROLE: %s（可选: monolith, api, live-runner, signal-runtime-runner, notification-worker, supervisor）", c.ProcessRole)
 	}
 	if c.StoreBackend == "postgres" && c.PostgresDSN == "" {
 		return fmt.Errorf("STORE_BACKEND=postgres 时 POSTGRES_DSN 不能为空")
@@ -277,6 +286,24 @@ func intSliceFromEnv(key string, fallback []int) []int {
 	out := make([]int, 0, len(parts))
 	for _, part := range parts {
 		if p, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && p > 0 {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return fallback
+	}
+	return out
+}
+
+func stringSliceFromEnv(key string, fallback []string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if p := strings.TrimSpace(part); p != "" {
 			out = append(out, p)
 		}
 	}

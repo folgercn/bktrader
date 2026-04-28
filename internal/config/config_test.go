@@ -92,6 +92,40 @@ func TestConfigValidateAcceptsSignalRuntimeRunnerRole(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAcceptsSupervisorRole(t *testing.T) {
+	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", ProcessRole: "supervisor"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected supervisor role to validate, got %v", err)
+	}
+	if cfg.RuntimeActionsEnabled() {
+		t.Fatal("expected supervisor role to reject live runtime mutations")
+	}
+}
+
+func TestLoadReadsSupervisorEnv(t *testing.T) {
+	t.Setenv("SUPERVISOR_TARGETS", "api=http://127.0.0.1:8080, http://127.0.0.1:8081")
+	t.Setenv("SUPERVISOR_BEARER_TOKEN", " supervisor-token ")
+	t.Setenv("SUPERVISOR_POLL_INTERVAL_SECONDS", "45")
+	t.Setenv("SUPERVISOR_HTTP_TIMEOUT_SECONDS", "3")
+
+	cfg := Load()
+	if len(cfg.SupervisorTargets) != 2 {
+		t.Fatalf("expected two supervisor targets, got %#v", cfg.SupervisorTargets)
+	}
+	if cfg.SupervisorTargets[0] != "api=http://127.0.0.1:8080" || cfg.SupervisorTargets[1] != "http://127.0.0.1:8081" {
+		t.Fatalf("unexpected supervisor targets %#v", cfg.SupervisorTargets)
+	}
+	if cfg.SupervisorBearerToken != "supervisor-token" {
+		t.Fatalf("expected trimmed supervisor bearer token, got %q", cfg.SupervisorBearerToken)
+	}
+	if cfg.SupervisorPollIntervalSeconds != 45 {
+		t.Fatalf("expected supervisor poll interval 45, got %d", cfg.SupervisorPollIntervalSeconds)
+	}
+	if cfg.SupervisorHTTPTimeoutSeconds != 3 {
+		t.Fatalf("expected supervisor HTTP timeout 3, got %d", cfg.SupervisorHTTPTimeoutSeconds)
+	}
+}
+
 func TestBoolFromEnvRecognizesTruthyAndFalsyValues(t *testing.T) {
 	t.Setenv("BOOL_TRUE", "yes")
 	if !boolFromEnv("BOOL_TRUE", false) {

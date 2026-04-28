@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -12,9 +11,19 @@ import (
 
 const signalRuntimeScannerInterval = 5 * time.Second
 
-var signalRuntimeSupervisorRestartBackoffs = []time.Duration{
-	time.Minute,
-	3 * time.Minute,
+var signalRuntimeSupervisorRestartPolicy = SupervisorBackoffPolicy{
+	First:  time.Minute,
+	Repeat: 3 * time.Minute,
+}
+
+var signalRuntimeSupervisorRestartStateKeys = []string{
+	"supervisorRestartAttempt",
+	"nextAutoRestartAt",
+	"supervisorRestartBackoff",
+	"supervisorRestartReason",
+	"supervisorRestartSeverity",
+	"lastSupervisorError",
+	"autoRestartSuppressed",
 }
 
 type signalRuntimeSessionStarter func(context.Context, string) (domain.SignalRuntimeSession, error)
@@ -95,7 +104,7 @@ func (p *Platform) signalRuntimeSupervisorRestartDeferred(session domain.SignalR
 	if strings.EqualFold(stringValue(state["supervisorRestartSeverity"]), disconnectFatal.String()) {
 		return true
 	}
-	nextAt, ok := parseSignalRuntimeSupervisorTime(state["nextAutoRestartAt"])
+	nextAt, ok := ParseRestartTime(state, "nextAutoRestartAt")
 	if !ok {
 		p.scheduleSignalRuntimeSupervisorRestart(session, now)
 		return true
@@ -106,12 +115,12 @@ func (p *Platform) signalRuntimeSupervisorRestartDeferred(session domain.SignalR
 func (p *Platform) scheduleSignalRuntimeSupervisorRestart(session domain.SignalRuntimeSession, now time.Time) {
 	_ = p.updateSignalRuntimeSessionState(session.ID, func(updated *domain.SignalRuntimeSession) {
 		state := cloneMetadata(updated.State)
-		attempt := signalRuntimeSupervisorRestartAttempt(state)
+		attempt := RestartAttempt(state, "supervisorRestartAttempt")
 		if attempt <= 0 {
 			attempt = 1
 			state["supervisorRestartAttempt"] = attempt
 		}
-		backoff := signalRuntimeSupervisorRestartBackoff(attempt)
+		backoff := RestartBackoff(signalRuntimeSupervisorRestartPolicy, attempt)
 		state["nextAutoRestartAt"] = now.Add(backoff).UTC().Format(time.RFC3339)
 		state["supervisorRestartBackoff"] = backoff.String()
 		state["supervisorRestartReason"] = "runtime-error"
@@ -134,49 +143,13 @@ func scheduleSignalRuntimeSupervisorRestartAfterTerminalError(state map[string]a
 		delete(state, "supervisorRestartBackoff")
 		return
 	}
-	attempt := signalRuntimeSupervisorRestartAttempt(state) + 1
+	attempt := RestartAttempt(state, "supervisorRestartAttempt") + 1
 	state["supervisorRestartAttempt"] = attempt
-	backoff := signalRuntimeSupervisorRestartBackoff(attempt)
+	backoff := RestartBackoff(signalRuntimeSupervisorRestartPolicy, attempt)
 	state["nextAutoRestartAt"] = now.Add(backoff).UTC().Format(time.RFC3339)
 	state["supervisorRestartBackoff"] = backoff.String()
 	state["lastSupervisorError"] = err.Error()
 	delete(state, "autoRestartSuppressed")
-}
-
-func signalRuntimeSupervisorRestartBackoff(attempt int) time.Duration {
-	if attempt <= 1 {
-		return signalRuntimeSupervisorRestartBackoffs[0]
-	}
-	return signalRuntimeSupervisorRestartBackoffs[len(signalRuntimeSupervisorRestartBackoffs)-1]
-}
-
-func signalRuntimeSupervisorRestartAttempt(state map[string]any) int {
-	switch value := state["supervisorRestartAttempt"].(type) {
-	case int:
-		return value
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	case string:
-		var parsed int
-		if _, err := fmt.Sscanf(strings.TrimSpace(value), "%d", &parsed); err == nil {
-			return parsed
-		}
-	}
-	return 0
-}
-
-func parseSignalRuntimeSupervisorTime(value any) (time.Time, bool) {
-	raw := stringValue(value)
-	if raw == "" {
-		return time.Time{}, false
-	}
-	parsed, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return parsed, true
 }
 
 func (p *Platform) signalRuntimeSessionRunningOrStarting(sessionID string) bool {
