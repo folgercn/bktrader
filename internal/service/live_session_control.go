@@ -74,7 +74,7 @@ func (p *Platform) scanLiveSessionControlRequests(ctx context.Context) {
 		if desired == "" {
 			continue
 		}
-		if strings.EqualFold(stringValue(session.State["actualStatus"]), "ERROR") {
+		if liveSessionControlErrorCurrent(session.State) {
 			continue
 		}
 		switch desired {
@@ -144,4 +144,32 @@ func liveSessionActualStatusFromSession(session domain.LiveSession) string {
 		}
 		return "STOPPED"
 	}
+}
+
+func liveSessionControlErrorCurrent(state map[string]any) bool {
+	if !strings.EqualFold(stringValue(state["actualStatus"]), "ERROR") {
+		return false
+	}
+	requestedAt, requestedOK := parseLiveSessionControlTime(state["controlRequestedAt"])
+	errorAt, errorOK := parseLiveSessionControlTime(state["lastControlErrorAt"])
+	if !requestedOK || !errorOK {
+		return true
+	}
+	return !requestedAt.After(errorAt)
+}
+
+func parseLiveSessionControlTime(value any) (time.Time, bool) {
+	raw := strings.TrimSpace(stringValue(value))
+	if raw == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err == nil {
+		return parsed, true
+	}
+	parsed, err = time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }

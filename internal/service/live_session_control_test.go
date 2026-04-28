@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
@@ -127,6 +128,66 @@ func TestScanLiveSessionControlRequestsWritesErrorWithoutRetryingStart(t *testin
 	}
 	if got := stringValue(stillFailed.State["actualStatus"]); got != "ERROR" {
 		t.Fatalf("expected ERROR not to auto retry, got %s", got)
+	}
+}
+
+func TestLiveSessionControlErrorCurrentAllowsNewerRequest(t *testing.T) {
+	now := time.Now().UTC()
+	state := map[string]any{
+		"actualStatus":       "ERROR",
+		"controlRequestedAt": now.Add(-time.Minute).Format(time.RFC3339),
+		"lastControlErrorAt": now.Format(time.RFC3339),
+	}
+	if !liveSessionControlErrorCurrent(state) {
+		t.Fatal("expected current control error to block automatic retry")
+	}
+
+	state["controlRequestedAt"] = now.Add(time.Minute).Format(time.RFC3339)
+	if liveSessionControlErrorCurrent(state) {
+		t.Fatal("expected newer control request to wake scanner")
+	}
+}
+
+func TestDeleteLiveSessionCancelsPendingDesiredControlIntent(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	if _, err := platform.RequestLiveSessionStart("live-session-main"); err != nil {
+		t.Fatalf("request start failed: %v", err)
+	}
+
+	if err := platform.DeleteLiveSessionWithForce("live-session-main", true); err != nil {
+		t.Fatalf("delete live session failed: %v", err)
+	}
+	platform.scanLiveSessionControlRequests(context.Background())
+
+	deleted, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if deleted.Status != "DELETED" {
+		t.Fatalf("expected DELETED status, got %s", deleted.Status)
+	}
+	if got := stringValue(deleted.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected delete to cancel desiredStatus as STOPPED, got %s", got)
+	}
+	if got := stringValue(deleted.State["actualStatus"]); got != "STOPPED" {
+		t.Fatalf("expected delete to mark actualStatus STOPPED, got %s", got)
+	}
+	if got := stringValue(deleted.State["controlDeletedAt"]); got == "" {
+		t.Fatal("expected controlDeletedAt after delete")
+	}
+	if _, ok := deleted.State["desiredStopForce"]; ok {
+		t.Fatalf("expected desiredStopForce to be cleared, got %#v", deleted.State["desiredStopForce"])
+	}
+
+	listed, err := store.ListLiveSessions()
+	if err != nil {
+		t.Fatalf("list live sessions failed: %v", err)
+	}
+	for _, item := range listed {
+		if item.ID == deleted.ID {
+			t.Fatalf("expected deleted session to be hidden from scanner list")
+		}
 	}
 }
 

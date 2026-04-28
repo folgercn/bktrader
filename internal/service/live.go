@@ -230,6 +230,16 @@ func (p *Platform) deleteLiveSessionWithForceLocked(session domain.LiveSession, 
 		logger.Warn("stop linked signal runtime before live session delete failed", "error", err)
 		return err
 	}
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = "STOPPED"
+	state["actualStatus"] = "STOPPED"
+	state["controlDeletedAt"] = time.Now().UTC().Format(time.RFC3339)
+	delete(state, "desiredStopForce")
+	delete(state, "lastControlError")
+	delete(state, "lastControlErrorAt")
+	if _, err := p.store.UpdateLiveSessionState(session.ID, state); err != nil {
+		return err
+	}
 	return p.store.DeleteLiveSession(session.ID)
 }
 

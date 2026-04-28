@@ -126,6 +126,51 @@ func TestLiveSessionStartStopRoutesAcceptedForAPIRole(t *testing.T) {
 	}
 }
 
+func TestLiveSessionDeleteCancelsPendingDesiredControlIntent(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+	mux := http.NewServeMux()
+	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "api"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/start", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for pending start intent, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/live/sessions/live-session-main?force=true", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for delete after pending intent, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	deleted, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if deleted.Status != "DELETED" {
+		t.Fatalf("expected DELETED status, got %s", deleted.Status)
+	}
+	if got := stringValue(deleted.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected delete to cancel desiredStatus as STOPPED, got %s", got)
+	}
+	if got := stringValue(deleted.State["actualStatus"]); got != "STOPPED" {
+		t.Fatalf("expected delete to mark actualStatus STOPPED, got %s", got)
+	}
+
+	listed, err := store.ListLiveSessions()
+	if err != nil {
+		t.Fatalf("list live sessions failed: %v", err)
+	}
+	for _, item := range listed {
+		if item.ID == deleted.ID {
+			t.Fatalf("expected deleted session to be hidden from live session list")
+		}
+	}
+}
+
 func TestLiveSessionStartRouteWritesDesiredStateForCorruptedControlKey(t *testing.T) {
 	store := memory.NewStore()
 	session, err := store.GetLiveSession("live-session-main")

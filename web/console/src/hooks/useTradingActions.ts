@@ -597,6 +597,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     setLiveFlowAction(account.id);
     setError(null);
     selectQuickLiveAccount(account.id);
+    let launchResult: LiveLaunchResult | null = null;
     
     try {
       const strategyBindings = strategySignalBindingMap[strategyId] ?? [];
@@ -604,7 +605,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
         window.location.hash = "signals";
         throw new Error("Launch live flow needs strategy signal bindings before it can continue");
       }
-      const launchResult = await fetchJSON<LiveLaunchResult>(`/api/v1/live/accounts/${account.id}/launch`, {
+      launchResult = await fetchJSON<LiveLaunchResult>(`/api/v1/live/accounts/${account.id}/launch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -641,7 +642,17 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
       setNotification({ type: 'success', message: "已提交实盘流程启动意图" });
       window.location.hash = "live";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to launch live flow");
+      const message = err instanceof Error ? err.message : "Failed to launch live flow";
+      const sessionId = launchResult?.liveSession?.id;
+      if (sessionId) {
+        await loadDashboard().catch(() => undefined);
+        const partialMessage = `会话已创建但启动意图未提交：${sessionId}。${message}`;
+        setError(partialMessage);
+        setNotification({ type: 'error', message: partialMessage });
+        window.location.hash = "live";
+        return;
+      }
+      setError(message);
     } finally {
       setLiveFlowAction(null);
     }
