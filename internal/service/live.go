@@ -240,8 +240,16 @@ func (p *Platform) deleteLiveSessionWithForceLocked(session domain.LiveSession, 
 	state["actualStatus"] = "STOPPED"
 	state["controlDeletedAt"] = time.Now().UTC().Format(time.RFC3339)
 	delete(state, "desiredStopForce")
+	delete(state, "controlRequestId")
+	delete(state, "controlVersion")
+	delete(state, "lastControlAction")
+	delete(state, "controlRequestedAt")
+	delete(state, "activeControlRequestId")
+	delete(state, "activeControlVersion")
 	delete(state, "lastControlError")
 	delete(state, "lastControlErrorAt")
+	delete(state, "lastControlErrorRequestId")
+	delete(state, "lastControlErrorVersion")
 	if _, err := p.store.UpdateLiveSessionState(session.ID, state); err != nil {
 		return err
 	}

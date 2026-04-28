@@ -726,6 +726,8 @@ func liveSessionControlAcceptedPayload(session domain.LiveSession) map[string]an
 		"sessionId":        session.ID,
 		"desiredStatus":    state["desiredStatus"],
 		"actualStatus":     state["actualStatus"],
+		"controlRequestId": state["controlRequestId"],
+		"controlVersion":   state["controlVersion"],
 		"lastControlError": state["lastControlError"],
 		"session":          session,
 	}

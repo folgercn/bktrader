@@ -98,9 +98,11 @@ func TestLiveSessionControlIntentAcceptedForAPIRole(t *testing.T) {
 				t.Fatalf("expected 202 for api role control intent, got %d body=%s", rec.Code, rec.Body.String())
 			}
 			var payload struct {
-				DesiredStatus string             `json:"desiredStatus"`
-				ActualStatus  string             `json:"actualStatus"`
-				Session       domain.LiveSession `json:"session"`
+				DesiredStatus    string             `json:"desiredStatus"`
+				ActualStatus     string             `json:"actualStatus"`
+				ControlRequestID string             `json:"controlRequestId"`
+				ControlVersion   int64              `json:"controlVersion"`
+				Session          domain.LiveSession `json:"session"`
 			}
 			if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode live session failed: %v", err)
@@ -110,6 +112,15 @@ func TestLiveSessionControlIntentAcceptedForAPIRole(t *testing.T) {
 			}
 			if payload.ActualStatus == "" {
 				t.Fatal("expected top-level actualStatus")
+			}
+			if payload.ControlRequestID == "" {
+				t.Fatal("expected top-level controlRequestId")
+			}
+			if payload.ControlVersion == 0 {
+				t.Fatal("expected top-level controlVersion")
+			}
+			if got := payload.Session.State["controlRequestId"]; got != payload.ControlRequestID {
+				t.Fatalf("expected session controlRequestId %s, got %#v", payload.ControlRequestID, got)
 			}
 			if got := payload.Session.State["desiredStatus"]; got != desired {
 				t.Fatalf("expected desiredStatus %s, got %#v", desired, got)

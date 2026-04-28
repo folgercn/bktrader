@@ -16,11 +16,8 @@ func TestScanLiveSessionControlRequestsStopsDesiredStoppedSession(t *testing.T) 
 	if err != nil {
 		t.Fatalf("set live session running failed: %v", err)
 	}
-	state := cloneMetadata(session.State)
-	state["desiredStatus"] = "STOPPED"
-	state["actualStatus"] = "RUNNING"
-	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
-		t.Fatalf("set desired stopped failed: %v", err)
+	if _, err := platform.RequestLiveSessionStopWithForce(session.ID, false); err != nil {
+		t.Fatalf("request stop failed: %v", err)
 	}
 
 	platform.scanLiveSessionControlRequests(context.Background())
@@ -34,6 +31,119 @@ func TestScanLiveSessionControlRequestsStopsDesiredStoppedSession(t *testing.T) 
 	}
 	if got := stringValue(updated.State["actualStatus"]); got != "STOPPED" {
 		t.Fatalf("expected actualStatus STOPPED, got %s", got)
+	}
+}
+
+func TestScanLiveSessionControlRequestsInitializesLegacyDesiredIntent(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	session, err := store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = "STOPPED"
+	state["actualStatus"] = "RUNNING"
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("set legacy desired stopped failed: %v", err)
+	}
+
+	platform.scanLiveSessionControlRequests(context.Background())
+
+	updated, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if updated.Status != "STOPPED" {
+		t.Fatalf("expected STOPPED status, got %s", updated.Status)
+	}
+	if got := stringValue(updated.State["controlRequestId"]); got == "" {
+		t.Fatal("expected scanner to initialize controlRequestId for legacy intent")
+	}
+	if got := liveSessionControlVersion(updated.State); got != 1 {
+		t.Fatalf("expected scanner to initialize controlVersion 1 for legacy intent, got %d", got)
+	}
+}
+
+func TestRequestLiveSessionControlAssignsRequestIdentityAndVersion(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	started, err := platform.RequestLiveSessionStart("live-session-main")
+	if err != nil {
+		t.Fatalf("request start failed: %v", err)
+	}
+	firstRequestID := stringValue(started.State["controlRequestId"])
+	if firstRequestID == "" {
+		t.Fatal("expected controlRequestId on start request")
+	}
+	if got := liveSessionControlVersion(started.State); got != 1 {
+		t.Fatalf("expected first controlVersion 1, got %d", got)
+	}
+	if got := stringValue(started.State["lastControlAction"]); got != "start" {
+		t.Fatalf("expected lastControlAction start, got %s", got)
+	}
+
+	stopped, err := platform.RequestLiveSessionStopWithForce("live-session-main", true)
+	if err != nil {
+		t.Fatalf("request stop failed: %v", err)
+	}
+	if got := stringValue(stopped.State["controlRequestId"]); got == "" || got == firstRequestID {
+		t.Fatalf("expected new controlRequestId on stop request, got %s", got)
+	}
+	if got := liveSessionControlVersion(stopped.State); got != 2 {
+		t.Fatalf("expected second controlVersion 2, got %d", got)
+	}
+	if got := stringValue(stopped.State["lastControlAction"]); got != "stop" {
+		t.Fatalf("expected lastControlAction stop, got %s", got)
+	}
+}
+
+func TestLiveSessionControlStaleRequestCannotOverwriteNewerRequest(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	session, err := store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	stopRequest, err := platform.RequestLiveSessionStopWithForce(session.ID, true)
+	if err != nil {
+		t.Fatalf("request stop failed: %v", err)
+	}
+	staleRequest, ok := liveSessionControlRequestFromState(stopRequest.State)
+	if !ok {
+		t.Fatal("expected stop request identity")
+	}
+	if !platform.markLiveSessionControlActual(stopRequest, staleRequest, "STOPPING", nil) {
+		t.Fatal("expected current stop request to mark STOPPING")
+	}
+
+	startRequest, err := platform.RequestLiveSessionStart(session.ID)
+	if err != nil {
+		t.Fatalf("request start failed: %v", err)
+	}
+	if got := liveSessionControlVersion(startRequest.State); got != staleRequest.Version+1 {
+		t.Fatalf("expected newer request version, got %d after %d", got, staleRequest.Version)
+	}
+	if platform.markLiveSessionControlActual(stopRequest, staleRequest, "STOPPED", nil) {
+		t.Fatal("expected stale stop result to be discarded")
+	}
+
+	latest, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(latest.State["desiredStatus"]); got != "RUNNING" {
+		t.Fatalf("expected newer desiredStatus RUNNING, got %s", got)
+	}
+	if got := stringValue(latest.State["actualStatus"]); got != "RUNNING" {
+		t.Fatalf("expected stale stop not to overwrite actualStatus, got %s", got)
+	}
+	if got := liveSessionControlVersion(latest.State); got != staleRequest.Version+1 {
+		t.Fatalf("expected newer controlVersion to remain, got %d", got)
+	}
+	if got := stringValue(latest.State["controlRequestId"]); got != stringValue(startRequest.State["controlRequestId"]) {
+		t.Fatalf("expected newer controlRequestId to remain, got %s", got)
 	}
 }
 
