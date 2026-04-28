@@ -21,6 +21,7 @@ func TestNormalizeBacktestParametersMapsLegacyBaselineAliases(t *testing.T) {
 		"delayedTrailingActivationATR": 0.5,
 		"longReentryATR":               0.1,
 		"shortReentryATR":              0.0,
+		"breakoutMinATRMargin":         0.02,
 	})
 	if err != nil {
 		t.Fatalf("expected normalization to succeed, got %v", err)
@@ -43,6 +44,9 @@ func TestNormalizeBacktestParametersMapsLegacyBaselineAliases(t *testing.T) {
 	}
 	if got := parseFloatValue(normalized["short_reentry_atr"]); got != 0.0 {
 		t.Fatalf("expected short_reentry_atr=0.0, got %v", got)
+	}
+	if got := parseFloatValue(normalized["breakout_min_atr_margin"]); got != 0.02 {
+		t.Fatalf("expected breakout_min_atr_margin=0.02, got %v", got)
 	}
 }
 
@@ -195,6 +199,24 @@ func TestResolveReplayInitialBreakoutBlocksT3InsideSep(t *testing.T) {
 	breakout := resolveReplayInitialBreakout(sig, "long", 69010, cfg)
 	if breakout.Ready {
 		t.Fatalf("expected t3 breakout inside sep filter to be blocked, got %#v", breakout)
+	}
+}
+
+func TestResolveReplayInitialBreakoutBlocksWeakTickWithMinATRMargin(t *testing.T) {
+	cfg := strategyReplayConfig{
+		BreakoutMinATRMargin: 0.02,
+	}
+	sig := strategySignalBar{
+		ATR:       191.47857143,
+		PrevHigh1: 76022.50,
+		PrevHigh2: 76025.80,
+		PrevHigh3: 75926.60,
+	}
+	if breakout := resolveReplayInitialBreakout(sig, "long", 76026.60, cfg); breakout.Ready {
+		t.Fatalf("expected weak tick breakout to be blocked by min ATR margin, got %#v", breakout)
+	}
+	if breakout := resolveReplayInitialBreakout(sig, "long", 76029.70, cfg); !breakout.Ready {
+		t.Fatalf("expected breakout beyond min ATR margin to pass, got %#v", breakout)
 	}
 }
 

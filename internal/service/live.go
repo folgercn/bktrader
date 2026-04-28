@@ -5325,6 +5325,7 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"sl_reentry_min_delay_seconds",
 		"breakout_shape",
 		"t3_min_sma_atr_separation",
+		"breakout_min_atr_margin",
 		"use_sma5_intraday_structure",
 	}
 	sessionParameterKeys = append(sessionParameterKeys, liveExecutionParameterOverrideKeys()...)
@@ -5654,13 +5655,25 @@ func deriveBreakoutSignalSnapshot(decision StrategySignalDecision, eventTime tim
 	prevBar2 := mapValue(signalBarDecision["prevBar2"])
 	side := ""
 	level := 0.0
+	breakoutBoundaryReady := false
+	breakoutMarginReady := false
+	breakoutDistance := 0.0
+	breakoutRequiredMargin := 0.0
 	switch {
 	case boolValue(signalBarDecision["longBreakoutPatternReady"]):
 		side = "BUY"
-		level = parseFloatValue(prevBar2["high"])
+		level = firstPositive(parseFloatValue(signalBarDecision["longBreakoutLevel"]), parseFloatValue(prevBar2["high"]))
+		breakoutBoundaryReady = boolValue(signalBarDecision["longBreakoutBoundaryReady"])
+		breakoutMarginReady = boolValue(signalBarDecision["longBreakoutMarginReady"])
+		breakoutDistance = parseFloatValue(signalBarDecision["longBreakoutDistance"])
+		breakoutRequiredMargin = parseFloatValue(signalBarDecision["longBreakoutRequiredMargin"])
 	case boolValue(signalBarDecision["shortBreakoutPatternReady"]):
 		side = "SELL"
-		level = parseFloatValue(prevBar2["low"])
+		level = firstPositive(parseFloatValue(signalBarDecision["shortBreakoutLevel"]), parseFloatValue(prevBar2["low"]))
+		breakoutBoundaryReady = boolValue(signalBarDecision["shortBreakoutBoundaryReady"])
+		breakoutMarginReady = boolValue(signalBarDecision["shortBreakoutMarginReady"])
+		breakoutDistance = parseFloatValue(signalBarDecision["shortBreakoutDistance"])
+		breakoutRequiredMargin = parseFloatValue(signalBarDecision["shortBreakoutRequiredMargin"])
 	default:
 		return nil
 	}
@@ -5676,6 +5689,11 @@ func deriveBreakoutSignalSnapshot(decision StrategySignalDecision, eventTime tim
 		"eventAt":           eventTime.UTC().Format(time.RFC3339),
 		"price":             parseFloatValue(signalBarDecision["breakoutPrice"]),
 		"priceSource":       stringValue(signalBarDecision["breakoutPriceSource"]),
+		"boundaryReady":     breakoutBoundaryReady,
+		"marginReady":       breakoutMarginReady,
+		"distance":          breakoutDistance,
+		"requiredMargin":    breakoutRequiredMargin,
+		"minATRMargin":      parseFloatValue(signalBarDecision["breakoutMinATRMargin"]),
 		"close":             parseFloatValue(current["close"]),
 		"timeframe":         stringValue(signalBarDecision["timeframe"]),
 		"signalBarStateKey": stringValue(meta["signalBarStateKey"]),
@@ -5847,6 +5865,9 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if separation := parseFloatValue(overrides["t3_min_sma_atr_separation"]); separation > 0 {
 		normalized["t3_min_sma_atr_separation"] = separation
+	}
+	if margin := parsePositiveFiniteFloat(overrides["breakout_min_atr_margin"]); margin > 0 {
+		normalized["breakout_min_atr_margin"] = margin
 	}
 	if _, ok := overrides["use_sma5_intraday_structure"]; ok {
 		normalized["use_sma5_intraday_structure"] = boolValue(overrides["use_sma5_intraday_structure"])

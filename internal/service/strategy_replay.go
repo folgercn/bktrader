@@ -78,6 +78,7 @@ type strategyReplayConfig struct {
 	FundingIntervalHours     int
 	BreakoutShape            string
 	T3MinSMAATRSeparation    float64
+	BreakoutMinATRMargin     float64
 	UseSMA5IntradayStructure bool
 }
 
@@ -1072,6 +1073,7 @@ func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayC
 		FundingIntervalHours:     maxIntValue(context.Semantics.FundingIntervalHours, 8),
 		BreakoutShape:            strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
 		T3MinSMAATRSeparation:    parseFloatValue(parameters["t3_min_sma_atr_separation"]),
+		BreakoutMinATRMargin:     parsePositiveFiniteFloat(parameters["breakout_min_atr_margin"]),
 		UseSMA5IntradayStructure: boolValue(parameters["use_sma5_intraday_structure"]),
 	}
 }
@@ -1183,27 +1185,41 @@ type replayInitialBreakout struct {
 func resolveReplayInitialBreakout(sig strategySignalBar, side string, observedPrice float64, cfg strategyReplayConfig) replayInitialBreakout {
 	switch strings.ToLower(strings.TrimSpace(side)) {
 	case "long":
-		if sig.PrevHigh2 > sig.PrevHigh1 && sig.PrevHigh2 > 0 && observedPrice >= sig.PrevHigh2 {
+		if sig.PrevHigh2 > sig.PrevHigh1 && sig.PrevHigh2 > 0 && observedPrice >= sig.PrevHigh2 &&
+			replayBreakoutATRMarginReady("long", observedPrice, sig.PrevHigh2, sig, cfg) {
 			return replayInitialBreakout{Ready: true, Level: sig.PrevHigh2, Shape: "original_t2"}
 		}
 		if cfg.BreakoutShape == "baseline_plus_t3" &&
 			sig.PrevHigh3 > sig.PrevHigh2 && sig.PrevHigh3 > sig.PrevHigh1 && sig.PrevHigh1 > sig.PrevHigh2 &&
 			sig.PrevHigh3 > 0 && observedPrice >= sig.PrevHigh3 &&
-			replayT3BreakoutQualityReady(sig.PrevHigh3, sig, cfg) {
+			replayT3BreakoutQualityReady(sig.PrevHigh3, sig, cfg) &&
+			replayBreakoutATRMarginReady("long", observedPrice, sig.PrevHigh3, sig, cfg) {
 			return replayInitialBreakout{Ready: true, Level: sig.PrevHigh3, Shape: "t3_swing"}
 		}
 	case "short":
-		if sig.PrevLow2 < sig.PrevLow1 && sig.PrevLow2 > 0 && observedPrice <= sig.PrevLow2 {
+		if sig.PrevLow2 < sig.PrevLow1 && sig.PrevLow2 > 0 && observedPrice <= sig.PrevLow2 &&
+			replayBreakoutATRMarginReady("short", observedPrice, sig.PrevLow2, sig, cfg) {
 			return replayInitialBreakout{Ready: true, Level: sig.PrevLow2, Shape: "original_t2"}
 		}
 		if cfg.BreakoutShape == "baseline_plus_t3" &&
 			sig.PrevLow3 < sig.PrevLow2 && sig.PrevLow3 < sig.PrevLow1 && sig.PrevLow1 < sig.PrevLow2 &&
 			sig.PrevLow3 > 0 && observedPrice <= sig.PrevLow3 &&
-			replayT3BreakoutQualityReady(sig.PrevLow3, sig, cfg) {
+			replayT3BreakoutQualityReady(sig.PrevLow3, sig, cfg) &&
+			replayBreakoutATRMarginReady("short", observedPrice, sig.PrevLow3, sig, cfg) {
 			return replayInitialBreakout{Ready: true, Level: sig.PrevLow3, Shape: "t3_swing"}
 		}
 	}
 	return replayInitialBreakout{}
+}
+
+func replayBreakoutATRMarginReady(side string, observedPrice, level float64, sig strategySignalBar, cfg strategyReplayConfig) bool {
+	if cfg.BreakoutMinATRMargin <= 0 {
+		return true
+	}
+	ready, _, _ := breakoutATRMarginReady(side, observedPrice, level, sig.ATR, signalBarGateOptions{
+		BreakoutMinATRMargin: cfg.BreakoutMinATRMargin,
+	})
+	return ready
 }
 
 func replayT3BreakoutQualityReady(level float64, sig strategySignalBar, cfg strategyReplayConfig) bool {

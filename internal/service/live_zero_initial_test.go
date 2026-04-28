@@ -142,6 +142,70 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesSignalBarBoundaryForMillisBar
 	}
 }
 
+func TestPrepareLivePlanStepForSignalEvaluationBlocksWeakTickBreakoutWithMinATRMargin(t *testing.T) {
+	barStart := time.Date(2026, 4, 28, 16, 0, 0, 0, time.UTC)
+	eventTime := barStart.Add(time.Minute + 40*time.Second + 77*time.Millisecond)
+	stalePlanEvent := barStart.Add(-time.Hour)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      75939.52,
+			"ma20":      76361.98,
+			"atr14":     191.47857143,
+			"current": map[string]any{
+				"barStart": barStart.Format(time.RFC3339),
+				"close":    76022.50,
+				"high":     76022.50,
+				"low":      76022.50,
+			},
+			"prevBar1": map[string]any{
+				"high": 76022.50,
+				"low":  75879.20,
+			},
+			"prevBar2": map[string]any{
+				"high": 76025.80,
+				"low":  75833.40,
+			},
+			"prevBar3": map[string]any{
+				"high": 75926.60,
+				"low":  75726.30,
+			},
+		},
+	}
+
+	state, gotEvent, gotPrice, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		map[string]any{},
+		map[string]any{
+			"dir2_zero_initial":       true,
+			"zero_initial_mode":       "reentry_window",
+			"long_reentry_atr":        0.1,
+			"breakout_min_atr_margin": 0.02,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		eventTime,
+		76026.60,
+		"trigger.price",
+		stalePlanEvent,
+		76025.80,
+		"BUY",
+		"entry",
+		"Initial",
+	)
+	if !gotEvent.Equal(stalePlanEvent) || gotPrice != 76025.80 || gotSide != "BUY" || gotRole != "entry" || gotReason != "Initial" {
+		t.Fatalf("expected weak tick breakout to leave stale plan unchanged, got event=%s price=%.2f side=%s role=%s reason=%s", gotEvent, gotPrice, gotSide, gotRole, gotReason)
+	}
+	if pending := mapValue(state[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected weak tick breakout to avoid arming zero initial window, got %+v", pending)
+	}
+	if timeline := metadataList(state["timeline"]); len(timeline) != 0 {
+		t.Fatalf("expected no zero-initial timeline event for filtered weak tick, got %+v", timeline)
+	}
+}
+
 func TestRefreshLiveZeroInitialWindowStateExpiresLegacyEventTimeWindowAtBarBoundary(t *testing.T) {
 	barStart := time.Date(2026, 4, 28, 11, 0, 0, 0, time.UTC)
 	eventTime := barStart.Add(time.Hour + 7*time.Second)

@@ -508,6 +508,49 @@ func TestEvaluateSignalBarGateAllowsBreakoutBoundaryEquality(t *testing.T) {
 	}
 }
 
+func TestEvaluateSignalBarGateBlocksWeakTickBreakoutWithMinATRMargin(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"timeframe": "30m",
+		"sma5":      75939.52,
+		"ma20":      76361.98,
+		"atr14":     191.47857143,
+		"current": map[string]any{
+			"close": 76022.50,
+			"high":  76022.50,
+			"low":   76022.50,
+		},
+		"prevBar1": map[string]any{
+			"high": 76022.50,
+			"low":  75879.20,
+		},
+		"prevBar2": map[string]any{
+			"high": 76025.80,
+			"low":  75833.40,
+		},
+		"prevBar3": map[string]any{
+			"high": 75926.60,
+			"low":  75726.30,
+		},
+	}, "BUY", "entry", "", 76026.60, "trigger.price", signalBarGateOptions{
+		BreakoutMinATRMargin: 0.02,
+	})
+	if !boolValue(gate["longBreakoutBoundaryReady"]) {
+		t.Fatalf("expected raw boundary cross to be visible, got %#v", gate)
+	}
+	if boolValue(gate["longBreakoutMarginReady"]) {
+		t.Fatalf("expected weak single-tick cross to fail ATR margin, got %#v", gate)
+	}
+	if boolValue(gate["longBreakoutPriceReady"]) || boolValue(gate["longBreakoutPatternReady"]) || boolValue(gate["longReady"]) {
+		t.Fatalf("expected min ATR margin to block the breakout, got %#v", gate)
+	}
+	if got := parseFloatValue(gate["longBreakoutDistance"]); got < 0.79 || got > 0.81 {
+		t.Fatalf("expected breakout distance around 0.80, got %v in %#v", got, gate)
+	}
+	if got := parseFloatValue(gate["longBreakoutRequiredMargin"]); got < 3.82 || got > 3.84 {
+		t.Fatalf("expected required margin around 3.83, got %v in %#v", got, gate)
+	}
+}
+
 func TestEvaluateSignalBarGateAllowsT3BreakoutWithSeparation(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "30m",
@@ -4041,8 +4084,10 @@ func TestNormalizeLiveSessionOverridesIncludesT3BreakoutControls(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
 		"breakout_shape":                    "baseline_plus_t3",
 		"t3_min_sma_atr_separation":         0.25,
+		"breakout_min_atr_margin":           "0.02",
 		"use_sma5_intraday_structure":       true,
 		"ignored_t3_min_sma_atr_separation": 0.50,
+		"ignored_breakout_min_atr_margin":   0.04,
 	})
 	if got := stringValue(overrides["breakout_shape"]); got != "baseline_plus_t3" {
 		t.Fatalf("expected breakout_shape=baseline_plus_t3, got %s", got)
@@ -4050,11 +4095,17 @@ func TestNormalizeLiveSessionOverridesIncludesT3BreakoutControls(t *testing.T) {
 	if got := parseFloatValue(overrides["t3_min_sma_atr_separation"]); got != 0.25 {
 		t.Fatalf("expected t3_min_sma_atr_separation=0.25, got %v", got)
 	}
+	if got := parseFloatValue(overrides["breakout_min_atr_margin"]); got != 0.02 {
+		t.Fatalf("expected breakout_min_atr_margin=0.02, got %v", got)
+	}
 	if !boolValue(overrides["use_sma5_intraday_structure"]) {
 		t.Fatal("expected use_sma5_intraday_structure override")
 	}
 	if _, ok := overrides["ignored_t3_min_sma_atr_separation"]; ok {
 		t.Fatalf("expected unknown t3 override key to be dropped, got %#v", overrides)
+	}
+	if _, ok := overrides["ignored_breakout_min_atr_margin"]; ok {
+		t.Fatalf("expected unknown breakout margin key to be dropped, got %#v", overrides)
 	}
 }
 

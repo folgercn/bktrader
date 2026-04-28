@@ -210,13 +210,27 @@ func (e bkLiveIntrabarSMA5T3SepEngine) EvaluateSignal(context StrategySignalEval
 type signalBarGateOptions struct {
 	BreakoutShape         string
 	T3MinSMAATRSeparation float64
+	BreakoutMinATRMargin  float64
 }
 
 func signalBarGateOptionsFromParameters(parameters map[string]any) signalBarGateOptions {
 	return signalBarGateOptions{
 		BreakoutShape:         strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
 		T3MinSMAATRSeparation: parseFloatValue(parameters["t3_min_sma_atr_separation"]),
+		BreakoutMinATRMargin:  parsePositiveFiniteFloat(parameters["breakout_min_atr_margin"]),
 	}
+}
+
+func parsePositiveFiniteFloat(value any) float64 {
+	parsed := parseFloatValue(value)
+	if parsed > 0 && isFiniteFloat(parsed) {
+		return parsed
+	}
+	return 0
+}
+
+func isFiniteFloat(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
@@ -873,8 +887,12 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	}
 	longBreakoutShapeReady := longBreakoutShapeName != "" && longBreakoutLevel > 0
 	shortBreakoutShapeReady := shortBreakoutShapeName != "" && shortBreakoutLevel > 0
-	longBreakoutPriceReady := breakoutPrice >= longBreakoutLevel && longBreakoutLevel > 0
-	shortBreakoutPriceReady := breakoutPrice <= shortBreakoutLevel && shortBreakoutLevel > 0
+	longBreakoutBoundaryReady := breakoutPrice >= longBreakoutLevel && longBreakoutLevel > 0
+	shortBreakoutBoundaryReady := breakoutPrice <= shortBreakoutLevel && shortBreakoutLevel > 0
+	longBreakoutMarginReady, longBreakoutDistance, longBreakoutRequiredMargin := breakoutATRMarginReady("long", breakoutPrice, longBreakoutLevel, atr14, gateOptions)
+	shortBreakoutMarginReady, shortBreakoutDistance, shortBreakoutRequiredMargin := breakoutATRMarginReady("short", breakoutPrice, shortBreakoutLevel, atr14, gateOptions)
+	longBreakoutPriceReady := longBreakoutBoundaryReady && longBreakoutMarginReady
+	shortBreakoutPriceReady := shortBreakoutBoundaryReady && shortBreakoutMarginReady
 	longBreakoutQualityReady := breakoutQualityReady(longBreakoutShapeName, longBreakoutLevel, sma5, atr14, gateOptions)
 	shortBreakoutQualityReady := breakoutQualityReady(shortBreakoutShapeName, shortBreakoutLevel, sma5, atr14, gateOptions)
 	longBreakoutReady := longBreakoutShapeReady && longBreakoutPriceReady && longBreakoutQualityReady
@@ -893,6 +911,15 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	result["breakoutPriceSource"] = breakoutPriceSource
 	result["longBreakoutShapeReady"] = longBreakoutShapeReady
 	result["shortBreakoutShapeReady"] = shortBreakoutShapeReady
+	result["longBreakoutBoundaryReady"] = longBreakoutBoundaryReady
+	result["shortBreakoutBoundaryReady"] = shortBreakoutBoundaryReady
+	result["longBreakoutMarginReady"] = longBreakoutMarginReady
+	result["shortBreakoutMarginReady"] = shortBreakoutMarginReady
+	result["longBreakoutDistance"] = longBreakoutDistance
+	result["shortBreakoutDistance"] = shortBreakoutDistance
+	result["longBreakoutRequiredMargin"] = longBreakoutRequiredMargin
+	result["shortBreakoutRequiredMargin"] = shortBreakoutRequiredMargin
+	result["breakoutMinATRMargin"] = gateOptions.BreakoutMinATRMargin
 	result["longBreakoutPriceReady"] = longBreakoutPriceReady
 	result["shortBreakoutPriceReady"] = shortBreakoutPriceReady
 	result["longBreakoutQualityReady"] = longBreakoutQualityReady
@@ -923,6 +950,27 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		}
 	}
 	return result
+}
+
+func breakoutATRMarginReady(side string, breakoutPrice, breakoutLevel, atr14 float64, options signalBarGateOptions) (bool, float64, float64) {
+	if !isFiniteFloat(breakoutPrice) || !isFiniteFloat(breakoutLevel) {
+		return false, 0, 0
+	}
+	distance := breakoutPrice - breakoutLevel
+	if strings.EqualFold(strings.TrimSpace(side), "short") {
+		distance = breakoutLevel - breakoutPrice
+	}
+	if options.BreakoutMinATRMargin <= 0 {
+		return true, distance, 0
+	}
+	if breakoutLevel <= 0 || breakoutPrice <= 0 || atr14 <= 0 || !isFiniteFloat(atr14) {
+		return false, distance, 0
+	}
+	requiredMargin := options.BreakoutMinATRMargin * atr14
+	if !isFiniteFloat(requiredMargin) || requiredMargin <= 0 {
+		return false, distance, 0
+	}
+	return distance >= requiredMargin, distance, requiredMargin
 }
 
 func breakoutQualityReady(shapeName string, breakoutLevel, sma5, atr14 float64, options signalBarGateOptions) bool {

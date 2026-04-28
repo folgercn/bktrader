@@ -724,6 +724,7 @@ func applyBacktestParameterAliases(parameters map[string]any) {
 		"delayedTrailingActivationATR": "delayed_trailing_activation_atr",
 		"longReentryATR":               "long_reentry_atr",
 		"shortReentryATR":              "short_reentry_atr",
+		"breakoutMinATRMargin":         "breakout_min_atr_margin",
 	}
 	for from, to := range aliases {
 		if _, ok := parameters[to]; ok {
