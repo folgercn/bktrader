@@ -23,10 +23,12 @@ var telegramBeijingLocation = func() *time.Location {
 }()
 
 const (
-	telegramFlapSendGrace    = 45 * time.Second
-	telegramFlapRecoverGrace = 60 * time.Second
-	telegramTradeEventLimit  = 50
-	telegramTradeEventWindow = 24 * time.Hour
+	telegramFlapSendGrace            = 45 * time.Second
+	telegramFlapRecoverGrace         = 60 * time.Second
+	telegramTradeEventLimit          = 50
+	telegramTradeEventWindow         = 24 * time.Hour
+	telegramUnprotectedPositionGrace = 15 * time.Minute
+	telegramPositionReportTradeQuiet = 15 * time.Minute
 )
 
 func (p *Platform) SendNotificationToTelegram(notificationID string) error {
@@ -311,10 +313,12 @@ func (p *Platform) DispatchTelegramTradeEvents(deliveryByID map[string]domain.No
 	if !config.Enabled || !config.TradeEventsEnabled || strings.TrimSpace(config.BotToken) == "" || strings.TrimSpace(config.ChatID) == "" {
 		return 0, nil
 	}
-	events, err := p.store.ListTelegramTradeEventCandidates(telegramNow().Add(-telegramTradeEventWindow), telegramTradeEventLimit)
+	now := telegramNow()
+	events, err := p.store.ListTelegramTradeEventCandidates(now.Add(-telegramTradeEventWindow), telegramTradeEventLimit)
 	if err != nil {
 		return 0, err
 	}
+	liveSessionLabelByID := p.telegramLiveSessionLabelByID()
 	sent := 0
 	var firstErr error
 	for _, event := range events {
@@ -328,7 +332,7 @@ func (p *Platform) DispatchTelegramTradeEvents(deliveryByID map[string]domain.No
 		if delivery, ok := deliveryByID[notificationID]; ok && strings.EqualFold(delivery.Status, "sent") {
 			continue
 		}
-		message := formatTelegramTradeEvent(event)
+		message := formatTelegramTradeEvent(event, liveSessionLabelByID)
 		if err := p.sendTelegramMessage(message); err != nil {
 			_, _ = p.store.UpsertNotificationDelivery(notificationID, "telegram", "failed", err.Error(), map[string]any{
 				"kind":      "trade-event",
@@ -348,6 +352,7 @@ func (p *Platform) DispatchTelegramTradeEvents(deliveryByID map[string]domain.No
 			"orderId":   event.OrderID,
 			"symbol":    event.Symbol,
 			"eventTime": event.EventTime.Format(time.RFC3339),
+			"sentAt":    now.Format(time.RFC3339),
 		})
 		if err != nil {
 			if firstErr == nil {
@@ -420,6 +425,12 @@ func (p *Platform) DispatchTelegramPositionReport(deliveryByID map[string]domain
 	if !telegramAccountsHaveOpenPosition(liveAccounts) {
 		return 0, nil
 	}
+	if telegramHasRecentTradeEventDelivery(deliveryByID, now, telegramPositionReportTradeQuiet) {
+		p.logger("service.telegram").Debug("skipping position report because a trade event was recently delivered",
+			"now", now.Format(time.RFC3339),
+			"quiet_window", telegramPositionReportTradeQuiet.String())
+		return 0, nil
+	}
 	summaries, err := p.ListAccountSummaries()
 	if err != nil {
 		return 0, err
@@ -464,7 +475,49 @@ func telegramAccountsHaveOpenPosition(accounts []domain.Account) bool {
 	return false
 }
 
-func formatTelegramTradeEvent(event domain.OrderExecutionEvent) string {
+func telegramHasRecentTradeEventDelivery(deliveryByID map[string]domain.NotificationDelivery, now time.Time, window time.Duration) bool {
+	if window <= 0 {
+		return false
+	}
+	for _, delivery := range deliveryByID {
+		if !strings.EqualFold(delivery.Channel, "telegram") {
+			continue
+		}
+		if stringValue(delivery.Metadata["kind"]) != "trade-event" {
+			continue
+		}
+		quietAnchor := parseOptionalRFC3339(firstNonEmpty(
+			stringValue(delivery.Metadata["sentAt"]),
+			stringValue(delivery.Metadata["eventTime"]),
+		))
+		if quietAnchor.IsZero() {
+			continue
+		}
+		age := now.UTC().Sub(quietAnchor.UTC())
+		if age >= 0 && age < window {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Platform) telegramLiveSessionLabelByID() map[string]string {
+	sessions, err := p.store.ListLiveSessions()
+	if err != nil {
+		p.logger("service.telegram").Warn("list live sessions for telegram labels failed", "error", err)
+		return nil
+	}
+	labels := make(map[string]string, len(sessions))
+	for _, session := range sessions {
+		label := firstNonEmpty(strings.TrimSpace(session.Alias), strings.TrimSpace(session.ID))
+		if label != "" {
+			labels[session.ID] = label
+		}
+	}
+	return labels
+}
+
+func formatTelegramTradeEvent(event domain.OrderExecutionEvent, liveSessionLabelByID map[string]string) string {
 	action := "开仓"
 	if telegramTradeEventIsClose(event) {
 		action = "平仓"
@@ -478,12 +531,7 @@ func formatTelegramTradeEvent(event domain.OrderExecutionEvent) string {
 	fee := firstNonZeroFloat(parseFloatValue(event.AdapterSync["totalFee"]), parseFloatValue(event.DispatchSummary["fee"]))
 	lines := []string{
 		fmt.Sprintf("📌 *%s成交* %s %s", action, NormalizeSymbol(event.Symbol), strings.ToUpper(strings.TrimSpace(event.Side))),
-		fmt.Sprintf("数量: %s", formatTelegramNumber(event.Quantity)),
-		fmt.Sprintf("价格: %s", formatTelegramNumber(price)),
-		fmt.Sprintf("订单: %s", event.OrderID),
-	}
-	if event.ExchangeOrderID != "" {
-		lines = append(lines, fmt.Sprintf("交易所订单: %s", event.ExchangeOrderID))
+		fmt.Sprintf("数量: %s  价格: %s", formatTelegramNumber(event.Quantity), formatTelegramNumber(price)),
 	}
 	if action == "平仓" {
 		lines = append(lines, fmt.Sprintf("已实现盈亏: %s", formatTelegramSignedNumber(realizedPnL)))
@@ -491,11 +539,8 @@ func formatTelegramTradeEvent(event domain.OrderExecutionEvent) string {
 	if fee != 0 {
 		lines = append(lines, fmt.Sprintf("手续费: %s", formatTelegramSignedNumber(-fee)))
 	}
-	if event.AccountID != "" {
-		lines = append(lines, fmt.Sprintf("账户: %s", event.AccountID))
-	}
 	if event.LiveSessionID != "" {
-		lines = append(lines, fmt.Sprintf("实盘会话: %s", event.LiveSessionID))
+		lines = append(lines, fmt.Sprintf("实盘会话: %s", firstNonEmpty(liveSessionLabelByID[event.LiveSessionID], event.LiveSessionID)))
 	}
 	if !event.EventTime.IsZero() {
 		lines = append(lines, fmt.Sprintf("北京时间: %s", formatTelegramBeijingTime(event.EventTime)))
@@ -637,6 +682,9 @@ func telegramDeliveryNeedsFlapSuppression(delivery domain.NotificationDelivery) 
 	if strings.HasPrefix(delivery.NotificationID, "live-preflight-runtime-error-") {
 		return true
 	}
+	if strings.HasPrefix(delivery.NotificationID, "live-unprotected-position-") {
+		return true
+	}
 	if delivery.Metadata == nil {
 		return false
 	}
@@ -659,16 +707,26 @@ func telegramFlapSuppressionKeyForAlert(alert domain.PlatformAlert) string {
 	if alert.Scope == "live" && strings.HasPrefix(alert.ID, "live-preflight-runtime-error-") {
 		return "live-preflight-runtime-error"
 	}
+	if alert.Scope == "live" && strings.HasPrefix(alert.ID, "live-unprotected-position-") {
+		return "live-unprotected-position"
+	}
 	return ""
 }
 
 func telegramFlapSuppressionKeyIsKnown(key string) bool {
 	switch key {
-	case "runtime-stale", "runtime-recovering", "live-warning-stale-source-states", "live-preflight-runtime-error":
+	case "runtime-stale", "runtime-recovering", "live-warning-stale-source-states", "live-preflight-runtime-error", "live-unprotected-position":
 		return true
 	default:
 		return false
 	}
+}
+
+func telegramFlapSendGraceForAlert(alert domain.PlatformAlert) time.Duration {
+	if telegramFlapSuppressionKeyForAlert(alert) == "live-unprotected-position" {
+		return telegramUnprotectedPositionGrace
+	}
+	return telegramFlapSendGrace
 }
 
 func (p *Platform) advanceTelegramFlapSuppressedActiveDelivery(
@@ -708,7 +766,7 @@ func (p *Platform) advanceTelegramFlapSuppressedActiveDelivery(
 				firstActiveAt = now
 				metadata["firstActiveAt"] = now.Format(time.RFC3339)
 			}
-			if now.Sub(firstActiveAt) < telegramFlapSendGrace {
+			if now.Sub(firstActiveAt) < telegramFlapSendGraceForAlert(item.Alert) {
 				nextDelivery, err := p.store.UpsertNotificationDelivery(item.ID, "telegram", "pending", "", metadata)
 				return nextDelivery, false, err
 			}
