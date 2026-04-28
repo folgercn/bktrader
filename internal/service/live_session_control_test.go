@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -181,6 +182,9 @@ func TestScanLiveSessionControlRequestsPreservesStopSafetyUntilForceRequested(t 
 	if got := stringValue(blocked.State["actualStatus"]); got != "ERROR" {
 		t.Fatalf("expected actualStatus ERROR, got %s", got)
 	}
+	if got := stringValue(blocked.State["lastControlErrorCode"]); got != LiveSessionControlErrorCodeActivePositionsOrOrders {
+		t.Fatalf("expected lastControlErrorCode %s, got %s", LiveSessionControlErrorCodeActivePositionsOrOrders, got)
+	}
 
 	platform.scanLiveSessionControlRequests(context.Background())
 	stillBlocked, err := store.GetLiveSession(session.ID)
@@ -245,6 +249,9 @@ func TestLiveSessionControlForceStopRecoversFromPreviousError(t *testing.T) {
 	if got := stringValue(failed.State["lastControlError"]); got == "" {
 		t.Fatal("expected lastControlError after blocked stop")
 	}
+	if got := stringValue(failed.State["lastControlErrorCode"]); got != LiveSessionControlErrorCodeActivePositionsOrOrders {
+		t.Fatalf("expected lastControlErrorCode %s, got %s", LiveSessionControlErrorCodeActivePositionsOrOrders, got)
+	}
 
 	if _, err := platform.RequestLiveSessionStopWithForce(session.ID, true); err != nil {
 		t.Fatalf("request force stop retry failed: %v", err)
@@ -255,6 +262,9 @@ func TestLiveSessionControlForceStopRecoversFromPreviousError(t *testing.T) {
 	}
 	if got := stringValue(retry.State["actualStatus"]); got == "ERROR" {
 		t.Fatal("expected force stop request to clear previous ERROR actualStatus")
+	}
+	if got := stringValue(retry.State["lastControlErrorCode"]); got != "" {
+		t.Fatalf("expected force stop request to clear previous error code, got %s", got)
 	}
 
 	platform.scanLiveSessionControlRequests(context.Background())
@@ -271,6 +281,9 @@ func TestLiveSessionControlForceStopRecoversFromPreviousError(t *testing.T) {
 	}
 	if got := stringValue(stopped.State["lastControlError"]); got != "" {
 		t.Fatalf("expected lastControlError cleared after recovery, got %s", got)
+	}
+	if got := stringValue(stopped.State["lastControlErrorCode"]); got != "" {
+		t.Fatalf("expected lastControlErrorCode cleared after recovery, got %s", got)
 	}
 }
 
@@ -296,6 +309,9 @@ func TestScanLiveSessionControlRequestsWritesErrorWithoutRetryingStart(t *testin
 	if got := stringValue(failed.State["lastControlError"]); got == "" {
 		t.Fatal("expected lastControlError")
 	}
+	if got := stringValue(failed.State["lastControlErrorCode"]); got != LiveSessionControlErrorCodeUnknown {
+		t.Fatalf("expected lastControlErrorCode %s, got %s", LiveSessionControlErrorCodeUnknown, got)
+	}
 
 	platform.scanLiveSessionControlRequests(context.Background())
 	stillFailed, err := store.GetLiveSession("live-session-main")
@@ -304,6 +320,27 @@ func TestScanLiveSessionControlRequestsWritesErrorWithoutRetryingStart(t *testin
 	}
 	if got := stringValue(stillFailed.State["actualStatus"]); got != "ERROR" {
 		t.Fatalf("expected ERROR not to auto retry, got %s", got)
+	}
+}
+
+func TestLiveSessionControlErrorCodeClassification(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "active exposure", err: activePositionsOrOrdersError{}, want: LiveSessionControlErrorCodeActivePositionsOrOrders},
+		{name: "runtime lease", err: fmt.Errorf("wrapped: %w", ErrRuntimeLeaseNotAcquired), want: LiveSessionControlErrorCodeRuntimeLeaseNotAcquired},
+		{name: "control operation", err: fmt.Errorf("wrapped: %w", ErrLiveControlOperationInProgress), want: LiveSessionControlErrorCodeControlOperationInProgress},
+		{name: "account operation", err: fmt.Errorf("wrapped: %w", ErrLiveAccountOperationInProgress), want: LiveSessionControlErrorCodeControlOperationInProgress},
+		{name: "unknown", err: fmt.Errorf("adapter returned unexpected status"), want: LiveSessionControlErrorCodeUnknown},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := liveSessionControlErrorCode(tc.err); got != tc.want {
+				t.Fatalf("expected %s, got %s", tc.want, got)
+			}
+		})
 	}
 }
 

@@ -27,12 +27,31 @@ function liveSessionControlStatus(session: LiveSession) {
   const desired = String(state.desiredStatus ?? "").trim().toUpperCase();
   const actual = String(state.actualStatus ?? "").trim().toUpperCase();
   const error = String(state.lastControlError ?? "").trim();
+  const errorCode = String(state.lastControlErrorCode ?? "").trim().toUpperCase();
   return {
     desired,
     actual,
     error,
-    key: `${desired}|${actual}|${error}`,
+    errorCode,
+    key: `${desired}|${actual}|${errorCode}|${error}`,
   };
+}
+
+function liveSessionControlErrorNotification(current: ReturnType<typeof liveSessionControlStatus>, sessionID: string) {
+  const detail = current.error || sessionID;
+  switch (current.errorCode) {
+    case "ACTIVE_POSITIONS_OR_ORDERS":
+      return `会话控制失败 (${current.errorCode})：${detail}。请先平仓/撤单，或确认风险后使用 force stop。`;
+    case "RUNTIME_LEASE_NOT_ACQUIRED":
+    case "CONTROL_OPERATION_IN_PROGRESS":
+      return `会话控制失败 (${current.errorCode})：${detail}。当前 runner/control 操作占用中，稍后重试。`;
+    case "CONFIG_ERROR":
+      return `会话控制失败 (${current.errorCode})：${detail}。请检查 live session、账户和 runtime 配置。`;
+    case "ADAPTER_ERROR":
+      return `会话控制失败 (${current.errorCode})：${detail}。请检查交易所适配器连接和 runner 日志。`;
+    default:
+      return current.errorCode ? `会话控制失败 (${current.errorCode})：${detail}` : `会话控制失败：${detail}`;
+  }
 }
 
 function notifyLiveSessionControlTransitions(
@@ -54,7 +73,7 @@ function notifyLiveSessionControlTransitions(
     if (current.actual === "ERROR") {
       setNotification({
         type: 'error',
-        message: `会话控制失败：${current.error || session.id}`,
+        message: liveSessionControlErrorNotification(current, session.id),
       });
       continue;
     }

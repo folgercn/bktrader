@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -12,7 +13,16 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
-const liveSessionControlScannerInterval = 5 * time.Second
+const (
+	liveSessionControlScannerInterval = 5 * time.Second
+
+	LiveSessionControlErrorCodeActivePositionsOrOrders    = "ACTIVE_POSITIONS_OR_ORDERS"
+	LiveSessionControlErrorCodeRuntimeLeaseNotAcquired    = "RUNTIME_LEASE_NOT_ACQUIRED"
+	LiveSessionControlErrorCodeControlOperationInProgress = "CONTROL_OPERATION_IN_PROGRESS"
+	LiveSessionControlErrorCodeAdapterError               = "ADAPTER_ERROR"
+	LiveSessionControlErrorCodeConfigError                = "CONFIG_ERROR"
+	LiveSessionControlErrorCodeUnknown                    = "UNKNOWN"
+)
 
 type liveSessionControlRequest struct {
 	ID      string
@@ -62,6 +72,9 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, fo
 		delete(state, "activeControlVersion")
 		delete(state, "lastControlError")
 		delete(state, "lastControlErrorAt")
+		delete(state, "lastControlErrorCode")
+		delete(state, "lastControlErrorRequestId")
+		delete(state, "lastControlErrorVersion")
 		updated, ok, err := p.updateLiveSessionControlStateIfPrevious(session.ID, previous, state)
 		if err != nil {
 			return domain.LiveSession{}, err
@@ -219,11 +232,13 @@ func (p *Platform) markLiveSessionControlActual(session domain.LiveSession, requ
 	state["activeControlVersion"] = request.Version
 	if controlErr != nil {
 		state["lastControlError"] = controlErr.Error()
+		state["lastControlErrorCode"] = liveSessionControlErrorCode(controlErr)
 		state["lastControlErrorAt"] = now.Format(time.RFC3339)
 		state["lastControlErrorRequestId"] = request.ID
 		state["lastControlErrorVersion"] = request.Version
 	} else {
 		delete(state, "lastControlError")
+		delete(state, "lastControlErrorCode")
 		delete(state, "lastControlErrorAt")
 		delete(state, "lastControlErrorRequestId")
 		delete(state, "lastControlErrorVersion")
@@ -265,6 +280,22 @@ func (p *Platform) updateLiveSessionControlStateIfPrevious(sessionID string, pre
 	}
 	updated, err := p.store.UpdateLiveSessionState(sessionID, state)
 	return updated, err == nil, err
+}
+
+func liveSessionControlErrorCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch {
+	case errors.Is(err, ErrActivePositionsOrOrders):
+		return LiveSessionControlErrorCodeActivePositionsOrOrders
+	case errors.Is(err, ErrRuntimeLeaseNotAcquired):
+		return LiveSessionControlErrorCodeRuntimeLeaseNotAcquired
+	case errors.Is(err, ErrLiveControlOperationInProgress), errors.Is(err, ErrLiveAccountOperationInProgress):
+		return LiveSessionControlErrorCodeControlOperationInProgress
+	default:
+		return LiveSessionControlErrorCodeUnknown
+	}
 }
 
 func liveSessionActualStatusFromSession(session domain.LiveSession) string {

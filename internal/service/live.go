@@ -247,6 +247,7 @@ func (p *Platform) deleteLiveSessionWithForceLocked(session domain.LiveSession, 
 	delete(state, "activeControlRequestId")
 	delete(state, "activeControlVersion")
 	delete(state, "lastControlError")
+	delete(state, "lastControlErrorCode")
 	delete(state, "lastControlErrorAt")
 	delete(state, "lastControlErrorRequestId")
 	delete(state, "lastControlErrorVersion")
