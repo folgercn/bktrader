@@ -1206,7 +1206,15 @@ func (p *Platform) collectLiveAccountReconcileSymbols(account domain.Account, lo
 		return nil, err
 	}
 	for _, position := range positions {
-		if position.AccountID != account.ID || position.Quantity <= 0 {
+		if position.AccountID != account.ID {
+			continue
+		}
+		if position.Quantity <= 0 {
+			if strings.TrimSpace(position.ID) != "" {
+				if err := p.store.DeletePosition(position.ID); err != nil {
+					return nil, err
+				}
+			}
 			continue
 		}
 		addLiveAccountReconcileSymbol(symbolSet, position.Symbol)
@@ -1746,7 +1754,7 @@ func (p *Platform) syncLiveAccountFromLocalState(account domain.Account, binding
 	}
 	filteredPositions := make([]domain.Position, 0)
 	for _, position := range positions {
-		if position.AccountID == account.ID {
+		if position.AccountID == account.ID && position.Quantity > 0 {
 			filteredPositions = append(filteredPositions, position)
 		}
 	}
@@ -3007,6 +3015,19 @@ func (p *Platform) reconcileLiveAccountPositions(account domain.Account, exchang
 			continue
 		}
 		if position.Quantity <= 0 {
+			if strings.TrimSpace(position.ID) != "" {
+				if err := p.store.DeletePosition(position.ID); err != nil {
+					return nil, err
+				}
+			}
+			recordGate(symbol, map[string]any{
+				"status":                 livePositionReconcileGateStatusVerified,
+				"scenario":               "non-positive-db-position-cleared",
+				"blocking":               false,
+				"dbPosition":             map[string]any{},
+				"exchangePosition":       map[string]any{},
+				"clearedStalePositionId": position.ID,
+			})
 			continue
 		}
 		cleanupGuard := livePositionFlatCleanupGuard{

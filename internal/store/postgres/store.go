@@ -942,7 +942,9 @@ func (s *Store) DeleteSyntheticFillsForOrder(orderID string) (float64, error) {
 func (s *Store) ListPositions() ([]domain.Position, error) {
 	rows, err := s.db.Query(`
 		select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
-		from positions order by updated_at asc
+		from positions
+		where quantity > 0
+		order by updated_at asc
 	`)
 	if err != nil {
 		return nil, err
@@ -969,7 +971,7 @@ func (s *Store) QueryPositions(query domain.PositionQuery) ([]domain.Position, e
 	builder.WriteString(`
 			select id, account_id, strategy_version_id, symbol, side, quantity, entry_price, mark_price, updated_at
 			from positions
-			where 1=1
+			where quantity > 0
 		`)
 	var args []any
 	appendQueryCondition(&builder, &args, "account_id = %s", strings.TrimSpace(query.AccountID))
@@ -1018,6 +1020,13 @@ func (s *Store) FindPosition(accountID, symbol string) (domain.Position, bool, e
 }
 
 func (s *Store) SavePosition(position domain.Position) (domain.Position, error) {
+	if position.Quantity <= 0 {
+		if strings.TrimSpace(position.ID) == "" {
+			return position, nil
+		}
+		return position, s.DeletePosition(position.ID)
+	}
+
 	now := time.Now().UTC()
 	position.UpdatedAt = now
 	if position.ID == "" {
