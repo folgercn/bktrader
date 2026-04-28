@@ -12,7 +12,7 @@ func TestBuildFillReconciliationPlanCreatesNewRealFill(t *testing.T) {
 	order := fillReconcileTestOrder(1)
 	realFill := fillReconcileReal(order.ID, "trade-1", 1)
 
-	plan, err := BuildFillReconciliationPlan(order, nil, []domain.Fill{realFill}, FillReconcilePolicy{})
+	plan, err := BuildFillReconciliationPlan(order, nil, []FillReconciliationInput{fillReconcileInput(realFill, FillSourceReal)}, FillReconcilePolicy{})
 	if err != nil {
 		t.Fatalf("BuildFillReconciliationPlan failed: %v", err)
 	}
@@ -28,8 +28,8 @@ func TestBuildFillReconciliationPlanCreatesNewRealFill(t *testing.T) {
 
 func TestBuildFillReconciliationPlanReplacesSyntheticWithRealWithoutDoubleApply(t *testing.T) {
 	order := fillReconcileTestOrder(1)
-	existing := []domain.Fill{fillReconcileSynthetic("fill-synthetic", order.ID, 1)}
-	incoming := []domain.Fill{fillReconcileReal(order.ID, "trade-1", 1)}
+	existing := []FillReconciliationInput{fillReconcileInput(fillReconcileSynthetic("fill-synthetic", order.ID, 1), FillSourceSynthetic)}
+	incoming := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 1), FillSourceReal)}
 
 	plan, err := BuildFillReconciliationPlan(order, existing, incoming, FillReconcilePolicy{})
 	if err != nil {
@@ -45,8 +45,8 @@ func TestBuildFillReconciliationPlanReplacesSyntheticWithRealWithoutDoubleApply(
 
 func TestBuildFillReconciliationPlanCreatesRemainderForPartialRealFill(t *testing.T) {
 	order := fillReconcileTestOrder(1)
-	existing := []domain.Fill{fillReconcileSynthetic("fill-synthetic", order.ID, 1)}
-	incoming := []domain.Fill{fillReconcileReal(order.ID, "trade-1", 0.4)}
+	existing := []FillReconciliationInput{fillReconcileInput(fillReconcileSynthetic("fill-synthetic", order.ID, 1), FillSourceSynthetic)}
+	incoming := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 0.4), FillSourceReal)}
 
 	plan, err := BuildFillReconciliationPlan(order, existing, incoming, FillReconcilePolicy{})
 	if err != nil {
@@ -62,11 +62,11 @@ func TestBuildFillReconciliationPlanCreatesRemainderForPartialRealFill(t *testin
 
 func TestBuildFillReconciliationPlanBatchedRealFillsShrinkRemainder(t *testing.T) {
 	order := fillReconcileTestOrder(1)
-	existing := []domain.Fill{
-		fillReconcileReal(order.ID, "trade-1", 0.4),
-		fillReconcileRemainder("fill-remainder", order.ID, 0.6),
+	existing := []FillReconciliationInput{
+		fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 0.4), FillSourceReal),
+		fillReconcileInput(fillReconcileRemainder("fill-remainder", order.ID, 0.6), FillSourceRemainder),
 	}
-	incoming := []domain.Fill{fillReconcileReal(order.ID, "trade-2", 0.3)}
+	incoming := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-2", 0.3), FillSourceReal)}
 
 	plan, err := BuildFillReconciliationPlan(order, existing, incoming, FillReconcilePolicy{})
 	if err != nil {
@@ -82,8 +82,8 @@ func TestBuildFillReconciliationPlanBatchedRealFillsShrinkRemainder(t *testing.T
 
 func TestBuildFillReconciliationPlanAppliesOnlyRealQtyBeyondSynthetic(t *testing.T) {
 	order := fillReconcileTestOrder(1)
-	existing := []domain.Fill{fillReconcileSynthetic("fill-synthetic", order.ID, 0.6)}
-	incoming := []domain.Fill{fillReconcileReal(order.ID, "trade-1", 1)}
+	existing := []FillReconciliationInput{fillReconcileInput(fillReconcileSynthetic("fill-synthetic", order.ID, 0.6), FillSourceSynthetic)}
+	incoming := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 1), FillSourceReal)}
 
 	plan, err := BuildFillReconciliationPlan(order, existing, incoming, FillReconcilePolicy{})
 	if err != nil {
@@ -98,8 +98,8 @@ func TestBuildFillReconciliationPlanAppliesOnlyRealQtyBeyondSynthetic(t *testing
 
 func TestBuildFillReconciliationPlanSkipsDuplicateRealTradeID(t *testing.T) {
 	order := fillReconcileTestOrder(1)
-	existing := []domain.Fill{fillReconcileReal(order.ID, "trade-1", 1)}
-	incoming := []domain.Fill{fillReconcileReal(order.ID, "trade-1", 1)}
+	existing := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 1), FillSourceReal)}
+	incoming := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 1), FillSourceReal)}
 
 	plan, err := BuildFillReconciliationPlan(order, existing, incoming, FillReconcilePolicy{})
 	if err != nil {
@@ -117,14 +117,46 @@ func TestBuildFillReconciliationPlanSkipsDuplicateRealTradeID(t *testing.T) {
 
 func TestBuildFillReconciliationPlanRejectsInvalidQuantity(t *testing.T) {
 	order := fillReconcileTestOrder(1)
-	_, err := BuildFillReconciliationPlan(order, nil, []domain.Fill{{
+	_, err := BuildFillReconciliationPlan(order, nil, []FillReconciliationInput{fillReconcileInput(domain.Fill{
 		OrderID:         order.ID,
 		ExchangeTradeID: "trade-1",
 		Price:           68000,
 		Quantity:        math.NaN(),
-	}}, FillReconcilePolicy{})
+	}, FillSourceReal)}, FillReconcilePolicy{})
 	if err == nil {
 		t.Fatal("expected invalid quantity error")
+	}
+}
+
+func TestBuildFillReconciliationPlanRequiresExplicitFillSource(t *testing.T) {
+	order := fillReconcileTestOrder(1)
+	_, err := BuildFillReconciliationPlan(order, nil, []FillReconciliationInput{{Fill: fillReconcileReal(order.ID, "trade-1", 1)}}, FillReconcilePolicy{})
+	if err == nil {
+		t.Fatal("expected missing fill source error")
+	}
+}
+
+func TestBuildFillReconciliationPlanDoesNotDeleteSyntheticWithoutExplicitSource(t *testing.T) {
+	order := fillReconcileTestOrder(1)
+	existing := []FillReconciliationInput{fillReconcileInput(fillReconcileSynthetic("fill-synthetic", order.ID, 1), FillSourceReal)}
+	_, err := BuildFillReconciliationPlan(order, existing, nil, FillReconcilePolicy{})
+	if err == nil {
+		t.Fatal("expected source/id mismatch error")
+	}
+}
+
+func TestBuildFillReconciliationPlanClampsNegativeRemainingQuantity(t *testing.T) {
+	order := fillReconcileTestOrder(1)
+	existing := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 1.2), FillSourceReal)}
+
+	plan, err := BuildFillReconciliationPlan(order, existing, nil, FillReconcilePolicy{})
+	if err != nil {
+		t.Fatalf("BuildFillReconciliationPlan failed: %v", err)
+	}
+
+	requireFillReconcileQuantity(t, metadataFloat(plan, "remainingQuantity"), 0)
+	if len(plan.Warnings) == 0 {
+		t.Fatal("expected overfill warning")
 	}
 }
 
@@ -147,6 +179,10 @@ func fillReconcileReal(orderID, tradeID string, quantity float64) domain.Fill {
 		Price:           68000,
 		Quantity:        quantity,
 	}
+}
+
+func fillReconcileInput(fill domain.Fill, source FillSource) FillReconciliationInput {
+	return FillReconciliationInput{Fill: fill, Source: source}
 }
 
 func fillReconcileSynthetic(id, orderID string, quantity float64) domain.Fill {

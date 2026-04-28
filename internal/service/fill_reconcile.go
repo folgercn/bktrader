@@ -24,6 +24,11 @@ type FillReconcilePolicy struct {
 	AllowSyntheticFallback bool
 }
 
+type FillReconciliationInput struct {
+	Fill   domain.Fill
+	Source FillSource
+}
+
 type FillReconciliationPlan struct {
 	DeleteFillIDs      []string
 	CreateFills        []domain.Fill
@@ -32,7 +37,7 @@ type FillReconciliationPlan struct {
 	Warnings           []string
 }
 
-func BuildFillReconciliationPlan(order domain.Order, existing []domain.Fill, incoming []domain.Fill, policy FillReconcilePolicy) (FillReconciliationPlan, error) {
+func BuildFillReconciliationPlan(order domain.Order, existing []FillReconciliationInput, incoming []FillReconciliationInput, policy FillReconcilePolicy) (FillReconciliationPlan, error) {
 	_ = policy
 	plan := FillReconciliationPlan{
 		UpdatedMetadata: map[string]any{},
@@ -52,26 +57,27 @@ func BuildFillReconciliationPlan(order domain.Order, existing []domain.Fill, inc
 	var existingPlaceholderIDs []string
 	lastKnownPrice := order.Price
 
-	for _, fill := range existing {
+	for _, input := range existing {
+		fill, source, err := validateFillReconciliationInput(input)
+		if err != nil {
+			return plan, fmt.Errorf("existing fill %s: %w", input.Fill.ID, err)
+		}
 		if strings.TrimSpace(fill.OrderID) != "" && fill.OrderID != order.ID {
 			continue
-		}
-		if err := validateFillQuantity(fill); err != nil {
-			return plan, fmt.Errorf("existing fill %s: %w", fill.ID, err)
 		}
 		if tradingQuantityPositive(fill.Price) {
 			lastKnownPrice = fill.Price
 		}
 		existingTotalQty += fill.Quantity
-		if fillReconcileSource(fill) == FillSourceReal {
+		if source == FillSourceReal {
 			existingRealQty += fill.Quantity
 			existingRealTradeIDs[strings.TrimSpace(fill.ExchangeTradeID)] = struct{}{}
 			continue
 		}
-		fingerprint := strings.TrimSpace(fill.DedupFingerprint)
-		if fingerprint == "" {
+		if source != FillSourceSynthetic && source != FillSourceRemainder {
 			continue
 		}
+		fingerprint := strings.TrimSpace(fill.DedupFingerprint)
 		existingFallbackFingerprints[fingerprint] = struct{}{}
 		existingPlaceholderQty += fill.Quantity
 		if strings.TrimSpace(fill.ID) != "" {
@@ -81,22 +87,26 @@ func BuildFillReconciliationPlan(order domain.Order, existing []domain.Fill, inc
 
 	newRealQty := 0.0
 	hasNewRealFill := false
-	incomingHasRealFill := hasIncomingRealFill(incoming)
-	for _, fill := range incoming {
+	incomingHasRealFill, err := hasIncomingRealFill(incoming)
+	if err != nil {
+		return plan, err
+	}
+	for _, input := range incoming {
+		fill, source, err := validateFillReconciliationInput(input)
+		if err != nil {
+			return plan, fmt.Errorf("incoming fill: %w", err)
+		}
 		if strings.TrimSpace(fill.OrderID) == "" {
 			fill.OrderID = order.ID
 		}
 		if fill.OrderID != order.ID {
 			return plan, fmt.Errorf("incoming fill order mismatch: got %s want %s", fill.OrderID, order.ID)
 		}
-		if err := validateFillQuantity(fill); err != nil {
-			return plan, fmt.Errorf("incoming fill: %w", err)
-		}
 		if tradingQuantityPositive(fill.Price) {
 			lastKnownPrice = fill.Price
 		}
 
-		if fillReconcileSource(fill) == FillSourceReal {
+		if source == FillSourceReal {
 			tradeID := strings.TrimSpace(fill.ExchangeTradeID)
 			if _, exists := existingRealTradeIDs[tradeID]; exists {
 				continue
@@ -176,23 +186,17 @@ func BuildFillReconciliationPlan(order domain.Order, existing []domain.Fill, inc
 	return plan, nil
 }
 
-func fillReconcileSource(fill domain.Fill) FillSource {
-	if strings.TrimSpace(fill.ExchangeTradeID) != "" {
-		return FillSourceReal
-	}
-	if strings.HasPrefix(strings.TrimSpace(fill.DedupFingerprint), syntheticRemainderFingerprintPrefix) {
-		return FillSourceRemainder
-	}
-	return FillSourceSynthetic
-}
-
-func hasIncomingRealFill(fills []domain.Fill) bool {
-	for _, fill := range fills {
-		if fillReconcileSource(fill) == FillSourceReal {
-			return true
+func hasIncomingRealFill(fills []FillReconciliationInput) (bool, error) {
+	for _, input := range fills {
+		_, source, err := validateFillReconciliationInput(input)
+		if err != nil {
+			return false, fmt.Errorf("incoming fill: %w", err)
+		}
+		if source == FillSourceReal {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func splitApplyPositionFills(fills []domain.Fill, quantity float64) []domain.Fill {
@@ -202,7 +206,7 @@ func splitApplyPositionFills(fills []domain.Fill, quantity float64) []domain.Fil
 	remaining := quantity
 	var result []domain.Fill
 	for _, fill := range fills {
-		if fillReconcileSource(fill) != FillSourceReal || !tradingQuantityPositive(remaining) {
+		if strings.TrimSpace(fill.ExchangeTradeID) == "" || !tradingQuantityPositive(remaining) {
 			continue
 		}
 		apply := fill
@@ -226,8 +230,41 @@ func setFillReconcileMetadata(plan *FillReconciliationPlan, order domain.Order, 
 	if remainingQty < 0 && !tradingQuantityExceeds(-remainingQty, 0) {
 		remainingQty = 0
 	}
+	if remainingQty < 0 {
+		remainingQty = 0
+	}
 	plan.UpdatedMetadata["filledQuantity"] = filledQty
 	plan.UpdatedMetadata["remainingQuantity"] = remainingQty
+}
+
+func validateFillReconciliationInput(input FillReconciliationInput) (domain.Fill, FillSource, error) {
+	fill := input.Fill
+	source := input.Source
+	if source == "" {
+		return fill, source, errors.New("fill source is required")
+	}
+	switch source {
+	case FillSourceReal:
+		if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+			return fill, source, errors.New("real fill requires exchange trade id")
+		}
+	case FillSourceSynthetic:
+		if strings.TrimSpace(fill.DedupFingerprint) == "" {
+			return fill, source, errors.New("synthetic fill requires dedup fingerprint")
+		}
+	case FillSourceRemainder:
+		if !strings.HasPrefix(strings.TrimSpace(fill.DedupFingerprint), syntheticRemainderFingerprintPrefix) {
+			return fill, source, errors.New("remainder fill requires synthetic-remainder fingerprint")
+		}
+	case FillSourcePaper:
+		return fill, source, errors.New("paper fills are not supported by live fill reconciliation")
+	default:
+		return fill, source, fmt.Errorf("unsupported fill source %q", source)
+	}
+	if err := validateFillQuantity(fill); err != nil {
+		return fill, source, err
+	}
+	return fill, source, nil
 }
 
 func validateFillQuantity(fill domain.Fill) error {

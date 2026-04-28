@@ -16,11 +16,14 @@
 | appliedQty | 已经更新过 position 的数量。real 替换 synthetic/remainder 时，这部分不能再次应用。 |
 | filledQuantity | 本地订单视角的成交总量，必须与 real + synthetic/remainder 的合计保持一致。 |
 
-当前版本不新增 DB 字段。识别规则保持兼容：
+当前版本不新增 DB 字段，但 plan builder 不再自行猜 source。调用方必须把每条 fill 标准化为显式 `FillReconciliationInput{Fill, Source}`：
 
-- `exchange_trade_id != ""`：real fill；
-- `exchange_trade_id == "" && dedup_fallback_fingerprint != ""`：synthetic fill；
-- `dedup_fallback_fingerprint` 以 `synthetic-remainder|` 开头：remainder fill。
+- `real` 必须带稳定 `exchange_trade_id`；
+- `synthetic` 必须带 `dedup_fallback_fingerprint`；
+- `remainder` 必须带 `synthetic-remainder|` 前缀；
+- source 缺失或字段与 source 不匹配时直接返回 error。
+
+这样后续执行删除计划时，只会删除被上游明确标记为 `synthetic` 或 `remainder` 的本地 fill，避免依赖间接条件误删合法 fallback fill。
 
 长期可以评估增加 `fill_source` 字段，取值为 `real / synthetic / remainder / paper / manual`。
 
@@ -53,7 +56,9 @@
 阶段 1+2 只新增文档和纯函数：
 
 - `BuildFillReconciliationPlan` 读取 `domain.Order`、existing fills 和 incoming fills；
+- existing/incoming fills 必须带显式 source；
 - 输出 `DeleteFillIDs`、`CreateFills`、`ApplyPositionFills`、`UpdatedMetadata`、`Warnings`；
+- `remainingQuantity` 统一 clamp 到非负值，超额成交通过 `Warnings` 暴露；
 - 不接入 `finalizeExecutedOrder`；
 - 不修改 store 接口；
 - 不新增 migration；
