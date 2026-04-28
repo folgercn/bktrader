@@ -1661,6 +1661,9 @@ func recordLiveSessionStopLossExitFill(state map[string]any, proposalMap map[str
 	state["lastSLExitFilledAt"] = filledAt.UTC().Format(time.RFC3339)
 	state["lastSLExitOrderId"] = order.ID
 	state["lastSLExitStatus"] = order.Status
+	delete(state, "lastSLExitReentryConsumedOrderId")
+	delete(state, "lastSLExitReentryConsumedAt")
+	delete(state, "lastSLExitReentryConsumedReason")
 	if side := liveEntrySideAfterExitSide(stringValue(proposalMap["side"])); side != "" {
 		state["lastSLExitReentrySide"] = side
 	}

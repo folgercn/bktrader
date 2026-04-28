@@ -4982,6 +4982,55 @@ func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsLatestSLExitFill
 	}
 }
 
+func TestUpdateLiveSessionStatePreservingNonRegressiveFactsKeepsSLReentryConsumptionGuard(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "30m",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	fillTime := time.Date(2026, 4, 28, 1, 55, 18, 0, time.UTC)
+	consumedAt := fillTime.Add(90 * time.Second)
+	session, err = platform.store.UpdateLiveSessionState(session.ID, map[string]any{
+		"symbol":                               "BTCUSDT",
+		"signalTimeframe":                      "30m",
+		"lastSLExitFilledAt":                   fillTime.Format(time.RFC3339),
+		"lastSLExitOrderId":                    "order-sl-latest",
+		"lastSLExitStatus":                     "FILLED",
+		"lastSLExitSignalBarStateKey":          "BTCUSDT|30m|2026-04-28T01:30:00Z",
+		"lastSLExitReentryConsumedOrderId":     "order-sl-latest",
+		"lastSLExitReentryConsumedAt":          consumedAt.Format(time.RFC3339),
+		"lastSLExitReentryConsumedReason":      "consumed-on-derive",
+		"lastDispatchedDecisionEventId":        "strategy-decision-event-consumed",
+		"lastStrategyDecisionEventFingerprint": "fingerprint-consumed",
+	})
+	if err != nil {
+		t.Fatalf("seed live session state failed: %v", err)
+	}
+
+	staleState := cloneMetadata(session.State)
+	staleState["lastSLExitReentrySide"] = "SELL"
+	delete(staleState, "lastSLExitReentryConsumedOrderId")
+	delete(staleState, "lastSLExitReentryConsumedAt")
+	delete(staleState, "lastSLExitReentryConsumedReason")
+
+	updated, err := platform.updateLiveSessionStatePreservingNonRegressiveFacts(session.ID, staleState)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastSLExitReentryConsumedOrderId"]); got != "order-sl-latest" {
+		t.Fatalf("expected consumed SL reentry order id to survive stale write, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSLExitReentryConsumedReason"]); got != "consumed-on-derive" {
+		t.Fatalf("expected consumed reason to survive stale write, got %q", got)
+	}
+	if got := stringValue(updated.State["lastSLExitReentrySide"]); got != "" {
+		t.Fatalf("expected consumed guard to prevent stale reentry side resurrection, got %q", got)
+	}
+}
+
 func TestLiveSessionNonRegressiveFactKeysIncludeSignalBarTradeLimitFacts(t *testing.T) {
 	keys := liveSessionNonRegressiveFactKeys()
 	for _, required := range []string{

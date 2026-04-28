@@ -476,4 +476,145 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesRecordedSLReentryWindow(t *te
 	if pending := mapValue(updated[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
 		t.Fatalf("expected no pending zero window for recorded SL reentry, got %+v", pending)
 	}
+	if got := stringValue(updated["lastSLExitReentryConsumedOrderId"]); got != "order-sl" {
+		t.Fatalf("expected recorded SL reentry to consume order-sl, got %q", got)
+	}
+	if got := stringValue(updated["lastSLExitReentryConsumedReason"]); got != "consumed-on-derive" {
+		t.Fatalf("expected consumed-on-derive reason, got %q", got)
+	}
+	if got := stringValue(updated["lastSLExitReentrySide"]); got != "" {
+		t.Fatalf("expected derived SL reentry to clear armed side, got %q", got)
+	}
+}
+
+func TestPrepareLivePlanStepForSignalEvaluationConsumesRecordedSLReentryWindowOnce(t *testing.T) {
+	slBarStart := time.Date(2026, 4, 28, 11, 30, 0, 0, time.UTC)
+	currentBarStart := slBarStart.Add(30 * time.Minute)
+	eventTime, state, signalStates := recordedSLReentryWindowFixture(slBarStart, currentBarStart)
+
+	updated, _, _, _, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"short_reentry_atr": 0.0,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		eventTime,
+		76170.4,
+		"trigger.price",
+		currentBarStart.Add(-2*time.Hour),
+		76444.6,
+		"SELL",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "SL-Reentry" {
+		t.Fatalf("expected first evaluation to derive SL-Reentry, got role=%s reason=%s", gotRole, gotReason)
+	}
+	if got := stringValue(updated["lastSLExitReentryConsumedOrderId"]); got != "order-sl" {
+		t.Fatalf("expected consumed order id order-sl after first derive, got %q", got)
+	}
+
+	second, _, _, _, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		updated,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"short_reentry_atr": 0.0,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		eventTime.Add(time.Second),
+		76170.4,
+		"trigger.price",
+		currentBarStart,
+		76444.6,
+		"SELL",
+		"entry",
+		"Initial",
+	)
+	if gotReason == "SL-Reentry" {
+		t.Fatalf("expected consumed SL fill not to derive SL-Reentry again, got role=%s reason=%s", gotRole, gotReason)
+	}
+	if got := stringValue(second["lastSLExitReentryConsumedOrderId"]); got != "order-sl" {
+		t.Fatalf("expected consumed order id to remain order-sl, got %q", got)
+	}
+	if got := stringValue(second["lastSLExitReentrySide"]); got != "" {
+		t.Fatalf("expected consumed SL reentry side to stay cleared, got %q", got)
+	}
+}
+
+func TestPrepareLivePlanStepForSignalEvaluationExpiresRecordedSLReentryWindowAfterNextBar(t *testing.T) {
+	slBarStart := time.Date(2026, 4, 28, 11, 30, 0, 0, time.UTC)
+	currentBarStart := slBarStart.Add(time.Hour)
+	eventTime, state, signalStates := recordedSLReentryWindowFixture(slBarStart, currentBarStart)
+
+	updated, _, _, _, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"short_reentry_atr": 0.0,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		eventTime,
+		76170.4,
+		"trigger.price",
+		currentBarStart,
+		76444.6,
+		"SELL",
+		"entry",
+		"Initial",
+	)
+	if gotReason == "SL-Reentry" {
+		t.Fatalf("expected third signal bar not to derive SL-Reentry, got role=%s reason=%s", gotRole, gotReason)
+	}
+	if got := stringValue(updated["lastSLExitReentryConsumedOrderId"]); got != "order-sl" {
+		t.Fatalf("expected expired SL reentry window to consume order-sl, got %q", got)
+	}
+	if got := stringValue(updated["lastSLExitReentryConsumedReason"]); got != "expired" {
+		t.Fatalf("expected expired consume reason, got %q", got)
+	}
+	if got := stringValue(updated["lastSLExitReentrySide"]); got != "" {
+		t.Fatalf("expected expired SL reentry side to be cleared, got %q", got)
+	}
+}
+
+func recordedSLReentryWindowFixture(slBarStart time.Time, currentBarStart time.Time) (time.Time, map[string]any, map[string]any) {
+	eventTime := currentBarStart.Add(7 * time.Second)
+	state := map[string]any{
+		"sessionReentryCount":         2.0,
+		"lastSLExitFilledAt":          slBarStart.Add(12*time.Minute + 57*time.Second).Format(time.RFC3339),
+		"lastSLExitOrderId":           "order-sl",
+		"lastSLExitSignalBarStateKey": "BTCUSDT|30m|" + slBarStart.Format(time.RFC3339),
+		"lastSLExitReentrySide":       "SELL",
+	}
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      76344.76,
+			"atr14":     231.3,
+			"current": map[string]any{
+				"barStart": strconv.FormatInt(currentBarStart.UnixMilli(), 10),
+				"close":    76170.4,
+				"high":     76206.3,
+				"low":      76170.4,
+			},
+			"prevBar1": map[string]any{
+				"high": 76483.7,
+				"low":  76157.7,
+			},
+		},
+	}
+	return eventTime, state, signalStates
 }

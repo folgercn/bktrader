@@ -60,25 +60,31 @@ func prepareLivePlanStepForSignalEvaluation(
 	if hasActivePosition {
 		return updatedState, nextPlannedEvent, nextPlannedPrice, nextPlannedSide, nextPlannedRole, nextPlannedReason
 	}
-	if updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, ok := liveSLReentryWindowPlanStep(
+	var alignedEvent time.Time
+	var alignedPrice float64
+	var alignedSide, alignedRole, alignedReason string
+	var ok bool
+	updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, ok = liveSLReentryWindowPlanStep(
 		updatedState,
 		parameters,
 		signalBarStates,
 		symbol,
 		signalTimeframe,
 		eventTime,
-	); ok {
+	)
+	if ok {
 		clearLivePendingZeroInitialWindow(updatedState, eventTime, "sl-exit-reentry-priority")
 		return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason
 	}
-	if updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, ok := liveZeroInitialWindowPlanStep(
+	updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, ok = liveZeroInitialWindowPlanStep(
 		updatedState,
 		parameters,
 		signalBarStates,
 		symbol,
 		signalTimeframe,
 		eventTime,
-	); ok {
+	)
+	if ok {
 		if livePendingZeroInitialWindowShouldYieldSLReentry(updatedState, signalBarStates, symbol, signalTimeframe, eventTime) {
 			clearLivePendingZeroInitialWindow(updatedState, eventTime, "sl-exit-reentry-priority")
 			return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, "SL-Reentry"
@@ -171,7 +177,7 @@ func prepareLivePlanStepForSignalEvaluation(
 		)
 	}
 	appendTimelineEvent(updatedState, "strategy", eventTime, "zero-initial-window-armed", timelineMetadata)
-	updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, _ := liveZeroInitialWindowPlanStep(updatedState, parameters, signalBarStates, symbol, signalTimeframe, eventTime)
+	updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, _ = liveZeroInitialWindowPlanStep(updatedState, parameters, signalBarStates, symbol, signalTimeframe, eventTime)
 	return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason
 }
 
@@ -249,6 +255,26 @@ func clearLivePendingZeroInitialWindow(state map[string]any, eventTime time.Time
 		livePendingZeroInitialWindowStateKey: pending,
 		"reason":                             firstNonEmpty(strings.TrimSpace(reason), "consumed"),
 	})
+}
+
+func liveSLReentryWindowConsumed(state map[string]any) bool {
+	orderID := strings.TrimSpace(stringValue(state["lastSLExitOrderId"]))
+	if orderID == "" {
+		return false
+	}
+	return strings.TrimSpace(stringValue(state["lastSLExitReentryConsumedOrderId"])) == orderID
+}
+
+func consumeLiveSLReentryWindow(state map[string]any, eventTime time.Time, reason string) {
+	if state == nil {
+		return
+	}
+	if orderID := strings.TrimSpace(stringValue(state["lastSLExitOrderId"])); orderID != "" {
+		state["lastSLExitReentryConsumedOrderId"] = orderID
+	}
+	state["lastSLExitReentryConsumedAt"] = eventTime.UTC().Format(time.RFC3339)
+	state["lastSLExitReentryConsumedReason"] = firstNonEmpty(strings.TrimSpace(reason), "consumed")
+	delete(state, "lastSLExitReentrySide")
 }
 
 func liveZeroInitialWindowHasBreakoutProof(pending map[string]any) bool {
@@ -368,6 +394,28 @@ func liveSignalBarKeyWithinReentryWindow(lastKey, currentKey, signalTimeframe st
 		return false
 	}
 	return currentStart.Sub(lastStart) <= step
+}
+
+func liveSignalBarKeyPastReentryWindow(lastKey, currentKey, signalTimeframe string) bool {
+	lastSymbol, lastTimeframe, lastStart, ok := parseLiveSignalBarTradeLimitKey(lastKey)
+	if !ok {
+		return false
+	}
+	currentSymbol, currentTimeframe, currentStart, ok := parseLiveSignalBarTradeLimitKey(currentKey)
+	if !ok {
+		return false
+	}
+	if lastSymbol != "" && currentSymbol != "" && lastSymbol != currentSymbol {
+		return false
+	}
+	if lastTimeframe != "" && currentTimeframe != "" && lastTimeframe != currentTimeframe {
+		return false
+	}
+	step := liveSignalBarStep(firstNonEmpty(signalTimeframe, currentTimeframe, lastTimeframe))
+	if step <= 0 || currentStart.Before(lastStart) {
+		return false
+	}
+	return currentStart.Sub(lastStart) > step
 }
 
 func parseLiveSignalBarTradeLimitKey(key string) (string, string, time.Time, bool) {
@@ -498,6 +546,9 @@ func liveSLReentryWindowPlanStep(
 	if parseFloatValue(state["sessionReentryCount"]) <= 0 {
 		return state, time.Time{}, 0, "", "", "", false
 	}
+	if strings.TrimSpace(stringValue(state["lastSLExitOrderId"])) == "" || liveSLReentryWindowConsumed(state) {
+		return state, time.Time{}, 0, "", "", "", false
+	}
 	side := strings.ToUpper(strings.TrimSpace(stringValue(state["lastSLExitReentrySide"])))
 	if side == "" {
 		return state, time.Time{}, 0, "", "", "", false
@@ -513,12 +564,16 @@ func liveSLReentryWindowPlanStep(
 	currentBarKey := resolveSignalBarTradeLimitKey(signalBarState, symbol, signalTimeframe)
 	lastSLBarKey := strings.TrimSpace(stringValue(state["lastSLExitSignalBarStateKey"]))
 	if !liveSignalBarKeyWithinReentryWindow(lastSLBarKey, currentBarKey, signalTimeframe) {
+		if liveSignalBarKeyPastReentryWindow(lastSLBarKey, currentBarKey, signalTimeframe) {
+			consumeLiveSLReentryWindow(state, eventTime, "expired")
+		}
 		return state, time.Time{}, 0, "", "", "", false
 	}
 	price := resolveLiveReentryPlanPrice(parameters, signalBarState, side)
 	if price <= 0 {
 		return state, time.Time{}, 0, "", "", "", false
 	}
+	consumeLiveSLReentryWindow(state, eventTime, "consumed-on-derive")
 	return state, liveCurrentSignalBarStart(signalBarState, eventTime), price, side, "entry", "SL-Reentry", true
 }
 
