@@ -700,7 +700,7 @@ func (s *Store) UpdateOrder(order domain.Order) (domain.Order, error) {
 
 func (s *Store) ListFills() ([]domain.Fill, error) {
 	rows, err := s.db.Query(`
-		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
+		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
 		from fills order by created_at asc
 	`)
 	if err != nil {
@@ -714,11 +714,13 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 		var exchangeTradeID sql.NullString
 		var exchangeTradeTime sql.NullTime
 		var fallbackFingerprint sql.NullString
-		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &exchangeTradeTime, &fallbackFingerprint, &item.Price, &item.Quantity, &item.Fee, &item.CreatedAt); err != nil {
+		var fillSource sql.NullString
+		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &exchangeTradeTime, &fallbackFingerprint, &item.Price, &item.Quantity, &item.Fee, &fillSource, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		item.ExchangeTradeID = exchangeTradeID.String
 		item.DedupFingerprint = fallbackFingerprint.String
+		item.Source = fillSource.String
 		if exchangeTradeTime.Valid {
 			parsed := exchangeTradeTime.Time.UTC()
 			item.ExchangeTradeTime = &parsed
@@ -730,7 +732,7 @@ func (s *Store) ListFills() ([]domain.Fill, error) {
 
 func (s *Store) ListFillsWithLimit(limit, offset int) ([]domain.Fill, error) {
 	query := `
-		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
+		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
 		from fills order by created_at desc
 	`
 	var rows *sql.Rows
@@ -757,11 +759,13 @@ func (s *Store) ListFillsWithLimit(limit, offset int) ([]domain.Fill, error) {
 		var exchangeTradeID sql.NullString
 		var exchangeTradeTime sql.NullTime
 		var fallbackFingerprint sql.NullString
-		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &exchangeTradeTime, &fallbackFingerprint, &item.Price, &item.Quantity, &item.Fee, &item.CreatedAt); err != nil {
+		var fillSource sql.NullString
+		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &exchangeTradeTime, &fallbackFingerprint, &item.Price, &item.Quantity, &item.Fee, &fillSource, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		item.ExchangeTradeID = exchangeTradeID.String
 		item.DedupFingerprint = fallbackFingerprint.String
+		item.Source = fillSource.String
 		if exchangeTradeTime.Valid {
 			parsed := exchangeTradeTime.Time.UTC()
 			item.ExchangeTradeTime = &parsed
@@ -779,7 +783,7 @@ func (s *Store) CountFills() (int, error) {
 
 func (s *Store) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {
 	sqlQuery := `
-		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
+		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
 		from fills
 	`
 	args := []any{}
@@ -805,11 +809,13 @@ func (s *Store) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {
 		var exchangeTradeID sql.NullString
 		var exchangeTradeTime sql.NullTime
 		var fallbackFingerprint sql.NullString
-		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &exchangeTradeTime, &fallbackFingerprint, &item.Price, &item.Quantity, &item.Fee, &item.CreatedAt); err != nil {
+		var fillSource sql.NullString
+		if err := rows.Scan(&item.ID, &item.OrderID, &exchangeTradeID, &exchangeTradeTime, &fallbackFingerprint, &item.Price, &item.Quantity, &item.Fee, &fillSource, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		item.ExchangeTradeID = exchangeTradeID.String
 		item.DedupFingerprint = fallbackFingerprint.String
+		item.Source = fillSource.String
 		if exchangeTradeTime.Valid {
 			parsed := exchangeTradeTime.Time.UTC()
 			item.ExchangeTradeTime = &parsed
@@ -844,22 +850,25 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 			fill.DedupFingerprint = fill.FallbackFingerprint()
 		}
 	}
+	fill.Source = normalizeFillSource(fill)
 
 	if strings.TrimSpace(fill.ExchangeTradeID) == "" {
 		row := s.db.QueryRow(`
-			insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			on conflict (order_id, dedup_fallback_fingerprint) do update set
 				price = fills.price,
 				quantity = fills.quantity,
 				fee = fills.fee,
+				fill_source = excluded.fill_source,
 				exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
-			returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
-		`, fill.ID, fill.OrderID, nullIfEmpty(fill.ExchangeTradeID), fill.ExchangeTradeTime, fill.DedupFingerprint, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+			returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
+		`, fill.ID, fill.OrderID, nullIfEmpty(fill.ExchangeTradeID), fill.ExchangeTradeTime, fill.DedupFingerprint, fill.Price, fill.Quantity, fill.Fee, fill.Source, fill.CreatedAt)
 		var (
 			exchangeTradeID     sql.NullString
 			exchangeTradeTime   sql.NullTime
 			fallbackFingerprint sql.NullString
+			fillSource          sql.NullString
 		)
 		err := row.Scan(
 			&fill.ID,
@@ -870,10 +879,12 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 			&fill.Price,
 			&fill.Quantity,
 			&fill.Fee,
+			&fillSource,
 			&fill.CreatedAt,
 		)
 		fill.ExchangeTradeID = exchangeTradeID.String
 		fill.DedupFingerprint = fallbackFingerprint.String
+		fill.Source = fillSource.String
 		if exchangeTradeTime.Valid {
 			parsed := exchangeTradeTime.Time.UTC()
 			fill.ExchangeTradeTime = &parsed
@@ -884,19 +895,21 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	}
 
 	row := s.db.QueryRow(`
-		insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		on conflict (order_id, exchange_trade_id) do update set
 			price = fills.price,
 			quantity = fills.quantity,
 			fee = fills.fee,
+			fill_source = excluded.fill_source,
 			exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
-		returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
-	`, fill.ID, fill.OrderID, fill.ExchangeTradeID, fill.ExchangeTradeTime, nil, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+		returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
+	`, fill.ID, fill.OrderID, fill.ExchangeTradeID, fill.ExchangeTradeTime, nil, fill.Price, fill.Quantity, fill.Fee, fill.Source, fill.CreatedAt)
 	var (
 		exchangeTradeID     sql.NullString
 		exchangeTradeTime   sql.NullTime
 		fallbackFingerprint sql.NullString
+		fillSource          sql.NullString
 	)
 	err := row.Scan(
 		&fill.ID,
@@ -907,10 +920,12 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 		&fill.Price,
 		&fill.Quantity,
 		&fill.Fee,
+		&fillSource,
 		&fill.CreatedAt,
 	)
 	fill.ExchangeTradeID = exchangeTradeID.String
 	fill.DedupFingerprint = fallbackFingerprint.String
+	fill.Source = fillSource.String
 	if exchangeTradeTime.Valid {
 		parsed := exchangeTradeTime.Time.UTC()
 		fill.ExchangeTradeTime = &parsed
@@ -968,11 +983,30 @@ type fillScanner interface {
 	Scan(dest ...any) error
 }
 
+func normalizeFillSource(fill domain.Fill) string {
+	switch source := strings.TrimSpace(fill.Source); source {
+	case "real", "synthetic", "remainder", "paper", "manual":
+		return source
+	}
+	if strings.TrimSpace(fill.ExchangeTradeID) != "" {
+		return "real"
+	}
+	fingerprint := strings.TrimSpace(fill.DedupFingerprint)
+	if strings.HasPrefix(fingerprint, "synthetic-remainder|") {
+		return "remainder"
+	}
+	if fingerprint != "" {
+		return "synthetic"
+	}
+	return "real"
+}
+
 func scanFill(row fillScanner, fill domain.Fill) (domain.Fill, error) {
 	var (
 		exchangeTradeID     sql.NullString
 		exchangeTradeTime   sql.NullTime
 		fallbackFingerprint sql.NullString
+		fillSource          sql.NullString
 	)
 	err := row.Scan(
 		&fill.ID,
@@ -983,10 +1017,12 @@ func scanFill(row fillScanner, fill domain.Fill) (domain.Fill, error) {
 		&fill.Price,
 		&fill.Quantity,
 		&fill.Fee,
+		&fillSource,
 		&fill.CreatedAt,
 	)
 	fill.ExchangeTradeID = exchangeTradeID.String
 	fill.DedupFingerprint = fallbackFingerprint.String
+	fill.Source = fillSource.String
 	if exchangeTradeTime.Valid {
 		parsed := exchangeTradeTime.Time.UTC()
 		fill.ExchangeTradeTime = &parsed
@@ -1034,31 +1070,34 @@ func (s fillSettlementTxStore) CreateFill(fill domain.Fill) (domain.Fill, error)
 			fill.DedupFingerprint = fill.FallbackFingerprint()
 		}
 	}
+	fill.Source = normalizeFillSource(fill)
 
 	if strings.TrimSpace(fill.ExchangeTradeID) == "" {
 		row := s.tx.QueryRow(`
-			insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			on conflict (order_id, dedup_fallback_fingerprint) do update set
 				price = fills.price,
 				quantity = fills.quantity,
 				fee = fills.fee,
+				fill_source = excluded.fill_source,
 				exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
-			returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
-		`, fill.ID, fill.OrderID, nullIfEmpty(fill.ExchangeTradeID), fill.ExchangeTradeTime, fill.DedupFingerprint, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+			returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
+		`, fill.ID, fill.OrderID, nullIfEmpty(fill.ExchangeTradeID), fill.ExchangeTradeTime, fill.DedupFingerprint, fill.Price, fill.Quantity, fill.Fee, fill.Source, fill.CreatedAt)
 		return scanFill(row, fill)
 	}
 
 	row := s.tx.QueryRow(`
-		insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		insert into fills (id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		on conflict (order_id, exchange_trade_id) do update set
 			price = fills.price,
 			quantity = fills.quantity,
 			fee = fills.fee,
+			fill_source = excluded.fill_source,
 			exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
-		returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, created_at
-	`, fill.ID, fill.OrderID, fill.ExchangeTradeID, fill.ExchangeTradeTime, nil, fill.Price, fill.Quantity, fill.Fee, fill.CreatedAt)
+		returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
+	`, fill.ID, fill.OrderID, fill.ExchangeTradeID, fill.ExchangeTradeTime, nil, fill.Price, fill.Quantity, fill.Fee, fill.Source, fill.CreatedAt)
 	return scanFill(row, fill)
 }
 

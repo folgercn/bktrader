@@ -1259,6 +1259,14 @@ func fillReconciliationInputsFromIncomingFills(order domain.Order, fills []domai
 }
 
 func fillReconciliationSourceFromStoredFill(fill domain.Fill) (FillSource, bool) {
+	if source := strings.TrimSpace(fill.Source); source != "" {
+		switch FillSource(source) {
+		case FillSourceReal, FillSourceSynthetic, FillSourceRemainder:
+			return FillSource(source), true
+		default:
+			return "", false
+		}
+	}
 	if strings.TrimSpace(fill.ExchangeTradeID) != "" {
 		return FillSourceReal, true
 	}
