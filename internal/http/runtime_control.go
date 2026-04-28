@@ -13,6 +13,8 @@ type runtimeRestartRequest struct {
 	RuntimeID   string `json:"runtimeId"`
 	RuntimeKind string `json:"runtimeKind"`
 	Force       bool   `json:"force"`
+	Confirm     bool   `json:"confirm"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 func registerRuntimeControlRoutes(mux *http.ServeMux, platform *service.Platform, cfg config.Config) {
@@ -35,9 +37,22 @@ func registerRuntimeControlRoutes(mux *http.ServeMux, platform *service.Platform
 			writeError(w, http.StatusBadRequest, "runtimeId is required")
 			return
 		}
+		if !request.Confirm {
+			writeError(w, http.StatusBadRequest, "confirm=true is required for runtime restart")
+			return
+		}
+		reason := strings.TrimSpace(request.Reason)
+		if request.Force && reason == "" {
+			writeError(w, http.StatusBadRequest, "reason is required when force=true")
+			return
+		}
 		switch strings.ToLower(strings.TrimSpace(request.RuntimeKind)) {
 		case "signal", "signal-runtime":
-			item, err := platform.RestartSignalRuntimeSessionWithForce(runtimeID, request.Force)
+			item, err := platform.RestartSignalRuntimeSessionWithOptions(runtimeID, service.SignalRuntimeRestartOptions{
+				Force:  request.Force,
+				Reason: reason,
+				Source: "api",
+			})
 			if err != nil {
 				writeRuntimeControlError(w, err)
 				return
@@ -49,6 +64,8 @@ func registerRuntimeControlRoutes(mux *http.ServeMux, platform *service.Platform
 				"runtimeKind":   "signal",
 				"desiredStatus": item.State["desiredStatus"],
 				"actualStatus":  item.State["actualStatus"],
+				"force":         request.Force,
+				"reason":        reason,
 				"runtime":       item,
 			})
 		case "":

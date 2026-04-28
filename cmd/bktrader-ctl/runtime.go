@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -13,6 +14,7 @@ func init() {
 	runtimeRestartCmd.Flags().String("kind", "signal", "runtime 类型 (signal)")
 	runtimeRestartCmd.Flags().Bool("force", false, "强制重启 signal runtime")
 	runtimeRestartCmd.Flags().Bool("confirm", false, "确认执行重启操作")
+	runtimeRestartCmd.Flags().String("reason", "", "重启原因；--force 时必填")
 }
 
 var runtimeCmd = &cobra.Command{
@@ -42,10 +44,16 @@ var runtimeRestartCmd = &cobra.Command{
 		}
 		kind, _ := cmd.Flags().GetString("kind")
 		force, _ := cmd.Flags().GetBool("force")
+		reason, _ := cmd.Flags().GetString("reason")
+		if force && strings.TrimSpace(reason) == "" && !dryRun {
+			return fmt.Errorf("--force 需要提供 --reason")
+		}
 		payload := map[string]any{
 			"runtimeId":   args[0],
 			"runtimeKind": kind,
 			"force":       force,
+			"confirm":     confirm,
+			"reason":      reason,
 		}
 		client := getClient()
 		resp, err := client.Request("POST", "/api/v1/runtime/restart", payload)

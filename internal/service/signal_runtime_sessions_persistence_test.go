@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
@@ -200,13 +201,15 @@ func TestRestartSignalRuntimeSessionStopsThenStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
 	}
-	if _, err := platform.StartSignalRuntimeSession(runtimeSession.ID); err != nil {
-		t.Fatalf("StartSignalRuntimeSession failed: %v", err)
-	}
+	runtimeSession = markSignalRuntimeSessionRunningForTest(t, platform, runtimeSession)
 
-	restarted, err := platform.RestartSignalRuntimeSessionWithForce(runtimeSession.ID, true)
+	restarted, err := platform.RestartSignalRuntimeSessionWithOptions(runtimeSession.ID, SignalRuntimeRestartOptions{
+		Force:  true,
+		Reason: "operator requested rebinding",
+		Source: "test",
+	})
 	if err != nil {
-		t.Fatalf("RestartSignalRuntimeSessionWithForce failed: %v", err)
+		t.Fatalf("RestartSignalRuntimeSessionWithOptions failed: %v", err)
 	}
 	if restarted.Status != "RUNNING" {
 		t.Fatalf("expected restarted runtime status RUNNING, got %s", restarted.Status)
@@ -216,6 +219,18 @@ func TestRestartSignalRuntimeSessionStopsThenStarts(t *testing.T) {
 	}
 	if actual := stringValue(restarted.State["actualStatus"]); actual != "STARTING" && actual != "RUNNING" {
 		t.Fatalf("expected actualStatus STARTING/RUNNING, got %s", actual)
+	}
+	if got := boolValue(restarted.State["restartRequestedForce"]); !got {
+		t.Fatal("expected restartRequestedForce true")
+	}
+	if got := stringValue(restarted.State["restartRequestedReason"]); got != "operator requested rebinding" {
+		t.Fatalf("expected restartRequestedReason, got %s", got)
+	}
+	if got := stringValue(restarted.State["restartRequestedSource"]); got != "test" {
+		t.Fatalf("expected restartRequestedSource test, got %s", got)
+	}
+	if got := stringValue(restarted.State["restartRequestedAt"]); got == "" {
+		t.Fatal("expected restartRequestedAt")
 	}
 	if _, err := platform.StopSignalRuntimeSessionWithForce(runtimeSession.ID, true); err != nil {
 		t.Fatalf("cleanup runtime failed: %v", err)
@@ -228,9 +243,7 @@ func TestRestartSignalRuntimeSessionWithoutForceKeepsRunningWhenExposureExists(t
 	if err != nil {
 		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
 	}
-	if _, err := platform.StartSignalRuntimeSession(runtimeSession.ID); err != nil {
-		t.Fatalf("StartSignalRuntimeSession failed: %v", err)
-	}
+	runtimeSession = markSignalRuntimeSessionRunningForTest(t, platform, runtimeSession)
 	if _, err := platform.store.CreateOrder(domain.Order{
 		AccountID:         "live-main",
 		StrategyVersionID: "strategy-version-bk-1d-v010",
@@ -256,9 +269,31 @@ func TestRestartSignalRuntimeSessionWithoutForceKeepsRunningWhenExposureExists(t
 	if got := stringValue(stored.State["desiredStatus"]); got != "RUNNING" {
 		t.Fatalf("expected blocked restart to keep desiredStatus RUNNING, got %s", got)
 	}
+	if got := stringValue(stored.State["restartRequestedAt"]); got != "" {
+		t.Fatalf("expected blocked restart to avoid audit mutation, got %s", got)
+	}
 	if _, err := platform.StopSignalRuntimeSessionWithForce(runtimeSession.ID, true); err != nil {
 		t.Fatalf("cleanup runtime failed: %v", err)
 	}
+}
+
+func markSignalRuntimeSessionRunningForTest(t *testing.T, platform *Platform, session domain.SignalRuntimeSession) domain.SignalRuntimeSession {
+	t.Helper()
+	now := time.Now().UTC()
+	state := cloneMetadata(session.State)
+	state["health"] = "healthy"
+	state["desiredStatus"] = "RUNNING"
+	state["actualStatus"] = "RUNNING"
+	state["lastHeartbeatAt"] = now.Format(time.RFC3339)
+	session.Status = "RUNNING"
+	session.State = state
+	session.UpdatedAt = now
+	updated, err := platform.store.UpdateSignalRuntimeSession(session)
+	if err != nil {
+		t.Fatalf("UpdateSignalRuntimeSession failed: %v", err)
+	}
+	platform.cacheSignalRuntimeSession(updated)
+	return updated
 }
 
 type blockingSignalRuntimeStore struct {

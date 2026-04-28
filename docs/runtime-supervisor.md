@@ -243,7 +243,7 @@ POST /runtime/resume-auto-restart
 - `start` / `restart` 只能写入期望状态或触发应用内恢复，不得绕过业务安全校验。
 - `stop` 必须写入 `desiredStatus=STOPPED`，使 scanner 和 supervisor 不再自动拉起。
 - `resume-auto-restart` 只能解除 suppressed，不代表立即允许交易。
-- 当前统一控制 API 的第一步只落 `POST /api/v1/runtime/restart`，且只支持 `runtimeKind=signal`；它复用现有 signal runtime stop/start 安全检查，不做 live session 自动 dispatch，也不做 Docker/container restart。
+- 当前统一控制 API 的第一步只落 `POST /api/v1/runtime/restart`，且只支持 `runtimeKind=signal`；请求必须显式传入 `confirm=true`，`force=true` 时必须传入非空 `reason` 并写入 runtime state 审计字段。该接口复用现有 signal runtime stop/start 安全检查，不做 live session 自动 dispatch，也不做 Docker/container restart。
 
 ## 6. 推进阶段
 
