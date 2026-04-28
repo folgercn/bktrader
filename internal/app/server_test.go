@@ -10,7 +10,7 @@ func TestRuntimeOptionsForSignalRuntimeRunner(t *testing.T) {
 	if !options.StartSignalRuntimeScanner {
 		t.Fatal("expected signal-runtime-runner to start signal runtime scanner")
 	}
-	if options.RecoverLiveTrading || options.StartLiveSync || options.StartRuntimeEventConsumer || options.StartTelegram || options.StartDashboard {
+	if options.RecoverLiveTrading || options.StartLiveSync || options.StartRuntimeEventConsumer || options.StartTelegram || options.StartDashboard || options.StartReadOnlyRuntimeSupervisor {
 		t.Fatalf("expected signal-runtime-runner to avoid live/telegram/dashboard components, got %+v", options)
 	}
 }
@@ -26,6 +26,9 @@ func TestRuntimeOptionsForLiveRunnerDoesNotStartSignalRuntimeScanner(t *testing.
 	if !options.RecoverLiveTrading || !options.StartLiveSync || !options.StartRuntimeEventConsumer || !options.StartLiveSessionControlScanner {
 		t.Fatalf("expected live-runner to keep live recovery/sync/event consumer, got %+v", options)
 	}
+	if options.StartReadOnlyRuntimeSupervisor {
+		t.Fatal("expected live-runner not to start read-only supervisor")
+	}
 }
 
 func TestRuntimeOptionsForAPIDoesNotStartLiveSessionScanner(t *testing.T) {
@@ -35,6 +38,26 @@ func TestRuntimeOptionsForAPIDoesNotStartLiveSessionScanner(t *testing.T) {
 	}
 	if !options.StartDashboard {
 		t.Fatal("expected api role to start dashboard")
+	}
+	if options.StartReadOnlyRuntimeSupervisor {
+		t.Fatal("expected api role not to start read-only supervisor")
+	}
+}
+
+func TestRuntimeOptionsForSupervisorOnlyStartsReadOnlySupervisor(t *testing.T) {
+	options := RuntimeOptionsForRole("supervisor")
+	if !options.StartReadOnlyRuntimeSupervisor {
+		t.Fatal("expected supervisor role to start read-only runtime supervisor")
+	}
+	if options.WarmLiveMarketData ||
+		options.StartTelegram ||
+		options.RecoverLiveTrading ||
+		options.StartLiveSync ||
+		options.StartDashboard ||
+		options.StartRuntimeEventConsumer ||
+		options.StartSignalRuntimeScanner ||
+		options.StartLiveSessionControlScanner {
+		t.Fatalf("expected supervisor role to avoid business runtime components, got %+v", options)
 	}
 }
 
@@ -49,5 +72,8 @@ func TestRuntimeOptionsForMonolithStartAllRuntimeComponents(t *testing.T) {
 		!options.StartSignalRuntimeScanner ||
 		!options.StartLiveSessionControlScanner {
 		t.Fatalf("expected monolith to start all runtime components, got %+v", options)
+	}
+	if options.StartReadOnlyRuntimeSupervisor {
+		t.Fatal("expected monolith not to start read-only supervisor by default")
 	}
 }

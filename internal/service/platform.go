@@ -71,6 +71,7 @@ type Platform struct {
 	tickEvalThrottle       sync.Map // runtimeSessionID or runtimeSessionID|symbol -> *tickEvalThrottleState
 	logBroker              *logging.Broker
 	dashboardBroker        *DashboardBroker
+	runtimeSupervisor      *RuntimeSupervisor
 	processRole            string
 }
 

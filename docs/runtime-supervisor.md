@@ -312,6 +312,13 @@ func ClearRestartState(state map[string]any, keys []string)
 - 在业务安全条件满足时调用服务内部 `/runtime/restart`。
 - 为未来前端 Runtime / Service 面板提供数据源。
 
+当前只读骨架：
+
+- `internal/service/runtime_supervisor.go` 提供 read-only collector。
+- `BKTRADER_ROLE=supervisor` 只启动 read-only supervisor，不启动 live / signal / dashboard / notification 业务组件。
+- `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL。
+- 当前只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
+
 验收标准：
 
 - supervisor 独立运行，不影响现有服务启动。

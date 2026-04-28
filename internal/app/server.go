@@ -31,6 +31,7 @@ type RuntimeOptions struct {
 	StartRuntimeEventConsumer      bool
 	StartSignalRuntimeScanner      bool
 	StartLiveSessionControlScanner bool
+	StartReadOnlyRuntimeSupervisor bool
 }
 
 func RuntimeOptionsForRole(role string) RuntimeOptions {
@@ -51,6 +52,8 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 		}
 	case "notification-worker":
 		return RuntimeOptions{StartTelegram: true}
+	case "supervisor":
+		return RuntimeOptions{StartReadOnlyRuntimeSupervisor: true}
 	default:
 		return RuntimeOptions{
 			WarmLiveMarketData:             true,
@@ -89,6 +92,7 @@ func NewServerWithRuntimeOptions(cfg config.Config, runtime RuntimeOptions) (*ht
 		"runtime_event_consumer", runtime.StartRuntimeEventConsumer,
 		"signal_runtime_scanner", runtime.StartSignalRuntimeScanner,
 		"live_session_control_scanner", runtime.StartLiveSessionControlScanner,
+		"read_only_runtime_supervisor", runtime.StartReadOnlyRuntimeSupervisor,
 	)
 
 	return &http.Server{
@@ -184,6 +188,21 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 	}
 	if runtime.StartLiveSessionControlScanner {
 		platform.StartLiveSessionControlScanner(ctx)
+	}
+	if runtime.StartReadOnlyRuntimeSupervisor {
+		targets := service.ParseRuntimeSupervisorTargets(cfg.SupervisorTargets)
+		if len(targets) == 0 {
+			logger.Warn("read-only runtime supervisor disabled because SUPERVISOR_TARGETS is empty")
+		} else {
+			supervisor := service.NewRuntimeSupervisor(targets, &http.Client{Timeout: time.Duration(cfg.SupervisorHTTPTimeoutSeconds) * time.Second})
+			platform.SetRuntimeSupervisor(supervisor)
+			supervisor.Start(ctx, time.Duration(cfg.SupervisorPollIntervalSeconds)*time.Second)
+			logger.Info("read-only runtime supervisor started",
+				"target_count", len(supervisor.Targets()),
+				"poll_interval_seconds", cfg.SupervisorPollIntervalSeconds,
+				"http_timeout_seconds", cfg.SupervisorHTTPTimeoutSeconds,
+			)
+		}
 	}
 }
 
