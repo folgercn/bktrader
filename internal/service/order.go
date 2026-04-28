@@ -1093,7 +1093,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	if err != nil {
 		return domain.Order{}, err
 	}
-	
+
 	hasRealFill := false
 	for _, f := range newFills {
 		if strings.TrimSpace(f.ExchangeTradeID) != "" {
@@ -1121,7 +1121,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		if err != nil {
 			return domain.Order{}, err
 		}
-		
+
 		applyQty := createdFill.Quantity
 		if syntheticQty > 0 {
 			if syntheticQty >= applyQty {
@@ -1138,7 +1138,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 			executionPrice = resolveExecutionPrice(order)
 		}
 		lastPrice = executionPrice
-		
+
 		if applyQty > 0 {
 			execOrder := order
 			execOrder.Quantity = applyQty

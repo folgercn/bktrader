@@ -932,7 +932,7 @@ func (s *Store) DeleteSyntheticFillsForOrder(orderID string) (float64, error) {
 		)
 		select sum(quantity) from deleted
 	`, orderID).Scan(&totalQty)
-	
+
 	if err != nil && err != sql.ErrNoRows {
 		return 0, err
 	}
