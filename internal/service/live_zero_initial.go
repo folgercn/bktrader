@@ -423,7 +423,7 @@ func livePendingZeroInitialWindowShouldYieldSLReentry(
 	signalBarState, _ := pickSignalBarState(signalBarStates, symbol, signalTimeframe)
 	currentBarKey := resolveSignalBarTradeLimitKey(signalBarState, symbol, signalTimeframe)
 	lastSLBarKey := strings.TrimSpace(stringValue(sessionState["lastSLExitSignalBarStateKey"]))
-	if currentBarKey != "" && lastSLBarKey != "" && currentBarKey != lastSLBarKey {
+	if currentBarKey == "" || lastSLBarKey == "" || currentBarKey != lastSLBarKey {
 		return false
 	}
 	return true
