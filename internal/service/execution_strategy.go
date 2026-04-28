@@ -480,6 +480,9 @@ func resolveReentryScheduleQuantity(session domain.LiveSession, account domain.A
 	if index < 0 {
 		index = 0
 	}
+	if reasonTag == "sl-reentry" && index == 0 && len(schedule) > 1 {
+		index = 1
+	}
 	if index >= len(schedule) {
 		index = len(schedule) - 1
 	}
