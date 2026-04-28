@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
+	storepkg "github.com/wuyaocheng/bktrader/internal/store"
 )
 
 const (
@@ -1094,118 +1095,102 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		return domain.Order{}, err
 	}
 
-	hasRealFill := false
-	for _, f := range newFills {
-		if strings.TrimSpace(f.ExchangeTradeID) != "" {
-			hasRealFill = true
-			break
-		}
-	}
-	syntheticQty := 0.0
-	if hasRealFill {
-		deletedQty, err := p.store.DeleteSyntheticFillsForOrder(order.ID)
-		if err != nil {
-			return domain.Order{}, fmt.Errorf("failed to delete synthetic fills before upgrade: %w", err)
-		}
-		syntheticQty = deletedQty
-	}
-
-	existingFilledQuantity, err := p.store.TotalFilledQuantityForOrder(order.ID)
+	existingFills, err := p.store.QueryFills(domain.FillQuery{OrderIDs: []string{order.ID}})
 	if err != nil {
 		return domain.Order{}, err
 	}
-	newFills = limitExecutionFillsToRemainingQuantity(newFills, order.Quantity-existingFilledQuantity)
-	lastPrice := order.Price
-	for _, fill := range newFills {
-		createdFill, err := p.store.CreateFill(fill)
-		if err != nil {
-			return domain.Order{}, err
-		}
+	existingInputs, err := fillReconciliationInputsFromStoredFills(existingFills)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	incomingInputs, err := fillReconciliationInputsFromIncomingFills(order, newFills)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	plan, err := BuildFillReconciliationPlan(order, existingInputs, incomingInputs, FillReconcilePolicy{AllowSyntheticFallback: true})
+	if err != nil {
+		return domain.Order{}, err
+	}
 
-		applyQty := createdFill.Quantity
-		if syntheticQty > 0 {
-			if syntheticQty >= applyQty {
-				syntheticQty -= applyQty
-				applyQty = 0
-			} else {
-				applyQty -= syntheticQty
-				syntheticQty = 0
+	var updatedOrder domain.Order
+	if err := p.store.WithFillSettlementTx(func(tx storepkg.FillSettlementStore) error {
+		if len(plan.DeleteFillIDs) > 0 {
+			if _, err := tx.DeleteFillsByID(plan.DeleteFillIDs); err != nil {
+				return fmt.Errorf("failed to delete synthetic fills before upgrade: %w", err)
 			}
 		}
 
-		executionPrice := createdFill.Price
-		if executionPrice <= 0 {
-			executionPrice = resolveExecutionPrice(order)
+		lastPrice := order.Price
+		for _, fill := range plan.CreateFills {
+			createdFill, err := tx.CreateFill(fill)
+			if err != nil {
+				return err
+			}
+			executionPrice := createdFill.Price
+			if executionPrice <= 0 {
+				executionPrice = resolveExecutionPrice(order)
+			}
+			lastPrice = executionPrice
 		}
-		lastPrice = executionPrice
 
-		if applyQty > 0 {
+		for _, fill := range plan.ApplyPositionFills {
+			executionPrice := fill.Price
+			if executionPrice <= 0 {
+				executionPrice = resolveExecutionPrice(order)
+			}
 			execOrder := order
-			execOrder.Quantity = applyQty
+			execOrder.Quantity = fill.Quantity
 			execOrder.Price = executionPrice
-			if err := p.applyExecutionFill(account, execOrder, executionPrice); err != nil {
-				return domain.Order{}, err
+			if err := p.applyExecutionFillWithStore(tx, account, execOrder, executionPrice); err != nil {
+				return err
 			}
 		}
-	}
 
-	if syntheticQty > 0 {
-		remainderFill := domain.Fill{
-			OrderID:          order.ID,
-			Price:            lastPrice,
-			Quantity:         syntheticQty,
-			Fee:              0,
-			DedupFingerprint: fmt.Sprintf("synthetic-remainder|%s|%.12f|%d", order.ID, syntheticQty, time.Now().UTC().UnixNano()),
+		filledQuantity, err := tx.TotalFilledQuantityForOrder(order.ID)
+		if err != nil {
+			return err
 		}
-		if _, err := p.store.CreateFill(remainderFill); err != nil {
-			return domain.Order{}, fmt.Errorf("failed to create synthetic remainder fill: %w", err)
+		order.Metadata["filledQuantity"] = filledQuantity
+		remainingQuantity := order.Quantity - filledQuantity
+		if remainingQuantity < 0 {
+			remainingQuantity = 0
 		}
-		// NOTE: We do not call applyExecutionFill for the remainder because its quantity
-		// was already applied to the position when the original synthetic fill was processed.
-	}
-	filledQuantity, err := p.store.TotalFilledQuantityForOrder(order.ID)
-	if err != nil {
-		return domain.Order{}, err
-	}
-	order.Metadata["filledQuantity"] = filledQuantity
-	remainingQuantity := order.Quantity - filledQuantity
-	if remainingQuantity < 0 && !tradingQuantityExceeds(-remainingQuantity, 0) {
-		remainingQuantity = 0
-	}
-	if remainingQuantity < 0 {
-		remainingQuantity = 0
-	}
-	order.Metadata["remainingQuantity"] = remainingQuantity
+		order.Metadata["remainingQuantity"] = remainingQuantity
 
-	orderCompletelyFilled := !tradingQuantityBelow(filledQuantity, order.Quantity)
-	if orderCompletelyFilled {
-		order.Status = "FILLED"
-		if !boolValue(order.Metadata["emptyTradeRetryRequired"]) {
-			delete(order.Metadata, liveSettlementSyncRequiredKey)
+		orderCompletelyFilled := !tradingQuantityBelow(filledQuantity, order.Quantity)
+		if orderCompletelyFilled {
+			order.Status = "FILLED"
+			if !boolValue(order.Metadata["emptyTradeRetryRequired"]) {
+				delete(order.Metadata, liveSettlementSyncRequiredKey)
+			}
+			delete(order.Metadata, liveSettlementSyncErrorKey)
+		} else if isTerminalOrderStatus(order.Status) && !strings.EqualFold(order.Status, "FILLED") {
+			if !boolValue(order.Metadata["emptyTradeRetryRequired"]) {
+				delete(order.Metadata, liveSettlementSyncRequiredKey)
+			}
+			delete(order.Metadata, liveSettlementSyncErrorKey)
+		} else if filledQuantity > 0 {
+			order.Status = "PARTIALLY_FILLED"
 		}
-		delete(order.Metadata, liveSettlementSyncErrorKey)
-	} else if isTerminalOrderStatus(order.Status) && !strings.EqualFold(order.Status, "FILLED") {
-		if !boolValue(order.Metadata["emptyTradeRetryRequired"]) {
-			delete(order.Metadata, liveSettlementSyncRequiredKey)
+		order.Price = lastPrice
+		markOrderLifecycle(order.Metadata, "filled", orderCompletelyFilled)
+		if order.Metadata["acceptedAt"] == nil {
+			order.Metadata["acceptedAt"] = time.Now().UTC().Format(time.RFC3339)
 		}
-		delete(order.Metadata, liveSettlementSyncErrorKey)
-	} else if filledQuantity > 0 {
-		order.Status = "PARTIALLY_FILLED"
-	}
-	order.Price = lastPrice
-	markOrderLifecycle(order.Metadata, "filled", orderCompletelyFilled)
-	if order.Metadata["acceptedAt"] == nil {
-		order.Metadata["acceptedAt"] = time.Now().UTC().Format(time.RFC3339)
-	}
-	if (len(newFills) > 0 || strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "") && filledQuantity > 0 {
-		filledAt := time.Now().UTC()
-		if latestTradeTime := latestFillExchangeTradeTime(newFills); !latestTradeTime.IsZero() {
-			filledAt = latestTradeTime
+		if (len(newFills) > 0 || strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "") && filledQuantity > 0 {
+			filledAt := time.Now().UTC()
+			if latestTradeTime := latestFillExchangeTradeTime(newFills); !latestTradeTime.IsZero() {
+				filledAt = latestTradeTime
+			}
+			order.Metadata["lastFilledAt"] = filledAt.Format(time.RFC3339)
 		}
-		order.Metadata["lastFilledAt"] = filledAt.Format(time.RFC3339)
-	}
-	updatedOrder, err := p.store.UpdateOrder(order)
-	if err != nil {
+		updated, err := tx.UpdateOrder(order)
+		if err != nil {
+			return err
+		}
+		updatedOrder = updated
+		return nil
+	}); err != nil {
 		return domain.Order{}, err
 	}
 	if strings.EqualFold(account.Mode, "LIVE") && len(newFills) > 0 {
@@ -1231,6 +1216,54 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		levelLogger.Debug("paper order filled", "fill_count", len(newFills), "price", updatedOrder.Price)
 	}
 	return updatedOrder, nil
+}
+
+func fillReconciliationInputsFromStoredFills(fills []domain.Fill) ([]FillReconciliationInput, error) {
+	inputs := make([]FillReconciliationInput, 0, len(fills))
+	for _, fill := range fills {
+		source, ok := fillReconciliationSourceFromStoredFill(fill)
+		if !ok {
+			return nil, fmt.Errorf("stored fill %s has ambiguous source", fill.ID)
+		}
+		inputs = append(inputs, FillReconciliationInput{Fill: fill, Source: source})
+	}
+	return inputs, nil
+}
+
+func fillReconciliationInputsFromIncomingFills(order domain.Order, fills []domain.Fill) ([]FillReconciliationInput, error) {
+	inputs := make([]FillReconciliationInput, 0, len(fills))
+	for _, fill := range fills {
+		if strings.TrimSpace(fill.OrderID) == "" {
+			fill.OrderID = order.ID
+		}
+		source := FillSourceReal
+		if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+			fill.DedupFingerprint = strings.TrimSpace(fill.DedupFingerprint)
+			if fill.DedupFingerprint == "" {
+				fill.DedupFingerprint = fill.FallbackFingerprint()
+			}
+			source = FillSourceSynthetic
+			if strings.HasPrefix(fill.DedupFingerprint, syntheticRemainderFingerprintPrefix) {
+				source = FillSourceRemainder
+			}
+		}
+		inputs = append(inputs, FillReconciliationInput{Fill: fill, Source: source})
+	}
+	return inputs, nil
+}
+
+func fillReconciliationSourceFromStoredFill(fill domain.Fill) (FillSource, bool) {
+	if strings.TrimSpace(fill.ExchangeTradeID) != "" {
+		return FillSourceReal, true
+	}
+	fingerprint := strings.TrimSpace(fill.DedupFingerprint)
+	if fingerprint == "" {
+		return "", false
+	}
+	if strings.HasPrefix(fingerprint, syntheticRemainderFingerprintPrefix) {
+		return FillSourceRemainder, true
+	}
+	return FillSourceSynthetic, true
 }
 
 func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.Fill) ([]domain.Fill, error) {
@@ -1434,6 +1467,10 @@ func (p *Platform) CountFills() (int, error) {
 // applyExecutionFill 根据已确认成交更新仓位。
 // 它是 paper/live 共用的持仓落账逻辑，只处理 canonical fill 之后的仓位变更。
 func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order, executionPrice float64) error {
+	return p.applyExecutionFillWithStore(p.store, account, order, executionPrice)
+}
+
+func (p *Platform) applyExecutionFillWithStore(settlementStore storepkg.FillSettlementStore, account domain.Account, order domain.Order, executionPrice float64) error {
 	if boolValue(order.Metadata["reconcileRecovered"]) {
 		snapshotQty := liveSyncSnapshotPositionAmounts(account)[NormalizeSymbol(order.Symbol)]
 		if !tradingQuantityPositive(snapshotQty) {
@@ -1445,7 +1482,7 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 			return nil
 		}
 	}
-	position, exists, err := p.store.FindPosition(account.ID, order.Symbol)
+	position, exists, err := settlementStore.FindPosition(account.ID, order.Symbol)
 	if err != nil {
 		return err
 	}
@@ -1458,7 +1495,7 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 
 	// 无现有持仓 → 新开仓
 	if !exists {
-		_, err := p.store.SavePosition(domain.Position{
+		_, err := settlementStore.SavePosition(domain.Position{
 			AccountID:         account.ID,
 			StrategyVersionID: order.StrategyVersionID,
 			Symbol:            order.Symbol,
@@ -1477,7 +1514,7 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 		position.Quantity = totalQty
 		position.MarkPrice = executionPrice
 		position.StrategyVersionID = firstNonEmpty(order.StrategyVersionID, position.StrategyVersionID)
-		_, err := p.store.SavePosition(position)
+		_, err := settlementStore.SavePosition(position)
 		return err
 	}
 
@@ -1485,16 +1522,16 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 	if tradingQuantityBelow(order.Quantity, position.Quantity) {
 		position.Quantity = position.Quantity - order.Quantity
 		if position.Quantity <= 0 {
-			return p.store.DeletePosition(position.ID)
+			return settlementStore.DeletePosition(position.ID)
 		}
 		position.MarkPrice = executionPrice
-		_, err := p.store.SavePosition(position)
+		_, err := settlementStore.SavePosition(position)
 		return err
 	}
 
 	// 反方向 → 全部平仓
 	if tradingQuantityEqual(order.Quantity, position.Quantity) {
-		err := p.store.DeletePosition(position.ID)
+		err := settlementStore.DeletePosition(position.ID)
 		if err == nil && strings.EqualFold(account.Mode, "LIVE") {
 			liveSessionID := stringValue(order.Metadata["liveSessionId"])
 			decisionEventID := stringValue(order.Metadata["decisionEventId"])
@@ -1508,7 +1545,7 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 				// for a given order in `enrichLiveTradePairs`.
 				// While `ws-sync` is an optimistic source, subsequent reconcile events can append a newer record
 				// with `VerifiedClosed=false` if residual position is detected.
-				_, _ = p.store.CreateOrderCloseVerification(domain.OrderCloseVerification{
+				_, _ = settlementStore.CreateOrderCloseVerification(domain.OrderCloseVerification{
 					LiveSessionID:        liveSessionID,
 					OrderID:              order.ID,
 					DecisionEventID:      decisionEventID,
@@ -1532,7 +1569,7 @@ func (p *Platform) applyExecutionFill(account domain.Account, order domain.Order
 	position.EntryPrice = executionPrice
 	position.MarkPrice = executionPrice
 	position.StrategyVersionID = firstNonEmpty(order.StrategyVersionID, position.StrategyVersionID)
-	_, err = p.store.SavePosition(position)
+	_, err = settlementStore.SavePosition(position)
 	return err
 }
 

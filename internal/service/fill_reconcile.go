@@ -111,6 +111,13 @@ func BuildFillReconciliationPlan(order domain.Order, existing []FillReconciliati
 			if _, exists := existingRealTradeIDs[tradeID]; exists {
 				continue
 			}
+			remainingRealQty := order.Quantity - existingRealQty - newRealQty
+			if !tradingQuantityPositive(remainingRealQty) {
+				continue
+			}
+			if tradingQuantityExceeds(fill.Quantity, remainingRealQty) {
+				fill.Quantity = remainingRealQty
+			}
 			existingRealTradeIDs[tradeID] = struct{}{}
 			hasNewRealFill = true
 			newRealQty += fill.Quantity
@@ -227,9 +234,6 @@ func setFillReconcileMetadata(plan *FillReconciliationPlan, order domain.Order, 
 		filledQty = 0
 	}
 	remainingQty := order.Quantity - filledQty
-	if remainingQty < 0 && !tradingQuantityExceeds(-remainingQty, 0) {
-		remainingQty = 0
-	}
 	if remainingQty < 0 {
 		remainingQty = 0
 	}
