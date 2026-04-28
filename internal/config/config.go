@@ -71,6 +71,7 @@ type Config struct {
 	SupervisorBearerToken         string   // 只读 supervisor 请求目标服务时使用的全局 Bearer token
 	SupervisorPollIntervalSeconds int      // 只读 supervisor 轮询间隔（秒）
 	SupervisorHTTPTimeoutSeconds  int      // 只读 supervisor HTTP 超时（秒）
+	SupervisorAppRestartEnabled   bool     // supervisor 是否允许按 runtime status 到期计划提交应用内 restart（默认关闭）
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -151,6 +152,7 @@ func Load() Config {
 		SupervisorBearerToken:          strings.TrimSpace(os.Getenv("SUPERVISOR_BEARER_TOKEN")),
 		SupervisorPollIntervalSeconds:  intFromEnvWithMin("SUPERVISOR_POLL_INTERVAL_SECONDS", 30, 5),
 		SupervisorHTTPTimeoutSeconds:   intFromEnvWithMin("SUPERVISOR_HTTP_TIMEOUT_SECONDS", 5, 1),
+		SupervisorAppRestartEnabled:    boolFromEnv("SUPERVISOR_APPLICATION_RESTART_ENABLED", false),
 	}
 }
 
