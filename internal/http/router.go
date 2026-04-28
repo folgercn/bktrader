@@ -38,6 +38,7 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 	registerLogRoutes(mux, platform)
 	registerStreamRoutes(mux, platform, cfg)
 	registerRuntimeStatusRoutes(mux, platform, cfg)
+	registerRuntimeControlRoutes(mux, platform, cfg)
 	registerSupervisorStatusRoutes(mux, platform)
 
 	// 系统概览端点
