@@ -106,3 +106,49 @@ func TestListLiveSessionsKeepsNonDeletedSessionWithLegacyDeletedAtState(t *testi
 	}
 	t.Fatalf("expected non-DELETED live session %s with legacy deletedAt state to remain listed", session.ID)
 }
+
+func TestUpdateLiveSessionStateIfControlRequestHandlesDirtyControlVersion(t *testing.T) {
+	dsn := os.Getenv("BKTRADER_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("BKTRADER_TEST_POSTGRES_DSN is not set")
+	}
+	if err := Migrate(dsn); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	store, err := New(dsn)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer store.Close()
+
+	account, err := store.CreateAccount("Live Dirty Control Version Test", "LIVE", "binance-futures")
+	if err != nil {
+		t.Fatalf("CreateAccount failed: %v", err)
+	}
+	strategy, err := store.CreateStrategy("live-dirty-control-version-test", "live dirty control version test", map[string]any{
+		"strategyEngine": "bk-default",
+	})
+	if err != nil {
+		t.Fatalf("CreateStrategy failed: %v", err)
+	}
+	session, err := store.CreateLiveSession(account.ID, strategy["id"].(string))
+	if err != nil {
+		t.Fatalf("CreateLiveSession failed: %v", err)
+	}
+	session.State["controlRequestId"] = "dirty-request"
+	session.State["controlVersion"] = "abc"
+	if _, err := store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("UpdateLiveSession failed: %v", err)
+	}
+
+	_, ok, err := store.UpdateLiveSessionStateIfControlRequest(session.ID, "dirty-request", 1, map[string]any{
+		"controlRequestId": "dirty-request",
+		"controlVersion":   int64(1),
+	})
+	if err != nil {
+		t.Fatalf("dirty controlVersion should not fail cast: %v", err)
+	}
+	if ok {
+		t.Fatal("expected dirty controlVersion to be treated as stale mismatch")
+	}
+}

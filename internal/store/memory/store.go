@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1036,6 +1037,23 @@ func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (
 	return item, nil
 }
 
+func (s *Store) UpdateLiveSessionStateIfControlRequest(sessionID, requestID string, version int64, state map[string]any) (domain.LiveSession, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.liveSessions[sessionID]
+	if !ok {
+		return domain.LiveSession{}, false, fmt.Errorf("live session not found: %s", sessionID)
+	}
+	currentRequestID := strings.TrimSpace(stringValue(item.State["controlRequestId"]))
+	currentVersion := int64Value(item.State["controlVersion"])
+	if currentRequestID != requestID || currentVersion != version {
+		return item, false, nil
+	}
+	item.State = state
+	s.liveSessions[sessionID] = item
+	return item, true, nil
+}
+
 func (s *Store) ListSignalRuntimeSessions() ([]domain.SignalRuntimeSession, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1562,6 +1580,27 @@ func stringValue(value any) string {
 		return strings.TrimSpace(text)
 	}
 	return ""
+}
+
+func int64Value(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case float64:
+		return int64(typed)
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err == nil {
+			return parsed
+		}
+		parsedFloat, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		if err == nil {
+			return int64(parsedFloat)
+		}
+	}
+	return 0
 }
 
 func (s *Store) ListMarketBars(exchange, symbol, timeframe string, from, to int64, limit int) ([]domain.MarketBar, error) {

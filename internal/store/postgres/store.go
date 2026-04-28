@@ -1358,6 +1358,36 @@ func (s *Store) UpdateLiveSessionState(sessionID string, state map[string]any) (
 	return s.GetLiveSession(sessionID)
 }
 
+func (s *Store) UpdateLiveSessionStateIfControlRequest(sessionID, requestID string, version int64, state map[string]any) (domain.LiveSession, bool, error) {
+	stateRaw, err := json.Marshal(state)
+	if err != nil {
+		return domain.LiveSession{}, false, fmt.Errorf("failed to marshal state: %w", err)
+	}
+	result, err := s.db.Exec(`
+		update live_sessions
+		set state = $4
+		where id = $1
+			and coalesce(state->>'controlRequestId', '') = $2
+			and case
+				when coalesce(state->>'controlVersion', '') ~ '^[0-9]+$'
+					then (state->>'controlVersion')::bigint
+				else 0
+			end = $3
+	`, sessionID, requestID, version, stateRaw)
+	if err != nil {
+		return domain.LiveSession{}, false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return domain.LiveSession{}, false, err
+	}
+	latest, getErr := s.GetLiveSession(sessionID)
+	if getErr != nil {
+		return domain.LiveSession{}, false, getErr
+	}
+	return latest, rows > 0, nil
+}
+
 func (s *Store) ListSignalRuntimeSessions() ([]domain.SignalRuntimeSession, error) {
 	rows, err := s.db.Query(`
 		select id, account_id, strategy_id, status, runtime_adapter, transport, subscription_count, state, created_at, updated_at
