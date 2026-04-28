@@ -551,7 +551,7 @@ func (p *Platform) buildLiveExecutionPlanFromMarketData(
 
 	var result map[string]any
 	switch normalized := normalizeStrategyEngineKey(engineKey); normalized {
-	case "bk-default":
+	case "bk-default", "bk-live-intrabar-sma5-t3-sep":
 		result, err = runStrategyReplayOnMinuteBars(cfg, signals, minuteBars)
 	default:
 		result, err = engine.Run(context)
