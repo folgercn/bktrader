@@ -1959,6 +1959,9 @@ func TestBookAwareExecutionStrategyDelaysSLReentryAfterStopLossFill(t *testing.T
 	if got := stringValue(delayed.Metadata["executionDecision"]); got != "wait-sl-reentry-delay" {
 		t.Fatalf("expected delay execution decision, got %s", got)
 	}
+	if got := stringValue(delayed.Metadata["reentryDelayReasonTag"]); got != "sl-reentry" {
+		t.Fatalf("expected delay reason tag sl-reentry, got %s", got)
+	}
 	if got := parseFloatValue(delayed.Metadata["slReentryDelayRemainingSeconds"]); got != 49 {
 		t.Fatalf("expected 49 seconds remaining, got %v", got)
 	}
@@ -1981,6 +1984,27 @@ func TestBookAwareExecutionStrategyDelaysSLReentryAfterStopLossFill(t *testing.T
 	}
 	if unaffected.Status != "waiting-sl-reentry-delay" {
 		t.Fatalf("expected zero-initial reentry to wait for SL delay, got %s", unaffected.Status)
+	}
+
+	ctx.Intent.Reason = "PT-Reentry"
+	ctx.Intent.SignalKind = "pt-reentry"
+	ptDelayed, err := strategy.BuildProposal(ctx)
+	if err != nil {
+		t.Fatalf("unexpected PT reentry delayed proposal error: %v", err)
+	}
+	if ptDelayed.Status != "waiting-sl-reentry-delay" {
+		t.Fatalf("expected PT-Reentry to wait for SL delay, got %s", ptDelayed.Status)
+	}
+	if got := stringValue(ptDelayed.Metadata["reentryDelayReasonTag"]); got != "pt-reentry" {
+		t.Fatalf("expected delay reason tag pt-reentry, got %s", got)
+	}
+	ctx.EventTime = lastSLFill.Add(60 * time.Second)
+	ptReady, err := strategy.BuildProposal(ctx)
+	if err != nil {
+		t.Fatalf("unexpected PT reentry ready proposal error: %v", err)
+	}
+	if ptReady.Status != "dispatchable" {
+		t.Fatalf("expected PT-Reentry to dispatch after delay, got %s", ptReady.Status)
 	}
 }
 
@@ -2238,6 +2262,52 @@ func TestBookAwareExecutionStrategyUsesMakerLimitOnWideSpreadWhenConfigured(t *t
 	}
 	if got := stringValue(proposal.Metadata["executionExpiresAt"]); got != eventTime.Add(45*time.Second).Format(time.RFC3339) {
 		t.Fatalf("expected execution expiry to be set, got %s", got)
+	}
+}
+
+func TestBookAwareExecutionStrategyUsesTightZeroInitialReentryMakerFallback(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{},
+		Execution: StrategyExecutionContext{
+			Parameters: map[string]any{
+				"executionEntryMaxSpreadBps":   8.0,
+				"executionEntryWideSpreadMode": "limit-maker",
+			},
+		},
+		Intent: SignalIntent{
+			Action:      "entry",
+			Role:        "entry",
+			Reason:      "Zero-Initial-Reentry",
+			Side:        "BUY",
+			Symbol:      "BTCUSDT",
+			PriceHint:   68000,
+			PriceSource: "trade_tick.price",
+			Metadata: map[string]any{
+				"bestBid":           67999.0,
+				"bestAsk":           68005.0,
+				"spreadBps":         4.0,
+				"signalBarStateKey": "state-zero-initial",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proposal.Status != "dispatchable" {
+		t.Fatalf("expected dispatchable maker proposal, got %s", proposal.Status)
+	}
+	if proposal.Type != "LIMIT" || proposal.TimeInForce != "GTX" || !proposal.PostOnly {
+		t.Fatalf("expected LIMIT GTX post-only proposal, got type=%s tif=%s postOnly=%v", proposal.Type, proposal.TimeInForce, proposal.PostOnly)
+	}
+	if proposal.LimitPrice != 67999.0 {
+		t.Fatalf("expected passive bid limit price, got %v", proposal.LimitPrice)
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "maker-resting" {
+		t.Fatalf("expected maker-resting decision, got %s", got)
+	}
+	if got := parseFloatValue(proposal.Metadata["executionProfileMaxSpreadBps"]); got != 3.0 {
+		t.Fatalf("expected zero-initial max spread default 3bps, got %v", got)
 	}
 }
 

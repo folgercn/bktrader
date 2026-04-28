@@ -210,6 +210,7 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	proposal.Metadata["executionProfileTimeInForce"] = profile.TimeInForce
 	proposal.Metadata["executionProfilePostOnly"] = profile.PostOnly
 	proposal.Metadata["executionProfileReduceOnly"] = profile.ReduceOnly
+	proposal.Metadata["executionProfileMaxSpreadBps"] = maxSpreadBps
 	proposal.Metadata["executionProfileWideSpreadMode"] = profile.WideSpreadMode
 	proposal.Metadata["executionStrategy"] = proposal.ExecutionStrategy
 	proposal.Metadata["signalSignature"] = signalSignature
@@ -381,6 +382,8 @@ func applySLReentryMinDelay(ctx ExecutionPlanningContext, proposal ExecutionProp
 	proposal.Reason = "sl-reentry-delay"
 	proposal.Metadata = cloneMetadata(proposal.Metadata)
 	proposal.Metadata["executionDecision"] = "wait-sl-reentry-delay"
+	proposal.Metadata["reentryDelayReasonTag"] = reasonTag
+	proposal.Metadata["reentryDelaySource"] = "last-sl-exit-fill"
 	proposal.Metadata["slReentryMinDelaySeconds"] = delaySeconds
 	proposal.Metadata["slReentryDelayElapsedSeconds"] = math.Max(0, elapsed.Seconds())
 	proposal.Metadata["slReentryDelayRemainingSeconds"] = math.Ceil(remaining.Seconds())
@@ -648,10 +651,10 @@ func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) exe
 	case role == "entry" && reasonTag == "zero-initial-reentry":
 		overrideExecutionProfile(&profile, parameters, "executionEntry")
 		overrideExecutionProfile(&profile, parameters, "executionZeroInitialReentry")
-		if profile.MaxSpreadBps <= 0 {
+		if parseFloatValue(parameters["executionZeroInitialReentryMaxSpreadBps"]) <= 0 {
 			profile.MaxSpreadBps = 3.0
 		}
-		if profile.WideSpreadMode == "" {
+		if strings.TrimSpace(stringValue(parameters["executionZeroInitialReentryWideSpreadMode"])) == "" {
 			profile.WideSpreadMode = "limit-maker"
 		}
 		if profile.TimeoutFallbackType == "" {
