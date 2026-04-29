@@ -177,6 +177,62 @@ func TestLogRoutesExposeUnifiedEvents(t *testing.T) {
 	}
 }
 
+func TestLogRoutesExposeLiveControlSummary(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+	mux := http.NewServeMux()
+	registerLogRoutes(mux, platform)
+
+	base := time.Date(2026, 4, 29, 10, 0, 0, 0, time.UTC)
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session: %v", err)
+	}
+	state := map[string]any{
+		"desiredStatus": "RUNNING",
+		"actualStatus":  "ERROR",
+		"controlEvents": []any{
+			map[string]any{
+				"id":               "control-summary-event-1",
+				"phase":            "failed",
+				"eventTime":        base.Format(time.RFC3339Nano),
+				"recordedAt":       base.Format(time.RFC3339Nano),
+				"liveSessionId":    session.ID,
+				"accountId":        session.AccountID,
+				"strategyId":       session.StrategyID,
+				"controlRequestId": "request-1",
+				"controlVersion":   1,
+				"desiredStatus":    "RUNNING",
+				"actualStatus":     "ERROR",
+				"action":           "start",
+				"errorCode":        service.LiveSessionControlErrorCodeAdapterError,
+				"latencyMs":        2200,
+			},
+		},
+	}
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("update live session state: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/live-control/summary?liveSessionId="+session.ID, nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for live control summary, got %d", rec.Code)
+	}
+	var metrics service.LiveControlMetrics
+	if err := json.NewDecoder(rec.Body).Decode(&metrics); err != nil {
+		t.Fatalf("decode live control metrics: %v", err)
+	}
+	if metrics.Failed != 1 || metrics.ByErrorCode[service.LiveSessionControlErrorCodeAdapterError] != 1 {
+		t.Fatalf("unexpected live control metrics: %#v", metrics)
+	}
+	if metrics.CurrentErrors != 1 || metrics.CurrentPending != 0 {
+		t.Fatalf("expected current error without pending, got pending=%d errors=%d", metrics.CurrentPending, metrics.CurrentErrors)
+	}
+}
+
 func TestLogStreamEndpointWritesSSE(t *testing.T) {
 	logging.ResetForTests()
 	t.Cleanup(logging.ResetForTests)
