@@ -4086,6 +4086,8 @@ func liveSessionNonRegressiveFactKeys() []string {
 		"lastSLExitReentryConsumedOrderId",
 		"lastSLExitReentryConsumedAt",
 		"lastSLExitReentryConsumedReason",
+		"lastSLExitReentryConsumedEntryOrderId",
+		"lastSLExitReentryConsumedEntryStatus",
 	}
 }
 

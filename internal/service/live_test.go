@@ -5005,6 +5005,62 @@ func TestMaybeIncrementLiveSessionReentryCountCountsZeroInitialWindowEntry(t *te
 	}
 }
 
+func TestMaybeConsumeLiveSLReentryWindowForEntryOrderConsumesOnDispatch(t *testing.T) {
+	eventTime := time.Date(2026, 4, 22, 3, 5, 10, 0, time.UTC)
+	state := map[string]any{
+		"lastSLExitOrderId":     "order-sl-1",
+		"lastSLExitReentrySide": "BUY",
+	}
+	proposal := map[string]any{
+		"role":   "entry",
+		"reason": "SL-Reentry",
+	}
+	maybeConsumeLiveSLReentryWindowForEntryOrder(state, proposal, "order-reentry-1", "NEW", eventTime, "sl-reentry-dispatched")
+	if got := stringValue(state["lastSLExitReentryConsumedOrderId"]); got != "order-sl-1" {
+		t.Fatalf("expected SL reentry dispatch to consume order-sl-1, got %q", got)
+	}
+	if got := stringValue(state["lastSLExitReentryConsumedEntryOrderId"]); got != "order-reentry-1" {
+		t.Fatalf("expected consumed entry order id order-reentry-1, got %q", got)
+	}
+	if got := stringValue(state["lastSLExitReentryConsumedEntryStatus"]); got != "NEW" {
+		t.Fatalf("expected consumed entry status NEW, got %q", got)
+	}
+	if got := stringValue(state["lastSLExitReentryConsumedReason"]); got != "sl-reentry-dispatched" {
+		t.Fatalf("expected sl-reentry-dispatched consume reason, got %q", got)
+	}
+	if got := stringValue(state["lastSLExitReentrySide"]); got != "" {
+		t.Fatalf("expected consumed SL reentry side to be cleared, got %q", got)
+	}
+}
+
+func TestMaybeConsumeLiveSLReentryWindowForEntryOrderSkipsNonSLReentry(t *testing.T) {
+	eventTime := time.Date(2026, 4, 22, 3, 5, 10, 0, time.UTC)
+	state := map[string]any{
+		"lastSLExitOrderId":     "order-sl-1",
+		"lastSLExitReentrySide": "BUY",
+	}
+	proposal := map[string]any{
+		"role":   "entry",
+		"reason": "Zero-Initial-Reentry",
+	}
+	maybeConsumeLiveSLReentryWindowForEntryOrder(state, proposal, "order-zero-1", "NEW", eventTime, "zero-initial-dispatched")
+	if got := stringValue(state["lastSLExitReentryConsumedOrderId"]); got != "" {
+		t.Fatalf("expected zero-initial entry not to consume SL reentry window, got %q", got)
+	}
+	if got := stringValue(state["lastSLExitReentrySide"]); got != "BUY" {
+		t.Fatalf("expected non-SL entry to leave SL reentry side armed, got %q", got)
+	}
+
+	proposal["reason"] = "SL-Reentry"
+	maybeConsumeLiveSLReentryWindowForEntryOrder(state, proposal, "order-reentry-1", "CANCELLED", eventTime, "sl-reentry-dispatched")
+	if got := stringValue(state["lastSLExitReentryConsumedOrderId"]); got != "" {
+		t.Fatalf("expected cancelled SL reentry order not to consume window, got %q", got)
+	}
+	if got := stringValue(state["lastSLExitReentrySide"]); got != "BUY" {
+		t.Fatalf("expected cancelled SL reentry order to leave side armed, got %q", got)
+	}
+}
+
 func TestMaybeIncrementLiveSessionReentryCountUsesPerBarIdentity(t *testing.T) {
 	eventTime := time.Date(2026, 4, 22, 3, 30, 10, 0, time.UTC)
 	state := map[string]any{

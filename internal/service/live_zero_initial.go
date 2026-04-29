@@ -178,6 +178,10 @@ func prepareLivePlanStepForSignalEvaluation(
 	}
 	appendTimelineEvent(updatedState, "strategy", eventTime, "zero-initial-window-armed", timelineMetadata)
 	updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason, _ = liveZeroInitialWindowPlanStep(updatedState, parameters, signalBarStates, symbol, signalTimeframe, eventTime)
+	if livePendingZeroInitialWindowShouldYieldSLReentry(updatedState, signalBarStates, symbol, signalTimeframe, eventTime) {
+		clearLivePendingZeroInitialWindow(updatedState, eventTime, "sl-exit-reentry-priority")
+		return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, "SL-Reentry"
+	}
 	return updatedState, alignedEvent, alignedPrice, alignedSide, alignedRole, alignedReason
 }
 
@@ -573,7 +577,6 @@ func liveSLReentryWindowPlanStep(
 	if price <= 0 {
 		return state, time.Time{}, 0, "", "", "", false
 	}
-	consumeLiveSLReentryWindow(state, eventTime, "consumed-on-derive")
 	return state, liveCurrentSignalBarStart(signalBarState, eventTime), price, side, "entry", "SL-Reentry", true
 }
 
@@ -591,11 +594,11 @@ func livePendingZeroInitialWindowShouldYieldSLReentry(
 	if parseFloatValue(sessionState["sessionReentryCount"]) <= 0 {
 		return false
 	}
-	lastSLExitAt := parseOptionalRFC3339(stringValue(sessionState["lastSLExitFilledAt"]))
-	if lastSLExitAt.IsZero() || lastSLExitAt.UTC().After(eventTime.UTC()) {
+	if liveSLReentryWindowConsumed(sessionState) {
 		return false
 	}
-	if armedAt := parseOptionalRFC3339(stringValue(pending["armedAt"])); !armedAt.IsZero() && lastSLExitAt.UTC().Before(armedAt.UTC()) {
+	lastSLExitAt := parseOptionalRFC3339(stringValue(sessionState["lastSLExitFilledAt"]))
+	if lastSLExitAt.IsZero() || lastSLExitAt.UTC().After(eventTime.UTC()) {
 		return false
 	}
 	if pendingSymbol := NormalizeSymbol(stringValue(pending["symbol"])); pendingSymbol != "" && pendingSymbol != NormalizeSymbol(symbol) {

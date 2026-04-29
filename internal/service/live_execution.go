@@ -987,6 +987,7 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	state["lastDispatchedOrderStatus"] = created.Status
 	state["lastExecutionDispatch"] = executionDispatchSummary(proposalMap, created, false)
 	updateExecutionEventStats(state, proposalMap, mapValue(state["lastExecutionDispatch"]))
+	maybeConsumeLiveSLReentryWindowForEntryOrder(state, proposalMap, created.ID, created.Status, dispatchedAt, "sl-reentry-dispatched")
 	if isTerminalOrderStatus(created.Status) {
 		state["lastSyncedOrderId"] = created.ID
 		state["lastSyncedOrderStatus"] = created.Status
@@ -1656,6 +1657,8 @@ func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map
 	}
 	if reasonTag == "zero-initial-reentry" {
 		clearLivePendingZeroInitialWindow(state, eventTime, "zero-initial-reentry-filled")
+	} else if reasonTag == "sl-reentry" {
+		maybeConsumeLiveSLReentryWindowForEntryOrder(state, proposalMap, orderID, status, eventTime, "sl-reentry-filled")
 	}
 	if orderID != "" && stringValue(state["lastCountedReentryOrderId"]) == orderID {
 		return
@@ -1673,6 +1676,33 @@ func maybeIncrementLiveSessionReentryCount(state map[string]any, proposalMap map
 	state["sessionReentryCount"] = reentryCount
 	if orderID != "" {
 		state["lastCountedReentryOrderId"] = orderID
+	}
+}
+
+func maybeConsumeLiveSLReentryWindowForEntryOrder(state map[string]any, proposalMap map[string]any, orderID, status string, eventTime time.Time, reason string) {
+	if state == nil || len(proposalMap) == 0 {
+		return
+	}
+	if strings.TrimSpace(stringValue(state["lastSLExitOrderId"])) == "" || liveSLReentryWindowConsumed(state) {
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(stringValue(proposalMap["role"])), "entry") {
+		return
+	}
+	if normalizeStrategyReasonTag(stringValue(proposalMap["reason"])) != "sl-reentry" {
+		return
+	}
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "NEW", "ACCEPTED", "PARTIALLY_FILLED", "FILLED":
+	default:
+		return
+	}
+	consumeLiveSLReentryWindow(state, eventTime, reason)
+	if strings.TrimSpace(orderID) != "" {
+		state["lastSLExitReentryConsumedEntryOrderId"] = orderID
+	}
+	if strings.TrimSpace(status) != "" {
+		state["lastSLExitReentryConsumedEntryStatus"] = strings.ToUpper(strings.TrimSpace(status))
 	}
 }
 
@@ -1700,6 +1730,8 @@ func recordLiveSessionStopLossExitFill(state map[string]any, proposalMap map[str
 	delete(state, "lastSLExitReentryConsumedOrderId")
 	delete(state, "lastSLExitReentryConsumedAt")
 	delete(state, "lastSLExitReentryConsumedReason")
+	delete(state, "lastSLExitReentryConsumedEntryOrderId")
+	delete(state, "lastSLExitReentryConsumedEntryStatus")
 	if side := liveEntrySideAfterExitSide(stringValue(proposalMap["side"])); side != "" {
 		state["lastSLExitReentrySide"] = side
 	}
