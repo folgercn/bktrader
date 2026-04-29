@@ -25,7 +25,7 @@
 
 这样后续执行删除计划时，只会删除被上游明确标记为 `synthetic` 或 `remainder` 的本地 fill，避免依赖间接条件误删合法 fallback fill。
 
-长期可以评估增加 `fill_source` 字段，取值为 `real / synthetic / remainder / paper / manual`。
+当前已经增加 `fill_source` 字段，取值为 `real / synthetic / remainder / paper / manual`。`domain.Fill.Source` 是内部 reconciliation source，不通过 fill JSON 对外输出。
 
 ## 一致性规则
 
@@ -51,17 +51,20 @@
 | `RealizedPnL` | `realizedPnl` | `fillPnl` | `closedPnl` |
 | `TradeTime` | `time` | `fillTime` | `execTime` |
 
-## 当前阶段实现
+## 当前实现
 
-阶段 1+2 只新增文档和纯函数：
+当前已经完成以下收口：
 
 - `BuildFillReconciliationPlan` 读取 `domain.Order`、existing fills 和 incoming fills；
 - existing/incoming fills 必须带显式 source；
 - 输出 `DeleteFillIDs`、`CreateFills`、`ApplyPositionFills`、`UpdatedMetadata`、`Warnings`；
 - `remainingQuantity` 统一 clamp 到非负值，超额成交通过 `Warnings` 暴露；
-- 不接入 `finalizeExecutedOrder`；
-- 不修改 store 接口；
-- 不新增 migration；
+- `finalizeExecutedOrder` 已按 plan 执行删除、创建、position 增量应用；
+- fill/order/position settlement 已进入同一事务边界；
+- 同一订单 settlement 在 Postgres 中通过 order row lock 串行化；
+- `fills.fill_source` 已持久化，memory/postgres store 均读写 source；
+- Binance user trades 已映射到 `ExchangeFillReport`；
+- OKX / Bybit 成交 payload 已有统一 mapper 和测试，后续 live adapter 只需要调用 mapper；
 - 不改变 Binance、testnet、mainnet 或 `dispatchMode` 默认行为。
 
-后续阶段再让 `finalizeExecutedOrder` 按 plan 执行删除、创建、position 增量应用，并把 adapter 原始字段逐步收敛到统一 fill report。
+后续阶段再把 OKX / Bybit live adapter 接入实际 REST/WS 成交流，并复用当前 `ExchangeFillReport` mapper，不在 adapter 内重写 synthetic upgrade 算法。

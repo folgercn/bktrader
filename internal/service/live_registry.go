@@ -74,6 +74,22 @@ type ExchangeFillReport struct {
 	Raw             map[string]any `json:"raw,omitempty"`
 }
 
+type exchangeFillReportPayloadMapping struct {
+	ReportSource         string
+	ExchangeOrderIDField string
+	ExchangeTradeIDField string
+	SymbolField          string
+	SideField            string
+	PriceField           string
+	QuantityField        string
+	FeeField             string
+	FeeAssetField        string
+	RealizedPnLField     string
+	FundingPnLField      string
+	TradeTimeField       string
+	MetadataFields       []string
+}
+
 func (report ExchangeFillReport) LiveFillReport() LiveFillReport {
 	metadata := map[string]any{
 		"source":          "exchange-fill-report",
@@ -84,6 +100,9 @@ func (report ExchangeFillReport) LiveFillReport() LiveFillReport {
 		"orderId":         report.OrderID,
 		"exchangeOrderId": report.ExchangeOrderID,
 		"tradeId":         report.ExchangeTradeID,
+		"symbol":          report.Symbol,
+		"side":            report.Side,
+		"feeAsset":        report.FeeAsset,
 		"commissionAsset": report.FeeAsset,
 		"realizedPnl":     report.RealizedPnL,
 		"tradeTime":       report.TradeTime,
@@ -99,6 +118,75 @@ func (report ExchangeFillReport) LiveFillReport() LiveFillReport {
 		Source:     report.Source,
 		Metadata:   metadata,
 	}
+}
+
+func liveFillReportsFromExchangePayloads(account domain.Account, adapterKey string, payloads []map[string]any, fallbackOrderID any, mapping exchangeFillReportPayloadMapping) []LiveFillReport {
+	reports := make([]LiveFillReport, 0, len(payloads))
+	for _, payload := range payloads {
+		qty := parseFloatValue(payload[mapping.QuantityField])
+		if qty <= 0 {
+			continue
+		}
+		report := ExchangeFillReport{
+			Exchange:        account.Exchange,
+			AdapterKey:      adapterKey,
+			AccountID:       account.ID,
+			ExchangeOrderID: normalizeExchangeID(payload[mapping.ExchangeOrderIDField], fallbackOrderID),
+			ExchangeTradeID: stringifyExchangeID(payload[mapping.ExchangeTradeIDField]),
+			Symbol:          stringValue(payload[mapping.SymbolField]),
+			Side:            stringValue(payload[mapping.SideField]),
+			Price:           parseFloatValue(payload[mapping.PriceField]),
+			Quantity:        qty,
+			Fee:             parseFloatValue(payload[mapping.FeeField]),
+			FeeAsset:        stringValue(payload[mapping.FeeAssetField]),
+			RealizedPnL:     parseFloatValue(payload[mapping.RealizedPnLField]),
+			FundingPnL:      parseFloatValue(payload[mapping.FundingPnLField]),
+			TradeTime:       parseExchangeMillisToRFC3339(payload[mapping.TradeTimeField]),
+			Source:          FillSourceReal,
+			Raw:             payload,
+		}
+		reports = append(reports, report.LiveFillReport())
+		metadata := reports[len(reports)-1].Metadata
+		metadata["source"] = mapping.ReportSource
+		metadata["reportSource"] = mapping.ReportSource
+		metadata["executionMode"] = "rest"
+		for _, field := range mapping.MetadataFields {
+			metadata[field] = payload[field]
+		}
+	}
+	return reports
+}
+
+func okxFillReportsFromTradePayloads(account domain.Account, adapterKey string, payloads []map[string]any, fallbackOrderID any) []LiveFillReport {
+	return liveFillReportsFromExchangePayloads(account, adapterKey, payloads, fallbackOrderID, exchangeFillReportPayloadMapping{
+		ReportSource:         "okx-fills",
+		ExchangeOrderIDField: "ordId",
+		ExchangeTradeIDField: "tradeId",
+		SymbolField:          "instId",
+		SideField:            "side",
+		PriceField:           "fillPx",
+		QuantityField:        "fillSz",
+		FeeField:             "fillFee",
+		FeeAssetField:        "feeCcy",
+		RealizedPnLField:     "fillPnl",
+		TradeTimeField:       "fillTime",
+	})
+}
+
+func bybitFillReportsFromExecutionPayloads(account domain.Account, adapterKey string, payloads []map[string]any, fallbackOrderID any) []LiveFillReport {
+	return liveFillReportsFromExchangePayloads(account, adapterKey, payloads, fallbackOrderID, exchangeFillReportPayloadMapping{
+		ReportSource:         "bybit-executions",
+		ExchangeOrderIDField: "orderId",
+		ExchangeTradeIDField: "execId",
+		SymbolField:          "symbol",
+		SideField:            "side",
+		PriceField:           "execPrice",
+		QuantityField:        "execQty",
+		FeeField:             "execFee",
+		FeeAssetField:        "feeCurrency",
+		RealizedPnLField:     "closedPnl",
+		TradeTimeField:       "execTime",
+	})
 }
 
 type LiveOrderSync struct {
@@ -735,35 +823,18 @@ func (a binanceFuturesLiveAdapter) fetchRESTTradeReportsForSymbol(account domain
 }
 
 func (a binanceFuturesLiveAdapter) tradeReportsFromBinanceTrades(account domain.Account, trades []map[string]any, fallbackOrderID any) []LiveFillReport {
-	reports := make([]LiveFillReport, 0, len(trades))
-	for _, trade := range trades {
-		qty := parseFloatValue(trade["qty"])
-		if qty <= 0 {
-			continue
-		}
-		reports = append(reports, ExchangeFillReport{
-			Exchange:        account.Exchange,
-			AdapterKey:      a.Key(),
-			AccountID:       account.ID,
-			ExchangeOrderID: normalizeBinanceOrderID(trade["orderId"], fallbackOrderID),
-			ExchangeTradeID: stringifyBinanceID(trade["id"]),
-			Price:           parseFloatValue(trade["price"]),
-			Quantity:        qty,
-			Fee:             parseFloatValue(trade["commission"]),
-			FeeAsset:        stringValue(trade["commissionAsset"]),
-			RealizedPnL:     parseFloatValue(trade["realizedPnl"]),
-			TradeTime:       parseBinanceMillisToRFC3339(trade["time"]),
-			Source:          FillSourceReal,
-			Raw:             trade,
-		}.LiveFillReport())
-		metadata := reports[len(reports)-1].Metadata
-		metadata["source"] = "binance-user-trades"
-		metadata["reportSource"] = "binance-user-trades"
-		metadata["maker"] = trade["maker"]
-		metadata["buyer"] = trade["buyer"]
-		metadata["executionMode"] = "rest"
-	}
-	return reports
+	return liveFillReportsFromExchangePayloads(account, a.Key(), trades, fallbackOrderID, exchangeFillReportPayloadMapping{
+		ReportSource:         "binance-user-trades",
+		ExchangeOrderIDField: "orderId",
+		ExchangeTradeIDField: "id",
+		PriceField:           "price",
+		QuantityField:        "qty",
+		FeeField:             "commission",
+		FeeAssetField:        "commissionAsset",
+		RealizedPnLField:     "realizedPnl",
+		TradeTimeField:       "time",
+		MetadataFields:       []string{"maker", "buyer"},
+	})
 }
 
 func normalizeCredentialRefs(value any) map[string]any {
@@ -1473,13 +1544,21 @@ func mapBinanceOrderStatus(status string) string {
 }
 
 func normalizeBinanceOrderID(primary any, fallback any) string {
-	if value := stringifyBinanceID(primary); value != "" {
-		return value
-	}
-	return stringifyBinanceID(fallback)
+	return normalizeExchangeID(primary, fallback)
 }
 
 func stringifyBinanceID(value any) string {
+	return stringifyExchangeID(value)
+}
+
+func normalizeExchangeID(primary any, fallback any) string {
+	if value := stringifyExchangeID(primary); value != "" {
+		return value
+	}
+	return stringifyExchangeID(fallback)
+}
+
+func stringifyExchangeID(value any) string {
 	switch v := value.(type) {
 	case nil:
 		return ""
@@ -1507,9 +1586,13 @@ func stringifyBinanceID(value any) string {
 }
 
 func parseBinanceMillisToRFC3339(value any) string {
+	return parseExchangeMillisToRFC3339(value)
+}
+
+func parseExchangeMillisToRFC3339(value any) string {
 	millis, ok := toInt64(value)
 	if !ok || millis <= 0 {
-		return ""
+		return strings.TrimSpace(stringValue(value))
 	}
 	return time.UnixMilli(millis).UTC().Format(time.RFC3339)
 }
