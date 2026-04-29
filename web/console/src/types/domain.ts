@@ -140,6 +140,7 @@ export type ManualFillSyncResponse = {
   changes?: {
     deletedSyntheticCount: number;
     addedRealCount: number;
+    skippedTradeCount: number;
     duplicateTradeIDs: string[];
     newTradeIDs: string[];
   };

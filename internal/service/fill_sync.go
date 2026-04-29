@@ -67,6 +67,7 @@ type FillSyncSnapshot struct {
 type FillRebuildChanges struct {
 	DeletedSyntheticCount int      `json:"deletedSyntheticCount"`
 	AddedRealCount        int      `json:"addedRealCount"`
+	SkippedTradeCount     int      `json:"skippedTradeCount"`
 	DuplicateTradeIDs     []string `json:"duplicateTradeIds,omitempty"`
 	NewTradeIDs           []string `json:"newTradeIds,omitempty"`
 	MatchedTradeIDs       []string `json:"matchedTradeIds,omitempty"`
@@ -262,6 +263,7 @@ func (p *Platform) RebuildOrderFills(orderID string, matchedTrades []LiveFillRep
 		for _, t := range matchedTrades {
 			tradeID := p.remoteTradeID(t)
 			if tradeID == "" {
+				changes.SkippedTradeCount++
 				continue
 			}
 			if existingRealMap[tradeID] {
@@ -310,6 +312,7 @@ func (p *Platform) RebuildOrderFills(orderID string, matchedTrades []LiveFillRep
 			for _, t := range matchedTrades {
 				tradeID := p.remoteTradeID(t)
 				if tradeID == "" {
+					changes.SkippedTradeCount++
 					continue
 				}
 

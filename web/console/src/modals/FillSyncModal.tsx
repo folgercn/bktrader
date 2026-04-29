@@ -225,11 +225,14 @@ export function FillSyncModal({ isOpen, onClose, order, onSuccess, initialMode =
                         <span className="text-muted-foreground">Added Real:</span>
                         <span className="font-bold text-green-500">{syncResult.changes.addedRealCount}</span>
                       </div>
-                      {syncResult.changes.duplicateTradeIDs && syncResult.changes.duplicateTradeIDs.length > 0 && (
-                        <div className="col-span-2 p-2 rounded bg-background/50 border border-border/50 text-muted-foreground">
-                          Skipped {syncResult.changes.duplicateTradeIDs.length} duplicates.
-                        </div>
-                      )}
+                      <div className="flex justify-between items-center p-2 rounded bg-background/50 border border-border/50">
+                        <span className="text-muted-foreground">Skipped (No ID):</span>
+                        <span className={`font-bold ${syncResult.changes.skippedTradeCount > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>{syncResult.changes.skippedTradeCount}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 rounded bg-background/50 border border-border/50">
+                        <span className="text-muted-foreground">Duplicates:</span>
+                        <span className="font-bold">{syncResult.changes.duplicateTradeIDs?.length || 0}</span>
+                      </div>
                     </div>
                   )}
 
