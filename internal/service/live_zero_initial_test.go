@@ -142,6 +142,80 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesSignalBarBoundaryForMillisBar
 	}
 }
 
+func TestPrepareLivePlanStepForSignalEvaluationConvertsNewZeroWindowAfterSameBarSLExit(t *testing.T) {
+	barStart := time.Date(2026, 4, 28, 11, 0, 0, 0, time.UTC)
+	eventTime := barStart.Add(22*time.Minute + 22*time.Second)
+	barKey := "BTCUSDT|30m|" + barStart.Format(time.RFC3339)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      76561.0,
+			"atr14":     230.0,
+			"current": map[string]any{
+				"barStart": strconv.FormatInt(barStart.UnixMilli(), 10),
+				"close":    76440.0,
+				"high":     76483.7,
+				"low":      76440.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 76564.2,
+				"low":  76470.2,
+			},
+			"prevBar2": map[string]any{
+				"high": 76565.7,
+				"low":  76444.6,
+			},
+		},
+	}
+	state := map[string]any{
+		"sessionReentryCount":         1.0,
+		"lastSLExitFilledAt":          barStart.Add(19*time.Minute + 49*time.Second).Format(time.RFC3339),
+		"lastSLExitOrderId":           "order-sl",
+		"lastSLExitSignalBarStateKey": barKey,
+	}
+
+	updated, _, _, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"short_reentry_atr": 0.0,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		eventTime,
+		76444.5,
+		"trigger.price",
+		barStart.Add(-2*time.Hour),
+		76444.6,
+		"SELL",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "SL-Reentry" || gotSide != "SELL" {
+		t.Fatalf("expected same-bar SL exit to convert newly armed zero window to SL-Reentry, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if pending := mapValue(updated[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected converted zero window to be consumed, got %+v", pending)
+	}
+	timeline := metadataList(updated["timeline"])
+	if len(timeline) != 2 {
+		t.Fatalf("expected arm and consume timeline events, got %+v", timeline)
+	}
+	if got := stringValue(timeline[0]["title"]); got != "zero-initial-window-armed" {
+		t.Fatalf("expected first timeline event to arm zero window, got %s", got)
+	}
+	if got := stringValue(timeline[1]["title"]); got != "zero-initial-window-consumed" {
+		t.Fatalf("expected second timeline event to consume zero window, got %s", got)
+	}
+	if got := stringValue(mapValue(timeline[1]["metadata"])["reason"]); got != "sl-exit-reentry-priority" {
+		t.Fatalf("expected sl-exit-reentry-priority consume reason, got %s", got)
+	}
+}
+
 func TestRefreshLiveZeroInitialWindowStateExpiresLegacyEventTimeWindowAtBarBoundary(t *testing.T) {
 	barStart := time.Date(2026, 4, 28, 11, 0, 0, 0, time.UTC)
 	eventTime := barStart.Add(time.Hour + 7*time.Second)
@@ -476,18 +550,15 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesRecordedSLReentryWindow(t *te
 	if pending := mapValue(updated[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
 		t.Fatalf("expected no pending zero window for recorded SL reentry, got %+v", pending)
 	}
-	if got := stringValue(updated["lastSLExitReentryConsumedOrderId"]); got != "order-sl" {
-		t.Fatalf("expected recorded SL reentry to consume order-sl, got %q", got)
+	if got := stringValue(updated["lastSLExitReentryConsumedOrderId"]); got != "" {
+		t.Fatalf("expected recorded SL reentry not to consume order-sl before dispatch, got %q", got)
 	}
-	if got := stringValue(updated["lastSLExitReentryConsumedReason"]); got != "consumed-on-derive" {
-		t.Fatalf("expected consumed-on-derive reason, got %q", got)
-	}
-	if got := stringValue(updated["lastSLExitReentrySide"]); got != "" {
-		t.Fatalf("expected derived SL reentry to clear armed side, got %q", got)
+	if got := stringValue(updated["lastSLExitReentrySide"]); got != "SELL" {
+		t.Fatalf("expected derived SL reentry to keep armed side until dispatch, got %q", got)
 	}
 }
 
-func TestPrepareLivePlanStepForSignalEvaluationConsumesRecordedSLReentryWindowOnce(t *testing.T) {
+func TestPrepareLivePlanStepForSignalEvaluationKeepsRecordedSLReentryWindowUntilDispatch(t *testing.T) {
 	slBarStart := time.Date(2026, 4, 28, 11, 30, 0, 0, time.UTC)
 	currentBarStart := slBarStart.Add(30 * time.Minute)
 	eventTime, state, signalStates := recordedSLReentryWindowFixture(slBarStart, currentBarStart)
@@ -515,8 +586,8 @@ func TestPrepareLivePlanStepForSignalEvaluationConsumesRecordedSLReentryWindowOn
 	if gotRole != "entry" || gotReason != "SL-Reentry" {
 		t.Fatalf("expected first evaluation to derive SL-Reentry, got role=%s reason=%s", gotRole, gotReason)
 	}
-	if got := stringValue(updated["lastSLExitReentryConsumedOrderId"]); got != "order-sl" {
-		t.Fatalf("expected consumed order id order-sl after first derive, got %q", got)
+	if got := stringValue(updated["lastSLExitReentryConsumedOrderId"]); got != "" {
+		t.Fatalf("expected first derive not to consume order-sl before dispatch, got %q", got)
 	}
 
 	second, _, _, _, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
@@ -539,14 +610,14 @@ func TestPrepareLivePlanStepForSignalEvaluationConsumesRecordedSLReentryWindowOn
 		"entry",
 		"Initial",
 	)
-	if gotReason == "SL-Reentry" {
-		t.Fatalf("expected consumed SL fill not to derive SL-Reentry again, got role=%s reason=%s", gotRole, gotReason)
+	if gotRole != "entry" || gotReason != "SL-Reentry" {
+		t.Fatalf("expected unconsumed SL fill to keep deriving SL-Reentry, got role=%s reason=%s", gotRole, gotReason)
 	}
-	if got := stringValue(second["lastSLExitReentryConsumedOrderId"]); got != "order-sl" {
-		t.Fatalf("expected consumed order id to remain order-sl, got %q", got)
+	if got := stringValue(second["lastSLExitReentryConsumedOrderId"]); got != "" {
+		t.Fatalf("expected second derive not to consume order-sl before dispatch, got %q", got)
 	}
-	if got := stringValue(second["lastSLExitReentrySide"]); got != "" {
-		t.Fatalf("expected consumed SL reentry side to stay cleared, got %q", got)
+	if got := stringValue(second["lastSLExitReentrySide"]); got != "SELL" {
+		t.Fatalf("expected unconsumed SL reentry side to remain armed, got %q", got)
 	}
 }
 
