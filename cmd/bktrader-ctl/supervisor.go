@@ -76,7 +76,12 @@ type supervisorContainerFallbackPlan struct {
 	Enabled            bool   `json:"enabled"`
 	ExecutorConfigured bool   `json:"executorConfigured"`
 	Executable         bool   `json:"executable"`
+	Decision           string `json:"decision"`
+	Suppressed         bool   `json:"suppressed"`
+	BackoffActive      bool   `json:"backoffActive"`
+	SafetyGateOK       bool   `json:"safetyGateOk"`
 	BlockedReason      string `json:"blockedReason,omitempty"`
+	EligibleReason     string `json:"eligibleReason,omitempty"`
 	Reason             string `json:"reason,omitempty"`
 }
 
@@ -173,12 +178,17 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 		}
 		if target.ContainerFallbackPlan != nil {
 			plan := target.ContainerFallbackPlan
-			fmt.Fprintf(&out, "  fallbackPlan: action=%s enabled=%t executorConfigured=%t executable=%t blockedReason=%s\n",
+			fmt.Fprintf(&out, "  fallbackPlan: action=%s decision=%s enabled=%t executorConfigured=%t executable=%t suppressed=%t backoffActive=%t safetyGateOk=%t blockedReason=%s eligibleReason=%s\n",
 				firstNonEmpty(plan.Action, "--"),
+				firstNonEmpty(plan.Decision, "--"),
 				plan.Enabled,
 				plan.ExecutorConfigured,
 				plan.Executable,
+				plan.Suppressed,
+				plan.BackoffActive,
+				plan.SafetyGateOK,
 				firstNonEmpty(plan.BlockedReason, "--"),
+				firstNonEmpty(plan.EligibleReason, "--"),
 			)
 		}
 		if target.Status != nil {

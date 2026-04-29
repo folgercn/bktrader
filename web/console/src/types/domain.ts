@@ -415,7 +415,12 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   enabled: boolean;
   executorConfigured: boolean;
   executable: boolean;
+  decision?: 'blocked' | 'eligible' | string;
+  suppressed: boolean;
+  backoffActive: boolean;
+  safetyGateOk: boolean;
   blockedReason?: string;
+  eligibleReason?: string;
   reason?: string;
 };
 
