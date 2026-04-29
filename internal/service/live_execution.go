@@ -1334,7 +1334,11 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	}
 	state := cloneMetadata(session.State)
 	if isTerminalOrderStatus(order.Status) {
-		if shouldBackfillTerminalFilledLiveOrder(order, state) {
+		fills, err := p.store.QueryFills(domain.FillQuery{OrderIDs: []string{order.ID}})
+		if err != nil {
+			return session, err
+		}
+		if shouldBackfillTerminalFilledLiveOrder(order, state, eventTime, fills) {
 			state["lastSyncAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
 			recordExecutionSyncAttemptHealth(state, eventTime)
 			syncedOrder, syncErr := p.SyncLiveOrder(order.ID)
@@ -1524,15 +1528,47 @@ func (p *Platform) syncLatestLiveSessionOrder(session domain.LiveSession, eventT
 	return updated, nil
 }
 
-func shouldBackfillTerminalFilledLiveOrder(order domain.Order, state map[string]any) bool {
+const terminalFilledOrderBackfillCooldown = 30 * time.Second
+
+func shouldBackfillTerminalFilledLiveOrder(order domain.Order, state map[string]any, eventTime time.Time, fills ...[]domain.Fill) bool {
 	if !strings.EqualFold(order.Status, "FILLED") {
 		return false
+	}
+	if len(fills) > 0 && terminalFilledOrderHasNonAuthoritativeFills(fills[0]) {
+		return terminalFilledOrderBackfillCooldownElapsed(state, eventTime)
 	}
 	if tradingQuantityBelow(parseFloatValue(order.Metadata["filledQuantity"]), order.Quantity) {
 		return true
 	}
 	if strings.TrimSpace(stringValue(order.Metadata["lastFilledAt"])) == "" {
 		return true
+	}
+	return false
+}
+
+func terminalFilledOrderBackfillCooldownElapsed(state map[string]any, eventTime time.Time) bool {
+	if eventTime.IsZero() {
+		return true
+	}
+	lastAttemptAt := parseOptionalRFC3339(stringValue(state["lastSyncAttemptAt"]))
+	if lastAttemptAt.IsZero() {
+		return true
+	}
+	return eventTime.UTC().Sub(lastAttemptAt.UTC()) >= terminalFilledOrderBackfillCooldown
+}
+
+func terminalFilledOrderHasNonAuthoritativeFills(fills []domain.Fill) bool {
+	for _, fill := range fills {
+		if !tradingQuantityPositive(fill.Quantity) {
+			continue
+		}
+		if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+			return true
+		}
+		switch FillSource(strings.TrimSpace(fill.Source)) {
+		case FillSourceSynthetic, FillSourceRemainder:
+			return true
+		}
 	}
 	return false
 }
