@@ -22,6 +22,7 @@ const (
 type RuntimeSupervisorOptions struct {
 	EnableApplicationRestart bool
 	ServiceFailureThreshold  int
+	EnableContainerFallback  bool
 }
 
 type RuntimeSupervisorTarget struct {
@@ -208,7 +209,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 		var status RuntimeStatusSnapshot
 		targetSnapshot.RuntimeStatus = s.fetchJSON(ctx, target, "/api/v1/runtime/status", &status)
 		targetSnapshot.ServiceState = s.updateServiceState(target, targetSnapshot.Healthz, targetSnapshot.RuntimeStatus, now)
-		targetSnapshot.ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(targetSnapshot.ServiceState)
+		targetSnapshot.ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(targetSnapshot.ServiceState, s.options)
 		if targetSnapshot.RuntimeStatus.Error == "" && targetSnapshot.RuntimeStatus.Reachable {
 			targetSnapshot.Status = &status
 			targetSnapshot.ControlActions = s.submitApplicationRestarts(ctx, target, status, targetSnapshot.Healthz, now)
@@ -282,6 +283,7 @@ func (s *RuntimeSupervisor) collectAndLog(ctx context.Context, logger *slog.Logg
 		"control_action_count", controlActions,
 		"application_restart_enabled", s.options.EnableApplicationRestart,
 		"service_failure_threshold", s.options.ServiceFailureThreshold,
+		"container_restart_enabled", s.options.EnableContainerFallback,
 		"container_fallback_candidate_count", containerFallbackCandidates,
 	)
 }
@@ -361,15 +363,19 @@ func runtimeSupervisorServiceStateSnapshot(state runtimeSupervisorServiceState, 
 	return out
 }
 
-func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState) *RuntimeSupervisorContainerFallbackPlan {
+func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState, options RuntimeSupervisorOptions) *RuntimeSupervisorContainerFallbackPlan {
 	if !state.ContainerFallbackCandidate {
 		return nil
+	}
+	blockedReason := "container-restart-disabled"
+	if options.EnableContainerFallback {
+		blockedReason = "container-executor-not-configured"
 	}
 	return &RuntimeSupervisorContainerFallbackPlan{
 		Action:        "container-restart",
 		Candidate:     true,
 		Executable:    false,
-		BlockedReason: "container-executor-not-configured",
+		BlockedReason: blockedReason,
 		Reason:        state.ContainerFallbackReason,
 	}
 }
