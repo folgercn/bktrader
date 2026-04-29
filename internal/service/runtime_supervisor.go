@@ -23,9 +23,39 @@ const (
 )
 
 type RuntimeSupervisorOptions struct {
-	EnableApplicationRestart bool
-	ServiceFailureThreshold  int
-	EnableContainerFallback  bool
+	EnableApplicationRestart  bool
+	ServiceFailureThreshold   int
+	EnableContainerFallback   bool
+	ContainerFallbackExecutor ContainerFallbackExecutor
+}
+
+type ContainerFallbackExecutor interface {
+	Configured() bool
+	Restart(ctx context.Context, target RuntimeSupervisorTarget, reason string) (ContainerFallbackExecutionResult, error)
+}
+
+type ContainerFallbackExecutionResult struct {
+	Executed bool   `json:"executed"`
+	Message  string `json:"message,omitempty"`
+}
+
+type NoopContainerFallbackExecutor struct {
+	configured bool
+}
+
+func NewNoopContainerFallbackExecutor(configured bool) NoopContainerFallbackExecutor {
+	return NoopContainerFallbackExecutor{configured: configured}
+}
+
+func (e NoopContainerFallbackExecutor) Configured() bool {
+	return e.configured
+}
+
+func (e NoopContainerFallbackExecutor) Restart(_ context.Context, _ RuntimeSupervisorTarget, _ string) (ContainerFallbackExecutionResult, error) {
+	return ContainerFallbackExecutionResult{
+		Executed: false,
+		Message:  "noop container fallback executor",
+	}, nil
 }
 
 type RuntimeSupervisorTarget struct {
@@ -453,7 +483,7 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 	if !state.ContainerFallbackCandidate {
 		return nil
 	}
-	executorConfigured := runtimeSupervisorContainerExecutorConfigured()
+	executorConfigured := runtimeSupervisorContainerExecutorConfigured(options.ContainerFallbackExecutor)
 	suppressed := state.ContainerFallbackSuppressed
 	backoffActive := runtimeSupervisorContainerFallbackBackoffActive(state.ContainerFallbackBackoffUntil, now)
 	safetyGateOK := strings.TrimSpace(state.ContainerFallbackReason) != ""
@@ -539,12 +569,12 @@ func runtimeSupervisorPolicy(options RuntimeSupervisorOptions) RuntimeSupervisor
 		ApplicationRestartEnabled:   options.EnableApplicationRestart,
 		ServiceFailureThreshold:     options.ServiceFailureThreshold,
 		ContainerRestartEnabled:     options.EnableContainerFallback,
-		ContainerExecutorConfigured: runtimeSupervisorContainerExecutorConfigured(),
+		ContainerExecutorConfigured: runtimeSupervisorContainerExecutorConfigured(options.ContainerFallbackExecutor),
 	}
 }
 
-func runtimeSupervisorContainerExecutorConfigured() bool {
-	return false
+func runtimeSupervisorContainerExecutorConfigured(executor ContainerFallbackExecutor) bool {
+	return executor != nil && executor.Configured()
 }
 
 func runtimeSupervisorServiceKey(target RuntimeSupervisorTarget) string {
