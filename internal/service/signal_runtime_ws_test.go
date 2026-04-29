@@ -719,6 +719,45 @@ func TestDeriveSignalBarStatesDedupesCanonicalBarHistory(t *testing.T) {
 	}
 }
 
+func TestDeriveSignalBarStatesIncludesATRPercentile(t *testing.T) {
+	key := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"})
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	bars := make([]any, 0, 70)
+	for i := 0; i < 70; i++ {
+		closePrice := 50000.0 + float64(i)*10
+		rangeSize := 100.0 + float64(i)
+		bars = append(bars, map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"barStart":  base.Add(time.Duration(i) * 30 * time.Minute).Format(time.RFC3339),
+			"open":      closePrice - 5,
+			"high":      closePrice + rangeSize/2,
+			"low":       closePrice - rangeSize/2,
+			"close":     closePrice,
+			"volume":    1000.0,
+			"isClosed":  true,
+		})
+	}
+
+	states := deriveSignalBarStates(map[string]any{
+		key: map[string]any{
+			"sourceKey":  "binance-kline",
+			"role":       "signal",
+			"streamType": "signal_bar",
+			"symbol":     "BTCUSDT",
+			"timeframe":  "30m",
+			"bars":       bars,
+		},
+	})
+	state := mapValue(states[key])
+	if state == nil {
+		t.Fatalf("expected signal bar state, got %#v", states)
+	}
+	if got := parseFloatValue(state["atrPercentile"]); got <= 0 || got > 100 {
+		t.Fatalf("expected ATR percentile in (0, 100], got %v from %#v", got, state)
+	}
+}
+
 func TestBootstrapSignalRuntimeSourceStatesUsesWarmMarketCache(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	signalBars := make([]strategySignalBar, 0, 4)

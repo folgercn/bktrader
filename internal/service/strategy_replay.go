@@ -15,21 +15,22 @@ import (
 )
 
 type strategySignalBar struct {
-	Time      time.Time
-	Open      float64
-	High      float64
-	Low       float64
-	Close     float64
-	Volume    float64
-	MA5       float64
-	MA20      float64
-	ATR       float64
-	PrevHigh1 float64
-	PrevHigh2 float64
-	PrevHigh3 float64
-	PrevLow1  float64
-	PrevLow2  float64
-	PrevLow3  float64
+	Time          time.Time
+	Open          float64
+	High          float64
+	Low           float64
+	Close         float64
+	Volume        float64
+	MA5           float64
+	MA20          float64
+	ATR           float64
+	ATRPercentile float64
+	PrevHigh1     float64
+	PrevHigh2     float64
+	PrevHigh3     float64
+	PrevLow1      float64
+	PrevLow2      float64
+	PrevLow3      float64
 }
 
 type executionBar struct {
@@ -1149,6 +1150,7 @@ func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignal
 		signals[i].MA5 = rollingMean(closes, i, 5)
 		signals[i].MA20 = rollingMean(closes, i, 20)
 		signals[i].ATR = rollingMean(trueRanges, i, 14)
+		signals[i].ATRPercentile = rollingLastPercentileFromSeries(trueRanges, i, 14, 240, 50)
 		if i >= 1 {
 			signals[i].PrevHigh1 = aggregated[i-1].High
 			signals[i].PrevLow1 = aggregated[i-1].Low
@@ -1589,7 +1591,11 @@ func replayTrailingActive(side string, entryPrice, hwm, lwm, atr, delayedActivat
 }
 
 func rollingMean(values []float64, end, window int) float64 {
-	if end+1 < window {
+	return rollingMeanOrNaN(values, end, window)
+}
+
+func rollingMeanOrNaN(values []float64, end, window int) float64 {
+	if window <= 0 || end < 0 || end >= len(values) || end-window+1 < 0 {
 		return math.NaN()
 	}
 	sum := 0.0
@@ -1597,6 +1603,43 @@ func rollingMean(values []float64, end, window int) float64 {
 		sum += values[i]
 	}
 	return sum / float64(window)
+}
+
+func rollingLastPercentile(values []float64, end, window, minPeriods int) float64 {
+	if end < 0 || end >= len(values) {
+		return math.NaN()
+	}
+	start := end - window + 1
+	if start < 0 {
+		start = 0
+	}
+	clean := make([]float64, 0, end-start+1)
+	for i := start; i <= end; i++ {
+		value := values[i]
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			continue
+		}
+		clean = append(clean, value)
+	}
+	if len(clean) < minPeriods {
+		return math.NaN()
+	}
+	last := clean[len(clean)-1]
+	lessOrEqual := 0
+	for _, value := range clean {
+		if value <= last {
+			lessOrEqual++
+		}
+	}
+	return float64(lessOrEqual) / float64(len(clean)) * 100.0
+}
+
+func rollingLastPercentileFromSeries(values []float64, end, sourceWindow, percentileWindow, minPeriods int) float64 {
+	rolled := make([]float64, end+1)
+	for i := 0; i <= end; i++ {
+		rolled[i] = rollingMeanOrNaN(values, i, sourceWindow)
+	}
+	return rollingLastPercentile(rolled, end, percentileWindow, minPeriods)
 }
 
 func firstPositive(value, fallback float64) float64 {

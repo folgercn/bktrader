@@ -238,6 +238,9 @@ func (p *Platform) liveSignalBarStates(symbol, timeframe string) (map[string]any
 		"atr14":     current.ATR,
 		"current":   strategySignalBarToStateEntry(current, symbol, timeframe),
 	}
+	if atrPercentile := finiteSignalBarIndicator(current.ATRPercentile); atrPercentile != nil {
+		entry["atrPercentile"] = *atrPercentile
+	}
 	if index >= 1 {
 		entry["prevBar1"] = strategySignalBarToStateEntry(bars[index-1], symbol, timeframe)
 	}
@@ -415,6 +418,7 @@ func buildStrategySignalBarsFromCandles(bars []candleBar) ([]strategySignalBar, 
 		signals[i].MA5 = rollingMean(closes, i, 5)
 		signals[i].MA20 = rollingMean(closes, i, 20)
 		signals[i].ATR = rollingMean(trueRanges, i, 14)
+		signals[i].ATRPercentile = rollingLastPercentileFromSeries(trueRanges, i, 14, 240, 50)
 		if i >= 1 {
 			signals[i].PrevHigh1 = bars[i-1].High
 			signals[i].PrevLow1 = bars[i-1].Low

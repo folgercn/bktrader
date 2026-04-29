@@ -29,9 +29,11 @@ var signalBarStateAllowedKeys = map[string]struct{}{
 	"current":        {},
 	"prevBar1":       {},
 	"prevBar2":       {},
+	"prevBar3":       {},
 	"sma5":           {},
 	"ma20":           {},
 	"atr14":          {},
+	"atrPercentile":  {},
 }
 
 // stripHeavyState removes large objects from a session state map to reduce the

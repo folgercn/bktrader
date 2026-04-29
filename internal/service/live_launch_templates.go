@@ -203,6 +203,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		item.Notes = append([]string{
 			fmt.Sprintf("增强模板单独使用 %s（strategyEngine=%s），不改变原 BTCUSDT 30m 模板。", enhancedStrategyName, "bk-live-intrabar-sma5-t3-sep"),
 			"策略口径对齐 research `live_intrabar_sma5_baseline_plus_t3_breakout+sep_0p25`：SMA5 intrabar hard filter + original_t2/t3_swing breakout，其中 sep_0p25 只过滤 t3_swing。",
+			"低波动 reentry gate 固化为 reentry_min_stop_bps=6 与 reentry_atr_percentile_gte=25，仅过滤 Zero-Initial/SL/PT reentry 开仓，不过滤止损出场。",
 			"模板仍保持 dispatchMode 由前端提交前选择，默认展示为 manual-review。",
 		}, item.Notes...)
 		return item
@@ -275,6 +276,8 @@ func liveBTC30mEnhancedOverrides() map[string]any {
 	overrides["breakout_shape"] = "baseline_plus_t3"
 	overrides["t3_min_sma_atr_separation"] = 0.25
 	overrides["use_sma5_intraday_structure"] = true
+	overrides["reentry_min_stop_bps"] = 6.0
+	overrides["reentry_atr_percentile_gte"] = 25.0
 	return overrides
 }
 

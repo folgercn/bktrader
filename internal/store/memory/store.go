@@ -153,6 +153,8 @@ func NewStore() *Store {
 			"breakout_shape":                  "baseline_plus_t3",
 			"t3_min_sma_atr_separation":       0.25,
 			"use_sma5_intraday_structure":     true,
+			"reentry_min_stop_bps":            6.0,
+			"reentry_atr_percentile_gte":      25.0,
 			"stop_mode":                       "atr",
 			"stop_loss_atr":                   0.3,
 			"profit_protect_atr":              1.0,

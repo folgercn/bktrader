@@ -5326,6 +5326,8 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"breakout_shape",
 		"t3_min_sma_atr_separation",
 		"use_sma5_intraday_structure",
+		"reentry_min_stop_bps",
+		"reentry_atr_percentile_gte",
 	}
 	sessionParameterKeys = append(sessionParameterKeys, liveExecutionParameterOverrideKeys()...)
 	for _, key := range sessionParameterKeys {
@@ -5560,6 +5562,7 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 	spreadBps := parseFloatValue(meta["spreadBps"])
 	ma20 := parseFloatValue(signalBarDecision["ma20"])
 	atr14 := parseFloatValue(signalBarDecision["atr14"])
+	atrPercentile := parseFloatValue(signalBarDecision["atrPercentile"])
 	liquidityBias := stringValue(meta["liquidityBias"])
 	biasActionable := boolValue(meta["biasActionable"])
 	bestBid := parseFloatValue(meta["bestBid"])
@@ -5595,6 +5598,7 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 			"spreadBps":                     spreadBps,
 			"ma20":                          ma20,
 			"atr14":                         atr14,
+			"atrPercentile":                 atrPercentile,
 			"liquidityBias":                 liquidityBias,
 			"biasActionable":                biasActionable,
 			"bestBid":                       bestBid,
@@ -5850,6 +5854,12 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if _, ok := overrides["use_sma5_intraday_structure"]; ok {
 		normalized["use_sma5_intraday_structure"] = boolValue(overrides["use_sma5_intraday_structure"])
+	}
+	if minStopBps := parseFloatValue(overrides["reentry_min_stop_bps"]); minStopBps > 0 {
+		normalized["reentry_min_stop_bps"] = minStopBps
+	}
+	if atrPercentileGTE := parseFloatValue(overrides["reentry_atr_percentile_gte"]); atrPercentileGTE > 0 {
+		normalized["reentry_atr_percentile_gte"] = atrPercentileGTE
 	}
 	return normalized
 }

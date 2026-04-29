@@ -1,0 +1,194 @@
+{
+  "symbol": "BTCUSDT",
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-03-31T23:59:59+00:00",
+  "build_stats": {
+    "raw_tick_rows": 448247191,
+    "kept_tick_rows": 448247183,
+    "sparse_second_rows": 7451463,
+    "continuous_second_rows": 7776000,
+    "first_second": "2026-01-01T00:00:00+00:00",
+    "last_second": "2026-03-31T23:59:59+00:00"
+  },
+  "signal_stats": {
+    "signal_rows": 4320,
+    "signal_start": "2026-01-01T00:00:00+00:00",
+    "signal_end": "2026-03-31T23:30:00+00:00",
+    "valid_sma5_rows": 4316,
+    "valid_atr_rows": 4307,
+    "valid_atr_percentile_rows": 4258
+  },
+  "replay_kwargs": {
+    "dir2_zero_initial": true,
+    "zero_initial_mode": "reentry_window",
+    "fixed_slippage": 0.0005,
+    "stop_loss_atr": 0.3,
+    "stop_mode": "atr",
+    "max_trades_per_bar": 2,
+    "reentry_size_schedule": [
+      0.2,
+      0.1
+    ],
+    "long_reentry_atr": 0.1,
+    "short_reentry_atr": 0.0,
+    "profit_protect_atr": 1.0,
+    "trailing_stop_atr": 0.3,
+    "delayed_trailing_activation": 0.5,
+    "reentry_anchor_levels": "wick",
+    "reentry_trigger_mode": "reclaim"
+  },
+  "selected_variants": [
+    {
+      "name": "min_stop_bps_6_atr_pct_gte_35",
+      "description": "Require both min stop distance of 6 bps and ATR percentile at least 35.",
+      "min_stop_bps": 6.0,
+      "atr_percentile_gte": 35.0
+    }
+  ],
+  "results": [
+    {
+      "variant": "min_stop_bps_6_atr_pct_gte_35",
+      "description": "Require both min stop distance of 6 bps and ATR percentile at least 35.",
+      "params": {
+        "name": "min_stop_bps_6_atr_pct_gte_35",
+        "description": "Require both min stop distance of 6 bps and ATR percentile at least 35.",
+        "min_stop_bps": 6.0,
+        "atr_percentile_gte": 35.0
+      },
+      "summary": {
+        "final_balance": 227154.89,
+        "return_pct": 127.15,
+        "max_dd_pct": -1.13,
+        "trades": 2017,
+        "win_rate_pct": 84.04,
+        "sharpe": 14.74,
+        "first_entry": "2026-01-02T08:13:12+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1344,
+          "Zero-Initial-Reentry": 673
+        },
+        "exit_reasons": {
+          "SL": 2016,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "SHORT": 1028,
+          "BUY": 989
+        },
+        "integrity": {
+          "rows": 4034,
+          "entries": 2017,
+          "exits": 2017,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2017,
+        "avg_loss_pct": -0.2218,
+        "worst_loss_pct": -0.7003,
+        "avg_win_pct": 0.5277,
+        "profit_factor": 26.6453,
+        "median_hold_seconds": 381.0,
+        "avg_hold_seconds": 627.53,
+        "entry_reasons": {
+          "SL-Reentry": 1344,
+          "Zero-Initial-Reentry": 673
+        },
+        "exit_reasons": {
+          "SL": 2016,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1579,
+          "win_rate_pct": 91.77,
+          "avg_pnl_pct": 0.4636,
+          "median_pnl_pct": 0.3555,
+          "pnl_std_pct": 0.4897,
+          "worst_pnl_pct": -0.7003,
+          "net_pnl_value": 171544.7,
+          "max_pnl_drawdown": -287.02,
+          "profit_factor": 25.5313,
+          "entry_types": {
+            "SHORT": 827,
+            "BUY": 752
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1052,
+            "Zero-Initial-Reentry": 527
+          },
+          "exit_reasons": {
+            "SL": 1578,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 438,
+          "win_rate_pct": 93.61,
+          "avg_pnl_pct": 0.4882,
+          "median_pnl_pct": 0.373,
+          "pnl_std_pct": 0.5562,
+          "worst_pnl_pct": -0.6977,
+          "net_pnl_value": 50247.96,
+          "max_pnl_drawdown": -185.71,
+          "profit_factor": 31.3507,
+          "entry_types": {
+            "BUY": 237,
+            "SHORT": 201
+          },
+          "entry_reasons": {
+            "SL-Reentry": 292,
+            "Zero-Initial-Reentry": 146
+          },
+          "exit_reasons": {
+            "SL": 438
+          }
+        }
+      },
+      "diagnostics": {
+        "entry_gate": {
+          "calls": 1162009,
+          "allowed_calls": 15989,
+          "rejected_calls": 1146020,
+          "reject_reasons": {
+            "min_stop_bps": 203385,
+            "atr_percentile": 1146020
+          },
+          "min_observed_stop_bps": 2.221071936201564,
+          "max_observed_stop_bps": 80.18742827110815,
+          "min_observed_atr_percentile": 0.4166666666666667,
+          "max_observed_atr_percentile": 100.0
+        },
+        "replay": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 423,
+              "t3_swing": 129
+            },
+            "short": {
+              "original_t2": 454,
+              "t3_swing": 119
+            }
+          },
+          "t3_cooldown_skips": {
+            "long": 0,
+            "short": 0
+          },
+          "t3_quality_rejects": {
+            "long": {
+              "sma_atr_separation": 18
+            },
+            "short": {
+              "sma_atr_separation": 19
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 194.21,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_1s_low_vol_entry_filter_combo35_min_stop_bps_6_atr_pct_gte_35_ledger.csv"
+    }
+  ],
+  "note": "Research-only comparison. Entry gates patch reentry price resolution and do not alter stop-loss exit behavior."
+}
