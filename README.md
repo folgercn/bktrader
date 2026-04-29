@@ -61,6 +61,7 @@
     - **信号监控**: `bktrader-ctl live list` 查看所有实盘会话状态。
     - **订单/持仓**: `bktrader-ctl order/position list` 管理活跃订单与仓位。
     - **日志溯源**: `bktrader-ctl logs system/events/trace` 实时跟踪系统事件与特定订单链路。
+    - **Live 控制观测**: `bktrader-ctl logs live-control-summary` 汇总控制请求、收敛延迟、错误码与当前 pending/error 快照；其中历史计数和延迟受 `--from/--to` 过滤，当前快照不受时间过滤。
 - **Agent 友好**: 所有命令均支持 `--json` 输出，便于 AI Agent 进行结构化分析与自动化操作。
 
 ## 🧠 知识图谱 (Knowledge Graph)

@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wuyaocheng/bktrader/internal/ctlclient"
@@ -90,7 +94,7 @@ var logsLiveControlSummaryCmd = &cobra.Command{
 			path += "?" + v.Encode()
 		}
 		resp, err := client.Request("GET", path, nil)
-		handleResponse(resp, err)
+		handleLiveControlSummaryResponse(resp, err)
 		return nil
 	},
 }
@@ -199,4 +203,82 @@ func init() {
 	logsLiveControlSummaryCmd.Flags().String("to", "", "结束时间 (RFC3339 或 Unix 秒/毫秒)")
 	logsStreamCmd.Flags().String("source", "", "流来源 (system,http,alert,timeline)")
 	logsTraceCmd.Flags().String("order-id", "", "要追踪的订单 ID")
+}
+
+type liveControlSummaryResponse struct {
+	GeneratedAt    time.Time                         `json:"generatedAt"`
+	TotalEvents    int                               `json:"totalEvents"`
+	Requests       int                               `json:"requests"`
+	RunnerPickups  int                               `json:"runnerPickups"`
+	Succeeded      int                               `json:"succeeded"`
+	Failed         int                               `json:"failed"`
+	StaleDiscarded int                               `json:"staleDiscarded"`
+	CurrentPending int                               `json:"currentPending"`
+	CurrentErrors  int                               `json:"currentErrors"`
+	Latency        liveControlLatencyMetricsResponse `json:"latency"`
+	ByErrorCode    map[string]int                    `json:"byErrorCode,omitempty"`
+}
+
+type liveControlLatencyMetricsResponse struct {
+	PickupMs   liveControlLatencyStatsResponse `json:"pickupMs"`
+	SuccessMs  liveControlLatencyStatsResponse `json:"successMs"`
+	FailureMs  liveControlLatencyStatsResponse `json:"failureMs"`
+	TerminalMs liveControlLatencyStatsResponse `json:"terminalMs"`
+}
+
+type liveControlLatencyStatsResponse struct {
+	Count   int     `json:"count"`
+	Min     int64   `json:"min,omitempty"`
+	Max     int64   `json:"max,omitempty"`
+	Average float64 `json:"average,omitempty"`
+}
+
+func handleLiveControlSummaryResponse(data []byte, err error) {
+	if err != nil || outputJSON {
+		handleResponse(data, err)
+		return
+	}
+	var summary liveControlSummaryResponse
+	if decodeErr := json.Unmarshal(data, &summary); decodeErr != nil {
+		handleResponse(data, nil)
+		return
+	}
+	var out bytes.Buffer
+	fmt.Fprintf(&out, "Live control summary\n")
+	fmt.Fprintf(&out, "generatedAt: %s\n", summary.GeneratedAt.Format(time.RFC3339))
+	fmt.Fprintf(&out, "note: historical counters and latency honor --from/--to; currentPending/currentErrors are current snapshots and ignore --from/--to.\n")
+	fmt.Fprintf(&out, "\nHistorical events:\n")
+	fmt.Fprintf(&out, "  total=%d requests=%d pickedUp=%d succeeded=%d failed=%d staleDiscarded=%d\n",
+		summary.TotalEvents, summary.Requests, summary.RunnerPickups, summary.Succeeded, summary.Failed, summary.StaleDiscarded)
+	fmt.Fprintf(&out, "\nLatency (ms):\n")
+	printLiveControlLatencyStats(&out, "pickup", summary.Latency.PickupMs)
+	printLiveControlLatencyStats(&out, "success", summary.Latency.SuccessMs)
+	printLiveControlLatencyStats(&out, "failure", summary.Latency.FailureMs)
+	printLiveControlLatencyStats(&out, "terminal", summary.Latency.TerminalMs)
+	fmt.Fprintf(&out, "\nCurrent snapshot:\n")
+	fmt.Fprintf(&out, "  pending=%d errors=%d\n", summary.CurrentPending, summary.CurrentErrors)
+	if len(summary.ByErrorCode) > 0 {
+		fmt.Fprintf(&out, "\nError codes:\n")
+		for _, code := range sortedLiveControlSummaryKeys(summary.ByErrorCode) {
+			fmt.Fprintf(&out, "  %s=%d\n", code, summary.ByErrorCode[code])
+		}
+	}
+	fmt.Print(strings.TrimRight(out.String(), "\n") + "\n")
+}
+
+func printLiveControlLatencyStats(out *bytes.Buffer, label string, stats liveControlLatencyStatsResponse) {
+	if stats.Count == 0 {
+		fmt.Fprintf(out, "  %s: count=0\n", label)
+		return
+	}
+	fmt.Fprintf(out, "  %s: count=%d avg=%.1f min=%d max=%d\n", label, stats.Count, stats.Average, stats.Min, stats.Max)
+}
+
+func sortedLiveControlSummaryKeys(values map[string]int) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

@@ -63,7 +63,10 @@ bktrader-ctl order list --json
 bktrader-ctl position list --json
 bktrader-ctl logs system --json
 bktrader-ctl logs events --json
+bktrader-ctl logs live-control-summary
 ```
+
+`logs live-control-summary` 的 `totalEvents` / `failed` / `latency` 等历史指标受 `--from` / `--to` 过滤；`currentPending` / `currentErrors` 是当前状态快照，不受时间过滤。需要机器读取时继续加 `--json`。
 
 排查单个订单或链路时：
 

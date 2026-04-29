@@ -47,6 +47,7 @@ var APIRegistry = []RouteEntry{
 	// Logs & Charts
 	{Path: "/api/v1/logs/system", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs system", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/logs/events", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs event", Idempotent: true, RiskLevel: "L0"},
+	{Path: "/api/v1/logs/live-control/summary", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs live-control-summary", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/logs/stream", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs stream", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/chart/candles", Methods: []string{"GET"}, Module: "chart", CLICommand: "chart candles", Idempotent: true, RiskLevel: "L0"},
 }
