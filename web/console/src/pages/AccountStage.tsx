@@ -158,6 +158,13 @@ function liveControlPendingSince(state: Record<string, unknown>, actualStatus: s
   return requestedAt ?? updatedAt;
 }
 
+function latestLiveControlEvent(state: Record<string, unknown>): Record<string, unknown> {
+  const events = getList(state.controlEvents)
+    .map((item) => getRecord(item))
+    .filter((item) => String(item.type ?? item.phase ?? "").trim() !== "");
+  return events.length > 0 ? events[events.length - 1] : {};
+}
+
 function formatLiveControlDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) {
     return "--";
@@ -1160,23 +1167,26 @@ export function AccountStage({
                      liveActualStatus !== "" &&
                      liveActualStatus !== "ERROR" &&
                      liveDesiredStatus !== liveActualStatus;
-                   const liveControlRequestId = String(sessionState.controlRequestId ?? "").trim();
-                   const liveControlVersion = String(sessionState.controlVersion ?? "").trim();
-                   const liveControlAction = String(sessionState.lastControlAction ?? "").trim();
+                   const latestControlEvent = latestLiveControlEvent(sessionState);
+                   const liveControlRequestId = String(sessionState.controlRequestId ?? latestControlEvent.controlRequestId ?? "").trim();
+                   const liveControlVersion = String(sessionState.controlVersion ?? latestControlEvent.controlVersion ?? "").trim();
+                   const liveControlAction = String(sessionState.lastControlAction ?? latestControlEvent.action ?? "").trim();
                    const liveControlRequestedAt = String(sessionState.controlRequestedAt ?? "").trim();
-                   const liveControlUpdatedAt = String(sessionState.lastControlUpdateAt ?? "").trim();
-                   const liveControlSucceededAt = String(sessionState.lastControlSucceededAt ?? "").trim();
+                   const liveControlUpdatedAt = String(sessionState.lastControlUpdateAt ?? latestControlEvent.eventTime ?? "").trim();
+                   const liveControlSucceededAt = String(sessionState.lastControlSucceededAt ?? (String(latestControlEvent.phase ?? "") === "succeeded" ? latestControlEvent.eventTime : "") ?? "").trim();
                    const liveControlErrorCode = String(sessionState.lastControlErrorCode ?? "").trim().toUpperCase();
-                   const liveControlErrorAt = String(sessionState.lastControlErrorAt ?? "").trim();
+                   const liveControlErrorAt = String(sessionState.lastControlErrorAt ?? (String(latestControlEvent.phase ?? "") === "failed" ? latestControlEvent.eventTime : "") ?? "").trim();
                    const liveControlError = liveActualStatus === "ERROR"
                      ? liveControlErrorMessage(liveControlErrorCode, String(sessionState.lastControlError ?? "").trim())
                      : "";
                    const liveControlPendingStart = liveControlConverging ? liveControlPendingSince(sessionState, liveActualStatus) : null;
                    const liveControlPendingFor = liveControlPendingStart ? formatLiveControlDuration(Date.now() - liveControlPendingStart.getTime()) : "";
-                   const hasLiveControlRequestMeta =
+                   const hasLiveControlIdentity =
                      liveControlRequestId ||
                      liveControlVersion ||
-                     liveControlAction ||
+                     liveControlAction;
+                   const hasLiveControlRequestMeta =
+                     hasLiveControlIdentity ||
                      liveControlRequestedAt ||
                      liveControlUpdatedAt ||
                      liveControlSucceededAt ||
@@ -1240,7 +1250,7 @@ export function AccountStage({
                                控制失败{liveControlErrorCode ? ` (${liveControlErrorCode})` : ""}：{liveControlError}
                              </p>
                            )}
-                           {hasLiveControlRequestMeta && (
+                           {hasLiveControlRequestMeta && hasLiveControlIdentity && (
                              <div className="mt-2 grid max-w-[min(100%,42rem)] grid-cols-2 gap-x-3 gap-y-1 rounded-[12px] border border-[var(--bk-border)] bg-[var(--bk-surface)] px-3 py-2 text-[10px] text-[var(--bk-text-muted)] sm:grid-cols-4">
                                <div className="min-w-0">
                                  <div className="font-black uppercase text-[8px] text-[var(--bk-text-muted)]">Action</div>
@@ -1261,6 +1271,11 @@ export function AccountStage({
                                  </div>
                                </div>
                              </div>
+                           )}
+                           {hasLiveControlRequestMeta && !hasLiveControlIdentity && (
+                             <p className="mt-2 text-[10px] font-bold text-[var(--bk-text-muted)]">
+                               暂无控制请求记录；下一次启动/停止提交后会显示 request、version 和 action。
+                             </p>
                            )}
                         </div>
                         <div className="flex items-center gap-1">
