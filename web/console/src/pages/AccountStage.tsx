@@ -139,6 +139,43 @@ function liveControlErrorMessage(code: string, error: string): string {
   }
 }
 
+function parseLiveControlTime(value: unknown): Date | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function liveControlPendingSince(state: Record<string, unknown>, actualStatus: string): Date | null {
+  const requestedAt = parseLiveControlTime(state.controlRequestedAt);
+  const updatedAt = parseLiveControlTime(state.lastControlUpdateAt);
+  const inProgress = actualStatus === "STARTING" || actualStatus === "STOPPING";
+  if (inProgress && updatedAt && (!requestedAt || updatedAt > requestedAt)) {
+    return updatedAt;
+  }
+  return requestedAt ?? updatedAt;
+}
+
+function formatLiveControlDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) {
+    return "--";
+  }
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes > 0 ? `${hours}h ${restMinutes}m` : `${hours}h`;
+}
+
 export function AccountStage({
   logout,
   openLiveAccountModal,
@@ -1123,10 +1160,27 @@ export function AccountStage({
                      liveActualStatus !== "" &&
                      liveActualStatus !== "ERROR" &&
                      liveDesiredStatus !== liveActualStatus;
+                   const liveControlRequestId = String(sessionState.controlRequestId ?? "").trim();
+                   const liveControlVersion = String(sessionState.controlVersion ?? "").trim();
+                   const liveControlAction = String(sessionState.lastControlAction ?? "").trim();
+                   const liveControlRequestedAt = String(sessionState.controlRequestedAt ?? "").trim();
+                   const liveControlUpdatedAt = String(sessionState.lastControlUpdateAt ?? "").trim();
+                   const liveControlSucceededAt = String(sessionState.lastControlSucceededAt ?? "").trim();
                    const liveControlErrorCode = String(sessionState.lastControlErrorCode ?? "").trim().toUpperCase();
+                   const liveControlErrorAt = String(sessionState.lastControlErrorAt ?? "").trim();
                    const liveControlError = liveActualStatus === "ERROR"
                      ? liveControlErrorMessage(liveControlErrorCode, String(sessionState.lastControlError ?? "").trim())
                      : "";
+                   const liveControlPendingStart = liveControlConverging ? liveControlPendingSince(sessionState, liveActualStatus) : null;
+                   const liveControlPendingFor = liveControlPendingStart ? formatLiveControlDuration(Date.now() - liveControlPendingStart.getTime()) : "";
+                   const hasLiveControlRequestMeta =
+                     liveControlRequestId ||
+                     liveControlVersion ||
+                     liveControlAction ||
+                     liveControlRequestedAt ||
+                     liveControlUpdatedAt ||
+                     liveControlSucceededAt ||
+                     liveControlErrorAt;
                    const linkedRuntimeSessionId = String(
                      sessionState.signalRuntimeSessionId ?? sessionState.lastSignalRuntimeSessionId ?? ""
                    ).trim();
@@ -1152,8 +1206,8 @@ export function AccountStage({
                      (linkedRuntimeSession ? signalRuntimeActionTargets(linkedRuntimeSession.id) : false) ||
                      ((liveSessionLaunchAction || launchingTemplate !== null) && quickLiveAccountId === session.accountId);
                    return (
-                     <div key={session.id} className="group flex items-center justify-between rounded-[20px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-4 transition-all hover:bg-[var(--bk-surface)]">
-                        <div className="space-y-1">
+                     <div key={session.id} className="group flex items-center justify-between gap-3 rounded-[20px] border border-[var(--bk-border)] bg-[var(--bk-surface-strong)] p-4 transition-all hover:bg-[var(--bk-surface)]">
+                        <div className="min-w-0 flex-1 space-y-1">
                            <div className="flex items-center gap-2">
                               <span className="text-sm font-black text-[var(--bk-text-primary)]">
                                 {session.alias || (session.id.length > 28 ? session.id.slice(0, 18) + '...' + session.id.slice(-6) : session.id)}
@@ -1177,7 +1231,7 @@ export function AccountStage({
                            {liveControlConverging && (
                              <p className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--bk-status-warning)]">
                                <AlertTriangle size={12} />
-                               控制意图 {liveDesiredStatus} 等待 runner 收敛，当前 {liveActualStatus}
+                               控制意图 {liveDesiredStatus} 等待 runner 收敛，当前 {liveActualStatus}{liveControlPendingFor ? `，已等待 ${liveControlPendingFor}` : ""}
                              </p>
                            )}
                            {liveControlError && (
@@ -1185,6 +1239,28 @@ export function AccountStage({
                                <AlertTriangle size={12} />
                                控制失败{liveControlErrorCode ? ` (${liveControlErrorCode})` : ""}：{liveControlError}
                              </p>
+                           )}
+                           {hasLiveControlRequestMeta && (
+                             <div className="mt-2 grid max-w-[min(100%,42rem)] grid-cols-2 gap-x-3 gap-y-1 rounded-[12px] border border-[var(--bk-border)] bg-[var(--bk-surface)] px-3 py-2 text-[10px] text-[var(--bk-text-muted)] sm:grid-cols-4">
+                               <div className="min-w-0">
+                                 <div className="font-black uppercase text-[8px] text-[var(--bk-text-muted)]">Action</div>
+                                 <div className="truncate font-mono font-bold text-[var(--bk-text-primary)]">{liveControlAction || "--"}</div>
+                               </div>
+                               <div className="min-w-0">
+                                 <div className="font-black uppercase text-[8px] text-[var(--bk-text-muted)]">Version</div>
+                                 <div className="truncate font-mono font-bold text-[var(--bk-text-primary)]">{liveControlVersion || "--"}</div>
+                               </div>
+                               <div className="min-w-0">
+                                 <div className="font-black uppercase text-[8px] text-[var(--bk-text-muted)]">Request</div>
+                                 <div className="truncate font-mono font-bold text-[var(--bk-text-primary)]">{liveControlRequestId ? shrink(liveControlRequestId) : "--"}</div>
+                               </div>
+                               <div className="min-w-0">
+                                 <div className="font-black uppercase text-[8px] text-[var(--bk-text-muted)]">{liveControlErrorAt ? "Error At" : liveControlSucceededAt ? "Succeeded" : "Updated"}</div>
+                                 <div className="truncate font-mono font-bold text-[var(--bk-text-primary)]">
+                                   {formatTime(liveControlErrorAt || liveControlSucceededAt || liveControlUpdatedAt || liveControlRequestedAt)}
+                                 </div>
+                               </div>
+                             </div>
                            )}
                         </div>
                         <div className="flex items-center gap-1">
