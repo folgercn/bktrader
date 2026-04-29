@@ -169,8 +169,8 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if second.ContainerFallbackPlan.Action != "container-restart" || !second.ContainerFallbackPlan.Candidate {
 		t.Fatalf("unexpected fallback plan identity, got %+v", second.ContainerFallbackPlan)
 	}
-	if second.ContainerFallbackPlan.Executable || second.ContainerFallbackPlan.BlockedReason != "container-executor-not-configured" {
-		t.Fatalf("expected fallback plan to stay blocked without executor, got %+v", second.ContainerFallbackPlan)
+	if second.ContainerFallbackPlan.Executable || second.ContainerFallbackPlan.BlockedReason != "container-restart-disabled" {
+		t.Fatalf("expected fallback plan to stay blocked without explicit opt-in, got %+v", second.ContainerFallbackPlan)
 	}
 	if second.ContainerFallbackPlan.Reason != second.ServiceState.ContainerFallbackReason {
 		t.Fatalf("expected fallback plan reason to mirror service state, got %+v", second.ContainerFallbackPlan)
@@ -189,6 +189,40 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	}
 	if recovered.ServiceState.LastHealthyAt == nil {
 		t.Fatalf("expected healthy probe to record last healthy time, got %+v", recovered.ServiceState)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		case "/api/v1/runtime/restart":
+			t.Errorf("container fallback opt-in must not call runtime control path %s", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold: 1,
+			EnableContainerFallback: true,
+		},
+	)
+	target := supervisor.Collect(context.Background()).Targets[0]
+	if target.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for candidate, got %+v", target)
+	}
+	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.BlockedReason != "container-executor-not-configured" {
+		t.Fatalf("expected opt-in plan to stay blocked without executor, got %+v", target.ContainerFallbackPlan)
 	}
 }
 

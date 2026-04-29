@@ -320,6 +320,7 @@ func ClearRestartState(state map[string]any, keys []string)
 - `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL。
 - `SUPERVISOR_BEARER_TOKEN` 可选；设置后 read-only collector 会对所有 targets 的 `/healthz` 与 `/api/v1/runtime/status` 请求附加 `Authorization: Bearer <token>`，用于采集受鉴权保护的内网 runtime API。
 - `SUPERVISOR_SERVICE_FAILURE_THRESHOLD=3` 为默认值；supervisor 会按 target 记录连续服务级失败次数，并在达到阈值后把该 target 标记为容器兜底候选，但当前阶段只暴露状态，不执行 Docker/container restart。
+- `SUPERVISOR_CONTAINER_RESTART_ENABLED=false` 为默认值；未显式设为 `true` 时，容器兜底计划只会返回 `blockedReason=container-restart-disabled`，不会进入 executor 阶段。
 - 默认只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
 - `GET /api/v1/supervisor/status` 返回最近一次 read-only supervisor 采集快照。
 - `bktrader-ctl runtime status --json` 和 `bktrader-ctl supervisor status --json` 提供 CLI 只读巡检入口。
@@ -359,7 +360,7 @@ func ClearRestartState(state map[string]any, keys []string)
 当前只读候选状态：
 
 - `GET /api/v1/supervisor/status` 的每个 target 会返回 `serviceState`，包含连续失败次数、失败阈值、最近失败/恢复时间，以及是否已成为 `containerFallbackCandidate`。
-- 当 target 已成为容器兜底候选时，状态中会额外返回 `containerFallbackPlan`；当前 `action=container-restart` 只是计划语义，`executable=false` 且 `blockedReason=container-executor-not-configured`，用于明确“候选”不等于“已允许执行”。
+- 当 target 已成为容器兜底候选时，状态中会额外返回 `containerFallbackPlan`；当前 `action=container-restart` 只是计划语义，`executable=false`。默认会返回 `blockedReason=container-restart-disabled`；即使 `SUPERVISOR_CONTAINER_RESTART_ENABLED=true`，在 executor 尚未配置前也只会返回 `blockedReason=container-executor-not-configured`，用于明确“候选”不等于“已允许执行”。
 - 当前 service fallback 只把 `/healthz` 不可达或非 2xx、`/api/v1/runtime/status` 连接不可达视为服务级失败；`/runtime/status` JSON decode 失败不会触发容器兜底候选，避免把业务状态或响应格式问题误判成需要重启容器。
 - 达到 `SUPERVISOR_SERVICE_FAILURE_THRESHOLD` 后只记录 `containerFallbackCandidate=true` 和原因，不调用 Docker API，不挂载 Docker socket，不执行容器 restart。
 - 后续真正执行容器级 restart 前，仍需单独设计 executor、backoff、人工抑制、权限边界和部署安全审查。

@@ -197,6 +197,7 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 			supervisor := service.NewRuntimeSupervisorWithOptions(targets, &http.Client{Timeout: time.Duration(cfg.SupervisorHTTPTimeoutSeconds) * time.Second}, service.RuntimeSupervisorOptions{
 				EnableApplicationRestart: cfg.SupervisorAppRestartEnabled,
 				ServiceFailureThreshold:  cfg.SupervisorServiceFailThreshold,
+				EnableContainerFallback:  cfg.SupervisorContainerRestart,
 			})
 			platform.SetRuntimeSupervisor(supervisor)
 			supervisor.Start(ctx, time.Duration(cfg.SupervisorPollIntervalSeconds)*time.Second)
@@ -206,6 +207,7 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 				"http_timeout_seconds", cfg.SupervisorHTTPTimeoutSeconds,
 				"application_restart_enabled", cfg.SupervisorAppRestartEnabled,
 				"service_failure_threshold", cfg.SupervisorServiceFailThreshold,
+				"container_restart_enabled", cfg.SupervisorContainerRestart,
 			)
 		}
 	}
