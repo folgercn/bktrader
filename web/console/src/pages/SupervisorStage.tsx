@@ -62,6 +62,11 @@ function probeText(probe?: RuntimeSupervisorTargetSnapshot['healthz']) {
   return probe.error ? 'error' : 'reachable';
 }
 
+function executorKindLabel(value?: string) {
+  const normalized = String(value || '').trim();
+  return normalized || 'none';
+}
+
 function statusVariant(value?: string): BadgeVariant {
   const normalized = String(value || '').trim().toLowerCase();
   if (['ok', 'ready', 'running', 'healthy'].includes(normalized)) {
@@ -173,7 +178,15 @@ export function SupervisorStage() {
     return () => window.clearInterval(timer);
   }, [loadSnapshot]);
 
-  const { runtimeRows, controlActionRows, fallbackCount, executableFallbackCount, attentionCount, fullyReachableTargets } = useMemo(() => {
+  const {
+    runtimeRows,
+    controlActionRows,
+    fallbackCount,
+    executableFallbackCount,
+    dryRunFallbackCount,
+    attentionCount,
+    fullyReachableTargets,
+  } = useMemo(() => {
     const targets = snapshot?.targets ?? [];
     const runtimes = targets.flatMap((target) =>
       (target.status?.runtimes ?? []).map((runtime) => ({
@@ -191,6 +204,7 @@ export function SupervisorStage() {
       ),
       fallbackCount: targets.filter((target) => target.serviceState.containerFallbackCandidate).length,
       executableFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable).length,
+      dryRunFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable && target.containerFallbackPlan.executorDryRun).length,
       attentionCount: runtimes.filter(runtimeNeedsAttention).length,
       fullyReachableTargets: targets.filter((target) => isProbeOK(target.healthz) && isProbeOK(target.runtimeStatus)).length,
     };
@@ -266,7 +280,11 @@ export function SupervisorStage() {
                 icon={ShieldAlert}
                 label="Fallback"
                 value={fallbackCount}
-                detail={`${executableFallbackCount} executable`}
+                detail={
+                  dryRunFallbackCount > 0
+                    ? `${executableFallbackCount} eligible, ${dryRunFallbackCount} dry-run`
+                    : `${executableFallbackCount} eligible`
+                }
                 tone={fallbackCount > 0 ? 'danger' : 'neutral'}
               />
               <MetricCard
@@ -283,9 +301,13 @@ export function SupervisorStage() {
                 <CardHeader>
                   <CardTitle>Supervisor Policy</CardTitle>
                   <CardAction>
-                    <Badge variant={policy.containerExecutorConfigured ? 'success' : 'neutral'}>
-                      {policy.containerExecutorConfigured ? 'executor ready' : 'no executor'}
-                    </Badge>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Badge variant={policy.containerExecutorConfigured ? 'success' : 'neutral'}>
+                        {policy.containerExecutorConfigured ? 'executor ready' : 'no executor'}
+                      </Badge>
+                      <Badge variant="neutral">{executorKindLabel(policy.containerExecutorKind)}</Badge>
+                      {policy.containerExecutorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                    </div>
                   </CardAction>
                 </CardHeader>
                 <CardContent>
@@ -314,7 +336,11 @@ export function SupervisorStage() {
                     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
                       <div className="flex min-w-0 flex-col gap-1">
                         <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Container Executor</span>
-                        <PolicyBadge enabled={policy.containerExecutorConfigured} enabledLabel="ready" disabledLabel="not configured" />
+                        <div className="flex flex-wrap gap-1">
+                          <PolicyBadge enabled={policy.containerExecutorConfigured} enabledLabel="ready" disabledLabel="not configured" />
+                          <Badge variant="neutral">{executorKindLabel(policy.containerExecutorKind)}</Badge>
+                          {policy.containerExecutorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                        </div>
                       </div>
                       <ServerCog className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
                     </div>
@@ -410,6 +436,8 @@ export function SupervisorStage() {
                                       {fallbackPlan.executorConfigured ? 'executor ready' : 'no executor'}
                                     </Badge>
                                   )}
+                                  {fallbackPlan && <Badge variant="neutral">{executorKindLabel(fallbackPlan.executorKind)}</Badge>}
+                                  {fallbackPlan?.executorDryRun && <Badge variant="secondary">dry-run</Badge>}
                                   {fallbackAttemptCount > 0 && (
                                     <Badge variant="neutral">
                                       attempts {fallbackAttemptCount}

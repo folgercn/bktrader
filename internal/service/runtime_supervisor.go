@@ -20,6 +20,10 @@ const (
 
 	runtimeSupervisorContainerFallbackDecisionBlocked  = "blocked"
 	runtimeSupervisorContainerFallbackDecisionEligible = "eligible"
+
+	runtimeSupervisorContainerExecutorKindCustom = "custom"
+	runtimeSupervisorContainerExecutorKindNone   = "none"
+	runtimeSupervisorContainerExecutorKindNoop   = "noop"
 )
 
 type RuntimeSupervisorOptions struct {
@@ -29,8 +33,14 @@ type RuntimeSupervisorOptions struct {
 	ContainerFallbackExecutor ContainerFallbackExecutor
 }
 
+type ContainerFallbackExecutorDescriptor struct {
+	Kind   string `json:"kind"`
+	DryRun bool   `json:"dryRun"`
+}
+
 type ContainerFallbackExecutor interface {
 	Configured() bool
+	Descriptor() ContainerFallbackExecutorDescriptor
 	Restart(ctx context.Context, target RuntimeSupervisorTarget, reason string) (ContainerFallbackExecutionResult, error)
 }
 
@@ -49,6 +59,13 @@ func NewNoopContainerFallbackExecutor(configured bool) NoopContainerFallbackExec
 
 func (e NoopContainerFallbackExecutor) Configured() bool {
 	return e.configured
+}
+
+func (e NoopContainerFallbackExecutor) Descriptor() ContainerFallbackExecutorDescriptor {
+	return ContainerFallbackExecutorDescriptor{
+		Kind:   runtimeSupervisorContainerExecutorKindNoop,
+		DryRun: true,
+	}
 }
 
 func (e NoopContainerFallbackExecutor) Restart(_ context.Context, _ RuntimeSupervisorTarget, _ string) (ContainerFallbackExecutionResult, error) {
@@ -91,10 +108,12 @@ type RuntimeSupervisorSnapshot struct {
 }
 
 type RuntimeSupervisorPolicy struct {
-	ApplicationRestartEnabled   bool `json:"applicationRestartEnabled"`
-	ServiceFailureThreshold     int  `json:"serviceFailureThreshold"`
-	ContainerRestartEnabled     bool `json:"containerRestartEnabled"`
-	ContainerExecutorConfigured bool `json:"containerExecutorConfigured"`
+	ApplicationRestartEnabled   bool   `json:"applicationRestartEnabled"`
+	ServiceFailureThreshold     int    `json:"serviceFailureThreshold"`
+	ContainerRestartEnabled     bool   `json:"containerRestartEnabled"`
+	ContainerExecutorConfigured bool   `json:"containerExecutorConfigured"`
+	ContainerExecutorKind       string `json:"containerExecutorKind"`
+	ContainerExecutorDryRun     bool   `json:"containerExecutorDryRun"`
 }
 
 type RuntimeSupervisorControlAction struct {
@@ -129,6 +148,8 @@ type RuntimeSupervisorContainerFallbackPlan struct {
 	Candidate          bool   `json:"candidate"`
 	Enabled            bool   `json:"enabled"`
 	ExecutorConfigured bool   `json:"executorConfigured"`
+	ExecutorKind       string `json:"executorKind"`
+	ExecutorDryRun     bool   `json:"executorDryRun"`
 	Executable         bool   `json:"executable"`
 	Decision           string `json:"decision"`
 	Suppressed         bool   `json:"suppressed"`
@@ -484,6 +505,7 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 		return nil
 	}
 	executorConfigured := runtimeSupervisorContainerExecutorConfigured(options.ContainerFallbackExecutor)
+	executorDescriptor := runtimeSupervisorContainerExecutorDescriptor(options.ContainerFallbackExecutor)
 	suppressed := state.ContainerFallbackSuppressed
 	backoffActive := runtimeSupervisorContainerFallbackBackoffActive(state.ContainerFallbackBackoffUntil, now)
 	safetyGateOK := strings.TrimSpace(state.ContainerFallbackReason) != ""
@@ -500,6 +522,8 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 		Candidate:          true,
 		Enabled:            options.EnableContainerFallback,
 		ExecutorConfigured: executorConfigured,
+		ExecutorKind:       executorDescriptor.Kind,
+		ExecutorDryRun:     executorDescriptor.DryRun,
 		Executable:         decision.Executable,
 		Decision:           decision.Decision,
 		Suppressed:         suppressed,
@@ -565,16 +589,34 @@ func evaluateRuntimeSupervisorContainerFallbackDecision(input runtimeSupervisorC
 
 func runtimeSupervisorPolicy(options RuntimeSupervisorOptions) RuntimeSupervisorPolicy {
 	options = normalizeRuntimeSupervisorOptions(options)
+	executorDescriptor := runtimeSupervisorContainerExecutorDescriptor(options.ContainerFallbackExecutor)
 	return RuntimeSupervisorPolicy{
 		ApplicationRestartEnabled:   options.EnableApplicationRestart,
 		ServiceFailureThreshold:     options.ServiceFailureThreshold,
 		ContainerRestartEnabled:     options.EnableContainerFallback,
 		ContainerExecutorConfigured: runtimeSupervisorContainerExecutorConfigured(options.ContainerFallbackExecutor),
+		ContainerExecutorKind:       executorDescriptor.Kind,
+		ContainerExecutorDryRun:     executorDescriptor.DryRun,
 	}
 }
 
 func runtimeSupervisorContainerExecutorConfigured(executor ContainerFallbackExecutor) bool {
 	return executor != nil && executor.Configured()
+}
+
+func runtimeSupervisorContainerExecutorDescriptor(executor ContainerFallbackExecutor) ContainerFallbackExecutorDescriptor {
+	if executor == nil {
+		return ContainerFallbackExecutorDescriptor{
+			Kind:   runtimeSupervisorContainerExecutorKindNone,
+			DryRun: true,
+		}
+	}
+	descriptor := executor.Descriptor()
+	descriptor.Kind = strings.TrimSpace(descriptor.Kind)
+	if descriptor.Kind == "" {
+		descriptor.Kind = runtimeSupervisorContainerExecutorKindCustom
+	}
+	return descriptor
 }
 
 func runtimeSupervisorServiceKey(target RuntimeSupervisorTarget) string {
