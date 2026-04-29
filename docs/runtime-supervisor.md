@@ -319,6 +319,7 @@ func ClearRestartState(state map[string]any, keys []string)
 - `BKTRADER_ROLE=supervisor` 只启动 read-only supervisor，不启动 live / signal / dashboard / notification 业务组件。
 - `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL。
 - `SUPERVISOR_BEARER_TOKEN` 可选；设置后 read-only collector 会对所有 targets 的 `/healthz` 与 `/api/v1/runtime/status` 请求附加 `Authorization: Bearer <token>`，用于采集受鉴权保护的内网 runtime API。
+- `SUPERVISOR_SERVICE_FAILURE_THRESHOLD=3` 为默认值；supervisor 会按 target 记录连续服务级失败次数，并在达到阈值后把该 target 标记为容器兜底候选，但当前阶段只暴露状态，不执行 Docker/container restart。
 - 默认只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
 - `GET /api/v1/supervisor/status` 返回最近一次 read-only supervisor 采集快照。
 - `bktrader-ctl runtime status --json` 和 `bktrader-ctl supervisor status --json` 提供 CLI 只读巡检入口。
@@ -354,6 +355,13 @@ func ClearRestartState(state map[string]any, keys []string)
 - 容器 restart 有 backoff、日志和人工抑制机制。
 - `desiredStatus=STOPPED`、fatal suppressed 和人工 stop 都不会被容器级 supervisor 反复拉起。
 - Docker socket 或 node-agent 权限边界有单独安全审查。
+
+当前只读候选状态：
+
+- `GET /api/v1/supervisor/status` 的每个 target 会返回 `serviceState`，包含连续失败次数、失败阈值、最近失败/恢复时间，以及是否已成为 `containerFallbackCandidate`。
+- 当前 service fallback 只把 `/healthz` 不可达或非 2xx、`/api/v1/runtime/status` 连接不可达视为服务级失败；`/runtime/status` JSON decode 失败不会触发容器兜底候选，避免把业务状态或响应格式问题误判成需要重启容器。
+- 达到 `SUPERVISOR_SERVICE_FAILURE_THRESHOLD` 后只记录 `containerFallbackCandidate=true` 和原因，不调用 Docker API，不挂载 Docker socket，不执行容器 restart。
+- 后续真正执行容器级 restart 前，仍需单独设计 executor、backoff、人工抑制、权限边界和部署安全审查。
 
 ## 7. 安全边界
 

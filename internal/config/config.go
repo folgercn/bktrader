@@ -67,11 +67,12 @@ type Config struct {
 	DashboardNotificationsPollMs   int    // 仪表盘 Notifications 轮询间隔 (ms)
 	DashboardMonitorHealthPollMs   int    // 仪表盘 Monitor Health 轮询间隔 (ms)
 
-	SupervisorTargets             []string // 只读 supervisor 采集目标，支持 name=url 或 base URL
-	SupervisorBearerToken         string   // 只读 supervisor 请求目标服务时使用的全局 Bearer token
-	SupervisorPollIntervalSeconds int      // 只读 supervisor 轮询间隔（秒）
-	SupervisorHTTPTimeoutSeconds  int      // 只读 supervisor HTTP 超时（秒）
-	SupervisorAppRestartEnabled   bool     // supervisor 是否允许按 runtime status 到期计划提交应用内 restart（默认关闭）
+	SupervisorTargets              []string // 只读 supervisor 采集目标，支持 name=url 或 base URL
+	SupervisorBearerToken          string   // 只读 supervisor 请求目标服务时使用的全局 Bearer token
+	SupervisorPollIntervalSeconds  int      // 只读 supervisor 轮询间隔（秒）
+	SupervisorHTTPTimeoutSeconds   int      // 只读 supervisor HTTP 超时（秒）
+	SupervisorAppRestartEnabled    bool     // supervisor 是否允许按 runtime status 到期计划提交应用内 restart（默认关闭）
+	SupervisorServiceFailThreshold int      // supervisor 标记容器兜底候选所需的连续服务级失败次数（默认 3）
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -153,6 +154,7 @@ func Load() Config {
 		SupervisorPollIntervalSeconds:  intFromEnvWithMin("SUPERVISOR_POLL_INTERVAL_SECONDS", 30, 5),
 		SupervisorHTTPTimeoutSeconds:   intFromEnvWithMin("SUPERVISOR_HTTP_TIMEOUT_SECONDS", 5, 1),
 		SupervisorAppRestartEnabled:    boolFromEnv("SUPERVISOR_APPLICATION_RESTART_ENABLED", false),
+		SupervisorServiceFailThreshold: intFromEnvWithMin("SUPERVISOR_SERVICE_FAILURE_THRESHOLD", 3, 1),
 	}
 }
 

@@ -120,6 +120,97 @@ func TestRuntimeSupervisorRecordsProbeFailuresWithoutControlActions(t *testing.T
 	}
 }
 
+func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t *testing.T) {
+	requested := make(map[string]int)
+	healthy := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/healthz":
+			if !healthy {
+				http.Error(w, "not ready", http.StatusServiceUnavailable)
+				return
+			}
+			writeRuntimeSupervisorTestJSON(t, w, map[string]any{"status": "ok"})
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		case "/api/v1/runtime/restart":
+			t.Errorf("service fallback planning must not call control path %s", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{ServiceFailureThreshold: 2},
+	)
+	first := supervisor.Collect(context.Background()).Targets[0]
+	if first.ServiceState.ConsecutiveFailures != 1 || first.ServiceState.ContainerFallbackCandidate {
+		t.Fatalf("expected first failure below fallback threshold, got %+v", first.ServiceState)
+	}
+	second := supervisor.Collect(context.Background()).Targets[0]
+	if second.ServiceState.ConsecutiveFailures != 2 || !second.ServiceState.ContainerFallbackCandidate {
+		t.Fatalf("expected second failure to become fallback candidate, got %+v", second.ServiceState)
+	}
+	if second.ServiceState.ContainerFallbackReason == "" || second.ServiceState.LastFailureReason == "" || second.ServiceState.LastFailureAt == nil {
+		t.Fatalf("expected fallback reason and failure metadata, got %+v", second.ServiceState)
+	}
+	if requested["POST /api/v1/runtime/restart"] != 0 {
+		t.Fatalf("expected no control action for service fallback candidate, got %#v", requested)
+	}
+
+	healthy = true
+	recovered := supervisor.Collect(context.Background()).Targets[0]
+	if recovered.ServiceState.ConsecutiveFailures != 0 || recovered.ServiceState.ContainerFallbackCandidate {
+		t.Fatalf("expected healthy probe to clear fallback candidate, got %+v", recovered.ServiceState)
+	}
+	if recovered.ServiceState.LastHealthyAt == nil {
+		t.Fatalf("expected healthy probe to record last healthy time, got %+v", recovered.ServiceState)
+	}
+}
+
+func TestRuntimeSupervisorDoesNotPlanContainerFallbackForRuntimeStatusDecodeError(t *testing.T) {
+	requested := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/healthz":
+			writeRuntimeSupervisorTestJSON(t, w, map[string]any{"status": "ok"})
+		case "/api/v1/runtime/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{"))
+		case "/api/v1/runtime/restart":
+			t.Errorf("runtime status decode errors must not trigger control paths")
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{ServiceFailureThreshold: 1},
+	)
+	target := supervisor.Collect(context.Background()).Targets[0]
+	if target.RuntimeStatus.Error == "" {
+		t.Fatalf("expected runtime status decode error, got %+v", target.RuntimeStatus)
+	}
+	if target.ServiceState.ConsecutiveFailures != 0 || target.ServiceState.ContainerFallbackCandidate {
+		t.Fatalf("expected decode error to stay outside service fallback planning, got %+v", target.ServiceState)
+	}
+	if requested["POST /api/v1/runtime/restart"] != 0 {
+		t.Fatalf("expected no control action for decode error, got %#v", requested)
+	}
+}
+
 func TestRuntimeSupervisorDefaultSkipsDueSignalRestart(t *testing.T) {
 	now := time.Now().UTC()
 	requested := make(map[string]int)
