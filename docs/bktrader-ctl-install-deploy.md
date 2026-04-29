@@ -103,18 +103,18 @@ bktrader-ctl order cancel <order-id> --confirm --json
 - `notify test`
 - `update`
 
-卡住的 LiveSession 控制状态只允许人工显式重置，固定流程如下：
+卡住的 LiveSession 控制状态只允许人工显式重置；它不是常规启停手段，固定流程如下：
 
 1. `--dry-run` 预览当前 stuck/error/active request 状态。
 2. 人工确认 runner 日志、控制意图与真实会话状态。
-3. 带 `--confirm` 和非空 `--reason` 执行 reset。
+3. 带 `--confirm` 和非空 `--reason` 执行 reset；`reason` 必须写真实、可追溯的依据。
 
 ```bash
 bktrader-ctl live control-reset <session-id> --dry-run --reason "operator verified runner state" --json
 bktrader-ctl live control-reset <session-id> --confirm --reason "operator verified runner state" --json
 ```
 
-reset 只清理控制面 stuck/error/active request 状态并写入 `controlEvents` 审计，不会启动或停止 runner。`--reason` 必须填写，用于后续审计。
+reset 只清理控制面 stuck/error/orphan active request 状态并写入 `controlEvents` 审计，不会启动或停止 runner。`--reason` 必须填写，用于后续审计；不要使用 “fix issue” / “manual reset” 这类不可追溯描述。
 
 ## 5. 手动更新 CLI
 

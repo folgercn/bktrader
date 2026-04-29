@@ -89,6 +89,16 @@ npm run build
 10. 自动 resume / dispatch 必须有显式前置条件
 11. 精度和容差只能有一个入口 — 必须使用 `internal/service/precision_tolerance.go`
 
+### Live 控制面 reset 运维规则
+
+`bktrader-ctl live control-reset` / `/api/v1/live/sessions/:id/control-reset` 是异常修复工具，不是常规启停流程。任何 Agent 或人工在建议、执行、排查该操作时必须遵守：
+
+1. **只用于异常**：仅当 LiveSession 控制面 stuck / ERROR / orphan active request 且已确认普通 start/stop/retry 不适用时使用。
+2. **必须先 dry-run**：先执行 `bktrader-ctl live control-reset <session-id> --dry-run --reason "<真实原因>" --json`，再人工核对 runner 日志、控制意图和真实会话状态。
+3. **reason 必须真实可追溯**：`--reason` / `reason` 不得填写空泛文本，必须说明可审计的事实依据，例如 runner 重启、已核对 exchange flat、已确认 active request orphan。
+
+reset 只清理控制面状态并写 `manual_reset` 审计事件；它不启动/停止 runner、不 dispatch、不 reconcile、不调用交易所 adapter。
+
 ## 8. 高频踩坑模式速查
 
 **改 `internal/` 代码前先自查**，详细案例见 [docs/pr-lessons-learned.md](docs/pr-lessons-learned.md)：
