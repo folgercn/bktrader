@@ -153,12 +153,27 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if first.ServiceState.ConsecutiveFailures != 1 || first.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected first failure below fallback threshold, got %+v", first.ServiceState)
 	}
+	if first.ContainerFallbackPlan != nil {
+		t.Fatalf("expected no fallback plan below threshold, got %+v", first.ContainerFallbackPlan)
+	}
 	second := supervisor.Collect(context.Background()).Targets[0]
 	if second.ServiceState.ConsecutiveFailures != 2 || !second.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected second failure to become fallback candidate, got %+v", second.ServiceState)
 	}
 	if second.ServiceState.ContainerFallbackReason == "" || second.ServiceState.LastFailureReason == "" || second.ServiceState.LastFailureAt == nil {
 		t.Fatalf("expected fallback reason and failure metadata, got %+v", second.ServiceState)
+	}
+	if second.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for candidate, got %+v", second)
+	}
+	if second.ContainerFallbackPlan.Action != "container-restart" || !second.ContainerFallbackPlan.Candidate {
+		t.Fatalf("unexpected fallback plan identity, got %+v", second.ContainerFallbackPlan)
+	}
+	if second.ContainerFallbackPlan.Executable || second.ContainerFallbackPlan.BlockedReason != "container-executor-not-configured" {
+		t.Fatalf("expected fallback plan to stay blocked without executor, got %+v", second.ContainerFallbackPlan)
+	}
+	if second.ContainerFallbackPlan.Reason != second.ServiceState.ContainerFallbackReason {
+		t.Fatalf("expected fallback plan reason to mirror service state, got %+v", second.ContainerFallbackPlan)
 	}
 	if requested["POST /api/v1/runtime/restart"] != 0 {
 		t.Fatalf("expected no control action for service fallback candidate, got %#v", requested)
@@ -168,6 +183,9 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	recovered := supervisor.Collect(context.Background()).Targets[0]
 	if recovered.ServiceState.ConsecutiveFailures != 0 || recovered.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected healthy probe to clear fallback candidate, got %+v", recovered.ServiceState)
+	}
+	if recovered.ContainerFallbackPlan != nil {
+		t.Fatalf("expected healthy probe to clear fallback plan, got %+v", recovered.ContainerFallbackPlan)
 	}
 	if recovered.ServiceState.LastHealthyAt == nil {
 		t.Fatalf("expected healthy probe to record last healthy time, got %+v", recovered.ServiceState)

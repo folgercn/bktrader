@@ -376,6 +376,14 @@ export type RuntimeSupervisorServiceState = {
   containerFallbackReason?: string;
 };
 
+export type RuntimeSupervisorContainerFallbackPlan = {
+  action: string;
+  candidate: boolean;
+  executable: boolean;
+  blockedReason?: string;
+  reason?: string;
+};
+
 export type RuntimeSupervisorControlAction = {
   action: string;
   path: string;
@@ -395,6 +403,7 @@ export type RuntimeSupervisorTargetSnapshot = {
   healthz: RuntimeSupervisorProbe;
   runtimeStatus: RuntimeSupervisorProbe;
   serviceState: RuntimeSupervisorServiceState;
+  containerFallbackPlan?: RuntimeSupervisorContainerFallbackPlan;
   status?: RuntimeSupervisorStatus;
   controlActions?: RuntimeSupervisorControlAction[];
 };
