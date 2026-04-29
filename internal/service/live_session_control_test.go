@@ -185,6 +185,28 @@ func TestScanLiveSessionControlRequestsPreservesStopSafetyUntilForceRequested(t 
 	if got := stringValue(blocked.State["lastControlErrorCode"]); got != LiveSessionControlErrorCodeActivePositionsOrOrders {
 		t.Fatalf("expected lastControlErrorCode %s, got %s", LiveSessionControlErrorCodeActivePositionsOrOrders, got)
 	}
+	events := metadataList(blocked.State[liveSessionControlEventStateKey])
+	if len(events) != 3 {
+		t.Fatalf("expected request, pickup, and failure events, got %d: %#v", len(events), events)
+	}
+	if got := stringValue(events[2]["phase"]); got != "failed" {
+		t.Fatalf("expected failed control event, got %s", got)
+	}
+	if got := stringValue(events[2]["errorCode"]); got != LiveSessionControlErrorCodeActivePositionsOrOrders {
+		t.Fatalf("expected failed event errorCode %s, got %s", LiveSessionControlErrorCodeActivePositionsOrOrders, got)
+	}
+	page, err := platform.ListLogEvents(UnifiedLogEventQuery{
+		Type:          "live-control",
+		Level:         "critical",
+		LiveSessionID: session.ID,
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list critical live control events: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("expected one critical live control event, got %d", len(page.Items))
+	}
 
 	platform.scanLiveSessionControlRequests(context.Background())
 	stillBlocked, err := store.GetLiveSession(session.ID)
@@ -403,6 +425,70 @@ func TestDeleteLiveSessionCancelsPendingDesiredControlIntent(t *testing.T) {
 		if item.ID == deleted.ID {
 			t.Fatalf("expected deleted session to be hidden from scanner list")
 		}
+	}
+}
+
+func TestLiveSessionControlRecordsAuditEvents(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	session, err := store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	requested, err := platform.RequestLiveSessionStopWithForce(session.ID, false)
+	if err != nil {
+		t.Fatalf("request stop failed: %v", err)
+	}
+	request, ok := liveSessionControlRequestFromState(requested.State)
+	if !ok {
+		t.Fatal("expected control request identity")
+	}
+
+	platform.scanLiveSessionControlRequests(context.Background())
+
+	stopped, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	events := metadataList(stopped.State[liveSessionControlEventStateKey])
+	if len(events) != 3 {
+		t.Fatalf("expected request, pickup, and success events, got %d: %#v", len(events), events)
+	}
+	wantPhases := []string{"request_accepted", "runner_picked_up", "succeeded"}
+	for i, want := range wantPhases {
+		if got := stringValue(events[i]["phase"]); got != want {
+			t.Fatalf("event %d expected phase %s, got %s", i, want, got)
+		}
+		if got := stringValue(events[i]["controlRequestId"]); got != request.ID {
+			t.Fatalf("event %d expected request id %s, got %s", i, request.ID, got)
+		}
+		if got := liveSessionControlVersionKey(events[i], "controlVersion"); got != request.Version {
+			t.Fatalf("event %d expected version %d, got %d", i, request.Version, got)
+		}
+	}
+	if got := stringValue(events[0]["action"]); got != "stop" {
+		t.Fatalf("expected stop action, got %s", got)
+	}
+	if got := boolValue(events[0]["force"]); got {
+		t.Fatal("expected non-force audit event")
+	}
+
+	page, err := platform.ListLogEvents(UnifiedLogEventQuery{
+		Type:          "live-control",
+		LiveSessionID: session.ID,
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live control log events: %v", err)
+	}
+	if len(page.Items) != 3 {
+		t.Fatalf("expected 3 unified live control events, got %d", len(page.Items))
+	}
+	if page.Items[0].Type != "live-control" || page.Items[0].Level != "info" {
+		t.Fatalf("unexpected newest live control event: %#v", page.Items[0])
+	}
+	if got := stringValue(page.Items[0].Metadata["phase"]); got != "succeeded" {
+		t.Fatalf("expected newest event to be succeeded, got %s", got)
 	}
 }
 

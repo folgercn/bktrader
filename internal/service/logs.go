@@ -188,6 +188,17 @@ func (p *Platform) ListLogEvents(query UnifiedLogEventQuery) (UnifiedLogEventPag
 			}
 		}
 	}
+	if normalizedType == "" || normalizedType == "live-control" {
+		items, err := p.queryLiveSessionControlEvents(query, cursor, fetchLimit)
+		if err != nil {
+			return UnifiedLogEventPage{}, err
+		}
+		for _, event := range items {
+			if matchesUnifiedLogLevel(event.Level, levelFilter) {
+				merged = append(merged, event)
+			}
+		}
+	}
 
 	sort.SliceStable(merged, func(i, j int) bool {
 		return unifiedLogEventLess(merged[i], merged[j])
@@ -340,6 +351,48 @@ func (p *Platform) queryPositionAccountSnapshots(query domain.PositionAccountSna
 	return limitPositionSnapshots(filtered, query.Limit), nil
 }
 
+func (p *Platform) queryLiveSessionControlEvents(query UnifiedLogEventQuery, cursor *domain.EventCursor, limit int) ([]UnifiedLogEvent, error) {
+	sessions, err := p.store.ListLiveSessions()
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]UnifiedLogEvent, 0)
+	for _, session := range sessions {
+		if strings.TrimSpace(query.AccountID) != "" && session.AccountID != strings.TrimSpace(query.AccountID) {
+			continue
+		}
+		if strings.TrimSpace(query.StrategyID) != "" && session.StrategyID != strings.TrimSpace(query.StrategyID) {
+			continue
+		}
+		if strings.TrimSpace(query.LiveSessionID) != "" && session.ID != strings.TrimSpace(query.LiveSessionID) {
+			continue
+		}
+		for _, entry := range metadataList(session.State[liveSessionControlEventStateKey]) {
+			event, ok := liveSessionControlToUnifiedLogEvent(session, entry)
+			if !ok {
+				continue
+			}
+			if !query.From.IsZero() && event.EventTime.Before(query.From.UTC()) {
+				continue
+			}
+			if !query.To.IsZero() && event.EventTime.After(query.To.UTC()) {
+				continue
+			}
+			if cursor != nil && !domain.EventBeforeCursor(event.EventTime, event.RecordedAt, event.ID, *cursor) {
+				continue
+			}
+			filtered = append(filtered, event)
+		}
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return unifiedLogEventLess(filtered[i], filtered[j])
+	})
+	if limit > 0 && len(filtered) > limit {
+		return slices.Clone(filtered[:limit]), nil
+	}
+	return filtered, nil
+}
+
 func strategyDecisionToUnifiedLogEvent(item domain.StrategyDecisionEvent) UnifiedLogEvent {
 	level := "info"
 	if !item.SourceGateReady || item.MissingCount > 0 || item.StaleCount > 0 {
@@ -443,6 +496,94 @@ func positionSnapshotToUnifiedLogEvent(item domain.PositionAccountSnapshot) Unif
 	}
 }
 
+func liveSessionControlToUnifiedLogEvent(session domain.LiveSession, entry map[string]any) (UnifiedLogEvent, bool) {
+	id := strings.TrimSpace(stringValue(entry["id"]))
+	if id == "" {
+		return UnifiedLogEvent{}, false
+	}
+	eventTime := parseOptionalRFC3339(stringValue(entry["eventTime"]))
+	if eventTime.IsZero() {
+		return UnifiedLogEvent{}, false
+	}
+	recordedAt := parseOptionalRFC3339(stringValue(entry["recordedAt"]))
+	recordedAt = domain.NormalizeEventRecordedAt(recordedAt, eventTime)
+	phase := strings.TrimSpace(stringValue(entry["phase"]))
+	actual := strings.TrimSpace(stringValue(entry["actualStatus"]))
+	errorCode := strings.TrimSpace(stringValue(entry["errorCode"]))
+	level := "info"
+	if errorCode != "" || strings.EqualFold(phase, "failed") || strings.EqualFold(actual, "ERROR") {
+		level = "critical"
+	} else if strings.EqualFold(phase, "stale_update_discarded") {
+		level = "warning"
+	}
+	metadata := map[string]any{
+		"phase":            phase,
+		"action":           entry["action"],
+		"desiredStatus":    entry["desiredStatus"],
+		"actualStatus":     entry["actualStatus"],
+		"controlRequestId": entry["controlRequestId"],
+		"controlVersion":   entry["controlVersion"],
+		"errorCode":        entry["errorCode"],
+		"latencyMs":        entry["latencyMs"],
+	}
+	return UnifiedLogEvent{
+		ID:            id,
+		Source:        "event",
+		Type:          "live-control",
+		Level:         level,
+		Title:         liveSessionControlEventTitle(phase),
+		Message:       liveSessionControlEventMessage(entry),
+		EventTime:     eventTime.UTC(),
+		RecordedAt:    recordedAt,
+		AccountID:     firstNonEmpty(strings.TrimSpace(stringValue(entry["accountId"])), session.AccountID),
+		StrategyID:    firstNonEmpty(strings.TrimSpace(stringValue(entry["strategyId"])), session.StrategyID),
+		LiveSessionID: firstNonEmpty(strings.TrimSpace(stringValue(entry["liveSessionId"])), session.ID),
+		Metadata:      metadata,
+		Payload:       entry,
+	}, true
+}
+
+func liveSessionControlEventTitle(phase string) string {
+	switch strings.ToLower(strings.TrimSpace(phase)) {
+	case "request_accepted":
+		return "live control request accepted"
+	case "legacy_request_initialized":
+		return "live control request initialized"
+	case "runner_picked_up":
+		return "live control picked up"
+	case "succeeded":
+		return "live control succeeded"
+	case "failed":
+		return "live control failed"
+	case "stale_update_discarded":
+		return "live control stale update discarded"
+	default:
+		return "live control updated"
+	}
+}
+
+func liveSessionControlEventMessage(entry map[string]any) string {
+	action := strings.TrimSpace(stringValue(entry["action"]))
+	actual := strings.TrimSpace(stringValue(entry["actualStatus"]))
+	if err := strings.TrimSpace(stringValue(entry["error"])); err != "" {
+		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(stringValue(entry["phase"]))) {
+	case "request_accepted":
+		return firstNonEmpty(action, "control") + " intent accepted"
+	case "legacy_request_initialized":
+		return firstNonEmpty(action, "control") + " legacy intent initialized"
+	case "runner_picked_up":
+		return "runner picked up " + firstNonEmpty(action, "control") + " intent"
+	case "succeeded":
+		return firstNonEmpty(action, "control") + " converged to " + firstNonEmpty(actual, "target status")
+	case "stale_update_discarded":
+		return "stale runner result discarded"
+	default:
+		return firstNonEmpty(actual, "live control state updated")
+	}
+}
+
 func encodeLogEventCursor(item UnifiedLogEvent) string {
 	payload, _ := json.Marshal(logEventCursor{
 		EventTime:  item.EventTime.UTC().Format(time.RFC3339Nano),
@@ -492,6 +633,8 @@ func normalizeUnifiedLogEventType(value string) string {
 		return "order-execution"
 	case "snapshot", "position-account-snapshot", "position_account_snapshot":
 		return "position-account-snapshot"
+	case "live-control", "live_control", "control":
+		return "live-control"
 	default:
 		return strings.ToLower(strings.TrimSpace(value))
 	}

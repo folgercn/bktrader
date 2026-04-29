@@ -15,6 +15,8 @@ import (
 
 const (
 	liveSessionControlScannerInterval = 5 * time.Second
+	liveSessionControlEventStateKey   = "controlEvents"
+	liveSessionControlEventMaxHistory = 50
 
 	LiveSessionControlErrorCodeActivePositionsOrOrders    = "ACTIVE_POSITIONS_OR_ORDERS"
 	LiveSessionControlErrorCodeRuntimeLeaseNotAcquired    = "RUNTIME_LEASE_NOT_ACQUIRED"
@@ -127,6 +129,13 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, fo
 		delete(state, "lastControlErrorCode")
 		delete(state, "lastControlErrorRequestId")
 		delete(state, "lastControlErrorVersion")
+		request := liveSessionControlRequest{
+			ID:      stringValue(state["controlRequestId"]),
+			Version: version,
+		}
+		eventSession := session
+		eventSession.State = state
+		appendLiveSessionControlEvent(state, liveSessionControlEvent(eventSession, request, "request_accepted", desired, stringValue(state["actualStatus"]), nil, now))
 		updated, ok, err := p.updateLiveSessionControlStateIfPrevious(session.ID, previous, state)
 		if err != nil {
 			return domain.LiveSession{}, err
@@ -228,6 +237,9 @@ func (p *Platform) initializeLegacyLiveSessionControlRequest(session domain.Live
 			state["lastControlAction"] = "stop"
 		}
 	}
+	eventSession := session
+	eventSession.State = state
+	appendLiveSessionControlEvent(state, liveSessionControlEvent(eventSession, request, "legacy_request_initialized", desired, stringValue(state["actualStatus"]), nil, now))
 	updated, ok, err := p.updateLiveSessionControlStateIfPrevious(session.ID, previous, state)
 	if err != nil {
 		return domain.LiveSession{}, liveSessionControlRequest{}, err
@@ -271,6 +283,7 @@ func (p *Platform) markLiveSessionControlActual(session domain.LiveSession, requ
 	}
 	if !liveSessionControlRequestMatches(latest.State, request) {
 		p.logger("service.live_session_control_scanner", "session_id", session.ID, "request_id", request.ID, "control_version", request.Version).Info("skip stale live session control update")
+		p.recordLiveSessionControlStaleDiscard(latest, request, "actual_status_update")
 		return false
 	}
 	state := cloneMetadata(session.State)
@@ -282,6 +295,7 @@ func (p *Platform) markLiveSessionControlActual(session domain.LiveSession, requ
 	state["lastControlUpdateAt"] = now.Format(time.RFC3339)
 	state["activeControlRequestId"] = request.ID
 	state["activeControlVersion"] = request.Version
+	appendLiveSessionControlEvent(state, liveSessionControlEvent(latest, request, liveSessionControlEventPhase(actual, controlErr), stringValue(state["desiredStatus"]), actual, controlErr, now))
 	if controlErr != nil {
 		state["lastControlError"] = controlErr.Error()
 		state["lastControlErrorCode"] = liveSessionControlErrorCode(controlErr)
@@ -309,10 +323,32 @@ func (p *Platform) markLiveSessionControlActual(session domain.LiveSession, requ
 	}
 	if !ok {
 		p.logger("service.live_session_control_scanner", "session_id", session.ID, "request_id", request.ID, "control_version", request.Version).Info("skip stale live session control update")
+		if latest, loadErr := p.store.GetLiveSession(session.ID); loadErr == nil {
+			p.recordLiveSessionControlStaleDiscard(latest, request, "actual_status_commit")
+		}
 		return false
 	}
 	_ = updated
 	return true
+}
+
+func (p *Platform) recordLiveSessionControlStaleDiscard(session domain.LiveSession, request liveSessionControlRequest, reason string) {
+	state := cloneMetadata(session.State)
+	current, ok := liveSessionControlRequestFromState(state)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	event := liveSessionControlEvent(session, request, "stale_update_discarded", stringValue(state["desiredStatus"]), stringValue(state["actualStatus"]), nil, now)
+	event["staleReason"] = reason
+	event["currentControlRequestId"] = stringValue(state["controlRequestId"])
+	event["currentControlVersion"] = liveSessionControlVersion(state)
+	appendLiveSessionControlEvent(state, event)
+	if _, updated, err := p.updateLiveSessionControlStateIfPrevious(session.ID, current, state); err != nil {
+		p.logger("service.live_session_control_scanner", "session_id", session.ID, "request_id", request.ID, "control_version", request.Version).Warn("record stale live session control event failed", "error", err)
+	} else if !updated {
+		p.logger("service.live_session_control_scanner", "session_id", session.ID, "request_id", request.ID, "control_version", request.Version).Info("skip stale live session control event update")
+	}
 }
 
 func (p *Platform) updateLiveSessionControlStateIfCurrent(sessionID string, request liveSessionControlRequest, state map[string]any) (domain.LiveSession, bool, error) {
@@ -351,6 +387,78 @@ func liveSessionControlErrorCode(err error) string {
 		return LiveSessionControlErrorCodeAdapterError
 	default:
 		return LiveSessionControlErrorCodeUnknown
+	}
+}
+
+func appendLiveSessionControlEvent(state map[string]any, event map[string]any) {
+	if state == nil || event == nil {
+		return
+	}
+	events := metadataList(state[liveSessionControlEventStateKey])
+	events = append(events, cloneMetadata(event))
+	if len(events) > liveSessionControlEventMaxHistory {
+		events = events[len(events)-liveSessionControlEventMaxHistory:]
+	}
+	state[liveSessionControlEventStateKey] = events
+}
+
+func liveSessionControlEvent(session domain.LiveSession, request liveSessionControlRequest, phase, desired, actual string, controlErr error, eventTime time.Time) map[string]any {
+	if eventTime.IsZero() {
+		eventTime = time.Now().UTC()
+	}
+	state := cloneMetadata(session.State)
+	event := map[string]any{
+		"id":               uuid.NewString(),
+		"type":             "live-control",
+		"phase":            phase,
+		"liveSessionId":    session.ID,
+		"accountId":        session.AccountID,
+		"strategyId":       session.StrategyID,
+		"sessionStatus":    session.Status,
+		"desiredStatus":    strings.ToUpper(strings.TrimSpace(desired)),
+		"actualStatus":     strings.ToUpper(strings.TrimSpace(actual)),
+		"controlRequestId": request.ID,
+		"controlVersion":   request.Version,
+		"action":           firstNonEmpty(stringValue(state["lastControlAction"]), liveSessionControlActionFromDesired(desired)),
+		"eventTime":        eventTime.UTC().Format(time.RFC3339Nano),
+		"recordedAt":       eventTime.UTC().Format(time.RFC3339Nano),
+	}
+	if force, ok := state["desiredStopForce"]; ok {
+		event["force"] = boolValue(force)
+	}
+	if requestedAt, ok := parseLiveSessionControlTime(state["controlRequestedAt"]); ok {
+		event["controlRequestedAt"] = requestedAt.UTC().Format(time.RFC3339Nano)
+		event["latencyMs"] = eventTime.UTC().Sub(requestedAt.UTC()).Milliseconds()
+	}
+	if controlErr != nil {
+		event["error"] = controlErr.Error()
+		event["errorCode"] = liveSessionControlErrorCode(controlErr)
+	}
+	return event
+}
+
+func liveSessionControlActionFromDesired(desired string) string {
+	switch strings.ToUpper(strings.TrimSpace(desired)) {
+	case "RUNNING":
+		return "start"
+	case "STOPPED":
+		return "stop"
+	default:
+		return strings.ToLower(strings.TrimSpace(desired))
+	}
+}
+
+func liveSessionControlEventPhase(actual string, controlErr error) string {
+	if controlErr != nil || strings.EqualFold(actual, "ERROR") {
+		return "failed"
+	}
+	switch strings.ToUpper(strings.TrimSpace(actual)) {
+	case "STARTING", "STOPPING":
+		return "runner_picked_up"
+	case "RUNNING", "STOPPED":
+		return "succeeded"
+	default:
+		return "actual_status_changed"
 	}
 }
 
