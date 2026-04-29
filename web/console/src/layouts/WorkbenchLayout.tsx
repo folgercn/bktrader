@@ -1,9 +1,11 @@
 import React from 'react';
-import { Activity, Briefcase, Settings, FileText } from 'lucide-react';
+import { Activity, Briefcase, Settings, FileText, ServerCog } from 'lucide-react';
+
+type SidebarTab = 'monitor' | 'strategy' | 'account' | 'log' | 'recovery' | 'supervisor';
 
 export interface WorkbenchLayoutProps {
-  sidebarTab: 'monitor' | 'strategy' | 'account' | 'log';
-  onSidebarTabChange: (tab: 'monitor' | 'strategy' | 'account' | 'log') => void;
+  sidebarTab: SidebarTab;
+  onSidebarTabChange: (tab: SidebarTab) => void;
   dockTab: 'pairs' | 'orders' | 'positions' | 'fills' | 'alerts';
   onDockTabChange: (tab: 'pairs' | 'orders' | 'positions' | 'fills' | 'alerts') => void;
   
@@ -55,6 +57,12 @@ export function WorkbenchLayout({
           label="日志查看台" 
           active={sidebarTab === 'log'} 
           onClick={() => onSidebarTabChange('log')} 
+        />
+        <SidebarItem
+          icon={<ServerCog size={22} />}
+          label="运行控制面"
+          active={sidebarTab === 'supervisor'}
+          onClick={() => onSidebarTabChange('supervisor')}
         />
       </aside>
 

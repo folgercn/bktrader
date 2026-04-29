@@ -9,7 +9,7 @@ import {
 import { readStoredAuthSession } from '../utils/auth';
 import { resolveUpdater } from './helpers';
 
-type SidebarTab = "monitor" | "strategy" | "account" | "log" | "recovery";
+type SidebarTab = "monitor" | "strategy" | "account" | "log" | "recovery" | "supervisor";
 type DockTab = "pairs" | "orders" | "positions" | "fills" | "alerts";
 
 export type SystemLogEntry = {
@@ -65,7 +65,7 @@ function readStoredConsoleNav(): { sidebarTab: SidebarTab; dockTab: DockTab } {
     }
 
     const parsed = JSON.parse(raw) as Partial<{ sidebarTab: SidebarTab; dockTab: DockTab }>;
-    const sidebarTab = parsed.sidebarTab === "strategy" || parsed.sidebarTab === "account" || parsed.sidebarTab === "monitor" || parsed.sidebarTab === "log" || parsed.sidebarTab === "recovery"
+    const sidebarTab = parsed.sidebarTab === "strategy" || parsed.sidebarTab === "account" || parsed.sidebarTab === "monitor" || parsed.sidebarTab === "log" || parsed.sidebarTab === "recovery" || parsed.sidebarTab === "supervisor"
       ? parsed.sidebarTab
       : DEFAULT_SIDEBAR_TAB;
     const dockTab = parsed.dockTab === "positions" || parsed.dockTab === "fills" || parsed.dockTab === "alerts" || parsed.dockTab === "orders" || parsed.dockTab === "pairs"

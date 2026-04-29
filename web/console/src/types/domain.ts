@@ -330,6 +330,79 @@ export type SignalRuntimeSession = {
   updatedAt: string;
 };
 
+export type RuntimeSupervisorProbe = {
+  path: string;
+  statusCode?: number;
+  reachable: boolean;
+  error?: string;
+  payload?: Record<string, unknown>;
+};
+
+export type RuntimeSupervisorRuntimeStatus = {
+  service: string;
+  runtimeId: string;
+  runtimeKind: string;
+  accountId?: string;
+  strategyId?: string;
+  desiredStatus?: string;
+  actualStatus?: string;
+  health?: string;
+  restartAttempt: number;
+  nextRestartAt?: string;
+  restartBackoff?: string;
+  restartReason?: string;
+  restartSeverity?: string;
+  lastRestartError?: string;
+  autoRestartSuppressed: boolean;
+  lastHealthyAt?: string;
+  lastCheckedAt: string;
+  updatedAt?: string;
+};
+
+export type RuntimeSupervisorStatus = {
+  service: string;
+  checkedAt: string;
+  runtimes: RuntimeSupervisorRuntimeStatus[];
+};
+
+export type RuntimeSupervisorServiceState = {
+  consecutiveFailures: number;
+  failureThreshold: number;
+  lastFailureReason?: string;
+  lastFailureAt?: string;
+  lastHealthyAt?: string;
+  containerFallbackCandidate: boolean;
+  containerFallbackReason?: string;
+};
+
+export type RuntimeSupervisorControlAction = {
+  action: string;
+  path: string;
+  runtimeId: string;
+  runtimeKind: string;
+  reason?: string;
+  submitted: boolean;
+  statusCode?: number;
+  error?: string;
+  requestedAt: string;
+};
+
+export type RuntimeSupervisorTargetSnapshot = {
+  name: string;
+  baseUrl: string;
+  checkedAt: string;
+  healthz: RuntimeSupervisorProbe;
+  runtimeStatus: RuntimeSupervisorProbe;
+  serviceState: RuntimeSupervisorServiceState;
+  status?: RuntimeSupervisorStatus;
+  controlActions?: RuntimeSupervisorControlAction[];
+};
+
+export type RuntimeSupervisorSnapshot = {
+  checkedAt: string;
+  targets: RuntimeSupervisorTargetSnapshot[];
+};
+
 export type ReplayReasonStats = Record<string, Record<string, number>>;
 
 export type ReplaySample = Record<string, unknown>;

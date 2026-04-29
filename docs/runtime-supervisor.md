@@ -363,6 +363,10 @@ func ClearRestartState(state map[string]any, keys []string)
 - 达到 `SUPERVISOR_SERVICE_FAILURE_THRESHOLD` 后只记录 `containerFallbackCandidate=true` 和原因，不调用 Docker API，不挂载 Docker socket，不执行容器 restart。
 - 后续真正执行容器级 restart 前，仍需单独设计 executor、backoff、人工抑制、权限边界和部署安全审查。
 
+### Dashboard 视图
+
+前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，只展示 service target、runtime 状态、应用内控制动作和 `containerFallbackCandidate`。该页面不提交 runtime 或容器控制请求；真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
+
 ## 7. 安全边界
 
 必须遵守：
