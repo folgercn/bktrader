@@ -32,6 +32,10 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 				"enabled":true,
 				"executorConfigured":false,
 				"executable":false,
+				"decision":"blocked",
+				"suppressed":false,
+				"backoffActive":false,
+				"safetyGateOk":true,
 				"blockedReason":"container-executor-not-configured"
 			},
 			"status":{
@@ -56,7 +60,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 		"Runtime supervisor snapshot",
 		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerExecutorConfigured=false",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=0 runtimes=1 attention=1 controlActions=1",
-		"fallbackPlan: action=container-restart enabled=true executorConfigured=false executable=false blockedReason=container-executor-not-configured",
+		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executable=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
 		"lastFailure=healthz-unhealthy: http 503",
 	}
 	for _, want := range expected {

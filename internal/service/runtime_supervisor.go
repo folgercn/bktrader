@@ -17,6 +17,9 @@ import (
 const (
 	defaultRuntimeSupervisorHTTPTimeout       = 5 * time.Second
 	defaultRuntimeSupervisorServiceFailThresh = 3
+
+	runtimeSupervisorContainerFallbackDecisionBlocked  = "blocked"
+	runtimeSupervisorContainerFallbackDecisionEligible = "eligible"
 )
 
 type RuntimeSupervisorOptions struct {
@@ -92,7 +95,12 @@ type RuntimeSupervisorContainerFallbackPlan struct {
 	Enabled            bool   `json:"enabled"`
 	ExecutorConfigured bool   `json:"executorConfigured"`
 	Executable         bool   `json:"executable"`
+	Decision           string `json:"decision"`
+	Suppressed         bool   `json:"suppressed"`
+	BackoffActive      bool   `json:"backoffActive"`
+	SafetyGateOK       bool   `json:"safetyGateOk"`
 	BlockedReason      string `json:"blockedReason,omitempty"`
+	EligibleReason     string `json:"eligibleReason,omitempty"`
 	Reason             string `json:"reason,omitempty"`
 }
 
@@ -101,6 +109,22 @@ type runtimeSupervisorServiceState struct {
 	LastFailureReason   string
 	LastFailureAt       time.Time
 	LastHealthyAt       time.Time
+}
+
+type runtimeSupervisorContainerFallbackDecisionInput struct {
+	Candidate          bool
+	Enabled            bool
+	ExecutorConfigured bool
+	Suppressed         bool
+	BackoffActive      bool
+	SafetyGateOK       bool
+}
+
+type runtimeSupervisorContainerFallbackDecisionResult struct {
+	Decision       string
+	Executable     bool
+	BlockedReason  string
+	EligibleReason string
 }
 
 type RuntimeSupervisor struct {
@@ -379,21 +403,62 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 		return nil
 	}
 	executorConfigured := runtimeSupervisorContainerExecutorConfigured()
-	executable := options.EnableContainerFallback && executorConfigured
-	blockedReason := ""
-	if !options.EnableContainerFallback {
-		blockedReason = "container-restart-disabled"
-	} else if !executorConfigured {
-		blockedReason = "container-executor-not-configured"
-	}
+	suppressed := false
+	backoffActive := false
+	safetyGateOK := strings.TrimSpace(state.ContainerFallbackReason) != ""
+	decision := evaluateRuntimeSupervisorContainerFallbackDecision(runtimeSupervisorContainerFallbackDecisionInput{
+		Candidate:          state.ContainerFallbackCandidate,
+		Enabled:            options.EnableContainerFallback,
+		ExecutorConfigured: executorConfigured,
+		Suppressed:         suppressed,
+		BackoffActive:      backoffActive,
+		SafetyGateOK:       safetyGateOK,
+	})
 	return &RuntimeSupervisorContainerFallbackPlan{
 		Action:             "container-restart",
 		Candidate:          true,
 		Enabled:            options.EnableContainerFallback,
 		ExecutorConfigured: executorConfigured,
-		Executable:         executable,
-		BlockedReason:      blockedReason,
+		Executable:         decision.Executable,
+		Decision:           decision.Decision,
+		Suppressed:         suppressed,
+		BackoffActive:      backoffActive,
+		SafetyGateOK:       safetyGateOK,
+		BlockedReason:      decision.BlockedReason,
+		EligibleReason:     decision.EligibleReason,
 		Reason:             state.ContainerFallbackReason,
+	}
+}
+
+func evaluateRuntimeSupervisorContainerFallbackDecision(input runtimeSupervisorContainerFallbackDecisionInput) runtimeSupervisorContainerFallbackDecisionResult {
+	blocked := func(reason string) runtimeSupervisorContainerFallbackDecisionResult {
+		return runtimeSupervisorContainerFallbackDecisionResult{
+			Decision:      runtimeSupervisorContainerFallbackDecisionBlocked,
+			BlockedReason: reason,
+		}
+	}
+	if !input.Candidate {
+		return blocked("container-fallback-not-candidate")
+	}
+	if !input.Enabled {
+		return blocked("container-restart-disabled")
+	}
+	if !input.ExecutorConfigured {
+		return blocked("container-executor-not-configured")
+	}
+	if input.Suppressed {
+		return blocked("container-fallback-suppressed")
+	}
+	if input.BackoffActive {
+		return blocked("container-fallback-backoff-active")
+	}
+	if !input.SafetyGateOK {
+		return blocked("container-fallback-safety-gate-blocked")
+	}
+	return runtimeSupervisorContainerFallbackDecisionResult{
+		Decision:       runtimeSupervisorContainerFallbackDecisionEligible,
+		Executable:     true,
+		EligibleReason: "container fallback eligible",
 	}
 }
 

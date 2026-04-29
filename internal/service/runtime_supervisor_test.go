@@ -219,6 +219,12 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if second.ContainerFallbackPlan.Executable || second.ContainerFallbackPlan.BlockedReason != "container-restart-disabled" {
 		t.Fatalf("expected fallback plan to stay blocked without explicit opt-in, got %+v", second.ContainerFallbackPlan)
 	}
+	if second.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionBlocked {
+		t.Fatalf("expected blocked fallback decision, got %+v", second.ContainerFallbackPlan)
+	}
+	if second.ContainerFallbackPlan.Suppressed || second.ContainerFallbackPlan.BackoffActive || !second.ContainerFallbackPlan.SafetyGateOK {
+		t.Fatalf("expected dry-run gates to be clear with safety gate ok, got %+v", second.ContainerFallbackPlan)
+	}
 	if second.ContainerFallbackPlan.Enabled || second.ContainerFallbackPlan.ExecutorConfigured {
 		t.Fatalf("expected fallback readiness to show disabled/no executor, got %+v", second.ContainerFallbackPlan)
 	}
@@ -274,8 +280,98 @@ func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing
 	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.BlockedReason != "container-executor-not-configured" {
 		t.Fatalf("expected opt-in plan to stay blocked without executor, got %+v", target.ContainerFallbackPlan)
 	}
+	if target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionBlocked {
+		t.Fatalf("expected opt-in plan to report blocked decision, got %+v", target.ContainerFallbackPlan)
+	}
 	if !target.ContainerFallbackPlan.Enabled || target.ContainerFallbackPlan.ExecutorConfigured {
 		t.Fatalf("expected opt-in readiness to show enabled/no executor, got %+v", target.ContainerFallbackPlan)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
+	base := runtimeSupervisorContainerFallbackDecisionInput{
+		Candidate:          true,
+		Enabled:            true,
+		ExecutorConfigured: true,
+		SafetyGateOK:       true,
+	}
+	tests := []struct {
+		name            string
+		input           runtimeSupervisorContainerFallbackDecisionInput
+		wantDecision    string
+		wantExecutable  bool
+		wantBlocked     string
+		wantEligibleSet bool
+	}{
+		{
+			name:         "not candidate",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-fallback-not-candidate",
+		},
+		{
+			name:         "disabled",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, ExecutorConfigured: true, SafetyGateOK: true},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-restart-disabled",
+		},
+		{
+			name:         "executor missing",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, SafetyGateOK: true},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-executor-not-configured",
+		},
+		{
+			name: "suppressed",
+			input: runtimeSupervisorContainerFallbackDecisionInput{
+				Candidate:          true,
+				Enabled:            true,
+				ExecutorConfigured: true,
+				Suppressed:         true,
+				SafetyGateOK:       true,
+			},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-fallback-suppressed",
+		},
+		{
+			name: "backoff active",
+			input: runtimeSupervisorContainerFallbackDecisionInput{
+				Candidate:          true,
+				Enabled:            true,
+				ExecutorConfigured: true,
+				BackoffActive:      true,
+				SafetyGateOK:       true,
+			},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-fallback-backoff-active",
+		},
+		{
+			name:         "safety gate blocked",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-fallback-safety-gate-blocked",
+		},
+		{
+			name:            "eligible",
+			input:           base,
+			wantDecision:    runtimeSupervisorContainerFallbackDecisionEligible,
+			wantExecutable:  true,
+			wantEligibleSet: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluateRuntimeSupervisorContainerFallbackDecision(tt.input)
+			if got.Decision != tt.wantDecision || got.Executable != tt.wantExecutable || got.BlockedReason != tt.wantBlocked {
+				t.Fatalf("unexpected decision: got %+v want decision=%s executable=%t blocked=%s", got, tt.wantDecision, tt.wantExecutable, tt.wantBlocked)
+			}
+			if tt.wantEligibleSet && got.EligibleReason == "" {
+				t.Fatalf("expected eligible reason, got %+v", got)
+			}
+			if !tt.wantEligibleSet && got.EligibleReason != "" {
+				t.Fatalf("did not expect eligible reason, got %+v", got)
+			}
+		})
 	}
 }
 
