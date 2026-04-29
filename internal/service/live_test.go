@@ -4452,7 +4452,8 @@ func TestSyncLatestLiveSessionOrderSyncsAfterUnknownOrderCancelRace(t *testing.T
 				Fills: []LiveFillReport{{
 					Quantity: order.Quantity,
 					Price:    69000.0,
-					Metadata: map[string]any{"tradeTime": "2026-04-27T13:09:46Z"},
+					Source:   FillSourceReal,
+					Metadata: map[string]any{"tradeId": "trade-cancel-race-1", "tradeTime": "2026-04-27T13:09:46Z"},
 				}},
 				Metadata: map[string]any{
 					"executedQty": order.Quantity,
@@ -10815,6 +10816,8 @@ func TestRecoverRunningLiveSessionPreservesRemainingQuantityAfterPartialFillRest
 				Fills: []LiveFillReport{{
 					Quantity: 0.004,
 					Price:    68950.0,
+					Source:   FillSourceReal,
+					Metadata: map[string]any{"tradeId": "trade-partial-fill-restart-1"},
 				}},
 			}, nil
 		},
@@ -11232,6 +11235,7 @@ func TestStartLiveSessionBackfillsFilledExitBeforeReconcileGateBlock(t *testing.
 					Price:    67950.0,
 					Quantity: order.Quantity,
 					Fee:      0.01,
+					Source:   FillSourceReal,
 					Metadata: map[string]any{
 						"exchangeOrderId": stringValue(order.Metadata["exchangeOrderId"]),
 						"tradeId":         "trade-terminal-fill-1",

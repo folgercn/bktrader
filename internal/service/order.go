@@ -1112,7 +1112,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		if err != nil {
 			return err
 		}
-		incomingInputs, err := fillReconciliationInputsFromIncomingFills(order, newFills)
+		incomingInputs, err := fillReconciliationInputsFromIncomingFills(order, newFills, !strings.EqualFold(account.Mode, "LIVE"))
 		if err != nil {
 			return err
 		}
@@ -1237,16 +1237,21 @@ func fillReconciliationInputsFromStoredFills(fills []domain.Fill) ([]FillReconci
 	return inputs, nil
 }
 
-func fillReconciliationInputsFromIncomingFills(order domain.Order, fills []domain.Fill) ([]FillReconciliationInput, error) {
+func fillReconciliationInputsFromIncomingFills(order domain.Order, fills []domain.Fill, allowLegacySourceFallback bool) ([]FillReconciliationInput, error) {
 	inputs := make([]FillReconciliationInput, 0, len(fills))
 	for _, fill := range fills {
 		if strings.TrimSpace(fill.OrderID) == "" {
 			fill.OrderID = order.ID
 		}
-		source := FillSourceReal
+		source := FillSource(strings.TrimSpace(fill.Source))
+		if source == "" && !allowLegacySourceFallback {
+			return nil, fmt.Errorf("incoming fill source is required for order %s", order.ID)
+		}
 		if strings.TrimSpace(fill.Source) != "" {
 			source = FillSource(strings.TrimSpace(fill.Source))
-		} else if strings.TrimSpace(fill.ExchangeTradeID) == "" {
+		} else if strings.TrimSpace(fill.ExchangeTradeID) != "" {
+			source = FillSourceReal
+		} else {
 			fill.DedupFingerprint = strings.TrimSpace(fill.DedupFingerprint)
 			if fill.DedupFingerprint == "" {
 				fill.DedupFingerprint = fill.FallbackFingerprint()
@@ -1254,6 +1259,12 @@ func fillReconciliationInputsFromIncomingFills(order domain.Order, fills []domai
 			source = FillSourceSynthetic
 			if strings.HasPrefix(fill.DedupFingerprint, syntheticRemainderFingerprintPrefix) {
 				source = FillSourceRemainder
+			}
+		}
+		if source == FillSourceSynthetic || source == FillSourceRemainder {
+			fill.DedupFingerprint = strings.TrimSpace(fill.DedupFingerprint)
+			if fill.DedupFingerprint == "" {
+				fill.DedupFingerprint = fill.FallbackFingerprint()
 			}
 		}
 		inputs = append(inputs, FillReconciliationInput{Fill: fill, Source: source})
@@ -1395,16 +1406,6 @@ func resolveLiveFillTradeID(report LiveFillReport) string {
 func resolveLiveFillSource(report LiveFillReport) FillSource {
 	if report.Source != "" {
 		return report.Source
-	}
-	metadata := mapValue(report.Metadata)
-	if boolValue(metadata["syntheticFill"]) {
-		return FillSourceSynthetic
-	}
-	if strings.TrimSpace(stringValue(metadata["dedupFingerprint"])) != "" {
-		return FillSourceSynthetic
-	}
-	if resolveLiveFillTradeID(report) != "" {
-		return FillSourceReal
 	}
 	return ""
 }
