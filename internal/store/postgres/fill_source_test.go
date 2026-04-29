@@ -176,7 +176,7 @@ func TestFillSettlementTxCreateFillUpsertUpdatesSourcePostgres(t *testing.T) {
 	}
 
 	fingerprint := "tx-source-upsert-" + time.Now().UTC().Format("20060102150405.000000000")
-	if err := store.WithFillSettlementTx(func(tx storepkg.FillSettlementStore) error {
+	if err := store.WithFillSettlementTx(order.ID, func(tx storepkg.FillSettlementStore) error {
 		if _, err := tx.CreateFill(domain.Fill{
 			OrderID:          order.ID,
 			Source:           "synthetic",

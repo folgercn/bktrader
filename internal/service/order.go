@@ -1094,30 +1094,33 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	if len(fills) == 0 {
 		return p.store.UpdateOrder(order)
 	}
-	newFills, err := p.filterExistingExecutionFills(order.ID, fills)
-	if err != nil {
-		return domain.Order{}, err
-	}
-
-	existingFills, err := p.store.QueryFills(domain.FillQuery{OrderIDs: []string{order.ID}})
-	if err != nil {
-		return domain.Order{}, err
-	}
-	existingInputs, err := fillReconciliationInputsFromStoredFills(existingFills)
-	if err != nil {
-		return domain.Order{}, err
-	}
-	incomingInputs, err := fillReconciliationInputsFromIncomingFills(order, newFills)
-	if err != nil {
-		return domain.Order{}, err
-	}
-	plan, err := BuildFillReconciliationPlan(order, existingInputs, incomingInputs, FillReconcilePolicy{AllowSyntheticFallback: true})
-	if err != nil {
-		return domain.Order{}, err
-	}
 
 	var updatedOrder domain.Order
-	if err := p.store.WithFillSettlementTx(func(tx storepkg.FillSettlementStore) error {
+	var newFills []domain.Fill
+	if err := p.store.WithFillSettlementTx(order.ID, func(tx storepkg.FillSettlementStore) error {
+		filteredFills, err := filterExistingExecutionFillsWithStore(tx, order.ID, fills)
+		if err != nil {
+			return err
+		}
+		newFills = filteredFills
+
+		existingFills, err := tx.QueryFills(domain.FillQuery{OrderIDs: []string{order.ID}})
+		if err != nil {
+			return err
+		}
+		existingInputs, err := fillReconciliationInputsFromStoredFills(existingFills)
+		if err != nil {
+			return err
+		}
+		incomingInputs, err := fillReconciliationInputsFromIncomingFills(order, newFills)
+		if err != nil {
+			return err
+		}
+		plan, err := BuildFillReconciliationPlan(order, existingInputs, incomingInputs, FillReconcilePolicy{AllowSyntheticFallback: true})
+		if err != nil {
+			return err
+		}
+
 		if len(plan.DeleteFillIDs) > 0 {
 			if _, err := tx.DeleteFillsByID(plan.DeleteFillIDs); err != nil {
 				return fmt.Errorf("failed to delete synthetic fills before upgrade: %w", err)
@@ -1281,10 +1284,18 @@ func fillReconciliationSourceFromStoredFill(fill domain.Fill) (FillSource, bool)
 }
 
 func (p *Platform) filterExistingExecutionFills(orderID string, fills []domain.Fill) ([]domain.Fill, error) {
+	return filterExistingExecutionFillsWithStore(p.store, orderID, fills)
+}
+
+type fillQueryStore interface {
+	QueryFills(query domain.FillQuery) ([]domain.Fill, error)
+}
+
+func filterExistingExecutionFillsWithStore(store fillQueryStore, orderID string, fills []domain.Fill) ([]domain.Fill, error) {
 	if len(fills) == 0 {
 		return nil, nil
 	}
-	existing, err := p.store.ListFills()
+	existing, err := store.QueryFills(domain.FillQuery{OrderIDs: []string{orderID}})
 	if err != nil {
 		return nil, err
 	}

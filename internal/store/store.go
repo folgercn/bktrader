@@ -12,6 +12,7 @@ import (
 var ErrSignalRuntimeSessionNotFound = errors.New("signal runtime session not found")
 
 type FillSettlementStore interface {
+	QueryFills(query domain.FillQuery) ([]domain.Fill, error)
 	DeleteFillsByID(fillIDs []string) (float64, error)
 	CreateFill(fill domain.Fill) (domain.Fill, error)
 	TotalFilledQuantityForOrder(orderID string) (float64, error)
@@ -78,8 +79,8 @@ type Repository interface {
 	CreateFill(fill domain.Fill) (domain.Fill, error)
 	// DeleteFillsByID 删除指定成交记录，并返回被删除的总数量。
 	DeleteFillsByID(fillIDs []string) (float64, error)
-	// WithFillSettlementTx 在同一个事务边界内执行 fill/order/position settlement。
-	WithFillSettlementTx(fn func(FillSettlementStore) error) error
+	// WithFillSettlementTx 在同一个事务边界内锁定订单并执行 fill/order/position settlement。
+	WithFillSettlementTx(orderID string, fn func(FillSettlementStore) error) error
 	// DeleteSyntheticFillsForOrder 删除指定订单的合成成交记录（没有 exchange_trade_id 的记录），并返回被删除的总数量。
 	DeleteSyntheticFillsForOrder(orderID string) (float64, error)
 

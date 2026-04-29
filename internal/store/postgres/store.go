@@ -782,6 +782,14 @@ func (s *Store) CountFills() (int, error) {
 }
 
 func (s *Store) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {
+	return queryFills(s.db, query)
+}
+
+type fillQueryer interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+func queryFills(q fillQueryer, query domain.FillQuery) ([]domain.Fill, error) {
 	sqlQuery := `
 		select id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
 		from fills
@@ -797,7 +805,7 @@ func (s *Store) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {
 	}
 	sqlQuery += ` order by created_at asc `
 
-	rows, err := s.db.Query(sqlQuery, args...)
+	rows, err := q.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -963,10 +971,22 @@ func (s *Store) DeleteFillsByID(fillIDs []string) (float64, error) {
 	return totalQty.Float64, nil
 }
 
-func (s *Store) WithFillSettlementTx(fn func(storepkg.FillSettlementStore) error) error {
+func (s *Store) WithFillSettlementTx(orderID string, fn func(storepkg.FillSettlementStore) error) error {
 	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(orderID) != "" {
+		var lockedOrderID string
+		if err := tx.QueryRow(`
+			select id
+			from orders
+			where id = $1
+			for update
+		`, strings.TrimSpace(orderID)).Scan(&lockedOrderID); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
 	}
 	if err := fn(fillSettlementTxStore{tx: tx}); err != nil {
 		_ = tx.Rollback()
@@ -977,6 +997,10 @@ func (s *Store) WithFillSettlementTx(fn func(storepkg.FillSettlementStore) error
 
 type fillSettlementTxStore struct {
 	tx *sql.Tx
+}
+
+func (s fillSettlementTxStore) QueryFills(query domain.FillQuery) ([]domain.Fill, error) {
+	return queryFills(s.tx, query)
 }
 
 type fillScanner interface {
