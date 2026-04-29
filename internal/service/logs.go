@@ -66,20 +66,24 @@ type UnifiedLogEventQuery struct {
 // operator-facing summary. It is intentionally derived from state.controlEvents
 // so Phase 4 observability does not introduce a new persistence surface.
 type LiveControlMetrics struct {
-	GeneratedAt    time.Time                         `json:"generatedAt"`
-	TotalEvents    int                               `json:"totalEvents"`
-	Requests       int                               `json:"requests"`
-	RunnerPickups  int                               `json:"runnerPickups"`
-	Succeeded      int                               `json:"succeeded"`
-	Failed         int                               `json:"failed"`
-	StaleDiscarded int                               `json:"staleDiscarded"`
-	CurrentPending int                               `json:"currentPending"`
-	CurrentErrors  int                               `json:"currentErrors"`
-	Latency        LiveControlLatencyMetrics         `json:"latency"`
-	ByErrorCode    map[string]int                    `json:"byErrorCode,omitempty"`
-	ByAccount      map[string]LiveControlMetricGroup `json:"byAccount,omitempty"`
-	ByStrategy     map[string]LiveControlMetricGroup `json:"byStrategy,omitempty"`
-	ByLiveSession  map[string]LiveControlMetricGroup `json:"byLiveSession,omitempty"`
+	GeneratedAt                 time.Time                         `json:"generatedAt"`
+	TotalEvents                 int                               `json:"totalEvents"`
+	Requests                    int                               `json:"requests"`
+	RunnerPickups               int                               `json:"runnerPickups"`
+	Succeeded                   int                               `json:"succeeded"`
+	Failed                      int                               `json:"failed"`
+	StaleDiscarded              int                               `json:"staleDiscarded"`
+	CurrentPending              int                               `json:"currentPending"`
+	CurrentErrors               int                               `json:"currentErrors"`
+	CurrentMaxPendingPickupMs   int64                             `json:"currentMaxPendingPickupMs,omitempty"`
+	StaleActiveControlRequests  int                               `json:"staleActiveControlRequests,omitempty"`
+	OrphanActiveControlRequests int                               `json:"orphanActiveControlRequests,omitempty"`
+	Scanner                     LiveControlScannerStatus          `json:"scanner"`
+	Latency                     LiveControlLatencyMetrics         `json:"latency"`
+	ByErrorCode                 map[string]int                    `json:"byErrorCode,omitempty"`
+	ByAccount                   map[string]LiveControlMetricGroup `json:"byAccount,omitempty"`
+	ByStrategy                  map[string]LiveControlMetricGroup `json:"byStrategy,omitempty"`
+	ByLiveSession               map[string]LiveControlMetricGroup `json:"byLiveSession,omitempty"`
 }
 
 type LiveControlLatencyMetrics struct {
@@ -446,6 +450,7 @@ func (p *Platform) LiveControlMetrics(query UnifiedLogEventQuery) (LiveControlMe
 	}
 	metrics := LiveControlMetrics{
 		GeneratedAt:   time.Now().UTC(),
+		Scanner:       p.LiveSessionControlScannerStatus(),
 		ByErrorCode:   make(map[string]int),
 		ByAccount:     make(map[string]LiveControlMetricGroup),
 		ByStrategy:    make(map[string]LiveControlMetricGroup),
@@ -457,6 +462,16 @@ func (p *Platform) LiveControlMetrics(query UnifiedLogEventQuery) (LiveControlMe
 		}
 		if liveSessionControlPending(session.State) {
 			metrics.CurrentPending++
+		}
+		if pendingMs, ok := liveSessionControlPendingPickupMs(session.State, metrics.GeneratedAt); ok && pendingMs > metrics.CurrentMaxPendingPickupMs {
+			metrics.CurrentMaxPendingPickupMs = pendingMs
+		}
+		staleActive, orphanActive := liveSessionControlActiveRequestAnomalies(session.State)
+		if staleActive {
+			metrics.StaleActiveControlRequests++
+		}
+		if orphanActive {
+			metrics.OrphanActiveControlRequests++
 		}
 		if strings.EqualFold(stringValue(session.State["actualStatus"]), "ERROR") {
 			metrics.CurrentErrors++
@@ -501,6 +516,43 @@ func liveSessionControlPending(state map[string]any) bool {
 	}
 	desired := strings.ToUpper(strings.TrimSpace(stringValue(state["desiredStatus"])))
 	return desired != "" && actual != "" && desired != actual
+}
+
+func liveSessionControlPendingPickupMs(state map[string]any, now time.Time) (int64, bool) {
+	desired := strings.ToUpper(strings.TrimSpace(stringValue(state["desiredStatus"])))
+	actual := strings.ToUpper(strings.TrimSpace(stringValue(state["actualStatus"])))
+	if desired == "" || actual == "" || desired == actual || actual == "ERROR" || actual == "STARTING" || actual == "STOPPING" {
+		return 0, false
+	}
+	requestedAt, ok := parseLiveSessionControlTime(state["controlRequestedAt"])
+	if !ok {
+		return 0, false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if now.Before(requestedAt) {
+		return 0, true
+	}
+	return now.UTC().Sub(requestedAt.UTC()).Milliseconds(), true
+}
+
+func liveSessionControlActiveRequestAnomalies(state map[string]any) (stale bool, orphan bool) {
+	activeID := strings.TrimSpace(stringValue(state["activeControlRequestId"]))
+	activeVersion := liveSessionControlVersionKey(state, "activeControlVersion")
+	if activeID == "" && activeVersion == 0 {
+		return false, false
+	}
+	currentID := strings.TrimSpace(stringValue(state["controlRequestId"]))
+	currentVersion := liveSessionControlVersion(state)
+	if activeID == "" || activeVersion == 0 || activeID != currentID || activeVersion != currentVersion {
+		return true, false
+	}
+	actual := strings.ToUpper(strings.TrimSpace(stringValue(state["actualStatus"])))
+	if actual != "STARTING" && actual != "STOPPING" {
+		return false, true
+	}
+	return false, false
 }
 
 func (m *LiveControlMetrics) recordLiveControlEvent(event UnifiedLogEvent) {

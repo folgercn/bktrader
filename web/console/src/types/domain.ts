@@ -303,6 +303,7 @@ export type PlatformHealthSnapshot = {
   status: string;
   alertCounts: PlatformHealthAlertCounts;
   runtimePolicy: RuntimePolicy;
+  liveControl?: Record<string, unknown>;
   liveAccounts: PlatformHealthAccountSnapshot[];
   runtimeSessions: PlatformHealthRuntimeSessionSnapshot[];
   liveSessions: PlatformHealthStrategySessionSnapshot[];

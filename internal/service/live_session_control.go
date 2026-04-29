@@ -87,6 +87,22 @@ type liveSessionControlStateCompareAndSwapStore interface {
 	UpdateLiveSessionStateIfControlRequest(sessionID, requestID string, version int64, state map[string]any) (domain.LiveSession, bool, error)
 }
 
+type LiveControlScannerStatus struct {
+	ProcessRole      string `json:"processRole,omitempty"`
+	Enabled          bool   `json:"enabled"`
+	LastCancelAt     string `json:"lastCancelAt,omitempty"`
+	LastTickAt       string `json:"lastTickAt,omitempty"`
+	LastSuccessAt    string `json:"lastSuccessAt,omitempty"`
+	LastErrorAt      string `json:"lastErrorAt,omitempty"`
+	LastError        string `json:"lastError,omitempty"`
+	LastDurationMs   int64  `json:"lastDurationMs,omitempty"`
+	LastSessionCount int    `json:"lastSessionCount,omitempty"`
+	TickCount        int64  `json:"tickCount"`
+	SuccessCount     int64  `json:"successCount"`
+	CancelCount      int64  `json:"cancelCount"`
+	ErrorCount       int64  `json:"errorCount"`
+}
+
 func (p *Platform) RequestLiveSessionStart(sessionID string) (domain.LiveSession, error) {
 	return p.requestLiveSessionDesiredStatus(sessionID, "RUNNING", false)
 }
@@ -150,6 +166,7 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, fo
 func (p *Platform) StartLiveSessionControlScanner(ctx context.Context) {
 	logger := p.logger("service.live_session_control_scanner")
 	logger.Info("live session control scanner started")
+	p.markLiveSessionControlScannerEnabled()
 	go func() {
 		defer logger.Info("live session control scanner stopped")
 		p.scanLiveSessionControlRequests(ctx)
@@ -167,17 +184,24 @@ func (p *Platform) StartLiveSessionControlScanner(ctx context.Context) {
 }
 
 func (p *Platform) scanLiveSessionControlRequests(ctx context.Context) {
+	startedAt := time.Now().UTC()
+	p.recordLiveSessionControlScannerTick(startedAt)
+	sessionCount, err := p.scanLiveSessionControlRequestsOnce(ctx)
+	p.recordLiveSessionControlScannerResult(startedAt, sessionCount, err)
+}
+
+func (p *Platform) scanLiveSessionControlRequestsOnce(ctx context.Context) (int, error) {
 	if err := ctx.Err(); err != nil {
-		return
+		return 0, err
 	}
 	sessions, err := p.ListLiveSessions()
 	if err != nil {
 		p.logger("service.live_session_control_scanner").Warn("list live sessions failed", "error", err)
-		return
+		return 0, err
 	}
 	for _, session := range sessions {
 		if err := ctx.Err(); err != nil {
-			return
+			return len(sessions), err
 		}
 		desired := strings.ToUpper(strings.TrimSpace(stringValue(session.State["desiredStatus"])))
 		if desired == "" {
@@ -211,6 +235,59 @@ func (p *Platform) scanLiveSessionControlRequests(ctx context.Context) {
 			p.executeLiveSessionControlStop(session, request)
 		}
 	}
+	return len(sessions), nil
+}
+
+func (p *Platform) recordLiveSessionControlScannerTick(t time.Time) {
+	if t.IsZero() {
+		t = time.Now().UTC()
+	}
+	p.liveControlScannerMu.Lock()
+	defer p.liveControlScannerMu.Unlock()
+	p.liveControlScanner.ProcessRole = p.processRole
+	p.liveControlScanner.Enabled = true
+	p.liveControlScanner.LastTickAt = t.UTC().Format(time.RFC3339Nano)
+	p.liveControlScanner.TickCount++
+}
+
+func (p *Platform) markLiveSessionControlScannerEnabled() {
+	p.liveControlScannerMu.Lock()
+	defer p.liveControlScannerMu.Unlock()
+	p.liveControlScanner.ProcessRole = p.processRole
+	p.liveControlScanner.Enabled = true
+}
+
+func (p *Platform) recordLiveSessionControlScannerResult(startedAt time.Time, sessionCount int, err error) {
+	now := time.Now().UTC()
+	p.liveControlScannerMu.Lock()
+	defer p.liveControlScannerMu.Unlock()
+	if !startedAt.IsZero() {
+		p.liveControlScanner.LastDurationMs = now.Sub(startedAt.UTC()).Milliseconds()
+	}
+	p.liveControlScanner.LastSessionCount = sessionCount
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		p.liveControlScanner.LastCancelAt = now.Format(time.RFC3339Nano)
+		p.liveControlScanner.SuccessCount++
+		p.liveControlScanner.CancelCount++
+		return
+	}
+	if err != nil {
+		p.liveControlScanner.LastErrorAt = now.Format(time.RFC3339Nano)
+		p.liveControlScanner.LastError = err.Error()
+		p.liveControlScanner.ErrorCount++
+		return
+	}
+	p.liveControlScanner.LastSuccessAt = now.Format(time.RFC3339Nano)
+	p.liveControlScanner.LastError = ""
+	p.liveControlScanner.SuccessCount++
+}
+
+func (p *Platform) LiveSessionControlScannerStatus() LiveControlScannerStatus {
+	p.liveControlScannerMu.RLock()
+	defer p.liveControlScannerMu.RUnlock()
+	status := p.liveControlScanner
+	status.ProcessRole = p.processRole
+	return status
 }
 
 func (p *Platform) initializeLegacyLiveSessionControlRequest(session domain.LiveSession, desired string) (domain.LiveSession, liveSessionControlRequest, error) {

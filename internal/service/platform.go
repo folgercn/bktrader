@@ -49,6 +49,8 @@ type Platform struct {
 	liveAccountSyncRunning atomic.Int64
 	liveControlOpState     sync.Map // accountID|strategyID -> *liveControlOperationState
 	liveDispatchMu         sync.Map // liveSessionID -> *sync.Mutex; process-local guard, not distributed idempotency.
+	liveControlScannerMu   sync.RWMutex
+	liveControlScanner     LiveControlScannerStatus
 	runtimeSourceGateState sync.Map // runtimeSessionID -> last blocked source gate signature
 	runtimeEventPublisher  RuntimeEventPublisher
 	runtimeEventConsumerOn bool

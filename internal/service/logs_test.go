@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -224,5 +225,58 @@ func TestLiveControlMetricsAggregatesLatencyAndErrorCodes(t *testing.T) {
 	accountGroup := metrics.ByAccount[session.AccountID]
 	if accountGroup.Total != 5 || accountGroup.ErrorCodes[LiveSessionControlErrorCodeConfigError] != 1 {
 		t.Fatalf("unexpected account group: %#v", accountGroup)
+	}
+}
+
+func TestLiveControlMetricsReportsScannerAndCurrentAnomalies(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	base := time.Now().UTC().Add(-5 * time.Minute)
+	platform.recordLiveSessionControlScannerTick(base)
+	platform.recordLiveSessionControlScannerResult(base, 3, nil)
+
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = "STOPPED"
+	state["actualStatus"] = "RUNNING"
+	state["controlRequestId"] = "request-current"
+	state["controlVersion"] = 12
+	state["controlRequestedAt"] = base.Format(time.RFC3339)
+	state["activeControlRequestId"] = "request-current"
+	state["activeControlVersion"] = 12
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("update live session state: %v", err)
+	}
+
+	metrics, err := platform.LiveControlMetrics(UnifiedLogEventQuery{LiveSessionID: session.ID})
+	if err != nil {
+		t.Fatalf("live control metrics: %v", err)
+	}
+	if metrics.Scanner.TickCount != 1 || metrics.Scanner.SuccessCount != 1 || metrics.Scanner.LastSessionCount != 3 || metrics.Scanner.LastSuccessAt == "" {
+		t.Fatalf("unexpected scanner metrics: %#v", metrics.Scanner)
+	}
+	if metrics.CurrentPending != 1 || metrics.CurrentMaxPendingPickupMs <= 0 {
+		t.Fatalf("expected current pending pickup age, got pending=%d max=%d", metrics.CurrentPending, metrics.CurrentMaxPendingPickupMs)
+	}
+	if metrics.OrphanActiveControlRequests != 1 || metrics.StaleActiveControlRequests != 0 {
+		t.Fatalf("expected orphan active request only, got stale=%d orphan=%d", metrics.StaleActiveControlRequests, metrics.OrphanActiveControlRequests)
+	}
+}
+
+func TestLiveControlScannerCancelDoesNotCountAsError(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	platform.scanLiveSessionControlRequests(ctx)
+	status := platform.LiveSessionControlScannerStatus()
+	if status.ErrorCount != 0 || status.LastError != "" || status.LastErrorAt != "" {
+		t.Fatalf("expected canceled scan not to count as error, got %#v", status)
+	}
+	if status.CancelCount != 1 || status.LastCancelAt == "" {
+		t.Fatalf("expected canceled scan accounting, got %#v", status)
 	}
 }

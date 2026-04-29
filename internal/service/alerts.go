@@ -341,6 +341,9 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		if alert, ok := buildLiveSessionControlPendingAlert(session, state, accountByID[session.AccountID].Name, strategyNameByID[session.StrategyID], time.Now().UTC()); ok {
 			appendAlert(alert)
 		}
+		if alert, ok := buildLiveSessionControlActiveRequestAlert(session, state, accountByID[session.AccountID].Name, strategyNameByID[session.StrategyID]); ok {
+			appendAlert(alert)
+		}
 		if p.liveSessionEvaluationQuiet("LIVE", session.Status, state) {
 			appendAlert(domain.PlatformAlert{
 				ID:           fmt.Sprintf("live-strategy-eval-quiet-%s", session.ID),
@@ -521,6 +524,45 @@ func liveSessionControlPendingSince(state map[string]any, inProgress bool) (time
 		return updatedAt.UTC(), true
 	}
 	return time.Time{}, false
+}
+
+func buildLiveSessionControlActiveRequestAlert(session domain.LiveSession, state map[string]any, accountName, strategyName string) (domain.PlatformAlert, bool) {
+	stale, orphan := liveSessionControlActiveRequestAnomalies(state)
+	if !stale && !orphan {
+		return domain.PlatformAlert{}, false
+	}
+	reason := "stale"
+	title := "实盘控制 active request 已过期"
+	detail := "activeControlRequest 与当前 controlRequest 不一致，请检查 live-runner 收敛日志"
+	if orphan {
+		reason = "orphan"
+		title = "实盘控制 active request 未清理"
+		detail = "activeControlRequest 仍存在但 actualStatus 已不在 STARTING/STOPPING"
+	}
+	eventTime := parseOptionalRFC3339(firstNonEmpty(stringValue(state["lastControlUpdateAt"]), stringValue(state["controlRequestedAt"])))
+	return domain.PlatformAlert{
+		ID:           fmt.Sprintf("live-control-active-request-%s", session.ID),
+		Scope:        "live",
+		Level:        "warning",
+		Title:        title,
+		Detail:       detail,
+		AccountID:    session.AccountID,
+		AccountName:  accountName,
+		StrategyID:   session.StrategyID,
+		StrategyName: strategyName,
+		Anchor:       "live",
+		EventTime:    eventTime,
+		Metadata: map[string]any{
+			"liveSessionId":          session.ID,
+			"reason":                 reason,
+			"controlRequestId":       stringValue(state["controlRequestId"]),
+			"controlVersion":         liveSessionControlVersion(state),
+			"activeControlRequestId": stringValue(state["activeControlRequestId"]),
+			"activeControlVersion":   liveSessionControlVersionKey(state, "activeControlVersion"),
+			"desiredStatus":          strings.ToUpper(strings.TrimSpace(stringValue(state["desiredStatus"]))),
+			"actualStatus":           strings.ToUpper(strings.TrimSpace(stringValue(state["actualStatus"]))),
+		},
+	}, true
 }
 
 func (p *Platform) buildLiveExitDispatchFailureAlert(session domain.LiveSession, state map[string]any, accountName, strategyName string) (domain.PlatformAlert, bool) {

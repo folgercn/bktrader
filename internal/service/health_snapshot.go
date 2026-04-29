@@ -42,6 +42,7 @@ func (p *Platform) HealthSnapshot() (domain.PlatformHealthSnapshot, error) {
 		GeneratedAt:     generatedAt,
 		AlertCounts:     summarizePlatformHealthAlertCounts(alerts),
 		RuntimePolicy:   currentRuntimePolicyDomain(p.runtimePolicy),
+		LiveControl:     p.platformHealthLiveControlSnapshot(generatedAt, liveSessions),
 		LiveAccounts:    make([]domain.PlatformHealthAccountSnapshot, 0),
 		RuntimeSessions: make([]domain.PlatformHealthRuntimeSessionSnapshot, 0, len(runtimeSessions)),
 		LiveSessions:    make([]domain.PlatformHealthStrategySessionSnapshot, 0, len(liveSessions)),
@@ -148,6 +149,44 @@ func (p *Platform) HealthSnapshot() (domain.PlatformHealthSnapshot, error) {
 	})
 
 	return snapshot, nil
+}
+
+func (p *Platform) platformHealthLiveControlSnapshot(now time.Time, liveSessions []domain.LiveSession) map[string]any {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	snapshot := map[string]any{
+		"scanner": p.LiveSessionControlScannerStatus(),
+	}
+	var currentPending int
+	var currentErrors int
+	var maxPendingPickupMs int64
+	var staleActive int
+	var orphanActive int
+	for _, session := range liveSessions {
+		if liveSessionControlPending(session.State) {
+			currentPending++
+		}
+		if strings.EqualFold(stringValue(session.State["actualStatus"]), "ERROR") {
+			currentErrors++
+		}
+		if pendingMs, ok := liveSessionControlPendingPickupMs(session.State, now); ok && pendingMs > maxPendingPickupMs {
+			maxPendingPickupMs = pendingMs
+		}
+		stale, orphan := liveSessionControlActiveRequestAnomalies(session.State)
+		if stale {
+			staleActive++
+		}
+		if orphan {
+			orphanActive++
+		}
+	}
+	snapshot["currentPending"] = currentPending
+	snapshot["currentErrors"] = currentErrors
+	snapshot["currentMaxPendingPickupMs"] = maxPendingPickupMs
+	snapshot["staleActiveControlRequests"] = staleActive
+	snapshot["orphanActiveControlRequests"] = orphanActive
+	return snapshot
 }
 
 func currentRuntimePolicyDomain(policy RuntimePolicy) domain.RuntimePolicy {

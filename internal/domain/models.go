@@ -530,6 +530,7 @@ type PlatformHealthSnapshot struct {
 	Status          string                                  `json:"status"`
 	AlertCounts     PlatformHealthAlertCounts               `json:"alertCounts"`
 	RuntimePolicy   RuntimePolicy                           `json:"runtimePolicy"`
+	LiveControl     map[string]any                          `json:"liveControl,omitempty"`
 	LiveAccounts    []PlatformHealthAccountSnapshot         `json:"liveAccounts"`
 	RuntimeSessions []PlatformHealthRuntimeSessionSnapshot  `json:"runtimeSessions"`
 	LiveSessions    []PlatformHealthStrategySessionSnapshot `json:"liveSessions"`
