@@ -276,7 +276,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 		reason = "signal-filter-not-ready"
 	}
 	orderBookStats := extractOrderBookStats(trigger, sourceStates)
-	maxDeviationBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxDeviationBps"]), 50)
+	maxDeviationBps := resolveSignalDecisionMaxDeviationBps(context.ExecutionContext.Parameters)
 	maxSpreadBps := firstPositive(parseFloatValue(context.ExecutionContext.Parameters["signalDecisionMaxSpreadBps"]), 8)
 	effectivePlannedPrice := context.NextPlannedPrice
 	reasonTag := normalizeStrategyReasonTag(context.NextPlannedReason)
@@ -548,6 +548,13 @@ func isPlannedPriceActionable(side string, plannedPrice, marketPrice, maxDeviati
 	default:
 		return math.Abs(marketPrice/plannedPrice-1) <= tolerance
 	}
+}
+
+func resolveSignalDecisionMaxDeviationBps(parameters map[string]any) float64 {
+	return firstPositive(
+		parseFloatValue(parameters["signalDecisionMaxDeviationBps"]),
+		firstPositive(parseFloatValue(parameters["executionEntryMaxSlippageBps"]), 8),
+	)
 }
 
 func isReentryTriggerReached(side string, plannedPrice, triggerPrice float64) bool {
