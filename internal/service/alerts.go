@@ -14,6 +14,7 @@ const (
 	liveExitDispatchFailureLogDedupeTTL        = 6 * time.Hour
 	liveExitDispatchFailureLogDedupeMaxEntries = 512
 	liveAccountSyncStaleAlertGrace             = 30 * time.Second
+	liveSessionControlPendingAlertThreshold    = 2 * time.Minute
 )
 
 type liveAccountSyncStaleness string
@@ -337,6 +338,9 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 
 	for _, session := range liveSessions {
 		state := cloneMetadata(session.State)
+		if alert, ok := buildLiveSessionControlPendingAlert(session, state, accountByID[session.AccountID].Name, strategyNameByID[session.StrategyID], time.Now().UTC()); ok {
+			appendAlert(alert)
+		}
 		if p.liveSessionEvaluationQuiet("LIVE", session.Status, state) {
 			appendAlert(domain.PlatformAlert{
 				ID:           fmt.Sprintf("live-strategy-eval-quiet-%s", session.ID),
@@ -447,6 +451,76 @@ func (p *Platform) ListAlerts() ([]domain.PlatformAlert, error) {
 		return 1
 	})
 	return alerts, nil
+}
+
+func buildLiveSessionControlPendingAlert(session domain.LiveSession, state map[string]any, accountName, strategyName string, now time.Time) (domain.PlatformAlert, bool) {
+	desired := strings.ToUpper(strings.TrimSpace(stringValue(state["desiredStatus"])))
+	if desired == "" {
+		return domain.PlatformAlert{}, false
+	}
+	actual := strings.ToUpper(strings.TrimSpace(stringValue(state["actualStatus"])))
+	if actual == "" {
+		actual = liveSessionActualStatusFromSession(session)
+	}
+	if actual == "ERROR" {
+		return domain.PlatformAlert{}, false
+	}
+	inProgress := actual == "STARTING" || actual == "STOPPING"
+	if desired == actual && !inProgress {
+		return domain.PlatformAlert{}, false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	pendingSince, ok := liveSessionControlPendingSince(state, inProgress)
+	if !ok {
+		return domain.PlatformAlert{}, false
+	}
+	pendingSeconds := int64(now.UTC().Sub(pendingSince.UTC()).Seconds())
+	if pendingSeconds < int64(liveSessionControlPendingAlertThreshold.Seconds()) {
+		return domain.PlatformAlert{}, false
+	}
+	action := firstNonEmpty(strings.TrimSpace(stringValue(state["lastControlAction"])), liveSessionControlActionFromDesired(desired))
+	return domain.PlatformAlert{
+		ID:           fmt.Sprintf("live-control-pending-%s", session.ID),
+		Scope:        "live",
+		Level:        "warning",
+		Title:        "实盘控制收敛超时",
+		Detail:       fmt.Sprintf("控制意图 %s 已等待 %d 秒仍未收敛，desired=%s actual=%s", firstNonEmpty(action, "control"), pendingSeconds, desired, actual),
+		AccountID:    session.AccountID,
+		AccountName:  accountName,
+		StrategyID:   session.StrategyID,
+		StrategyName: strategyName,
+		Anchor:       "live",
+		EventTime:    pendingSince,
+		Metadata: map[string]any{
+			"liveSessionId":    session.ID,
+			"controlRequestId": stringValue(state["controlRequestId"]),
+			"controlVersion":   liveSessionControlVersion(state),
+			"action":           action,
+			"desiredStatus":    desired,
+			"actualStatus":     actual,
+			"pendingSeconds":   pendingSeconds,
+			"thresholdSeconds": int64(liveSessionControlPendingAlertThreshold.Seconds()),
+		},
+	}, true
+}
+
+func liveSessionControlPendingSince(state map[string]any, inProgress bool) (time.Time, bool) {
+	requestedAt, requestedOK := parseLiveSessionControlTime(state["controlRequestedAt"])
+	updatedAt, updatedOK := parseLiveSessionControlTime(state["lastControlUpdateAt"])
+	if inProgress && updatedOK {
+		if !requestedOK || updatedAt.After(requestedAt) {
+			return updatedAt.UTC(), true
+		}
+	}
+	if requestedOK {
+		return requestedAt.UTC(), true
+	}
+	if updatedOK {
+		return updatedAt.UTC(), true
+	}
+	return time.Time{}, false
 }
 
 func (p *Platform) buildLiveExitDispatchFailureAlert(session domain.LiveSession, state map[string]any, accountName, strategyName string) (domain.PlatformAlert, bool) {
