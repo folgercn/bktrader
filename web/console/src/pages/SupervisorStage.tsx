@@ -8,6 +8,7 @@ import {
   ServerCog,
   ShieldAlert,
   Signal,
+  SlidersHorizontal,
   XCircle,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
@@ -140,6 +141,10 @@ function runtimeNeedsAttention(runtime: RuntimeSupervisorRuntimeStatus) {
   return actual === 'ERROR' || ['error', 'suppressed', 'unreachable', 'stale'].includes(health);
 }
 
+function PolicyBadge({ enabled, enabledLabel, disabledLabel }: { enabled: boolean; enabledLabel: string; disabledLabel: string }) {
+  return <Badge variant={enabled ? 'secondary' : 'neutral'}>{enabled ? enabledLabel : disabledLabel}</Badge>;
+}
+
 export function SupervisorStage() {
   const [snapshot, setSnapshot] = useState<RuntimeSupervisorSnapshot | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
@@ -192,6 +197,7 @@ export function SupervisorStage() {
   }, [snapshot]);
 
   const targets = snapshot?.targets ?? [];
+  const policy = snapshot?.policy;
   const isLoading = loadState === 'loading' || loadState === 'idle';
 
   return (
@@ -271,6 +277,51 @@ export function SupervisorStage() {
                 tone={controlActionRows.some((action) => action.error) ? 'danger' : 'neutral'}
               />
             </div>
+
+            {policy && (
+              <Card tone="bento" className="rounded-lg">
+                <CardHeader>
+                  <CardTitle>Supervisor Policy</CardTitle>
+                  <CardAction>
+                    <Badge variant={policy.containerExecutorConfigured ? 'success' : 'neutral'}>
+                      {policy.containerExecutorConfigured ? 'executor ready' : 'no executor'}
+                    </Badge>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Application Restart</span>
+                        <PolicyBadge enabled={policy.applicationRestartEnabled} enabledLabel="enabled" disabledLabel="disabled" />
+                      </div>
+                      <RotateCw className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
+                    </div>
+                    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Failure Threshold</span>
+                        <Badge variant="neutral">{policy.serviceFailureThreshold}</Badge>
+                      </div>
+                      <SlidersHorizontal className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
+                    </div>
+                    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Container Restart</span>
+                        <PolicyBadge enabled={policy.containerRestartEnabled} enabledLabel="opt-in" disabledLabel="disabled" />
+                      </div>
+                      <ShieldAlert className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
+                    </div>
+                    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Container Executor</span>
+                        <PolicyBadge enabled={policy.containerExecutorConfigured} enabledLabel="ready" disabledLabel="not configured" />
+                      </div>
+                      <ServerCog className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card tone="bento" className="rounded-lg">
               <CardHeader>
