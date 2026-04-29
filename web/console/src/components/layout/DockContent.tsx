@@ -1208,7 +1208,7 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
         )}
         {dockTab === 'fills' && (
           <DockTable
-            columns={["ID", "来源", "策略版本", "Symbol", "侧向", "价格", "数量", "手续费", "交易所成交ID", "交易所成交时间", "状态/操作"]}
+            columns={["ID", "来源", "策略版本", "Symbol", "侧向", "价格", "数量", "手续费", "交易所成交ID", "交易所成交时间", "创建时间", "状态/操作"]}
             rows={pagedFills.map((fill) => {
               const order = orderById.get(fill.orderId);
               const duplicateKey = [
@@ -1233,6 +1233,7 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
                 formatMaybeNumber(fill.fee),
                 <TruncatedValue key={`${fill.id}-exid`} value={fill.exchangeTradeId ?? "--"} />,
                 formatTime(fill.exchangeTradeTime ?? ""),
+                formatTime(fill.createdAt),
                 <div key={`${fill.id}-actions`} className="flex items-center justify-end gap-2">
                   {suspiciousDuplicate ? (
                     <DockBadge tone="watch">疑似重复</DockBadge>

@@ -137,6 +137,12 @@ export type ManualFillSyncResponse = {
   before: FillSyncSnapshot;
   after: FillSyncSnapshot;
   diagnostics: RemoteFillDiagnostics;
+  changes?: {
+    deletedSyntheticCount: number;
+    addedRealCount: number;
+    duplicateTradeIDs: string[];
+    newTradeIDs: string[];
+  };
 };
 
 export type Position = {

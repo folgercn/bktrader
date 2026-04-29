@@ -215,18 +215,38 @@ export function FillSyncModal({ isOpen, onClose, order, onSuccess, initialMode =
                     </span>
                   </h3>
                   
-                  <div className="grid grid-cols-2 gap-4 text-sm mt-4">
+                  {syncResult.changes && (
+                    <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex justify-between items-center p-2 rounded bg-background/50 border border-border/50">
+                        <span className="text-muted-foreground">Deleted Synthetic:</span>
+                        <span className="font-bold text-orange-500">{syncResult.changes.deletedSyntheticCount}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 rounded bg-background/50 border border-border/50">
+                        <span className="text-muted-foreground">Added Real:</span>
+                        <span className="font-bold text-green-500">{syncResult.changes.addedRealCount}</span>
+                      </div>
+                      {syncResult.changes.duplicateTradeIDs && syncResult.changes.duplicateTradeIDs.length > 0 && (
+                        <div className="col-span-2 p-2 rounded bg-background/50 border border-border/50 text-muted-foreground">
+                          Skipped {syncResult.changes.duplicateTradeIDs.length} duplicates.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4 text-sm mt-4 border-t border-border/30 pt-4">
                     <div className="space-y-2">
                       <div className="font-medium text-muted-foreground mb-1 border-b border-border pb-1">Before</div>
                       <div className="flex justify-between"><span>Total Fills:</span> <span>{syncResult.before.fillCount}</span></div>
                       <div className="flex justify-between"><span>Real:</span> <span>{syncResult.before.realFillCount}</span></div>
                       <div className="flex justify-between"><span>Synthetic:</span> <span>{syncResult.before.syntheticFillCount}</span></div>
+                      <div className="flex justify-between"><span>Filled Qty:</span> <span>{syncResult.before.filledQuantity}</span></div>
                     </div>
                     <div className="space-y-2">
-                      <div className="font-medium text-muted-foreground mb-1 border-b border-border pb-1">After (Predicted)</div>
+                      <div className="font-medium text-muted-foreground mb-1 border-b border-border pb-1">{syncResult.dryRun ? 'After (Predicted)' : 'After'}</div>
                       <div className="flex justify-between"><span>Total Fills:</span> <span>{syncResult.after.fillCount}</span></div>
                       <div className="flex justify-between"><span>Real:</span> <span className={syncResult.after.realFillCount > syncResult.before.realFillCount ? 'text-green-500 font-medium' : ''}>{syncResult.after.realFillCount}</span></div>
                       <div className="flex justify-between"><span>Synthetic:</span> <span className={syncResult.after.syntheticFillCount < syncResult.before.syntheticFillCount ? 'text-blue-500 font-medium' : ''}>{syncResult.after.syntheticFillCount}</span></div>
+                      <div className="flex justify-between"><span>Filled Qty:</span> <span className={syncResult.after.filledQuantity !== syncResult.before.filledQuantity ? 'text-blue-500 font-medium' : ''}>{syncResult.after.filledQuantity}</span></div>
                     </div>
                   </div>
                 </div>
