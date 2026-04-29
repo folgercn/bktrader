@@ -995,3 +995,44 @@ func TestListAlertsSuppressesFreshOrErrorLiveControlPending(t *testing.T) {
 		}
 	}
 }
+
+func TestListAlertsShowsOrphanLiveControlActiveRequest(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	now := time.Now().UTC()
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = "RUNNING"
+	state["actualStatus"] = "RUNNING"
+	state["controlRequestId"] = "control-request-orphan"
+	state["controlVersion"] = 13
+	state["activeControlRequestId"] = "control-request-orphan"
+	state["activeControlVersion"] = 13
+	state["controlRequestedAt"] = now.Add(-5 * time.Minute).Format(time.RFC3339)
+	state["lastControlUpdateAt"] = now.Add(-4 * time.Minute).Format(time.RFC3339)
+	session.State = state
+	session.Status = "RUNNING"
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session failed: %v", err)
+	}
+
+	alerts, err := platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list alerts failed: %v", err)
+	}
+	for _, alert := range alerts {
+		if alert.ID != "live-control-active-request-"+session.ID {
+			continue
+		}
+		if got := stringValue(alert.Metadata["reason"]); got != "orphan" {
+			t.Fatalf("expected orphan metadata, got %s", got)
+		}
+		if got := stringValue(alert.Metadata["activeControlRequestId"]); got != "control-request-orphan" {
+			t.Fatalf("expected active request metadata, got %s", got)
+		}
+		return
+	}
+	t.Fatal("expected orphan live control active request alert")
+}

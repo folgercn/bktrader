@@ -206,17 +206,37 @@ func init() {
 }
 
 type liveControlSummaryResponse struct {
-	GeneratedAt    time.Time                         `json:"generatedAt"`
-	TotalEvents    int                               `json:"totalEvents"`
-	Requests       int                               `json:"requests"`
-	RunnerPickups  int                               `json:"runnerPickups"`
-	Succeeded      int                               `json:"succeeded"`
-	Failed         int                               `json:"failed"`
-	StaleDiscarded int                               `json:"staleDiscarded"`
-	CurrentPending int                               `json:"currentPending"`
-	CurrentErrors  int                               `json:"currentErrors"`
-	Latency        liveControlLatencyMetricsResponse `json:"latency"`
-	ByErrorCode    map[string]int                    `json:"byErrorCode,omitempty"`
+	GeneratedAt                 time.Time                         `json:"generatedAt"`
+	TotalEvents                 int                               `json:"totalEvents"`
+	Requests                    int                               `json:"requests"`
+	RunnerPickups               int                               `json:"runnerPickups"`
+	Succeeded                   int                               `json:"succeeded"`
+	Failed                      int                               `json:"failed"`
+	StaleDiscarded              int                               `json:"staleDiscarded"`
+	CurrentPending              int                               `json:"currentPending"`
+	CurrentErrors               int                               `json:"currentErrors"`
+	CurrentMaxPendingPickupMs   int64                             `json:"currentMaxPendingPickupMs,omitempty"`
+	StaleActiveControlRequests  int                               `json:"staleActiveControlRequests,omitempty"`
+	OrphanActiveControlRequests int                               `json:"orphanActiveControlRequests,omitempty"`
+	Scanner                     liveControlScannerResponse        `json:"scanner"`
+	Latency                     liveControlLatencyMetricsResponse `json:"latency"`
+	ByErrorCode                 map[string]int                    `json:"byErrorCode,omitempty"`
+}
+
+type liveControlScannerResponse struct {
+	ProcessRole      string `json:"processRole,omitempty"`
+	Enabled          bool   `json:"enabled"`
+	LastCancelAt     string `json:"lastCancelAt,omitempty"`
+	LastTickAt       string `json:"lastTickAt,omitempty"`
+	LastSuccessAt    string `json:"lastSuccessAt,omitempty"`
+	LastErrorAt      string `json:"lastErrorAt,omitempty"`
+	LastError        string `json:"lastError,omitempty"`
+	LastDurationMs   int64  `json:"lastDurationMs,omitempty"`
+	LastSessionCount int    `json:"lastSessionCount,omitempty"`
+	TickCount        int64  `json:"tickCount"`
+	SuccessCount     int64  `json:"successCount"`
+	CancelCount      int64  `json:"cancelCount"`
+	ErrorCount       int64  `json:"errorCount"`
 }
 
 type liveControlLatencyMetricsResponse struct {
@@ -256,7 +276,20 @@ func handleLiveControlSummaryResponse(data []byte, err error) {
 	printLiveControlLatencyStats(&out, "failure", summary.Latency.FailureMs)
 	printLiveControlLatencyStats(&out, "terminal", summary.Latency.TerminalMs)
 	fmt.Fprintf(&out, "\nCurrent snapshot:\n")
-	fmt.Fprintf(&out, "  pending=%d errors=%d\n", summary.CurrentPending, summary.CurrentErrors)
+	fmt.Fprintf(&out, "  pending=%d errors=%d maxPendingPickupMs=%d staleActive=%d orphanActive=%d\n",
+		summary.CurrentPending, summary.CurrentErrors, summary.CurrentMaxPendingPickupMs, summary.StaleActiveControlRequests, summary.OrphanActiveControlRequests)
+	fmt.Fprintf(&out, "\nScanner:\n")
+	fmt.Fprintf(&out, "  enabled=%t processRole=%s\n", summary.Scanner.Enabled, firstNonEmpty(summary.Scanner.ProcessRole, "--"))
+	if !summary.Scanner.Enabled {
+		fmt.Fprintf(&out, "  note=scanner is not started in this process; this is expected for api-only roles.\n")
+	}
+	fmt.Fprintf(&out, "  ticks=%d successes=%d cancels=%d errors=%d lastSessions=%d lastDurationMs=%d\n",
+		summary.Scanner.TickCount, summary.Scanner.SuccessCount, summary.Scanner.CancelCount, summary.Scanner.ErrorCount, summary.Scanner.LastSessionCount, summary.Scanner.LastDurationMs)
+	fmt.Fprintf(&out, "  lastTickAt=%s lastSuccessAt=%s lastCancelAt=%s lastErrorAt=%s\n",
+		firstNonEmpty(summary.Scanner.LastTickAt, "--"), firstNonEmpty(summary.Scanner.LastSuccessAt, "--"), firstNonEmpty(summary.Scanner.LastCancelAt, "--"), firstNonEmpty(summary.Scanner.LastErrorAt, "--"))
+	if strings.TrimSpace(summary.Scanner.LastError) != "" {
+		fmt.Fprintf(&out, "  lastError=%s\n", summary.Scanner.LastError)
+	}
 	if len(summary.ByErrorCode) > 0 {
 		fmt.Fprintf(&out, "\nError codes:\n")
 		for _, code := range sortedLiveControlSummaryKeys(summary.ByErrorCode) {
