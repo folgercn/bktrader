@@ -1,19 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/cobra"
-	"github.com/wuyaocheng/bktrader/internal/ctlclient"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/wuyaocheng/bktrader/internal/ctlclient"
 )
 
 func init() {
 	liveCmd.AddCommand(liveListCmd)
 	liveCmd.AddCommand(liveGetCmd)
+	liveCmd.AddCommand(liveControlStatusCmd)
 	liveCmd.AddCommand(liveStartCmd)
 	liveCmd.AddCommand(liveStopCmd)
 	liveCmd.AddCommand(liveDispatchCmd)
@@ -53,6 +56,43 @@ var liveGetCmd = &cobra.Command{
 		client := getClient()
 		resp, err := client.Request("GET", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/detail", nil)
 		handleResponse(resp, err)
+		return nil
+	},
+}
+
+var liveControlStatusCmd = &cobra.Command{
+	Use:   "control-status [sessionId]",
+	Short: "查看实盘控制面状态 [IDEMPOTENT]",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client := getClient()
+		sessions, err := fetchLiveSessionControlViews(client)
+		if err != nil {
+			return err
+		}
+		if len(args) == 1 {
+			filtered := sessions[:0]
+			for _, session := range sessions {
+				if session.ID == args[0] {
+					filtered = append(filtered, session)
+				}
+			}
+			sessions = filtered
+			if len(sessions) == 0 {
+				return fmt.Errorf("live session not found: %s", args[0])
+			}
+		}
+		now := time.Now().UTC()
+		statuses := make([]liveSessionControlStatus, 0, len(sessions))
+		for _, session := range sessions {
+			statuses = append(statuses, buildLiveSessionControlStatus(session, now))
+		}
+		if outputJSON {
+			data, _ := json.Marshal(statuses)
+			fmt.Println(string(data))
+			return nil
+		}
+		printLiveSessionControlStatuses(statuses)
 		return nil
 	},
 }
@@ -197,9 +237,34 @@ func init() {
 }
 
 type liveSessionControlView struct {
-	ID     string         `json:"id"`
-	Status string         `json:"status"`
-	State  map[string]any `json:"state"`
+	ID         string         `json:"id"`
+	Alias      string         `json:"alias,omitempty"`
+	AccountID  string         `json:"accountId,omitempty"`
+	StrategyID string         `json:"strategyId,omitempty"`
+	Status     string         `json:"status"`
+	State      map[string]any `json:"state"`
+}
+
+type liveSessionControlStatus struct {
+	ID               string `json:"id"`
+	Alias            string `json:"alias,omitempty"`
+	AccountID        string `json:"accountId,omitempty"`
+	StrategyID       string `json:"strategyId,omitempty"`
+	Status           string `json:"status"`
+	DesiredStatus    string `json:"desiredStatus,omitempty"`
+	ActualStatus     string `json:"actualStatus,omitempty"`
+	Action           string `json:"action,omitempty"`
+	ControlRequestID string `json:"controlRequestId,omitempty"`
+	ControlVersion   string `json:"controlVersion,omitempty"`
+	Pending          bool   `json:"pending"`
+	PendingSeconds   int64  `json:"pendingSeconds,omitempty"`
+	RequestedAt      string `json:"requestedAt,omitempty"`
+	UpdatedAt        string `json:"updatedAt,omitempty"`
+	SucceededAt      string `json:"succeededAt,omitempty"`
+	ErrorAt          string `json:"errorAt,omitempty"`
+	ErrorCode        string `json:"errorCode,omitempty"`
+	Error            string `json:"error,omitempty"`
+	Hint             string `json:"hint,omitempty"`
 }
 
 func waitLiveSessionActualStatus(client *ctlclient.Client, sessionID, target string, timeout time.Duration) error {
@@ -265,22 +330,153 @@ func liveSessionControlErrorHint(code string) string {
 	}
 }
 
-func fetchLiveSessionControlView(client *ctlclient.Client, sessionID string) (liveSessionControlView, error) {
-	data, err := client.Request("GET", "/api/v1/live/sessions?view=summary", nil)
-	if err != nil {
-		return liveSessionControlView{}, err
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
 	}
-	var sessions []liveSessionControlView
-	if err := json.Unmarshal(data, &sessions); err != nil {
+	return ""
+}
+
+func fetchLiveSessionControlView(client *ctlclient.Client, sessionID string) (liveSessionControlView, error) {
+	sessions, err := fetchLiveSessionControlViews(client)
+	if err != nil {
 		return liveSessionControlView{}, err
 	}
 	for _, session := range sessions {
 		if session.ID == sessionID {
-			if session.State == nil {
-				session.State = map[string]any{}
-			}
 			return session, nil
 		}
 	}
 	return liveSessionControlView{}, fmt.Errorf("live session not found: %s", sessionID)
+}
+
+func fetchLiveSessionControlViews(client *ctlclient.Client) ([]liveSessionControlView, error) {
+	data, err := client.Request("GET", "/api/v1/live/sessions?view=summary", nil)
+	if err != nil {
+		return nil, err
+	}
+	var sessions []liveSessionControlView
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		return nil, err
+	}
+	for i := range sessions {
+		if sessions[i].State == nil {
+			sessions[i].State = map[string]any{}
+		}
+	}
+	return sessions, nil
+}
+
+func buildLiveSessionControlStatus(session liveSessionControlView, now time.Time) liveSessionControlStatus {
+	state := session.State
+	desired := strings.ToUpper(liveSessionControlString(state["desiredStatus"]))
+	actual := strings.ToUpper(liveSessionControlString(state["actualStatus"]))
+	if actual == "" {
+		actual = strings.ToUpper(strings.TrimSpace(session.Status))
+	}
+	status := liveSessionControlStatus{
+		ID:               session.ID,
+		Alias:            session.Alias,
+		AccountID:        session.AccountID,
+		StrategyID:       session.StrategyID,
+		Status:           session.Status,
+		DesiredStatus:    desired,
+		ActualStatus:     actual,
+		Action:           liveSessionControlString(state["lastControlAction"]),
+		ControlRequestID: liveSessionControlString(state["controlRequestId"]),
+		ControlVersion:   liveSessionControlString(state["controlVersion"]),
+		RequestedAt:      liveSessionControlString(state["controlRequestedAt"]),
+		UpdatedAt:        liveSessionControlString(state["lastControlUpdateAt"]),
+		SucceededAt:      liveSessionControlString(state["lastControlSucceededAt"]),
+		ErrorAt:          liveSessionControlString(state["lastControlErrorAt"]),
+		ErrorCode:        liveSessionControlString(state["lastControlErrorCode"]),
+		Error:            liveSessionControlString(state["lastControlError"]),
+	}
+	status.Pending = liveSessionControlStatusPending(status.DesiredStatus, status.ActualStatus)
+	if status.Pending {
+		if since, ok := liveSessionControlPendingSinceForStatus(state, status.ActualStatus); ok && !now.IsZero() && now.After(since) {
+			status.PendingSeconds = int64(now.Sub(since).Seconds())
+		}
+	}
+	if status.ErrorCode != "" || status.ActualStatus == "ERROR" {
+		status.Hint = liveSessionControlErrorHint(status.ErrorCode)
+	}
+	return status
+}
+
+func liveSessionControlStatusPending(desired, actual string) bool {
+	actual = strings.ToUpper(strings.TrimSpace(actual))
+	if actual == "" || actual == "ERROR" {
+		return false
+	}
+	if actual == "STARTING" || actual == "STOPPING" {
+		return true
+	}
+	desired = strings.ToUpper(strings.TrimSpace(desired))
+	return desired != "" && desired != actual
+}
+
+func liveSessionControlPendingSinceForStatus(state map[string]any, actual string) (time.Time, bool) {
+	requestedAt, requestedOK := parseLiveSessionControlStatusTime(state["controlRequestedAt"])
+	updatedAt, updatedOK := parseLiveSessionControlStatusTime(state["lastControlUpdateAt"])
+	if strings.EqualFold(actual, "STARTING") || strings.EqualFold(actual, "STOPPING") {
+		if updatedOK && (!requestedOK || updatedAt.After(requestedAt)) {
+			return updatedAt, true
+		}
+	}
+	if requestedOK {
+		return requestedAt, true
+	}
+	return updatedAt, updatedOK
+}
+
+func parseLiveSessionControlStatusTime(value any) (time.Time, bool) {
+	raw := liveSessionControlString(value)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err == nil {
+		return parsed.UTC(), true
+	}
+	parsed, err = time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed.UTC(), true
+}
+
+func printLiveSessionControlStatuses(statuses []liveSessionControlStatus) {
+	var out bytes.Buffer
+	for i, status := range statuses {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		label := status.ID
+		if status.Alias != "" {
+			label += " (" + status.Alias + ")"
+		}
+		fmt.Fprintf(&out, "%s\n", label)
+		fmt.Fprintf(&out, "  status=%s desired=%s actual=%s pending=%t", status.Status, firstNonEmpty(status.DesiredStatus, "-"), firstNonEmpty(status.ActualStatus, "-"), status.Pending)
+		if status.PendingSeconds > 0 {
+			fmt.Fprintf(&out, " pendingSeconds=%d", status.PendingSeconds)
+		}
+		out.WriteByte('\n')
+		fmt.Fprintf(&out, "  action=%s requestId=%s version=%s\n", firstNonEmpty(status.Action, "-"), firstNonEmpty(status.ControlRequestID, "-"), firstNonEmpty(status.ControlVersion, "-"))
+		if status.RequestedAt != "" || status.UpdatedAt != "" || status.SucceededAt != "" || status.ErrorAt != "" {
+			fmt.Fprintf(&out, "  requestedAt=%s updatedAt=%s succeededAt=%s errorAt=%s\n",
+				firstNonEmpty(status.RequestedAt, "-"),
+				firstNonEmpty(status.UpdatedAt, "-"),
+				firstNonEmpty(status.SucceededAt, "-"),
+				firstNonEmpty(status.ErrorAt, "-"),
+			)
+		}
+		if status.ErrorCode != "" || status.Error != "" {
+			fmt.Fprintf(&out, "  errorCode=%s error=%s\n", firstNonEmpty(status.ErrorCode, "-"), firstNonEmpty(status.Error, "-"))
+			fmt.Fprintf(&out, "  hint=%s\n", firstNonEmpty(status.Hint, "check live-runner logs"))
+		}
+	}
+	fmt.Print(out.String())
 }
