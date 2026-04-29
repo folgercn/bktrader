@@ -79,11 +79,13 @@ type RuntimeSupervisorServiceState struct {
 }
 
 type RuntimeSupervisorContainerFallbackPlan struct {
-	Action        string `json:"action"`
-	Candidate     bool   `json:"candidate"`
-	Executable    bool   `json:"executable"`
-	BlockedReason string `json:"blockedReason,omitempty"`
-	Reason        string `json:"reason,omitempty"`
+	Action             string `json:"action"`
+	Candidate          bool   `json:"candidate"`
+	Enabled            bool   `json:"enabled"`
+	ExecutorConfigured bool   `json:"executorConfigured"`
+	Executable         bool   `json:"executable"`
+	BlockedReason      string `json:"blockedReason,omitempty"`
+	Reason             string `json:"reason,omitempty"`
 }
 
 type runtimeSupervisorServiceState struct {
@@ -367,16 +369,22 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 	if !state.ContainerFallbackCandidate {
 		return nil
 	}
-	blockedReason := "container-restart-disabled"
-	if options.EnableContainerFallback {
+	executorConfigured := false
+	executable := options.EnableContainerFallback && executorConfigured
+	blockedReason := ""
+	if !options.EnableContainerFallback {
+		blockedReason = "container-restart-disabled"
+	} else if !executorConfigured {
 		blockedReason = "container-executor-not-configured"
 	}
 	return &RuntimeSupervisorContainerFallbackPlan{
-		Action:        "container-restart",
-		Candidate:     true,
-		Executable:    false,
-		BlockedReason: blockedReason,
-		Reason:        state.ContainerFallbackReason,
+		Action:             "container-restart",
+		Candidate:          true,
+		Enabled:            options.EnableContainerFallback,
+		ExecutorConfigured: executorConfigured,
+		Executable:         executable,
+		BlockedReason:      blockedReason,
+		Reason:             state.ContainerFallbackReason,
 	}
 }
 

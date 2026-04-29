@@ -168,7 +168,7 @@ export function SupervisorStage() {
     return () => window.clearInterval(timer);
   }, [loadSnapshot]);
 
-  const { runtimeRows, controlActionRows, fallbackCount, attentionCount, fullyReachableTargets } = useMemo(() => {
+  const { runtimeRows, controlActionRows, fallbackCount, executableFallbackCount, attentionCount, fullyReachableTargets } = useMemo(() => {
     const targets = snapshot?.targets ?? [];
     const runtimes = targets.flatMap((target) =>
       (target.status?.runtimes ?? []).map((runtime) => ({
@@ -185,6 +185,7 @@ export function SupervisorStage() {
         }))
       ),
       fallbackCount: targets.filter((target) => target.serviceState.containerFallbackCandidate).length,
+      executableFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable).length,
       attentionCount: runtimes.filter(runtimeNeedsAttention).length,
       fullyReachableTargets: targets.filter((target) => isProbeOK(target.healthz) && isProbeOK(target.runtimeStatus)).length,
     };
@@ -259,7 +260,7 @@ export function SupervisorStage() {
                 icon={ShieldAlert}
                 label="Fallback"
                 value={fallbackCount}
-                detail="container candidates"
+                detail={`${executableFallbackCount} executable`}
                 tone={fallbackCount > 0 ? 'danger' : 'neutral'}
               />
               <MetricCard
@@ -304,6 +305,7 @@ export function SupervisorStage() {
                           target.containerFallbackPlan?.blockedReason ||
                           target.containerFallbackPlan?.reason ||
                           target.serviceState.containerFallbackReason;
+                        const fallbackPlan = target.containerFallbackPlan;
                         return (
                           <TableRow key={`${target.name}:${target.baseUrl}`}>
                             <TableCell>
@@ -334,9 +336,21 @@ export function SupervisorStage() {
                             </TableCell>
                             <TableCell>
                               <div className="flex max-w-[220px] flex-col gap-1">
-                                <Badge variant={target.serviceState.containerFallbackCandidate ? 'destructive' : 'neutral'}>
-                                  {target.serviceState.containerFallbackCandidate ? 'candidate' : 'clear'}
-                                </Badge>
+                                <div className="flex flex-wrap gap-1">
+                                  <Badge variant={target.serviceState.containerFallbackCandidate ? 'destructive' : 'neutral'}>
+                                    {target.serviceState.containerFallbackCandidate ? 'candidate' : 'clear'}
+                                  </Badge>
+                                  {fallbackPlan && (
+                                    <Badge variant={fallbackPlan.enabled ? 'secondary' : 'neutral'}>
+                                      {fallbackPlan.enabled ? 'opt-in' : 'disabled'}
+                                    </Badge>
+                                  )}
+                                  {fallbackPlan && (
+                                    <Badge variant={fallbackPlan.executorConfigured ? 'success' : 'neutral'}>
+                                      {fallbackPlan.executorConfigured ? 'executor ready' : 'no executor'}
+                                    </Badge>
+                                  )}
+                                </div>
                                 {fallbackDetail && (
                                   <span className="truncate text-xs text-[var(--bk-text-muted)]" title={fallbackDetail}>
                                     {fallbackDetail}
