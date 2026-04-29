@@ -187,7 +187,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		}
 		return persistSnapshot(updated)
 	}
-	marketPrice := firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(mapValue(signalBarState["current"])["close"]))
+	marketPrice := resolveLivePositionContextMarketPrice(positionSnapshot, signalBarState, state)
 	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, state)
 	if len(livePositionState) == 0 {
 		applyLivePositionReconcileGateState(state, reconcileGate)
@@ -289,6 +289,43 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		return domain.LiveSession{}, updateErr
 	}
 	return persistSnapshot(updated)
+}
+
+func resolveLivePositionContextMarketPrice(positionSnapshot map[string]any, signalBarState map[string]any, sessionState map[string]any) float64 {
+	symbol := NormalizeSymbol(firstNonEmpty(
+		stringValue(positionSnapshot["symbol"]),
+		stringValue(sessionState["symbol"]),
+		stringValue(sessionState["lastSymbol"]),
+	))
+	sourceStates := cloneMetadata(mapValue(sessionState["lastStrategyEvaluationSourceStates"]))
+	if len(sourceStates) > 0 {
+		sourceStates = filterSourceStatesBySymbol(sourceStates, symbol)
+		if sourcePrice, _ := pickDecisionMarketPrice(map[string]any{"symbol": symbol}, sourceStates, livePositionExitSide(positionSnapshot)); sourcePrice > 0 {
+			return sourcePrice
+		}
+	}
+
+	decisionMetadata := mapValue(mapValue(sessionState["lastStrategyDecision"])["metadata"])
+	if decisionPrice := parseFloatValue(decisionMetadata["marketPrice"]); decisionPrice > 0 {
+		return decisionPrice
+	}
+
+	currentClose := parseFloatValue(mapValue(signalBarState["current"])["close"])
+	if currentClose > 0 {
+		return currentClose
+	}
+	return firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(positionSnapshot["entryPrice"]))
+}
+
+func livePositionExitSide(positionSnapshot map[string]any) string {
+	switch strings.ToUpper(strings.TrimSpace(stringValue(positionSnapshot["side"]))) {
+	case "LONG", "BUY":
+		return "SELL"
+	case "SHORT", "SELL":
+		return "BUY"
+	default:
+		return ""
+	}
 }
 
 func isProtectionOrder(order map[string]any) bool {

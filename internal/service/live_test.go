@@ -7634,6 +7634,120 @@ func testLiveRecoverySignalBarStates(symbol string, closePrice float64) map[stri
 	}
 }
 
+func TestRefreshLiveSessionPositionContextPrefersRuntimePriceOverDivergentMarkPrice(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"openOrders": []map[string]any{},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-btc-30m-enhanced-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.0064,
+		EntryPrice:        77092.0,
+		MarkPrice:         77230.00949936,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-btc-30m-enhanced", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "30m",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastStrategyEvaluationSignalBarStates"] = map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":        "BTCUSDT",
+			"timeframe":     "30m",
+			"sma5":          77047.84,
+			"ma20":          76853.78,
+			"atr14":         160.5857142857172,
+			"atrPercentile": 34.39153439153439,
+			"current": map[string]any{
+				"barStart": time.Date(2026, 4, 29, 9, 30, 0, 0, time.UTC).Format(time.RFC3339),
+				"close":    77150.0,
+				"high":     77160.0,
+				"low":      77085.6,
+				"open":     77085.7,
+			},
+			"prevBar1": map[string]any{
+				"high": 77093.8,
+				"low":  76920.9,
+			},
+			"prevBar2": map[string]any{
+				"high": 77106.6,
+				"low":  76951.7,
+			},
+		},
+	}
+	state["lastStrategyEvaluationSourceStates"] = map[string]any{
+		signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT"): map[string]any{
+			"sourceKey":  "binance-order-book",
+			"role":       "feature",
+			"symbol":     "BTCUSDT",
+			"streamType": "order_book",
+			"summary": map[string]any{
+				"bestBid":    77091.0,
+				"bestAsk":    77092.0,
+				"bestBidQty": 1.0,
+				"bestAskQty": 1.0,
+			},
+		},
+		signalBindingMatchKey("binance-trade-tick", "trigger", "BTCUSDT"): map[string]any{
+			"sourceKey":  "binance-trade-tick",
+			"role":       "trigger",
+			"symbol":     "BTCUSDT",
+			"streamType": "trade_tick",
+			"summary": map[string]any{
+				"price": 77091.0,
+			},
+		},
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.refreshLiveSessionPositionContext(session, time.Date(2026, 4, 29, 9, 35, 35, 0, time.UTC), "test-refresh")
+	if err != nil {
+		t.Fatalf("refresh live session position context failed: %v", err)
+	}
+	liveState := mapValue(updated.State["livePositionState"])
+	if len(liveState) == 0 {
+		t.Fatal("expected live position state to be rebuilt")
+	}
+	if got := parseFloatValue(liveState["hwm"]); got != 77092.0 {
+		t.Fatalf("expected HWM to stay at entry using runtime bestBid instead of signal close or markPrice, got %v", got)
+	}
+	if got := parseFloatValue(liveState["lwm"]); got != 77091.0 {
+		t.Fatalf("expected LWM to follow runtime bestBid, got %v", got)
+	}
+	if got := parseFloatValue(liveState["markPrice"]); got != 0 {
+		t.Fatalf("expected live risk state not to persist divergent markPrice, got %v", got)
+	}
+	if boolValue(liveState["trailingStopActive"]) {
+		t.Fatalf("expected trailing stop to stay inactive without a real price advance, got %+v", liveState)
+	}
+	if got := stringValue(liveState["stopLossSource"]); got != "initial-stop" {
+		t.Fatalf("expected initial-stop source, got %s", got)
+	}
+	if got := parseFloatValue(liveState["stopLoss"]); got < 77043.8 || got > 77043.9 {
+		t.Fatalf("expected initial ATR stop around 77043.82, got %v", got)
+	}
+}
+
 func TestRefreshLiveSessionPositionContextRebuildsLivePositionState(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	account, err := platform.store.GetAccount("live-main")
