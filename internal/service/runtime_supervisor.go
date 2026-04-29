@@ -53,7 +53,15 @@ type RuntimeSupervisorTargetSnapshot struct {
 
 type RuntimeSupervisorSnapshot struct {
 	CheckedAt time.Time                         `json:"checkedAt"`
+	Policy    RuntimeSupervisorPolicy           `json:"policy"`
 	Targets   []RuntimeSupervisorTargetSnapshot `json:"targets"`
+}
+
+type RuntimeSupervisorPolicy struct {
+	ApplicationRestartEnabled   bool `json:"applicationRestartEnabled"`
+	ServiceFailureThreshold     int  `json:"serviceFailureThreshold"`
+	ContainerRestartEnabled     bool `json:"containerRestartEnabled"`
+	ContainerExecutorConfigured bool `json:"containerExecutorConfigured"`
 }
 
 type RuntimeSupervisorControlAction struct {
@@ -196,6 +204,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 	now := time.Now().UTC()
 	snapshot := RuntimeSupervisorSnapshot{
 		CheckedAt: now,
+		Policy:    runtimeSupervisorPolicy(s.options),
 		Targets:   make([]RuntimeSupervisorTargetSnapshot, 0, len(s.targets)),
 	}
 	for _, target := range s.targets {
@@ -369,7 +378,7 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 	if !state.ContainerFallbackCandidate {
 		return nil
 	}
-	executorConfigured := false
+	executorConfigured := runtimeSupervisorContainerExecutorConfigured()
 	executable := options.EnableContainerFallback && executorConfigured
 	blockedReason := ""
 	if !options.EnableContainerFallback {
@@ -386,6 +395,20 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 		BlockedReason:      blockedReason,
 		Reason:             state.ContainerFallbackReason,
 	}
+}
+
+func runtimeSupervisorPolicy(options RuntimeSupervisorOptions) RuntimeSupervisorPolicy {
+	options = normalizeRuntimeSupervisorOptions(options)
+	return RuntimeSupervisorPolicy{
+		ApplicationRestartEnabled:   options.EnableApplicationRestart,
+		ServiceFailureThreshold:     options.ServiceFailureThreshold,
+		ContainerRestartEnabled:     options.EnableContainerFallback,
+		ContainerExecutorConfigured: runtimeSupervisorContainerExecutorConfigured(),
+	}
+}
+
+func runtimeSupervisorContainerExecutorConfigured() bool {
+	return false
 }
 
 func runtimeSupervisorServiceKey(target RuntimeSupervisorTarget) string {

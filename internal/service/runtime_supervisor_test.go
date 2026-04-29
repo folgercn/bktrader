@@ -45,6 +45,12 @@ func TestRuntimeSupervisorCollectsHealthAndRuntimeStatus(t *testing.T) {
 		BaseURL: server.URL + "/",
 	}}, server.Client())
 	snapshot := supervisor.Collect(context.Background())
+	if snapshot.Policy.ApplicationRestartEnabled || snapshot.Policy.ContainerRestartEnabled || snapshot.Policy.ContainerExecutorConfigured {
+		t.Fatalf("expected default supervisor policy to stay read-only, got %+v", snapshot.Policy)
+	}
+	if snapshot.Policy.ServiceFailureThreshold != defaultRuntimeSupervisorServiceFailThresh {
+		t.Fatalf("expected default service failure threshold %d, got %+v", defaultRuntimeSupervisorServiceFailThresh, snapshot.Policy)
+	}
 	if len(snapshot.Targets) != 1 {
 		t.Fatalf("expected one target snapshot, got %#v", snapshot.Targets)
 	}
@@ -69,6 +75,47 @@ func TestRuntimeSupervisorCollectsHealthAndRuntimeStatus(t *testing.T) {
 	}
 	if requested["GET /healthz"] != 1 || requested["GET /api/v1/runtime/status"] != 1 {
 		t.Fatalf("expected one GET per read-only endpoint, got %#v", requested)
+	}
+}
+
+func TestRuntimeSupervisorSnapshotReportsPolicyWithoutFallbackCandidate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			writeRuntimeSupervisorTestJSON(t, w, map[string]any{"status": "ok"})
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		case "/api/v1/runtime/restart":
+			t.Errorf("policy reporting must not call control path %s", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			EnableApplicationRestart: true,
+			ServiceFailureThreshold:  4,
+			EnableContainerFallback:  true,
+		},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	if !snapshot.Policy.ApplicationRestartEnabled || !snapshot.Policy.ContainerRestartEnabled {
+		t.Fatalf("expected policy to expose enabled restart settings, got %+v", snapshot.Policy)
+	}
+	if snapshot.Policy.ContainerExecutorConfigured {
+		t.Fatalf("expected policy to expose missing container executor, got %+v", snapshot.Policy)
+	}
+	if snapshot.Policy.ServiceFailureThreshold != 4 {
+		t.Fatalf("expected service failure threshold 4, got %+v", snapshot.Policy)
+	}
+	if len(snapshot.Targets) != 1 || snapshot.Targets[0].ContainerFallbackPlan != nil {
+		t.Fatalf("expected policy without fallback candidate plan, got %+v", snapshot.Targets)
 	}
 }
 
