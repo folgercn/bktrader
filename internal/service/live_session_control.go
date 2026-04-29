@@ -122,13 +122,6 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, fo
 			state["lastControlAction"] = "start"
 			delete(state, "desiredStopForce")
 		}
-		request := liveSessionControlRequest{
-			ID:      stringValue(state["controlRequestId"]),
-			Version: version,
-		}
-		eventSession := session
-		eventSession.State = state
-		appendLiveSessionControlEvent(state, liveSessionControlEvent(eventSession, request, "request_accepted", desired, stringValue(state["actualStatus"]), nil, now))
 		delete(state, "activeControlRequestId")
 		delete(state, "activeControlVersion")
 		delete(state, "lastControlError")
@@ -136,6 +129,13 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, fo
 		delete(state, "lastControlErrorCode")
 		delete(state, "lastControlErrorRequestId")
 		delete(state, "lastControlErrorVersion")
+		request := liveSessionControlRequest{
+			ID:      stringValue(state["controlRequestId"]),
+			Version: version,
+		}
+		eventSession := session
+		eventSession.State = state
+		appendLiveSessionControlEvent(state, liveSessionControlEvent(eventSession, request, "request_accepted", desired, stringValue(state["actualStatus"]), nil, now))
 		updated, ok, err := p.updateLiveSessionControlStateIfPrevious(session.ID, previous, state)
 		if err != nil {
 			return domain.LiveSession{}, err
