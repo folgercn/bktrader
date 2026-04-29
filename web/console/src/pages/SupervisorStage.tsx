@@ -354,9 +354,11 @@ export function SupervisorStage() {
                         const runtimeErrors = target.status?.runtimes.filter(runtimeNeedsAttention).length ?? 0;
                         const fallbackPlan = target.containerFallbackPlan;
                         const fallbackDecision = fallbackPlan?.decision || (fallbackPlan?.executable ? 'eligible' : 'blocked');
+                        const fallbackAttemptCount = target.serviceState.containerFallbackAttemptCount ?? 0;
                         const fallbackDetail =
                           fallbackPlan?.blockedReason ||
                           fallbackPlan?.eligibleReason ||
+                          target.serviceState.lastContainerFallbackDecisionReason ||
                           fallbackPlan?.reason ||
                           target.serviceState.containerFallbackReason;
                         return (
@@ -407,6 +409,17 @@ export function SupervisorStage() {
                                     <Badge variant={fallbackPlan.executorConfigured ? 'success' : 'neutral'}>
                                       {fallbackPlan.executorConfigured ? 'executor ready' : 'no executor'}
                                     </Badge>
+                                  )}
+                                  {fallbackAttemptCount > 0 && (
+                                    <Badge variant="neutral">
+                                      attempts {fallbackAttemptCount}
+                                    </Badge>
+                                  )}
+                                  {target.serviceState.containerFallbackSuppressed && (
+                                    <Badge variant="destructive">suppressed</Badge>
+                                  )}
+                                  {fallbackPlan?.backoffActive && (
+                                    <Badge variant="secondary">backoff</Badge>
                                   )}
                                 </div>
                                 {fallbackDetail && (

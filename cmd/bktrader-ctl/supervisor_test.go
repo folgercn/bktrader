@@ -24,7 +24,11 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 				"failureThreshold":3,
 				"lastFailureReason":"healthz-unhealthy: http 503",
 				"containerFallbackCandidate":true,
-				"containerFallbackReason":"service probes failed 3/3"
+				"containerFallbackReason":"service probes failed 3/3",
+				"containerFallbackAttemptCount":2,
+				"containerFallbackSuppressed":false,
+				"lastContainerFallbackDecisionAt":"2026-04-29T08:00:00Z",
+				"lastContainerFallbackDecisionReason":"container-executor-not-configured"
 			},
 			"containerFallbackPlan":{
 				"action":"container-restart",
@@ -60,6 +64,8 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 		"Runtime supervisor snapshot",
 		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerExecutorConfigured=false",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=0 runtimes=1 attention=1 controlActions=1",
+		"serviceState: failures=3/3 fallback=candidate attempts=2 suppressed=false backoffUntil=--",
+		"lastFallbackDecision=container-executor-not-configured at=2026-04-29T08:00:00Z",
 		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executable=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
 		"lastFailure=healthz-unhealthy: http 503",
 	}
@@ -96,7 +102,7 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 	expected := []string{
 		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerExecutorConfigured=false",
 		"targets: total=1 fullyReachable=1 fallbackCandidates=0 fallbackExecutable=0 runtimes=0 attention=0 controlActions=0",
-		"serviceState: failures=0/3 fallback=clear",
+		"serviceState: failures=0/3 fallback=clear attempts=0 suppressed=false backoffUntil=--",
 		"runtimes: total=0 attention=0 service=platform-api",
 	}
 	for _, want := range expected {

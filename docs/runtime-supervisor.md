@@ -323,7 +323,7 @@ func ClearRestartState(state map[string]any, keys []string)
 - `SUPERVISOR_CONTAINER_RESTART_ENABLED=false` 为默认值；未显式设为 `true` 时，容器兜底计划只会返回 `blockedReason=container-restart-disabled`，不会进入 executor 阶段。
 - 默认只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
 - `GET /api/v1/supervisor/status` 返回最近一次 read-only supervisor 采集快照，并在顶层 `policy` 中暴露 `applicationRestartEnabled`、`serviceFailureThreshold`、`containerRestartEnabled`、`containerExecutorConfigured`。这些字段只反映当前 supervisor policy，不代表已执行或允许执行容器 restart。
-- `bktrader-ctl runtime status --json` 和 `bktrader-ctl supervisor status --json` 提供 CLI 只读巡检入口；`bktrader-ctl supervisor status` 的人类可读输出会汇总 policy、target reachability、runtime attention、control action 数量，以及 container fallback 的 `decision`、`enabled` / `executorConfigured` / `executable` readiness 和 dry-run gates。
+- `bktrader-ctl runtime status --json` 和 `bktrader-ctl supervisor status --json` 提供 CLI 只读巡检入口；`bktrader-ctl supervisor status` 的人类可读输出会汇总 policy、target reachability、runtime attention、control action 数量，以及 container fallback 的 `decision`、`enabled` / `executorConfigured` / `executable` readiness、dry-run gates 和当前失败 episode 的 decision audit。
 - `SUPERVISOR_APPLICATION_RESTART_ENABLED=false` 为默认值；只有显式设为 `true` 时，supervisor 才会对满足全部条件的 signal runtime 提交应用内 `POST /api/v1/runtime/restart`：
   - 目标服务 `/healthz` 可达且成功。
   - `/api/v1/runtime/status` 可读。
@@ -359,7 +359,7 @@ func ClearRestartState(state map[string]any, keys []string)
 
 当前只读候选状态：
 
-- `GET /api/v1/supervisor/status` 的每个 target 会返回 `serviceState`，包含连续失败次数、失败阈值、最近失败/恢复时间，以及是否已成为 `containerFallbackCandidate`。
+- `GET /api/v1/supervisor/status` 的每个 target 会返回 `serviceState`，包含连续失败次数、失败阈值、最近失败/恢复时间、是否已成为 `containerFallbackCandidate`，以及 dry-run decision audit：`containerFallbackSuppressed`、`containerFallbackBackoffUntil`、`containerFallbackAttemptCount`、`lastContainerFallbackDecisionAt`、`lastContainerFallbackDecisionReason`。当前 `containerFallbackAttemptCount` 表示当前连续失败 episode 内进入容器兜底决策层的次数，健康恢复后清零；它不是 Docker restart 执行次数。
 - 当 target 已成为容器兜底候选时，状态中会额外返回 `containerFallbackPlan`；当前 `action=container-restart` 只是计划语义。该计划显式返回 `decision=blocked|eligible`、`enabled`、`executorConfigured`、`executable` 以及 dry-run gates：`suppressed`、`backoffActive`、`safetyGateOk`。当前完整执行语义被固定为 `candidate && enabled && executorConfigured && !suppressed && !backoffActive && safetyGateOk`；默认 `enabled=false`、`executorConfigured=false`、`executable=false`、`decision=blocked`，并返回 `blockedReason=container-restart-disabled`；即使 `SUPERVISOR_CONTAINER_RESTART_ENABLED=true`，在 executor 尚未配置前也只会返回 `enabled=true`、`executorConfigured=false`、`executable=false`、`decision=blocked`、`blockedReason=container-executor-not-configured`，用于明确“候选”不等于“已允许执行”。
 - 当前 service fallback 只把 `/healthz` 不可达或非 2xx、`/api/v1/runtime/status` 连接不可达视为服务级失败；`/runtime/status` JSON decode 失败不会触发容器兜底候选，避免把业务状态或响应格式问题误判成需要重启容器。
 - 达到 `SUPERVISOR_SERVICE_FAILURE_THRESHOLD` 后只记录 `containerFallbackCandidate=true` 和原因，不调用 Docker API，不挂载 Docker socket，不执行容器 restart。
@@ -367,7 +367,7 @@ func ClearRestartState(state map[string]any, keys []string)
 
 ### Dashboard 视图
 
-前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，只展示 supervisor policy、service target、runtime 状态、应用内控制动作、`containerFallbackCandidate` 和 fallback `decision`。该页面不提交 runtime 或容器控制请求；真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
+前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，只展示 supervisor policy、service target、runtime 状态、应用内控制动作、`containerFallbackCandidate`、fallback `decision` 和 dry-run audit 摘要。该页面不提交 runtime 或容器控制请求；真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
 
 ## 7. 安全边界
 

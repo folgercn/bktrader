@@ -210,6 +210,9 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if second.ServiceState.ContainerFallbackReason == "" || second.ServiceState.LastFailureReason == "" || second.ServiceState.LastFailureAt == nil {
 		t.Fatalf("expected fallback reason and failure metadata, got %+v", second.ServiceState)
 	}
+	if second.ServiceState.ContainerFallbackAttemptCount != 1 || second.ServiceState.LastContainerFallbackDecisionAt == nil || second.ServiceState.LastContainerFallbackDecisionReason != "container-restart-disabled" {
+		t.Fatalf("expected first fallback decision audit, got %+v", second.ServiceState)
+	}
 	if second.ContainerFallbackPlan == nil {
 		t.Fatalf("expected fallback plan for candidate, got %+v", second)
 	}
@@ -235,6 +238,11 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 		t.Fatalf("expected no control action for service fallback candidate, got %#v", requested)
 	}
 
+	third := supervisor.Collect(context.Background()).Targets[0]
+	if third.ServiceState.ContainerFallbackAttemptCount != 2 || third.ServiceState.LastContainerFallbackDecisionReason != "container-restart-disabled" {
+		t.Fatalf("expected fallback decision audit to advance while candidate remains active, got %+v", third.ServiceState)
+	}
+
 	healthy = true
 	recovered := supervisor.Collect(context.Background()).Targets[0]
 	if recovered.ServiceState.ConsecutiveFailures != 0 || recovered.ServiceState.ContainerFallbackCandidate {
@@ -245,6 +253,9 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	}
 	if recovered.ServiceState.LastHealthyAt == nil {
 		t.Fatalf("expected healthy probe to record last healthy time, got %+v", recovered.ServiceState)
+	}
+	if recovered.ServiceState.ContainerFallbackAttemptCount != 0 || recovered.ServiceState.LastContainerFallbackDecisionAt != nil || recovered.ServiceState.LastContainerFallbackDecisionReason != "" {
+		t.Fatalf("expected healthy probe to clear fallback decision audit, got %+v", recovered.ServiceState)
 	}
 }
 
@@ -283,6 +294,9 @@ func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing
 	if target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionBlocked {
 		t.Fatalf("expected opt-in plan to report blocked decision, got %+v", target.ContainerFallbackPlan)
 	}
+	if target.ServiceState.ContainerFallbackAttemptCount != 1 || target.ServiceState.LastContainerFallbackDecisionReason != "container-executor-not-configured" {
+		t.Fatalf("expected opt-in plan to audit executor blocker, got %+v", target.ServiceState)
+	}
 	if !target.ContainerFallbackPlan.Enabled || target.ContainerFallbackPlan.ExecutorConfigured {
 		t.Fatalf("expected opt-in readiness to show enabled/no executor, got %+v", target.ContainerFallbackPlan)
 	}
@@ -301,6 +315,7 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		wantDecision    string
 		wantExecutable  bool
 		wantBlocked     string
+		wantEligible    string
 		wantEligibleSet bool
 	}{
 		{
@@ -356,6 +371,8 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 			input:           base,
 			wantDecision:    runtimeSupervisorContainerFallbackDecisionEligible,
 			wantExecutable:  true,
+			wantBlocked:     "",
+			wantEligible:    "container-fallback-eligible",
 			wantEligibleSet: true,
 		},
 	}
@@ -368,10 +385,28 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 			if tt.wantEligibleSet && got.EligibleReason == "" {
 				t.Fatalf("expected eligible reason, got %+v", got)
 			}
+			if tt.wantEligible != "" && got.EligibleReason != tt.wantEligible {
+				t.Fatalf("unexpected eligible reason: got %+v want %s", got, tt.wantEligible)
+			}
 			if !tt.wantEligibleSet && got.EligibleReason != "" {
 				t.Fatalf("did not expect eligible reason, got %+v", got)
 			}
 		})
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackBackoffActive(t *testing.T) {
+	now := time.Date(2026, 4, 29, 8, 55, 0, 0, time.UTC)
+	future := now.Add(time.Minute)
+	if !runtimeSupervisorContainerFallbackBackoffActive(&future, now) {
+		t.Fatal("expected future backoff to be active")
+	}
+	past := now.Add(-time.Minute)
+	if runtimeSupervisorContainerFallbackBackoffActive(&past, now) {
+		t.Fatal("expected past backoff to be inactive")
+	}
+	if runtimeSupervisorContainerFallbackBackoffActive(nil, now) {
+		t.Fatal("expected missing backoff to be inactive")
 	}
 }
 
