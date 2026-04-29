@@ -14,10 +14,14 @@ import (
 	"time"
 )
 
-const defaultRuntimeSupervisorHTTPTimeout = 5 * time.Second
+const (
+	defaultRuntimeSupervisorHTTPTimeout       = 5 * time.Second
+	defaultRuntimeSupervisorServiceFailThresh = 3
+)
 
 type RuntimeSupervisorOptions struct {
 	EnableApplicationRestart bool
+	ServiceFailureThreshold  int
 }
 
 type RuntimeSupervisorTarget struct {
@@ -40,6 +44,7 @@ type RuntimeSupervisorTargetSnapshot struct {
 	CheckedAt      time.Time                        `json:"checkedAt"`
 	Healthz        RuntimeSupervisorProbe           `json:"healthz"`
 	RuntimeStatus  RuntimeSupervisorProbe           `json:"runtimeStatus"`
+	ServiceState   RuntimeSupervisorServiceState    `json:"serviceState"`
 	Status         *RuntimeStatusSnapshot           `json:"status,omitempty"`
 	ControlActions []RuntimeSupervisorControlAction `json:"controlActions,omitempty"`
 }
@@ -61,6 +66,23 @@ type RuntimeSupervisorControlAction struct {
 	RequestedAt time.Time `json:"requestedAt"`
 }
 
+type RuntimeSupervisorServiceState struct {
+	ConsecutiveFailures        int        `json:"consecutiveFailures"`
+	FailureThreshold           int        `json:"failureThreshold"`
+	LastFailureReason          string     `json:"lastFailureReason,omitempty"`
+	LastFailureAt              *time.Time `json:"lastFailureAt,omitempty"`
+	LastHealthyAt              *time.Time `json:"lastHealthyAt,omitempty"`
+	ContainerFallbackCandidate bool       `json:"containerFallbackCandidate"`
+	ContainerFallbackReason    string     `json:"containerFallbackReason,omitempty"`
+}
+
+type runtimeSupervisorServiceState struct {
+	ConsecutiveFailures int
+	LastFailureReason   string
+	LastFailureAt       time.Time
+	LastHealthyAt       time.Time
+}
+
 type RuntimeSupervisor struct {
 	targets []RuntimeSupervisorTarget
 	client  *http.Client
@@ -69,6 +91,7 @@ type RuntimeSupervisor struct {
 	mu                sync.RWMutex
 	snapshot          RuntimeSupervisorSnapshot
 	submittedRestarts map[string]string
+	serviceStates     map[string]runtimeSupervisorServiceState
 }
 
 func (p *Platform) SetRuntimeSupervisor(supervisor *RuntimeSupervisor) {
@@ -92,6 +115,7 @@ func NewRuntimeSupervisor(targets []RuntimeSupervisorTarget, client *http.Client
 }
 
 func NewRuntimeSupervisorWithOptions(targets []RuntimeSupervisorTarget, client *http.Client, options RuntimeSupervisorOptions) *RuntimeSupervisor {
+	options = normalizeRuntimeSupervisorOptions(options)
 	normalized := make([]RuntimeSupervisorTarget, 0, len(targets))
 	for i, target := range targets {
 		baseURL := strings.TrimRight(strings.TrimSpace(target.BaseURL), "/")
@@ -114,7 +138,15 @@ func NewRuntimeSupervisorWithOptions(targets []RuntimeSupervisorTarget, client *
 		client:            client,
 		options:           options,
 		submittedRestarts: make(map[string]string),
+		serviceStates:     make(map[string]runtimeSupervisorServiceState),
 	}
+}
+
+func normalizeRuntimeSupervisorOptions(options RuntimeSupervisorOptions) RuntimeSupervisorOptions {
+	if options.ServiceFailureThreshold <= 0 {
+		options.ServiceFailureThreshold = defaultRuntimeSupervisorServiceFailThresh
+	}
+	return options
 }
 
 func ParseRuntimeSupervisorTargets(rawTargets []string, bearerToken ...string) []RuntimeSupervisorTarget {
@@ -166,6 +198,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 
 		var status RuntimeStatusSnapshot
 		targetSnapshot.RuntimeStatus = s.fetchJSON(ctx, target, "/api/v1/runtime/status", &status)
+		targetSnapshot.ServiceState = s.updateServiceState(target, targetSnapshot.Healthz, targetSnapshot.RuntimeStatus, now)
 		if targetSnapshot.RuntimeStatus.Error == "" && targetSnapshot.RuntimeStatus.Reachable {
 			targetSnapshot.Status = &status
 			targetSnapshot.ControlActions = s.submitApplicationRestarts(ctx, target, status, targetSnapshot.Healthz, now)
@@ -219,6 +252,7 @@ func (s *RuntimeSupervisor) collectAndLog(ctx context.Context, logger *slog.Logg
 	unreachable := 0
 	runtimeErrors := 0
 	controlActions := 0
+	containerFallbackCandidates := 0
 	for _, target := range snapshot.Targets {
 		if !target.Healthz.Reachable || target.Healthz.Error != "" {
 			unreachable++
@@ -227,6 +261,9 @@ func (s *RuntimeSupervisor) collectAndLog(ctx context.Context, logger *slog.Logg
 			runtimeErrors++
 		}
 		controlActions += len(target.ControlActions)
+		if target.ServiceState.ContainerFallbackCandidate {
+			containerFallbackCandidates++
+		}
 	}
 	logger.Info("runtime supervisor snapshot collected",
 		"target_count", len(snapshot.Targets),
@@ -234,7 +271,88 @@ func (s *RuntimeSupervisor) collectAndLog(ctx context.Context, logger *slog.Logg
 		"runtime_error_count", runtimeErrors,
 		"control_action_count", controlActions,
 		"application_restart_enabled", s.options.EnableApplicationRestart,
+		"service_failure_threshold", s.options.ServiceFailureThreshold,
+		"container_fallback_candidate_count", containerFallbackCandidates,
 	)
+}
+
+func (s *RuntimeSupervisor) updateServiceState(target RuntimeSupervisorTarget, healthz, runtimeStatus RuntimeSupervisorProbe, now time.Time) RuntimeSupervisorServiceState {
+	if s == nil {
+		return RuntimeSupervisorServiceState{FailureThreshold: defaultRuntimeSupervisorServiceFailThresh}
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	failed, reason := runtimeSupervisorServiceProbeFailure(healthz, runtimeStatus)
+	key := runtimeSupervisorServiceKey(target)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.serviceStates == nil {
+		s.serviceStates = make(map[string]runtimeSupervisorServiceState)
+	}
+	state := s.serviceStates[key]
+	if failed {
+		state.ConsecutiveFailures++
+		state.LastFailureReason = reason
+		state.LastFailureAt = now
+	} else {
+		state.ConsecutiveFailures = 0
+		state.LastFailureReason = ""
+		state.LastHealthyAt = now
+	}
+	s.serviceStates[key] = state
+	return runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold)
+}
+
+func runtimeSupervisorServiceProbeFailure(healthz, runtimeStatus RuntimeSupervisorProbe) (bool, string) {
+	if !healthz.Reachable {
+		return true, runtimeSupervisorProbeFailureReason("healthz-unreachable", healthz)
+	}
+	if healthz.Error != "" {
+		return true, runtimeSupervisorProbeFailureReason("healthz-unhealthy", healthz)
+	}
+	if !runtimeStatus.Reachable {
+		return true, runtimeSupervisorProbeFailureReason("runtime-status-unreachable", runtimeStatus)
+	}
+	return false, ""
+}
+
+func runtimeSupervisorProbeFailureReason(prefix string, probe RuntimeSupervisorProbe) string {
+	err := strings.TrimSpace(probe.Error)
+	if err == "" {
+		return prefix
+	}
+	return prefix + ": " + err
+}
+
+func runtimeSupervisorServiceStateSnapshot(state runtimeSupervisorServiceState, threshold int) RuntimeSupervisorServiceState {
+	if threshold <= 0 {
+		threshold = defaultRuntimeSupervisorServiceFailThresh
+	}
+	out := RuntimeSupervisorServiceState{
+		ConsecutiveFailures: state.ConsecutiveFailures,
+		FailureThreshold:    threshold,
+		LastFailureReason:   state.LastFailureReason,
+	}
+	if !state.LastFailureAt.IsZero() {
+		lastFailureAt := state.LastFailureAt.UTC()
+		out.LastFailureAt = &lastFailureAt
+	}
+	if !state.LastHealthyAt.IsZero() {
+		lastHealthyAt := state.LastHealthyAt.UTC()
+		out.LastHealthyAt = &lastHealthyAt
+	}
+	if state.ConsecutiveFailures >= threshold && state.LastFailureReason != "" {
+		out.ContainerFallbackCandidate = true
+		out.ContainerFallbackReason = fmt.Sprintf("service probes failed %d/%d: %s", state.ConsecutiveFailures, threshold, state.LastFailureReason)
+	}
+	return out
+}
+
+func runtimeSupervisorServiceKey(target RuntimeSupervisorTarget) string {
+	return strings.TrimSpace(target.Name) + "|" + strings.TrimSpace(target.BaseURL)
 }
 
 func (s *RuntimeSupervisor) submitApplicationRestarts(ctx context.Context, target RuntimeSupervisorTarget, status RuntimeStatusSnapshot, healthz RuntimeSupervisorProbe, now time.Time) []RuntimeSupervisorControlAction {
