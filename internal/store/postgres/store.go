@@ -1003,6 +1003,28 @@ func (s fillSettlementTxStore) QueryFills(query domain.FillQuery) ([]domain.Fill
 	return queryFills(s.tx, query)
 }
 
+func (s fillSettlementTxStore) DeleteSyntheticFillsForOrder(orderID string) (float64, error) {
+	var totalQty sql.NullFloat64
+	err := s.tx.QueryRow(`
+		with deleted as (
+			delete from fills
+			where order_id = $1
+			and (
+				fill_source = 'synthetic'
+				or ((exchange_trade_id is null or exchange_trade_id = '') and dedup_fallback_fingerprint is not null)
+			)
+			and fill_source != 'remainder'
+			returning quantity
+		)
+		select sum(quantity) from deleted
+	`, orderID).Scan(&totalQty)
+
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	return totalQty.Float64, nil
+}
+
 type fillScanner interface {
 	Scan(dest ...any) error
 }

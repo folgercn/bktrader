@@ -35,6 +35,7 @@ import {
   DialogFooter,
   DialogClose
 } from '../ui/dialog';
+import { FillSyncModal } from '../../modals/FillSyncModal';
 import { ManualTradeReviewDialog } from '../live/ManualTradeReviewDialog';
 
 import { cn } from '../../lib/utils';
@@ -869,6 +870,9 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
   const [decisionTraceStatus, setDecisionTraceStatus] = useState<DecisionTraceStatus>("idle");
   const [decisionTrace, setDecisionTrace] = useState<DecisionTrace | null>(null);
   const [decisionTraceError, setDecisionTraceError] = useState("");
+  
+  const [fillSyncOrder, setFillSyncOrder] = useState<Order | null>(null);
+  const [fillSyncMode, setFillSyncMode] = useState<'view' | 'sync'>('view');
 
   // Pagination & Sorting State
   const [pages, setPages] = useState({ pairs: 1, positions: 1, alerts: 1 });
@@ -1204,7 +1208,7 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
         )}
         {dockTab === 'fills' && (
           <DockTable
-            columns={["ID", "策略版本", "Symbol", "侧向", "价格", "数量", "手续费", "交易所成交ID", "交易所成交时间", "本地入库时间", "同步提示"]}
+            columns={["ID", "来源", "策略版本", "Symbol", "侧向", "价格", "数量", "手续费", "交易所成交ID", "交易所成交时间", "创建时间", "状态/操作"]}
             rows={pagedFills.map((fill) => {
               const order = orderById.get(fill.orderId);
               const duplicateKey = [
@@ -1215,9 +1219,12 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
                 fill.exchangeTradeTime ?? "",
               ].join("|");
               const suspiciousDuplicate = !(fill.exchangeTradeId ?? "").trim() && (duplicateFallbackFillCounts.get(duplicateKey) ?? 0) > 1;
+              const sourceLabel = fill.source === "synthetic" ? "Synthetic" : fill.source === "real" ? "Real" : fill.source === "remainder" ? "Remainder" : (fill.source || "--");
+              const isSynthetic = fill.source === "synthetic" || !fill.exchangeTradeId || fill.fee === 0;
 
               return [
                 <TruncatedValue key={`${fill.id}-id`} value={fill.id} display={fill.id.replace('fill-', '')} />,
+                <DockBadge key={`${fill.id}-source`} tone={fill.source === "real" ? "ready" : fill.source === "synthetic" ? "watch" : "neutral"}>{sourceLabel}</DockBadge>,
                 String(order?.metadata?.strategyVersionId ?? fill.strategyVersion ?? "--"),
                 order?.symbol ?? fill.symbol ?? "--",
                 order?.side ?? fill.side ?? "--",
@@ -1227,15 +1234,43 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
                 <TruncatedValue key={`${fill.id}-exid`} value={fill.exchangeTradeId ?? "--"} />,
                 formatTime(fill.exchangeTradeTime ?? ""),
                 formatTime(fill.createdAt),
-                suspiciousDuplicate ? (
-                  <DockBadge key={`${fill.id}-dup`} tone="watch">疑似重复</DockBadge>
-                ) : fill.exchangeTradeId ? (
-                  <DockBadge key={`${fill.id}-ok`} tone="ready">已同步</DockBadge>
-                ) : (
-                  <span key={`${fill.id}-pending`} className="text-[11px] text-[var(--bk-text-muted)]">
-                    等待同步
-                  </span>
-                ),
+                <div key={`${fill.id}-actions`} className="flex items-center justify-end gap-2">
+                  {suspiciousDuplicate ? (
+                    <DockBadge tone="watch">疑似重复</DockBadge>
+                  ) : fill.exchangeTradeId ? (
+                    <DockBadge tone="ready">已同步</DockBadge>
+                  ) : (
+                    <span className="text-[11px] text-[var(--bk-text-muted)]">等待同步</span>
+                  )}
+                  {order && (
+                    <div className="flex gap-1 ml-2">
+                      <Button
+                        variant="bento-outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        onClick={() => {
+                          setFillSyncOrder(order);
+                          setFillSyncMode('view');
+                        }}
+                      >
+                        详情
+                      </Button>
+                      {isSynthetic && (
+                        <Button
+                          variant="bento-outline"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] text-orange-500 border-orange-500/30 hover:bg-orange-500/10"
+                          onClick={() => {
+                            setFillSyncOrder(order);
+                            setFillSyncMode('sync');
+                          }}
+                        >
+                          同步
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>,
               ];
             })}
             emptyMessage="暂无成交记录"
@@ -1278,6 +1313,17 @@ export function DockContent({ dockTab, actions, sessionId }: DockContentProps) {
         sessionId={sessionId}
         onClose={() => setSelectedPairForReview(null)}
         onSuccess={() => refetchPairs?.()}
+      />
+
+      <FillSyncModal
+        isOpen={fillSyncOrder !== null}
+        onClose={() => setFillSyncOrder(null)}
+        order={fillSyncOrder}
+        initialMode={fillSyncMode}
+        onSuccess={() => {
+          fillsPageQuery.refetch?.();
+          ordersPageQuery.refetch?.();
+        }}
       />
     </div>
   );

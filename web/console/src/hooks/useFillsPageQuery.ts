@@ -34,5 +34,9 @@ export function useFillsPageQuery(pageSize: number, active: boolean) {
     }
   }, [active, currentPage, fetchPage]);
 
-  return { fills, totalCount, currentPage, setCurrentPage, loading };
+  const refetch = useCallback(() => {
+    fetchPage(currentPage);
+  }, [fetchPage, currentPage]);
+
+  return { fills, totalCount, currentPage, setCurrentPage, loading, refetch };
 }

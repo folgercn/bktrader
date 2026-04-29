@@ -86,9 +86,64 @@ export type Fill = {
   price: number;
   quantity: number;
   fee: number;
+  source?: string;
   exchangeTradeId?: string;
   exchangeTradeTime?: string;
   createdAt: string;
+};
+
+export type RemoteFillDiagnostics = {
+  hasRealTrades: boolean;
+  hasSyntheticLocalFill: boolean;
+  localFeeZero: boolean;
+  canSettle: boolean;
+  reason: string;
+  remoteTradeCount: number;
+  localFillCount: number;
+  localRealFillCount: number;
+  localSyntheticFillCount: number;
+};
+
+export type FillSyncSnapshot = {
+  fillCount: number;
+  realFillCount: number;
+  syntheticFillCount: number;
+  feeZeroCount: number;
+  filledQuantity: number;
+  remainingQuantity: number;
+};
+
+export type RemoteFillsResponse = {
+  orderId: string;
+  accountId: string;
+  exchange: string;
+  symbol: string;
+  exchangeOrderId: string;
+  status: string;
+  queriedAt: string;
+  remoteOrder?: Record<string, unknown>;
+  remoteTrades: Array<Record<string, unknown>>;
+  normalizedReports: Array<Record<string, unknown>>;
+  localFills: Fill[];
+  raw?: Record<string, unknown>;
+  diagnostics: RemoteFillDiagnostics;
+};
+
+export type ManualFillSyncResponse = {
+  orderId: string;
+  dryRun: boolean;
+  syncedAt?: string;
+  result: string;
+  before: FillSyncSnapshot;
+  after: FillSyncSnapshot;
+  diagnostics: RemoteFillDiagnostics;
+  changes?: {
+    deletedSyntheticCount: number;
+    addedRealCount: number;
+    skippedTradeCount: number;
+    duplicateTradeIDs: string[];
+    newTradeIDs: string[];
+  };
 };
 
 export type Position = {

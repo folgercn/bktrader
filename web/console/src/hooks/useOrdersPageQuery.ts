@@ -34,5 +34,9 @@ export function useOrdersPageQuery(pageSize: number, active: boolean) {
     }
   }, [active, currentPage, fetchPage]);
 
-  return { orders, totalCount, currentPage, setCurrentPage, loading };
+  const refetch = useCallback(() => {
+    fetchPage(currentPage);
+  }, [fetchPage, currentPage]);
+
+  return { orders, totalCount, currentPage, setCurrentPage, loading, refetch };
 }

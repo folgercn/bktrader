@@ -21,6 +21,7 @@ type FillSettlementStore interface {
 	DeletePosition(positionID string) error
 	UpdateOrder(order domain.Order) (domain.Order, error)
 	CreateOrderCloseVerification(item domain.OrderCloseVerification) (domain.OrderCloseVerification, error)
+	DeleteSyntheticFillsForOrder(orderID string) (float64, error)
 }
 
 // Repository 定义平台的数据持久化接口。
