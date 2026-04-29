@@ -1,0 +1,960 @@
+{
+  "symbol": "BTCUSDT",
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-03-31T23:59:59+00:00",
+  "build_stats": {
+    "raw_tick_rows": 448247191,
+    "kept_tick_rows": 448247183,
+    "sparse_second_rows": 7451463,
+    "continuous_second_rows": 7776000,
+    "first_second": "2026-01-01T00:00:00+00:00",
+    "last_second": "2026-03-31T23:59:59+00:00"
+  },
+  "signal_stats": {
+    "signal_rows": 4320,
+    "signal_start": "2026-01-01T00:00:00+00:00",
+    "signal_end": "2026-03-31T23:30:00+00:00",
+    "valid_sma5_rows": 4316,
+    "valid_atr_rows": 4307,
+    "valid_atr_percentile_rows": 4258
+  },
+  "replay_kwargs": {
+    "dir2_zero_initial": true,
+    "zero_initial_mode": "reentry_window",
+    "fixed_slippage": 0.0005,
+    "stop_loss_atr": 0.3,
+    "stop_mode": "atr",
+    "max_trades_per_bar": 2,
+    "reentry_size_schedule": [
+      0.2,
+      0.1
+    ],
+    "long_reentry_atr": 0.1,
+    "short_reentry_atr": 0.0,
+    "profit_protect_atr": 1.0,
+    "trailing_stop_atr": 0.3,
+    "delayed_trailing_activation": 0.5,
+    "reentry_anchor_levels": "wick",
+    "reentry_trigger_mode": "reclaim"
+  },
+  "selected_variants": [
+    {
+      "name": "baseline",
+      "description": "No low-volatility entry gate."
+    },
+    {
+      "name": "min_stop_bps_6",
+      "description": "Require stop_loss_atr * ATR to be at least 6 bps of entry reference price.",
+      "min_stop_bps": 6.0
+    },
+    {
+      "name": "min_stop_bps_8",
+      "description": "Require stop_loss_atr * ATR to be at least 8 bps of entry reference price.",
+      "min_stop_bps": 8.0
+    },
+    {
+      "name": "atr_pct_gte_25",
+      "description": "Require signal ATR percentile over the rolling 240 signal bars to be at least 25.",
+      "atr_percentile_gte": 25.0
+    },
+    {
+      "name": "atr_pct_gte_35",
+      "description": "Require signal ATR percentile over the rolling 240 signal bars to be at least 35.",
+      "atr_percentile_gte": 35.0
+    },
+    {
+      "name": "min_stop_bps_6_atr_pct_gte_25",
+      "description": "Require both min stop distance of 6 bps and ATR percentile at least 25.",
+      "min_stop_bps": 6.0,
+      "atr_percentile_gte": 25.0
+    }
+  ],
+  "results": [
+    {
+      "variant": "baseline",
+      "description": "No low-volatility entry gate.",
+      "params": {
+        "name": "baseline",
+        "description": "No low-volatility entry gate."
+      },
+      "summary": {
+        "final_balance": 227449.41,
+        "return_pct": 127.45,
+        "max_dd_pct": -3.03,
+        "trades": 3177,
+        "win_rate_pct": 76.46,
+        "sharpe": 13.23,
+        "first_entry": "2026-01-01T07:11:33+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 2137,
+          "Zero-Initial-Reentry": 1040
+        },
+        "exit_reasons": {
+          "SL": 3176,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "SHORT": 1595,
+          "BUY": 1582
+        },
+        "integrity": {
+          "rows": 6354,
+          "entries": 3177,
+          "exits": 3177,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 3177,
+        "avg_loss_pct": -0.1659,
+        "worst_loss_pct": -0.7003,
+        "avg_win_pct": 0.4348,
+        "profit_factor": 21.9525,
+        "median_hold_seconds": 355.0,
+        "avg_hold_seconds": 600.92,
+        "entry_reasons": {
+          "SL-Reentry": 2137,
+          "Zero-Initial-Reentry": 1040
+        },
+        "exit_reasons": {
+          "SL": 3176,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 2441,
+          "win_rate_pct": 89.47,
+          "avg_pnl_pct": 0.3705,
+          "median_pnl_pct": 0.2763,
+          "pnl_std_pct": 0.4355,
+          "worst_pnl_pct": -0.7003,
+          "net_pnl_value": 209920.87,
+          "max_pnl_drawdown": -285.47,
+          "profit_factor": 21.2922,
+          "entry_types": {
+            "SHORT": 1255,
+            "BUY": 1186
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1638,
+            "Zero-Initial-Reentry": 803
+          },
+          "exit_reasons": {
+            "SL": 2440,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 736,
+          "win_rate_pct": 90.35,
+          "avg_pnl_pct": 0.3802,
+          "median_pnl_pct": 0.2807,
+          "pnl_std_pct": 0.4841,
+          "worst_pnl_pct": -0.6977,
+          "net_pnl_value": 66030.95,
+          "max_pnl_drawdown": -174.03,
+          "profit_factor": 24.3702,
+          "entry_types": {
+            "BUY": 396,
+            "SHORT": 340
+          },
+          "entry_reasons": {
+            "SL-Reentry": 499,
+            "Zero-Initial-Reentry": 237
+          },
+          "exit_reasons": {
+            "SL": 736
+          }
+        }
+      },
+      "diagnostics": {
+        "entry_gate": {
+          "calls": 24366,
+          "allowed_calls": 24366,
+          "rejected_calls": 0,
+          "reject_reasons": {},
+          "min_observed_stop_bps": 2.244589406582735,
+          "max_observed_stop_bps": 80.18742827110815,
+          "min_observed_atr_percentile": 0.4166666666666667,
+          "max_observed_atr_percentile": 100.0
+        },
+        "replay": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 393,
+              "t3_swing": 124
+            },
+            "short": {
+              "original_t2": 434,
+              "t3_swing": 115
+            }
+          },
+          "t3_cooldown_skips": {
+            "long": 0,
+            "short": 0
+          },
+          "t3_quality_rejects": {
+            "long": {
+              "sma_atr_separation": 7
+            },
+            "short": {
+              "sma_atr_separation": 5
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 230.18,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_1s_low_vol_entry_filter_baseline_ledger.csv"
+    },
+    {
+      "variant": "min_stop_bps_6",
+      "description": "Require stop_loss_atr * ATR to be at least 6 bps of entry reference price.",
+      "params": {
+        "name": "min_stop_bps_6",
+        "description": "Require stop_loss_atr * ATR to be at least 6 bps of entry reference price.",
+        "min_stop_bps": 6.0
+      },
+      "summary": {
+        "final_balance": 240319.34,
+        "return_pct": 140.32,
+        "max_dd_pct": -1.27,
+        "trades": 2967,
+        "win_rate_pct": 80.49,
+        "sharpe": 13.91,
+        "first_entry": "2026-01-01T19:39:10+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1996,
+          "Zero-Initial-Reentry": 971
+        },
+        "exit_reasons": {
+          "SL": 2966,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "SHORT": 1494,
+          "BUY": 1473
+        },
+        "integrity": {
+          "rows": 5934,
+          "entries": 2967,
+          "exits": 2967,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2967,
+        "avg_loss_pct": -0.1977,
+        "worst_loss_pct": -0.7003,
+        "avg_win_pct": 0.4521,
+        "profit_factor": 23.0636,
+        "median_hold_seconds": 355.0,
+        "avg_hold_seconds": 598.51,
+        "entry_reasons": {
+          "SL-Reentry": 1996,
+          "Zero-Initial-Reentry": 971
+        },
+        "exit_reasons": {
+          "SL": 2966,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 2285,
+          "win_rate_pct": 91.25,
+          "avg_pnl_pct": 0.3935,
+          "median_pnl_pct": 0.2977,
+          "pnl_std_pct": 0.44,
+          "worst_pnl_pct": -0.7003,
+          "net_pnl_value": 219765.74,
+          "max_pnl_drawdown": -301.27,
+          "profit_factor": 22.3802,
+          "entry_types": {
+            "SHORT": 1179,
+            "BUY": 1106
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1532,
+            "Zero-Initial-Reentry": 753
+          },
+          "exit_reasons": {
+            "SL": 2284,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 682,
+          "win_rate_pct": 92.23,
+          "avg_pnl_pct": 0.4074,
+          "median_pnl_pct": 0.3034,
+          "pnl_std_pct": 0.4921,
+          "worst_pnl_pct": -0.6977,
+          "net_pnl_value": 69035.19,
+          "max_pnl_drawdown": -183.44,
+          "profit_factor": 25.5633,
+          "entry_types": {
+            "BUY": 367,
+            "SHORT": 315
+          },
+          "entry_reasons": {
+            "SL-Reentry": 464,
+            "Zero-Initial-Reentry": 218
+          },
+          "exit_reasons": {
+            "SL": 682
+          }
+        }
+      },
+      "diagnostics": {
+        "entry_gate": {
+          "calls": 227998,
+          "allowed_calls": 22216,
+          "rejected_calls": 205782,
+          "reject_reasons": {
+            "min_stop_bps": 205782
+          },
+          "min_observed_stop_bps": 2.221071936201564,
+          "max_observed_stop_bps": 80.18742827110815,
+          "min_observed_atr_percentile": 0.4166666666666667,
+          "max_observed_atr_percentile": 100.0
+        },
+        "replay": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 397,
+              "t3_swing": 125
+            },
+            "short": {
+              "original_t2": 436,
+              "t3_swing": 115
+            }
+          },
+          "t3_cooldown_skips": {
+            "long": 0,
+            "short": 0
+          },
+          "t3_quality_rejects": {
+            "long": {
+              "sma_atr_separation": 10
+            },
+            "short": {
+              "sma_atr_separation": 7
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 233.94,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_1s_low_vol_entry_filter_min_stop_bps_6_ledger.csv",
+      "delta_vs_baseline": {
+        "final_balance_delta": 12869.93,
+        "return_pct_delta": 12.87,
+        "max_dd_pct_delta": 1.76,
+        "trades_delta": -210,
+        "win_rate_pct_delta": 4.03,
+        "sharpe_delta": 0.68
+      }
+    },
+    {
+      "variant": "min_stop_bps_8",
+      "description": "Require stop_loss_atr * ATR to be at least 8 bps of entry reference price.",
+      "params": {
+        "name": "min_stop_bps_8",
+        "description": "Require stop_loss_atr * ATR to be at least 8 bps of entry reference price.",
+        "min_stop_bps": 8.0
+      },
+      "summary": {
+        "final_balance": 251377.98,
+        "return_pct": 151.38,
+        "max_dd_pct": -0.66,
+        "trades": 2748,
+        "win_rate_pct": 83.08,
+        "sharpe": 14.56,
+        "first_entry": "2026-01-02T03:07:26+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1847,
+          "Zero-Initial-Reentry": 901
+        },
+        "exit_reasons": {
+          "SL": 2747,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "BUY": 1375,
+          "SHORT": 1373
+        },
+        "integrity": {
+          "rows": 5496,
+          "entries": 2748,
+          "exits": 2748,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2748,
+        "avg_loss_pct": -0.213,
+        "worst_loss_pct": -0.7003,
+        "avg_win_pct": 0.4769,
+        "profit_factor": 24.5632,
+        "median_hold_seconds": 353.0,
+        "avg_hold_seconds": 603.15,
+        "entry_reasons": {
+          "SL-Reentry": 1847,
+          "Zero-Initial-Reentry": 901
+        },
+        "exit_reasons": {
+          "SL": 2747,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 2101,
+          "win_rate_pct": 91.77,
+          "avg_pnl_pct": 0.4205,
+          "median_pnl_pct": 0.327,
+          "pnl_std_pct": 0.4485,
+          "worst_pnl_pct": -0.7003,
+          "net_pnl_value": 224392.21,
+          "max_pnl_drawdown": -313.99,
+          "profit_factor": 23.7211,
+          "entry_types": {
+            "SHORT": 1071,
+            "BUY": 1030
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1407,
+            "Zero-Initial-Reentry": 694
+          },
+          "exit_reasons": {
+            "SL": 2100,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 647,
+          "win_rate_pct": 93.2,
+          "avg_pnl_pct": 0.4288,
+          "median_pnl_pct": 0.329,
+          "pnl_std_pct": 0.4969,
+          "worst_pnl_pct": -0.6977,
+          "net_pnl_value": 71279.65,
+          "max_pnl_drawdown": -188.84,
+          "profit_factor": 27.6756,
+          "entry_types": {
+            "BUY": 345,
+            "SHORT": 302
+          },
+          "entry_reasons": {
+            "SL-Reentry": 440,
+            "Zero-Initial-Reentry": 207
+          },
+          "exit_reasons": {
+            "SL": 647
+          }
+        }
+      },
+      "diagnostics": {
+        "entry_gate": {
+          "calls": 462831,
+          "allowed_calls": 19260,
+          "rejected_calls": 443571,
+          "reject_reasons": {
+            "min_stop_bps": 443571
+          },
+          "min_observed_stop_bps": 2.221071936201564,
+          "max_observed_stop_bps": 80.18742827110815,
+          "min_observed_atr_percentile": 0.4166666666666667,
+          "max_observed_atr_percentile": 100.0
+        },
+        "replay": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 401,
+              "t3_swing": 125
+            },
+            "short": {
+              "original_t2": 437,
+              "t3_swing": 117
+            }
+          },
+          "t3_cooldown_skips": {
+            "long": 0,
+            "short": 0
+          },
+          "t3_quality_rejects": {
+            "long": {
+              "sma_atr_separation": 11
+            },
+            "short": {
+              "sma_atr_separation": 7
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 231.76,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_1s_low_vol_entry_filter_min_stop_bps_8_ledger.csv",
+      "delta_vs_baseline": {
+        "final_balance_delta": 23928.57,
+        "return_pct_delta": 23.93,
+        "max_dd_pct_delta": 2.37,
+        "trades_delta": -429,
+        "win_rate_pct_delta": 6.62,
+        "sharpe_delta": 1.33
+      }
+    },
+    {
+      "variant": "atr_pct_gte_25",
+      "description": "Require signal ATR percentile over the rolling 240 signal bars to be at least 25.",
+      "params": {
+        "name": "atr_pct_gte_25",
+        "description": "Require signal ATR percentile over the rolling 240 signal bars to be at least 25.",
+        "atr_percentile_gte": 25.0
+      },
+      "summary": {
+        "final_balance": 237251.08,
+        "return_pct": 137.25,
+        "max_dd_pct": -1.27,
+        "trades": 2334,
+        "win_rate_pct": 82.73,
+        "sharpe": 14.47,
+        "first_entry": "2026-01-02T08:13:12+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1558,
+          "Zero-Initial-Reentry": 776
+        },
+        "exit_reasons": {
+          "SL": 2333,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "SHORT": 1184,
+          "BUY": 1150
+        },
+        "integrity": {
+          "rows": 4668,
+          "entries": 2334,
+          "exits": 2334,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2334,
+        "avg_loss_pct": -0.2117,
+        "worst_loss_pct": -0.7003,
+        "avg_win_pct": 0.5048,
+        "profit_factor": 25.1441,
+        "median_hold_seconds": 368.0,
+        "avg_hold_seconds": 610.36,
+        "entry_reasons": {
+          "SL-Reentry": 1558,
+          "Zero-Initial-Reentry": 776
+        },
+        "exit_reasons": {
+          "SL": 2333,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1804,
+          "win_rate_pct": 91.57,
+          "avg_pnl_pct": 0.4408,
+          "median_pnl_pct": 0.3411,
+          "pnl_std_pct": 0.4735,
+          "worst_pnl_pct": -0.7003,
+          "net_pnl_value": 190391.63,
+          "max_pnl_drawdown": -296.92,
+          "profit_factor": 24.4523,
+          "entry_types": {
+            "SHORT": 936,
+            "BUY": 868
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1203,
+            "Zero-Initial-Reentry": 601
+          },
+          "exit_reasons": {
+            "SL": 1803,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 530,
+          "win_rate_pct": 92.26,
+          "avg_pnl_pct": 0.4617,
+          "median_pnl_pct": 0.3525,
+          "pnl_std_pct": 0.5367,
+          "worst_pnl_pct": -0.6977,
+          "net_pnl_value": 58953.11,
+          "max_pnl_drawdown": -183.62,
+          "profit_factor": 27.6861,
+          "entry_types": {
+            "BUY": 282,
+            "SHORT": 248
+          },
+          "entry_reasons": {
+            "SL-Reentry": 355,
+            "Zero-Initial-Reentry": 175
+          },
+          "exit_reasons": {
+            "SL": 530
+          }
+        }
+      },
+      "diagnostics": {
+        "entry_gate": {
+          "calls": 845230,
+          "allowed_calls": 18656,
+          "rejected_calls": 826574,
+          "reject_reasons": {
+            "atr_percentile": 826574
+          },
+          "min_observed_stop_bps": 2.221071936201564,
+          "max_observed_stop_bps": 80.18742827110815,
+          "min_observed_atr_percentile": 0.4166666666666667,
+          "max_observed_atr_percentile": 100.0
+        },
+        "replay": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 413,
+              "t3_swing": 127
+            },
+            "short": {
+              "original_t2": 448,
+              "t3_swing": 117
+            }
+          },
+          "t3_cooldown_skips": {
+            "long": 0,
+            "short": 0
+          },
+          "t3_quality_rejects": {
+            "long": {
+              "sma_atr_separation": 16
+            },
+            "short": {
+              "sma_atr_separation": 17
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 236.09,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_1s_low_vol_entry_filter_atr_pct_gte_25_ledger.csv",
+      "delta_vs_baseline": {
+        "final_balance_delta": 9801.67,
+        "return_pct_delta": 9.8,
+        "max_dd_pct_delta": 1.76,
+        "trades_delta": -843,
+        "win_rate_pct_delta": 6.27,
+        "sharpe_delta": 1.24
+      }
+    },
+    {
+      "variant": "atr_pct_gte_35",
+      "description": "Require signal ATR percentile over the rolling 240 signal bars to be at least 35.",
+      "params": {
+        "name": "atr_pct_gte_35",
+        "description": "Require signal ATR percentile over the rolling 240 signal bars to be at least 35.",
+        "atr_percentile_gte": 35.0
+      },
+      "summary": {
+        "final_balance": 227154.89,
+        "return_pct": 127.15,
+        "max_dd_pct": -1.13,
+        "trades": 2017,
+        "win_rate_pct": 84.04,
+        "sharpe": 14.74,
+        "first_entry": "2026-01-02T08:13:12+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1344,
+          "Zero-Initial-Reentry": 673
+        },
+        "exit_reasons": {
+          "SL": 2016,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "SHORT": 1028,
+          "BUY": 989
+        },
+        "integrity": {
+          "rows": 4034,
+          "entries": 2017,
+          "exits": 2017,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2017,
+        "avg_loss_pct": -0.2218,
+        "worst_loss_pct": -0.7003,
+        "avg_win_pct": 0.5277,
+        "profit_factor": 26.6453,
+        "median_hold_seconds": 381.0,
+        "avg_hold_seconds": 627.53,
+        "entry_reasons": {
+          "SL-Reentry": 1344,
+          "Zero-Initial-Reentry": 673
+        },
+        "exit_reasons": {
+          "SL": 2016,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1579,
+          "win_rate_pct": 91.77,
+          "avg_pnl_pct": 0.4636,
+          "median_pnl_pct": 0.3555,
+          "pnl_std_pct": 0.4897,
+          "worst_pnl_pct": -0.7003,
+          "net_pnl_value": 171544.7,
+          "max_pnl_drawdown": -287.02,
+          "profit_factor": 25.5313,
+          "entry_types": {
+            "SHORT": 827,
+            "BUY": 752
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1052,
+            "Zero-Initial-Reentry": 527
+          },
+          "exit_reasons": {
+            "SL": 1578,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 438,
+          "win_rate_pct": 93.61,
+          "avg_pnl_pct": 0.4882,
+          "median_pnl_pct": 0.373,
+          "pnl_std_pct": 0.5562,
+          "worst_pnl_pct": -0.6977,
+          "net_pnl_value": 50247.96,
+          "max_pnl_drawdown": -185.71,
+          "profit_factor": 31.3507,
+          "entry_types": {
+            "BUY": 237,
+            "SHORT": 201
+          },
+          "entry_reasons": {
+            "SL-Reentry": 292,
+            "Zero-Initial-Reentry": 146
+          },
+          "exit_reasons": {
+            "SL": 438
+          }
+        }
+      },
+      "diagnostics": {
+        "entry_gate": {
+          "calls": 1162009,
+          "allowed_calls": 15989,
+          "rejected_calls": 1146020,
+          "reject_reasons": {
+            "atr_percentile": 1146020
+          },
+          "min_observed_stop_bps": 2.221071936201564,
+          "max_observed_stop_bps": 80.18742827110815,
+          "min_observed_atr_percentile": 0.4166666666666667,
+          "max_observed_atr_percentile": 100.0
+        },
+        "replay": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 423,
+              "t3_swing": 129
+            },
+            "short": {
+              "original_t2": 454,
+              "t3_swing": 119
+            }
+          },
+          "t3_cooldown_skips": {
+            "long": 0,
+            "short": 0
+          },
+          "t3_quality_rejects": {
+            "long": {
+              "sma_atr_separation": 18
+            },
+            "short": {
+              "sma_atr_separation": 19
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 239.02,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_1s_low_vol_entry_filter_atr_pct_gte_35_ledger.csv",
+      "delta_vs_baseline": {
+        "final_balance_delta": -294.52,
+        "return_pct_delta": -0.3,
+        "max_dd_pct_delta": 1.9,
+        "trades_delta": -1160,
+        "win_rate_pct_delta": 7.58,
+        "sharpe_delta": 1.51
+      }
+    },
+    {
+      "variant": "min_stop_bps_6_atr_pct_gte_25",
+      "description": "Require both min stop distance of 6 bps and ATR percentile at least 25.",
+      "params": {
+        "name": "min_stop_bps_6_atr_pct_gte_25",
+        "description": "Require both min stop distance of 6 bps and ATR percentile at least 25.",
+        "min_stop_bps": 6.0,
+        "atr_percentile_gte": 25.0
+      },
+      "summary": {
+        "final_balance": 238079.98,
+        "return_pct": 138.08,
+        "max_dd_pct": -1.27,
+        "trades": 2318,
+        "win_rate_pct": 83.09,
+        "sharpe": 14.54,
+        "first_entry": "2026-01-02T08:13:12+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1549,
+          "Zero-Initial-Reentry": 769
+        },
+        "exit_reasons": {
+          "SL": 2317,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "SHORT": 1178,
+          "BUY": 1140
+        },
+        "integrity": {
+          "rows": 4636,
+          "entries": 2318,
+          "exits": 2318,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2318,
+        "avg_loss_pct": -0.2146,
+        "worst_loss_pct": -0.7003,
+        "avg_win_pct": 0.507,
+        "profit_factor": 25.2584,
+        "median_hold_seconds": 368.5,
+        "avg_hold_seconds": 611.28,
+        "entry_reasons": {
+          "SL-Reentry": 1549,
+          "Zero-Initial-Reentry": 769
+        },
+        "exit_reasons": {
+          "SL": 2317,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1795,
+          "win_rate_pct": 91.7,
+          "avg_pnl_pct": 0.4429,
+          "median_pnl_pct": 0.3425,
+          "pnl_std_pct": 0.4737,
+          "worst_pnl_pct": -0.7003,
+          "net_pnl_value": 190980.34,
+          "max_pnl_drawdown": -297.96,
+          "profit_factor": 24.5511,
+          "entry_types": {
+            "SHORT": 934,
+            "BUY": 861
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1197,
+            "Zero-Initial-Reentry": 598
+          },
+          "exit_reasons": {
+            "SL": 1794,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 523,
+          "win_rate_pct": 92.35,
+          "avg_pnl_pct": 0.4662,
+          "median_pnl_pct": 0.3591,
+          "pnl_std_pct": 0.5386,
+          "worst_pnl_pct": -0.6977,
+          "net_pnl_value": 59009.71,
+          "max_pnl_drawdown": -184.26,
+          "profit_factor": 27.8699,
+          "entry_types": {
+            "BUY": 279,
+            "SHORT": 244
+          },
+          "entry_reasons": {
+            "SL-Reentry": 352,
+            "Zero-Initial-Reentry": 171
+          },
+          "exit_reasons": {
+            "SL": 523
+          }
+        }
+      },
+      "diagnostics": {
+        "entry_gate": {
+          "calls": 861992,
+          "allowed_calls": 18283,
+          "rejected_calls": 843709,
+          "reject_reasons": {
+            "min_stop_bps": 202666,
+            "atr_percentile": 826574
+          },
+          "min_observed_stop_bps": 2.221071936201564,
+          "max_observed_stop_bps": 80.18742827110815,
+          "min_observed_atr_percentile": 0.4166666666666667,
+          "max_observed_atr_percentile": 100.0
+        },
+        "replay": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 413,
+              "t3_swing": 127
+            },
+            "short": {
+              "original_t2": 448,
+              "t3_swing": 117
+            }
+          },
+          "t3_cooldown_skips": {
+            "long": 0,
+            "short": 0
+          },
+          "t3_quality_rejects": {
+            "long": {
+              "sma_atr_separation": 16
+            },
+            "short": {
+              "sma_atr_separation": 17
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 235.56,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_1s_low_vol_entry_filter_min_stop_bps_6_atr_pct_gte_25_ledger.csv",
+      "delta_vs_baseline": {
+        "final_balance_delta": 10630.57,
+        "return_pct_delta": 10.63,
+        "max_dd_pct_delta": 1.76,
+        "trades_delta": -859,
+        "win_rate_pct_delta": 6.63,
+        "sharpe_delta": 1.31
+      }
+    }
+  ],
+  "note": "Research-only comparison. Entry gates patch reentry price resolution and do not alter stop-loss exit behavior."
+}

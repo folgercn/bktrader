@@ -375,6 +375,110 @@ func TestEvaluateSignalRequiresReentryTriggerWithinOpenWindow(t *testing.T) {
 	}
 }
 
+func TestEvaluateSignalAppliesReentryLowVolatilityGate(t *testing.T) {
+	engine := bkStrategyEngine{}
+	barStart := time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC)
+	baseSignalState := func(atr14, atrPercentile float64) map[string]any {
+		return map[string]any{
+			"symbol":        "BTCUSDT",
+			"timeframe":     "30m",
+			"sma5":          49500.0,
+			"atr14":         atr14,
+			"atrPercentile": atrPercentile,
+			"current": map[string]any{
+				"barStart": barStart.Format(time.RFC3339),
+				"close":    50100.0,
+				"high":     50120.0,
+				"low":      49980.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 50200.0,
+				"low":  49800.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 50300.0,
+				"low":  49700.0,
+			},
+		}
+	}
+	sessionState := map[string]any{
+		livePendingZeroInitialWindowStateKey: map[string]any{
+			"side":            "BUY",
+			"symbol":          "BTCUSDT",
+			"signalTimeframe": "30m",
+			"armedAt":         barStart.Add(-5 * time.Minute).Format(time.RFC3339),
+			"signalBarStart":  barStart.Format(time.RFC3339),
+			"expiresAt":       barStart.Add(30 * time.Minute).Format(time.RFC3339),
+			"breakoutBacked":  true,
+			"openReason":      liveZeroInitialWindowOpenReasonBreakoutLocked,
+		},
+	}
+	evaluate := func(atr14, atrPercentile float64) StrategySignalDecision {
+		decision, err := engine.EvaluateSignal(StrategySignalEvaluationContext{
+			ExecutionContext: StrategyExecutionContext{
+				Symbol:          "BTCUSDT",
+				SignalTimeframe: "30m",
+				Parameters: map[string]any{
+					"symbol":                     "BTCUSDT",
+					"signalTimeframe":            "30m",
+					"stop_loss_atr":              0.3,
+					"reentry_min_stop_bps":       6.0,
+					"reentry_atr_percentile_gte": 25.0,
+					"signalDecisionMaxSpreadBps": 8.0,
+				},
+			},
+			TriggerSummary: map[string]any{
+				"role":   "trigger",
+				"symbol": "BTCUSDT",
+				"price":  50010.0,
+			},
+			SourceStates: map[string]any{
+				"tick": map[string]any{
+					"streamType": "trade_tick",
+					"symbol":     "BTCUSDT",
+					"summary":    map[string]any{"price": 50010.0},
+				},
+			},
+			SignalBarStates: map[string]any{
+				signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): baseSignalState(atr14, atrPercentile),
+			},
+			CurrentPosition:   map[string]any{},
+			SessionState:      cloneMetadata(sessionState),
+			EventTime:         barStart.Add(5 * time.Minute),
+			NextPlannedEvent:  barStart,
+			NextPlannedPrice:  50000.0,
+			NextPlannedSide:   "BUY",
+			NextPlannedRole:   "entry",
+			NextPlannedReason: "Zero-Initial-Reentry",
+		})
+		if err != nil {
+			t.Fatalf("evaluate signal failed: %v", err)
+		}
+		return decision
+	}
+
+	thinStop := evaluate(90.0, 30.0)
+	if thinStop.Action != "wait" || thinStop.Reason != "reentry-stop-distance-too-small" {
+		t.Fatalf("expected min stop bps gate to block thin stop, got %+v", thinStop)
+	}
+	if got := parseFloatValue(mapValue(thinStop.Metadata["reentryEntryQuality"])["stopBps"]); got >= 6.0 {
+		t.Fatalf("expected stop bps below 6, got %v", got)
+	}
+
+	lowPercentile := evaluate(110.0, 20.0)
+	if lowPercentile.Action != "wait" || lowPercentile.Reason != "reentry-atr-percentile-too-low" {
+		t.Fatalf("expected ATR percentile gate to block low percentile, got %+v", lowPercentile)
+	}
+
+	ready := evaluate(110.0, 30.0)
+	if ready.Action != "advance-plan" {
+		t.Fatalf("expected reentry to pass low-volatility gate, got %+v", ready)
+	}
+	if !boolValue(mapValue(ready.Metadata["reentryEntryQuality"])["ready"]) {
+		t.Fatalf("expected reentry entry quality metadata to be ready, got %+v", ready.Metadata["reentryEntryQuality"])
+	}
+}
+
 func TestEvaluateSignalRejectsZeroInitialWindowWithoutBreakoutProof(t *testing.T) {
 	engine := bkStrategyEngine{}
 	barStart := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
@@ -3926,6 +4030,8 @@ func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 		"executionSLExitMaxSpreadBps":          999.0,
 		"executionSLMaxSlippageBps":            8.0,
 		"sl_reentry_min_delay_seconds":         60,
+		"reentry_min_stop_bps":                 6.0,
+		"reentry_atr_percentile_gte":           25.0,
 	})
 	if got := stringValue(overrides["executionStrategy"]); got != "book-aware-v1" {
 		t.Fatalf("expected execution strategy override, got %s", got)
@@ -3987,6 +4093,12 @@ func TestNormalizeLiveSessionOverridesIncludesExecutionControls(t *testing.T) {
 	if got := maxIntValue(overrides["sl_reentry_min_delay_seconds"], 0); got != 60 {
 		t.Fatalf("expected SL-Reentry delay override, got %d", got)
 	}
+	if got := parseFloatValue(overrides["reentry_min_stop_bps"]); got != 6.0 {
+		t.Fatalf("expected reentry_min_stop_bps override, got %v", got)
+	}
+	if got := parseFloatValue(overrides["reentry_atr_percentile_gte"]); got != 25.0 {
+		t.Fatalf("expected reentry_atr_percentile_gte override, got %v", got)
+	}
 }
 
 func TestNormalizeLiveSessionOverridesIncludesPositionSizing(t *testing.T) {
@@ -4042,6 +4154,8 @@ func TestNormalizeLiveSessionOverridesIncludesT3BreakoutControls(t *testing.T) {
 		"breakout_shape":                    "baseline_plus_t3",
 		"t3_min_sma_atr_separation":         0.25,
 		"use_sma5_intraday_structure":       true,
+		"reentry_min_stop_bps":              6.0,
+		"reentry_atr_percentile_gte":        25.0,
 		"ignored_t3_min_sma_atr_separation": 0.50,
 	})
 	if got := stringValue(overrides["breakout_shape"]); got != "baseline_plus_t3" {
@@ -4053,15 +4167,27 @@ func TestNormalizeLiveSessionOverridesIncludesT3BreakoutControls(t *testing.T) {
 	if !boolValue(overrides["use_sma5_intraday_structure"]) {
 		t.Fatal("expected use_sma5_intraday_structure override")
 	}
+	if got := parseFloatValue(overrides["reentry_min_stop_bps"]); got != 6.0 {
+		t.Fatalf("expected reentry_min_stop_bps=6, got %v", got)
+	}
+	if got := parseFloatValue(overrides["reentry_atr_percentile_gte"]); got != 25.0 {
+		t.Fatalf("expected reentry_atr_percentile_gte=25, got %v", got)
+	}
 	if _, ok := overrides["ignored_t3_min_sma_atr_separation"]; ok {
 		t.Fatalf("expected unknown t3 override key to be dropped, got %#v", overrides)
 	}
 }
 
-func TestLiveBTC30mEnhancedOverridesEnableSLReentryDelay(t *testing.T) {
+func TestLiveBTC30mEnhancedOverridesEnableReentryGuards(t *testing.T) {
 	overrides := liveBTC30mEnhancedOverrides()
 	if got := maxIntValue(overrides["sl_reentry_min_delay_seconds"], 0); got != 60 {
 		t.Fatalf("expected BTC 30m enhanced template to require 60s SL-Reentry delay, got %d", got)
+	}
+	if got := parseFloatValue(overrides["reentry_min_stop_bps"]); got != 6.0 {
+		t.Fatalf("expected BTC 30m enhanced template to require reentry_min_stop_bps=6, got %v", got)
+	}
+	if got := parseFloatValue(overrides["reentry_atr_percentile_gte"]); got != 25.0 {
+		t.Fatalf("expected BTC 30m enhanced template to require reentry_atr_percentile_gte=25, got %v", got)
 	}
 }
 

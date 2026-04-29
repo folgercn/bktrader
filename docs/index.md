@@ -49,6 +49,7 @@
 
 ### 投研
 - [量化交易与CTA扩展说明.md](量化交易与CTA扩展说明.md) — 量化交易扩展说明
+- [30m-enhanced-filter-research.md](30m-enhanced-filter-research.md) — BTC/ETH 30m enhanced 过滤器、模板参数与 Q1 2026 回测结论
 
 ---
 

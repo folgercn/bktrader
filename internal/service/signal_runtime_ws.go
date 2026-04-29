@@ -115,6 +115,7 @@ const (
 	signalRuntimeWSHandshakeTimeout   = 5 * time.Second
 	signalRuntimeWSPingInterval       = 10 * time.Second
 	signalRuntimeWSPingWriteTimeout   = 3 * time.Second
+	liveSignalBarHistoryLimit         = 260
 )
 
 type signalRuntimeWSProfile struct {
@@ -1111,7 +1112,7 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 	}
 	if strings.EqualFold(stringValue(summary["streamType"]), "signal_bar") {
 		entry := cloneMetadata(mapValue(stateMap[key]))
-		entry["bars"] = mergeSignalBarHistory(existingEntry["bars"], summary, eventTime, 200)
+		entry["bars"] = mergeSignalBarHistory(existingEntry["bars"], summary, eventTime, liveSignalBarHistoryLimit)
 		stateMap[key] = entry
 	}
 	return stateMap
@@ -1223,6 +1224,9 @@ func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
 		}
 		if atr14 := finiteSignalBarIndicator(rollingMean(trueRanges, len(indicatorBars)-1, 14)); atr14 != nil {
 			entry["atr14"] = *atr14
+		}
+		if atrPercentile := finiteSignalBarIndicator(rollingLastPercentileFromSeries(trueRanges, len(indicatorBars)-1, 14, 240, 50)); atrPercentile != nil {
+			entry["atrPercentile"] = *atrPercentile
 		}
 		if len(previousClosed) >= 1 {
 			entry["prevBar1"] = cloneMetadata(previousClosed[len(previousClosed)-1])

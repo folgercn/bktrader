@@ -208,14 +208,18 @@ func (e bkLiveIntrabarSMA5T3SepEngine) EvaluateSignal(context StrategySignalEval
 }
 
 type signalBarGateOptions struct {
-	BreakoutShape         string
-	T3MinSMAATRSeparation float64
+	BreakoutShape           string
+	T3MinSMAATRSeparation   float64
+	ReentryMinStopBps       float64
+	ReentryATRPercentileGTE float64
 }
 
 func signalBarGateOptionsFromParameters(parameters map[string]any) signalBarGateOptions {
 	return signalBarGateOptions{
-		BreakoutShape:         strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
-		T3MinSMAATRSeparation: parseFloatValue(parameters["t3_min_sma_atr_separation"]),
+		BreakoutShape:           strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
+		T3MinSMAATRSeparation:   parseFloatValue(parameters["t3_min_sma_atr_separation"]),
+		ReentryMinStopBps:       firstPositive(parseFloatValue(parameters["reentry_min_stop_bps"]), parseFloatValue(parameters["min_stop_bps"])),
+		ReentryATRPercentileGTE: firstPositive(parseFloatValue(parameters["reentry_atr_percentile_gte"]), parseFloatValue(parameters["atr_pct_gte"])),
 	}
 }
 
@@ -330,6 +334,19 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			reason = "reentry-trigger-not-reached"
 		}
 	}
+	reentryEntryQuality := evaluateReentryEntryQualityGate(
+		context.ExecutionContext.Parameters,
+		signalBarState,
+		context.NextPlannedSide,
+		context.NextPlannedRole,
+		context.NextPlannedReason,
+		effectivePlannedPrice,
+		marketPrice,
+	)
+	if action == "advance-plan" && !boolValue(reentryEntryQuality["ready"]) {
+		action = "wait"
+		reason = firstNonEmpty(stringValue(reentryEntryQuality["reason"]), "reentry-entry-quality-not-ready")
+	}
 	deviationBps := 0.0
 	positionPnLBps := computePositionPnLBps(currentPosition, marketPrice)
 	if action == "advance-plan" && effectivePlannedPrice > 0 && marketPrice > 0 {
@@ -384,6 +401,7 @@ func (e bkStrategyEngine) EvaluateSignal(context StrategySignalEvaluationContext
 			"reentryTriggerPrice":           reentryTriggerPrice,
 			"reentryTriggerPriceSource":     reentryTriggerPriceSource,
 			"reentryTriggerReady":           reentryTriggerReady,
+			"reentryEntryQuality":           reentryEntryQuality,
 			"bestBid":                       orderBookStats.bestBid,
 			"bestAsk":                       orderBookStats.bestAsk,
 			"bestBidQty":                    orderBookStats.bestBidQty,
@@ -574,6 +592,8 @@ func classifyStrategyDecisionState(action, reason, nextRole string) string {
 		return "waiting-price"
 	case "reentry-trigger-not-reached":
 		return "waiting-price"
+	case "reentry-stop-distance-too-small", "reentry-atr-percentile-too-low", "reentry-entry-quality-not-ready":
+		return "waiting-signal-filter"
 	case "spread-too-wide":
 		return "waiting-liquidity"
 	case "bias-unfavorable":
@@ -773,18 +793,19 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		timeframe = strings.ToLower(strings.TrimSpace(stringValue(mapValue(signalBarState["current"])["timeframe"])))
 	}
 	result := map[string]any{
-		"ready":     true,
-		"reason":    "signal-bar-ready",
-		"side":      strings.ToUpper(strings.TrimSpace(nextSide)),
-		"role":      role,
-		"timeframe": timeframe,
-		"sma5":      parseFloatValue(signalBarState["sma5"]),
-		"ma20":      parseFloatValue(signalBarState["ma20"]),
-		"atr14":     parseFloatValue(signalBarState["atr14"]),
-		"current":   cloneMetadata(mapValue(signalBarState["current"])),
-		"prevBar1":  cloneMetadata(mapValue(signalBarState["prevBar1"])),
-		"prevBar2":  cloneMetadata(mapValue(signalBarState["prevBar2"])),
-		"prevBar3":  cloneMetadata(mapValue(signalBarState["prevBar3"])),
+		"ready":         true,
+		"reason":        "signal-bar-ready",
+		"side":          strings.ToUpper(strings.TrimSpace(nextSide)),
+		"role":          role,
+		"timeframe":     timeframe,
+		"sma5":          parseFloatValue(signalBarState["sma5"]),
+		"ma20":          parseFloatValue(signalBarState["ma20"]),
+		"atr14":         parseFloatValue(signalBarState["atr14"]),
+		"atrPercentile": parseFloatValue(signalBarState["atrPercentile"]),
+		"current":       cloneMetadata(mapValue(signalBarState["current"])),
+		"prevBar1":      cloneMetadata(mapValue(signalBarState["prevBar1"])),
+		"prevBar2":      cloneMetadata(mapValue(signalBarState["prevBar2"])),
+		"prevBar3":      cloneMetadata(mapValue(signalBarState["prevBar3"])),
 	}
 	current := mapValue(signalBarState["current"])
 	prevBar1 := mapValue(signalBarState["prevBar1"])
@@ -921,6 +942,74 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 			result["ready"] = false
 			result["reason"] = "short-signal-not-ready"
 		}
+	}
+	return result
+}
+
+func evaluateReentryEntryQualityGate(parameters map[string]any, signalBarState map[string]any, nextSide, nextRole, nextReason string, plannedPrice, marketPrice float64) map[string]any {
+	options := signalBarGateOptionsFromParameters(parameters)
+	result := map[string]any{
+		"ready":            true,
+		"reason":           "reentry-entry-quality-ready",
+		"side":             strings.ToUpper(strings.TrimSpace(nextSide)),
+		"role":             strings.ToLower(strings.TrimSpace(nextRole)),
+		"reasonTag":        normalizeStrategyReasonTag(nextReason),
+		"minStopBps":       options.ReentryMinStopBps,
+		"atrPercentileGTE": options.ReentryATRPercentileGTE,
+	}
+	reasonTag := stringValue(result["reasonTag"])
+	if result["role"] != "entry" || (reasonTag != "zero-initial-reentry" && reasonTag != "sl-reentry" && reasonTag != "pt-reentry") {
+		result["applied"] = false
+		return result
+	}
+	if options.ReentryMinStopBps <= 0 && options.ReentryATRPercentileGTE <= 0 {
+		result["applied"] = false
+		return result
+	}
+	result["applied"] = true
+
+	atr14 := parseFloatValue(mapValue(signalBarState)["atr14"])
+	atrPercentile := parseFloatValue(mapValue(signalBarState)["atrPercentile"])
+	stopLossATR := parseFloatValue(parameters["stop_loss_atr"])
+	if stopLossATR <= 0 {
+		stopLossATR = 0.05
+	}
+	priceRef := plannedPrice
+	if priceRef <= 0 {
+		priceRef = marketPrice
+	}
+	if priceRef <= 0 {
+		priceRef = parseFloatValue(mapValue(mapValue(signalBarState)["current"])["close"])
+	}
+	stopBps := 0.0
+	if atr14 > 0 && priceRef > 0 {
+		stopBps = stopLossATR * atr14 / priceRef * 10000.0
+	}
+	result["stopLossATR"] = stopLossATR
+	result["atr14"] = atr14
+	result["atrPercentile"] = atrPercentile
+	result["priceRef"] = priceRef
+	result["stopBps"] = stopBps
+
+	rejectReasons := []string{}
+	if options.ReentryMinStopBps > 0 && (stopBps <= 0 || stopBps < options.ReentryMinStopBps) {
+		rejectReasons = append(rejectReasons, "min_stop_bps")
+	}
+	if options.ReentryATRPercentileGTE > 0 && (atrPercentile <= 0 || atrPercentile < options.ReentryATRPercentileGTE) {
+		rejectReasons = append(rejectReasons, "atr_percentile")
+	}
+	if len(rejectReasons) == 0 {
+		return result
+	}
+	result["ready"] = false
+	result["rejectReasons"] = rejectReasons
+	switch rejectReasons[0] {
+	case "min_stop_bps":
+		result["reason"] = "reentry-stop-distance-too-small"
+	case "atr_percentile":
+		result["reason"] = "reentry-atr-percentile-too-low"
+	default:
+		result["reason"] = "reentry-entry-quality-not-ready"
 	}
 	return result
 }

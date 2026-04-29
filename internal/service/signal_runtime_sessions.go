@@ -580,7 +580,7 @@ func (p *Platform) bootstrapSignalRuntimeSourceStates(subscriptions []map[string
 				"timeframe":  timeframe,
 				"streamType": stringValue(subscription["streamType"]),
 			},
-			"bars": strategySignalBarsToRuntimeHistory(bars, symbol, timeframe, 200),
+			"bars": strategySignalBarsToRuntimeHistory(bars, symbol, timeframe, liveSignalBarHistoryLimit),
 		}
 	}
 	return out
