@@ -65,6 +65,8 @@ var liveControlStatusCmd = &cobra.Command{
 	Short: "查看实盘控制面状态 [IDEMPOTENT]",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		onlyPending, _ := cmd.Flags().GetBool("only-pending")
+		onlyError, _ := cmd.Flags().GetBool("only-error")
 		client := getClient()
 		sessions, err := fetchLiveSessionControlViews(client)
 		if err != nil {
@@ -87,6 +89,7 @@ var liveControlStatusCmd = &cobra.Command{
 		for _, session := range sessions {
 			statuses = append(statuses, buildLiveSessionControlStatus(session, now))
 		}
+		statuses = filterLiveSessionControlStatuses(statuses, onlyPending, onlyError)
 		if outputJSON {
 			data, _ := json.Marshal(statuses)
 			fmt.Println(string(data))
@@ -223,6 +226,8 @@ func init() {
 	liveTemplateCmd.AddCommand(liveTemplateListCmd)
 
 	liveListCmd.Flags().String("view", "", "视图类型 (e.g. summary)")
+	liveControlStatusCmd.Flags().Bool("only-pending", false, "只显示尚未收敛的控制请求")
+	liveControlStatusCmd.Flags().Bool("only-error", false, "只显示 actualStatus=ERROR 或存在控制错误的会话")
 
 	// 安全确认标志
 	liveStartCmd.Flags().Bool("confirm", false, "确认执行启动操作")
@@ -404,6 +409,23 @@ func buildLiveSessionControlStatus(session liveSessionControlView, now time.Time
 		status.Hint = liveSessionControlErrorHint(status.ErrorCode)
 	}
 	return status
+}
+
+func filterLiveSessionControlStatuses(statuses []liveSessionControlStatus, onlyPending, onlyError bool) []liveSessionControlStatus {
+	if !onlyPending && !onlyError {
+		return statuses
+	}
+	filtered := make([]liveSessionControlStatus, 0, len(statuses))
+	for _, status := range statuses {
+		if onlyPending && status.Pending {
+			filtered = append(filtered, status)
+			continue
+		}
+		if onlyError && (strings.EqualFold(status.ActualStatus, "ERROR") || strings.TrimSpace(status.ErrorCode) != "" || strings.TrimSpace(status.Error) != "") {
+			filtered = append(filtered, status)
+		}
+	}
+	return filtered
 }
 
 func liveSessionControlStatusPending(desired, actual string) bool {

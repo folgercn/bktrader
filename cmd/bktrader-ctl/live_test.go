@@ -56,3 +56,26 @@ func TestBuildLiveSessionControlStatusErrorHint(t *testing.T) {
 		t.Fatalf("unexpected error hint: %s", status.Hint)
 	}
 }
+
+func TestFilterLiveSessionControlStatuses(t *testing.T) {
+	statuses := []liveSessionControlStatus{
+		{ID: "running", ActualStatus: "RUNNING"},
+		{ID: "pending", DesiredStatus: "RUNNING", ActualStatus: "STARTING", Pending: true},
+		{ID: "error", ActualStatus: "ERROR", ErrorCode: "CONFIG_ERROR"},
+	}
+
+	pending := filterLiveSessionControlStatuses(statuses, true, false)
+	if len(pending) != 1 || pending[0].ID != "pending" {
+		t.Fatalf("expected only pending status, got %#v", pending)
+	}
+
+	errors := filterLiveSessionControlStatuses(statuses, false, true)
+	if len(errors) != 1 || errors[0].ID != "error" {
+		t.Fatalf("expected only error status, got %#v", errors)
+	}
+
+	combined := filterLiveSessionControlStatuses(statuses, true, true)
+	if len(combined) != 2 || combined[0].ID != "pending" || combined[1].ID != "error" {
+		t.Fatalf("expected pending and error statuses, got %#v", combined)
+	}
+}

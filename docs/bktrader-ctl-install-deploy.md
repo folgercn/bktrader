@@ -60,6 +60,8 @@ bktrader-ctl account list --json
 bktrader-ctl account summary --json
 bktrader-ctl live list --json
 bktrader-ctl live control-status
+bktrader-ctl live control-status --only-pending
+bktrader-ctl live control-status --only-error
 bktrader-ctl order list --json
 bktrader-ctl position list --json
 bktrader-ctl logs system --json
