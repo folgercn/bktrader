@@ -53,6 +53,7 @@ func TestReconcileLiveAccountRecoversMissingFilledOrder(t *testing.T) {
 				Price:    68010,
 				Quantity: 0.2,
 				Fee:      1.2,
+				Source:   FillSourceReal,
 				Metadata: map[string]any{
 					"exchangeOrderId": "9001",
 					"tradeId":         "trade-9001",
@@ -171,6 +172,7 @@ func TestReconcileLiveAccountSkipsHistoricalTerminalOrderWithoutLocalMatchAndWit
 			Price:    68010,
 			Quantity: 0.2,
 			Fee:      1.2,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{
 				"exchangeOrderId": "9002",
 				"tradeId":         "trade-9002",
@@ -321,6 +323,7 @@ func TestReconcileLiveAccountReusesExistingOrderByExchangeOrderIDInsteadOfCreati
 			Price:    68010,
 			Quantity: 0.2,
 			Fee:      1.2,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{
 				"exchangeOrderId": "9003",
 				"tradeId":         "trade-9003",
@@ -590,6 +593,7 @@ func TestReconcileLiveAccountDefersPositionAdoptForPendingImmediateFilledSettlem
 			Price:    75600.0,
 			Quantity: 0.002,
 			Fee:      0.04,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{
 				"exchangeOrderId": "13056935018",
 				"tradeId":         "trade-13056935018",
@@ -1239,6 +1243,7 @@ func cloneReconcileTrades(source []LiveFillReport) []LiveFillReport {
 			Quantity:   item.Quantity,
 			Fee:        item.Fee,
 			FundingPnL: item.FundingPnL,
+			Source:     item.Source,
 			Metadata:   cloneMetadata(item.Metadata),
 		})
 	}

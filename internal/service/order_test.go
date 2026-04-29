@@ -205,6 +205,7 @@ func TestFinalizeExecutedOrderSkipsDuplicateExchangeTradeIDFills(t *testing.T) {
 	fill := domain.Fill{
 		OrderID:         order.ID,
 		ExchangeTradeID: "trade-1",
+		Source:          string(FillSourceReal),
 		Price:           68000,
 		Quantity:        0.1,
 		Fee:             1.23,
@@ -255,6 +256,39 @@ func TestFinalizeExecutedOrderSkipsDuplicateExchangeTradeIDFills(t *testing.T) {
 	}
 	if filledEventCount != 1 {
 		t.Fatalf("expected duplicate sync to keep one filled execution event, got %d", filledEventCount)
+	}
+}
+
+func TestFinalizeExecutedOrderRejectsLiveFillWithoutExplicitSource(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+
+	order, err := store.CreateOrder(domain.Order{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  0.1,
+		Price:     68000,
+		Metadata:  map[string]any{"executionMode": "live"},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	_, err = platform.finalizeExecutedOrder(account, order, []domain.Fill{{
+		OrderID:         order.ID,
+		ExchangeTradeID: "trade-without-source",
+		Price:           68000,
+		Quantity:        0.1,
+	}})
+	if err == nil || !strings.Contains(err.Error(), "incoming fill source is required") {
+		t.Fatalf("expected missing live fill source error, got %v", err)
 	}
 }
 
@@ -351,6 +385,7 @@ func TestFinalizeExecutedOrderSkipsDuplicateFallbackFillsWithoutExchangeTradeID(
 	tradeTime := time.Date(2026, 4, 17, 12, 36, 0, 0, time.UTC)
 	fill := domain.Fill{
 		OrderID:           order.ID,
+		Source:            string(FillSourceSynthetic),
 		Price:             68000,
 		Quantity:          0.1,
 		Fee:               1.23,
@@ -400,6 +435,7 @@ func TestSyntheticUpgrade_PartialRealFills(t *testing.T) {
 
 	syntheticFill := domain.Fill{
 		OrderID:           order.ID,
+		Source:            string(FillSourceSynthetic),
 		Price:             68000,
 		Quantity:          1.0,
 		DedupFingerprint:  "synthetic-1.0",
@@ -413,6 +449,7 @@ func TestSyntheticUpgrade_PartialRealFills(t *testing.T) {
 	realFill := domain.Fill{
 		OrderID:           order.ID,
 		ExchangeTradeID:   "real-trade-1",
+		Source:            string(FillSourceReal),
 		Price:             68000,
 		Quantity:          0.4,
 		ExchangeTradeTime: &tradeTime,
@@ -535,6 +572,7 @@ func TestSyntheticUpgrade_RetryCleanup(t *testing.T) {
 		Fills: []LiveFillReport{{
 			Price:    68000,
 			Quantity: 1.0,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{"tradeId": "real-trade-1"},
 		}},
 		Metadata: map[string]any{
@@ -576,6 +614,7 @@ func TestSyntheticUpgrade_BatchedRealFills(t *testing.T) {
 		Fills: []LiveFillReport{{
 			Price:    68000,
 			Quantity: 1.0,
+			Source:   FillSourceSynthetic,
 			Metadata: map[string]any{"syntheticFill": true},
 		}},
 	}
@@ -593,6 +632,7 @@ func TestSyntheticUpgrade_BatchedRealFills(t *testing.T) {
 		Fills: []LiveFillReport{{
 			Price:    68000,
 			Quantity: 0.4,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{"tradeId": "real-1"},
 		}},
 	}
@@ -614,6 +654,7 @@ func TestSyntheticUpgrade_BatchedRealFills(t *testing.T) {
 		Fills: []LiveFillReport{{
 			Price:    68000,
 			Quantity: 0.3,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{"tradeId": "real-2"},
 		}},
 	}
@@ -635,6 +676,7 @@ func TestSyntheticUpgrade_BatchedRealFills(t *testing.T) {
 		Fills: []LiveFillReport{{
 			Price:    68000,
 			Quantity: 0.3,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{"tradeId": "real-3"},
 		}},
 	}
@@ -700,6 +742,7 @@ func TestFilledExitWithoutFillReportsDoesNotLeaveStaleShortPosition(t *testing.T
 	if _, err := platform.finalizeExecutedOrder(account, entryOrder, []domain.Fill{{
 		OrderID:         entryOrder.ID,
 		ExchangeTradeID: "entry-trade-1",
+		Source:          string(FillSourceReal),
 		Price:           75600.0,
 		Quantity:        0.002,
 	}}); err != nil {
@@ -756,6 +799,7 @@ func TestFilledExitWithoutFillReportsDoesNotLeaveStaleShortPosition(t *testing.T
 	if _, err := platform.finalizeExecutedOrder(account, syncedExit, []domain.Fill{{
 		OrderID:         syncedExit.ID,
 		ExchangeTradeID: "late-exit-trade-1",
+		Source:          string(FillSourceReal),
 		Price:           75600.1,
 		Quantity:        0.002,
 	}}); err != nil {
@@ -786,6 +830,7 @@ func TestFilledExitWithoutFillReportsDoesNotLeaveStaleShortPosition(t *testing.T
 	if _, err := platform.finalizeExecutedOrder(account, reentryOrder, []domain.Fill{{
 		OrderID:         reentryOrder.ID,
 		ExchangeTradeID: "reentry-trade-1",
+		Source:          string(FillSourceReal),
 		Price:           75600.0,
 		Quantity:        0.002,
 	}}); err != nil {
@@ -824,6 +869,7 @@ func TestFinalizeExecutedOrderUsesExchangeTradeTimeForLastFilledAt(t *testing.T)
 	tradeTime := time.Date(2026, 4, 17, 12, 36, 0, 0, time.UTC)
 	filledOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{{
 		OrderID:           order.ID,
+		Source:            string(FillSourceSynthetic),
 		Price:             68000,
 		Quantity:          0.1,
 		Fee:               1.23,
@@ -1371,6 +1417,7 @@ func TestApplyLiveSyncResultHealsStoredQuantityFromNormalizedSubmission(t *testi
 			Price:    68643.6,
 			Quantity: 0.002,
 			Fee:      0.01,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{
 				"exchangeOrderId": "exchange-order-normalized-2",
 				"tradeId":         "trade-normalized-2",
@@ -1450,6 +1497,7 @@ func TestApplyLiveSyncResultSettlesClippedReduceOnlyFallbackClose(t *testing.T) 
 				Price:    77597.7,
 				Quantity: 0.001,
 				Fee:      0.01551954,
+				Source:   FillSourceReal,
 				Metadata: map[string]any{
 					"exchangeOrderId": "exchange-limit-exit",
 					"tradeId":         "trade-limit-1",
@@ -1460,6 +1508,7 @@ func TestApplyLiveSyncResultSettlesClippedReduceOnlyFallbackClose(t *testing.T) 
 				Price:    77597.7,
 				Quantity: 0.0014,
 				Fee:      0.02172735,
+				Source:   FillSourceReal,
 				Metadata: map[string]any{
 					"exchangeOrderId": "exchange-limit-exit",
 					"tradeId":         "trade-limit-2",
@@ -1470,6 +1519,7 @@ func TestApplyLiveSyncResultSettlesClippedReduceOnlyFallbackClose(t *testing.T) 
 				Price:    77597.7,
 				Quantity: 0.0014,
 				Fee:      0.02172735,
+				Source:   FillSourceReal,
 				Metadata: map[string]any{
 					"exchangeOrderId": "exchange-limit-exit",
 					"tradeId":         "trade-limit-3",
@@ -1536,6 +1586,7 @@ func TestApplyLiveSyncResultSettlesClippedReduceOnlyFallbackClose(t *testing.T) 
 			Price:    77593.4,
 			Quantity: 0.0091,
 			Fee:      0.28243997,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{
 				"exchangeOrderId": "exchange-market-fallback",
 				"tradeId":         "trade-market-1",
@@ -1613,6 +1664,7 @@ func TestClosePositionImmediatelySettlesFilledLiveManualClose(t *testing.T) {
 				Price:    68100,
 				Quantity: 0.25,
 				Fee:      1.25,
+				Source:   FillSourceReal,
 				Metadata: map[string]any{
 					"exchangeOrderId": "exchange-order-filled-1",
 					"tradeId":         "trade-filled-1",
@@ -1688,6 +1740,7 @@ func TestClosePositionFilledLiveManualCloseClearsRecoverySessionState(t *testing
 				Price:    68150,
 				Quantity: 0.25,
 				Fee:      1.1,
+				Source:   FillSourceReal,
 				Metadata: map[string]any{
 					"exchangeOrderId": "exchange-order-filled-2",
 					"tradeId":         "trade-filled-2",
@@ -1774,6 +1827,7 @@ func TestSettleImmediatelyFilledLiveOrderReturnsSettledOrderWhenAccountRefreshFa
 				Price:    68200,
 				Quantity: 0.25,
 				Fee:      1.15,
+				Source:   FillSourceReal,
 				Metadata: map[string]any{
 					"exchangeOrderId": "exchange-order-filled-3",
 					"tradeId":         "trade-filled-3",
@@ -1862,6 +1916,7 @@ func TestImmediateFilledLiveOrderRepeatedSyncKeepsRetryMarkerAndFillDedupeStable
 				Price:    68250,
 				Quantity: 0.25,
 				Fee:      1.2,
+				Source:   FillSourceReal,
 				Metadata: map[string]any{
 					"exchangeOrderId": "exchange-order-filled-4",
 					"tradeId":         "trade-filled-4",
@@ -1976,6 +2031,7 @@ func TestImmediateFilledLiveOrderPartialSettlementKeepsRetryMarker(t *testing.T)
 			Price:    75600,
 			Quantity: 0.002,
 			Fee:      0.04,
+			Source:   FillSourceReal,
 			Metadata: map[string]any{
 				"exchangeOrderId": "exchange-order-partial",
 				"tradeId":         "trade-partial-1",
@@ -2468,6 +2524,7 @@ func TestFinalizeExecutedOrderFallsBackToNowWhenExchangeTradeTimeMissing(t *test
 	before := time.Now().UTC().Add(-time.Second)
 	filledOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{{
 		OrderID:  order.ID,
+		Source:   string(FillSourceSynthetic),
 		Price:    68000,
 		Quantity: 0.1,
 		Fee:      1.23,
@@ -2504,6 +2561,7 @@ func TestFinalizeExecutedOrderKeepsLastFilledAtOnDuplicateSync(t *testing.T) {
 	firstTradeTime := time.Date(2026, 4, 17, 12, 36, 0, 0, time.UTC)
 	fill := domain.Fill{
 		OrderID:           order.ID,
+		Source:            string(FillSourceSynthetic),
 		Price:             68000,
 		Quantity:          0.1,
 		Fee:               1.23,
