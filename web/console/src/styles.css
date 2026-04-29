@@ -575,10 +575,6 @@ a {
   grid-row: span 2;
 }
 
-.panel-backtests {
-  padding-bottom: 18px;
-}
-
 .panel-alerts {
   padding-bottom: 18px;
 }
@@ -795,20 +791,6 @@ a {
   justify-content: flex-end;
 }
 
-.backtest-layout {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.05fr);
-  gap: 18px;
-}
-
-.backtest-form,
-.backtest-list {
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.58);
-  padding: 16px;
-}
-
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -855,10 +837,6 @@ a {
 
 .form-field-wide {
   grid-column: 1 / -1;
-}
-
-.backtest-actions {
-  margin-top: 14px;
 }
 
 .live-card-list {
@@ -1025,20 +1003,8 @@ a {
   gap: 8px;
 }
 
-.backtest-notes {
-  margin-top: 14px;
-  display: grid;
-  gap: 8px;
-}
-
 .notes-compact {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.backtest-detail-card {
-  margin-top: 16px;
-  display: grid;
-  gap: 14px;
 }
 
 .live-detail-layout {
@@ -1112,23 +1078,6 @@ a {
 .detail-item-compact strong {
   font-size: 0.82rem;
   line-height: 1.45;
-}
-
-.backtest-breakdown h4,
-.backtest-sample-panel h4 {
-  margin: 0 0 10px;
-  font-size: 0.95rem;
-}
-
-.backtest-samples-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 14px;
-}
-
-.backtest-sample-panel {
-  display: grid;
-  gap: 10px;
 }
 
 .note-item {
@@ -1682,9 +1631,6 @@ tbody tr:last-child td {
     grid-template-columns: 1fr;
   }
 
-  .backtest-layout {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 920px) {

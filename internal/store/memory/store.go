@@ -23,7 +23,6 @@ type Store struct {
 	orders             map[string]domain.Order
 	fills              map[string]domain.Fill
 	positions          map[string]domain.Position
-	backtests          map[string]domain.BacktestRun
 	paperSessions      map[string]domain.PaperSession
 	liveSessions       map[string]domain.LiveSession
 	signalRuntime      map[string]domain.SignalRuntimeSession
@@ -53,7 +52,6 @@ func NewStore() *Store {
 		orders:             make(map[string]domain.Order),
 		fills:              make(map[string]domain.Fill),
 		positions:          make(map[string]domain.Position),
-		backtests:          make(map[string]domain.BacktestRun),
 		paperSessions:      make(map[string]domain.PaperSession),
 		liveSessions:       make(map[string]domain.LiveSession),
 		signalRuntime:      make(map[string]domain.SignalRuntimeSession),
@@ -188,21 +186,6 @@ func NewStore() *Store {
 		CreatedAt: now,
 	}
 	store.accounts[live.ID] = live
-
-	backtest := domain.BacktestRun{
-		ID:                "backtest-20260403-001",
-		StrategyVersionID: version.ID,
-		Status:            "COMPLETED",
-		Parameters:        version.Parameters,
-		ResultSummary: map[string]any{
-			"return":       1.51,
-			"maxDrawdown":  -0.0055,
-			"tradePairs":   1098,
-			"sampleWindow": "2020-01-01 ~ 2026-02-28",
-		},
-		CreatedAt: now,
-	}
-	store.backtests[backtest.ID] = backtest
 
 	store.liveSessions["live-session-main"] = domain.LiveSession{
 		ID:         "live-session-main",
@@ -918,43 +901,6 @@ func (s *Store) DeletePosition(positionID string) error {
 	defer s.mu.Unlock()
 	delete(s.positions, positionID)
 	return nil
-}
-
-func (s *Store) ListBacktests() ([]domain.BacktestRun, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	items := make([]domain.BacktestRun, 0, len(s.backtests))
-	for _, item := range s.backtests {
-		items = append(items, item)
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
-	return items, nil
-}
-
-func (s *Store) CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	backtest := domain.BacktestRun{
-		ID:                s.nextID("backtest"),
-		StrategyVersionID: strategyVersionID,
-		Status:            "QUEUED",
-		Parameters:        parameters,
-		ResultSummary: map[string]any{
-			"return":      0,
-			"maxDrawdown": 0,
-			"tradePairs":  0,
-		},
-		CreatedAt: time.Now().UTC(),
-	}
-	s.backtests[backtest.ID] = backtest
-	return backtest, nil
-}
-
-func (s *Store) UpdateBacktest(backtest domain.BacktestRun) (domain.BacktestRun, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.backtests[backtest.ID] = backtest
-	return backtest, nil
 }
 
 func (s *Store) ListPaperSessions() ([]domain.PaperSession, error) {

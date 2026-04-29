@@ -54,4 +54,4 @@
 
 > **归档文档**在 [docs/归档/](归档/) 目录下，包含历史规划和已完成的实施方案。
 >
-> **Smoke Test**: 若需要部署回测，请手动执行 `scripts/testnet_live_session_smoke.sh`。
+> **Smoke Test**: 若需要部署验证，请手动执行 `scripts/testnet_live_session_smoke.sh`。

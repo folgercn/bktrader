@@ -3,8 +3,8 @@
 > **阅读顺序：** [AGENTS.md](../AGENTS.md)（全局规则）→ 本文件（目录结构）→ [docs/index.md](index.md)（分级文档导航）
 
 ## 1. 项目定位
-**BKTrader** 是一个加密货币自动化交易与回测平台。
-它包含一个用 Go 编写的高性能后端引擎（负责行情接入、信号处理、实盘执行、回测模拟），以及一个用 React 编写的现代化前端控制台（负责监控、策略管理和人工干预）。
+**BKTrader** 是一个加密货币自动化交易平台。
+它包含一个用 Go 编写的高性能后端引擎（负责行情接入、信号处理、实盘执行、模拟盘执行），以及一个用 React 编写的现代化前端控制台（负责监控、策略管理和人工干预）。
 
 ## 2. 核心目录映射
 
@@ -13,7 +13,7 @@
 - **`cmd/`**: 服务启动入口（`platform-api`、`platform-worker`、`db-migrate`、`bktrader-ctl`）。
 - **`internal/`**: 业务核心代码。
   - `domain/`: 核心实体模型 (Models) 和错误类型。
-  - `service/`: 业务逻辑层（实盘 Live、回测 Backtest、信号 Signal、引擎适配器等）。
+  - `service/`: 业务逻辑层（实盘 Live、模拟盘 Paper、信号 Signal、引擎适配器等）。
   - `http/`: REST API 路由控制和 Handlers。
   - `store/`: 持久化层（PostgreSQL）。
   - `app/`: 应用启动与依赖注入。

@@ -3,7 +3,7 @@
 本仓库包含两部分内容：
 
 - 历史策略研究与回测资产（BTCUSDT）
-- 全新的 Go 实盘交易平台脚手架，支持信号驱动执行、监控、模拟盘交易和回测
+- 全新的 Go 实盘交易平台脚手架，支持信号驱动执行、监控和模拟盘交易
 
 ## 新平台目录结构
 
@@ -133,8 +133,6 @@ go run ./cmd/platform-api
 - `GET|POST /api/v1/orders` — 订单管理
 - `GET /api/v1/fills` — 成交记录
 - `GET /api/v1/positions` — 持仓查询
-- `GET|POST /api/v1/backtests` — 回测管理
-- `GET /api/v1/backtests/options` — 回测配置选项（信号周期、执行数据源、可发现数据文件、支持标的、CSV 字段规范）
 - `GET|POST /api/v1/live/sessions` — 实盘策略会话
 - `POST /api/v1/live/sessions/{id}/start` — 启动实盘策略会话
 - `POST /api/v1/live/sessions/{id}/stop` — 停止实盘策略会话
@@ -308,58 +306,12 @@ npm run dev
 - 回滚和排障更直接，核心就是 `dist/` 目录内容
 - Nginx 可以同时处理静态资源、TLS and `/api` 反代
 
-## 回测执行数据源
-
-平台将策略信号周期与执行层数据源分开管理，回测模块支持可选执行测试源：
-
-- 信号周期：`4h`、`1d`
-- 执行数据源：`tick`、`1min`
-
-当前执行层测试支持的 CSV / archive 约定如下：
-
-- `tick`
-  - 文件名示例：`BTC_tick_Clean.csv`、`ETH_tick.csv`
-  - 必需列：`timestamp`、`price`
-  - 可选列：`quantity`、`side`
-默认目录可通过环境变量配置：
-
-```env
-MINUTE_DATA_DIR=.
-TICK_DATA_DIR=./dataset/archive
-```
-
-仓库内已经预留了标准 tick 目录和模板文件：
-
-- [data/tick/.gitkeep](/Users/wuyaocheng/Downloads/bkTrader/data/tick/.gitkeep)
-- [data/tick/BTC_tick.sample.template](/Users/wuyaocheng/Downloads/bkTrader/data/tick/BTC_tick.sample.template)
-- [docs/tick-data-spec.md](/Users/wuyaocheng/Downloads/bkTrader/docs/tick-data-spec.md)
-
-前端回测面板 and `GET /api/v1/backtests/options` 会展示：
-
-- 当前目录下实际发现的数据文件
-- 每种执行数据源支持的标的列表
-- 缺失数据源时的可用性状态
-
-回测创建时还支持可选时间窗口参数：
-
-- `from`：RFC3339 起始时间
-- `to`：RFC3339 结束时间
-
-当前 `tick` runner 已接入按时间窗口挑选月分片 and 流式预览，不会默认把整个 archive 全量扫完。
-当前平台的主回测入口是 `Strategy Replay`：
-
-- 选择 `4h` 或 `1d` 作为信号周期
-- 选择 `tick` 或 `1min` 作为执行数据源
-- 由 Go 版策略引擎直接生成交易并回放
-
-其中 `tick` 执行源现在已经是流式逐笔 `Strategy Replay`，会按信号窗口顺序消费 trade archive，而不是先把整段逐笔数据并入内存。
-
 ## 策略模块约束
 
-- 策略引擎必须可插拔，平台通过 `StrategyEngine` registry 装载，不把单个策略硬编码在回测、模拟盘或实盘入口上。
-- 回测、模拟交易、实盘交易必须共享同一套策略执行语义和订单意图生成逻辑。
-- 只有回测允许显式注入模拟滑点；`paper/live` 默认使用 `observed` 执行语义，不在策略层额外叠加虚拟滑点。
-- 回测和模拟盘的交易手续费、资金费参数可配置。
+- 策略引擎必须可插拔，平台通过 `StrategyEngine` registry 装载，不把单个策略硬编码在模拟盘或实盘入口上。
+- 模拟交易、实盘交易必须共享同一套策略执行语义和订单意图生成逻辑。
+- `paper/live` 默认使用 `observed` 执行语义，不在策略层额外叠加虚拟滑点。
+- 模拟盘的交易手续费、资金费参数可配置。
 - 实盘的手续费、资金费、返佣等成本项必须以交易所返回为准，不在平台里做静态硬编码。
 - 当前内置引擎键值为 `bk-default`，可通过策略参数中的 `strategyEngine` 绑定。
 
@@ -368,49 +320,6 @@ TICK_DATA_DIR=./dataset/archive
 - `tradingFeeBps = 10`
 - `fundingRateBps = 0`
 - `fundingIntervalHours = 8`
-
-`replayLedger=true` 仍然保留为可选内部审计能力，用于排查历史账本和执行层之间的差异，但它不是当前平台推荐的主回测入口。
-
-当前仓库还提供了一个对齐脚本，用于校验 Go 策略回放 and Python 研究版在 `1d -> 1min` 场景下的一致性：
-
-```bash
-python3 scripts/check_1d_1min_parity.py
-```
-
-脚本会自动拉起本地 API，分别运行：
-
-- Python 研究版策略回测
-- Go `Strategy Replay`
-
-然后比较：
-
-- `return`
-- `maxDrawdown`
-- `tradePairs`
-- `finalBalance`
-
-推荐做法：
-
-1. 把真实逐笔数据清洗成统一 CSV。
-2. 按 `BTC_tick_Clean.csv` 这类格式命名。
-3. 放到 `data/tick/`。
-4. 设置 `TICK_DATA_DIR=./data/tick`。
-5. 打开回测面板确认 `tick` 状态从 `missing` 变成 `available`。
-
-你当前仓库里的真实逐笔数据已经位于：
-
-- [dataset/archive](/Users/wuyaocheng/Downloads/bkTrader/dataset/archive)
-
-平台现在同时支持两种 tick 组织方式：
-
-- 扁平清洗文件：`BTC_tick_Clean.csv`
-- Binance 月度 archive：`BTCUSDT-trades-2020-01/BTCUSDT-trades-2020-01.csv`
-
-对于 `dataset/archive` 这类大体量逐笔数据，平台当前设计是：
-
-- 先扫描目录生成轻量 manifest
-- 回测时按月文件顺序流式读取
-- 不把跨年的 tick 数据整段并入内存
 
 ## CI/CD
 
@@ -490,16 +399,14 @@ OKX_PUBLIC_WS_URL=wss://ws.okx.com:8443/ws/v5/public
 
 ## 备注
 
-- 回测配置已区分“信号周期”和“执行数据源”两个维度。
 - 当前平台标准支持的信号周期为 `4h / 1d`。
 - 当前平台标准支持的执行数据源为 `tick / 1min`。
 - `1min` 在这套策略里主要用于近似 tick 级执行，不应被误解为策略主交易周期。
-- `tick` 模式当前要求本地存在 tick 数据文件；若缺失，回测会以 `FAILED` 状态返回明确错误信息。
 
 - 现有的研究文件已整理至 `research/` 目录，避免干扰策略研究工作。
 - 平台脚手架采用模块化设计，初期以可部署的单体架构启动，便于快速迭代，后续可按需拆分。
 - Phase 1 支持内存存储 and PostgreSQL 两种存储后端，通过 `STORE_BACKEND` 环境变量切换。
-- PostgreSQL 持久化目前覆盖策略、账户、订单、持仓、回测记录 and live 运行状态。
+- PostgreSQL 持久化目前覆盖策略、账户、订单、持仓 and live 运行状态。
 - `cmd/db-migrate` 执行嵌入式 SQL 迁移，并在 `schema_migrations` 表中记录迁移历史。
 - `GET /api/v1/account-summaries` 返回模拟账户的权益、费用、已实现/未实现盈亏及敞口快照。
 - 当前推荐的“模拟交易”已经切到 Binance Futures testnet，凭据默认从 `.env` 读取。

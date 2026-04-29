@@ -34,7 +34,6 @@ export function MainContent({ actions, dockContent, strategies, quickLiveAccount
         <StrategyStage 
           createStrategy={actions.createStrategy} 
           saveStrategyParameters={actions.saveStrategyParameters} 
-          createBacktestRun={actions.createBacktestRun}
         />
       )}
       {sidebarTab === 'account' && (

@@ -285,26 +285,6 @@ type PositionQuery struct {
 	Symbol    string
 }
 
-// BacktestRun 回测运行记录，保存参数和结果摘要。
-type BacktestRun struct {
-	ID                string         `json:"id"`
-	StrategyVersionID string         `json:"strategyVersionId"`
-	Status            string         `json:"status"` // PENDING / RUNNING / COMPLETED
-	Parameters        map[string]any `json:"parameters"`
-	ResultSummary     map[string]any `json:"resultSummary"`
-	CreatedAt         time.Time      `json:"createdAt"`
-}
-
-// BacktestConfig 是平台级标准化回测配置。
-// signalTimeframe 表示策略信号周期，例如 5m / 4h / 1d。
-// executionDataSource 表示执行层数据源，例如 tick / 1min。
-type BacktestConfig struct {
-	SignalTimeframe     string         `json:"signalTimeframe"`
-	ExecutionDataSource string         `json:"executionDataSource"`
-	Symbol              string         `json:"symbol"`
-	Metadata            map[string]any `json:"metadata,omitempty"`
-}
-
 // ChartAnnotation 图表标注，用于在 TradingView 上渲染交易标记。
 type ChartAnnotation struct {
 	ID       string         `json:"id"`

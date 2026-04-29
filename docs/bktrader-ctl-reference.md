@@ -54,7 +54,6 @@ bktrader-ctl 是一个 LLM/Agent-first 的远程控制工具，
 * [bktrader-ctl account](bktrader-ctl_account.md)	 - 账户与资产管理
 * [bktrader-ctl alert](bktrader-ctl_alert.md)	 - 系统警告管理
 * [bktrader-ctl auth](bktrader-ctl_auth.md)	 - 鉴权管理
-* [bktrader-ctl backtest](bktrader-ctl_backtest.md)	 - 回测管理
 * [bktrader-ctl chart](bktrader-ctl_chart.md)	 - 图表数据管理
 * [bktrader-ctl check](bktrader-ctl_check.md)	 - 一致性与环境检查
 * [bktrader-ctl completion](bktrader-ctl_completion.md)	 - Generate the autocompletion script for the specified shell

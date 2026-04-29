@@ -97,15 +97,6 @@ type Repository interface {
 	// DeletePosition 删除持仓（全部平仓时调用）。
 	DeletePosition(positionID string) error
 
-	// --- 回测管理 ---
-
-	// ListBacktests 获取所有回测记录。
-	ListBacktests() ([]domain.BacktestRun, error)
-	// CreateBacktest 创建新回测运行记录。
-	CreateBacktest(strategyVersionID string, parameters map[string]any) (domain.BacktestRun, error)
-	// UpdateBacktest 更新回测运行记录状态和结果。
-	UpdateBacktest(backtest domain.BacktestRun) (domain.BacktestRun, error)
-
 	// --- 模拟交易会话 ---
 
 	// ListPaperSessions 获取所有模拟交易会话。

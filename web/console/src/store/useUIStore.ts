@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { 
-  AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession,
-  LoginForm, BacktestForm, PaperForm, LiveAccountForm, LiveBindingForm, LiveOrderForm, LiveSessionForm, StrategySignalForm, StrategyCreateForm, StrategyEditorForm, SignalRuntimeForm, RuntimePolicyForm, TelegramForm,
+  AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession,
+  LoginForm, PaperForm, LiveAccountForm, LiveBindingForm, LiveOrderForm, LiveSessionForm, StrategySignalForm, StrategyCreateForm, StrategyEditorForm, SignalRuntimeForm, RuntimePolicyForm, TelegramForm,
   TimelineConfig
 } from '../types/domain';
 
@@ -172,8 +172,6 @@ export interface useUIStoreState {
   setNotificationAction: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
   telegramAction: string | null;
   setTelegramAction: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
-  backtestAction: boolean;
-  setBacktestAction: (valOrUpdater: boolean | ((prev: boolean) => boolean)) => void;
   runtimePolicyAction: boolean;
   setRuntimePolicyAction: (valOrUpdater: boolean | ((prev: boolean) => boolean)) => void;
   strategyCreateAction: boolean;
@@ -190,14 +188,10 @@ export interface useUIStoreState {
   setFocusNonce: (valOrUpdater: number | ((prev: number) => number)) => void;
   hoveredMarker: MarkerDetail | null;
   setHoveredMarker: (valOrUpdater: MarkerDetail | null | ((prev: MarkerDetail | null) => MarkerDetail | null)) => void;
-  selectedBacktestId: string | null;
-  setSelectedBacktestId: (valOrUpdater: string | null | ((prev: string | null) => string | null)) => void;
   chartOverrideRange: ChartOverrideRange | null;
   setChartOverrideRange: (valOrUpdater: ChartOverrideRange | null | ((prev: ChartOverrideRange | null) => ChartOverrideRange | null)) => void;
   selectedSample: SelectedSample | null;
   setSelectedSample: (valOrUpdater: SelectedSample | null | ((prev: SelectedSample | null) => SelectedSample | null)) => void;
-  backtestForm: BacktestForm;
-  setBacktestForm: (valOrUpdater: BacktestForm | ((prev: BacktestForm) => BacktestForm)) => void;
   paperForm: PaperForm;
   setPaperForm: (valOrUpdater: PaperForm | ((prev: PaperForm) => PaperForm)) => void;
   liveAccountForm: LiveAccountForm;
@@ -345,8 +339,6 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   setNotificationAction: (valOrUpdater) => set((state) => ({ notificationAction: resolveUpdater(valOrUpdater, state.notificationAction) })),
   telegramAction: null,
   setTelegramAction: (valOrUpdater) => set((state) => ({ telegramAction: resolveUpdater(valOrUpdater, state.telegramAction) })),
-  backtestAction: false,
-  setBacktestAction: (valOrUpdater) => set((state) => ({ backtestAction: resolveUpdater(valOrUpdater, state.backtestAction) })),
   runtimePolicyAction: false,
   setRuntimePolicyAction: (valOrUpdater) => set((state) => ({ runtimePolicyAction: resolveUpdater(valOrUpdater, state.runtimePolicyAction) })),
   strategyCreateAction: false,
@@ -363,14 +355,10 @@ export const useUIStore = create<useUIStoreState>((set) => ({
   setFocusNonce: (valOrUpdater) => set((state) => ({ focusNonce: resolveUpdater(valOrUpdater, state.focusNonce) })),
   hoveredMarker: null,
   setHoveredMarker: (valOrUpdater) => set((state) => ({ hoveredMarker: resolveUpdater(valOrUpdater, state.hoveredMarker) })),
-  selectedBacktestId: null,
-  setSelectedBacktestId: (valOrUpdater) => set((state) => ({ selectedBacktestId: resolveUpdater(valOrUpdater, state.selectedBacktestId) })),
   chartOverrideRange: null,
   setChartOverrideRange: (valOrUpdater) => set((state) => ({ chartOverrideRange: resolveUpdater(valOrUpdater, state.chartOverrideRange) })),
   selectedSample: null,
   setSelectedSample: (valOrUpdater) => set((state) => ({ selectedSample: resolveUpdater(valOrUpdater, state.selectedSample) })),
-  backtestForm: { strategyVersionId: "", signalTimeframe: "1d", executionDataSource: "1min", symbol: "BTCUSDT", from: "", to: "", },
-  setBacktestForm: (valOrUpdater) => set((state) => ({ backtestForm: resolveUpdater(valOrUpdater, state.backtestForm) })),
   paperForm: { accountId: "", strategyId: "", startEquity: "100000", signalTimeframe: "1d", executionDataSource: "tick", symbol: "BTCUSDT", tradingFeeBps: "10", fundingRateBps: "0", fundingIntervalHours: "8", },
   setPaperForm: (valOrUpdater) => set((state) => ({ paperForm: resolveUpdater(valOrUpdater, state.paperForm) })),
   liveAccountForm: { name: "Binance Testnet", exchange: "binance-futures", },

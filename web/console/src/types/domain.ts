@@ -169,28 +169,6 @@ export type MarkerLegendItem = {
   color: string;
 };
 
-export type BacktestRun = {
-  id: string;
-  strategyVersionId: string;
-  status: string;
-  parameters?: Record<string, unknown>;
-  resultSummary?: Record<string, unknown>;
-  createdAt: string;
-};
-
-export type BacktestOptions = {
-  signalTimeframes: string[];
-  executionDataSources: string[];
-  defaultSignalTimeframe: string;
-  defaultExecutionDataSource: string;
-  dataDirectories?: Record<string, string>;
-  availability?: Record<string, string>;
-  datasets?: Record<string, Array<{ name: string; path: string; symbol?: string; format?: string; fileCount?: number; timeColumn?: string }>>;
-  supportedSymbols?: Record<string, string[]>;
-  schema?: Record<string, { requiredColumns?: string[]; optionalColumns?: string[]; filenameExamples?: string[] }>;
-  notes: string[];
-};
-
 export type LiveAdapter = {
   key: string;
   name: string;
@@ -647,15 +625,6 @@ export type ActiveSettingsModal = "telegram" | "live-account" | "live-binding" |
 export interface LoginForm {
   username: string;
   password: string;
-}
-
-export interface BacktestForm {
-  strategyVersionId: string;
-  signalTimeframe: string;
-  executionDataSource: string;
-  symbol: string;
-  from: string;
-  to: string;
 }
 
 export interface PaperForm {

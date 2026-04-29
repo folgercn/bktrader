@@ -3,8 +3,8 @@ import { useUIStore } from '../store/useUIStore';
 import { useTradingStore } from '../store/useTradingStore';
 import { fetchJSON, API_BASE } from '../utils/api';
 import { writeStoredAuthSession } from '../utils/auth';
-import { 
-  AccountRecord, LiveSession, StrategyRecord, BacktestRun, RuntimePolicy, 
+import {
+  AccountRecord, LiveSession, StrategyRecord, RuntimePolicy,
   PlatformAlert, PlatformNotification, TelegramConfig, AuthSession,
   SignalBinding, SignalRuntimeSession, LiveNextAction, LaunchTemplate, LiveLaunchResult
 } from '../types/domain';
@@ -33,7 +33,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   const setSignalRuntimeAction = useUIStore(s => s.setSignalRuntimeAction);
   const setNotificationAction = useUIStore(s => s.setNotificationAction);
   const setTelegramAction = useUIStore(s => s.setTelegramAction);
-  const setBacktestAction = useUIStore(s => s.setBacktestAction);
   const setRuntimePolicyAction = useUIStore(s => s.setRuntimePolicyAction);
   const setStrategyCreateAction = useUIStore(s => s.setStrategyCreateAction);
   const setStrategySaveAction = useUIStore(s => s.setStrategySaveAction);
@@ -69,7 +68,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
   const runtimePolicyForm = useUIStore(s => s.runtimePolicyForm);
   const telegramForm = useUIStore(s => s.telegramForm);
   const activeSettingsModal = useUIStore(s => s.activeSettingsModal);
-  const backtestForm = useUIStore(s => s.backtestForm);
 
   const strategies = useTradingStore(s => s.strategies);
   const accounts = useTradingStore(s => s.accounts);
@@ -1002,32 +1000,6 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     }
   }
 
-  async function createBacktestRun() {
-    try {
-      setBacktestAction(true);
-      setError(null);
-      await fetchJSON<BacktestRun>("/api/v1/backtests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          strategyVersionId: backtestForm.strategyVersionId,
-          parameters: {
-            signalTimeframe: backtestForm.signalTimeframe,
-            executionDataSource: backtestForm.executionDataSource,
-            symbol: backtestForm.symbol,
-            from: backtestForm.from || undefined,
-            to: backtestForm.to || undefined,
-          },
-        }),
-      });
-      await loadDashboard();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create backtest");
-    } finally {
-      setBacktestAction(false);
-    }
-  }
-
   async function login() {
     if (!loginForm.username.trim() || !loginForm.password) {
       setError("请输入用户名和密码");
@@ -1237,7 +1209,7 @@ export function useTradingActions(loadDashboard: () => Promise<void>) {
     launchLiveFlow, runLiveSessionAction, dispatchLiveSessionIntent, syncLiveSession,
     bindStrategySignalSource, createSignalRuntimeSession,
     updateRuntimePolicy, runSignalRuntimeAction, acknowledgeNotification,
-    sendNotificationToTelegram, saveTelegramConfig, sendTelegramTest, createBacktestRun,
+    sendNotificationToTelegram, saveTelegramConfig, sendTelegramTest,
     executeLaunchTemplate,
     unbindLiveAccount,
     selectQuickLiveAccount,
