@@ -300,6 +300,10 @@ export function SupervisorStage() {
                       {targets.map((target) => {
                         const runtimeCount = target.status?.runtimes.length ?? 0;
                         const runtimeErrors = target.status?.runtimes.filter(runtimeNeedsAttention).length ?? 0;
+                        const fallbackDetail =
+                          target.containerFallbackPlan?.blockedReason ||
+                          target.containerFallbackPlan?.reason ||
+                          target.serviceState.containerFallbackReason;
                         return (
                           <TableRow key={`${target.name}:${target.baseUrl}`}>
                             <TableCell>
@@ -333,9 +337,9 @@ export function SupervisorStage() {
                                 <Badge variant={target.serviceState.containerFallbackCandidate ? 'destructive' : 'neutral'}>
                                   {target.serviceState.containerFallbackCandidate ? 'candidate' : 'clear'}
                                 </Badge>
-                                {target.serviceState.containerFallbackReason && (
-                                  <span className="truncate text-xs text-[var(--bk-text-muted)]" title={target.serviceState.containerFallbackReason}>
-                                    {target.serviceState.containerFallbackReason}
+                                {fallbackDetail && (
+                                  <span className="truncate text-xs text-[var(--bk-text-muted)]" title={fallbackDetail}>
+                                    {fallbackDetail}
                                   </span>
                                 )}
                               </div>

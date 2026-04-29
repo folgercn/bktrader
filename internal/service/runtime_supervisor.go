@@ -39,14 +39,15 @@ type RuntimeSupervisorProbe struct {
 }
 
 type RuntimeSupervisorTargetSnapshot struct {
-	Name           string                           `json:"name"`
-	BaseURL        string                           `json:"baseUrl"`
-	CheckedAt      time.Time                        `json:"checkedAt"`
-	Healthz        RuntimeSupervisorProbe           `json:"healthz"`
-	RuntimeStatus  RuntimeSupervisorProbe           `json:"runtimeStatus"`
-	ServiceState   RuntimeSupervisorServiceState    `json:"serviceState"`
-	Status         *RuntimeStatusSnapshot           `json:"status,omitempty"`
-	ControlActions []RuntimeSupervisorControlAction `json:"controlActions,omitempty"`
+	Name                  string                                  `json:"name"`
+	BaseURL               string                                  `json:"baseUrl"`
+	CheckedAt             time.Time                               `json:"checkedAt"`
+	Healthz               RuntimeSupervisorProbe                  `json:"healthz"`
+	RuntimeStatus         RuntimeSupervisorProbe                  `json:"runtimeStatus"`
+	ServiceState          RuntimeSupervisorServiceState           `json:"serviceState"`
+	ContainerFallbackPlan *RuntimeSupervisorContainerFallbackPlan `json:"containerFallbackPlan,omitempty"`
+	Status                *RuntimeStatusSnapshot                  `json:"status,omitempty"`
+	ControlActions        []RuntimeSupervisorControlAction        `json:"controlActions,omitempty"`
 }
 
 type RuntimeSupervisorSnapshot struct {
@@ -74,6 +75,14 @@ type RuntimeSupervisorServiceState struct {
 	LastHealthyAt              *time.Time `json:"lastHealthyAt,omitempty"`
 	ContainerFallbackCandidate bool       `json:"containerFallbackCandidate"`
 	ContainerFallbackReason    string     `json:"containerFallbackReason,omitempty"`
+}
+
+type RuntimeSupervisorContainerFallbackPlan struct {
+	Action        string `json:"action"`
+	Candidate     bool   `json:"candidate"`
+	Executable    bool   `json:"executable"`
+	BlockedReason string `json:"blockedReason,omitempty"`
+	Reason        string `json:"reason,omitempty"`
 }
 
 type runtimeSupervisorServiceState struct {
@@ -199,6 +208,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 		var status RuntimeStatusSnapshot
 		targetSnapshot.RuntimeStatus = s.fetchJSON(ctx, target, "/api/v1/runtime/status", &status)
 		targetSnapshot.ServiceState = s.updateServiceState(target, targetSnapshot.Healthz, targetSnapshot.RuntimeStatus, now)
+		targetSnapshot.ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(targetSnapshot.ServiceState)
 		if targetSnapshot.RuntimeStatus.Error == "" && targetSnapshot.RuntimeStatus.Reachable {
 			targetSnapshot.Status = &status
 			targetSnapshot.ControlActions = s.submitApplicationRestarts(ctx, target, status, targetSnapshot.Healthz, now)
@@ -349,6 +359,19 @@ func runtimeSupervisorServiceStateSnapshot(state runtimeSupervisorServiceState, 
 		out.ContainerFallbackReason = fmt.Sprintf("service probes failed %d/%d: %s", state.ConsecutiveFailures, threshold, state.LastFailureReason)
 	}
 	return out
+}
+
+func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState) *RuntimeSupervisorContainerFallbackPlan {
+	if !state.ContainerFallbackCandidate {
+		return nil
+	}
+	return &RuntimeSupervisorContainerFallbackPlan{
+		Action:        "container-restart",
+		Candidate:     true,
+		Executable:    false,
+		BlockedReason: "container-executor-not-configured",
+		Reason:        state.ContainerFallbackReason,
+	}
 }
 
 func runtimeSupervisorServiceKey(target RuntimeSupervisorTarget) string {

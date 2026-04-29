@@ -359,6 +359,7 @@ func ClearRestartState(state map[string]any, keys []string)
 当前只读候选状态：
 
 - `GET /api/v1/supervisor/status` 的每个 target 会返回 `serviceState`，包含连续失败次数、失败阈值、最近失败/恢复时间，以及是否已成为 `containerFallbackCandidate`。
+- 当 target 已成为容器兜底候选时，状态中会额外返回 `containerFallbackPlan`；当前 `action=container-restart` 只是计划语义，`executable=false` 且 `blockedReason=container-executor-not-configured`，用于明确“候选”不等于“已允许执行”。
 - 当前 service fallback 只把 `/healthz` 不可达或非 2xx、`/api/v1/runtime/status` 连接不可达视为服务级失败；`/runtime/status` JSON decode 失败不会触发容器兜底候选，避免把业务状态或响应格式问题误判成需要重启容器。
 - 达到 `SUPERVISOR_SERVICE_FAILURE_THRESHOLD` 后只记录 `containerFallbackCandidate=true` 和原因，不调用 Docker API，不挂载 Docker socket，不执行容器 restart。
 - 后续真正执行容器级 restart 前，仍需单独设计 executor、backoff、人工抑制、权限边界和部署安全审查。
