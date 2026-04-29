@@ -1259,9 +1259,9 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 			profitATR := 0.0
 			if sig.ATR > 0 {
 				if side == "long" {
-					profitATR = (marketPrice - entryPrice) / sig.ATR
+					profitATR = (hwm - entryPrice) / sig.ATR
 				} else if side == "short" {
-					profitATR = (entryPrice - marketPrice) / sig.ATR
+					profitATR = (entryPrice - lwm) / sig.ATR
 				}
 			}
 			if profitATR < delayedActivation {
