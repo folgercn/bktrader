@@ -320,7 +320,7 @@ func (p *Platform) startSignalRuntimeSession(parent context.Context, sessionID s
 		cancelRunner()
 		p.clearSignalRuntimeRun(sessionID, run)
 		logger.Warn("build signal runtime plan failed", "error", err)
-		return domain.SignalRuntimeSession{}, err
+		return domain.SignalRuntimeSession{}, wrapLiveControlConfigError(err)
 	}
 	if err := ctx.Err(); err != nil {
 		p.clearSignalRuntimeRun(sessionID, run)

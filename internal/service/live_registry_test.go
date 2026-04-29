@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -9,6 +10,38 @@ import (
 	"testing"
 	"time"
 )
+
+func TestDoBinanceRESTRequestClassifiesHTTPFailureAsAdapterError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"code":-2015,"msg":"invalid api-key"}`, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	previousLimiter := binanceRESTLimiterState
+	previousRate := binanceRESTRequestsPerSecond
+	previousBurst := binanceRESTBurst
+	binanceRESTLimiterState = newBinanceRESTLimiter()
+	binanceRESTRequestsPerSecond = 1000
+	binanceRESTBurst = 10
+	defer func() {
+		binanceRESTLimiterState = previousLimiter
+		binanceRESTRequestsPerSecond = previousRate
+		binanceRESTBurst = previousBurst
+	}()
+
+	_, _, err := doBinancePublicGET(server.URL, "/fapi/v1/exchangeInfo", map[string]string{
+		"symbol": "BTCUSDT",
+	}, binanceRESTCategoryMetadataRead)
+	if err == nil {
+		t.Fatal("expected HTTP failure")
+	}
+	if !errors.Is(err, ErrLiveControlAdapter) {
+		t.Fatalf("expected adapter error sentinel, got %v", err)
+	}
+	if got := liveSessionControlErrorCode(err); got != LiveSessionControlErrorCodeAdapterError {
+		t.Fatalf("expected %s, got %s", LiveSessionControlErrorCodeAdapterError, got)
+	}
+}
 
 func TestDoBinanceSignedRequestBacksOffAfter429(t *testing.T) {
 	var requestCount atomic.Int32

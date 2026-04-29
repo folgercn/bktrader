@@ -1419,15 +1419,15 @@ func latestFillExchangeTradeTime(fills []domain.Fill) time.Time {
 func (p *Platform) resolveLiveAdapterForAccount(account domain.Account) (LiveExecutionAdapter, map[string]any, error) {
 	binding := resolveLiveBinding(account)
 	if len(binding) == 0 {
-		return nil, nil, fmt.Errorf("live account %s has no adapter binding", account.ID)
+		return nil, nil, liveControlConfigErrorf("live account %s has no adapter binding", account.ID)
 	}
 	adapterKey := normalizeLiveAdapterKey(stringValue(binding["adapterKey"]))
 	adapter, ok := p.liveAdapters[adapterKey]
 	if !ok {
-		return nil, nil, fmt.Errorf("live adapter not registered: %s", adapterKey)
+		return nil, nil, liveControlConfigErrorf("live adapter not registered: %s", adapterKey)
 	}
 	if err := adapter.ValidateAccountConfig(binding); err != nil {
-		return nil, nil, err
+		return nil, nil, wrapLiveControlConfigError(err)
 	}
 	return adapter, binding, nil
 }

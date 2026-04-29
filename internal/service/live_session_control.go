@@ -24,6 +24,58 @@ const (
 	LiveSessionControlErrorCodeUnknown                    = "UNKNOWN"
 )
 
+var (
+	ErrLiveControlAdapter = errors.New("live control adapter error")
+	ErrLiveControlConfig  = errors.New("live control configuration error")
+)
+
+type liveControlClassError struct {
+	class error
+	cause error
+}
+
+func (e liveControlClassError) Error() string {
+	if e.cause != nil {
+		return e.cause.Error()
+	}
+	return e.class.Error()
+}
+
+func (e liveControlClassError) Unwrap() []error {
+	if e.cause == nil {
+		return []error{e.class}
+	}
+	return []error{e.class, e.cause}
+}
+
+func liveControlConfigErrorf(format string, args ...any) error {
+	return liveControlClassError{
+		class: ErrLiveControlConfig,
+		cause: fmt.Errorf(format, args...),
+	}
+}
+
+func wrapLiveControlConfigError(err error) error {
+	if err == nil || errors.Is(err, ErrLiveControlConfig) {
+		return err
+	}
+	return liveControlClassError{class: ErrLiveControlConfig, cause: err}
+}
+
+func liveControlAdapterErrorf(format string, args ...any) error {
+	return liveControlClassError{
+		class: ErrLiveControlAdapter,
+		cause: fmt.Errorf(format, args...),
+	}
+}
+
+func wrapLiveControlAdapterError(err error) error {
+	if err == nil || errors.Is(err, ErrLiveControlAdapter) {
+		return err
+	}
+	return liveControlClassError{class: ErrLiveControlAdapter, cause: err}
+}
+
 type liveSessionControlRequest struct {
 	ID      string
 	Version int64
@@ -293,6 +345,10 @@ func liveSessionControlErrorCode(err error) string {
 		return LiveSessionControlErrorCodeRuntimeLeaseNotAcquired
 	case errors.Is(err, ErrLiveControlOperationInProgress), errors.Is(err, ErrLiveAccountOperationInProgress):
 		return LiveSessionControlErrorCodeControlOperationInProgress
+	case errors.Is(err, ErrLiveControlConfig):
+		return LiveSessionControlErrorCodeConfigError
+	case errors.Is(err, ErrLiveControlAdapter):
+		return LiveSessionControlErrorCodeAdapterError
 	default:
 		return LiveSessionControlErrorCodeUnknown
 	}

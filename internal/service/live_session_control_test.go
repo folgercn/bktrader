@@ -309,8 +309,8 @@ func TestScanLiveSessionControlRequestsWritesErrorWithoutRetryingStart(t *testin
 	if got := stringValue(failed.State["lastControlError"]); got == "" {
 		t.Fatal("expected lastControlError")
 	}
-	if got := stringValue(failed.State["lastControlErrorCode"]); got != LiveSessionControlErrorCodeUnknown {
-		t.Fatalf("expected lastControlErrorCode %s, got %s", LiveSessionControlErrorCodeUnknown, got)
+	if got := stringValue(failed.State["lastControlErrorCode"]); got != LiveSessionControlErrorCodeConfigError {
+		t.Fatalf("expected lastControlErrorCode %s, got %s", LiveSessionControlErrorCodeConfigError, got)
 	}
 
 	platform.scanLiveSessionControlRequests(context.Background())
@@ -333,6 +333,8 @@ func TestLiveSessionControlErrorCodeClassification(t *testing.T) {
 		{name: "runtime lease", err: fmt.Errorf("wrapped: %w", ErrRuntimeLeaseNotAcquired), want: LiveSessionControlErrorCodeRuntimeLeaseNotAcquired},
 		{name: "control operation", err: fmt.Errorf("wrapped: %w", ErrLiveControlOperationInProgress), want: LiveSessionControlErrorCodeControlOperationInProgress},
 		{name: "account operation", err: fmt.Errorf("wrapped: %w", ErrLiveAccountOperationInProgress), want: LiveSessionControlErrorCodeControlOperationInProgress},
+		{name: "config", err: wrapLiveControlConfigError(fmt.Errorf("live account is not configured")), want: LiveSessionControlErrorCodeConfigError},
+		{name: "adapter", err: wrapLiveControlAdapterError(fmt.Errorf("binance request failed: 500 Internal Server Error")), want: LiveSessionControlErrorCodeAdapterError},
 		{name: "unknown", err: fmt.Errorf("adapter returned unexpected status"), want: LiveSessionControlErrorCodeUnknown},
 	}
 	for _, tc := range cases {
