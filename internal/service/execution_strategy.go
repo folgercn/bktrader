@@ -262,33 +262,27 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 	}
 	if profile.ReduceOnly && reasonTag == "sl" {
 		slMaxSlippageBps := firstPositive(profile.SLMaxSlippageBps, 8)
+		proposal.Type = "MARKET"
+		proposal.LimitPrice = 0
+		proposal.TimeInForce = ""
+		proposal.PostOnly = false
 		if spreadBps > 0 && slMaxSlippageBps > 0 && spreadBps > slMaxSlippageBps {
 			slProtection := resolveAggressiveSLProtectionDecision(intent.Side, proposal.Quantity, bestBid, bestAsk, bestBidQty, bestAskQty, priceHint, slMaxSlippageBps)
-			cappedPrice := slProtection.Price
-			proposal.Type = "LIMIT"
-			proposal.LimitPrice = cappedPrice
-			proposal.TimeInForce = "GTC"
-			proposal.PostOnly = false
-			timeoutSeconds := profile.RestingTimeoutSeconds
-			if timeoutSeconds <= 0 {
-				timeoutSeconds = 5
-			}
-			proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(time.Duration(timeoutSeconds) * time.Second).Format(time.RFC3339)
-			proposal.Metadata["executionRestingTimeoutSeconds"] = timeoutSeconds
-			proposal.Metadata["slProtectionActive"] = true
-			proposal.Metadata["slCappedPrice"] = cappedPrice
+			proposal.Metadata["slProtectionObserved"] = true
+			proposal.Metadata["slCappedPrice"] = slProtection.Price
 			proposal.Metadata["slOriginalSpreadBps"] = spreadBps
 			proposal.Metadata["slMaxSlippageBps"] = slMaxSlippageBps
 			proposal.Metadata["topDepthNotional"] = slProtection.TopDepthNotional
 			proposal.Metadata["expectedFillCoverage"] = slProtection.ExpectedCoverage
 			proposal.Metadata["quoteGapBps"] = slProtection.QuoteGapBps
 			proposal.Metadata["slProtectionDepthMode"] = slProtection.DepthMode
-			proposal.Metadata["executionDecision"] = "sl-slippage-protected"
+			proposal.Metadata["executionDecision"] = "direct-dispatch"
 			proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
 				mapValue(proposal.Metadata["executionDecisionContext"]),
 				map[string]any{
 					"slProtectionBranch":    true,
-					"slProtectionMode":      "spread-capped-limit",
+					"slProtectionMode":      "market-dispatch",
+					"slProtectionObserved":  true,
 					"slMaxSlippageBps":      slMaxSlippageBps,
 					"slProtectionDepthMode": slProtection.DepthMode,
 					"topDepthQty":           slProtection.TopDepthQty,

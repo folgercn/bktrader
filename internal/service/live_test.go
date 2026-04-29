@@ -2787,7 +2787,7 @@ func TestBookAwareExecutionStrategyUsesTightZeroInitialReentryMakerFallback(t *t
 	}
 }
 
-func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *testing.T) {
+func TestBookAwareExecutionStrategyKeepsMarketSLWhenSlippageProtectionConfigured(t *testing.T) {
 	strategy := bookAwareExecutionStrategy{}
 	eventTime := time.Date(2026, 4, 7, 8, 0, 0, 0, time.UTC)
 	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
@@ -2795,6 +2795,8 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 		Execution: StrategyExecutionContext{
 			Parameters: map[string]any{
 				"executionMaxSpreadBps":                5.0,
+				"executionSLExitOrderType":             "LIMIT",
+				"executionSLExitPostOnly":              true,
 				"executionSLExitRestingTimeoutSeconds": 15,
 				"executionSLMaxSlippageBps":            20.0,
 			},
@@ -2819,27 +2821,39 @@ func TestBookAwareExecutionStrategySetsExpiryForSLProtectionWhenConfigured(t *te
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := proposal.Type; got != "LIMIT" {
-		t.Fatalf("expected LIMIT SL protection order, got %s", got)
+	if got := proposal.Type; got != "MARKET" {
+		t.Fatalf("expected SL to remain MARKET despite wide spread, got %s", got)
 	}
-	if got := stringValue(proposal.Metadata["executionDecision"]); got != "sl-slippage-protected" {
-		t.Fatalf("expected sl-slippage-protected, got %s", got)
+	if proposal.LimitPrice != 0 || proposal.TimeInForce != "" || proposal.PostOnly {
+		t.Fatalf("expected unbounded market SL, got limit=%v tif=%s postOnly=%v", proposal.LimitPrice, proposal.TimeInForce, proposal.PostOnly)
 	}
-	if got := proposal.LimitPrice; got != 68013.85 {
-		t.Fatalf("expected spread-capped SL protection price 68013.85, got %v", got)
+	if !proposal.ReduceOnly {
+		t.Fatal("expected SL proposal to stay reduceOnly")
 	}
-	if got := stringValue(proposal.Metadata["executionExpiresAt"]); got != eventTime.Add(15*time.Second).Format(time.RFC3339) {
-		t.Fatalf("expected configured SL expiry, got %s", got)
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "direct-dispatch" {
+		t.Fatalf("expected direct-dispatch for market SL, got %s", got)
+	}
+	if got := stringValue(proposal.Metadata["executionExpiresAt"]); got != "" {
+		t.Fatalf("expected market SL to avoid resting expiry, got %s", got)
+	}
+	if got := parseFloatValue(proposal.Metadata["slCappedPrice"]); got != 68013.85 {
+		t.Fatalf("expected telemetry capped price 68013.85, got %v", got)
+	}
+	if !boolValue(proposal.Metadata["slProtectionObserved"]) {
+		t.Fatal("expected wide-spread SL telemetry to be recorded")
 	}
 	if !boolValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionBranch"]) {
-		t.Fatal("expected explicit SL protection branch marker")
+		t.Fatal("expected explicit SL slippage branch marker")
+	}
+	if got := stringValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionMode"]); got != "market-dispatch" {
+		t.Fatalf("expected SL protection mode market-dispatch, got %s", got)
 	}
 	if got := stringValue(mapValue(proposal.Metadata["executionDecisionContext"])["slProtectionDepthMode"]); got != "spread-capped-fallback" {
 		t.Fatalf("expected fallback SL depth mode without qty data, got %s", got)
 	}
 }
 
-func TestBookAwareExecutionStrategyUsesTightDefaultForSLProtection(t *testing.T) {
+func TestBookAwareExecutionStrategyKeepsMarketSLWithDefaultSlippageTelemetry(t *testing.T) {
 	strategy := bookAwareExecutionStrategy{}
 	eventTime := time.Date(2026, 4, 24, 9, 22, 46, 0, time.UTC)
 	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
@@ -2867,15 +2881,24 @@ func TestBookAwareExecutionStrategyUsesTightDefaultForSLProtection(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := proposal.Type; got != "LIMIT" {
-		t.Fatalf("expected default SL protection to switch to LIMIT on 20bps spread, got %s", got)
+	if got := proposal.Type; got != "MARKET" {
+		t.Fatalf("expected default SL to remain MARKET on 20bps spread, got %s", got)
 	}
-	if got := stringValue(proposal.Metadata["executionDecision"]); got != "sl-slippage-protected" {
-		t.Fatalf("expected sl-slippage-protected, got %s", got)
+	if proposal.LimitPrice != 0 || proposal.TimeInForce != "" || proposal.PostOnly {
+		t.Fatalf("expected unbounded market SL, got limit=%v tif=%s postOnly=%v", proposal.LimitPrice, proposal.TimeInForce, proposal.PostOnly)
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "direct-dispatch" {
+		t.Fatalf("expected direct-dispatch for market SL, got %s", got)
+	}
+	if !boolValue(proposal.Metadata["slProtectionObserved"]) {
+		t.Fatal("expected wide-spread SL telemetry to be recorded")
 	}
 	context := mapValue(proposal.Metadata["executionDecisionContext"])
 	if got := parseFloatValue(context["slMaxSlippageBps"]); got != 8 {
 		t.Fatalf("expected default slMaxSlippageBps=8, got %v", got)
+	}
+	if got := stringValue(context["slProtectionMode"]); got != "market-dispatch" {
+		t.Fatalf("expected market-dispatch SL mode, got %s", got)
 	}
 }
 
