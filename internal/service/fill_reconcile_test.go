@@ -115,6 +115,32 @@ func TestBuildFillReconciliationPlanSkipsDuplicateRealTradeID(t *testing.T) {
 	requireFillReconcileQuantity(t, metadataFloat(plan, "filledQuantity"), 1)
 }
 
+func TestBuildFillReconciliationPlanRefreshesDuplicateRealFee(t *testing.T) {
+	order := fillReconcileTestOrder(1)
+	existingFill := fillReconcileReal(order.ID, "trade-1", 1)
+	existingFill.Fee = 0
+	incomingFill := fillReconcileReal(order.ID, "trade-1", 1)
+	incomingFill.Fee = 0.1234
+	existing := []FillReconciliationInput{fillReconcileInput(existingFill, FillSourceReal)}
+	incoming := []FillReconciliationInput{fillReconcileInput(incomingFill, FillSourceReal)}
+
+	plan, err := BuildFillReconciliationPlan(order, existing, incoming, FillReconcilePolicy{})
+	if err != nil {
+		t.Fatalf("BuildFillReconciliationPlan failed: %v", err)
+	}
+
+	if len(plan.CreateFills) != 1 {
+		t.Fatalf("expected duplicate real fill fee refresh to upsert one fill, got %+v", plan.CreateFills)
+	}
+	if plan.CreateFills[0].Fee != 0.1234 {
+		t.Fatalf("expected refreshed fee 0.1234, got %v", plan.CreateFills[0].Fee)
+	}
+	if len(plan.ApplyPositionFills) != 0 {
+		t.Fatalf("expected fee refresh to apply no position fills, got %+v", plan.ApplyPositionFills)
+	}
+	requireFillReconcileQuantity(t, metadataFloat(plan, "filledQuantity"), 1)
+}
+
 func TestBuildFillReconciliationPlanClampsIncomingRealToRemainingQuantity(t *testing.T) {
 	order := fillReconcileTestOrder(1)
 	incoming := []FillReconciliationInput{fillReconcileInput(fillReconcileReal(order.ID, "trade-1", 1.2), FillSourceReal)}

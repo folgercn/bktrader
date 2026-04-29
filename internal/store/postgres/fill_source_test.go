@@ -144,6 +144,92 @@ func TestCreateFillUpsertUpdatesSourcePostgres(t *testing.T) {
 	}
 }
 
+func TestCreateFillUpsertUpdatesNonZeroFeePostgres(t *testing.T) {
+	dsn := os.Getenv("BKTRADER_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("BKTRADER_TEST_POSTGRES_DSN is not set")
+	}
+	if err := Migrate(dsn); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	store, err := New(dsn)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer store.Close()
+
+	account, err := store.GetAccount("paper-default")
+	if err != nil {
+		t.Fatalf("GetAccount failed: %v", err)
+	}
+	order, err := store.CreateOrder(domain.Order{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  1,
+		Price:     68000,
+		Metadata:  map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder failed: %v", err)
+	}
+
+	tradeID := "trade-fee-upsert-" + time.Now().UTC().Format("20060102150405.000000000")
+	if _, err := store.CreateFill(domain.Fill{
+		OrderID:         order.ID,
+		ExchangeTradeID: tradeID,
+		Source:          "real",
+		Price:           68000,
+		Quantity:        0.4,
+		Fee:             0,
+	}); err != nil {
+		t.Fatalf("CreateFill initial real failed: %v", err)
+	}
+	updated, err := store.CreateFill(domain.Fill{
+		OrderID:         order.ID,
+		ExchangeTradeID: tradeID,
+		Source:          "real",
+		Price:           68000,
+		Quantity:        0.5,
+		Fee:             0.1234,
+	})
+	if err != nil {
+		t.Fatalf("CreateFill real fee upsert failed: %v", err)
+	}
+	if updated.Fee != 0.1234 {
+		t.Fatalf("expected fee to update from later real report, got %v", updated.Fee)
+	}
+	if updated.Quantity != 0.4 {
+		t.Fatalf("expected fee upsert to keep original quantity 0.4, got %v", updated.Quantity)
+	}
+	unchanged, err := store.CreateFill(domain.Fill{
+		OrderID:         order.ID,
+		ExchangeTradeID: tradeID,
+		Source:          "real",
+		Price:           68000,
+		Quantity:        0.4,
+		Fee:             0,
+	})
+	if err != nil {
+		t.Fatalf("CreateFill zero fee upsert failed: %v", err)
+	}
+	if unchanged.Fee != 0.1234 {
+		t.Fatalf("expected later zero-fee retry to keep real fee, got %v", unchanged.Fee)
+	}
+	if unchanged.Quantity != 0.4 {
+		t.Fatalf("expected zero-fee retry to keep original quantity 0.4, got %v", unchanged.Quantity)
+	}
+
+	fills, err := store.QueryFills(domain.FillQuery{OrderIDs: []string{order.ID}})
+	if err != nil {
+		t.Fatalf("QueryFills failed: %v", err)
+	}
+	if len(fills) != 1 || fills[0].Fee != 0.1234 || fills[0].Quantity != 0.4 {
+		t.Fatalf("expected persisted upsert fee 0.1234 and quantity 0.4, got %+v", fills)
+	}
+}
+
 func TestFillSettlementTxCreateFillUpsertUpdatesSourcePostgres(t *testing.T) {
 	dsn := os.Getenv("BKTRADER_TEST_POSTGRES_DSN")
 	if dsn == "" {
@@ -182,6 +268,7 @@ func TestFillSettlementTxCreateFillUpsertUpdatesSourcePostgres(t *testing.T) {
 			Source:           "synthetic",
 			Price:            68000,
 			Quantity:         0.4,
+			Fee:              0,
 			DedupFingerprint: fingerprint,
 		}); err != nil {
 			return err
@@ -191,6 +278,7 @@ func TestFillSettlementTxCreateFillUpsertUpdatesSourcePostgres(t *testing.T) {
 			Source:           "remainder",
 			Price:            68000,
 			Quantity:         0.4,
+			Fee:              0.4567,
 			DedupFingerprint: fingerprint,
 		})
 		if err != nil {
@@ -198,6 +286,9 @@ func TestFillSettlementTxCreateFillUpsertUpdatesSourcePostgres(t *testing.T) {
 		}
 		if updated.Source != "remainder" {
 			t.Fatalf("expected tx upserted source remainder, got %q", updated.Source)
+		}
+		if updated.Fee != 0.4567 {
+			t.Fatalf("expected tx upserted fee 0.4567, got %v", updated.Fee)
 		}
 		return nil
 	}); err != nil {
@@ -208,7 +299,7 @@ func TestFillSettlementTxCreateFillUpsertUpdatesSourcePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryFills failed: %v", err)
 	}
-	if len(fills) != 1 || fills[0].Source != "remainder" {
-		t.Fatalf("expected persisted tx source remainder, got %+v", fills)
+	if len(fills) != 1 || fills[0].Source != "remainder" || fills[0].Fee != 0.4567 {
+		t.Fatalf("expected persisted tx source remainder and fee 0.4567, got %+v", fills)
 	}
 }

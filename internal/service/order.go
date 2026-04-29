@@ -1300,10 +1300,10 @@ func filterExistingExecutionFillsWithStore(store fillQueryStore, orderID string,
 		return nil, err
 	}
 	seen := make(map[string]struct{}, len(existing)+len(fills))
-	globalTradeSeen := make(map[string]struct{}, len(existing)+len(fills))
+	globalTradeSeen := make(map[string]domain.Fill, len(existing)+len(fills))
 	for _, item := range existing {
 		if item.ExchangeTradeID != "" {
-			globalTradeSeen[strings.TrimSpace(item.ExchangeTradeID)] = struct{}{}
+			globalTradeSeen[strings.TrimSpace(item.ExchangeTradeID)] = item
 		}
 		if item.OrderID != orderID {
 			continue
@@ -1321,10 +1321,15 @@ func filterExistingExecutionFillsWithStore(store fillQueryStore, orderID string,
 			fill.DedupFingerprint = fill.FallbackFingerprint()
 		}
 		if tradeID := strings.TrimSpace(fill.ExchangeTradeID); tradeID != "" {
-			if _, exists := globalTradeSeen[tradeID]; exists {
+			if existingFill, exists := globalTradeSeen[tradeID]; exists {
+				if fill.Fee == 0 || tradingQuantityEqual(fill.Fee, existingFill.Fee) {
+					continue
+				}
+				filtered = append(filtered, fill)
 				continue
+			} else {
+				globalTradeSeen[tradeID] = fill
 			}
-			globalTradeSeen[tradeID] = struct{}{}
 		}
 		key := buildFillDedupKey(fill)
 		if key == "" {

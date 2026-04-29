@@ -693,9 +693,11 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if strings.TrimSpace(fill.ExchangeTradeID) != "" {
-		for _, item := range s.fills {
+		for id, item := range s.fills {
 			if item.OrderID == fill.OrderID && strings.EqualFold(strings.TrimSpace(item.ExchangeTradeID), strings.TrimSpace(fill.ExchangeTradeID)) {
-				return item, nil
+				updated := mergeExistingFill(item, fill)
+				s.fills[id] = updated
+				return updated, nil
 			}
 		}
 	} else {
@@ -703,9 +705,11 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 		if fill.DedupFingerprint == "" {
 			fill.DedupFingerprint = fill.FallbackFingerprint()
 		}
-		for _, item := range s.fills {
+		for id, item := range s.fills {
 			if item.OrderID == fill.OrderID && item.DedupFingerprint != "" && item.DedupFingerprint == fill.DedupFingerprint {
-				return item, nil
+				updated := mergeExistingFill(item, fill)
+				s.fills[id] = updated
+				return updated, nil
 			}
 		}
 	}
@@ -718,6 +722,18 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	}
 	s.fills[fill.ID] = fill
 	return fill, nil
+}
+
+func mergeExistingFill(existing, incoming domain.Fill) domain.Fill {
+	existing.Source = normalizeFillSource(incoming)
+	if incoming.Fee != 0 {
+		existing.Fee = incoming.Fee
+	}
+	if existing.ExchangeTradeTime == nil && incoming.ExchangeTradeTime != nil {
+		resolved := incoming.ExchangeTradeTime.UTC()
+		existing.ExchangeTradeTime = &resolved
+	}
+	return existing
 }
 
 func normalizeFillSource(fill domain.Fill) string {

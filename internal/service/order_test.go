@@ -452,6 +452,63 @@ func TestSyntheticUpgrade_PartialRealFills(t *testing.T) {
 	}
 }
 
+func TestFinalizeExecutedOrderRefreshesDuplicateRealFillFee(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, _ := store.GetAccount("live-main")
+	order, _ := store.CreateOrder(domain.Order{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Side:      "BUY",
+		Type:      "MARKET",
+		Quantity:  1.0,
+		Price:     68000,
+		Status:    "FILLED",
+		Metadata:  map[string]any{},
+	})
+
+	tradeTime := time.Now().UTC()
+	initialFill := domain.Fill{
+		OrderID:           order.ID,
+		ExchangeTradeID:   "real-trade-fee-refresh",
+		Source:            string(FillSourceReal),
+		Price:             68000,
+		Quantity:          1.0,
+		Fee:               0,
+		ExchangeTradeTime: &tradeTime,
+	}
+	filledOrder, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{initialFill})
+	if err != nil {
+		t.Fatalf("first finalize failed: %v", err)
+	}
+
+	feeRefresh := initialFill
+	feeRefresh.Quantity = 0.5
+	feeRefresh.Fee = 0.1234
+	finalOrder, err := platform.finalizeExecutedOrder(account, filledOrder, []domain.Fill{feeRefresh})
+	if err != nil {
+		t.Fatalf("fee refresh finalize failed: %v", err)
+	}
+	if val := parseFloatValue(finalOrder.Metadata["filledQuantity"]); math.Abs(val-1.0) > 1e-9 {
+		t.Fatalf("expected order filledQuantity to remain 1.0, got %v", val)
+	}
+
+	fills, err := store.QueryFills(domain.FillQuery{OrderIDs: []string{order.ID}})
+	if err != nil {
+		t.Fatalf("QueryFills failed: %v", err)
+	}
+	if len(fills) != 1 {
+		t.Fatalf("expected fee refresh to keep one fill, got %+v", fills)
+	}
+	if fills[0].Fee != 0.1234 {
+		t.Fatalf("expected fee refresh to persist 0.1234, got %v", fills[0].Fee)
+	}
+	if fills[0].Quantity != 1.0 {
+		t.Fatalf("expected fee refresh to keep original quantity 1.0, got %v", fills[0].Quantity)
+	}
+}
+
 func TestSyntheticUpgrade_RetryCleanup(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)
