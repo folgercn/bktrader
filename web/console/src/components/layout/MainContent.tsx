@@ -4,6 +4,7 @@ import { StrategyStage } from '../../pages/StrategyStage';
 import { AccountStage } from '../../pages/AccountStage';
 import { LogStage } from '../../pages/LogStage';
 import { RecoveryStage } from '../../pages/RecoveryStage';
+import { SupervisorStage } from '../../pages/SupervisorStage';
 import { useUIStore } from '../../store/useUIStore';
 
 interface MainContentProps {
@@ -66,6 +67,9 @@ export function MainContent({ actions, dockContent, strategies, quickLiveAccount
       )}
       {sidebarTab === 'recovery' && (
         <RecoveryStage />
+      )}
+      {sidebarTab === 'supervisor' && (
+        <SupervisorStage />
       )}
     </div>
   );
