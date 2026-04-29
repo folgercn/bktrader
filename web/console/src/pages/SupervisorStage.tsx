@@ -168,7 +168,7 @@ export function SupervisorStage() {
     return () => window.clearInterval(timer);
   }, [loadSnapshot]);
 
-  const { runtimeRows, controlActionRows, fallbackCount, attentionCount, reachableTargets } = useMemo(() => {
+  const { runtimeRows, controlActionRows, fallbackCount, attentionCount, fullyReachableTargets } = useMemo(() => {
     const targets = snapshot?.targets ?? [];
     const runtimes = targets.flatMap((target) =>
       (target.status?.runtimes ?? []).map((runtime) => ({
@@ -186,7 +186,7 @@ export function SupervisorStage() {
       ),
       fallbackCount: targets.filter((target) => target.serviceState.containerFallbackCandidate).length,
       attentionCount: runtimes.filter(runtimeNeedsAttention).length,
-      reachableTargets: targets.filter((target) => isProbeOK(target.healthz) && isProbeOK(target.runtimeStatus)).length,
+      fullyReachableTargets: targets.filter((target) => isProbeOK(target.healthz) && isProbeOK(target.runtimeStatus)).length,
     };
   }, [snapshot]);
 
@@ -245,8 +245,8 @@ export function SupervisorStage() {
                 icon={ServerCog}
                 label="Targets"
                 value={targets.length}
-                detail={`${reachableTargets}/${targets.length} reachable`}
-                tone={reachableTargets === targets.length && targets.length > 0 ? 'success' : 'warning'}
+                detail={`${fullyReachableTargets}/${targets.length} fully reachable`}
+                tone={fullyReachableTargets === targets.length && targets.length > 0 ? 'success' : 'warning'}
               />
               <MetricCard
                 icon={Signal}
