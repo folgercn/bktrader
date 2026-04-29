@@ -302,6 +302,70 @@ func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing
 	}
 }
 
+func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *testing.T) {
+	requested := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		case "/api/v1/runtime/restart":
+			t.Errorf("noop container fallback executor plumbing must not call runtime control path %s", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: NewNoopContainerFallbackExecutor(true),
+		},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	if !snapshot.Policy.ContainerExecutorConfigured {
+		t.Fatalf("expected noop executor readiness in policy, got %+v", snapshot.Policy)
+	}
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for candidate, got %+v", target)
+	}
+	if !target.ContainerFallbackPlan.ExecutorConfigured || !target.ContainerFallbackPlan.Executable {
+		t.Fatalf("expected configured noop executor to make plan eligible, got %+v", target.ContainerFallbackPlan)
+	}
+	if target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionEligible || target.ContainerFallbackPlan.EligibleReason != "container-fallback-eligible" {
+		t.Fatalf("expected eligible dry-run decision, got %+v", target.ContainerFallbackPlan)
+	}
+	if target.ServiceState.LastContainerFallbackDecisionReason != "container-fallback-eligible" {
+		t.Fatalf("expected eligible decision audit, got %+v", target.ServiceState)
+	}
+	if requested["POST /api/v1/runtime/restart"] != 0 {
+		t.Fatalf("expected no control action for noop executor readiness, got %#v", requested)
+	}
+}
+
+func TestNoopContainerFallbackExecutorDoesNotExecuteRestart(t *testing.T) {
+	executor := NewNoopContainerFallbackExecutor(true)
+	if !executor.Configured() {
+		t.Fatal("expected configured noop executor")
+	}
+	result, err := executor.Restart(context.Background(), RuntimeSupervisorTarget{Name: "api"}, "test")
+	if err != nil {
+		t.Fatalf("noop restart failed: %v", err)
+	}
+	if result.Executed || result.Message == "" {
+		t.Fatalf("expected noop executor to report non-execution, got %+v", result)
+	}
+}
+
 func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 	base := runtimeSupervisorContainerFallbackDecisionInput{
 		Candidate:          true,
