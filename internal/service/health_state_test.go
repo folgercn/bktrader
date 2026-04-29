@@ -893,3 +893,105 @@ func TestLiveSessionEvaluationQuietMatchesAlertsAndSnapshot(t *testing.T) {
 		t.Fatal("expected stopped live session snapshot to suppress evaluationQuiet")
 	}
 }
+
+func TestListAlertsShowsStuckLiveControlPending(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	now := time.Now().UTC()
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = "RUNNING"
+	state["actualStatus"] = "STARTING"
+	state["lastControlAction"] = "start"
+	state["controlRequestId"] = "control-request-stuck"
+	state["controlVersion"] = 7
+	state["controlRequestedAt"] = now.Add(-10 * time.Minute).Format(time.RFC3339)
+	state["lastControlUpdateAt"] = now.Add(-3 * time.Minute).Format(time.RFC3339)
+	session.State = state
+	session.Status = "STOPPED"
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session failed: %v", err)
+	}
+
+	alerts, err := platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list alerts failed: %v", err)
+	}
+	found := false
+	for _, alert := range alerts {
+		if alert.ID != "live-control-pending-"+session.ID {
+			continue
+		}
+		found = true
+		if alert.Level != "warning" {
+			t.Fatalf("expected warning level, got %s", alert.Level)
+		}
+		if got := stringValue(alert.Metadata["controlRequestId"]); got != "control-request-stuck" {
+			t.Fatalf("expected request id metadata, got %s", got)
+		}
+		if got := liveSessionControlVersionKey(alert.Metadata, "controlVersion"); got != 7 {
+			t.Fatalf("expected control version 7, got %d", got)
+		}
+		if got := stringValue(alert.Metadata["actualStatus"]); got != "STARTING" {
+			t.Fatalf("expected actual STARTING metadata, got %s", got)
+		}
+		pending, _ := toFloat64(alert.Metadata["pendingSeconds"])
+		if int64(pending) < int64(liveSessionControlPendingAlertThreshold.Seconds()) {
+			t.Fatalf("expected pending seconds over threshold, got %.0f", pending)
+		}
+	}
+	if !found {
+		t.Fatal("expected live control pending alert")
+	}
+}
+
+func TestListAlertsSuppressesFreshOrErrorLiveControlPending(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	now := time.Now().UTC()
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = "STOPPED"
+	state["actualStatus"] = "STOPPING"
+	state["lastControlAction"] = "stop"
+	state["controlRequestId"] = "control-request-fresh"
+	state["controlVersion"] = 9
+	state["controlRequestedAt"] = now.Add(-30 * time.Second).Format(time.RFC3339)
+	state["lastControlUpdateAt"] = now.Add(-10 * time.Second).Format(time.RFC3339)
+	session.State = state
+	session.Status = "RUNNING"
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update live session failed: %v", err)
+	}
+
+	alerts, err := platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list fresh alerts failed: %v", err)
+	}
+	for _, alert := range alerts {
+		if alert.ID == "live-control-pending-"+session.ID {
+			t.Fatal("expected fresh pending control alert to be suppressed")
+		}
+	}
+
+	state["actualStatus"] = "ERROR"
+	state["lastControlErrorAt"] = now.Add(-10 * time.Minute).Format(time.RFC3339)
+	state["lastControlError"] = "adapter unavailable"
+	session.State = state
+	if _, err := platform.store.UpdateLiveSession(session); err != nil {
+		t.Fatalf("update error live session failed: %v", err)
+	}
+	alerts, err = platform.ListAlerts()
+	if err != nil {
+		t.Fatalf("list error alerts failed: %v", err)
+	}
+	for _, alert := range alerts {
+		if alert.ID == "live-control-pending-"+session.ID {
+			t.Fatal("expected ERROR control state not to emit pending alert")
+		}
+	}
+}
