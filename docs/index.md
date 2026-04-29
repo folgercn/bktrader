@@ -32,6 +32,7 @@
 ## 🟢 参考文档（需要时查阅）
 
 ### 架构与工程设计
+- [fill-reconciliation-engine.md](fill-reconciliation-engine.md) — 成交一致性引擎：real/synthetic/remainder fill、`fill_source`、事务化 settlement、交易所成交归一化
 - [dashboard-sse-architecture.md](dashboard-sse-architecture.md) — SSE 实时仪表盘架构
 - [bento-ui-modernization-guidelines.md](bento-ui-modernization-guidelines.md) — Bento 风格 UI 现代化指南
 - [runtime-runner-decomposition-protocol.md](runtime-runner-decomposition-protocol.md) — `live-runner` / `signal-runtime-runner` 拆分协议

@@ -16,7 +16,7 @@
 | appliedQty | 已经更新过 position 的数量。real 替换 synthetic/remainder 时，这部分不能再次应用。 |
 | filledQuantity | 本地订单视角的成交总量，必须与 real + synthetic/remainder 的合计保持一致。 |
 
-当前版本不新增 DB 字段，但 plan builder 不再自行猜 source。调用方必须把每条 fill 标准化为显式 `FillReconciliationInput{Fill, Source}`：
+当前 plan builder 不再自行猜 source。调用方必须把每条 fill 标准化为显式 `FillReconciliationInput{Fill, Source}`：
 
 - `real` 必须带稳定 `exchange_trade_id`；
 - `synthetic` 必须带 `dedup_fallback_fingerprint`；
@@ -26,6 +26,19 @@
 这样后续执行删除计划时，只会删除被上游明确标记为 `synthetic` 或 `remainder` 的本地 fill，避免依赖间接条件误删合法 fallback fill。
 
 当前已经增加 `fill_source` 字段，取值为 `real / synthetic / remainder / paper / manual`。`domain.Fill.Source` 是内部 reconciliation source，不通过 fill JSON 对外输出。
+
+## 已完成 PR
+
+| 能力 | PR |
+| --- | --- |
+| 文档与纯函数 plan builder | #283 |
+| 显式 source 输入与 `remainingQuantity` clamp | #284 |
+| `finalizeExecutedOrder` 接入 plan builder | #285 |
+| settlement 事务化 | #285 |
+| `ExchangeFillReport` 与 Binance user trades 映射 | #290 |
+| `fills.fill_source` 持久化 | #294 |
+| 同一订单 settlement 串行化 | #300 |
+| OKX / Bybit 成交 payload mapper | #303 |
 
 ## 一致性规则
 
