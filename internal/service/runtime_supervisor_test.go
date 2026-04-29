@@ -51,6 +51,9 @@ func TestRuntimeSupervisorCollectsHealthAndRuntimeStatus(t *testing.T) {
 	if snapshot.Policy.ServiceFailureThreshold != defaultRuntimeSupervisorServiceFailThresh {
 		t.Fatalf("expected default service failure threshold %d, got %+v", defaultRuntimeSupervisorServiceFailThresh, snapshot.Policy)
 	}
+	if snapshot.Policy.ContainerExecutorKind != runtimeSupervisorContainerExecutorKindNone || !snapshot.Policy.ContainerExecutorDryRun {
+		t.Fatalf("expected default policy to expose no dry-run executor, got %+v", snapshot.Policy)
+	}
 	if len(snapshot.Targets) != 1 {
 		t.Fatalf("expected one target snapshot, got %#v", snapshot.Targets)
 	}
@@ -110,6 +113,9 @@ func TestRuntimeSupervisorSnapshotReportsPolicyWithoutFallbackCandidate(t *testi
 	}
 	if snapshot.Policy.ContainerExecutorConfigured {
 		t.Fatalf("expected policy to expose missing container executor, got %+v", snapshot.Policy)
+	}
+	if snapshot.Policy.ContainerExecutorKind != runtimeSupervisorContainerExecutorKindNone || !snapshot.Policy.ContainerExecutorDryRun {
+		t.Fatalf("expected policy to expose no dry-run executor metadata, got %+v", snapshot.Policy)
 	}
 	if snapshot.Policy.ServiceFailureThreshold != 4 {
 		t.Fatalf("expected service failure threshold 4, got %+v", snapshot.Policy)
@@ -231,6 +237,9 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if second.ContainerFallbackPlan.Enabled || second.ContainerFallbackPlan.ExecutorConfigured {
 		t.Fatalf("expected fallback readiness to show disabled/no executor, got %+v", second.ContainerFallbackPlan)
 	}
+	if second.ContainerFallbackPlan.ExecutorKind != runtimeSupervisorContainerExecutorKindNone || !second.ContainerFallbackPlan.ExecutorDryRun {
+		t.Fatalf("expected fallback plan to expose no dry-run executor metadata, got %+v", second.ContainerFallbackPlan)
+	}
 	if second.ContainerFallbackPlan.Reason != second.ServiceState.ContainerFallbackReason {
 		t.Fatalf("expected fallback plan reason to mirror service state, got %+v", second.ContainerFallbackPlan)
 	}
@@ -300,6 +309,9 @@ func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing
 	if !target.ContainerFallbackPlan.Enabled || target.ContainerFallbackPlan.ExecutorConfigured {
 		t.Fatalf("expected opt-in readiness to show enabled/no executor, got %+v", target.ContainerFallbackPlan)
 	}
+	if target.ContainerFallbackPlan.ExecutorKind != runtimeSupervisorContainerExecutorKindNone || !target.ContainerFallbackPlan.ExecutorDryRun {
+		t.Fatalf("expected opt-in plan to expose no dry-run executor metadata, got %+v", target.ContainerFallbackPlan)
+	}
 }
 
 func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *testing.T) {
@@ -334,12 +346,18 @@ func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *t
 	if !snapshot.Policy.ContainerExecutorConfigured {
 		t.Fatalf("expected noop executor readiness in policy, got %+v", snapshot.Policy)
 	}
+	if snapshot.Policy.ContainerExecutorKind != runtimeSupervisorContainerExecutorKindNoop || !snapshot.Policy.ContainerExecutorDryRun {
+		t.Fatalf("expected noop executor metadata in policy, got %+v", snapshot.Policy)
+	}
 	target := snapshot.Targets[0]
 	if target.ContainerFallbackPlan == nil {
 		t.Fatalf("expected fallback plan for candidate, got %+v", target)
 	}
 	if !target.ContainerFallbackPlan.ExecutorConfigured || !target.ContainerFallbackPlan.Executable {
 		t.Fatalf("expected configured noop executor to make plan eligible, got %+v", target.ContainerFallbackPlan)
+	}
+	if target.ContainerFallbackPlan.ExecutorKind != runtimeSupervisorContainerExecutorKindNoop || !target.ContainerFallbackPlan.ExecutorDryRun {
+		t.Fatalf("expected eligible noop plan to expose dry-run executor metadata, got %+v", target.ContainerFallbackPlan)
 	}
 	if target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionEligible || target.ContainerFallbackPlan.EligibleReason != "container-fallback-eligible" {
 		t.Fatalf("expected eligible dry-run decision, got %+v", target.ContainerFallbackPlan)
@@ -356,6 +374,10 @@ func TestNoopContainerFallbackExecutorDoesNotExecuteRestart(t *testing.T) {
 	executor := NewNoopContainerFallbackExecutor(true)
 	if !executor.Configured() {
 		t.Fatal("expected configured noop executor")
+	}
+	descriptor := executor.Descriptor()
+	if descriptor.Kind != runtimeSupervisorContainerExecutorKindNoop || !descriptor.DryRun {
+		t.Fatalf("expected noop executor descriptor to report dry-run noop, got %+v", descriptor)
 	}
 	result, err := executor.Restart(context.Background(), RuntimeSupervisorTarget{Name: "api"}, "test")
 	if err != nil {

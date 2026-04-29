@@ -419,6 +419,8 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   candidate: boolean;
   enabled: boolean;
   executorConfigured: boolean;
+  executorKind?: string;
+  executorDryRun?: boolean;
   executable: boolean;
   decision?: 'blocked' | 'eligible' | string;
   suppressed: boolean;
@@ -446,6 +448,8 @@ export type RuntimeSupervisorPolicy = {
   serviceFailureThreshold: number;
   containerRestartEnabled: boolean;
   containerExecutorConfigured: boolean;
+  containerExecutorKind?: string;
+  containerExecutorDryRun?: boolean;
 };
 
 export type RuntimeSupervisorTargetSnapshot = {

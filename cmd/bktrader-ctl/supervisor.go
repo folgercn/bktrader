@@ -37,10 +37,12 @@ type supervisorStatusSnapshot struct {
 }
 
 type supervisorPolicy struct {
-	ApplicationRestartEnabled   bool `json:"applicationRestartEnabled"`
-	ServiceFailureThreshold     int  `json:"serviceFailureThreshold"`
-	ContainerRestartEnabled     bool `json:"containerRestartEnabled"`
-	ContainerExecutorConfigured bool `json:"containerExecutorConfigured"`
+	ApplicationRestartEnabled   bool   `json:"applicationRestartEnabled"`
+	ServiceFailureThreshold     int    `json:"serviceFailureThreshold"`
+	ContainerRestartEnabled     bool   `json:"containerRestartEnabled"`
+	ContainerExecutorConfigured bool   `json:"containerExecutorConfigured"`
+	ContainerExecutorKind       string `json:"containerExecutorKind"`
+	ContainerExecutorDryRun     bool   `json:"containerExecutorDryRun"`
 }
 
 type supervisorTargetSnapshot struct {
@@ -80,6 +82,8 @@ type supervisorContainerFallbackPlan struct {
 	Candidate          bool   `json:"candidate"`
 	Enabled            bool   `json:"enabled"`
 	ExecutorConfigured bool   `json:"executorConfigured"`
+	ExecutorKind       string `json:"executorKind"`
+	ExecutorDryRun     bool   `json:"executorDryRun"`
 	Executable         bool   `json:"executable"`
 	Decision           string `json:"decision"`
 	Suppressed         bool   `json:"suppressed"`
@@ -134,6 +138,7 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	runtimeAttention := 0
 	fallbackCandidates := 0
 	fallbackExecutable := 0
+	fallbackDryRun := 0
 	controlActions := 0
 
 	for _, target := range snapshot.Targets {
@@ -145,6 +150,9 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 		}
 		if target.ContainerFallbackPlan != nil && target.ContainerFallbackPlan.Executable {
 			fallbackExecutable++
+			if target.ContainerFallbackPlan.ExecutorDryRun {
+				fallbackDryRun++
+			}
 		}
 		if target.Status != nil {
 			runtimeCount += len(target.Status.Runtimes)
@@ -161,15 +169,17 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	fmt.Fprintln(&out, "Runtime supervisor snapshot")
 	fmt.Fprintf(&out, "checkedAt: %s\n", firstNonEmpty(snapshot.CheckedAt, "--"))
 	if snapshot.Policy != nil {
-		fmt.Fprintf(&out, "policy: applicationRestartEnabled=%t serviceFailureThreshold=%d containerRestartEnabled=%t containerExecutorConfigured=%t\n",
+		fmt.Fprintf(&out, "policy: applicationRestartEnabled=%t serviceFailureThreshold=%d containerRestartEnabled=%t containerExecutorConfigured=%t containerExecutorKind=%s containerExecutorDryRun=%t\n",
 			snapshot.Policy.ApplicationRestartEnabled,
 			snapshot.Policy.ServiceFailureThreshold,
 			snapshot.Policy.ContainerRestartEnabled,
 			snapshot.Policy.ContainerExecutorConfigured,
+			firstNonEmpty(snapshot.Policy.ContainerExecutorKind, "--"),
+			snapshot.Policy.ContainerExecutorDryRun,
 		)
 	}
-	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d runtimes=%d attention=%d controlActions=%d\n",
-		targets, fullyReachable, fallbackCandidates, fallbackExecutable, runtimeCount, runtimeAttention, controlActions)
+	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d fallbackDryRun=%d runtimes=%d attention=%d controlActions=%d\n",
+		targets, fullyReachable, fallbackCandidates, fallbackExecutable, fallbackDryRun, runtimeCount, runtimeAttention, controlActions)
 	for _, target := range snapshot.Targets {
 		fmt.Fprintf(&out, "\n- %s %s\n", firstNonEmpty(target.Name, "--"), firstNonEmpty(target.BaseURL, "--"))
 		fmt.Fprintf(&out, "  probes: healthz=%s runtimeStatus=%s\n", supervisorProbeText(target.Healthz), supervisorProbeText(target.RuntimeStatus))
@@ -192,11 +202,13 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 		}
 		if target.ContainerFallbackPlan != nil {
 			plan := target.ContainerFallbackPlan
-			fmt.Fprintf(&out, "  fallbackPlan: action=%s decision=%s enabled=%t executorConfigured=%t executable=%t suppressed=%t backoffActive=%t safetyGateOk=%t blockedReason=%s eligibleReason=%s\n",
+			fmt.Fprintf(&out, "  fallbackPlan: action=%s decision=%s enabled=%t executorConfigured=%t executorKind=%s executorDryRun=%t executable=%t suppressed=%t backoffActive=%t safetyGateOk=%t blockedReason=%s eligibleReason=%s\n",
 				firstNonEmpty(plan.Action, "--"),
 				firstNonEmpty(plan.Decision, "--"),
 				plan.Enabled,
 				plan.ExecutorConfigured,
+				firstNonEmpty(plan.ExecutorKind, "--"),
+				plan.ExecutorDryRun,
 				plan.Executable,
 				plan.Suppressed,
 				plan.BackoffActive,
