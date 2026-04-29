@@ -407,6 +407,11 @@ export type RuntimeSupervisorServiceState = {
   lastHealthyAt?: string;
   containerFallbackCandidate: boolean;
   containerFallbackReason?: string;
+  containerFallbackSuppressed?: boolean;
+  containerFallbackBackoffUntil?: string;
+  containerFallbackAttemptCount?: number;
+  lastContainerFallbackDecisionAt?: string;
+  lastContainerFallbackDecisionReason?: string;
 };
 
 export type RuntimeSupervisorContainerFallbackPlan = {

@@ -63,11 +63,16 @@ type supervisorProbe struct {
 }
 
 type supervisorServiceState struct {
-	ConsecutiveFailures        int    `json:"consecutiveFailures"`
-	FailureThreshold           int    `json:"failureThreshold"`
-	LastFailureReason          string `json:"lastFailureReason,omitempty"`
-	ContainerFallbackCandidate bool   `json:"containerFallbackCandidate"`
-	ContainerFallbackReason    string `json:"containerFallbackReason,omitempty"`
+	ConsecutiveFailures                 int    `json:"consecutiveFailures"`
+	FailureThreshold                    int    `json:"failureThreshold"`
+	LastFailureReason                   string `json:"lastFailureReason,omitempty"`
+	ContainerFallbackCandidate          bool   `json:"containerFallbackCandidate"`
+	ContainerFallbackReason             string `json:"containerFallbackReason,omitempty"`
+	ContainerFallbackSuppressed         bool   `json:"containerFallbackSuppressed"`
+	ContainerFallbackBackoffUntil       string `json:"containerFallbackBackoffUntil,omitempty"`
+	ContainerFallbackAttemptCount       int    `json:"containerFallbackAttemptCount"`
+	LastContainerFallbackDecisionAt     string `json:"lastContainerFallbackDecisionAt,omitempty"`
+	LastContainerFallbackDecisionReason string `json:"lastContainerFallbackDecisionReason,omitempty"`
 }
 
 type supervisorContainerFallbackPlan struct {
@@ -168,13 +173,22 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	for _, target := range snapshot.Targets {
 		fmt.Fprintf(&out, "\n- %s %s\n", firstNonEmpty(target.Name, "--"), firstNonEmpty(target.BaseURL, "--"))
 		fmt.Fprintf(&out, "  probes: healthz=%s runtimeStatus=%s\n", supervisorProbeText(target.Healthz), supervisorProbeText(target.RuntimeStatus))
-		fmt.Fprintf(&out, "  serviceState: failures=%d/%d fallback=%s\n",
+		fmt.Fprintf(&out, "  serviceState: failures=%d/%d fallback=%s attempts=%d suppressed=%t backoffUntil=%s\n",
 			target.ServiceState.ConsecutiveFailures,
 			target.ServiceState.FailureThreshold,
 			supervisorFallbackStateText(target.ServiceState),
+			target.ServiceState.ContainerFallbackAttemptCount,
+			target.ServiceState.ContainerFallbackSuppressed,
+			firstNonEmpty(target.ServiceState.ContainerFallbackBackoffUntil, "--"),
 		)
 		if strings.TrimSpace(target.ServiceState.LastFailureReason) != "" {
 			fmt.Fprintf(&out, "  lastFailure=%s\n", target.ServiceState.LastFailureReason)
+		}
+		if strings.TrimSpace(target.ServiceState.LastContainerFallbackDecisionReason) != "" {
+			fmt.Fprintf(&out, "  lastFallbackDecision=%s at=%s\n",
+				target.ServiceState.LastContainerFallbackDecisionReason,
+				firstNonEmpty(target.ServiceState.LastContainerFallbackDecisionAt, "--"),
+			)
 		}
 		if target.ContainerFallbackPlan != nil {
 			plan := target.ContainerFallbackPlan
