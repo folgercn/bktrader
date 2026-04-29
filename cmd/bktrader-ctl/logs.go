@@ -18,6 +18,8 @@ func init() {
 	logsCmd.AddCommand(logsSystemCmd)
 	logsCmd.AddCommand(logsEventCmd)
 	logsCmd.AddCommand(logsLiveControlSummaryCmd)
+	logsCmd.AddCommand(logsLiveControlHistoryCmd)
+	logsCmd.AddCommand(logsLiveControlFailuresCmd)
 	logsCmd.AddCommand(logsHTTPCmd)
 	logsCmd.AddCommand(logsStreamCmd)
 	logsCmd.AddCommand(logsTraceCmd)
@@ -95,6 +97,38 @@ var logsLiveControlSummaryCmd = &cobra.Command{
 		}
 		resp, err := client.Request("GET", path, nil)
 		handleLiveControlSummaryResponse(resp, err)
+		return nil
+	},
+}
+
+var logsLiveControlHistoryCmd = &cobra.Command{
+	Use:   "live-control-history",
+	Short: "查询 LiveSession 控制历史事件 [IDEMPOTENT]",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		v := buildLiveControlLogQuery(cmd)
+		client := getClient()
+		path := "/api/v1/logs/live-control/history"
+		if len(v) > 0 {
+			path += "?" + v.Encode()
+		}
+		resp, err := client.Request("GET", path, nil)
+		handleLiveControlEventPageResponse(resp, err)
+		return nil
+	},
+}
+
+var logsLiveControlFailuresCmd = &cobra.Command{
+	Use:   "live-control-failures",
+	Short: "查询最近 LiveSession 控制失败事件 [IDEMPOTENT]",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		v := buildLiveControlLogQuery(cmd)
+		client := getClient()
+		path := "/api/v1/logs/live-control/failures"
+		if len(v) > 0 {
+			path += "?" + v.Encode()
+		}
+		resp, err := client.Request("GET", path, nil)
+		handleLiveControlEventPageResponse(resp, err)
 		return nil
 	},
 }
@@ -201,8 +235,56 @@ func init() {
 	logsLiveControlSummaryCmd.Flags().String("live-session-id", "", "实盘会话 ID 过滤")
 	logsLiveControlSummaryCmd.Flags().String("from", "", "开始时间 (RFC3339 或 Unix 秒/毫秒)")
 	logsLiveControlSummaryCmd.Flags().String("to", "", "结束时间 (RFC3339 或 Unix 秒/毫秒)")
+	for _, cmd := range []*cobra.Command{logsLiveControlHistoryCmd, logsLiveControlFailuresCmd} {
+		cmd.Flags().String("account-id", "", "账户 ID 过滤")
+		cmd.Flags().String("strategy-id", "", "策略 ID 过滤")
+		cmd.Flags().String("live-session-id", "", "实盘会话 ID 过滤")
+		cmd.Flags().String("from", "", "开始时间 (RFC3339 或 Unix 秒/毫秒)")
+		cmd.Flags().String("to", "", "结束时间 (RFC3339 或 Unix 秒/毫秒)")
+		cmd.Flags().Int("limit", 20, "返回数量")
+		cmd.Flags().String("cursor", "", "分页游标")
+	}
 	logsStreamCmd.Flags().String("source", "", "流来源 (system,http,alert,timeline)")
 	logsTraceCmd.Flags().String("order-id", "", "要追踪的订单 ID")
+}
+
+func buildLiveControlLogQuery(cmd *cobra.Command) url.Values {
+	v := url.Values{}
+	for flag, queryKey := range map[string]string{
+		"account-id":      "accountId",
+		"strategy-id":     "strategyId",
+		"live-session-id": "liveSessionId",
+		"from":            "from",
+		"to":              "to",
+		"cursor":          "cursor",
+	} {
+		value, _ := cmd.Flags().GetString(flag)
+		if value != "" {
+			v.Set(queryKey, value)
+		}
+	}
+	limit, _ := cmd.Flags().GetInt("limit")
+	if limit > 0 {
+		v.Set("limit", fmt.Sprint(limit))
+	}
+	return v
+}
+
+type liveControlEventPageResponse struct {
+	Items      []liveControlEventResponse `json:"items"`
+	NextCursor string                     `json:"nextCursor,omitempty"`
+}
+
+type liveControlEventResponse struct {
+	ID            string         `json:"id"`
+	Level         string         `json:"level"`
+	Title         string         `json:"title"`
+	Message       string         `json:"message"`
+	EventTime     time.Time      `json:"eventTime"`
+	AccountID     string         `json:"accountId,omitempty"`
+	StrategyID    string         `json:"strategyId,omitempty"`
+	LiveSessionID string         `json:"liveSessionId,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
 }
 
 type liveControlSummaryResponse struct {
@@ -295,6 +377,49 @@ func handleLiveControlSummaryResponse(data []byte, err error) {
 		for _, code := range sortedLiveControlSummaryKeys(summary.ByErrorCode) {
 			fmt.Fprintf(&out, "  %s=%d\n", code, summary.ByErrorCode[code])
 		}
+	}
+	fmt.Print(strings.TrimRight(out.String(), "\n") + "\n")
+}
+
+func handleLiveControlEventPageResponse(data []byte, err error) {
+	if err != nil || outputJSON {
+		handleResponse(data, err)
+		return
+	}
+	var page liveControlEventPageResponse
+	if decodeErr := json.Unmarshal(data, &page); decodeErr != nil {
+		handleResponse(data, nil)
+		return
+	}
+	var out bytes.Buffer
+	if len(page.Items) == 0 {
+		fmt.Fprintln(&out, "No live control events.")
+	} else {
+		for i, item := range page.Items {
+			if i > 0 {
+				out.WriteByte('\n')
+			}
+			meta := item.Metadata
+			fmt.Fprintf(&out, "%s %s %s\n", item.EventTime.Format(time.RFC3339), strings.ToUpper(firstNonEmpty(item.Level, "info")), firstNonEmpty(item.Title, item.ID))
+			fmt.Fprintf(&out, "  session=%s action=%s phase=%s desired=%s actual=%s\n",
+				firstNonEmpty(item.LiveSessionID, "-"),
+				firstNonEmpty(liveSessionControlString(meta["action"]), "-"),
+				firstNonEmpty(liveSessionControlString(meta["phase"]), "-"),
+				firstNonEmpty(liveSessionControlString(meta["desiredStatus"]), "-"),
+				firstNonEmpty(liveSessionControlString(meta["actualStatus"]), "-"),
+			)
+			fmt.Fprintf(&out, "  requestId=%s version=%s errorCode=%s\n",
+				firstNonEmpty(liveSessionControlString(meta["controlRequestId"]), "-"),
+				firstNonEmpty(liveSessionControlString(meta["controlVersion"]), "-"),
+				firstNonEmpty(liveSessionControlString(meta["errorCode"]), "-"),
+			)
+			if strings.TrimSpace(item.Message) != "" {
+				fmt.Fprintf(&out, "  message=%s\n", item.Message)
+			}
+		}
+	}
+	if strings.TrimSpace(page.NextCursor) != "" {
+		fmt.Fprintf(&out, "\nnextCursor=%s\n", page.NextCursor)
 	}
 	fmt.Print(strings.TrimRight(out.String(), "\n") + "\n")
 }

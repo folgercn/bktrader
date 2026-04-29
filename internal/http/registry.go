@@ -42,12 +42,15 @@ var APIRegistry = []RouteEntry{
 	{Path: "/api/v1/live/sessions/{id}/detail", Methods: []string{"GET"}, Module: "live", CLICommand: "live get", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/live/sessions/{id}/start", Methods: []string{"POST"}, Module: "live", CLICommand: "live start", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/live/sessions/{id}/stop", Methods: []string{"POST"}, Module: "live", CLICommand: "live stop", Idempotent: false, RiskLevel: "L1"},
+	{Path: "/api/v1/live/sessions/{id}/control-reset", Methods: []string{"POST"}, Module: "live", CLICommand: "live control-reset", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/live/sessions/{id}/dispatch", Methods: []string{"POST"}, Module: "live", CLICommand: "live dispatch", Idempotent: false, RiskLevel: "L2"},
 
 	// Logs & Charts
 	{Path: "/api/v1/logs/system", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs system", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/logs/events", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs event", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/logs/live-control/summary", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs live-control-summary", Idempotent: true, RiskLevel: "L0"},
+	{Path: "/api/v1/logs/live-control/history", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs live-control-history", Idempotent: true, RiskLevel: "L0"},
+	{Path: "/api/v1/logs/live-control/failures", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs live-control-failures", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/logs/stream", Methods: []string{"GET"}, Module: "logs", CLICommand: "logs stream", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/chart/candles", Methods: []string{"GET"}, Module: "chart", CLICommand: "chart candles", Idempotent: true, RiskLevel: "L0"},
 }

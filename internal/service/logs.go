@@ -842,6 +842,8 @@ func liveSessionControlEventTitle(phase string) string {
 		return "live control failed"
 	case "stale_update_discarded":
 		return "live control stale update discarded"
+	case "manual_reset":
+		return "live control manually reset"
 	default:
 		return "live control updated"
 	}
@@ -864,6 +866,8 @@ func liveSessionControlEventMessage(entry map[string]any) string {
 		return firstNonEmpty(action, "control") + " converged to " + firstNonEmpty(actual, "target status")
 	case "stale_update_discarded":
 		return "stale runner result discarded"
+	case "manual_reset":
+		return "operator reset stuck live control state"
 	default:
 		return firstNonEmpty(actual, "live control state updated")
 	}

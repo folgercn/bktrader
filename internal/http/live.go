@@ -687,6 +687,19 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 				return
 			}
 			writeJSON(w, http.StatusAccepted, liveSessionControlAcceptedPayload(item))
+		case "control-reset":
+			result, err := platform.ResetLiveSessionControlState(sessionID, r.URL.Query().Get("reason"), queryFlagEnabled(r, "confirm"))
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, service.ErrLiveControlResetConfirmRequired) ||
+					errors.Is(err, service.ErrLiveControlResetReasonRequired) ||
+					errors.Is(err, service.ErrLiveControlResetDeletedSession) {
+					status = http.StatusBadRequest
+				}
+				writeError(w, status, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, result)
 		case "dispatch":
 			if !cfg.RuntimeActionsEnabled() {
 				writeError(w, http.StatusConflict, "runtime action dispatch is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
