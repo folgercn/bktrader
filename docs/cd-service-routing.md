@@ -28,7 +28,7 @@
 | `internal/app/**`, `internal/config/**`, `internal/store/**`, `internal/domain/**`, `db/**` | 全部后端服务 |
 | `cmd/platform-api/**`, `internal/http/**` | `platform-api` |
 | `cmd/platform-worker/**` | `live-runner`, `signal-runtime-runner`, `notification-worker` |
-| `internal/service/state_util*`, `logs.go`, `dashboard_broker*`, `backtest*`, `chart*`, `paper*`, `pnl*`, `strategy_replay*` | `platform-api` |
+| `internal/service/state_util*`, `logs.go`, `dashboard_broker*`, `chart*`, `paper*`, `pnl*`, `strategy_replay*` | `platform-api` |
 | `internal/service/live*`, `order*`, `execution_strategy.go`, `precision_tolerance.go`, `strategy_registry.go`, `live_account_flow.go`, `live_launch*`, `live_trade*`, `telemetry*` | `platform-api`, `live-runner` |
 | `internal/service/live_market_data.go`, `signal_runtime*`, `runtime_lease*` | `platform-api`, `signal-runtime-runner` |
 | `internal/service/runtime_event_consumer*` | `live-runner`, `signal-runtime-runner` |

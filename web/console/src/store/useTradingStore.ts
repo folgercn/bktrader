@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, BacktestRun, BacktestOptions, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession, PlatformHealthSnapshot } from '../types/domain';
+import { AccountSummary, AccountRecord, Order, Fill, Position, AccountEquitySnapshot, StrategyRecord, PaperSession, LiveSession, LiveAdapter, SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter, SignalRuntimeSession, RuntimePolicy, PlatformAlert, PlatformNotification, TelegramConfig, SignalBinding, ChartCandle, ChartAnnotation, MarkerDetail, ChartOverrideRange, SelectedSample, SourceFilter, EventFilter, TimeWindow, AuthSession, PlatformHealthSnapshot } from '../types/domain';
 import { readStoredAuthSession } from '../utils/auth';
 import { resolveUpdater } from './helpers';
 
@@ -19,10 +19,6 @@ export interface useTradingStoreState {
   setSnapshots: (valOrUpdater: AccountEquitySnapshot[] | ((prev: AccountEquitySnapshot[]) => AccountEquitySnapshot[])) => void;
   strategies: StrategyRecord[];
   setStrategies: (valOrUpdater: StrategyRecord[] | ((prev: StrategyRecord[]) => StrategyRecord[])) => void;
-  backtests: BacktestRun[];
-  setBacktests: (valOrUpdater: BacktestRun[] | ((prev: BacktestRun[]) => BacktestRun[])) => void;
-  backtestOptions: BacktestOptions | null;
-  setBacktestOptions: (valOrUpdater: BacktestOptions | null | ((prev: BacktestOptions | null) => BacktestOptions | null)) => void;
   paperSessions: PaperSession[];
   setPaperSessions: (valOrUpdater: PaperSession[] | ((prev: PaperSession[]) => PaperSession[])) => void;
   liveSessions: LiveSession[];
@@ -84,10 +80,6 @@ export const useTradingStore = create<useTradingStoreState>((set) => ({
   setSnapshots: (valOrUpdater) => set((state) => ({ snapshots: resolveUpdater(valOrUpdater, state.snapshots) })),
   strategies: [],
   setStrategies: (valOrUpdater) => set((state) => ({ strategies: resolveUpdater(valOrUpdater, state.strategies) })),
-  backtests: [],
-  setBacktests: (valOrUpdater) => set((state) => ({ backtests: resolveUpdater(valOrUpdater, state.backtests) })),
-  backtestOptions: null,
-  setBacktestOptions: (valOrUpdater) => set((state) => ({ backtestOptions: resolveUpdater(valOrUpdater, state.backtestOptions) })),
   paperSessions: [],
   setPaperSessions: (valOrUpdater) => set((state) => ({ paperSessions: resolveUpdater(valOrUpdater, state.paperSessions) })),
   liveSessions: [],

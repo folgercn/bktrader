@@ -4,7 +4,7 @@ import { useTradingStore } from '../store/useTradingStore';
 import { fetchJSON } from '../utils/api';
 import { writeStoredAuthSession } from '../utils/auth';
 import {
-  StrategyRecord, BacktestRun, BacktestOptions, LiveAdapter,
+  StrategyRecord, LiveAdapter,
   SignalSourceCatalog, SignalSourceType, SignalRuntimeAdapter,
   RuntimePolicy, TelegramConfig, SignalBinding
 } from '../types/domain';
@@ -17,13 +17,9 @@ export function useDashboardConfig() {
   const setRuntimePolicyForm = useUIStore(s => s.setRuntimePolicyForm);
   const activeSettingsModal = useUIStore(s => s.activeSettingsModal);
   const authSession = useUIStore(s => s.authSession);
-  const setBacktestForm = useUIStore(s => s.setBacktestForm);
-  const setSelectedBacktestId = useUIStore(s => s.setSelectedBacktestId);
 
   const setStrategies = useTradingStore(s => s.setStrategies);
   const setSelectedStrategyId = useTradingStore(s => s.setSelectedStrategyId);
-  const setBacktests = useTradingStore(s => s.setBacktests);
-  const setBacktestOptions = useTradingStore(s => s.setBacktestOptions);
   const setLiveAdapters = useTradingStore(s => s.setLiveAdapters);
   const setSignalCatalog = useTradingStore(s => s.setSignalCatalog);
   const setSignalSourceTypes = useTradingStore(s => s.setSignalSourceTypes);
@@ -36,8 +32,6 @@ export function useDashboardConfig() {
   async function loadConfig() {
     const [
       strategyData,
-      backtestData,
-      backtestOptionsData,
       liveAdapterData,
       signalCatalogData,
       signalSourceTypeData,
@@ -47,8 +41,6 @@ export function useDashboardConfig() {
       launchTemplateData,
     ] = await Promise.all([
       fetchDashboardConfigList<StrategyRecord>("strategies", () => fetchJSON<StrategyRecord[]>("/api/v1/strategies")),
-      fetchDashboardConfigList<BacktestRun>("backtests", () => fetchJSON<BacktestRun[]>("/api/v1/backtests")),
-      fetchDashboardConfigItem<BacktestOptions | null>("backtest-options", () => fetchJSON<BacktestOptions>("/api/v1/backtests/options"), null),
       fetchDashboardConfigList<LiveAdapter>("live-adapters", () => fetchJSON<LiveAdapter[]>("/api/v1/live-adapters")),
       fetchDashboardConfigItem<SignalSourceCatalog>("signal-sources", () => fetchJSON<SignalSourceCatalog>("/api/v1/signal-sources"), { sources: [], notes: [] }),
       fetchDashboardConfigList<SignalSourceType>("signal-source-types", () => fetchJSON<SignalSourceType[]>("/api/v1/signal-source-types")),
@@ -69,12 +61,10 @@ export function useDashboardConfig() {
     );
 
     const normalizedStrategies = Array.isArray(strategyData) ? strategyData : [];
-    const normalizedBacktests = Array.isArray(backtestData) ? backtestData : [];
     const normalizedLiveAdapters = Array.isArray(liveAdapterData) ? liveAdapterData : [];
     const normalizedSignalSourceTypes = Array.isArray(signalSourceTypeData) ? signalSourceTypeData : [];
     const normalizedSignalRuntimeAdapters = Array.isArray(signalRuntimeAdapterData) ? signalRuntimeAdapterData : [];
     const normalizedSignalCatalog = signalCatalogData && typeof signalCatalogData === "object" ? signalCatalogData : { sources: [], notes: [] };
-    const normalizedBacktestOptions = backtestOptionsData && typeof backtestOptionsData === "object" ? backtestOptionsData : ({} as BacktestOptions);
     const normalizedLaunchTemplates = Array.isArray(launchTemplateData) ? launchTemplateData : [];
 
     setStrategies(normalizedStrategies);
@@ -82,12 +72,6 @@ export function useDashboardConfig() {
       if (current && normalizedStrategies.some((item) => item.id === current)) return current;
       return normalizedStrategies[0]?.id ?? null;
     });
-    setBacktests(normalizedBacktests);
-    setSelectedBacktestId((current: string | null) => {
-      if (current && normalizedBacktests.some((item) => item.id === current)) return current;
-      return normalizedBacktests.length > 0 ? normalizedBacktests[normalizedBacktests.length - 1].id : null;
-    });
-    setBacktestOptions(normalizedBacktestOptions);
     setLiveAdapters(normalizedLiveAdapters);
     setSignalCatalog(normalizedSignalCatalog as SignalSourceCatalog);
     setSignalSourceTypes(normalizedSignalSourceTypes);
@@ -121,14 +105,6 @@ export function useDashboardConfig() {
     }
     setStrategySignalBindingMap(Object.fromEntries(strategyBindingEntries));
     setStrategySignalBindings(strategyBindingEntries.flatMap((e) => e[1]));
-    setBacktestForm((current: any) => ({
-      strategyVersionId: current.strategyVersionId || normalizedStrategies[0]?.currentVersion?.id || "",
-      signalTimeframe: current.signalTimeframe || normalizedBacktestOptions.defaultSignalTimeframe,
-      executionDataSource: current.executionDataSource || normalizedBacktestOptions.defaultExecutionDataSource,
-      symbol: current.symbol || "BTCUSDT",
-      from: current.from || "",
-      to: current.to || "",
-    }));
   }
 
   useEffect(() => {

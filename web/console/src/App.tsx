@@ -28,8 +28,6 @@ import { LiveSessionModal } from './modals/LiveSessionModal';
 import { TelegramModal } from './modals/TelegramModal';
 import { ConfirmModal } from './modals/ConfirmModal';
 
-// Pages
-import { StrategySidePanel } from './pages/StrategySidePanel';
 import { Toaster } from "./components/ui/sonner";
 
 import { TooltipProvider } from "./components/ui/tooltip";

@@ -51,7 +51,6 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 				"orders",
 				"positions",
 				"live-monitoring",
-				"backtests",
 				"chart-feed",
 			},
 			"notes": "Phase 1 MVP API，可插拔存储、实盘/测试网执行流、账户净值快照、CRUD 风格接口、TradingView 图表脚手架。",
@@ -64,7 +63,6 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 	registerAccountRoutes(mux, platform)
 	registerLiveRoutes(mux, platform, cfg)
 	registerOrderRoutes(mux, platform)
-	registerBacktestRoutes(mux, platform)
 	registerChartRoutes(mux, platform)
 
 	// 依次包裹中间件：CORS -> 请求日志 -> 路由
