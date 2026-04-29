@@ -27,8 +27,11 @@ const (
 )
 
 var (
-	ErrLiveControlAdapter = errors.New("live control adapter error")
-	ErrLiveControlConfig  = errors.New("live control configuration error")
+	ErrLiveControlAdapter              = errors.New("live control adapter error")
+	ErrLiveControlConfig               = errors.New("live control configuration error")
+	ErrLiveControlResetConfirmRequired = errors.New("live control reset confirm required")
+	ErrLiveControlResetReasonRequired  = errors.New("live control reset reason required")
+	ErrLiveControlResetDeletedSession  = errors.New("live control reset deleted session")
 )
 
 type liveControlClassError struct {
@@ -87,6 +90,17 @@ type liveSessionControlStateCompareAndSwapStore interface {
 	UpdateLiveSessionStateIfControlRequest(sessionID, requestID string, version int64, state map[string]any) (domain.LiveSession, bool, error)
 }
 
+type LiveSessionControlResetResult struct {
+	Status           string             `json:"status"`
+	SessionID        string             `json:"sessionId"`
+	ControlRequestID string             `json:"controlRequestId"`
+	ControlVersion   int64              `json:"controlVersion"`
+	DesiredStatus    string             `json:"desiredStatus"`
+	ActualStatus     string             `json:"actualStatus"`
+	ResetReason      string             `json:"resetReason,omitempty"`
+	Session          domain.LiveSession `json:"session"`
+}
+
 type LiveControlScannerStatus struct {
 	ProcessRole      string `json:"processRole,omitempty"`
 	Enabled          bool   `json:"enabled"`
@@ -109,6 +123,79 @@ func (p *Platform) RequestLiveSessionStart(sessionID string) (domain.LiveSession
 
 func (p *Platform) RequestLiveSessionStopWithForce(sessionID string, force bool) (domain.LiveSession, error) {
 	return p.requestLiveSessionDesiredStatus(sessionID, "STOPPED", force)
+}
+
+func (p *Platform) ResetLiveSessionControlState(sessionID, reason string, confirm bool) (LiveSessionControlResetResult, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return LiveSessionControlResetResult{}, fmt.Errorf("live session id is required")
+	}
+	if !confirm {
+		return LiveSessionControlResetResult{}, ErrLiveControlResetConfirmRequired
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return LiveSessionControlResetResult{}, ErrLiveControlResetReasonRequired
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		session, err := p.store.GetLiveSession(sessionID)
+		if err != nil {
+			return LiveSessionControlResetResult{}, err
+		}
+		if strings.EqualFold(session.Status, "DELETED") || strings.TrimSpace(stringValue(session.State["deletedAt"])) != "" {
+			return LiveSessionControlResetResult{}, fmt.Errorf("%w: %s", ErrLiveControlResetDeletedSession, sessionID)
+		}
+		state := cloneMetadata(session.State)
+		previous := liveSessionControlRequest{
+			ID:      strings.TrimSpace(stringValue(state["controlRequestId"])),
+			Version: liveSessionControlVersion(state),
+		}
+		actual := liveSessionActualStatusFromSession(session)
+		now := time.Now().UTC()
+		request := liveSessionControlRequest{
+			ID:      uuid.NewString(),
+			Version: previous.Version + 1,
+		}
+		state["desiredStatus"] = actual
+		state["actualStatus"] = actual
+		state["controlRequestId"] = request.ID
+		state["controlVersion"] = request.Version
+		state["lastControlAction"] = "reset"
+		state["controlRequestedAt"] = now.Format(time.RFC3339)
+		state["lastControlUpdateAt"] = now.Format(time.RFC3339)
+		state["lastControlResetAt"] = now.Format(time.RFC3339)
+		state["lastControlResetReason"] = reason
+		delete(state, "desiredStopForce")
+		delete(state, "activeControlRequestId")
+		delete(state, "activeControlVersion")
+		delete(state, "lastControlError")
+		delete(state, "lastControlErrorAt")
+		delete(state, "lastControlErrorCode")
+		delete(state, "lastControlErrorRequestId")
+		delete(state, "lastControlErrorVersion")
+		eventSession := session
+		eventSession.State = state
+		event := liveSessionControlEvent(eventSession, request, "manual_reset", actual, actual, nil, now)
+		event["resetReason"] = reason
+		appendLiveSessionControlEvent(state, event)
+		updated, ok, err := p.updateLiveSessionControlStateIfPrevious(session.ID, previous, state)
+		if err != nil {
+			return LiveSessionControlResetResult{}, err
+		}
+		if ok {
+			return LiveSessionControlResetResult{
+				Status:           "reset",
+				SessionID:        updated.ID,
+				ControlRequestID: request.ID,
+				ControlVersion:   request.Version,
+				DesiredStatus:    actual,
+				ActualStatus:     actual,
+				ResetReason:      reason,
+				Session:          updated,
+			}, nil
+		}
+	}
+	return LiveSessionControlResetResult{}, fmt.Errorf("live session control request changed concurrently: %s", sessionID)
 }
 
 func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, force bool) (domain.LiveSession, error) {

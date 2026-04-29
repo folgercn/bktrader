@@ -67,6 +67,8 @@ bktrader-ctl position list --json
 bktrader-ctl logs system --json
 bktrader-ctl logs events --json
 bktrader-ctl logs live-control-summary
+bktrader-ctl logs live-control-history --live-session-id <session-id>
+bktrader-ctl logs live-control-failures --limit 20
 ```
 
 `logs live-control-summary` 的 `totalEvents` / `failed` / `latency` 等历史指标受 `--from` / `--to` 过滤；`currentPending` / `currentErrors` 是当前状态快照，不受时间过滤。需要机器读取时继续加 `--json`。
@@ -94,11 +96,25 @@ bktrader-ctl order cancel <order-id> --confirm --json
 - `account sync`
 - `account reconcile`
 - `live sync`
+- `live control-reset`
 - `order cancel`
 - `order sync`
 - `position close`
 - `notify test`
 - `update`
+
+卡住的 LiveSession 控制状态只允许人工显式重置，固定流程如下：
+
+1. `--dry-run` 预览当前 stuck/error/active request 状态。
+2. 人工确认 runner 日志、控制意图与真实会话状态。
+3. 带 `--confirm` 和非空 `--reason` 执行 reset。
+
+```bash
+bktrader-ctl live control-reset <session-id> --dry-run --reason "operator verified runner state" --json
+bktrader-ctl live control-reset <session-id> --confirm --reason "operator verified runner state" --json
+```
+
+reset 只清理控制面 stuck/error/active request 状态并写入 `controlEvents` 审计，不会启动或停止 runner。`--reason` 必须填写，用于后续审计。
 
 ## 5. 手动更新 CLI
 

@@ -233,6 +233,83 @@ func TestLogRoutesExposeLiveControlSummary(t *testing.T) {
 	}
 }
 
+func TestLogRoutesExposeLiveControlHistoryAndFailures(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+	mux := http.NewServeMux()
+	registerLogRoutes(mux, platform)
+
+	base := time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC)
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session: %v", err)
+	}
+	state := map[string]any{
+		"controlEvents": []any{
+			map[string]any{
+				"id":               "control-history-event-1",
+				"phase":            "request_accepted",
+				"eventTime":        base.Format(time.RFC3339Nano),
+				"recordedAt":       base.Format(time.RFC3339Nano),
+				"liveSessionId":    session.ID,
+				"accountId":        session.AccountID,
+				"strategyId":       session.StrategyID,
+				"controlRequestId": "request-1",
+				"controlVersion":   1,
+				"desiredStatus":    "RUNNING",
+				"actualStatus":     "STOPPED",
+				"action":           "start",
+			},
+			map[string]any{
+				"id":               "control-history-event-2",
+				"phase":            "failed",
+				"eventTime":        base.Add(time.Minute).Format(time.RFC3339Nano),
+				"recordedAt":       base.Add(time.Minute).Format(time.RFC3339Nano),
+				"liveSessionId":    session.ID,
+				"accountId":        session.AccountID,
+				"strategyId":       session.StrategyID,
+				"controlRequestId": "request-2",
+				"controlVersion":   2,
+				"desiredStatus":    "RUNNING",
+				"actualStatus":     "ERROR",
+				"action":           "start",
+				"errorCode":        service.LiveSessionControlErrorCodeConfigError,
+			},
+		},
+	}
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("update live session state: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/live-control/history?liveSessionId="+session.ID+"&limit=10", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for history, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var history service.UnifiedLogEventPage
+	if err := json.NewDecoder(rec.Body).Decode(&history); err != nil {
+		t.Fatalf("decode history page: %v", err)
+	}
+	if len(history.Items) != 2 || history.Items[0].ID != "control-history-event-2" {
+		t.Fatalf("unexpected history page: %#v", history.Items)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/logs/live-control/failures?liveSessionId="+session.ID+"&limit=10", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for failures, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var failures service.UnifiedLogEventPage
+	if err := json.NewDecoder(rec.Body).Decode(&failures); err != nil {
+		t.Fatalf("decode failures page: %v", err)
+	}
+	if len(failures.Items) != 1 || failures.Items[0].ID != "control-history-event-2" {
+		t.Fatalf("unexpected failures page: %#v", failures.Items)
+	}
+}
+
 func TestLogStreamEndpointWritesSSE(t *testing.T) {
 	logging.ResetForTests()
 	t.Cleanup(logging.ResetForTests)

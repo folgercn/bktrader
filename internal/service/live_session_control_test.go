@@ -66,6 +66,119 @@ func TestScanLiveSessionControlRequestsInitializesLegacyDesiredIntent(t *testing
 	}
 }
 
+func TestScanLiveSessionControlRequestsRecoversInFlightRequestAfterRunnerRestart(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	session, err := store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	requested, err := platform.RequestLiveSessionStopWithForce(session.ID, true)
+	if err != nil {
+		t.Fatalf("request stop failed: %v", err)
+	}
+	request, ok := liveSessionControlRequestFromState(requested.State)
+	if !ok {
+		t.Fatal("expected control request identity")
+	}
+	state := cloneMetadata(requested.State)
+	state["actualStatus"] = "STOPPING"
+	state["activeControlRequestId"] = request.ID
+	state["activeControlVersion"] = request.Version
+	state["lastControlUpdateAt"] = time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("seed in-flight control state failed: %v", err)
+	}
+
+	platform.scanLiveSessionControlRequests(context.Background())
+
+	updated, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if updated.Status != "STOPPED" {
+		t.Fatalf("expected scanner to finish in-flight stop after restart, got %s", updated.Status)
+	}
+	if got := stringValue(updated.State["actualStatus"]); got != "STOPPED" {
+		t.Fatalf("expected actualStatus STOPPED, got %s", got)
+	}
+	if got := stringValue(updated.State["activeControlRequestId"]); got != "" {
+		t.Fatalf("expected activeControlRequestId cleared after recovery, got %s", got)
+	}
+}
+
+func TestResetLiveSessionControlStateClearsStuckStateAndAudits(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	session, err := store.UpdateLiveSessionStatus("live-session-main", "RUNNING")
+	if err != nil {
+		t.Fatalf("set live session running failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = "STOPPED"
+	state["actualStatus"] = "STOPPING"
+	state["controlRequestId"] = "request-stuck"
+	state["controlVersion"] = 4
+	state["activeControlRequestId"] = "request-stuck"
+	state["activeControlVersion"] = 4
+	state["lastControlError"] = "runner died mid-stop"
+	state["lastControlErrorCode"] = LiveSessionControlErrorCodeUnknown
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("seed stuck control state failed: %v", err)
+	}
+
+	result, err := platform.ResetLiveSessionControlState(session.ID, "operator verified runner restart", true)
+	if err != nil {
+		t.Fatalf("reset control state failed: %v", err)
+	}
+	if result.Status != "reset" || result.ActualStatus != "RUNNING" || result.DesiredStatus != "RUNNING" {
+		t.Fatalf("unexpected reset result: %#v", result)
+	}
+	reset, err := store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get reset live session failed: %v", err)
+	}
+	if got := stringValue(reset.State["desiredStatus"]); got != "RUNNING" {
+		t.Fatalf("expected desiredStatus RUNNING after reset, got %s", got)
+	}
+	if got := stringValue(reset.State["actualStatus"]); got != "RUNNING" {
+		t.Fatalf("expected actualStatus RUNNING after reset, got %s", got)
+	}
+	if got := stringValue(reset.State["activeControlRequestId"]); got != "" {
+		t.Fatalf("expected activeControlRequestId cleared, got %s", got)
+	}
+	if got := stringValue(reset.State["lastControlError"]); got != "" {
+		t.Fatalf("expected lastControlError cleared, got %s", got)
+	}
+	if got := liveSessionControlVersion(reset.State); got != 5 {
+		t.Fatalf("expected controlVersion 5 after reset, got %d", got)
+	}
+	events := metadataList(reset.State[liveSessionControlEventStateKey])
+	if len(events) != 1 {
+		t.Fatalf("expected one manual reset event, got %d: %#v", len(events), events)
+	}
+	if got := stringValue(events[0]["phase"]); got != "manual_reset" {
+		t.Fatalf("expected manual_reset audit phase, got %s", got)
+	}
+	if got := stringValue(events[0]["resetReason"]); got != "operator verified runner restart" {
+		t.Fatalf("expected reset reason audit, got %s", got)
+	}
+}
+
+func TestResetLiveSessionControlStateRequiresConfirm(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.ResetLiveSessionControlState("live-session-main", "missing confirm", false); err == nil {
+		t.Fatal("expected reset without confirm to fail")
+	}
+}
+
+func TestResetLiveSessionControlStateRequiresReason(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	if _, err := platform.ResetLiveSessionControlState("live-session-main", "", true); err == nil {
+		t.Fatal("expected reset without reason to fail")
+	}
+}
+
 func TestRequestLiveSessionControlAssignsRequestIdentityAndVersion(t *testing.T) {
 	store := memory.NewStore()
 	platform := NewPlatform(store)

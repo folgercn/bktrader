@@ -75,6 +75,53 @@ func registerLogRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, metrics)
 	})
 
+	mux.HandleFunc("/api/v1/logs/live-control/history", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		query, err := parseUnifiedLogEventQuery(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		query.Type = "live-control"
+		page, err := platform.ListLogEvents(query)
+		if err != nil {
+			if strings.Contains(err.Error(), "cursor") {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, page)
+	})
+
+	mux.HandleFunc("/api/v1/logs/live-control/failures", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		query, err := parseUnifiedLogEventQuery(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		query.Type = "live-control"
+		query.Level = "critical"
+		page, err := platform.ListLogEvents(query)
+		if err != nil {
+			if strings.Contains(err.Error(), "cursor") {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, page)
+	})
+
 	mux.HandleFunc("/api/v1/logs/system", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

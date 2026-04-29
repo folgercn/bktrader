@@ -80,6 +80,68 @@ func TestLiveSessionStopRoutePersistsDesiredStopIntent(t *testing.T) {
 	}
 }
 
+func TestLiveSessionControlResetRouteRequiresConfirmAndAudits(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	state := map[string]any{
+		"desiredStatus":          "RUNNING",
+		"actualStatus":           "STARTING",
+		"controlRequestId":       "request-stuck",
+		"controlVersion":         8,
+		"activeControlRequestId": "request-stuck",
+		"activeControlVersion":   8,
+	}
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("seed live session state failed: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	registerLiveRoutes(mux, platform, config.Config{ProcessRole: "api"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/control-reset", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 without confirm, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/control-reset?confirm=true", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 without reason, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/live/sessions/live-session-main/control-reset?confirm=true&reason=operator", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for reset, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result service.LiveSessionControlResetResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("decode reset response failed: %v", err)
+	}
+	if result.Status != "reset" || result.ControlVersion != 9 {
+		t.Fatalf("unexpected reset response: %#v", result)
+	}
+	if got := result.Session.State["activeControlRequestId"]; got != nil {
+		t.Fatalf("expected activeControlRequestId cleared, got %#v", got)
+	}
+	events, ok := result.Session.State["controlEvents"].([]any)
+	if !ok || len(events) != 1 {
+		t.Fatalf("expected one control event, got %#v", result.Session.State["controlEvents"])
+	}
+	event, ok := events[0].(map[string]any)
+	if !ok || event["phase"] != "manual_reset" {
+		t.Fatalf("expected manual_reset audit event, got %#v", events[0])
+	}
+}
+
 func TestLiveSessionControlIntentAcceptedForAPIRole(t *testing.T) {
 	cases := map[string]string{
 		"/api/v1/live/sessions/live-session-main/start": "RUNNING",

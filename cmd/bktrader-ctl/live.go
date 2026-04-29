@@ -17,6 +17,7 @@ func init() {
 	liveCmd.AddCommand(liveListCmd)
 	liveCmd.AddCommand(liveGetCmd)
 	liveCmd.AddCommand(liveControlStatusCmd)
+	liveCmd.AddCommand(liveControlResetCmd)
 	liveCmd.AddCommand(liveStartCmd)
 	liveCmd.AddCommand(liveStopCmd)
 	liveCmd.AddCommand(liveDispatchCmd)
@@ -96,6 +97,58 @@ var liveControlStatusCmd = &cobra.Command{
 			return nil
 		}
 		printLiveSessionControlStatuses(statuses)
+		return nil
+	},
+}
+
+var liveControlResetCmd = &cobra.Command{
+	Use:   "control-reset <sessionId>",
+	Short: "重置卡住的实盘控制状态 [MUTATING]",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		confirm, _ := cmd.Flags().GetBool("confirm")
+		reason, _ := cmd.Flags().GetString("reason")
+		if !confirm && !dryRun {
+			return fmt.Errorf("操作需要 --confirm 确认")
+		}
+		if strings.TrimSpace(reason) == "" {
+			return fmt.Errorf("操作需要 --reason 说明重置原因")
+		}
+		client := getClient()
+		if dryRun {
+			session, err := fetchLiveSessionControlView(client, args[0])
+			if err != nil {
+				return err
+			}
+			preview := map[string]any{
+				"status":          "dry-run",
+				"message":         "live control reset preview only; no state was changed",
+				"sessionId":       session.ID,
+				"desiredStatus":   liveSessionControlString(session.State["desiredStatus"]),
+				"actualStatus":    liveSessionControlString(session.State["actualStatus"]),
+				"requestId":       liveSessionControlString(session.State["controlRequestId"]),
+				"version":         liveSessionControlString(session.State["controlVersion"]),
+				"activeRequestId": liveSessionControlString(session.State["activeControlRequestId"]),
+				"activeVersion":   liveSessionControlString(session.State["activeControlVersion"]),
+				"reason":          reason,
+			}
+			if outputJSON {
+				data, _ := json.Marshal(preview)
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Fprintf(os.Stderr, "dry-run: would reset live control state for %s; use --confirm to apply\n", session.ID)
+			data, _ := json.Marshal(preview)
+			handleResponse(data, nil)
+			return nil
+		}
+		v := url.Values{}
+		v.Set("confirm", "true")
+		if strings.TrimSpace(reason) != "" {
+			v.Set("reason", reason)
+		}
+		resp, err := client.Request("POST", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/control-reset?"+v.Encode(), nil)
+		handleResponse(resp, err)
 		return nil
 	},
 }
@@ -228,6 +281,8 @@ func init() {
 	liveListCmd.Flags().String("view", "", "视图类型 (e.g. summary)")
 	liveControlStatusCmd.Flags().Bool("only-pending", false, "只显示尚未收敛的控制请求")
 	liveControlStatusCmd.Flags().Bool("only-error", false, "只显示 actualStatus=ERROR 或存在控制错误的会话")
+	liveControlResetCmd.Flags().Bool("confirm", false, "确认执行控制状态重置")
+	liveControlResetCmd.Flags().String("reason", "", "重置原因，写入 controlEvents 审计")
 
 	// 安全确认标志
 	liveStartCmd.Flags().Bool("confirm", false, "确认执行启动操作")
