@@ -27,6 +27,18 @@
 - 再入场风险仓位管理：首次 `20%`，后续 `10%` (`reentry_size_schedule=[0.20, 0.10]`)
 - 止损模式：`atr`
 
+## 核心执行安全能力
+
+平台的 live/testnet 链路已经把订单、成交、持仓和对账收敛到强一致模型：
+
+- **成交一致性引擎**：`BuildFillReconciliationPlan` 统一处理 real / synthetic / remainder fill，避免真实成交替换兜底成交时重复更新 position。
+- **显式 fill source**：`fills.fill_source` 持久化 `real / synthetic / remainder / paper / manual`，live reconcile 不再依赖“trade id 为空 + fingerprint”这类弱推断来删除占位成交。
+- **原子 settlement**：fill 删除、fill 创建、position apply、order metadata/status 更新在同一事务边界内完成，避免“成交已写入但仓位未更新”的半提交状态。
+- **同订单串行化**：PostgreSQL settlement 通过 order row lock 串行化同一订单的 finalize / retry / sync，防止并发 plan 重复 apply。
+- **交易所成交归一化**：Binance user trades 已进入 `ExchangeFillReport`；OKX / Bybit 成交流已有字段 mapper 和测试，后续 adapter 只负责归一化，不重写 synthetic upgrade 算法。
+
+详细设计见 [Fill Reconciliation Engine](docs/fill-reconciliation-engine.md)。
+
 ## 🏗️ Harness Engineering & 协作准则
 
 本项目引入了 **Harness Engineering** 体系，旨在通过自动化工具和严格的协作纪律确保交易系统的执行安全性：

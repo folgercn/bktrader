@@ -55,3 +55,4 @@
 ## 3. 最近的重大重构记录
 - **前端模块化拆解**: 曾将 5000 行的 `main.tsx` 逻辑抽离成了几十个职责单一的 React 组件。
 - **Harness Engineering 体系部署**: 引入了 `AGENTS.md` 强约束、自动化安全传感器以及基于风险定级的验证矩阵（`test-matrix.md`），将安全边界从文档口头约定转为机械化拦截。
+- **Fill Reconciliation Engine**: 将 Binance synthetic fill upgrade 提升为交易所无关的成交一致性模型。核心能力包括 `BuildFillReconciliationPlan`、显式 `FillReconciliationInput{Fill, Source}`、`fills.fill_source` 持久化、事务化 fill/order/position settlement、同订单 settlement 串行化，以及 Binance/OKX/Bybit 成交 payload 到 `ExchangeFillReport` 的归一化入口。
