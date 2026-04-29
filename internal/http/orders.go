@@ -101,16 +101,43 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 			writeJSON(w, http.StatusOK, item)
 			return
 		}
-		if r.Method != http.MethodPost || len(parts) != 2 {
-			if r.Method != http.MethodPost {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
+		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "order route not found")
 			return
 		}
 		switch parts[1] {
+		case "remote-fills":
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			item, err := platform.FetchRemoteFills(parts[0])
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case "sync-fills":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			var req service.ManualFillSyncRequest
+			if err := decodeJSON(r, &req); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := platform.ManualSyncFills(parts[0], req)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
 		case "sync":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
 			item, err := platform.SyncLiveOrder(parts[0])
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -118,6 +145,10 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 			}
 			writeJSON(w, http.StatusOK, item)
 		case "cancel":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
 			item, err := platform.CancelLiveOrder(parts[0])
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())

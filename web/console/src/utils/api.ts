@@ -27,3 +27,19 @@ export async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T>
   }
   return (await response.json()) as T;
 }
+
+import { RemoteFillsResponse, ManualFillSyncResponse } from '../types/domain';
+
+export async function fetchRemoteFills(orderId: string): Promise<RemoteFillsResponse> {
+  return fetchJSON<RemoteFillsResponse>(`/api/v1/orders/${orderId}/remote-fills`, {
+    method: 'GET',
+  });
+}
+
+export async function manualSyncFills(orderId: string, req: { confirm: boolean; reason: string; dryRun: boolean }): Promise<ManualFillSyncResponse> {
+  return fetchJSON<ManualFillSyncResponse>(`/api/v1/orders/${orderId}/sync-fills`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}

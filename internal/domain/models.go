@@ -239,7 +239,7 @@ type Fill struct {
 	ExchangeTradeTime *time.Time `json:"exchangeTradeTime,omitempty"`
 	DedupFingerprint  string     `json:"-"`
 	// Source is an internal reconciliation source stored in fill_source, not exposed by fill JSON.
-	Source    string    `json:"-"`
+	Source    string    `json:"source,omitempty"`
 	Price     float64   `json:"price"`
 	Quantity  float64   `json:"quantity"`
 	Fee       float64   `json:"fee"` // 手续费
