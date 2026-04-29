@@ -58,7 +58,7 @@
 - **核心功能**:
     - **状态概览**: `bktrader-ctl status` 查看系统整体运行健康度。
     - **账户管理**: `bktrader-ctl account list/summary` 查看账户权益与 PnL。
-    - **信号监控**: `bktrader-ctl live list` 查看所有实盘会话状态。
+    - **信号监控**: `bktrader-ctl live list` 查看所有实盘会话状态，`bktrader-ctl live control-status` 查看 desired/actual、requestId/version、pending 时长和错误建议。
     - **订单/持仓**: `bktrader-ctl order/position list` 管理活跃订单与仓位。
     - **日志溯源**: `bktrader-ctl logs system/events/trace` 实时跟踪系统事件与特定订单链路。
     - **Live 控制观测**: `bktrader-ctl logs live-control-summary` 汇总控制请求、收敛延迟、错误码与当前 pending/error 快照；其中历史计数和延迟受 `--from/--to` 过滤，当前快照不受时间过滤。
