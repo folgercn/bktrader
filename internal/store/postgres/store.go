@@ -867,7 +867,7 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 			on conflict (order_id, dedup_fallback_fingerprint) do update set
 				price = fills.price,
 				quantity = fills.quantity,
-				fee = fills.fee,
+				fee = case when excluded.fee <> 0 then excluded.fee else fills.fee end,
 				fill_source = excluded.fill_source,
 				exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
 			returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
@@ -908,7 +908,7 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 		on conflict (order_id, exchange_trade_id) do update set
 			price = fills.price,
 			quantity = fills.quantity,
-			fee = fills.fee,
+			fee = case when excluded.fee <> 0 then excluded.fee else fills.fee end,
 			fill_source = excluded.fill_source,
 			exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
 		returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
@@ -1103,7 +1103,7 @@ func (s fillSettlementTxStore) CreateFill(fill domain.Fill) (domain.Fill, error)
 			on conflict (order_id, dedup_fallback_fingerprint) do update set
 				price = fills.price,
 				quantity = fills.quantity,
-				fee = fills.fee,
+				fee = case when excluded.fee <> 0 then excluded.fee else fills.fee end,
 				fill_source = excluded.fill_source,
 				exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
 			returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at
@@ -1117,7 +1117,7 @@ func (s fillSettlementTxStore) CreateFill(fill domain.Fill) (domain.Fill, error)
 		on conflict (order_id, exchange_trade_id) do update set
 			price = fills.price,
 			quantity = fills.quantity,
-			fee = fills.fee,
+			fee = case when excluded.fee <> 0 then excluded.fee else fills.fee end,
 			fill_source = excluded.fill_source,
 			exchange_trade_time = coalesce(fills.exchange_trade_time, excluded.exchange_trade_time)
 		returning id, order_id, exchange_trade_id, exchange_trade_time, dedup_fallback_fingerprint, price, quantity, fee, fill_source, created_at

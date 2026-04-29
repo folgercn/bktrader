@@ -61,3 +61,54 @@ func TestCreateFillInfersSourceMemory(t *testing.T) {
 		t.Fatalf("expected synthetic source, got %q", syntheticFill.Source)
 	}
 }
+
+func TestCreateFillUpsertKeepsRealFeeMemory(t *testing.T) {
+	store := NewStore()
+
+	if _, err := store.CreateFill(domain.Fill{
+		OrderID:         "order-fee-upsert",
+		ExchangeTradeID: "trade-fee-upsert",
+		Source:          "real",
+		Price:           68000,
+		Quantity:        0.4,
+		Fee:             0,
+	}); err != nil {
+		t.Fatalf("CreateFill initial real failed: %v", err)
+	}
+
+	updated, err := store.CreateFill(domain.Fill{
+		OrderID:         "order-fee-upsert",
+		ExchangeTradeID: "trade-fee-upsert",
+		Source:          "real",
+		Price:           68000,
+		Quantity:        0.5,
+		Fee:             0.1234,
+	})
+	if err != nil {
+		t.Fatalf("CreateFill real fee upsert failed: %v", err)
+	}
+	if updated.Fee != 0.1234 {
+		t.Fatalf("expected fee to update from later real report, got %v", updated.Fee)
+	}
+	if updated.Quantity != 0.4 {
+		t.Fatalf("expected fee upsert to keep original quantity 0.4, got %v", updated.Quantity)
+	}
+
+	unchanged, err := store.CreateFill(domain.Fill{
+		OrderID:         "order-fee-upsert",
+		ExchangeTradeID: "trade-fee-upsert",
+		Source:          "real",
+		Price:           68000,
+		Quantity:        0.4,
+		Fee:             0,
+	})
+	if err != nil {
+		t.Fatalf("CreateFill zero fee upsert failed: %v", err)
+	}
+	if unchanged.Fee != 0.1234 {
+		t.Fatalf("expected later zero-fee retry to keep real fee, got %v", unchanged.Fee)
+	}
+	if unchanged.Quantity != 0.4 {
+		t.Fatalf("expected zero-fee retry to keep original quantity 0.4, got %v", unchanged.Quantity)
+	}
+}

@@ -49,7 +49,7 @@ func BuildFillReconciliationPlan(order domain.Order, existing []FillReconciliati
 		return plan, fmt.Errorf("order quantity must be positive: %v", order.Quantity)
 	}
 
-	existingRealTradeIDs := map[string]struct{}{}
+	existingRealFillsByTradeID := map[string]domain.Fill{}
 	existingFallbackFingerprints := map[string]struct{}{}
 	existingRealQty := 0.0
 	existingPlaceholderQty := 0.0
@@ -71,7 +71,7 @@ func BuildFillReconciliationPlan(order domain.Order, existing []FillReconciliati
 		existingTotalQty += fill.Quantity
 		if source == FillSourceReal {
 			existingRealQty += fill.Quantity
-			existingRealTradeIDs[strings.TrimSpace(fill.ExchangeTradeID)] = struct{}{}
+			existingRealFillsByTradeID[strings.TrimSpace(fill.ExchangeTradeID)] = fill
 			continue
 		}
 		if source != FillSourceSynthetic && source != FillSourceRemainder {
@@ -108,7 +108,10 @@ func BuildFillReconciliationPlan(order domain.Order, existing []FillReconciliati
 
 		if source == FillSourceReal {
 			tradeID := strings.TrimSpace(fill.ExchangeTradeID)
-			if _, exists := existingRealTradeIDs[tradeID]; exists {
+			if existingFill, exists := existingRealFillsByTradeID[tradeID]; exists {
+				if fill.Fee != 0 && !tradingQuantityEqual(fill.Fee, existingFill.Fee) {
+					plan.CreateFills = append(plan.CreateFills, fill)
+				}
 				continue
 			}
 			remainingRealQty := order.Quantity - existingRealQty - newRealQty
@@ -118,7 +121,7 @@ func BuildFillReconciliationPlan(order domain.Order, existing []FillReconciliati
 			if tradingQuantityExceeds(fill.Quantity, remainingRealQty) {
 				fill.Quantity = remainingRealQty
 			}
-			existingRealTradeIDs[tradeID] = struct{}{}
+			existingRealFillsByTradeID[tradeID] = fill
 			hasNewRealFill = true
 			newRealQty += fill.Quantity
 			plan.CreateFills = append(plan.CreateFills, fill)
