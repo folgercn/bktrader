@@ -367,7 +367,7 @@ func ClearRestartState(state map[string]any, keys []string)
 
 ### Dashboard 视图
 
-前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，只展示 service target、runtime 状态、应用内控制动作和 `containerFallbackCandidate`。该页面不提交 runtime 或容器控制请求；真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
+前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，只展示 supervisor policy、service target、runtime 状态、应用内控制动作和 `containerFallbackCandidate`。该页面不提交 runtime 或容器控制请求；真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
 
 ## 7. 安全边界
 
