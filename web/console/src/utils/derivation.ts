@@ -660,6 +660,71 @@ export function mapChartCandlesToSignalBarCandles(candles: ChartCandle[], timefr
   }));
 }
 
+function signalBarResolutionSeconds(timeframe: string) {
+  const normalized = String(timeframe ?? "").trim().toUpperCase();
+  if (normalized === "1D") {
+    return 24 * 60 * 60;
+  }
+  const minutes = Number.parseInt(normalized, 10);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : 5 * 60;
+}
+
+export function mergeLivePriceIntoSignalBars(
+  candles: SignalBarCandle[],
+  price: number | null | undefined,
+  timeframe: string,
+  eventTime?: string
+): SignalBarCandle[] {
+  if (price == null || !Number.isFinite(price) || price <= 0) {
+    return candles;
+  }
+  const eventMs = eventTime ? Date.parse(eventTime) : Date.now();
+  if (!Number.isFinite(eventMs)) {
+    return candles;
+  }
+
+  const stepMs = signalBarResolutionSeconds(timeframe) * 1000;
+  const currentStartMs = Math.floor(eventMs / stepMs) * stepMs;
+  const currentStartISO = new Date(currentStartMs).toISOString();
+  const sorted = [...candles].sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+  const latestMs = sorted.length > 0 ? Date.parse(sorted[sorted.length - 1].time) : NaN;
+  if (Number.isFinite(latestMs) && latestMs > currentStartMs) {
+    return sorted;
+  }
+
+  let matched = false;
+  const updated = sorted.map((item) => {
+    const itemMs = Date.parse(item.time);
+    if (itemMs !== currentStartMs) {
+      return item;
+    }
+    matched = true;
+    return {
+      ...item,
+      high: Math.max(item.high, price),
+      low: Math.min(item.low, price),
+      close: price,
+      isClosed: false,
+    };
+  });
+
+  if (!matched) {
+    const previous = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+    const open = previous && Number.isFinite(latestMs) && latestMs < currentStartMs ? previous.close : price;
+    updated.push({
+      time: currentStartISO,
+      open,
+      high: Math.max(open, price),
+      low: Math.min(open, price),
+      close: price,
+      timeframe,
+      isClosed: false,
+    });
+  }
+
+  return updated.sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+}
+
 export function applyDefaultChartWindow(chart: ReturnType<typeof createChart>, candleCount: number, preferredBars: number) {
   if (candleCount <= 0) {
     return;

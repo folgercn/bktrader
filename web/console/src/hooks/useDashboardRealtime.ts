@@ -4,7 +4,7 @@ import { useTradingStore } from '../store/useTradingStore';
 import { fetchJSON } from '../utils/api';
 import { writeStoredAuthSession } from '../utils/auth';
 import { 
-  LiveSession, Position, Order, Fill, PlatformAlert, 
+  LiveSession, Position, Order, Fill, PlatformAlert, SignalRuntimeSession,
   PlatformNotification, PlatformHealthSnapshot
 } from '../types/domain';
 import { useDashboardStream } from './useDashboardStream';
@@ -99,6 +99,7 @@ export function useDashboardRealtime() {
   const authSession = useUIStore(s => s.authSession);
 
   const setLiveSessions = useTradingStore(s => s.setLiveSessions);
+  const setSignalRuntimeSessions = useTradingStore(s => s.setSignalRuntimeSessions);
   const setPositions = useTradingStore(s => s.setPositions);
   const setOrders = useTradingStore(s => s.setOrders);
   const setFills = useTradingStore(s => s.setFills);
@@ -116,6 +117,7 @@ export function useDashboardRealtime() {
   async function loadRealtime() {
     const [
       liveSessionData,
+      signalRuntimeSessionData,
       positionsData,
       ordersData,
       fillsData,
@@ -124,6 +126,7 @@ export function useDashboardRealtime() {
       monitorHealthData,
     ] = await Promise.all([
       fetchJSON<LiveSession[]>("/api/v1/live/sessions?view=summary"),
+      fetchJSON<SignalRuntimeSession[]>("/api/v1/signal-runtime/sessions?view=summary"),
       fetchJSON<Position[]>("/api/v1/positions"),
       fetchJSON<Order[]>("/api/v1/orders?limit=50"),
       fetchJSON<Fill[]>("/api/v1/fills?limit=50"),
@@ -133,6 +136,7 @@ export function useDashboardRealtime() {
     ]);
 
     const normalizedLiveSessions = Array.isArray(liveSessionData) ? liveSessionData : [];
+    const normalizedSignalRuntimeSessions = Array.isArray(signalRuntimeSessionData) ? signalRuntimeSessionData : [];
     const normalizedPositions = Array.isArray(positionsData) ? positionsData : [];
     const normalizedOrders = Array.isArray(ordersData) ? ordersData : [];
     const normalizedFills = Array.isArray(fillsData) ? fillsData : [];
@@ -142,6 +146,7 @@ export function useDashboardRealtime() {
     const mergedLiveSessions = mergeLiveSessionSnapshot(useTradingStore.getState().liveSessions, normalizedLiveSessions);
     notifyLiveSessionControlTransitions(liveSessionControlRef.current, mergedLiveSessions, setNotification);
     setLiveSessions(mergedLiveSessions);
+    setSignalRuntimeSessions(normalizedSignalRuntimeSessions);
     setPositions(normalizedPositions);
     setOrders(normalizedOrders);
     setFills(normalizedFills);

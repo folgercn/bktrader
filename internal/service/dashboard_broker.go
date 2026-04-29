@@ -145,6 +145,9 @@ func (b *DashboardBroker) StartPolling(ctx context.Context, cfg config.Config) {
 	startTicker(cfg.DashboardLiveSessionsPollMs, "live-sessions", func() (any, error) {
 		return b.platform.ListLiveSessionsSummary()
 	})
+	startTicker(cfg.DashboardLiveSessionsPollMs, "signal-runtime-sessions", func() (any, error) {
+		return b.platform.ListSignalRuntimeSessionsSummary(), nil
+	})
 	startTicker(cfg.DashboardPositionsPollMs, "positions", func() (any, error) {
 		return b.platform.ListPositions()
 	})
@@ -177,6 +180,9 @@ func (b *DashboardBroker) PushInitialSnapshot(id int) {
 	// Push latest state to new subscriber
 	// This ensures they don't have to wait for the next change
 	b.pushLatestIfAvailable("live-sessions", func() (any, error) { return b.platform.ListLiveSessionsSummary() }, ch)
+	b.pushLatestIfAvailable("signal-runtime-sessions", func() (any, error) {
+		return b.platform.ListSignalRuntimeSessionsSummary(), nil
+	}, ch)
 	b.pushLatestIfAvailable("positions", func() (any, error) { return b.platform.ListPositions() }, ch)
 	b.pushLatestIfAvailable("orders", func() (any, error) { return b.platform.ListOrdersWithLimit(50, 0) }, ch)
 	b.pushLatestIfAvailable("fills", func() (any, error) { return b.platform.ListFillsWithLimit(50, 0) }, ch)
