@@ -511,8 +511,11 @@ export type SelectableSample = SelectedSample & {
 
 export type RuntimeMarketSnapshot = {
   tradePrice?: number;
+  tradePriceAt?: string;
   bestBid?: number;
+  bestBidAt?: string;
   bestAsk?: number;
+  bestAskAt?: string;
   spreadBps?: number;
 };
 

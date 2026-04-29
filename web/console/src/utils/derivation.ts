@@ -406,6 +406,15 @@ export function getList(value: unknown): Array<Record<string, unknown>> {
   return value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item));
 }
 
+function sourceStateNumber(state: Record<string, unknown>, key: string) {
+  return getNumber(state[key]) ?? getNumber(getRecord(state.summary)[key]);
+}
+
+function sourceStateTime(state: Record<string, unknown>) {
+  const value = String(state.lastEventAt ?? getRecord(state.summary).lastEventAt ?? "").trim();
+  return Number.isFinite(Date.parse(value)) ? value : undefined;
+}
+
 export function deriveRuntimeMarketSnapshot(
   sourceStates: Record<string, unknown>,
   summary: Record<string, unknown>,
@@ -424,20 +433,50 @@ export function deriveRuntimeMarketSnapshot(
     });
 
   for (const state of states) {
-    if (snapshot.tradePrice == null) {
-      snapshot.tradePrice = getNumber(state.price);
+    const streamType = String(state.streamType ?? "").trim().toLowerCase();
+    const lastEventAt = sourceStateTime(state);
+    if (streamType === "trade_tick" && snapshot.tradePrice == null) {
+      snapshot.tradePrice = sourceStateNumber(state, "price");
+      snapshot.tradePriceAt = snapshot.tradePrice != null ? lastEventAt : undefined;
     }
-    if (snapshot.bestBid == null) {
-      snapshot.bestBid = getNumber(state.bestBid);
+    if (streamType === "order_book" && snapshot.bestBid == null) {
+      snapshot.bestBid = sourceStateNumber(state, "bestBid");
+      snapshot.bestBidAt = snapshot.bestBid != null ? lastEventAt : undefined;
     }
-    if (snapshot.bestAsk == null) {
-      snapshot.bestAsk = getNumber(state.bestAsk);
+    if (streamType === "order_book" && snapshot.bestAsk == null) {
+      snapshot.bestAsk = sourceStateNumber(state, "bestAsk");
+      snapshot.bestAskAt = snapshot.bestAsk != null ? lastEventAt : undefined;
     }
   }
 
-  snapshot.tradePrice ??= getNumber(summary.price);
-  snapshot.bestBid ??= getNumber(summary.bestBid);
-  snapshot.bestAsk ??= getNumber(summary.bestAsk);
+  for (const state of states) {
+    const lastEventAt = sourceStateTime(state);
+    if (snapshot.tradePrice == null) {
+      snapshot.tradePrice = sourceStateNumber(state, "price");
+      snapshot.tradePriceAt = snapshot.tradePrice != null ? lastEventAt : undefined;
+    }
+    if (snapshot.bestBid == null) {
+      snapshot.bestBid = sourceStateNumber(state, "bestBid");
+      snapshot.bestBidAt = snapshot.bestBid != null ? lastEventAt : undefined;
+    }
+    if (snapshot.bestAsk == null) {
+      snapshot.bestAsk = sourceStateNumber(state, "bestAsk");
+      snapshot.bestAskAt = snapshot.bestAsk != null ? lastEventAt : undefined;
+    }
+  }
+
+  if (snapshot.tradePrice == null) {
+    snapshot.tradePrice = getNumber(summary.price);
+    snapshot.tradePriceAt = snapshot.tradePrice != null ? sourceStateTime(summary) : undefined;
+  }
+  if (snapshot.bestBid == null) {
+    snapshot.bestBid = getNumber(summary.bestBid);
+    snapshot.bestBidAt = snapshot.bestBid != null ? sourceStateTime(summary) : undefined;
+  }
+  if (snapshot.bestAsk == null) {
+    snapshot.bestAsk = getNumber(summary.bestAsk);
+    snapshot.bestAskAt = snapshot.bestAsk != null ? sourceStateTime(summary) : undefined;
+  }
 
   if (snapshot.bestBid != null && snapshot.bestAsk != null && snapshot.bestBid > 0 && snapshot.bestAsk >= snapshot.bestBid) {
     const mid = (snapshot.bestBid + snapshot.bestAsk) / 2;
@@ -678,7 +717,10 @@ export function mergeLivePriceIntoSignalBars(
   if (price == null || !Number.isFinite(price) || price <= 0) {
     return candles;
   }
-  const eventMs = eventTime ? Date.parse(eventTime) : Date.now();
+  if (!eventTime) {
+    return candles;
+  }
+  const eventMs = Date.parse(eventTime);
   if (!Number.isFinite(eventMs)) {
     return candles;
   }

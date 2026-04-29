@@ -54,7 +54,24 @@ func TestStripHeavyState_Whitelist(t *testing.T) {
 				"streamType":  "trade_tick",
 				"lastEventAt": "2024-01-01T00:00:00Z",
 				"bars":        []any{1, 2, 3},
-				"summary":     map[string]any{"price": "100"},
+				"price":       "100",
+				"summary": map[string]any{
+					"price":   "100",
+					"bestBid": "99",
+					"bestAsk": "101",
+					"volume":  "1000",
+				},
+			},
+			"s2": map[string]any{
+				"streamType":  "order_book",
+				"lastEventAt": "2024-01-01T00:00:01Z",
+				"bestBid":     "99",
+				"bestAsk":     "101",
+				"summary": map[string]any{
+					"bestBid": "99",
+					"bestAsk": "101",
+					"bids":    []any{1, 2, 3},
+				},
 			},
 		},
 		"signalBarStates": map[string]any{
@@ -72,8 +89,23 @@ func TestStripHeavyState_Whitelist(t *testing.T) {
 	if s1["streamType"] != "trade_tick" || s1["lastEventAt"] != "2024-01-01T00:00:00Z" {
 		t.Error("missing allowed source metadata")
 	}
-	if s1["bars"] != nil || s1["summary"] != nil {
+	if s1["price"] != "100" {
+		t.Error("missing allowed trade price")
+	}
+	s1Summary := s1["summary"].(map[string]any)
+	if s1Summary["price"] != "100" || s1Summary["bestBid"] != "99" || s1Summary["bestAsk"] != "101" {
+		t.Error("missing allowed source summary market fields")
+	}
+	if s1["bars"] != nil || s1Summary["volume"] != nil {
 		t.Error("failed to strip disallowed source metadata")
+	}
+	s2 := output["sourceStates"].(map[string]any)["s2"].(map[string]any)
+	s2Summary := s2["summary"].(map[string]any)
+	if s2["bestBid"] != "99" || s2["bestAsk"] != "101" || s2Summary["bestBid"] != "99" || s2Summary["bestAsk"] != "101" {
+		t.Error("missing allowed order book fields")
+	}
+	if s2Summary["bids"] != nil {
+		t.Error("failed to strip heavy order book summary fields")
 	}
 
 	b1 := output["signalBarStates"].(map[string]any)["b1"].(map[string]any)

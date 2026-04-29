@@ -326,9 +326,9 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
         mergeSignalBars(fallbackMonitorBars, monitorBars),
         monitorMarket.tradePrice,
         fallbackResolution,
-        monitorSourceSummary.latestEventAt
+        monitorMarket.tradePriceAt
       ),
-    [fallbackMonitorBars, fallbackResolution, monitorBars, monitorMarket.tradePrice, monitorSourceSummary.latestEventAt]
+    [fallbackMonitorBars, fallbackResolution, monitorBars, monitorMarket.tradePrice, monitorMarket.tradePriceAt]
   );
 
   useEffect(() => {
