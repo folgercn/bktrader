@@ -187,7 +187,8 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		}
 		return persistSnapshot(updated)
 	}
-	marketPrice := resolveLivePositionContextMarketPrice(positionSnapshot, signalBarState, state)
+	priceContext := p.resolveLivePositionContextMarketPrice(positionSnapshot, signalBarState, state, eventTime)
+	marketPrice := priceContext.Price
 	livePositionState := evaluateLivePositionState(parameters, positionSnapshot, signalBarState, marketPrice, state)
 	if len(livePositionState) == 0 {
 		applyLivePositionReconcileGateState(state, reconcileGate)
@@ -199,6 +200,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		}
 		return persistSnapshot(updated)
 	}
+	applyLivePositionContextPriceMetadata(livePositionState, priceContext)
 	state["livePositionState"] = livePositionState
 	state["lastLivePositionState"] = livePositionState
 	state["lastPositionContextRefreshAt"] = eventTime.UTC().Format(time.RFC3339)
@@ -291,7 +293,18 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 	return persistSnapshot(updated)
 }
 
-func resolveLivePositionContextMarketPrice(positionSnapshot map[string]any, signalBarState map[string]any, sessionState map[string]any) float64 {
+type livePositionContextPrice struct {
+	Price  float64
+	Source string
+	At     time.Time
+	Age    time.Duration
+}
+
+func (p *Platform) resolveLivePositionContextMarketPrice(positionSnapshot map[string]any, signalBarState map[string]any, sessionState map[string]any, eventTime time.Time) livePositionContextPrice {
+	if eventTime.IsZero() {
+		eventTime = time.Now().UTC()
+	}
+	eventTime = eventTime.UTC()
 	symbol := NormalizeSymbol(firstNonEmpty(
 		stringValue(positionSnapshot["symbol"]),
 		stringValue(sessionState["symbol"]),
@@ -300,21 +313,51 @@ func resolveLivePositionContextMarketPrice(positionSnapshot map[string]any, sign
 	sourceStates := cloneMetadata(mapValue(sessionState["lastStrategyEvaluationSourceStates"]))
 	if len(sourceStates) > 0 {
 		sourceStates = filterSourceStatesBySymbol(sourceStates, symbol)
-		if sourcePrice, _ := pickDecisionMarketPrice(map[string]any{"symbol": symbol}, sourceStates, livePositionExitSide(positionSnapshot)); sourcePrice > 0 {
-			return sourcePrice
+		sourceStates = p.freshLivePositionContextSourceStates(sourceStates, sessionState, eventTime)
+		if sourcePrice, sourceName := pickDecisionMarketPrice(map[string]any{"symbol": symbol}, sourceStates, livePositionExitSide(positionSnapshot)); sourcePrice > 0 {
+			sourceAt := livePositionContextSourceEventAt(sourceStates, sourceName)
+			return livePositionContextPrice{
+				Price:  sourcePrice,
+				Source: sourceName,
+				At:     sourceAt,
+				Age:    nonNegativeDuration(eventTime.Sub(sourceAt)),
+			}
 		}
 	}
 
 	decisionMetadata := mapValue(mapValue(sessionState["lastStrategyDecision"])["metadata"])
-	if decisionPrice := parseFloatValue(decisionMetadata["marketPrice"]); decisionPrice > 0 {
-		return decisionPrice
+	if decisionPrice, decisionSource, decisionAt, ok := p.freshLivePositionDecisionMarketPrice(decisionMetadata, sessionState, eventTime); ok {
+		return livePositionContextPrice{
+			Price:  decisionPrice,
+			Source: decisionSource,
+			At:     decisionAt,
+			Age:    nonNegativeDuration(eventTime.Sub(decisionAt)),
+		}
 	}
 
 	currentClose := parseFloatValue(mapValue(signalBarState["current"])["close"])
 	if currentClose > 0 {
-		return currentClose
+		signalAt := parseOptionalRFC3339(firstNonEmpty(
+			stringValue(signalBarState["lastEventAt"]),
+			stringValue(mapValue(signalBarState["current"])["lastEventAt"]),
+		))
+		return livePositionContextPrice{
+			Price:  currentClose,
+			Source: "signal_bar.current.close",
+			At:     signalAt,
+			Age:    nonNegativeDuration(eventTime.Sub(signalAt)),
+		}
 	}
-	return firstPositive(parseFloatValue(positionSnapshot["markPrice"]), parseFloatValue(positionSnapshot["entryPrice"]))
+	if markPrice := parseFloatValue(positionSnapshot["markPrice"]); markPrice > 0 {
+		return livePositionContextPrice{
+			Price:  markPrice,
+			Source: "position.markPrice",
+		}
+	}
+	return livePositionContextPrice{
+		Price:  parseFloatValue(positionSnapshot["entryPrice"]),
+		Source: "position.entryPrice",
+	}
 }
 
 func livePositionExitSide(positionSnapshot map[string]any) string {
@@ -326,6 +369,146 @@ func livePositionExitSide(positionSnapshot map[string]any) string {
 	default:
 		return ""
 	}
+}
+
+func (p *Platform) freshLivePositionContextSourceStates(sourceStates map[string]any, sessionState map[string]any, eventTime time.Time) map[string]any {
+	if len(sourceStates) == 0 {
+		return map[string]any{}
+	}
+	if sourceGate := mapValue(sessionState["lastStrategyEvaluationSourceGate"]); len(sourceGate) > 0 && !boolValue(sourceGate["ready"]) {
+		return map[string]any{}
+	}
+	fresh := make(map[string]any, len(sourceStates))
+	for key, raw := range sourceStates {
+		entry := cloneMetadata(mapValue(raw))
+		if len(entry) == 0 {
+			continue
+		}
+		if _, _, ok := p.livePositionContextSourceFreshness(entry, sessionState, eventTime); !ok {
+			continue
+		}
+		fresh[key] = entry
+	}
+	return fresh
+}
+
+func (p *Platform) livePositionContextSourceFreshness(entry map[string]any, sessionState map[string]any, eventTime time.Time) (time.Time, time.Duration, bool) {
+	lastEventAt := parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
+	if lastEventAt.IsZero() {
+		return time.Time{}, 0, false
+	}
+	maxAge := p.livePositionContextSourceFreshnessWindow(entry, sessionState)
+	if maxAge <= 0 {
+		return lastEventAt, 0, false
+	}
+	age := nonNegativeDuration(eventTime.Sub(lastEventAt))
+	if eventTime.Sub(lastEventAt) > maxAge {
+		return lastEventAt, age, false
+	}
+	return lastEventAt, age, true
+}
+
+func (p *Platform) livePositionContextSourceFreshnessWindow(entry map[string]any, sessionState map[string]any) time.Duration {
+	options := cloneMetadata(mapValue(entry["options"]))
+	if timeframe := firstNonEmpty(
+		stringValue(entry["timeframe"]),
+		stringValue(mapValue(entry["summary"])["timeframe"]),
+	); timeframe != "" {
+		options["timeframe"] = timeframe
+	}
+	return p.signalSourceFreshnessWindowWithOverride(domain.AccountSignalBinding{
+		SourceKey:  stringValue(entry["sourceKey"]),
+		Role:       stringValue(entry["role"]),
+		StreamType: stringValue(entry["streamType"]),
+		Symbol:     stringValue(entry["symbol"]),
+		Options:    options,
+	}, sessionState)
+}
+
+func (p *Platform) freshLivePositionDecisionMarketPrice(decisionMetadata map[string]any, sessionState map[string]any, eventTime time.Time) (float64, string, time.Time, bool) {
+	price := parseFloatValue(decisionMetadata["marketPrice"])
+	if price <= 0 {
+		return 0, "", time.Time{}, false
+	}
+	source := strings.TrimSpace(stringValue(decisionMetadata["marketSource"]))
+	if source == "" {
+		return 0, "", time.Time{}, false
+	}
+	decisionAt := parseOptionalRFC3339(firstNonEmpty(
+		stringValue(decisionMetadata["eventTime"]),
+		stringValue(sessionState["lastStrategyEvaluationAt"]),
+	))
+	if decisionAt.IsZero() {
+		return 0, "", time.Time{}, false
+	}
+	maxAge := p.livePositionContextDecisionFreshnessWindow(source)
+	if maxAge <= 0 {
+		return 0, "", time.Time{}, false
+	}
+	if eventTime.Sub(decisionAt) > maxAge {
+		return 0, "", time.Time{}, false
+	}
+	return price, source, decisionAt, true
+}
+
+func (p *Platform) livePositionContextDecisionFreshnessWindow(source string) time.Duration {
+	switch {
+	case strings.HasPrefix(source, "order_book."):
+		return time.Duration(p.runtimePolicy.OrderBookFreshnessSeconds) * time.Second
+	case strings.HasPrefix(source, "trade_tick."), source == "trigger.price":
+		return time.Duration(p.runtimePolicy.TradeTickFreshnessSeconds) * time.Second
+	default:
+		return 0
+	}
+}
+
+func livePositionContextSourceEventAt(sourceStates map[string]any, source string) time.Time {
+	streamType := livePositionContextPriceSourceStreamType(source)
+	if streamType == "" {
+		return time.Time{}
+	}
+	for _, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(stringValue(entry["streamType"])), streamType) {
+			return parseOptionalRFC3339(stringValue(entry["lastEventAt"]))
+		}
+	}
+	return time.Time{}
+}
+
+func livePositionContextPriceSourceStreamType(source string) string {
+	switch {
+	case strings.HasPrefix(source, "order_book."):
+		return "order_book"
+	case strings.HasPrefix(source, "trade_tick."), source == "trigger.price":
+		return "trade_tick"
+	default:
+		return ""
+	}
+}
+
+func applyLivePositionContextPriceMetadata(livePositionState map[string]any, price livePositionContextPrice) {
+	if livePositionState == nil || price.Price <= 0 {
+		return
+	}
+	livePositionState["positionContextPrice"] = price.Price
+	if price.Source != "" {
+		livePositionState["positionContextPriceSource"] = price.Source
+	}
+	if !price.At.IsZero() {
+		livePositionState["positionContextPriceAt"] = price.At.UTC().Format(time.RFC3339Nano)
+		livePositionState["positionContextPriceAgeMs"] = int64(price.Age / time.Millisecond)
+	}
+}
+
+func nonNegativeDuration(value time.Duration) time.Duration {
+	if value < 0 {
+		return 0
+	}
+	return value
 }
 
 func isProtectionOrder(order map[string]any) bool {
