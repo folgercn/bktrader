@@ -268,6 +268,7 @@ func validateFillReconciliationInput(input FillReconciliationInput) (domain.Fill
 	if err := validateFillQuantity(fill); err != nil {
 		return fill, source, err
 	}
+	fill.Source = string(source)
 	return fill, source, nil
 }
 

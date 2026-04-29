@@ -708,6 +708,7 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 			}
 		}
 	}
+	fill.Source = normalizeFillSource(fill)
 	fill.ID = s.nextID("fill")
 	fill.CreatedAt = time.Now().UTC()
 	if fill.ExchangeTradeTime != nil {
@@ -716,6 +717,24 @@ func (s *Store) CreateFill(fill domain.Fill) (domain.Fill, error) {
 	}
 	s.fills[fill.ID] = fill
 	return fill, nil
+}
+
+func normalizeFillSource(fill domain.Fill) string {
+	switch source := strings.TrimSpace(fill.Source); source {
+	case "real", "synthetic", "remainder", "paper", "manual":
+		return source
+	}
+	if strings.TrimSpace(fill.ExchangeTradeID) != "" {
+		return "real"
+	}
+	fingerprint := strings.TrimSpace(fill.DedupFingerprint)
+	if strings.HasPrefix(fingerprint, "synthetic-remainder|") {
+		return "remainder"
+	}
+	if fingerprint != "" {
+		return "synthetic"
+	}
+	return "real"
 }
 
 func (s *Store) DeleteFillsByID(fillIDs []string) (float64, error) {
