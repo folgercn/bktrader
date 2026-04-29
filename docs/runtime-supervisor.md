@@ -323,7 +323,7 @@ func ClearRestartState(state map[string]any, keys []string)
 - `SUPERVISOR_CONTAINER_RESTART_ENABLED=false` 为默认值；未显式设为 `true` 时，容器兜底计划只会返回 `blockedReason=container-restart-disabled`，不会进入 executor 阶段。
 - 默认只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。
 - `GET /api/v1/supervisor/status` 返回最近一次 read-only supervisor 采集快照。
-- `bktrader-ctl runtime status --json` 和 `bktrader-ctl supervisor status --json` 提供 CLI 只读巡检入口。
+- `bktrader-ctl runtime status --json` 和 `bktrader-ctl supervisor status --json` 提供 CLI 只读巡检入口；`bktrader-ctl supervisor status` 的人类可读输出会汇总 target reachability、runtime attention、control action 数量，以及 container fallback 的 `enabled` / `executorConfigured` / `executable` readiness。
 - `SUPERVISOR_APPLICATION_RESTART_ENABLED=false` 为默认值；只有显式设为 `true` 时，supervisor 才会对满足全部条件的 signal runtime 提交应用内 `POST /api/v1/runtime/restart`：
   - 目标服务 `/healthz` 可达且成功。
   - `/api/v1/runtime/status` 可读。
