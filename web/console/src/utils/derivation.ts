@@ -406,6 +406,15 @@ export function getList(value: unknown): Array<Record<string, unknown>> {
   return value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item));
 }
 
+function sourceStateNumber(state: Record<string, unknown>, key: string) {
+  return getNumber(state[key]) ?? getNumber(getRecord(state.summary)[key]);
+}
+
+function sourceStateTime(state: Record<string, unknown>) {
+  const value = String(state.lastEventAt ?? getRecord(state.summary).lastEventAt ?? "").trim();
+  return Number.isFinite(Date.parse(value)) ? value : undefined;
+}
+
 export function deriveRuntimeMarketSnapshot(
   sourceStates: Record<string, unknown>,
   summary: Record<string, unknown>,
@@ -424,20 +433,50 @@ export function deriveRuntimeMarketSnapshot(
     });
 
   for (const state of states) {
-    if (snapshot.tradePrice == null) {
-      snapshot.tradePrice = getNumber(state.price);
+    const streamType = String(state.streamType ?? "").trim().toLowerCase();
+    const lastEventAt = sourceStateTime(state);
+    if (streamType === "trade_tick" && snapshot.tradePrice == null) {
+      snapshot.tradePrice = sourceStateNumber(state, "price");
+      snapshot.tradePriceAt = snapshot.tradePrice != null ? lastEventAt : undefined;
     }
-    if (snapshot.bestBid == null) {
-      snapshot.bestBid = getNumber(state.bestBid);
+    if (streamType === "order_book" && snapshot.bestBid == null) {
+      snapshot.bestBid = sourceStateNumber(state, "bestBid");
+      snapshot.bestBidAt = snapshot.bestBid != null ? lastEventAt : undefined;
     }
-    if (snapshot.bestAsk == null) {
-      snapshot.bestAsk = getNumber(state.bestAsk);
+    if (streamType === "order_book" && snapshot.bestAsk == null) {
+      snapshot.bestAsk = sourceStateNumber(state, "bestAsk");
+      snapshot.bestAskAt = snapshot.bestAsk != null ? lastEventAt : undefined;
     }
   }
 
-  snapshot.tradePrice ??= getNumber(summary.price);
-  snapshot.bestBid ??= getNumber(summary.bestBid);
-  snapshot.bestAsk ??= getNumber(summary.bestAsk);
+  for (const state of states) {
+    const lastEventAt = sourceStateTime(state);
+    if (snapshot.tradePrice == null) {
+      snapshot.tradePrice = sourceStateNumber(state, "price");
+      snapshot.tradePriceAt = snapshot.tradePrice != null ? lastEventAt : undefined;
+    }
+    if (snapshot.bestBid == null) {
+      snapshot.bestBid = sourceStateNumber(state, "bestBid");
+      snapshot.bestBidAt = snapshot.bestBid != null ? lastEventAt : undefined;
+    }
+    if (snapshot.bestAsk == null) {
+      snapshot.bestAsk = sourceStateNumber(state, "bestAsk");
+      snapshot.bestAskAt = snapshot.bestAsk != null ? lastEventAt : undefined;
+    }
+  }
+
+  if (snapshot.tradePrice == null) {
+    snapshot.tradePrice = getNumber(summary.price);
+    snapshot.tradePriceAt = snapshot.tradePrice != null ? sourceStateTime(summary) : undefined;
+  }
+  if (snapshot.bestBid == null) {
+    snapshot.bestBid = getNumber(summary.bestBid);
+    snapshot.bestBidAt = snapshot.bestBid != null ? sourceStateTime(summary) : undefined;
+  }
+  if (snapshot.bestAsk == null) {
+    snapshot.bestAsk = getNumber(summary.bestAsk);
+    snapshot.bestAskAt = snapshot.bestAsk != null ? sourceStateTime(summary) : undefined;
+  }
 
   if (snapshot.bestBid != null && snapshot.bestAsk != null && snapshot.bestBid > 0 && snapshot.bestAsk >= snapshot.bestBid) {
     const mid = (snapshot.bestBid + snapshot.bestAsk) / 2;
@@ -658,6 +697,74 @@ export function mapChartCandlesToSignalBarCandles(candles: ChartCandle[], timefr
     timeframe,
     isClosed: true,
   }));
+}
+
+function signalBarResolutionSeconds(timeframe: string) {
+  const normalized = String(timeframe ?? "").trim().toUpperCase();
+  if (normalized === "1D") {
+    return 24 * 60 * 60;
+  }
+  const minutes = Number.parseInt(normalized, 10);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : 5 * 60;
+}
+
+export function mergeLivePriceIntoSignalBars(
+  candles: SignalBarCandle[],
+  price: number | null | undefined,
+  timeframe: string,
+  eventTime?: string
+): SignalBarCandle[] {
+  if (price == null || !Number.isFinite(price) || price <= 0) {
+    return candles;
+  }
+  if (!eventTime) {
+    return candles;
+  }
+  const eventMs = Date.parse(eventTime);
+  if (!Number.isFinite(eventMs)) {
+    return candles;
+  }
+
+  const stepMs = signalBarResolutionSeconds(timeframe) * 1000;
+  const currentStartMs = Math.floor(eventMs / stepMs) * stepMs;
+  const currentStartISO = new Date(currentStartMs).toISOString();
+  const sorted = [...candles].sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+  const latestMs = sorted.length > 0 ? Date.parse(sorted[sorted.length - 1].time) : NaN;
+  if (Number.isFinite(latestMs) && latestMs > currentStartMs) {
+    return sorted;
+  }
+
+  let matched = false;
+  const updated = sorted.map((item) => {
+    const itemMs = Date.parse(item.time);
+    if (itemMs !== currentStartMs) {
+      return item;
+    }
+    matched = true;
+    return {
+      ...item,
+      high: Math.max(item.high, price),
+      low: Math.min(item.low, price),
+      close: price,
+      isClosed: false,
+    };
+  });
+
+  if (!matched) {
+    const previous = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+    const open = previous && Number.isFinite(latestMs) && latestMs < currentStartMs ? previous.close : price;
+    updated.push({
+      time: currentStartISO,
+      open,
+      high: Math.max(open, price),
+      low: Math.min(open, price),
+      close: price,
+      timeframe,
+      isClosed: false,
+    });
+  }
+
+  return updated.sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
 }
 
 export function applyDefaultChartWindow(chart: ReturnType<typeof createChart>, candleCount: number, preferredBars: number) {

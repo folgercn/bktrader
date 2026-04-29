@@ -19,10 +19,11 @@ import {
   deriveHighlightedLiveSession,
   deriveLiveDispatchPreview,
   deriveLiveSessionFlow,
-  deriveRuntimeReadiness,
   deriveRuntimeSourceSummary,
+  deriveRuntimeReadiness,
   deriveLiveSessionExecutionSummary,
   deriveLiveSessionHealth,
+  mergeLivePriceIntoSignalBars,
   buildTimelineNotes,
   liveSessionHealthTone,
   getNumber,
@@ -309,9 +310,25 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     () => mapChartCandlesToSignalBarCandles(monitorCandles, fallbackResolution),
     [monitorCandles, fallbackResolution]
   );
+  const monitorMarket = deriveRuntimeMarketSnapshot(
+    getRecord(monitorRuntimeState.sourceStates),
+    getRecord(monitorRuntimeState.lastEventSummary),
+    monitorSymbol
+  );
+  const monitorSourceSummary = deriveRuntimeSourceSummary(
+    getRecord(monitorRuntimeState.sourceStates),
+    runtimePolicy,
+    monitorSymbol
+  );
   const displayMonitorBars = useMemo(
-    () => mergeSignalBars(fallbackMonitorBars, monitorBars),
-    [fallbackMonitorBars, monitorBars]
+    () =>
+      mergeLivePriceIntoSignalBars(
+        mergeSignalBars(fallbackMonitorBars, monitorBars),
+        monitorMarket.tradePrice,
+        fallbackResolution,
+        monitorMarket.tradePriceAt
+      ),
+    [fallbackMonitorBars, fallbackResolution, monitorBars, monitorMarket.tradePrice, monitorMarket.tradePriceAt]
   );
 
   useEffect(() => {
@@ -453,11 +470,6 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     [expandMonitorCandles]
   );
 
-  const monitorMarket = deriveRuntimeMarketSnapshot(
-    getRecord(monitorRuntimeState.sourceStates),
-    getRecord(monitorRuntimeState.lastEventSummary),
-    monitorSymbol
-  );
   const monitorSummary =
     monitorSession ? summaries.find((item) => item.accountId === monitorSession.accountId) ?? null : null;
   const monitorMarkers = deriveSessionMarkers(monitorSession, orders, fills);
@@ -489,7 +501,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
     : [];
   const monitorRuntimeReadiness = deriveRuntimeReadiness(
     highlightedLiveRuntimeState,
-    deriveRuntimeSourceSummary(getRecord(highlightedLiveRuntimeState.sourceStates), runtimePolicy, monitorSymbol),
+    monitorSourceSummary,
     { requireTick: true, requireOrderBook: false }
   );
   const monitorIntent = getRecord(monitorSession?.state?.lastStrategyIntent);

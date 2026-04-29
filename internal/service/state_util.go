@@ -17,7 +17,17 @@ var sourceStateAllowedKeys = map[string]struct{}{
 	"symbol":      {},
 	"timeframe":   {},
 	"event":       {},
+	"price":       {},
+	"bestBid":     {},
+	"bestAsk":     {},
+	"summary":     {},
 	"lastEventAt": {},
+}
+
+var sourceStateSummaryAllowedKeys = map[string]struct{}{
+	"price":   {},
+	"bestBid": {},
+	"bestAsk": {},
 }
 
 var signalBarStateAllowedKeys = map[string]struct{}{
@@ -54,16 +64,16 @@ func stripHeavyState(state map[string]any) map[string]any {
 		case "breakoutHistory":
 			v = trimStateList(v, liveSessionSummaryBreakoutHistoryLimit)
 		case "sourceStates":
-			v = stripMapEntriesByWhitelist(v, sourceStateAllowedKeys)
+			v = stripMapEntriesByWhitelist(v, sourceStateAllowedKeys, true)
 		case "signalBarStates":
-			v = stripMapEntriesByWhitelist(v, signalBarStateAllowedKeys)
+			v = stripMapEntriesByWhitelist(v, signalBarStateAllowedKeys, false)
 		}
 		newState[k] = v
 	}
 	return newState
 }
 
-func stripMapEntriesByWhitelist(v any, whitelist map[string]struct{}) any {
+func stripMapEntriesByWhitelist(v any, whitelist map[string]struct{}, trimSourceSummary bool) any {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return v
@@ -78,10 +88,27 @@ func stripMapEntriesByWhitelist(v any, whitelist map[string]struct{}) any {
 		newE := make(map[string]any, len(whitelist))
 		for ek, ev := range e {
 			if _, allowed := whitelist[ek]; allowed {
+				if ek == "summary" && trimSourceSummary {
+					ev = stripMapByWhitelist(ev, sourceStateSummaryAllowedKeys)
+				}
 				newE[ek] = ev
 			}
 		}
 		newM[k] = newE
+	}
+	return newM
+}
+
+func stripMapByWhitelist(v any, whitelist map[string]struct{}) any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	newM := make(map[string]any, len(whitelist))
+	for k, ev := range m {
+		if _, allowed := whitelist[k]; allowed {
+			newM[k] = ev
+		}
 	}
 	return newM
 }

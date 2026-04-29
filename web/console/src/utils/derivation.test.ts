@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveSessionMarkers, deriveSignalMonitorDecorations, markerText } from "./derivation";
+import { deriveRuntimeMarketSnapshot, deriveSessionMarkers, deriveSignalMonitorDecorations, markerText, mergeLivePriceIntoSignalBars } from "./derivation";
 import { ChartAnnotation, Order, Position, SignalBarCandle } from "../types/domain";
 
 describe("monitor chart marker labels", () => {
@@ -73,6 +73,101 @@ describe("monitor chart marker labels", () => {
     } satisfies ChartAnnotation;
 
     expect(markerText(annotation)).toBe("平多 TP");
+  });
+});
+
+describe("live monitor candles", () => {
+  it("updates the active bar with the latest runtime trade price", () => {
+    const candles: SignalBarCandle[] = [
+      { ...candle("2026-04-24T00:00:00Z"), high: 101, low: 99, close: 100, timeframe: "5" },
+    ];
+
+    const merged = mergeLivePriceIntoSignalBars(candles, 105, "5", "2026-04-24T00:03:10Z");
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      time: "2026-04-24T00:00:00Z",
+      high: 105,
+      low: 99,
+      close: 105,
+      isClosed: false,
+    });
+  });
+
+  it("appends a current bar when REST candles are behind runtime trade data", () => {
+    const candles: SignalBarCandle[] = [
+      { ...candle("2026-04-24T00:00:00Z"), close: 76000, timeframe: "5" },
+    ];
+
+    const merged = mergeLivePriceIntoSignalBars(candles, 77100, "5", "2026-04-24T00:05:02Z");
+
+    expect(merged).toHaveLength(2);
+    expect(merged[1]).toMatchObject({
+      time: "2026-04-24T00:05:00.000Z",
+      open: 76000,
+      high: 77100,
+      low: 76000,
+      close: 77100,
+      isClosed: false,
+    });
+  });
+
+  it("keeps trade price paired with its own source timestamp when order book is newer", () => {
+    const market = deriveRuntimeMarketSnapshot(
+      {
+        trade: {
+          streamType: "trade_tick",
+          symbol: "BTCUSDT",
+          summary: { price: "77100" },
+          lastEventAt: "2026-04-24T00:00:10Z",
+        },
+        book: {
+          streamType: "order_book",
+          symbol: "BTCUSDT",
+          summary: { bestBid: "77090", bestAsk: "77110" },
+          lastEventAt: "2026-04-24T00:05:10Z",
+        },
+      },
+      { event: "depth", bestBid: "77090", bestAsk: "77110" },
+      "BTCUSDT"
+    );
+    const candles: SignalBarCandle[] = [
+      { ...candle("2026-04-24T00:00:00Z"), close: 76000, timeframe: "5" },
+    ];
+
+    const merged = mergeLivePriceIntoSignalBars(candles, market.tradePrice, "5", market.tradePriceAt);
+
+    expect(market).toMatchObject({
+      tradePrice: 77100,
+      tradePriceAt: "2026-04-24T00:00:10Z",
+      bestBid: 77090,
+      bestBidAt: "2026-04-24T00:05:10Z",
+      bestAsk: 77110,
+      bestAskAt: "2026-04-24T00:05:10Z",
+    });
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      time: "2026-04-24T00:00:00Z",
+      close: 77100,
+    });
+  });
+
+  it("reads trade price from source summary when last event summary is not a trade", () => {
+    const market = deriveRuntimeMarketSnapshot(
+      {
+        trade: {
+          streamType: "trade_tick",
+          symbol: "BTCUSDT",
+          summary: { price: "77100" },
+          lastEventAt: "2026-04-24T00:00:10Z",
+        },
+      },
+      { event: "depth", bestBid: "77090", bestAsk: "77110" },
+      "BTCUSDT"
+    );
+
+    expect(market.tradePrice).toBe(77100);
+    expect(market.tradePriceAt).toBe("2026-04-24T00:00:10Z");
   });
 });
 

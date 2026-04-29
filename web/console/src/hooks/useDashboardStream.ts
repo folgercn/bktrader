@@ -10,6 +10,7 @@ export function useDashboardStream(enabled: boolean) {
   const authSession = useUIStore(s => s.authSession);
 
   const setLiveSessions = useTradingStore(s => s.setLiveSessions);
+  const setSignalRuntimeSessions = useTradingStore(s => s.setSignalRuntimeSessions);
   const setPositions = useTradingStore(s => s.setPositions);
   const setOrders = useTradingStore(s => s.setOrders);
   const setFills = useTradingStore(s => s.setFills);
@@ -123,6 +124,7 @@ export function useDashboardStream(enabled: boolean) {
         const snapshot = Array.isArray(data) ? data : [];
         setLiveSessions((current) => mergeLiveSessionSnapshot(current, snapshot));
       }));
+      es.addEventListener('signal-runtime-sessions', handleEvent('signal-runtime-sessions', setSignalRuntimeSessions));
       es.addEventListener('positions', handleEvent('positions', setPositions));
       es.addEventListener('orders', handleEvent('orders', setOrders));
       es.addEventListener('fills', handleEvent('fills', setFills));
