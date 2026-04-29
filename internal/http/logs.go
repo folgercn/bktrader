@@ -57,6 +57,24 @@ func registerLogRoutes(mux *http.ServeMux, platform *service.Platform) {
 		writeJSON(w, http.StatusOK, page)
 	})
 
+	mux.HandleFunc("/api/v1/logs/live-control/summary", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		query, err := parseUnifiedLogEventQuery(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		metrics, err := platform.LiveControlMetrics(query)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, metrics)
+	})
+
 	mux.HandleFunc("/api/v1/logs/system", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

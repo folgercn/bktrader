@@ -4,8 +4,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +60,50 @@ type UnifiedLogEventQuery struct {
 	From             time.Time
 	To               time.Time
 	Limit            int
+}
+
+// LiveControlMetrics aggregates the bounded live control audit history into an
+// operator-facing summary. It is intentionally derived from state.controlEvents
+// so Phase 4 observability does not introduce a new persistence surface.
+type LiveControlMetrics struct {
+	GeneratedAt    time.Time                         `json:"generatedAt"`
+	TotalEvents    int                               `json:"totalEvents"`
+	Requests       int                               `json:"requests"`
+	RunnerPickups  int                               `json:"runnerPickups"`
+	Succeeded      int                               `json:"succeeded"`
+	Failed         int                               `json:"failed"`
+	StaleDiscarded int                               `json:"staleDiscarded"`
+	CurrentPending int                               `json:"currentPending"`
+	CurrentErrors  int                               `json:"currentErrors"`
+	Latency        LiveControlLatencyMetrics         `json:"latency"`
+	ByErrorCode    map[string]int                    `json:"byErrorCode,omitempty"`
+	ByAccount      map[string]LiveControlMetricGroup `json:"byAccount,omitempty"`
+	ByStrategy     map[string]LiveControlMetricGroup `json:"byStrategy,omitempty"`
+	ByLiveSession  map[string]LiveControlMetricGroup `json:"byLiveSession,omitempty"`
+}
+
+type LiveControlLatencyMetrics struct {
+	PickupMs   LiveControlLatencyStats `json:"pickupMs"`
+	SuccessMs  LiveControlLatencyStats `json:"successMs"`
+	FailureMs  LiveControlLatencyStats `json:"failureMs"`
+	TerminalMs LiveControlLatencyStats `json:"terminalMs"`
+}
+
+type LiveControlLatencyStats struct {
+	Count   int     `json:"count"`
+	Min     int64   `json:"min,omitempty"`
+	Max     int64   `json:"max,omitempty"`
+	Average float64 `json:"average,omitempty"`
+}
+
+type LiveControlMetricGroup struct {
+	Total          int            `json:"total"`
+	Requests       int            `json:"requests"`
+	RunnerPickups  int            `json:"runnerPickups"`
+	Succeeded      int            `json:"succeeded"`
+	Failed         int            `json:"failed"`
+	StaleDiscarded int            `json:"staleDiscarded"`
+	ErrorCodes     map[string]int `json:"errorCodes,omitempty"`
 }
 
 type logEventCursor struct {
@@ -391,6 +437,193 @@ func (p *Platform) queryLiveSessionControlEvents(query UnifiedLogEventQuery, cur
 		return slices.Clone(filtered[:limit]), nil
 	}
 	return filtered, nil
+}
+
+func (p *Platform) LiveControlMetrics(query UnifiedLogEventQuery) (LiveControlMetrics, error) {
+	sessions, err := p.store.ListLiveSessions()
+	if err != nil {
+		return LiveControlMetrics{}, err
+	}
+	metrics := LiveControlMetrics{
+		GeneratedAt:   time.Now().UTC(),
+		ByErrorCode:   make(map[string]int),
+		ByAccount:     make(map[string]LiveControlMetricGroup),
+		ByStrategy:    make(map[string]LiveControlMetricGroup),
+		ByLiveSession: make(map[string]LiveControlMetricGroup),
+	}
+	for _, session := range sessions {
+		if !liveControlMetricsSessionMatches(session, query) {
+			continue
+		}
+		if liveSessionControlPending(session.State) {
+			metrics.CurrentPending++
+		}
+		if strings.EqualFold(stringValue(session.State["actualStatus"]), "ERROR") {
+			metrics.CurrentErrors++
+		}
+		for _, entry := range metadataList(session.State[liveSessionControlEventStateKey]) {
+			event, ok := liveSessionControlToUnifiedLogEvent(session, entry)
+			if !ok {
+				continue
+			}
+			if !query.From.IsZero() && event.EventTime.Before(query.From.UTC()) {
+				continue
+			}
+			if !query.To.IsZero() && event.EventTime.After(query.To.UTC()) {
+				continue
+			}
+			metrics.recordLiveControlEvent(event)
+		}
+	}
+	return metrics, nil
+}
+
+func liveControlMetricsSessionMatches(session domain.LiveSession, query UnifiedLogEventQuery) bool {
+	if strings.TrimSpace(query.AccountID) != "" && session.AccountID != strings.TrimSpace(query.AccountID) {
+		return false
+	}
+	if strings.TrimSpace(query.StrategyID) != "" && session.StrategyID != strings.TrimSpace(query.StrategyID) {
+		return false
+	}
+	if strings.TrimSpace(query.LiveSessionID) != "" && session.ID != strings.TrimSpace(query.LiveSessionID) {
+		return false
+	}
+	return true
+}
+
+func liveSessionControlPending(state map[string]any) bool {
+	actual := strings.ToUpper(strings.TrimSpace(stringValue(state["actualStatus"])))
+	if actual == "ERROR" {
+		return false
+	}
+	if actual == "STARTING" || actual == "STOPPING" {
+		return true
+	}
+	desired := strings.ToUpper(strings.TrimSpace(stringValue(state["desiredStatus"])))
+	return desired != "" && actual != "" && desired != actual
+}
+
+func (m *LiveControlMetrics) recordLiveControlEvent(event UnifiedLogEvent) {
+	m.TotalEvents++
+	phase := strings.ToLower(strings.TrimSpace(stringValue(event.Metadata["phase"])))
+	errorCode := strings.ToUpper(strings.TrimSpace(stringValue(event.Metadata["errorCode"])))
+	latencyMs, hasLatency := int64MetadataValue(event.Metadata["latencyMs"])
+
+	switch phase {
+	case "request_accepted", "legacy_request_initialized":
+		m.Requests++
+	case "runner_picked_up":
+		m.RunnerPickups++
+		if hasLatency {
+			m.Latency.PickupMs.Add(latencyMs)
+		}
+	case "succeeded":
+		m.Succeeded++
+		if hasLatency {
+			m.Latency.SuccessMs.Add(latencyMs)
+			m.Latency.TerminalMs.Add(latencyMs)
+		}
+	case "failed":
+		m.Failed++
+		if errorCode != "" {
+			m.ByErrorCode[errorCode]++
+		}
+		if hasLatency {
+			m.Latency.FailureMs.Add(latencyMs)
+			m.Latency.TerminalMs.Add(latencyMs)
+		}
+	case "stale_update_discarded":
+		m.StaleDiscarded++
+	}
+	m.recordLiveControlGroup(m.ByAccount, event.AccountID, phase, errorCode)
+	m.recordLiveControlGroup(m.ByStrategy, event.StrategyID, phase, errorCode)
+	m.recordLiveControlGroup(m.ByLiveSession, event.LiveSessionID, phase, errorCode)
+}
+
+func (m *LiveControlMetrics) recordLiveControlGroup(groups map[string]LiveControlMetricGroup, key, phase, errorCode string) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
+	group := groups[key]
+	group.Total++
+	switch phase {
+	case "request_accepted", "legacy_request_initialized":
+		group.Requests++
+	case "runner_picked_up":
+		group.RunnerPickups++
+	case "succeeded":
+		group.Succeeded++
+	case "failed":
+		group.Failed++
+		if errorCode != "" {
+			if group.ErrorCodes == nil {
+				group.ErrorCodes = make(map[string]int)
+			}
+			group.ErrorCodes[errorCode]++
+		}
+	case "stale_update_discarded":
+		group.StaleDiscarded++
+	}
+	groups[key] = group
+}
+
+func (s *LiveControlLatencyStats) Add(value int64) {
+	if value < 0 {
+		return
+	}
+	if s.Count == 0 || value < s.Min {
+		s.Min = value
+	}
+	if value > s.Max {
+		s.Max = value
+	}
+	s.Average = ((s.Average * float64(s.Count)) + float64(value)) / float64(s.Count+1)
+	s.Count++
+}
+
+func int64MetadataValue(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int8:
+		return int64(v), true
+	case int16:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	case uint:
+		if uint64(v) > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(v), true
+	case uint8:
+		return int64(v), true
+	case uint16:
+		return int64(v), true
+	case uint32:
+		return int64(v), true
+	case uint64:
+		if v > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(v), true
+	case float32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		parsed, err := time.ParseDuration(strings.TrimSpace(v))
+		if err == nil {
+			return parsed.Milliseconds(), true
+		}
+		numeric, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return numeric, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func strategyDecisionToUnifiedLogEvent(item domain.StrategyDecisionEvent) UnifiedLogEvent {

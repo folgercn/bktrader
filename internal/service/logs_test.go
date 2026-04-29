@@ -106,3 +106,123 @@ func TestListLogEventsSupportsPaginationAndFilters(t *testing.T) {
 		t.Fatalf("unexpected filtered item: %#v", item)
 	}
 }
+
+func TestLiveControlMetricsAggregatesLatencyAndErrorCodes(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+	base := time.Date(2026, 4, 29, 9, 0, 0, 0, time.UTC)
+
+	session, err := store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = "RUNNING"
+	state["actualStatus"] = "STARTING"
+	state["controlRequestId"] = "request-2"
+	state["controlVersion"] = 2
+	state["controlRequestedAt"] = base.Add(-5 * time.Minute).Format(time.RFC3339)
+	state[liveSessionControlEventStateKey] = []any{
+		map[string]any{
+			"id":               "control-event-1",
+			"phase":            "request_accepted",
+			"eventTime":        base.Add(-30 * time.Second).Format(time.RFC3339Nano),
+			"recordedAt":       base.Add(-30 * time.Second).Format(time.RFC3339Nano),
+			"liveSessionId":    session.ID,
+			"accountId":        session.AccountID,
+			"strategyId":       session.StrategyID,
+			"controlRequestId": "request-1",
+			"controlVersion":   1,
+			"desiredStatus":    "RUNNING",
+			"actualStatus":     "STOPPED",
+			"action":           "start",
+		},
+		map[string]any{
+			"id":               "control-event-2",
+			"phase":            "runner_picked_up",
+			"eventTime":        base.Add(-25 * time.Second).Format(time.RFC3339Nano),
+			"recordedAt":       base.Add(-25 * time.Second).Format(time.RFC3339Nano),
+			"liveSessionId":    session.ID,
+			"accountId":        session.AccountID,
+			"strategyId":       session.StrategyID,
+			"controlRequestId": "request-1",
+			"controlVersion":   1,
+			"desiredStatus":    "RUNNING",
+			"actualStatus":     "STARTING",
+			"action":           "start",
+			"latencyMs":        1500,
+		},
+		map[string]any{
+			"id":               "control-event-3",
+			"phase":            "succeeded",
+			"eventTime":        base.Add(-20 * time.Second).Format(time.RFC3339Nano),
+			"recordedAt":       base.Add(-20 * time.Second).Format(time.RFC3339Nano),
+			"liveSessionId":    session.ID,
+			"accountId":        session.AccountID,
+			"strategyId":       session.StrategyID,
+			"controlRequestId": "request-1",
+			"controlVersion":   1,
+			"desiredStatus":    "RUNNING",
+			"actualStatus":     "RUNNING",
+			"action":           "start",
+			"latencyMs":        4500,
+		},
+		map[string]any{
+			"id":               "control-event-4",
+			"phase":            "failed",
+			"eventTime":        base.Add(-10 * time.Second).Format(time.RFC3339Nano),
+			"recordedAt":       base.Add(-10 * time.Second).Format(time.RFC3339Nano),
+			"liveSessionId":    session.ID,
+			"accountId":        session.AccountID,
+			"strategyId":       session.StrategyID,
+			"controlRequestId": "request-2",
+			"controlVersion":   2,
+			"desiredStatus":    "RUNNING",
+			"actualStatus":     "ERROR",
+			"action":           "start",
+			"errorCode":        LiveSessionControlErrorCodeConfigError,
+			"latencyMs":        8000,
+		},
+		map[string]any{
+			"id":               "control-event-5",
+			"phase":            "stale_update_discarded",
+			"eventTime":        base.Add(-5 * time.Second).Format(time.RFC3339Nano),
+			"recordedAt":       base.Add(-5 * time.Second).Format(time.RFC3339Nano),
+			"liveSessionId":    session.ID,
+			"accountId":        session.AccountID,
+			"strategyId":       session.StrategyID,
+			"controlRequestId": "request-old",
+			"controlVersion":   1,
+			"desiredStatus":    "RUNNING",
+			"actualStatus":     "STARTING",
+			"action":           "start",
+		},
+	}
+	if _, err := store.UpdateLiveSessionState(session.ID, state); err != nil {
+		t.Fatalf("update live session state: %v", err)
+	}
+
+	metrics, err := platform.LiveControlMetrics(UnifiedLogEventQuery{LiveSessionID: session.ID})
+	if err != nil {
+		t.Fatalf("live control metrics: %v", err)
+	}
+	if metrics.TotalEvents != 5 || metrics.Requests != 1 || metrics.RunnerPickups != 1 || metrics.Succeeded != 1 || metrics.Failed != 1 || metrics.StaleDiscarded != 1 {
+		t.Fatalf("unexpected counters: %#v", metrics)
+	}
+	if metrics.CurrentPending != 1 || metrics.CurrentErrors != 0 {
+		t.Fatalf("expected current pending without current error, got pending=%d errors=%d", metrics.CurrentPending, metrics.CurrentErrors)
+	}
+	if got := metrics.ByErrorCode[LiveSessionControlErrorCodeConfigError]; got != 1 {
+		t.Fatalf("expected CONFIG_ERROR count 1, got %d", got)
+	}
+	if metrics.Latency.PickupMs.Count != 1 || metrics.Latency.PickupMs.Min != 1500 {
+		t.Fatalf("unexpected pickup latency: %#v", metrics.Latency.PickupMs)
+	}
+	if metrics.Latency.TerminalMs.Count != 2 || metrics.Latency.TerminalMs.Min != 4500 || metrics.Latency.TerminalMs.Max != 8000 || metrics.Latency.TerminalMs.Average != 6250 {
+		t.Fatalf("unexpected terminal latency: %#v", metrics.Latency.TerminalMs)
+	}
+	accountGroup := metrics.ByAccount[session.AccountID]
+	if accountGroup.Total != 5 || accountGroup.ErrorCodes[LiveSessionControlErrorCodeConfigError] != 1 {
+		t.Fatalf("unexpected account group: %#v", accountGroup)
+	}
+}

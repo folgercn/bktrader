@@ -13,6 +13,7 @@ import (
 func init() {
 	logsCmd.AddCommand(logsSystemCmd)
 	logsCmd.AddCommand(logsEventCmd)
+	logsCmd.AddCommand(logsLiveControlSummaryCmd)
 	logsCmd.AddCommand(logsHTTPCmd)
 	logsCmd.AddCommand(logsStreamCmd)
 	logsCmd.AddCommand(logsTraceCmd)
@@ -60,6 +61,35 @@ var logsEventCmd = &cobra.Command{
 
 		client := getClient()
 		resp, err := client.Request("GET", "/api/v1/logs/events?"+v.Encode(), nil)
+		handleResponse(resp, err)
+		return nil
+	},
+}
+
+var logsLiveControlSummaryCmd = &cobra.Command{
+	Use:   "live-control-summary",
+	Short: "查询 LiveSession 控制面指标汇总 [IDEMPOTENT]",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		v := url.Values{}
+		for flag, queryKey := range map[string]string{
+			"account-id":      "accountId",
+			"strategy-id":     "strategyId",
+			"live-session-id": "liveSessionId",
+			"from":            "from",
+			"to":              "to",
+		} {
+			value, _ := cmd.Flags().GetString(flag)
+			if value != "" {
+				v.Set(queryKey, value)
+			}
+		}
+
+		client := getClient()
+		path := "/api/v1/logs/live-control/summary"
+		if len(v) > 0 {
+			path += "?" + v.Encode()
+		}
+		resp, err := client.Request("GET", path, nil)
 		handleResponse(resp, err)
 		return nil
 	},
@@ -162,6 +192,11 @@ func init() {
 	logsSystemCmd.Flags().String("level", "", "日志级别")
 	logsSystemCmd.Flags().String("component", "", "组件名称")
 	logsEventCmd.Flags().String("order-id", "", "订单 ID 过滤")
+	logsLiveControlSummaryCmd.Flags().String("account-id", "", "账户 ID 过滤")
+	logsLiveControlSummaryCmd.Flags().String("strategy-id", "", "策略 ID 过滤")
+	logsLiveControlSummaryCmd.Flags().String("live-session-id", "", "实盘会话 ID 过滤")
+	logsLiveControlSummaryCmd.Flags().String("from", "", "开始时间 (RFC3339 或 Unix 秒/毫秒)")
+	logsLiveControlSummaryCmd.Flags().String("to", "", "结束时间 (RFC3339 或 Unix 秒/毫秒)")
 	logsStreamCmd.Flags().String("source", "", "流来源 (system,http,alert,timeline)")
 	logsTraceCmd.Flags().String("order-id", "", "要追踪的订单 ID")
 }
