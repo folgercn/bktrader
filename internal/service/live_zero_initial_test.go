@@ -142,6 +142,194 @@ func TestPrepareLivePlanStepForSignalEvaluationUsesSignalBarBoundaryForMillisBar
 	}
 }
 
+func TestPrepareLivePlanStepForSignalEvaluationSnapshotsZeroInitialReentryPriceAcrossBars(t *testing.T) {
+	armedBarStart := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
+	parameters := map[string]any{
+		"dir2_zero_initial": true,
+		"zero_initial_mode": "reentry_window",
+		"long_reentry_atr":  0.1,
+	}
+	armedSignalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"sma5":      68050.0,
+			"atr14":     900.0,
+			"current": map[string]any{
+				"barStart": armedBarStart.Format(time.RFC3339),
+				"close":    68100.0,
+				"high":     69010.0,
+				"low":      67800.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 68850.0,
+				"low":  67750.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 69000.0,
+				"low":  67600.0,
+			},
+		},
+	}
+
+	state, _, gotPrice, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		map[string]any{},
+		parameters,
+		armedSignalStates,
+		"BTCUSDT",
+		"1d",
+		map[string]any{},
+		armedBarStart.Add(5*time.Minute),
+		69010.0,
+		"trigger.price",
+		armedBarStart.Add(-48*time.Hour),
+		75600.0,
+		"SELL",
+		"entry",
+		"SL-Reentry",
+	)
+	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
+		t.Fatalf("expected armed BUY zero reentry, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if gotPrice != 67840.0 {
+		t.Fatalf("expected armed reentry price 67840.0, got %.2f", gotPrice)
+	}
+	pending := mapValue(state[livePendingZeroInitialWindowStateKey])
+	if got := parseFloatValue(pending["plannedReentryPrice"]); got != 67840.0 {
+		t.Fatalf("expected pending window to snapshot planned reentry price 67840.0, got %.2f", got)
+	}
+
+	nextBarStart := armedBarStart.Add(24 * time.Hour)
+	nextSignalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT"): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "1d",
+			"sma5":      70000.0,
+			"atr14":     900.0,
+			"current": map[string]any{
+				"barStart": nextBarStart.Format(time.RFC3339),
+				"close":    71000.0,
+				"high":     71200.0,
+				"low":      70500.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 71000.0,
+				"low":  70000.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 69010.0,
+				"low":  67800.0,
+			},
+		},
+	}
+	_, gotEvent, gotPrice, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		state,
+		parameters,
+		nextSignalStates,
+		"BTCUSDT",
+		"1d",
+		map[string]any{},
+		nextBarStart.Add(8*time.Minute),
+		71050.0,
+		"trigger.price",
+		nextBarStart,
+		70090.0,
+		"BUY",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "Zero-Initial-Reentry" || gotSide != "BUY" {
+		t.Fatalf("expected persisted zero reentry window, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if !gotEvent.Equal(nextBarStart) {
+		t.Fatalf("expected current bar planned event %s, got %s", nextBarStart, gotEvent)
+	}
+	if gotPrice != 67840.0 {
+		t.Fatalf("expected cross-bar zero reentry to keep armed price 67840.0, got %.2f", gotPrice)
+	}
+}
+
+func TestPrepareLivePlanStepForSignalEvaluationRejectsZeroWindowSideProofMismatch(t *testing.T) {
+	barStart := time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC)
+	state := map[string]any{
+		livePendingZeroInitialWindowStateKey: map[string]any{
+			"side":                      "SELL",
+			"symbol":                    "BTCUSDT",
+			"signalTimeframe":           "30m",
+			"armedAt":                   barStart.Add(-5 * time.Minute).Format(time.RFC3339),
+			"signalBarStart":            barStart.Format(time.RFC3339),
+			"expiresAt":                 barStart.Add(time.Hour).Format(time.RFC3339),
+			"breakoutBacked":            true,
+			"openReason":                liveZeroInitialWindowOpenReasonBreakoutLocked,
+			"breakoutSide":              "BUY",
+			"longBreakoutReady":         true,
+			"longBreakoutShapeReady":    true,
+			"longBreakoutPriceReady":    true,
+			"longBreakoutQualityReady":  true,
+			"shortBreakoutReady":        false,
+			"shortBreakoutShapeReady":   false,
+			"shortBreakoutPriceReady":   false,
+			"shortBreakoutQualityReady": true,
+		},
+	}
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      100.0,
+			"atr14":     10.0,
+			"current": map[string]any{
+				"barStart": barStart.Format(time.RFC3339),
+				"close":    98.0,
+				"high":     99.0,
+				"low":      97.0,
+			},
+			"prevBar1": map[string]any{
+				"high": 101.0,
+				"low":  98.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 102.0,
+				"low":  97.0,
+			},
+		},
+	}
+
+	updated, _, _, gotSide, gotRole, gotReason := prepareLivePlanStepForSignalEvaluation(
+		state,
+		map[string]any{
+			"dir2_zero_initial": true,
+			"zero_initial_mode": "reentry_window",
+			"short_reentry_atr": 0.0,
+		},
+		signalStates,
+		"BTCUSDT",
+		"30m",
+		map[string]any{},
+		barStart.Add(5*time.Minute),
+		98.0,
+		"trigger.price",
+		barStart,
+		98.5,
+		"SELL",
+		"entry",
+		"Initial",
+	)
+	if gotRole != "entry" || gotReason != "Initial" || gotSide != "SELL" {
+		t.Fatalf("expected side-mismatched zero window to fall back to original plan, got side=%s role=%s reason=%s", gotSide, gotRole, gotReason)
+	}
+	if pending := mapValue(updated[livePendingZeroInitialWindowStateKey]); len(pending) != 0 {
+		t.Fatalf("expected side-mismatched zero window to be cleared, got %+v", pending)
+	}
+	timeline := metadataList(updated["timeline"])
+	if len(timeline) != 1 || stringValue(timeline[0]["title"]) != "zero-initial-window-consumed" {
+		t.Fatalf("expected one consume timeline event, got %+v", timeline)
+	}
+	if got := stringValue(mapValue(timeline[0]["metadata"])["reason"]); got != "zero-initial-window-side-breakout-proof-mismatch" {
+		t.Fatalf("expected side proof mismatch consume reason, got %s", got)
+	}
+}
+
 func TestPrepareLivePlanStepForSignalEvaluationConvertsNewZeroWindowAfterSameBarSLExit(t *testing.T) {
 	barStart := time.Date(2026, 4, 28, 11, 0, 0, 0, time.UTC)
 	eventTime := barStart.Add(22*time.Minute + 22*time.Second)

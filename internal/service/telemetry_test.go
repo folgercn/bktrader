@@ -477,6 +477,71 @@ func TestRefreshLiveSessionPositionContextPersistsPositionAccountSnapshot(t *tes
 	}
 }
 
+func TestRecordLivePositionAccountSnapshotUsesOrderDecisionEventID(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"syncStatus": "SYNCED",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	session, err := platform.store.GetLiveSession("live-session-main")
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	order, err := platform.store.CreateOrder(domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "LIMIT",
+		Quantity:          0.01,
+		Price:             100.0,
+		Metadata: map[string]any{
+			"decisionEventId": "decision-order-current",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["symbol"] = "BTCUSDT"
+	state["lastStrategyDecisionEventId"] = "decision-stale-cancelled-entry"
+	state["lastDispatchedOrderId"] = order.ID
+	state["livePositionState"] = map[string]any{
+		"symbol":     "BTCUSDT",
+		"side":       "LONG",
+		"quantity":   0.01,
+		"entryPrice": 100.0,
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	if err := platform.recordLivePositionAccountSnapshot(session, time.Date(2026, 4, 29, 15, 19, 41, 0, time.UTC), "live-order-sync", order.ID); err != nil {
+		t.Fatalf("record position/account snapshot failed: %v", err)
+	}
+	snapshots, err := platform.store.ListPositionAccountSnapshots(session.AccountID)
+	if err != nil {
+		t.Fatalf("list position/account snapshots failed: %v", err)
+	}
+	if len(snapshots) == 0 {
+		t.Fatal("expected at least one snapshot")
+	}
+	got := snapshots[len(snapshots)-1]
+	if got.DecisionEventID != "decision-order-current" {
+		t.Fatalf("expected snapshot to use order decision event id, got %s", got.DecisionEventID)
+	}
+}
+
 func prepareLiveDecisionTelemetryFixture(t *testing.T) (*Platform, domain.LiveSession, string, map[string]any, time.Time) {
 	t.Helper()
 

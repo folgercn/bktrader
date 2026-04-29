@@ -127,6 +127,7 @@ func prepareLivePlanStepForSignalEvaluation(
 	if shortReady {
 		side = "SELL"
 	}
+	plannedReentryPrice := resolveLiveReentryPlanPrice(parameters, signalBarState, side)
 	pendingWindow := map[string]any{
 		"side":                      side,
 		"symbol":                    NormalizeSymbol(symbol),
@@ -136,8 +137,11 @@ func prepareLivePlanStepForSignalEvaluation(
 		"expiresAt":                 expiresAt.UTC().Format(time.RFC3339),
 		"breakoutBacked":            true,
 		"openReason":                liveZeroInitialWindowOpenReasonBreakoutLocked,
+		"breakoutSide":              side,
 		"breakoutPrice":             breakoutPrice,
 		"breakoutPriceSource":       strings.TrimSpace(breakoutPriceSource),
+		"plannedReentryPrice":       plannedReentryPrice,
+		"plannedReentryPriceSource": "zero-initial-window-armed",
 		"longStructureReady":        boolValue(gate["longStructureReady"]),
 		"shortStructureReady":       boolValue(gate["shortStructureReady"]),
 		"longBreakoutReady":         boolValue(gate["longBreakoutReady"]),
@@ -294,6 +298,9 @@ func livePendingZeroInitialWindowOpen(sessionState map[string]any, symbol, signa
 		return false
 	}
 	if !liveZeroInitialWindowHasBreakoutProof(pending) {
+		return false
+	}
+	if !liveZeroInitialWindowHasSideBreakoutProof(pending, side) {
 		return false
 	}
 	if pendingSide := strings.ToUpper(strings.TrimSpace(stringValue(pending["side"]))); pendingSide != "" &&
@@ -526,11 +533,15 @@ func liveZeroInitialWindowPlanStep(
 		delete(state, livePendingZeroInitialWindowStateKey)
 		return state, time.Time{}, 0, "", "", "", false
 	}
+	if !liveZeroInitialWindowHasSideBreakoutProof(pending, side) {
+		clearLivePendingZeroInitialWindow(state, eventTime, "zero-initial-window-side-breakout-proof-mismatch")
+		return state, time.Time{}, 0, "", "", "", false
+	}
 	signalBarState, _ := pickSignalBarState(signalBarStates, symbol, signalTimeframe)
 	if signalBarState == nil {
 		return state, time.Time{}, 0, "", "", "", false
 	}
-	price := resolveLiveReentryPlanPrice(parameters, signalBarState, side)
+	price := resolveLiveZeroInitialReentryPlanPrice(parameters, signalBarState, pending, side)
 	if price <= 0 {
 		return state, time.Time{}, 0, "", "", "", false
 	}
@@ -630,5 +641,53 @@ func resolveLiveReentryPlanPrice(parameters map[string]any, signalBarState map[s
 		return parseFloatValue(prevBar1["high"]) + parseFloatValue(firstNonNil(parameters["short_reentry_atr"], 0.0))*atr14
 	default:
 		return 0
+	}
+}
+
+func resolveLiveZeroInitialReentryPlanPrice(parameters map[string]any, signalBarState map[string]any, pending map[string]any, side string) float64 {
+	if liveZeroInitialWindowHasBreakoutProof(pending) {
+		if price := parseFloatValue(pending["plannedReentryPrice"]); price > 0 {
+			return price
+		}
+	}
+	return resolveLiveReentryPlanPrice(parameters, signalBarState, side)
+}
+
+func liveZeroInitialWindowHasSideBreakoutProof(pending map[string]any, side string) bool {
+	if !liveZeroInitialWindowHasBreakoutProof(pending) {
+		return false
+	}
+	normalizedSide := strings.ToUpper(strings.TrimSpace(side))
+	if breakoutSide := strings.ToUpper(strings.TrimSpace(stringValue(pending["breakoutSide"]))); breakoutSide != "" && breakoutSide != normalizedSide {
+		return false
+	}
+	hasSideProofFields := false
+	for _, key := range []string{
+		"longBreakoutReady",
+		"longBreakoutShapeReady",
+		"longBreakoutPriceReady",
+		"longBreakoutQualityReady",
+		"shortBreakoutReady",
+		"shortBreakoutShapeReady",
+		"shortBreakoutPriceReady",
+		"shortBreakoutQualityReady",
+	} {
+		if _, ok := pending[key]; ok {
+			hasSideProofFields = true
+			break
+		}
+	}
+	if !hasSideProofFields {
+		return true
+	}
+	switch normalizedSide {
+	case "BUY":
+		return boolValue(pending["longBreakoutReady"]) ||
+			(boolValue(pending["longBreakoutShapeReady"]) && boolValue(pending["longBreakoutPriceReady"]) && boolValue(pending["longBreakoutQualityReady"]))
+	case "SELL", "SHORT":
+		return boolValue(pending["shortBreakoutReady"]) ||
+			(boolValue(pending["shortBreakoutShapeReady"]) && boolValue(pending["shortBreakoutPriceReady"]) && boolValue(pending["shortBreakoutQualityReady"]))
+	default:
+		return false
 	}
 }

@@ -533,10 +533,16 @@ func (p *Platform) recordLivePositionAccountSnapshot(session domain.LiveSession,
 	if orderID == "" {
 		orderID = stringValue(state["lastDispatchedOrderId"])
 	}
+	decisionEventID := stringValue(state["lastStrategyDecisionEventId"])
+	if orderID != "" {
+		if order, orderErr := p.GetOrder(orderID); orderErr == nil {
+			decisionEventID = firstNonEmpty(stringValue(order.Metadata["decisionEventId"]), decisionEventID)
+		}
+	}
 
 	snapshot := domain.PositionAccountSnapshot{
 		LiveSessionID:     session.ID,
-		DecisionEventID:   stringValue(state["lastStrategyDecisionEventId"]),
+		DecisionEventID:   decisionEventID,
 		OrderID:           orderID,
 		AccountID:         session.AccountID,
 		StrategyID:        session.StrategyID,

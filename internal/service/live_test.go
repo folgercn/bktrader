@@ -193,6 +193,88 @@ func TestEvaluateSignalBarGateAllowsLongAfterBreakoutAlignmentWithResearch(t *te
 	}
 }
 
+func TestEvaluateSignalUsesExecutionEntrySlippageAsDefaultDecisionDeviation(t *testing.T) {
+	engine := bkStrategyEngine{}
+	barStart := time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC)
+	signalStates := map[string]any{
+		signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      99.0,
+			"atr14":     10.0,
+			"current": map[string]any{
+				"barStart": barStart.Format(time.RFC3339),
+				"close":    100.2,
+				"high":     100.2,
+				"low":      99.5,
+			},
+			"prevBar1": map[string]any{
+				"high": 99.0,
+				"low":  98.0,
+			},
+			"prevBar2": map[string]any{
+				"high": 100.0,
+				"low":  97.0,
+			},
+		},
+	}
+	evaluate := func(parameters map[string]any) StrategySignalDecision {
+		decision, err := engine.EvaluateSignal(StrategySignalEvaluationContext{
+			ExecutionContext: StrategyExecutionContext{
+				Symbol:          "BTCUSDT",
+				SignalTimeframe: "30m",
+				Parameters:      parameters,
+			},
+			TriggerSummary: map[string]any{
+				"role":   "trigger",
+				"symbol": "BTCUSDT",
+				"price":  100.2,
+			},
+			SourceStates: map[string]any{
+				"tick": map[string]any{
+					"streamType": "trade_tick",
+					"symbol":     "BTCUSDT",
+					"summary":    map[string]any{"price": 100.2},
+				},
+			},
+			SignalBarStates:   signalStates,
+			CurrentPosition:   map[string]any{},
+			SessionState:      map[string]any{},
+			EventTime:         barStart.Add(5 * time.Minute),
+			NextPlannedEvent:  barStart,
+			NextPlannedPrice:  100.0,
+			NextPlannedSide:   "BUY",
+			NextPlannedRole:   "entry",
+			NextPlannedReason: "Initial",
+		})
+		if err != nil {
+			t.Fatalf("evaluate signal failed: %v", err)
+		}
+		return decision
+	}
+
+	blocked := evaluate(map[string]any{
+		"executionEntryMaxSlippageBps": 8.0,
+	})
+	if blocked.Action != "wait" || blocked.Reason != "price-not-actionable" {
+		t.Fatalf("expected 8 bps inherited decision deviation to block 20 bps entry, got %+v", blocked)
+	}
+	if got := parseFloatValue(blocked.Metadata["maxDeviationBps"]); got != 8.0 {
+		t.Fatalf("expected maxDeviationBps to inherit executionEntryMaxSlippageBps=8, got %v", got)
+	}
+
+	allowed := evaluate(map[string]any{
+		"executionEntryMaxSlippageBps":  8.0,
+		"signalDecisionMaxDeviationBps": 25.0,
+	})
+	if allowed.Action != "advance-plan" {
+		t.Fatalf("expected explicit signalDecisionMaxDeviationBps to allow entry, got %+v", allowed)
+	}
+	if got := parseFloatValue(allowed.Metadata["maxDeviationBps"]); got != 25.0 {
+		t.Fatalf("expected explicit maxDeviationBps=25, got %v", got)
+	}
+}
+
 func TestEvaluateSignalBarGateUsesSMA5ForIntradayReentry(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "30m",
@@ -7331,10 +7413,11 @@ func TestEvaluateLiveSessionOnSignalKeepsReentryDispatchableWithoutInitialBreako
 	}
 
 	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
-		"symbol":              "BTCUSDT",
-		"signalTimeframe":     "1d",
-		"executionDataSource": "tick",
-		"dispatchMode":        "manual-review",
+		"symbol":                        "BTCUSDT",
+		"signalTimeframe":               "1d",
+		"executionDataSource":           "tick",
+		"dispatchMode":                  "manual-review",
+		"signalDecisionMaxDeviationBps": 25.0,
 	})
 	if err != nil {
 		t.Fatalf("create live session failed: %v", err)
@@ -7428,7 +7511,7 @@ func TestEvaluateLiveSessionOnSignalKeepsReentryDispatchableWithoutInitialBreako
 	}
 	proposal := mapValue(updated.State["lastExecutionProposal"])
 	if proposal == nil {
-		t.Fatal("expected lastExecutionProposal to be recorded")
+		t.Fatalf("expected lastExecutionProposal to be recorded; lastStrategyDecision=%+v", mapValue(updated.State["lastStrategyDecision"]))
 	}
 	if got := stringValue(proposal["status"]); got != "dispatchable" {
 		t.Fatalf("expected reentry proposal to remain dispatchable, got %s", got)
@@ -7485,12 +7568,13 @@ func TestEvaluateLiveSessionOnSignalUsesInjectedATRForVolatilitySizing(t *testin
 	}
 
 	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
-		"symbol":              "BTCUSDT",
-		"signalTimeframe":     "1d",
-		"executionDataSource": "tick",
-		"dispatchMode":        "manual-review",
-		"positionSizingMode":  "volatility_adjusted",
-		"targetRiskBps":       100.0,
+		"symbol":                        "BTCUSDT",
+		"signalTimeframe":               "1d",
+		"executionDataSource":           "tick",
+		"dispatchMode":                  "manual-review",
+		"positionSizingMode":            "volatility_adjusted",
+		"targetRiskBps":                 100.0,
+		"signalDecisionMaxDeviationBps": 25.0,
 	})
 	if err != nil {
 		t.Fatalf("create live session failed: %v", err)
@@ -7584,7 +7668,7 @@ func TestEvaluateLiveSessionOnSignalUsesInjectedATRForVolatilitySizing(t *testin
 	}
 	proposal := mapValue(updated.State["lastExecutionProposal"])
 	if proposal == nil {
-		t.Fatal("expected lastExecutionProposal to be recorded")
+		t.Fatalf("expected lastExecutionProposal to be recorded; lastStrategyDecision=%+v", mapValue(updated.State["lastStrategyDecision"]))
 	}
 	metadata := mapValue(proposal["metadata"])
 	if got := parseFloatValue(metadata["sizingATR14"]); got != 900.0 {

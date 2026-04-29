@@ -5330,6 +5330,7 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"use_sma5_intraday_structure",
 		"reentry_min_stop_bps",
 		"reentry_atr_percentile_gte",
+		"signalDecisionMaxDeviationBps",
 	}
 	sessionParameterKeys = append(sessionParameterKeys, liveExecutionParameterOverrideKeys()...)
 	for _, key := range sessionParameterKeys {
@@ -5823,6 +5824,9 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if maxSpread := parseFloatValue(overrides["executionMaxSpreadBps"]); maxSpread > 0 {
 		normalized["executionMaxSpreadBps"] = maxSpread
+	}
+	if maxDeviation := parseFloatValue(overrides["signalDecisionMaxDeviationBps"]); maxDeviation > 0 {
+		normalized["signalDecisionMaxDeviationBps"] = maxDeviation
 	}
 	if maxAgeMs := parseFloatValue(overrides["executionEntryMaxBookAgeMs"]); maxAgeMs > 0 {
 		normalized["executionEntryMaxBookAgeMs"] = maxAgeMs
