@@ -32,7 +32,15 @@ var supervisorStatusCmd = &cobra.Command{
 
 type supervisorStatusSnapshot struct {
 	CheckedAt string                     `json:"checkedAt"`
+	Policy    *supervisorPolicy          `json:"policy,omitempty"`
 	Targets   []supervisorTargetSnapshot `json:"targets"`
+}
+
+type supervisorPolicy struct {
+	ApplicationRestartEnabled   bool `json:"applicationRestartEnabled"`
+	ServiceFailureThreshold     int  `json:"serviceFailureThreshold"`
+	ContainerRestartEnabled     bool `json:"containerRestartEnabled"`
+	ContainerExecutorConfigured bool `json:"containerExecutorConfigured"`
 }
 
 type supervisorTargetSnapshot struct {
@@ -142,6 +150,14 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	var out bytes.Buffer
 	fmt.Fprintln(&out, "Runtime supervisor snapshot")
 	fmt.Fprintf(&out, "checkedAt: %s\n", firstNonEmpty(snapshot.CheckedAt, "--"))
+	if snapshot.Policy != nil {
+		fmt.Fprintf(&out, "policy: applicationRestartEnabled=%t serviceFailureThreshold=%d containerRestartEnabled=%t containerExecutorConfigured=%t\n",
+			snapshot.Policy.ApplicationRestartEnabled,
+			snapshot.Policy.ServiceFailureThreshold,
+			snapshot.Policy.ContainerRestartEnabled,
+			snapshot.Policy.ContainerExecutorConfigured,
+		)
+	}
 	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d runtimes=%d attention=%d controlActions=%d\n",
 		targets, fullyReachable, fallbackCandidates, fallbackExecutable, runtimeCount, runtimeAttention, controlActions)
 	for _, target := range snapshot.Targets {

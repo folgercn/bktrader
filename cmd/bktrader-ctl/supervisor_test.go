@@ -8,6 +8,12 @@ import (
 func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 	payload := []byte(`{
 		"checkedAt":"2026-04-29T08:00:00Z",
+		"policy":{
+			"applicationRestartEnabled":true,
+			"serviceFailureThreshold":3,
+			"containerRestartEnabled":true,
+			"containerExecutorConfigured":false
+		},
 		"targets":[{
 			"name":"api",
 			"baseUrl":"http://127.0.0.1:8080",
@@ -48,6 +54,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 	}
 	expected := []string{
 		"Runtime supervisor snapshot",
+		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerExecutorConfigured=false",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=0 runtimes=1 attention=1 controlActions=1",
 		"fallbackPlan: action=container-restart enabled=true executorConfigured=false executable=false blockedReason=container-executor-not-configured",
 		"lastFailure=healthz-unhealthy: http 503",
@@ -62,6 +69,12 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 	payload := []byte(`{
 		"checkedAt":"2026-04-29T08:00:00Z",
+		"policy":{
+			"applicationRestartEnabled":false,
+			"serviceFailureThreshold":3,
+			"containerRestartEnabled":false,
+			"containerExecutorConfigured":false
+		},
 		"targets":[{
 			"name":"api",
 			"baseUrl":"http://127.0.0.1:8080",
@@ -77,6 +90,7 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
+		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerExecutorConfigured=false",
 		"targets: total=1 fullyReachable=1 fallbackCandidates=0 fallbackExecutable=0 runtimes=0 attention=0 controlActions=0",
 		"serviceState: failures=0/3 fallback=clear",
 		"runtimes: total=0 attention=0 service=platform-api",

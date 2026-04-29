@@ -431,6 +431,13 @@ export type RuntimeSupervisorControlAction = {
   requestedAt: string;
 };
 
+export type RuntimeSupervisorPolicy = {
+  applicationRestartEnabled: boolean;
+  serviceFailureThreshold: number;
+  containerRestartEnabled: boolean;
+  containerExecutorConfigured: boolean;
+};
+
 export type RuntimeSupervisorTargetSnapshot = {
   name: string;
   baseUrl: string;
@@ -445,6 +452,7 @@ export type RuntimeSupervisorTargetSnapshot = {
 
 export type RuntimeSupervisorSnapshot = {
   checkedAt: string;
+  policy: RuntimeSupervisorPolicy;
   targets: RuntimeSupervisorTargetSnapshot[];
 };
 
