@@ -108,7 +108,14 @@ func TestRebuildOrderFills(t *testing.T) {
 		Source:          "real",
 	})
 
-	// Match 3 remote trades (one duplicate, two new)
+	// Create position
+	store.SavePosition(domain.Position{
+		AccountID: account.ID,
+		Symbol:    "BTCUSDT",
+		Quantity:  0.7, // 0.4 synthetic + 0.3 real
+	})
+
+	// Match 3 remote trades (one duplicate, two new using different ID keys)
 	matchedTrades := []LiveFillReport{
 		{
 			Price:    50000,
@@ -118,12 +125,12 @@ func TestRebuildOrderFills(t *testing.T) {
 		{
 			Price:    50100,
 			Quantity: 0.5,
-			Metadata: map[string]any{"exchangeTradeId": "trade-new-1"},
+			Metadata: map[string]any{"tradeId": "trade-new-1"},
 		},
 		{
 			Price:    50200,
 			Quantity: 0.2,
-			Metadata: map[string]any{"exchangeTradeId": "trade-new-2"},
+			Metadata: map[string]any{"execId": "trade-new-2"},
 		},
 	}
 
@@ -163,9 +170,27 @@ func TestRebuildOrderFills(t *testing.T) {
 		t.Errorf("Expected after snapshot filled quantity 1.0, got %f", resp.After.FilledQuantity)
 	}
 
+	// Check Audit History
 	updatedOrder, _ := store.GetOrderByID(order.ID)
 	history, ok := updatedOrder.Metadata["manualFillSyncHistory"].([]any)
 	if !ok || len(history) != 1 {
 		t.Errorf("Audit history not found or incorrect")
+	} else {
+		entry := history[0].(map[string]any)
+		if entry["result"] != "settled" {
+			t.Errorf("Expected result 'settled', got %v", entry["result"])
+		}
+		if entry["after"] == nil {
+			t.Errorf("Expected 'after' snapshot in history")
+		}
+		if entry["actor"] != "system" {
+			t.Errorf("Expected actor 'system', got %v", entry["actor"])
+		}
+	}
+
+	// Check Position (should NOT have changed as it's degraded to reconcile)
+	pos, _, _ := store.FindPosition(account.ID, "BTCUSDT")
+	if pos.Quantity != 0.7 {
+		t.Errorf("Expected position quantity 0.7 (unchanged), got %f", pos.Quantity)
 	}
 }

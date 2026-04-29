@@ -69,6 +69,7 @@ type FillRebuildChanges struct {
 	AddedRealCount        int      `json:"addedRealCount"`
 	DuplicateTradeIDs     []string `json:"duplicateTradeIds,omitempty"`
 	NewTradeIDs           []string `json:"newTradeIds,omitempty"`
+	MatchedTradeIDs       []string `json:"matchedTradeIds,omitempty"`
 }
 
 // FetchRemoteFills pulls the remote details of an order from the exchange, without modifying local DB.
@@ -96,12 +97,17 @@ func (p *Platform) FetchRemoteFills(orderID string) (RemoteFillsResponse, error)
 		return RemoteFillsResponse{}, fmt.Errorf("failed to fetch remote trades: %w", err)
 	}
 
-	exchangeOrderID := order.Metadata["exchangeOrderId"]
-	if exchangeOrderID == nil && syncResult.Metadata != nil {
-		exchangeOrderID = syncResult.Metadata["exchangeOrderId"]
+	exchangeOrderID := ""
+	if eoid := order.Metadata["exchangeOrderId"]; eoid != nil {
+		exchangeOrderID = fmt.Sprintf("%v", eoid)
+	}
+	if exchangeOrderID == "" && syncResult.Metadata != nil {
+		if eoid := syncResult.Metadata["exchangeOrderId"]; eoid != nil {
+			exchangeOrderID = fmt.Sprintf("%v", eoid)
+		}
 	}
 
-	matchedTrades := matchRemoteTrades(order.ID, fmt.Sprintf("%v", exchangeOrderID), remoteTrades)
+	matchedTrades := p.matchRemoteTrades(order.ID, exchangeOrderID, remoteTrades)
 
 	localFills, err := p.store.QueryFills(domain.FillQuery{OrderIDs: []string{orderID}})
 	if err != nil {
@@ -195,12 +201,17 @@ func (p *Platform) ManualSyncFills(orderID string, req ManualFillSyncRequest) (M
 		return ManualFillSyncResponse{}, fmt.Errorf("failed to fetch remote trades: %w", err)
 	}
 
-	exchangeOrderID := order.Metadata["exchangeOrderId"]
-	if exchangeOrderID == nil && syncResult.Metadata != nil {
-		exchangeOrderID = syncResult.Metadata["exchangeOrderId"]
+	exchangeOrderID := ""
+	if eoid := order.Metadata["exchangeOrderId"]; eoid != nil {
+		exchangeOrderID = fmt.Sprintf("%v", eoid)
+	}
+	if exchangeOrderID == "" && syncResult.Metadata != nil {
+		if eoid := syncResult.Metadata["exchangeOrderId"]; eoid != nil {
+			exchangeOrderID = fmt.Sprintf("%v", eoid)
+		}
 	}
 
-	matchedTrades := matchRemoteTrades(order.ID, fmt.Sprintf("%v", exchangeOrderID), remoteTrades)
+	matchedTrades := p.matchRemoteTrades(order.ID, exchangeOrderID, remoteTrades)
 
 	// Perform rebuild (dry-run or real)
 	resp, err := p.RebuildOrderFills(order.ID, matchedTrades, req.Reason, req.DryRun)
@@ -249,7 +260,10 @@ func (p *Platform) RebuildOrderFills(orderID string, matchedTrades []LiveFillRep
 		}
 		// Add new ones from matched trades
 		for _, t := range matchedTrades {
-			tradeID := fmt.Sprintf("%v", t.Metadata["exchangeTradeId"])
+			tradeID := p.remoteTradeID(t)
+			if tradeID == "" {
+				continue
+			}
 			if existingRealMap[tradeID] {
 				changes.DuplicateTradeIDs = append(changes.DuplicateTradeIDs, tradeID)
 			} else {
@@ -294,7 +308,11 @@ func (p *Platform) RebuildOrderFills(orderID string, matchedTrades []LiveFillRep
 
 			// 3. Create real fills
 			for _, t := range matchedTrades {
-				tradeID := fmt.Sprintf("%v", t.Metadata["exchangeTradeId"])
+				tradeID := p.remoteTradeID(t)
+				if tradeID == "" {
+					continue
+				}
+
 				if existingRealMap[tradeID] {
 					changes.DuplicateTradeIDs = append(changes.DuplicateTradeIDs, tradeID)
 					continue
@@ -331,46 +349,43 @@ func (p *Platform) RebuildOrderFills(orderID string, matchedTrades []LiveFillRep
 			if order.Metadata == nil {
 				order.Metadata = make(map[string]any)
 			}
+
+			// Capture After Snapshot
+			afterSnapshot := buildFillSyncSnapshot(order, localFillsAfter) // localFillsAfter not populated yet, wait
+
+			// Populate localFillsAfter inside TX for audit accuracy
+			localFillsAfter, err = tx.QueryFills(domain.FillQuery{OrderIDs: []string{orderID}})
+			if err != nil {
+				return err
+			}
+			afterSnapshot = buildFillSyncSnapshot(order, localFillsAfter)
+
 			// Update audit history
 			historyEntry := map[string]any{
 				"time":    time.Now().UTC().Format(time.RFC3339),
 				"reason":  reason,
 				"changes": changes,
 				"before":  beforeSnapshot,
+				"after":   afterSnapshot,
+				"actor":   "system", // Placeholder for future auth context
+				"result":  "settled",
 			}
 			historyRaw := order.Metadata["manualFillSyncHistory"]
 			history, _ := historyRaw.([]any)
 			history = append(history, historyEntry)
 			order.Metadata["manualFillSyncHistory"] = history
-			order.Metadata["manualFillSync"] = historyEntry // Backward compatibility for single last op
+			order.Metadata["manualFillSync"] = historyEntry // Backward compatibility
 
 			syncedOrder, err = tx.UpdateOrder(order)
 			if err != nil {
 				return err
 			}
 
-			// 5. Update Position
-			pos, exists, err := tx.FindPosition(order.AccountID, order.Symbol)
-			if err != nil {
-				return err
-			}
-			if exists {
-				delta := totalFilledAfter - beforeSnapshot.FilledQuantity
-				if delta != 0 {
-					if order.Side == "BUY" {
-						pos.Quantity += delta
-					} else {
-						pos.Quantity -= delta
-					}
-					_, err = tx.SavePosition(pos)
-					if err != nil {
-						return err
-					}
-				}
-			}
+			// 5. Position adjustment degraded to subsequent reconcile
+			// We skip manual position.Quantity updates here to avoid cost/PnL accounting errors.
+			// The system will eventually reconcile this account/symbol.
 
-			localFillsAfter, err = tx.QueryFills(domain.FillQuery{OrderIDs: []string{orderID}})
-			return err
+			return nil
 		})
 		if err != nil {
 			return nil, err
@@ -400,19 +415,19 @@ func (p *Platform) RebuildOrderFills(orderID string, matchedTrades []LiveFillRep
 	}, nil
 }
 
-func matchRemoteTrades(orderID, exchangeOrderID string, remoteTrades []LiveFillReport) []LiveFillReport {
+func (p *Platform) matchRemoteTrades(orderID, exchangeOrderID string, remoteTrades []LiveFillReport) []LiveFillReport {
 	var matched []LiveFillReport
 	for _, trade := range remoteTrades {
 		tradeExchangeOrderID := ""
 		tradeClientOrderID := ""
 		if trade.Metadata != nil {
-			if eoid, ok := trade.Metadata["exchangeOrderId"]; ok {
+			if eoid := trade.Metadata["exchangeOrderId"]; eoid != nil {
 				tradeExchangeOrderID = fmt.Sprintf("%v", eoid)
 			}
-			if coid, ok := trade.Metadata["clientOrderId"]; ok {
+			if coid := trade.Metadata["clientOrderId"]; coid != nil {
 				tradeClientOrderID = fmt.Sprintf("%v", coid)
 			}
-			if coid, ok := trade.Metadata["orderId"]; ok && tradeClientOrderID == "" {
+			if coid := trade.Metadata["orderId"]; coid != nil && tradeClientOrderID == "" {
 				tradeClientOrderID = fmt.Sprintf("%v", coid)
 			}
 		}
@@ -422,6 +437,15 @@ func matchRemoteTrades(orderID, exchangeOrderID string, remoteTrades []LiveFillR
 		}
 	}
 	return matched
+}
+
+func (p *Platform) remoteTradeID(t LiveFillReport) string {
+	return firstNonEmpty(
+		stringValue(t.Metadata["exchangeTradeId"]),
+		stringValue(t.Metadata["tradeId"]),
+		stringValue(t.Metadata["execId"]),
+		stringValue(t.Metadata["id"]),
+	)
 }
 
 func buildFillSyncSnapshot(order domain.Order, fills []domain.Fill) FillSyncSnapshot {
