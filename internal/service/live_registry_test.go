@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
 func TestDoBinanceRESTRequestClassifiesHTTPFailureAsAdapterError(t *testing.T) {
@@ -293,5 +296,93 @@ func TestBinanceRESTGateDoesNotConsumeTokensDuringBackoff(t *testing.T) {
 func TestBinanceRESTGateUnknownCategoryDefaultsToLowestPriority(t *testing.T) {
 	if got := normalizeBinanceRESTRequestCategory(binanceRESTRequestCategory("new-background-class")); got != binanceRESTCategoryMarketData {
 		t.Fatalf("expected unknown category to default to lowest priority, got %s", got)
+	}
+}
+
+func TestOKXFillReportsNormalizeTradePayloads(t *testing.T) {
+	reports := okxFillReportsFromTradePayloads(domain.Account{
+		ID:       "live-okx",
+		Exchange: "OKX",
+	}, "okx-live", []map[string]any{{
+		"tradeId":  "okx-trade-1",
+		"ordId":    "okx-order-1",
+		"instId":   "BTC-USDT-SWAP",
+		"side":     "buy",
+		"fillPx":   "68000.5",
+		"fillSz":   "0.2",
+		"fillFee":  "1.25",
+		"feeCcy":   "USDT",
+		"fillPnl":  "3.5",
+		"fillTime": "1777389360000",
+	}}, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected one report, got %d", len(reports))
+	}
+	assertLiveFillReport(t, reports[0], FillSourceReal, "okx-fills", "okx-order-1", "okx-trade-1", "BTC-USDT-SWAP", "buy", 68000.5, 0.2, 1.25, "USDT", 3.5)
+	if got := stringValue(reports[0].Metadata["tradeTime"]); got != "2026-04-28T15:16:00Z" {
+		t.Fatalf("expected normalized OKX trade time, got %q", got)
+	}
+}
+
+func TestBybitFillReportsNormalizeExecutionPayloads(t *testing.T) {
+	reports := bybitFillReportsFromExecutionPayloads(domain.Account{
+		ID:       "live-bybit",
+		Exchange: "Bybit",
+	}, "bybit-live", []map[string]any{{
+		"execId":      "bybit-exec-1",
+		"orderId":     "bybit-order-1",
+		"symbol":      "BTCUSDT",
+		"side":        "Sell",
+		"execPrice":   "68100.5",
+		"execQty":     "0.3",
+		"execFee":     "1.75",
+		"feeCurrency": "USDT",
+		"closedPnl":   "4.5",
+		"execTime":    json.Number("1777389360000"),
+	}}, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected one report, got %d", len(reports))
+	}
+	assertLiveFillReport(t, reports[0], FillSourceReal, "bybit-executions", "bybit-order-1", "bybit-exec-1", "BTCUSDT", "Sell", 68100.5, 0.3, 1.75, "USDT", 4.5)
+}
+
+func TestExchangeFillReportMapperSkipsNonPositiveQuantity(t *testing.T) {
+	reports := okxFillReportsFromTradePayloads(domain.Account{ID: "live-okx", Exchange: "OKX"}, "okx-live", []map[string]any{{
+		"tradeId": "skip-zero",
+		"ordId":   "okx-order-1",
+		"fillPx":  "68000.5",
+		"fillSz":  "0",
+	}}, nil)
+	if len(reports) != 0 {
+		t.Fatalf("expected zero-quantity payload to be skipped, got %+v", reports)
+	}
+}
+
+func assertLiveFillReport(t *testing.T, report LiveFillReport, source FillSource, reportSource, orderID, tradeID, symbol, side string, price, quantity, fee float64, feeAsset string, realizedPnL float64) {
+	t.Helper()
+	if report.Source != source {
+		t.Fatalf("expected source %q, got %q", source, report.Source)
+	}
+	if report.Price != price || report.Quantity != quantity || report.Fee != fee {
+		t.Fatalf("unexpected price/quantity/fee: %+v", report)
+	}
+	metadata := report.Metadata
+	checks := map[string]string{
+		"reportSource":    reportSource,
+		"exchangeOrderId": orderID,
+		"tradeId":         tradeID,
+		"symbol":          symbol,
+		"side":            side,
+		"feeAsset":        feeAsset,
+	}
+	for key, want := range checks {
+		if got := stringValue(metadata[key]); got != want {
+			t.Fatalf("expected metadata[%s]=%q, got %q", key, want, got)
+		}
+	}
+	if got := parseFloatValue(metadata["realizedPnl"]); got != realizedPnL {
+		t.Fatalf("expected realizedPnl %v, got %v", realizedPnL, got)
 	}
 }
