@@ -9327,8 +9327,167 @@ func TestShouldBackfillTerminalFilledLiveOrderSkipsCompleteFillWhenGateBlocked(t
 		"positionReconcileGateBlocking": true,
 		"positionReconcileGateScenario": "db-position-exchange-missing",
 	}
-	if shouldBackfillTerminalFilledLiveOrder(order, state) {
+	if shouldBackfillTerminalFilledLiveOrder(order, state, time.Date(2026, 4, 26, 3, 36, 53, 0, time.UTC)) {
 		t.Fatal("expected complete terminal fill not to be repeatedly backfilled while reconcile gate is blocked")
+	}
+}
+
+func TestShouldBackfillTerminalFilledLiveOrderBackfillsSyntheticFill(t *testing.T) {
+	order := domain.Order{
+		ID:       "order-terminal-synthetic",
+		Status:   "FILLED",
+		Quantity: 0.013,
+		Metadata: map[string]any{
+			"filledQuantity": 0.013,
+			"lastFilledAt":   time.Date(2026, 4, 29, 3, 35, 12, 0, time.UTC).Format(time.RFC3339),
+		},
+	}
+	fills := []domain.Fill{{
+		OrderID:  order.ID,
+		Source:   string(FillSourceSynthetic),
+		Price:    76784.4,
+		Quantity: 0.013,
+		Fee:      0,
+	}}
+	if !shouldBackfillTerminalFilledLiveOrder(order, nil, time.Date(2026, 4, 29, 3, 35, 42, 0, time.UTC), fills) {
+		t.Fatal("expected complete terminal synthetic fill to be backfilled")
+	}
+}
+
+func TestShouldBackfillTerminalFilledLiveOrderThrottlesRecentSyntheticBackfill(t *testing.T) {
+	now := time.Date(2026, 4, 29, 3, 35, 42, 0, time.UTC)
+	order := domain.Order{
+		ID:       "order-terminal-synthetic-throttle",
+		Status:   "FILLED",
+		Quantity: 0.013,
+		Metadata: map[string]any{
+			"filledQuantity": 0.013,
+			"lastFilledAt":   now.Add(-30 * time.Second).Format(time.RFC3339),
+		},
+	}
+	state := map[string]any{
+		"lastSyncAttemptAt": now.Add(-10 * time.Second).Format(time.RFC3339),
+	}
+	fills := []domain.Fill{{
+		OrderID:  order.ID,
+		Source:   string(FillSourceSynthetic),
+		Price:    76784.4,
+		Quantity: 0.013,
+		Fee:      0,
+	}}
+	if shouldBackfillTerminalFilledLiveOrder(order, state, now, fills) {
+		t.Fatal("expected recent synthetic backfill attempt to be throttled")
+	}
+	if !shouldBackfillTerminalFilledLiveOrder(order, state, now.Add(21*time.Second), fills) {
+		t.Fatal("expected synthetic backfill after cooldown")
+	}
+}
+
+func TestSyncLatestLiveSessionOrderBackfillsSyntheticTerminalFill(t *testing.T) {
+	platform, session, _, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	var syncCount int64
+	tradeTime := time.Date(2026, 4, 29, 3, 35, 12, 0, time.UTC)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{
+		key: "test-terminal-synthetic-backfill",
+		syncOrderFunc: func(_ domain.Account, order domain.Order, _ map[string]any) (LiveOrderSync, error) {
+			atomic.AddInt64(&syncCount, 1)
+			return LiveOrderSync{
+				Status:   "FILLED",
+				SyncedAt: tradeTime.Format(time.RFC3339),
+				Fills: []LiveFillReport{{
+					Price:    76784.4,
+					Quantity: order.Quantity,
+					Fee:      0.39927888,
+					Source:   FillSourceReal,
+					Metadata: map[string]any{
+						"tradeId":   "481518956",
+						"tradeTime": tradeTime.Format(time.RFC3339),
+					},
+				}},
+				Metadata: map[string]any{
+					"executedQty":      order.Quantity,
+					"avgPrice":         76784.4,
+					"updateTime":       tradeTime.Format(time.RFC3339),
+					"tradeReportCount": 1,
+					"totalFee":         0.39927888,
+				},
+				Terminal: true,
+			}, nil
+		},
+	})
+
+	account, err := platform.store.GetAccount(session.AccountID)
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-terminal-synthetic-backfill",
+		"connectionMode": "mock",
+		"executionMode":  "rest",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+
+	order, err := platform.store.CreateOrder(domain.Order{
+		AccountID:         session.AccountID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "SELL",
+		Type:              "MARKET",
+		Status:            "FILLED",
+		Quantity:          0.013,
+		Price:             76784.4,
+		Metadata: map[string]any{
+			"source":            "live-session-intent",
+			"liveSessionId":     session.ID,
+			"executionProposal": map[string]any{"role": "exit", "side": "SELL", "symbol": "BTCUSDT"},
+			"filledQuantity":    0.013,
+			"lastFilledAt":      tradeTime.Format(time.RFC3339),
+		},
+	})
+	if err != nil {
+		t.Fatalf("create live order failed: %v", err)
+	}
+	if _, err := platform.store.CreateFill(domain.Fill{
+		OrderID:          order.ID,
+		Source:           string(FillSourceSynthetic),
+		Price:            76784.4,
+		Quantity:         0.013,
+		Fee:              0,
+		DedupFingerprint: "terminal-filled-order-fallback|" + order.ID,
+	}); err != nil {
+		t.Fatalf("create synthetic fill failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastDispatchedOrderId"] = order.ID
+	state["lastDispatchedOrderStatus"] = "FILLED"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("update live session state failed: %v", err)
+	}
+
+	updated, err := platform.syncLatestLiveSessionOrder(session, tradeTime.Add(10*time.Minute))
+	if err != nil {
+		t.Fatalf("sync latest live session order failed: %v", err)
+	}
+	if got := atomic.LoadInt64(&syncCount); got != 1 {
+		t.Fatalf("expected synthetic terminal fill to trigger one order sync, got %d", got)
+	}
+	if got := stringValue(updated.State["lastSyncedOrderId"]); got != order.ID {
+		t.Fatalf("expected synced order id %s, got %s", order.ID, got)
+	}
+	fills, err := platform.store.QueryFills(domain.FillQuery{OrderIDs: []string{order.ID}})
+	if err != nil {
+		t.Fatalf("query fills failed: %v", err)
+	}
+	if len(fills) != 1 {
+		t.Fatalf("expected synthetic fill to be replaced by one real fill, got %+v", fills)
+	}
+	if fills[0].ExchangeTradeID != "481518956" || fills[0].Source != string(FillSourceReal) || fills[0].Fee != 0.39927888 {
+		t.Fatalf("expected real fee fill after backfill sync, got %+v", fills[0])
 	}
 }
 
