@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	neturl "net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -255,6 +256,74 @@ func TestFinalizeExecutedOrderSkipsDuplicateExchangeTradeIDFills(t *testing.T) {
 	if filledEventCount != 1 {
 		t.Fatalf("expected duplicate sync to keep one filled execution event, got %d", filledEventCount)
 	}
+}
+
+func TestFinalizeExecutedOrderSerializesConcurrentSettlementForSameOrder(t *testing.T) {
+	store := memory.NewStore()
+	platform := NewPlatform(store)
+
+	account, err := store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	order, err := store.CreateOrder(domain.Order{
+		AccountID:         account.ID,
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "BUY",
+		Type:              "MARKET",
+		Quantity:          1,
+		Price:             68000,
+		Status:            "ACCEPTED",
+		Metadata:          map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("create order failed: %v", err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, fill := range []domain.Fill{
+		{OrderID: order.ID, ExchangeTradeID: "concurrent-trade-1", Source: string(FillSourceReal), Price: 68000, Quantity: 0.6},
+		{OrderID: order.ID, ExchangeTradeID: "concurrent-trade-2", Source: string(FillSourceReal), Price: 68000, Quantity: 0.6},
+	} {
+		fill := fill
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := platform.finalizeExecutedOrder(account, order, []domain.Fill{fill})
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent finalize failed: %v", err)
+		}
+	}
+
+	fills, err := store.QueryFills(domain.FillQuery{OrderIDs: []string{order.ID}})
+	if err != nil {
+		t.Fatalf("query fills failed: %v", err)
+	}
+	totalFillQty := 0.0
+	for _, fill := range fills {
+		totalFillQty += fill.Quantity
+	}
+	requireFillReconcileQuantity(t, totalFillQty, 1)
+
+	position, found, err := store.FindPosition(account.ID, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("find position failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected position to be opened")
+	}
+	requireFillReconcileQuantity(t, position.Quantity, 1)
 }
 
 func TestFinalizeExecutedOrderSkipsDuplicateFallbackFillsWithoutExchangeTradeID(t *testing.T) {

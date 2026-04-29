@@ -12,7 +12,7 @@ func TestWithFillSettlementTxRollsBackFillOnError(t *testing.T) {
 	store := NewStore()
 	errSentinel := errors.New("stop after fill create")
 
-	err := store.WithFillSettlementTx(func(tx storepkg.FillSettlementStore) error {
+	err := store.WithFillSettlementTx("", func(tx storepkg.FillSettlementStore) error {
 		if _, err := tx.CreateFill(domain.Fill{
 			OrderID:          "order-rollback",
 			Price:            68000,

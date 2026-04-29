@@ -14,7 +14,8 @@ import (
 )
 
 type Store struct {
-	mu sync.RWMutex
+	mu           sync.RWMutex
+	settlementMu sync.Mutex
 
 	strategies         map[string]domain.Strategy
 	strategyVersion    map[string]domain.StrategyVersion
@@ -752,7 +753,13 @@ func (s *Store) DeleteFillsByID(fillIDs []string) (float64, error) {
 	return totalQty, nil
 }
 
-func (s *Store) WithFillSettlementTx(fn func(storepkg.FillSettlementStore) error) error {
+func (s *Store) WithFillSettlementTx(orderID string, fn func(storepkg.FillSettlementStore) error) error {
+	_ = orderID
+	// The memory backend keeps settlement simple by serializing all settlement work.
+	// Postgres uses the order row lock to serialize only the same order.
+	s.settlementMu.Lock()
+	defer s.settlementMu.Unlock()
+
 	s.mu.RLock()
 	orders := cloneJSONValue(s.orders)
 	fills := cloneJSONValue(s.fills)
