@@ -128,6 +128,23 @@ func TestBuildSignalBarsSupportsFiveMinuteAggregation(t *testing.T) {
 	}
 }
 
+func TestRollingLastPercentileFromSeriesIgnoresSourceWarmup(t *testing.T) {
+	trueRanges := make([]float64, 63)
+	for i := range trueRanges {
+		trueRanges[i] = 100.0
+	}
+
+	if got := rollingLastPercentileFromSeries(trueRanges, 49, 14, 240, 50); !math.IsNaN(got) {
+		t.Fatalf("expected percentile to stay NaN before 50 real ATR14 samples, got %v", got)
+	}
+	if got := rollingLastPercentileFromSeries(trueRanges, 50, 14, 240, 50); !math.IsNaN(got) {
+		t.Fatalf("expected percentile to stay NaN near the warmup boundary, got %v", got)
+	}
+	if got := rollingLastPercentileFromSeries(trueRanges, 62, 14, 240, 50); got != 100.0 {
+		t.Fatalf("expected percentile after 50 real ATR14 samples to be 100, got %v", got)
+	}
+}
+
 func TestBuildStrategyReplayConfigUsesUpdatedBaselineDefaults(t *testing.T) {
 	cfg := buildStrategyReplayConfig(StrategyExecutionContext{
 		SignalTimeframe:     "1d",

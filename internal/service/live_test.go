@@ -378,13 +378,15 @@ func TestEvaluateSignalRequiresReentryTriggerWithinOpenWindow(t *testing.T) {
 func TestEvaluateSignalAppliesReentryLowVolatilityGate(t *testing.T) {
 	engine := bkStrategyEngine{}
 	barStart := time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC)
-	baseSignalState := func(atr14, atrPercentile float64) map[string]any {
-		return map[string]any{
-			"symbol":        "BTCUSDT",
-			"timeframe":     "30m",
-			"sma5":          49500.0,
-			"atr14":         atr14,
-			"atrPercentile": atrPercentile,
+	floatPtr := func(value float64) *float64 {
+		return &value
+	}
+	baseSignalState := func(atr14 float64, atrPercentile *float64) map[string]any {
+		state := map[string]any{
+			"symbol":    "BTCUSDT",
+			"timeframe": "30m",
+			"sma5":      49500.0,
+			"atr14":     atr14,
 			"current": map[string]any{
 				"barStart": barStart.Format(time.RFC3339),
 				"close":    50100.0,
@@ -400,6 +402,10 @@ func TestEvaluateSignalAppliesReentryLowVolatilityGate(t *testing.T) {
 				"low":  49700.0,
 			},
 		}
+		if atrPercentile != nil {
+			state["atrPercentile"] = *atrPercentile
+		}
+		return state
 	}
 	sessionState := map[string]any{
 		livePendingZeroInitialWindowStateKey: map[string]any{
@@ -413,7 +419,7 @@ func TestEvaluateSignalAppliesReentryLowVolatilityGate(t *testing.T) {
 			"openReason":      liveZeroInitialWindowOpenReasonBreakoutLocked,
 		},
 	}
-	evaluate := func(atr14, atrPercentile float64) StrategySignalDecision {
+	evaluate := func(atr14 float64, atrPercentile *float64) StrategySignalDecision {
 		decision, err := engine.EvaluateSignal(StrategySignalEvaluationContext{
 			ExecutionContext: StrategyExecutionContext{
 				Symbol:          "BTCUSDT",
@@ -457,7 +463,7 @@ func TestEvaluateSignalAppliesReentryLowVolatilityGate(t *testing.T) {
 		return decision
 	}
 
-	thinStop := evaluate(90.0, 30.0)
+	thinStop := evaluate(90.0, floatPtr(30.0))
 	if thinStop.Action != "wait" || thinStop.Reason != "reentry-stop-distance-too-small" {
 		t.Fatalf("expected min stop bps gate to block thin stop, got %+v", thinStop)
 	}
@@ -465,17 +471,100 @@ func TestEvaluateSignalAppliesReentryLowVolatilityGate(t *testing.T) {
 		t.Fatalf("expected stop bps below 6, got %v", got)
 	}
 
-	lowPercentile := evaluate(110.0, 20.0)
+	lowPercentile := evaluate(110.0, floatPtr(20.0))
 	if lowPercentile.Action != "wait" || lowPercentile.Reason != "reentry-atr-percentile-too-low" {
 		t.Fatalf("expected ATR percentile gate to block low percentile, got %+v", lowPercentile)
 	}
 
-	ready := evaluate(110.0, 30.0)
+	missingPercentile := evaluate(110.0, nil)
+	if missingPercentile.Action != "wait" || missingPercentile.Reason != "reentry-atr-percentile-too-low" {
+		t.Fatalf("expected missing ATR percentile to block conservatively, got %+v", missingPercentile)
+	}
+
+	ready := evaluate(110.0, floatPtr(30.0))
 	if ready.Action != "advance-plan" {
 		t.Fatalf("expected reentry to pass low-volatility gate, got %+v", ready)
 	}
 	if !boolValue(mapValue(ready.Metadata["reentryEntryQuality"])["ready"]) {
 		t.Fatalf("expected reentry entry quality metadata to be ready, got %+v", ready.Metadata["reentryEntryQuality"])
+	}
+}
+
+func TestEvaluateSignalDoesNotApplyReentryLowVolatilityGateToSLExit(t *testing.T) {
+	engine := bkStrategyEngine{}
+	barStart := time.Date(2026, 4, 22, 3, 0, 0, 0, time.UTC)
+	signalState := map[string]any{
+		"symbol":    "BTCUSDT",
+		"timeframe": "30m",
+		"sma5":      50000.0,
+		"atr14":     100.0,
+		"current": map[string]any{
+			"barStart": barStart.Format(time.RFC3339),
+			"close":    49960.0,
+			"high":     50100.0,
+			"low":      49950.0,
+		},
+		"prevBar1": map[string]any{
+			"high": 50200.0,
+			"low":  49900.0,
+		},
+		"prevBar2": map[string]any{
+			"high": 50300.0,
+			"low":  49800.0,
+		},
+	}
+	decision, err := engine.EvaluateSignal(StrategySignalEvaluationContext{
+		ExecutionContext: StrategyExecutionContext{
+			Symbol:          "BTCUSDT",
+			SignalTimeframe: "30m",
+			Parameters: map[string]any{
+				"symbol":                     "BTCUSDT",
+				"signalTimeframe":            "30m",
+				"stop_loss_atr":              0.3,
+				"reentry_min_stop_bps":       6.0,
+				"reentry_atr_percentile_gte": 25.0,
+				"signalDecisionMaxSpreadBps": 8.0,
+			},
+		},
+		TriggerSummary: map[string]any{
+			"role":   "trigger",
+			"symbol": "BTCUSDT",
+			"price":  49960.0,
+		},
+		SourceStates: map[string]any{
+			"tick": map[string]any{
+				"streamType": "trade_tick",
+				"symbol":     "BTCUSDT",
+				"summary":    map[string]any{"price": 49960.0},
+			},
+		},
+		SignalBarStates: map[string]any{
+			signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"}): signalState,
+		},
+		CurrentPosition: map[string]any{
+			"found":      true,
+			"symbol":     "BTCUSDT",
+			"side":       "LONG",
+			"entryPrice": 50000.0,
+			"quantity":   0.01,
+		},
+		SessionState:      map[string]any{},
+		EventTime:         barStart.Add(5 * time.Minute),
+		NextPlannedEvent:  barStart,
+		NextPlannedPrice:  49970.0,
+		NextPlannedSide:   "SELL",
+		NextPlannedRole:   "exit",
+		NextPlannedReason: "SL",
+	})
+	if err != nil {
+		t.Fatalf("evaluate signal failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected SL exit to bypass reentry entry gate, got %+v", decision)
+	}
+	reentryEntryQuality := mapValue(decision.Metadata["reentryEntryQuality"])
+	if boolValue(reentryEntryQuality["applied"]) || !boolValue(reentryEntryQuality["ready"]) {
+		t.Fatalf("expected reentry entry gate to be unapplied and ready for exit, got %+v", reentryEntryQuality)
 	}
 }
 

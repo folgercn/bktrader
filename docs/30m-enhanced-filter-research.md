@@ -150,6 +150,39 @@ Read:
 - `stop_loss_atr=0.3` is reasonable for ETH 30m in Q1 and had the best return in this sweep.
 - If ETH 30m moves from `stop_loss_atr=0.05` to `0.3`, the bps gate must be recalibrated. The current `reentry_min_stop_bps=2.0` recommendation is tied to the `0.05` stop profile.
 
+## Follow-up: Unified Entry Quality Report
+
+The current BTC live template wires the low-volatility checks into the reentry entry path only. A follow-up PR should consolidate entry eligibility checks into one report schema instead of adding more isolated conditionals over time.
+
+Suggested gate result shape:
+
+```go
+type EntryQualityGateResult struct {
+	Name       string         `json:"name"`
+	Applied    bool           `json:"applied"`
+	Ready      bool           `json:"ready"`
+	Reason     string         `json:"reason,omitempty"`
+	Metrics    map[string]any `json:"metrics,omitempty"`
+	Thresholds map[string]any `json:"thresholds,omitempty"`
+}
+
+type EntryQualityReport struct {
+	Ready       bool                     `json:"ready"`
+	Reason      string                   `json:"reason,omitempty"`
+	GateResults []EntryQualityGateResult `json:"gates"`
+}
+```
+
+Candidate gates to migrate into this report:
+
+- signal bar readiness: SMA5, breakout shape, T3 separation.
+- reentry trigger readiness: planned price versus trigger price.
+- low-volatility reentry quality: stop-distance bps and ATR percentile.
+- execution quality: spread, source divergence, book bias, book freshness, top-book coverage.
+- delay controls: SL reentry cooldown.
+
+The report should explicitly carry scope such as `entry-only`, `reentry-only`, or `exit-never` so protective SL exits cannot be blocked by entry-quality filters.
+
 ## Source Reports
 
 - `research/20260429_btc_q1_30min_low_vol_entry_filters.md`

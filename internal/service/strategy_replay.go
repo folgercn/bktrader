@@ -1591,7 +1591,11 @@ func replayTrailingActive(side string, entryPrice, hwm, lwm, atr, delayedActivat
 }
 
 func rollingMean(values []float64, end, window int) float64 {
-	if end+1 < window {
+	return rollingMeanOrNaN(values, end, window)
+}
+
+func rollingMeanOrNaN(values []float64, end, window int) float64 {
+	if window <= 0 || end < 0 || end >= len(values) || end-window+1 < 0 {
 		return math.NaN()
 	}
 	sum := 0.0
@@ -1633,7 +1637,7 @@ func rollingLastPercentile(values []float64, end, window, minPeriods int) float6
 func rollingLastPercentileFromSeries(values []float64, end, sourceWindow, percentileWindow, minPeriods int) float64 {
 	rolled := make([]float64, end+1)
 	for i := 0; i <= end; i++ {
-		rolled[i] = rollingMean(values, i, sourceWindow)
+		rolled[i] = rollingMeanOrNaN(values, i, sourceWindow)
 	}
 	return rollingLastPercentile(rolled, end, percentileWindow, minPeriods)
 }
