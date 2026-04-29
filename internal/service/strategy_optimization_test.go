@@ -98,6 +98,40 @@ func TestEvaluateLiveExitStateKeepsTrailingStopActiveAfterPullbackBelowActivatio
 	}
 }
 
+func TestEvaluateLiveExitStateKeepsShortTrailingStopActiveAfterPullbackBelowActivation(t *testing.T) {
+	parameters := map[string]any{
+		"trailing_stop_atr":               0.3,
+		"delayed_trailing_activation_atr": 0.5,
+		"stop_loss_atr":                   0.05,
+		"stop_mode":                       "atr",
+	}
+	signalBarState := map[string]any{
+		"atr14":    1000.0,
+		"current":  map[string]any{"close": 49800.0},
+		"prevBar1": map[string]any{"high": 50500.0, "low": 49500.0},
+		"prevBar2": map[string]any{"high": 50600.0, "low": 49400.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"side":       "SHORT",
+		"entryPrice": 50000.0,
+		"quantity":   1.0,
+	}
+	sessionState := map[string]any{}
+
+	evaluateLivePositionState(parameters, currentPosition, signalBarState, 49400.0, sessionState)
+	state := evaluateLiveExitState(parameters, currentPosition, signalBarState, 49800.0, sessionState, "SL")
+	if !boolValue(state["ready"]) {
+		t.Fatalf("expected pullback through short trailing stop to be exit-ready, got waitReason=%s", stringValue(state["waitReason"]))
+	}
+	if got := stringValue(state["targetPriceSource"]); got != "trailing-stop" {
+		t.Fatalf("expected targetPriceSource trailing-stop after short pullback, got %s", got)
+	}
+	if got := parseFloatValue(state["stopLoss"]); got != 49700.0 {
+		t.Fatalf("expected short trailing stop to stay at 49700 after pullback, got %v", got)
+	}
+}
+
 func TestReentryDecayLogic(t *testing.T) {
 	session := domain.LiveSession{
 		State: map[string]any{
