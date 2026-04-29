@@ -172,6 +172,9 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if second.ContainerFallbackPlan.Executable || second.ContainerFallbackPlan.BlockedReason != "container-restart-disabled" {
 		t.Fatalf("expected fallback plan to stay blocked without explicit opt-in, got %+v", second.ContainerFallbackPlan)
 	}
+	if second.ContainerFallbackPlan.Enabled || second.ContainerFallbackPlan.ExecutorConfigured {
+		t.Fatalf("expected fallback readiness to show disabled/no executor, got %+v", second.ContainerFallbackPlan)
+	}
 	if second.ContainerFallbackPlan.Reason != second.ServiceState.ContainerFallbackReason {
 		t.Fatalf("expected fallback plan reason to mirror service state, got %+v", second.ContainerFallbackPlan)
 	}
@@ -223,6 +226,9 @@ func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing
 	}
 	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.BlockedReason != "container-executor-not-configured" {
 		t.Fatalf("expected opt-in plan to stay blocked without executor, got %+v", target.ContainerFallbackPlan)
+	}
+	if !target.ContainerFallbackPlan.Enabled || target.ContainerFallbackPlan.ExecutorConfigured {
+		t.Fatalf("expected opt-in readiness to show enabled/no executor, got %+v", target.ContainerFallbackPlan)
 	}
 }
 

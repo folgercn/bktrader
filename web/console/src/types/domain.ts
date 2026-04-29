@@ -379,6 +379,8 @@ export type RuntimeSupervisorServiceState = {
 export type RuntimeSupervisorContainerFallbackPlan = {
   action: string;
   candidate: boolean;
+  enabled: boolean;
+  executorConfigured: boolean;
   executable: boolean;
   blockedReason?: string;
   reason?: string;
