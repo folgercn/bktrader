@@ -7697,8 +7697,9 @@ func TestRefreshLiveSessionPositionContextPrefersRuntimePriceOverDivergentMarkPr
 	state["lastStrategyEvaluationSourceGate"] = map[string]any{
 		"ready": true,
 	}
+	orderBookStateKey := signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT")
 	state["lastStrategyEvaluationSourceStates"] = map[string]any{
-		signalBindingMatchKey("binance-order-book", "feature", "BTCUSDT"): map[string]any{
+		orderBookStateKey: map[string]any{
 			"sourceKey":   "binance-order-book",
 			"role":        "feature",
 			"symbol":      "BTCUSDT",
@@ -7744,6 +7745,9 @@ func TestRefreshLiveSessionPositionContextPrefersRuntimePriceOverDivergentMarkPr
 	if got := stringValue(liveState["positionContextPriceSource"]); got != "order_book.bestBid" {
 		t.Fatalf("expected runtime order book price source, got %s", got)
 	}
+	if got := stringValue(liveState["positionContextPriceStateKey"]); got != orderBookStateKey {
+		t.Fatalf("expected runtime order book state key %s, got %s", orderBookStateKey, got)
+	}
 	if got := stringValue(liveState["positionContextPriceAt"]); got != sourceAt.Format(time.RFC3339Nano) {
 		t.Fatalf("expected runtime source timestamp %s, got %s", sourceAt.Format(time.RFC3339Nano), got)
 	}
@@ -7773,8 +7777,11 @@ func TestResolveLivePositionContextMarketPriceRequiresFreshRuntimePrice(t *testi
 		"markPrice":  77230.00949936,
 	}
 	signalBarState := map[string]any{
+		"symbol":    "BTCUSDT",
+		"timeframe": "30m",
 		"current": map[string]any{
-			"close": 77150.0,
+			"close":     77150.0,
+			"updatedAt": eventTime.Add(-time.Second).Format(time.RFC3339Nano),
 		},
 	}
 	bookState := func(lastEventAt string) map[string]any {
@@ -7830,6 +7837,19 @@ func TestResolveLivePositionContextMarketPriceRequiresFreshRuntimePrice(t *testi
 		t.Fatalf("expected stale runtime and decision prices to fall back to signal close, got %+v", staleRuntimeAndDecision)
 	}
 
+	staleSignalBarState := map[string]any{
+		"symbol":    "BTCUSDT",
+		"timeframe": "30m",
+		"current": map[string]any{
+			"close":     77150.0,
+			"updatedAt": eventTime.Add(-time.Minute).Format(time.RFC3339Nano),
+		},
+	}
+	staleRuntimeDecisionAndSignal := platform.resolveLivePositionContextMarketPrice(positionSnapshot, staleSignalBarState, stale, eventTime)
+	if staleRuntimeDecisionAndSignal.Price != 77230.00949936 || staleRuntimeDecisionAndSignal.Source != "position.markPrice" {
+		t.Fatalf("expected stale runtime, decision, and signal prices to fall back to markPrice, got %+v", staleRuntimeDecisionAndSignal)
+	}
+
 	freshDecisionState := bookState("")
 	freshDecisionState["lastStrategyEvaluationAt"] = eventTime.Add(-time.Second).Format(time.RFC3339Nano)
 	freshDecisionState["lastStrategyDecision"] = map[string]any{
@@ -7856,8 +7876,11 @@ func TestResolveLivePositionContextMarketPriceUsesShortExitAsk(t *testing.T) {
 		"markPrice":  76950.0,
 	}
 	signalBarState := map[string]any{
+		"symbol":    "BTCUSDT",
+		"timeframe": "30m",
 		"current": map[string]any{
-			"close": 77050.0,
+			"close":     77050.0,
+			"updatedAt": eventTime.Add(-time.Second).Format(time.RFC3339Nano),
 		},
 	}
 	sessionState := map[string]any{
@@ -7882,6 +7905,38 @@ func TestResolveLivePositionContextMarketPriceUsesShortExitAsk(t *testing.T) {
 	price := platform.resolveLivePositionContextMarketPrice(positionSnapshot, signalBarState, sessionState, eventTime)
 	if price.Price != 77092.0 || price.Source != "order_book.bestAsk" {
 		t.Fatalf("expected SHORT refresh to use exit bestAsk, got %+v", price)
+	}
+}
+
+func TestPickLivePositionContextSourcePriceReturnsSelectedStateKeyTimestamp(t *testing.T) {
+	eventTime := time.Date(2026, 4, 29, 9, 35, 35, 0, time.UTC)
+	selectedAt := eventTime.Add(-2 * time.Second)
+	otherAt := eventTime.Add(-1 * time.Second)
+	sourceStates := map[string]any{
+		"book-a": map[string]any{
+			"streamType":  "order_book",
+			"lastEventAt": selectedAt.Format(time.RFC3339Nano),
+			"summary": map[string]any{
+				"bestBid": 77091.0,
+				"bestAsk": 77092.0,
+			},
+		},
+		"book-z": map[string]any{
+			"streamType":  "order_book",
+			"lastEventAt": otherAt.Format(time.RFC3339Nano),
+			"summary": map[string]any{
+				"bestBid": 77080.0,
+				"bestAsk": 77081.0,
+			},
+		},
+	}
+
+	price, ok := pickLivePositionContextSourcePrice(sourceStates, "SELL", eventTime)
+	if !ok {
+		t.Fatal("expected source price")
+	}
+	if price.Price != 77091.0 || price.Source != "order_book.bestBid" || price.StateKey != "book-a" || !price.At.Equal(selectedAt) {
+		t.Fatalf("expected selected book-a timestamp to be returned, got %+v", price)
 	}
 }
 
@@ -8805,9 +8860,10 @@ func TestRefreshLiveSessionPositionContextRebuildsVirtualWatermarksFromVirtualPo
 			"timeframe": "1d",
 			"atr14":     900.0,
 			"current": map[string]any{
-				"close": 51000.0,
-				"high":  51100.0,
-				"low":   50500.0,
+				"close":     51000.0,
+				"high":      51100.0,
+				"low":       50500.0,
+				"updatedAt": time.Date(2026, 4, 10, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano),
 			},
 			"prevBar1": map[string]any{
 				"high": 50800.0,
