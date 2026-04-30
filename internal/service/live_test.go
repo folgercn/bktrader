@@ -783,7 +783,13 @@ func TestEvaluateSignalBarGateAllowsBreakoutBoundaryEquality(t *testing.T) {
 	}
 }
 
-func TestEvaluateSignalBarGateAllowsT3BreakoutWithSeparation(t *testing.T) {
+func TestNormalizeStrategyEngineKeyMapsLegacyT3SepToT2Only(t *testing.T) {
+	if got := normalizeStrategyEngineKey(bkLiveIntrabarSMA5LegacyT3SepEngineKey); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
+		t.Fatalf("expected legacy enhanced engine key to normalize to %s, got %s", bkLiveIntrabarSMA5T2Only0p5BpsEngineKey, got)
+	}
+}
+
+func TestEvaluateSignalBarGateAllowsT2BreakoutTolerance(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "30m",
 		"sma5":      68200.0,
@@ -791,25 +797,28 @@ func TestEvaluateSignalBarGateAllowsT3BreakoutWithSeparation(t *testing.T) {
 		"atr14":     800.0,
 		"current": map[string]any{
 			"close": 68600.0,
-			"high":  69050.0,
+			"high":  68998.0,
 			"low":   68100.0,
 		},
-		"prevBar1": map[string]any{"high": 68800.0, "low": 68100.0},
-		"prevBar2": map[string]any{"high": 68600.0, "low": 68000.0},
-		"prevBar3": map[string]any{"high": 69000.0, "low": 67900.0},
-	}, "BUY", "entry", "", 69010.0, "trade_tick.price", signalBarGateOptions{
-		BreakoutShape:         "baseline_plus_t3",
-		T3MinSMAATRSeparation: 0.25,
+		"prevBar1": map[string]any{"high": 69000.0, "low": 68100.0},
+		"prevBar2": map[string]any{"high": 68997.0, "low": 68000.0},
+		"prevBar3": map[string]any{"high": 68700.0, "low": 67900.0},
+	}, "BUY", "entry", "", 68997.0, "trade_tick.price", signalBarGateOptions{
+		BreakoutShape:             "original_t2",
+		BreakoutShapeToleranceBps: 0.5,
 	})
 	if !boolValue(gate["longBreakoutPatternReady"]) || !boolValue(gate["longReady"]) {
-		t.Fatalf("expected t3 breakout with sep_0p25 to pass, got %#v", gate)
+		t.Fatalf("expected original_t2 breakout within 0.5 bps tolerance to pass, got %#v", gate)
 	}
-	if got := stringValue(gate["longBreakoutShapeName"]); got != "t3_swing" {
-		t.Fatalf("expected t3_swing shape, got %s in %#v", got, gate)
+	if got := stringValue(gate["longBreakoutShapeName"]); got != "original_t2" {
+		t.Fatalf("expected original_t2 shape, got %s in %#v", got, gate)
+	}
+	if got := parseFloatValue(gate["longBreakoutLevel"]); got != 68997.0 {
+		t.Fatalf("expected original_t2 level to remain T2 high, got %v in %#v", got, gate)
 	}
 }
 
-func TestEvaluateSignalBarGateKeepsOriginalT2WhenT3Enabled(t *testing.T) {
+func TestEvaluateSignalBarGateKeepsOriginalT2WithLegacyBreakoutShape(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "30m",
 		"sma5":      68200.0,
@@ -824,18 +833,18 @@ func TestEvaluateSignalBarGateKeepsOriginalT2WhenT3Enabled(t *testing.T) {
 		"prevBar2": map[string]any{"high": 69000.0, "low": 68000.0},
 		"prevBar3": map[string]any{"high": 68700.0, "low": 67900.0},
 	}, "BUY", "entry", "", 69000.0, "trade_tick.price", signalBarGateOptions{
-		BreakoutShape:         "baseline_plus_t3",
-		T3MinSMAATRSeparation: 0.25,
+		BreakoutShape:             "baseline_plus_t3",
+		BreakoutShapeToleranceBps: 0.5,
 	})
 	if !boolValue(gate["longBreakoutPatternReady"]) || !boolValue(gate["longReady"]) {
-		t.Fatalf("expected original_t2 breakout to pass with t3 enabled, got %#v", gate)
+		t.Fatalf("expected original_t2 breakout to pass with legacy breakout shape configured, got %#v", gate)
 	}
 	if got := stringValue(gate["longBreakoutShapeName"]); got != "original_t2" {
 		t.Fatalf("expected original_t2 to remain selected, got %s in %#v", got, gate)
 	}
 }
 
-func TestEvaluateSignalBarGateBlocksT3BreakoutInsideSeparation(t *testing.T) {
+func TestEvaluateSignalBarGateIgnoresT3OnlyBreakoutShape(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "30m",
 		"sma5":      68850.0,
@@ -850,14 +859,14 @@ func TestEvaluateSignalBarGateBlocksT3BreakoutInsideSeparation(t *testing.T) {
 		"prevBar2": map[string]any{"high": 68600.0, "low": 68000.0},
 		"prevBar3": map[string]any{"high": 69000.0, "low": 67900.0},
 	}, "BUY", "entry", "", 69010.0, "trade_tick.price", signalBarGateOptions{
-		BreakoutShape:         "baseline_plus_t3",
-		T3MinSMAATRSeparation: 0.25,
+		BreakoutShape:             "baseline_plus_t3",
+		BreakoutShapeToleranceBps: 0.5,
 	})
 	if boolValue(gate["longBreakoutPatternReady"]) || boolValue(gate["longReady"]) {
-		t.Fatalf("expected t3 breakout inside sep_0p25 to be blocked, got %#v", gate)
+		t.Fatalf("expected t3-only breakout shape to be ignored, got %#v", gate)
 	}
-	if boolValue(gate["longBreakoutQualityReady"]) {
-		t.Fatalf("expected t3 quality gate to fail, got %#v", gate)
+	if got := stringValue(gate["longBreakoutShapeName"]); got != "" {
+		t.Fatalf("expected no breakout shape, got %s in %#v", got, gate)
 	}
 }
 
@@ -1554,7 +1563,7 @@ func TestBuildLiveExecutionPlanFromMarketDataUsesLiveSnapshotForEnhanced30m(t *t
 	if err != nil {
 		t.Fatalf("resolve strategy engine failed: %v", err)
 	}
-	if got := normalizeStrategyEngineKey(engineKey); got != "bk-live-intrabar-sma5-t3-sep" {
+	if got := normalizeStrategyEngineKey(engineKey); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
 		t.Fatalf("expected enhanced engine, got %s", got)
 	}
 
@@ -4343,20 +4352,20 @@ func TestNormalizeLiveSessionOverridesIncludesZeroInitialControls(t *testing.T) 
 	}
 }
 
-func TestNormalizeLiveSessionOverridesIncludesT3BreakoutControls(t *testing.T) {
+func TestNormalizeLiveSessionOverridesIncludesT2BreakoutTolerance(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
-		"breakout_shape":                    "baseline_plus_t3",
-		"t3_min_sma_atr_separation":         0.25,
-		"use_sma5_intraday_structure":       true,
-		"reentry_min_stop_bps":              6.0,
-		"reentry_atr_percentile_gte":        25.0,
-		"ignored_t3_min_sma_atr_separation": 0.50,
+		"breakout_shape":                       "ORIGINAL_T2",
+		"breakout_shape_tolerance_bps":         0.5,
+		"use_sma5_intraday_structure":          true,
+		"reentry_min_stop_bps":                 6.0,
+		"reentry_atr_percentile_gte":           25.0,
+		"ignored_breakout_shape_tolerance_bps": 1.0,
 	})
-	if got := stringValue(overrides["breakout_shape"]); got != "baseline_plus_t3" {
-		t.Fatalf("expected breakout_shape=baseline_plus_t3, got %s", got)
+	if got := stringValue(overrides["breakout_shape"]); got != "original_t2" {
+		t.Fatalf("expected breakout_shape=original_t2, got %s", got)
 	}
-	if got := parseFloatValue(overrides["t3_min_sma_atr_separation"]); got != 0.25 {
-		t.Fatalf("expected t3_min_sma_atr_separation=0.25, got %v", got)
+	if got := parseFloatValue(overrides["breakout_shape_tolerance_bps"]); got != 0.5 {
+		t.Fatalf("expected breakout_shape_tolerance_bps=0.5, got %v", got)
 	}
 	if !boolValue(overrides["use_sma5_intraday_structure"]) {
 		t.Fatal("expected use_sma5_intraday_structure override")
@@ -4367,13 +4376,25 @@ func TestNormalizeLiveSessionOverridesIncludesT3BreakoutControls(t *testing.T) {
 	if got := parseFloatValue(overrides["reentry_atr_percentile_gte"]); got != 25.0 {
 		t.Fatalf("expected reentry_atr_percentile_gte=25, got %v", got)
 	}
-	if _, ok := overrides["ignored_t3_min_sma_atr_separation"]; ok {
-		t.Fatalf("expected unknown t3 override key to be dropped, got %#v", overrides)
+	if _, ok := overrides["ignored_breakout_shape_tolerance_bps"]; ok {
+		t.Fatalf("expected unknown breakout tolerance override key to be dropped, got %#v", overrides)
 	}
 }
 
 func TestLiveBTC30mEnhancedOverridesEnableReentryGuards(t *testing.T) {
 	overrides := liveBTC30mEnhancedOverrides()
+	if got := stringValue(overrides["strategyEngine"]); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
+		t.Fatalf("expected BTC 30m enhanced template to use T2-only engine, got %s", got)
+	}
+	if got := stringValue(overrides["breakout_shape"]); got != "original_t2" {
+		t.Fatalf("expected BTC 30m enhanced template to use original_t2 breakout, got %s", got)
+	}
+	if got := parseFloatValue(overrides["breakout_shape_tolerance_bps"]); got != 0.5 {
+		t.Fatalf("expected BTC 30m enhanced template to use T2 tolerance 0.5 bps, got %v", got)
+	}
+	if _, ok := overrides["t3_min_sma_atr_separation"]; ok {
+		t.Fatalf("expected BTC 30m enhanced template to omit t3 sep override, got %#v", overrides)
+	}
 	if got := maxIntValue(overrides["sl_reentry_min_delay_seconds"], 0); got != 60 {
 		t.Fatalf("expected BTC 30m enhanced template to require 60s SL-Reentry delay, got %d", got)
 	}

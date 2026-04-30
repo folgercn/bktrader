@@ -10,7 +10,7 @@ Template key: `binance-testnet-btc-30m-enhanced`
 Strategy/version:
 
 - `strategy-bk-btc-30m-enhanced`
-- `strategyEngine=bk-live-intrabar-sma5-t3-sep`
+- `strategyEngine=bk-live-intrabar-sma5-t2-only-0p5bps`
 - `signalTimeframe=30m`
 - `executionDataSource=tick`
 
@@ -31,8 +31,8 @@ Sizing/risk baseline:
 Signal filters:
 
 - `use_sma5_intraday_structure=true`: intraday entries use the current 30m bar close vs SMA5 as the hard structure filter. Long entries need close above SMA5; short entries need close below SMA5.
-- `breakout_shape=baseline_plus_t3`: the original T2 breakout remains enabled, and the T3 swing breakout is added.
-- `t3_min_sma_atr_separation=0.25`: T3 swing breakout must be at least `0.25 * ATR14` away from SMA5. This filter applies to `t3_swing` only; it does not block `original_t2`.
+- `breakout_shape=original_t2`: only the T2 breakout shape is enabled; T3 swing breakout is disabled.
+- `breakout_shape_tolerance_bps=0.5`: the T2 high/low comparison may miss by up to 0.5 bps, while the breakout level still locks to T2 high/low.
 - `reentry_min_stop_bps=6.0`: reentry entries require `stop_loss_atr * ATR14 / reentry_price * 10000 >= 6`.
 - `reentry_atr_percentile_gte=25.0`: reentry entries require the current ATR14 percentile to be at least 25 over the rolling ATR sample.
 
@@ -60,8 +60,9 @@ Replay setup:
 - Full Binance trade archive, continuous 1s execution bars
 - Signal timeframe `30m`
 - Replay mode `live_intrabar_sma5`
-- `breakout_shape=baseline_plus_t3`
-- `t3_min_sma_atr_separation=0.25`
+- Current live breakout shape: `original_t2`
+- Current live T2 tolerance: `breakout_shape_tolerance_bps=0.5`
+- Historical sweep baseline before this change used `breakout_shape=baseline_plus_t3` with `t3_min_sma_atr_separation=0.25`.
 - BTC live-like risk profile: `stop_loss_atr=0.3`, `trailing_stop_atr=0.3`, `delayed_trailing_activation=0.5`
 
 Low-volatility reentry gate sweep:
@@ -103,8 +104,8 @@ The ETH low-volatility gate was evaluated on the ETH research baseline:
 - `stop_loss_atr=0.05`
 - `trailing_stop_atr=0.3`
 - `delayed_trailing_activation=0.5`
-- `breakout_shape=baseline_plus_t3`
-- `t3_min_sma_atr_separation=0.25`
+- Historical ETH low-volatility gate sweep used `breakout_shape=baseline_plus_t3` with `t3_min_sma_atr_separation=0.25`.
+- T2-only follow-up research preference: `breakout_shape=original_t2`, `breakout_shape_tolerance_bps=0.5`.
 
 ETH stop-distance distribution under `stop_loss_atr=0.05`:
 

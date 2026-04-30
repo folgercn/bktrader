@@ -611,6 +611,8 @@ func applyBacktestParameterAliases(parameters map[string]any) {
 		"delayedTrailingActivationATR": "delayed_trailing_activation_atr",
 		"longReentryATR":               "long_reentry_atr",
 		"shortReentryATR":              "short_reentry_atr",
+		"breakoutShape":                "breakout_shape",
+		"breakoutShapeToleranceBps":    "breakout_shape_tolerance_bps",
 		"reentryMinStopBps":            "reentry_min_stop_bps",
 		"reentryATRPercentileGTE":      "reentry_atr_percentile_gte",
 		"minStopBps":                   "min_stop_bps",
