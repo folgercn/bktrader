@@ -137,6 +137,9 @@ jobs:
             | grep -v '/scripts/check-ctl-coverage$' \
             | xargs go test
 
+      - name: Trading Harness Golden Cases
+        run: go test ./internal/domain/... -run TestClassifyOrderIntent -v
+
       - name: Build platform API
         run: go build ./cmd/platform-api
 

@@ -1332,6 +1332,12 @@ function resolveExecutionOrderSignalBarTime(order: Order): string {
 }
 
 function executionOrderMarkerText(order: Order): string {
+  // 优先消费后端 intentLabel（由 ClassifyOrderIntent 唯一分类器注入）
+  if (order.intentLabel) {
+    const reasonLabel = compactExecutionReasonLabel(executionOrderReason(order));
+    return [order.intentLabel, reasonLabel].filter(Boolean).join(" ");
+  }
+  // fallback：兼容没有 intent 字段的旧订单数据
   const side = String(order.side ?? "").trim().toUpperCase();
   const isExit = isExitOrderMarker(order);
   const positionSide = executionOrderPositionSide(side, isExit);
@@ -1342,6 +1348,11 @@ function executionOrderMarkerText(order: Order): string {
 }
 
 function isExitOrderMarker(order: Order): boolean {
+  // 优先消费后端 intent 字段（由 ClassifyOrderIntent 唯一分类器注入）
+  if (order.intent) {
+    return order.intent.startsWith("CLOSE_");
+  }
+  // fallback：兼容没有 intent 字段的旧订单数据
   const metadata = getRecord(order.metadata);
   const proposal = getRecord(metadata.executionProposal ?? metadata.intent);
   const role = String(metadata.orderRole ?? proposal.role ?? "").trim().toLowerCase();
@@ -1366,7 +1377,14 @@ function executionOrderReason(order: Order): string {
   return String(metadata.reason ?? proposal.reason ?? order.type ?? "").trim();
 }
 
-function executionOrderPositionSide(side: string, isExit: boolean): "LONG" | "SHORT" | "" {
+function executionOrderPositionSide(side: string, isExit: boolean, intent?: string): "LONG" | "SHORT" | "" {
+  // 优先从 intent 推导（由 ClassifyOrderIntent 唯一分类器注入）
+  if (intent) {
+    if (intent === "OPEN_LONG" || intent === "CLOSE_LONG") return "LONG";
+    if (intent === "OPEN_SHORT" || intent === "CLOSE_SHORT") return "SHORT";
+    return "";
+  }
+  // fallback：兼容没有 intent 字段的旧订单数据
   if (side === "BUY") {
     return isExit ? "SHORT" : "LONG";
   }
@@ -1776,7 +1794,9 @@ function resolveLiveExitDispatchFailure(session: LiveSession, summary: LiveSessi
   const executionProfile = String(dispatchSummary.executionProfile ?? dispatchIntent.executionProfile ?? "").trim().toLowerCase();
   const signalKind = String(dispatchIntent.signalKind ?? dispatchSummary.signalKind ?? "").trim().toLowerCase();
   const reduceOnly = liveRecordFlagEnabled(dispatchIntent.reduceOnly ?? dispatchSummary.reduceOnly);
-  const isExit = role === "exit" || reduceOnly || executionProfile.includes("exit") || executionProfile.includes("close") || signalKind.includes("exit") || signalKind.includes("watchdog");
+  // 补充 intent 字段作为平仓判据（由 ClassifyOrderIntent 唯一分类器注入）
+  const dispatchedIntent = String(dispatchIntent.intent ?? dispatchSummary.intent ?? "").trim();
+  const isExit = dispatchedIntent.startsWith("CLOSE_") || role === "exit" || reduceOnly || executionProfile.includes("exit") || executionProfile.includes("close") || signalKind.includes("exit") || signalKind.includes("watchdog");
 
   if (!hasOpenPosition || !isExit || (!rejectedStatus && !dispatchError)) {
     return null;
