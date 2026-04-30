@@ -99,10 +99,6 @@ func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain
 		uniqueSymbols[NormalizeSymbol(order.Symbol)] = struct{}{}
 	}
 
-	if len(uniqueSymbols) > 1 {
-		p.logger("service.live_trade_pairs", "session_id", liveSessionID).Warn("live session has orders for multiple symbols, trade pairs might be miscalculated")
-	}
-
 	fills, err := p.store.QueryFills(domain.FillQuery{OrderIDs: orderIDs})
 	if err != nil {
 		return nil, err
@@ -136,6 +132,43 @@ func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain
 		}
 	})
 
+	results := make([]domain.LiveTradePair, 0, len(fillEvents))
+	eventsBySymbol := make(map[string][]liveTradeFillEvent, len(uniqueSymbols))
+	for _, event := range fillEvents {
+		symbol := NormalizeSymbol(event.order.Symbol)
+		eventsBySymbol[symbol] = append(eventsBySymbol[symbol], event)
+	}
+	symbols := make([]string, 0, len(eventsBySymbol))
+	for symbol := range eventsBySymbol {
+		symbols = append(symbols, symbol)
+	}
+	sort.Strings(symbols)
+	for _, symbol := range symbols {
+		results = append(results, buildLiveTradePairsForSymbol(session, eventsBySymbol[symbol], currentPositionBySymbol)...)
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		leftTime := results[i].EntryAt
+		rightTime := results[j].EntryAt
+		switch {
+		case leftTime.After(rightTime):
+			return true
+		case leftTime.Before(rightTime):
+			return false
+		default:
+			return results[i].ID > results[j].ID
+		}
+	})
+	results = filterAndLimitLiveTradePairs(results, normalizeLiveTradePairStatus(query.Status), normalizeLiveTradePairLimit(query.Limit))
+	p.enrichLiveTradePairs(results, orderByID)
+	return results, nil
+}
+
+func buildLiveTradePairsForSymbol(
+	session domain.LiveSession,
+	fillEvents []liveTradeFillEvent,
+	currentPositionBySymbol map[string]domain.Position,
+) []domain.LiveTradePair {
 	state := pnlState{}
 	results := make([]domain.LiveTradePair, 0, len(fillEvents))
 	var current *liveTradePairBuilder
@@ -191,22 +224,7 @@ func (p *Platform) ListLiveTradePairs(query domain.LiveTradePairQuery) ([]domain
 	if current != nil {
 		results = append(results, current.finalizeOpen(currentPositionBySymbol[current.symbol]))
 	}
-
-	sort.SliceStable(results, func(i, j int) bool {
-		leftTime := results[i].EntryAt
-		rightTime := results[j].EntryAt
-		switch {
-		case leftTime.After(rightTime):
-			return true
-		case leftTime.Before(rightTime):
-			return false
-		default:
-			return results[i].ID > results[j].ID
-		}
-	})
-	results = filterAndLimitLiveTradePairs(results, normalizeLiveTradePairStatus(query.Status), normalizeLiveTradePairLimit(query.Limit))
-	p.enrichLiveTradePairs(results, orderByID)
-	return results, nil
+	return results
 }
 
 func liveTradePairRelevantFills(fills []domain.Fill, orderByID map[string]domain.Order) []domain.Fill {
@@ -296,6 +314,9 @@ func buildLiveTradeFillEvents(
 		if !ok {
 			continue
 		}
+		if !liveTradeOrderCanContributeFills(order) {
+			continue
+		}
 		eventTime := fill.CreatedAt
 		if fill.ExchangeTradeTime != nil && !fill.ExchangeTradeTime.IsZero() {
 			eventTime = fill.ExchangeTradeTime.UTC()
@@ -310,6 +331,19 @@ func buildLiveTradeFillEvents(
 		})
 	}
 	return items
+}
+
+func liveTradeOrderCanContributeFills(order domain.Order) bool {
+	switch strings.ToUpper(strings.TrimSpace(order.Status)) {
+	case "FILLED", "PARTIALLY_FILLED":
+		return true
+	case "CANCELLED", "CANCELED", "REJECTED", "EXPIRED", "EXPIRED_IN_MATCH":
+		return tradingQuantityPositive(parseFloatValue(order.Metadata["filledQuantity"])) ||
+			tradingQuantityPositive(parseFloatValue(order.Metadata["executedQty"])) ||
+			tradingQuantityPositive(parseFloatValue(order.Metadata["cumQty"]))
+	default:
+		return false
+	}
 }
 
 func decisionEventIDFromOrder(order domain.Order) string {
