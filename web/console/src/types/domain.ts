@@ -391,6 +391,23 @@ export type RuntimeSupervisorRuntimeStatus = {
   lastHealthyAt?: string;
   lastCheckedAt: string;
   updatedAt?: string;
+  applicationRestartPlan?: RuntimeSupervisorApplicationRestartPlan;
+};
+
+export type RuntimeSupervisorApplicationRestartPlan = {
+  runtimeId?: string;
+  runtimeKind?: string;
+  candidate: boolean;
+  enabled: boolean;
+  healthzOk: boolean;
+  supported: boolean;
+  due: boolean;
+  duplicate: boolean;
+  decision?: 'blocked' | 'eligible' | string;
+  blockedReason?: string;
+  eligibleReason?: string;
+  reason?: string;
+  nextRestartAt?: string;
 };
 
 export type RuntimeSupervisorStatus = {

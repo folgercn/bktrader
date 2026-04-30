@@ -332,6 +332,7 @@ func ClearRestartState(state map[string]any, keys []string)
   - `autoRestartSuppressed=false` 且 `restartSeverity` 不是 `fatal`。
   - `nextRestartAt` 存在且已经到期。
   - 提交 restart 时固定 `force=false`、`confirm=true`，并带上 supervisor reason；同一个 target/runtime/`nextRestartAt` 只提交一次。
+- 当 runtime 进入 restart 关注范围（例如 `actualStatus=ERROR`、存在 `nextRestartAt`、fatal/suppressed）时，supervisor 会在对应 runtime 上附加只读 `applicationRestartPlan`，显式返回 `decision=blocked|eligible`、`enabled`、`healthzOk`、`supported`、`due`、`duplicate`、`blockedReason` / `eligibleReason`。该计划用于解释为什么某个 runtime 会或不会进入应用内 restart；当前 `supported=true` 仍只覆盖 `signal` / `signal-runtime`，因此 `live-session` 等 runtime 即使 ERROR 也只会显示 `blockedReason=runtime-restart-unsupported-kind`，不会被 supervisor 自动拉起。
 
 验收标准：
 
@@ -368,7 +369,7 @@ func ClearRestartState(state map[string]any, keys []string)
 
 ### Dashboard 视图
 
-前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，只展示 supervisor policy、service target、runtime 状态、应用内控制动作、`containerFallbackCandidate`、fallback `decision`、executor `kind`/`dryRun` 和 dry-run audit 摘要。该页面不提交 runtime 或容器控制请求；真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
+前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，只展示 supervisor policy、service target、runtime 状态、`applicationRestartPlan`、应用内控制动作、`containerFallbackCandidate`、fallback `decision`、executor `kind`/`dryRun` 和 dry-run audit 摘要。该页面不提交 runtime 或容器控制请求；真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
 
 ## 7. 安全边界
 

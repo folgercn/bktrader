@@ -14,24 +14,25 @@ type RuntimeStatusSnapshot struct {
 }
 
 type RuntimeStatus struct {
-	Service               string     `json:"service"`
-	RuntimeID             string     `json:"runtimeId"`
-	RuntimeKind           string     `json:"runtimeKind"`
-	AccountID             string     `json:"accountId,omitempty"`
-	StrategyID            string     `json:"strategyId,omitempty"`
-	DesiredStatus         string     `json:"desiredStatus,omitempty"`
-	ActualStatus          string     `json:"actualStatus,omitempty"`
-	Health                string     `json:"health,omitempty"`
-	RestartAttempt        int        `json:"restartAttempt"`
-	NextRestartAt         string     `json:"nextRestartAt,omitempty"`
-	RestartBackoff        string     `json:"restartBackoff,omitempty"`
-	RestartReason         string     `json:"restartReason,omitempty"`
-	RestartSeverity       string     `json:"restartSeverity,omitempty"`
-	LastRestartError      string     `json:"lastRestartError,omitempty"`
-	AutoRestartSuppressed bool       `json:"autoRestartSuppressed"`
-	LastHealthyAt         string     `json:"lastHealthyAt,omitempty"`
-	LastCheckedAt         string     `json:"lastCheckedAt"`
-	UpdatedAt             *time.Time `json:"updatedAt,omitempty"`
+	Service                string                                   `json:"service"`
+	RuntimeID              string                                   `json:"runtimeId"`
+	RuntimeKind            string                                   `json:"runtimeKind"`
+	AccountID              string                                   `json:"accountId,omitempty"`
+	StrategyID             string                                   `json:"strategyId,omitempty"`
+	DesiredStatus          string                                   `json:"desiredStatus,omitempty"`
+	ActualStatus           string                                   `json:"actualStatus,omitempty"`
+	Health                 string                                   `json:"health,omitempty"`
+	RestartAttempt         int                                      `json:"restartAttempt"`
+	NextRestartAt          string                                   `json:"nextRestartAt,omitempty"`
+	RestartBackoff         string                                   `json:"restartBackoff,omitempty"`
+	RestartReason          string                                   `json:"restartReason,omitempty"`
+	RestartSeverity        string                                   `json:"restartSeverity,omitempty"`
+	LastRestartError       string                                   `json:"lastRestartError,omitempty"`
+	AutoRestartSuppressed  bool                                     `json:"autoRestartSuppressed"`
+	LastHealthyAt          string                                   `json:"lastHealthyAt,omitempty"`
+	LastCheckedAt          string                                   `json:"lastCheckedAt"`
+	UpdatedAt              *time.Time                               `json:"updatedAt,omitempty"`
+	ApplicationRestartPlan *RuntimeSupervisorApplicationRestartPlan `json:"applicationRestartPlan,omitempty"`
 }
 
 var liveRuntimeStatusUpdatedAtKeys = []string{

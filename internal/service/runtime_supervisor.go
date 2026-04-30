@@ -18,6 +18,9 @@ const (
 	defaultRuntimeSupervisorHTTPTimeout       = 5 * time.Second
 	defaultRuntimeSupervisorServiceFailThresh = 3
 
+	runtimeSupervisorApplicationRestartDecisionBlocked  = "blocked"
+	runtimeSupervisorApplicationRestartDecisionEligible = "eligible"
+
 	runtimeSupervisorContainerFallbackDecisionBlocked  = "blocked"
 	runtimeSupervisorContainerFallbackDecisionEligible = "eligible"
 
@@ -128,6 +131,22 @@ type RuntimeSupervisorControlAction struct {
 	RequestedAt time.Time `json:"requestedAt"`
 }
 
+type RuntimeSupervisorApplicationRestartPlan struct {
+	RuntimeID      string `json:"runtimeId"`
+	RuntimeKind    string `json:"runtimeKind"`
+	Candidate      bool   `json:"candidate"`
+	Enabled        bool   `json:"enabled"`
+	HealthzOK      bool   `json:"healthzOk"`
+	Supported      bool   `json:"supported"`
+	Due            bool   `json:"due"`
+	Duplicate      bool   `json:"duplicate"`
+	Decision       string `json:"decision"`
+	BlockedReason  string `json:"blockedReason,omitempty"`
+	EligibleReason string `json:"eligibleReason,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	NextRestartAt  string `json:"nextRestartAt,omitempty"`
+}
+
 type RuntimeSupervisorServiceState struct {
 	ConsecutiveFailures                 int        `json:"consecutiveFailures"`
 	FailureThreshold                    int        `json:"failureThreshold"`
@@ -184,6 +203,26 @@ type runtimeSupervisorContainerFallbackDecisionInput struct {
 type runtimeSupervisorContainerFallbackDecisionResult struct {
 	Decision       string
 	Executable     bool
+	BlockedReason  string
+	EligibleReason string
+}
+
+type runtimeSupervisorApplicationRestartDecisionInput struct {
+	Candidate            bool
+	Enabled              bool
+	HealthzOK            bool
+	Supported            bool
+	DesiredRunning       bool
+	ActualError          bool
+	Suppressed           bool
+	Fatal                bool
+	NextRestartAtPresent bool
+	Due                  bool
+	Duplicate            bool
+}
+
+type runtimeSupervisorApplicationRestartDecisionResult struct {
+	Decision       string
 	BlockedReason  string
 	EligibleReason string
 }
@@ -307,6 +346,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 		targetSnapshot.ServiceState = s.updateServiceState(target, targetSnapshot.Healthz, targetSnapshot.RuntimeStatus, now)
 		targetSnapshot.ContainerFallbackPlan, targetSnapshot.ServiceState = s.updateContainerFallbackPlan(target, targetSnapshot.ServiceState, now)
 		if targetSnapshot.RuntimeStatus.Error == "" && targetSnapshot.RuntimeStatus.Reachable {
+			status = s.attachApplicationRestartPlans(target, status, targetSnapshot.Healthz, now)
 			targetSnapshot.Status = &status
 			targetSnapshot.ControlActions = s.submitApplicationRestarts(ctx, target, status, targetSnapshot.Healthz, now)
 		}
@@ -623,16 +663,137 @@ func runtimeSupervisorServiceKey(target RuntimeSupervisorTarget) string {
 	return strings.TrimSpace(target.Name) + "|" + strings.TrimSpace(target.BaseURL)
 }
 
+func (s *RuntimeSupervisor) attachApplicationRestartPlans(target RuntimeSupervisorTarget, status RuntimeStatusSnapshot, healthz RuntimeSupervisorProbe, now time.Time) RuntimeStatusSnapshot {
+	for i := range status.Runtimes {
+		plan := s.runtimeSupervisorApplicationRestartPlan(target, status.Runtimes[i], healthz, now)
+		if plan != nil {
+			status.Runtimes[i].ApplicationRestartPlan = plan
+		}
+	}
+	return status
+}
+
+func (s *RuntimeSupervisor) runtimeSupervisorApplicationRestartPlan(target RuntimeSupervisorTarget, runtime RuntimeStatus, healthz RuntimeSupervisorProbe, now time.Time) *RuntimeSupervisorApplicationRestartPlan {
+	if !runtimeSupervisorApplicationRestartCandidate(runtime) {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	nextRestartAt := strings.TrimSpace(runtime.NextRestartAt)
+	_, nextRestartAtPresent := ParseRestartTime(map[string]any{"nextRestartAt": nextRestartAt}, "nextRestartAt")
+	due := runtimeSupervisorRestartDueAt(runtime, now)
+	duplicate := due && s.runtimeRestartAlreadySubmitted(target, runtime)
+	reason := runtimeSupervisorRestartReason(target, runtime)
+	decision := evaluateRuntimeSupervisorApplicationRestartDecision(runtimeSupervisorApplicationRestartDecisionInput{
+		Candidate:            true,
+		Enabled:              s != nil && s.options.EnableApplicationRestart,
+		HealthzOK:            runtimeSupervisorHealthzOK(healthz),
+		Supported:            runtimeSupervisorRestartSupportedKind(runtime.RuntimeKind),
+		DesiredRunning:       strings.EqualFold(strings.TrimSpace(runtime.DesiredStatus), "RUNNING"),
+		ActualError:          strings.EqualFold(strings.TrimSpace(runtime.ActualStatus), "ERROR"),
+		Suppressed:           runtime.AutoRestartSuppressed,
+		Fatal:                strings.EqualFold(strings.TrimSpace(runtime.RestartSeverity), "fatal"),
+		NextRestartAtPresent: nextRestartAtPresent,
+		Due:                  due,
+		Duplicate:            duplicate,
+	})
+	return &RuntimeSupervisorApplicationRestartPlan{
+		RuntimeID:      strings.TrimSpace(runtime.RuntimeID),
+		RuntimeKind:    strings.TrimSpace(runtime.RuntimeKind),
+		Candidate:      true,
+		Enabled:        s != nil && s.options.EnableApplicationRestart,
+		HealthzOK:      runtimeSupervisorHealthzOK(healthz),
+		Supported:      runtimeSupervisorRestartSupportedKind(runtime.RuntimeKind),
+		Due:            due,
+		Duplicate:      duplicate,
+		Decision:       decision.Decision,
+		BlockedReason:  decision.BlockedReason,
+		EligibleReason: decision.EligibleReason,
+		Reason:         reason,
+		NextRestartAt:  nextRestartAt,
+	}
+}
+
+func runtimeSupervisorApplicationRestartCandidate(runtime RuntimeStatus) bool {
+	if strings.TrimSpace(runtime.RuntimeID) == "" {
+		return false
+	}
+	if strings.TrimSpace(runtime.NextRestartAt) != "" || runtime.AutoRestartSuppressed {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(runtime.RestartSeverity), "fatal") {
+		return true
+	}
+	actual := strings.ToUpper(strings.TrimSpace(runtime.ActualStatus))
+	health := strings.ToLower(strings.TrimSpace(runtime.Health))
+	return actual == "ERROR" || health == "error" || health == "suppressed" || health == "unreachable" || health == "stale"
+}
+
+func evaluateRuntimeSupervisorApplicationRestartDecision(input runtimeSupervisorApplicationRestartDecisionInput) runtimeSupervisorApplicationRestartDecisionResult {
+	blocked := func(reason string) runtimeSupervisorApplicationRestartDecisionResult {
+		return runtimeSupervisorApplicationRestartDecisionResult{
+			Decision:      runtimeSupervisorApplicationRestartDecisionBlocked,
+			BlockedReason: reason,
+		}
+	}
+	if !input.Candidate {
+		return blocked("runtime-restart-not-candidate")
+	}
+	if !input.Enabled {
+		return blocked("runtime-restart-disabled")
+	}
+	if !input.HealthzOK {
+		return blocked("runtime-restart-healthz-unhealthy")
+	}
+	if !input.Supported {
+		return blocked("runtime-restart-unsupported-kind")
+	}
+	if !input.DesiredRunning {
+		return blocked("runtime-restart-desired-not-running")
+	}
+	if !input.ActualError {
+		return blocked("runtime-restart-actual-not-error")
+	}
+	if input.Suppressed {
+		return blocked("runtime-restart-suppressed")
+	}
+	if input.Fatal {
+		return blocked("runtime-restart-fatal")
+	}
+	if !input.NextRestartAtPresent {
+		return blocked("runtime-restart-next-at-missing")
+	}
+	if !input.Due {
+		return blocked("runtime-restart-not-due")
+	}
+	if input.Duplicate {
+		return blocked("runtime-restart-duplicate")
+	}
+	return runtimeSupervisorApplicationRestartDecisionResult{
+		Decision:       runtimeSupervisorApplicationRestartDecisionEligible,
+		EligibleReason: "runtime-restart-eligible",
+	}
+}
+
+func runtimeSupervisorHealthzOK(healthz RuntimeSupervisorProbe) bool {
+	if !healthz.Reachable || strings.TrimSpace(healthz.Error) != "" {
+		return false
+	}
+	return healthz.StatusCode == 0 || (healthz.StatusCode >= http.StatusOK && healthz.StatusCode < http.StatusMultipleChoices)
+}
+
 func (s *RuntimeSupervisor) submitApplicationRestarts(ctx context.Context, target RuntimeSupervisorTarget, status RuntimeStatusSnapshot, healthz RuntimeSupervisorProbe, now time.Time) []RuntimeSupervisorControlAction {
 	if s == nil || !s.options.EnableApplicationRestart {
 		return nil
 	}
-	if !healthz.Reachable || healthz.Error != "" {
+	if !runtimeSupervisorHealthzOK(healthz) {
 		return nil
 	}
 	actions := make([]RuntimeSupervisorControlAction, 0)
 	for _, runtime := range status.Runtimes {
-		if !runtimeSupervisorRestartDue(runtime, now) {
+		if runtime.ApplicationRestartPlan == nil || runtime.ApplicationRestartPlan.Decision != runtimeSupervisorApplicationRestartDecisionEligible {
 			continue
 		}
 		if s.runtimeRestartAlreadySubmitted(target, runtime) {
@@ -686,7 +847,7 @@ func runtimeSupervisorRestartDue(runtime RuntimeStatus, now time.Time) bool {
 	if strings.TrimSpace(runtime.RuntimeID) == "" {
 		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(runtime.RuntimeKind), "signal") {
+	if !runtimeSupervisorRestartSupportedKind(runtime.RuntimeKind) {
 		return false
 	}
 	if !strings.EqualFold(strings.TrimSpace(runtime.DesiredStatus), "RUNNING") {
@@ -701,6 +862,15 @@ func runtimeSupervisorRestartDue(runtime RuntimeStatus, now time.Time) bool {
 	if strings.EqualFold(strings.TrimSpace(runtime.RestartSeverity), "fatal") {
 		return false
 	}
+	return runtimeSupervisorRestartDueAt(runtime, now)
+}
+
+func runtimeSupervisorRestartSupportedKind(kind string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(kind))
+	return normalized == "signal" || normalized == "signal-runtime"
+}
+
+func runtimeSupervisorRestartDueAt(runtime RuntimeStatus, now time.Time) bool {
 	nextRestartAt, ok := ParseRestartTime(map[string]any{"nextRestartAt": runtime.NextRestartAt}, "nextRestartAt")
 	if !ok {
 		return false

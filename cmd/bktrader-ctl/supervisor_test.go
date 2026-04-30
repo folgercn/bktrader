@@ -48,14 +48,23 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 			},
 			"status":{
 				"service":"platform-api",
-				"runtimes":[{
-					"runtimeId":"signal-1",
-					"runtimeKind":"signal",
-					"desiredStatus":"RUNNING",
-					"actualStatus":"ERROR",
-					"health":"recovering"
-				}]
-			},
+					"runtimes":[{
+						"runtimeId":"signal-1",
+						"runtimeKind":"signal",
+						"desiredStatus":"RUNNING",
+						"actualStatus":"ERROR",
+						"health":"recovering",
+						"applicationRestartPlan":{
+							"candidate":true,
+							"enabled":true,
+							"healthzOk":false,
+							"supported":true,
+							"due":true,
+							"decision":"blocked",
+							"blockedReason":"runtime-restart-healthz-unhealthy"
+						}
+					}]
+				},
 			"controlActions":[{"action":"runtime-restart","runtimeId":"signal-1"}]
 		}]
 	}`)
@@ -71,6 +80,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 		"serviceState: failures=3/3 fallback=candidate attempts=2 suppressed=false backoffUntil=--",
 		"lastFallbackDecision=container-executor-not-configured at=2026-04-29T08:00:00Z",
 		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executorKind=none executorDryRun=true executable=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
+		"runtimes: total=1 attention=1 restartPlans=1 restartEligible=0 service=platform-api",
 		"lastFailure=healthz-unhealthy: http 503",
 	}
 	for _, want := range expected {
