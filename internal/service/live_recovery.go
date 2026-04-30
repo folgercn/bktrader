@@ -618,10 +618,89 @@ func nonNegativeDuration(value time.Duration) time.Duration {
 
 func isProtectionOrder(order map[string]any) bool {
 	orderType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(order["origType"]), stringValue(order["type"]))))
-	if boolValue(order["reduceOnly"]) || boolValue(order["closePosition"]) {
+	if recoveryMapOrderIntent(order).IsExit() {
+		return true
+	}
+	if recoveryMapOrderHasExitFlags(order) {
 		return true
 	}
 	return strings.Contains(orderType, "STOP") || strings.Contains(orderType, "TAKE_PROFIT")
+}
+
+func recoveryMapOrderIntent(order map[string]any) domain.OrderIntent {
+	return domain.ClassifyOrderIntent(recoveryMapToDomainOrder(order))
+}
+
+func recoveryMapToDomainOrder(order map[string]any) domain.Order {
+	if order == nil {
+		return domain.Order{}
+	}
+	metadata := cloneMetadata(mapValue(order["metadata"]))
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	proposal := firstNonEmptyMapValue(metadata["executionProposal"], metadata["intent"])
+	intent := mapValue(metadata["intent"])
+	return domain.Order{
+		ID: firstNonEmpty(
+			stringValue(order["id"]),
+			stringValue(order["orderId"]),
+			stringValue(order["clientOrderId"]),
+		),
+		Side: firstNonEmpty(
+			stringValue(order["side"]),
+			stringValue(metadata["side"]),
+			stringValue(proposal["side"]),
+			stringValue(intent["side"]),
+		),
+		Status: firstNonEmpty(
+			stringValue(order["status"]),
+			stringValue(order["orderStatus"]),
+			stringValue(metadata["status"]),
+		),
+		Quantity: firstPositiveFloatValue(
+			order["quantity"],
+			order["origQty"],
+			order["executedQty"],
+			metadata["quantity"],
+			proposal["quantity"],
+		),
+		ReduceOnly: boolValue(order["reduceOnly"]) ||
+			boolValue(metadata["reduceOnly"]) ||
+			boolValue(proposal["reduceOnly"]) ||
+			boolValue(intent["reduceOnly"]),
+		ClosePosition: boolValue(order["closePosition"]) ||
+			boolValue(metadata["closePosition"]) ||
+			boolValue(proposal["closePosition"]) ||
+			boolValue(intent["closePosition"]),
+		Metadata: metadata,
+	}
+}
+
+func recoveryMapOrderHasExitFlags(order map[string]any) bool {
+	if order == nil {
+		return false
+	}
+	metadata := mapValue(order["metadata"])
+	proposal := firstNonEmptyMapValue(metadata["executionProposal"], metadata["intent"])
+	intent := mapValue(metadata["intent"])
+	return boolValue(order["reduceOnly"]) ||
+		boolValue(order["closePosition"]) ||
+		boolValue(metadata["reduceOnly"]) ||
+		boolValue(metadata["closePosition"]) ||
+		boolValue(proposal["reduceOnly"]) ||
+		boolValue(proposal["closePosition"]) ||
+		boolValue(intent["reduceOnly"]) ||
+		boolValue(intent["closePosition"])
+}
+
+func firstPositiveFloatValue(values ...any) float64 {
+	for _, value := range values {
+		if parsed := parseFloatValue(value); parsed > 0 {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func isStopProtectionOrder(order map[string]any) bool {
@@ -763,7 +842,7 @@ func activeLiveWatchdogExitOrder(orders []map[string]any) (map[string]any, bool)
 		if len(order) == 0 {
 			continue
 		}
-		if !boolValue(order["reduceOnly"]) && !boolValue(order["closePosition"]) {
+		if !recoveryMapOrderIntent(order).IsExit() && !recoveryMapOrderHasExitFlags(order) {
 			continue
 		}
 		if isStopProtectionOrder(order) || isTakeProfitProtectionOrder(order) {
