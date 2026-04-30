@@ -50,6 +50,27 @@ describe("monitor chart marker labels", () => {
     expect(markers[0].text).toBe("平多 SL 75948.80");
   });
 
+  it("reads signal bar keys from execution proposal top-level metadata", () => {
+    const session = { id: "live-1", strategyId: "strategy-1" } as any;
+    const orders: Order[] = [
+      order(
+        "o1",
+        "BUY",
+        75897.5,
+        false,
+        "2026-04-30T00:33:51Z",
+        "",
+        "BTCUSDT|30m|2026-04-30T00:30:00Z",
+        "proposalTopLevel"
+      ),
+    ];
+
+    const markers = deriveSessionMarkers(session, orders, []);
+
+    expect(markers[0].time).toBe("2026-04-30T00:30:00.000Z");
+    expect(markers[0].text).toBe("开多 75897.50");
+  });
+
   it("draws execution price overlays across the owning signal bar", () => {
     const candles: SignalBarCandle[] = [
       candle("2026-04-30T00:00:00Z"),
@@ -157,7 +178,6 @@ describe("live monitor candles", () => {
             high: "76387.00",
             low: "76213.70",
             close: "76263.10",
-            isClosed: true,
           },
           current: {
             barStart: "1777514400000",
@@ -165,7 +185,6 @@ describe("live monitor candles", () => {
             high: "76317.10",
             low: "76218.90",
             close: "76236.30",
-            isClosed: false,
           },
         },
       },
@@ -202,7 +221,7 @@ describe("live monitor candles", () => {
           accountId: "live-main",
           strategyId: "strategy-bk-1d",
           status: "READY",
-          state: { dispatchMode: "manual-review" },
+          state: { dispatchMode: "manual-review", symbol: "BTCUSDT" },
           createdAt: "2026-04-30T01:57:39Z",
         } as any,
         {
@@ -328,8 +347,32 @@ function order(
   reduceOnly: boolean,
   createdAt: string,
   reason = "",
-  signalBarTradeLimitKey = ""
+  signalBarTradeLimitKey = "",
+  signalBarTradeLimitKeyPlacement: "proposalMetadata" | "proposalTopLevel" | "intentMetadata" | "orderMetadata" = "proposalMetadata"
 ): Order {
+  const executionProposal: Record<string, unknown> = {
+    role: reduceOnly ? "exit" : "entry",
+    reason,
+    reduceOnly,
+  };
+  const intent: Record<string, unknown> = {};
+  const metadata: Record<string, unknown> = {
+    liveSessionId: "live-1",
+    reduceOnly,
+    executionProposal,
+  };
+  if (signalBarTradeLimitKey) {
+    if (signalBarTradeLimitKeyPlacement === "proposalTopLevel") {
+      executionProposal.signalBarTradeLimitKey = signalBarTradeLimitKey;
+    } else if (signalBarTradeLimitKeyPlacement === "intentMetadata") {
+      intent.metadata = { signalBarTradeLimitKey };
+      metadata.intent = intent;
+    } else if (signalBarTradeLimitKeyPlacement === "orderMetadata") {
+      metadata.signalBarTradeLimitKey = signalBarTradeLimitKey;
+    } else {
+      executionProposal.metadata = { signalBarTradeLimitKey };
+    }
+  }
   return {
     id,
     accountId: "account-1",
@@ -340,16 +383,7 @@ function order(
     quantity: 0.01,
     price,
     reduceOnly,
-    metadata: {
-      liveSessionId: "live-1",
-      reduceOnly,
-      executionProposal: {
-        role: reduceOnly ? "exit" : "entry",
-        reason,
-        reduceOnly,
-        metadata: signalBarTradeLimitKey ? { signalBarTradeLimitKey } : undefined,
-      },
-    },
+    metadata,
     createdAt,
   };
 }

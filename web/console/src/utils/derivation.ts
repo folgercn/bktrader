@@ -765,16 +765,18 @@ export function deriveSignalBarStateCandles(
       continue;
     }
 
-    const bars = Array.isArray(state.bars) ? (state.bars as Array<Record<string, unknown>>) : [];
+    const bars = Array.isArray(state.bars)
+      ? (state.bars as Array<Record<string, unknown>>).map((bar) => ({ bar, fallbackClosed: false }))
+      : [];
     const namedBars = ["prevBar4", "prevBar3", "prevBar2", "prevBar1", "current"]
-      .map((key) => getRecord(state[key]))
-      .filter((bar) => Object.keys(bar).length > 0);
-    for (const bar of [...bars, ...namedBars]) {
+      .map((key) => ({ bar: getRecord(state[key]), fallbackClosed: key !== "current" }))
+      .filter((item) => Object.keys(item.bar).length > 0);
+    for (const { bar, fallbackClosed } of [...bars, ...namedBars]) {
       const candle = signalBarStateCandleFromRecord(
         bar,
         stateSymbol,
         stateTimeframe,
-        false,
+        fallbackClosed,
         targetSymbol,
         targetTimeframe
       );
@@ -1298,17 +1300,28 @@ export function deriveSessionMarkers(session: LiveSession | PaperSession | null,
   });
 }
 
-function executionOrderMetadata(order: Order): Record<string, unknown> {
+function executionOrderSignalBarTradeLimitKey(order: Order): string {
   const metadata = getRecord(order.metadata);
-  const proposalMetadata = getRecord(getRecord(metadata.executionProposal).metadata);
-  if (Object.keys(proposalMetadata).length > 0) {
-    return proposalMetadata;
+  const proposal = getRecord(metadata.executionProposal);
+  const intent = getRecord(metadata.intent);
+  const candidates = [
+    metadata.signalBarTradeLimitKey,
+    proposal.signalBarTradeLimitKey,
+    getRecord(proposal.metadata).signalBarTradeLimitKey,
+    intent.signalBarTradeLimitKey,
+    getRecord(intent.metadata).signalBarTradeLimitKey,
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate ?? "").trim();
+    if (value) {
+      return value;
+    }
   }
-  return getRecord(getRecord(metadata.intent).metadata);
+  return "";
 }
 
 function resolveExecutionOrderSignalBarTime(order: Order): string {
-  const key = String(executionOrderMetadata(order).signalBarTradeLimitKey ?? "").trim();
+  const key = executionOrderSignalBarTradeLimitKey(order);
   const parts = key.split("|");
   const candidate = parts.length >= 3 ? parts.slice(2).join("|") : "";
   if (!candidate) {
@@ -1670,13 +1683,29 @@ export function deriveSelectedOrHighlightedLiveSession(
     return selected;
   }
 
+  const selectedState = getRecord(selected.session.state);
+  const selectedHasRuntimeData = !!String(
+    selectedState.signalRuntimeSessionId ??
+      selectedState.lastSignalRuntimeSessionId ??
+      selectedState.signalRuntimeStatus ??
+      selectedState.lastSignalRuntimeEventAt ??
+      ""
+  ).trim();
+  const selectedHasStrategyActivity =
+    Object.keys(getRecord(selectedState.lastStrategyIntent)).length > 0 ||
+    !!String(
+      selectedState.lastStrategyEvaluationStatus ??
+        selectedState.lastStrategyDecisionAt ??
+        selectedState.lastStrategyTriggerErrorAt ??
+        ""
+    ).trim();
   const selectedIsEmptySeed =
     liveSessionHealthPriority(selected.health.status) === 0 &&
     selected.execution.orderCount === 0 &&
     selected.execution.fillCount === 0 &&
     !selected.execution.position &&
-    !String(selected.session.state?.symbol ?? "").trim() &&
-    !String(selected.session.state?.signalRuntimeSessionId ?? "").trim();
+    !selectedHasRuntimeData &&
+    !selectedHasStrategyActivity;
   if (selectedIsEmptySeed && liveSessionHealthPriority(highlighted.health.status) > liveSessionHealthPriority(selected.health.status)) {
     return highlighted;
   }
