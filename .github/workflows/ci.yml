@@ -98,6 +98,11 @@ jobs:
       
       - name: Check high risk defaults
         run: bash scripts/check_high_risk_defaults.sh
+
+      - name: Check order intent inference
+        run: |
+          ORDER_INTENT_SENSOR_TEST=1 bash scripts/check_order_intent_inference.sh
+          bash scripts/check_order_intent_inference.sh
         
       - name: Check env safety
         run: bash scripts/check_env_safety.sh
