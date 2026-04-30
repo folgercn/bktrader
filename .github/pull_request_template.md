@@ -18,6 +18,11 @@ _是否涉及默认行为、交易路径、部署流程、环境变量_
 - [ ] DB migration 是否具备向下兼容幂等性？
 - [ ] 配置字段有没有无意被混改？
 
+## 交易语义变更
+- [ ] 本次改动是否新增/修改了 `signalKind`？若是，需同步更新 Golden Case
+- [ ] 本次改动是否影响订单方向判断（`side` / `reduceOnly` / `closePosition`）？
+- [ ] 若涉及上述改动，`go test ./internal/domain/... -run TestClassifyOrderIntent` 是否通过？
+
 ## 验证方式与测试证据
 _本地怎么测，测试环境怎么验_
 - [ ] 无需跑后端或无需编译的文档性修改
