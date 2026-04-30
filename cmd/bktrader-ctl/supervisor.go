@@ -100,12 +100,25 @@ type supervisorRuntimeStatusSnapshot struct {
 }
 
 type supervisorRuntimeStatus struct {
-	RuntimeID             string `json:"runtimeId"`
-	RuntimeKind           string `json:"runtimeKind"`
-	DesiredStatus         string `json:"desiredStatus"`
-	ActualStatus          string `json:"actualStatus"`
-	Health                string `json:"health"`
-	AutoRestartSuppressed bool   `json:"autoRestartSuppressed"`
+	RuntimeID              string                            `json:"runtimeId"`
+	RuntimeKind            string                            `json:"runtimeKind"`
+	DesiredStatus          string                            `json:"desiredStatus"`
+	ActualStatus           string                            `json:"actualStatus"`
+	Health                 string                            `json:"health"`
+	AutoRestartSuppressed  bool                              `json:"autoRestartSuppressed"`
+	ApplicationRestartPlan *supervisorApplicationRestartPlan `json:"applicationRestartPlan,omitempty"`
+}
+
+type supervisorApplicationRestartPlan struct {
+	Candidate      bool   `json:"candidate"`
+	Enabled        bool   `json:"enabled"`
+	HealthzOK      bool   `json:"healthzOk"`
+	Supported      bool   `json:"supported"`
+	Due            bool   `json:"due"`
+	Duplicate      bool   `json:"duplicate"`
+	Decision       string `json:"decision"`
+	BlockedReason  string `json:"blockedReason,omitempty"`
+	EligibleReason string `json:"eligibleReason,omitempty"`
 }
 
 type supervisorControlAction struct {
@@ -219,12 +232,24 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 		}
 		if target.Status != nil {
 			attention := 0
+			restartPlans := 0
+			restartEligible := 0
 			for _, runtime := range target.Status.Runtimes {
 				if supervisorRuntimeNeedsAttention(runtime) {
 					attention++
 				}
+				if runtime.ApplicationRestartPlan != nil {
+					restartPlans++
+					if runtime.ApplicationRestartPlan.Decision == "eligible" {
+						restartEligible++
+					}
+				}
 			}
-			fmt.Fprintf(&out, "  runtimes: total=%d attention=%d service=%s\n", len(target.Status.Runtimes), attention, firstNonEmpty(target.Status.Service, "--"))
+			if restartPlans > 0 {
+				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d restartPlans=%d restartEligible=%d service=%s\n", len(target.Status.Runtimes), attention, restartPlans, restartEligible, firstNonEmpty(target.Status.Service, "--"))
+			} else {
+				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d service=%s\n", len(target.Status.Runtimes), attention, firstNonEmpty(target.Status.Service, "--"))
+			}
 		}
 		if len(target.ControlActions) > 0 {
 			errors := 0

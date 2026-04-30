@@ -640,6 +640,16 @@ func TestRuntimeSupervisorSubmitsDueSignalRestartWhenEnabled(t *testing.T) {
 	if len(snapshot.Targets) != 1 || len(snapshot.Targets[0].ControlActions) != 1 {
 		t.Fatalf("expected one recorded control action, got %#v", snapshot.Targets)
 	}
+	if snapshot.Targets[0].Status == nil || len(snapshot.Targets[0].Status.Runtimes) != 1 {
+		t.Fatalf("expected supervisor status with one runtime, got %#v", snapshot.Targets[0].Status)
+	}
+	plan := snapshot.Targets[0].Status.Runtimes[0].ApplicationRestartPlan
+	if plan == nil {
+		t.Fatalf("expected application restart plan for due signal runtime, got %#v", snapshot.Targets[0].Status.Runtimes[0])
+	}
+	if plan.Decision != runtimeSupervisorApplicationRestartDecisionEligible || plan.EligibleReason != "runtime-restart-eligible" {
+		t.Fatalf("expected eligible application restart plan, got %+v", plan)
+	}
 	action := snapshot.Targets[0].ControlActions[0]
 	if !action.Submitted || action.StatusCode != http.StatusOK || action.Error != "" {
 		t.Fatalf("expected submitted restart action, got %+v", action)
@@ -650,6 +660,13 @@ func TestRuntimeSupervisorSubmitsDueSignalRestartWhenEnabled(t *testing.T) {
 	}
 	if len(second.Targets) != 1 || len(second.Targets[0].ControlActions) != 0 {
 		t.Fatalf("expected duplicate restart plan to skip new control actions, got %#v", second.Targets)
+	}
+	if second.Targets[0].Status == nil || len(second.Targets[0].Status.Runtimes) != 1 || second.Targets[0].Status.Runtimes[0].ApplicationRestartPlan == nil {
+		t.Fatalf("expected duplicate application restart plan in second snapshot, got %#v", second.Targets[0].Status)
+	}
+	secondPlan := second.Targets[0].Status.Runtimes[0].ApplicationRestartPlan
+	if !secondPlan.Duplicate || secondPlan.BlockedReason != "runtime-restart-duplicate" {
+		t.Fatalf("expected duplicate application restart plan to be blocked, got %+v", secondPlan)
 	}
 }
 
@@ -770,6 +787,13 @@ func TestRuntimeSupervisorSkipsApplicationRestartWhenHealthzFails(t *testing.T) 
 	if len(snapshot.Targets) != 1 || len(snapshot.Targets[0].ControlActions) != 0 {
 		t.Fatalf("expected no recorded control actions when healthz fails, got %#v", snapshot.Targets)
 	}
+	if snapshot.Targets[0].Status == nil || len(snapshot.Targets[0].Status.Runtimes) != 1 || snapshot.Targets[0].Status.Runtimes[0].ApplicationRestartPlan == nil {
+		t.Fatalf("expected blocked restart plan when healthz fails, got %#v", snapshot.Targets[0].Status)
+	}
+	plan := snapshot.Targets[0].Status.Runtimes[0].ApplicationRestartPlan
+	if plan.Decision != runtimeSupervisorApplicationRestartDecisionBlocked || plan.BlockedReason != "runtime-restart-healthz-unhealthy" || plan.HealthzOK {
+		t.Fatalf("expected healthz blocker in restart plan, got %+v", plan)
+	}
 }
 
 func TestRuntimeSupervisorSkipsApplicationRestartWhenSuppressedOrNotDue(t *testing.T) {
@@ -840,6 +864,32 @@ func TestRuntimeSupervisorSkipsApplicationRestartWhenSuppressedOrNotDue(t *testi
 	}
 	if len(snapshot.Targets) != 1 || len(snapshot.Targets[0].ControlActions) != 0 {
 		t.Fatalf("expected no recorded control actions, got %#v", snapshot.Targets)
+	}
+	if snapshot.Targets[0].Status == nil {
+		t.Fatalf("expected runtime status with blocked restart plans")
+	}
+	plans := make(map[string]*RuntimeSupervisorApplicationRestartPlan)
+	for _, runtime := range snapshot.Targets[0].Status.Runtimes {
+		if runtime.ApplicationRestartPlan != nil {
+			plans[runtime.RuntimeID] = runtime.ApplicationRestartPlan
+		}
+	}
+	expectedBlocked := map[string]string{
+		"suppressed-signal-runtime": "runtime-restart-suppressed",
+		"future-signal-runtime":     "runtime-restart-not-due",
+		"live-runtime":              "runtime-restart-unsupported-kind",
+	}
+	for runtimeID, want := range expectedBlocked {
+		plan := plans[runtimeID]
+		if plan == nil {
+			t.Fatalf("expected blocked restart plan for %s, got %#v", runtimeID, plans)
+		}
+		if plan.Decision != runtimeSupervisorApplicationRestartDecisionBlocked || plan.BlockedReason != want {
+			t.Fatalf("expected %s blocker for %s, got %+v", want, runtimeID, plan)
+		}
+	}
+	if _, ok := plans[""]; ok {
+		t.Fatalf("expected runtime without runtimeId to have no restart plan, got %#v", plans)
 	}
 }
 

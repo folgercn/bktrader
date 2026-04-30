@@ -503,39 +503,60 @@ export function SupervisorStage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {runtimeRows.map((runtime) => (
-                        <TableRow key={`${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}`}>
-                          <TableCell>{runtime.targetName}</TableCell>
-                          <TableCell>
-                            <div className="flex max-w-[220px] flex-col gap-1">
-                              <span className="font-mono text-xs text-[var(--bk-text-primary)]">{shrink(runtime.runtimeId)}</span>
-                              {runtime.accountId && <span className="text-xs text-[var(--bk-text-muted)]">{shrink(runtime.accountId)}</span>}
-                            </div>
-                          </TableCell>
-                          <TableCell><Badge variant="metal">{runtime.runtimeKind}</Badge></TableCell>
-                          <TableCell><StatusBadge value={runtime.desiredStatus} /></TableCell>
-                          <TableCell><StatusBadge value={runtime.actualStatus} /></TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <StatusBadge value={runtime.health} />
-                              {runtime.autoRestartSuppressed && <Badge variant="destructive">suppressed</Badge>}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              <span className="font-mono text-sm tabular-nums">{runtime.restartAttempt}</span>
-                              {runtime.restartSeverity && <StatusBadge value={runtime.restartSeverity} />}
-                              {runtime.lastRestartError && (
-                                <span className="max-w-[220px] truncate text-xs text-[var(--bk-text-muted)]" title={runtime.lastRestartError}>
-                                  {runtime.lastRestartError}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatOptionalTime(runtime.nextRestartAt)}</TableCell>
-                          <TableCell>{formatOptionalTime(runtime.lastCheckedAt)}</TableCell>
-                        </TableRow>
-                      ))}
+                      {runtimeRows.map((runtime) => {
+                        const restartPlan = runtime.applicationRestartPlan;
+                        const restartPlanReason =
+                          restartPlan?.blockedReason ||
+                          restartPlan?.eligibleReason ||
+                          restartPlan?.reason;
+                        return (
+                          <TableRow key={`${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}`}>
+                            <TableCell>{runtime.targetName}</TableCell>
+                            <TableCell>
+                              <div className="flex max-w-[220px] flex-col gap-1">
+                                <span className="font-mono text-xs text-[var(--bk-text-primary)]">{shrink(runtime.runtimeId)}</span>
+                                {runtime.accountId && <span className="text-xs text-[var(--bk-text-muted)]">{shrink(runtime.accountId)}</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell><Badge variant="metal">{runtime.runtimeKind}</Badge></TableCell>
+                            <TableCell><StatusBadge value={runtime.desiredStatus} /></TableCell>
+                            <TableCell><StatusBadge value={runtime.actualStatus} /></TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <StatusBadge value={runtime.health} />
+                                {runtime.autoRestartSuppressed && <Badge variant="destructive">suppressed</Badge>}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex max-w-[240px] flex-col gap-1">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="font-mono text-sm tabular-nums">{runtime.restartAttempt}</span>
+                                  {runtime.restartSeverity && <StatusBadge value={runtime.restartSeverity} />}
+                                  {restartPlan && (
+                                    <Badge variant={restartPlan.decision === 'eligible' ? 'success' : 'neutral'}>
+                                      {restartPlan.decision || 'blocked'}
+                                    </Badge>
+                                  )}
+                                  {restartPlan && !restartPlan.supported && <Badge variant="secondary">unsupported</Badge>}
+                                  {restartPlan?.duplicate && <Badge variant="neutral">duplicate</Badge>}
+                                </div>
+                                {restartPlanReason && (
+                                  <span className="truncate text-xs text-[var(--bk-text-muted)]" title={restartPlanReason}>
+                                    {restartPlanReason}
+                                  </span>
+                                )}
+                                {runtime.lastRestartError && (
+                                  <span className="truncate text-xs text-[var(--bk-text-muted)]" title={runtime.lastRestartError}>
+                                    {runtime.lastRestartError}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{formatOptionalTime(runtime.nextRestartAt)}</TableCell>
+                            <TableCell>{formatOptionalTime(runtime.lastCheckedAt)}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 )}
