@@ -129,9 +129,9 @@ func NewStore() *Store {
 
 	enhancedStrategy := domain.Strategy{
 		ID:          "strategy-bk-btc-30m-enhanced",
-		Name:        "BK BTCUSDT 30m Enhanced",
+		Name:        "BK BTCUSDT 30m T2-only 0.5bps",
 		Status:      "ACTIVE",
-		Description: "BTCUSDT 30m live intrabar SMA5 baseline plus t3 breakout with sep_0p25.",
+		Description: "BTCUSDT 30m live intrabar SMA5 original T2 breakout with 0.5 bps tolerance.",
 		CreatedAt:   now,
 	}
 	enhancedVersion := domain.StrategyVersion{
@@ -141,7 +141,7 @@ func NewStore() *Store {
 		SignalTimeframe:    "30m",
 		ExecutionTimeframe: "tick",
 		Parameters: map[string]any{
-			"strategyEngine":                  "bk-live-intrabar-sma5-t3-sep",
+			"strategyEngine":                  "bk-live-intrabar-sma5-t2-only-0p5bps",
 			"symbol":                          "BTCUSDT",
 			"signalTimeframe":                 "30m",
 			"executionDataSource":             "tick",
@@ -150,8 +150,8 @@ func NewStore() *Store {
 			"zero_initial_mode":               domain.ResearchBaselineZeroInitialMode,
 			"max_trades_per_bar":              domain.ResearchBaselineMaxTradesPerBar,
 			"reentry_size_schedule":           domain.ResearchBaselineReentrySizeSchedule(),
-			"breakout_shape":                  "baseline_plus_t3",
-			"t3_min_sma_atr_separation":       0.25,
+			"breakout_shape":                  "original_t2",
+			"breakout_shape_tolerance_bps":    0.5,
 			"use_sma5_intraday_structure":     true,
 			"reentry_min_stop_bps":            6.0,
 			"reentry_atr_percentile_gte":      25.0,

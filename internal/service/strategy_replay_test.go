@@ -176,31 +176,31 @@ func TestBuildStrategyReplayConfigUsesUpdatedBaselineDefaults(t *testing.T) {
 	}
 }
 
-func TestResolveReplayInitialBreakoutAllowsT3WithSep(t *testing.T) {
+func TestResolveReplayInitialBreakoutAllowsT2Tolerance(t *testing.T) {
 	cfg := strategyReplayConfig{
-		BreakoutShape:         "baseline_plus_t3",
-		T3MinSMAATRSeparation: 0.25,
+		BreakoutShape:             "original_t2",
+		BreakoutShapeToleranceBps: 0.5,
 	}
 	sig := strategySignalBar{
 		MA5:       68200,
 		ATR:       800,
-		PrevHigh1: 68800,
-		PrevHigh2: 68600,
-		PrevHigh3: 69000,
+		PrevHigh1: 69000,
+		PrevHigh2: 68997,
+		PrevHigh3: 68700,
 		PrevLow1:  68100,
 		PrevLow2:  68000,
 		PrevLow3:  67900,
 	}
-	breakout := resolveReplayInitialBreakout(sig, "long", 69010, cfg)
-	if !breakout.Ready || breakout.Level != 69000 || breakout.Shape != "t3_swing" {
-		t.Fatalf("expected t3 breakout to pass sep filter, got %#v", breakout)
+	breakout := resolveReplayInitialBreakout(sig, "long", 68997, cfg)
+	if !breakout.Ready || breakout.Level != 68997 || breakout.Shape != "original_t2" {
+		t.Fatalf("expected original_t2 breakout within 0.5 bps tolerance, got %#v", breakout)
 	}
 }
 
-func TestResolveReplayInitialBreakoutBlocksT3InsideSep(t *testing.T) {
+func TestResolveReplayInitialBreakoutIgnoresT3OnlyShape(t *testing.T) {
 	cfg := strategyReplayConfig{
-		BreakoutShape:         "baseline_plus_t3",
-		T3MinSMAATRSeparation: 0.25,
+		BreakoutShape:             "baseline_plus_t3",
+		BreakoutShapeToleranceBps: 0.5,
 	}
 	sig := strategySignalBar{
 		MA5:       68850,
@@ -211,7 +211,7 @@ func TestResolveReplayInitialBreakoutBlocksT3InsideSep(t *testing.T) {
 	}
 	breakout := resolveReplayInitialBreakout(sig, "long", 69010, cfg)
 	if breakout.Ready {
-		t.Fatalf("expected t3 breakout inside sep filter to be blocked, got %#v", breakout)
+		t.Fatalf("expected t3-only breakout shape to be ignored, got %#v", breakout)
 	}
 }
 

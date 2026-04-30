@@ -97,10 +97,19 @@ func defaultExecutionSemantics(mode ExecutionMode, parameters map[string]any) St
 	return semantics
 }
 
+const (
+	bkLiveIntrabarSMA5T2Only0p5BpsEngineKey = "bk-live-intrabar-sma5-t2-only-0p5bps"
+	bkLiveIntrabarSMA5LegacyT3SepEngineKey  = "bk-live-intrabar-sma5-t3-sep"
+	defaultT2BreakoutShapeToleranceBps      = 0.5
+)
+
 func normalizeStrategyEngineKey(raw string) string {
 	value := strings.TrimSpace(strings.ToLower(raw))
 	if value == "" {
 		return "bk-default"
+	}
+	if value == bkLiveIntrabarSMA5LegacyT3SepEngineKey {
+		return bkLiveIntrabarSMA5T2Only0p5BpsEngineKey
 	}
 	return value
 }
@@ -117,7 +126,7 @@ func (p *Platform) registerStrategyEngine(engine StrategyEngine) {
 
 func (p *Platform) registerBuiltInStrategyEngines() {
 	p.registerStrategyEngine(bkStrategyEngine{platform: p})
-	p.registerStrategyEngine(bkLiveIntrabarSMA5T3SepEngine{platform: p})
+	p.registerStrategyEngine(bkLiveIntrabarSMA5T2Only0p5BpsEngine{platform: p})
 }
 
 func (p *Platform) resolveStrategyEngine(strategyVersionID string, parameters map[string]any) (StrategyEngine, string, error) {
@@ -180,46 +189,46 @@ func (e bkStrategyEngine) Run(context StrategyExecutionContext) (map[string]any,
 	return e.platform.runStrategyReplay(context)
 }
 
-type bkLiveIntrabarSMA5T3SepEngine struct {
+type bkLiveIntrabarSMA5T2Only0p5BpsEngine struct {
 	platform *Platform
 }
 
-func (e bkLiveIntrabarSMA5T3SepEngine) Key() string {
-	return "bk-live-intrabar-sma5-t3-sep"
+func (e bkLiveIntrabarSMA5T2Only0p5BpsEngine) Key() string {
+	return bkLiveIntrabarSMA5T2Only0p5BpsEngineKey
 }
 
-func (e bkLiveIntrabarSMA5T3SepEngine) Describe() map[string]any {
+func (e bkLiveIntrabarSMA5T2Only0p5BpsEngine) Describe() map[string]any {
 	return map[string]any{
 		"key":                  e.Key(),
-		"name":                 "BK Live Intrabar SMA5 T3 Sep",
+		"name":                 "BK Live Intrabar SMA5 T2-only 0.5bps",
 		"supportedSignalBars":  []string{"30m"},
 		"supportedExecutions":  []string{"tick", "1min"},
-		"runtimeConsistency":   "live-intrabar-sma5-baseline-plus-t3-breakout-sep-0p25",
+		"runtimeConsistency":   "live-intrabar-sma5-original-t2-breakout-tol-0p5bps",
 		"backtestSlippageOnly": true,
 	}
 }
 
-func (e bkLiveIntrabarSMA5T3SepEngine) Run(context StrategyExecutionContext) (map[string]any, error) {
+func (e bkLiveIntrabarSMA5T2Only0p5BpsEngine) Run(context StrategyExecutionContext) (map[string]any, error) {
 	return e.platform.runStrategyReplay(context)
 }
 
-func (e bkLiveIntrabarSMA5T3SepEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
+func (e bkLiveIntrabarSMA5T2Only0p5BpsEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
 	return bkStrategyEngine{platform: e.platform}.EvaluateSignal(context)
 }
 
 type signalBarGateOptions struct {
-	BreakoutShape           string
-	T3MinSMAATRSeparation   float64
-	ReentryMinStopBps       float64
-	ReentryATRPercentileGTE float64
+	BreakoutShape             string
+	BreakoutShapeToleranceBps float64
+	ReentryMinStopBps         float64
+	ReentryATRPercentileGTE   float64
 }
 
 func signalBarGateOptionsFromParameters(parameters map[string]any) signalBarGateOptions {
 	return signalBarGateOptions{
-		BreakoutShape:           strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
-		T3MinSMAATRSeparation:   parseFloatValue(parameters["t3_min_sma_atr_separation"]),
-		ReentryMinStopBps:       firstPositive(parseFloatValue(parameters["reentry_min_stop_bps"]), parseFloatValue(parameters["min_stop_bps"])),
-		ReentryATRPercentileGTE: firstPositive(parseFloatValue(parameters["reentry_atr_percentile_gte"]), parseFloatValue(parameters["atr_pct_gte"])),
+		BreakoutShape:             strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
+		BreakoutShapeToleranceBps: parseFloatValue(parameters["breakout_shape_tolerance_bps"]),
+		ReentryMinStopBps:         firstPositive(parseFloatValue(parameters["reentry_min_stop_bps"]), parseFloatValue(parameters["min_stop_bps"])),
+		ReentryATRPercentileGTE:   firstPositive(parseFloatValue(parameters["reentry_atr_percentile_gte"]), parseFloatValue(parameters["atr_pct_gte"])),
 	}
 }
 
@@ -817,7 +826,6 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	current := mapValue(signalBarState["current"])
 	prevBar1 := mapValue(signalBarState["prevBar1"])
 	prevBar2 := mapValue(signalBarState["prevBar2"])
-	prevBar3 := mapValue(signalBarState["prevBar3"])
 	ma20 := parseFloatValue(signalBarState["ma20"])
 	sma5 := parseFloatValue(signalBarState["sma5"])
 	atr14 := parseFloatValue(signalBarState["atr14"])
@@ -829,10 +837,8 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	closePrice := parseFloatValue(current["close"])
 	prevHigh1 := parseFloatValue(prevBar1["high"])
 	prevHigh2 := parseFloatValue(prevBar2["high"])
-	prevHigh3 := parseFloatValue(prevBar3["high"])
 	prevLow1 := parseFloatValue(prevBar1["low"])
 	prevLow2 := parseFloatValue(prevBar2["low"])
-	prevLow3 := parseFloatValue(prevBar3["low"])
 	longStructureReady := false
 	shortStructureReady := false
 	longEarlyReversalReady := false
@@ -879,32 +885,22 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	}
 	longBreakoutShapeName := ""
 	longBreakoutLevel := 0.0
-	if prevHigh2 > prevHigh1 && prevHigh2 > 0 {
+	if t2LongBreakoutShapeReady(prevHigh2, prevHigh1, gateOptions.BreakoutShapeToleranceBps) {
 		longBreakoutShapeName = "original_t2"
 		longBreakoutLevel = prevHigh2
 	}
-	if gateOptions.BreakoutShape == "baseline_plus_t3" &&
-		prevHigh3 > prevHigh2 && prevHigh3 > prevHigh1 && prevHigh1 > prevHigh2 && prevHigh3 > 0 {
-		longBreakoutShapeName = "t3_swing"
-		longBreakoutLevel = prevHigh3
-	}
 	shortBreakoutShapeName := ""
 	shortBreakoutLevel := 0.0
-	if prevLow2 < prevLow1 && prevLow2 > 0 {
+	if t2ShortBreakoutShapeReady(prevLow2, prevLow1, gateOptions.BreakoutShapeToleranceBps) {
 		shortBreakoutShapeName = "original_t2"
 		shortBreakoutLevel = prevLow2
-	}
-	if gateOptions.BreakoutShape == "baseline_plus_t3" &&
-		prevLow3 < prevLow2 && prevLow3 < prevLow1 && prevLow1 < prevLow2 && prevLow3 > 0 {
-		shortBreakoutShapeName = "t3_swing"
-		shortBreakoutLevel = prevLow3
 	}
 	longBreakoutShapeReady := longBreakoutShapeName != "" && longBreakoutLevel > 0
 	shortBreakoutShapeReady := shortBreakoutShapeName != "" && shortBreakoutLevel > 0
 	longBreakoutPriceReady := breakoutPrice >= longBreakoutLevel && longBreakoutLevel > 0
 	shortBreakoutPriceReady := breakoutPrice <= shortBreakoutLevel && shortBreakoutLevel > 0
-	longBreakoutQualityReady := breakoutQualityReady(longBreakoutShapeName, longBreakoutLevel, sma5, atr14, gateOptions)
-	shortBreakoutQualityReady := breakoutQualityReady(shortBreakoutShapeName, shortBreakoutLevel, sma5, atr14, gateOptions)
+	longBreakoutQualityReady := true
+	shortBreakoutQualityReady := true
 	longBreakoutReady := longBreakoutShapeReady && longBreakoutPriceReady && longBreakoutQualityReady
 	shortBreakoutReady := shortBreakoutShapeReady && shortBreakoutPriceReady && shortBreakoutQualityReady
 	longReady := longStructureReady && longBreakoutReady
@@ -1021,14 +1017,33 @@ func evaluateReentryEntryQualityGate(parameters map[string]any, signalBarState m
 	return result
 }
 
-func breakoutQualityReady(shapeName string, breakoutLevel, sma5, atr14 float64, options signalBarGateOptions) bool {
-	if shapeName != "t3_swing" || options.T3MinSMAATRSeparation <= 0 {
-		return true
-	}
-	if breakoutLevel <= 0 || sma5 <= 0 || atr14 <= 0 {
+func t2LongBreakoutShapeReady(prevHigh2, prevHigh1, toleranceBps float64) bool {
+	if prevHigh2 <= 0 || prevHigh1 <= 0 {
 		return false
 	}
-	return math.Abs(breakoutLevel-sma5) >= options.T3MinSMAATRSeparation*atr14
+	toleranceBps = sanitizeBreakoutShapeToleranceBps(toleranceBps)
+	if toleranceBps <= 0 {
+		return prevHigh2 > prevHigh1
+	}
+	return prevHigh2 >= prevHigh1*(1-toleranceBps/10000)
+}
+
+func t2ShortBreakoutShapeReady(prevLow2, prevLow1, toleranceBps float64) bool {
+	if prevLow2 <= 0 || prevLow1 <= 0 {
+		return false
+	}
+	toleranceBps = sanitizeBreakoutShapeToleranceBps(toleranceBps)
+	if toleranceBps <= 0 {
+		return prevLow2 < prevLow1
+	}
+	return prevLow2 <= prevLow1*(1+toleranceBps/10000)
+}
+
+func sanitizeBreakoutShapeToleranceBps(toleranceBps float64) float64 {
+	if toleranceBps <= 0 || math.IsNaN(toleranceBps) || math.IsInf(toleranceBps, 0) {
+		return 0
+	}
+	return toleranceBps
 }
 
 func isFavorableBiasForPlan(nextRole, nextReason, liquidityBias string) bool {

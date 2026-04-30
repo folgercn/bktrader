@@ -189,8 +189,8 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 	buildEnhancedTemplate := func() LiveLaunchTemplate {
 		item := buildTemplate("BTCUSDT", "30m", 0.002, false)
 		item.Key = "binance-testnet-btc-30m-enhanced"
-		item.Name = "Binance Testnet BTCUSDT 30m Enhanced"
-		item.Description = "BTCUSDT 30m 增强策略：live_intrabar_sma5_baseline_plus_t3_breakout + t3 sep_0p25。"
+		item.Name = "Binance Testnet BTCUSDT 30m T2-only 0.5bps"
+		item.Description = "BTCUSDT 30m 增强策略：live_intrabar_sma5_original_t2_breakout_tol_0p5bps。"
 		item.StrategyID = enhancedStrategyID
 		item.StrategyName = enhancedStrategyName
 		item.StrategyVersionID = enhancedStrategyVersionID
@@ -201,8 +201,8 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		item.LaunchPayload.LaunchTemplateKey = item.Key
 		item.LaunchPayload.LaunchTemplateName = item.Name
 		item.Notes = append([]string{
-			fmt.Sprintf("增强模板单独使用 %s（strategyEngine=%s），不改变原 BTCUSDT 30m 模板。", enhancedStrategyName, "bk-live-intrabar-sma5-t3-sep"),
-			"策略口径对齐 research `live_intrabar_sma5_baseline_plus_t3_breakout+sep_0p25`：SMA5 intrabar hard filter + original_t2/t3_swing breakout，其中 sep_0p25 只过滤 t3_swing。",
+			fmt.Sprintf("增强模板单独使用 %s（strategyEngine=%s，历史 key %s 保留兼容），不改变原 BTCUSDT 30m 模板。", enhancedStrategyName, bkLiveIntrabarSMA5T2Only0p5BpsEngineKey, bkLiveIntrabarSMA5LegacyT3SepEngineKey),
+			"策略口径：SMA5 intrabar hard filter + original_t2 breakout + T2 shape tolerance 0.5 bps；t3_swing breakout 已摘除。",
 			"低波动 reentry gate 固化为 reentry_min_stop_bps=6 与 reentry_atr_percentile_gte=25，仅过滤 Zero-Initial/SL/PT reentry 开仓，不过滤止损出场。",
 			"模板仍保持 dispatchMode 由前端提交前选择，默认展示为 manual-review。",
 		}, item.Notes...)
@@ -269,12 +269,12 @@ func liveIntradayResearchBaselineOverrides(strategyEngine string) map[string]any
 }
 
 func liveBTC30mEnhancedOverrides() map[string]any {
-	overrides := liveIntradayResearchBaselineOverrides("bk-live-intrabar-sma5-t3-sep")
+	overrides := liveIntradayResearchBaselineOverrides(bkLiveIntrabarSMA5T2Only0p5BpsEngineKey)
 	overrides["max_trades_per_bar"] = domain.ResearchBaselineMaxTradesPerBar
 	overrides["stop_loss_atr"] = 0.3
 	overrides["sl_reentry_min_delay_seconds"] = 60
-	overrides["breakout_shape"] = "baseline_plus_t3"
-	overrides["t3_min_sma_atr_separation"] = 0.25
+	overrides["breakout_shape"] = "original_t2"
+	overrides["breakout_shape_tolerance_bps"] = defaultT2BreakoutShapeToleranceBps
 	overrides["use_sma5_intraday_structure"] = true
 	overrides["reentry_min_stop_bps"] = 6.0
 	overrides["reentry_atr_percentile_gte"] = 25.0

@@ -232,14 +232,17 @@ func TestLaunchLiveFlowEnhancedTemplateUsesEnhancedStrategyAndEngine(t *testing.
 	if result.RuntimeSession.StrategyID != "strategy-bk-btc-30m-enhanced" {
 		t.Fatalf("expected enhanced runtime strategy, got %s", result.RuntimeSession.StrategyID)
 	}
-	if got := stringValue(result.LiveSession.State["strategyEngine"]); got != "bk-live-intrabar-sma5-t3-sep" {
+	if got := stringValue(result.LiveSession.State["strategyEngine"]); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
 		t.Fatalf("expected enhanced strategy engine, got %s", got)
 	}
-	if got := stringValue(result.LiveSession.State["breakout_shape"]); got != "baseline_plus_t3" {
-		t.Fatalf("expected baseline_plus_t3 breakout shape, got %s", got)
+	if got := stringValue(result.LiveSession.State["breakout_shape"]); got != "original_t2" {
+		t.Fatalf("expected original_t2 breakout shape, got %s", got)
 	}
-	if got := parseFloatValue(result.LiveSession.State["t3_min_sma_atr_separation"]); got != 0.25 {
-		t.Fatalf("expected t3 sep_0p25, got %v", got)
+	if got := parseFloatValue(result.LiveSession.State["breakout_shape_tolerance_bps"]); got != 0.5 {
+		t.Fatalf("expected T2 breakout tolerance 0.5 bps, got %v", got)
+	}
+	if _, ok := result.LiveSession.State["t3_min_sma_atr_separation"]; ok {
+		t.Fatalf("expected enhanced live session to omit t3 sep override, got %#v", result.LiveSession.State)
 	}
 	if got := maxIntValue(result.LiveSession.State["sl_reentry_min_delay_seconds"], 0); got != 60 {
 		t.Fatalf("expected enhanced live session SL-Reentry delay 60s, got %d", got)

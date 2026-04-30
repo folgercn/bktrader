@@ -5326,7 +5326,7 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"zero_initial_mode",
 		"sl_reentry_min_delay_seconds",
 		"breakout_shape",
-		"t3_min_sma_atr_separation",
+		"breakout_shape_tolerance_bps",
 		"use_sma5_intraday_structure",
 		"reentry_min_stop_bps",
 		"reentry_atr_percentile_gte",
@@ -5855,8 +5855,11 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	if shape := strings.ToLower(strings.TrimSpace(stringValue(overrides["breakout_shape"]))); shape != "" {
 		normalized["breakout_shape"] = shape
 	}
-	if separation := parseFloatValue(overrides["t3_min_sma_atr_separation"]); separation > 0 {
-		normalized["t3_min_sma_atr_separation"] = separation
+	if _, ok := overrides["breakout_shape_tolerance_bps"]; ok {
+		toleranceBps := parseFloatValue(overrides["breakout_shape_tolerance_bps"])
+		if toleranceBps >= 0 && !math.IsInf(toleranceBps, 0) {
+			normalized["breakout_shape_tolerance_bps"] = sanitizeBreakoutShapeToleranceBps(toleranceBps)
+		}
 	}
 	if _, ok := overrides["use_sma5_intraday_structure"]; ok {
 		normalized["use_sma5_intraday_structure"] = boolValue(overrides["use_sma5_intraday_structure"])

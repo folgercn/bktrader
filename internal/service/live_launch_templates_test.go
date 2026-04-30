@@ -186,14 +186,17 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 				t.Fatalf("expected reentry_size_schedule [0.20, 0.10] for %s, got %#v", item.Key, item.LaunchPayload.LiveSessionOverrides["reentry_size_schedule"])
 			}
 			if want.enhanced {
-				if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got != "bk-live-intrabar-sma5-t3-sep" {
+				if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
 					t.Fatalf("expected enhanced strategy engine, got %s", got)
 				}
-				if got := stringValue(item.LaunchPayload.LiveSessionOverrides["breakout_shape"]); got != "baseline_plus_t3" {
-					t.Fatalf("expected baseline_plus_t3 breakout shape, got %s", got)
+				if got := stringValue(item.LaunchPayload.LiveSessionOverrides["breakout_shape"]); got != "original_t2" {
+					t.Fatalf("expected original_t2 breakout shape, got %s", got)
 				}
-				if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["t3_min_sma_atr_separation"]); got != 0.25 {
-					t.Fatalf("expected t3 sep 0.25, got %v", got)
+				if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["breakout_shape_tolerance_bps"]); got != 0.5 {
+					t.Fatalf("expected T2 breakout tolerance 0.5 bps, got %v", got)
+				}
+				if _, ok := item.LaunchPayload.LiveSessionOverrides["t3_min_sma_atr_separation"]; ok {
+					t.Fatalf("expected enhanced template to omit t3 sep override, got %#v", item.LaunchPayload.LiveSessionOverrides)
 				}
 				if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["sl_reentry_min_delay_seconds"], 0); got != 60 {
 					t.Fatalf("expected enhanced template SL-Reentry delay 60s, got %d", got)

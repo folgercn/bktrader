@@ -55,31 +55,31 @@ type strategyPosition struct {
 }
 
 type strategyReplayConfig struct {
-	SignalTimeframe          string
-	ExecutionDataSource      string
-	Symbol                   string
-	From                     time.Time
-	To                       time.Time
-	InitialBalance           float64
-	Dir1ReentryConfirm       bool
-	Dir2ZeroInitial          bool
-	ZeroInitialMode          string
-	FixedSlippage            float64
-	StopLossATR              float64
-	MaxTradesPerBar          int
-	ReentrySizeSchedule      []float64
-	LongReentryATR           float64
-	ShortReentryATR          float64
-	StopMode                 string
-	ProfitProtectATR         float64
-	TrailingStopATR          float64
-	DelayedTrailingATR       float64
-	TradingFeeRate           float64
-	FundingRate              float64
-	FundingIntervalHours     int
-	BreakoutShape            string
-	T3MinSMAATRSeparation    float64
-	UseSMA5IntradayStructure bool
+	SignalTimeframe           string
+	ExecutionDataSource       string
+	Symbol                    string
+	From                      time.Time
+	To                        time.Time
+	InitialBalance            float64
+	Dir1ReentryConfirm        bool
+	Dir2ZeroInitial           bool
+	ZeroInitialMode           string
+	FixedSlippage             float64
+	StopLossATR               float64
+	MaxTradesPerBar           int
+	ReentrySizeSchedule       []float64
+	LongReentryATR            float64
+	ShortReentryATR           float64
+	StopMode                  string
+	ProfitProtectATR          float64
+	TrailingStopATR           float64
+	DelayedTrailingATR        float64
+	TradingFeeRate            float64
+	FundingRate               float64
+	FundingIntervalHours      int
+	BreakoutShape             string
+	BreakoutShapeToleranceBps float64
+	UseSMA5IntradayStructure  bool
 }
 
 func (p *Platform) runStrategyReplay(context StrategyExecutionContext) (map[string]any, error) {
@@ -1049,31 +1049,31 @@ func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayC
 		stopLossATR = 0.05
 	}
 	return strategyReplayConfig{
-		SignalTimeframe:          normalizeSignalBarInterval(context.SignalTimeframe),
-		ExecutionDataSource:      strings.ToLower(context.ExecutionDataSource),
-		Symbol:                   normalizeBacktestSymbol(context.Symbol),
-		From:                     context.From,
-		To:                       context.To,
-		InitialBalance:           100000.0,
-		Dir1ReentryConfirm:       false,
-		Dir2ZeroInitial:          dir2ZeroInitial,
-		ZeroInitialMode:          resolveStrategyZeroInitialMode(dir2ZeroInitial, parameters["zero_initial_mode"]),
-		FixedSlippage:            strategyReplaySlippage(context, parameters),
-		StopLossATR:              stopLossATR,
-		MaxTradesPerBar:          maxIntValue(parameters["max_trades_per_bar"], domain.ResearchBaselineMaxTradesPerBar),
-		ReentrySizeSchedule:      reentrySizes,
-		LongReentryATR:           parseFloatValue(firstNonNil(parameters["long_reentry_atr"], 0.1)),
-		ShortReentryATR:          parseFloatValue(firstNonNil(parameters["short_reentry_atr"], 0.0)),
-		StopMode:                 stopMode,
-		ProfitProtectATR:         firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0),
-		TrailingStopATR:          parseFloatValue(parameters["trailing_stop_atr"]),
-		DelayedTrailingATR:       parseFloatValue(parameters["delayed_trailing_activation_atr"]),
-		TradingFeeRate:           context.Semantics.TradingFeeBps / 10000.0,
-		FundingRate:              context.Semantics.FundingRateBps / 10000.0,
-		FundingIntervalHours:     maxIntValue(context.Semantics.FundingIntervalHours, 8),
-		BreakoutShape:            strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
-		T3MinSMAATRSeparation:    parseFloatValue(parameters["t3_min_sma_atr_separation"]),
-		UseSMA5IntradayStructure: boolValue(parameters["use_sma5_intraday_structure"]),
+		SignalTimeframe:           normalizeSignalBarInterval(context.SignalTimeframe),
+		ExecutionDataSource:       strings.ToLower(context.ExecutionDataSource),
+		Symbol:                    normalizeBacktestSymbol(context.Symbol),
+		From:                      context.From,
+		To:                        context.To,
+		InitialBalance:            100000.0,
+		Dir1ReentryConfirm:        false,
+		Dir2ZeroInitial:           dir2ZeroInitial,
+		ZeroInitialMode:           resolveStrategyZeroInitialMode(dir2ZeroInitial, parameters["zero_initial_mode"]),
+		FixedSlippage:             strategyReplaySlippage(context, parameters),
+		StopLossATR:               stopLossATR,
+		MaxTradesPerBar:           maxIntValue(parameters["max_trades_per_bar"], domain.ResearchBaselineMaxTradesPerBar),
+		ReentrySizeSchedule:       reentrySizes,
+		LongReentryATR:            parseFloatValue(firstNonNil(parameters["long_reentry_atr"], 0.1)),
+		ShortReentryATR:           parseFloatValue(firstNonNil(parameters["short_reentry_atr"], 0.0)),
+		StopMode:                  stopMode,
+		ProfitProtectATR:          firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0),
+		TrailingStopATR:           parseFloatValue(parameters["trailing_stop_atr"]),
+		DelayedTrailingATR:        parseFloatValue(parameters["delayed_trailing_activation_atr"]),
+		TradingFeeRate:            context.Semantics.TradingFeeBps / 10000.0,
+		FundingRate:               context.Semantics.FundingRateBps / 10000.0,
+		FundingIntervalHours:      maxIntValue(context.Semantics.FundingIntervalHours, 8),
+		BreakoutShape:             strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
+		BreakoutShapeToleranceBps: parseFloatValue(parameters["breakout_shape_tolerance_bps"]),
+		UseSMA5IntradayStructure:  boolValue(parameters["use_sma5_intraday_structure"]),
 	}
 }
 
@@ -1185,37 +1185,15 @@ type replayInitialBreakout struct {
 func resolveReplayInitialBreakout(sig strategySignalBar, side string, observedPrice float64, cfg strategyReplayConfig) replayInitialBreakout {
 	switch strings.ToLower(strings.TrimSpace(side)) {
 	case "long":
-		if sig.PrevHigh2 > sig.PrevHigh1 && sig.PrevHigh2 > 0 && observedPrice >= sig.PrevHigh2 {
+		if t2LongBreakoutShapeReady(sig.PrevHigh2, sig.PrevHigh1, cfg.BreakoutShapeToleranceBps) && observedPrice >= sig.PrevHigh2 {
 			return replayInitialBreakout{Ready: true, Level: sig.PrevHigh2, Shape: "original_t2"}
 		}
-		if cfg.BreakoutShape == "baseline_plus_t3" &&
-			sig.PrevHigh3 > sig.PrevHigh2 && sig.PrevHigh3 > sig.PrevHigh1 && sig.PrevHigh1 > sig.PrevHigh2 &&
-			sig.PrevHigh3 > 0 && observedPrice >= sig.PrevHigh3 &&
-			replayT3BreakoutQualityReady(sig.PrevHigh3, sig, cfg) {
-			return replayInitialBreakout{Ready: true, Level: sig.PrevHigh3, Shape: "t3_swing"}
-		}
 	case "short":
-		if sig.PrevLow2 < sig.PrevLow1 && sig.PrevLow2 > 0 && observedPrice <= sig.PrevLow2 {
+		if t2ShortBreakoutShapeReady(sig.PrevLow2, sig.PrevLow1, cfg.BreakoutShapeToleranceBps) && observedPrice <= sig.PrevLow2 {
 			return replayInitialBreakout{Ready: true, Level: sig.PrevLow2, Shape: "original_t2"}
-		}
-		if cfg.BreakoutShape == "baseline_plus_t3" &&
-			sig.PrevLow3 < sig.PrevLow2 && sig.PrevLow3 < sig.PrevLow1 && sig.PrevLow1 < sig.PrevLow2 &&
-			sig.PrevLow3 > 0 && observedPrice <= sig.PrevLow3 &&
-			replayT3BreakoutQualityReady(sig.PrevLow3, sig, cfg) {
-			return replayInitialBreakout{Ready: true, Level: sig.PrevLow3, Shape: "t3_swing"}
 		}
 	}
 	return replayInitialBreakout{}
-}
-
-func replayT3BreakoutQualityReady(level float64, sig strategySignalBar, cfg strategyReplayConfig) bool {
-	if cfg.T3MinSMAATRSeparation <= 0 {
-		return true
-	}
-	if level <= 0 || sig.MA5 <= 0 || sig.ATR <= 0 || math.IsNaN(sig.MA5) || math.IsNaN(sig.ATR) {
-		return false
-	}
-	return math.Abs(level-sig.MA5) >= cfg.T3MinSMAATRSeparation*sig.ATR
 }
 
 func strategySignalRegimeReady(sig strategySignalBar, timeframe string, useSMA5Intraday ...bool) (bool, bool) {
