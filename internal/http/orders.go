@@ -9,6 +9,32 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
+// OrderResponse 在 API 层给 Order 追加语义分类字段。
+// intent 和 intentLabel 由 ClassifyOrderIntent() 唯一分类器计算，
+// 前端应直接消费这两个字段，禁止自行组合 side + reduceOnly 推断。
+type OrderResponse struct {
+	domain.Order
+	Intent      string `json:"intent"`
+	IntentLabel string `json:"intentLabel"`
+}
+
+func toOrderResponse(o domain.Order) OrderResponse {
+	intent := domain.ClassifyOrderIntent(o)
+	return OrderResponse{
+		Order:       o,
+		Intent:      string(intent),
+		IntentLabel: intent.IntentLabel(),
+	}
+}
+
+func toOrderResponses(orders []domain.Order) []OrderResponse {
+	result := make([]OrderResponse, len(orders))
+	for i, o := range orders {
+		result[i] = toOrderResponse(o)
+	}
+	return result
+}
+
 // registerOrderRoutes 注册订单和成交记录相关路由。
 func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 	// GET|POST /api/v1/orders — 订单列表/下单
@@ -35,7 +61,7 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusOK, items)
+			writeJSON(w, http.StatusOK, toOrderResponses(items))
 		case http.MethodPost:
 			var payload struct {
 				AccountID         string         `json:"accountId"`
@@ -79,7 +105,7 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusCreated, item)
+			writeJSON(w, http.StatusCreated, toOrderResponse(item))
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -98,7 +124,7 @@ func registerOrderRoutes(mux *http.ServeMux, platform *service.Platform) {
 				writeError(w, http.StatusNotFound, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusOK, item)
+			writeJSON(w, http.StatusOK, toOrderResponse(item))
 			return
 		}
 		if r.Method != http.MethodPost || len(parts) != 2 {
