@@ -1340,7 +1340,7 @@ function executionOrderMarkerText(order: Order): string {
   // fallback：兼容没有 intent 字段的旧订单数据
   const side = String(order.side ?? "").trim().toUpperCase();
   const isExit = isExitOrderMarker(order);
-  const positionSide = executionOrderPositionSide(side, isExit);
+  const positionSide = executionOrderPositionSide(side, isExit, order.intent);
   const action = isExit ? "平" : "开";
   const sideLabel = positionSide === "SHORT" ? "空" : positionSide === "LONG" ? "多" : "";
   const reasonLabel = compactExecutionReasonLabel(executionOrderReason(order));
@@ -1349,9 +1349,9 @@ function executionOrderMarkerText(order: Order): string {
 
 function isExitOrderMarker(order: Order): boolean {
   // 优先消费后端 intent 字段（由 ClassifyOrderIntent 唯一分类器注入）
-  if (order.intent) {
-    return order.intent.startsWith("CLOSE_");
-  }
+  // 只在明确的 CLOSE_/OPEN_ 前缀时短路；UNKNOWN 继续 fallback 到旧逻辑
+  if (order.intent?.startsWith("CLOSE_")) return true;
+  if (order.intent?.startsWith("OPEN_")) return false;
   // fallback：兼容没有 intent 字段的旧订单数据
   const metadata = getRecord(order.metadata);
   const proposal = getRecord(metadata.executionProposal ?? metadata.intent);
