@@ -353,6 +353,56 @@ func TestListLiveTradePairsKeepsPartiallyFilledCancelledOrderWithExecutedQuantit
 	assertTradePairFloat(t, pair.NetPnL, 9.80)
 }
 
+func TestListLiveTradePairsKeepsCancelledOrderWithExchangeTradeID(t *testing.T) {
+	platform, session := newLiveTradePairTestPlatform(t)
+	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+
+	entry := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   1,
+		price:      100,
+		fee:        0.10,
+		createdAt:  start,
+		fillAt:     start.Add(time.Second),
+		reduceOnly: false,
+	})
+	exit := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		status:          "CANCELLED",
+		side:            "SELL",
+		reason:          "PT",
+		quantity:        1,
+		price:           120,
+		fee:             0.10,
+		createdAt:       start.Add(time.Minute),
+		fillAt:          start.Add(time.Minute + time.Second),
+		reduceOnly:      true,
+		exchangeTradeID: "exchange-trade-exit-1",
+	})
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live trade pairs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 closed pair, got %d: %#v", len(items), items)
+	}
+	pair := items[0]
+	if got := pair.EntryOrderIDs; len(got) != 1 || got[0] != entry.ID {
+		t.Fatalf("expected entry order %s, got %#v", entry.ID, got)
+	}
+	if got := pair.ExitOrderIDs; len(got) != 1 || got[0] != exit.ID {
+		t.Fatalf("expected cancelled exchange-backed exit order %s, got %#v", exit.ID, got)
+	}
+	assertTradePairFloat(t, pair.RealizedPnL, 20)
+	assertTradePairFloat(t, pair.Fees, 0.20)
+	assertTradePairFloat(t, pair.NetPnL, 19.80)
+}
+
 func TestListLiveTradePairsIgnoresRejectedOrderWithZeroExecutedQuantity(t *testing.T) {
 	platform, session := newLiveTradePairTestPlatform(t)
 	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
@@ -576,6 +626,7 @@ type liveTradeFixture struct {
 type tradePairOrderFixture struct {
 	symbol            string
 	status            string
+	exchangeTradeID   string
 	side              string
 	reason            string
 	quantity          float64
@@ -778,6 +829,7 @@ func createLiveTradePairOrder(t *testing.T, platform *Platform, session domain.L
 	}
 	if _, err := platform.store.CreateFill(domain.Fill{
 		OrderID:           order.ID,
+		ExchangeTradeID:   fixture.exchangeTradeID,
 		Price:             fixture.price,
 		Quantity:          fixture.quantity,
 		Fee:               fixture.fee,

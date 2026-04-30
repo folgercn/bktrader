@@ -314,7 +314,7 @@ func buildLiveTradeFillEvents(
 		if !ok {
 			continue
 		}
-		if !liveTradeOrderCanContributeFills(order) {
+		if !liveTradeOrderCanContributeFill(order, fill) {
 			continue
 		}
 		eventTime := fill.CreatedAt
@@ -333,11 +333,14 @@ func buildLiveTradeFillEvents(
 	return items
 }
 
-func liveTradeOrderCanContributeFills(order domain.Order) bool {
+func liveTradeOrderCanContributeFill(order domain.Order, fill domain.Fill) bool {
 	switch strings.ToUpper(strings.TrimSpace(order.Status)) {
 	case "FILLED", "PARTIALLY_FILLED":
 		return true
 	case "CANCELLED", "CANCELED", "REJECTED", "EXPIRED", "EXPIRED_IN_MATCH":
+		if strings.TrimSpace(fill.ExchangeTradeID) != "" {
+			return true
+		}
 		return tradingQuantityPositive(parseFloatValue(order.Metadata["filledQuantity"])) ||
 			tradingQuantityPositive(parseFloatValue(order.Metadata["executedQty"])) ||
 			tradingQuantityPositive(parseFloatValue(order.Metadata["cumQty"]))
