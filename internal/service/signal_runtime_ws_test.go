@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -655,6 +656,62 @@ func TestDeriveSignalBarStatesUsesOpenCurrentBarWithClosedHistory(t *testing.T) 
 	}
 	if boolValue(gate["longBreakoutShapeReady"]) {
 		t.Fatalf("expected breakout shape to remain false for this monotonic sample, got %#v", gate)
+	}
+}
+
+func TestMergeSignalBarHistoryClosesPriorOpenBarWhenNextBarArrives(t *testing.T) {
+	key := signalBindingMatchKey("binance-kline", "signal", "BTCUSDT", map[string]any{"timeframe": "30m"})
+	sourceStates := map[string]any{}
+	base := time.Date(2026, 4, 30, 5, 0, 0, 0, time.UTC)
+	eventTime := base
+
+	merge := func(start time.Time, high, low, close string, closed bool) {
+		sourceStates = mergeSignalSourceState(sourceStates, map[string]any{
+			"sourceKey":          "binance-kline",
+			"role":               "signal",
+			"streamType":         "signal_bar",
+			"symbol":             "BTCUSDT",
+			"subscriptionSymbol": "BTCUSDT",
+			"timeframe":          "30m",
+			"barStart":           strconv.FormatInt(start.UnixMilli(), 10),
+			"barEnd":             strconv.FormatInt(start.Add(30*time.Minute).Add(-time.Millisecond).UnixMilli(), 10),
+			"open":               close,
+			"high":               high,
+			"low":                low,
+			"close":              close,
+			"volume":             "100",
+			"isClosed":           closed,
+		}, eventTime)
+		eventTime = eventTime.Add(time.Second)
+	}
+
+	merge(base, "75587.90", "75388.30", "75400.00", true)
+	merge(base.Add(30*time.Minute), "75708.70", "75392.20", "75653.30", true)
+	merge(base.Add(60*time.Minute), "75653.30", "75555.80", "75641.60", false)
+	merge(base.Add(90*time.Minute), "75648.00", "75638.30", "75647.90", false)
+
+	entry := mapValue(sourceStates[key])
+	bars := normalizeSignalBarEntries(entry["bars"])
+	if len(bars) != 4 {
+		t.Fatalf("expected four signal bars, got %#v", bars)
+	}
+	if !boolValue(bars[2]["isClosed"]) || !boolValue(bars[2]["closedByNextBar"]) {
+		t.Fatalf("expected missing final close to be inferred on prior bar, got %#v", bars[2])
+	}
+	if boolValue(bars[3]["isClosed"]) {
+		t.Fatalf("expected latest bar to remain open, got %#v", bars[3])
+	}
+
+	states := deriveSignalBarStates(sourceStates)
+	state := mapValue(states[key])
+	if state == nil {
+		t.Fatalf("expected signal bar state, got %#v", states)
+	}
+	if got := stringValue(mapValue(state["prevBar1"])["barStart"]); got != strconv.FormatInt(base.Add(60*time.Minute).UnixMilli(), 10) {
+		t.Fatalf("expected inferred-closed 06:00 bar to become prevBar1, got %#v", state["prevBar1"])
+	}
+	if got := stringValue(mapValue(state["prevBar2"])["barStart"]); got != strconv.FormatInt(base.Add(30*time.Minute).UnixMilli(), 10) {
+		t.Fatalf("expected 05:30 bar to become prevBar2, got %#v", state["prevBar2"])
 	}
 }
 
