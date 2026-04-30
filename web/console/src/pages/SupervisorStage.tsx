@@ -150,6 +150,22 @@ function PolicyBadge({ enabled, enabledLabel, disabledLabel }: { enabled: boolea
   return <Badge variant={enabled ? 'secondary' : 'neutral'}>{enabled ? enabledLabel : disabledLabel}</Badge>;
 }
 
+function applicationRestartPlanTitle(plan?: RuntimeSupervisorRuntimeStatus['applicationRestartPlan']) {
+  if (!plan) {
+    return undefined;
+  }
+  return [
+    `decision=${plan.decision || 'blocked'}`,
+    `enabled=${plan.enabled}`,
+    `healthzOk=${plan.healthzOk}`,
+    `supported=${plan.supported}`,
+    `due=${plan.due}`,
+    `duplicate=${plan.duplicate}`,
+    plan.blockedReason ? `blockedReason=${plan.blockedReason}` : undefined,
+    plan.eligibleReason ? `eligibleReason=${plan.eligibleReason}` : undefined,
+  ].filter(Boolean).join(' ');
+}
+
 export function SupervisorStage() {
   const [snapshot, setSnapshot] = useState<RuntimeSupervisorSnapshot | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
@@ -505,6 +521,7 @@ export function SupervisorStage() {
                     <TableBody>
                       {runtimeRows.map((runtime) => {
                         const restartPlan = runtime.applicationRestartPlan;
+                        const restartPlanTitle = applicationRestartPlanTitle(restartPlan);
                         const restartPlanReason =
                           restartPlan?.blockedReason ||
                           restartPlan?.eligibleReason ||
@@ -533,12 +550,12 @@ export function SupervisorStage() {
                                   <span className="font-mono text-sm tabular-nums">{runtime.restartAttempt}</span>
                                   {runtime.restartSeverity && <StatusBadge value={runtime.restartSeverity} />}
                                   {restartPlan && (
-                                    <Badge variant={restartPlan.decision === 'eligible' ? 'success' : 'neutral'}>
+                                    <Badge variant={restartPlan.decision === 'eligible' ? 'success' : 'neutral'} title={restartPlanTitle}>
                                       {restartPlan.decision || 'blocked'}
                                     </Badge>
                                   )}
-                                  {restartPlan && !restartPlan.supported && <Badge variant="secondary">unsupported</Badge>}
-                                  {restartPlan?.duplicate && <Badge variant="neutral">duplicate</Badge>}
+                                  {restartPlan && !restartPlan.supported && <Badge variant="secondary" title={restartPlanTitle}>unsupported</Badge>}
+                                  {restartPlan?.duplicate && <Badge variant="neutral" title={restartPlanTitle}>duplicate</Badge>}
                                 </div>
                                 {restartPlanReason && (
                                   <span className="truncate text-xs text-[var(--bk-text-muted)]" title={restartPlanReason}>
