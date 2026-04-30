@@ -1136,6 +1136,8 @@ func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.
 		"updatedAt": eventTime.UTC().Format(time.RFC3339Nano),
 	})
 
+	markPriorOpenSignalBarsClosed(items, bar)
+
 	matchIndex := -1
 	barKey := signalBarHistoryKey(bar)
 	for i, item := range items {
@@ -1158,6 +1160,50 @@ func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.
 		out = append(out, item)
 	}
 	return out
+}
+
+func markPriorOpenSignalBarsClosed(items []map[string]any, current map[string]any) {
+	currentStart, ok := signalBarTimestampMillis(current["barStart"])
+	if !ok {
+		return
+	}
+	currentSymbol := NormalizeSymbol(stringValue(current["symbol"]))
+	currentTimeframe := strings.ToLower(strings.TrimSpace(stringValue(current["timeframe"])))
+	if currentSymbol == "" || currentTimeframe == "" {
+		return
+	}
+	for _, item := range items {
+		if item == nil || boolValue(item["isClosed"]) {
+			continue
+		}
+		if NormalizeSymbol(stringValue(item["symbol"])) != currentSymbol {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(stringValue(item["timeframe"]))) != currentTimeframe {
+			continue
+		}
+		itemStart, ok := signalBarTimestampMillis(item["barStart"])
+		if !ok || itemStart >= currentStart {
+			continue
+		}
+		itemEnd, ok := signalBarTimestampMillis(item["barEnd"])
+		if ok && itemEnd > currentStart {
+			continue
+		}
+		item["isClosed"] = true
+		item["closedByNextBar"] = true
+	}
+}
+
+func signalBarTimestampMillis(raw any) (int64, bool) {
+	if numeric, ok := toFloat64(raw); ok && numeric > 0 {
+		return int64(numeric), true
+	}
+	parsed := parseOptionalRFC3339(stringValue(raw))
+	if parsed.IsZero() {
+		return 0, false
+	}
+	return parsed.UTC().UnixMilli(), true
 }
 
 func deriveSignalBarStates(sourceStates map[string]any) map[string]any {
