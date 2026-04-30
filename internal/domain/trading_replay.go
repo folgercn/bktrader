@@ -101,12 +101,6 @@ type TradingReplayOrphan struct {
 	Reason  string `json:"reason"`
 }
 
-type TradingReplayViolation struct {
-	OrderID string `json:"orderId,omitempty"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
 type replayEntry struct {
 	OrderID    string
 	Intent     OrderIntent
@@ -145,7 +139,7 @@ func ReplayTradingOrders(orders []TradingReplayOrder) TradingReplayResult {
 			continue
 		}
 
-		if violation, ok := tradingReplaySignalKindViolation(order, intent); ok {
+		if violation, ok := CheckSignalKindContract(order.ID, order.EffectiveSignalKind(), intent); ok {
 			result.Violations = append(result.Violations, violation)
 		}
 
@@ -297,12 +291,8 @@ func appendTradingReplayExitViolation(result TradingReplayResult, order TradingR
 		Intent:  string(intent),
 		Reason:  OrphanReasonNoMatchingPosition,
 	})
-	if domainOrder.EffectiveReduceOnly() || domainOrder.EffectiveClosePosition() {
-		result.Violations = append(result.Violations, TradingReplayViolation{
-			OrderID: order.ID,
-			Code:    ViolationReduceOnlyWithoutPosition,
-			Message: fmt.Sprintf("%s has no matching virtual position", intent),
-		})
+	if violation, ok := CheckReduceOnlyConstraint(domainOrder, intent, false); ok {
+		result.Violations = append(result.Violations, violation)
 	}
 	result.Violations = append(result.Violations, TradingReplayViolation{
 		OrderID: order.ID,
@@ -317,43 +307,4 @@ func appendTradingReplayExitViolation(result TradingReplayResult, order TradingR
 		})
 	}
 	return result
-}
-
-func tradingReplaySignalKindViolation(order TradingReplayOrder, intent OrderIntent) (TradingReplayViolation, bool) {
-	signalKind := strings.ToLower(strings.TrimSpace(order.EffectiveSignalKind()))
-	if signalKind == "" {
-		return TradingReplayViolation{}, false
-	}
-
-	entrySignalKinds := map[string]bool{
-		"initial":              true,
-		"initial-entry":        true,
-		"zero-initial-reentry": true,
-		"sl-reentry":           true,
-		"pt-reentry":           true,
-		"entry":                true,
-	}
-	exitSignalKinds := map[string]bool{
-		"risk-exit":         true,
-		"sl":                true,
-		"pt":                true,
-		"protect-exit":      true,
-		"recovery-watchdog": true,
-	}
-
-	if entrySignalKinds[signalKind] && !intent.IsEntry() {
-		return TradingReplayViolation{
-			OrderID: order.ID,
-			Code:    ViolationSignalKindIntentMismatch,
-			Message: fmt.Sprintf("signalKind %q expects entry intent, got %s", signalKind, intent),
-		}, true
-	}
-	if exitSignalKinds[signalKind] && !intent.IsExit() {
-		return TradingReplayViolation{
-			OrderID: order.ID,
-			Code:    ViolationSignalKindIntentMismatch,
-			Message: fmt.Sprintf("signalKind %q expects exit intent, got %s", signalKind, intent),
-		}, true
-	}
-	return TradingReplayViolation{}, false
 }
