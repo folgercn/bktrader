@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,6 +147,326 @@ func TestListLiveTradePairsReturnsOpenTradeWithUnrealizedPnLAndAggregatedEntries
 	assertTradePairFloat(t, pair.NetPnL, pair.UnrealizedPnL-0.03)
 }
 
+func TestListLiveTradePairsKeepsInterleavedSymbolsIndependent(t *testing.T) {
+	platform, session := newLiveTradePairTestPlatform(t)
+	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+
+	btcEntry := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		symbol:     "BTCUSDT",
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   0.01,
+		price:      100,
+		fee:        0.10,
+		createdAt:  start,
+		fillAt:     start.Add(time.Second),
+		reduceOnly: false,
+	})
+	ethEntry := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		symbol:     "ETHUSDT",
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   0.5,
+		price:      200,
+		fee:        0.20,
+		createdAt:  start.Add(time.Minute),
+		fillAt:     start.Add(time.Minute + time.Second),
+		reduceOnly: false,
+	})
+	btcExit := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		symbol:     "BTCUSDT",
+		side:       "SELL",
+		reason:     "PT",
+		quantity:   0.01,
+		price:      110,
+		fee:        0.10,
+		createdAt:  start.Add(2 * time.Minute),
+		fillAt:     start.Add(2*time.Minute + time.Second),
+		reduceOnly: true,
+	})
+	ethExit := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		symbol:     "ETHUSDT",
+		side:       "SELL",
+		reason:     "SL",
+		quantity:   0.5,
+		price:      190,
+		fee:        0.20,
+		createdAt:  start.Add(3 * time.Minute),
+		fillAt:     start.Add(3*time.Minute + time.Second),
+		reduceOnly: true,
+	})
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live trade pairs: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 closed pairs, got %d: %#v", len(items), items)
+	}
+
+	bySymbol := map[string]domain.LiveTradePair{}
+	for _, item := range items {
+		bySymbol[item.Symbol] = item
+	}
+	btcPair, ok := bySymbol["BTCUSDT"]
+	if !ok {
+		t.Fatalf("missing BTCUSDT pair: %#v", items)
+	}
+	if got := btcPair.EntryOrderIDs; len(got) != 1 || got[0] != btcEntry.ID {
+		t.Fatalf("expected BTC entry order %s, got %#v", btcEntry.ID, got)
+	}
+	if got := btcPair.ExitOrderIDs; len(got) != 1 || got[0] != btcExit.ID {
+		t.Fatalf("expected BTC exit order %s, got %#v", btcExit.ID, got)
+	}
+	assertTradePairFloat(t, btcPair.EntryQuantity, 0.01)
+	assertTradePairFloat(t, btcPair.RealizedPnL, 0.10)
+	assertTradePairFloat(t, btcPair.NetPnL, -0.10)
+
+	ethPair, ok := bySymbol["ETHUSDT"]
+	if !ok {
+		t.Fatalf("missing ETHUSDT pair: %#v", items)
+	}
+	if got := ethPair.EntryOrderIDs; len(got) != 1 || got[0] != ethEntry.ID {
+		t.Fatalf("expected ETH entry order %s, got %#v", ethEntry.ID, got)
+	}
+	if got := ethPair.ExitOrderIDs; len(got) != 1 || got[0] != ethExit.ID {
+		t.Fatalf("expected ETH exit order %s, got %#v", ethExit.ID, got)
+	}
+	assertTradePairFloat(t, ethPair.EntryQuantity, 0.5)
+	assertTradePairFloat(t, ethPair.RealizedPnL, -5)
+	assertTradePairFloat(t, ethPair.NetPnL, -5.4)
+}
+
+func TestListLiveTradePairsIgnoresCancelledOrderWithoutExecutedQuantity(t *testing.T) {
+	platform, session := newLiveTradePairTestPlatform(t)
+	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+
+	cancelled := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		status:     "CANCELLED",
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   1,
+		price:      100,
+		fee:        0.10,
+		createdAt:  start,
+		fillAt:     start.Add(time.Second),
+		reduceOnly: false,
+	})
+	entry := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   1,
+		price:      110,
+		fee:        0.10,
+		createdAt:  start.Add(time.Minute),
+		fillAt:     start.Add(time.Minute + time.Second),
+		reduceOnly: false,
+	})
+	exit := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "SELL",
+		reason:     "PT",
+		quantity:   1,
+		price:      120,
+		fee:        0.10,
+		createdAt:  start.Add(2 * time.Minute),
+		fillAt:     start.Add(2*time.Minute + time.Second),
+		reduceOnly: true,
+	})
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live trade pairs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 closed pair, got %d: %#v", len(items), items)
+	}
+	pair := items[0]
+	if got := pair.EntryOrderIDs; len(got) != 1 || got[0] != entry.ID {
+		t.Fatalf("expected entry order %s only, got %#v; cancelled order was %s", entry.ID, got, cancelled.ID)
+	}
+	if got := pair.ExitOrderIDs; len(got) != 1 || got[0] != exit.ID {
+		t.Fatalf("expected exit order %s, got %#v", exit.ID, got)
+	}
+	assertTradePairFloat(t, pair.EntryAvgPrice, 110)
+	assertTradePairFloat(t, pair.ExitAvgPrice, 120)
+	assertTradePairFloat(t, pair.RealizedPnL, 10)
+	assertTradePairFloat(t, pair.Fees, 0.20)
+	assertTradePairFloat(t, pair.NetPnL, 9.80)
+}
+
+func TestListLiveTradePairsKeepsPartiallyFilledCancelledOrderWithExecutedQuantity(t *testing.T) {
+	platform, session := newLiveTradePairTestPlatform(t)
+	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+
+	entry := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		status:     "CANCELLED",
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   0.4,
+		price:      100,
+		fee:        0.10,
+		createdAt:  start,
+		fillAt:     start.Add(time.Second),
+		reduceOnly: false,
+		metadata: map[string]any{
+			"filledQuantity": 0.4,
+		},
+	})
+	exit := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "SELL",
+		reason:     "PT",
+		quantity:   0.4,
+		price:      125,
+		fee:        0.10,
+		createdAt:  start.Add(time.Minute),
+		fillAt:     start.Add(time.Minute + time.Second),
+		reduceOnly: true,
+	})
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live trade pairs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 closed pair, got %d: %#v", len(items), items)
+	}
+	pair := items[0]
+	if got := pair.EntryOrderIDs; len(got) != 1 || got[0] != entry.ID {
+		t.Fatalf("expected cancelled partial entry order %s, got %#v", entry.ID, got)
+	}
+	if got := pair.ExitOrderIDs; len(got) != 1 || got[0] != exit.ID {
+		t.Fatalf("expected exit order %s, got %#v", exit.ID, got)
+	}
+	assertTradePairFloat(t, pair.RealizedPnL, 10)
+	assertTradePairFloat(t, pair.NetPnL, 9.80)
+}
+
+func TestListLiveTradePairsIgnoresRejectedOrderWithZeroExecutedQuantity(t *testing.T) {
+	platform, session := newLiveTradePairTestPlatform(t)
+	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+
+	rejected := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		status:     "REJECTED",
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   1,
+		price:      100,
+		fee:        0.10,
+		createdAt:  start,
+		fillAt:     start.Add(time.Second),
+		reduceOnly: false,
+		metadata: map[string]any{
+			"executedQty": 0,
+		},
+	})
+	entry := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   1,
+		price:      110,
+		fee:        0.10,
+		createdAt:  start.Add(time.Minute),
+		fillAt:     start.Add(time.Minute + time.Second),
+		reduceOnly: false,
+	})
+	exit := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "SELL",
+		reason:     "PT",
+		quantity:   1,
+		price:      120,
+		fee:        0.10,
+		createdAt:  start.Add(2 * time.Minute),
+		fillAt:     start.Add(2*time.Minute + time.Second),
+		reduceOnly: true,
+	})
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live trade pairs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 closed pair, got %d: %#v", len(items), items)
+	}
+	pair := items[0]
+	if got := pair.EntryOrderIDs; len(got) != 1 || got[0] != entry.ID {
+		t.Fatalf("expected entry order %s only, got %#v; rejected order was %s", entry.ID, got, rejected.ID)
+	}
+	if got := pair.ExitOrderIDs; len(got) != 1 || got[0] != exit.ID {
+		t.Fatalf("expected exit order %s, got %#v", exit.ID, got)
+	}
+	assertTradePairFloat(t, pair.EntryAvgPrice, 110)
+	assertTradePairFloat(t, pair.RealizedPnL, 10)
+	assertTradePairFloat(t, pair.NetPnL, 9.80)
+}
+
+func TestListLiveTradePairsKeepsExpiredOrderWithCumQty(t *testing.T) {
+	platform, session := newLiveTradePairTestPlatform(t)
+	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+
+	entry := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		status:     "EXPIRED",
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   0.25,
+		price:      100,
+		fee:        0.05,
+		createdAt:  start,
+		fillAt:     start.Add(time.Second),
+		reduceOnly: false,
+		metadata: map[string]any{
+			"cumQty": 0.25,
+		},
+	})
+	exit := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "SELL",
+		reason:     "PT",
+		quantity:   0.25,
+		price:      120,
+		fee:        0.05,
+		createdAt:  start.Add(time.Minute),
+		fillAt:     start.Add(time.Minute + time.Second),
+		reduceOnly: true,
+	})
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list live trade pairs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 closed pair, got %d: %#v", len(items), items)
+	}
+	pair := items[0]
+	if got := pair.EntryOrderIDs; len(got) != 1 || got[0] != entry.ID {
+		t.Fatalf("expected expired partial entry order %s, got %#v", entry.ID, got)
+	}
+	if got := pair.ExitOrderIDs; len(got) != 1 || got[0] != exit.ID {
+		t.Fatalf("expected exit order %s, got %#v", exit.ID, got)
+	}
+	assertTradePairFloat(t, pair.RealizedPnL, 5)
+	assertTradePairFloat(t, pair.Fees, 0.10)
+	assertTradePairFloat(t, pair.NetPnL, 4.90)
+}
+
 func TestListLiveTradePairsFallsBackWhenTelemetryTablesAreUnavailable(t *testing.T) {
 	baseStore := memory.NewStore()
 	platform := NewPlatform(&testMissingLiveTradePairTelemetryStore{Store: baseStore})
@@ -253,6 +574,8 @@ type liveTradeFixture struct {
 }
 
 type tradePairOrderFixture struct {
+	symbol            string
+	status            string
 	side              string
 	reason            string
 	quantity          float64
@@ -263,6 +586,7 @@ type tradePairOrderFixture struct {
 	reduceOnly        bool
 	decisionEventID   string
 	targetPriceSource string
+	metadata          map[string]any
 }
 
 type liveTradePairTargetedQueryStore struct {
@@ -399,6 +723,10 @@ func createLiveTradePairOrder(t *testing.T, platform *Platform, session domain.L
 	if fixture.reduceOnly {
 		role = "exit"
 	}
+	symbol := NormalizeSymbol(fixture.symbol)
+	if symbol == "" {
+		symbol = "BTCUSDT"
+	}
 	orderMeta := map[string]any{
 		"liveSessionId": session.ID,
 		"executionMode": "live",
@@ -406,7 +734,7 @@ func createLiveTradePairOrder(t *testing.T, platform *Platform, session domain.L
 			"role":     role,
 			"reason":   fixture.reason,
 			"side":     fixture.side,
-			"symbol":   "BTCUSDT",
+			"symbol":   symbol,
 			"quantity": fixture.quantity,
 			"status":   "dispatchable",
 			"metadata": map[string]any{
@@ -418,11 +746,14 @@ func createLiveTradePairOrder(t *testing.T, platform *Platform, session domain.L
 		orderMeta["decisionEventId"] = fixture.decisionEventID
 		mapValue(orderMeta["executionProposal"])["decisionEventId"] = fixture.decisionEventID
 	}
+	for key, value := range fixture.metadata {
+		orderMeta[key] = value
+	}
 
 	order, err := platform.store.CreateOrder(domain.Order{
 		AccountID:         session.AccountID,
 		StrategyVersionID: "strategy-version-test",
-		Symbol:            "BTCUSDT",
+		Symbol:            symbol,
 		Side:              fixture.side,
 		Type:              "MARKET",
 		Status:            "FILLED",
@@ -434,6 +765,16 @@ func createLiveTradePairOrder(t *testing.T, platform *Platform, session domain.L
 	})
 	if err != nil {
 		t.Fatalf("create order: %v", err)
+	}
+	status := strings.ToUpper(strings.TrimSpace(fixture.status))
+	if status == "" {
+		status = "FILLED"
+	}
+	order.Status = status
+	order.Metadata = orderMeta
+	order, err = platform.store.UpdateOrder(order)
+	if err != nil {
+		t.Fatalf("update order: %v", err)
 	}
 	if _, err := platform.store.CreateFill(domain.Fill{
 		OrderID:           order.ID,
