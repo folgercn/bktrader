@@ -14,10 +14,10 @@ describe("monitor chart marker labels", () => {
   it("distinguishes long and short entry/exit order markers", () => {
     const session = { id: "live-1", strategyId: "strategy-1" } as any;
     const orders: Order[] = [
-      order("o1", "BUY", 100, false, "2026-04-24T00:00:00Z"),
-      order("o2", "SELL", 101, false, "2026-04-24T00:01:00Z"),
-      order("o3", "SELL", 102, true, "2026-04-24T00:02:00Z", "SL"),
-      order("o4", "BUY", 103, true, "2026-04-24T00:03:00Z", "PT"),
+      order("o1", "BUY", 100, false, "2026-04-24T00:00:00Z", "", "", "proposalMetadata", "OPEN_LONG", "开多"),
+      order("o2", "SELL", 101, false, "2026-04-24T00:01:00Z", "", "", "proposalMetadata", "OPEN_SHORT", "开空"),
+      order("o3", "SELL", 102, true, "2026-04-24T00:02:00Z", "SL", "", "proposalMetadata", "CLOSE_LONG", "平多"),
+      order("o4", "BUY", 103, true, "2026-04-24T00:03:00Z", "PT", "", "proposalMetadata", "CLOSE_SHORT", "平空"),
     ];
 
     const markers = deriveSessionMarkers(session, orders, []);
@@ -30,6 +30,24 @@ describe("monitor chart marker labels", () => {
     ]);
   });
 
+  it("degrades missing order intent instead of inferring from side and reduceOnly", () => {
+    const session = { id: "live-1", strategyId: "strategy-1" } as any;
+    const orders: Order[] = [
+      order("o1", "SELL", 102, true, "2026-04-24T00:02:00Z", "SL"),
+    ];
+    const candles: SignalBarCandle[] = [
+      candle("2026-04-24T00:02:00Z"),
+      candle("2026-04-24T00:03:00Z"),
+      candle("2026-04-24T00:04:00Z"),
+    ];
+
+    const markers = deriveSessionMarkers(session, orders, []);
+    const { overlays } = deriveSignalMonitorDecorations(session, candles, null, orders, []);
+
+    expect(markers[0].text).toBe("未知 SL 102.00");
+    expect(overlays[0].lineStyle).toBe("dotted");
+  });
+
   it("anchors order markers to the signal bar trade limit key", () => {
     const session = { id: "live-1", strategyId: "strategy-1" } as any;
     const orders: Order[] = [
@@ -40,7 +58,10 @@ describe("monitor chart marker labels", () => {
         true,
         "2026-04-30T00:41:02Z",
         "SL",
-        "BTCUSDT|30m|2026-04-30T00:30:00Z"
+        "BTCUSDT|30m|2026-04-30T00:30:00Z",
+        "proposalMetadata",
+        "CLOSE_LONG",
+        "平多"
       ),
     ];
 
@@ -61,7 +82,9 @@ describe("monitor chart marker labels", () => {
         "2026-04-30T00:33:51Z",
         "",
         "BTCUSDT|30m|2026-04-30T00:30:00Z",
-        "proposalTopLevel"
+        "proposalTopLevel",
+        "OPEN_LONG",
+        "开多"
       ),
     ];
 
@@ -86,7 +109,10 @@ describe("monitor chart marker labels", () => {
         true,
         "2026-04-30T00:41:02Z",
         "SL",
-        "BTCUSDT|30m|2026-04-30T00:30:00Z"
+        "BTCUSDT|30m|2026-04-30T00:30:00Z",
+        "proposalMetadata",
+        "CLOSE_LONG",
+        "平多"
       ),
     ];
     const fills: Fill[] = [
@@ -348,14 +374,16 @@ function order(
   createdAt: string,
   reason = "",
   signalBarTradeLimitKey = "",
-  signalBarTradeLimitKeyPlacement: "proposalMetadata" | "proposalTopLevel" | "intentMetadata" | "orderMetadata" = "proposalMetadata"
+  signalBarTradeLimitKeyPlacement: "proposalMetadata" | "proposalTopLevel" | "intentMetadata" | "orderMetadata" = "proposalMetadata",
+  intent = "",
+  intentLabel = ""
 ): Order {
   const executionProposal: Record<string, unknown> = {
     role: reduceOnly ? "exit" : "entry",
     reason,
     reduceOnly,
   };
-  const intent: Record<string, unknown> = {};
+  const intentMetadata: Record<string, unknown> = {};
   const metadata: Record<string, unknown> = {
     liveSessionId: "live-1",
     reduceOnly,
@@ -365,8 +393,8 @@ function order(
     if (signalBarTradeLimitKeyPlacement === "proposalTopLevel") {
       executionProposal.signalBarTradeLimitKey = signalBarTradeLimitKey;
     } else if (signalBarTradeLimitKeyPlacement === "intentMetadata") {
-      intent.metadata = { signalBarTradeLimitKey };
-      metadata.intent = intent;
+      intentMetadata.metadata = { signalBarTradeLimitKey };
+      metadata.intent = intentMetadata;
     } else if (signalBarTradeLimitKeyPlacement === "orderMetadata") {
       metadata.signalBarTradeLimitKey = signalBarTradeLimitKey;
     } else {
@@ -383,6 +411,8 @@ function order(
     quantity: 0.01,
     price,
     reduceOnly,
+    intent: intent || undefined,
+    intentLabel: intentLabel || undefined,
     metadata,
     createdAt,
   };
