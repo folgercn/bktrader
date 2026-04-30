@@ -1,0 +1,27 @@
+{
+  "chains": [],
+  "orphans": [
+    {
+      "orderId": "close-short-while-long-open",
+      "intent": "CLOSE_SHORT",
+      "reason": "no_matching_position"
+    }
+  ],
+  "violations": [
+    {
+      "orderId": "close-short-while-long-open",
+      "code": "REDUCE_ONLY_WITHOUT_POSITION",
+      "message": "CLOSE_SHORT has no matching virtual position"
+    },
+    {
+      "orderId": "close-short-while-long-open",
+      "code": "EXIT_WITHOUT_POSITION",
+      "message": "CLOSE_SHORT has no matching virtual position"
+    },
+    {
+      "orderId": "close-short-while-long-open",
+      "code": "UNSUPPORTED_REVERSAL",
+      "message": "CLOSE_SHORT cannot close the opposite virtual position in replay v1"
+    }
+  ]
+}

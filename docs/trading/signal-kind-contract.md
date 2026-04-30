@@ -8,12 +8,15 @@
 | signalKind              | 允许的 Intent                    | 说明           |
 |-------------------------|--------------------------------|----------------|
 | `initial`               | `OPEN_LONG`, `OPEN_SHORT`      | 初始建仓       |
+| `initial-entry`         | `OPEN_LONG`, `OPEN_SHORT`      | 初始建仓事件别名 |
+| `entry`                 | `OPEN_LONG`, `OPEN_SHORT`      | 通用入场事件别名 |
 | `zero-initial-reentry`  | `OPEN_LONG`, `OPEN_SHORT`      | 零仓再入场     |
 | `sl-reentry`            | `OPEN_LONG`, `OPEN_SHORT`      | 止损后再入场   |
 | `pt-reentry`            | `OPEN_LONG`, `OPEN_SHORT`      | 止盈后再入场   |
 | `risk-exit`             | `CLOSE_LONG`, `CLOSE_SHORT`    | 风险退出       |
 | `sl`                    | `CLOSE_LONG`, `CLOSE_SHORT`    | 止损           |
 | `pt`                    | `CLOSE_LONG`, `CLOSE_SHORT`    | 止盈           |
+| `protect-exit`          | `CLOSE_LONG`, `CLOSE_SHORT`    | 保护性退出     |
 | `recovery-watchdog`     | `CLOSE_LONG`, `CLOSE_SHORT`    | 恢复看门狗平仓 |
 
 ## 规则

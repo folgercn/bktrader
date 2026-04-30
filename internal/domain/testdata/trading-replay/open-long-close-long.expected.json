@@ -1,0 +1,20 @@
+{
+  "chains": [
+    {
+      "chainType": "OPEN_LONG_CLOSE_LONG",
+      "entryOrderIds": [
+        "order-1777471086379688754"
+      ],
+      "exitOrderIds": [
+        "order-1777471148180758130"
+      ],
+      "entryIntents": [
+        "OPEN_LONG"
+      ],
+      "exitIntents": [
+        "CLOSE_LONG"
+      ],
+      "display": "开多 → 平多"
+    }
+  ]
+}

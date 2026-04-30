@@ -1,0 +1,17 @@
+[
+  {
+    "id": "entry-long-small",
+    "side": "BUY",
+    "quantity": 0.1,
+    "status": "FILLED",
+    "signalKind": "zero-initial-reentry"
+  },
+  {
+    "id": "exit-long-too-large",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  }
+]

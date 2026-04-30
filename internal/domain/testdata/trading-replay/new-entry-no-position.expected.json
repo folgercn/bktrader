@@ -1,0 +1,29 @@
+{
+  "chains": [],
+  "ignored": [
+    {
+      "orderId": "new-entry",
+      "intent": "OPEN_LONG",
+      "reason": "not_filled"
+    }
+  ],
+  "orphans": [
+    {
+      "orderId": "exit-after-new-entry",
+      "intent": "CLOSE_LONG",
+      "reason": "no_matching_position"
+    }
+  ],
+  "violations": [
+    {
+      "orderId": "exit-after-new-entry",
+      "code": "REDUCE_ONLY_WITHOUT_POSITION",
+      "message": "CLOSE_LONG has no matching virtual position"
+    },
+    {
+      "orderId": "exit-after-new-entry",
+      "code": "EXIT_WITHOUT_POSITION",
+      "message": "CLOSE_LONG has no matching virtual position"
+    }
+  ]
+}

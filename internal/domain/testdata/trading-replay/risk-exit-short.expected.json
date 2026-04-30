@@ -1,0 +1,20 @@
+{
+  "chains": [
+    {
+      "chainType": "OPEN_SHORT_CLOSE_SHORT",
+      "entryOrderIds": [
+        "entry-short"
+      ],
+      "exitOrderIds": [
+        "risk-exit-short"
+      ],
+      "entryIntents": [
+        "OPEN_SHORT"
+      ],
+      "exitIntents": [
+        "CLOSE_SHORT"
+      ],
+      "display": "开空 → 平空"
+    }
+  ]
+}

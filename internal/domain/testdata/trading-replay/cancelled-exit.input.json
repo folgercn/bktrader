@@ -1,0 +1,17 @@
+[
+  {
+    "id": "entry-before-cancelled-exit",
+    "side": "BUY",
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "zero-initial-reentry"
+  },
+  {
+    "id": "cancelled-exit",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "CANCELLED",
+    "signalKind": "risk-exit"
+  }
+]

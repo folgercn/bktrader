@@ -28,6 +28,8 @@
 - **intent 与 Status 无关**：即使订单 Status = CANCELLED，intent 仍然可分类（用于回归和展示）
 - **intent 不参与结算**：结算和持仓更新严格基于交易所返回的 fills 和 status 事实
 - **intent 只用于**：展示、回归验证、审计追溯
+- **链路级语义必须跑 Replay Harness**：开仓 / 平仓 / 撤单 / `risk-exit` 相关改动需要通过 `go test ./internal/domain/... -run TestTradingReplayGoldenCases`
+- **Replay over-close 语义**：`chains` 表示已成功匹配的仓位部分；`violations` 表示 exit 数量中未匹配的剩余超量。
 
 ## 未来扩展：Hedge Mode（positionSide = LONG/SHORT）
 

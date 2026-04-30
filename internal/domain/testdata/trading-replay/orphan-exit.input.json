@@ -1,0 +1,10 @@
+[
+  {
+    "id": "orphan-exit",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  }
+]

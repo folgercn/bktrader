@@ -1,0 +1,22 @@
+{
+  "chains": [],
+  "orphans": [
+    {
+      "orderId": "orphan-exit",
+      "intent": "CLOSE_LONG",
+      "reason": "no_matching_position"
+    }
+  ],
+  "violations": [
+    {
+      "orderId": "orphan-exit",
+      "code": "REDUCE_ONLY_WITHOUT_POSITION",
+      "message": "CLOSE_LONG has no matching virtual position"
+    },
+    {
+      "orderId": "orphan-exit",
+      "code": "EXIT_WITHOUT_POSITION",
+      "message": "CLOSE_LONG has no matching virtual position"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "order-1777475288746567463",
+    "side": "BUY",
+    "quantity": 0.2,
+    "status": "CANCELLED",
+    "signalKind": "zero-initial-reentry"
+  },
+  {
+    "id": "order-1777475288746567464",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  }
+]

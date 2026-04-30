@@ -1,0 +1,10 @@
+{
+  "chains": [],
+  "violations": [
+    {
+      "orderId": "unknown-side-filled",
+      "code": "UNKNOWN_INTENT",
+      "message": "order intent is UNKNOWN"
+    }
+  ]
+}

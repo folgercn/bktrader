@@ -1,0 +1,17 @@
+[
+  {
+    "id": "order-1777486182526885338",
+    "side": "SELL",
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "initial-entry"
+  },
+  {
+    "id": "order-1777486257764774887",
+    "side": "BUY",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  }
+]
