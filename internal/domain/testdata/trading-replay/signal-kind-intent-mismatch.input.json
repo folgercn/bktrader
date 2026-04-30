@@ -1,0 +1,17 @@
+[
+  {
+    "id": "mismatch-risk-exit-open",
+    "side": "BUY",
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  },
+  {
+    "id": "mismatch-entry-close",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "zero-initial-reentry"
+  }
+]

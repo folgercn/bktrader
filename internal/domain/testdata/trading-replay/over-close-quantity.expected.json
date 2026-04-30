@@ -1,0 +1,27 @@
+{
+  "chains": [
+    {
+      "chainType": "OPEN_LONG_CLOSE_LONG",
+      "entryOrderIds": [
+        "entry-long-small"
+      ],
+      "exitOrderIds": [
+        "exit-long-too-large"
+      ],
+      "entryIntents": [
+        "OPEN_LONG"
+      ],
+      "exitIntents": [
+        "CLOSE_LONG"
+      ],
+      "display": "开多 → 平多"
+    }
+  ],
+  "violations": [
+    {
+      "orderId": "exit-long-too-large",
+      "code": "QUANTITY_MISMATCH",
+      "message": "CLOSE_LONG quantity 0.20000000 exceeds matching virtual position by 0.10000000"
+    }
+  ]
+}

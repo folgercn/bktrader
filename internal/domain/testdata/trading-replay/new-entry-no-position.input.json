@@ -1,0 +1,17 @@
+[
+  {
+    "id": "new-entry",
+    "side": "BUY",
+    "quantity": 0.2,
+    "status": "NEW",
+    "signalKind": "zero-initial-reentry"
+  },
+  {
+    "id": "exit-after-new-entry",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  }
+]

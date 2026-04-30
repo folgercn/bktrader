@@ -1,0 +1,17 @@
+[
+  {
+    "id": "entry-short",
+    "side": "SELL",
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "initial-entry"
+  },
+  {
+    "id": "risk-exit-short",
+    "side": "BUY",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  }
+]

@@ -140,6 +140,9 @@ jobs:
       - name: Trading Harness Golden Cases
         run: go test ./internal/domain/... -run TestClassifyOrderIntent -v
 
+      - name: Trading Replay Harness Golden Cases
+        run: go test ./internal/domain/... -run TestTradingReplayGoldenCases -v
+
       - name: Build platform API
         run: go build ./cmd/platform-api
 

@@ -1,0 +1,19 @@
+[
+  {
+    "id": "entry-long",
+    "side": "BUY",
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "zero-initial-reentry"
+  },
+  {
+    "id": "risk-exit-long",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "metadata": {
+      "signalKind": "risk-exit"
+    }
+  }
+]

@@ -1,0 +1,25 @@
+[
+  {
+    "id": "entry-long-qty",
+    "side": "BUY",
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "zero-initial-reentry"
+  },
+  {
+    "id": "exit-long-half-1",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.1,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  },
+  {
+    "id": "exit-long-half-2",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.1,
+    "status": "FILLED",
+    "signalKind": "protect-exit"
+  }
+]

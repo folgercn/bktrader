@@ -1,0 +1,10 @@
+{
+  "chains": [],
+  "ignored": [
+    {
+      "orderId": "cancelled-exit",
+      "intent": "CLOSE_LONG",
+      "reason": "cancelled_exit"
+    }
+  ]
+}

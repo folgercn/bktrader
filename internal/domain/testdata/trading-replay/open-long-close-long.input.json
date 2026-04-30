@@ -1,0 +1,18 @@
+[
+  {
+    "id": "order-1777471086379688754",
+    "time": "2026-04-29T13:58:06.379689Z",
+    "side": "BUY",
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "zero-initial-reentry"
+  },
+  {
+    "id": "order-1777471148180758130",
+    "side": "SELL",
+    "reduceOnly": true,
+    "quantity": 0.2,
+    "status": "FILLED",
+    "signalKind": "risk-exit"
+  }
+]

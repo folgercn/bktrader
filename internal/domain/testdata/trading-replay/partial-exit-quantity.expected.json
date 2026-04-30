@@ -1,0 +1,36 @@
+{
+  "chains": [
+    {
+      "chainType": "OPEN_LONG_CLOSE_LONG",
+      "entryOrderIds": [
+        "entry-long-qty"
+      ],
+      "exitOrderIds": [
+        "exit-long-half-1"
+      ],
+      "entryIntents": [
+        "OPEN_LONG"
+      ],
+      "exitIntents": [
+        "CLOSE_LONG"
+      ],
+      "display": "开多 → 平多"
+    },
+    {
+      "chainType": "OPEN_LONG_CLOSE_LONG",
+      "entryOrderIds": [
+        "entry-long-qty"
+      ],
+      "exitOrderIds": [
+        "exit-long-half-2"
+      ],
+      "entryIntents": [
+        "OPEN_LONG"
+      ],
+      "exitIntents": [
+        "CLOSE_LONG"
+      ],
+      "display": "开多 → 平多"
+    }
+  ]
+}

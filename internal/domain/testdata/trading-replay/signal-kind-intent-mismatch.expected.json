@@ -1,0 +1,32 @@
+{
+  "chains": [
+    {
+      "chainType": "OPEN_LONG_CLOSE_LONG",
+      "entryOrderIds": [
+        "mismatch-risk-exit-open"
+      ],
+      "exitOrderIds": [
+        "mismatch-entry-close"
+      ],
+      "entryIntents": [
+        "OPEN_LONG"
+      ],
+      "exitIntents": [
+        "CLOSE_LONG"
+      ],
+      "display": "开多 → 平多"
+    }
+  ],
+  "violations": [
+    {
+      "orderId": "mismatch-risk-exit-open",
+      "code": "SIGNAL_KIND_INTENT_MISMATCH",
+      "message": "signalKind \"risk-exit\" expects exit intent, got OPEN_LONG"
+    },
+    {
+      "orderId": "mismatch-entry-close",
+      "code": "SIGNAL_KIND_INTENT_MISMATCH",
+      "message": "signalKind \"zero-initial-reentry\" expects entry intent, got CLOSE_LONG"
+    }
+  ]
+}

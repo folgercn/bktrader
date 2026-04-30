@@ -22,6 +22,7 @@ _是否涉及默认行为、交易路径、部署流程、环境变量_
 - [ ] 本次改动是否新增/修改了 `signalKind`？若是，需同步更新 Golden Case
 - [ ] 本次改动是否影响订单方向判断（`side` / `reduceOnly` / `closePosition`）？
 - [ ] 若涉及上述改动，`go test ./internal/domain/... -run TestClassifyOrderIntent` 是否通过？
+- [ ] 若涉及交易链路语义（开仓/平仓/撤单/risk-exit），`go test ./internal/domain/... -run TestTradingReplayGoldenCases` 是否通过？
 
 ## 验证方式与测试证据
 _本地怎么测，测试环境怎么验_
