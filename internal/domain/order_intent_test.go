@@ -99,6 +99,26 @@ func TestClassifyOrderIntent_GoldenCases(t *testing.T) {
 			display:  "平空",
 		},
 
+		// === 组 F：Metadata 中 string 类型的标志位（覆盖 orderFlagValue 的 string 分支）===
+		{
+			name: "SELL with metadata reduceOnly=\"true\" (string) → CLOSE_LONG",
+			order: Order{
+				Side:     "SELL",
+				Metadata: map[string]any{"reduceOnly": "true"},
+			},
+			expected: OrderIntentCloseLong,
+			display:  "平多",
+		},
+		{
+			name: "BUY with metadata closePosition=\" true \" (string with spaces) → CLOSE_SHORT",
+			order: Order{
+				Side:     "BUY",
+				Metadata: map[string]any{"closePosition": " true "},
+			},
+			expected: OrderIntentCloseShort,
+			display:  "平空",
+		},
+
 		// === 边界 case ===
 		{
 			name:     "空 side → UNKNOWN",
