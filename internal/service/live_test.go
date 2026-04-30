@@ -8490,6 +8490,7 @@ func TestRefreshLiveSessionPositionContextDoesNotCrossProtectedBoundary(t *testi
 		"openOrders": []map[string]any{
 			{
 				"symbol":        "BTCUSDT",
+				"side":          "SELL",
 				"origType":      "STOP_MARKET",
 				"reduceOnly":    true,
 				"closePosition": true,
@@ -8833,6 +8834,7 @@ func TestRefreshLiveSessionPositionContextTracksActiveReduceOnlyExitOrder(t *tes
 		"openOrders": []map[string]any{
 			{
 				"symbol":     "BTCUSDT",
+				"side":       "SELL",
 				"origType":   "MARKET",
 				"type":       "MARKET",
 				"status":     "NEW",
@@ -8888,6 +8890,123 @@ func TestRefreshLiveSessionPositionContextTracksActiveReduceOnlyExitOrder(t *tes
 	}
 	if got := stringValue(updated.State["watchdogExitStatus"]); got != "order-working" {
 		t.Fatalf("expected watchdog order-working status, got %s", got)
+	}
+}
+
+func TestRecoveryMapOrderIntentUsesDomainClassifier(t *testing.T) {
+	cases := []struct {
+		name  string
+		order map[string]any
+		want  domain.OrderIntent
+	}{
+		{
+			name: "top-level reduce-only sell closes long",
+			order: map[string]any{
+				"id":         "order-1",
+				"side":       "SELL",
+				"status":     "NEW",
+				"quantity":   "0.010",
+				"reduceOnly": true,
+			},
+			want: domain.OrderIntentCloseLong,
+		},
+		{
+			name: "metadata close-position buy closes short",
+			order: map[string]any{
+				"orderId": "order-2",
+				"status":  "NEW",
+				"metadata": map[string]any{
+					"side":          "BUY",
+					"quantity":      0.02,
+					"closePosition": "true",
+				},
+			},
+			want: domain.OrderIntentCloseShort,
+		},
+		{
+			name: "execution proposal metadata supplies legacy side and reduce-only",
+			order: map[string]any{
+				"clientOrderId": "order-3",
+				"status":        "NEW",
+				"metadata": map[string]any{
+					"executionProposal": map[string]any{
+						"side":       "SELL",
+						"quantity":   0.03,
+						"reduceOnly": true,
+					},
+				},
+			},
+			want: domain.OrderIntentCloseLong,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			domainOrder := recoveryMapToDomainOrder(tc.order)
+			if got := domain.ClassifyOrderIntent(domainOrder); got != tc.want {
+				t.Fatalf("ClassifyOrderIntent(recoveryMapToDomainOrder()) = %s, want %s, order=%+v", got, tc.want, domainOrder)
+			}
+		})
+	}
+}
+
+func TestRecoveryMapOrderHasExitFlagsKeepsMissingSideFailSafe(t *testing.T) {
+	order := map[string]any{
+		"orderId":    "missing-side-exit",
+		"status":     "NEW",
+		"reduceOnly": true,
+	}
+	if got := recoveryMapOrderIntent(order); got != domain.OrderIntentUnknown {
+		t.Fatalf("expected missing side to classify UNKNOWN, got %s", got)
+	}
+	if !recoveryMapOrderHasExitFlags(order) {
+		t.Fatal("expected missing-side reduceOnly order to retain fail-safe exit flag")
+	}
+	if !isProtectionOrder(order) {
+		t.Fatal("expected missing-side reduceOnly order to remain a protection order")
+	}
+}
+
+func TestActiveLiveWatchdogExitOrderUsesRecoveryMapClassifier(t *testing.T) {
+	order, ok := activeLiveWatchdogExitOrder([]map[string]any{
+		{
+			"orderId":  "entry-order",
+			"side":     "BUY",
+			"status":   "NEW",
+			"quantity": 0.01,
+		},
+		{
+			"orderId": "exit-order",
+			"status":  "NEW",
+			"metadata": map[string]any{
+				"executionProposal": map[string]any{
+					"side":       "SELL",
+					"quantity":   0.01,
+					"reduceOnly": true,
+				},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected active exit order from recovery map classifier")
+	}
+	if got := liveWatchdogExitOrderID(order); got != "exit-order" {
+		t.Fatalf("expected exit-order, got %s", got)
+	}
+}
+
+func TestActiveLiveWatchdogExitOrderKeepsMissingSideReduceOnlyFailSafe(t *testing.T) {
+	order, ok := activeLiveWatchdogExitOrder([]map[string]any{
+		{
+			"orderId":    "missing-side-exit-order",
+			"status":     "NEW",
+			"reduceOnly": true,
+		},
+	})
+	if !ok {
+		t.Fatal("expected missing-side reduceOnly order to remain active watchdog exit")
+	}
+	if got := liveWatchdogExitOrderID(order); got != "missing-side-exit-order" {
+		t.Fatalf("expected missing-side-exit-order, got %s", got)
 	}
 }
 
