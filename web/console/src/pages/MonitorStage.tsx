@@ -10,13 +10,14 @@ import {
   resolveChartAnchor,
   buildTimeRange,
   deriveSignalBarCandles,
+  deriveSignalBarStateCandles,
   mapChartCandlesToSignalBarCandles,
   derivePrimarySignalBarState, 
   deriveRuntimeMarketSnapshot, 
   deriveSessionMarkers,
   deriveSignalMonitorDecorations,
   derivePaperSessionExecutionSummary,
-  deriveHighlightedLiveSession,
+  deriveSelectedOrHighlightedLiveSession,
   deriveLiveDispatchPreview,
   deriveLiveSessionFlow,
   deriveRuntimeSourceSummary,
@@ -169,18 +170,7 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
 
   // 1. 高亮会话选择逻辑
   const highlightedLiveSession = useMemo(
-    () => {
-      if (selectedSignalRuntimeId) {
-        const sessionWithRuntime = liveSessions.find(s => 
-          s.id === selectedSignalRuntimeId || 
-          String(s.state?.signalRuntimeSessionId) === selectedSignalRuntimeId
-        );
-        if (sessionWithRuntime) {
-          return deriveHighlightedLiveSession([sessionWithRuntime], orders, fills, positions);
-        }
-      }
-      return deriveHighlightedLiveSession(liveSessions, orders, fills, positions);
-    },
+    () => deriveSelectedOrHighlightedLiveSession(liveSessions, selectedSignalRuntimeId, orders, fills, positions),
     [liveSessions, orders, fills, positions, selectedSignalRuntimeId]
   );
 
@@ -295,12 +285,24 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorSymbol = monitorSignalSymbol || sessionSymbol;
 
   const monitorBars = useMemo(() => {
-    return deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), {
+    const sourceBars = deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), {
       targetSymbol: monitorSymbol,
       targetTimeframe: monitorSignalTimeframe,
       targetStateKey: monitorSignalBarStateKey,
     });
-  }, [highlightedLiveRuntimeState.sourceStates, monitorSymbol, monitorSignalTimeframe, monitorSignalBarStateKey]);
+    const stateBars = deriveSignalBarStateCandles(getRecord(highlightedLiveRuntimeState.signalBarStates), {
+      targetSymbol: monitorSymbol,
+      targetTimeframe: monitorSignalTimeframe,
+      targetStateKey: monitorSignalBarStateKey,
+    });
+    return mergeSignalBars(sourceBars, stateBars);
+  }, [
+    highlightedLiveRuntimeState.sourceStates,
+    highlightedLiveRuntimeState.signalBarStates,
+    monitorSymbol,
+    monitorSignalTimeframe,
+    monitorSignalBarStateKey,
+  ]);
 
   const fallbackResolution = useMemo(
     () => resolveMonitorFallbackResolution(monitorSignalTimeframe),
@@ -390,7 +392,10 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
           return;
         }
         console.warn("Failed to load monitor fallback candles", error);
-        fallbackRequestKeyRef.current = "";
+        candleCacheRef.current[requestKey] = {
+          candles: [],
+          fetchedAt: Date.now(),
+        };
         setMonitorCandles([]);
       });
 

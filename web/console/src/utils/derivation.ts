@@ -687,6 +687,117 @@ export function deriveSignalBarCandles(
   return candles.slice(-120);
 }
 
+function normalizeSignalBarStart(value: unknown): string {
+  if (value == null || value === "") {
+    return "";
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  const raw = String(value).trim();
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    const millis = parsed > 10_000_000_000 ? parsed : parsed * 1000;
+    return new Date(millis).toISOString();
+  }
+  const timestamp = Date.parse(raw);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
+}
+
+function signalBarStateCandleFromRecord(
+  bar: Record<string, unknown>,
+  fallbackSymbol: string,
+  fallbackTimeframe: string,
+  fallbackClosed: boolean,
+  targetSymbol: string,
+  targetTimeframe: string
+): SignalBarCandle | null {
+  const barSymbol = normalizeSignalSymbol(bar.symbol ?? fallbackSymbol);
+  const barTimeframe = normalizeSignalTimeframe(bar.timeframe ?? fallbackTimeframe);
+  if (targetSymbol && barSymbol && barSymbol !== targetSymbol) {
+    return null;
+  }
+  if (targetTimeframe && barTimeframe && barTimeframe !== targetTimeframe) {
+    return null;
+  }
+  const time = normalizeSignalBarStart(bar.barStart ?? bar.time ?? bar.openTime ?? bar.startTime);
+  const open = getNumber(bar.open);
+  const high = getNumber(bar.high);
+  const low = getNumber(bar.low);
+  const close = getNumber(bar.close);
+  if (!time || open == null || high == null || low == null || close == null) {
+    return null;
+  }
+  return {
+    time,
+    open,
+    high,
+    low,
+    close,
+    timeframe: String(bar.timeframe ?? fallbackTimeframe ?? "--"),
+    isClosed: bar.isClosed == null ? fallbackClosed : Boolean(bar.isClosed),
+  };
+}
+
+export function deriveSignalBarStateCandles(
+  signalBarStates: Record<string, unknown>,
+  options?: Omit<SignalBarSelectionOptions, "fallbackStates">
+): SignalBarCandle[] {
+  const targetStateKey = String(options?.targetStateKey ?? "").trim();
+  const targetSymbol = normalizeSignalSymbol(options?.targetSymbol);
+  const targetTimeframe = normalizeSignalTimeframe(options?.targetTimeframe);
+  const candidateEntries = targetStateKey
+    ? Object.entries(signalBarStates).filter(([key]) => key === targetStateKey)
+    : Object.entries(signalBarStates);
+  const byTime = new Map<string, SignalBarCandle>();
+
+  for (const [, value] of candidateEntries) {
+    const state = getRecord(value);
+    if (Object.keys(state).length === 0) {
+      continue;
+    }
+    const stateSymbol = normalizeSignalSymbol(state.symbol ?? getRecord(state.current).symbol);
+    const stateTimeframe = normalizeSignalTimeframe(state.timeframe ?? getRecord(state.current).timeframe);
+    if (targetSymbol && stateSymbol && stateSymbol !== targetSymbol) {
+      continue;
+    }
+    if (targetTimeframe && stateTimeframe && stateTimeframe !== targetTimeframe) {
+      continue;
+    }
+
+    const bars = Array.isArray(state.bars)
+      ? (state.bars as Array<Record<string, unknown>>).map((bar) => ({ bar, fallbackClosed: false }))
+      : [];
+    const namedBars = ["prevBar4", "prevBar3", "prevBar2", "prevBar1", "current"]
+      .map((key) => ({ bar: getRecord(state[key]), fallbackClosed: key !== "current" }))
+      .filter((item) => Object.keys(item.bar).length > 0);
+    for (const { bar, fallbackClosed } of [...bars, ...namedBars]) {
+      const candle = signalBarStateCandleFromRecord(
+        bar,
+        stateSymbol,
+        stateTimeframe,
+        fallbackClosed,
+        targetSymbol,
+        targetTimeframe
+      );
+      if (candle) {
+        byTime.set(candle.time, candle);
+      }
+    }
+  }
+
+  if (byTime.size === 0 && targetStateKey) {
+    return deriveSignalBarStateCandles(signalBarStates, {
+      targetSymbol: options?.targetSymbol,
+      targetTimeframe: options?.targetTimeframe,
+    });
+  }
+
+  return Array.from(byTime.values())
+    .sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
+    .slice(-120);
+}
+
 export function mapChartCandlesToSignalBarCandles(candles: ChartCandle[], timeframe: string): SignalBarCandle[] {
   return candles.map((item) => ({
     time: item.time,
@@ -1180,13 +1291,44 @@ export function deriveSessionMarkers(session: LiveSession | PaperSession | null,
     const isBuy = side === "BUY";
     const markerText = executionOrderMarkerText(order);
     return {
-      time: fill?.createdAt || order.createdAt,
+      time: resolveExecutionOrderSignalBarTime(order) || fill?.createdAt || order.createdAt,
       position: isBuy ? "belowBar" : "aboveBar",
       color: isBuy ? "#0e6d60" : "#b04a37",
       shape: isBuy ? "arrowUp" : "arrowDown",
       text: `${markerText} ${formatMaybeNumber(order.price)}`,
     };
   });
+}
+
+function executionOrderSignalBarTradeLimitKey(order: Order): string {
+  const metadata = getRecord(order.metadata);
+  const proposal = getRecord(metadata.executionProposal);
+  const intent = getRecord(metadata.intent);
+  const candidates = [
+    metadata.signalBarTradeLimitKey,
+    proposal.signalBarTradeLimitKey,
+    getRecord(proposal.metadata).signalBarTradeLimitKey,
+    intent.signalBarTradeLimitKey,
+    getRecord(intent.metadata).signalBarTradeLimitKey,
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate ?? "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function resolveExecutionOrderSignalBarTime(order: Order): string {
+  const key = executionOrderSignalBarTradeLimitKey(order);
+  const parts = key.split("|");
+  const candidate = parts.length >= 3 ? parts.slice(2).join("|") : "";
+  if (!candidate) {
+    return "";
+  }
+  const parsed = Date.parse(candidate);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : "";
 }
 
 function executionOrderMarkerText(order: Order): string {
@@ -1236,6 +1378,10 @@ function executionOrderPositionSide(side: string, isExit: boolean): "LONG" | "SH
 
 function normalizeExecutionReasonTag(reason: string): string {
   return reason.trim().toLowerCase().replace(/_/g, "-");
+}
+
+function executionOrderMarkerColor(order: Order): string {
+  return String(order.side ?? "").trim().toUpperCase() === "BUY" ? "#0e6d60" : "#b04a37";
 }
 
 function compactExecutionReasonLabel(reason: string): string {
@@ -1347,6 +1493,33 @@ export function deriveSignalMonitorDecorations(
     });
   }
 
+  const sessionOrders = resolveSessionOrders(session, orders);
+  const fillByOrderId = new Map(fills.map((fill) => [fill.orderId, fill] as const));
+  for (const order of sessionOrders.slice(-24)) {
+    const price = getNumber(fillByOrderId.get(order.id)?.price) ?? getNumber(order.price);
+    if (price == null || price <= 0) {
+      continue;
+    }
+    const orderTime = clampAnnotationTime(
+      resolveExecutionOrderSignalBarTime(order) || fillByOrderId.get(order.id)?.createdAt || order.createdAt,
+      visibleStart,
+      visibleEnd
+    );
+    if (!orderTime) {
+      continue;
+    }
+    const nextCandleTime =
+      candles.find((item) => Date.parse(item.time) > Date.parse(orderTime))?.time ??
+      new Date(Date.parse(orderTime) + signalBarResolutionSeconds(candles[0]?.timeframe ?? "") * 1000).toISOString();
+    overlays.push({
+      startTime: orderTime,
+      endTime: nextCandleTime,
+      price,
+      color: executionOrderMarkerColor(order),
+      lineStyle: isExitOrderMarker(order) ? "solid" : "dotted",
+    });
+  }
+
   if (!position || Math.abs(Number(position.quantity ?? 0)) <= 0 || !visibleEnd) {
     return { markers, overlays };
   }
@@ -1360,8 +1533,6 @@ export function deriveSignalMonitorDecorations(
     return { markers, overlays };
   }
 
-  const sessionOrders = resolveSessionOrders(session, orders);
-  const fillByOrderId = new Map(fills.map((fill) => [fill.orderId, fill] as const));
   const normalizedSide = String(position.side ?? livePositionState.side ?? "").trim().toUpperCase();
   const entrySide = normalizedSide === "SHORT" ? "SELL" : "BUY";
   const entryOrder = [...sessionOrders]
@@ -1487,6 +1658,59 @@ export function deriveHighlightedLiveSession(
     })
     .sort((left, right) => right.priority - left.priority || Date.parse(right.session.createdAt) - Date.parse(left.session.createdAt));
   return ranked[0] ?? null;
+}
+
+export function deriveSelectedOrHighlightedLiveSession(
+  sessions: LiveSession[],
+  selectedSessionOrRuntimeId: string | null | undefined,
+  orders: Order[],
+  fills: Fill[],
+  positions: Position[]
+): HighlightedLiveSession {
+  const highlighted = deriveHighlightedLiveSession(sessions, orders, fills, positions);
+  const selectedID = String(selectedSessionOrRuntimeId ?? "").trim();
+  if (!selectedID) {
+    return highlighted;
+  }
+  const selectedSession = sessions.find(
+    (session) => session.id === selectedID || String(session.state?.signalRuntimeSessionId ?? "") === selectedID
+  );
+  if (!selectedSession) {
+    return highlighted;
+  }
+  const selected = deriveHighlightedLiveSession([selectedSession], orders, fills, positions);
+  if (!selected || !highlighted || selected.session.id === highlighted.session.id) {
+    return selected;
+  }
+
+  const selectedState = getRecord(selected.session.state);
+  const selectedHasRuntimeData = !!String(
+    selectedState.signalRuntimeSessionId ??
+      selectedState.lastSignalRuntimeSessionId ??
+      selectedState.signalRuntimeStatus ??
+      selectedState.lastSignalRuntimeEventAt ??
+      ""
+  ).trim();
+  const selectedHasStrategyActivity =
+    Object.keys(getRecord(selectedState.lastStrategyIntent)).length > 0 ||
+    !!String(
+      selectedState.lastStrategyEvaluationStatus ??
+        selectedState.lastStrategyDecisionAt ??
+        selectedState.lastStrategyTriggerErrorAt ??
+        ""
+    ).trim();
+  const selectedIsEmptySeed =
+    liveSessionHealthPriority(selected.health.status) === 0 &&
+    selected.execution.orderCount === 0 &&
+    selected.execution.fillCount === 0 &&
+    !selected.execution.position &&
+    !selectedHasRuntimeData &&
+    !selectedHasStrategyActivity;
+  if (selectedIsEmptySeed && liveSessionHealthPriority(highlighted.health.status) > liveSessionHealthPriority(selected.health.status)) {
+    return highlighted;
+  }
+
+  return selected;
 }
 
 export function deriveLiveSessionFlow(session: LiveSession, summary: LiveSessionExecutionSummary): LiveSessionFlowStep[] {

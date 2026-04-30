@@ -11,7 +11,7 @@ import { useTradingStore } from './store/useTradingStore';
 import { useDashboard } from './hooks/useDashboard';
 import { useTradingActions } from './hooks/useTradingActions';
 import { fetchJSON } from './utils/api';
-import { deriveHighlightedLiveSession } from './utils/derivation';
+import { deriveSelectedOrHighlightedLiveSession } from './utils/derivation';
 
 // Layout Components
 import { HeaderMetrics } from './components/layout/HeaderMetrics';
@@ -93,17 +93,7 @@ export default function App() {
 
   const selectedSignalRuntimeId = useTradingStore(s => s.selectedSignalRuntimeId);
   const monitorSessionId = useMemo(() => {
-    if (selectedSignalRuntimeId) {
-      const sessionWithRuntime = liveSessions.find(s => 
-        s.id === selectedSignalRuntimeId || 
-        String(s.state?.signalRuntimeSessionId) === selectedSignalRuntimeId
-      );
-      if (sessionWithRuntime) {
-        const highlighted = deriveHighlightedLiveSession([sessionWithRuntime], orders, fills, positions);
-        return highlighted?.session.id || null;
-      }
-    }
-    const highlighted = deriveHighlightedLiveSession(liveSessions, orders, fills, positions);
+    const highlighted = deriveSelectedOrHighlightedLiveSession(liveSessions, selectedSignalRuntimeId, orders, fills, positions);
     return highlighted?.session.id || null;
   }, [liveSessions, orders, fills, positions, selectedSignalRuntimeId]);
 
