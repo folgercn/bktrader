@@ -72,6 +72,8 @@ export type Order = {
   price: number;
   reduceOnly?: boolean;
   closePosition?: boolean;
+  intent?: string;       // "OPEN_LONG" | "OPEN_SHORT" | "CLOSE_LONG" | "CLOSE_SHORT" | "UNKNOWN" — 由后端 ClassifyOrderIntent() 唯一分类器注入
+  intentLabel?: string;  // "开多" | "开空" | "平多" | "平空" | "未知" — 由后端注入，前端直接消费
   metadata?: Record<string, unknown>;
   bindings?: any;
   createdAt: string;
