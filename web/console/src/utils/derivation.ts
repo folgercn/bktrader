@@ -323,7 +323,7 @@ function annotationMarkerText(item: ChartAnnotation): string {
   const positionSide =
     type.includes("short") ? "SHORT" :
     type.includes("long") ? "LONG" :
-    executionOrderPositionSide(metadataSide, isExit);
+    annotationPositionSide(metadataSide, isExit);
   const actionLabel = isEntry ? "开" : isExit ? "平" : "";
   const sideLabel = positionSide === "SHORT" ? "空" : positionSide === "LONG" ? "多" : "";
   const reasonLabel = compactExecutionReasonLabel(
@@ -1337,38 +1337,17 @@ function executionOrderMarkerText(order: Order): string {
     const reasonLabel = compactExecutionReasonLabel(executionOrderReason(order));
     return [order.intentLabel, reasonLabel].filter(Boolean).join(" ");
   }
-  // fallback：兼容没有 intent 字段的旧订单数据
-  const side = String(order.side ?? "").trim().toUpperCase();
-  const isExit = isExitOrderMarker(order);
-  const positionSide = executionOrderPositionSide(side, isExit, order.intent);
-  const action = isExit ? "平" : "开";
-  const sideLabel = positionSide === "SHORT" ? "空" : positionSide === "LONG" ? "多" : "";
+  // 缺失 intentLabel 时显式 degraded，禁止前端从 side/reduceOnly 重建开平语义。
   const reasonLabel = compactExecutionReasonLabel(executionOrderReason(order));
-  return [action + sideLabel, reasonLabel].filter(Boolean).join(" ");
+  return ["未知", reasonLabel].filter(Boolean).join(" ");
 }
 
 function isExitOrderMarker(order: Order): boolean {
-  // 优先消费后端 intent 字段（由 ClassifyOrderIntent 唯一分类器注入）
-  // 只在明确的 CLOSE_/OPEN_ 前缀时短路；UNKNOWN 继续 fallback 到旧逻辑
+  // 消费后端 intent 字段（由 ClassifyOrderIntent 唯一分类器注入）。
+  // 缺失或 UNKNOWN 时显式 degraded，禁止前端用 reduceOnly/side 重建 classifier。
   if (order.intent?.startsWith("CLOSE_")) return true;
   if (order.intent?.startsWith("OPEN_")) return false;
-  // fallback：兼容没有 intent 字段的旧订单数据
-  const metadata = getRecord(order.metadata);
-  const proposal = getRecord(metadata.executionProposal ?? metadata.intent);
-  const role = String(metadata.orderRole ?? proposal.role ?? "").trim().toLowerCase();
-  const reason = normalizeExecutionReasonTag(executionOrderReason(order));
-  return (
-    order.reduceOnly === true ||
-    order.closePosition === true ||
-    metadata.reduceOnly === true ||
-    metadata.closePosition === true ||
-    proposal.reduceOnly === true ||
-    proposal.closePosition === true ||
-    role === "exit" ||
-    reason === "sl" ||
-    reason === "pt" ||
-    reason === "tp"
-  );
+  return false;
 }
 
 function executionOrderReason(order: Order): string {
@@ -1377,18 +1356,11 @@ function executionOrderReason(order: Order): string {
   return String(metadata.reason ?? proposal.reason ?? order.type ?? "").trim();
 }
 
-function executionOrderPositionSide(side: string, isExit: boolean, intent?: string): "LONG" | "SHORT" | "" {
-  // 优先从 intent 推导（由 ClassifyOrderIntent 唯一分类器注入）
-  if (intent) {
-    if (intent === "OPEN_LONG" || intent === "CLOSE_LONG") return "LONG";
-    if (intent === "OPEN_SHORT" || intent === "CLOSE_SHORT") return "SHORT";
-    return "";
-  }
-  // fallback：兼容没有 intent 字段的旧订单数据
-  if (side === "BUY") {
+function annotationPositionSide(metadataSide: string, isExit: boolean): "LONG" | "SHORT" | "" {
+  if (metadataSide === "BUY") {
     return isExit ? "SHORT" : "LONG";
   }
-  if (side === "SELL") {
+  if (metadataSide === "SELL") {
     return isExit ? "LONG" : "SHORT";
   }
   return "";

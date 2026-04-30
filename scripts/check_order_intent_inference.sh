@@ -58,8 +58,7 @@ ALLOWLIST = [
     allowed("internal/service/live_execution.go", r'side == "SELL"', 1, "execution side normalization"),
 
     # Existing Monitor fallback is tracked by issue #357 and must not grow.
-    allowed("web/console/src/utils/derivation.ts", r'side === "BUY"', 2, "issue #357 existing fallback"),
-    allowed("web/console/src/utils/derivation.ts", r'side === "SELL"', 1, "issue #357 existing fallback"),
+    allowed("web/console/src/utils/derivation.ts", r'side === "BUY"', 1, "order marker buy/sell visual direction"),
 ]
 
 
