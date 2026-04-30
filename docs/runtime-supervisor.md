@@ -327,12 +327,12 @@ func ClearRestartState(state map[string]any, keys []string)
 - `SUPERVISOR_APPLICATION_RESTART_ENABLED=false` 为默认值；只有显式设为 `true` 时，supervisor 才会对满足全部条件的 signal runtime 提交应用内 `POST /api/v1/runtime/restart`：
   - 目标服务 `/healthz` 可达且成功。
   - `/api/v1/runtime/status` 可读。
-  - runtimeKind 为 `signal`。
+  - runtimeKind 为 `signal`；外部 target 可返回 `signal-runtime` 作为兼容 alias，语义等同 `signal`，不代表新增 runtime class。
   - `desiredStatus=RUNNING` 且 `actualStatus=ERROR`。
   - `autoRestartSuppressed=false` 且 `restartSeverity` 不是 `fatal`。
   - `nextRestartAt` 存在且已经到期。
   - 提交 restart 时固定 `force=false`、`confirm=true`，并带上 supervisor reason；同一个 target/runtime/`nextRestartAt` 只提交一次。
-- 当 runtime 进入 restart 关注范围（例如 `actualStatus=ERROR`、存在 `nextRestartAt`、fatal/suppressed）时，supervisor 会在对应 runtime 上附加只读 `applicationRestartPlan`，显式返回 `decision=blocked|eligible`、`enabled`、`healthzOk`、`supported`、`due`、`duplicate`、`blockedReason` / `eligibleReason`。该计划用于解释为什么某个 runtime 会或不会进入应用内 restart；当前 `supported=true` 仍只覆盖 `signal` / `signal-runtime`，因此 `live-session` 等 runtime 即使 ERROR 也只会显示 `blockedReason=runtime-restart-unsupported-kind`，不会被 supervisor 自动拉起。
+- 当 runtime 进入 restart 关注范围（例如 `actualStatus=ERROR`、存在 `nextRestartAt`、fatal/suppressed）时，supervisor 会在对应 runtime 上附加只读 `applicationRestartPlan`，显式返回 `decision=blocked|eligible`、`enabled`、`healthzOk`、`supported`、`due`、`duplicate`、`blockedReason` / `eligibleReason`。该计划用于解释为什么某个 runtime 会或不会进入应用内 restart；当前 `supported=true` 仍只覆盖 `signal` 及其兼容 alias `signal-runtime`，因此 `live-session` 等 runtime 即使 ERROR 也只会显示 `blockedReason=runtime-restart-unsupported-kind`，不会被 supervisor 自动拉起。
 
 验收标准：
 

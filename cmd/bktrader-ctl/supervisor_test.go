@@ -80,7 +80,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 		"serviceState: failures=3/3 fallback=candidate attempts=2 suppressed=false backoffUntil=--",
 		"lastFallbackDecision=container-executor-not-configured at=2026-04-29T08:00:00Z",
 		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executorKind=none executorDryRun=true executable=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
-		"runtimes: total=1 attention=1 restartPlans=1 restartEligible=0 service=platform-api",
+		"runtimes: total=1 attention=1 restartPlans=1 restartEligible=0 restartBlockedReasons=runtime-restart-healthz-unhealthy:1 service=platform-api",
 		"lastFailure=healthz-unhealthy: http 503",
 	}
 	for _, want := range expected {
@@ -183,5 +183,76 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 	}
 	if strings.Contains(summary, "fallbackPlan:") {
 		t.Fatalf("did not expect fallback plan for clear target, got:\n%s", summary)
+	}
+}
+
+func TestBuildSupervisorStatusSummaryAggregatesRestartBlockedReasons(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[{
+			"name":"api",
+			"baseUrl":"http://127.0.0.1:8080",
+			"healthz":{"path":"/healthz","statusCode":200,"reachable":true},
+			"runtimeStatus":{"path":"/api/v1/runtime/status","statusCode":200,"reachable":true},
+			"serviceState":{"consecutiveFailures":0,"failureThreshold":3,"containerFallbackCandidate":false},
+			"status":{
+				"service":"platform-api",
+				"runtimes":[{
+					"runtimeId":"signal-1",
+					"runtimeKind":"signal",
+					"desiredStatus":"RUNNING",
+					"actualStatus":"ERROR",
+					"health":"error",
+					"applicationRestartPlan":{
+						"candidate":true,
+						"enabled":true,
+						"healthzOk":true,
+						"supported":true,
+						"due":false,
+						"decision":"blocked",
+						"blockedReason":"runtime-restart-not-due"
+					}
+				},{
+					"runtimeId":"signal-2",
+					"runtimeKind":"signal",
+					"desiredStatus":"RUNNING",
+					"actualStatus":"ERROR",
+					"health":"error",
+					"applicationRestartPlan":{
+						"candidate":true,
+						"enabled":true,
+						"healthzOk":false,
+						"supported":true,
+						"due":true,
+						"decision":"blocked",
+						"blockedReason":"runtime-restart-healthz-unhealthy"
+					}
+				},{
+					"runtimeId":"signal-3",
+					"runtimeKind":"signal",
+					"desiredStatus":"RUNNING",
+					"actualStatus":"ERROR",
+					"health":"error",
+					"applicationRestartPlan":{
+						"candidate":true,
+						"enabled":true,
+						"healthzOk":true,
+						"supported":true,
+						"due":false,
+						"decision":"blocked",
+						"blockedReason":"runtime-restart-not-due"
+					}
+				}]
+			}
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	want := "runtimes: total=3 attention=3 restartPlans=3 restartEligible=0 restartBlockedReasons=runtime-restart-healthz-unhealthy:1,runtime-restart-not-due:2 service=platform-api"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
 	}
 }

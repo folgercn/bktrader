@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -246,7 +247,14 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				}
 			}
 			if restartPlans > 0 {
-				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d restartPlans=%d restartEligible=%d service=%s\n", len(target.Status.Runtimes), attention, restartPlans, restartEligible, firstNonEmpty(target.Status.Service, "--"))
+				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d restartPlans=%d restartEligible=%d restartBlockedReasons=%s service=%s\n",
+					len(target.Status.Runtimes),
+					attention,
+					restartPlans,
+					restartEligible,
+					supervisorApplicationRestartBlockedReasons(target.Status.Runtimes),
+					firstNonEmpty(target.Status.Service, "--"),
+				)
 			} else {
 				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d service=%s\n", len(target.Status.Runtimes), attention, firstNonEmpty(target.Status.Service, "--"))
 			}
@@ -300,4 +308,31 @@ func supervisorRuntimeNeedsAttention(runtime supervisorRuntimeStatus) bool {
 	actual := strings.ToUpper(strings.TrimSpace(runtime.ActualStatus))
 	health := strings.ToLower(strings.TrimSpace(runtime.Health))
 	return actual == "ERROR" || health == "error" || health == "suppressed" || health == "unreachable" || health == "stale"
+}
+
+func supervisorApplicationRestartBlockedReasons(runtimes []supervisorRuntimeStatus) string {
+	counts := make(map[string]int)
+	for _, runtime := range runtimes {
+		if runtime.ApplicationRestartPlan == nil {
+			continue
+		}
+		reason := strings.TrimSpace(runtime.ApplicationRestartPlan.BlockedReason)
+		if reason == "" {
+			continue
+		}
+		counts[reason]++
+	}
+	if len(counts) == 0 {
+		return "--"
+	}
+	reasons := make([]string, 0, len(counts))
+	for reason := range counts {
+		reasons = append(reasons, reason)
+	}
+	sort.Strings(reasons)
+	parts := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		parts = append(parts, fmt.Sprintf("%s:%d", reason, counts[reason]))
+	}
+	return strings.Join(parts, ",")
 }
