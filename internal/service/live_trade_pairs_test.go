@@ -403,6 +403,66 @@ func TestListLiveTradePairsKeepsCancelledOrderWithExchangeTradeID(t *testing.T) 
 	assertTradePairFloat(t, pair.NetPnL, 19.80)
 }
 
+func TestListLiveTradePairsDoesNotOpenReversalFromOversizedReduceOnlyExit(t *testing.T) {
+	platform, session := newLiveTradePairTestPlatform(t)
+	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
+
+	entry := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "BUY",
+		reason:     "initial",
+		quantity:   0.0015,
+		price:      100,
+		fee:        0.01,
+		createdAt:  start,
+		fillAt:     start.Add(time.Second),
+		reduceOnly: false,
+	})
+	exit := createLiveTradePairOrder(t, platform, session, tradePairOrderFixture{
+		side:       "SELL",
+		reason:     "SL",
+		quantity:   0.013,
+		price:      120,
+		fee:        0.10,
+		createdAt:  start.Add(time.Minute),
+		fillAt:     start.Add(time.Minute + time.Second),
+		reduceOnly: true,
+	})
+
+	openItems, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "open",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list open live trade pairs: %v", err)
+	}
+	if len(openItems) != 0 {
+		t.Fatalf("expected no open pair from oversized reduce-only exit, got %#v", openItems)
+	}
+
+	items, err := platform.ListLiveTradePairs(domain.LiveTradePairQuery{
+		LiveSessionID: session.ID,
+		Status:        "closed",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("list closed live trade pairs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 closed pair, got %d: %#v", len(items), items)
+	}
+	pair := items[0]
+	if got := pair.EntryOrderIDs; len(got) != 1 || got[0] != entry.ID {
+		t.Fatalf("expected entry order %s, got %#v", entry.ID, got)
+	}
+	if got := pair.ExitOrderIDs; len(got) != 1 || got[0] != exit.ID {
+		t.Fatalf("expected exit order %s, got %#v", exit.ID, got)
+	}
+	assertTradePairFloat(t, pair.EntryQuantity, 0.0015)
+	assertTradePairFloat(t, pair.ExitQuantity, 0.0015)
+	assertTradePairHasNote(t, pair, "exit-only-fill-exceeded-derived-position")
+}
+
 func TestListLiveTradePairsIgnoresRejectedOrderWithZeroExecutedQuantity(t *testing.T) {
 	platform, session := newLiveTradePairTestPlatform(t)
 	start := time.Date(2026, 4, 22, 6, 0, 0, 0, time.UTC)
@@ -846,6 +906,16 @@ func assertTradePairFloat(t *testing.T, got, want float64) {
 	if math.Abs(got-want) > 1e-9 {
 		t.Fatalf("expected %.12f, got %.12f", want, got)
 	}
+}
+
+func assertTradePairHasNote(t *testing.T, pair domain.LiveTradePair, want string) {
+	t.Helper()
+	for _, note := range pair.Notes {
+		if note == want {
+			return
+		}
+	}
+	t.Fatalf("expected note %q in %#v", want, pair.Notes)
 }
 
 func timePointer(value time.Time) *time.Time {

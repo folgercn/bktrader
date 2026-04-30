@@ -181,7 +181,17 @@ func buildLiveTradePairsForSymbol(
 		absQty := absFloat(signedQty)
 		remainingFee := event.fill.Fee
 		prevNetQty := state.netQty
+		exitOnly := liveTradeFillIsExitOnly(event)
 		if prevNetQty == 0 || sameSign(prevNetQty, signedQty) {
+			if exitOnly {
+				pairIndex++
+				orphan := newLiveTradePairBuilder(pairIndex, session, event.order.Symbol, liveTradeSideFromSignedQty(-signedQty))
+				orphan.addNote("exit-only-fill-without-derived-position")
+				orphan.exitVerdict = "orphan-exit"
+				orphan.addExit(event, absQty, remainingFee, 0)
+				results = append(results, orphan.finalizeClosed())
+				continue
+			}
 			if current == nil {
 				pairIndex++
 				current = newLiveTradePairBuilder(pairIndex, session, event.order.Symbol, liveTradeSideFromSignedQty(signedQty))
@@ -208,13 +218,23 @@ func buildLiveTradePairsForSymbol(
 		}
 		current.addExit(event, closingQty, closingFee, realizedPnL)
 
-		applyPnLFill(&state, event.order.Side, event.fill.Quantity, event.fill.Price)
 		remainingQty := absQty - closingQty
+		appliedQty := event.fill.Quantity
+		if exitOnly && tradingQuantityPositive(remainingQty) {
+			current.addNote("exit-only-fill-exceeded-derived-position")
+			appliedQty = closingQty
+		}
+		if tradingQuantityPositive(appliedQty) {
+			applyPnLFill(&state, event.order.Side, appliedQty, event.fill.Price)
+		}
 		if !tradingQuantityExceeds(absFloat(prevNetQty)-closingQty, 0) {
 			results = append(results, current.finalizeClosed())
 			current = nil
 		}
 		if tradingQuantityPositive(remainingQty) {
+			if exitOnly {
+				continue
+			}
 			pairIndex++
 			current = newLiveTradePairBuilder(pairIndex, session, event.order.Symbol, liveTradeSideFromSignedQty(signedQty))
 			current.addEntry(event, remainingQty, remainingFee)
@@ -236,6 +256,12 @@ func liveTradePairRelevantFills(fills []domain.Fill, orderByID map[string]domain
 		items = append(items, fill)
 	}
 	return items
+}
+
+func liveTradeFillIsExitOnly(event liveTradeFillEvent) bool {
+	return event.order.EffectiveReduceOnly() ||
+		event.order.EffectiveClosePosition() ||
+		strings.EqualFold(strings.TrimSpace(event.intent.role), "exit")
 }
 
 func (p *Platform) fetchLiveTradeDecisionEvents(liveSessionID string, orderByID map[string]domain.Order) (map[string]domain.StrategyDecisionEvent, error) {
@@ -496,7 +522,9 @@ func (b *liveTradePairBuilder) addExit(event liveTradeFillEvent, qty, fee, reali
 
 func (b *liveTradePairBuilder) finalizeClosed() domain.LiveTradePair {
 	verdict := "normal"
-	if b.exitQty <= 0 {
+	if b.exitVerdict == "orphan-exit" {
+		verdict = "orphan-exit"
+	} else if b.exitQty <= 0 {
 		verdict = "orphan-exit"
 	} else if b.hasUnsafeExitOrder {
 		verdict = "mismatch"
