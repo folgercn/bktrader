@@ -13,6 +13,7 @@
 - **图谱** == **graphify** (本项目的知识图谱工具，资产位于 `graphify-out/`)
 - **UI 规范** == **shadcn** (本项目的基础 UI 组件库与规范指南，见 [.skills/shadcn/SKILL.md](.skills/shadcn/SKILL.md))
 - **Research Baseline**: 研究/回测语境下，当前长期 baseline 视为 `dir2_zero_initial=true` + `zero_initial_mode=reentry_window`，并固定使用 `reentry_size_schedule=[0.20, 0.10]`、`max_trades_per_bar=2`。也就是同一根 signal bar 内，第 1 次真实下单为 `20%`，第 2 次真实下单为 `10%`。除非人类明确要求复现历史对照组，否则不要再默认把 `position` 或旧的 `10%/5%/2.5%` 方案当作 baseline 反复判断。
+- **Production Business Data Source**: 查询生产业务事实（live session / order / fill / position / trace / control status）必须优先使用 `bktrader-ctl --json`，不要先 SSH 查 DB 或直接翻原始文件。SSH 日志入口只用于 `bktrader-ctl` 无法回答的进程、部署、文件日志、连通性、REST 限流等运行环境问题；详见 [docs/production-log-troubleshooting.md](docs/production-log-troubleshooting.md)。
 - **环境路径**: 工具绝对路径见 `AGENTS.local.md`（本地私有）。若不存在，参考 [docs/AGENT_PATHS.md](docs/AGENT_PATHS.md)。
 
 ### graphify 规则
