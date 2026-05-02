@@ -17,6 +17,13 @@ type runtimeRestartRequest struct {
 	Reason      string `json:"reason,omitempty"`
 }
 
+type runtimeAutoRestartControlRequest struct {
+	RuntimeID   string `json:"runtimeId"`
+	RuntimeKind string `json:"runtimeKind"`
+	Confirm     bool   `json:"confirm"`
+	Reason      string `json:"reason"`
+}
+
 func registerRuntimeControlRoutes(mux *http.ServeMux, platform *service.Platform, cfg config.Config) {
 	mux.HandleFunc("/api/v1/runtime/restart", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -73,6 +80,77 @@ func registerRuntimeControlRoutes(mux *http.ServeMux, platform *service.Platform
 		default:
 			writeError(w, http.StatusBadRequest, "unsupported runtimeKind: "+request.RuntimeKind)
 		}
+	})
+	registerRuntimeAutoRestartControlRoute(mux, platform, cfg, "/api/v1/runtime/suppress-auto-restart", "suppress")
+	registerRuntimeAutoRestartControlRoute(mux, platform, cfg, "/api/v1/runtime/resume-auto-restart", "resume")
+}
+
+func registerRuntimeAutoRestartControlRoute(mux *http.ServeMux, platform *service.Platform, cfg config.Config, path, action string) {
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !cfg.RuntimeActionsEnabled() {
+			writeError(w, http.StatusConflict, "runtime action "+action+" auto-restart is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+			return
+		}
+		var request runtimeAutoRestartControlRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		runtimeID := strings.TrimSpace(request.RuntimeID)
+		if runtimeID == "" {
+			writeError(w, http.StatusBadRequest, "runtimeId is required")
+			return
+		}
+		if !request.Confirm {
+			writeError(w, http.StatusBadRequest, "confirm=true is required for runtime auto-restart "+action)
+			return
+		}
+		reason := strings.TrimSpace(request.Reason)
+		if reason == "" {
+			writeError(w, http.StatusBadRequest, "reason is required for runtime auto-restart "+action)
+			return
+		}
+		var item any
+		var suppressed bool
+		switch strings.ToLower(strings.TrimSpace(request.RuntimeKind)) {
+		case "signal", "signal-runtime":
+			var updated any
+			var err error
+			options := service.SignalRuntimeAutoRestartControlOptions{
+				Reason: reason,
+				Source: "api",
+			}
+			if action == "suppress" {
+				updated, err = platform.SuppressSignalRuntimeAutoRestart(runtimeID, options)
+				suppressed = true
+			} else {
+				updated, err = platform.ResumeSignalRuntimeAutoRestart(runtimeID, options)
+			}
+			if err != nil {
+				writeRuntimeControlError(w, err)
+				return
+			}
+			item = updated
+		case "":
+			writeError(w, http.StatusBadRequest, "runtimeKind is required")
+			return
+		default:
+			writeError(w, http.StatusBadRequest, "unsupported runtimeKind: "+request.RuntimeKind)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"status":                "accepted",
+			"message":               "runtime auto-restart " + action + " intent accepted",
+			"runtimeId":             runtimeID,
+			"runtimeKind":           "signal",
+			"autoRestartSuppressed": suppressed,
+			"reason":                reason,
+			"runtime":               item,
+		})
 	})
 }
 

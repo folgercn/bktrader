@@ -243,7 +243,7 @@ POST /runtime/resume-auto-restart
 - `start` / `restart` 只能写入期望状态或触发应用内恢复，不得绕过业务安全校验。
 - `stop` 必须写入 `desiredStatus=STOPPED`，使 scanner 和 supervisor 不再自动拉起。
 - `resume-auto-restart` 只能解除 suppressed，不代表立即允许交易。
-- 当前统一控制 API 的第一步只落 `POST /api/v1/runtime/restart`，且只支持 `runtimeKind=signal`；请求必须显式传入 `confirm=true`，`force=true` 时必须传入非空 `reason` 并写入 runtime state 审计字段。该接口复用现有 signal runtime stop/start 安全检查，不做 live session 自动 dispatch，也不做 Docker/container restart。
+- 当前统一控制 API 已落最小 signal 切片：`POST /api/v1/runtime/restart`、`POST /api/v1/runtime/suppress-auto-restart`、`POST /api/v1/runtime/resume-auto-restart` 均只支持 `runtimeKind=signal` / `signal-runtime`。请求必须显式传入 `confirm=true`；`restart` 在 `force=true` 时必须传入非空 `reason`，`suppress-auto-restart` / `resume-auto-restart` 始终要求非空 `reason` 并写入 runtime state 审计字段。该接口复用现有 signal runtime 安全边界，不做 live session restart，不做 live session 自动 dispatch，也不做 Docker/container restart。
 
 ## 6. 推进阶段
 
@@ -371,7 +371,7 @@ func ClearRestartState(state map[string]any, keys []string)
 
 前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，展示 supervisor policy、service target、runtime 状态、`applicationRestartPlan`、应用内控制动作、`containerFallbackCandidate`、fallback `decision`、executor `kind`/`dryRun` 和 dry-run audit 摘要。
 
-当前页面只开放最小的手动应用内控制入口：对 `runtimeKind=signal` / `signal-runtime` 的 runtime，可在显式确认并填写 reason 后调用现有 `POST /api/v1/runtime/restart`。该入口固定 `confirm=true`、`force=false`，不支持 live-session restart，不提交 suppress/resume，不触碰 Docker/container fallback。真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
+当前页面只开放最小的手动应用内控制入口：对 `runtimeKind=signal` / `signal-runtime` 的 runtime，可在显式确认并填写 reason 后调用现有 `POST /api/v1/runtime/restart`、`POST /api/v1/runtime/suppress-auto-restart`、`POST /api/v1/runtime/resume-auto-restart`。restart 入口固定 `confirm=true`、`force=false`；suppress/resume 只切换 signal runtime 自动恢复抑制状态并写审计 reason。该页面不支持 live-session restart，不触碰 Docker/container fallback。真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
 
 ## 7. 安全边界
 

@@ -277,6 +277,85 @@ func TestRestartSignalRuntimeSessionWithoutForceKeepsRunningWhenExposureExists(t
 	}
 }
 
+func TestSignalRuntimeAutoRestartSuppressAndResumeAuditState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	runtimeSession, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
+	}
+	now := time.Now().UTC()
+	runtimeSession.State["desiredStatus"] = "RUNNING"
+	runtimeSession.State["actualStatus"] = "ERROR"
+	runtimeSession.State["autoRestartSuppressed"] = true
+	runtimeSession.State["nextAutoRestartAt"] = now.Add(time.Minute).Format(time.RFC3339)
+	runtimeSession.State["supervisorRestartBackoff"] = time.Minute.String()
+	runtimeSession.State["supervisorRestartSeverity"] = "fatal"
+	runtimeSession.State["lastSupervisorError"] = "auth failed"
+	updated, err := platform.store.UpdateSignalRuntimeSession(runtimeSession)
+	if err != nil {
+		t.Fatalf("UpdateSignalRuntimeSession failed: %v", err)
+	}
+	platform.cacheSignalRuntimeSession(updated)
+
+	suppressed, err := platform.SuppressSignalRuntimeAutoRestart(runtimeSession.ID, SignalRuntimeAutoRestartControlOptions{
+		Reason: "operator paused runtime recovery during maintenance",
+		Source: "test",
+	})
+	if err != nil {
+		t.Fatalf("SuppressSignalRuntimeAutoRestart failed: %v", err)
+	}
+	if got := boolValue(suppressed.State["autoRestartSuppressed"]); !got {
+		t.Fatal("expected autoRestartSuppressed true")
+	}
+	if got := stringValue(suppressed.State["autoRestartSuppressedReason"]); got != "operator paused runtime recovery during maintenance" {
+		t.Fatalf("expected suppress reason, got %s", got)
+	}
+	if got := stringValue(suppressed.State["autoRestartSuppressedSource"]); got != "test" {
+		t.Fatalf("expected suppress source test, got %s", got)
+	}
+	if got := stringValue(suppressed.State["autoRestartSuppressedAt"]); got == "" {
+		t.Fatal("expected autoRestartSuppressedAt")
+	}
+	if got := stringValue(suppressed.State["nextAutoRestartAt"]); got != "" {
+		t.Fatalf("expected suppress to clear nextAutoRestartAt, got %s", got)
+	}
+	if got := stringValue(suppressed.State["supervisorRestartBackoff"]); got != "" {
+		t.Fatalf("expected suppress to clear supervisorRestartBackoff, got %s", got)
+	}
+	if got := stringValue(suppressed.State["lastSupervisorError"]); got != "auth failed" {
+		t.Fatalf("expected suppress to preserve lastSupervisorError, got %s", got)
+	}
+
+	resumed, err := platform.ResumeSignalRuntimeAutoRestart(runtimeSession.ID, SignalRuntimeAutoRestartControlOptions{
+		Reason: "maintenance finished and credentials rotated",
+		Source: "test",
+	})
+	if err != nil {
+		t.Fatalf("ResumeSignalRuntimeAutoRestart failed: %v", err)
+	}
+	if got := boolValue(resumed.State["autoRestartSuppressed"]); got {
+		t.Fatal("expected autoRestartSuppressed false after resume")
+	}
+	if got := stringValue(resumed.State["autoRestartSuppressedAt"]); got != "" {
+		t.Fatalf("expected resume to clear autoRestartSuppressedAt, got %s", got)
+	}
+	if got := stringValue(resumed.State["supervisorRestartSeverity"]); got != "" {
+		t.Fatalf("expected resume to clear supervisorRestartSeverity, got %s", got)
+	}
+	if got := stringValue(resumed.State["autoRestartResumedReason"]); got != "maintenance finished and credentials rotated" {
+		t.Fatalf("expected resume reason, got %s", got)
+	}
+	if got := stringValue(resumed.State["autoRestartResumedSource"]); got != "test" {
+		t.Fatalf("expected resume source test, got %s", got)
+	}
+	if got := stringValue(resumed.State["autoRestartResumedAt"]); got == "" {
+		t.Fatal("expected autoRestartResumedAt")
+	}
+	if got := stringValue(resumed.State["lastSupervisorError"]); got != "auth failed" {
+		t.Fatalf("expected resume to preserve lastSupervisorError for audit, got %s", got)
+	}
+}
+
 func markSignalRuntimeSessionRunningForTest(t *testing.T, platform *Platform, session domain.SignalRuntimeSession) domain.SignalRuntimeSession {
 	t.Helper()
 	now := time.Now().UTC()
