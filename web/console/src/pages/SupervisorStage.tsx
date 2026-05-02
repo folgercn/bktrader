@@ -208,9 +208,11 @@ export function SupervisorStage() {
       setSnapshot(payload);
       setError(null);
       setLoadState('loaded');
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : '读取 supervisor 状态失败');
       setLoadState('error');
+      return false;
     }
   }, []);
 
@@ -254,15 +256,21 @@ export function SupervisorStage() {
           reason,
         }),
       });
-      setRestartNotice(`restart accepted: ${shrink(restartDialogRuntime.runtimeId)}`);
-      setRestartDialogRuntime(null);
-      setRestartReason('');
-      await loadSnapshot(true);
     } catch (err) {
       setRestartError(err instanceof Error ? err.message : 'runtime restart failed');
-    } finally {
       setRestartSubmittingKey(null);
+      return;
     }
+
+    setRestartDialogRuntime(null);
+    setRestartReason('');
+    const refreshed = await loadSnapshot(true);
+    if (refreshed) {
+      setRestartNotice(`restart accepted: ${shrink(restartDialogRuntime.runtimeId)}`);
+    } else {
+      setRestartNotice(`restart accepted; refresh failed: ${shrink(restartDialogRuntime.runtimeId)}`);
+    }
+    setRestartSubmittingKey(null);
   }, [loadSnapshot, restartDialogRuntime, restartReason]);
 
   useEffect(() => {
