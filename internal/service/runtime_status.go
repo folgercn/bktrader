@@ -28,6 +28,10 @@ type RuntimeStatus struct {
 	RestartReason               string                                   `json:"restartReason,omitempty"`
 	RestartSeverity             string                                   `json:"restartSeverity,omitempty"`
 	LastRestartError            string                                   `json:"lastRestartError,omitempty"`
+	RestartRequestedAt          string                                   `json:"restartRequestedAt,omitempty"`
+	RestartRequestedReason      string                                   `json:"restartRequestedReason,omitempty"`
+	RestartRequestedSource      string                                   `json:"restartRequestedSource,omitempty"`
+	RestartRequestedForce       bool                                     `json:"restartRequestedForce,omitempty"`
 	StartRequestedAt            string                                   `json:"startRequestedAt,omitempty"`
 	StartRequestedReason        string                                   `json:"startRequestedReason,omitempty"`
 	StartRequestedSource        string                                   `json:"startRequestedSource,omitempty"`
@@ -147,6 +151,10 @@ func runtimeStatusFromState(serviceName, runtimeKind, runtimeID, status string, 
 		RestartReason:               firstNonEmpty(stringValue(state["restartReason"]), stringValue(state["supervisorRestartReason"])),
 		RestartSeverity:             firstNonEmpty(stringValue(state["restartSeverity"]), stringValue(state["supervisorRestartSeverity"])),
 		LastRestartError:            firstNonEmpty(stringValue(state["lastRestartError"]), stringValue(state["lastSupervisorError"])),
+		RestartRequestedAt:          stringValue(state["restartRequestedAt"]),
+		RestartRequestedReason:      stringValue(state["restartRequestedReason"]),
+		RestartRequestedSource:      stringValue(state["restartRequestedSource"]),
+		RestartRequestedForce:       boolValue(state["restartRequestedForce"]),
 		StartRequestedAt:            stringValue(state["startRequestedAt"]),
 		StartRequestedReason:        stringValue(state["startRequestedReason"]),
 		StartRequestedSource:        stringValue(state["startRequestedSource"]),

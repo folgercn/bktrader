@@ -99,20 +99,37 @@ func TestRuntimeStatusFromStateExposesAutoRestartAuditFields(t *testing.T) {
 
 func TestRuntimeStatusFromStateExposesLifecycleAuditFields(t *testing.T) {
 	checkedAt := time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC)
+	restartedAt := checkedAt.Add(-20 * time.Minute).Format(time.RFC3339)
 	startedAt := checkedAt.Add(-15 * time.Minute).Format(time.RFC3339)
 	stoppedAt := checkedAt.Add(-3 * time.Minute).Format(time.RFC3339)
 	status := runtimeStatusFromState("platform-api", "signal", "runtime-1", "STOPPED", map[string]any{
-		"desiredStatus":        "STOPPED",
-		"actualStatus":         "STOPPED",
-		"startRequestedAt":     startedAt,
-		"startRequestedReason": "maintenance finished",
-		"startRequestedSource": "api",
-		"stopRequestedAt":      stoppedAt,
-		"stopRequestedReason":  "maintenance window",
-		"stopRequestedSource":  "dashboard",
-		"stopRequestedForce":   true,
+		"desiredStatus":          "STOPPED",
+		"actualStatus":           "STOPPED",
+		"restartRequestedAt":     restartedAt,
+		"restartRequestedReason": "operator requested rebinding",
+		"restartRequestedSource": "api",
+		"restartRequestedForce":  true,
+		"startRequestedAt":       startedAt,
+		"startRequestedReason":   "maintenance finished",
+		"startRequestedSource":   "api",
+		"stopRequestedAt":        stoppedAt,
+		"stopRequestedReason":    "maintenance window",
+		"stopRequestedSource":    "dashboard",
+		"stopRequestedForce":     true,
 	}, checkedAt)
 
+	if status.RestartRequestedAt != restartedAt {
+		t.Fatalf("expected restart requested at %s, got %s", restartedAt, status.RestartRequestedAt)
+	}
+	if status.RestartRequestedReason != "operator requested rebinding" {
+		t.Fatalf("expected restart reason, got %s", status.RestartRequestedReason)
+	}
+	if status.RestartRequestedSource != "api" {
+		t.Fatalf("expected restart source api, got %s", status.RestartRequestedSource)
+	}
+	if !status.RestartRequestedForce {
+		t.Fatal("expected restart requested force true")
+	}
 	if status.StartRequestedAt != startedAt {
 		t.Fatalf("expected start requested at %s, got %s", startedAt, status.StartRequestedAt)
 	}

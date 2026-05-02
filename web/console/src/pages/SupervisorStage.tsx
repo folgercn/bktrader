@@ -179,30 +179,58 @@ function runtimeNeedsAttention(runtime: RuntimeSupervisorRuntimeStatus) {
 }
 
 function runtimeLifecycleAudit(runtime: RuntimeSupervisorRuntimeStatus): RuntimeLifecycleAudit | null {
-  const startTime = runtime.startRequestedAt ? new Date(runtime.startRequestedAt).getTime() : Number.NaN;
-  const stopTime = runtime.stopRequestedAt ? new Date(runtime.stopRequestedAt).getTime() : Number.NaN;
+  const audits: RuntimeLifecycleAudit[] = [];
+  const hasRestart = Boolean(
+    runtime.restartRequestedAt ||
+    runtime.restartRequestedReason ||
+    runtime.restartRequestedSource ||
+    runtime.restartRequestedForce
+  );
   const hasStart = Boolean(runtime.startRequestedAt || runtime.startRequestedReason || runtime.startRequestedSource);
   const hasStop = Boolean(runtime.stopRequestedAt || runtime.stopRequestedReason || runtime.stopRequestedSource || runtime.stopRequestedForce);
-  if (!hasStart && !hasStop) {
-    return null;
+  if (hasRestart) {
+    audits.push({
+      label: 'restart requested',
+      variant: 'secondary',
+      at: runtime.restartRequestedAt,
+      reason: runtime.restartRequestedReason,
+      source: runtime.restartRequestedSource,
+      force: runtime.restartRequestedForce,
+    });
   }
-  if (hasStop && (!hasStart || !Number.isFinite(startTime) || !Number.isFinite(stopTime) || stopTime >= startTime)) {
-    return {
+  if (hasStart) {
+    audits.push({
+      label: 'start requested',
+      variant: 'neutral',
+      at: runtime.startRequestedAt,
+      reason: runtime.startRequestedReason,
+      source: runtime.startRequestedSource,
+    });
+  }
+  if (hasStop) {
+    audits.push({
       label: 'stop requested',
       variant: 'secondary',
       at: runtime.stopRequestedAt,
       reason: runtime.stopRequestedReason,
       source: runtime.stopRequestedSource,
       force: runtime.stopRequestedForce,
-    };
+    });
   }
-  return {
-    label: 'start requested',
-    variant: 'neutral',
-    at: runtime.startRequestedAt,
-    reason: runtime.startRequestedReason,
-    source: runtime.startRequestedSource,
-  };
+  if (audits.length === 0) {
+    return null;
+  }
+  return audits.reduce((latest, audit) => {
+    const currentTime = audit.at ? new Date(audit.at).getTime() : Number.NaN;
+    const latestTime = latest.at ? new Date(latest.at).getTime() : Number.NaN;
+    if (!Number.isFinite(currentTime)) {
+      return Number.isFinite(latestTime) ? latest : audit;
+    }
+    if (!Number.isFinite(latestTime)) {
+      return audit;
+    }
+    return currentTime >= latestTime ? audit : latest;
+  });
 }
 
 function runtimeLifecycleAuditText(audit: RuntimeLifecycleAudit) {

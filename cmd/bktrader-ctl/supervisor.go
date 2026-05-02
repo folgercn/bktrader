@@ -106,6 +106,10 @@ type supervisorRuntimeStatus struct {
 	DesiredStatus               string                            `json:"desiredStatus"`
 	ActualStatus                string                            `json:"actualStatus"`
 	Health                      string                            `json:"health"`
+	RestartRequestedAt          string                            `json:"restartRequestedAt,omitempty"`
+	RestartRequestedReason      string                            `json:"restartRequestedReason,omitempty"`
+	RestartRequestedSource      string                            `json:"restartRequestedSource,omitempty"`
+	RestartRequestedForce       bool                              `json:"restartRequestedForce,omitempty"`
 	StartRequestedAt            string                            `json:"startRequestedAt,omitempty"`
 	StartRequestedReason        string                            `json:"startRequestedReason,omitempty"`
 	StartRequestedSource        string                            `json:"startRequestedSource,omitempty"`
@@ -328,9 +332,16 @@ func supervisorRuntimeNeedsAttention(runtime supervisorRuntimeStatus) bool {
 }
 
 func supervisorRuntimeLifecycleAuditSummary(runtimes []supervisorRuntimeStatus) string {
+	restartAudit := 0
 	startAudit := 0
 	stopAudit := 0
 	for _, runtime := range runtimes {
+		if strings.TrimSpace(runtime.RestartRequestedAt) != "" ||
+			strings.TrimSpace(runtime.RestartRequestedReason) != "" ||
+			strings.TrimSpace(runtime.RestartRequestedSource) != "" ||
+			runtime.RestartRequestedForce {
+			restartAudit++
+		}
 		if strings.TrimSpace(runtime.StartRequestedAt) != "" ||
 			strings.TrimSpace(runtime.StartRequestedReason) != "" ||
 			strings.TrimSpace(runtime.StartRequestedSource) != "" {
@@ -343,10 +354,10 @@ func supervisorRuntimeLifecycleAuditSummary(runtimes []supervisorRuntimeStatus) 
 			stopAudit++
 		}
 	}
-	if startAudit == 0 && stopAudit == 0 {
+	if restartAudit == 0 && startAudit == 0 && stopAudit == 0 {
 		return ""
 	}
-	return fmt.Sprintf(" startAudit=%d stopAudit=%d", startAudit, stopAudit)
+	return fmt.Sprintf(" restartAudit=%d startAudit=%d stopAudit=%d", restartAudit, startAudit, stopAudit)
 }
 
 func supervisorRuntimeAutoRestartAuditSummary(runtimes []supervisorRuntimeStatus) string {
