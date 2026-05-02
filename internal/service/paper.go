@@ -1229,6 +1229,9 @@ func (p *Platform) resolvePaperSessionParameters(session domain.PaperSession, ve
 		"fixed_slippage",
 		"dir2_zero_initial",
 		"zero_initial_mode",
+		"min_atr_percentile",
+		"min_sma_atr_separation",
+		"quality_filter_shapes",
 	} {
 		if value, ok := state[key]; ok {
 			parameters[key] = value
@@ -1283,7 +1286,7 @@ func normalizePaperSessionOverrides(overrides map[string]any) map[string]any {
 			normalized[key] = normalizeStrategyEngineKey(stringValue(value))
 		case "tradingFeeBps", "fundingRateBps", "fixed_slippage", "stop_loss_atr", "profit_protect_atr",
 			"long_reentry_atr", "short_reentry_atr", "trailing_stop_atr", "delayed_trailing_activation_atr",
-			"reentry_decay_factor":
+			"reentry_decay_factor", "min_atr_percentile", "min_sma_atr_separation":
 			normalized[key] = parseFloatValue(value)
 		case "fundingIntervalHours", "max_trades_per_bar":
 			normalized[key] = maxIntValue(value, 0)
@@ -1309,6 +1312,8 @@ func normalizePaperSessionOverrides(overrides map[string]any) map[string]any {
 			default:
 				normalized[key] = value
 			}
+		case "quality_filter_shapes":
+			normalized[key] = normalizeStringList(value)
 		}
 	}
 	return normalized

@@ -42,44 +42,50 @@ type executionBar struct {
 }
 
 type strategyPosition struct {
-	Side       string
-	EntryPrice float64
-	StopLoss   float64
-	Protected  bool
-	Notional   float64
-	Reason     string
-	BarIndex   int
-	EntryTime  time.Time
-	HWM        float64
-	LWM        float64
+	Side          string
+	EntryPrice    float64
+	StopLoss      float64
+	Protected     bool
+	Notional      float64
+	Reason        string
+	BreakoutShape string
+	BarIndex      int
+	EntryTime     time.Time
+	HWM           float64
+	LWM           float64
 }
 
 type strategyReplayConfig struct {
-	SignalTimeframe           string
-	ExecutionDataSource       string
-	Symbol                    string
-	From                      time.Time
-	To                        time.Time
-	InitialBalance            float64
-	Dir1ReentryConfirm        bool
-	Dir2ZeroInitial           bool
-	ZeroInitialMode           string
-	FixedSlippage             float64
-	StopLossATR               float64
-	MaxTradesPerBar           int
-	ReentrySizeSchedule       []float64
-	LongReentryATR            float64
-	ShortReentryATR           float64
-	StopMode                  string
-	ProfitProtectATR          float64
-	TrailingStopATR           float64
-	DelayedTrailingATR        float64
-	TradingFeeRate            float64
-	FundingRate               float64
-	FundingIntervalHours      int
-	BreakoutShape             string
-	BreakoutShapeToleranceBps float64
-	UseSMA5IntradayStructure  bool
+	SignalTimeframe               string
+	ExecutionDataSource           string
+	Symbol                        string
+	From                          time.Time
+	To                            time.Time
+	InitialBalance                float64
+	Dir1ReentryConfirm            bool
+	Dir2ZeroInitial               bool
+	ZeroInitialMode               string
+	FixedSlippage                 float64
+	StopLossATR                   float64
+	MaxTradesPerBar               int
+	ReentrySizeSchedule           []float64
+	LongReentryATR                float64
+	ShortReentryATR               float64
+	StopMode                      string
+	ProfitProtectATR              float64
+	TrailingStopATR               float64
+	DelayedTrailingATR            float64
+	TradingFeeRate                float64
+	FundingRate                   float64
+	FundingIntervalHours          int
+	BreakoutShape                 string
+	BreakoutShapeToleranceBps     float64
+	UseSMA5IntradayStructure      bool
+	MinATRPercentile              float64
+	MinSMAATRSeparation           float64
+	QualityFilterShapes           []string
+	SignalDecisionMaxDeviationBps float64
+	SLReentryMinDelaySeconds      int
 }
 
 func (p *Platform) runStrategyReplay(context StrategyExecutionContext) (map[string]any, error) {
@@ -121,6 +127,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 	defer iterator.Close()
 
 	engine := newStrategyReplayEngine(cfg)
+	closedTrueRanges := replayClosedTrueRanges(signals)
 	commission := cfg.TradingFeeRate
 	initialUsage := 0.10
 	if cfg.Dir2ZeroInitial {
@@ -166,41 +173,61 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 			engine.lastExitSide = ""
 		}
 		engine.clearExpiredZeroInitialWindow(i)
+		highSoFar := math.Inf(-1)
+		lowSoFar := math.Inf(1)
+		qualityRejectRecorded := map[string]map[string]bool{
+			"long":  {},
+			"short": {},
+		}
 
 		for hasEvent && !nextEvent.Time.After(endT) {
 			current := nextEvent
 			engine.processedCount++
+			highSoFar = math.Max(highSoFar, current.Price)
+			lowSoFar = math.Min(lowSoFar, current.Price)
+			evalSig := sig
+			if replayUsesLiveAlignedSignal(cfg) {
+				evalSig = liveAlignedReplaySignal(signals, i, highSoFar, lowSoFar, current.Price, closedTrueRanges)
+			}
 			if engine.position == nil {
 				executed := false
 
-				longRegimeReady, shortRegimeReady := strategySignalRegimeReady(sig, engine.cfg.SignalTimeframe, engine.cfg.UseSMA5IntradayStructure)
+				longRegimeReady, shortRegimeReady := strategySignalRegimeReady(evalSig, engine.cfg.SignalTimeframe, engine.cfg.UseSMA5IntradayStructure)
 				if longRegimeReady {
-					reP := sig.PrevLow1 + cfg.LongReentryATR*sig.ATR
-					if breakout := resolveReplayInitialBreakout(sig, "long", current.Price, cfg); tradesInBar == 0 && breakout.Ready {
-						if engine.zeroInitialReentryWindowEnabled() {
-							engine.armZeroInitialWindow("long", i)
-						} else {
-							entry := math.Max(current.Price, breakout.Level) * (1 + cfg.FixedSlippage)
-							notional := engine.balance * initialUsage
-							stopLoss := resolveStopPrice("long", entry, sig, cfg.StopMode, cfg.StopLossATR)
-							engine.position = &strategyPosition{
-								Side:       "long",
-								EntryPrice: entry,
-								StopLoss:   stopLoss,
-								Protected:  false,
-								Notional:   notional,
-								Reason:     "Initial",
-								BarIndex:   i,
-								EntryTime:  current.Time,
-								HWM:        entry,
-								LWM:        entry,
+					reP := evalSig.PrevLow1 + cfg.LongReentryATR*evalSig.ATR
+					if breakout := resolveReplayInitialBreakout(evalSig, "long", current.Price, cfg); tradesInBar == 0 {
+						if breakout.QualityRejected && !qualityRejectRecorded["long"][breakout.RejectReason] {
+							engine.recordBreakoutQualityReject("long", breakout.RejectReason)
+							qualityRejectRecorded["long"][breakout.RejectReason] = true
+						}
+						if breakout.Ready {
+							if engine.zeroInitialReentryWindowEnabled() {
+								engine.armZeroInitialWindow("long", i, breakout.Shape)
+								engine.recordBreakoutLock("long", breakout.Shape)
+							} else {
+								entry := math.Max(current.Price, breakout.Level) * (1 + cfg.FixedSlippage)
+								notional := engine.balance * initialUsage
+								stopLoss := resolveStopPrice("long", entry, evalSig, cfg.StopMode, cfg.StopLossATR)
+								engine.position = &strategyPosition{
+									Side:          "long",
+									EntryPrice:    entry,
+									StopLoss:      stopLoss,
+									Protected:     false,
+									Notional:      notional,
+									Reason:        "Initial",
+									BreakoutShape: breakout.Shape,
+									BarIndex:      i,
+									EntryTime:     current.Time,
+									HWM:           entry,
+									LWM:           entry,
+								}
+								tradingFee := notional * commission
+								engine.balance -= tradingFee
+								engine.totalTradingFees += tradingFee
+								engine.appendTrade("BUY", current.Time, entry, "Initial", notional, 0, tradingFee, 0, breakout.Shape)
+								tradesInBar++
+								executed = true
 							}
-							tradingFee := notional * commission
-							engine.balance -= tradingFee
-							engine.totalTradingFees += tradingFee
-							engine.appendTrade("BUY", current.Time, entry, "Initial", notional, 0, tradingFee, 0)
-							tradesInBar++
-							executed = true
 						}
 					}
 					hasExitWindow := engine.lastExitSide == "long" && i-engine.lastExitBarIndex <= 1
@@ -208,6 +235,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 					if hasExitWindow || hasZeroWindow {
 						if current.Price >= reP {
 							reason := "Zero-Initial-Reentry"
+							shape := engine.pendingZeroInitialShape
 							size := getReentrySize(1, cfg.ReentrySizeSchedule)
 							effectiveTradesInBar := 0
 							ok := size > 0
@@ -216,28 +244,30 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 								if engine.lastExitReason == "SL" {
 									reason = "SL-Reentry"
 								}
+								shape = ""
 								size, effectiveTradesInBar, ok = resolveReplayReentrySlot(tradesInBar, cfg.MaxTradesPerBar, cfg.ReentrySizeSchedule)
 							}
-							if ok {
+							if ok && engine.replayReentryAllowed(evalSig, "long", reason, reP, current.Price, current.Time) {
 								notional := engine.balance * size
 								entry := reP * (1 + cfg.FixedSlippage)
-								stopLoss := resolveStopPrice("long", entry, sig, cfg.StopMode, cfg.StopLossATR)
+								stopLoss := resolveStopPrice("long", entry, evalSig, cfg.StopMode, cfg.StopLossATR)
 								engine.position = &strategyPosition{
-									Side:       "long",
-									EntryPrice: entry,
-									StopLoss:   stopLoss,
-									Protected:  false,
-									Notional:   notional,
-									Reason:     reason,
-									BarIndex:   i,
-									EntryTime:  current.Time,
-									HWM:        entry,
-									LWM:        entry,
+									Side:          "long",
+									EntryPrice:    entry,
+									StopLoss:      stopLoss,
+									Protected:     false,
+									Notional:      notional,
+									Reason:        reason,
+									BreakoutShape: shape,
+									BarIndex:      i,
+									EntryTime:     current.Time,
+									HWM:           entry,
+									LWM:           entry,
 								}
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
-								engine.appendTrade("BUY", current.Time, entry, reason, notional, 0, tradingFee, 0)
+								engine.appendTrade("BUY", current.Time, entry, reason, notional, 0, tradingFee, 0, shape)
 								if hasExitWindow {
 									tradesInBar = effectiveTradesInBar + 1
 								} else {
@@ -254,32 +284,40 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 						}
 					}
 				} else if shortRegimeReady {
-					reP := sig.PrevHigh1 + cfg.ShortReentryATR*sig.ATR
-					if breakout := resolveReplayInitialBreakout(sig, "short", current.Price, cfg); tradesInBar == 0 && breakout.Ready {
-						if engine.zeroInitialReentryWindowEnabled() {
-							engine.armZeroInitialWindow("short", i)
-						} else {
-							entry := math.Min(current.Price, breakout.Level) * (1 - cfg.FixedSlippage)
-							notional := engine.balance * initialUsage
-							stopLoss := resolveStopPrice("short", entry, sig, cfg.StopMode, cfg.StopLossATR)
-							engine.position = &strategyPosition{
-								Side:       "short",
-								EntryPrice: entry,
-								StopLoss:   stopLoss,
-								Protected:  false,
-								Notional:   notional,
-								Reason:     "Initial",
-								BarIndex:   i,
-								EntryTime:  current.Time,
-								HWM:        entry,
-								LWM:        entry,
+					reP := evalSig.PrevHigh1 + cfg.ShortReentryATR*evalSig.ATR
+					if breakout := resolveReplayInitialBreakout(evalSig, "short", current.Price, cfg); tradesInBar == 0 {
+						if breakout.QualityRejected && !qualityRejectRecorded["short"][breakout.RejectReason] {
+							engine.recordBreakoutQualityReject("short", breakout.RejectReason)
+							qualityRejectRecorded["short"][breakout.RejectReason] = true
+						}
+						if breakout.Ready {
+							if engine.zeroInitialReentryWindowEnabled() {
+								engine.armZeroInitialWindow("short", i, breakout.Shape)
+								engine.recordBreakoutLock("short", breakout.Shape)
+							} else {
+								entry := math.Min(current.Price, breakout.Level) * (1 - cfg.FixedSlippage)
+								notional := engine.balance * initialUsage
+								stopLoss := resolveStopPrice("short", entry, evalSig, cfg.StopMode, cfg.StopLossATR)
+								engine.position = &strategyPosition{
+									Side:          "short",
+									EntryPrice:    entry,
+									StopLoss:      stopLoss,
+									Protected:     false,
+									Notional:      notional,
+									Reason:        "Initial",
+									BreakoutShape: breakout.Shape,
+									BarIndex:      i,
+									EntryTime:     current.Time,
+									HWM:           entry,
+									LWM:           entry,
+								}
+								tradingFee := notional * commission
+								engine.balance -= tradingFee
+								engine.totalTradingFees += tradingFee
+								engine.appendTrade("SHORT", current.Time, entry, "Initial", notional, 0, tradingFee, 0, breakout.Shape)
+								tradesInBar++
+								executed = true
 							}
-							tradingFee := notional * commission
-							engine.balance -= tradingFee
-							engine.totalTradingFees += tradingFee
-							engine.appendTrade("SHORT", current.Time, entry, "Initial", notional, 0, tradingFee, 0)
-							tradesInBar++
-							executed = true
 						}
 					}
 					hasExitWindow := engine.lastExitSide == "short" && i-engine.lastExitBarIndex <= 1
@@ -287,6 +325,7 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 					if hasExitWindow || hasZeroWindow {
 						if current.Price <= reP {
 							reason := "Zero-Initial-Reentry"
+							shape := engine.pendingZeroInitialShape
 							size := getReentrySize(1, cfg.ReentrySizeSchedule)
 							effectiveTradesInBar := 0
 							ok := size > 0
@@ -295,28 +334,30 @@ func (p *Platform) runStrategyReplayOnTick(cfg strategyReplayConfig, signals []s
 								if engine.lastExitReason == "SL" {
 									reason = "SL-Reentry"
 								}
+								shape = ""
 								size, effectiveTradesInBar, ok = resolveReplayReentrySlot(tradesInBar, cfg.MaxTradesPerBar, cfg.ReentrySizeSchedule)
 							}
-							if ok {
+							if ok && engine.replayReentryAllowed(evalSig, "short", reason, reP, current.Price, current.Time) {
 								notional := engine.balance * size
 								entry := reP * (1 - cfg.FixedSlippage)
-								stopLoss := resolveStopPrice("short", entry, sig, cfg.StopMode, cfg.StopLossATR)
+								stopLoss := resolveStopPrice("short", entry, evalSig, cfg.StopMode, cfg.StopLossATR)
 								engine.position = &strategyPosition{
-									Side:       "short",
-									EntryPrice: entry,
-									StopLoss:   stopLoss,
-									Protected:  false,
-									Notional:   notional,
-									Reason:     reason,
-									BarIndex:   i,
-									EntryTime:  current.Time,
-									HWM:        entry,
-									LWM:        entry,
+									Side:          "short",
+									EntryPrice:    entry,
+									StopLoss:      stopLoss,
+									Protected:     false,
+									Notional:      notional,
+									Reason:        reason,
+									BreakoutShape: shape,
+									BarIndex:      i,
+									EntryTime:     current.Time,
+									HWM:           entry,
+									LWM:           entry,
 								}
 								tradingFee := notional * commission
 								engine.balance -= tradingFee
 								engine.totalTradingFees += tradingFee
-								engine.appendTrade("SHORT", current.Time, entry, reason, notional, 0, tradingFee, 0)
+								engine.appendTrade("SHORT", current.Time, entry, reason, notional, 0, tradingFee, 0, shape)
 								if hasExitWindow {
 									tradesInBar = effectiveTradesInBar + 1
 								} else {
@@ -697,7 +738,9 @@ type strategyReplayEngine struct {
 	lastExitReason             string
 	lastExitSide               string
 	lastExitBarIndex           int
+	lastExitTime               time.Time
 	pendingZeroInitialSide     string
+	pendingZeroInitialShape    string
 	pendingZeroInitialBarIndex int
 	currentBarIndex            int
 	tradesInBar                int
@@ -707,6 +750,35 @@ type strategyReplayEngine struct {
 	processedCount             int
 	totalTradingFees           float64
 	totalFundingPnL            float64
+	diagnostics                strategyReplayDiagnostics
+}
+
+type strategyReplayDiagnostics struct {
+	BreakoutLocks          map[string]map[string]int
+	BreakoutQualityRejects map[string]map[string]int
+	ActionableGateSkips    int
+	SLReentryDelaySkips    int
+}
+
+func (d strategyReplayDiagnostics) toMap() map[string]any {
+	return map[string]any{
+		"breakoutLocks":          cloneStringIntNestedMap(d.BreakoutLocks),
+		"breakoutQualityRejects": cloneStringIntNestedMap(d.BreakoutQualityRejects),
+		"actionableGateSkips":    d.ActionableGateSkips,
+		"slReentryDelaySkips":    d.SLReentryDelaySkips,
+	}
+}
+
+func cloneStringIntNestedMap(input map[string]map[string]int) map[string]any {
+	out := make(map[string]any, len(input))
+	for key, values := range input {
+		nested := make(map[string]int, len(values))
+		for nestedKey, value := range values {
+			nested[nestedKey] = value
+		}
+		out[key] = nested
+	}
+	return out
 }
 
 func newStrategyReplayEngine(cfg strategyReplayConfig) *strategyReplayEngine {
@@ -717,6 +789,16 @@ func newStrategyReplayEngine(cfg strategyReplayConfig) *strategyReplayEngine {
 		pendingZeroInitialBarIndex: -999,
 		equity:                     []float64{cfg.InitialBalance},
 		trades:                     make([]map[string]any, 0, 128),
+		diagnostics: strategyReplayDiagnostics{
+			BreakoutLocks: map[string]map[string]int{
+				"long":  {},
+				"short": {},
+			},
+			BreakoutQualityRejects: map[string]map[string]int{
+				"long":  {},
+				"short": {},
+			},
+		},
 	}
 }
 
@@ -727,12 +809,17 @@ func (e *strategyReplayEngine) zeroInitialReentryWindowEnabled() bool {
 func (e *strategyReplayEngine) clearExpiredZeroInitialWindow(currentBarIndex int) {
 	if currentBarIndex-e.pendingZeroInitialBarIndex > 1 {
 		e.pendingZeroInitialSide = ""
+		e.pendingZeroInitialShape = ""
 		e.pendingZeroInitialBarIndex = -999
 	}
 }
 
-func (e *strategyReplayEngine) armZeroInitialWindow(side string, currentBarIndex int) {
+func (e *strategyReplayEngine) armZeroInitialWindow(side string, currentBarIndex int, shape ...string) {
 	e.pendingZeroInitialSide = strings.ToLower(strings.TrimSpace(side))
+	e.pendingZeroInitialShape = ""
+	if len(shape) > 0 {
+		e.pendingZeroInitialShape = strings.TrimSpace(shape[0])
+	}
 	e.pendingZeroInitialBarIndex = currentBarIndex
 }
 
@@ -743,7 +830,77 @@ func (e *strategyReplayEngine) hasZeroInitialWindow(side string, currentBarIndex
 
 func (e *strategyReplayEngine) clearZeroInitialWindow() {
 	e.pendingZeroInitialSide = ""
+	e.pendingZeroInitialShape = ""
 	e.pendingZeroInitialBarIndex = -999
+}
+
+func (e *strategyReplayEngine) recordBreakoutLock(side, shape string) {
+	side = replayDiagnosticsSide(side)
+	shape = strings.TrimSpace(shape)
+	if side == "" || shape == "" {
+		return
+	}
+	if e.diagnostics.BreakoutLocks[side] == nil {
+		e.diagnostics.BreakoutLocks[side] = map[string]int{}
+	}
+	e.diagnostics.BreakoutLocks[side][shape]++
+}
+
+func (e *strategyReplayEngine) recordBreakoutQualityReject(side, reason string) {
+	side = replayDiagnosticsSide(side)
+	reason = strings.TrimSpace(reason)
+	if side == "" || reason == "" {
+		return
+	}
+	if e.diagnostics.BreakoutQualityRejects[side] == nil {
+		e.diagnostics.BreakoutQualityRejects[side] = map[string]int{}
+	}
+	e.diagnostics.BreakoutQualityRejects[side][reason]++
+}
+
+func replayDiagnosticsSide(side string) string {
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "buy", "long":
+		return "long"
+	case "sell", "short":
+		return "short"
+	default:
+		return ""
+	}
+}
+
+func (e *strategyReplayEngine) replayReentryAllowed(sig strategySignalBar, side, reason string, plannedPrice, marketPrice float64, eventTime time.Time) bool {
+	if e.cfg.SLReentryMinDelaySeconds > 0 &&
+		strings.EqualFold(strings.TrimSpace(e.lastExitReason), "SL") &&
+		!e.lastExitTime.IsZero() &&
+		eventTime.UTC().Sub(e.lastExitTime.UTC()) < time.Duration(e.cfg.SLReentryMinDelaySeconds)*time.Second {
+		e.diagnostics.SLReentryDelaySkips++
+		return false
+	}
+	if e.cfg.SignalDecisionMaxDeviationBps > 0 && plannedPrice > 0 && marketPrice > 0 {
+		nextSide := "BUY"
+		if strings.EqualFold(strings.TrimSpace(side), "short") {
+			nextSide = "SELL"
+		}
+		if !isPlannedPriceActionable(nextSide, plannedPrice, marketPrice, e.cfg.SignalDecisionMaxDeviationBps) {
+			e.diagnostics.ActionableGateSkips++
+			return false
+		}
+	}
+	nextSide := "BUY"
+	if strings.EqualFold(strings.TrimSpace(side), "short") {
+		nextSide = "SELL"
+	}
+	gate := evaluateReentryEntryQualityGate(
+		replayParametersFromConfig(e.cfg),
+		replaySignalBarState(sig, e.cfg.Symbol, e.cfg.SignalTimeframe),
+		nextSide,
+		"entry",
+		reason,
+		plannedPrice,
+		marketPrice,
+	)
+	return boolValue(gate["ready"])
 }
 
 func (e *strategyReplayEngine) process(bar executionBar, signals []strategySignalBar) {
@@ -981,7 +1138,7 @@ func (e *strategyReplayEngine) tryExit(bar executionBar, sig strategySignalBar) 
 	e.position = nil
 }
 
-func (e *strategyReplayEngine) appendTrade(kind string, at time.Time, price float64, reason string, notional float64, pnl float64, tradingFee float64, fundingPnL float64) {
+func (e *strategyReplayEngine) appendTrade(kind string, at time.Time, price float64, reason string, notional float64, pnl float64, tradingFee float64, fundingPnL float64, breakoutShape ...string) {
 	record := map[string]any{
 		"time":       at.UTC().Format(time.RFC3339),
 		"type":       kind,
@@ -992,6 +1149,9 @@ func (e *strategyReplayEngine) appendTrade(kind string, at time.Time, price floa
 		"pnl":        pnl,
 		"tradingFee": tradingFee,
 		"fundingPnL": fundingPnL,
+	}
+	if len(breakoutShape) > 0 && strings.TrimSpace(breakoutShape[0]) != "" {
+		record["breakoutShapeName"] = strings.TrimSpace(breakoutShape[0])
 	}
 	e.equity = append(e.equity, e.balance)
 	e.trades = append(e.trades, record)
@@ -1014,6 +1174,7 @@ func (e *strategyReplayEngine) summary(signals []strategySignalBar) map[string]a
 	} else {
 		result["processedBars"] = e.processedCount
 	}
+	result["diagnostics"] = e.diagnostics.toMap()
 	result["tradingFees"] = e.totalTradingFees
 	result["fundingPnL"] = e.totalFundingPnL
 	if len(e.trades) == 0 {
@@ -1049,31 +1210,36 @@ func buildStrategyReplayConfig(context StrategyExecutionContext) strategyReplayC
 		stopLossATR = 0.05
 	}
 	return strategyReplayConfig{
-		SignalTimeframe:           normalizeSignalBarInterval(context.SignalTimeframe),
-		ExecutionDataSource:       strings.ToLower(context.ExecutionDataSource),
-		Symbol:                    normalizeBacktestSymbol(context.Symbol),
-		From:                      context.From,
-		To:                        context.To,
-		InitialBalance:            100000.0,
-		Dir1ReentryConfirm:        false,
-		Dir2ZeroInitial:           dir2ZeroInitial,
-		ZeroInitialMode:           resolveStrategyZeroInitialMode(dir2ZeroInitial, parameters["zero_initial_mode"]),
-		FixedSlippage:             strategyReplaySlippage(context, parameters),
-		StopLossATR:               stopLossATR,
-		MaxTradesPerBar:           maxIntValue(parameters["max_trades_per_bar"], domain.ResearchBaselineMaxTradesPerBar),
-		ReentrySizeSchedule:       reentrySizes,
-		LongReentryATR:            parseFloatValue(firstNonNil(parameters["long_reentry_atr"], 0.1)),
-		ShortReentryATR:           parseFloatValue(firstNonNil(parameters["short_reentry_atr"], 0.0)),
-		StopMode:                  stopMode,
-		ProfitProtectATR:          firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0),
-		TrailingStopATR:           parseFloatValue(parameters["trailing_stop_atr"]),
-		DelayedTrailingATR:        parseFloatValue(parameters["delayed_trailing_activation_atr"]),
-		TradingFeeRate:            context.Semantics.TradingFeeBps / 10000.0,
-		FundingRate:               context.Semantics.FundingRateBps / 10000.0,
-		FundingIntervalHours:      maxIntValue(context.Semantics.FundingIntervalHours, 8),
-		BreakoutShape:             strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
-		BreakoutShapeToleranceBps: parseFloatValue(parameters["breakout_shape_tolerance_bps"]),
-		UseSMA5IntradayStructure:  boolValue(parameters["use_sma5_intraday_structure"]),
+		SignalTimeframe:               normalizeSignalBarInterval(context.SignalTimeframe),
+		ExecutionDataSource:           strings.ToLower(context.ExecutionDataSource),
+		Symbol:                        normalizeBacktestSymbol(context.Symbol),
+		From:                          context.From,
+		To:                            context.To,
+		InitialBalance:                100000.0,
+		Dir1ReentryConfirm:            false,
+		Dir2ZeroInitial:               dir2ZeroInitial,
+		ZeroInitialMode:               resolveStrategyZeroInitialMode(dir2ZeroInitial, parameters["zero_initial_mode"]),
+		FixedSlippage:                 strategyReplaySlippage(context, parameters),
+		StopLossATR:                   stopLossATR,
+		MaxTradesPerBar:               maxIntValue(parameters["max_trades_per_bar"], domain.ResearchBaselineMaxTradesPerBar),
+		ReentrySizeSchedule:           reentrySizes,
+		LongReentryATR:                parseFloatValue(firstNonNil(parameters["long_reentry_atr"], 0.1)),
+		ShortReentryATR:               parseFloatValue(firstNonNil(parameters["short_reentry_atr"], 0.0)),
+		StopMode:                      stopMode,
+		ProfitProtectATR:              firstPositive(parseFloatValue(parameters["profit_protect_atr"]), 1.0),
+		TrailingStopATR:               parseFloatValue(parameters["trailing_stop_atr"]),
+		DelayedTrailingATR:            parseFloatValue(parameters["delayed_trailing_activation_atr"]),
+		TradingFeeRate:                context.Semantics.TradingFeeBps / 10000.0,
+		FundingRate:                   context.Semantics.FundingRateBps / 10000.0,
+		FundingIntervalHours:          maxIntValue(context.Semantics.FundingIntervalHours, 8),
+		BreakoutShape:                 strings.ToLower(strings.TrimSpace(stringValue(parameters["breakout_shape"]))),
+		BreakoutShapeToleranceBps:     parseFloatValue(parameters["breakout_shape_tolerance_bps"]),
+		UseSMA5IntradayStructure:      boolValue(parameters["use_sma5_intraday_structure"]),
+		MinATRPercentile:              firstPositive(parseFloatValue(parameters["min_atr_percentile"]), parseFloatValue(parameters["breakout_min_atr_percentile"])),
+		MinSMAATRSeparation:           firstPositive(parseFloatValue(parameters["min_sma_atr_separation"]), parseFloatValue(parameters["breakout_min_sma_atr_separation"])),
+		QualityFilterShapes:           normalizeStringList(parameters["quality_filter_shapes"]),
+		SignalDecisionMaxDeviationBps: firstPositive(parseFloatValue(parameters["signalDecisionMaxDeviationBps"]), parseFloatValue(parameters["actionable_bps"])),
+		SLReentryMinDelaySeconds:      maxIntValue(parameters["sl_reentry_min_delay_seconds"], 0),
 	}
 }
 
@@ -1176,24 +1342,210 @@ func buildSignalBars(minuteBars []candleBar, timeframe string) ([]strategySignal
 	return signals, nil
 }
 
+func replayClosedTrueRanges(signals []strategySignalBar) []float64 {
+	trueRanges := make([]float64, len(signals))
+	for i, sig := range signals {
+		if i == 0 {
+			trueRanges[i] = sig.High - sig.Low
+			continue
+		}
+		highLow := sig.High - sig.Low
+		highClose := math.Abs(sig.High - signals[i-1].Close)
+		lowClose := math.Abs(sig.Low - signals[i-1].Close)
+		trueRanges[i] = math.Max(highLow, math.Max(highClose, lowClose))
+	}
+	return trueRanges
+}
+
+func liveAlignedReplaySignal(signals []strategySignalBar, index int, highSoFar, lowSoFar, closePrice float64, closedTrueRanges []float64) strategySignalBar {
+	sig := signals[index]
+	sig.High = highSoFar
+	sig.Low = lowSoFar
+	sig.Close = closePrice
+	if index >= 4 {
+		sum := closePrice
+		for i := index - 4; i < index; i++ {
+			sum += signals[i].Close
+		}
+		sig.MA5 = sum / 5
+	} else {
+		sig.MA5 = math.NaN()
+	}
+	if index >= 19 {
+		sum := closePrice
+		for i := index - 19; i < index; i++ {
+			sum += signals[i].Close
+		}
+		sig.MA20 = sum / 20
+	} else {
+		sig.MA20 = math.NaN()
+	}
+	currentTR := replayCurrentTrueRange(signals, index, highSoFar, lowSoFar, closePrice)
+	if index >= 13 {
+		sum := currentTR
+		for i := index - 13; i < index; i++ {
+			sum += closedTrueRanges[i]
+		}
+		sig.ATR = sum / 14
+	} else {
+		sig.ATR = math.NaN()
+	}
+	sig.ATRPercentile = replayCurrentATRPercentile(closedTrueRanges, index, sig.ATR)
+	if index >= 1 {
+		sig.PrevHigh1 = signals[index-1].High
+		sig.PrevLow1 = signals[index-1].Low
+	}
+	if index >= 2 {
+		sig.PrevHigh2 = signals[index-2].High
+		sig.PrevLow2 = signals[index-2].Low
+	}
+	if index >= 3 {
+		sig.PrevHigh3 = signals[index-3].High
+		sig.PrevLow3 = signals[index-3].Low
+	}
+	return sig
+}
+
+func replayCurrentTrueRange(signals []strategySignalBar, index int, highSoFar, lowSoFar, closePrice float64) float64 {
+	if index <= 0 {
+		return highSoFar - lowSoFar
+	}
+	prevClose := signals[index-1].Close
+	highLow := highSoFar - lowSoFar
+	highClose := math.Abs(highSoFar - prevClose)
+	lowClose := math.Abs(lowSoFar - prevClose)
+	if closePrice <= 0 {
+		return math.Max(highLow, math.Max(highClose, lowClose))
+	}
+	return math.Max(highLow, math.Max(highClose, lowClose))
+}
+
+func replayCurrentATRPercentile(closedTrueRanges []float64, index int, currentATR float64) float64 {
+	if math.IsNaN(currentATR) || math.IsInf(currentATR, 0) {
+		return math.NaN()
+	}
+	start := index - 239
+	if start < 0 {
+		start = 0
+	}
+	clean := make([]float64, 0, index-start+1)
+	for i := start; i < index; i++ {
+		value := rollingMeanOrNaN(closedTrueRanges, i, 14)
+		if !math.IsNaN(value) && !math.IsInf(value, 0) {
+			clean = append(clean, value)
+		}
+	}
+	clean = append(clean, currentATR)
+	if len(clean) < 50 {
+		return math.NaN()
+	}
+	lessOrEqual := 0
+	for _, value := range clean {
+		if value <= currentATR {
+			lessOrEqual++
+		}
+	}
+	return float64(lessOrEqual) / float64(len(clean)) * 100.0
+}
+
+func replayUsesLiveAlignedSignal(cfg strategyReplayConfig) bool {
+	return cfg.UseSMA5IntradayStructure && normalizeSignalBarInterval(cfg.SignalTimeframe) != "1d"
+}
+
 type replayInitialBreakout struct {
-	Ready bool
-	Level float64
-	Shape string
+	Ready           bool
+	Level           float64
+	Shape           string
+	QualityRejected bool
+	RejectReason    string
 }
 
 func resolveReplayInitialBreakout(sig strategySignalBar, side string, observedPrice float64, cfg strategyReplayConfig) replayInitialBreakout {
-	switch strings.ToLower(strings.TrimSpace(side)) {
-	case "long":
-		if t2LongBreakoutShapeReady(sig.PrevHigh2, sig.PrevHigh1, cfg.BreakoutShapeToleranceBps) && observedPrice >= sig.PrevHigh2 {
-			return replayInitialBreakout{Ready: true, Level: sig.PrevHigh2, Shape: "original_t2"}
-		}
-	case "short":
-		if t2ShortBreakoutShapeReady(sig.PrevLow2, sig.PrevLow1, cfg.BreakoutShapeToleranceBps) && observedPrice <= sig.PrevLow2 {
-			return replayInitialBreakout{Ready: true, Level: sig.PrevLow2, Shape: "original_t2"}
+	nextSide := "BUY"
+	fieldPrefix := "long"
+	if strings.EqualFold(strings.TrimSpace(side), "short") {
+		nextSide = "SELL"
+		fieldPrefix = "short"
+	}
+	gate := evaluateSignalBarGate(
+		replaySignalBarState(sig, cfg.Symbol, cfg.SignalTimeframe),
+		nextSide,
+		"entry",
+		"Initial",
+		observedPrice,
+		"replay.observed_price",
+		signalBarGateOptionsFromParameters(replayParametersFromConfig(cfg)),
+	)
+	shape := stringValue(gate[fieldPrefix+"BreakoutShapeName"])
+	level := parseFloatValue(gate[fieldPrefix+"BreakoutLevel"])
+	if boolValue(gate[fieldPrefix+"BreakoutReady"]) {
+		return replayInitialBreakout{Ready: true, Level: level, Shape: shape}
+	}
+	if shape != "" &&
+		boolValue(gate[fieldPrefix+"BreakoutShapeReady"]) &&
+		boolValue(gate[fieldPrefix+"BreakoutPriceReady"]) &&
+		!boolValue(gate[fieldPrefix+"BreakoutQualityReady"]) {
+		return replayInitialBreakout{
+			Ready:           false,
+			Level:           level,
+			Shape:           shape,
+			QualityRejected: true,
+			RejectReason:    stringValue(gate[fieldPrefix+"BreakoutRejectReason"]),
 		}
 	}
 	return replayInitialBreakout{}
+}
+
+func replaySignalBarState(sig strategySignalBar, symbol, timeframe string) map[string]any {
+	return map[string]any{
+		"symbol":         NormalizeSymbol(symbol),
+		"timeframe":      normalizeSignalBarInterval(timeframe),
+		"sma5":           sig.MA5,
+		"ma20":           sig.MA20,
+		"atr14":          sig.ATR,
+		"atrPercentile":  sig.ATRPercentile,
+		"current":        replayCandleMap(symbol, timeframe, sig.Time, sig.Open, sig.High, sig.Low, sig.Close),
+		"prevBar1":       replayCandleMap(symbol, timeframe, time.Time{}, 0, sig.PrevHigh1, sig.PrevLow1, 0),
+		"prevBar2":       replayCandleMap(symbol, timeframe, time.Time{}, 0, sig.PrevHigh2, sig.PrevLow2, 0),
+		"prevBar3":       replayCandleMap(symbol, timeframe, time.Time{}, 0, sig.PrevHigh3, sig.PrevLow3, 0),
+		"currentClosed":  false,
+		"barCount":       0,
+		"closedBarCount": 0,
+	}
+}
+
+func replayCandleMap(symbol, timeframe string, at time.Time, open, high, low, close float64) map[string]any {
+	item := map[string]any{
+		"symbol":    NormalizeSymbol(symbol),
+		"timeframe": normalizeSignalBarInterval(timeframe),
+		"open":      open,
+		"high":      high,
+		"low":       low,
+		"close":     close,
+	}
+	if !at.IsZero() {
+		item["barStart"] = at.UTC().Format(time.RFC3339)
+		item["time"] = at.UTC().Format(time.RFC3339)
+	}
+	return item
+}
+
+func replayParametersFromConfig(cfg strategyReplayConfig) map[string]any {
+	return map[string]any{
+		"breakout_shape":                cfg.BreakoutShape,
+		"breakout_shape_tolerance_bps":  cfg.BreakoutShapeToleranceBps,
+		"use_sma5_intraday_structure":   cfg.UseSMA5IntradayStructure,
+		"stop_loss_atr":                 cfg.StopLossATR,
+		"reentry_size_schedule":         cfg.ReentrySizeSchedule,
+		"max_trades_per_bar":            cfg.MaxTradesPerBar,
+		"long_reentry_atr":              cfg.LongReentryATR,
+		"short_reentry_atr":             cfg.ShortReentryATR,
+		"min_atr_percentile":            cfg.MinATRPercentile,
+		"min_sma_atr_separation":        cfg.MinSMAATRSeparation,
+		"quality_filter_shapes":         cfg.QualityFilterShapes,
+		"signalDecisionMaxDeviationBps": cfg.SignalDecisionMaxDeviationBps,
+		"sl_reentry_min_delay_seconds":  cfg.SLReentryMinDelaySeconds,
+	}
 }
 
 func strategySignalRegimeReady(sig strategySignalBar, timeframe string, useSMA5Intraday ...bool) (bool, bool) {
@@ -1226,12 +1578,12 @@ func strategySignalRegimeReady(sig strategySignalBar, timeframe string, useSMA5I
 
 func (p *Platform) loadStrategySignalBars(timeframe string) ([]strategySignalBar, error) {
 	switch normalizeSignalBarInterval(timeframe) {
-	case "5m":
+	case "5m", "15m", "30m":
 		minuteBars, err := p.loadCandleBars()
 		if err != nil {
 			return nil, err
 		}
-		return buildSignalBars(minuteBars, "5m")
+		return buildSignalBars(minuteBars, normalizeSignalBarInterval(timeframe))
 	case "4h":
 		return readSignalBarsCSV("BTC_4H_Signals.csv")
 	case "1d":
@@ -1654,23 +2006,24 @@ func pairStrategyTrades(events []map[string]any, source string) []map[string]any
 				quantity = notional / entryPrice
 			}
 			trades = append(trades, map[string]any{
-				"source":          source,
-				"side":            stringValue(current["type"]),
-				"quantity":        quantity,
-				"notional":        notional,
-				"entryTarget":     current["price"],
-				"entryTime":       current["time"],
-				"entryPrice":      current["price"],
-				"entryReason":     current["reason"],
-				"entryTradingFee": current["tradingFee"],
-				"exitTime":        event["time"],
-				"exitPrice":       event["price"],
-				"exitType":        event["reason"],
-				"exitTradingFee":  event["tradingFee"],
-				"fundingPnL":      event["fundingPnL"],
-				"realizedPnL":     event["pnl"],
-				"processedBars":   0,
-				"status":          "closed",
+				"source":             source,
+				"side":               stringValue(current["type"]),
+				"quantity":           quantity,
+				"notional":           notional,
+				"entryTarget":        current["price"],
+				"entryTime":          current["time"],
+				"entryPrice":         current["price"],
+				"entryReason":        current["reason"],
+				"entryBreakoutShape": current["breakoutShapeName"],
+				"entryTradingFee":    current["tradingFee"],
+				"exitTime":           event["time"],
+				"exitPrice":          event["price"],
+				"exitType":           event["reason"],
+				"exitTradingFee":     event["tradingFee"],
+				"fundingPnL":         event["fundingPnL"],
+				"realizedPnL":        event["pnl"],
+				"processedBars":      0,
+				"status":             "closed",
 			})
 			current = nil
 		}

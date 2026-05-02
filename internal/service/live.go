@@ -2358,7 +2358,7 @@ func liveIntradayResearchBaselineStateMatchesTemplate(state map[string]any) bool
 	switch key {
 	case "binance-testnet-btc-15m":
 		return symbol == "BTCUSDT" && timeframe == "15m"
-	case "binance-testnet-btc-30m":
+	case "binance-testnet-btc-30m", "binance-testnet-btc-30m-baseline-plus-t3-enhanced":
 		return symbol == "BTCUSDT" && timeframe == "30m"
 	default:
 		return false
@@ -5330,6 +5330,9 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"use_sma5_intraday_structure",
 		"reentry_min_stop_bps",
 		"reentry_atr_percentile_gte",
+		"min_atr_percentile",
+		"min_sma_atr_separation",
+		"quality_filter_shapes",
 		"signalDecisionMaxDeviationBps",
 	}
 	sessionParameterKeys = append(sessionParameterKeys, liveExecutionParameterOverrideKeys()...)
@@ -5869,6 +5872,15 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if atrPercentileGTE := parseFloatValue(overrides["reentry_atr_percentile_gte"]); atrPercentileGTE > 0 {
 		normalized["reentry_atr_percentile_gte"] = atrPercentileGTE
+	}
+	if minATRPercentile := parseFloatValue(overrides["min_atr_percentile"]); minATRPercentile > 0 {
+		normalized["min_atr_percentile"] = minATRPercentile
+	}
+	if minSeparation := parseFloatValue(overrides["min_sma_atr_separation"]); minSeparation > 0 {
+		normalized["min_sma_atr_separation"] = minSeparation
+	}
+	if shapes := normalizeStringList(overrides["quality_filter_shapes"]); len(shapes) > 0 {
+		normalized["quality_filter_shapes"] = shapes
 	}
 	return normalized
 }

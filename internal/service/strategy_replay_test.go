@@ -197,7 +197,7 @@ func TestResolveReplayInitialBreakoutAllowsT2Tolerance(t *testing.T) {
 	}
 }
 
-func TestResolveReplayInitialBreakoutIgnoresT3OnlyShape(t *testing.T) {
+func TestResolveReplayInitialBreakoutAllowsT3SwingWithBaselinePlusT3Shape(t *testing.T) {
 	cfg := strategyReplayConfig{
 		BreakoutShape:             "baseline_plus_t3",
 		BreakoutShapeToleranceBps: 0.5,
@@ -210,8 +210,8 @@ func TestResolveReplayInitialBreakoutIgnoresT3OnlyShape(t *testing.T) {
 		PrevHigh3: 69000,
 	}
 	breakout := resolveReplayInitialBreakout(sig, "long", 69010, cfg)
-	if breakout.Ready {
-		t.Fatalf("expected t3-only breakout shape to be ignored, got %#v", breakout)
+	if !breakout.Ready || breakout.Level != 69000 || breakout.Shape != "t3_swing" {
+		t.Fatalf("expected t3_swing breakout with baseline_plus_t3 shape, got %#v", breakout)
 	}
 }
 
