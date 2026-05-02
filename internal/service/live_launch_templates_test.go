@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/wuyaocheng/bktrader/internal/domain"
 	storepkg "github.com/wuyaocheng/bktrader/internal/store"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
@@ -33,8 +34,8 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
-	if len(templates) != 9 {
-		t.Fatalf("expected 9 launch templates, got %d", len(templates))
+	if len(templates) != 10 {
+		t.Fatalf("expected 10 launch templates, got %d", len(templates))
 	}
 
 	expected := map[string]struct {
@@ -43,16 +44,18 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		quantity         float64
 		researchBaseline bool
 		enhanced         bool
+		baselinePlusT3   bool
 	}{
-		"binance-testnet-btc-5m":           {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
-		"binance-testnet-btc-15m":          {symbol: "BTCUSDT", timeframe: "15m", quantity: 0.002, researchBaseline: true},
-		"binance-testnet-btc-30m":          {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, researchBaseline: true},
-		"binance-testnet-btc-30m-enhanced": {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, enhanced: true},
-		"binance-testnet-btc-4h":           {symbol: "BTCUSDT", timeframe: "4h", quantity: 0.002},
-		"binance-testnet-btc-1d":           {symbol: "BTCUSDT", timeframe: "1d", quantity: 0.002},
-		"binance-testnet-eth-5m":           {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
-		"binance-testnet-eth-4h":           {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
-		"binance-testnet-eth-1d":           {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
+		"binance-testnet-btc-5m":                            {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
+		"binance-testnet-btc-15m":                           {symbol: "BTCUSDT", timeframe: "15m", quantity: 0.002, researchBaseline: true},
+		"binance-testnet-btc-30m":                           {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, researchBaseline: true},
+		"binance-testnet-btc-30m-enhanced":                  {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, enhanced: true},
+		"binance-testnet-btc-30m-baseline-plus-t3-enhanced": {symbol: "BTCUSDT", timeframe: "30m", quantity: 0.002, enhanced: true, baselinePlusT3: true},
+		"binance-testnet-btc-4h":                            {symbol: "BTCUSDT", timeframe: "4h", quantity: 0.002},
+		"binance-testnet-btc-1d":                            {symbol: "BTCUSDT", timeframe: "1d", quantity: 0.002},
+		"binance-testnet-eth-5m":                            {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
+		"binance-testnet-eth-4h":                            {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
+		"binance-testnet-eth-1d":                            {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
 	}
 
 	for _, item := range templates {
@@ -174,10 +177,7 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["short_reentry_atr"]); got != 0.0 {
 				t.Fatalf("expected short_reentry_atr=0.0 for %s, got %v", item.Key, got)
 			}
-			expectedMaxTradesPerBar := 1
-			if want.enhanced {
-				expectedMaxTradesPerBar = 2
-			}
+			expectedMaxTradesPerBar := domain.ResearchBaselineMaxTradesPerBar
 			if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["max_trades_per_bar"], 0); got != expectedMaxTradesPerBar {
 				t.Fatalf("expected max_trades_per_bar=%d for %s, got %d", expectedMaxTradesPerBar, item.Key, got)
 			}
@@ -186,12 +186,6 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 				t.Fatalf("expected reentry_size_schedule [0.20, 0.10] for %s, got %#v", item.Key, item.LaunchPayload.LiveSessionOverrides["reentry_size_schedule"])
 			}
 			if want.enhanced {
-				if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
-					t.Fatalf("expected enhanced strategy engine, got %s", got)
-				}
-				if got := stringValue(item.LaunchPayload.LiveSessionOverrides["breakout_shape"]); got != "original_t2" {
-					t.Fatalf("expected original_t2 breakout shape, got %s", got)
-				}
 				if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["breakout_shape_tolerance_bps"]); got != 0.5 {
 					t.Fatalf("expected T2 breakout tolerance 0.5 bps, got %v", got)
 				}
@@ -201,11 +195,38 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 				if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["sl_reentry_min_delay_seconds"], 0); got != 60 {
 					t.Fatalf("expected enhanced template SL-Reentry delay 60s, got %d", got)
 				}
-				if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["reentry_min_stop_bps"]); got != 6.0 {
-					t.Fatalf("expected enhanced template reentry_min_stop_bps=6, got %v", got)
-				}
-				if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["reentry_atr_percentile_gte"]); got != 25.0 {
-					t.Fatalf("expected enhanced template reentry_atr_percentile_gte=25, got %v", got)
+				if want.baselinePlusT3 {
+					if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got != bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey {
+						t.Fatalf("expected baseline+T3 enhanced strategy engine, got %s", got)
+					}
+					if got := stringValue(item.LaunchPayload.LiveSessionOverrides["breakout_shape"]); got != "baseline_plus_t3" {
+						t.Fatalf("expected baseline_plus_t3 breakout shape, got %s", got)
+					}
+					if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["min_atr_percentile"]); got != 25.0 {
+						t.Fatalf("expected enhanced template min_atr_percentile=25, got %v", got)
+					}
+					if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["min_sma_atr_separation"]); got != 0.1 {
+						t.Fatalf("expected enhanced template min_sma_atr_separation=0.1, got %v", got)
+					}
+					if _, ok := item.LaunchPayload.LiveSessionOverrides["reentry_min_stop_bps"]; ok {
+						t.Fatalf("expected baseline+T3 template to omit legacy reentry_min_stop_bps, got %#v", item.LaunchPayload.LiveSessionOverrides)
+					}
+					if _, ok := item.LaunchPayload.LiveSessionOverrides["reentry_atr_percentile_gte"]; ok {
+						t.Fatalf("expected baseline+T3 template to omit legacy reentry_atr_percentile_gte, got %#v", item.LaunchPayload.LiveSessionOverrides)
+					}
+				} else {
+					if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
+						t.Fatalf("expected legacy enhanced strategy engine, got %s", got)
+					}
+					if got := stringValue(item.LaunchPayload.LiveSessionOverrides["breakout_shape"]); got != "original_t2" {
+						t.Fatalf("expected original_t2 breakout shape, got %s", got)
+					}
+					if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["reentry_min_stop_bps"]); got != 6.0 {
+						t.Fatalf("expected enhanced template reentry_min_stop_bps=6, got %v", got)
+					}
+					if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["reentry_atr_percentile_gte"]); got != 25.0 {
+						t.Fatalf("expected enhanced template reentry_atr_percentile_gte=25, got %v", got)
+					}
 				}
 				if !boolValue(item.LaunchPayload.LiveSessionOverrides["use_sma5_intraday_structure"]) {
 					t.Fatalf("expected enhanced template to use SMA5 intraday structure")

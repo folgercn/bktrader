@@ -98,9 +98,10 @@ func defaultExecutionSemantics(mode ExecutionMode, parameters map[string]any) St
 }
 
 const (
-	bkLiveIntrabarSMA5T2Only0p5BpsEngineKey = "bk-live-intrabar-sma5-t2-only-0p5bps"
-	bkLiveIntrabarSMA5LegacyT3SepEngineKey  = "bk-live-intrabar-sma5-t3-sep"
-	defaultT2BreakoutShapeToleranceBps      = 0.5
+	bkLiveIntrabarSMA5T2Only0p5BpsEngineKey           = "bk-live-intrabar-sma5-t2-only-0p5bps"
+	bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey = "bk-live-intrabar-sma5-baseline-plus-t3-enhanced"
+	bkLiveIntrabarSMA5LegacyT3SepEngineKey            = "bk-live-intrabar-sma5-t3-sep"
+	defaultT2BreakoutShapeToleranceBps                = 0.5
 )
 
 func normalizeStrategyEngineKey(raw string) string {
@@ -127,6 +128,7 @@ func (p *Platform) registerStrategyEngine(engine StrategyEngine) {
 func (p *Platform) registerBuiltInStrategyEngines() {
 	p.registerStrategyEngine(bkStrategyEngine{platform: p})
 	p.registerStrategyEngine(bkLiveIntrabarSMA5T2Only0p5BpsEngine{platform: p})
+	p.registerStrategyEngine(bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngine{platform: p})
 }
 
 func (p *Platform) resolveStrategyEngine(strategyVersionID string, parameters map[string]any) (StrategyEngine, string, error) {
@@ -216,11 +218,66 @@ func (e bkLiveIntrabarSMA5T2Only0p5BpsEngine) EvaluateSignal(context StrategySig
 	return bkStrategyEngine{platform: e.platform}.EvaluateSignal(context)
 }
 
+type bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngine struct {
+	platform *Platform
+}
+
+func (e bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngine) Key() string {
+	return bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey
+}
+
+func (e bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngine) Describe() map[string]any {
+	return map[string]any{
+		"key":                  e.Key(),
+		"name":                 "BK Live Intrabar SMA5 Baseline+T3 Enhanced",
+		"supportedSignalBars":  []string{"30m"},
+		"supportedExecutions":  []string{"tick", "1min"},
+		"runtimeConsistency":   "live-intrabar-sma5-baseline-plus-t3-enhanced",
+		"backtestSlippageOnly": true,
+	}
+}
+
+func (e bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngine) Run(context StrategyExecutionContext) (map[string]any, error) {
+	return e.platform.runStrategyReplay(context)
+}
+
+func (e bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngine) EvaluateSignal(context StrategySignalEvaluationContext) (StrategySignalDecision, error) {
+	return bkStrategyEngine{platform: e.platform}.EvaluateSignal(context)
+}
+
+type EntryQualityGateResult struct {
+	Name       string         `json:"name"`
+	Scope      string         `json:"scope"`
+	Applied    bool           `json:"applied"`
+	Ready      bool           `json:"ready"`
+	Reason     string         `json:"reason,omitempty"`
+	Metrics    map[string]any `json:"metrics,omitempty"`
+	Thresholds map[string]any `json:"thresholds,omitempty"`
+}
+
+type EntryQualityReport struct {
+	Ready       bool                     `json:"ready"`
+	Reason      string                   `json:"reason,omitempty"`
+	GateResults []EntryQualityGateResult `json:"gates"`
+}
+
+type BreakoutQualityReport struct {
+	Shape       string                   `json:"shape,omitempty"`
+	Scope       string                   `json:"scope"`
+	Applied     bool                     `json:"applied"`
+	Ready       bool                     `json:"ready"`
+	Reason      string                   `json:"reason,omitempty"`
+	GateResults []EntryQualityGateResult `json:"gates,omitempty"`
+}
+
 type signalBarGateOptions struct {
 	BreakoutShape             string
 	BreakoutShapeToleranceBps float64
 	ReentryMinStopBps         float64
 	ReentryATRPercentileGTE   float64
+	MinATRPercentile          float64
+	MinSMAATRSeparation       float64
+	QualityFilterShapes       []string
 }
 
 func signalBarGateOptionsFromParameters(parameters map[string]any) signalBarGateOptions {
@@ -229,6 +286,9 @@ func signalBarGateOptionsFromParameters(parameters map[string]any) signalBarGate
 		BreakoutShapeToleranceBps: parseFloatValue(parameters["breakout_shape_tolerance_bps"]),
 		ReentryMinStopBps:         firstPositive(parseFloatValue(parameters["reentry_min_stop_bps"]), parseFloatValue(parameters["min_stop_bps"])),
 		ReentryATRPercentileGTE:   firstPositive(parseFloatValue(parameters["reentry_atr_percentile_gte"]), parseFloatValue(parameters["atr_pct_gte"])),
+		MinATRPercentile:          firstPositive(parseFloatValue(parameters["min_atr_percentile"]), parseFloatValue(parameters["breakout_min_atr_percentile"])),
+		MinSMAATRSeparation:       firstPositive(parseFloatValue(parameters["min_sma_atr_separation"]), parseFloatValue(parameters["breakout_min_sma_atr_separation"])),
+		QualityFilterShapes:       normalizeStringList(parameters["quality_filter_shapes"]),
 	}
 }
 
@@ -883,24 +943,31 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		longStructureReady = closePrice > ma20
 		shortStructureReady = closePrice < ma20
 	}
-	longBreakoutShapeName := ""
-	longBreakoutLevel := 0.0
-	if t2LongBreakoutShapeReady(prevHigh2, prevHigh1, gateOptions.BreakoutShapeToleranceBps) {
-		longBreakoutShapeName = "original_t2"
-		longBreakoutLevel = prevHigh2
-	}
-	shortBreakoutShapeName := ""
-	shortBreakoutLevel := 0.0
-	if t2ShortBreakoutShapeReady(prevLow2, prevLow1, gateOptions.BreakoutShapeToleranceBps) {
-		shortBreakoutShapeName = "original_t2"
-		shortBreakoutLevel = prevLow2
-	}
+	prevBar3 := mapValue(signalBarState["prevBar3"])
+	prevHigh3 := parseFloatValue(prevBar3["high"])
+	prevLow3 := parseFloatValue(prevBar3["low"])
+	longBreakoutShapeName, longBreakoutLevel := resolveLongBreakoutShape(
+		prevHigh1,
+		prevHigh2,
+		prevHigh3,
+		breakoutPrice,
+		gateOptions,
+	)
+	shortBreakoutShapeName, shortBreakoutLevel := resolveShortBreakoutShape(
+		prevLow1,
+		prevLow2,
+		prevLow3,
+		breakoutPrice,
+		gateOptions,
+	)
 	longBreakoutShapeReady := longBreakoutShapeName != "" && longBreakoutLevel > 0
 	shortBreakoutShapeReady := shortBreakoutShapeName != "" && shortBreakoutLevel > 0
 	longBreakoutPriceReady := breakoutPrice >= longBreakoutLevel && longBreakoutLevel > 0
 	shortBreakoutPriceReady := breakoutPrice <= shortBreakoutLevel && shortBreakoutLevel > 0
-	longBreakoutQualityReady := true
-	shortBreakoutQualityReady := true
+	longBreakoutQuality := evaluateBreakoutQualityGate(gateOptions, longBreakoutShapeName, longBreakoutLevel, sma5, atr14, parseFloatValue(signalBarState["atrPercentile"]))
+	shortBreakoutQuality := evaluateBreakoutQualityGate(gateOptions, shortBreakoutShapeName, shortBreakoutLevel, sma5, atr14, parseFloatValue(signalBarState["atrPercentile"]))
+	longBreakoutQualityReady := longBreakoutQuality.Ready
+	shortBreakoutQualityReady := shortBreakoutQuality.Ready
 	longBreakoutReady := longBreakoutShapeReady && longBreakoutPriceReady && longBreakoutQualityReady
 	shortBreakoutReady := shortBreakoutShapeReady && shortBreakoutPriceReady && shortBreakoutQualityReady
 	longReady := longStructureReady && longBreakoutReady
@@ -925,6 +992,10 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 	result["shortBreakoutShapeName"] = shortBreakoutShapeName
 	result["longBreakoutLevel"] = longBreakoutLevel
 	result["shortBreakoutLevel"] = shortBreakoutLevel
+	result["longBreakoutQuality"] = longBreakoutQuality
+	result["shortBreakoutQuality"] = shortBreakoutQuality
+	result["longBreakoutRejectReason"] = longBreakoutQuality.Reason
+	result["shortBreakoutRejectReason"] = shortBreakoutQuality.Reason
 	result["longBreakoutReady"] = longBreakoutReady
 	result["shortBreakoutReady"] = shortBreakoutReady
 	result["longBreakoutPatternReady"] = longBreakoutReady
@@ -951,6 +1022,7 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 
 func evaluateReentryEntryQualityGate(parameters map[string]any, signalBarState map[string]any, nextSide, nextRole, nextReason string, plannedPrice, marketPrice float64) map[string]any {
 	options := signalBarGateOptionsFromParameters(parameters)
+	report := EntryQualityReport{Ready: true, Reason: "reentry-entry-quality-ready"}
 	result := map[string]any{
 		"ready":            true,
 		"reason":           "reentry-entry-quality-ready",
@@ -963,10 +1035,14 @@ func evaluateReentryEntryQualityGate(parameters map[string]any, signalBarState m
 	reasonTag := stringValue(result["reasonTag"])
 	if result["role"] != "entry" || (reasonTag != "zero-initial-reentry" && reasonTag != "sl-reentry" && reasonTag != "pt-reentry") {
 		result["applied"] = false
+		report.GateResults = append(report.GateResults, EntryQualityGateResult{Name: "reentry-entry-quality", Scope: "reentry-only", Applied: false, Ready: true})
+		result["report"] = report
 		return result
 	}
 	if options.ReentryMinStopBps <= 0 && options.ReentryATRPercentileGTE <= 0 {
 		result["applied"] = false
+		report.GateResults = append(report.GateResults, EntryQualityGateResult{Name: "reentry-entry-quality", Scope: "reentry-only", Applied: false, Ready: true})
+		result["report"] = report
 		return result
 	}
 	result["applied"] = true
@@ -993,6 +1069,16 @@ func evaluateReentryEntryQualityGate(parameters map[string]any, signalBarState m
 	result["atrPercentile"] = atrPercentile
 	result["priceRef"] = priceRef
 	result["stopBps"] = stopBps
+	thresholds := map[string]any{
+		"minStopBps":       options.ReentryMinStopBps,
+		"atrPercentileGTE": options.ReentryATRPercentileGTE,
+	}
+	metrics := map[string]any{
+		"stopBps":       stopBps,
+		"atr14":         atr14,
+		"atrPercentile": atrPercentile,
+		"priceRef":      priceRef,
+	}
 
 	rejectReasons := []string{}
 	if options.ReentryMinStopBps > 0 && (stopBps <= 0 || stopBps < options.ReentryMinStopBps) {
@@ -1002,6 +1088,15 @@ func evaluateReentryEntryQualityGate(parameters map[string]any, signalBarState m
 		rejectReasons = append(rejectReasons, "atr_percentile")
 	}
 	if len(rejectReasons) == 0 {
+		report.GateResults = append(report.GateResults, EntryQualityGateResult{
+			Name:       "reentry-entry-quality",
+			Scope:      "reentry-only",
+			Applied:    true,
+			Ready:      true,
+			Metrics:    metrics,
+			Thresholds: thresholds,
+		})
+		result["report"] = report
 		return result
 	}
 	result["ready"] = false
@@ -1014,7 +1109,43 @@ func evaluateReentryEntryQualityGate(parameters map[string]any, signalBarState m
 	default:
 		result["reason"] = "reentry-entry-quality-not-ready"
 	}
+	report.Ready = false
+	report.Reason = stringValue(result["reason"])
+	report.GateResults = append(report.GateResults, EntryQualityGateResult{
+		Name:       "reentry-entry-quality",
+		Scope:      "reentry-only",
+		Applied:    true,
+		Ready:      false,
+		Reason:     report.Reason,
+		Metrics:    metrics,
+		Thresholds: thresholds,
+	})
+	result["report"] = report
 	return result
+}
+
+func resolveLongBreakoutShape(prevHigh1, prevHigh2, prevHigh3, observedPrice float64, options signalBarGateOptions) (string, float64) {
+	if t2LongBreakoutShapeReady(prevHigh2, prevHigh1, options.BreakoutShapeToleranceBps) && observedPrice >= prevHigh2 {
+		return "original_t2", prevHigh2
+	}
+	if strings.EqualFold(strings.TrimSpace(options.BreakoutShape), "baseline_plus_t3") &&
+		t3LongBreakoutShapeReady(prevHigh1, prevHigh2, prevHigh3) &&
+		observedPrice >= prevHigh3 {
+		return "t3_swing", prevHigh3
+	}
+	return "", 0
+}
+
+func resolveShortBreakoutShape(prevLow1, prevLow2, prevLow3, observedPrice float64, options signalBarGateOptions) (string, float64) {
+	if t2ShortBreakoutShapeReady(prevLow2, prevLow1, options.BreakoutShapeToleranceBps) && observedPrice <= prevLow2 {
+		return "original_t2", prevLow2
+	}
+	if strings.EqualFold(strings.TrimSpace(options.BreakoutShape), "baseline_plus_t3") &&
+		t3ShortBreakoutShapeReady(prevLow1, prevLow2, prevLow3) &&
+		observedPrice <= prevLow3 {
+		return "t3_swing", prevLow3
+	}
+	return "", 0
 }
 
 func t2LongBreakoutShapeReady(prevHigh2, prevHigh1, toleranceBps float64) bool {
@@ -1037,6 +1168,131 @@ func t2ShortBreakoutShapeReady(prevLow2, prevLow1, toleranceBps float64) bool {
 		return prevLow2 < prevLow1
 	}
 	return prevLow2 <= prevLow1*(1+toleranceBps/10000)
+}
+
+func t3LongBreakoutShapeReady(prevHigh1, prevHigh2, prevHigh3 float64) bool {
+	return prevHigh1 > 0 && prevHigh2 > 0 && prevHigh3 > 0 &&
+		prevHigh3 > prevHigh2 &&
+		prevHigh3 > prevHigh1 &&
+		prevHigh1 > prevHigh2
+}
+
+func t3ShortBreakoutShapeReady(prevLow1, prevLow2, prevLow3 float64) bool {
+	return prevLow1 > 0 && prevLow2 > 0 && prevLow3 > 0 &&
+		prevLow3 < prevLow2 &&
+		prevLow3 < prevLow1 &&
+		prevLow1 < prevLow2
+}
+
+func evaluateBreakoutQualityGate(options signalBarGateOptions, shape string, level, sma5, atr14, atrPercentile float64) BreakoutQualityReport {
+	report := BreakoutQualityReport{
+		Shape:   strings.TrimSpace(shape),
+		Scope:   "entry-only",
+		Applied: false,
+		Ready:   true,
+	}
+	if strings.TrimSpace(shape) == "" {
+		return report
+	}
+	if !breakoutQualityAppliesToShape(options, shape) || (options.MinATRPercentile <= 0 && options.MinSMAATRSeparation <= 0) {
+		return report
+	}
+	report.Applied = true
+	rejectReasons := []string{}
+	if options.MinATRPercentile > 0 {
+		ready := atrPercentile > 0 && atrPercentile >= options.MinATRPercentile
+		result := EntryQualityGateResult{
+			Name:    "min_atr_percentile",
+			Scope:   "entry-only",
+			Applied: true,
+			Ready:   ready,
+			Metrics: map[string]any{
+				"atrPercentile": atrPercentile,
+			},
+			Thresholds: map[string]any{
+				"minATRPercentile": options.MinATRPercentile,
+			},
+		}
+		if !ready {
+			result.Reason = "atr_percentile"
+			rejectReasons = append(rejectReasons, result.Reason)
+		}
+		report.GateResults = append(report.GateResults, result)
+	}
+	if options.MinSMAATRSeparation > 0 {
+		separation := 0.0
+		if level > 0 && sma5 > 0 && atr14 > 0 {
+			separation = math.Abs(level-sma5) / atr14
+		}
+		ready := separation > 0 && separation >= options.MinSMAATRSeparation
+		result := EntryQualityGateResult{
+			Name:    "min_sma_atr_separation",
+			Scope:   "entry-only",
+			Applied: true,
+			Ready:   ready,
+			Metrics: map[string]any{
+				"breakoutLevel":    level,
+				"sma5":             sma5,
+				"atr14":            atr14,
+				"smaATRSeparation": separation,
+			},
+			Thresholds: map[string]any{
+				"minSMAATRSeparation": options.MinSMAATRSeparation,
+			},
+		}
+		if !ready {
+			result.Reason = "sma_atr_separation"
+			rejectReasons = append(rejectReasons, result.Reason)
+		}
+		report.GateResults = append(report.GateResults, result)
+	}
+	if len(rejectReasons) > 0 {
+		report.Ready = false
+		report.Reason = rejectReasons[0]
+	}
+	return report
+}
+
+func breakoutQualityAppliesToShape(options signalBarGateOptions, shape string) bool {
+	normalizedShape := strings.ToLower(strings.TrimSpace(shape))
+	if normalizedShape == "" {
+		return false
+	}
+	shapes := options.QualityFilterShapes
+	if len(shapes) == 0 {
+		return normalizedShape == "t3_swing"
+	}
+	for _, item := range shapes {
+		if strings.EqualFold(strings.TrimSpace(item), normalizedShape) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeStringList(value any) []string {
+	items := []string{}
+	add := func(raw string) {
+		for _, part := range strings.Split(raw, ",") {
+			normalized := strings.ToLower(strings.TrimSpace(part))
+			if normalized != "" {
+				items = append(items, normalized)
+			}
+		}
+	}
+	switch raw := value.(type) {
+	case []string:
+		for _, item := range raw {
+			add(item)
+		}
+	case []any:
+		for _, item := range raw {
+			add(stringValue(item))
+		}
+	case string:
+		add(raw)
+	}
+	return items
 }
 
 func sanitizeBreakoutShapeToleranceBps(toleranceBps float64) float64 {

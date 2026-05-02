@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/wuyaocheng/bktrader/internal/domain"
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
 
@@ -330,8 +331,8 @@ func TestSyncLiveSessionRuntimeReconcilesIntradayLaunchTemplateBaseline(t *testi
 	if got := stringValue(synced.State["zero_initial_mode"]); got != "reentry_window" {
 		t.Fatalf("expected template baseline zero_initial_mode=reentry_window, got %s", got)
 	}
-	if got := maxIntValue(synced.State["max_trades_per_bar"], 0); got != 1 {
-		t.Fatalf("expected template baseline max_trades_per_bar=1, got %d", got)
+	if got := maxIntValue(synced.State["max_trades_per_bar"], 0); got != domain.ResearchBaselineMaxTradesPerBar {
+		t.Fatalf("expected template baseline max_trades_per_bar=%d, got %d", domain.ResearchBaselineMaxTradesPerBar, got)
 	}
 	if got := stringValue(synced.State["launchTemplateBaseline"]); got != "intraday-research" {
 		t.Fatalf("expected intraday research baseline marker, got %s", got)

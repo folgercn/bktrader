@@ -844,7 +844,7 @@ func TestEvaluateSignalBarGateKeepsOriginalT2WithLegacyBreakoutShape(t *testing.
 	}
 }
 
-func TestEvaluateSignalBarGateIgnoresT3OnlyBreakoutShape(t *testing.T) {
+func TestEvaluateSignalBarGateAllowsT3SwingWithBaselinePlusT3Shape(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "30m",
 		"sma5":      68850.0,
@@ -862,11 +862,11 @@ func TestEvaluateSignalBarGateIgnoresT3OnlyBreakoutShape(t *testing.T) {
 		BreakoutShape:             "baseline_plus_t3",
 		BreakoutShapeToleranceBps: 0.5,
 	})
-	if boolValue(gate["longBreakoutPatternReady"]) || boolValue(gate["longReady"]) {
-		t.Fatalf("expected t3-only breakout shape to be ignored, got %#v", gate)
+	if !boolValue(gate["longBreakoutPatternReady"]) || !boolValue(gate["longReady"]) {
+		t.Fatalf("expected t3_swing breakout to pass with baseline_plus_t3 configured, got %#v", gate)
 	}
-	if got := stringValue(gate["longBreakoutShapeName"]); got != "" {
-		t.Fatalf("expected no breakout shape, got %s in %#v", got, gate)
+	if got := stringValue(gate["longBreakoutShapeName"]); got != "t3_swing" {
+		t.Fatalf("expected t3_swing breakout shape, got %s in %#v", got, gate)
 	}
 }
 
@@ -4381,8 +4381,8 @@ func TestNormalizeLiveSessionOverridesIncludesT2BreakoutTolerance(t *testing.T) 
 	}
 }
 
-func TestLiveBTC30mEnhancedOverridesEnableReentryGuards(t *testing.T) {
-	overrides := liveBTC30mEnhancedOverrides()
+func TestLiveBTC30mLegacyEnhancedOverridesEnableReentryGuards(t *testing.T) {
+	overrides := liveBTC30mLegacyEnhancedOverrides()
 	if got := stringValue(overrides["strategyEngine"]); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
 		t.Fatalf("expected BTC 30m enhanced template to use T2-only engine, got %s", got)
 	}
@@ -4403,6 +4403,38 @@ func TestLiveBTC30mEnhancedOverridesEnableReentryGuards(t *testing.T) {
 	}
 	if got := parseFloatValue(overrides["reentry_atr_percentile_gte"]); got != 25.0 {
 		t.Fatalf("expected BTC 30m enhanced template to require reentry_atr_percentile_gte=25, got %v", got)
+	}
+}
+
+func TestLiveBTC30mBaselinePlusT3EnhancedOverridesUseBaselineQualityGates(t *testing.T) {
+	overrides := liveBTC30mBaselinePlusT3EnhancedOverrides()
+	if got := stringValue(overrides["strategyEngine"]); got != bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey {
+		t.Fatalf("expected BTC 30m baseline+T3 template to use enhanced engine, got %s", got)
+	}
+	if got := stringValue(overrides["breakout_shape"]); got != "baseline_plus_t3" {
+		t.Fatalf("expected BTC 30m baseline+T3 template to use baseline_plus_t3 breakout, got %s", got)
+	}
+	if got := parseFloatValue(overrides["breakout_shape_tolerance_bps"]); got != 0.5 {
+		t.Fatalf("expected BTC 30m baseline+T3 template to keep T2 tolerance 0.5 bps, got %v", got)
+	}
+	if got := maxIntValue(overrides["sl_reentry_min_delay_seconds"], 0); got != 60 {
+		t.Fatalf("expected BTC 30m baseline+T3 template to require 60s SL-Reentry delay, got %d", got)
+	}
+	if got := parseFloatValue(overrides["min_atr_percentile"]); got != 25.0 {
+		t.Fatalf("expected BTC 30m baseline+T3 template to require min_atr_percentile=25, got %v", got)
+	}
+	if got := parseFloatValue(overrides["min_sma_atr_separation"]); got != 0.1 {
+		t.Fatalf("expected BTC 30m baseline+T3 template to require min_sma_atr_separation=0.1, got %v", got)
+	}
+	shapes := normalizeStringList(overrides["quality_filter_shapes"])
+	if len(shapes) != 2 || shapes[0] != "original_t2" || shapes[1] != "t3_swing" {
+		t.Fatalf("expected quality filter shapes [original_t2 t3_swing], got %#v", shapes)
+	}
+	if _, ok := overrides["reentry_min_stop_bps"]; ok {
+		t.Fatalf("expected BTC 30m baseline+T3 template to omit reentry_min_stop_bps, got %#v", overrides)
+	}
+	if _, ok := overrides["reentry_atr_percentile_gte"]; ok {
+		t.Fatalf("expected BTC 30m baseline+T3 template to omit reentry_atr_percentile_gte, got %#v", overrides)
 	}
 }
 

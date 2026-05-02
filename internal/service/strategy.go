@@ -617,6 +617,9 @@ func applyBacktestParameterAliases(parameters map[string]any) {
 		"reentryATRPercentileGTE":      "reentry_atr_percentile_gte",
 		"minStopBps":                   "min_stop_bps",
 		"atrPctGTE":                    "atr_pct_gte",
+		"minATRPercentile":             "min_atr_percentile",
+		"minSMAATRSeparation":          "min_sma_atr_separation",
+		"qualityFilterShapes":          "quality_filter_shapes",
 	}
 	for from, to := range aliases {
 		if _, ok := parameters[to]; ok {

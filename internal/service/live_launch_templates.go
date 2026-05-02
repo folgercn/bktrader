@@ -135,7 +135,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 				liveOverrides[key] = value
 			}
 			baselineNotes = append(baselineNotes,
-				"该模板已显式固化 intraday research baseline：dir2 zero initial + reentry_window + reentry_size_schedule=[0.20, 0.10] + max_trades_per_bar=1。",
+				"该模板已显式固化 intraday research baseline：dir2 zero initial + reentry_window + reentry_size_schedule=[0.20, 0.10] + max_trades_per_bar=2。",
 				"非 1d 周期默认使用 canonical SMA5 hard filter；止损与移动止损参数分别固定为 stop_loss_atr=0.3、trailing_stop_atr=0.3、profit_protect_atr=1.0、delayed_trailing_activation_atr=0.5。",
 				"当前 research baseline 只提升 BTCUSDT 15m/30m；BTCUSDT 5m 暂保留为通用模板，因为现阶段 5m 对执行摩擦更敏感，尚不作为默认 intraday baseline 候选。",
 			)
@@ -186,24 +186,46 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 			Notes: notes,
 		}
 	}
-	buildEnhancedTemplate := func() LiveLaunchTemplate {
+	buildLegacyEnhancedTemplate := func() LiveLaunchTemplate {
 		item := buildTemplate("BTCUSDT", "30m", 0.002, false)
 		item.Key = "binance-testnet-btc-30m-enhanced"
 		item.Name = "Binance Testnet BTCUSDT 30m T2-only 0.5bps"
-		item.Description = "BTCUSDT 30m 增强策略：live_intrabar_sma5_original_t2_breakout_tol_0p5bps。"
+		item.Description = "BTCUSDT 30m legacy 增强策略：live_intrabar_sma5_original_t2_breakout_tol_0p5bps。"
 		item.StrategyID = enhancedStrategyID
 		item.StrategyName = enhancedStrategyName
 		item.StrategyVersionID = enhancedStrategyVersionID
-		for key, value := range liveBTC30mEnhancedOverrides() {
+		for key, value := range liveBTC30mLegacyEnhancedOverrides() {
 			item.LaunchPayload.LiveSessionOverrides[key] = value
 		}
 		item.LaunchPayload.StrategyID = enhancedStrategyID
 		item.LaunchPayload.LaunchTemplateKey = item.Key
 		item.LaunchPayload.LaunchTemplateName = item.Name
 		item.Notes = append([]string{
-			fmt.Sprintf("增强模板单独使用 %s（strategyEngine=%s，历史 key %s 保留兼容），不改变原 BTCUSDT 30m 模板。", enhancedStrategyName, bkLiveIntrabarSMA5T2Only0p5BpsEngineKey, bkLiveIntrabarSMA5LegacyT3SepEngineKey),
-			"策略口径：SMA5 intrabar hard filter + original_t2 breakout + T2 shape tolerance 0.5 bps；t3_swing breakout 已摘除。",
-			"低波动 reentry gate 固化为 reentry_min_stop_bps=6 与 reentry_atr_percentile_gte=25，仅过滤 Zero-Initial/SL/PT reentry 开仓，不过滤止损出场。",
+			fmt.Sprintf("legacy 增强模板继续使用 %s（strategyEngine=%s），用于复现现有 T2-only live 行为。", enhancedStrategyName, bkLiveIntrabarSMA5T2Only0p5BpsEngineKey),
+			"策略口径：SMA5 intrabar hard filter + original_t2 breakout + T2 shape tolerance 0.5 bps；t3_swing breakout 不在该 legacy 模板启用。",
+			"低波动 reentry gate 仍为 reentry_min_stop_bps=6 与 reentry_atr_percentile_gte=25，仅过滤 Zero-Initial/SL/PT reentry 开仓，不过滤止损出场。",
+			"模板仍保持 dispatchMode 由前端提交前选择，默认展示为 manual-review。",
+		}, item.Notes...)
+		return item
+	}
+	buildBaselinePlusT3EnhancedTemplate := func() LiveLaunchTemplate {
+		item := buildTemplate("BTCUSDT", "30m", 0.002, false)
+		item.Key = "binance-testnet-btc-30m-baseline-plus-t3-enhanced"
+		item.Name = "Binance Testnet BTCUSDT 30m Baseline+T3 Enhanced"
+		item.Description = "BTCUSDT 30m 新增强策略：live_intrabar_sma5_baseline_plus_t3_enhanced。"
+		item.StrategyID = enhancedStrategyID
+		item.StrategyName = enhancedStrategyName
+		item.StrategyVersionID = enhancedStrategyVersionID
+		for key, value := range liveBTC30mBaselinePlusT3EnhancedOverrides() {
+			item.LaunchPayload.LiveSessionOverrides[key] = value
+		}
+		item.LaunchPayload.StrategyID = enhancedStrategyID
+		item.LaunchPayload.LaunchTemplateKey = item.Key
+		item.LaunchPayload.LaunchTemplateName = item.Name
+		item.Notes = append([]string{
+			fmt.Sprintf("Baseline+T3 增强模板单独使用 %s（strategyEngine=%s），旧 T2-only 模板 key %s 保留兼容。", enhancedStrategyName, bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey, "binance-testnet-btc-30m-enhanced"),
+			"策略口径：SMA5 intrabar hard filter + baseline_plus_t3 breakout，original_t2 与 t3_swing 均可锁定 reentry window。",
+			"baseline gate 固化为 min_atr_percentile=25 与 min_sma_atr_separation=0.1，仅过滤 entry/reentry window 锁定，不过滤止损出场。",
 			"模板仍保持 dispatchMode 由前端提交前选择，默认展示为 manual-review。",
 		}, item.Notes...)
 		return item
@@ -215,7 +237,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		buildTemplate("BTCUSDT", "30m", 0.002, true),
 	}
 	if hasEnhancedTemplate {
-		templates = append(templates, buildEnhancedTemplate())
+		templates = append(templates, buildLegacyEnhancedTemplate(), buildBaselinePlusT3EnhancedTemplate())
 	}
 	templates = append(templates,
 		buildTemplate("BTCUSDT", "4h", 0.002, false),
@@ -237,7 +259,7 @@ func liveLaunchTemplateAutoDispatchMode() string {
 
 func liveIntradayResearchBaselineTemplateKey(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "binance-testnet-btc-15m", "binance-testnet-btc-30m":
+	case "binance-testnet-btc-15m", "binance-testnet-btc-30m", "binance-testnet-btc-30m-baseline-plus-t3-enhanced":
 		return true
 	default:
 		return false
@@ -257,7 +279,7 @@ func liveIntradayResearchBaselineOverrides(strategyEngine string) map[string]any
 		"delayed_trailing_activation_atr":      0.5,
 		"long_reentry_atr":                     0.1,
 		"short_reentry_atr":                    0.0,
-		"max_trades_per_bar":                   1,
+		"max_trades_per_bar":                   domain.ResearchBaselineMaxTradesPerBar,
 		"reentry_size_schedule":                domain.ResearchBaselineReentrySizeSchedule(),
 		"executionEntryMaxSlippageBps":         8,
 		"executionEntryMaxBookAgeMs":           500,
@@ -268,7 +290,7 @@ func liveIntradayResearchBaselineOverrides(strategyEngine string) map[string]any
 	}
 }
 
-func liveBTC30mEnhancedOverrides() map[string]any {
+func liveBTC30mLegacyEnhancedOverrides() map[string]any {
 	overrides := liveIntradayResearchBaselineOverrides(bkLiveIntrabarSMA5T2Only0p5BpsEngineKey)
 	overrides["max_trades_per_bar"] = domain.ResearchBaselineMaxTradesPerBar
 	overrides["stop_loss_atr"] = 0.3
@@ -278,6 +300,22 @@ func liveBTC30mEnhancedOverrides() map[string]any {
 	overrides["use_sma5_intraday_structure"] = true
 	overrides["reentry_min_stop_bps"] = 6.0
 	overrides["reentry_atr_percentile_gte"] = 25.0
+	return overrides
+}
+
+func liveBTC30mBaselinePlusT3EnhancedOverrides() map[string]any {
+	overrides := liveIntradayResearchBaselineOverrides(bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey)
+	overrides["max_trades_per_bar"] = domain.ResearchBaselineMaxTradesPerBar
+	overrides["stop_loss_atr"] = 0.3
+	overrides["sl_reentry_min_delay_seconds"] = 60
+	overrides["breakout_shape"] = "baseline_plus_t3"
+	overrides["breakout_shape_tolerance_bps"] = defaultT2BreakoutShapeToleranceBps
+	overrides["use_sma5_intraday_structure"] = true
+	overrides["min_atr_percentile"] = 25.0
+	overrides["min_sma_atr_separation"] = 0.1
+	overrides["quality_filter_shapes"] = []string{"original_t2", "t3_swing"}
+	delete(overrides, "reentry_min_stop_bps")
+	delete(overrides, "reentry_atr_percentile_gte")
 	return overrides
 }
 
