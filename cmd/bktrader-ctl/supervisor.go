@@ -101,13 +101,19 @@ type supervisorRuntimeStatusSnapshot struct {
 }
 
 type supervisorRuntimeStatus struct {
-	RuntimeID              string                            `json:"runtimeId"`
-	RuntimeKind            string                            `json:"runtimeKind"`
-	DesiredStatus          string                            `json:"desiredStatus"`
-	ActualStatus           string                            `json:"actualStatus"`
-	Health                 string                            `json:"health"`
-	AutoRestartSuppressed  bool                              `json:"autoRestartSuppressed"`
-	ApplicationRestartPlan *supervisorApplicationRestartPlan `json:"applicationRestartPlan,omitempty"`
+	RuntimeID                   string                            `json:"runtimeId"`
+	RuntimeKind                 string                            `json:"runtimeKind"`
+	DesiredStatus               string                            `json:"desiredStatus"`
+	ActualStatus                string                            `json:"actualStatus"`
+	Health                      string                            `json:"health"`
+	AutoRestartSuppressed       bool                              `json:"autoRestartSuppressed"`
+	AutoRestartSuppressedAt     string                            `json:"autoRestartSuppressedAt,omitempty"`
+	AutoRestartSuppressedReason string                            `json:"autoRestartSuppressedReason,omitempty"`
+	AutoRestartSuppressedSource string                            `json:"autoRestartSuppressedSource,omitempty"`
+	AutoRestartResumedAt        string                            `json:"autoRestartResumedAt,omitempty"`
+	AutoRestartResumedReason    string                            `json:"autoRestartResumedReason,omitempty"`
+	AutoRestartResumedSource    string                            `json:"autoRestartResumedSource,omitempty"`
+	ApplicationRestartPlan      *supervisorApplicationRestartPlan `json:"applicationRestartPlan,omitempty"`
 }
 
 type supervisorApplicationRestartPlan struct {
@@ -246,17 +252,19 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 					}
 				}
 			}
+			autoRestartAudit := supervisorRuntimeAutoRestartAuditSummary(target.Status.Runtimes)
 			if restartPlans > 0 {
-				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d restartPlans=%d restartEligible=%d restartBlockedReasons=%s service=%s\n",
+				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d restartPlans=%d restartEligible=%d restartBlockedReasons=%s service=%s%s\n",
 					len(target.Status.Runtimes),
 					attention,
 					restartPlans,
 					restartEligible,
 					supervisorApplicationRestartBlockedReasons(target.Status.Runtimes),
 					firstNonEmpty(target.Status.Service, "--"),
+					autoRestartAudit,
 				)
 			} else {
-				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d service=%s\n", len(target.Status.Runtimes), attention, firstNonEmpty(target.Status.Service, "--"))
+				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d service=%s%s\n", len(target.Status.Runtimes), attention, firstNonEmpty(target.Status.Service, "--"), autoRestartAudit)
 			}
 		}
 		if len(target.ControlActions) > 0 {
@@ -308,6 +316,31 @@ func supervisorRuntimeNeedsAttention(runtime supervisorRuntimeStatus) bool {
 	actual := strings.ToUpper(strings.TrimSpace(runtime.ActualStatus))
 	health := strings.ToLower(strings.TrimSpace(runtime.Health))
 	return actual == "ERROR" || health == "error" || health == "suppressed" || health == "unreachable" || health == "stale"
+}
+
+func supervisorRuntimeAutoRestartAuditSummary(runtimes []supervisorRuntimeStatus) string {
+	suppressed := 0
+	suppressAudit := 0
+	resumeAudit := 0
+	for _, runtime := range runtimes {
+		if runtime.AutoRestartSuppressed {
+			suppressed++
+		}
+		if strings.TrimSpace(runtime.AutoRestartSuppressedAt) != "" ||
+			strings.TrimSpace(runtime.AutoRestartSuppressedReason) != "" ||
+			strings.TrimSpace(runtime.AutoRestartSuppressedSource) != "" {
+			suppressAudit++
+		}
+		if strings.TrimSpace(runtime.AutoRestartResumedAt) != "" ||
+			strings.TrimSpace(runtime.AutoRestartResumedReason) != "" ||
+			strings.TrimSpace(runtime.AutoRestartResumedSource) != "" {
+			resumeAudit++
+		}
+	}
+	if suppressed == 0 && suppressAudit == 0 && resumeAudit == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" autoRestartSuppressed=%d suppressAudit=%d resumeAudit=%d", suppressed, suppressAudit, resumeAudit)
 }
 
 func supervisorApplicationRestartBlockedReasons(runtimes []supervisorRuntimeStatus) string {

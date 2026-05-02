@@ -20,6 +20,7 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		t.Fatalf("create signal runtime failed: %v", err)
 	}
 	nextRestartAt := time.Date(2026, 4, 28, 12, 33, 0, 0, time.UTC).Format(time.RFC3339)
+	resumedAt := time.Date(2026, 4, 28, 12, 28, 0, 0, time.UTC).Format(time.RFC3339)
 	runtime.Status = "ERROR"
 	runtime.State = map[string]any{
 		"desiredStatus":             "RUNNING",
@@ -32,6 +33,9 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		"supervisorRestartSeverity": "transient",
 		"lastSupervisorError":       "websocket timeout",
 		"autoRestartSuppressed":     false,
+		"autoRestartResumedAt":      resumedAt,
+		"autoRestartResumedReason":  "maintenance finished",
+		"autoRestartResumedSource":  "dashboard",
 	}
 	if _, err := store.UpdateSignalRuntimeSession(runtime); err != nil {
 		t.Fatalf("update signal runtime failed: %v", err)
@@ -63,21 +67,27 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 	var payload struct {
 		Service  string `json:"service"`
 		Runtimes []struct {
-			RuntimeID             string `json:"runtimeId"`
-			RuntimeKind           string `json:"runtimeKind"`
-			AccountID             string `json:"accountId"`
-			StrategyID            string `json:"strategyId"`
-			DesiredStatus         string `json:"desiredStatus"`
-			ActualStatus          string `json:"actualStatus"`
-			Health                string `json:"health"`
-			RestartAttempt        int    `json:"restartAttempt"`
-			NextRestartAt         string `json:"nextRestartAt"`
-			RestartBackoff        string `json:"restartBackoff"`
-			RestartReason         string `json:"restartReason"`
-			RestartSeverity       string `json:"restartSeverity"`
-			LastRestartError      string `json:"lastRestartError"`
-			AutoRestartSuppressed bool   `json:"autoRestartSuppressed"`
-			LastCheckedAt         string `json:"lastCheckedAt"`
+			RuntimeID                   string `json:"runtimeId"`
+			RuntimeKind                 string `json:"runtimeKind"`
+			AccountID                   string `json:"accountId"`
+			StrategyID                  string `json:"strategyId"`
+			DesiredStatus               string `json:"desiredStatus"`
+			ActualStatus                string `json:"actualStatus"`
+			Health                      string `json:"health"`
+			RestartAttempt              int    `json:"restartAttempt"`
+			NextRestartAt               string `json:"nextRestartAt"`
+			RestartBackoff              string `json:"restartBackoff"`
+			RestartReason               string `json:"restartReason"`
+			RestartSeverity             string `json:"restartSeverity"`
+			LastRestartError            string `json:"lastRestartError"`
+			AutoRestartSuppressed       bool   `json:"autoRestartSuppressed"`
+			AutoRestartSuppressedAt     string `json:"autoRestartSuppressedAt"`
+			AutoRestartSuppressedReason string `json:"autoRestartSuppressedReason"`
+			AutoRestartSuppressedSource string `json:"autoRestartSuppressedSource"`
+			AutoRestartResumedAt        string `json:"autoRestartResumedAt"`
+			AutoRestartResumedReason    string `json:"autoRestartResumedReason"`
+			AutoRestartResumedSource    string `json:"autoRestartResumedSource"`
+			LastCheckedAt               string `json:"lastCheckedAt"`
 		} `json:"runtimes"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
@@ -87,21 +97,27 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		t.Fatalf("expected service platform-api, got %s", payload.Service)
 	}
 	var signalRuntime, liveRuntime *struct {
-		RuntimeID             string `json:"runtimeId"`
-		RuntimeKind           string `json:"runtimeKind"`
-		AccountID             string `json:"accountId"`
-		StrategyID            string `json:"strategyId"`
-		DesiredStatus         string `json:"desiredStatus"`
-		ActualStatus          string `json:"actualStatus"`
-		Health                string `json:"health"`
-		RestartAttempt        int    `json:"restartAttempt"`
-		NextRestartAt         string `json:"nextRestartAt"`
-		RestartBackoff        string `json:"restartBackoff"`
-		RestartReason         string `json:"restartReason"`
-		RestartSeverity       string `json:"restartSeverity"`
-		LastRestartError      string `json:"lastRestartError"`
-		AutoRestartSuppressed bool   `json:"autoRestartSuppressed"`
-		LastCheckedAt         string `json:"lastCheckedAt"`
+		RuntimeID                   string `json:"runtimeId"`
+		RuntimeKind                 string `json:"runtimeKind"`
+		AccountID                   string `json:"accountId"`
+		StrategyID                  string `json:"strategyId"`
+		DesiredStatus               string `json:"desiredStatus"`
+		ActualStatus                string `json:"actualStatus"`
+		Health                      string `json:"health"`
+		RestartAttempt              int    `json:"restartAttempt"`
+		NextRestartAt               string `json:"nextRestartAt"`
+		RestartBackoff              string `json:"restartBackoff"`
+		RestartReason               string `json:"restartReason"`
+		RestartSeverity             string `json:"restartSeverity"`
+		LastRestartError            string `json:"lastRestartError"`
+		AutoRestartSuppressed       bool   `json:"autoRestartSuppressed"`
+		AutoRestartSuppressedAt     string `json:"autoRestartSuppressedAt"`
+		AutoRestartSuppressedReason string `json:"autoRestartSuppressedReason"`
+		AutoRestartSuppressedSource string `json:"autoRestartSuppressedSource"`
+		AutoRestartResumedAt        string `json:"autoRestartResumedAt"`
+		AutoRestartResumedReason    string `json:"autoRestartResumedReason"`
+		AutoRestartResumedSource    string `json:"autoRestartResumedSource"`
+		LastCheckedAt               string `json:"lastCheckedAt"`
 	}
 	for i := range payload.Runtimes {
 		switch payload.Runtimes[i].RuntimeKind {
@@ -135,6 +151,18 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 	}
 	if signalRuntime.LastRestartError != "websocket timeout" {
 		t.Fatalf("expected last restart error, got %s", signalRuntime.LastRestartError)
+	}
+	if signalRuntime.AutoRestartSuppressed {
+		t.Fatal("expected signal runtime autoRestartSuppressed false")
+	}
+	if signalRuntime.AutoRestartSuppressedAt != "" || signalRuntime.AutoRestartSuppressedReason != "" || signalRuntime.AutoRestartSuppressedSource != "" {
+		t.Fatalf("expected suppress audit fields empty, got at=%s reason=%s source=%s", signalRuntime.AutoRestartSuppressedAt, signalRuntime.AutoRestartSuppressedReason, signalRuntime.AutoRestartSuppressedSource)
+	}
+	if signalRuntime.AutoRestartResumedAt != resumedAt {
+		t.Fatalf("expected resume at %s, got %s", resumedAt, signalRuntime.AutoRestartResumedAt)
+	}
+	if signalRuntime.AutoRestartResumedReason != "maintenance finished" || signalRuntime.AutoRestartResumedSource != "dashboard" {
+		t.Fatalf("expected resume audit reason/source, got %s/%s", signalRuntime.AutoRestartResumedReason, signalRuntime.AutoRestartResumedSource)
 	}
 	if signalRuntime.LastCheckedAt == "" {
 		t.Fatal("expected signal runtime lastCheckedAt")

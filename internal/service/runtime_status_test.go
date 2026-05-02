@@ -48,3 +48,51 @@ func TestRuntimeStatusFromLiveSessionOmitsUpdatedAtWhenStateHasNoFreshnessTime(t
 		t.Fatalf("expected live runtime status to avoid createdAt fallback, got %s", status.UpdatedAt.Format(time.RFC3339))
 	}
 }
+
+func TestRuntimeStatusFromStateExposesAutoRestartAuditFields(t *testing.T) {
+	checkedAt := time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC)
+	suppressedAt := checkedAt.Add(-10 * time.Minute).Format(time.RFC3339)
+	resumedAt := checkedAt.Add(-5 * time.Minute).Format(time.RFC3339)
+	status := runtimeStatusFromState("platform-api", "signal", "runtime-1", "ERROR", map[string]any{
+		"desiredStatus":               "RUNNING",
+		"actualStatus":                "ERROR",
+		"autoRestartSuppressed":       true,
+		"autoRestartSuppressedAt":     suppressedAt,
+		"autoRestartSuppressedReason": "operator paused runtime recovery during maintenance",
+		"autoRestartSuppressedSource": "api",
+		"autoRestartResumedAt":        resumedAt,
+		"autoRestartResumedReason":    "maintenance finished",
+		"autoRestartResumedSource":    "dashboard",
+		"supervisorRestartReason":     "manual-suppress-auto-restart",
+		"supervisorRestartSeverity":   "fatal",
+		"lastSupervisorError":         "auth failed",
+	}, checkedAt)
+
+	if !status.AutoRestartSuppressed {
+		t.Fatal("expected autoRestartSuppressed true")
+	}
+	if status.AutoRestartSuppressedAt != suppressedAt {
+		t.Fatalf("expected suppressed at %s, got %s", suppressedAt, status.AutoRestartSuppressedAt)
+	}
+	if status.AutoRestartSuppressedReason != "operator paused runtime recovery during maintenance" {
+		t.Fatalf("expected suppress reason, got %s", status.AutoRestartSuppressedReason)
+	}
+	if status.AutoRestartSuppressedSource != "api" {
+		t.Fatalf("expected suppress source api, got %s", status.AutoRestartSuppressedSource)
+	}
+	if status.AutoRestartResumedAt != resumedAt {
+		t.Fatalf("expected resumed at %s, got %s", resumedAt, status.AutoRestartResumedAt)
+	}
+	if status.AutoRestartResumedReason != "maintenance finished" {
+		t.Fatalf("expected resume reason, got %s", status.AutoRestartResumedReason)
+	}
+	if status.AutoRestartResumedSource != "dashboard" {
+		t.Fatalf("expected resume source dashboard, got %s", status.AutoRestartResumedSource)
+	}
+	if status.RestartReason != "manual-suppress-auto-restart" || status.RestartSeverity != "fatal" {
+		t.Fatalf("expected restart audit reason/severity, got %s/%s", status.RestartReason, status.RestartSeverity)
+	}
+	if status.LastRestartError != "auth failed" {
+		t.Fatalf("expected last restart error, got %s", status.LastRestartError)
+	}
+}

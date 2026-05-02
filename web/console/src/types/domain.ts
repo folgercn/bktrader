@@ -390,6 +390,12 @@ export type RuntimeSupervisorRuntimeStatus = {
   restartSeverity?: string;
   lastRestartError?: string;
   autoRestartSuppressed: boolean;
+  autoRestartSuppressedAt?: string;
+  autoRestartSuppressedReason?: string;
+  autoRestartSuppressedSource?: string;
+  autoRestartResumedAt?: string;
+  autoRestartResumedReason?: string;
+  autoRestartResumedSource?: string;
   lastHealthyAt?: string;
   lastCheckedAt: string;
   updatedAt?: string;
