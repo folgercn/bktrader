@@ -369,7 +369,9 @@ func ClearRestartState(state map[string]any, keys []string)
 
 ### Dashboard 视图
 
-前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，只展示 supervisor policy、service target、runtime 状态、`applicationRestartPlan`、应用内控制动作、`containerFallbackCandidate`、fallback `decision`、executor `kind`/`dryRun` 和 dry-run audit 摘要。该页面不提交 runtime 或容器控制请求；真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
+前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，展示 supervisor policy、service target、runtime 状态、`applicationRestartPlan`、应用内控制动作、`containerFallbackCandidate`、fallback `decision`、executor `kind`/`dryRun` 和 dry-run audit 摘要。
+
+当前页面只开放最小的手动应用内控制入口：对 `runtimeKind=signal` / `signal-runtime` 的 runtime，可在显式确认并填写 reason 后调用现有 `POST /api/v1/runtime/restart`。该入口固定 `confirm=true`、`force=false`，不支持 live-session restart，不提交 suppress/resume，不触碰 Docker/container fallback。真正执行容器级 restart 前仍需单独 PR 设计 executor、权限边界和部署安全审查。
 
 ## 7. 安全边界
 
