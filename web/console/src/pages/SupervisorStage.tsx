@@ -50,6 +50,13 @@ type RuntimeControlDialogState = {
   runtime: RuntimeRow;
   action: RuntimeControlActionKind;
 };
+type RuntimeAutoRestartAudit = {
+  label: string;
+  variant: BadgeVariant;
+  at?: string;
+  reason?: string;
+  source?: string;
+};
 
 const REFRESH_INTERVAL_MS = 15_000;
 
@@ -159,6 +166,46 @@ function runtimeNeedsAttention(runtime: RuntimeSupervisorRuntimeStatus) {
   const actual = String(runtime.actualStatus || '').toUpperCase();
   const health = String(runtime.health || '').toLowerCase();
   return actual === 'ERROR' || ['error', 'suppressed', 'unreachable', 'stale'].includes(health);
+}
+
+function runtimeAutoRestartAudit(runtime: RuntimeSupervisorRuntimeStatus): RuntimeAutoRestartAudit | null {
+  if (runtime.autoRestartSuppressed) {
+    return {
+      label: 'suppressed',
+      variant: 'destructive',
+      at: runtime.autoRestartSuppressedAt,
+      reason: runtime.autoRestartSuppressedReason,
+      source: runtime.autoRestartSuppressedSource,
+    };
+  }
+  if (runtime.autoRestartResumedAt || runtime.autoRestartResumedReason || runtime.autoRestartResumedSource) {
+    return {
+      label: 'resumed',
+      variant: 'neutral',
+      at: runtime.autoRestartResumedAt,
+      reason: runtime.autoRestartResumedReason,
+      source: runtime.autoRestartResumedSource,
+    };
+  }
+  return null;
+}
+
+function runtimeAutoRestartAuditText(audit: RuntimeAutoRestartAudit) {
+  const reason = String(audit.reason || '').trim() || '--';
+  const meta = [
+    audit.at ? `at ${formatTime(audit.at)}` : undefined,
+    audit.source ? `source ${audit.source}` : undefined,
+  ].filter(Boolean);
+  return meta.length > 0 ? `${audit.label}: ${reason} (${meta.join(', ')})` : `${audit.label}: ${reason}`;
+}
+
+function runtimeAutoRestartAuditTitle(audit: RuntimeAutoRestartAudit) {
+  return [
+    `state=${audit.label}`,
+    audit.at ? `at=${audit.at}` : undefined,
+    audit.source ? `source=${audit.source}` : undefined,
+    audit.reason ? `reason=${audit.reason}` : undefined,
+  ].filter(Boolean).join(' ');
 }
 
 function PolicyBadge({ enabled, enabledLabel, disabledLabel }: { enabled: boolean; enabledLabel: string; disabledLabel: string }) {
@@ -645,6 +692,7 @@ export function SupervisorStage() {
                         const restartSubmitting = controlSubmittingKey === runtimeControlActionKey(runtime, 'restart');
                         const suppressAction: RuntimeControlActionKind = runtime.autoRestartSuppressed ? 'resume-auto-restart' : 'suppress-auto-restart';
                         const suppressSubmitting = controlSubmittingKey === runtimeControlActionKey(runtime, suppressAction);
+                        const autoRestartAudit = runtimeAutoRestartAudit(runtime);
                         return (
                           <TableRow key={`${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}`}>
                             <TableCell>{runtime.targetName}</TableCell>
@@ -658,9 +706,16 @@ export function SupervisorStage() {
                             <TableCell><StatusBadge value={runtime.desiredStatus} /></TableCell>
                             <TableCell><StatusBadge value={runtime.actualStatus} /></TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-2">
-                                <StatusBadge value={runtime.health} />
-                                {runtime.autoRestartSuppressed && <Badge variant="destructive">suppressed</Badge>}
+                              <div className="flex max-w-[220px] flex-col gap-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <StatusBadge value={runtime.health} />
+                                  {autoRestartAudit && <Badge variant={autoRestartAudit.variant}>{autoRestartAudit.label}</Badge>}
+                                </div>
+                                {autoRestartAudit && (
+                                  <span className="truncate text-xs text-[var(--bk-text-muted)]" title={runtimeAutoRestartAuditTitle(autoRestartAudit)}>
+                                    {runtimeAutoRestartAuditText(autoRestartAudit)}
+                                  </span>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>
