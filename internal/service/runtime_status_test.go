@@ -96,3 +96,42 @@ func TestRuntimeStatusFromStateExposesAutoRestartAuditFields(t *testing.T) {
 		t.Fatalf("expected last restart error, got %s", status.LastRestartError)
 	}
 }
+
+func TestRuntimeStatusFromStateExposesLifecycleAuditFields(t *testing.T) {
+	checkedAt := time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC)
+	startedAt := checkedAt.Add(-15 * time.Minute).Format(time.RFC3339)
+	stoppedAt := checkedAt.Add(-3 * time.Minute).Format(time.RFC3339)
+	status := runtimeStatusFromState("platform-api", "signal", "runtime-1", "STOPPED", map[string]any{
+		"desiredStatus":        "STOPPED",
+		"actualStatus":         "STOPPED",
+		"startRequestedAt":     startedAt,
+		"startRequestedReason": "maintenance finished",
+		"startRequestedSource": "api",
+		"stopRequestedAt":      stoppedAt,
+		"stopRequestedReason":  "maintenance window",
+		"stopRequestedSource":  "dashboard",
+		"stopRequestedForce":   true,
+	}, checkedAt)
+
+	if status.StartRequestedAt != startedAt {
+		t.Fatalf("expected start requested at %s, got %s", startedAt, status.StartRequestedAt)
+	}
+	if status.StartRequestedReason != "maintenance finished" {
+		t.Fatalf("expected start reason, got %s", status.StartRequestedReason)
+	}
+	if status.StartRequestedSource != "api" {
+		t.Fatalf("expected start source api, got %s", status.StartRequestedSource)
+	}
+	if status.StopRequestedAt != stoppedAt {
+		t.Fatalf("expected stop requested at %s, got %s", stoppedAt, status.StopRequestedAt)
+	}
+	if status.StopRequestedReason != "maintenance window" {
+		t.Fatalf("expected stop reason, got %s", status.StopRequestedReason)
+	}
+	if status.StopRequestedSource != "dashboard" {
+		t.Fatalf("expected stop source dashboard, got %s", status.StopRequestedSource)
+	}
+	if !status.StopRequestedForce {
+		t.Fatal("expected stop requested force true")
+	}
+}

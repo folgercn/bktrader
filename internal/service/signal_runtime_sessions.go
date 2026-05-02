@@ -30,6 +30,17 @@ type SignalRuntimeRestartOptions struct {
 	Source string
 }
 
+type SignalRuntimeStartOptions struct {
+	Reason string
+	Source string
+}
+
+type SignalRuntimeStopOptions struct {
+	Force  bool
+	Reason string
+	Source string
+}
+
 type SignalRuntimeAutoRestartControlOptions struct {
 	Reason string
 	Source string
@@ -237,6 +248,10 @@ func (p *Platform) syncSignalRuntimeSessionPlan(sessionID string) (domain.Signal
 }
 
 func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRuntimeSession, error) {
+	return p.StartSignalRuntimeSessionWithOptions(sessionID, SignalRuntimeStartOptions{})
+}
+
+func (p *Platform) StartSignalRuntimeSessionWithOptions(sessionID string, options SignalRuntimeStartOptions) (domain.SignalRuntimeSession, error) {
 	session, err := p.GetSignalRuntimeSession(sessionID)
 	if err != nil {
 		return domain.SignalRuntimeSession{}, err
@@ -258,6 +273,9 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 			(current.Operation != liveControlOperationSignalRuntimeStart || current.RuntimeSessionID != session.ID) {
 			return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
 		}
+		if err := p.persistSignalRuntimeStartAudit(sessionID, options); err != nil {
+			return domain.SignalRuntimeSession{}, err
+		}
 		return p.startSignalRuntimeSession(context.Background(), sessionID)
 	}
 	requested := liveControlOperationInfo{
@@ -274,7 +292,40 @@ func (p *Platform) StartSignalRuntimeSession(sessionID string) (domain.SignalRun
 		return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
 	}
 	defer release()
+	if err := p.persistSignalRuntimeStartAudit(sessionID, options); err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
 	return p.startSignalRuntimeSession(context.Background(), sessionID)
+}
+
+func (p *Platform) persistSignalRuntimeStartAudit(sessionID string, options SignalRuntimeStartOptions) error {
+	if !signalRuntimeStartAuditRequested(options) {
+		return nil
+	}
+	now := time.Now().UTC()
+	return p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
+		session.State = signalRuntimeStartAuditState(session.State, options, now)
+	})
+}
+
+func signalRuntimeStartAuditRequested(options SignalRuntimeStartOptions) bool {
+	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != ""
+}
+
+func signalRuntimeStartAuditState(state map[string]any, options SignalRuntimeStartOptions, now time.Time) map[string]any {
+	out := cloneMetadata(state)
+	out["startRequestedAt"] = now.UTC().Format(time.RFC3339)
+	if reason := strings.TrimSpace(options.Reason); reason != "" {
+		out["startRequestedReason"] = reason
+	} else {
+		delete(out, "startRequestedReason")
+	}
+	if source := strings.TrimSpace(options.Source); source != "" {
+		out["startRequestedSource"] = source
+	} else {
+		delete(out, "startRequestedSource")
+	}
+	return out
 }
 
 func (p *Platform) startSignalRuntimeSession(parent context.Context, sessionID string) (domain.SignalRuntimeSession, error) {
@@ -527,6 +578,10 @@ func signalRuntimeResumeAutoRestartState(state map[string]any, options SignalRun
 }
 
 func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force bool) (domain.SignalRuntimeSession, error) {
+	return p.StopSignalRuntimeSessionWithOptions(sessionID, SignalRuntimeStopOptions{Force: force})
+}
+
+func (p *Platform) StopSignalRuntimeSessionWithOptions(sessionID string, options SignalRuntimeStopOptions) (domain.SignalRuntimeSession, error) {
 	logger := p.logger("service.signal_runtime", "session_id", sessionID)
 	existing, err := p.GetSignalRuntimeSession(sessionID)
 	if err != nil {
@@ -547,7 +602,33 @@ func (p *Platform) StopSignalRuntimeSessionWithForce(sessionID string, force boo
 		return domain.SignalRuntimeSession{}, liveControlOperationInProgressError(requested, current)
 	}
 	defer release()
-	return p.stopSignalRuntimeSessionWithForceLocked(existing, force)
+	if signalRuntimeStopAuditRequested(options) {
+		now := time.Now().UTC()
+		existing.State = signalRuntimeStopAuditState(existing.State, options, now)
+		existing.UpdatedAt = now
+	}
+	return p.stopSignalRuntimeSessionWithForceLocked(existing, options.Force)
+}
+
+func signalRuntimeStopAuditRequested(options SignalRuntimeStopOptions) bool {
+	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != ""
+}
+
+func signalRuntimeStopAuditState(state map[string]any, options SignalRuntimeStopOptions, now time.Time) map[string]any {
+	out := cloneMetadata(state)
+	out["stopRequestedAt"] = now.UTC().Format(time.RFC3339)
+	out["stopRequestedForce"] = options.Force
+	if reason := strings.TrimSpace(options.Reason); reason != "" {
+		out["stopRequestedReason"] = reason
+	} else {
+		delete(out, "stopRequestedReason")
+	}
+	if source := strings.TrimSpace(options.Source); source != "" {
+		out["stopRequestedSource"] = source
+	} else {
+		delete(out, "stopRequestedSource")
+	}
+	return out
 }
 
 func (p *Platform) stopSignalRuntimeSessionWithForceLocked(existing domain.SignalRuntimeSession, force bool) (domain.SignalRuntimeSession, error) {

@@ -20,6 +20,8 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		t.Fatalf("create signal runtime failed: %v", err)
 	}
 	nextRestartAt := time.Date(2026, 4, 28, 12, 33, 0, 0, time.UTC).Format(time.RFC3339)
+	startedAt := time.Date(2026, 4, 28, 12, 18, 0, 0, time.UTC).Format(time.RFC3339)
+	stoppedAt := time.Date(2026, 4, 28, 12, 24, 0, 0, time.UTC).Format(time.RFC3339)
 	resumedAt := time.Date(2026, 4, 28, 12, 28, 0, 0, time.UTC).Format(time.RFC3339)
 	runtime.Status = "ERROR"
 	runtime.State = map[string]any{
@@ -32,6 +34,13 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		"supervisorRestartReason":   "runtime-error",
 		"supervisorRestartSeverity": "transient",
 		"lastSupervisorError":       "websocket timeout",
+		"startRequestedAt":          startedAt,
+		"startRequestedReason":      "maintenance finished",
+		"startRequestedSource":      "api",
+		"stopRequestedAt":           stoppedAt,
+		"stopRequestedReason":       "maintenance window",
+		"stopRequestedSource":       "dashboard",
+		"stopRequestedForce":        true,
 		"autoRestartSuppressed":     false,
 		"autoRestartResumedAt":      resumedAt,
 		"autoRestartResumedReason":  "maintenance finished",
@@ -80,6 +89,13 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 			RestartReason               string `json:"restartReason"`
 			RestartSeverity             string `json:"restartSeverity"`
 			LastRestartError            string `json:"lastRestartError"`
+			StartRequestedAt            string `json:"startRequestedAt"`
+			StartRequestedReason        string `json:"startRequestedReason"`
+			StartRequestedSource        string `json:"startRequestedSource"`
+			StopRequestedAt             string `json:"stopRequestedAt"`
+			StopRequestedReason         string `json:"stopRequestedReason"`
+			StopRequestedSource         string `json:"stopRequestedSource"`
+			StopRequestedForce          bool   `json:"stopRequestedForce"`
 			AutoRestartSuppressed       bool   `json:"autoRestartSuppressed"`
 			AutoRestartSuppressedAt     string `json:"autoRestartSuppressedAt"`
 			AutoRestartSuppressedReason string `json:"autoRestartSuppressedReason"`
@@ -110,6 +126,13 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		RestartReason               string `json:"restartReason"`
 		RestartSeverity             string `json:"restartSeverity"`
 		LastRestartError            string `json:"lastRestartError"`
+		StartRequestedAt            string `json:"startRequestedAt"`
+		StartRequestedReason        string `json:"startRequestedReason"`
+		StartRequestedSource        string `json:"startRequestedSource"`
+		StopRequestedAt             string `json:"stopRequestedAt"`
+		StopRequestedReason         string `json:"stopRequestedReason"`
+		StopRequestedSource         string `json:"stopRequestedSource"`
+		StopRequestedForce          bool   `json:"stopRequestedForce"`
 		AutoRestartSuppressed       bool   `json:"autoRestartSuppressed"`
 		AutoRestartSuppressedAt     string `json:"autoRestartSuppressedAt"`
 		AutoRestartSuppressedReason string `json:"autoRestartSuppressedReason"`
@@ -151,6 +174,21 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 	}
 	if signalRuntime.LastRestartError != "websocket timeout" {
 		t.Fatalf("expected last restart error, got %s", signalRuntime.LastRestartError)
+	}
+	if signalRuntime.StartRequestedAt != startedAt {
+		t.Fatalf("expected start requested at %s, got %s", startedAt, signalRuntime.StartRequestedAt)
+	}
+	if signalRuntime.StartRequestedReason != "maintenance finished" || signalRuntime.StartRequestedSource != "api" {
+		t.Fatalf("expected start audit reason/source, got %s/%s", signalRuntime.StartRequestedReason, signalRuntime.StartRequestedSource)
+	}
+	if signalRuntime.StopRequestedAt != stoppedAt {
+		t.Fatalf("expected stop requested at %s, got %s", stoppedAt, signalRuntime.StopRequestedAt)
+	}
+	if signalRuntime.StopRequestedReason != "maintenance window" || signalRuntime.StopRequestedSource != "dashboard" {
+		t.Fatalf("expected stop audit reason/source, got %s/%s", signalRuntime.StopRequestedReason, signalRuntime.StopRequestedSource)
+	}
+	if !signalRuntime.StopRequestedForce {
+		t.Fatal("expected stop requested force true")
 	}
 	if signalRuntime.AutoRestartSuppressed {
 		t.Fatal("expected signal runtime autoRestartSuppressed false")

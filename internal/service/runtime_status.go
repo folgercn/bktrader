@@ -28,6 +28,13 @@ type RuntimeStatus struct {
 	RestartReason               string                                   `json:"restartReason,omitempty"`
 	RestartSeverity             string                                   `json:"restartSeverity,omitempty"`
 	LastRestartError            string                                   `json:"lastRestartError,omitempty"`
+	StartRequestedAt            string                                   `json:"startRequestedAt,omitempty"`
+	StartRequestedReason        string                                   `json:"startRequestedReason,omitempty"`
+	StartRequestedSource        string                                   `json:"startRequestedSource,omitempty"`
+	StopRequestedAt             string                                   `json:"stopRequestedAt,omitempty"`
+	StopRequestedReason         string                                   `json:"stopRequestedReason,omitempty"`
+	StopRequestedSource         string                                   `json:"stopRequestedSource,omitempty"`
+	StopRequestedForce          bool                                     `json:"stopRequestedForce,omitempty"`
 	AutoRestartSuppressed       bool                                     `json:"autoRestartSuppressed"`
 	AutoRestartSuppressedAt     string                                   `json:"autoRestartSuppressedAt,omitempty"`
 	AutoRestartSuppressedReason string                                   `json:"autoRestartSuppressedReason,omitempty"`
@@ -140,6 +147,13 @@ func runtimeStatusFromState(serviceName, runtimeKind, runtimeID, status string, 
 		RestartReason:               firstNonEmpty(stringValue(state["restartReason"]), stringValue(state["supervisorRestartReason"])),
 		RestartSeverity:             firstNonEmpty(stringValue(state["restartSeverity"]), stringValue(state["supervisorRestartSeverity"])),
 		LastRestartError:            firstNonEmpty(stringValue(state["lastRestartError"]), stringValue(state["lastSupervisorError"])),
+		StartRequestedAt:            stringValue(state["startRequestedAt"]),
+		StartRequestedReason:        stringValue(state["startRequestedReason"]),
+		StartRequestedSource:        stringValue(state["startRequestedSource"]),
+		StopRequestedAt:             stringValue(state["stopRequestedAt"]),
+		StopRequestedReason:         stringValue(state["stopRequestedReason"]),
+		StopRequestedSource:         stringValue(state["stopRequestedSource"]),
+		StopRequestedForce:          boolValue(state["stopRequestedForce"]),
 		AutoRestartSuppressed:       boolValue(state["autoRestartSuppressed"]),
 		AutoRestartSuppressedAt:     stringValue(state["autoRestartSuppressedAt"]),
 		AutoRestartSuppressedReason: stringValue(state["autoRestartSuppressedReason"]),

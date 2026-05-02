@@ -106,6 +106,13 @@ type supervisorRuntimeStatus struct {
 	DesiredStatus               string                            `json:"desiredStatus"`
 	ActualStatus                string                            `json:"actualStatus"`
 	Health                      string                            `json:"health"`
+	StartRequestedAt            string                            `json:"startRequestedAt,omitempty"`
+	StartRequestedReason        string                            `json:"startRequestedReason,omitempty"`
+	StartRequestedSource        string                            `json:"startRequestedSource,omitempty"`
+	StopRequestedAt             string                            `json:"stopRequestedAt,omitempty"`
+	StopRequestedReason         string                            `json:"stopRequestedReason,omitempty"`
+	StopRequestedSource         string                            `json:"stopRequestedSource,omitempty"`
+	StopRequestedForce          bool                              `json:"stopRequestedForce,omitempty"`
 	AutoRestartSuppressed       bool                              `json:"autoRestartSuppressed"`
 	AutoRestartSuppressedAt     string                            `json:"autoRestartSuppressedAt,omitempty"`
 	AutoRestartSuppressedReason string                            `json:"autoRestartSuppressedReason,omitempty"`
@@ -253,18 +260,20 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				}
 			}
 			autoRestartAudit := supervisorRuntimeAutoRestartAuditSummary(target.Status.Runtimes)
+			lifecycleAudit := supervisorRuntimeLifecycleAuditSummary(target.Status.Runtimes)
 			if restartPlans > 0 {
-				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d restartPlans=%d restartEligible=%d restartBlockedReasons=%s service=%s%s\n",
+				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d restartPlans=%d restartEligible=%d restartBlockedReasons=%s service=%s%s%s\n",
 					len(target.Status.Runtimes),
 					attention,
 					restartPlans,
 					restartEligible,
 					supervisorApplicationRestartBlockedReasons(target.Status.Runtimes),
 					firstNonEmpty(target.Status.Service, "--"),
+					lifecycleAudit,
 					autoRestartAudit,
 				)
 			} else {
-				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d service=%s%s\n", len(target.Status.Runtimes), attention, firstNonEmpty(target.Status.Service, "--"), autoRestartAudit)
+				fmt.Fprintf(&out, "  runtimes: total=%d attention=%d service=%s%s%s\n", len(target.Status.Runtimes), attention, firstNonEmpty(target.Status.Service, "--"), lifecycleAudit, autoRestartAudit)
 			}
 		}
 		if len(target.ControlActions) > 0 {
@@ -316,6 +325,28 @@ func supervisorRuntimeNeedsAttention(runtime supervisorRuntimeStatus) bool {
 	actual := strings.ToUpper(strings.TrimSpace(runtime.ActualStatus))
 	health := strings.ToLower(strings.TrimSpace(runtime.Health))
 	return actual == "ERROR" || health == "error" || health == "suppressed" || health == "unreachable" || health == "stale"
+}
+
+func supervisorRuntimeLifecycleAuditSummary(runtimes []supervisorRuntimeStatus) string {
+	startAudit := 0
+	stopAudit := 0
+	for _, runtime := range runtimes {
+		if strings.TrimSpace(runtime.StartRequestedAt) != "" ||
+			strings.TrimSpace(runtime.StartRequestedReason) != "" ||
+			strings.TrimSpace(runtime.StartRequestedSource) != "" {
+			startAudit++
+		}
+		if strings.TrimSpace(runtime.StopRequestedAt) != "" ||
+			strings.TrimSpace(runtime.StopRequestedReason) != "" ||
+			strings.TrimSpace(runtime.StopRequestedSource) != "" ||
+			runtime.StopRequestedForce {
+			stopAudit++
+		}
+	}
+	if startAudit == 0 && stopAudit == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" startAudit=%d stopAudit=%d", startAudit, stopAudit)
 }
 
 func supervisorRuntimeAutoRestartAuditSummary(runtimes []supervisorRuntimeStatus) string {
