@@ -16,6 +16,8 @@ var APIRegistry = []RouteEntry{
 	{Path: "/healthz", Methods: []string{"GET"}, Module: "system", CLICommand: "status", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/overview", Methods: []string{"GET"}, Module: "system", CLICommand: "status", Idempotent: true, RiskLevel: "L0"},
 	{Path: "/api/v1/runtime/status", Methods: []string{"GET"}, Module: "runtime", CLICommand: "runtime status", Idempotent: true, RiskLevel: "L0"},
+	{Path: "/api/v1/runtime/start", Methods: []string{"POST"}, Module: "runtime", CLICommand: "runtime start", Idempotent: false, RiskLevel: "L1"},
+	{Path: "/api/v1/runtime/stop", Methods: []string{"POST"}, Module: "runtime", CLICommand: "runtime stop", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/runtime/restart", Methods: []string{"POST"}, Module: "runtime", CLICommand: "runtime restart", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/runtime/suppress-auto-restart", Methods: []string{"POST"}, Module: "runtime", CLICommand: "runtime suppress-auto-restart", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/runtime/resume-auto-restart", Methods: []string{"POST"}, Module: "runtime", CLICommand: "runtime resume-auto-restart", Idempotent: false, RiskLevel: "L1"},

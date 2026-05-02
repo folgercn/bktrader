@@ -50,6 +50,14 @@ type RuntimeControlDialogState = {
   runtime: RuntimeRow;
   action: RuntimeControlActionKind;
 };
+type RuntimeLifecycleAudit = {
+  label: string;
+  variant: BadgeVariant;
+  at?: string;
+  reason?: string;
+  source?: string;
+  force?: boolean;
+};
 type RuntimeAutoRestartAudit = {
   label: string;
   variant: BadgeVariant;
@@ -166,6 +174,53 @@ function runtimeNeedsAttention(runtime: RuntimeSupervisorRuntimeStatus) {
   const actual = String(runtime.actualStatus || '').toUpperCase();
   const health = String(runtime.health || '').toLowerCase();
   return actual === 'ERROR' || ['error', 'suppressed', 'unreachable', 'stale'].includes(health);
+}
+
+function runtimeLifecycleAudit(runtime: RuntimeSupervisorRuntimeStatus): RuntimeLifecycleAudit | null {
+  const startTime = runtime.startRequestedAt ? new Date(runtime.startRequestedAt).getTime() : Number.NaN;
+  const stopTime = runtime.stopRequestedAt ? new Date(runtime.stopRequestedAt).getTime() : Number.NaN;
+  const hasStart = Boolean(runtime.startRequestedAt || runtime.startRequestedReason || runtime.startRequestedSource);
+  const hasStop = Boolean(runtime.stopRequestedAt || runtime.stopRequestedReason || runtime.stopRequestedSource || runtime.stopRequestedForce);
+  if (!hasStart && !hasStop) {
+    return null;
+  }
+  if (hasStop && (!hasStart || !Number.isFinite(startTime) || !Number.isFinite(stopTime) || stopTime >= startTime)) {
+    return {
+      label: 'stop requested',
+      variant: 'secondary',
+      at: runtime.stopRequestedAt,
+      reason: runtime.stopRequestedReason,
+      source: runtime.stopRequestedSource,
+      force: runtime.stopRequestedForce,
+    };
+  }
+  return {
+    label: 'start requested',
+    variant: 'neutral',
+    at: runtime.startRequestedAt,
+    reason: runtime.startRequestedReason,
+    source: runtime.startRequestedSource,
+  };
+}
+
+function runtimeLifecycleAuditText(audit: RuntimeLifecycleAudit) {
+  const reason = String(audit.reason || '').trim() || '--';
+  const meta = [
+    audit.at ? `at ${formatTime(audit.at)}` : undefined,
+    audit.source ? `source ${audit.source}` : undefined,
+    audit.force ? 'force' : undefined,
+  ].filter(Boolean);
+  return meta.length > 0 ? `${audit.label}: ${reason} (${meta.join(', ')})` : `${audit.label}: ${reason}`;
+}
+
+function runtimeLifecycleAuditTitle(audit: RuntimeLifecycleAudit) {
+  return [
+    `state=${audit.label}`,
+    audit.at ? `at=${audit.at}` : undefined,
+    audit.source ? `source=${audit.source}` : undefined,
+    audit.force ? 'force=true' : undefined,
+    audit.reason ? `reason=${audit.reason}` : undefined,
+  ].filter(Boolean).join(' ');
 }
 
 function runtimeAutoRestartAudit(runtime: RuntimeSupervisorRuntimeStatus): RuntimeAutoRestartAudit | null {
@@ -692,6 +747,7 @@ export function SupervisorStage() {
                         const restartSubmitting = controlSubmittingKey === runtimeControlActionKey(runtime, 'restart');
                         const suppressAction: RuntimeControlActionKind = runtime.autoRestartSuppressed ? 'resume-auto-restart' : 'suppress-auto-restart';
                         const suppressSubmitting = controlSubmittingKey === runtimeControlActionKey(runtime, suppressAction);
+                        const lifecycleAudit = runtimeLifecycleAudit(runtime);
                         const autoRestartAudit = runtimeAutoRestartAudit(runtime);
                         return (
                           <TableRow key={`${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}`}>
@@ -709,8 +765,14 @@ export function SupervisorStage() {
                               <div className="flex max-w-[220px] flex-col gap-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <StatusBadge value={runtime.health} />
+                                  {lifecycleAudit && <Badge variant={lifecycleAudit.variant}>{lifecycleAudit.label}</Badge>}
                                   {autoRestartAudit && <Badge variant={autoRestartAudit.variant}>{autoRestartAudit.label}</Badge>}
                                 </div>
+                                {lifecycleAudit && (
+                                  <span className="truncate text-xs text-[var(--bk-text-muted)]" title={runtimeLifecycleAuditTitle(lifecycleAudit)}>
+                                    {runtimeLifecycleAuditText(lifecycleAudit)}
+                                  </span>
+                                )}
                                 {autoRestartAudit && (
                                   <span className="truncate text-xs text-[var(--bk-text-muted)]" title={runtimeAutoRestartAuditTitle(autoRestartAudit)}>
                                     {runtimeAutoRestartAuditText(autoRestartAudit)}

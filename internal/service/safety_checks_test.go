@@ -411,10 +411,20 @@ func TestSignalRuntimeStartReturnsConflictDuringLiveControlOperation(t *testing.
 	if !acquired {
 		t.Fatalf("acquire live control operation failed: %v", liveControlOperationInProgressError(requested, current))
 	}
-	_, err = platform.StartSignalRuntimeSession(runtime.ID)
+	_, err = platform.StartSignalRuntimeSessionWithOptions(runtime.ID, SignalRuntimeStartOptions{
+		Reason: "operator retry while live stop is active",
+		Source: "test",
+	})
 	release()
 	if !errors.Is(err, ErrLiveControlOperationInProgress) {
 		t.Fatalf("expected runtime start to return live control conflict, got %v", err)
+	}
+	stored, getErr := platform.GetSignalRuntimeSession(runtime.ID)
+	if getErr != nil {
+		t.Fatalf("get runtime after failed start failed: %v", getErr)
+	}
+	if got := stringValue(stored.State["startRequestedReason"]); got != "" {
+		t.Fatalf("expected failed start not to persist startRequestedReason, got %s", got)
 	}
 	if _, stopErr := platform.StopSignalRuntimeSessionWithForce(runtime.ID, true); stopErr != nil {
 		t.Fatalf("cleanup runtime failed: %v", stopErr)

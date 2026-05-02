@@ -302,3 +302,48 @@ func TestBuildSupervisorStatusSummaryCountsRuntimeAutoRestartAudit(t *testing.T)
 		t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
 	}
 }
+
+func TestBuildSupervisorStatusSummaryCountsRuntimeLifecycleAudit(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[{
+			"name":"api",
+			"baseUrl":"http://127.0.0.1:8080",
+			"healthz":{"path":"/healthz","statusCode":200,"reachable":true},
+			"runtimeStatus":{"path":"/api/v1/runtime/status","statusCode":200,"reachable":true},
+			"serviceState":{"consecutiveFailures":0,"failureThreshold":3,"containerFallbackCandidate":false},
+			"status":{
+				"service":"platform-api",
+				"runtimes":[{
+					"runtimeId":"signal-1",
+					"runtimeKind":"signal",
+					"desiredStatus":"RUNNING",
+					"actualStatus":"RUNNING",
+					"health":"healthy",
+					"startRequestedAt":"2026-04-29T07:55:00Z",
+					"startRequestedReason":"maintenance finished",
+					"startRequestedSource":"api"
+				},{
+					"runtimeId":"signal-2",
+					"runtimeKind":"signal",
+					"desiredStatus":"STOPPED",
+					"actualStatus":"STOPPED",
+					"health":"stopped",
+					"stopRequestedAt":"2026-04-29T07:59:00Z",
+					"stopRequestedReason":"maintenance window",
+					"stopRequestedSource":"dashboard",
+					"stopRequestedForce":true
+				}]
+			}
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	want := "runtimes: total=2 attention=0 service=platform-api startAudit=1 stopAudit=1"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+	}
+}

@@ -237,6 +237,61 @@ func TestRestartSignalRuntimeSessionStopsThenStarts(t *testing.T) {
 	}
 }
 
+func TestSignalRuntimeStartAndStopControlAuditState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	runtimeSession, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
+	}
+
+	started, err := platform.StartSignalRuntimeSessionWithOptions(runtimeSession.ID, SignalRuntimeStartOptions{
+		Reason: "operator resumed runtime after maintenance",
+		Source: "test",
+	})
+	if err != nil {
+		t.Fatalf("StartSignalRuntimeSessionWithOptions failed: %v", err)
+	}
+	if got := stringValue(started.State["startRequestedReason"]); got != "operator resumed runtime after maintenance" {
+		t.Fatalf("expected start reason, got %s", got)
+	}
+	if got := stringValue(started.State["startRequestedSource"]); got != "test" {
+		t.Fatalf("expected start source test, got %s", got)
+	}
+	if got := stringValue(started.State["startRequestedAt"]); got == "" {
+		t.Fatal("expected startRequestedAt")
+	}
+	if got := stringValue(started.State["desiredStatus"]); got != "RUNNING" {
+		t.Fatalf("expected desiredStatus RUNNING after start, got %s", got)
+	}
+
+	stopped, err := platform.StopSignalRuntimeSessionWithOptions(runtimeSession.ID, SignalRuntimeStopOptions{
+		Force:  true,
+		Reason: "operator paused runtime during maintenance",
+		Source: "test",
+	})
+	if err != nil {
+		t.Fatalf("StopSignalRuntimeSessionWithOptions failed: %v", err)
+	}
+	if got := boolValue(stopped.State["stopRequestedForce"]); !got {
+		t.Fatal("expected stopRequestedForce true")
+	}
+	if got := stringValue(stopped.State["stopRequestedReason"]); got != "operator paused runtime during maintenance" {
+		t.Fatalf("expected stop reason, got %s", got)
+	}
+	if got := stringValue(stopped.State["stopRequestedSource"]); got != "test" {
+		t.Fatalf("expected stop source test, got %s", got)
+	}
+	if got := stringValue(stopped.State["stopRequestedAt"]); got == "" {
+		t.Fatal("expected stopRequestedAt")
+	}
+	if got := stringValue(stopped.State["desiredStatus"]); got != "STOPPED" {
+		t.Fatalf("expected desiredStatus STOPPED after stop, got %s", got)
+	}
+	if got := stringValue(stopped.State["actualStatus"]); got != "STOPPED" {
+		t.Fatalf("expected actualStatus STOPPED after stop, got %s", got)
+	}
+}
+
 func TestRestartSignalRuntimeSessionWithoutForceKeepsRunningWhenExposureExists(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	runtimeSession, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
