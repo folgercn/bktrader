@@ -45,6 +45,11 @@ import {
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>['variant']>;
 type RuntimeRow = RuntimeSupervisorRuntimeStatus & { targetName: string };
+type RuntimeControlActionKind = 'restart' | 'suppress-auto-restart' | 'resume-auto-restart';
+type RuntimeControlDialogState = {
+  runtime: RuntimeRow;
+  action: RuntimeControlActionKind;
+};
 
 const REFRESH_INTERVAL_MS = 15_000;
 
@@ -181,23 +186,43 @@ function runtimeRestartSupported(runtime: RuntimeSupervisorRuntimeStatus) {
   return kind === 'signal' || kind === 'signal-runtime';
 }
 
-function runtimeRestartActionKey(runtime: RuntimeRow) {
-  return `${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}`;
+function runtimeControlActionKey(runtime: RuntimeRow, action: RuntimeControlActionKind) {
+  return `${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}:${action}`;
 }
 
-function dashboardRuntimeRestartReason(runtime: RuntimeRow) {
-  return `dashboard manual restart: target=${runtime.targetName} runtime=${runtime.runtimeId}`;
+function runtimeControlPath(action: RuntimeControlActionKind) {
+  if (action === 'suppress-auto-restart') {
+    return '/api/v1/runtime/suppress-auto-restart';
+  }
+  if (action === 'resume-auto-restart') {
+    return '/api/v1/runtime/resume-auto-restart';
+  }
+  return '/api/v1/runtime/restart';
+}
+
+function runtimeControlLabel(action: RuntimeControlActionKind) {
+  if (action === 'suppress-auto-restart') {
+    return 'Suppress Auto Restart';
+  }
+  if (action === 'resume-auto-restart') {
+    return 'Resume Auto Restart';
+  }
+  return 'Restart Signal Runtime';
+}
+
+function dashboardRuntimeControlReason(runtime: RuntimeRow, action: RuntimeControlActionKind) {
+  return `dashboard manual ${action}: target=${runtime.targetName} runtime=${runtime.runtimeId}`;
 }
 
 export function SupervisorStage() {
   const [snapshot, setSnapshot] = useState<RuntimeSupervisorSnapshot | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [restartDialogRuntime, setRestartDialogRuntime] = useState<RuntimeRow | null>(null);
-  const [restartReason, setRestartReason] = useState('');
-  const [restartSubmittingKey, setRestartSubmittingKey] = useState<string | null>(null);
-  const [restartNotice, setRestartNotice] = useState<string | null>(null);
-  const [restartError, setRestartError] = useState<string | null>(null);
+  const [controlDialog, setControlDialog] = useState<RuntimeControlDialogState | null>(null);
+  const [controlReason, setControlReason] = useState('');
+  const [controlSubmittingKey, setControlSubmittingKey] = useState<string | null>(null);
+  const [controlNotice, setControlNotice] = useState<string | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
 
   const loadSnapshot = useCallback(async (silent = false) => {
     if (!silent) {
@@ -216,62 +241,64 @@ export function SupervisorStage() {
     }
   }, []);
 
-  const openRestartDialog = useCallback((runtime: RuntimeRow) => {
-    setRestartDialogRuntime(runtime);
-    setRestartReason(dashboardRuntimeRestartReason(runtime));
-    setRestartNotice(null);
-    setRestartError(null);
+  const openControlDialog = useCallback((runtime: RuntimeRow, action: RuntimeControlActionKind) => {
+    setControlDialog({ runtime, action });
+    setControlReason(dashboardRuntimeControlReason(runtime, action));
+    setControlNotice(null);
+    setControlError(null);
   }, []);
 
-  const closeRestartDialog = useCallback(() => {
-    if (restartSubmittingKey) {
+  const closeControlDialog = useCallback(() => {
+    if (controlSubmittingKey) {
       return;
     }
-    setRestartDialogRuntime(null);
-    setRestartReason('');
-  }, [restartSubmittingKey]);
+    setControlDialog(null);
+    setControlReason('');
+  }, [controlSubmittingKey]);
 
-  const submitRuntimeRestart = useCallback(async () => {
-    if (!restartDialogRuntime) {
+  const submitRuntimeControl = useCallback(async () => {
+    if (!controlDialog) {
       return;
     }
-    const reason = restartReason.trim();
+    const { runtime, action } = controlDialog;
+    const reason = controlReason.trim();
     if (!reason) {
-      setRestartError('restart reason is required');
+      setControlError('reason is required');
       return;
     }
-    const key = runtimeRestartActionKey(restartDialogRuntime);
-    setRestartSubmittingKey(key);
-    setRestartError(null);
-    setRestartNotice(null);
+    const key = runtimeControlActionKey(runtime, action);
+    setControlSubmittingKey(key);
+    setControlError(null);
+    setControlNotice(null);
     try {
-      await fetchJSON('/api/v1/runtime/restart', {
+      await fetchJSON(runtimeControlPath(action), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          runtimeId: restartDialogRuntime.runtimeId,
-          runtimeKind: restartDialogRuntime.runtimeKind,
+          runtimeId: runtime.runtimeId,
+          runtimeKind: runtime.runtimeKind,
           confirm: true,
-          force: false,
+          force: action === 'restart' ? false : undefined,
           reason,
         }),
       });
     } catch (err) {
-      setRestartError(err instanceof Error ? err.message : 'runtime restart failed');
-      setRestartSubmittingKey(null);
+      setControlError(err instanceof Error ? err.message : 'runtime control failed');
+      setControlSubmittingKey(null);
       return;
     }
 
-    setRestartDialogRuntime(null);
-    setRestartReason('');
+    setControlDialog(null);
+    setControlReason('');
     const refreshed = await loadSnapshot(true);
+    const acceptedMessage = `${runtimeControlLabel(action)} accepted: ${shrink(runtime.runtimeId)}`;
     if (refreshed) {
-      setRestartNotice(`restart accepted: ${shrink(restartDialogRuntime.runtimeId)}`);
+      setControlNotice(acceptedMessage);
     } else {
-      setRestartNotice(`restart accepted; refresh failed: ${shrink(restartDialogRuntime.runtimeId)}`);
+      setControlNotice(`${acceptedMessage}; refresh failed`);
     }
-    setRestartSubmittingKey(null);
-  }, [loadSnapshot, restartDialogRuntime, restartReason]);
+    setControlSubmittingKey(null);
+  }, [controlDialog, controlReason, loadSnapshot]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -614,9 +641,10 @@ export function SupervisorStage() {
                           restartPlan?.blockedReason ||
                           restartPlan?.eligibleReason ||
                           restartPlan?.reason;
-                        const restartActionKey = runtimeRestartActionKey(runtime);
                         const canRestart = runtimeRestartSupported(runtime);
-                        const restartSubmitting = restartSubmittingKey === restartActionKey;
+                        const restartSubmitting = controlSubmittingKey === runtimeControlActionKey(runtime, 'restart');
+                        const suppressAction: RuntimeControlActionKind = runtime.autoRestartSuppressed ? 'resume-auto-restart' : 'suppress-auto-restart';
+                        const suppressSubmitting = controlSubmittingKey === runtimeControlActionKey(runtime, suppressAction);
                         return (
                           <TableRow key={`${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}`}>
                             <TableCell>{runtime.targetName}</TableCell>
@@ -664,18 +692,36 @@ export function SupervisorStage() {
                             <TableCell>{formatOptionalTime(runtime.lastCheckedAt)}</TableCell>
                             <TableCell>
                               {canRestart ? (
-                                <Button
-                                  type="button"
-                                  size="icon-sm"
-                                  variant="bento-outline"
-                                  className="rounded-lg"
-                                  onClick={() => openRestartDialog(runtime)}
-                                  disabled={Boolean(restartSubmittingKey) || restartSubmitting}
-                                  title="Restart signal runtime"
-                                  aria-label={`Restart signal runtime ${runtime.runtimeId}`}
-                                >
-                                  <RotateCw className={cn(restartSubmitting && 'animate-spin')} />
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    size="icon-sm"
+                                    variant="bento-outline"
+                                    className="rounded-lg"
+                                    onClick={() => openControlDialog(runtime, 'restart')}
+                                    disabled={Boolean(controlSubmittingKey) || restartSubmitting}
+                                    title="Restart signal runtime"
+                                    aria-label={`Restart signal runtime ${runtime.runtimeId}`}
+                                  >
+                                    <RotateCw className={cn(restartSubmitting && 'animate-spin')} />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon-sm"
+                                    variant={runtime.autoRestartSuppressed ? 'bento-outline' : 'bento-ghost'}
+                                    className="rounded-lg"
+                                    onClick={() => openControlDialog(runtime, suppressAction)}
+                                    disabled={Boolean(controlSubmittingKey) || suppressSubmitting}
+                                    title={runtime.autoRestartSuppressed ? 'Resume auto restart' : 'Suppress auto restart'}
+                                    aria-label={`${runtime.autoRestartSuppressed ? 'Resume' : 'Suppress'} auto restart for ${runtime.runtimeId}`}
+                                  >
+                                    {runtime.autoRestartSuppressed ? (
+                                      <CheckCircle2 className={cn(suppressSubmitting && 'animate-pulse')} />
+                                    ) : (
+                                      <ShieldAlert className={cn(suppressSubmitting && 'animate-pulse')} />
+                                    )}
+                                  </Button>
+                                </div>
                               ) : (
                                 <span className="text-xs text-[var(--bk-text-muted)]">--</span>
                               )}
@@ -694,8 +740,8 @@ export function SupervisorStage() {
                 <CardTitle>Control Actions</CardTitle>
                 <CardAction>
                   <div className="flex flex-wrap justify-end gap-2">
-                    {restartError && <Badge variant="destructive" title={restartError}>restart failed</Badge>}
-                    {restartNotice && <Badge variant="success" title={restartNotice}>restart accepted</Badge>}
+                    {controlError && <Badge variant="destructive" title={controlError}>control failed</Badge>}
+                    {controlNotice && <Badge variant="success" title={controlNotice}>control accepted</Badge>}
                     <Badge variant="neutral">{controlActionRows.length}</Badge>
                   </div>
                 </CardAction>
@@ -754,12 +800,14 @@ export function SupervisorStage() {
           </>
         )}
       </div>
-      <Dialog open={Boolean(restartDialogRuntime)} onOpenChange={(open) => !open && closeRestartDialog()}>
+      <Dialog open={Boolean(controlDialog)} onOpenChange={(open) => !open && closeControlDialog()}>
         <DialogContent tone="bento" className="max-w-lg rounded-lg border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-0">
           <DialogHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] px-6 py-4">
-            <DialogTitle className="text-lg font-semibold text-[var(--bk-text-primary)]">Restart Signal Runtime</DialogTitle>
+            <DialogTitle className="text-lg font-semibold text-[var(--bk-text-primary)]">
+              {controlDialog ? runtimeControlLabel(controlDialog.action) : 'Runtime Control'}
+            </DialogTitle>
             <DialogDescription className="text-sm text-[var(--bk-text-muted)]">
-              {restartDialogRuntime ? `${restartDialogRuntime.targetName} / ${shrink(restartDialogRuntime.runtimeId)}` : '--'}
+              {controlDialog ? `${controlDialog.runtime.targetName} / ${shrink(controlDialog.runtime.runtimeId)}` : '--'}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 px-6 py-5">
@@ -769,16 +817,16 @@ export function SupervisorStage() {
               </label>
               <Textarea
                 id="supervisor-runtime-restart-reason"
-                value={restartReason}
-                onChange={(event) => setRestartReason(event.target.value)}
-                disabled={Boolean(restartSubmittingKey)}
+                value={controlReason}
+                onChange={(event) => setControlReason(event.target.value)}
+                disabled={Boolean(controlSubmittingKey)}
                 rows={4}
-                aria-invalid={restartReason.trim() === ''}
+                aria-invalid={controlReason.trim() === ''}
               />
             </div>
-            {restartError && (
+            {controlError && (
               <div className="rounded-lg border border-[var(--bk-status-danger)] bg-[var(--bk-status-danger-soft)] px-3 py-2 text-sm text-[var(--bk-status-danger)]">
-                {restartError}
+                {controlError}
               </div>
             )}
           </div>
@@ -787,8 +835,8 @@ export function SupervisorStage() {
               type="button"
               variant="bento-outline"
               className="rounded-lg"
-              onClick={closeRestartDialog}
-              disabled={Boolean(restartSubmittingKey)}
+              onClick={closeControlDialog}
+              disabled={Boolean(controlSubmittingKey)}
             >
               Cancel
             </Button>
@@ -796,11 +844,11 @@ export function SupervisorStage() {
               type="button"
               variant="bento-destructive"
               className="rounded-lg"
-              onClick={() => void submitRuntimeRestart()}
-              disabled={!restartReason.trim() || Boolean(restartSubmittingKey)}
+              onClick={() => void submitRuntimeControl()}
+              disabled={!controlReason.trim() || Boolean(controlSubmittingKey)}
             >
-              <RotateCw data-icon="inline-start" className={cn(restartSubmittingKey && 'animate-spin')} />
-              Submit Restart
+              <RotateCw data-icon="inline-start" className={cn(controlSubmittingKey && 'animate-spin')} />
+              Submit
             </Button>
           </DialogFooter>
         </DialogContent>

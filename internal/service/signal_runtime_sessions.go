@@ -30,6 +30,11 @@ type SignalRuntimeRestartOptions struct {
 	Source string
 }
 
+type SignalRuntimeAutoRestartControlOptions struct {
+	Reason string
+	Source string
+}
+
 func (r *signalRuntimeRun) releaseRuntimeLease() {
 	if r == nil || r.releaseLease == nil {
 		return
@@ -451,6 +456,72 @@ func signalRuntimeRestartAuditState(state map[string]any, options SignalRuntimeR
 		out["restartRequestedSource"] = source
 	} else {
 		delete(out, "restartRequestedSource")
+	}
+	return out
+}
+
+func (p *Platform) SuppressSignalRuntimeAutoRestart(sessionID string, options SignalRuntimeAutoRestartControlOptions) (domain.SignalRuntimeSession, error) {
+	now := time.Now().UTC()
+	if err := p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
+		state := signalRuntimeSuppressAutoRestartState(session.State, options, now)
+		session.State = state
+	}); err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	return p.GetSignalRuntimeSession(sessionID)
+}
+
+func (p *Platform) ResumeSignalRuntimeAutoRestart(sessionID string, options SignalRuntimeAutoRestartControlOptions) (domain.SignalRuntimeSession, error) {
+	now := time.Now().UTC()
+	if err := p.updateSignalRuntimeSessionState(sessionID, func(session *domain.SignalRuntimeSession) {
+		state := signalRuntimeResumeAutoRestartState(session.State, options, now)
+		session.State = state
+	}); err != nil {
+		return domain.SignalRuntimeSession{}, err
+	}
+	return p.GetSignalRuntimeSession(sessionID)
+}
+
+func signalRuntimeSuppressAutoRestartState(state map[string]any, options SignalRuntimeAutoRestartControlOptions, now time.Time) map[string]any {
+	out := cloneMetadata(state)
+	out["autoRestartSuppressed"] = true
+	out["autoRestartSuppressedAt"] = now.UTC().Format(time.RFC3339)
+	out["supervisorRestartReason"] = "manual-suppress-auto-restart"
+	if reason := strings.TrimSpace(options.Reason); reason != "" {
+		out["autoRestartSuppressedReason"] = reason
+	} else {
+		delete(out, "autoRestartSuppressedReason")
+	}
+	if source := strings.TrimSpace(options.Source); source != "" {
+		out["autoRestartSuppressedSource"] = source
+	} else {
+		delete(out, "autoRestartSuppressedSource")
+	}
+	delete(out, "nextAutoRestartAt")
+	delete(out, "supervisorRestartBackoff")
+	return out
+}
+
+func signalRuntimeResumeAutoRestartState(state map[string]any, options SignalRuntimeAutoRestartControlOptions, now time.Time) map[string]any {
+	out := cloneMetadata(state)
+	delete(out, "autoRestartSuppressed")
+	delete(out, "autoRestartSuppressedAt")
+	delete(out, "autoRestartSuppressedReason")
+	delete(out, "autoRestartSuppressedSource")
+	delete(out, "nextAutoRestartAt")
+	delete(out, "supervisorRestartBackoff")
+	delete(out, "supervisorRestartSeverity")
+	out["autoRestartResumedAt"] = now.UTC().Format(time.RFC3339)
+	out["supervisorRestartReason"] = "manual-resume-auto-restart"
+	if reason := strings.TrimSpace(options.Reason); reason != "" {
+		out["autoRestartResumedReason"] = reason
+	} else {
+		delete(out, "autoRestartResumedReason")
+	}
+	if source := strings.TrimSpace(options.Source); source != "" {
+		out["autoRestartResumedSource"] = source
+	} else {
+		delete(out, "autoRestartResumedSource")
 	}
 	return out
 }
