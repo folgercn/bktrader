@@ -320,6 +320,10 @@ func TestBuildSupervisorStatusSummaryCountsRuntimeLifecycleAudit(t *testing.T) {
 					"desiredStatus":"RUNNING",
 					"actualStatus":"RUNNING",
 					"health":"healthy",
+					"restartRequestedAt":"2026-04-29T07:54:00Z",
+					"restartRequestedReason":"operator requested rebinding",
+					"restartRequestedSource":"api",
+					"restartRequestedForce":true,
 					"startRequestedAt":"2026-04-29T07:55:00Z",
 					"startRequestedReason":"maintenance finished",
 					"startRequestedSource":"api"
@@ -342,7 +346,7 @@ func TestBuildSupervisorStatusSummaryCountsRuntimeLifecycleAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
-	want := "runtimes: total=2 attention=0 service=platform-api startAudit=1 stopAudit=1"
+	want := "runtimes: total=2 attention=0 service=platform-api restartAudit=1 startAudit=1 stopAudit=1"
 	if !strings.Contains(summary, want) {
 		t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
 	}

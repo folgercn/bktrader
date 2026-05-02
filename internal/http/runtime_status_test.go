@@ -20,6 +20,7 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		t.Fatalf("create signal runtime failed: %v", err)
 	}
 	nextRestartAt := time.Date(2026, 4, 28, 12, 33, 0, 0, time.UTC).Format(time.RFC3339)
+	restartedAt := time.Date(2026, 4, 28, 12, 12, 0, 0, time.UTC).Format(time.RFC3339)
 	startedAt := time.Date(2026, 4, 28, 12, 18, 0, 0, time.UTC).Format(time.RFC3339)
 	stoppedAt := time.Date(2026, 4, 28, 12, 24, 0, 0, time.UTC).Format(time.RFC3339)
 	resumedAt := time.Date(2026, 4, 28, 12, 28, 0, 0, time.UTC).Format(time.RFC3339)
@@ -34,6 +35,10 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		"supervisorRestartReason":   "runtime-error",
 		"supervisorRestartSeverity": "transient",
 		"lastSupervisorError":       "websocket timeout",
+		"restartRequestedAt":        restartedAt,
+		"restartRequestedReason":    "operator requested rebinding",
+		"restartRequestedSource":    "api",
+		"restartRequestedForce":     true,
 		"startRequestedAt":          startedAt,
 		"startRequestedReason":      "maintenance finished",
 		"startRequestedSource":      "api",
@@ -89,6 +94,10 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 			RestartReason               string `json:"restartReason"`
 			RestartSeverity             string `json:"restartSeverity"`
 			LastRestartError            string `json:"lastRestartError"`
+			RestartRequestedAt          string `json:"restartRequestedAt"`
+			RestartRequestedReason      string `json:"restartRequestedReason"`
+			RestartRequestedSource      string `json:"restartRequestedSource"`
+			RestartRequestedForce       bool   `json:"restartRequestedForce"`
 			StartRequestedAt            string `json:"startRequestedAt"`
 			StartRequestedReason        string `json:"startRequestedReason"`
 			StartRequestedSource        string `json:"startRequestedSource"`
@@ -126,6 +135,10 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		RestartReason               string `json:"restartReason"`
 		RestartSeverity             string `json:"restartSeverity"`
 		LastRestartError            string `json:"lastRestartError"`
+		RestartRequestedAt          string `json:"restartRequestedAt"`
+		RestartRequestedReason      string `json:"restartRequestedReason"`
+		RestartRequestedSource      string `json:"restartRequestedSource"`
+		RestartRequestedForce       bool   `json:"restartRequestedForce"`
 		StartRequestedAt            string `json:"startRequestedAt"`
 		StartRequestedReason        string `json:"startRequestedReason"`
 		StartRequestedSource        string `json:"startRequestedSource"`
@@ -174,6 +187,15 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 	}
 	if signalRuntime.LastRestartError != "websocket timeout" {
 		t.Fatalf("expected last restart error, got %s", signalRuntime.LastRestartError)
+	}
+	if signalRuntime.RestartRequestedAt != restartedAt {
+		t.Fatalf("expected restart requested at %s, got %s", restartedAt, signalRuntime.RestartRequestedAt)
+	}
+	if signalRuntime.RestartRequestedReason != "operator requested rebinding" || signalRuntime.RestartRequestedSource != "api" {
+		t.Fatalf("expected restart audit reason/source, got %s/%s", signalRuntime.RestartRequestedReason, signalRuntime.RestartRequestedSource)
+	}
+	if !signalRuntime.RestartRequestedForce {
+		t.Fatal("expected restart requested force true")
 	}
 	if signalRuntime.StartRequestedAt != startedAt {
 		t.Fatalf("expected start requested at %s, got %s", startedAt, signalRuntime.StartRequestedAt)
