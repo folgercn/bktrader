@@ -4462,11 +4462,11 @@ func TestLiveBTC30mBaselinePlusT3EnhancedOverridesUseBaselineQualityGates(t *tes
 	if len(shapes) != 2 || shapes[0] != "original_t2" || shapes[1] != "t3_swing" {
 		t.Fatalf("expected quality filter shapes [original_t2 t3_swing], got %#v", shapes)
 	}
-	if _, ok := overrides["reentry_min_stop_bps"]; ok {
-		t.Fatalf("expected BTC 30m baseline+T3 template to omit reentry_min_stop_bps, got %#v", overrides)
+	if got := parseFloatValue(overrides["reentry_min_stop_bps"]); got != btc30mBaselinePlusT3ReentryMinStopBps {
+		t.Fatalf("expected BTC 30m baseline+T3 template to require reentry_min_stop_bps=%v, got %v", btc30mBaselinePlusT3ReentryMinStopBps, got)
 	}
-	if _, ok := overrides["reentry_atr_percentile_gte"]; ok {
-		t.Fatalf("expected BTC 30m baseline+T3 template to omit reentry_atr_percentile_gte, got %#v", overrides)
+	if got := parseFloatValue(overrides["reentry_atr_percentile_gte"]); got != btc30mBaselinePlusT3ReentryATRPercentileGTE {
+		t.Fatalf("expected BTC 30m baseline+T3 template to require reentry_atr_percentile_gte=%v, got %v", btc30mBaselinePlusT3ReentryATRPercentileGTE, got)
 	}
 }
 

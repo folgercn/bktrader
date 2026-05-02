@@ -36,6 +36,11 @@ type LiveLaunchTemplate struct {
 	Notes                  []string                 `json:"notes"`
 }
 
+const (
+	btc30mBaselinePlusT3ReentryMinStopBps       = 4.0
+	btc30mBaselinePlusT3ReentryATRPercentileGTE = 10.0
+)
+
 func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 	strategyID, strategyName, strategyVersionID, strategyEngine, err := p.resolvePrimaryLiveTemplateStrategy()
 	if err != nil {
@@ -225,7 +230,7 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		item.Notes = append([]string{
 			fmt.Sprintf("Baseline+T3 增强模板单独使用 %s（strategyEngine=%s），旧 T2-only 模板 key %s 保留兼容。", enhancedStrategyName, bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey, "binance-testnet-btc-30m-enhanced"),
 			"策略口径：SMA5 intrabar hard filter + baseline_plus_t3 breakout，original_t2 与 t3_swing 均可锁定 reentry window。",
-			"baseline gate 固化为 min_atr_percentile=25 与 min_sma_atr_separation=0.1，仅过滤 entry/reentry window 锁定，不过滤止损出场。",
+			"baseline breakout gate 固化为 min_atr_percentile=25 与 min_sma_atr_separation=0.1；legacy reentry gate 保留但放松为 reentry_min_stop_bps=4 与 reentry_atr_percentile_gte=10，仅过滤 entry/reentry，不过滤止损出场。",
 			"模板仍保持 dispatchMode 由前端提交前选择，默认展示为 manual-review。",
 		}, item.Notes...)
 		return item
@@ -314,8 +319,8 @@ func liveBTC30mBaselinePlusT3EnhancedOverrides() map[string]any {
 	overrides["min_atr_percentile"] = 25.0
 	overrides["min_sma_atr_separation"] = 0.1
 	overrides["quality_filter_shapes"] = []string{"original_t2", "t3_swing"}
-	delete(overrides, "reentry_min_stop_bps")
-	delete(overrides, "reentry_atr_percentile_gte")
+	overrides["reentry_min_stop_bps"] = btc30mBaselinePlusT3ReentryMinStopBps
+	overrides["reentry_atr_percentile_gte"] = btc30mBaselinePlusT3ReentryATRPercentileGTE
 	return overrides
 }
 

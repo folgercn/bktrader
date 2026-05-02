@@ -208,11 +208,11 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 					if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["min_sma_atr_separation"]); got != 0.1 {
 						t.Fatalf("expected enhanced template min_sma_atr_separation=0.1, got %v", got)
 					}
-					if _, ok := item.LaunchPayload.LiveSessionOverrides["reentry_min_stop_bps"]; ok {
-						t.Fatalf("expected baseline+T3 template to omit legacy reentry_min_stop_bps, got %#v", item.LaunchPayload.LiveSessionOverrides)
+					if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["reentry_min_stop_bps"]); got != btc30mBaselinePlusT3ReentryMinStopBps {
+						t.Fatalf("expected baseline+T3 template reentry_min_stop_bps=%v, got %v", btc30mBaselinePlusT3ReentryMinStopBps, got)
 					}
-					if _, ok := item.LaunchPayload.LiveSessionOverrides["reentry_atr_percentile_gte"]; ok {
-						t.Fatalf("expected baseline+T3 template to omit legacy reentry_atr_percentile_gte, got %#v", item.LaunchPayload.LiveSessionOverrides)
+					if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["reentry_atr_percentile_gte"]); got != btc30mBaselinePlusT3ReentryATRPercentileGTE {
+						t.Fatalf("expected baseline+T3 template reentry_atr_percentile_gte=%v, got %v", btc30mBaselinePlusT3ReentryATRPercentileGTE, got)
 					}
 				} else {
 					if got := stringValue(item.LaunchPayload.LiveSessionOverrides["strategyEngine"]); got != bkLiveIntrabarSMA5T2Only0p5BpsEngineKey {
