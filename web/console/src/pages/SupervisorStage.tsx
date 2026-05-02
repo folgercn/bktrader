@@ -15,6 +15,14 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -23,6 +31,7 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { Separator } from '../components/ui/separator';
+import { Textarea } from '../components/ui/textarea';
 import { cn } from '../lib/utils';
 import { fetchJSON } from '../utils/api';
 import { formatTime, shrink } from '../utils/format';
@@ -35,6 +44,7 @@ import {
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>['variant']>;
+type RuntimeRow = RuntimeSupervisorRuntimeStatus & { targetName: string };
 
 const REFRESH_INTERVAL_MS = 15_000;
 
@@ -166,10 +176,28 @@ function applicationRestartPlanTitle(plan?: RuntimeSupervisorRuntimeStatus['appl
   ].filter(Boolean).join(' ');
 }
 
+function runtimeRestartSupported(runtime: RuntimeSupervisorRuntimeStatus) {
+  const kind = String(runtime.runtimeKind || '').trim().toLowerCase();
+  return kind === 'signal' || kind === 'signal-runtime';
+}
+
+function runtimeRestartActionKey(runtime: RuntimeRow) {
+  return `${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}`;
+}
+
+function dashboardRuntimeRestartReason(runtime: RuntimeRow) {
+  return `dashboard manual restart: target=${runtime.targetName} runtime=${runtime.runtimeId}`;
+}
+
 export function SupervisorStage() {
   const [snapshot, setSnapshot] = useState<RuntimeSupervisorSnapshot | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [restartDialogRuntime, setRestartDialogRuntime] = useState<RuntimeRow | null>(null);
+  const [restartReason, setRestartReason] = useState('');
+  const [restartSubmittingKey, setRestartSubmittingKey] = useState<string | null>(null);
+  const [restartNotice, setRestartNotice] = useState<string | null>(null);
+  const [restartError, setRestartError] = useState<string | null>(null);
 
   const loadSnapshot = useCallback(async (silent = false) => {
     if (!silent) {
@@ -185,6 +213,57 @@ export function SupervisorStage() {
       setLoadState('error');
     }
   }, []);
+
+  const openRestartDialog = useCallback((runtime: RuntimeRow) => {
+    setRestartDialogRuntime(runtime);
+    setRestartReason(dashboardRuntimeRestartReason(runtime));
+    setRestartNotice(null);
+    setRestartError(null);
+  }, []);
+
+  const closeRestartDialog = useCallback(() => {
+    if (restartSubmittingKey) {
+      return;
+    }
+    setRestartDialogRuntime(null);
+    setRestartReason('');
+  }, [restartSubmittingKey]);
+
+  const submitRuntimeRestart = useCallback(async () => {
+    if (!restartDialogRuntime) {
+      return;
+    }
+    const reason = restartReason.trim();
+    if (!reason) {
+      setRestartError('restart reason is required');
+      return;
+    }
+    const key = runtimeRestartActionKey(restartDialogRuntime);
+    setRestartSubmittingKey(key);
+    setRestartError(null);
+    setRestartNotice(null);
+    try {
+      await fetchJSON('/api/v1/runtime/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          runtimeId: restartDialogRuntime.runtimeId,
+          runtimeKind: restartDialogRuntime.runtimeKind,
+          confirm: true,
+          force: false,
+          reason,
+        }),
+      });
+      setRestartNotice(`restart accepted: ${shrink(restartDialogRuntime.runtimeId)}`);
+      setRestartDialogRuntime(null);
+      setRestartReason('');
+      await loadSnapshot(true);
+    } catch (err) {
+      setRestartError(err instanceof Error ? err.message : 'runtime restart failed');
+    } finally {
+      setRestartSubmittingKey(null);
+    }
+  }, [loadSnapshot, restartDialogRuntime, restartReason]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -516,6 +595,7 @@ export function SupervisorStage() {
                         <TableHead>Restart</TableHead>
                         <TableHead>Next</TableHead>
                         <TableHead>Checked</TableHead>
+                        <TableHead>Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -526,6 +606,9 @@ export function SupervisorStage() {
                           restartPlan?.blockedReason ||
                           restartPlan?.eligibleReason ||
                           restartPlan?.reason;
+                        const restartActionKey = runtimeRestartActionKey(runtime);
+                        const canRestart = runtimeRestartSupported(runtime);
+                        const restartSubmitting = restartSubmittingKey === restartActionKey;
                         return (
                           <TableRow key={`${runtime.targetName}:${runtime.runtimeKind}:${runtime.runtimeId}`}>
                             <TableCell>{runtime.targetName}</TableCell>
@@ -571,6 +654,24 @@ export function SupervisorStage() {
                             </TableCell>
                             <TableCell>{formatOptionalTime(runtime.nextRestartAt)}</TableCell>
                             <TableCell>{formatOptionalTime(runtime.lastCheckedAt)}</TableCell>
+                            <TableCell>
+                              {canRestart ? (
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="bento-outline"
+                                  className="rounded-lg"
+                                  onClick={() => openRestartDialog(runtime)}
+                                  disabled={Boolean(restartSubmittingKey) || restartSubmitting}
+                                  title="Restart signal runtime"
+                                  aria-label={`Restart signal runtime ${runtime.runtimeId}`}
+                                >
+                                  <RotateCw className={cn(restartSubmitting && 'animate-spin')} />
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-[var(--bk-text-muted)]">--</span>
+                              )}
+                            </TableCell>
                           </TableRow>
                         );
                       })}
@@ -584,7 +685,11 @@ export function SupervisorStage() {
               <CardHeader>
                 <CardTitle>Control Actions</CardTitle>
                 <CardAction>
-                  <Badge variant="neutral">{controlActionRows.length}</Badge>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {restartError && <Badge variant="destructive" title={restartError}>restart failed</Badge>}
+                    {restartNotice && <Badge variant="success" title={restartNotice}>restart accepted</Badge>}
+                    <Badge variant="neutral">{controlActionRows.length}</Badge>
+                  </div>
                 </CardAction>
               </CardHeader>
               <CardContent>
@@ -641,6 +746,57 @@ export function SupervisorStage() {
           </>
         )}
       </div>
+      <Dialog open={Boolean(restartDialogRuntime)} onOpenChange={(open) => !open && closeRestartDialog()}>
+        <DialogContent tone="bento" className="max-w-lg rounded-lg border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-0">
+          <DialogHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] px-6 py-4">
+            <DialogTitle className="text-lg font-semibold text-[var(--bk-text-primary)]">Restart Signal Runtime</DialogTitle>
+            <DialogDescription className="text-sm text-[var(--bk-text-muted)]">
+              {restartDialogRuntime ? `${restartDialogRuntime.targetName} / ${shrink(restartDialogRuntime.runtimeId)}` : '--'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 px-6 py-5">
+            <div className="flex flex-col gap-2">
+              <label htmlFor="supervisor-runtime-restart-reason" className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">
+                Reason
+              </label>
+              <Textarea
+                id="supervisor-runtime-restart-reason"
+                value={restartReason}
+                onChange={(event) => setRestartReason(event.target.value)}
+                disabled={Boolean(restartSubmittingKey)}
+                rows={4}
+                aria-invalid={restartReason.trim() === ''}
+              />
+            </div>
+            {restartError && (
+              <div className="rounded-lg border border-[var(--bk-status-danger)] bg-[var(--bk-status-danger-soft)] px-3 py-2 text-sm text-[var(--bk-status-danger)]">
+                {restartError}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="border-t border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)]/30 px-6 py-4">
+            <Button
+              type="button"
+              variant="bento-outline"
+              className="rounded-lg"
+              onClick={closeRestartDialog}
+              disabled={Boolean(restartSubmittingKey)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="bento-destructive"
+              className="rounded-lg"
+              onClick={() => void submitRuntimeRestart()}
+              disabled={!restartReason.trim() || Boolean(restartSubmittingKey)}
+            >
+              <RotateCw data-icon="inline-start" className={cn(restartSubmittingKey && 'animate-spin')} />
+              Submit Restart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
