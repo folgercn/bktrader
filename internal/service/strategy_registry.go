@@ -950,14 +950,12 @@ func evaluateSignalBarGate(signalBarState map[string]any, nextSide, nextRole, ne
 		prevHigh1,
 		prevHigh2,
 		prevHigh3,
-		breakoutPrice,
 		gateOptions,
 	)
 	shortBreakoutShapeName, shortBreakoutLevel := resolveShortBreakoutShape(
 		prevLow1,
 		prevLow2,
 		prevLow3,
-		breakoutPrice,
 		gateOptions,
 	)
 	longBreakoutShapeReady := longBreakoutShapeName != "" && longBreakoutLevel > 0
@@ -1124,25 +1122,23 @@ func evaluateReentryEntryQualityGate(parameters map[string]any, signalBarState m
 	return result
 }
 
-func resolveLongBreakoutShape(prevHigh1, prevHigh2, prevHigh3, observedPrice float64, options signalBarGateOptions) (string, float64) {
-	if t2LongBreakoutShapeReady(prevHigh2, prevHigh1, options.BreakoutShapeToleranceBps) && observedPrice >= prevHigh2 {
+func resolveLongBreakoutShape(prevHigh1, prevHigh2, prevHigh3 float64, options signalBarGateOptions) (string, float64) {
+	if t2LongBreakoutShapeReady(prevHigh2, prevHigh1, options.BreakoutShapeToleranceBps) {
 		return "original_t2", prevHigh2
 	}
 	if strings.EqualFold(strings.TrimSpace(options.BreakoutShape), "baseline_plus_t3") &&
-		t3LongBreakoutShapeReady(prevHigh1, prevHigh2, prevHigh3) &&
-		observedPrice >= prevHigh3 {
+		t3LongBreakoutShapeReady(prevHigh1, prevHigh2, prevHigh3) {
 		return "t3_swing", prevHigh3
 	}
 	return "", 0
 }
 
-func resolveShortBreakoutShape(prevLow1, prevLow2, prevLow3, observedPrice float64, options signalBarGateOptions) (string, float64) {
-	if t2ShortBreakoutShapeReady(prevLow2, prevLow1, options.BreakoutShapeToleranceBps) && observedPrice <= prevLow2 {
+func resolveShortBreakoutShape(prevLow1, prevLow2, prevLow3 float64, options signalBarGateOptions) (string, float64) {
+	if t2ShortBreakoutShapeReady(prevLow2, prevLow1, options.BreakoutShapeToleranceBps) {
 		return "original_t2", prevLow2
 	}
 	if strings.EqualFold(strings.TrimSpace(options.BreakoutShape), "baseline_plus_t3") &&
-		t3ShortBreakoutShapeReady(prevLow1, prevLow2, prevLow3) &&
-		observedPrice <= prevLow3 {
+		t3ShortBreakoutShapeReady(prevLow1, prevLow2, prevLow3) {
 		return "t3_swing", prevLow3
 	}
 	return "", 0

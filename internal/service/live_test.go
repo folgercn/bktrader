@@ -818,6 +818,38 @@ func TestEvaluateSignalBarGateAllowsT2BreakoutTolerance(t *testing.T) {
 	}
 }
 
+func TestEvaluateSignalBarGateSeparatesBreakoutShapeFromPriceTrigger(t *testing.T) {
+	gate := evaluateSignalBarGate(map[string]any{
+		"timeframe": "30m",
+		"sma5":      68200.0,
+		"ma20":      68000.0,
+		"atr14":     800.0,
+		"current": map[string]any{
+			"close": 68600.0,
+			"high":  68950.0,
+			"low":   68100.0,
+		},
+		"prevBar1": map[string]any{"high": 69000.0, "low": 68100.0},
+		"prevBar2": map[string]any{"high": 68997.0, "low": 68000.0},
+		"prevBar3": map[string]any{"high": 68700.0, "low": 67900.0},
+	}, "BUY", "entry", "", 68950.0, "trade_tick.price", signalBarGateOptions{
+		BreakoutShape:             "original_t2",
+		BreakoutShapeToleranceBps: 0.5,
+	})
+	if !boolValue(gate["longBreakoutShapeReady"]) {
+		t.Fatalf("expected original_t2 structure to be ready before price trigger, got %#v", gate)
+	}
+	if boolValue(gate["longBreakoutPriceReady"]) || boolValue(gate["longBreakoutReady"]) || boolValue(gate["longReady"]) {
+		t.Fatalf("expected price trigger and full breakout to remain not ready, got %#v", gate)
+	}
+	if got := stringValue(gate["longBreakoutShapeName"]); got != "original_t2" {
+		t.Fatalf("expected original_t2 shape metadata, got %s in %#v", got, gate)
+	}
+	if got := parseFloatValue(gate["longBreakoutLevel"]); got != 68997.0 {
+		t.Fatalf("expected original_t2 level metadata, got %v in %#v", got, gate)
+	}
+}
+
 func TestEvaluateSignalBarGateKeepsOriginalT2WithLegacyBreakoutShape(t *testing.T) {
 	gate := evaluateSignalBarGate(map[string]any{
 		"timeframe": "30m",
