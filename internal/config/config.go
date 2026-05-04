@@ -74,6 +74,7 @@ type Config struct {
 	SupervisorAppRestartEnabled    bool     // supervisor 是否允许按 runtime status 到期计划提交应用内 restart（默认关闭）
 	SupervisorServiceFailThreshold int      // supervisor 标记容器兜底候选所需的连续服务级失败次数（默认 3）
 	SupervisorContainerRestart     bool     // supervisor 是否允许容器级 restart 进入 executor 阶段（默认关闭）
+	SupervisorContainerExecutor    string   // 容器兜底 executor 类型；当前仅支持 noop dry-run readiness
 }
 
 // Load 从环境变量加载配置，未设置的使用默认值。
@@ -157,6 +158,7 @@ func Load() Config {
 		SupervisorAppRestartEnabled:    boolFromEnv("SUPERVISOR_APPLICATION_RESTART_ENABLED", false),
 		SupervisorServiceFailThreshold: intFromEnvWithMin("SUPERVISOR_SERVICE_FAILURE_THRESHOLD", 3, 1),
 		SupervisorContainerRestart:     boolFromEnv("SUPERVISOR_CONTAINER_RESTART_ENABLED", false),
+		SupervisorContainerExecutor:    strings.ToLower(strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR"))),
 	}
 }
 

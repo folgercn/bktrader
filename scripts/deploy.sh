@@ -41,6 +41,7 @@ env_file_value() {
 
 effective_app_env=${APP_ENV:-$(env_file_value APP_ENV)}
 effective_supervisor_token=${SUPERVISOR_BEARER_TOKEN:-$(env_file_value SUPERVISOR_BEARER_TOKEN)}
+effective_supervisor_container_executor=${SUPERVISOR_CONTAINER_EXECUTOR:-$(env_file_value SUPERVISOR_CONTAINER_EXECUTOR)}
 if [[ "$effective_app_env" == "production" && "$effective_supervisor_token" == "change-this-supervisor-probe-token" ]]; then
   echo "Refusing production deploy with placeholder SUPERVISOR_BEARER_TOKEN; set a strong random token in $APP_ENV_FILE." >&2
   exit 3
@@ -50,6 +51,9 @@ if [[ -n "$effective_app_env" ]]; then
 fi
 if [[ -n "$effective_supervisor_token" ]]; then
   export SUPERVISOR_BEARER_TOKEN="$effective_supervisor_token"
+fi
+if [[ -n "$effective_supervisor_container_executor" ]]; then
+  export SUPERVISOR_CONTAINER_EXECUTOR="$effective_supervisor_container_executor"
 fi
 
 export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"

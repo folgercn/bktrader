@@ -110,6 +110,7 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_APPLICATION_RESTART_ENABLED", "true")
 	t.Setenv("SUPERVISOR_SERVICE_FAILURE_THRESHOLD", "4")
 	t.Setenv("SUPERVISOR_CONTAINER_RESTART_ENABLED", "true")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR", " NoOp ")
 
 	cfg := Load()
 	if len(cfg.SupervisorTargets) != 2 {
@@ -135,6 +136,9 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	}
 	if !cfg.SupervisorContainerRestart {
 		t.Fatal("expected supervisor container restart opt-in to be enabled")
+	}
+	if cfg.SupervisorContainerExecutor != "noop" {
+		t.Fatalf("expected supervisor container executor noop, got %q", cfg.SupervisorContainerExecutor)
 	}
 }
 

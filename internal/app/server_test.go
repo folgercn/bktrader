@@ -81,6 +81,40 @@ func TestRuntimeOptionsForSupervisorOnlyStartsReadOnlySupervisor(t *testing.T) {
 	}
 }
 
+func TestRuntimeSupervisorOptionsForConfigWiresNoopExecutorReadiness(t *testing.T) {
+	options := runtimeSupervisorOptionsForConfig(config.Config{
+		SupervisorContainerRestart:  true,
+		SupervisorContainerExecutor: "noop",
+	})
+	if !options.EnableContainerFallback {
+		t.Fatal("expected container fallback opt-in to remain enabled")
+	}
+	if options.ContainerFallbackExecutor == nil || !options.ContainerFallbackExecutor.Configured() {
+		t.Fatalf("expected configured noop executor, got %+v", options.ContainerFallbackExecutor)
+	}
+	descriptor := options.ContainerFallbackExecutor.Descriptor()
+	if descriptor.Kind != "noop" || !descriptor.DryRun {
+		t.Fatalf("expected dry-run noop descriptor, got %+v", descriptor)
+	}
+	result, err := options.ContainerFallbackExecutor.Restart(context.Background(), service.RuntimeSupervisorTarget{Name: "api"}, "test")
+	if err != nil {
+		t.Fatalf("noop executor restart returned error: %v", err)
+	}
+	if result.Executed {
+		t.Fatalf("noop executor must not execute restart, got %+v", result)
+	}
+}
+
+func TestRuntimeSupervisorOptionsForConfigLeavesExecutorUnconfiguredByDefault(t *testing.T) {
+	options := runtimeSupervisorOptionsForConfig(config.Config{
+		SupervisorContainerRestart:  true,
+		SupervisorContainerExecutor: "",
+	})
+	if options.ContainerFallbackExecutor != nil {
+		t.Fatalf("expected no container fallback executor by default, got %+v", options.ContainerFallbackExecutor)
+	}
+}
+
 func TestRuntimeOptionsForMonolithStartAllRuntimeComponents(t *testing.T) {
 	options := RuntimeOptionsForRole("monolith")
 	if !options.WarmLiveMarketData ||
