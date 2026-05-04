@@ -12,7 +12,13 @@ import (
 
 func init() {
 	supervisorCmd.AddCommand(supervisorStatusCmd)
+	supervisorCmd.AddCommand(supervisorSuppressContainerFallbackCmd)
+	supervisorCmd.AddCommand(supervisorResumeContainerFallbackCmd)
 	rootCmd.AddCommand(supervisorCmd)
+	supervisorSuppressContainerFallbackCmd.Flags().Bool("confirm", false, "确认抑制 container fallback")
+	supervisorSuppressContainerFallbackCmd.Flags().String("reason", "", "抑制原因；必填")
+	supervisorResumeContainerFallbackCmd.Flags().Bool("confirm", false, "确认恢复 container fallback")
+	supervisorResumeContainerFallbackCmd.Flags().String("reason", "", "恢复原因；必填")
 }
 
 var supervisorCmd = &cobra.Command{
@@ -29,6 +35,44 @@ var supervisorStatusCmd = &cobra.Command{
 		handleSupervisorStatusResponse(resp, err)
 		return nil
 	},
+}
+
+var supervisorSuppressContainerFallbackCmd = &cobra.Command{
+	Use:   "suppress-container-fallback <targetName>",
+	Short: "抑制 supervisor 容器兜底计划 [MUTATING]",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runSupervisorContainerFallbackControl(cmd, args[0], "/api/v1/supervisor/container-fallback/suppress")
+	},
+}
+
+var supervisorResumeContainerFallbackCmd = &cobra.Command{
+	Use:   "resume-container-fallback <targetName>",
+	Short: "恢复 supervisor 容器兜底计划 [MUTATING]",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runSupervisorContainerFallbackControl(cmd, args[0], "/api/v1/supervisor/container-fallback/resume")
+	},
+}
+
+func runSupervisorContainerFallbackControl(cmd *cobra.Command, targetName, path string) error {
+	confirm, _ := cmd.Flags().GetBool("confirm")
+	if !confirm && !dryRun {
+		return fmt.Errorf("操作需要 --confirm 确认")
+	}
+	reason, _ := cmd.Flags().GetString("reason")
+	if strings.TrimSpace(reason) == "" && !dryRun {
+		return fmt.Errorf("操作需要提供 --reason")
+	}
+	payload := map[string]any{
+		"targetName": targetName,
+		"confirm":    confirm,
+		"reason":     reason,
+	}
+	client := getClient()
+	resp, err := client.Request("POST", path, payload)
+	handleResponse(resp, err)
+	return nil
 }
 
 type supervisorStatusSnapshot struct {
@@ -72,6 +116,12 @@ type supervisorServiceState struct {
 	ContainerFallbackCandidate          bool   `json:"containerFallbackCandidate"`
 	ContainerFallbackReason             string `json:"containerFallbackReason,omitempty"`
 	ContainerFallbackSuppressed         bool   `json:"containerFallbackSuppressed"`
+	ContainerFallbackSuppressedAt       string `json:"containerFallbackSuppressedAt,omitempty"`
+	ContainerFallbackSuppressedReason   string `json:"containerFallbackSuppressedReason,omitempty"`
+	ContainerFallbackSuppressedSource   string `json:"containerFallbackSuppressedSource,omitempty"`
+	ContainerFallbackResumedAt          string `json:"containerFallbackResumedAt,omitempty"`
+	ContainerFallbackResumedReason      string `json:"containerFallbackResumedReason,omitempty"`
+	ContainerFallbackResumedSource      string `json:"containerFallbackResumedSource,omitempty"`
 	ContainerFallbackBackoffUntil       string `json:"containerFallbackBackoffUntil,omitempty"`
 	ContainerFallbackAttemptCount       int    `json:"containerFallbackAttemptCount"`
 	LastContainerFallbackDecisionAt     string `json:"lastContainerFallbackDecisionAt,omitempty"`
@@ -224,6 +274,20 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 		)
 		if strings.TrimSpace(target.ServiceState.LastFailureReason) != "" {
 			fmt.Fprintf(&out, "  lastFailure=%s\n", target.ServiceState.LastFailureReason)
+		}
+		if strings.TrimSpace(target.ServiceState.ContainerFallbackSuppressedReason) != "" {
+			fmt.Fprintf(&out, "  fallbackSuppressed reason=%s source=%s at=%s\n",
+				target.ServiceState.ContainerFallbackSuppressedReason,
+				firstNonEmpty(target.ServiceState.ContainerFallbackSuppressedSource, "--"),
+				firstNonEmpty(target.ServiceState.ContainerFallbackSuppressedAt, "--"),
+			)
+		}
+		if strings.TrimSpace(target.ServiceState.ContainerFallbackResumedReason) != "" {
+			fmt.Fprintf(&out, "  fallbackResumed reason=%s source=%s at=%s\n",
+				target.ServiceState.ContainerFallbackResumedReason,
+				firstNonEmpty(target.ServiceState.ContainerFallbackResumedSource, "--"),
+				firstNonEmpty(target.ServiceState.ContainerFallbackResumedAt, "--"),
+			)
 		}
 		if strings.TrimSpace(target.ServiceState.LastContainerFallbackDecisionReason) != "" {
 			fmt.Fprintf(&out, "  lastFallbackDecision=%s at=%s\n",
