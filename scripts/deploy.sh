@@ -26,6 +26,32 @@ if [[ -n "${APP_ENV_FILE_CONTENT:-}" ]]; then
 ' "$APP_ENV_FILE_CONTENT" > "$APP_ENV_FILE"
 fi
 
+env_file_value() {
+  local key=$1
+  [[ -f "$APP_ENV_FILE" ]] || return 0
+  awk -F= -v key="$key" '
+    $0 !~ /^[[:space:]]*#/ && $1 == key {
+      value = substr($0, length($1) + 2)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      gsub(/^["'\'']|["'\'']$/, "", value)
+      print value
+    }
+  ' "$APP_ENV_FILE" | tail -1
+}
+
+effective_app_env=${APP_ENV:-$(env_file_value APP_ENV)}
+effective_supervisor_token=${SUPERVISOR_BEARER_TOKEN:-$(env_file_value SUPERVISOR_BEARER_TOKEN)}
+if [[ "$effective_app_env" == "production" && "$effective_supervisor_token" == "change-this-supervisor-probe-token" ]]; then
+  echo "Refusing production deploy with placeholder SUPERVISOR_BEARER_TOKEN; set a strong random token in $APP_ENV_FILE." >&2
+  exit 3
+fi
+if [[ -n "$effective_app_env" ]]; then
+  export APP_ENV="$effective_app_env"
+fi
+if [[ -n "$effective_supervisor_token" ]]; then
+  export SUPERVISOR_BEARER_TOKEN="$effective_supervisor_token"
+fi
+
 export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
 
 if [[ "$IMAGE_REPO" == ghcr.io/* ]]; then
