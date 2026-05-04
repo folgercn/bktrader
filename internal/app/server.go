@@ -200,23 +200,33 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 		if len(targets) == 0 {
 			logger.Warn("read-only runtime supervisor disabled because SUPERVISOR_TARGETS is empty")
 		} else {
-			supervisor := service.NewRuntimeSupervisorWithOptions(targets, &http.Client{Timeout: time.Duration(cfg.SupervisorHTTPTimeoutSeconds) * time.Second}, service.RuntimeSupervisorOptions{
-				EnableApplicationRestart: cfg.SupervisorAppRestartEnabled,
-				ServiceFailureThreshold:  cfg.SupervisorServiceFailThreshold,
-				EnableContainerFallback:  cfg.SupervisorContainerRestart,
-			})
+			supervisorOptions := runtimeSupervisorOptionsForConfig(cfg)
+			supervisor := service.NewRuntimeSupervisorWithOptions(targets, &http.Client{Timeout: time.Duration(cfg.SupervisorHTTPTimeoutSeconds) * time.Second}, supervisorOptions)
 			platform.SetRuntimeSupervisor(supervisor)
 			supervisor.Start(ctx, time.Duration(cfg.SupervisorPollIntervalSeconds)*time.Second)
 			logger.Info("runtime supervisor started",
 				"target_count", len(supervisor.Targets()),
 				"poll_interval_seconds", cfg.SupervisorPollIntervalSeconds,
 				"http_timeout_seconds", cfg.SupervisorHTTPTimeoutSeconds,
-				"application_restart_enabled", cfg.SupervisorAppRestartEnabled,
-				"service_failure_threshold", cfg.SupervisorServiceFailThreshold,
-				"container_restart_enabled", cfg.SupervisorContainerRestart,
+				"application_restart_enabled", supervisorOptions.EnableApplicationRestart,
+				"service_failure_threshold", supervisorOptions.ServiceFailureThreshold,
+				"container_restart_enabled", supervisorOptions.EnableContainerFallback,
+				"container_executor", cfg.SupervisorContainerExecutor,
 			)
 		}
 	}
+}
+
+func runtimeSupervisorOptionsForConfig(cfg config.Config) service.RuntimeSupervisorOptions {
+	options := service.RuntimeSupervisorOptions{
+		EnableApplicationRestart: cfg.SupervisorAppRestartEnabled,
+		ServiceFailureThreshold:  cfg.SupervisorServiceFailThreshold,
+		EnableContainerFallback:  cfg.SupervisorContainerRestart,
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.SupervisorContainerExecutor), "noop") {
+		options.ContainerFallbackExecutor = service.NewNoopContainerFallbackExecutor(true)
+	}
+	return options
 }
 
 // buildRepository 根据配置选择并初始化存储后端。
