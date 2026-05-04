@@ -19,7 +19,8 @@ func (s hiddenEnhancedStrategyStore) ListStrategies() ([]map[string]any, error) 
 	}
 	filtered := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		if stringValue(item["id"]) == "strategy-bk-btc-30m-enhanced" {
+		id := stringValue(item["id"])
+		if id == "strategy-bk-btc-30m-enhanced" || id == "strategy-bk-btc-30m-enhanced-t3" {
 			continue
 		}
 		filtered = append(filtered, item)
@@ -66,6 +67,9 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		expectedStrategyID := "strategy-bk-1d"
 		if want.enhanced {
 			expectedStrategyID = "strategy-bk-btc-30m-enhanced"
+			if want.baselinePlusT3 {
+				expectedStrategyID = "strategy-bk-btc-30m-enhanced-t3"
+			}
 		}
 		if item.StrategyID != expectedStrategyID {
 			t.Fatalf("expected %s, got %s", expectedStrategyID, item.StrategyID)
@@ -247,7 +251,7 @@ func TestLiveLaunchTemplatesSkipEnhancedWhenStrategyMissing(t *testing.T) {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
 	if len(templates) != 8 {
-		t.Fatalf("expected original 8 launch templates when enhanced strategy is missing, got %d", len(templates))
+		t.Fatalf("expected original 8 launch templates when enhanced strategies are missing, got %d", len(templates))
 	}
 	for _, item := range templates {
 		if item.Key == "binance-testnet-btc-30m-enhanced" {
