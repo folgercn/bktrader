@@ -33,6 +33,10 @@ func authMiddleware(cfg config.Config, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if isSupervisorBearerRuntimeStatusRequest(cfg, r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !cfg.AuthEnabled {
 			next.ServeHTTP(w, r)
 			return
@@ -77,6 +81,21 @@ func isLoopbackRuntimeStatusRequest(cfg config.Config, r *http.Request) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func isSupervisorBearerRuntimeStatusRequest(cfg config.Config, r *http.Request) bool {
+	if !cfg.AuthEnabled || strings.TrimSpace(cfg.SupervisorBearerToken) == "" {
+		return false
+	}
+	if r == nil || r.URL == nil || r.URL.Path != "/api/v1/runtime/status" {
+		return false
+	}
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(strings.ToLower(authorization), "bearer ") {
+		return false
+	}
+	token := strings.TrimSpace(authorization[len("Bearer "):])
+	return token != "" && hmac.Equal([]byte(token), []byte(strings.TrimSpace(cfg.SupervisorBearerToken)))
 }
 
 func authClaimsFromContext(ctx context.Context) (authClaims, bool) {

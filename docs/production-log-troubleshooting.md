@@ -157,7 +157,7 @@ bktrader-ctl logs live-control-summary --json
 - `liveControl.scanner.enabled=false` 或 `scanner.processRole=api`：当前 API 进程不消费控制意图，必须先检查 / 拉起 `live-runner`；`--force` 不能替代 runner。
 - `runnerPickups=0` 且 `currentPending>0`：意图已写入，但 runner 没接走，优先处理 runner / deployment / supervisor 状态。
 - 只有普通 stop 被持仓 / 挂单安全阻断，并且用户明确接受风险时，才考虑 `--force`。
-- Runtime Supervisor 页面显示 `runtime supervisor is not configured` 时，先确认当前生产镜像/compose 是否已包含 platform-api 的 `SUPERVISOR_TARGETS` 配置；它不能证明 `live-runner` 正常，仍以 `status` 和 live-control summary 为准。
+- Runtime Supervisor 页面显示 `runtime supervisor is not configured` 时，先确认当前生产镜像/compose 是否已包含 platform-api 的 `SUPERVISOR_TARGETS` 配置；独立 supervisor 巡检可用 `BKTRADER_API_URL=http://127.0.0.1:8081 bktrader-ctl supervisor status --json` 读取。该页面状态不能证明 `live-runner` 正常，仍以 `status` 和 live-control summary 为准。
 
 ## 8. 安全边界
 

@@ -59,12 +59,12 @@ deploy_args=()
 if [[ -n "$DEPLOY_SERVICES" ]]; then
   for service in $DEPLOY_SERVICES; do
     case "$service" in
-      platform-api|live-runner|signal-runtime-runner|notification-worker)
+      platform-api|live-runner|signal-runtime-runner|notification-worker|supervisor)
         deploy_args+=("$service")
         ;;
       *)
         echo "Unsupported DEPLOY_SERVICES entry: $service" >&2
-        echo "Allowed services: platform-api live-runner signal-runtime-runner notification-worker" >&2
+        echo "Allowed services: platform-api live-runner signal-runtime-runner notification-worker supervisor" >&2
         exit 2
         ;;
     esac

@@ -56,6 +56,27 @@ services:
       BKTRADER_ROLE: notification-worker
       AUTO_MIGRATE: "false"
 
+  supervisor:
+    <<: *app-image
+    container_name: bktrader-supervisor
+    command: ["platform-api"]
+    environment:
+      BKTRADER_ROLE: supervisor
+      HTTP_ADDR: :8081
+      AUTO_MIGRATE: "false"
+      SUPERVISOR_TARGETS: ${SUPERVISOR_STANDALONE_TARGETS:-api=http://platform-api:8080}
+      SUPERVISOR_POLL_INTERVAL_SECONDS: ${SUPERVISOR_POLL_INTERVAL_SECONDS:-30}
+      SUPERVISOR_HTTP_TIMEOUT_SECONDS: ${SUPERVISOR_HTTP_TIMEOUT_SECONDS:-5}
+      SUPERVISOR_APPLICATION_RESTART_ENABLED: ${SUPERVISOR_APPLICATION_RESTART_ENABLED:-false}
+      SUPERVISOR_CONTAINER_RESTART_ENABLED: ${SUPERVISOR_CONTAINER_RESTART_ENABLED:-false}
+    depends_on:
+      - platform-api
+      - postgres
+      - redis
+      - nats
+    ports:
+      - "8081:8081"
+
   postgres:
     image: postgres:16
     environment:
