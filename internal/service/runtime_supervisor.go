@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,6 +28,14 @@ const (
 	runtimeSupervisorContainerExecutorKindCustom = "custom"
 	runtimeSupervisorContainerExecutorKindNone   = "none"
 	runtimeSupervisorContainerExecutorKindNoop   = "noop"
+)
+
+var (
+	ErrRuntimeSupervisorControlConfirmRequired = errors.New("runtime supervisor control confirm required")
+	ErrRuntimeSupervisorControlReasonRequired  = errors.New("runtime supervisor control reason required")
+	ErrRuntimeSupervisorTargetRequired         = errors.New("runtime supervisor target is required")
+	ErrRuntimeSupervisorTargetNotFound         = errors.New("runtime supervisor target not found")
+	ErrRuntimeSupervisorTargetAmbiguous        = errors.New("runtime supervisor target is ambiguous")
 )
 
 type RuntimeSupervisorOptions struct {
@@ -156,6 +165,12 @@ type RuntimeSupervisorServiceState struct {
 	ContainerFallbackCandidate          bool       `json:"containerFallbackCandidate"`
 	ContainerFallbackReason             string     `json:"containerFallbackReason,omitempty"`
 	ContainerFallbackSuppressed         bool       `json:"containerFallbackSuppressed"`
+	ContainerFallbackSuppressedAt       *time.Time `json:"containerFallbackSuppressedAt,omitempty"`
+	ContainerFallbackSuppressedReason   string     `json:"containerFallbackSuppressedReason,omitempty"`
+	ContainerFallbackSuppressedSource   string     `json:"containerFallbackSuppressedSource,omitempty"`
+	ContainerFallbackResumedAt          *time.Time `json:"containerFallbackResumedAt,omitempty"`
+	ContainerFallbackResumedReason      string     `json:"containerFallbackResumedReason,omitempty"`
+	ContainerFallbackResumedSource      string     `json:"containerFallbackResumedSource,omitempty"`
 	ContainerFallbackBackoffUntil       *time.Time `json:"containerFallbackBackoffUntil,omitempty"`
 	ContainerFallbackAttemptCount       int        `json:"containerFallbackAttemptCount"`
 	LastContainerFallbackDecisionAt     *time.Time `json:"lastContainerFallbackDecisionAt,omitempty"`
@@ -185,6 +200,12 @@ type runtimeSupervisorServiceState struct {
 	LastFailureAt                       time.Time
 	LastHealthyAt                       time.Time
 	ContainerFallbackSuppressed         bool
+	ContainerFallbackSuppressedAt       time.Time
+	ContainerFallbackSuppressedReason   string
+	ContainerFallbackSuppressedSource   string
+	ContainerFallbackResumedAt          time.Time
+	ContainerFallbackResumedReason      string
+	ContainerFallbackResumedSource      string
 	ContainerFallbackBackoffUntil       time.Time
 	ContainerFallbackAttemptCount       int
 	LastContainerFallbackDecisionAt     time.Time
@@ -227,6 +248,22 @@ type runtimeSupervisorApplicationRestartDecisionResult struct {
 	EligibleReason string
 }
 
+type RuntimeSupervisorContainerFallbackControlOptions struct {
+	Confirm bool
+	Reason  string
+	Source  string
+}
+
+type RuntimeSupervisorContainerFallbackControlResult struct {
+	TargetName    string                        `json:"targetName"`
+	TargetBaseURL string                        `json:"targetBaseUrl"`
+	Suppressed    bool                          `json:"suppressed"`
+	Reason        string                        `json:"reason"`
+	Source        string                        `json:"source"`
+	UpdatedAt     time.Time                     `json:"updatedAt"`
+	ServiceState  RuntimeSupervisorServiceState `json:"serviceState"`
+}
+
 type RuntimeSupervisor struct {
 	targets []RuntimeSupervisorTarget
 	client  *http.Client
@@ -252,6 +289,26 @@ func (p *Platform) RuntimeSupervisorSnapshot() (RuntimeSupervisorSnapshot, bool)
 		return RuntimeSupervisorSnapshot{}, false
 	}
 	return supervisor.LastSnapshot(), true
+}
+
+func (p *Platform) SuppressRuntimeSupervisorContainerFallback(targetName string, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackControlResult, error) {
+	p.mu.Lock()
+	supervisor := p.runtimeSupervisor
+	p.mu.Unlock()
+	if supervisor == nil {
+		return RuntimeSupervisorContainerFallbackControlResult{}, ErrRuntimeSupervisorTargetNotFound
+	}
+	return supervisor.SuppressContainerFallback(targetName, options)
+}
+
+func (p *Platform) ResumeRuntimeSupervisorContainerFallback(targetName string, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackControlResult, error) {
+	p.mu.Lock()
+	supervisor := p.runtimeSupervisor
+	p.mu.Unlock()
+	if supervisor == nil {
+		return RuntimeSupervisorContainerFallbackControlResult{}, ErrRuntimeSupervisorTargetNotFound
+	}
+	return supervisor.ResumeContainerFallback(targetName, options)
 }
 
 func NewRuntimeSupervisor(targets []RuntimeSupervisorTarget, client *http.Client) *RuntimeSupervisor {
@@ -371,6 +428,88 @@ func (s *RuntimeSupervisor) LastSnapshot() RuntimeSupervisorSnapshot {
 	return out
 }
 
+func (s *RuntimeSupervisor) SuppressContainerFallback(targetName string, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackControlResult, error) {
+	return s.setContainerFallbackSuppressed(targetName, true, options)
+}
+
+func (s *RuntimeSupervisor) ResumeContainerFallback(targetName string, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackControlResult, error) {
+	return s.setContainerFallbackSuppressed(targetName, false, options)
+}
+
+func (s *RuntimeSupervisor) setContainerFallbackSuppressed(targetName string, suppressed bool, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackControlResult, error) {
+	if s == nil {
+		return RuntimeSupervisorContainerFallbackControlResult{}, ErrRuntimeSupervisorTargetNotFound
+	}
+	if !options.Confirm {
+		return RuntimeSupervisorContainerFallbackControlResult{}, ErrRuntimeSupervisorControlConfirmRequired
+	}
+	reason := strings.TrimSpace(options.Reason)
+	if reason == "" {
+		return RuntimeSupervisorContainerFallbackControlResult{}, ErrRuntimeSupervisorControlReasonRequired
+	}
+	target, err := s.targetByName(targetName)
+	if err != nil {
+		return RuntimeSupervisorContainerFallbackControlResult{}, err
+	}
+	source := strings.TrimSpace(options.Source)
+	if source == "" {
+		source = "api"
+	}
+	now := time.Now().UTC()
+	key := runtimeSupervisorServiceKey(target)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.serviceStates == nil {
+		s.serviceStates = make(map[string]runtimeSupervisorServiceState)
+	}
+	state := s.serviceStates[key]
+	state.ContainerFallbackSuppressed = suppressed
+	if suppressed {
+		state.ContainerFallbackSuppressedAt = now
+		state.ContainerFallbackSuppressedReason = reason
+		state.ContainerFallbackSuppressedSource = source
+	} else {
+		state.ContainerFallbackSuppressedAt = time.Time{}
+		state.ContainerFallbackSuppressedReason = ""
+		state.ContainerFallbackSuppressedSource = ""
+		state.ContainerFallbackResumedAt = now
+		state.ContainerFallbackResumedReason = reason
+		state.ContainerFallbackResumedSource = source
+	}
+	s.serviceStates[key] = state
+	return RuntimeSupervisorContainerFallbackControlResult{
+		TargetName:    target.Name,
+		TargetBaseURL: target.BaseURL,
+		Suppressed:    suppressed,
+		Reason:        reason,
+		Source:        source,
+		UpdatedAt:     now,
+		ServiceState:  runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold),
+	}, nil
+}
+
+func (s *RuntimeSupervisor) targetByName(targetName string) (RuntimeSupervisorTarget, error) {
+	name := strings.TrimSpace(targetName)
+	if name == "" {
+		return RuntimeSupervisorTarget{}, ErrRuntimeSupervisorTargetRequired
+	}
+	var match RuntimeSupervisorTarget
+	found := 0
+	for _, target := range s.targets {
+		if target.Name == name {
+			match = target
+			found++
+		}
+	}
+	if found == 0 {
+		return RuntimeSupervisorTarget{}, fmt.Errorf("%w: %s", ErrRuntimeSupervisorTargetNotFound, name)
+	}
+	if found > 1 {
+		return RuntimeSupervisorTarget{}, fmt.Errorf("%w: %s", ErrRuntimeSupervisorTargetAmbiguous, name)
+	}
+	return match, nil
+}
+
 func (s *RuntimeSupervisor) Start(ctx context.Context, interval time.Duration) {
 	if s == nil {
 		return
@@ -488,6 +627,10 @@ func runtimeSupervisorServiceStateSnapshot(state runtimeSupervisorServiceState, 
 		FailureThreshold:                    threshold,
 		LastFailureReason:                   state.LastFailureReason,
 		ContainerFallbackSuppressed:         state.ContainerFallbackSuppressed,
+		ContainerFallbackSuppressedReason:   state.ContainerFallbackSuppressedReason,
+		ContainerFallbackSuppressedSource:   state.ContainerFallbackSuppressedSource,
+		ContainerFallbackResumedReason:      state.ContainerFallbackResumedReason,
+		ContainerFallbackResumedSource:      state.ContainerFallbackResumedSource,
 		ContainerFallbackAttemptCount:       state.ContainerFallbackAttemptCount,
 		LastContainerFallbackDecisionReason: state.LastContainerFallbackDecisionReason,
 	}
@@ -498,6 +641,14 @@ func runtimeSupervisorServiceStateSnapshot(state runtimeSupervisorServiceState, 
 	if !state.LastHealthyAt.IsZero() {
 		lastHealthyAt := state.LastHealthyAt.UTC()
 		out.LastHealthyAt = &lastHealthyAt
+	}
+	if !state.ContainerFallbackSuppressedAt.IsZero() {
+		suppressedAt := state.ContainerFallbackSuppressedAt.UTC()
+		out.ContainerFallbackSuppressedAt = &suppressedAt
+	}
+	if !state.ContainerFallbackResumedAt.IsZero() {
+		resumedAt := state.ContainerFallbackResumedAt.UTC()
+		out.ContainerFallbackResumedAt = &resumedAt
 	}
 	if !state.ContainerFallbackBackoffUntil.IsZero() {
 		backoffUntil := state.ContainerFallbackBackoffUntil.UTC()
