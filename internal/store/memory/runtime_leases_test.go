@@ -47,6 +47,7 @@ func TestRuntimeLeaseAcquireBlocksActiveOwnerAndAllowsSameOwnerHeartbeatRelease(
 		t.Fatalf("expected same owner reacquire to preserve acquiredAt, first=%s again=%s", first.AcquiredAt, again.AcquiredAt)
 	}
 
+	time.Sleep(time.Millisecond)
 	heartbeat, alive, err := store.HeartbeatRuntimeLease(req.ResourceType, req.ResourceID, req.OwnerID, time.Minute)
 	if err != nil || !alive {
 		t.Fatalf("HeartbeatRuntimeLease owner failed: alive=%v err=%v", alive, err)

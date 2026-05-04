@@ -297,6 +297,42 @@ func TestRuntimeStatusRouteRejectsNonLoopbackSupervisorProbeWithAuthEnabled(t *t
 	}
 }
 
+func TestRuntimeStatusRouteAllowsSupervisorBearerProbeWithAuthEnabled(t *testing.T) {
+	router := NewRouter(config.Config{
+		ProcessRole:           "platform-api",
+		AuthEnabled:           true,
+		AuthSecret:            "test-secret",
+		SupervisorBearerToken: "supervisor-probe-token",
+	}, service.NewPlatform(memory.NewStore()))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	req.RemoteAddr = "192.0.2.10:49152"
+	req.Header.Set("Authorization", "Bearer supervisor-probe-token")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected supervisor bearer probe to bypass auth, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRuntimeStatusRouteRejectsWrongSupervisorBearerProbeWithAuthEnabled(t *testing.T) {
+	router := NewRouter(config.Config{
+		ProcessRole:           "platform-api",
+		AuthEnabled:           true,
+		AuthSecret:            "test-secret",
+		SupervisorBearerToken: "supervisor-probe-token",
+	}, service.NewPlatform(memory.NewStore()))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	req.RemoteAddr = "192.0.2.10:49152"
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected wrong supervisor bearer probe to require auth, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHealthzIncludesServiceLevelStatusFields(t *testing.T) {
 	router := NewRouter(config.Config{
 		AppName:     "bktrader",
