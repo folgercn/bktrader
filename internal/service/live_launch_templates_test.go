@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -316,6 +317,47 @@ func TestLiveLaunchTemplatesExposeDispatchModeMetadata(t *testing.T) {
 		}
 		if !foundManual || !foundAuto {
 			t.Errorf("template %s: missing required dispatch mode options, got %#v", item.Key, item.DispatchModeOptions)
+		}
+	}
+}
+
+func TestLiveLaunchTemplatesStrategyParameterConsistency(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	templates, err := platform.LiveLaunchTemplates()
+	if err != nil {
+		t.Fatalf("list templates failed: %v", err)
+	}
+
+	for _, tmpl := range templates {
+		if tmpl.StrategyID == "" {
+			continue
+		}
+		strategy, err := platform.GetStrategy(tmpl.StrategyID)
+		if err != nil {
+			t.Fatalf("get strategy %s failed: %v", tmpl.StrategyID, err)
+		}
+		version, ok := strategy["currentVersion"].(domain.StrategyVersion)
+		if !ok {
+			t.Fatalf("strategy %s missing currentVersion", tmpl.StrategyID)
+		}
+
+		// 验证模板中的 LiveSessionOverrides 必须与策略本身的参数一致，
+		// 避免模板在 launch 时产生不必要的“静默覆盖”导致策略逻辑不透明。
+		for key, val := range tmpl.LaunchPayload.LiveSessionOverrides {
+			// 跳过一些非策略核心参数
+			if key == "symbol" || key == "signalTimeframe" || key == "executionDataSource" || key == "launchTemplateKey" || key == "launchTemplateName" {
+				continue
+			}
+			strategyVal, exists := version.Parameters[key]
+			if !exists {
+				// 允许模板额外提供一些执行层面的覆盖（如 maxSlippage 等），但核心逻辑参数应尽量对齐
+				continue
+			}
+
+			// 处理类型转换后的比较
+			if fmt.Sprintf("%v", val) != fmt.Sprintf("%v", strategyVal) {
+				t.Errorf("template %s parameter mismatch: key=%s template=%v strategy=%v", tmpl.Key, key, val, strategyVal)
+			}
 		}
 	}
 }
