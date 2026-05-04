@@ -386,6 +386,19 @@ func ClearRestartState(state map[string]any, keys []string)
 - 达到 `SUPERVISOR_SERVICE_FAILURE_THRESHOLD` 后只记录 `containerFallbackCandidate=true` 和原因，不调用 Docker API，不挂载 Docker socket，不执行容器 restart。
 - 后续真正执行容器级 restart 前，仍需单独设计 executor、backoff、人工抑制、权限边界和部署安全审查。
 
+真实 executor 的安全合同：
+
+- Executor 必须保持 allowlist 语义，只能操作显式配置的 supervisor target 对应容器；不得接受任意容器名、镜像名、compose service 名或 shell command 作为 runtime 输入。
+- Executor 入参只能来自 supervisor 已知 target、当前 service failure episode 和只读 decision plan；HTTP request body、Dashboard 字段或 CLI 参数不得直接穿透为容器操作参数。
+- `SUPERVISOR_CONTAINER_RESTART_ENABLED=true` 只是打开策略层；仍必须同时满足 executor 已配置、target 已成为候选、未被人工抑制、backoff 未生效、safety gate 通过，才允许进入真实 executor。
+- 真实 executor 必须在执行前后写结构化审计日志，至少包含 target、executor kind、decision reason、episode attempt、operator suppression state、backoff_until、executed、error；失败不能伪装成成功。
+- 容器 restart 执行次数必须与当前 `containerFallbackAttemptCount` 区分：前者表示真实 executor 调用，后者仍只表示本轮连续失败 episode 进入决策层的次数。
+- 任意真实执行失败后必须进入 backoff；健康恢复后才能清理当前 episode 的临时状态。反复失败不得形成无间隔 restart loop。
+- 人工 stop、fatal suppressed、`desiredStatus=STOPPED`、target 未在 allowlist、reason 为空、最近一次真实执行仍在 backoff 内时，必须硬性阻断真实 executor。
+- Docker socket 方案必须单独 PR 修改 `deployments/`，并在 PR 中声明 L2/L3 风险、socket 权限、网络暴露边界和回滚方式；node-agent 方案必须先定义 agent 鉴权、target allowlist 和审计格式。
+- Dashboard 在真实 executor 落地前只能展示计划和 dry-run readiness；任何 container fallback 操作按钮都必须另开 PR，并要求 confirm、reason、preview/audit，不得直接绑定 executor。
+- 第一个真实 executor PR 应优先实现 dry-run parity 测试和 blocked-path 测试，再考虑执行路径；测试至少覆盖 disabled、executor missing、suppressed、backoff active、allowlist miss、empty reason、executor failure。
+
 ### Dashboard 视图
 
 前端 console 的 Runtime Supervisor 页面读取 `GET /api/v1/supervisor/status`，展示 supervisor policy、service target、runtime 状态、`applicationRestartPlan`、应用内控制动作、`containerFallbackCandidate`、fallback `decision`、executor `kind`/`dryRun` 和 dry-run audit 摘要。
@@ -423,8 +436,10 @@ func ClearRestartState(state map[string]any, keys []string)
 3. Status API PR：统一 `/healthz` 与 `/runtime/status` 返回结构。
 4. Read-only Supervisor PR：只读采集状态，不执行恢复。
 5. Application Restart PR：调用服务内部 `/runtime/restart` 执行业务级恢复。
-6. Docker Fallback PR：在严格条件下加入容器级兜底。
-7. Dashboard PR：增加统一运行态视图。
+6. Container Fallback Readiness PR：容器兜底候选、计划、noop executor readiness 和安全合同。
+7. Docker Executor Design PR：确定真实 executor 的 allowlist、权限边界、backoff、审计、dry-run parity 和回滚策略。
+8. Docker Executor PR：在严格条件和单独安全审查后加入容器级执行器。
+9. Dashboard PR：增加统一运行态视图；容器操作入口需单独确认/审计 PR。
 
 ## 10. 开发检查表
 
