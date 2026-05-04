@@ -48,6 +48,13 @@ fi
 
 export IMAGE_REPO IMAGE_TAG APP_ENV_FILE
 
+echo "Deploy image: ${IMAGE_REPO}:${IMAGE_TAG}"
+if [[ -n "$DEPLOY_SERVICES" ]]; then
+  echo "Deploy service input: ${DEPLOY_SERVICES}"
+else
+  echo "Deploy service input: <all compose services>"
+fi
+
 deploy_args=()
 if [[ -n "$DEPLOY_SERVICES" ]]; then
   for service in $DEPLOY_SERVICES; do
