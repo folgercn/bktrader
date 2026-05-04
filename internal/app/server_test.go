@@ -1,6 +1,13 @@
 package app
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/wuyaocheng/bktrader/internal/config"
+	"github.com/wuyaocheng/bktrader/internal/service"
+	"github.com/wuyaocheng/bktrader/internal/store/memory"
+)
 
 func TestRuntimeOptionsForSignalRuntimeRunner(t *testing.T) {
 	options := RuntimeOptionsForRole("signal-runtime-runner")
@@ -75,5 +82,28 @@ func TestRuntimeOptionsForMonolithStartAllRuntimeComponents(t *testing.T) {
 	}
 	if options.StartReadOnlyRuntimeSupervisor {
 		t.Fatal("expected monolith not to start read-only supervisor by default")
+	}
+}
+
+func TestStartRuntimeComponentsContinuesAfterRuntimeEventConsumerFailure(t *testing.T) {
+	platform := service.NewPlatform(memory.NewStore())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	StartRuntimeComponents(ctx, platform, config.Config{
+		ProcessRole:     "live-runner",
+		RuntimeEventBus: "nats",
+		NATSURL:         "nats://127.0.0.1:1",
+	}, RuntimeOptions{
+		StartRuntimeEventConsumer:      true,
+		StartLiveSessionControlScanner: true,
+	})
+
+	if platform.RuntimeEventConsumerEnabled() {
+		t.Fatal("expected runtime event consumer to remain disabled after connection failure")
+	}
+	status := platform.LiveSessionControlScannerStatus()
+	if !status.Enabled {
+		t.Fatalf("expected live session control scanner to start after consumer failure, got %+v", status)
 	}
 }
