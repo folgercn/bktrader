@@ -243,6 +243,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/bktrader-app
           tags: |
             type=ref,event=branch
+            type=raw,value=sha-${{ github.sha }}
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
@@ -327,7 +328,7 @@ jobs:
         env:
           DEPLOY_PATH: /Users/fujun/services/bktrader
           IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/bktrader-app
-          IMAGE_TAG: latest
+          IMAGE_TAG: sha-${{ github.sha }}
           APP_ENV_FILE: /Users/fujun/services/bktrader/.env
           DEPLOY_SERVICES: ${{ needs.changes.outputs.deploy_services }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
