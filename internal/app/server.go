@@ -19,7 +19,7 @@ import (
 
 // NewServer 根据配置创建 HTTP 服务实例，初始化存储层和平台服务。
 func NewServer(cfg config.Config) (*http.Server, error) {
-	return NewServerWithRuntimeOptions(cfg, RuntimeOptionsForRole(cfg.ProcessRole))
+	return NewServerWithRuntimeOptions(cfg, RuntimeOptionsForConfig(cfg))
 }
 
 type RuntimeOptions struct {
@@ -66,6 +66,14 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 			StartLiveSessionControlScanner: true,
 		}
 	}
+}
+
+func RuntimeOptionsForConfig(cfg config.Config) RuntimeOptions {
+	options := RuntimeOptionsForRole(cfg.ProcessRole)
+	if strings.EqualFold(strings.TrimSpace(cfg.ProcessRole), "api") && len(cfg.SupervisorTargets) > 0 {
+		options.StartReadOnlyRuntimeSupervisor = true
+	}
+	return options
 }
 
 // NewServerWithRuntimeOptions 创建 HTTP 服务，并按进程角色启动后台组件。

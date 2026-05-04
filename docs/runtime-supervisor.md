@@ -329,9 +329,11 @@ func ClearRestartState(state map[string]any, keys []string)
 当前只读骨架：
 
 - `internal/service/runtime_supervisor.go` 提供 read-only collector。
+- `BKTRADER_ROLE=api` 在显式配置 `SUPERVISOR_TARGETS` 时会启动 read-only supervisor collector，用于让现有 console 继续通过 platform-api 读取 `GET /api/v1/supervisor/status`。
 - `BKTRADER_ROLE=supervisor` 只启动 read-only supervisor，不启动 live / signal / dashboard / notification 业务组件。
 - `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL。
-- `SUPERVISOR_BEARER_TOKEN` 可选；设置后 read-only collector 会对所有 targets 的 `/healthz` 与 `/api/v1/runtime/status` 请求附加 `Authorization: Bearer <token>`，用于采集受鉴权保护的内网 runtime API。
+- `SUPERVISOR_BEARER_TOKEN` 可选；设置后 read-only collector 会对所有 targets 的 `/healthz` 与 `/api/v1/runtime/status` 请求附加 `Authorization: Bearer <token>`，用于采集受鉴权保护的内网 runtime API。当 target 指向其他容器、其他服务或非 loopback 地址时，应使用该 token 路径，不依赖 loopback 豁免。
+- 生产 compose 默认将 platform-api 配为 `SUPERVISOR_TARGETS=api=http://127.0.0.1:8080`；该 loopback 自采集只读取 `/healthz` 和 `/api/v1/runtime/status`，不会调用控制 API。启用鉴权时，`/api/v1/runtime/status` 仅在 `SUPERVISOR_TARGETS` 非空且请求来自 loopback 时免 token，用于 platform-api 的 supervisor 自采集；未配置 supervisor targets 时，loopback 请求仍需正常鉴权。
 - `SUPERVISOR_SERVICE_FAILURE_THRESHOLD=3` 为默认值；supervisor 会按 target 记录连续服务级失败次数，并在达到阈值后把该 target 标记为容器兜底候选，但当前阶段只暴露状态，不执行 Docker/container restart。
 - `SUPERVISOR_CONTAINER_RESTART_ENABLED=false` 为默认值；未显式设为 `true` 时，容器兜底计划只会返回 `blockedReason=container-restart-disabled`，不会进入 executor 阶段。
 - 默认只采集 `/healthz` 和 `/api/v1/runtime/status`，不调用任何控制 API。

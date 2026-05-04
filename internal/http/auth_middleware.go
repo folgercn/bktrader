@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"net"
 	"net/http"
 	"strings"
 
@@ -25,6 +26,10 @@ func authMiddleware(cfg config.Config, next http.Handler) http.Handler {
 			return
 		}
 		if r.URL.Path == "/api/v1/stream/dashboard" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if isLoopbackRuntimeStatusRequest(cfg, r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -57,6 +62,21 @@ func authMiddleware(cfg config.Config, next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), authClaimsKey, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func isLoopbackRuntimeStatusRequest(cfg config.Config, r *http.Request) bool {
+	if !cfg.AuthEnabled || len(cfg.SupervisorTargets) == 0 {
+		return false
+	}
+	if r == nil || r.URL == nil || r.URL.Path != "/api/v1/runtime/status" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func authClaimsFromContext(ctx context.Context) (authClaims, bool) {

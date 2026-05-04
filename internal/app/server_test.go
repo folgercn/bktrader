@@ -51,6 +51,19 @@ func TestRuntimeOptionsForAPIDoesNotStartLiveSessionScanner(t *testing.T) {
 	}
 }
 
+func TestRuntimeOptionsForAPIStartsReadOnlySupervisorWhenTargetsConfigured(t *testing.T) {
+	options := RuntimeOptionsForConfig(config.Config{
+		ProcessRole:       "api",
+		SupervisorTargets: []string{"api=http://127.0.0.1:8080"},
+	})
+	if !options.StartReadOnlyRuntimeSupervisor {
+		t.Fatal("expected api role to start read-only supervisor when SUPERVISOR_TARGETS is configured")
+	}
+	if options.StartLiveSessionControlScanner || options.RecoverLiveTrading || options.StartLiveSync {
+		t.Fatalf("expected api role to avoid live runtime components, got %+v", options)
+	}
+}
+
 func TestRuntimeOptionsForSupervisorOnlyStartsReadOnlySupervisor(t *testing.T) {
 	options := RuntimeOptionsForRole("supervisor")
 	if !options.StartReadOnlyRuntimeSupervisor {
