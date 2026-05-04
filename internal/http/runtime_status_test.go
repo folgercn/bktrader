@@ -247,6 +247,38 @@ func TestRuntimeStatusRouteRejectsNonGet(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatusRouteAllowsLoopbackSupervisorProbeWithAuthEnabled(t *testing.T) {
+	router := NewRouter(config.Config{
+		ProcessRole: "platform-api",
+		AuthEnabled: true,
+		AuthSecret:  "test-secret",
+	}, service.NewPlatform(memory.NewStore()))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	req.RemoteAddr = "127.0.0.1:49152"
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected loopback probe to bypass auth, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRuntimeStatusRouteRejectsNonLoopbackSupervisorProbeWithAuthEnabled(t *testing.T) {
+	router := NewRouter(config.Config{
+		ProcessRole: "platform-api",
+		AuthEnabled: true,
+		AuthSecret:  "test-secret",
+	}, service.NewPlatform(memory.NewStore()))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	req.RemoteAddr = "192.0.2.10:49152"
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected non-loopback probe to require auth, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHealthzIncludesServiceLevelStatusFields(t *testing.T) {
 	router := NewRouter(config.Config{
 		AppName:     "bktrader",
