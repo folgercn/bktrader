@@ -174,14 +174,12 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 		consumer, err := service.NewNATSRuntimeEventConsumer(cfg.NATSURL, platform)
 		if err != nil {
 			logger.Warn("runtime event consumer unavailable; continuing without JetStream consume", "error", err)
-			return
-		}
-		if err := consumer.Start(ctx); err != nil {
+		} else if err := consumer.Start(ctx); err != nil {
 			consumer.Close()
 			logger.Warn("runtime event consumer failed to start", "error", err)
-			return
+		} else {
+			platform.SetRuntimeEventConsumerEnabled(true)
 		}
-		platform.SetRuntimeEventConsumerEnabled(true)
 	}
 	if runtime.StartSignalRuntimeScanner {
 		platform.StartSignalRuntimeScanner(ctx)
