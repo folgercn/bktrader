@@ -32,6 +32,14 @@ func (p *Platform) CountOrders() (int, error) {
 	return p.store.CountOrders()
 }
 
+func (p *Platform) notifyDashboardOrdersChanged(reason string) {
+	p.NotifyDashboardChanged(DashboardDomainOrders, reason)
+}
+
+func (p *Platform) notifyDashboardFillsChanged(reason string) {
+	p.NotifyDashboardChanged(DashboardDomainFills, reason)
+}
+
 func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
 	return p.store.GetOrderByID(orderID)
 }
@@ -171,6 +179,7 @@ func (p *Platform) CreateOrder(order domain.Order) (domain.Order, error) {
 		logger.Error("persist order failed", "error", err)
 		return domain.Order{}, err
 	}
+	p.notifyDashboardOrdersChanged("order-created")
 	logger.Debug("order persisted", "order_id", createdOrder.ID, "account_mode", account.Mode)
 	return p.executeCreatedOrder(account, createdOrder)
 }
@@ -532,6 +541,7 @@ func (p *Platform) applyLiveSubmissionResult(
 		if updateErr != nil {
 			return domain.Order{}, updateErr
 		}
+		p.notifyDashboardOrdersChanged("order-submit-failed")
 		if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "submitted", time.Now().UTC(), true, submitErr); telemetryErr != nil {
 			logger.Warn("record live order submission event failed", "error", telemetryErr)
 		}
@@ -558,6 +568,7 @@ func (p *Platform) applyLiveSubmissionResult(
 	if err != nil {
 		return domain.Order{}, err
 	}
+	p.notifyDashboardOrdersChanged("order-submitted")
 	if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "submitted", time.Now().UTC(), false, nil); telemetryErr != nil {
 		logger.Warn("record live order submission event failed", "error", telemetryErr)
 	}
@@ -569,6 +580,7 @@ func (p *Platform) applyLiveSubmissionResult(
 			if updateErr != nil {
 				return domain.Order{}, updateErr
 			}
+			p.notifyDashboardOrdersChanged("order-settlement-retry")
 			logger.Warn("live order immediate fill sync failed",
 				"exchange_order_id", submission.ExchangeOrderID,
 				"error", settleErr,
@@ -927,6 +939,7 @@ func (p *Platform) applyLiveSyncResult(account domain.Account, order domain.Orde
 	if err != nil {
 		return domain.Order{}, err
 	}
+	p.notifyDashboardOrdersChanged("order-synced")
 	if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "synced", parseOptionalRFC3339(firstNonEmpty(syncResult.SyncedAt, stringValue(updatedOrder.Metadata["lastSyncAt"]))), false, nil); telemetryErr != nil {
 		logger.Warn("record live order sync event failed", "error", telemetryErr)
 	}
@@ -1092,11 +1105,17 @@ func terminalFilledFallbackDedupFingerprint(order domain.Order, syncResult LiveO
 
 func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Order, fills []domain.Fill) (domain.Order, error) {
 	if len(fills) == 0 {
-		return p.store.UpdateOrder(order)
+		updated, err := p.store.UpdateOrder(order)
+		if err != nil {
+			return domain.Order{}, err
+		}
+		p.notifyDashboardOrdersChanged("order-updated")
+		return updated, nil
 	}
 
 	var updatedOrder domain.Order
 	var newFills []domain.Fill
+	createdFillCount := 0
 	if err := p.store.WithFillSettlementTx(order.ID, func(tx storepkg.FillSettlementStore) error {
 		filteredFills, err := filterExistingExecutionFillsWithStore(tx, order.ID, fills)
 		if err != nil {
@@ -1133,6 +1152,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 			if err != nil {
 				return err
 			}
+			createdFillCount++
 			executionPrice := createdFill.Price
 			if executionPrice <= 0 {
 				executionPrice = resolveExecutionPrice(order)
@@ -1199,6 +1219,10 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 		return nil
 	}); err != nil {
 		return domain.Order{}, err
+	}
+	p.notifyDashboardOrdersChanged("order-filled")
+	if createdFillCount > 0 {
+		p.notifyDashboardFillsChanged("fill-created")
 	}
 	if strings.EqualFold(account.Mode, "LIVE") && len(newFills) > 0 {
 		if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "filled", parseOptionalRFC3339(stringValue(updatedOrder.Metadata["lastFilledAt"])), false, nil); telemetryErr != nil {
