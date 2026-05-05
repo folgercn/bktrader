@@ -20,22 +20,79 @@ type DashboardEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// DashboardDomain identifies a dashboard snapshot domain.
+type DashboardDomain string
+
+const (
+	DashboardDomainLiveSessions          DashboardDomain = "live-sessions"
+	DashboardDomainSignalRuntimeSessions DashboardDomain = "signal-runtime-sessions"
+	DashboardDomainPositions             DashboardDomain = "positions"
+	DashboardDomainOrders                DashboardDomain = "orders"
+	DashboardDomainFills                 DashboardDomain = "fills"
+	DashboardDomainAlerts                DashboardDomain = "alerts"
+	DashboardDomainNotifications         DashboardDomain = "notifications"
+	DashboardDomainMonitorHealth         DashboardDomain = "monitor-health"
+)
+
+type dashboardChange struct {
+	Domain DashboardDomain
+	Reason string
+}
+
 // DashboardBroker 负责仪表盘实时数据的事件分发。
-// 采用"轮询检测变更 + 增量推送"模式。
+// 采用"变更通知合并 + snapshot 推送"模式，保留轮询作为兜底触发源。
 type DashboardBroker struct {
-	mu          sync.RWMutex
-	subscribers map[int]chan DashboardEvent
-	nextID      int
-	seq         int64
-	lastHashes  map[string]string
-	platform    *Platform
+	mu             sync.RWMutex
+	subscribers    map[int]chan DashboardEvent
+	nextID         int
+	seq            int64
+	lastHashes     map[string]string
+	platform       *Platform
+	changes        chan dashboardChange
+	fetchFuncs     map[DashboardDomain]func() (any, error)
+	coalesceWindow time.Duration
 }
 
 func NewDashboardBroker(platform *Platform) *DashboardBroker {
-	return &DashboardBroker{
-		subscribers: make(map[int]chan DashboardEvent),
-		lastHashes:  make(map[string]string),
-		platform:    platform,
+	b := &DashboardBroker{
+		subscribers:    make(map[int]chan DashboardEvent),
+		lastHashes:     make(map[string]string),
+		platform:       platform,
+		changes:        make(chan dashboardChange, 128),
+		fetchFuncs:     make(map[DashboardDomain]func() (any, error)),
+		coalesceWindow: 300 * time.Millisecond,
+	}
+	b.registerDefaultFetchFuncs()
+	return b
+}
+
+func (b *DashboardBroker) registerDefaultFetchFuncs() {
+	if b.platform == nil {
+		return
+	}
+	b.fetchFuncs[DashboardDomainLiveSessions] = func() (any, error) {
+		return b.platform.ListLiveSessionsSummary()
+	}
+	b.fetchFuncs[DashboardDomainSignalRuntimeSessions] = func() (any, error) {
+		return b.platform.ListSignalRuntimeSessionsSummary(), nil
+	}
+	b.fetchFuncs[DashboardDomainPositions] = func() (any, error) {
+		return b.platform.ListPositions()
+	}
+	b.fetchFuncs[DashboardDomainOrders] = func() (any, error) {
+		return b.platform.ListOrdersWithLimit(50, 0)
+	}
+	b.fetchFuncs[DashboardDomainFills] = func() (any, error) {
+		return b.platform.ListFillsWithLimit(50, 0)
+	}
+	b.fetchFuncs[DashboardDomainAlerts] = func() (any, error) {
+		return b.platform.ListAlerts()
+	}
+	b.fetchFuncs[DashboardDomainNotifications] = func() (any, error) {
+		return b.platform.ListNotifications(true)
+	}
+	b.fetchFuncs[DashboardDomainMonitorHealth] = func() (any, error) {
+		return b.platform.HealthSnapshot()
 	}
 }
 
@@ -93,13 +150,64 @@ func hashPayload(payload any) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// checkAndPublish 检测数据变更并推送
-func (b *DashboardBroker) checkAndPublish(eventType string, fetchData func() (any, error)) {
+// NotifyChanged schedules a dashboard domain snapshot check without blocking the caller.
+func (b *DashboardBroker) NotifyChanged(domain DashboardDomain, reason string) {
+	select {
+	case b.changes <- dashboardChange{Domain: domain, Reason: reason}:
+	default:
+	}
+}
+
+// StartEventLoop 合并短时间窗口内的 dashboard 变更信号并发布 snapshot。
+func (b *DashboardBroker) StartEventLoop(ctx context.Context) {
+	timer := time.NewTimer(b.coalesceWindow)
+	if !timer.Stop() {
+		<-timer.C
+	}
+	pending := make(map[DashboardDomain]struct{})
+	timerActive := false
+
+	flush := func() {
+		for domain := range pending {
+			b.publishSnapshotForDomain(domain)
+			delete(pending, domain)
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			if timerActive && !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		case change := <-b.changes:
+			if change.Domain == "" {
+				continue
+			}
+			pending[change.Domain] = struct{}{}
+			if !timerActive {
+				timer.Reset(b.coalesceWindow)
+				timerActive = true
+			}
+		case <-timer.C:
+			timerActive = false
+			flush()
+		}
+	}
+}
+
+// publishSnapshotForDomain 检测指定 domain 数据变更并推送 snapshot。
+func (b *DashboardBroker) publishSnapshotForDomain(domain DashboardDomain) {
 	b.mu.RLock()
 	hasSubscribers := len(b.subscribers) > 0
+	fetchData := b.fetchFuncs[domain]
 	b.mu.RUnlock()
 
-	if !hasSubscribers {
+	if !hasSubscribers || fetchData == nil {
 		return
 	}
 
@@ -112,6 +220,7 @@ func (b *DashboardBroker) checkAndPublish(eventType string, fetchData func() (an
 		return
 	}
 
+	eventType := string(domain)
 	b.mu.RLock()
 	lastHash := b.lastHashes[eventType]
 	b.mu.RUnlock()
@@ -126,7 +235,7 @@ func (b *DashboardBroker) checkAndPublish(eventType string, fetchData func() (an
 
 // StartPolling 启动轮询检查
 func (b *DashboardBroker) StartPolling(ctx context.Context, cfg config.Config) {
-	startTicker := func(intervalMs int, eventType string, fetchData func() (any, error)) {
+	startTicker := func(intervalMs int, domain DashboardDomain) {
 		interval := time.Duration(intervalMs) * time.Millisecond
 		ticker := time.NewTicker(interval)
 		go func() {
@@ -136,36 +245,20 @@ func (b *DashboardBroker) StartPolling(ctx context.Context, cfg config.Config) {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					b.checkAndPublish(eventType, fetchData)
+					b.NotifyChanged(domain, "polling")
 				}
 			}
 		}()
 	}
 
-	startTicker(cfg.DashboardLiveSessionsPollMs, "live-sessions", func() (any, error) {
-		return b.platform.ListLiveSessionsSummary()
-	})
-	startTicker(cfg.DashboardLiveSessionsPollMs, "signal-runtime-sessions", func() (any, error) {
-		return b.platform.ListSignalRuntimeSessionsSummary(), nil
-	})
-	startTicker(cfg.DashboardPositionsPollMs, "positions", func() (any, error) {
-		return b.platform.ListPositions()
-	})
-	startTicker(cfg.DashboardOrdersPollMs, "orders", func() (any, error) {
-		return b.platform.ListOrdersWithLimit(50, 0)
-	})
-	startTicker(cfg.DashboardFillsPollMs, "fills", func() (any, error) {
-		return b.platform.ListFillsWithLimit(50, 0)
-	})
-	startTicker(cfg.DashboardAlertsPollMs, "alerts", func() (any, error) {
-		return b.platform.ListAlerts()
-	})
-	startTicker(cfg.DashboardNotificationsPollMs, "notifications", func() (any, error) {
-		return b.platform.ListNotifications(true)
-	})
-	startTicker(cfg.DashboardMonitorHealthPollMs, "monitor-health", func() (any, error) {
-		return b.platform.HealthSnapshot()
-	})
+	startTicker(cfg.DashboardLiveSessionsPollMs, DashboardDomainLiveSessions)
+	startTicker(cfg.DashboardLiveSessionsPollMs, DashboardDomainSignalRuntimeSessions)
+	startTicker(cfg.DashboardPositionsPollMs, DashboardDomainPositions)
+	startTicker(cfg.DashboardOrdersPollMs, DashboardDomainOrders)
+	startTicker(cfg.DashboardFillsPollMs, DashboardDomainFills)
+	startTicker(cfg.DashboardAlertsPollMs, DashboardDomainAlerts)
+	startTicker(cfg.DashboardNotificationsPollMs, DashboardDomainNotifications)
+	startTicker(cfg.DashboardMonitorHealthPollMs, DashboardDomainMonitorHealth)
 }
 
 // PushInitialSnapshot 手动为某个连接推送当前最新数据
@@ -179,32 +272,34 @@ func (b *DashboardBroker) PushInitialSnapshot(id int) {
 
 	// Push latest state to new subscriber
 	// This ensures they don't have to wait for the next change
-	b.pushLatestIfAvailable("live-sessions", func() (any, error) { return b.platform.ListLiveSessionsSummary() }, ch)
-	b.pushLatestIfAvailable("signal-runtime-sessions", func() (any, error) {
-		return b.platform.ListSignalRuntimeSessionsSummary(), nil
-	}, ch)
-	b.pushLatestIfAvailable("positions", func() (any, error) { return b.platform.ListPositions() }, ch)
-	b.pushLatestIfAvailable("orders", func() (any, error) { return b.platform.ListOrdersWithLimit(50, 0) }, ch)
-	b.pushLatestIfAvailable("fills", func() (any, error) { return b.platform.ListFillsWithLimit(50, 0) }, ch)
-	b.pushLatestIfAvailable("alerts", func() (any, error) { return b.platform.ListAlerts() }, ch)
-	b.pushLatestIfAvailable("notifications", func() (any, error) { return b.platform.ListNotifications(true) }, ch)
-	b.pushLatestIfAvailable("monitor-health", func() (any, error) { return b.platform.HealthSnapshot() }, ch)
+	b.pushLatestIfAvailable(DashboardDomainLiveSessions, ch)
+	b.pushLatestIfAvailable(DashboardDomainSignalRuntimeSessions, ch)
+	b.pushLatestIfAvailable(DashboardDomainPositions, ch)
+	b.pushLatestIfAvailable(DashboardDomainOrders, ch)
+	b.pushLatestIfAvailable(DashboardDomainFills, ch)
+	b.pushLatestIfAvailable(DashboardDomainAlerts, ch)
+	b.pushLatestIfAvailable(DashboardDomainNotifications, ch)
+	b.pushLatestIfAvailable(DashboardDomainMonitorHealth, ch)
 }
 
-func (b *DashboardBroker) pushLatestIfAvailable(eventType string, fetchData func() (any, error), ch chan<- DashboardEvent) {
+func (b *DashboardBroker) pushLatestIfAvailable(domain DashboardDomain, ch chan<- DashboardEvent) {
+	b.mu.RLock()
+	fetchData := b.fetchFuncs[domain]
+	b.mu.RUnlock()
+	if fetchData == nil {
+		return
+	}
+
 	data, err := fetchData()
 	if err != nil {
 		return
 	}
 
-	hash := hashPayload(data)
+	eventType := string(domain)
 
 	b.mu.Lock()
 	b.seq++
 	seq := b.seq
-	if hash != "" {
-		b.lastHashes[eventType] = hash
-	}
 	b.mu.Unlock()
 
 	event := DashboardEvent{
