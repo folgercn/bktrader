@@ -27,10 +27,11 @@ func TestCreatePaperOrderNotifiesDashboardOrdersAndFills(t *testing.T) {
 		t.Fatalf("CreateOrder failed: %v", err)
 	}
 
-	changes := collectDashboardChanges(t, platform.DashboardBroker(), 3, 200*time.Millisecond)
+	changes := collectDashboardChanges(t, platform.DashboardBroker(), 4, 200*time.Millisecond)
 	requireDashboardChange(t, changes, DashboardDomainOrders, "order-created")
 	requireDashboardChange(t, changes, DashboardDomainOrders, "order-filled")
 	requireDashboardChange(t, changes, DashboardDomainFills, "fill-created")
+	requireDashboardChange(t, changes, DashboardDomainPositions, "position-updated")
 }
 
 func TestApplyLiveSyncResultWithoutFillsNotifiesDashboardOrders(t *testing.T) {
