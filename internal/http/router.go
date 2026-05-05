@@ -39,7 +39,7 @@ func NewRouter(cfg config.Config, platform *service.Platform) http.Handler {
 	registerStreamRoutes(mux, platform, cfg)
 	registerRuntimeStatusRoutes(mux, platform, cfg)
 	registerRuntimeControlRoutes(mux, platform, cfg)
-	registerSupervisorStatusRoutes(mux, platform)
+	registerSupervisorStatusRoutes(mux, platform, cfg)
 
 	// 系统概览端点
 	mux.HandleFunc("/api/v1/overview", func(w http.ResponseWriter, _ *http.Request) {
