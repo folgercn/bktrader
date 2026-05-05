@@ -126,7 +126,14 @@ Stronger JTI uniqueness with UUID has been implemented in PR #198 (Issue #193).
 
 ## 6. DashboardBroker Design
 
-`DashboardBroker` is responsible for polling selected backend data, detecting changes, and publishing SSE events to subscribers.
+`DashboardBroker` is responsible for collecting selected backend snapshots, detecting changes, and publishing SSE events to subscribers.
+
+Current implementation uses two trigger paths:
+
+1. Polling fallback tickers enqueue non-blocking domain change notifications.
+2. The broker event loop coalesces notifications for a short window, then fetches and hashes the affected domain snapshots.
+
+No business write path is connected to `NotifyChanged` yet. The first event-driven slice only introduces the broker-side framework and keeps polling as the active fallback trigger.
 
 ### 6.1 Subscriber model
 
@@ -137,7 +144,7 @@ Stronger JTI uniqueness with UUID has been implemented in PR #198 (Issue #193).
 
 ### 6.2 No-subscriber behavior
 
-When there are no subscribers, `checkAndPublish` returns immediately.
+When there are no subscribers, `publishSnapshotForDomain` returns immediately.
 
 This avoids unnecessary:
 
@@ -173,6 +180,7 @@ Current SSE payloads are deliberately conservative.
 | Event type | Payload source | Notes |
 |---|---|---|
 | `live-sessions` | `ListLiveSessionsSummary()` | Strips heavy `sourceStates` and `signalBarStates`. |
+| `signal-runtime-sessions` | `ListSignalRuntimeSessionsSummary()` | Runtime session summary snapshot. |
 | `positions` | `ListPositions()` | Full position list. |
 | `orders` | `ListOrdersWithLimit(50, 0)` | Recent 50 only. |
 | `fills` | `ListFillsWithLimit(50, 0)` | Recent 50 only. |
