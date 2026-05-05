@@ -133,8 +133,10 @@ Current implementation uses these trigger paths:
 1. Polling fallback tickers enqueue non-blocking domain change notifications.
 2. The broker event loop coalesces notifications for a short window, then fetches and hashes the affected domain snapshots.
 3. Notification ack / unack operations enqueue `notifications` domain changes after their store write succeeds.
+4. Order create / submit / sync / fill settlement operations enqueue `orders` domain changes after their store write succeeds.
+5. Fill settlement operations enqueue `fills` domain changes after fill persistence succeeds.
 
-Most business write paths still rely on polling fallback. The first event-driven business slice is deliberately limited to low-risk notification ack state changes.
+Some business write paths still rely on polling fallback. Event-driven triggers currently cover low-risk notification ack state changes and order/fill snapshot refreshes.
 
 ### 6.1 Subscriber model
 
