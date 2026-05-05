@@ -39,9 +39,54 @@ env_file_value() {
   ' "$APP_ENV_FILE" | tail -1
 }
 
+set_env_file_value() {
+  local key=$1
+  local value=$2
+  mkdir -p "$(dirname "$APP_ENV_FILE")"
+  if [[ -f "$APP_ENV_FILE" ]]; then
+    tmp_file="$(mktemp)"
+    awk -F= -v key="$key" -v value="$value" '
+      $0 !~ /^[[:space:]]*#/ && $1 == key {
+        print key "=" value
+        found = 1
+        next
+      }
+      { print }
+      END {
+        if (!found) {
+          print ""
+          print key "=" value
+        }
+      }
+    ' "$APP_ENV_FILE" > "$tmp_file"
+    mv "$tmp_file" "$APP_ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" > "$APP_ENV_FILE"
+  fi
+  chmod 600 "$APP_ENV_FILE"
+}
+
+generate_supervisor_bearer_token() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+  if command -v uuidgen >/dev/null 2>&1; then
+    printf '%s-%s\n' "$(uuidgen)" "$(uuidgen)" | tr '[:upper:]' '[:lower:]'
+    return
+  fi
+  echo "Unable to generate SUPERVISOR_BEARER_TOKEN: openssl or uuidgen is required" >&2
+  exit 3
+}
+
 effective_app_env=${APP_ENV:-$(env_file_value APP_ENV)}
 effective_supervisor_token=${SUPERVISOR_BEARER_TOKEN:-$(env_file_value SUPERVISOR_BEARER_TOKEN)}
 effective_supervisor_container_executor=${SUPERVISOR_CONTAINER_EXECUTOR:-$(env_file_value SUPERVISOR_CONTAINER_EXECUTOR)}
+if [[ -z "$effective_supervisor_token" ]]; then
+  effective_supervisor_token="$(generate_supervisor_bearer_token)"
+  set_env_file_value SUPERVISOR_BEARER_TOKEN "$effective_supervisor_token"
+  echo "Generated SUPERVISOR_BEARER_TOKEN and stored it in $APP_ENV_FILE"
+fi
 if [[ "$effective_app_env" == "production" && "$effective_supervisor_token" == "change-this-supervisor-probe-token" ]]; then
   echo "Refusing production deploy with placeholder SUPERVISOR_BEARER_TOKEN; set a strong random token in $APP_ENV_FILE." >&2
   exit 3
