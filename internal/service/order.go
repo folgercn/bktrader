@@ -40,6 +40,10 @@ func (p *Platform) notifyDashboardFillsChanged(reason string) {
 	p.NotifyDashboardChanged(DashboardDomainFills, reason)
 }
 
+func (p *Platform) notifyDashboardPositionsChanged(reason string) {
+	p.NotifyDashboardChanged(DashboardDomainPositions, reason)
+}
+
 func (p *Platform) GetOrder(orderID string) (domain.Order, error) {
 	return p.store.GetOrderByID(orderID)
 }
@@ -1116,6 +1120,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	var updatedOrder domain.Order
 	var newFills []domain.Fill
 	createdFillCount := 0
+	appliedPositionFillCount := 0
 	if err := p.store.WithFillSettlementTx(order.ID, func(tx storepkg.FillSettlementStore) error {
 		filteredFills, err := filterExistingExecutionFillsWithStore(tx, order.ID, fills)
 		if err != nil {
@@ -1171,6 +1176,7 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 			if err := p.applyExecutionFillWithStore(tx, account, execOrder, executionPrice); err != nil {
 				return err
 			}
+			appliedPositionFillCount++
 		}
 
 		filledQuantity, err := tx.TotalFilledQuantityForOrder(order.ID)
@@ -1223,6 +1229,9 @@ func (p *Platform) finalizeExecutedOrder(account domain.Account, order domain.Or
 	p.notifyDashboardOrdersChanged("order-filled")
 	if createdFillCount > 0 {
 		p.notifyDashboardFillsChanged("fill-created")
+	}
+	if appliedPositionFillCount > 0 {
+		p.notifyDashboardPositionsChanged("position-updated")
 	}
 	if strings.EqualFold(account.Mode, "LIVE") && len(newFills) > 0 {
 		if telemetryErr := p.recordLiveOrderExecutionEvent(updatedOrder, "filled", parseOptionalRFC3339(stringValue(updatedOrder.Metadata["lastFilledAt"])), false, nil); telemetryErr != nil {
