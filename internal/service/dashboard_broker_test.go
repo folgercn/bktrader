@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
+	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
 
 func newTestDashboardBroker(window time.Duration) *DashboardBroker {
@@ -172,6 +173,34 @@ func TestDashboardBrokerPollingTriggersNotifyChanged(t *testing.T) {
 		}
 	case <-time.After(250 * time.Millisecond):
 		t.Fatal("expected polling to enqueue a dashboard change")
+	}
+}
+
+func TestStartDashboardBrokerPollingPublishesThroughEventLoop(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	b := platform.DashboardBroker()
+	b.coalesceWindow = 10 * time.Millisecond
+	b.fetchFuncs[DashboardDomainNotifications] = func() (any, error) {
+		return map[string]any{"notifications": []string{"notification-1"}}, nil
+	}
+	_, ch := b.Subscribe(10)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	slowPollMs := int((24 * time.Hour) / time.Millisecond)
+	platform.StartDashboardBroker(ctx, config.Config{
+		DashboardLiveSessionsPollMs:  slowPollMs,
+		DashboardPositionsPollMs:     slowPollMs,
+		DashboardOrdersPollMs:        slowPollMs,
+		DashboardFillsPollMs:         slowPollMs,
+		DashboardAlertsPollMs:        slowPollMs,
+		DashboardNotificationsPollMs: 10,
+		DashboardMonitorHealthPollMs: slowPollMs,
+	})
+
+	event := waitDashboardEvent(t, ch, 250*time.Millisecond)
+	if event.Type != string(DashboardDomainNotifications) || event.Action != "snapshot" {
+		t.Fatalf("unexpected event from broker startup path: %+v", event)
 	}
 }
 

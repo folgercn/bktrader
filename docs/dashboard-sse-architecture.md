@@ -128,12 +128,13 @@ Stronger JTI uniqueness with UUID has been implemented in PR #198 (Issue #193).
 
 `DashboardBroker` is responsible for collecting selected backend snapshots, detecting changes, and publishing SSE events to subscribers.
 
-Current implementation uses two trigger paths:
+Current implementation uses these trigger paths:
 
 1. Polling fallback tickers enqueue non-blocking domain change notifications.
 2. The broker event loop coalesces notifications for a short window, then fetches and hashes the affected domain snapshots.
+3. Notification ack / unack operations enqueue `notifications` domain changes after their store write succeeds.
 
-No business write path is connected to `NotifyChanged` yet. The first event-driven slice only introduces the broker-side framework and keeps polling as the active fallback trigger.
+Most business write paths still rely on polling fallback. The first event-driven business slice is deliberately limited to low-risk notification ack state changes.
 
 ### 6.1 Subscriber model
 
