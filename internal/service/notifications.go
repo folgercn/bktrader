@@ -69,9 +69,18 @@ func (p *Platform) ListNotifications(includeAcked bool) ([]domain.PlatformNotifi
 }
 
 func (p *Platform) AckNotification(notificationID string) (domain.NotificationAck, error) {
-	return p.store.UpsertNotificationAck(strings.TrimSpace(notificationID))
+	ack, err := p.store.UpsertNotificationAck(strings.TrimSpace(notificationID))
+	if err != nil {
+		return domain.NotificationAck{}, err
+	}
+	p.NotifyDashboardChanged(DashboardDomainNotifications, "notification-acked")
+	return ack, nil
 }
 
 func (p *Platform) UnackNotification(notificationID string) error {
-	return p.store.DeleteNotificationAck(strings.TrimSpace(notificationID))
+	if err := p.store.DeleteNotificationAck(strings.TrimSpace(notificationID)); err != nil {
+		return err
+	}
+	p.NotifyDashboardChanged(DashboardDomainNotifications, "notification-unacked")
+	return nil
 }
