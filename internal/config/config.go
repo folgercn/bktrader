@@ -228,6 +228,11 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("不支持的 RUNTIME_EVENT_BUS: %s（可选: nats, disabled）", c.RuntimeEventBus)
 	}
+	switch strings.ToLower(strings.TrimSpace(c.SupervisorContainerExecutor)) {
+	case "", "noop":
+	default:
+		return fmt.Errorf("不支持的 SUPERVISOR_CONTAINER_EXECUTOR: %s（可选: noop；留空表示不配置 executor）", c.SupervisorContainerExecutor)
+	}
 	return nil
 }
 

@@ -102,6 +102,22 @@ func TestConfigValidateAcceptsSupervisorRole(t *testing.T) {
 	}
 }
 
+func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
+	for _, executor := range []string{"", "noop", " NoOp "} {
+		t.Run("accept_"+executor, func(t *testing.T) {
+			cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: executor}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected executor %q to validate, got %v", executor, err)
+			}
+		})
+	}
+
+	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "docker"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected unsupported supervisor container executor to fail validation")
+	}
+}
+
 func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_TARGETS", "api=http://127.0.0.1:8080, http://127.0.0.1:8081")
 	t.Setenv("SUPERVISOR_BEARER_TOKEN", " supervisor-token ")
