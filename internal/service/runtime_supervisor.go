@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	defaultRuntimeSupervisorHTTPTimeout       = 5 * time.Second
-	defaultRuntimeSupervisorServiceFailThresh = 3
+	defaultRuntimeSupervisorHTTPTimeout          = 5 * time.Second
+	defaultRuntimeSupervisorServiceFailThresh    = 3
+	maxRuntimeSupervisorContainerFallbackBackoff = 24 * time.Hour
 
 	runtimeSupervisorApplicationRestartDecisionBlocked  = "blocked"
 	runtimeSupervisorApplicationRestartDecisionEligible = "eligible"
@@ -34,6 +35,7 @@ var (
 	ErrRuntimeSupervisorControlConfirmRequired  = errors.New("runtime supervisor control confirm required")
 	ErrRuntimeSupervisorControlReasonRequired   = errors.New("runtime supervisor control reason required")
 	ErrRuntimeSupervisorBackoffDurationRequired = errors.New("runtime supervisor backoff duration must be positive")
+	ErrRuntimeSupervisorBackoffDurationTooLarge = errors.New("runtime supervisor backoff duration exceeds maximum")
 	ErrRuntimeSupervisorTargetRequired          = errors.New("runtime supervisor target is required")
 	ErrRuntimeSupervisorTargetNotFound          = errors.New("runtime supervisor target not found")
 	ErrRuntimeSupervisorTargetAmbiguous         = errors.New("runtime supervisor target is ambiguous")
@@ -544,6 +546,9 @@ func (s *RuntimeSupervisor) setContainerFallbackBackoff(targetName string, optio
 	}
 	if !clear && options.BackoffDuration <= 0 {
 		return RuntimeSupervisorContainerFallbackControlResult{}, ErrRuntimeSupervisorBackoffDurationRequired
+	}
+	if !clear && options.BackoffDuration > maxRuntimeSupervisorContainerFallbackBackoff {
+		return RuntimeSupervisorContainerFallbackControlResult{}, ErrRuntimeSupervisorBackoffDurationTooLarge
 	}
 	target, err := s.targetByName(targetName)
 	if err != nil {
