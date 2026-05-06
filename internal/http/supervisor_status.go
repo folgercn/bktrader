@@ -4,15 +4,17 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/service"
 )
 
 type supervisorContainerFallbackControlRequest struct {
-	TargetName string `json:"targetName"`
-	Confirm    bool   `json:"confirm"`
-	Reason     string `json:"reason"`
+	TargetName     string `json:"targetName"`
+	Confirm        bool   `json:"confirm"`
+	Reason         string `json:"reason"`
+	BackoffSeconds int    `json:"backoffSeconds,omitempty"`
 }
 
 func registerSupervisorStatusRoutes(mux *http.ServeMux, platform *service.Platform, cfg config.Config) {
@@ -30,6 +32,8 @@ func registerSupervisorStatusRoutes(mux *http.ServeMux, platform *service.Platfo
 	})
 	registerSupervisorContainerFallbackControlRoute(mux, platform, cfg, "/api/v1/supervisor/container-fallback/suppress", true)
 	registerSupervisorContainerFallbackControlRoute(mux, platform, cfg, "/api/v1/supervisor/container-fallback/resume", false)
+	registerSupervisorContainerFallbackBackoffRoute(mux, platform, cfg, "/api/v1/supervisor/container-fallback/defer", false)
+	registerSupervisorContainerFallbackBackoffRoute(mux, platform, cfg, "/api/v1/supervisor/container-fallback/clear-backoff", true)
 }
 
 func registerSupervisorContainerFallbackControlRoute(mux *http.ServeMux, platform *service.Platform, cfg config.Config, path string, suppressed bool) {
@@ -94,10 +98,78 @@ func registerSupervisorContainerFallbackControlRoute(mux *http.ServeMux, platfor
 	})
 }
 
+func registerSupervisorContainerFallbackBackoffRoute(mux *http.ServeMux, platform *service.Platform, cfg config.Config, path string, clear bool) {
+	action := "defer"
+	if clear {
+		action = "clear-backoff"
+	}
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !cfg.RuntimeActionsEnabled() {
+			writeError(w, http.StatusConflict, "supervisor container fallback "+action+" is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+			return
+		}
+		var request supervisorContainerFallbackControlRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		targetName := strings.TrimSpace(request.TargetName)
+		if targetName == "" {
+			writeError(w, http.StatusBadRequest, "targetName is required")
+			return
+		}
+		if !request.Confirm {
+			writeError(w, http.StatusBadRequest, "confirm=true is required for supervisor container fallback "+action)
+			return
+		}
+		reason := strings.TrimSpace(request.Reason)
+		if reason == "" {
+			writeError(w, http.StatusBadRequest, "reason is required for supervisor container fallback "+action)
+			return
+		}
+		if !clear && request.BackoffSeconds <= 0 {
+			writeError(w, http.StatusBadRequest, "backoffSeconds must be positive for supervisor container fallback "+action)
+			return
+		}
+		options := service.RuntimeSupervisorContainerFallbackControlOptions{
+			Confirm:         true,
+			Reason:          reason,
+			Source:          "api",
+			BackoffDuration: time.Duration(request.BackoffSeconds) * time.Second,
+		}
+		var result service.RuntimeSupervisorContainerFallbackControlResult
+		var err error
+		if clear {
+			result, err = platform.ClearRuntimeSupervisorContainerFallbackBackoff(targetName, options)
+		} else {
+			result, err = platform.DeferRuntimeSupervisorContainerFallback(targetName, options)
+		}
+		if err != nil {
+			writeSupervisorContainerFallbackControlError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"status":       "accepted",
+			"message":      "supervisor container fallback " + action + " accepted",
+			"targetName":   result.TargetName,
+			"backoffUntil": result.BackoffUntil,
+			"reason":       result.Reason,
+			"source":       result.Source,
+			"updatedAt":    result.UpdatedAt,
+			"serviceState": result.ServiceState,
+		})
+	})
+}
+
 func writeSupervisorContainerFallbackControlError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrRuntimeSupervisorControlConfirmRequired),
 		errors.Is(err, service.ErrRuntimeSupervisorControlReasonRequired),
+		errors.Is(err, service.ErrRuntimeSupervisorBackoffDurationRequired),
 		errors.Is(err, service.ErrRuntimeSupervisorTargetRequired):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrRuntimeSupervisorTargetNotFound):
