@@ -14,11 +14,18 @@ func init() {
 	supervisorCmd.AddCommand(supervisorStatusCmd)
 	supervisorCmd.AddCommand(supervisorSuppressContainerFallbackCmd)
 	supervisorCmd.AddCommand(supervisorResumeContainerFallbackCmd)
+	supervisorCmd.AddCommand(supervisorDeferContainerFallbackCmd)
+	supervisorCmd.AddCommand(supervisorClearContainerFallbackBackoffCmd)
 	rootCmd.AddCommand(supervisorCmd)
 	supervisorSuppressContainerFallbackCmd.Flags().Bool("confirm", false, "确认抑制 container fallback")
 	supervisorSuppressContainerFallbackCmd.Flags().String("reason", "", "抑制原因；必填")
 	supervisorResumeContainerFallbackCmd.Flags().Bool("confirm", false, "确认恢复 container fallback")
 	supervisorResumeContainerFallbackCmd.Flags().String("reason", "", "恢复原因；必填")
+	supervisorDeferContainerFallbackCmd.Flags().Bool("confirm", false, "确认延后 container fallback")
+	supervisorDeferContainerFallbackCmd.Flags().String("reason", "", "延后原因；必填")
+	supervisorDeferContainerFallbackCmd.Flags().Int("seconds", 0, "延后秒数；必填且必须大于 0")
+	supervisorClearContainerFallbackBackoffCmd.Flags().Bool("confirm", false, "确认清理 container fallback backoff")
+	supervisorClearContainerFallbackBackoffCmd.Flags().String("reason", "", "清理原因；必填")
 }
 
 var supervisorCmd = &cobra.Command{
@@ -55,7 +62,30 @@ var supervisorResumeContainerFallbackCmd = &cobra.Command{
 	},
 }
 
+var supervisorDeferContainerFallbackCmd = &cobra.Command{
+	Use:   "defer-container-fallback <targetName>",
+	Short: "为 supervisor 容器兜底计划设置 backoff [MUTATING]",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		seconds, _ := cmd.Flags().GetInt("seconds")
+		return runSupervisorContainerFallbackControlWithBackoff(cmd, args[0], "/api/v1/supervisor/container-fallback/defer", seconds)
+	},
+}
+
+var supervisorClearContainerFallbackBackoffCmd = &cobra.Command{
+	Use:   "clear-container-fallback-backoff <targetName>",
+	Short: "清理 supervisor 容器兜底 backoff [MUTATING]",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runSupervisorContainerFallbackControl(cmd, args[0], "/api/v1/supervisor/container-fallback/clear-backoff")
+	},
+}
+
 func runSupervisorContainerFallbackControl(cmd *cobra.Command, targetName, path string) error {
+	return runSupervisorContainerFallbackControlWithBackoff(cmd, targetName, path, 0)
+}
+
+func runSupervisorContainerFallbackControlWithBackoff(cmd *cobra.Command, targetName, path string, backoffSeconds int) error {
 	confirm, _ := cmd.Flags().GetBool("confirm")
 	if !confirm && !dryRun {
 		return fmt.Errorf("操作需要 --confirm 确认")
@@ -68,6 +98,11 @@ func runSupervisorContainerFallbackControl(cmd *cobra.Command, targetName, path 
 		"targetName": targetName,
 		"confirm":    confirm,
 		"reason":     reason,
+	}
+	if backoffSeconds > 0 {
+		payload["backoffSeconds"] = backoffSeconds
+	} else if strings.Contains(path, "/defer") && !dryRun {
+		return fmt.Errorf("操作需要提供 --seconds 且必须大于 0")
 	}
 	client := getClient()
 	resp, err := client.Request("POST", path, payload)
@@ -110,22 +145,28 @@ type supervisorProbe struct {
 }
 
 type supervisorServiceState struct {
-	ConsecutiveFailures                 int    `json:"consecutiveFailures"`
-	FailureThreshold                    int    `json:"failureThreshold"`
-	LastFailureReason                   string `json:"lastFailureReason,omitempty"`
-	ContainerFallbackCandidate          bool   `json:"containerFallbackCandidate"`
-	ContainerFallbackReason             string `json:"containerFallbackReason,omitempty"`
-	ContainerFallbackSuppressed         bool   `json:"containerFallbackSuppressed"`
-	ContainerFallbackSuppressedAt       string `json:"containerFallbackSuppressedAt,omitempty"`
-	ContainerFallbackSuppressedReason   string `json:"containerFallbackSuppressedReason,omitempty"`
-	ContainerFallbackSuppressedSource   string `json:"containerFallbackSuppressedSource,omitempty"`
-	ContainerFallbackResumedAt          string `json:"containerFallbackResumedAt,omitempty"`
-	ContainerFallbackResumedReason      string `json:"containerFallbackResumedReason,omitempty"`
-	ContainerFallbackResumedSource      string `json:"containerFallbackResumedSource,omitempty"`
-	ContainerFallbackBackoffUntil       string `json:"containerFallbackBackoffUntil,omitempty"`
-	ContainerFallbackAttemptCount       int    `json:"containerFallbackAttemptCount"`
-	LastContainerFallbackDecisionAt     string `json:"lastContainerFallbackDecisionAt,omitempty"`
-	LastContainerFallbackDecisionReason string `json:"lastContainerFallbackDecisionReason,omitempty"`
+	ConsecutiveFailures                   int    `json:"consecutiveFailures"`
+	FailureThreshold                      int    `json:"failureThreshold"`
+	LastFailureReason                     string `json:"lastFailureReason,omitempty"`
+	ContainerFallbackCandidate            bool   `json:"containerFallbackCandidate"`
+	ContainerFallbackReason               string `json:"containerFallbackReason,omitempty"`
+	ContainerFallbackSuppressed           bool   `json:"containerFallbackSuppressed"`
+	ContainerFallbackSuppressedAt         string `json:"containerFallbackSuppressedAt,omitempty"`
+	ContainerFallbackSuppressedReason     string `json:"containerFallbackSuppressedReason,omitempty"`
+	ContainerFallbackSuppressedSource     string `json:"containerFallbackSuppressedSource,omitempty"`
+	ContainerFallbackResumedAt            string `json:"containerFallbackResumedAt,omitempty"`
+	ContainerFallbackResumedReason        string `json:"containerFallbackResumedReason,omitempty"`
+	ContainerFallbackResumedSource        string `json:"containerFallbackResumedSource,omitempty"`
+	ContainerFallbackBackoffUntil         string `json:"containerFallbackBackoffUntil,omitempty"`
+	ContainerFallbackBackoffSetAt         string `json:"containerFallbackBackoffSetAt,omitempty"`
+	ContainerFallbackBackoffReason        string `json:"containerFallbackBackoffReason,omitempty"`
+	ContainerFallbackBackoffSource        string `json:"containerFallbackBackoffSource,omitempty"`
+	ContainerFallbackBackoffClearedAt     string `json:"containerFallbackBackoffClearedAt,omitempty"`
+	ContainerFallbackBackoffClearedReason string `json:"containerFallbackBackoffClearedReason,omitempty"`
+	ContainerFallbackBackoffClearedSource string `json:"containerFallbackBackoffClearedSource,omitempty"`
+	ContainerFallbackAttemptCount         int    `json:"containerFallbackAttemptCount"`
+	LastContainerFallbackDecisionAt       string `json:"lastContainerFallbackDecisionAt,omitempty"`
+	LastContainerFallbackDecisionReason   string `json:"lastContainerFallbackDecisionReason,omitempty"`
 }
 
 type supervisorContainerFallbackPlan struct {
@@ -287,6 +328,21 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				target.ServiceState.ContainerFallbackResumedReason,
 				firstNonEmpty(target.ServiceState.ContainerFallbackResumedSource, "--"),
 				firstNonEmpty(target.ServiceState.ContainerFallbackResumedAt, "--"),
+			)
+		}
+		if strings.TrimSpace(target.ServiceState.ContainerFallbackBackoffReason) != "" {
+			fmt.Fprintf(&out, "  fallbackBackoff reason=%s source=%s setAt=%s until=%s\n",
+				target.ServiceState.ContainerFallbackBackoffReason,
+				firstNonEmpty(target.ServiceState.ContainerFallbackBackoffSource, "--"),
+				firstNonEmpty(target.ServiceState.ContainerFallbackBackoffSetAt, "--"),
+				firstNonEmpty(target.ServiceState.ContainerFallbackBackoffUntil, "--"),
+			)
+		}
+		if strings.TrimSpace(target.ServiceState.ContainerFallbackBackoffClearedReason) != "" {
+			fmt.Fprintf(&out, "  fallbackBackoffCleared reason=%s source=%s at=%s\n",
+				target.ServiceState.ContainerFallbackBackoffClearedReason,
+				firstNonEmpty(target.ServiceState.ContainerFallbackBackoffClearedSource, "--"),
+				firstNonEmpty(target.ServiceState.ContainerFallbackBackoffClearedAt, "--"),
 			)
 		}
 		if strings.TrimSpace(target.ServiceState.LastContainerFallbackDecisionReason) != "" {

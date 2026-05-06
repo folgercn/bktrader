@@ -446,6 +446,82 @@ func TestRuntimeSupervisorContainerFallbackSuppressionBlocksEligiblePlan(t *test
 	}
 }
 
+func TestRuntimeSupervisorContainerFallbackBackoffBlocksEligiblePlan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: NewNoopContainerFallbackExecutor(true),
+		},
+	)
+	initial := supervisor.Collect(context.Background()).Targets[0]
+	if initial.ContainerFallbackPlan == nil || !initial.ContainerFallbackPlan.Executable {
+		t.Fatalf("expected initial noop plan to be eligible, got %+v", initial.ContainerFallbackPlan)
+	}
+
+	deferred, err := supervisor.DeferContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm:         true,
+		Reason:          "operator cooling down restart loop",
+		Source:          "ctl",
+		BackoffDuration: 5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("defer container fallback failed: %v", err)
+	}
+	if deferred.BackoffUntil == nil || deferred.ServiceState.ContainerFallbackBackoffUntil == nil {
+		t.Fatalf("expected backoff until in result, got %+v", deferred)
+	}
+	if deferred.ServiceState.ContainerFallbackBackoffReason != "operator cooling down restart loop" || deferred.ServiceState.ContainerFallbackBackoffSource != "ctl" || deferred.ServiceState.ContainerFallbackBackoffSetAt == nil {
+		t.Fatalf("expected backoff audit fields, got %+v", deferred.ServiceState)
+	}
+
+	blocked := supervisor.Collect(context.Background()).Targets[0]
+	if blocked.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan after backoff, got %+v", blocked)
+	}
+	if blocked.ContainerFallbackPlan.Executable || blocked.ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" {
+		t.Fatalf("expected backoff plan to block execution, got %+v", blocked.ContainerFallbackPlan)
+	}
+	if blocked.ServiceState.LastContainerFallbackDecisionReason != "container-fallback-backoff-active" {
+		t.Fatalf("expected backoff decision audit, got %+v", blocked.ServiceState)
+	}
+
+	cleared, err := supervisor.ClearContainerFallbackBackoff("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator verified target stable",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("clear container fallback backoff failed: %v", err)
+	}
+	if cleared.BackoffUntil != nil || cleared.ServiceState.ContainerFallbackBackoffUntil != nil {
+		t.Fatalf("expected clear to remove backoff, got %+v", cleared)
+	}
+	if cleared.ServiceState.ContainerFallbackBackoffClearedReason != "operator verified target stable" || cleared.ServiceState.ContainerFallbackBackoffClearedSource != "ctl" || cleared.ServiceState.ContainerFallbackBackoffClearedAt == nil {
+		t.Fatalf("expected backoff clear audit fields, got %+v", cleared.ServiceState)
+	}
+
+	eligible := supervisor.Collect(context.Background()).Targets[0]
+	if eligible.ContainerFallbackPlan == nil || !eligible.ContainerFallbackPlan.Executable || eligible.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionEligible {
+		t.Fatalf("expected clear to restore eligible noop plan, got %+v", eligible.ContainerFallbackPlan)
+	}
+}
+
 func TestRuntimeSupervisorContainerFallbackControlValidation(t *testing.T) {
 	supervisor := NewRuntimeSupervisorWithOptions(
 		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: "http://127.0.0.1:8080"}},
@@ -457,6 +533,9 @@ func TestRuntimeSupervisorContainerFallbackControlValidation(t *testing.T) {
 	}
 	if _, err := supervisor.SuppressContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true}); !errors.Is(err, ErrRuntimeSupervisorControlReasonRequired) {
 		t.Fatalf("expected reason required, got %v", err)
+	}
+	if _, err := supervisor.DeferContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorBackoffDurationRequired) {
+		t.Fatalf("expected backoff duration required, got %v", err)
 	}
 	if _, err := supervisor.SuppressContainerFallback("", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorTargetRequired) {
 		t.Fatalf("expected target required, got %v", err)

@@ -177,6 +177,83 @@ func TestSupervisorContainerFallbackControlSuppressesAndResumesTarget(t *testing
 	}
 }
 
+func TestSupervisorContainerFallbackControlDefersAndClearsBackoff(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeJSON(w, http.StatusOK, service.RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer targetServer.Close()
+
+	platform := service.NewPlatform(memory.NewStore())
+	supervisor := service.NewRuntimeSupervisorWithOptions(
+		[]service.RuntimeSupervisorTarget{{Name: "api", BaseURL: targetServer.URL}},
+		targetServer.Client(),
+		service.RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: service.NewNoopContainerFallbackExecutor(true),
+		},
+	)
+	supervisor.Collect(context.Background())
+	platform.SetRuntimeSupervisor(supervisor)
+
+	mux := http.NewServeMux()
+	registerSupervisorStatusRoutes(mux, platform, config.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/defer", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"cooldown","backoffSeconds":300}`))
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected defer 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var deferPayload struct {
+		BackoffUntil string                                `json:"backoffUntil"`
+		Reason       string                                `json:"reason"`
+		ServiceState service.RuntimeSupervisorServiceState `json:"serviceState"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deferPayload); err != nil {
+		t.Fatalf("decode defer payload failed: %v", err)
+	}
+	if deferPayload.BackoffUntil == "" || deferPayload.Reason != "cooldown" || deferPayload.ServiceState.ContainerFallbackBackoffUntil == nil {
+		t.Fatalf("unexpected defer payload: %+v", deferPayload)
+	}
+	if deferPayload.ServiceState.ContainerFallbackBackoffReason != "cooldown" || deferPayload.ServiceState.ContainerFallbackBackoffSource != "api" {
+		t.Fatalf("expected backoff audit state, got %+v", deferPayload.ServiceState)
+	}
+
+	blocked := supervisor.Collect(context.Background()).Targets[0]
+	if blocked.ContainerFallbackPlan == nil || blocked.ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" {
+		t.Fatalf("expected backoff plan to block fallback, got %+v", blocked.ContainerFallbackPlan)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/clear-backoff", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"stable"}`))
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected clear-backoff 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var clearPayload struct {
+		BackoffUntil *string                               `json:"backoffUntil"`
+		Reason       string                                `json:"reason"`
+		ServiceState service.RuntimeSupervisorServiceState `json:"serviceState"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&clearPayload); err != nil {
+		t.Fatalf("decode clear payload failed: %v", err)
+	}
+	if clearPayload.BackoffUntil != nil || clearPayload.Reason != "stable" || clearPayload.ServiceState.ContainerFallbackBackoffUntil != nil {
+		t.Fatalf("unexpected clear payload: %+v", clearPayload)
+	}
+	if clearPayload.ServiceState.ContainerFallbackBackoffClearedReason != "stable" || clearPayload.ServiceState.ContainerFallbackBackoffClearedSource != "api" {
+		t.Fatalf("expected backoff clear audit state, got %+v", clearPayload.ServiceState)
+	}
+}
+
 func TestSupervisorContainerFallbackControlValidation(t *testing.T) {
 	platform := service.NewPlatform(memory.NewStore())
 	supervisor := service.NewRuntimeSupervisor(
@@ -190,26 +267,37 @@ func TestSupervisorContainerFallbackControlValidation(t *testing.T) {
 
 	tests := []struct {
 		name       string
+		path       string
 		body       string
 		wantStatus int
 	}{
 		{
 			name:       "missing target",
+			path:       "/api/v1/supervisor/container-fallback/suppress",
 			body:       `{"confirm":true,"reason":"maintenance"}`,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "missing confirm",
+			path:       "/api/v1/supervisor/container-fallback/suppress",
 			body:       `{"targetName":"api","reason":"maintenance"}`,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "missing reason",
+			path:       "/api/v1/supervisor/container-fallback/suppress",
 			body:       `{"targetName":"api","confirm":true}`,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
+			name:       "missing backoff seconds",
+			path:       "/api/v1/supervisor/container-fallback/defer",
+			body:       `{"targetName":"api","confirm":true,"reason":"cooldown"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
 			name:       "missing configured target",
+			path:       "/api/v1/supervisor/container-fallback/suppress",
 			body:       `{"targetName":"missing","confirm":true,"reason":"maintenance"}`,
 			wantStatus: http.StatusNotFound,
 		},
@@ -217,7 +305,7 @@ func TestSupervisorContainerFallbackControlValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/suppress", strings.NewReader(tt.body))
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
 			mux.ServeHTTP(rec, req)
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("expected %d, got %d body=%s", tt.wantStatus, rec.Code, rec.Body.String())
