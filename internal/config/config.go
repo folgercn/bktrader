@@ -233,7 +233,29 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("不支持的 SUPERVISOR_CONTAINER_EXECUTOR: %s（可选: noop；留空表示不配置 executor）", c.SupervisorContainerExecutor)
 	}
+	if duplicate := duplicateSupervisorTargetName(c.SupervisorTargets); duplicate != "" {
+		return fmt.Errorf("SUPERVISOR_TARGETS 包含重复 target name: %s", duplicate)
+	}
 	return nil
+}
+
+func duplicateSupervisorTargetName(targets []string) string {
+	seen := make(map[string]struct{})
+	for _, raw := range targets {
+		name, _, ok := strings.Cut(strings.TrimSpace(raw), "=")
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			return name
+		}
+		seen[name] = struct{}{}
+	}
+	return ""
 }
 
 // RuntimeActionsEnabled reports whether this process is allowed to execute

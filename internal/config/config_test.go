@@ -118,6 +118,28 @@ func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsDuplicateSupervisorTargetNames(t *testing.T) {
+	cfg := Config{
+		HTTPAddr:          ":8080",
+		StoreBackend:      "memory",
+		SupervisorTargets: []string{"api=http://127.0.0.1:8080", "api=http://127.0.0.1:8081"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected duplicate supervisor target name to fail validation")
+	}
+}
+
+func TestConfigValidateAllowsUnnamedSupervisorTargets(t *testing.T) {
+	cfg := Config{
+		HTTPAddr:          ":8080",
+		StoreBackend:      "memory",
+		SupervisorTargets: []string{"http://127.0.0.1:8080", "http://127.0.0.1:8081"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected unnamed supervisor targets to validate, got %v", err)
+	}
+}
+
 func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_TARGETS", "api=http://127.0.0.1:8080, http://127.0.0.1:8081")
 	t.Setenv("SUPERVISOR_BEARER_TOKEN", " supervisor-token ")
