@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -246,9 +247,15 @@ func validateSupervisorTargets(targets []string) error {
 		if raw == "" {
 			continue
 		}
+		if strings.HasPrefix(strings.ToLower(raw), "http://") || strings.HasPrefix(strings.ToLower(raw), "https://") {
+			if err := validateSupervisorTargetBaseURL(raw); err != nil {
+				return err
+			}
+			continue
+		}
 		name, baseURL, ok := strings.Cut(raw, "=")
 		if !ok {
-			continue
+			return fmt.Errorf("SUPERVISOR_TARGETS target %q 必须是 http(s) base URL，或 name=http(s)://host[:port]", raw)
 		}
 		name = strings.TrimSpace(name)
 		baseURL = strings.TrimSpace(baseURL)
@@ -258,10 +265,29 @@ func validateSupervisorTargets(targets []string) error {
 		if baseURL == "" {
 			return fmt.Errorf("SUPERVISOR_TARGETS target %s 缺少 base URL", name)
 		}
+		if err := validateSupervisorTargetBaseURL(baseURL); err != nil {
+			return fmt.Errorf("SUPERVISOR_TARGETS target %s 配置无效: %w", name, err)
+		}
 		if _, exists := seen[name]; exists {
 			return fmt.Errorf("SUPERVISOR_TARGETS 包含重复 target name: %s", name)
 		}
 		seen[name] = struct{}{}
+	}
+	return nil
+}
+
+func validateSupervisorTargetBaseURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("base URL 解析失败: %w", err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("base URL 必须使用 http 或 https scheme: %s", raw)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("base URL 必须包含 host: %s", raw)
 	}
 	return nil
 }
