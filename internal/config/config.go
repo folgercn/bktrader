@@ -262,6 +262,9 @@ func validateSupervisorTargets(targets []string) error {
 		if name == "" {
 			return fmt.Errorf("SUPERVISOR_TARGETS 包含空 target name: %s", raw)
 		}
+		if !validSupervisorTargetName(name) {
+			return fmt.Errorf("SUPERVISOR_TARGETS target name %q 只能包含 ASCII 字母、数字、点、下划线或短横线", name)
+		}
 		if baseURL == "" {
 			return fmt.Errorf("SUPERVISOR_TARGETS target %s 缺少 base URL", name)
 		}
@@ -274,6 +277,23 @@ func validateSupervisorTargets(targets []string) error {
 		seen[name] = struct{}{}
 	}
 	return nil
+}
+
+func validSupervisorTargetName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '.', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func validateSupervisorTargetBaseURL(raw string) error {
