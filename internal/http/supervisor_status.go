@@ -17,6 +17,8 @@ type supervisorContainerFallbackControlRequest struct {
 	BackoffSeconds int    `json:"backoffSeconds,omitempty"`
 }
 
+const maxSupervisorContainerFallbackBackoffSeconds = 24 * 60 * 60
+
 func registerSupervisorStatusRoutes(mux *http.ServeMux, platform *service.Platform, cfg config.Config) {
 	mux.HandleFunc("/api/v1/supervisor/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -135,6 +137,10 @@ func registerSupervisorContainerFallbackBackoffRoute(mux *http.ServeMux, platfor
 			writeError(w, http.StatusBadRequest, "backoffSeconds must be positive for supervisor container fallback "+action)
 			return
 		}
+		if !clear && request.BackoffSeconds > maxSupervisorContainerFallbackBackoffSeconds {
+			writeError(w, http.StatusBadRequest, "backoffSeconds must be <= 86400 for supervisor container fallback "+action)
+			return
+		}
 		options := service.RuntimeSupervisorContainerFallbackControlOptions{
 			Confirm:         true,
 			Reason:          reason,
@@ -170,6 +176,7 @@ func writeSupervisorContainerFallbackControlError(w http.ResponseWriter, err err
 	case errors.Is(err, service.ErrRuntimeSupervisorControlConfirmRequired),
 		errors.Is(err, service.ErrRuntimeSupervisorControlReasonRequired),
 		errors.Is(err, service.ErrRuntimeSupervisorBackoffDurationRequired),
+		errors.Is(err, service.ErrRuntimeSupervisorBackoffDurationTooLarge),
 		errors.Is(err, service.ErrRuntimeSupervisorTargetRequired):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrRuntimeSupervisorTargetNotFound):

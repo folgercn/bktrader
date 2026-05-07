@@ -296,6 +296,12 @@ func TestSupervisorContainerFallbackControlValidation(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
+			name:       "backoff seconds too large",
+			path:       "/api/v1/supervisor/container-fallback/defer",
+			body:       `{"targetName":"api","confirm":true,"reason":"cooldown","backoffSeconds":86401}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
 			name:       "missing configured target",
 			path:       "/api/v1/supervisor/container-fallback/suppress",
 			body:       `{"targetName":"missing","confirm":true,"reason":"maintenance"}`,

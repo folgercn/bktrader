@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const maxSupervisorContainerFallbackBackoffSeconds = 24 * 60 * 60
+
 func init() {
 	supervisorCmd.AddCommand(supervisorStatusCmd)
 	supervisorCmd.AddCommand(supervisorSuppressContainerFallbackCmd)
@@ -100,6 +102,9 @@ func runSupervisorContainerFallbackControlWithBackoff(cmd *cobra.Command, target
 		"reason":     reason,
 	}
 	if backoffSeconds > 0 {
+		if backoffSeconds > maxSupervisorContainerFallbackBackoffSeconds {
+			return fmt.Errorf("--seconds 不能超过 86400")
+		}
 		payload["backoffSeconds"] = backoffSeconds
 	} else if strings.Contains(path, "/defer") && !dryRun {
 		return fmt.Errorf("操作需要提供 --seconds 且必须大于 0")

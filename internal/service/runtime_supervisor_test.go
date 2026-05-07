@@ -537,6 +537,9 @@ func TestRuntimeSupervisorContainerFallbackControlValidation(t *testing.T) {
 	if _, err := supervisor.DeferContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorBackoffDurationRequired) {
 		t.Fatalf("expected backoff duration required, got %v", err)
 	}
+	if _, err := supervisor.DeferContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance", BackoffDuration: maxRuntimeSupervisorContainerFallbackBackoff + time.Second}); !errors.Is(err, ErrRuntimeSupervisorBackoffDurationTooLarge) {
+		t.Fatalf("expected backoff duration too large, got %v", err)
+	}
 	if _, err := supervisor.SuppressContainerFallback("", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorTargetRequired) {
 		t.Fatalf("expected target required, got %v", err)
 	}
