@@ -159,6 +159,22 @@ func TestConfigValidateRejectsMalformedSupervisorTargets(t *testing.T) {
 			targets: []string{"api=http://"},
 		},
 		{
+			name:    "explicit name with whitespace",
+			targets: []string{"platform api=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit name with slash",
+			targets: []string{"platform/api=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit name with colon",
+			targets: []string{"platform:api=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit name with unicode",
+			targets: []string{"平台=http://127.0.0.1:8080"},
+		},
+		{
 			name:    "unnamed base url without scheme",
 			targets: []string{"platform-api:8080"},
 		},
@@ -192,7 +208,7 @@ func TestConfigValidateAllowsHTTPSNamedSupervisorTargets(t *testing.T) {
 	cfg := Config{
 		HTTPAddr:          ":8080",
 		StoreBackend:      "memory",
-		SupervisorTargets: []string{"api=https://platform-api.example", "worker=http://127.0.0.1:8081"},
+		SupervisorTargets: []string{"api=https://platform-api.example", "signal_runtime.worker-1=http://127.0.0.1:8081"},
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected named supervisor targets with http(s) URLs to validate, got %v", err)
