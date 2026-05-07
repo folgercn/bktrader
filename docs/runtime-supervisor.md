@@ -332,7 +332,7 @@ func ClearRestartState(state map[string]any, keys []string)
 - `BKTRADER_ROLE=api` 在显式配置 `SUPERVISOR_TARGETS` 时会启动 read-only supervisor collector，用于让现有 console 继续通过 platform-api 读取 `GET /api/v1/supervisor/status`。
 - `BKTRADER_ROLE=supervisor` 只启动 read-only supervisor，不启动 live / signal / dashboard / notification 业务组件。
 - 生产 compose 已提供独立 `supervisor` 服务：使用 `platform-api` 二进制、`BKTRADER_ROLE=supervisor`、`HTTP_ADDR=:8081`，默认 `SUPERVISOR_STANDALONE_TARGETS=api=http://platform-api:8080`。该服务可通过 `DEPLOY_SERVICES=supervisor` 单独发布，挂掉不会停止 platform-api / live-runner / signal-runtime-runner。
-- `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL；显式 `name=` 形式必须唯一，避免后续按 `targetName` 执行 suppress/backoff 控制时出现 allowlist 歧义。
+- `SUPERVISOR_TARGETS` 使用逗号分隔，支持 `name=http://host:port` 或直接填写 base URL；显式 `name=` 形式必须有非空 name、非空 base URL，且 name 必须唯一，避免后续按 `targetName` 执行 suppress/backoff 控制时出现 allowlist 歧义或静默跳过 target。
 - `SUPERVISOR_BEARER_TOKEN` 可选；设置后 read-only collector 会对所有 targets 的 `/healthz` 与 `/api/v1/runtime/status` 请求附加 `Authorization: Bearer <token>`，用于采集受鉴权保护的内网 runtime API。platform-api 会在 `/api/v1/runtime/status` 上接受该 token 作为只读 supervisor probe，不创建用户会话、不放行其他 API。当 target 指向其他容器、其他服务或非 loopback 地址时，应使用该 token 路径，不依赖 loopback 豁免。
 - 生产 compose 默认将 platform-api 配为 `SUPERVISOR_TARGETS=api=http://127.0.0.1:8080`；该 loopback 自采集只读取 `/healthz` 和 `/api/v1/runtime/status`，不会调用控制 API。启用鉴权时，`/api/v1/runtime/status` 仅在 `SUPERVISOR_TARGETS` 非空且请求来自 loopback 时免 token，用于 platform-api 的 supervisor 自采集；未配置 supervisor targets 时，loopback 请求仍需正常鉴权。
 - 独立 `supervisor` 服务跨容器采集 platform-api 时，请在生产 `.env` 配置强随机 `SUPERVISOR_BEARER_TOKEN`；若部署脚本发现该变量缺失，会生成强随机 token 写入 `.env` 并导出给本次 compose 调用。prod compose 要求该变量非空，`scripts/deploy.sh` 会拒绝使用示例值发布生产环境。示例值只能用于本地开发。

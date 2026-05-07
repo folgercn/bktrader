@@ -129,6 +129,34 @@ func TestConfigValidateRejectsDuplicateSupervisorTargetNames(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsMalformedSupervisorTargets(t *testing.T) {
+	tests := []struct {
+		name    string
+		targets []string
+	}{
+		{
+			name:    "empty explicit name",
+			targets: []string{"=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "missing explicit base url",
+			targets: []string{"api="},
+		},
+		{
+			name:    "blank explicit base url",
+			targets: []string{"api= "},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorTargets: tt.targets}
+			if err := cfg.Validate(); err == nil {
+				t.Fatalf("expected malformed supervisor target to fail validation")
+			}
+		})
+	}
+}
+
 func TestConfigValidateAllowsUnnamedSupervisorTargets(t *testing.T) {
 	cfg := Config{
 		HTTPAddr:          ":8080",
