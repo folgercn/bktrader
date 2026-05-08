@@ -119,6 +119,7 @@ type supervisorStatusSnapshot struct {
 	CheckedAt                 string                                     `json:"checkedAt"`
 	Policy                    *supervisorPolicy                          `json:"policy,omitempty"`
 	Targets                   []supervisorTargetSnapshot                 `json:"targets"`
+	ServiceFailureEpisodes    []supervisorServiceFailureEpisode          `json:"serviceFailureEpisodes,omitempty"`
 	ContainerFallbackControls []supervisorContainerFallbackControlAction `json:"containerFallbackControls,omitempty"`
 	ContainerFallbackActions  []supervisorContainerFallbackAction        `json:"containerFallbackActions,omitempty"`
 }
@@ -253,6 +254,26 @@ type supervisorControlAction struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type supervisorServiceFailureEpisode struct {
+	TargetName                          string `json:"targetName"`
+	TargetBaseURL                       string `json:"targetBaseUrl"`
+	StartedAt                           string `json:"startedAt"`
+	RecoveredAt                         string `json:"recoveredAt"`
+	DurationSeconds                     int    `json:"durationSeconds"`
+	MaxConsecutiveFailures              int    `json:"maxConsecutiveFailures"`
+	LastFailureReason                   string `json:"lastFailureReason,omitempty"`
+	LastFailureAt                       string `json:"lastFailureAt,omitempty"`
+	ContainerFallbackCandidate          bool   `json:"containerFallbackCandidate"`
+	ContainerFallbackCandidateSince     string `json:"containerFallbackCandidateSince,omitempty"`
+	ContainerFallbackAttemptCount       int    `json:"containerFallbackAttemptCount"`
+	ContainerFallbackSubmitted          bool   `json:"containerFallbackSubmitted"`
+	ContainerFallbackSubmittedAt        string `json:"containerFallbackSubmittedAt,omitempty"`
+	ContainerFallbackSubmittedError     string `json:"containerFallbackSubmittedError,omitempty"`
+	ContainerFallbackBackoffUntil       string `json:"containerFallbackBackoffUntil,omitempty"`
+	LastContainerFallbackDecisionAt     string `json:"lastContainerFallbackDecisionAt,omitempty"`
+	LastContainerFallbackDecisionReason string `json:"lastContainerFallbackDecisionReason,omitempty"`
+}
+
 type supervisorContainerFallbackControlAction struct {
 	Action         string `json:"action"`
 	TargetName     string `json:"targetName"`
@@ -347,8 +368,8 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 			snapshot.Policy.ContainerExecutorDryRun,
 		)
 	}
-	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d fallbackDryRun=%d runtimes=%d attention=%d controlActions=%d fallbackControls=%d fallbackActions=%d\n",
-		targets, fullyReachable, fallbackCandidates, fallbackExecutable, fallbackDryRun, runtimeCount, runtimeAttention, controlActions, len(snapshot.ContainerFallbackControls), len(snapshot.ContainerFallbackActions))
+	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d fallbackDryRun=%d runtimes=%d attention=%d controlActions=%d serviceFailureEpisodes=%d fallbackControls=%d fallbackActions=%d\n",
+		targets, fullyReachable, fallbackCandidates, fallbackExecutable, fallbackDryRun, runtimeCount, runtimeAttention, controlActions, len(snapshot.ServiceFailureEpisodes), len(snapshot.ContainerFallbackControls), len(snapshot.ContainerFallbackActions))
 	for _, target := range snapshot.Targets {
 		fmt.Fprintf(&out, "\n- %s %s\n", firstNonEmpty(target.Name, "--"), firstNonEmpty(target.BaseURL, "--"))
 		fmt.Fprintf(&out, "  probes: healthz=%s runtimeStatus=%s\n", supervisorProbeText(target.Healthz), supervisorProbeText(target.RuntimeStatus))
@@ -482,6 +503,32 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				firstNonEmpty(action.UpdatedAt, "--"),
 				firstNonEmpty(action.Reason, "--"),
 			)
+		}
+	}
+	if len(snapshot.ServiceFailureEpisodes) > 0 {
+		fmt.Fprintf(&out, "\nserviceFailureEpisodes: total=%d\n", len(snapshot.ServiceFailureEpisodes))
+		for _, episode := range snapshot.ServiceFailureEpisodes {
+			fmt.Fprintf(&out, "  - target=%s startedAt=%s recoveredAt=%s durationSeconds=%d maxFailures=%d candidate=%t candidateSince=%s attempts=%d submitted=%t submittedAt=%s lastDecision=%s lastFailure=%s",
+				firstNonEmpty(episode.TargetName, "--"),
+				firstNonEmpty(episode.StartedAt, "--"),
+				firstNonEmpty(episode.RecoveredAt, "--"),
+				episode.DurationSeconds,
+				episode.MaxConsecutiveFailures,
+				episode.ContainerFallbackCandidate,
+				firstNonEmpty(episode.ContainerFallbackCandidateSince, "--"),
+				episode.ContainerFallbackAttemptCount,
+				episode.ContainerFallbackSubmitted,
+				firstNonEmpty(episode.ContainerFallbackSubmittedAt, "--"),
+				firstNonEmpty(episode.LastContainerFallbackDecisionReason, "--"),
+				firstNonEmpty(episode.LastFailureReason, "--"),
+			)
+			if strings.TrimSpace(episode.ContainerFallbackSubmittedError) != "" {
+				fmt.Fprintf(&out, " submittedError=%s", episode.ContainerFallbackSubmittedError)
+			}
+			if strings.TrimSpace(episode.ContainerFallbackBackoffUntil) != "" {
+				fmt.Fprintf(&out, " backoffUntil=%s", episode.ContainerFallbackBackoffUntil)
+			}
+			fmt.Fprintln(&out)
 		}
 	}
 	if len(snapshot.ContainerFallbackActions) > 0 {
