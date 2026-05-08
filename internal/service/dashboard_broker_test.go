@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -38,10 +39,10 @@ func TestNotifyChangedNonBlocking(t *testing.T) {
 func TestDashboardBrokerCoalescesSameDomain(t *testing.T) {
 	b := newTestDashboardBroker(20 * time.Millisecond)
 	var fetches atomic.Int64
-	b.fetchFuncs[DashboardDomainOrders] = func() (any, error) {
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
 		fetches.Add(1)
 		return map[string]any{"orders": []string{"order-1"}}, nil
-	}
+	})
 	_, ch := b.Subscribe(10)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -66,14 +67,14 @@ func TestDashboardBrokerCoalescesMultipleDomains(t *testing.T) {
 	b := newTestDashboardBroker(20 * time.Millisecond)
 	var orderFetches atomic.Int64
 	var fillFetches atomic.Int64
-	b.fetchFuncs[DashboardDomainOrders] = func() (any, error) {
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
 		orderFetches.Add(1)
 		return map[string]any{"orders": []string{"order-1"}}, nil
-	}
-	b.fetchFuncs[DashboardDomainFills] = func() (any, error) {
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainFills, func() (any, error) {
 		fillFetches.Add(1)
 		return map[string]any{"fills": []string{"fill-1"}}, nil
-	}
+	})
 	_, ch := b.Subscribe(10)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -104,10 +105,10 @@ func TestDashboardBrokerCoalescesMultipleDomains(t *testing.T) {
 func TestDashboardBrokerNoSubscriberSkipsFetch(t *testing.T) {
 	b := newTestDashboardBroker(10 * time.Millisecond)
 	var fetches atomic.Int64
-	b.fetchFuncs[DashboardDomainOrders] = func() (any, error) {
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
 		fetches.Add(1)
 		return map[string]any{"orders": []string{"order-1"}}, nil
-	}
+	})
 
 	b.publishSnapshotForDomain(DashboardDomainOrders)
 
@@ -116,13 +117,98 @@ func TestDashboardBrokerNoSubscriberSkipsFetch(t *testing.T) {
 	}
 }
 
+func TestDashboardBrokerRegisterFetchFuncReplacesFetcher(t *testing.T) {
+	b := newTestDashboardBroker(10 * time.Millisecond)
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
+		return map[string]any{"orders": []string{"old"}}, nil
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
+		return map[string]any{"orders": []string{"new"}}, nil
+	})
+	_, ch := b.Subscribe(10)
+
+	b.publishSnapshotForDomain(DashboardDomainOrders)
+
+	event := waitDashboardEvent(t, ch, 100*time.Millisecond)
+	payload, ok := event.Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map payload, got %#v", event.Payload)
+	}
+	orders, ok := payload["orders"].([]string)
+	if !ok || len(orders) != 1 || orders[0] != "new" {
+		t.Fatalf("expected replacement fetcher payload, got %#v", event.Payload)
+	}
+}
+
+func TestDashboardBrokerRegisterFetchFuncIgnoresInvalidInput(t *testing.T) {
+	b := newTestDashboardBroker(10 * time.Millisecond)
+	b.RegisterDashboardFetchFunc("", func() (any, error) {
+		return map[string]any{"orders": []string{"unexpected"}}, nil
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, nil)
+	if len(b.fetchFuncs) != 0 {
+		t.Fatalf("expected invalid fetch funcs to be ignored, got %#v", b.fetchFuncs)
+	}
+}
+
+func TestDashboardBrokerRegisterFetchFuncConcurrentWithSnapshots(t *testing.T) {
+	b := newTestDashboardBroker(10 * time.Millisecond)
+	subID, ch := b.Subscribe(512)
+	done := make(chan struct{})
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for {
+			select {
+			case <-done:
+				return
+			case <-ch:
+			}
+		}
+	}()
+	defer func() {
+		close(done)
+		<-drained
+		b.Unsubscribe(subID)
+	}()
+
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
+		return map[string]any{"orders": []string{"initial"}}, nil
+	})
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			value := i
+			b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
+				return map[string]any{"orders": []int{value}}, nil
+			})
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			b.publishSnapshotForDomain(DashboardDomainOrders)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			b.PushInitialSnapshot(subID)
+		}
+	}()
+	wg.Wait()
+}
+
 func TestDashboardBrokerInitialSnapshotDoesNotSuppressBroadcast(t *testing.T) {
 	b := newTestDashboardBroker(10 * time.Millisecond)
 	currentPayload := atomic.Value{}
 	currentPayload.Store(map[string]any{"orders": []string{"h1"}})
-	b.fetchFuncs[DashboardDomainOrders] = func() (any, error) {
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
 		return currentPayload.Load(), nil
-	}
+	})
 
 	subA, chA := b.Subscribe(10)
 	b.PushInitialSnapshot(subA)
@@ -180,9 +266,9 @@ func TestStartDashboardBrokerPollingPublishesThroughEventLoop(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	b := platform.DashboardBroker()
 	b.coalesceWindow = 10 * time.Millisecond
-	b.fetchFuncs[DashboardDomainNotifications] = func() (any, error) {
+	b.RegisterDashboardFetchFunc(DashboardDomainNotifications, func() (any, error) {
 		return map[string]any{"notifications": []string{"notification-1"}}, nil
-	}
+	})
 	_, ch := b.Subscribe(10)
 
 	ctx, cancel := context.WithCancel(context.Background())
