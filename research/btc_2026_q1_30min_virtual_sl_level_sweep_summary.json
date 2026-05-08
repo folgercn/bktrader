@@ -1,0 +1,3710 @@
+{
+  "symbol": "BTCUSDT",
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-03-31T23:59:59+00:00",
+  "build_stats": {
+    "raw_tick_rows": 448247191,
+    "kept_tick_rows": 448247183,
+    "sparse_second_rows": 7451463,
+    "continuous_second_rows": 7776000,
+    "first_second": "2026-01-01T00:00:00+00:00",
+    "last_second": "2026-03-31T23:59:59+00:00"
+  },
+  "signal_stats": {
+    "signal_rows": 4320,
+    "signal_start": "2026-01-01T00:00:00+00:00",
+    "signal_end": "2026-03-31T23:30:00+00:00",
+    "valid_sma5_rows": 4316,
+    "valid_atr_rows": 4307
+  },
+  "baseline_kwargs": {
+    "dir2_zero_initial": true,
+    "zero_initial_mode": "reentry_window",
+    "fixed_slippage": 0.0005,
+    "stop_loss_atr": 0.3,
+    "stop_mode": "atr",
+    "max_trades_per_bar": 2,
+    "reentry_size_schedule": [
+      0.2,
+      0.1
+    ],
+    "long_reentry_atr": 0.1,
+    "short_reentry_atr": 0.0,
+    "profit_protect_atr": 1.0,
+    "trailing_stop_atr": 0.3,
+    "delayed_trailing_activation": 0.5,
+    "reentry_anchor_levels": "wick",
+    "reentry_trigger_mode": "reclaim"
+  },
+  "variants": [
+    {
+      "name": "fixed_vsl_0p2atr_turn_0p05atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.2,
+      "entry_offset_atr": 0.05,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.05 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p2atr_turn_0p1atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.2,
+      "entry_offset_atr": 0.1,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.1 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p2atr_turn_0p15atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.2,
+      "entry_offset_atr": 0.15,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.15 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p2atr_turn_0p2atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.2,
+      "entry_offset_atr": 0.2,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.2 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p4atr_turn_0p05atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.05,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.05 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p4atr_turn_0p1atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.1,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.1 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p4atr_turn_0p15atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.15,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.15 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p4atr_turn_0p2atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.2,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.2 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p4atr_turn_0p3atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.3,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.3 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p6atr_turn_0p1atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.6,
+      "entry_offset_atr": 0.1,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on fixed turn confirmation of 0.1 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p6atr_turn_0p2atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.6,
+      "entry_offset_atr": 0.2,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on fixed turn confirmation of 0.2 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p8atr_turn_0p1atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.8,
+      "entry_offset_atr": 0.1,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.8 ATR; enter on fixed turn confirmation of 0.1 ATR."
+    },
+    {
+      "name": "fixed_vsl_0p8atr_turn_0p2atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.8,
+      "entry_offset_atr": 0.2,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.8 ATR; enter on fixed turn confirmation of 0.2 ATR."
+    },
+    {
+      "name": "dynamic_vsl_0p2atr_turn_0p1atr",
+      "turn_mode": "dynamic",
+      "virtual_sl_atr": 0.2,
+      "entry_offset_atr": 0.1,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on dynamic turn confirmation of 0.1 ATR."
+    },
+    {
+      "name": "dynamic_vsl_0p2atr_turn_0p2atr",
+      "turn_mode": "dynamic",
+      "virtual_sl_atr": 0.2,
+      "entry_offset_atr": 0.2,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on dynamic turn confirmation of 0.2 ATR."
+    },
+    {
+      "name": "dynamic_vsl_0p4atr_turn_0p05atr",
+      "turn_mode": "dynamic",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.05,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.05 ATR."
+    },
+    {
+      "name": "dynamic_vsl_0p4atr_turn_0p1atr",
+      "turn_mode": "dynamic",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.1,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.1 ATR."
+    },
+    {
+      "name": "dynamic_vsl_0p4atr_turn_0p15atr",
+      "turn_mode": "dynamic",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.15,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.15 ATR."
+    },
+    {
+      "name": "dynamic_vsl_0p4atr_turn_0p2atr",
+      "turn_mode": "dynamic",
+      "virtual_sl_atr": 0.4,
+      "entry_offset_atr": 0.2,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.2 ATR."
+    },
+    {
+      "name": "dynamic_vsl_0p6atr_turn_0p1atr",
+      "turn_mode": "dynamic",
+      "virtual_sl_atr": 0.6,
+      "entry_offset_atr": 0.1,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on dynamic turn confirmation of 0.1 ATR."
+    },
+    {
+      "name": "dynamic_vsl_0p6atr_turn_0p2atr",
+      "turn_mode": "dynamic",
+      "virtual_sl_atr": 0.6,
+      "entry_offset_atr": 0.2,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on dynamic turn confirmation of 0.2 ATR."
+    }
+  ],
+  "best_by_return": {
+    "variant": "fixed_vsl_0p8atr_turn_0p2atr",
+    "description": "Virtual Initial SL at structural breakout level +/- 0.8 ATR; enter on fixed turn confirmation of 0.2 ATR.",
+    "params": {
+      "name": "fixed_vsl_0p8atr_turn_0p2atr",
+      "turn_mode": "fixed",
+      "virtual_sl_atr": 0.8,
+      "entry_offset_atr": 0.2,
+      "description": "Virtual Initial SL at structural breakout level +/- 0.8 ATR; enter on fixed turn confirmation of 0.2 ATR."
+    },
+    "summary": {
+      "final_balance": 75848.84,
+      "return_pct": -24.15,
+      "max_dd_pct": -24.15,
+      "trades": 527,
+      "win_rate_pct": 19.92,
+      "sharpe": -6.52,
+      "first_entry": "2026-01-02T13:17:17+00:00",
+      "last_exit": "2026-03-31T16:01:09+00:00",
+      "entry_reasons": {
+        "SL-Reentry": 333,
+        "Zero-Initial-Reentry": 194
+      },
+      "exit_reasons": {
+        "SL": 527
+      },
+      "entry_types": {
+        "SHORT": 284,
+        "BUY": 243
+      },
+      "integrity": {
+        "rows": 1054,
+        "entries": 527,
+        "exits": 527,
+        "zero_notional_entries": 0
+      }
+    },
+    "pair_diagnostics": {
+      "paired_trades": 527,
+      "avg_loss_pct": -0.2158,
+      "worst_loss_pct": -0.5719,
+      "avg_win_pct": 0.2168,
+      "profit_factor": 0.3744,
+      "median_hold_seconds": 326.0,
+      "avg_hold_seconds": 690.39,
+      "entry_reasons": {
+        "SL-Reentry": 333,
+        "Zero-Initial-Reentry": 194
+      },
+      "exit_reasons": {
+        "SL": 527
+      }
+    },
+    "level_diagnostics": {
+      "entry_reason_stats": {
+        "SL-Reentry": {
+          "trades": 333,
+          "win_rate_pct": 29.73,
+          "net_pnl": -4204.51,
+          "avg_pnl_pct": -0.0853
+        },
+        "Zero-Initial-Reentry": {
+          "trades": 194,
+          "win_rate_pct": 25.26,
+          "net_pnl": -3710.44,
+          "avg_pnl_pct": -0.1098
+        }
+      },
+      "median_seconds_from_virtual_sl": 310.0,
+      "median_entry_vs_stop_bps": 15.6975,
+      "median_entry_vs_trigger_bps": 5.5861
+    },
+    "attribution": {
+      "original_t2": {
+        "trades": 395,
+        "win_rate_pct": 28.86,
+        "avg_pnl_pct": -0.0906,
+        "median_pnl_pct": -0.1902,
+        "pnl_std_pct": 0.241,
+        "worst_pnl_pct": -0.5719,
+        "net_pnl_value": -5706.78,
+        "max_pnl_drawdown": -5822.2,
+        "profit_factor": 0.4026,
+        "entry_types": {
+          "SHORT": 203,
+          "BUY": 192
+        },
+        "entry_reasons": {
+          "SL-Reentry": 249,
+          "Zero-Initial-Reentry": 146
+        },
+        "exit_reasons": {
+          "SL": 395
+        }
+      },
+      "t3_swing": {
+        "trades": 132,
+        "win_rate_pct": 25.76,
+        "avg_pnl_pct": -0.1056,
+        "median_pnl_pct": -0.1815,
+        "pnl_std_pct": 0.1899,
+        "worst_pnl_pct": -0.4607,
+        "net_pnl_value": -2208.17,
+        "max_pnl_drawdown": -2209.14,
+        "profit_factor": 0.2876,
+        "entry_types": {
+          "SHORT": 81,
+          "BUY": 51
+        },
+        "entry_reasons": {
+          "SL-Reentry": 84,
+          "Zero-Initial-Reentry": 48
+        },
+        "exit_reasons": {
+          "SL": 132
+        }
+      }
+    },
+    "diagnostics": {
+      "breakout_locks": {
+        "long": {
+          "original_t2": 383,
+          "t3_swing": 116
+        },
+        "short": {
+          "original_t2": 394,
+          "t3_swing": 109
+        }
+      },
+      "virtual_sl": 262,
+      "pending_expired": 205,
+      "pending_triggered": 527,
+      "pending_armed_by_reason": {
+        "Zero-Initial-Reentry": 262,
+        "SL-Reentry": 527
+      },
+      "pending_triggered_by_reason": {
+        "Zero-Initial-Reentry": 194,
+        "SL-Reentry": 333
+      },
+      "pending_expired_by_reason": {
+        "Zero-Initial-Reentry": 66,
+        "SL-Reentry": 139
+      },
+      "real_sl": 527,
+      "real_sl_reentry_armed": 527,
+      "virtual_expired_without_sl": 739,
+      "max_trades_blocked": 57
+    },
+    "elapsed_seconds": 253.42,
+    "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p8atr_turn_0p2atr_ledger.csv",
+    "delta_vs_best": {
+      "final_balance_delta": 0.0,
+      "return_pct_delta": 0.0,
+      "max_dd_pct_delta": 0.0,
+      "trades_delta": 0,
+      "win_rate_pct_delta": 0.0,
+      "sharpe_delta": 0.0
+    }
+  },
+  "results": [
+    {
+      "variant": "fixed_vsl_0p2atr_turn_0p05atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.05 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p2atr_turn_0p05atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.2,
+        "entry_offset_atr": 0.05,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.05 ATR."
+      },
+      "summary": {
+        "final_balance": 40653.65,
+        "return_pct": -59.35,
+        "max_dd_pct": -59.34,
+        "trades": 1972,
+        "win_rate_pct": 8.72,
+        "sharpe": -8.54,
+        "first_entry": "2026-01-01T07:21:03+00:00",
+        "last_exit": "2026-03-31T23:25:50+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1244,
+          "Zero-Initial-Reentry": 728
+        },
+        "exit_reasons": {
+          "SL": 1972
+        },
+        "entry_types": {
+          "SHORT": 995,
+          "BUY": 977
+        },
+        "integrity": {
+          "rows": 3944,
+          "entries": 1972,
+          "exits": 1972,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1972,
+        "avg_loss_pct": -0.1335,
+        "worst_loss_pct": -0.2538,
+        "avg_win_pct": 0.2307,
+        "profit_factor": 0.2621,
+        "median_hold_seconds": 90.5,
+        "avg_hold_seconds": 337.43,
+        "entry_reasons": {
+          "SL-Reentry": 1244,
+          "Zero-Initial-Reentry": 728
+        },
+        "exit_reasons": {
+          "SL": 1972
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 1244,
+            "win_rate_pct": 13.91,
+            "net_pnl": -9548.09,
+            "avg_pnl_pct": -0.0845
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 728,
+            "win_rate_pct": 12.64,
+            "net_pnl": -8085.97,
+            "avg_pnl_pct": -0.0847
+          }
+        },
+        "median_seconds_from_virtual_sl": 70.0,
+        "median_entry_vs_stop_bps": 8.0882,
+        "median_entry_vs_trigger_bps": 5.5152
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1520,
+          "win_rate_pct": 13.29,
+          "avg_pnl_pct": -0.0833,
+          "median_pnl_pct": -0.1283,
+          "pnl_std_pct": 0.1649,
+          "worst_pnl_pct": -0.2538,
+          "net_pnl_value": -13496.22,
+          "max_pnl_drawdown": -13473.92,
+          "profit_factor": 0.2723,
+          "entry_types": {
+            "SHORT": 770,
+            "BUY": 750
+          },
+          "entry_reasons": {
+            "SL-Reentry": 958,
+            "Zero-Initial-Reentry": 562
+          },
+          "exit_reasons": {
+            "SL": 1520
+          }
+        },
+        "t3_swing": {
+          "trades": 452,
+          "win_rate_pct": 13.94,
+          "avg_pnl_pct": -0.0889,
+          "median_pnl_pct": -0.1277,
+          "pnl_std_pct": 0.1279,
+          "worst_pnl_pct": -0.2384,
+          "net_pnl_value": -4137.84,
+          "max_pnl_drawdown": -4187.36,
+          "profit_factor": 0.2267,
+          "entry_types": {
+            "BUY": 227,
+            "SHORT": 225
+          },
+          "entry_reasons": {
+            "SL-Reentry": 286,
+            "Zero-Initial-Reentry": 166
+          },
+          "exit_reasons": {
+            "SL": 452
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 454,
+            "t3_swing": 121
+          },
+          "short": {
+            "original_t2": 463,
+            "t3_swing": 127
+          }
+        },
+        "virtual_sl": 885,
+        "pending_expired": 294,
+        "pending_triggered": 1972,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 885,
+          "SL-Reentry": 1972
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 728,
+          "SL-Reentry": 1244
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 212,
+          "Zero-Initial-Reentry": 82
+        },
+        "real_sl": 1972,
+        "real_sl_reentry_armed": 1972,
+        "virtual_expired_without_sl": 280,
+        "max_trades_blocked": 591
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p2atr_turn_0p05atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -35195.19,
+        "return_pct_delta": -35.2,
+        "max_dd_pct_delta": -35.19,
+        "trades_delta": 1445,
+        "win_rate_pct_delta": -11.2,
+        "sharpe_delta": -2.02
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p2atr_turn_0p1atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.1 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p2atr_turn_0p1atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.2,
+        "entry_offset_atr": 0.1,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.1 ATR."
+      },
+      "summary": {
+        "final_balance": 43386.35,
+        "return_pct": -56.61,
+        "max_dd_pct": -56.6,
+        "trades": 1822,
+        "win_rate_pct": 14.05,
+        "sharpe": -6.37,
+        "first_entry": "2026-01-01T07:26:01+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1207,
+          "Zero-Initial-Reentry": 615
+        },
+        "exit_reasons": {
+          "SL": 1821,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "BUY": 915,
+          "SHORT": 907
+        },
+        "integrity": {
+          "rows": 3644,
+          "entries": 1822,
+          "exits": 1822,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1822,
+        "avg_loss_pct": -0.1588,
+        "worst_loss_pct": -0.3698,
+        "avg_win_pct": 0.2336,
+        "profit_factor": 0.3672,
+        "median_hold_seconds": 187.0,
+        "avg_hold_seconds": 472.48,
+        "entry_reasons": {
+          "SL-Reentry": 1207,
+          "Zero-Initial-Reentry": 615
+        },
+        "exit_reasons": {
+          "SL": 1821,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 1207,
+            "win_rate_pct": 21.62,
+            "net_pnl": -9264.4,
+            "avg_pnl_pct": -0.0753
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 615,
+            "win_rate_pct": 18.7,
+            "net_pnl": -6821.51,
+            "avg_pnl_pct": -0.0828
+          }
+        },
+        "median_seconds_from_virtual_sl": 147.0,
+        "median_entry_vs_stop_bps": 10.6224,
+        "median_entry_vs_trigger_bps": 5.5626
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1366,
+          "win_rate_pct": 19.91,
+          "avg_pnl_pct": -0.0778,
+          "median_pnl_pct": -0.148,
+          "pnl_std_pct": 0.2013,
+          "worst_pnl_pct": -0.361,
+          "net_pnl_value": -12105.53,
+          "max_pnl_drawdown": -12089.11,
+          "profit_factor": 0.3765,
+          "entry_types": {
+            "BUY": 688,
+            "SHORT": 678
+          },
+          "entry_reasons": {
+            "SL-Reentry": 893,
+            "Zero-Initial-Reentry": 473
+          },
+          "exit_reasons": {
+            "SL": 1365,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 456,
+          "win_rate_pct": 22.81,
+          "avg_pnl_pct": -0.0778,
+          "median_pnl_pct": -0.1434,
+          "pnl_std_pct": 0.1702,
+          "worst_pnl_pct": -0.3698,
+          "net_pnl_value": -3980.37,
+          "max_pnl_drawdown": -3980.78,
+          "profit_factor": 0.3373,
+          "entry_types": {
+            "SHORT": 229,
+            "BUY": 227
+          },
+          "entry_reasons": {
+            "SL-Reentry": 314,
+            "Zero-Initial-Reentry": 142
+          },
+          "exit_reasons": {
+            "SL": 456
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 381,
+            "t3_swing": 108
+          },
+          "short": {
+            "original_t2": 399,
+            "t3_swing": 111
+          }
+        },
+        "virtual_sl": 763,
+        "pending_expired": 398,
+        "pending_triggered": 1822,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 763,
+          "SL-Reentry": 1821
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 615,
+          "SL-Reentry": 1207
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 291,
+          "Zero-Initial-Reentry": 107
+        },
+        "real_sl": 1821,
+        "real_sl_reentry_armed": 1821,
+        "virtual_expired_without_sl": 236,
+        "max_trades_blocked": 364
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p2atr_turn_0p1atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -32462.49,
+        "return_pct_delta": -32.46,
+        "max_dd_pct_delta": -32.45,
+        "trades_delta": 1295,
+        "win_rate_pct_delta": -5.87,
+        "sharpe_delta": 0.15
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p2atr_turn_0p15atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.15 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p2atr_turn_0p15atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.2,
+        "entry_offset_atr": 0.15,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.15 ATR."
+      },
+      "summary": {
+        "final_balance": 44721.91,
+        "return_pct": -55.28,
+        "max_dd_pct": -55.27,
+        "trades": 1662,
+        "win_rate_pct": 16.91,
+        "sharpe": -6.11,
+        "first_entry": "2026-01-01T07:26:03+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1126,
+          "Zero-Initial-Reentry": 536
+        },
+        "exit_reasons": {
+          "SL": 1661,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "BUY": 885,
+          "SHORT": 777
+        },
+        "integrity": {
+          "rows": 3324,
+          "entries": 1662,
+          "exits": 1662,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1662,
+        "avg_loss_pct": -0.1875,
+        "worst_loss_pct": -0.5357,
+        "avg_win_pct": 0.2269,
+        "profit_factor": 0.3847,
+        "median_hold_seconds": 273.0,
+        "avg_hold_seconds": 584.23,
+        "entry_reasons": {
+          "SL-Reentry": 1126,
+          "Zero-Initial-Reentry": 536
+        },
+        "exit_reasons": {
+          "SL": 1661,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 1126,
+            "win_rate_pct": 25.4,
+            "net_pnl": -10424.24,
+            "avg_pnl_pct": -0.0833
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 536,
+            "win_rate_pct": 24.44,
+            "net_pnl": -6187.07,
+            "avg_pnl_pct": -0.0839
+          }
+        },
+        "median_seconds_from_virtual_sl": 257.0,
+        "median_entry_vs_stop_bps": 13.2423,
+        "median_entry_vs_trigger_bps": 5.5749
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1210,
+          "win_rate_pct": 24.13,
+          "avg_pnl_pct": -0.0842,
+          "median_pnl_pct": -0.1651,
+          "pnl_std_pct": 0.22,
+          "worst_pnl_pct": -0.4646,
+          "net_pnl_value": -12352.12,
+          "max_pnl_drawdown": -12330.44,
+          "profit_factor": 0.3853,
+          "entry_types": {
+            "BUY": 643,
+            "SHORT": 567
+          },
+          "entry_reasons": {
+            "SL-Reentry": 805,
+            "Zero-Initial-Reentry": 405
+          },
+          "exit_reasons": {
+            "SL": 1209,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 452,
+          "win_rate_pct": 27.65,
+          "avg_pnl_pct": -0.0815,
+          "median_pnl_pct": -0.1658,
+          "pnl_std_pct": 0.2078,
+          "worst_pnl_pct": -0.5357,
+          "net_pnl_value": -4259.19,
+          "max_pnl_drawdown": -4315.25,
+          "profit_factor": 0.3828,
+          "entry_types": {
+            "BUY": 242,
+            "SHORT": 210
+          },
+          "entry_reasons": {
+            "SL-Reentry": 321,
+            "Zero-Initial-Reentry": 131
+          },
+          "exit_reasons": {
+            "SL": 452
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 351,
+            "t3_swing": 101
+          },
+          "short": {
+            "original_t2": 343,
+            "t3_swing": 103
+          }
+        },
+        "virtual_sl": 679,
+        "pending_expired": 463,
+        "pending_triggered": 1662,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 679,
+          "SL-Reentry": 1661
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 536,
+          "SL-Reentry": 1126
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 342,
+          "Zero-Initial-Reentry": 121
+        },
+        "real_sl": 1661,
+        "real_sl_reentry_armed": 1661,
+        "virtual_expired_without_sl": 219,
+        "max_trades_blocked": 215
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p2atr_turn_0p15atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -31126.93,
+        "return_pct_delta": -31.13,
+        "max_dd_pct_delta": -31.12,
+        "trades_delta": 1135,
+        "win_rate_pct_delta": -3.01,
+        "sharpe_delta": 0.41
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p2atr_turn_0p2atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.2 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p2atr_turn_0p2atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.2,
+        "entry_offset_atr": 0.2,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on fixed turn confirmation of 0.2 ATR."
+      },
+      "summary": {
+        "final_balance": 50802.74,
+        "return_pct": -49.2,
+        "max_dd_pct": -49.19,
+        "trades": 1389,
+        "win_rate_pct": 21.53,
+        "sharpe": -5.43,
+        "first_entry": "2026-01-01T07:26:09+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 909,
+          "Zero-Initial-Reentry": 480
+        },
+        "exit_reasons": {
+          "SL": 1388,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "BUY": 721,
+          "SHORT": 668
+        },
+        "integrity": {
+          "rows": 2778,
+          "entries": 1389,
+          "exits": 1389,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1389,
+        "avg_loss_pct": -0.2127,
+        "worst_loss_pct": -0.6288,
+        "avg_win_pct": 0.2196,
+        "profit_factor": 0.4341,
+        "median_hold_seconds": 336.0,
+        "avg_hold_seconds": 683.72,
+        "entry_reasons": {
+          "SL-Reentry": 909,
+          "Zero-Initial-Reentry": 480
+        },
+        "exit_reasons": {
+          "SL": 1388,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 909,
+            "win_rate_pct": 30.25,
+            "net_pnl": -9242.7,
+            "avg_pnl_pct": -0.0847
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 480,
+            "win_rate_pct": 30.83,
+            "net_pnl": -5252.25,
+            "avg_pnl_pct": -0.0742
+          }
+        },
+        "median_seconds_from_virtual_sl": 331.0,
+        "median_entry_vs_stop_bps": 15.894,
+        "median_entry_vs_trigger_bps": 5.5794
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1048,
+          "win_rate_pct": 29.29,
+          "avg_pnl_pct": -0.0833,
+          "median_pnl_pct": -0.1801,
+          "pnl_std_pct": 0.2421,
+          "worst_pnl_pct": -0.6288,
+          "net_pnl_value": -11348.53,
+          "max_pnl_drawdown": -11322.09,
+          "profit_factor": 0.4301,
+          "entry_types": {
+            "BUY": 540,
+            "SHORT": 508
+          },
+          "entry_reasons": {
+            "SL-Reentry": 686,
+            "Zero-Initial-Reentry": 362
+          },
+          "exit_reasons": {
+            "SL": 1047,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 341,
+          "win_rate_pct": 34.02,
+          "avg_pnl_pct": -0.0741,
+          "median_pnl_pct": -0.1727,
+          "pnl_std_pct": 0.2198,
+          "worst_pnl_pct": -0.4011,
+          "net_pnl_value": -3146.42,
+          "max_pnl_drawdown": -3263.23,
+          "profit_factor": 0.4481,
+          "entry_types": {
+            "BUY": 181,
+            "SHORT": 160
+          },
+          "entry_reasons": {
+            "SL-Reentry": 223,
+            "Zero-Initial-Reentry": 118
+          },
+          "exit_reasons": {
+            "SL": 341
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 330,
+            "t3_swing": 100
+          },
+          "short": {
+            "original_t2": 345,
+            "t3_swing": 99
+          }
+        },
+        "virtual_sl": 660,
+        "pending_expired": 527,
+        "pending_triggered": 1389,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 660,
+          "SL-Reentry": 1388
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 480,
+          "SL-Reentry": 909
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 360,
+          "Zero-Initial-Reentry": 167
+        },
+        "real_sl": 1388,
+        "real_sl_reentry_armed": 1388,
+        "virtual_expired_without_sl": 214,
+        "max_trades_blocked": 132
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p2atr_turn_0p2atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -25046.1,
+        "return_pct_delta": -25.05,
+        "max_dd_pct_delta": -25.04,
+        "trades_delta": 862,
+        "win_rate_pct_delta": 1.61,
+        "sharpe_delta": 1.09
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p4atr_turn_0p05atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.05 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p4atr_turn_0p05atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.05,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.05 ATR."
+      },
+      "summary": {
+        "final_balance": 51369.8,
+        "return_pct": -48.63,
+        "max_dd_pct": -48.62,
+        "trades": 1451,
+        "win_rate_pct": 8.96,
+        "sharpe": -10.05,
+        "first_entry": "2026-01-01T15:36:08+00:00",
+        "last_exit": "2026-03-31T22:21:26+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 932,
+          "Zero-Initial-Reentry": 519
+        },
+        "exit_reasons": {
+          "SL": 1451
+        },
+        "entry_types": {
+          "SHORT": 752,
+          "BUY": 699
+        },
+        "integrity": {
+          "rows": 2902,
+          "entries": 1451,
+          "exits": 1451,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1451,
+        "avg_loss_pct": -0.1335,
+        "worst_loss_pct": -0.2663,
+        "avg_win_pct": 0.2098,
+        "profit_factor": 0.2399,
+        "median_hold_seconds": 83.0,
+        "avg_hold_seconds": 366.41,
+        "entry_reasons": {
+          "SL-Reentry": 932,
+          "Zero-Initial-Reentry": 519
+        },
+        "exit_reasons": {
+          "SL": 1451
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 932,
+            "win_rate_pct": 13.73,
+            "net_pnl": -7915.58,
+            "avg_pnl_pct": -0.0871
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 519,
+            "win_rate_pct": 12.33,
+            "net_pnl": -6860.31,
+            "avg_pnl_pct": -0.09
+          }
+        },
+        "median_seconds_from_virtual_sl": 66.0,
+        "median_entry_vs_stop_bps": 8.0745,
+        "median_entry_vs_trigger_bps": 5.5137
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1131,
+          "win_rate_pct": 13.26,
+          "avg_pnl_pct": -0.0887,
+          "median_pnl_pct": -0.1282,
+          "pnl_std_pct": 0.1404,
+          "worst_pnl_pct": -0.2663,
+          "net_pnl_value": -11487.25,
+          "max_pnl_drawdown": -11521.9,
+          "profit_factor": 0.2407,
+          "entry_types": {
+            "SHORT": 588,
+            "BUY": 543
+          },
+          "entry_reasons": {
+            "SL-Reentry": 723,
+            "Zero-Initial-Reentry": 408
+          },
+          "exit_reasons": {
+            "SL": 1131
+          }
+        },
+        "t3_swing": {
+          "trades": 320,
+          "win_rate_pct": 13.12,
+          "avg_pnl_pct": -0.086,
+          "median_pnl_pct": -0.1279,
+          "pnl_std_pct": 0.1348,
+          "worst_pnl_pct": -0.246,
+          "net_pnl_value": -3288.64,
+          "max_pnl_drawdown": -3383.43,
+          "profit_factor": 0.2372,
+          "entry_types": {
+            "SHORT": 164,
+            "BUY": 156
+          },
+          "entry_reasons": {
+            "SL-Reentry": 209,
+            "Zero-Initial-Reentry": 111
+          },
+          "exit_reasons": {
+            "SL": 320
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 427,
+            "t3_swing": 112
+          },
+          "short": {
+            "original_t2": 427,
+            "t3_swing": 117
+          }
+        },
+        "virtual_sl": 610,
+        "pending_expired": 221,
+        "pending_triggered": 1451,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 610,
+          "SL-Reentry": 1451
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 519,
+          "SL-Reentry": 932
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 154,
+          "Zero-Initial-Reentry": 67
+        },
+        "real_sl": 1451,
+        "real_sl_reentry_armed": 1451,
+        "virtual_expired_without_sl": 472,
+        "max_trades_blocked": 389
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p4atr_turn_0p05atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -24479.04,
+        "return_pct_delta": -24.48,
+        "max_dd_pct_delta": -24.47,
+        "trades_delta": 924,
+        "win_rate_pct_delta": -10.96,
+        "sharpe_delta": -3.53
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p4atr_turn_0p1atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.1 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p4atr_turn_0p1atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.1,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.1 ATR."
+      },
+      "summary": {
+        "final_balance": 52549.31,
+        "return_pct": -47.45,
+        "max_dd_pct": -47.44,
+        "trades": 1343,
+        "win_rate_pct": 12.21,
+        "sharpe": -8.72,
+        "first_entry": "2026-01-01T15:36:08+00:00",
+        "last_exit": "2026-03-31T22:00:47+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 908,
+          "Zero-Initial-Reentry": 435
+        },
+        "exit_reasons": {
+          "SL": 1343
+        },
+        "entry_types": {
+          "SHORT": 708,
+          "BUY": 635
+        },
+        "integrity": {
+          "rows": 2686,
+          "entries": 1343,
+          "exits": 1343,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1343,
+        "avg_loss_pct": -0.1586,
+        "worst_loss_pct": -0.3527,
+        "avg_win_pct": 0.2054,
+        "profit_factor": 0.2888,
+        "median_hold_seconds": 177.0,
+        "avg_hold_seconds": 478.88,
+        "entry_reasons": {
+          "SL-Reentry": 908,
+          "Zero-Initial-Reentry": 435
+        },
+        "exit_reasons": {
+          "SL": 1343
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 908,
+            "win_rate_pct": 18.39,
+            "net_pnl": -9181.8,
+            "avg_pnl_pct": -0.0926
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 435,
+            "win_rate_pct": 18.39,
+            "net_pnl": -5691.58,
+            "avg_pnl_pct": -0.0897
+          }
+        },
+        "median_seconds_from_virtual_sl": 157.0,
+        "median_entry_vs_stop_bps": 10.588,
+        "median_entry_vs_trigger_bps": 5.5365
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1058,
+          "win_rate_pct": 18.43,
+          "avg_pnl_pct": -0.0917,
+          "median_pnl_pct": -0.149,
+          "pnl_std_pct": 0.1705,
+          "worst_pnl_pct": -0.3492,
+          "net_pnl_value": -11739.87,
+          "max_pnl_drawdown": -11773.02,
+          "profit_factor": 0.29,
+          "entry_types": {
+            "SHORT": 548,
+            "BUY": 510
+          },
+          "entry_reasons": {
+            "SL-Reentry": 713,
+            "Zero-Initial-Reentry": 345
+          },
+          "exit_reasons": {
+            "SL": 1058
+          }
+        },
+        "t3_swing": {
+          "trades": 285,
+          "win_rate_pct": 18.25,
+          "avg_pnl_pct": -0.0916,
+          "median_pnl_pct": -0.1471,
+          "pnl_std_pct": 0.1526,
+          "worst_pnl_pct": -0.3527,
+          "net_pnl_value": -3133.5,
+          "max_pnl_drawdown": -3233.93,
+          "profit_factor": 0.2844,
+          "entry_types": {
+            "SHORT": 160,
+            "BUY": 125
+          },
+          "entry_reasons": {
+            "SL-Reentry": 195,
+            "Zero-Initial-Reentry": 90
+          },
+          "exit_reasons": {
+            "SL": 285
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 388,
+            "t3_swing": 98
+          },
+          "short": {
+            "original_t2": 368,
+            "t3_swing": 112
+          }
+        },
+        "virtual_sl": 535,
+        "pending_expired": 294,
+        "pending_triggered": 1343,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 535,
+          "SL-Reentry": 1343
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 435,
+          "SL-Reentry": 908
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 209,
+          "Zero-Initial-Reentry": 85
+        },
+        "real_sl": 1343,
+        "real_sl_reentry_armed": 1343,
+        "virtual_expired_without_sl": 430,
+        "max_trades_blocked": 241
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p4atr_turn_0p1atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -23299.53,
+        "return_pct_delta": -23.3,
+        "max_dd_pct_delta": -23.29,
+        "trades_delta": 816,
+        "win_rate_pct_delta": -7.71,
+        "sharpe_delta": -2.2
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p4atr_turn_0p15atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.15 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p4atr_turn_0p15atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.15,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.15 ATR."
+      },
+      "summary": {
+        "final_balance": 56077.46,
+        "return_pct": -43.92,
+        "max_dd_pct": -43.91,
+        "trades": 1198,
+        "win_rate_pct": 16.36,
+        "sharpe": -6.81,
+        "first_entry": "2026-01-01T15:36:08+00:00",
+        "last_exit": "2026-03-31T23:07:01+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 804,
+          "Zero-Initial-Reentry": 394
+        },
+        "exit_reasons": {
+          "SL": 1198
+        },
+        "entry_types": {
+          "SHORT": 631,
+          "BUY": 567
+        },
+        "integrity": {
+          "rows": 2396,
+          "entries": 1198,
+          "exits": 1198,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1198,
+        "avg_loss_pct": -0.1845,
+        "worst_loss_pct": -0.4406,
+        "avg_win_pct": 0.2054,
+        "profit_factor": 0.3653,
+        "median_hold_seconds": 268.0,
+        "avg_hold_seconds": 595.35,
+        "entry_reasons": {
+          "SL-Reentry": 804,
+          "Zero-Initial-Reentry": 394
+        },
+        "exit_reasons": {
+          "SL": 1198
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 804,
+            "win_rate_pct": 25.25,
+            "net_pnl": -8174.17,
+            "avg_pnl_pct": -0.0869
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 394,
+            "win_rate_pct": 24.62,
+            "net_pnl": -5110.4,
+            "avg_pnl_pct": -0.0868
+          }
+        },
+        "median_seconds_from_virtual_sl": 231.0,
+        "median_entry_vs_stop_bps": 13.0443,
+        "median_entry_vs_trigger_bps": 5.5525
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 931,
+          "win_rate_pct": 24.27,
+          "avg_pnl_pct": -0.0882,
+          "median_pnl_pct": -0.1651,
+          "pnl_std_pct": 0.2075,
+          "worst_pnl_pct": -0.4406,
+          "net_pnl_value": -10550.66,
+          "max_pnl_drawdown": -10582.33,
+          "profit_factor": 0.3626,
+          "entry_types": {
+            "SHORT": 472,
+            "BUY": 459
+          },
+          "entry_reasons": {
+            "SL-Reentry": 621,
+            "Zero-Initial-Reentry": 310
+          },
+          "exit_reasons": {
+            "SL": 931
+          }
+        },
+        "t3_swing": {
+          "trades": 267,
+          "win_rate_pct": 27.72,
+          "avg_pnl_pct": -0.0819,
+          "median_pnl_pct": -0.1613,
+          "pnl_std_pct": 0.1832,
+          "worst_pnl_pct": -0.3366,
+          "net_pnl_value": -2733.91,
+          "max_pnl_drawdown": -2845.97,
+          "profit_factor": 0.3759,
+          "entry_types": {
+            "SHORT": 159,
+            "BUY": 108
+          },
+          "entry_reasons": {
+            "SL-Reentry": 183,
+            "Zero-Initial-Reentry": 84
+          },
+          "exit_reasons": {
+            "SL": 267
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 358,
+            "t3_swing": 95
+          },
+          "short": {
+            "original_t2": 362,
+            "t3_swing": 110
+          }
+        },
+        "virtual_sl": 509,
+        "pending_expired": 348,
+        "pending_triggered": 1198,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 509,
+          "SL-Reentry": 1198
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 394,
+          "SL-Reentry": 804
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 244,
+          "Zero-Initial-Reentry": 104
+        },
+        "real_sl": 1198,
+        "real_sl_reentry_armed": 1198,
+        "virtual_expired_without_sl": 416,
+        "max_trades_blocked": 160
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p4atr_turn_0p15atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -19771.38,
+        "return_pct_delta": -19.77,
+        "max_dd_pct_delta": -19.76,
+        "trades_delta": 671,
+        "win_rate_pct_delta": -3.56,
+        "sharpe_delta": -0.29
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p4atr_turn_0p2atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.2 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p4atr_turn_0p2atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.2,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.2 ATR."
+      },
+      "summary": {
+        "final_balance": 60642.41,
+        "return_pct": -39.36,
+        "max_dd_pct": -39.35,
+        "trades": 1032,
+        "win_rate_pct": 20.83,
+        "sharpe": -5.57,
+        "first_entry": "2026-01-01T15:36:08+00:00",
+        "last_exit": "2026-03-31T22:00:00+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 681,
+          "Zero-Initial-Reentry": 351
+        },
+        "exit_reasons": {
+          "SL": 1032
+        },
+        "entry_types": {
+          "SHORT": 548,
+          "BUY": 484
+        },
+        "integrity": {
+          "rows": 2064,
+          "entries": 1032,
+          "exits": 1032,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1032,
+        "avg_loss_pct": -0.2075,
+        "worst_loss_pct": -0.5671,
+        "avg_win_pct": 0.2198,
+        "profit_factor": 0.448,
+        "median_hold_seconds": 360.5,
+        "avg_hold_seconds": 747.22,
+        "entry_reasons": {
+          "SL-Reentry": 681,
+          "Zero-Initial-Reentry": 351
+        },
+        "exit_reasons": {
+          "SL": 1032
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 681,
+            "win_rate_pct": 27.9,
+            "net_pnl": -7465.94,
+            "avg_pnl_pct": -0.0871
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 351,
+            "win_rate_pct": 33.05,
+            "net_pnl": -3730.69,
+            "avg_pnl_pct": -0.0686
+          }
+        },
+        "median_seconds_from_virtual_sl": 320.5,
+        "median_entry_vs_stop_bps": 15.4113,
+        "median_entry_vs_trigger_bps": 5.5426
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 810,
+          "win_rate_pct": 28.64,
+          "avg_pnl_pct": -0.0823,
+          "median_pnl_pct": -0.1737,
+          "pnl_std_pct": 0.2355,
+          "worst_pnl_pct": -0.5671,
+          "net_pnl_value": -9103.57,
+          "max_pnl_drawdown": -9148.73,
+          "profit_factor": 0.4438,
+          "entry_types": {
+            "SHORT": 414,
+            "BUY": 396
+          },
+          "entry_reasons": {
+            "SL-Reentry": 529,
+            "Zero-Initial-Reentry": 281
+          },
+          "exit_reasons": {
+            "SL": 810
+          }
+        },
+        "t3_swing": {
+          "trades": 222,
+          "win_rate_pct": 33.33,
+          "avg_pnl_pct": -0.0753,
+          "median_pnl_pct": -0.1712,
+          "pnl_std_pct": 0.2085,
+          "worst_pnl_pct": -0.4256,
+          "net_pnl_value": -2093.06,
+          "max_pnl_drawdown": -2229.36,
+          "profit_factor": 0.4658,
+          "entry_types": {
+            "SHORT": 134,
+            "BUY": 88
+          },
+          "entry_reasons": {
+            "SL-Reentry": 152,
+            "Zero-Initial-Reentry": 70
+          },
+          "exit_reasons": {
+            "SL": 222
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 339,
+            "t3_swing": 94
+          },
+          "short": {
+            "original_t2": 344,
+            "t3_swing": 102
+          }
+        },
+        "virtual_sl": 485,
+        "pending_expired": 404,
+        "pending_triggered": 1032,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 485,
+          "SL-Reentry": 1032
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 351,
+          "SL-Reentry": 681
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 276,
+          "Zero-Initial-Reentry": 128
+        },
+        "real_sl": 1032,
+        "real_sl_reentry_armed": 1032,
+        "virtual_expired_without_sl": 393,
+        "max_trades_blocked": 81
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p4atr_turn_0p2atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -15206.43,
+        "return_pct_delta": -15.21,
+        "max_dd_pct_delta": -15.2,
+        "trades_delta": 505,
+        "win_rate_pct_delta": 0.91,
+        "sharpe_delta": 0.95
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p4atr_turn_0p3atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.3 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p4atr_turn_0p3atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.3,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on fixed turn confirmation of 0.3 ATR."
+      },
+      "summary": {
+        "final_balance": 65527.49,
+        "return_pct": -34.47,
+        "max_dd_pct": -34.46,
+        "trades": 814,
+        "win_rate_pct": 25.68,
+        "sharpe": -5.1,
+        "first_entry": "2026-01-01T15:36:36+00:00",
+        "last_exit": "2026-03-31T22:27:10+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 508,
+          "Zero-Initial-Reentry": 306
+        },
+        "exit_reasons": {
+          "SL": 814
+        },
+        "entry_types": {
+          "SHORT": 439,
+          "BUY": 375
+        },
+        "integrity": {
+          "rows": 1628,
+          "entries": 814,
+          "exits": 814,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 814,
+        "avg_loss_pct": -0.2597,
+        "worst_loss_pct": -0.8094,
+        "avg_win_pct": 0.2142,
+        "profit_factor": 0.4615,
+        "median_hold_seconds": 560.0,
+        "avg_hold_seconds": 968.43,
+        "entry_reasons": {
+          "SL-Reentry": 508,
+          "Zero-Initial-Reentry": 306
+        },
+        "exit_reasons": {
+          "SL": 814
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 508,
+            "win_rate_pct": 35.43,
+            "net_pnl": -6474.57,
+            "avg_pnl_pct": -0.088
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 306,
+            "win_rate_pct": 38.89,
+            "net_pnl": -4032.89,
+            "avg_pnl_pct": -0.0816
+          }
+        },
+        "median_seconds_from_virtual_sl": 467.0,
+        "median_entry_vs_stop_bps": 20.4314,
+        "median_entry_vs_trigger_bps": 5.6791
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 615,
+          "win_rate_pct": 36.26,
+          "avg_pnl_pct": -0.0868,
+          "median_pnl_pct": -0.1968,
+          "pnl_std_pct": 0.2734,
+          "worst_pnl_pct": -0.8094,
+          "net_pnl_value": -8142.63,
+          "max_pnl_drawdown": -8168.65,
+          "profit_factor": 0.4622,
+          "entry_types": {
+            "SHORT": 316,
+            "BUY": 299
+          },
+          "entry_reasons": {
+            "SL-Reentry": 375,
+            "Zero-Initial-Reentry": 240
+          },
+          "exit_reasons": {
+            "SL": 615
+          }
+        },
+        "t3_swing": {
+          "trades": 199,
+          "win_rate_pct": 38.19,
+          "avg_pnl_pct": -0.082,
+          "median_pnl_pct": -0.1787,
+          "pnl_std_pct": 0.2428,
+          "worst_pnl_pct": -0.5449,
+          "net_pnl_value": -2364.83,
+          "max_pnl_drawdown": -2548.67,
+          "profit_factor": 0.4591,
+          "entry_types": {
+            "SHORT": 123,
+            "BUY": 76
+          },
+          "entry_reasons": {
+            "SL-Reentry": 133,
+            "Zero-Initial-Reentry": 66
+          },
+          "exit_reasons": {
+            "SL": 199
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 332,
+            "t3_swing": 96
+          },
+          "short": {
+            "original_t2": 335,
+            "t3_swing": 102
+          }
+        },
+        "virtual_sl": 488,
+        "pending_expired": 448,
+        "pending_triggered": 814,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 488,
+          "SL-Reentry": 814
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 306,
+          "SL-Reentry": 508
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 267,
+          "Zero-Initial-Reentry": 181
+        },
+        "real_sl": 814,
+        "real_sl_reentry_armed": 814,
+        "virtual_expired_without_sl": 376,
+        "max_trades_blocked": 40
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p4atr_turn_0p3atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -10321.35,
+        "return_pct_delta": -10.32,
+        "max_dd_pct_delta": -10.31,
+        "trades_delta": 287,
+        "win_rate_pct_delta": 5.76,
+        "sharpe_delta": 1.42
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p6atr_turn_0p1atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on fixed turn confirmation of 0.1 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p6atr_turn_0p1atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.6,
+        "entry_offset_atr": 0.1,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on fixed turn confirmation of 0.1 ATR."
+      },
+      "summary": {
+        "final_balance": 62716.36,
+        "return_pct": -37.28,
+        "max_dd_pct": -37.27,
+        "trades": 975,
+        "win_rate_pct": 12.1,
+        "sharpe": -7.63,
+        "first_entry": "2026-01-01T16:33:15+00:00",
+        "last_exit": "2026-03-31T23:59:59+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 659,
+          "Zero-Initial-Reentry": 316
+        },
+        "exit_reasons": {
+          "SL": 974,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "SHORT": 505,
+          "BUY": 470
+        },
+        "integrity": {
+          "rows": 1950,
+          "entries": 975,
+          "exits": 975,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 975,
+        "avg_loss_pct": -0.1615,
+        "worst_loss_pct": -0.393,
+        "avg_win_pct": 0.2349,
+        "profit_factor": 0.3109,
+        "median_hold_seconds": 163.0,
+        "avg_hold_seconds": 439.9,
+        "entry_reasons": {
+          "SL-Reentry": 659,
+          "Zero-Initial-Reentry": 316
+        },
+        "exit_reasons": {
+          "SL": 974,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 659,
+            "win_rate_pct": 18.06,
+            "net_pnl": -6787.66,
+            "avg_pnl_pct": -0.0873
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 316,
+            "win_rate_pct": 17.72,
+            "net_pnl": -4864.55,
+            "avg_pnl_pct": -0.0968
+          }
+        },
+        "median_seconds_from_virtual_sl": 140.0,
+        "median_entry_vs_stop_bps": 10.6952,
+        "median_entry_vs_trigger_bps": 5.5468
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 777,
+          "win_rate_pct": 18.92,
+          "avg_pnl_pct": -0.0862,
+          "median_pnl_pct": -0.1501,
+          "pnl_std_pct": 0.1983,
+          "worst_pnl_pct": -0.393,
+          "net_pnl_value": -8787.26,
+          "max_pnl_drawdown": -8763.31,
+          "profit_factor": 0.3422,
+          "entry_types": {
+            "SHORT": 418,
+            "BUY": 359
+          },
+          "entry_reasons": {
+            "SL-Reentry": 531,
+            "Zero-Initial-Reentry": 246
+          },
+          "exit_reasons": {
+            "SL": 776,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "t3_swing": {
+          "trades": 198,
+          "win_rate_pct": 14.14,
+          "avg_pnl_pct": -0.1065,
+          "median_pnl_pct": -0.1483,
+          "pnl_std_pct": 0.139,
+          "worst_pnl_pct": -0.2504,
+          "net_pnl_value": -2864.95,
+          "max_pnl_drawdown": -2840.14,
+          "profit_factor": 0.193,
+          "entry_types": {
+            "BUY": 111,
+            "SHORT": 87
+          },
+          "entry_reasons": {
+            "SL-Reentry": 128,
+            "Zero-Initial-Reentry": 70
+          },
+          "exit_reasons": {
+            "SL": 198
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 401,
+            "t3_swing": 116
+          },
+          "short": {
+            "original_t2": 404,
+            "t3_swing": 112
+          }
+        },
+        "virtual_sl": 387,
+        "pending_expired": 185,
+        "pending_triggered": 975,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 387,
+          "SL-Reentry": 974
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 316,
+          "SL-Reentry": 659
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 123,
+          "Zero-Initial-Reentry": 62
+        },
+        "real_sl": 974,
+        "real_sl_reentry_armed": 974,
+        "virtual_expired_without_sl": 646,
+        "max_trades_blocked": 201
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p6atr_turn_0p1atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -13132.48,
+        "return_pct_delta": -13.13,
+        "max_dd_pct_delta": -13.12,
+        "trades_delta": 448,
+        "win_rate_pct_delta": -7.82,
+        "sharpe_delta": -1.11
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p6atr_turn_0p2atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on fixed turn confirmation of 0.2 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p6atr_turn_0p2atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.6,
+        "entry_offset_atr": 0.2,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on fixed turn confirmation of 0.2 ATR."
+      },
+      "summary": {
+        "final_balance": 66446.27,
+        "return_pct": -33.55,
+        "max_dd_pct": -33.54,
+        "trades": 798,
+        "win_rate_pct": 18.42,
+        "sharpe": -6.62,
+        "first_entry": "2026-01-01T16:37:51+00:00",
+        "last_exit": "2026-03-31T16:37:11+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 541,
+          "Zero-Initial-Reentry": 257
+        },
+        "exit_reasons": {
+          "SL": 798
+        },
+        "entry_types": {
+          "SHORT": 418,
+          "BUY": 380
+        },
+        "integrity": {
+          "rows": 1596,
+          "entries": 798,
+          "exits": 798,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 798,
+        "avg_loss_pct": -0.2086,
+        "worst_loss_pct": -0.4686,
+        "avg_win_pct": 0.2147,
+        "profit_factor": 0.3685,
+        "median_hold_seconds": 341.0,
+        "avg_hold_seconds": 682.91,
+        "entry_reasons": {
+          "SL-Reentry": 541,
+          "Zero-Initial-Reentry": 257
+        },
+        "exit_reasons": {
+          "SL": 798
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 541,
+            "win_rate_pct": 29.02,
+            "net_pnl": -6058.02,
+            "avg_pnl_pct": -0.084
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 257,
+            "win_rate_pct": 23.35,
+            "net_pnl": -4838.29,
+            "avg_pnl_pct": -0.1135
+          }
+        },
+        "median_seconds_from_virtual_sl": 321.0,
+        "median_entry_vs_stop_bps": 15.4451,
+        "median_entry_vs_trigger_bps": 5.5585
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 626,
+          "win_rate_pct": 27.48,
+          "avg_pnl_pct": -0.0921,
+          "median_pnl_pct": -0.1793,
+          "pnl_std_pct": 0.2327,
+          "worst_pnl_pct": -0.4686,
+          "net_pnl_value": -8398.38,
+          "max_pnl_drawdown": -8372.11,
+          "profit_factor": 0.3856,
+          "entry_types": {
+            "SHORT": 337,
+            "BUY": 289
+          },
+          "entry_reasons": {
+            "SL-Reentry": 427,
+            "Zero-Initial-Reentry": 199
+          },
+          "exit_reasons": {
+            "SL": 626
+          }
+        },
+        "t3_swing": {
+          "trades": 172,
+          "win_rate_pct": 26.16,
+          "avg_pnl_pct": -0.0987,
+          "median_pnl_pct": -0.179,
+          "pnl_std_pct": 0.1884,
+          "worst_pnl_pct": -0.3743,
+          "net_pnl_value": -2497.93,
+          "max_pnl_drawdown": -2498.29,
+          "profit_factor": 0.3032,
+          "entry_types": {
+            "BUY": 91,
+            "SHORT": 81
+          },
+          "entry_reasons": {
+            "SL-Reentry": 114,
+            "Zero-Initial-Reentry": 58
+          },
+          "exit_reasons": {
+            "SL": 172
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 369,
+            "t3_swing": 106
+          },
+          "short": {
+            "original_t2": 370,
+            "t3_swing": 102
+          }
+        },
+        "virtual_sl": 349,
+        "pending_expired": 259,
+        "pending_triggered": 798,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 349,
+          "SL-Reentry": 798
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 257,
+          "SL-Reentry": 541
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 173,
+          "Zero-Initial-Reentry": 86
+        },
+        "real_sl": 798,
+        "real_sl_reentry_armed": 798,
+        "virtual_expired_without_sl": 598,
+        "max_trades_blocked": 89
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p6atr_turn_0p2atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -9402.57,
+        "return_pct_delta": -9.4,
+        "max_dd_pct_delta": -9.39,
+        "trades_delta": 271,
+        "win_rate_pct_delta": -1.5,
+        "sharpe_delta": -0.1
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p8atr_turn_0p1atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.8 ATR; enter on fixed turn confirmation of 0.1 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p8atr_turn_0p1atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.8,
+        "entry_offset_atr": 0.1,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.8 ATR; enter on fixed turn confirmation of 0.1 ATR."
+      },
+      "summary": {
+        "final_balance": 71059.94,
+        "return_pct": -28.94,
+        "max_dd_pct": -28.93,
+        "trades": 687,
+        "win_rate_pct": 11.94,
+        "sharpe": -8.87,
+        "first_entry": "2026-01-02T13:16:24+00:00",
+        "last_exit": "2026-03-31T15:13:55+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 449,
+          "Zero-Initial-Reentry": 238
+        },
+        "exit_reasons": {
+          "SL": 687
+        },
+        "entry_types": {
+          "SHORT": 380,
+          "BUY": 307
+        },
+        "integrity": {
+          "rows": 1374,
+          "entries": 687,
+          "exits": 687,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 687,
+        "avg_loss_pct": -0.1605,
+        "worst_loss_pct": -0.3428,
+        "avg_win_pct": 0.2172,
+        "profit_factor": 0.2602,
+        "median_hold_seconds": 130.0,
+        "avg_hold_seconds": 419.44,
+        "entry_reasons": {
+          "SL-Reentry": 449,
+          "Zero-Initial-Reentry": 238
+        },
+        "exit_reasons": {
+          "SL": 687
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 449,
+            "win_rate_pct": 18.49,
+            "net_pnl": -5447.0,
+            "avg_pnl_pct": -0.0916
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 238,
+            "win_rate_pct": 14.71,
+            "net_pnl": -4114.66,
+            "avg_pnl_pct": -0.1032
+          }
+        },
+        "median_seconds_from_virtual_sl": 122.0,
+        "median_entry_vs_stop_bps": 10.618,
+        "median_entry_vs_trigger_bps": 5.4868
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 518,
+          "win_rate_pct": 16.6,
+          "avg_pnl_pct": -0.097,
+          "median_pnl_pct": -0.153,
+          "pnl_std_pct": 0.1803,
+          "worst_pnl_pct": -0.3428,
+          "net_pnl_value": -7154.6,
+          "max_pnl_drawdown": -7151.54,
+          "profit_factor": 0.2735,
+          "entry_types": {
+            "SHORT": 277,
+            "BUY": 241
+          },
+          "entry_reasons": {
+            "SL-Reentry": 336,
+            "Zero-Initial-Reentry": 182
+          },
+          "exit_reasons": {
+            "SL": 518
+          }
+        },
+        "t3_swing": {
+          "trades": 169,
+          "win_rate_pct": 18.93,
+          "avg_pnl_pct": -0.0911,
+          "median_pnl_pct": -0.1444,
+          "pnl_std_pct": 0.1377,
+          "worst_pnl_pct": -0.2485,
+          "net_pnl_value": -2407.06,
+          "max_pnl_drawdown": -2382.1,
+          "profit_factor": 0.2178,
+          "entry_types": {
+            "SHORT": 103,
+            "BUY": 66
+          },
+          "entry_reasons": {
+            "SL-Reentry": 113,
+            "Zero-Initial-Reentry": 56
+          },
+          "exit_reasons": {
+            "SL": 169
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 406,
+            "t3_swing": 118
+          },
+          "short": {
+            "original_t2": 412,
+            "t3_swing": 115
+          }
+        },
+        "virtual_sl": 276,
+        "pending_expired": 155,
+        "pending_triggered": 687,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 276,
+          "SL-Reentry": 687
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 238,
+          "SL-Reentry": 449
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 119,
+          "Zero-Initial-Reentry": 36
+        },
+        "real_sl": 687,
+        "real_sl_reentry_armed": 687,
+        "virtual_expired_without_sl": 774,
+        "max_trades_blocked": 121
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p8atr_turn_0p1atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -4788.9,
+        "return_pct_delta": -4.79,
+        "max_dd_pct_delta": -4.78,
+        "trades_delta": 160,
+        "win_rate_pct_delta": -7.98,
+        "sharpe_delta": -2.35
+      }
+    },
+    {
+      "variant": "fixed_vsl_0p8atr_turn_0p2atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.8 ATR; enter on fixed turn confirmation of 0.2 ATR.",
+      "params": {
+        "name": "fixed_vsl_0p8atr_turn_0p2atr",
+        "turn_mode": "fixed",
+        "virtual_sl_atr": 0.8,
+        "entry_offset_atr": 0.2,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.8 ATR; enter on fixed turn confirmation of 0.2 ATR."
+      },
+      "summary": {
+        "final_balance": 75848.84,
+        "return_pct": -24.15,
+        "max_dd_pct": -24.15,
+        "trades": 527,
+        "win_rate_pct": 19.92,
+        "sharpe": -6.52,
+        "first_entry": "2026-01-02T13:17:17+00:00",
+        "last_exit": "2026-03-31T16:01:09+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 333,
+          "Zero-Initial-Reentry": 194
+        },
+        "exit_reasons": {
+          "SL": 527
+        },
+        "entry_types": {
+          "SHORT": 284,
+          "BUY": 243
+        },
+        "integrity": {
+          "rows": 1054,
+          "entries": 527,
+          "exits": 527,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 527,
+        "avg_loss_pct": -0.2158,
+        "worst_loss_pct": -0.5719,
+        "avg_win_pct": 0.2168,
+        "profit_factor": 0.3744,
+        "median_hold_seconds": 326.0,
+        "avg_hold_seconds": 690.39,
+        "entry_reasons": {
+          "SL-Reentry": 333,
+          "Zero-Initial-Reentry": 194
+        },
+        "exit_reasons": {
+          "SL": 527
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 333,
+            "win_rate_pct": 29.73,
+            "net_pnl": -4204.51,
+            "avg_pnl_pct": -0.0853
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 194,
+            "win_rate_pct": 25.26,
+            "net_pnl": -3710.44,
+            "avg_pnl_pct": -0.1098
+          }
+        },
+        "median_seconds_from_virtual_sl": 310.0,
+        "median_entry_vs_stop_bps": 15.6975,
+        "median_entry_vs_trigger_bps": 5.5861
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 395,
+          "win_rate_pct": 28.86,
+          "avg_pnl_pct": -0.0906,
+          "median_pnl_pct": -0.1902,
+          "pnl_std_pct": 0.241,
+          "worst_pnl_pct": -0.5719,
+          "net_pnl_value": -5706.78,
+          "max_pnl_drawdown": -5822.2,
+          "profit_factor": 0.4026,
+          "entry_types": {
+            "SHORT": 203,
+            "BUY": 192
+          },
+          "entry_reasons": {
+            "SL-Reentry": 249,
+            "Zero-Initial-Reentry": 146
+          },
+          "exit_reasons": {
+            "SL": 395
+          }
+        },
+        "t3_swing": {
+          "trades": 132,
+          "win_rate_pct": 25.76,
+          "avg_pnl_pct": -0.1056,
+          "median_pnl_pct": -0.1815,
+          "pnl_std_pct": 0.1899,
+          "worst_pnl_pct": -0.4607,
+          "net_pnl_value": -2208.17,
+          "max_pnl_drawdown": -2209.14,
+          "profit_factor": 0.2876,
+          "entry_types": {
+            "SHORT": 81,
+            "BUY": 51
+          },
+          "entry_reasons": {
+            "SL-Reentry": 84,
+            "Zero-Initial-Reentry": 48
+          },
+          "exit_reasons": {
+            "SL": 132
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 383,
+            "t3_swing": 116
+          },
+          "short": {
+            "original_t2": 394,
+            "t3_swing": 109
+          }
+        },
+        "virtual_sl": 262,
+        "pending_expired": 205,
+        "pending_triggered": 527,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 262,
+          "SL-Reentry": 527
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 194,
+          "SL-Reentry": 333
+        },
+        "pending_expired_by_reason": {
+          "Zero-Initial-Reentry": 66,
+          "SL-Reentry": 139
+        },
+        "real_sl": 527,
+        "real_sl_reentry_armed": 527,
+        "virtual_expired_without_sl": 739,
+        "max_trades_blocked": 57
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_fixed_vsl_0p8atr_turn_0p2atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": 0.0,
+        "return_pct_delta": 0.0,
+        "max_dd_pct_delta": 0.0,
+        "trades_delta": 0,
+        "win_rate_pct_delta": 0.0,
+        "sharpe_delta": 0.0
+      }
+    },
+    {
+      "variant": "dynamic_vsl_0p2atr_turn_0p1atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on dynamic turn confirmation of 0.1 ATR.",
+      "params": {
+        "name": "dynamic_vsl_0p2atr_turn_0p1atr",
+        "turn_mode": "dynamic",
+        "virtual_sl_atr": 0.2,
+        "entry_offset_atr": 0.1,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on dynamic turn confirmation of 0.1 ATR."
+      },
+      "summary": {
+        "final_balance": 37150.24,
+        "return_pct": -62.85,
+        "max_dd_pct": -62.84,
+        "trades": 2348,
+        "win_rate_pct": 4.26,
+        "sharpe": -10.23,
+        "first_entry": "2026-01-01T07:20:33+00:00",
+        "last_exit": "2026-03-31T23:29:45+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1373,
+          "Zero-Initial-Reentry": 975
+        },
+        "exit_reasons": {
+          "SL": 2348
+        },
+        "entry_types": {
+          "BUY": 1193,
+          "SHORT": 1155
+        },
+        "integrity": {
+          "rows": 4696,
+          "entries": 2348,
+          "exits": 2348,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2348,
+        "avg_loss_pct": -0.0978,
+        "worst_loss_pct": -0.3206,
+        "avg_win_pct": 0.2582,
+        "profit_factor": 0.173,
+        "median_hold_seconds": 1.0,
+        "avg_hold_seconds": 166.45,
+        "entry_reasons": {
+          "SL-Reentry": 1373,
+          "Zero-Initial-Reentry": 975
+        },
+        "exit_reasons": {
+          "SL": 2348
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 1373,
+            "win_rate_pct": 5.17,
+            "net_pnl": -7784.11,
+            "avg_pnl_pct": -0.0744
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 975,
+            "win_rate_pct": 7.79,
+            "net_pnl": -9456.52,
+            "avg_pnl_pct": -0.0771
+          }
+        },
+        "median_seconds_from_virtual_sl": 54.0,
+        "median_entry_vs_stop_bps": 5.229,
+        "median_entry_vs_trigger_bps": 5.5088
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1777,
+          "win_rate_pct": 5.8,
+          "avg_pnl_pct": -0.0755,
+          "median_pnl_pct": -0.0942,
+          "pnl_std_pct": 0.1217,
+          "worst_pnl_pct": -0.2432,
+          "net_pnl_value": -13005.16,
+          "max_pnl_drawdown": -12983.89,
+          "profit_factor": 0.1761,
+          "entry_types": {
+            "BUY": 890,
+            "SHORT": 887
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1034,
+            "Zero-Initial-Reentry": 743
+          },
+          "exit_reasons": {
+            "SL": 1777
+          }
+        },
+        "t3_swing": {
+          "trades": 571,
+          "win_rate_pct": 7.71,
+          "avg_pnl_pct": -0.0758,
+          "median_pnl_pct": -0.0921,
+          "pnl_std_pct": 0.1023,
+          "worst_pnl_pct": -0.3206,
+          "net_pnl_value": -4235.47,
+          "max_pnl_drawdown": -4296.92,
+          "profit_factor": 0.1632,
+          "entry_types": {
+            "BUY": 303,
+            "SHORT": 268
+          },
+          "entry_reasons": {
+            "SL-Reentry": 339,
+            "Zero-Initial-Reentry": 232
+          },
+          "exit_reasons": {
+            "SL": 571
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 600,
+            "t3_swing": 169
+          },
+          "short": {
+            "original_t2": 628,
+            "t3_swing": 164
+          }
+        },
+        "virtual_sl": 1172,
+        "pending_expired": 0,
+        "pending_triggered": 2348,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 1172,
+          "SL-Reentry": 2348
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 975,
+          "SL-Reentry": 1373
+        },
+        "pending_expired_by_reason": {},
+        "real_sl": 2348,
+        "real_sl_reentry_armed": 2348,
+        "virtual_expired_without_sl": 389,
+        "max_trades_blocked": 1171
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_dynamic_vsl_0p2atr_turn_0p1atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -38698.6,
+        "return_pct_delta": -38.7,
+        "max_dd_pct_delta": -38.69,
+        "trades_delta": 1821,
+        "win_rate_pct_delta": -15.66,
+        "sharpe_delta": -3.71
+      }
+    },
+    {
+      "variant": "dynamic_vsl_0p2atr_turn_0p2atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on dynamic turn confirmation of 0.2 ATR.",
+      "params": {
+        "name": "dynamic_vsl_0p2atr_turn_0p2atr",
+        "turn_mode": "dynamic",
+        "virtual_sl_atr": 0.2,
+        "entry_offset_atr": 0.2,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.2 ATR; enter on dynamic turn confirmation of 0.2 ATR."
+      },
+      "summary": {
+        "final_balance": 31997.53,
+        "return_pct": -68.0,
+        "max_dd_pct": -68.0,
+        "trades": 2674,
+        "win_rate_pct": 7.33,
+        "sharpe": -7.84,
+        "first_entry": "2026-01-01T07:26:03+00:00",
+        "last_exit": "2026-03-31T23:15:17+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1819,
+          "Zero-Initial-Reentry": 855
+        },
+        "exit_reasons": {
+          "SL": 2674
+        },
+        "entry_types": {
+          "SHORT": 1358,
+          "BUY": 1316
+        },
+        "integrity": {
+          "rows": 5348,
+          "entries": 2674,
+          "exits": 2674,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2674,
+        "avg_loss_pct": -0.109,
+        "worst_loss_pct": -0.5357,
+        "avg_win_pct": 0.2412,
+        "profit_factor": 0.2477,
+        "median_hold_seconds": 7.0,
+        "avg_hold_seconds": 254.31,
+        "entry_reasons": {
+          "SL-Reentry": 1819,
+          "Zero-Initial-Reentry": 855
+        },
+        "exit_reasons": {
+          "SL": 2674
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 1819,
+            "win_rate_pct": 10.01,
+            "net_pnl": -10240.45,
+            "avg_pnl_pct": -0.0692
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 855,
+            "win_rate_pct": 11.7,
+            "net_pnl": -7816.79,
+            "avg_pnl_pct": -0.078
+          }
+        },
+        "median_seconds_from_virtual_sl": 210.0,
+        "median_entry_vs_stop_bps": 5.8575,
+        "median_entry_vs_trigger_bps": 5.4944
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 2028,
+          "win_rate_pct": 9.71,
+          "avg_pnl_pct": -0.0737,
+          "median_pnl_pct": -0.0868,
+          "pnl_std_pct": 0.1497,
+          "worst_pnl_pct": -0.3915,
+          "net_pnl_value": -13769.81,
+          "max_pnl_drawdown": -13743.9,
+          "profit_factor": 0.2531,
+          "entry_types": {
+            "SHORT": 1043,
+            "BUY": 985
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1376,
+            "Zero-Initial-Reentry": 652
+          },
+          "exit_reasons": {
+            "SL": 2028
+          }
+        },
+        "t3_swing": {
+          "trades": 646,
+          "win_rate_pct": 13.16,
+          "avg_pnl_pct": -0.0668,
+          "median_pnl_pct": -0.071,
+          "pnl_std_pct": 0.1326,
+          "worst_pnl_pct": -0.5357,
+          "net_pnl_value": -4287.43,
+          "max_pnl_drawdown": -4330.92,
+          "profit_factor": 0.2298,
+          "entry_types": {
+            "BUY": 331,
+            "SHORT": 315
+          },
+          "entry_reasons": {
+            "SL-Reentry": 443,
+            "Zero-Initial-Reentry": 203
+          },
+          "exit_reasons": {
+            "SL": 646
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 506,
+            "t3_swing": 146
+          },
+          "short": {
+            "original_t2": 528,
+            "t3_swing": 140
+          }
+        },
+        "virtual_sl": 980,
+        "pending_expired": 10,
+        "pending_triggered": 2674,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 980,
+          "SL-Reentry": 2674
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 855,
+          "SL-Reentry": 1819
+        },
+        "pending_expired_by_reason": {
+          "Zero-Initial-Reentry": 3,
+          "SL-Reentry": 7
+        },
+        "real_sl": 2674,
+        "real_sl_reentry_armed": 2674,
+        "virtual_expired_without_sl": 340,
+        "max_trades_blocked": 969
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_dynamic_vsl_0p2atr_turn_0p2atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -43851.31,
+        "return_pct_delta": -43.85,
+        "max_dd_pct_delta": -43.85,
+        "trades_delta": 2147,
+        "win_rate_pct_delta": -12.59,
+        "sharpe_delta": -1.32
+      }
+    },
+    {
+      "variant": "dynamic_vsl_0p4atr_turn_0p05atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.05 ATR.",
+      "params": {
+        "name": "dynamic_vsl_0p4atr_turn_0p05atr",
+        "turn_mode": "dynamic",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.05,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.05 ATR."
+      },
+      "summary": {
+        "final_balance": 52298.03,
+        "return_pct": -47.7,
+        "max_dd_pct": -47.69,
+        "trades": 1516,
+        "win_rate_pct": 2.84,
+        "sharpe": -16.17,
+        "first_entry": "2026-01-01T15:36:02+00:00",
+        "last_exit": "2026-03-31T22:32:14+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 832,
+          "Zero-Initial-Reentry": 684
+        },
+        "exit_reasons": {
+          "SL": 1516
+        },
+        "entry_types": {
+          "SHORT": 771,
+          "BUY": 745
+        },
+        "integrity": {
+          "rows": 3032,
+          "entries": 1516,
+          "exits": 1516,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1516,
+        "avg_loss_pct": -0.0916,
+        "worst_loss_pct": -0.2663,
+        "avg_win_pct": 0.2269,
+        "profit_factor": 0.0945,
+        "median_hold_seconds": 0.0,
+        "avg_hold_seconds": 122.2,
+        "entry_reasons": {
+          "SL-Reentry": 832,
+          "Zero-Initial-Reentry": 684
+        },
+        "exit_reasons": {
+          "SL": 1516
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 832,
+            "win_rate_pct": 3.73,
+            "net_pnl": -5321.45,
+            "avg_pnl_pct": -0.0761
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 684,
+            "win_rate_pct": 4.09,
+            "net_pnl": -8404.95,
+            "avg_pnl_pct": -0.083
+          }
+        },
+        "median_seconds_from_virtual_sl": 16.0,
+        "median_entry_vs_stop_bps": 4.6485,
+        "median_entry_vs_trigger_bps": 5.557
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1176,
+          "win_rate_pct": 3.91,
+          "avg_pnl_pct": -0.0791,
+          "median_pnl_pct": -0.092,
+          "pnl_std_pct": 0.0777,
+          "worst_pnl_pct": -0.2663,
+          "net_pnl_value": -10582.02,
+          "max_pnl_drawdown": -10567.67,
+          "profit_factor": 0.0919,
+          "entry_types": {
+            "SHORT": 603,
+            "BUY": 573
+          },
+          "entry_reasons": {
+            "SL-Reentry": 643,
+            "Zero-Initial-Reentry": 533
+          },
+          "exit_reasons": {
+            "SL": 1176
+          }
+        },
+        "t3_swing": {
+          "trades": 340,
+          "win_rate_pct": 3.82,
+          "avg_pnl_pct": -0.0797,
+          "median_pnl_pct": -0.0943,
+          "pnl_std_pct": 0.078,
+          "worst_pnl_pct": -0.1637,
+          "net_pnl_value": -3144.38,
+          "max_pnl_drawdown": -3136.92,
+          "profit_factor": 0.1031,
+          "entry_types": {
+            "BUY": 172,
+            "SHORT": 168
+          },
+          "entry_reasons": {
+            "SL-Reentry": 189,
+            "Zero-Initial-Reentry": 151
+          },
+          "exit_reasons": {
+            "SL": 340
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 521,
+            "t3_swing": 152
+          },
+          "short": {
+            "original_t2": 546,
+            "t3_swing": 143
+          }
+        },
+        "virtual_sl": 748,
+        "pending_expired": 0,
+        "pending_triggered": 1516,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 748,
+          "SL-Reentry": 1516
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 684,
+          "SL-Reentry": 832
+        },
+        "pending_expired_by_reason": {},
+        "real_sl": 1516,
+        "real_sl_reentry_armed": 1516,
+        "virtual_expired_without_sl": 613,
+        "max_trades_blocked": 748
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_dynamic_vsl_0p4atr_turn_0p05atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -23550.81,
+        "return_pct_delta": -23.55,
+        "max_dd_pct_delta": -23.54,
+        "trades_delta": 989,
+        "win_rate_pct_delta": -17.08,
+        "sharpe_delta": -9.65
+      }
+    },
+    {
+      "variant": "dynamic_vsl_0p4atr_turn_0p1atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.1 ATR.",
+      "params": {
+        "name": "dynamic_vsl_0p4atr_turn_0p1atr",
+        "turn_mode": "dynamic",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.1,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.1 ATR."
+      },
+      "summary": {
+        "final_balance": 50599.47,
+        "return_pct": -49.4,
+        "max_dd_pct": -49.39,
+        "trades": 1616,
+        "win_rate_pct": 4.39,
+        "sharpe": -10.8,
+        "first_entry": "2026-01-01T15:36:08+00:00",
+        "last_exit": "2026-03-31T22:36:20+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 950,
+          "Zero-Initial-Reentry": 666
+        },
+        "exit_reasons": {
+          "SL": 1616
+        },
+        "entry_types": {
+          "SHORT": 817,
+          "BUY": 799
+        },
+        "integrity": {
+          "rows": 3232,
+          "entries": 1616,
+          "exits": 1616,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1616,
+        "avg_loss_pct": -0.0961,
+        "worst_loss_pct": -0.2925,
+        "avg_win_pct": 0.2404,
+        "profit_factor": 0.17,
+        "median_hold_seconds": 0.0,
+        "avg_hold_seconds": 176.98,
+        "entry_reasons": {
+          "SL-Reentry": 950,
+          "Zero-Initial-Reentry": 666
+        },
+        "exit_reasons": {
+          "SL": 1616
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 950,
+            "win_rate_pct": 5.26,
+            "net_pnl": -6211.92,
+            "avg_pnl_pct": -0.0745
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 666,
+            "win_rate_pct": 7.96,
+            "net_pnl": -7229.92,
+            "avg_pnl_pct": -0.0749
+          }
+        },
+        "median_seconds_from_virtual_sl": 52.0,
+        "median_entry_vs_stop_bps": 4.8272,
+        "median_entry_vs_trigger_bps": 5.5118
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1260,
+          "win_rate_pct": 6.27,
+          "avg_pnl_pct": -0.0755,
+          "median_pnl_pct": -0.0885,
+          "pnl_std_pct": 0.1085,
+          "worst_pnl_pct": -0.2925,
+          "net_pnl_value": -10592.29,
+          "max_pnl_drawdown": -10603.43,
+          "profit_factor": 0.1559,
+          "entry_types": {
+            "SHORT": 642,
+            "BUY": 618
+          },
+          "entry_reasons": {
+            "SL-Reentry": 741,
+            "Zero-Initial-Reentry": 519
+          },
+          "exit_reasons": {
+            "SL": 1260
+          }
+        },
+        "t3_swing": {
+          "trades": 356,
+          "win_rate_pct": 6.74,
+          "avg_pnl_pct": -0.0718,
+          "median_pnl_pct": -0.089,
+          "pnl_std_pct": 0.1138,
+          "worst_pnl_pct": -0.2872,
+          "net_pnl_value": -2849.54,
+          "max_pnl_drawdown": -2984.1,
+          "profit_factor": 0.2183,
+          "entry_types": {
+            "BUY": 181,
+            "SHORT": 175
+          },
+          "entry_reasons": {
+            "SL-Reentry": 209,
+            "Zero-Initial-Reentry": 147
+          },
+          "exit_reasons": {
+            "SL": 356
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 509,
+            "t3_swing": 148
+          },
+          "short": {
+            "original_t2": 533,
+            "t3_swing": 139
+          }
+        },
+        "virtual_sl": 725,
+        "pending_expired": 0,
+        "pending_triggered": 1616,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 725,
+          "SL-Reentry": 1616
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 666,
+          "SL-Reentry": 950
+        },
+        "pending_expired_by_reason": {},
+        "real_sl": 1616,
+        "real_sl_reentry_armed": 1616,
+        "virtual_expired_without_sl": 603,
+        "max_trades_blocked": 725
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_dynamic_vsl_0p4atr_turn_0p1atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -25249.37,
+        "return_pct_delta": -25.25,
+        "max_dd_pct_delta": -25.24,
+        "trades_delta": 1089,
+        "win_rate_pct_delta": -15.53,
+        "sharpe_delta": -4.28
+      }
+    },
+    {
+      "variant": "dynamic_vsl_0p4atr_turn_0p15atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.15 ATR.",
+      "params": {
+        "name": "dynamic_vsl_0p4atr_turn_0p15atr",
+        "turn_mode": "dynamic",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.15,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.15 ATR."
+      },
+      "summary": {
+        "final_balance": 47518.08,
+        "return_pct": -52.48,
+        "max_dd_pct": -52.47,
+        "trades": 1761,
+        "win_rate_pct": 5.85,
+        "sharpe": -9.61,
+        "first_entry": "2026-01-01T15:36:08+00:00",
+        "last_exit": "2026-03-31T23:11:54+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1125,
+          "Zero-Initial-Reentry": 636
+        },
+        "exit_reasons": {
+          "SL": 1761
+        },
+        "entry_types": {
+          "SHORT": 897,
+          "BUY": 864
+        },
+        "integrity": {
+          "rows": 3522,
+          "entries": 1761,
+          "exits": 1761,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1761,
+        "avg_loss_pct": -0.103,
+        "worst_loss_pct": -0.3719,
+        "avg_win_pct": 0.2235,
+        "profit_factor": 0.2135,
+        "median_hold_seconds": 3.0,
+        "avg_hold_seconds": 235.71,
+        "entry_reasons": {
+          "SL-Reentry": 1125,
+          "Zero-Initial-Reentry": 636
+        },
+        "exit_reasons": {
+          "SL": 1761
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 1125,
+            "win_rate_pct": 7.64,
+            "net_pnl": -7570.25,
+            "avg_pnl_pct": -0.0751
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 636,
+            "win_rate_pct": 10.85,
+            "net_pnl": -6484.37,
+            "avg_pnl_pct": -0.0727
+          }
+        },
+        "median_seconds_from_virtual_sl": 110.0,
+        "median_entry_vs_stop_bps": 5.4932,
+        "median_entry_vs_trigger_bps": 5.4968
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1372,
+          "win_rate_pct": 8.53,
+          "avg_pnl_pct": -0.0765,
+          "median_pnl_pct": -0.0902,
+          "pnl_std_pct": 0.1209,
+          "worst_pnl_pct": -0.3719,
+          "net_pnl_value": -11209.08,
+          "max_pnl_drawdown": -11221.22,
+          "profit_factor": 0.1972,
+          "entry_types": {
+            "SHORT": 699,
+            "BUY": 673
+          },
+          "entry_reasons": {
+            "SL-Reentry": 875,
+            "Zero-Initial-Reentry": 497
+          },
+          "exit_reasons": {
+            "SL": 1372
+          }
+        },
+        "t3_swing": {
+          "trades": 389,
+          "win_rate_pct": 9.77,
+          "avg_pnl_pct": -0.0661,
+          "median_pnl_pct": -0.077,
+          "pnl_std_pct": 0.128,
+          "worst_pnl_pct": -0.3372,
+          "net_pnl_value": -2845.53,
+          "max_pnl_drawdown": -2968.33,
+          "profit_factor": 0.2717,
+          "entry_types": {
+            "SHORT": 198,
+            "BUY": 191
+          },
+          "entry_reasons": {
+            "SL-Reentry": 250,
+            "Zero-Initial-Reentry": 139
+          },
+          "exit_reasons": {
+            "SL": 389
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 479,
+            "t3_swing": 142
+          },
+          "short": {
+            "original_t2": 508,
+            "t3_swing": 134
+          }
+        },
+        "virtual_sl": 688,
+        "pending_expired": 1,
+        "pending_triggered": 1761,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 688,
+          "SL-Reentry": 1761
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 636,
+          "SL-Reentry": 1125
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 1
+        },
+        "real_sl": 1761,
+        "real_sl_reentry_armed": 1761,
+        "virtual_expired_without_sl": 574,
+        "max_trades_blocked": 687
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_dynamic_vsl_0p4atr_turn_0p15atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -28330.76,
+        "return_pct_delta": -28.33,
+        "max_dd_pct_delta": -28.32,
+        "trades_delta": 1234,
+        "win_rate_pct_delta": -14.07,
+        "sharpe_delta": -3.09
+      }
+    },
+    {
+      "variant": "dynamic_vsl_0p4atr_turn_0p2atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.2 ATR.",
+      "params": {
+        "name": "dynamic_vsl_0p4atr_turn_0p2atr",
+        "turn_mode": "dynamic",
+        "virtual_sl_atr": 0.4,
+        "entry_offset_atr": 0.2,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.4 ATR; enter on dynamic turn confirmation of 0.2 ATR."
+      },
+      "summary": {
+        "final_balance": 44593.3,
+        "return_pct": -55.41,
+        "max_dd_pct": -55.4,
+        "trades": 1887,
+        "win_rate_pct": 6.94,
+        "sharpe": -8.16,
+        "first_entry": "2026-01-01T15:36:08+00:00",
+        "last_exit": "2026-03-31T22:47:17+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 1293,
+          "Zero-Initial-Reentry": 594
+        },
+        "exit_reasons": {
+          "SL": 1887
+        },
+        "entry_types": {
+          "SHORT": 969,
+          "BUY": 918
+        },
+        "integrity": {
+          "rows": 3774,
+          "entries": 1887,
+          "exits": 1887,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1887,
+        "avg_loss_pct": -0.1073,
+        "worst_loss_pct": -0.467,
+        "avg_win_pct": 0.2319,
+        "profit_factor": 0.2377,
+        "median_hold_seconds": 2.0,
+        "avg_hold_seconds": 276.41,
+        "entry_reasons": {
+          "SL-Reentry": 1293,
+          "Zero-Initial-Reentry": 594
+        },
+        "exit_reasons": {
+          "SL": 1887
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 1293,
+            "win_rate_pct": 9.28,
+            "net_pnl": -8542.03,
+            "avg_pnl_pct": -0.0707
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 594,
+            "win_rate_pct": 12.29,
+            "net_pnl": -6203.43,
+            "avg_pnl_pct": -0.0766
+          }
+        },
+        "median_seconds_from_virtual_sl": 198.0,
+        "median_entry_vs_stop_bps": 5.5253,
+        "median_entry_vs_trigger_bps": 5.5172
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 1475,
+          "win_rate_pct": 9.83,
+          "avg_pnl_pct": -0.0745,
+          "median_pnl_pct": -0.0818,
+          "pnl_std_pct": 0.1436,
+          "worst_pnl_pct": -0.467,
+          "net_pnl_value": -11863.53,
+          "max_pnl_drawdown": -11869.56,
+          "profit_factor": 0.2246,
+          "entry_types": {
+            "SHORT": 749,
+            "BUY": 726
+          },
+          "entry_reasons": {
+            "SL-Reentry": 1012,
+            "Zero-Initial-Reentry": 463
+          },
+          "exit_reasons": {
+            "SL": 1475
+          }
+        },
+        "t3_swing": {
+          "trades": 412,
+          "win_rate_pct": 11.65,
+          "avg_pnl_pct": -0.0657,
+          "median_pnl_pct": -0.0628,
+          "pnl_std_pct": 0.132,
+          "worst_pnl_pct": -0.3603,
+          "net_pnl_value": -2881.93,
+          "max_pnl_drawdown": -2972.89,
+          "profit_factor": 0.2873,
+          "entry_types": {
+            "SHORT": 220,
+            "BUY": 192
+          },
+          "entry_reasons": {
+            "SL-Reentry": 281,
+            "Zero-Initial-Reentry": 131
+          },
+          "exit_reasons": {
+            "SL": 412
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 451,
+            "t3_swing": 131
+          },
+          "short": {
+            "original_t2": 475,
+            "t3_swing": 125
+          }
+        },
+        "virtual_sl": 646,
+        "pending_expired": 8,
+        "pending_triggered": 1887,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 646,
+          "SL-Reentry": 1887
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 594,
+          "SL-Reentry": 1293
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 6,
+          "Zero-Initial-Reentry": 2
+        },
+        "real_sl": 1887,
+        "real_sl_reentry_armed": 1887,
+        "virtual_expired_without_sl": 535,
+        "max_trades_blocked": 638
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_dynamic_vsl_0p4atr_turn_0p2atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -31255.54,
+        "return_pct_delta": -31.26,
+        "max_dd_pct_delta": -31.25,
+        "trades_delta": 1360,
+        "win_rate_pct_delta": -12.98,
+        "sharpe_delta": -1.64
+      }
+    },
+    {
+      "variant": "dynamic_vsl_0p6atr_turn_0p1atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on dynamic turn confirmation of 0.1 ATR.",
+      "params": {
+        "name": "dynamic_vsl_0p6atr_turn_0p1atr",
+        "turn_mode": "dynamic",
+        "virtual_sl_atr": 0.6,
+        "entry_offset_atr": 0.1,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on dynamic turn confirmation of 0.1 ATR."
+      },
+      "summary": {
+        "final_balance": 63561.13,
+        "return_pct": -36.44,
+        "max_dd_pct": -36.43,
+        "trades": 1065,
+        "win_rate_pct": 4.04,
+        "sharpe": -12.18,
+        "first_entry": "2026-01-01T16:33:15+00:00",
+        "last_exit": "2026-03-31T23:18:47+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 617,
+          "Zero-Initial-Reentry": 448
+        },
+        "exit_reasons": {
+          "SL": 1065
+        },
+        "entry_types": {
+          "SHORT": 545,
+          "BUY": 520
+        },
+        "integrity": {
+          "rows": 2130,
+          "entries": 1065,
+          "exits": 1065,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1065,
+        "avg_loss_pct": -0.0961,
+        "worst_loss_pct": -0.393,
+        "avg_win_pct": 0.2119,
+        "profit_factor": 0.1489,
+        "median_hold_seconds": 0.0,
+        "avg_hold_seconds": 160.73,
+        "entry_reasons": {
+          "SL-Reentry": 617,
+          "Zero-Initial-Reentry": 448
+        },
+        "exit_reasons": {
+          "SL": 1065
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 617,
+            "win_rate_pct": 6.16,
+            "net_pnl": -4416.56,
+            "avg_pnl_pct": -0.0743
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 448,
+            "win_rate_pct": 6.47,
+            "net_pnl": -5783.69,
+            "avg_pnl_pct": -0.08
+          }
+        },
+        "median_seconds_from_virtual_sl": 41.0,
+        "median_entry_vs_stop_bps": 4.7986,
+        "median_entry_vs_trigger_bps": 5.5438
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 858,
+          "win_rate_pct": 7.46,
+          "avg_pnl_pct": -0.0731,
+          "median_pnl_pct": -0.0907,
+          "pnl_std_pct": 0.1085,
+          "worst_pnl_pct": -0.393,
+          "net_pnl_value": -7847.9,
+          "max_pnl_drawdown": -7823.94,
+          "profit_factor": 0.1805,
+          "entry_types": {
+            "SHORT": 446,
+            "BUY": 412
+          },
+          "entry_reasons": {
+            "SL-Reentry": 502,
+            "Zero-Initial-Reentry": 356
+          },
+          "exit_reasons": {
+            "SL": 858
+          }
+        },
+        "t3_swing": {
+          "trades": 207,
+          "win_rate_pct": 1.45,
+          "avg_pnl_pct": -0.0919,
+          "median_pnl_pct": -0.0894,
+          "pnl_std_pct": 0.0484,
+          "worst_pnl_pct": -0.2504,
+          "net_pnl_value": -2352.35,
+          "max_pnl_drawdown": -2333.8,
+          "profit_factor": 0.023,
+          "entry_types": {
+            "BUY": 108,
+            "SHORT": 99
+          },
+          "entry_reasons": {
+            "SL-Reentry": 115,
+            "Zero-Initial-Reentry": 92
+          },
+          "exit_reasons": {
+            "SL": 207
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 489,
+            "t3_swing": 144
+          },
+          "short": {
+            "original_t2": 506,
+            "t3_swing": 133
+          }
+        },
+        "virtual_sl": 482,
+        "pending_expired": 0,
+        "pending_triggered": 1065,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 482,
+          "SL-Reentry": 1065
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 448,
+          "SL-Reentry": 617
+        },
+        "pending_expired_by_reason": {},
+        "real_sl": 1065,
+        "real_sl_reentry_armed": 1065,
+        "virtual_expired_without_sl": 790,
+        "max_trades_blocked": 482
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_dynamic_vsl_0p6atr_turn_0p1atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -12287.71,
+        "return_pct_delta": -12.29,
+        "max_dd_pct_delta": -12.28,
+        "trades_delta": 538,
+        "win_rate_pct_delta": -15.88,
+        "sharpe_delta": -5.66
+      }
+    },
+    {
+      "variant": "dynamic_vsl_0p6atr_turn_0p2atr",
+      "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on dynamic turn confirmation of 0.2 ATR.",
+      "params": {
+        "name": "dynamic_vsl_0p6atr_turn_0p2atr",
+        "turn_mode": "dynamic",
+        "virtual_sl_atr": 0.6,
+        "entry_offset_atr": 0.2,
+        "description": "Virtual Initial SL at structural breakout level +/- 0.6 ATR; enter on dynamic turn confirmation of 0.2 ATR."
+      },
+      "summary": {
+        "final_balance": 57755.24,
+        "return_pct": -42.24,
+        "max_dd_pct": -42.23,
+        "trades": 1269,
+        "win_rate_pct": 5.83,
+        "sharpe": -9.39,
+        "first_entry": "2026-01-01T16:33:25+00:00",
+        "last_exit": "2026-03-31T23:25:28+00:00",
+        "entry_reasons": {
+          "SL-Reentry": 855,
+          "Zero-Initial-Reentry": 414
+        },
+        "exit_reasons": {
+          "SL": 1269
+        },
+        "entry_types": {
+          "SHORT": 648,
+          "BUY": 621
+        },
+        "integrity": {
+          "rows": 2538,
+          "entries": 1269,
+          "exits": 1269,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 1269,
+        "avg_loss_pct": -0.1089,
+        "worst_loss_pct": -0.5068,
+        "avg_win_pct": 0.2031,
+        "profit_factor": 0.2034,
+        "median_hold_seconds": 3.0,
+        "avg_hold_seconds": 260.54,
+        "entry_reasons": {
+          "SL-Reentry": 855,
+          "Zero-Initial-Reentry": 414
+        },
+        "exit_reasons": {
+          "SL": 1269
+        }
+      },
+      "level_diagnostics": {
+        "entry_reason_stats": {
+          "SL-Reentry": {
+            "trades": 855,
+            "win_rate_pct": 9.24,
+            "net_pnl": -6880.76,
+            "avg_pnl_pct": -0.0783
+          },
+          "Zero-Initial-Reentry": {
+            "trades": 414,
+            "win_rate_pct": 11.11,
+            "net_pnl": -4943.02,
+            "avg_pnl_pct": -0.0779
+          }
+        },
+        "median_seconds_from_virtual_sl": 156.0,
+        "median_entry_vs_stop_bps": 5.7294,
+        "median_entry_vs_trigger_bps": 5.5104
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 996,
+          "win_rate_pct": 10.34,
+          "avg_pnl_pct": -0.0767,
+          "median_pnl_pct": -0.082,
+          "pnl_std_pct": 0.1396,
+          "worst_pnl_pct": -0.5068,
+          "net_pnl_value": -9033.83,
+          "max_pnl_drawdown": -9009.56,
+          "profit_factor": 0.2256,
+          "entry_types": {
+            "SHORT": 520,
+            "BUY": 476
+          },
+          "entry_reasons": {
+            "SL-Reentry": 669,
+            "Zero-Initial-Reentry": 327
+          },
+          "exit_reasons": {
+            "SL": 996
+          }
+        },
+        "t3_swing": {
+          "trades": 273,
+          "win_rate_pct": 8.06,
+          "avg_pnl_pct": -0.0836,
+          "median_pnl_pct": -0.0833,
+          "pnl_std_pct": 0.0993,
+          "worst_pnl_pct": -0.3752,
+          "net_pnl_value": -2789.95,
+          "max_pnl_drawdown": -2768.57,
+          "profit_factor": 0.1222,
+          "entry_types": {
+            "BUY": 145,
+            "SHORT": 128
+          },
+          "entry_reasons": {
+            "SL-Reentry": 186,
+            "Zero-Initial-Reentry": 87
+          },
+          "exit_reasons": {
+            "SL": 273
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 457,
+            "t3_swing": 137
+          },
+          "short": {
+            "original_t2": 468,
+            "t3_swing": 124
+          }
+        },
+        "virtual_sl": 444,
+        "pending_expired": 3,
+        "pending_triggered": 1269,
+        "pending_armed_by_reason": {
+          "Zero-Initial-Reentry": 444,
+          "SL-Reentry": 1269
+        },
+        "pending_triggered_by_reason": {
+          "Zero-Initial-Reentry": 414,
+          "SL-Reentry": 855
+        },
+        "pending_expired_by_reason": {
+          "SL-Reentry": 2,
+          "Zero-Initial-Reentry": 1
+        },
+        "real_sl": 1269,
+        "real_sl_reentry_armed": 1269,
+        "virtual_expired_without_sl": 742,
+        "max_trades_blocked": 441
+      },
+      "elapsed_seconds": 253.42,
+      "ledger_path": "research/tmp_btc_2026_q1_30min_virtual_sl_level_sweep_dynamic_vsl_0p6atr_turn_0p2atr_ledger.csv",
+      "delta_vs_best": {
+        "final_balance_delta": -18093.6,
+        "return_pct_delta": -18.09,
+        "max_dd_pct_delta": -18.08,
+        "trades_delta": 742,
+        "win_rate_pct_delta": -14.09,
+        "sharpe_delta": -2.87
+      }
+    }
+  ],
+  "note": "Research-only virtual-SL level sweep. re_p and cooldown are not used."
+}

@@ -1,0 +1,718 @@
+{
+  "start": "2025-01-01T00:00:00+00:00",
+  "end": "2025-12-31T23:59:59+00:00",
+  "timeframe": "1h",
+  "mode": {
+    "arm": "true original_t2 intrabar touch of prev_high_2/prev_low_2",
+    "confirm": "same signal bar intrabar touch of prev_high_8/prev_low_8",
+    "entry": "next 1s close after confirm touch",
+    "scope": "research-only"
+  },
+  "cost_model": {
+    "slippage_bps_per_side": 2.0,
+    "entry_fee_bps": 2.0,
+    "exit_fee_bps": 4.0
+  },
+  "stop_loss_atr": 0.3,
+  "results": [
+    {
+      "timeframe": "1h",
+      "variant": "b55_loose",
+      "params": {
+        "trend_mode": "signal",
+        "body_min": 0.55,
+        "close_top": 0.65,
+        "range_min_atr": 0.6,
+        "range_max_atr": 2.2,
+        "pre_range_atr": 3.0,
+        "max_atr_percentile": 95.0,
+        "max_entry_extension_atr": 0.3,
+        "micro_window_seconds": 300,
+        "micro_fast_seconds": 60,
+        "base_speed_atr": 0.02,
+        "base_fast_atr": 0.0,
+        "base_efficiency": 0.12,
+        "strong_speed_atr": 0.08,
+        "strong_fast_atr": 0.02,
+        "strong_efficiency": 0.3,
+        "strong_close_pos": 0.6,
+        "weak_share": 0.1,
+        "base_share": 0.2,
+        "strong_share": 0.3,
+        "skip_weak": 1.0,
+        "min_donchian_gap_atr": 0.0,
+        "max_donchian_gap_atr": 99.0
+      },
+      "exit_policy": {
+        "name": "baseline",
+        "trailing_stop_atr": 0.3,
+        "delayed_trailing_activation": 0.5,
+        "profit_protect_atr": 1.0,
+        "profit_lock_activation_atr": null,
+        "profit_lock_bps": 0.0,
+        "take_profit_atr": null
+      },
+      "summary": {
+        "final_balance": 94658.75,
+        "return_pct": -5.34,
+        "max_dd_pct": -7.15,
+        "trades": 505,
+        "win_rate_pct": 34.85,
+        "sharpe": -1.27,
+        "first_entry": "2025-01-01T21:23:43+00:00",
+        "last_exit": "2025-12-29T00:30:22+00:00",
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 505
+        },
+        "exit_reasons": {
+          "InitialSL": 329,
+          "TrailingSL": 176
+        },
+        "entry_types": {
+          "SHORT": 255,
+          "BUY": 250
+        },
+        "integrity": {
+          "rows": 1010,
+          "entries": 505,
+          "exits": 505,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 505,
+        "avg_loss_pct": -0.315,
+        "worst_loss_pct": -0.7773,
+        "avg_win_pct": 0.4849,
+        "profit_factor": 0.8229,
+        "median_hold_seconds": 405.0,
+        "avg_hold_seconds": 877.13,
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 505
+        },
+        "exit_reasons": {
+          "InitialSL": 329,
+          "TrailingSL": 176
+        }
+      },
+      "entry_distance_diagnostics": {
+        "entries": 505,
+        "median_entry_vs_breakout_bps": 5.6559,
+        "entry_within_5bps_of_breakout_pct": 45.35,
+        "worst_entry_extension_bps": 59.3488
+      },
+      "exit_hold_diagnostics": {
+        "InitialSL": {
+          "trades": 329,
+          "avg_hold_seconds": 704.94,
+          "median_hold_seconds": 329.0,
+          "win_rate_pct": 0.0
+        },
+        "TrailingSL": {
+          "trades": 176,
+          "avg_hold_seconds": 1199.02,
+          "median_hold_seconds": 617.0,
+          "win_rate_pct": 100.0
+        }
+      },
+      "mfe_mae_diagnostics": {
+        "overall": {
+          "trades": 505,
+          "median_mfe_bps": 23.0204,
+          "median_mae_bps": 24.2838,
+          "avg_mfe_bps": 37.1439,
+          "avg_mae_bps": 24.695,
+          "median_mfe_atr": 0.2454,
+          "median_mae_atr": 0.3027,
+          "median_realized_bps": -23.1887,
+          "mfe_ge_10bps_pct": 68.51,
+          "mfe_ge_20bps_pct": 53.86,
+          "mae_ge_10bps_pct": 82.57,
+          "mae_ge_20bps_pct": 62.57
+        },
+        "by_exit_reason": {
+          "InitialSL": {
+            "trades": 329,
+            "median_mfe_bps": 10.6724,
+            "median_mae_bps": 29.3219,
+            "avg_mfe_bps": 14.0752,
+            "avg_mae_bps": 30.9968,
+            "median_mfe_atr": 0.1108,
+            "median_mae_atr": 0.3079,
+            "median_realized_bps": -29.8523,
+            "mfe_ge_10bps_pct": 51.67,
+            "mfe_ge_20bps_pct": 29.18,
+            "mae_ge_10bps_pct": 98.48,
+            "mae_ge_20bps_pct": 85.71
+          },
+          "TrailingSL": {
+            "trades": 176,
+            "median_mfe_bps": 67.4233,
+            "median_mae_bps": 10.4916,
+            "avg_mfe_bps": 80.2666,
+            "avg_mae_bps": 12.9149,
+            "median_mfe_atr": 0.705,
+            "median_mae_atr": 0.1171,
+            "median_realized_bps": 35.5517,
+            "mfe_ge_10bps_pct": 100.0,
+            "mfe_ge_20bps_pct": 100.0,
+            "mae_ge_10bps_pct": 52.84,
+            "mae_ge_20bps_pct": 19.32
+          }
+        },
+        "by_breakout_shape": {
+          "original_t2_arm_donchian8_confirm": {
+            "trades": 505,
+            "median_mfe_bps": 23.0204,
+            "median_mae_bps": 24.2838,
+            "avg_mfe_bps": 37.1439,
+            "avg_mae_bps": 24.695,
+            "median_mfe_atr": 0.2454,
+            "median_mae_atr": 0.3027,
+            "median_realized_bps": -23.1887,
+            "mfe_ge_10bps_pct": 68.51,
+            "mfe_ge_20bps_pct": 53.86,
+            "mae_ge_10bps_pct": 82.57,
+            "mae_ge_20bps_pct": 62.57
+          }
+        },
+        "by_trade_slot": {
+          "0": {
+            "trades": 505,
+            "median_mfe_bps": 23.0204,
+            "median_mae_bps": 24.2838,
+            "avg_mfe_bps": 37.1439,
+            "avg_mae_bps": 24.695,
+            "median_mfe_atr": 0.2454,
+            "median_mae_atr": 0.3027,
+            "median_realized_bps": -23.1887,
+            "mfe_ge_10bps_pct": 68.51,
+            "mfe_ge_20bps_pct": 53.86,
+            "mae_ge_10bps_pct": 82.57,
+            "mae_ge_20bps_pct": 62.57
+          }
+        }
+      },
+      "accounting_2bps_maker_entry_market_exit": {
+        "round_trips": 505,
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 505
+        },
+        "raw_no_fee_no_slip_return_pct": 0.5486,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -5.3412,
+        "realistic_return_pct": -13.5367,
+        "realistic_final_balance": 86463.32,
+        "realistic_fees_pct": 8.415,
+        "entry_fee_bps": 2.0,
+        "exit_fee_bps": 4.0,
+        "slippage_bps_per_side": 2.0,
+        "by_trade_slot": {
+          "0": {
+            "round_trips": 505,
+            "raw_no_fee_no_slip_contribution_pct": 0.5486,
+            "price_pnl_with_2bps_slip_no_fee_contribution_pct": -5.3412,
+            "realistic_contribution_pct": -13.5367,
+            "fees_pct": 8.415
+          }
+        }
+      },
+      "diagnostics": {
+        "signal_bars": 7858,
+        "original_t2_armed_long": 1030,
+        "original_t2_armed_short": 1044,
+        "donchian_touches": 236876,
+        "bar_gate_skipped": 219661,
+        "micro_weak_skipped": 295,
+        "entry_extension_skipped": 16410,
+        "min_gap_skipped": 0,
+        "max_gap_skipped": 0,
+        "bad_signal_skipped": 0,
+        "entries": 505,
+        "busy_skipped": 140,
+        "long_entries": 250,
+        "short_entries": 255,
+        "quality_counts": {
+          "weak": 295,
+          "base": 6,
+          "strong": 499
+        }
+      },
+      "elapsed_seconds": 73.4,
+      "symbol": "ETHUSDT",
+      "ledger_path": "research/tmp_eth_2025_1h_original_t2_arm_donchian_confirm_b55_ETHUSDT_1h_b55_loose_ledger.csv",
+      "build_stats": {
+        "cache_hit": true,
+        "cache_path": "research/cache/second_bars/ETHUSDT_1s_20250101T000000_20251231T235959.parquet",
+        "rows": 31536000
+      }
+    },
+    {
+      "timeframe": "1h",
+      "variant": "b55_loose_trail0p5_act1p0",
+      "params": {
+        "trend_mode": "signal",
+        "body_min": 0.55,
+        "close_top": 0.65,
+        "range_min_atr": 0.6,
+        "range_max_atr": 2.2,
+        "pre_range_atr": 3.0,
+        "max_atr_percentile": 95.0,
+        "max_entry_extension_atr": 0.3,
+        "micro_window_seconds": 300,
+        "micro_fast_seconds": 60,
+        "base_speed_atr": 0.02,
+        "base_fast_atr": 0.0,
+        "base_efficiency": 0.12,
+        "strong_speed_atr": 0.08,
+        "strong_fast_atr": 0.02,
+        "strong_efficiency": 0.3,
+        "strong_close_pos": 0.6,
+        "weak_share": 0.1,
+        "base_share": 0.2,
+        "strong_share": 0.3,
+        "skip_weak": 1.0,
+        "min_donchian_gap_atr": 0.0,
+        "max_donchian_gap_atr": 99.0
+      },
+      "exit_policy": {
+        "name": "trail0p5_act1p0",
+        "trailing_stop_atr": 0.5,
+        "delayed_trailing_activation": 1.0,
+        "profit_protect_atr": 1.0,
+        "profit_lock_activation_atr": null,
+        "profit_lock_bps": 0.0,
+        "take_profit_atr": null
+      },
+      "summary": {
+        "final_balance": 94004.06,
+        "return_pct": -6.0,
+        "max_dd_pct": -7.13,
+        "trades": 500,
+        "win_rate_pct": 22.4,
+        "sharpe": -1.1,
+        "first_entry": "2025-01-01T21:23:43+00:00",
+        "last_exit": "2025-12-29T00:36:33+00:00",
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 500
+        },
+        "exit_reasons": {
+          "InitialSL": 388,
+          "TrailingSL": 112
+        },
+        "entry_types": {
+          "SHORT": 252,
+          "BUY": 248
+        },
+        "integrity": {
+          "rows": 1000,
+          "entries": 500,
+          "exits": 500,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 500,
+        "avg_loss_pct": -0.3162,
+        "worst_loss_pct": -0.7773,
+        "avg_win_pct": 0.9136,
+        "profit_factor": 0.8319,
+        "median_hold_seconds": 629.5,
+        "avg_hold_seconds": 1732.43,
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 500
+        },
+        "exit_reasons": {
+          "InitialSL": 388,
+          "TrailingSL": 112
+        }
+      },
+      "entry_distance_diagnostics": {
+        "entries": 500,
+        "median_entry_vs_breakout_bps": 5.6361,
+        "entry_within_5bps_of_breakout_pct": 45.4,
+        "worst_entry_extension_bps": 59.3488
+      },
+      "exit_hold_diagnostics": {
+        "InitialSL": {
+          "trades": 388,
+          "avg_hold_seconds": 1210.98,
+          "median_hold_seconds": 420.0,
+          "win_rate_pct": 0.0
+        },
+        "TrailingSL": {
+          "trades": 112,
+          "avg_hold_seconds": 3538.88,
+          "median_hold_seconds": 2188.0,
+          "win_rate_pct": 100.0
+        }
+      },
+      "mfe_mae_diagnostics": {
+        "overall": {
+          "trades": 500,
+          "median_mfe_bps": 23.0051,
+          "median_mae_bps": 26.2891,
+          "avg_mfe_bps": 49.4225,
+          "avg_mae_bps": 27.2838,
+          "median_mfe_atr": 0.2448,
+          "median_mae_atr": 0.305,
+          "median_realized_bps": -26.5974,
+          "mfe_ge_10bps_pct": 68.6,
+          "mfe_ge_20bps_pct": 53.8,
+          "mae_ge_10bps_pct": 90.8,
+          "mae_ge_20bps_pct": 71.0
+        },
+        "by_exit_reason": {
+          "InitialSL": {
+            "trades": 388,
+            "median_mfe_bps": 14.4144,
+            "median_mae_bps": 28.8063,
+            "avg_mfe_bps": 22.8968,
+            "avg_mae_bps": 31.2056,
+            "median_mfe_atr": 0.162,
+            "median_mae_atr": 0.308,
+            "median_realized_bps": -29.7599,
+            "mfe_ge_10bps_pct": 59.54,
+            "mfe_ge_20bps_pct": 40.46,
+            "mae_ge_10bps_pct": 98.71,
+            "mae_ge_20bps_pct": 86.34
+          },
+          "TrailingSL": {
+            "trades": 112,
+            "median_mfe_bps": 122.5578,
+            "median_mae_bps": 12.2909,
+            "avg_mfe_bps": 141.315,
+            "avg_mae_bps": 13.6976,
+            "median_mfe_atr": 1.3472,
+            "median_mae_atr": 0.1318,
+            "median_realized_bps": 79.3534,
+            "mfe_ge_10bps_pct": 100.0,
+            "mfe_ge_20bps_pct": 100.0,
+            "mae_ge_10bps_pct": 63.39,
+            "mae_ge_20bps_pct": 17.86
+          }
+        },
+        "by_breakout_shape": {
+          "original_t2_arm_donchian8_confirm": {
+            "trades": 500,
+            "median_mfe_bps": 23.0051,
+            "median_mae_bps": 26.2891,
+            "avg_mfe_bps": 49.4225,
+            "avg_mae_bps": 27.2838,
+            "median_mfe_atr": 0.2448,
+            "median_mae_atr": 0.305,
+            "median_realized_bps": -26.5974,
+            "mfe_ge_10bps_pct": 68.6,
+            "mfe_ge_20bps_pct": 53.8,
+            "mae_ge_10bps_pct": 90.8,
+            "mae_ge_20bps_pct": 71.0
+          }
+        },
+        "by_trade_slot": {
+          "0": {
+            "trades": 500,
+            "median_mfe_bps": 23.0051,
+            "median_mae_bps": 26.2891,
+            "avg_mfe_bps": 49.4225,
+            "avg_mae_bps": 27.2838,
+            "median_mfe_atr": 0.2448,
+            "median_mae_atr": 0.305,
+            "median_realized_bps": -26.5974,
+            "mfe_ge_10bps_pct": 68.6,
+            "mfe_ge_20bps_pct": 53.8,
+            "mae_ge_10bps_pct": 90.8,
+            "mae_ge_20bps_pct": 71.0
+          }
+        }
+      },
+      "accounting_2bps_maker_entry_market_exit": {
+        "round_trips": 500,
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 500
+        },
+        "raw_no_fee_no_slip_return_pct": -0.2063,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -5.9959,
+        "realistic_return_pct": -14.0575,
+        "realistic_final_balance": 85942.51,
+        "realistic_fees_pct": 8.3231,
+        "entry_fee_bps": 2.0,
+        "exit_fee_bps": 4.0,
+        "slippage_bps_per_side": 2.0,
+        "by_trade_slot": {
+          "0": {
+            "round_trips": 500,
+            "raw_no_fee_no_slip_contribution_pct": -0.2063,
+            "price_pnl_with_2bps_slip_no_fee_contribution_pct": -5.9959,
+            "realistic_contribution_pct": -14.0575,
+            "fees_pct": 8.3231
+          }
+        }
+      },
+      "diagnostics": {
+        "signal_bars": 7745,
+        "original_t2_armed_long": 1025,
+        "original_t2_armed_short": 1036,
+        "donchian_touches": 236745,
+        "bar_gate_skipped": 219535,
+        "micro_weak_skipped": 295,
+        "entry_extension_skipped": 16410,
+        "min_gap_skipped": 0,
+        "max_gap_skipped": 0,
+        "bad_signal_skipped": 0,
+        "entries": 500,
+        "busy_skipped": 265,
+        "long_entries": 248,
+        "short_entries": 252,
+        "quality_counts": {
+          "weak": 295,
+          "base": 6,
+          "strong": 494
+        }
+      },
+      "elapsed_seconds": 106.6,
+      "symbol": "ETHUSDT",
+      "ledger_path": "research/tmp_eth_2025_1h_original_t2_arm_donchian_confirm_b55_ETHUSDT_1h_b55_loose_trail0p5_act1p0_ledger.csv",
+      "build_stats": {
+        "cache_hit": true,
+        "cache_path": "research/cache/second_bars/ETHUSDT_1s_20250101T000000_20251231T235959.parquet",
+        "rows": 31536000
+      }
+    },
+    {
+      "timeframe": "1h",
+      "variant": "b55_loose_structure1p0_b4",
+      "params": {
+        "trend_mode": "signal",
+        "body_min": 0.55,
+        "close_top": 0.65,
+        "range_min_atr": 0.6,
+        "range_max_atr": 2.2,
+        "pre_range_atr": 3.0,
+        "max_atr_percentile": 95.0,
+        "max_entry_extension_atr": 0.3,
+        "micro_window_seconds": 300,
+        "micro_fast_seconds": 60,
+        "base_speed_atr": 0.02,
+        "base_fast_atr": 0.0,
+        "base_efficiency": 0.12,
+        "strong_speed_atr": 0.08,
+        "strong_fast_atr": 0.02,
+        "strong_efficiency": 0.3,
+        "strong_close_pos": 0.6,
+        "weak_share": 0.1,
+        "base_share": 0.2,
+        "strong_share": 0.3,
+        "skip_weak": 1.0,
+        "min_donchian_gap_atr": 0.0,
+        "max_donchian_gap_atr": 99.0
+      },
+      "exit_policy": {
+        "name": "structure1p0_b4",
+        "trailing_stop_atr": 0.5,
+        "delayed_trailing_activation": 99.0,
+        "profit_protect_atr": 99.0,
+        "profit_lock_activation_atr": null,
+        "profit_lock_bps": 0.0,
+        "take_profit_atr": null,
+        "structure_start_atr": 1.0,
+        "structure_bars": 4,
+        "structure_buffer_atr": 0.05
+      },
+      "summary": {
+        "final_balance": 91837.9,
+        "return_pct": -8.16,
+        "max_dd_pct": -13.81,
+        "trades": 489,
+        "win_rate_pct": 9.41,
+        "sharpe": -0.7,
+        "first_entry": "2025-01-01T21:23:43+00:00",
+        "last_exit": "2025-12-29T01:16:31+00:00",
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 489
+        },
+        "exit_reasons": {
+          "InitialSL": 432,
+          "StructureSL": 57
+        },
+        "entry_types": {
+          "SHORT": 247,
+          "BUY": 242
+        },
+        "integrity": {
+          "rows": 978,
+          "entries": 489,
+          "exits": 489,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 489,
+        "avg_loss_pct": -0.3072,
+        "worst_loss_pct": -0.7587,
+        "avg_win_pct": 2.3541,
+        "profit_factor": 0.795,
+        "median_hold_seconds": 773.0,
+        "avg_hold_seconds": 6069.19,
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 489
+        },
+        "exit_reasons": {
+          "InitialSL": 432,
+          "StructureSL": 57
+        }
+      },
+      "entry_distance_diagnostics": {
+        "entries": 489,
+        "median_entry_vs_breakout_bps": 5.7429,
+        "entry_within_5bps_of_breakout_pct": 45.4,
+        "worst_entry_extension_bps": 59.3488
+      },
+      "exit_hold_diagnostics": {
+        "InitialSL": {
+          "trades": 432,
+          "avg_hold_seconds": 2184.01,
+          "median_hold_seconds": 572.0,
+          "win_rate_pct": 0.0
+        },
+        "StructureSL": {
+          "trades": 57,
+          "avg_hold_seconds": 35514.74,
+          "median_hold_seconds": 26264.0,
+          "win_rate_pct": 80.7
+        }
+      },
+      "mfe_mae_diagnostics": {
+        "overall": {
+          "trades": 489,
+          "median_mfe_bps": 23.0204,
+          "median_mae_bps": 27.8132,
+          "avg_mfe_bps": 84.6701,
+          "avg_mae_bps": 29.1668,
+          "median_mfe_atr": 0.2443,
+          "median_mae_atr": 0.3072,
+          "median_realized_bps": -27.7876,
+          "mfe_ge_10bps_pct": 68.71,
+          "mfe_ge_20bps_pct": 53.78,
+          "mae_ge_10bps_pct": 95.91,
+          "mae_ge_20bps_pct": 77.71
+        },
+        "by_exit_reason": {
+          "InitialSL": {
+            "trades": 432,
+            "median_mfe_bps": 18.927,
+            "median_mae_bps": 28.71,
+            "avg_mfe_bps": 37.0572,
+            "avg_mae_bps": 30.943,
+            "median_mfe_atr": 0.197,
+            "median_mae_atr": 0.3088,
+            "median_realized_bps": -29.5172,
+            "mfe_ge_10bps_pct": 64.58,
+            "mfe_ge_20bps_pct": 47.69,
+            "mae_ge_10bps_pct": 98.61,
+            "mae_ge_20bps_pct": 84.72
+          },
+          "StructureSL": {
+            "trades": 57,
+            "median_mfe_bps": 321.3495,
+            "median_mae_bps": 13.4211,
+            "avg_mfe_bps": 445.5256,
+            "avg_mae_bps": 15.705,
+            "median_mfe_atr": 3.5941,
+            "median_mae_atr": 0.1463,
+            "median_realized_bps": 108.1726,
+            "mfe_ge_10bps_pct": 100.0,
+            "mfe_ge_20bps_pct": 100.0,
+            "mae_ge_10bps_pct": 75.44,
+            "mae_ge_20bps_pct": 24.56
+          }
+        },
+        "by_breakout_shape": {
+          "original_t2_arm_donchian8_confirm": {
+            "trades": 489,
+            "median_mfe_bps": 23.0204,
+            "median_mae_bps": 27.8132,
+            "avg_mfe_bps": 84.6701,
+            "avg_mae_bps": 29.1668,
+            "median_mfe_atr": 0.2443,
+            "median_mae_atr": 0.3072,
+            "median_realized_bps": -27.7876,
+            "mfe_ge_10bps_pct": 68.71,
+            "mfe_ge_20bps_pct": 53.78,
+            "mae_ge_10bps_pct": 95.91,
+            "mae_ge_20bps_pct": 77.71
+          }
+        },
+        "by_trade_slot": {
+          "0": {
+            "trades": 489,
+            "median_mfe_bps": 23.0204,
+            "median_mae_bps": 27.8132,
+            "avg_mfe_bps": 84.6701,
+            "avg_mae_bps": 29.1668,
+            "median_mfe_atr": 0.2443,
+            "median_mae_atr": 0.3072,
+            "median_realized_bps": -27.7876,
+            "mfe_ge_10bps_pct": 68.71,
+            "mfe_ge_20bps_pct": 53.78,
+            "mae_ge_10bps_pct": 95.91,
+            "mae_ge_20bps_pct": 77.71
+          }
+        }
+      },
+      "accounting_2bps_maker_entry_market_exit": {
+        "round_trips": 489,
+        "entry_reasons": {
+          "OriginalT2-Arm-DonchianConfirm": 489
+        },
+        "raw_no_fee_no_slip_return_pct": -2.6337,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -8.1621,
+        "realistic_return_pct": -15.8718,
+        "realistic_final_balance": 84128.17,
+        "realistic_fees_pct": 8.1957,
+        "entry_fee_bps": 2.0,
+        "exit_fee_bps": 4.0,
+        "slippage_bps_per_side": 2.0,
+        "by_trade_slot": {
+          "0": {
+            "round_trips": 489,
+            "raw_no_fee_no_slip_contribution_pct": -2.6337,
+            "price_pnl_with_2bps_slip_no_fee_contribution_pct": -8.1621,
+            "realistic_contribution_pct": -15.8718,
+            "fees_pct": 8.1957
+          }
+        }
+      },
+      "diagnostics": {
+        "signal_bars": 7213,
+        "original_t2_armed_long": 960,
+        "original_t2_armed_short": 982,
+        "donchian_touches": 218680,
+        "bar_gate_skipped": 201556,
+        "micro_weak_skipped": 295,
+        "entry_extension_skipped": 16335,
+        "min_gap_skipped": 0,
+        "max_gap_skipped": 0,
+        "bad_signal_skipped": 0,
+        "entries": 489,
+        "busy_skipped": 849,
+        "long_entries": 242,
+        "short_entries": 247,
+        "quality_counts": {
+          "weak": 295,
+          "base": 6,
+          "strong": 483
+        }
+      },
+      "elapsed_seconds": 272.81,
+      "symbol": "ETHUSDT",
+      "ledger_path": "research/tmp_eth_2025_1h_original_t2_arm_donchian_confirm_b55_ETHUSDT_1h_b55_loose_structure1p0_b4_ledger.csv",
+      "build_stats": {
+        "cache_hit": true,
+        "cache_path": "research/cache/second_bars/ETHUSDT_1s_20250101T000000_20251231T235959.parquet",
+        "rows": 31536000
+      }
+    }
+  ],
+  "summary_path": "research/eth_2025_1h_original_t2_arm_donchian_confirm_b55_summary.json",
+  "markdown_path": "research/20260508_eth_2025_1h_original_t2_arm_donchian_confirm_b55.md",
+  "elapsed_seconds": 458.85
+}

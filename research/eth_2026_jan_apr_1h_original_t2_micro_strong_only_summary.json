@@ -1,0 +1,333 @@
+{
+  "symbol": "ETHUSDT",
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-04-30T23:59:59+00:00",
+  "timeframes": [
+    "1h"
+  ],
+  "build_stats": {
+    "cache_hit": true,
+    "cache_path": "research/cache/second_bars/ETHUSDT_1s_20260101T000000_20260430T235959.parquet",
+    "rows": 10368000
+  },
+  "mode": {
+    "breakout_shape": "original_t2",
+    "entry": "intrabar 1s high/low touches prev_high_2/prev_low_2, filled at triggering 1s close",
+    "micro_filter": "weak skipped, base/strong use configured slot shares",
+    "allow_same_bar_second_breakout": true,
+    "stop_loss_atr": 0.3
+  },
+  "results": [
+    {
+      "timeframe": "1h",
+      "variant": "strong_only",
+      "breakout_shape": "original_t2",
+      "exit_policy": {
+        "name": "baseline",
+        "trailing_stop_atr": 0.3,
+        "delayed_trailing_activation": 0.5,
+        "profit_protect_atr": 1.0,
+        "profit_lock_activation_atr": null,
+        "profit_lock_bps": 0.0,
+        "take_profit_atr": null
+      },
+      "summary": {
+        "final_balance": 99832.95,
+        "return_pct": -0.17,
+        "max_dd_pct": -3.19,
+        "trades": 555,
+        "win_rate_pct": 38.38,
+        "sharpe": -0.12,
+        "first_entry": "2026-01-01T15:41:38+00:00",
+        "last_exit": "2026-04-30T15:32:38+00:00",
+        "entry_reasons": {
+          "OriginalT2-MicroBreakout": 555
+        },
+        "exit_reasons": {
+          "InitialSL": 342,
+          "TrailingSL": 213
+        },
+        "entry_types": {
+          "SHORT": 278,
+          "BUY": 277
+        },
+        "integrity": {
+          "rows": 1110,
+          "entries": 555,
+          "exits": 555,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 555,
+        "avg_loss_pct": -0.2941,
+        "worst_loss_pct": -1.0703,
+        "avg_win_pct": 0.4632,
+        "profit_factor": 0.991,
+        "median_hold_seconds": 445.0,
+        "avg_hold_seconds": 1051.3,
+        "entry_reasons": {
+          "OriginalT2-MicroBreakout": 555
+        },
+        "exit_reasons": {
+          "InitialSL": 342,
+          "TrailingSL": 213
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 555,
+          "win_rate_pct": 38.38,
+          "avg_pnl_pct": -0.0035,
+          "median_pnl_pct": -0.1899,
+          "pnl_std_pct": 0.4508,
+          "worst_pnl_pct": -1.0703,
+          "net_pnl_value": -167.05,
+          "max_pnl_drawdown": -3268.51,
+          "profit_factor": 0.991,
+          "entry_types": {
+            "SHORT": 278,
+            "BUY": 277
+          },
+          "entry_reasons": {
+            "OriginalT2-MicroBreakout": 555
+          },
+          "exit_reasons": {
+            "InitialSL": 342,
+            "TrailingSL": 213
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 277
+          },
+          "short": {
+            "original_t2": 278
+          }
+        },
+        "candidate_breakouts": 4110,
+        "entries": 555,
+        "weak_skipped": 3555,
+        "base_candidates": 3244,
+        "strong_candidates": 555,
+        "max_trades_blocked": 135126,
+        "allow_same_bar_second_breakout": true,
+        "weak_candidates": 311,
+        "bars_rejected_by_weak": 311,
+        "bars_with_entry": 464
+      },
+      "bar_guard_diagnostics": {
+        "bars_with_multi_entries": 91,
+        "extra_entries": 91,
+        "max_entries_per_bar": 2
+      },
+      "entry_distance_diagnostics": {
+        "entries": 555,
+        "median_entry_vs_breakout_bps": 2.1174,
+        "entry_within_5bps_of_breakout_pct": 64.32,
+        "worst_entry_extension_bps": 216.4099
+      },
+      "exit_hold_diagnostics": {
+        "InitialSL": {
+          "trades": 342,
+          "avg_hold_seconds": 922.61,
+          "median_hold_seconds": 383.0,
+          "win_rate_pct": 0.0
+        },
+        "TrailingSL": {
+          "trades": 213,
+          "avg_hold_seconds": 1257.92,
+          "median_hold_seconds": 526.0,
+          "win_rate_pct": 100.0
+        }
+      },
+      "trade_slot_diagnostics": {
+        "0": {
+          "trades": 464,
+          "win_rate_pct": 37.93,
+          "avg_pnl_pct": 0.001,
+          "net_pnl": 80.33,
+          "avg_hold_seconds": 1150.7,
+          "median_hold_seconds": 508.5,
+          "exit_reasons": {
+            "InitialSL": 288,
+            "TrailingSL": 176
+          }
+        },
+        "1": {
+          "trades": 91,
+          "win_rate_pct": 40.66,
+          "avg_pnl_pct": -0.0263,
+          "net_pnl": -247.38,
+          "avg_hold_seconds": 544.49,
+          "median_hold_seconds": 219.0,
+          "exit_reasons": {
+            "InitialSL": 54,
+            "TrailingSL": 37
+          }
+        }
+      },
+      "mfe_mae_diagnostics": {
+        "overall": {
+          "trades": 555,
+          "median_mfe_bps": 24.6327,
+          "median_mae_bps": 21.4343,
+          "avg_mfe_bps": 39.0731,
+          "avg_mae_bps": 23.0857,
+          "median_mfe_atr": 0.3061,
+          "median_mae_atr": 0.3034,
+          "median_realized_bps": -18.9916,
+          "mfe_ge_10bps_pct": 67.39,
+          "mfe_ge_20bps_pct": 54.23,
+          "mae_ge_10bps_pct": 76.76,
+          "mae_ge_20bps_pct": 53.33
+        },
+        "by_exit_reason": {
+          "InitialSL": {
+            "trades": 342,
+            "median_mfe_bps": 9.0915,
+            "median_mae_bps": 28.391,
+            "avg_mfe_bps": 15.1038,
+            "avg_mae_bps": 29.2949,
+            "median_mfe_atr": 0.1119,
+            "median_mae_atr": 0.3111,
+            "median_realized_bps": -28.9336,
+            "mfe_ge_10bps_pct": 47.08,
+            "mfe_ge_20bps_pct": 28.36,
+            "mae_ge_10bps_pct": 94.44,
+            "mae_ge_20bps_pct": 74.27
+          },
+          "TrailingSL": {
+            "trades": 213,
+            "median_mfe_bps": 65.7612,
+            "median_mae_bps": 9.5031,
+            "avg_mfe_bps": 77.5591,
+            "avg_mae_bps": 13.1161,
+            "median_mfe_atr": 0.7352,
+            "median_mae_atr": 0.1215,
+            "median_realized_bps": 32.2739,
+            "mfe_ge_10bps_pct": 100.0,
+            "mfe_ge_20bps_pct": 95.77,
+            "mae_ge_10bps_pct": 48.36,
+            "mae_ge_20bps_pct": 19.72
+          }
+        },
+        "by_breakout_shape": {
+          "original_t2": {
+            "trades": 555,
+            "median_mfe_bps": 24.6327,
+            "median_mae_bps": 21.4343,
+            "avg_mfe_bps": 39.0731,
+            "avg_mae_bps": 23.0857,
+            "median_mfe_atr": 0.3061,
+            "median_mae_atr": 0.3034,
+            "median_realized_bps": -18.9916,
+            "mfe_ge_10bps_pct": 67.39,
+            "mfe_ge_20bps_pct": 54.23,
+            "mae_ge_10bps_pct": 76.76,
+            "mae_ge_20bps_pct": 53.33
+          }
+        },
+        "by_trade_slot": {
+          "0": {
+            "trades": 464,
+            "median_mfe_bps": 23.9445,
+            "median_mae_bps": 21.2967,
+            "avg_mfe_bps": 39.0124,
+            "avg_mae_bps": 23.0528,
+            "median_mfe_atr": 0.2938,
+            "median_mae_atr": 0.3034,
+            "median_realized_bps": -19.012,
+            "mfe_ge_10bps_pct": 66.38,
+            "mfe_ge_20bps_pct": 53.23,
+            "mae_ge_10bps_pct": 76.72,
+            "mae_ge_20bps_pct": 53.23
+          },
+          "1": {
+            "trades": 91,
+            "median_mfe_bps": 28.6895,
+            "median_mae_bps": 21.6276,
+            "avg_mfe_bps": 39.3829,
+            "avg_mae_bps": 23.2537,
+            "median_mfe_atr": 0.3758,
+            "median_mae_atr": 0.3021,
+            "median_realized_bps": -15.7487,
+            "mfe_ge_10bps_pct": 72.53,
+            "mfe_ge_20bps_pct": 59.34,
+            "mae_ge_10bps_pct": 76.92,
+            "mae_ge_20bps_pct": 53.85
+          }
+        }
+      },
+      "quality_diagnostics": {
+        "strong": {
+          "trades": 555,
+          "win_rate_pct": 38.38,
+          "avg_pnl_pct": -0.0035,
+          "median_pnl_pct": -0.1899,
+          "exit_reasons": {
+            "InitialSL": 342,
+            "TrailingSL": 213
+          }
+        }
+      },
+      "accounting_2bps_maker_entry_market_exit": {
+        "round_trips": 555,
+        "entry_reasons": {
+          "OriginalT2-MicroBreakout": 555
+        },
+        "raw_no_fee_no_slip_return_pct": 3.9848,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -0.167,
+        "realistic_return_pct": -6.0883,
+        "realistic_final_balance": 93911.68,
+        "realistic_fees_pct": 5.9648,
+        "entry_fee_bps": 2.0,
+        "exit_fee_bps": 4.0,
+        "slippage_bps_per_side": 2.0,
+        "by_trade_slot": {
+          "0": {
+            "round_trips": 464,
+            "raw_no_fee_no_slip_contribution_pct": 3.8573,
+            "price_pnl_with_2bps_slip_no_fee_contribution_pct": 0.0803,
+            "realistic_contribution_pct": -5.3061,
+            "fees_pct": 5.432
+          },
+          "1": {
+            "round_trips": 91,
+            "raw_no_fee_no_slip_contribution_pct": 0.1274,
+            "price_pnl_with_2bps_slip_no_fee_contribution_pct": -0.2474,
+            "realistic_contribution_pct": -0.7822,
+            "fees_pct": 0.5328
+          }
+        }
+      },
+      "elapsed_seconds": 258.06,
+      "params": {
+        "micro_window_seconds": 300,
+        "micro_fast_seconds": 60,
+        "base_speed_atr": 0.12,
+        "base_fast_atr": 0.04,
+        "base_efficiency": 0.5,
+        "strong_speed_atr": 0.25,
+        "strong_fast_atr": 0.08,
+        "strong_efficiency": 0.7,
+        "strong_close_pos": 0.75,
+        "skip_weak": 1.0,
+        "weak_share": 0.0,
+        "base_share": 1.0,
+        "strong_share": 1.0,
+        "strong_slot0_share": 0.2,
+        "strong_slot1_share": 0.1,
+        "base_slot0_share": 0.0,
+        "base_slot1_share": 0.0,
+        "reject_bar_on_weak": 1.0
+      },
+      "ledger_path": "research/tmp_eth_2026_jan_apr_1h_original_t2_micro_strong_only_1h_strong_only_ledger.csv"
+    }
+  ],
+  "summary_path": "research/eth_2026_jan_apr_1h_original_t2_micro_strong_only_summary.json",
+  "markdown_path": "research/20260508_eth_2026_jan_apr_1h_original_t2_micro_strong_only.md",
+  "elapsed_seconds": 259.44
+}

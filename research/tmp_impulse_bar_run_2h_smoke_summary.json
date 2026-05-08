@@ -1,0 +1,96 @@
+{
+  "start": "2025-01-01T00:00:00+00:00",
+  "end": "2025-01-07T23:59:59+00:00",
+  "signal_timeframe": "2h",
+  "trend_timeframe": "8h",
+  "signal": "closed 2h impulse bars with 8h EMA20 trend context",
+  "execution": "continuous 1s OHLC bars from local trade ticks",
+  "accounting": "2bps/side slippage in ledger plus maker entry 2bps and market exit 4bps in realistic accounting",
+  "variants": [
+    {
+      "name": "break8_body65",
+      "params": {
+        "break_lookback": 8,
+        "body_min": 0.65,
+        "close_top": 0.75,
+        "range_min_atr": 0.8,
+        "range_max_atr": 2.2,
+        "pre_range_atr": 3.0,
+        "max_atr_percentile": 95.0,
+        "max_entry_extension_atr": 0.15,
+        "initial_stop_atr": 0.45,
+        "stop_buffer_atr": 0.05,
+        "stop_cap_atr": 0.8,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_buffer_atr": 0.05,
+        "max_hold_bars": 6,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      }
+    }
+  ],
+  "results": [
+    {
+      "summary": {
+        "trades": 0,
+        "raw_no_fee_no_slip_return_pct": 0.0,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 0.0,
+        "realistic_return_pct": 0.0,
+        "win_rate_pct": 0.0,
+        "max_dd_pct": 0.0,
+        "exit_reasons": {}
+      },
+      "diagnostics": {
+        "candidate_signals": 0,
+        "entries": 0,
+        "busy_skipped": 0,
+        "entry_extension_skipped": 0,
+        "min_stop_skipped": 0,
+        "long_signals": 0,
+        "short_signals": 0
+      },
+      "symbol": "BTCUSDT",
+      "variant": "break8_body65",
+      "params": {
+        "break_lookback": 8,
+        "body_min": 0.65,
+        "close_top": 0.75,
+        "range_min_atr": 0.8,
+        "range_max_atr": 2.2,
+        "pre_range_atr": 3.0,
+        "max_atr_percentile": 95.0,
+        "max_entry_extension_atr": 0.15,
+        "initial_stop_atr": 0.45,
+        "stop_buffer_atr": 0.05,
+        "stop_cap_atr": 0.8,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_buffer_atr": 0.05,
+        "max_hold_bars": 6,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      },
+      "ledger_path": "research/tmp_impulse_bar_run_2h_smoke_BTCUSDT_break8_body65_ledger.csv",
+      "build_stats": {
+        "raw_tick_rows": 22000000,
+        "kept_tick_rows": 19516841,
+        "sparse_second_rows": 564231,
+        "continuous_second_rows": 604800,
+        "first_second": "2025-01-01T00:00:00+00:00",
+        "last_second": "2025-01-07T23:59:59+00:00"
+      }
+    }
+  ],
+  "summary_path": "research/tmp_impulse_bar_run_2h_smoke_summary.json",
+  "markdown_path": "research/tmp_impulse_bar_run_2h_smoke.md",
+  "elapsed_seconds": 18.07
+}

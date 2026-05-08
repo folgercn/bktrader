@@ -89,16 +89,30 @@ def _as_utc_timestamp(value: str) -> pd.Timestamp:
 
 
 def _read_tick_chunks(path: str, chunksize: int):
-    reader = pd.read_csv(
-        path,
-        header=0,
-        usecols=["price", "qty", "time"],
-        dtype={"price": "float32", "qty": "float32", "time": "int64"},
-        chunksize=chunksize,
-        compression="infer",
-    )
+    try:
+        reader = pd.read_csv(
+            path,
+            header=0,
+            usecols=["price", "qty", "time"],
+            dtype={"price": "float32", "qty": "float32", "time": "int64"},
+            chunksize=chunksize,
+            compression="infer",
+        )
+    except ValueError:
+        reader = pd.read_csv(
+            path,
+            header=None,
+            names=["id", "price", "qty", "quote_qty", "time", "is_buyer_maker", "is_best_match"],
+            usecols=["price", "qty", "time"],
+            dtype={"price": "float32", "qty": "float32", "time": "int64"},
+            chunksize=chunksize,
+            compression="infer",
+        )
     for chunk in reader:
-        yield chunk.rename(columns={"time": "timestamp"})
+        chunk = chunk.rename(columns={"time": "timestamp"})
+        if not chunk.empty and chunk["timestamp"].iloc[0] > 10_000_000_000_000:
+            chunk["timestamp"] = chunk["timestamp"] // 1000
+        yield chunk
 
 
 def build_continuous_second_bars(paths, start: pd.Timestamp, end: pd.Timestamp, chunksize: int):
@@ -382,9 +396,23 @@ def run_second_bar_replay(
     t3_cooldown_bars: int = 0,
     t3_quality_filters=None,
     quality_filter_shapes=None,
+    zero_initial_reentry_anchor_mode: str = "rolling",
+    reentry_trigger_observation_mode: str = "bar_extrema",
+    reentry_max_deviation_bps=None,
+    reentry_fill_price_mode: str = "planned",
 ):
     if replay_mode not in {"same_bar_parity", "live_intrabar_sma5"}:
         raise ValueError(f"unknown replay mode: {replay_mode}")
+    zero_initial_reentry_anchor_mode = str(zero_initial_reentry_anchor_mode).lower().strip()
+    if zero_initial_reentry_anchor_mode not in {"rolling", "snapshot"}:
+        raise ValueError(f"unknown zero_initial_reentry_anchor_mode: {zero_initial_reentry_anchor_mode}")
+    reentry_trigger_observation_mode = str(reentry_trigger_observation_mode).lower().strip()
+    if reentry_trigger_observation_mode not in {"bar_extrema", "close"}:
+        raise ValueError(f"unknown reentry_trigger_observation_mode: {reentry_trigger_observation_mode}")
+    reentry_max_deviation_bps = None if reentry_max_deviation_bps is None else float(reentry_max_deviation_bps)
+    reentry_fill_price_mode = str(reentry_fill_price_mode).lower().strip()
+    if reentry_fill_price_mode not in {"planned", "observed"}:
+        raise ValueError(f"unknown reentry_fill_price_mode: {reentry_fill_price_mode}")
 
     balance = initial_balance
     position = None
@@ -426,6 +454,7 @@ def run_second_bar_replay(
     pending_zero_initial_side = None
     pending_zero_initial_breakout_shape = ""
     pending_zero_initial_bar_index = -999
+    pending_zero_initial_reentry_price = None
     last_t3_lock_bar_index = -999
 
     for i in range(len(signal) - 1):
@@ -459,12 +488,18 @@ def run_second_bar_replay(
         if i - pending_zero_initial_bar_index > reentry_timeout:
             pending_zero_initial_side = None
             pending_zero_initial_breakout_shape = ""
+            pending_zero_initial_reentry_price = None
 
         while current_pos < end_pos:
             bar_time = second_index[current_pos]
             high_value = high_values[current_pos]
             low_value = low_values[current_pos]
             close_value = close_values[current_pos]
+            reentry_high_value = high_value
+            reentry_low_value = low_value
+            if reentry_trigger_observation_mode == "close":
+                reentry_high_value = close_value
+                reentry_low_value = close_value
             prev_close = close_values[current_pos - 1] if current_pos > start_pos else None
             if replay_mode == "live_intrabar_sma5":
                 bar_high_so_far = max(bar_high_so_far, high_value)
@@ -502,6 +537,11 @@ def run_second_bar_replay(
                             pending_zero_initial_side = "long"
                             pending_zero_initial_breakout_shape = shape_name
                             pending_zero_initial_bar_index = i
+                            pending_zero_initial_reentry_price = (
+                                _resolve_reentry_price(sig, "long", reentry_anchor_levels, long_reentry_atr)
+                                if zero_initial_reentry_anchor_mode == "snapshot"
+                                else None
+                            )
                         else:
                             diagnostics["t3_cooldown_skips"]["long"] += 1
 
@@ -511,11 +551,18 @@ def run_second_bar_replay(
                     )
                     if has_exit_reentry_window or has_zero_initial_window:
                         re_p = _resolve_reentry_price(sig, "long", reentry_anchor_levels, long_reentry_atr)
+                        if (
+                            has_zero_initial_window
+                            and not has_exit_reentry_window
+                            and zero_initial_reentry_anchor_mode == "snapshot"
+                            and pending_zero_initial_reentry_price is not None
+                        ):
+                            re_p = pending_zero_initial_reentry_price
                         is_triggered, entry_p_raw = _reentry_triggered(
                             "long",
                             reentry_trigger_mode,
-                            high_value,
-                            low_value,
+                            reentry_high_value,
+                            reentry_low_value,
                             close_value,
                             prev_close,
                             re_p,
@@ -525,6 +572,13 @@ def run_second_bar_replay(
                             reason = "Zero-Initial-Reentry"
                             if has_exit_reentry_window:
                                 reason = "SL-Reentry" if last_exit_reason == "SL" else "PT-Reentry"
+                            if (
+                                reentry_max_deviation_bps is not None
+                                and reentry_max_deviation_bps >= 0
+                                and close_value > float(re_p) * (1 + reentry_max_deviation_bps / 10000.0)
+                            ):
+                                current_pos += 1
+                                continue
                             if trades_in_bar < max_trades_per_bar:
                                 entry_breakout_shape = pending_zero_initial_breakout_shape
                                 if has_exit_reentry_window:
@@ -535,7 +589,8 @@ def run_second_bar_replay(
                                     t3_reentry_size_schedule,
                                 )
                                 notional_share = _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
-                                entry_price = float(entry_p_raw) * (1 + slippage)
+                                fill_price_raw = close_value if reentry_fill_price_mode == "observed" else entry_p_raw
+                                entry_price = float(fill_price_raw) * (1 + slippage)
                                 balance, position = _open_position(
                                     balance,
                                     sig,
@@ -567,6 +622,7 @@ def run_second_bar_replay(
                             if has_zero_initial_window:
                                 pending_zero_initial_side = None
                                 pending_zero_initial_breakout_shape = ""
+                                pending_zero_initial_reentry_price = None
 
                 elif short_regime_ready:
                     triggered, breakout_level, shape_name = _short_breakout(sig, low_value, breakout_shape)
@@ -597,6 +653,11 @@ def run_second_bar_replay(
                             pending_zero_initial_side = "short"
                             pending_zero_initial_breakout_shape = shape_name
                             pending_zero_initial_bar_index = i
+                            pending_zero_initial_reentry_price = (
+                                _resolve_reentry_price(sig, "short", reentry_anchor_levels, short_reentry_atr)
+                                if zero_initial_reentry_anchor_mode == "snapshot"
+                                else None
+                            )
                         else:
                             diagnostics["t3_cooldown_skips"]["short"] += 1
 
@@ -606,11 +667,18 @@ def run_second_bar_replay(
                     )
                     if has_exit_reentry_window or has_zero_initial_window:
                         re_p = _resolve_reentry_price(sig, "short", reentry_anchor_levels, short_reentry_atr)
+                        if (
+                            has_zero_initial_window
+                            and not has_exit_reentry_window
+                            and zero_initial_reentry_anchor_mode == "snapshot"
+                            and pending_zero_initial_reentry_price is not None
+                        ):
+                            re_p = pending_zero_initial_reentry_price
                         is_triggered, entry_p_raw = _reentry_triggered(
                             "short",
                             reentry_trigger_mode,
-                            high_value,
-                            low_value,
+                            reentry_high_value,
+                            reentry_low_value,
                             close_value,
                             prev_close,
                             re_p,
@@ -620,6 +688,13 @@ def run_second_bar_replay(
                             reason = "Zero-Initial-Reentry"
                             if has_exit_reentry_window:
                                 reason = "SL-Reentry" if last_exit_reason == "SL" else "PT-Reentry"
+                            if (
+                                reentry_max_deviation_bps is not None
+                                and reentry_max_deviation_bps >= 0
+                                and close_value < float(re_p) * (1 - reentry_max_deviation_bps / 10000.0)
+                            ):
+                                current_pos += 1
+                                continue
                             if trades_in_bar < max_trades_per_bar:
                                 entry_breakout_shape = pending_zero_initial_breakout_shape
                                 if has_exit_reentry_window:
@@ -630,7 +705,8 @@ def run_second_bar_replay(
                                     t3_reentry_size_schedule,
                                 )
                                 notional_share = _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
-                                entry_price = float(entry_p_raw) * (1 - slippage)
+                                fill_price_raw = close_value if reentry_fill_price_mode == "observed" else entry_p_raw
+                                entry_price = float(fill_price_raw) * (1 - slippage)
                                 balance, position = _open_position(
                                     balance,
                                     sig,
@@ -662,6 +738,7 @@ def run_second_bar_replay(
                             if has_zero_initial_window:
                                 pending_zero_initial_side = None
                                 pending_zero_initial_breakout_shape = ""
+                                pending_zero_initial_reentry_price = None
 
             else:
                 exit_triggered = False

@@ -1,0 +1,397 @@
+{
+  "symbol": "ETHUSDT",
+  "timeframe": "4h",
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-03-31T23:59:59+00:00",
+  "build_stats": {
+    "raw_tick_rows": 748747244,
+    "kept_tick_rows": 748747172,
+    "sparse_second_rows": 7596268,
+    "continuous_second_rows": 7776000,
+    "first_second": "2026-01-01T00:00:00+00:00",
+    "last_second": "2026-03-31T23:59:59+00:00"
+  },
+  "signal_stats": {
+    "signal_rows": 540,
+    "signal_start": "2026-01-01T00:00:00+00:00",
+    "signal_end": "2026-03-31T20:00:00+00:00",
+    "valid_sma5_rows": 536,
+    "valid_atr_rows": 527
+  },
+  "baseline_kwargs": {
+    "dir2_zero_initial": true,
+    "zero_initial_mode": "reentry_window",
+    "fixed_slippage": 0.0005,
+    "stop_loss_atr": 0.05,
+    "stop_mode": "atr",
+    "max_trades_per_bar": 2,
+    "reentry_size_schedule": [
+      0.2,
+      0.1
+    ],
+    "long_reentry_atr": 0.1,
+    "short_reentry_atr": 0.0,
+    "profit_protect_atr": 1.0,
+    "trailing_stop_atr": 0.3,
+    "delayed_trailing_activation": 0.5,
+    "reentry_anchor_levels": "wick",
+    "reentry_trigger_mode": "reclaim"
+  },
+  "variant": {
+    "name": "fixed_vsl_0p55atr_turn_0p1atr_entrysl_0p3atr",
+    "turn_mode": "fixed",
+    "virtual_sl_atr": 0.55,
+    "entry_offset_atr": 0.1,
+    "real_stop_mode": "entry_atr",
+    "real_stop_atr": 0.3,
+    "real_stop_buffer_atr": null,
+    "description": "ETH Q1 4h single candidate with one Zero-Initial arm per signal bar guard."
+  },
+  "zero_initial_bar_guard": "A new virtual Zero-Initial can only be armed when trades_in_bar == 0. VSL remains zero-notional and does not increment trades_in_bar.",
+  "outputs": {
+    "no_downstream": {
+      "allow_downstream_sl_reentry": false,
+      "result": {
+        "variant": "fixed_vsl_0p55atr_turn_0p1atr_entrysl_0p3atr",
+        "description": "ETH Q1 4h single candidate with one Zero-Initial arm per signal bar guard.",
+        "params": {
+          "name": "fixed_vsl_0p55atr_turn_0p1atr_entrysl_0p3atr",
+          "turn_mode": "fixed",
+          "virtual_sl_atr": 0.55,
+          "entry_offset_atr": 0.1,
+          "real_stop_mode": "entry_atr",
+          "real_stop_atr": 0.3,
+          "real_stop_buffer_atr": null,
+          "description": "ETH Q1 4h single candidate with one Zero-Initial arm per signal bar guard."
+        },
+        "summary": {
+          "final_balance": 95220.22,
+          "return_pct": -4.78,
+          "max_dd_pct": -5.34,
+          "trades": 64,
+          "win_rate_pct": 31.25,
+          "sharpe": -3.35,
+          "first_entry": "2026-01-04T09:23:23+00:00",
+          "last_exit": "2026-03-31T15:26:47+00:00",
+          "entry_reasons": {
+            "Zero-Initial-Reentry": 64
+          },
+          "exit_reasons": {
+            "SL": 64
+          },
+          "entry_types": {
+            "SHORT": 33,
+            "BUY": 31
+          },
+          "integrity": {
+            "rows": 128,
+            "entries": 64,
+            "exits": 64,
+            "zero_notional_entries": 0
+          }
+        },
+        "pair_diagnostics": {
+          "paired_trades": 64,
+          "avg_loss_pct": -0.6901,
+          "worst_loss_pct": -1.5593,
+          "avg_win_pct": 0.9366,
+          "profit_factor": 0.618,
+          "median_hold_seconds": 3655.0,
+          "avg_hold_seconds": 6216.28,
+          "entry_reasons": {
+            "Zero-Initial-Reentry": 64
+          },
+          "exit_reasons": {
+            "SL": 64
+          }
+        },
+        "level_diagnostics": {
+          "entry_reason_stats": {
+            "Zero-Initial-Reentry": {
+              "trades": 64,
+              "win_rate_pct": 31.25,
+              "net_pnl": -2273.35,
+              "avg_pnl_pct": -0.1818
+            }
+          },
+          "median_seconds_from_virtual_sl": 266.0,
+          "median_entry_vs_stop_bps": 25.7964,
+          "median_entry_vs_real_stop_bps": 62.271,
+          "median_entry_vs_trigger_bps": 5.8297
+        },
+        "attribution": {
+          "original_t2": {
+            "trades": 52,
+            "win_rate_pct": 32.69,
+            "avg_pnl_pct": -0.1473,
+            "median_pnl_pct": -0.5651,
+            "pnl_std_pct": 0.8566,
+            "worst_pnl_pct": -1.471,
+            "net_pnl_value": -1487.76,
+            "max_pnl_drawdown": -2216.49,
+            "profit_factor": 0.6744,
+            "entry_types": {
+              "SHORT": 29,
+              "BUY": 23
+            },
+            "entry_reasons": {
+              "Zero-Initial-Reentry": 52
+            },
+            "exit_reasons": {
+              "SL": 52
+            }
+          },
+          "t3_swing": {
+            "trades": 12,
+            "win_rate_pct": 25.0,
+            "avg_pnl_pct": -0.3312,
+            "median_pnl_pct": -0.7025,
+            "pnl_std_pct": 0.8282,
+            "worst_pnl_pct": -1.5593,
+            "net_pnl_value": -785.59,
+            "max_pnl_drawdown": -832.14,
+            "profit_factor": 0.4314,
+            "entry_types": {
+              "BUY": 8,
+              "SHORT": 4
+            },
+            "entry_reasons": {
+              "Zero-Initial-Reentry": 12
+            },
+            "exit_reasons": {
+              "SL": 12
+            }
+          }
+        },
+        "diagnostics": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 44,
+              "t3_swing": 14
+            },
+            "short": {
+              "original_t2": 64,
+              "t3_swing": 13
+            }
+          },
+          "virtual_sl": 67,
+          "pending_expired": 3,
+          "pending_triggered": 64,
+          "pending_armed_by_reason": {
+            "Zero-Initial-Reentry": 67
+          },
+          "pending_triggered_by_reason": {
+            "Zero-Initial-Reentry": 64
+          },
+          "pending_expired_by_reason": {
+            "Zero-Initial-Reentry": 3
+          },
+          "real_sl": 64,
+          "real_sl_reentry_armed": 0,
+          "virtual_expired_without_sl": 68,
+          "max_trades_blocked": 0
+        },
+        "elapsed_seconds": 174.1,
+        "re_p_diagnostics": {
+          "entries": 64,
+          "median_entry_vs_re_p_bps": 92.3669,
+          "median_vsl_vs_re_p_bps": 67.4592,
+          "median_trigger_vs_re_p_bps": 87.1897,
+          "median_breakout_vs_re_p_bps": 166.9947,
+          "entry_within_5bps_of_re_p_pct": 3.12,
+          "entry_at_or_better_than_re_p_pct": 4.69,
+          "p25_entry_vs_re_p_bps": 56.478,
+          "p75_entry_vs_re_p_bps": 163.4651
+        },
+        "bar_guard_diagnostics": {
+          "bars_with_multi_zero_initial": 0,
+          "extra_zero_initial_entries": 0,
+          "bars_with_multi_entries": 0,
+          "extra_entries": 0,
+          "max_zero_initial_per_bar": 1,
+          "max_entries_per_bar": 1
+        },
+        "ledger_path": "research/tmp_eth_2026_q1_4h_vsl_0p55_turn_0p1_entrysl_0p3_bar_guard_no_downstream_fixed_vsl_0p55atr_turn_0p1atr_entrysl_0p3atr_ledger.csv"
+      }
+    },
+    "with_downstream": {
+      "allow_downstream_sl_reentry": true,
+      "result": {
+        "variant": "fixed_vsl_0p55atr_turn_0p1atr_entrysl_0p3atr",
+        "description": "ETH Q1 4h single candidate with one Zero-Initial arm per signal bar guard.",
+        "params": {
+          "name": "fixed_vsl_0p55atr_turn_0p1atr_entrysl_0p3atr",
+          "turn_mode": "fixed",
+          "virtual_sl_atr": 0.55,
+          "entry_offset_atr": 0.1,
+          "real_stop_mode": "entry_atr",
+          "real_stop_atr": 0.3,
+          "real_stop_buffer_atr": null,
+          "description": "ETH Q1 4h single candidate with one Zero-Initial arm per signal bar guard."
+        },
+        "summary": {
+          "final_balance": 92096.99,
+          "return_pct": -7.9,
+          "max_dd_pct": -8.23,
+          "trades": 172,
+          "win_rate_pct": 33.72,
+          "sharpe": -1.7,
+          "first_entry": "2026-01-04T09:23:23+00:00",
+          "last_exit": "2026-03-31T14:43:30+00:00",
+          "entry_reasons": {
+            "SL-Reentry": 128,
+            "Zero-Initial-Reentry": 44
+          },
+          "exit_reasons": {
+            "SL": 172
+          },
+          "entry_types": {
+            "BUY": 93,
+            "SHORT": 79
+          },
+          "integrity": {
+            "rows": 344,
+            "entries": 172,
+            "exits": 172,
+            "zero_notional_entries": 0
+          }
+        },
+        "pair_diagnostics": {
+          "paired_trades": 172,
+          "avg_loss_pct": -0.7064,
+          "worst_loss_pct": -1.7868,
+          "avg_win_pct": 1.0695,
+          "profit_factor": 0.8039,
+          "median_hold_seconds": 3979.5,
+          "avg_hold_seconds": 6178.47,
+          "entry_reasons": {
+            "SL-Reentry": 128,
+            "Zero-Initial-Reentry": 44
+          },
+          "exit_reasons": {
+            "SL": 172
+          }
+        },
+        "level_diagnostics": {
+          "entry_reason_stats": {
+            "SL-Reentry": {
+              "trades": 128,
+              "win_rate_pct": 32.81,
+              "net_pnl": -1913.62,
+              "avg_pnl_pct": -0.1208
+            },
+            "Zero-Initial-Reentry": {
+              "trades": 44,
+              "win_rate_pct": 36.36,
+              "net_pnl": -563.8,
+              "avg_pnl_pct": -0.0689
+            }
+          },
+          "median_seconds_from_virtual_sl": 532.5,
+          "median_entry_vs_stop_bps": 27.0004,
+          "median_entry_vs_real_stop_bps": 63.5262,
+          "median_entry_vs_trigger_bps": 5.8265
+        },
+        "attribution": {
+          "original_t2": {
+            "trades": 138,
+            "win_rate_pct": 35.51,
+            "avg_pnl_pct": -0.0624,
+            "median_pnl_pct": -0.5626,
+            "pnl_std_pct": 1.0353,
+            "worst_pnl_pct": -1.7868,
+            "net_pnl_value": -900.93,
+            "max_pnl_drawdown": -2019.57,
+            "profit_factor": 0.9074,
+            "entry_types": {
+              "SHORT": 75,
+              "BUY": 63
+            },
+            "entry_reasons": {
+              "SL-Reentry": 101,
+              "Zero-Initial-Reentry": 37
+            },
+            "exit_reasons": {
+              "SL": 138
+            }
+          },
+          "t3_swing": {
+            "trades": 34,
+            "win_rate_pct": 26.47,
+            "avg_pnl_pct": -0.2909,
+            "median_pnl_pct": -0.6747,
+            "pnl_std_pct": 0.817,
+            "worst_pnl_pct": -1.5698,
+            "net_pnl_value": -1576.48,
+            "max_pnl_drawdown": -1710.02,
+            "profit_factor": 0.4566,
+            "entry_types": {
+              "BUY": 30,
+              "SHORT": 4
+            },
+            "entry_reasons": {
+              "SL-Reentry": 27,
+              "Zero-Initial-Reentry": 7
+            },
+            "exit_reasons": {
+              "SL": 34
+            }
+          }
+        },
+        "diagnostics": {
+          "breakout_locks": {
+            "long": {
+              "original_t2": 32,
+              "t3_swing": 11
+            },
+            "short": {
+              "original_t2": 47,
+              "t3_swing": 9
+            }
+          },
+          "virtual_sl": 46,
+          "pending_expired": 18,
+          "pending_triggered": 172,
+          "pending_armed_by_reason": {
+            "Zero-Initial-Reentry": 46,
+            "SL-Reentry": 172
+          },
+          "pending_triggered_by_reason": {
+            "Zero-Initial-Reentry": 44,
+            "SL-Reentry": 128
+          },
+          "pending_expired_by_reason": {
+            "SL-Reentry": 16,
+            "Zero-Initial-Reentry": 2
+          },
+          "real_sl": 172,
+          "real_sl_reentry_armed": 172,
+          "virtual_expired_without_sl": 53,
+          "max_trades_blocked": 28
+        },
+        "elapsed_seconds": 176.85,
+        "re_p_diagnostics": {
+          "entries": 172,
+          "median_entry_vs_re_p_bps": 107.2463,
+          "median_vsl_vs_re_p_bps": 76.5947,
+          "median_trigger_vs_re_p_bps": 100.9615,
+          "median_breakout_vs_re_p_bps": 161.4435,
+          "entry_within_5bps_of_re_p_pct": 3.49,
+          "entry_at_or_better_than_re_p_pct": 10.47,
+          "p25_entry_vs_re_p_bps": 42.4747,
+          "p75_entry_vs_re_p_bps": 191.5745
+        },
+        "bar_guard_diagnostics": {
+          "bars_with_multi_zero_initial": 0,
+          "extra_zero_initial_entries": 0,
+          "bars_with_multi_entries": 62,
+          "extra_entries": 62,
+          "max_zero_initial_per_bar": 1,
+          "max_entries_per_bar": 2
+        },
+        "ledger_path": "research/tmp_eth_2026_q1_4h_vsl_0p55_turn_0p1_entrysl_0p3_bar_guard_with_downstream_fixed_vsl_0p55atr_turn_0p1atr_entrysl_0p3atr_ledger.csv"
+      }
+    }
+  },
+  "elapsed_seconds": 724.79
+}

@@ -1,0 +1,270 @@
+{
+  "symbol": "ETHUSDT",
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-01-03T23:59:59+00:00",
+  "timeframe": "1h",
+  "build_stats": {
+    "cache_hit": true,
+    "cache_path": "research/cache/second_bars/ETHUSDT_1s_20260101T000000_20260103T235959.parquet",
+    "rows": 259200
+  },
+  "candidate_csv": "research/tmp_eth_original_t2_pretouch_continuation_smoke_candidates.csv",
+  "mode": {
+    "breakout_shape": "original_t2",
+    "entry": "pre-touch candidate state, filled at next 1s close",
+    "max_trades_per_bar": 1,
+    "schedule": [
+      0.2
+    ],
+    "stop_loss_atr": 0.3
+  },
+  "results": [
+    {
+      "timeframe": "1h",
+      "variant": "fast_clean",
+      "states": [
+        {
+          "distance_bucket": "0.10-0.15",
+          "speed300_bucket": ">=0.20",
+          "pullback_bucket": "0-0.02"
+        }
+      ],
+      "max_trades_per_bar": 1,
+      "reentry_size_schedule": [
+        0.2
+      ],
+      "exit_policy": {
+        "name": "baseline",
+        "trailing_stop_atr": 0.3,
+        "delayed_trailing_activation": 0.5,
+        "profit_protect_atr": 1.0,
+        "profit_lock_activation_atr": null,
+        "profit_lock_bps": 0.0,
+        "take_profit_atr": null
+      },
+      "summary": {
+        "final_balance": 100043.19,
+        "return_pct": 0.04,
+        "max_dd_pct": -0.03,
+        "trades": 2,
+        "win_rate_pct": 0.0,
+        "sharpe": 4.71,
+        "first_entry": "2026-01-02T06:27:00+00:00",
+        "last_exit": "2026-01-03T15:22:02+00:00",
+        "entry_reasons": {
+          "OriginalT2-PreTouchState": 2
+        },
+        "exit_reasons": {
+          "TrailingSL": 1,
+          "InitialSL": 1
+        },
+        "entry_types": {
+          "BUY": 1,
+          "SHORT": 1
+        },
+        "integrity": {
+          "rows": 4,
+          "entries": 2,
+          "exits": 2,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 2,
+        "avg_loss_pct": -0.1492,
+        "worst_loss_pct": -0.1492,
+        "avg_win_pct": 0.3653,
+        "profit_factor": 2.4462,
+        "median_hold_seconds": 964.5,
+        "avg_hold_seconds": 964.5,
+        "entry_reasons": {
+          "OriginalT2-PreTouchState": 2
+        },
+        "exit_reasons": {
+          "TrailingSL": 1,
+          "InitialSL": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 2,
+          "win_rate_pct": 50.0,
+          "avg_pnl_pct": 0.108,
+          "median_pnl_pct": 0.108,
+          "pnl_std_pct": 0.2572,
+          "worst_pnl_pct": -0.1492,
+          "net_pnl_value": 43.19,
+          "max_pnl_drawdown": -29.86,
+          "profit_factor": 2.4462,
+          "entry_types": {
+            "BUY": 1,
+            "SHORT": 1
+          },
+          "entry_reasons": {
+            "OriginalT2-PreTouchState": 2
+          },
+          "exit_reasons": {
+            "TrailingSL": 1,
+            "InitialSL": 1
+          }
+        }
+      },
+      "diagnostics": {
+        "matching_candidates": 2,
+        "entries": 2,
+        "skipped_position_open": 0,
+        "skipped_entry_time_processed": 0,
+        "skipped_max_trades_per_bar": 0,
+        "skipped_bad_signal": 0,
+        "skipped_no_second": 0,
+        "skipped_zero_share": 0
+      },
+      "bar_guard_diagnostics": {
+        "bars_with_entry": 2,
+        "bars_with_multi_entries": 0,
+        "extra_entries": 0,
+        "max_entries_per_bar": 1
+      },
+      "entry_distance_diagnostics": {
+        "entries": 2,
+        "median_entry_vs_breakout_bps": -6.0575,
+        "entry_within_5bps_of_breakout_pct": 0.0,
+        "worst_entry_extension_bps": -5.888
+      },
+      "exit_hold_diagnostics": {
+        "InitialSL": {
+          "trades": 1,
+          "avg_hold_seconds": 1022.0,
+          "median_hold_seconds": 1022.0,
+          "win_rate_pct": 0.0
+        },
+        "TrailingSL": {
+          "trades": 1,
+          "avg_hold_seconds": 907.0,
+          "median_hold_seconds": 907.0,
+          "win_rate_pct": 100.0
+        }
+      },
+      "trade_slot_diagnostics": {
+        "0": {
+          "trades": 2,
+          "win_rate_pct": 50.0,
+          "avg_pnl_pct": 0.108,
+          "net_pnl": 43.19,
+          "avg_hold_seconds": 964.5,
+          "median_hold_seconds": 964.5,
+          "exit_reasons": {
+            "TrailingSL": 1,
+            "InitialSL": 1
+          }
+        }
+      },
+      "mfe_mae_diagnostics": {
+        "overall": {
+          "trades": 2,
+          "median_mfe_bps": 29.7734,
+          "median_mae_bps": 8.8187,
+          "avg_mfe_bps": 29.7734,
+          "avg_mae_bps": 8.8187,
+          "median_mfe_atr": 0.617,
+          "median_mae_atr": 0.1988,
+          "median_realized_bps": 10.803,
+          "mfe_ge_10bps_pct": 50.0,
+          "mfe_ge_20bps_pct": 50.0,
+          "mae_ge_10bps_pct": 50.0,
+          "mae_ge_20bps_pct": 0.0
+        },
+        "by_exit_reason": {
+          "InitialSL": {
+            "trades": 1,
+            "median_mfe_bps": 5.1594,
+            "median_mae_bps": 13.2885,
+            "avg_mfe_bps": 5.1594,
+            "avg_mae_bps": 13.2885,
+            "median_mfe_atr": 0.1198,
+            "median_mae_atr": 0.3086,
+            "median_realized_bps": -14.9212,
+            "mfe_ge_10bps_pct": 0.0,
+            "mfe_ge_20bps_pct": 0.0,
+            "mae_ge_10bps_pct": 100.0,
+            "mae_ge_20bps_pct": 0.0
+          },
+          "TrailingSL": {
+            "trades": 1,
+            "median_mfe_bps": 54.3873,
+            "median_mae_bps": 4.3489,
+            "avg_mfe_bps": 54.3873,
+            "avg_mae_bps": 4.3489,
+            "median_mfe_atr": 1.1142,
+            "median_mae_atr": 0.0891,
+            "median_realized_bps": 36.5272,
+            "mfe_ge_10bps_pct": 100.0,
+            "mfe_ge_20bps_pct": 100.0,
+            "mae_ge_10bps_pct": 0.0,
+            "mae_ge_20bps_pct": 0.0
+          }
+        },
+        "by_breakout_shape": {
+          "original_t2": {
+            "trades": 2,
+            "median_mfe_bps": 29.7734,
+            "median_mae_bps": 8.8187,
+            "avg_mfe_bps": 29.7734,
+            "avg_mae_bps": 8.8187,
+            "median_mfe_atr": 0.617,
+            "median_mae_atr": 0.1988,
+            "median_realized_bps": 10.803,
+            "mfe_ge_10bps_pct": 50.0,
+            "mfe_ge_20bps_pct": 50.0,
+            "mae_ge_10bps_pct": 50.0,
+            "mae_ge_20bps_pct": 0.0
+          }
+        },
+        "by_trade_slot": {
+          "0": {
+            "trades": 2,
+            "median_mfe_bps": 29.7734,
+            "median_mae_bps": 8.8187,
+            "avg_mfe_bps": 29.7734,
+            "avg_mae_bps": 8.8187,
+            "median_mfe_atr": 0.617,
+            "median_mae_atr": 0.1988,
+            "median_realized_bps": 10.803,
+            "mfe_ge_10bps_pct": 50.0,
+            "mfe_ge_20bps_pct": 50.0,
+            "mae_ge_10bps_pct": 50.0,
+            "mae_ge_20bps_pct": 0.0
+          }
+        }
+      },
+      "accounting_2bps_maker_entry_market_exit": {
+        "round_trips": 2,
+        "entry_reasons": {
+          "OriginalT2-PreTouchState": 2
+        },
+        "raw_no_fee_no_slip_return_pct": 0.0592,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 0.0432,
+        "realistic_return_pct": 0.0192,
+        "realistic_final_balance": 100019.19,
+        "realistic_fees_pct": 0.024,
+        "entry_fee_bps": 2.0,
+        "exit_fee_bps": 4.0,
+        "slippage_bps_per_side": 2.0,
+        "by_trade_slot": {
+          "0": {
+            "round_trips": 2,
+            "raw_no_fee_no_slip_contribution_pct": 0.0592,
+            "price_pnl_with_2bps_slip_no_fee_contribution_pct": 0.0432,
+            "realistic_contribution_pct": 0.0192,
+            "fees_pct": 0.024
+          }
+        }
+      },
+      "elapsed_seconds": 0.24,
+      "ledger_path": "research/tmp_eth_original_t2_pretouch_entry_smoke_1h_fast_clean_ledger.csv"
+    }
+  ],
+  "summary_path": "research/tmp_eth_original_t2_pretouch_entry_smoke_summary.json",
+  "markdown_path": "research/tmp_eth_original_t2_pretouch_entry_smoke.md",
+  "elapsed_seconds": 0.41
+}

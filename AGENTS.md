@@ -13,6 +13,9 @@
 - **图谱** == **graphify** (本项目的知识图谱工具，资产位于 `graphify-out/`)
 - **UI 规范** == **shadcn** (本项目的基础 UI 组件库与规范指南，见 [.skills/shadcn/SKILL.md](.skills/shadcn/SKILL.md))
 - **Research Baseline**: 研究/回测语境下，当前长期 baseline 视为 `dir2_zero_initial=true` + `zero_initial_mode=reentry_window`，并固定使用 `reentry_size_schedule=[0.20, 0.10]`、`max_trades_per_bar=2`。也就是同一根 signal bar 内，第 1 次真实下单为 `20%`，第 2 次真实下单为 `10%`。除非人类明确要求复现历史对照组，否则不要再默认把 `position` 或旧的 `10%/5%/2.5%` 方案当作 baseline 反复判断。
+- **Breakout Structure Semantics**: 当前结构 breakout 不是“闭合 signal bar 收盘确认”。按三根 bar 结构理解时，第三根为当前未闭合 signal bar；`original_t2` long level 为 `prev_high_2`（需满足 T2 结构 ready，例如 `prev_high_2 > prev_high_1`/容差），由当前 bar 内 `1s high >= level` 触发；short level 为 `prev_low_2`，由当前 bar 内 `1s low <= level` 触发。`baseline_plus_t3` 可额外启用 `t3_swing` 结构。文档中不要把这种 intrabar breakout 写成“闭合 1h breakout 信号”。
+- **Strategy Semantic Sources**: 当前策略语义只按两条事实源讨论：`research`（研究/回测脚本）和 `live`（生产实盘运行）。不要再引用或默认存在所谓 Go live-aligned replay / replay 模块作为第三套语义来源；该 replay 模块已移除。比较 baseline、进场 gate、reentry window、breakout 快照/漂移时，必须明确是在问 `research` 还是 `live`，不要用已移除的 replay 代码或图谱旧节点当依据。
+- **Documentation Language**: 面向人类阅读的项目输出文档默认使用中文，包括 research 报告、回测结论、handoff、issue/PR 辅助说明和阶段总结。代码标识、参数名、字段名、命令、文件路径、指标缩写可保留英文；除非人类明确要求英文，不要再默认输出英文报告。
 - **Production Business Data Source**: 查询生产业务事实（live session / order / fill / position / trace / control status）必须优先使用 `bktrader-ctl --json`，不要先 SSH 查 DB 或直接翻原始文件。SSH 日志入口只用于 `bktrader-ctl` 无法回答的进程、部署、文件日志、连通性、REST 限流等运行环境问题；详见 [docs/production-log-troubleshooting.md](docs/production-log-troubleshooting.md)。
 - **环境路径**: 工具绝对路径见 `AGENTS.local.md`（本地私有）。若不存在，参考 [docs/AGENT_PATHS.md](docs/AGENT_PATHS.md)。
 

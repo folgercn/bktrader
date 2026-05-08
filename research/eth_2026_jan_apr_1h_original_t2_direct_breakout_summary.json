@@ -1,0 +1,399 @@
+{
+  "symbol": "ETHUSDT",
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-04-30T23:59:59+00:00",
+  "timeframes": [
+    "1h"
+  ],
+  "schedule_variants": [
+    {
+      "name": "default",
+      "schedule": [
+        0.2,
+        0.1
+      ]
+    }
+  ],
+  "breakout_shapes": [
+    "original_t2"
+  ],
+  "exit_variants": [
+    {
+      "name": "baseline",
+      "trailing_stop_atr": 0.3,
+      "delayed_trailing_activation": 0.5,
+      "profit_protect_atr": 1.0,
+      "profit_lock_activation_atr": null,
+      "profit_lock_bps": 0.0,
+      "take_profit_atr": null
+    }
+  ],
+  "tick_files": [
+    "dataset/archive/ETHUSDT-trades-2026-01/ETHUSDT-trades-2026-01.csv",
+    "dataset/archive/ETHUSDT-trades-2026-02/ETHUSDT-trades-2026-02.zip",
+    "dataset/archive/ETHUSDT-trades-2026-03/ETHUSDT-trades-2026-03.zip",
+    "dataset/archive/ETHUSDT-trades-2026-04/ETHUSDT-trades-2026-04.zip"
+  ],
+  "build_stats": {
+    "raw_tick_rows": 845377275,
+    "kept_tick_rows": 845377268,
+    "sparse_second_rows": 9433712,
+    "continuous_second_rows": 10368000,
+    "first_second": "2026-01-01T00:00:00+00:00",
+    "last_second": "2026-04-30T23:59:59+00:00"
+  },
+  "mode": {
+    "name": "direct_breakout_observed_close",
+    "breakout_shape": [
+      "original_t2"
+    ],
+    "entry": "first breakout per signal bar, filled at triggering 1s close",
+    "allow_same_bar_second_breakout": true,
+    "vsl": "disabled",
+    "re_p": "disabled",
+    "reclaim_reentry": "disabled",
+    "real_stop_atr": 0.3,
+    "exit_labels": {
+      "InitialSL": "initial 0.30 ATR stop",
+      "ProfitLockSL": "stop after an MFE threshold moves the stop to entry or a configured positive bps lock",
+      "TrailingSL": "stop after trailing logic moves the original stop",
+      "PT": "structure profit-taking after profit protection is armed",
+      "TPxATR": "full take-profit target at a configured ATR multiple"
+    },
+    "trailing_stop_atr": 0.3,
+    "delayed_trailing_activation": 0.5,
+    "profit_protect_atr": 1.0
+  },
+  "baseline_kwargs": {
+    "dir2_zero_initial": true,
+    "zero_initial_mode": "reentry_window",
+    "fixed_slippage": 0.0002,
+    "stop_loss_atr": 0.3,
+    "stop_mode": "atr",
+    "max_trades_per_bar": 2,
+    "reentry_size_schedule": [
+      0.2,
+      0.1
+    ],
+    "long_reentry_atr": 0.1,
+    "short_reentry_atr": 0.0,
+    "profit_protect_atr": 1.0,
+    "trailing_stop_atr": 0.3,
+    "delayed_trailing_activation": 0.5,
+    "reentry_anchor_levels": "wick",
+    "reentry_trigger_mode": "reclaim",
+    "commission": 0.0
+  },
+  "accounting_assumption": "Event path generated with fixed_slippage=2bps/side and commission=0; accounting recomputed as maker entry fee 2bps + market SL/exit fee 4bps.",
+  "results": [
+    {
+      "timeframe": "1h",
+      "variant": "default",
+      "breakout_shape": "original_t2",
+      "exit_policy": {
+        "name": "baseline",
+        "trailing_stop_atr": 0.3,
+        "delayed_trailing_activation": 0.5,
+        "profit_protect_atr": 1.0,
+        "profit_lock_activation_atr": null,
+        "profit_lock_bps": 0.0,
+        "take_profit_atr": null
+      },
+      "reentry_size_schedule": [
+        0.2,
+        0.1
+      ],
+      "summary": {
+        "final_balance": 99208.31,
+        "return_pct": -0.79,
+        "max_dd_pct": -3.65,
+        "trades": 940,
+        "win_rate_pct": 36.7,
+        "sharpe": -0.25,
+        "first_entry": "2026-01-01T15:41:38+00:00",
+        "last_exit": "2026-04-30T23:59:59+00:00",
+        "entry_reasons": {
+          "Direct-Breakout": 940
+        },
+        "exit_reasons": {
+          "InitialSL": 594,
+          "TrailingSL": 345,
+          "FinalMarkToMarket": 1
+        },
+        "entry_types": {
+          "BUY": 477,
+          "SHORT": 463
+        },
+        "integrity": {
+          "rows": 1880,
+          "entries": 940,
+          "exits": 940,
+          "zero_notional_entries": 0
+        }
+      },
+      "pair_diagnostics": {
+        "paired_trades": 940,
+        "avg_loss_pct": -0.2897,
+        "worst_loss_pct": -1.0703,
+        "avg_win_pct": 0.4796,
+        "profit_factor": 0.9725,
+        "median_hold_seconds": 612.0,
+        "avg_hold_seconds": 1285.23,
+        "entry_reasons": {
+          "Direct-Breakout": 940
+        },
+        "exit_reasons": {
+          "InitialSL": 594,
+          "TrailingSL": 345,
+          "FinalMarkToMarket": 1
+        }
+      },
+      "attribution": {
+        "original_t2": {
+          "trades": 940,
+          "win_rate_pct": 36.7,
+          "avg_pnl_pct": -0.0073,
+          "median_pnl_pct": -0.1886,
+          "pnl_std_pct": 0.4606,
+          "worst_pnl_pct": -1.0703,
+          "net_pnl_value": -791.69,
+          "max_pnl_drawdown": -3721.42,
+          "profit_factor": 0.9725,
+          "entry_types": {
+            "BUY": 477,
+            "SHORT": 463
+          },
+          "entry_reasons": {
+            "Direct-Breakout": 940
+          },
+          "exit_reasons": {
+            "InitialSL": 594,
+            "TrailingSL": 345,
+            "FinalMarkToMarket": 1
+          }
+        }
+      },
+      "diagnostics": {
+        "breakout_locks": {
+          "long": {
+            "original_t2": 477
+          },
+          "short": {
+            "original_t2": 463
+          }
+        },
+        "direct_entries": 940,
+        "max_trades_blocked": 340133,
+        "bars_with_entry": 629,
+        "allow_same_bar_second_breakout": true
+      },
+      "bar_guard_diagnostics": {
+        "bars_with_multi_entries": 311,
+        "extra_entries": 311,
+        "max_entries_per_bar": 2
+      },
+      "entry_distance_diagnostics": {
+        "entries": 940,
+        "median_entry_vs_breakout_bps": 1.2756,
+        "entry_within_5bps_of_breakout_pct": 67.87,
+        "worst_entry_extension_bps": 245.241
+      },
+      "exit_hold_diagnostics": {
+        "FinalMarkToMarket": {
+          "trades": 1,
+          "avg_hold_seconds": 9056.0,
+          "median_hold_seconds": 9056.0,
+          "win_rate_pct": 0.0
+        },
+        "InitialSL": {
+          "trades": 594,
+          "avg_hold_seconds": 1121.8,
+          "median_hold_seconds": 536.5,
+          "win_rate_pct": 0.0
+        },
+        "TrailingSL": {
+          "trades": 345,
+          "avg_hold_seconds": 1544.1,
+          "median_hold_seconds": 793.0,
+          "win_rate_pct": 100.0
+        }
+      },
+      "trade_slot_diagnostics": {
+        "0": {
+          "trades": 629,
+          "win_rate_pct": 37.52,
+          "avg_pnl_pct": -0.0012,
+          "net_pnl": -174.76,
+          "avg_hold_seconds": 1441.64,
+          "median_hold_seconds": 705.0,
+          "exit_reasons": {
+            "InitialSL": 392,
+            "TrailingSL": 236,
+            "FinalMarkToMarket": 1
+          }
+        },
+        "1": {
+          "trades": 311,
+          "win_rate_pct": 35.05,
+          "avg_pnl_pct": -0.0198,
+          "net_pnl": -616.93,
+          "avg_hold_seconds": 968.89,
+          "median_hold_seconds": 486.0,
+          "exit_reasons": {
+            "InitialSL": 202,
+            "TrailingSL": 109
+          }
+        }
+      },
+      "mfe_mae_diagnostics": {
+        "overall": {
+          "trades": 940,
+          "median_mfe_bps": 22.591,
+          "median_mae_bps": 21.5862,
+          "avg_mfe_bps": 38.642,
+          "avg_mae_bps": 23.3656,
+          "median_mfe_atr": 0.2777,
+          "median_mae_atr": 0.3036,
+          "median_realized_bps": -18.8592,
+          "mfe_ge_10bps_pct": 66.17,
+          "mfe_ge_20bps_pct": 52.34,
+          "mae_ge_10bps_pct": 76.91,
+          "mae_ge_20bps_pct": 53.4
+        },
+        "by_exit_reason": {
+          "FinalMarkToMarket": {
+            "trades": 1,
+            "median_mfe_bps": 23.3351,
+            "median_mae_bps": 16.1751,
+            "avg_mfe_bps": 23.3351,
+            "avg_mae_bps": 16.1751,
+            "median_mfe_atr": 0.414,
+            "median_mae_atr": 0.287,
+            "median_realized_bps": -1.166,
+            "mfe_ge_10bps_pct": 100.0,
+            "mfe_ge_20bps_pct": 100.0,
+            "mae_ge_10bps_pct": 100.0,
+            "mae_ge_20bps_pct": 0.0
+          },
+          "InitialSL": {
+            "trades": 594,
+            "median_mfe_bps": 8.9978,
+            "median_mae_bps": 27.9681,
+            "avg_mfe_bps": 14.4534,
+            "avg_mae_bps": 28.8531,
+            "median_mfe_atr": 0.1073,
+            "median_mae_atr": 0.3108,
+            "median_realized_bps": -28.1236,
+            "mfe_ge_10bps_pct": 46.46,
+            "mfe_ge_20bps_pct": 27.1,
+            "mae_ge_10bps_pct": 93.27,
+            "mae_ge_20bps_pct": 72.73
+          },
+          "TrailingSL": {
+            "trades": 345,
+            "median_mfe_bps": 67.5522,
+            "median_mae_bps": 9.4717,
+            "avg_mfe_bps": 80.3329,
+            "avg_mae_bps": 13.9384,
+            "median_mfe_atr": 0.7248,
+            "median_mae_atr": 0.1269,
+            "median_realized_bps": 34.9922,
+            "mfe_ge_10bps_pct": 100.0,
+            "mfe_ge_20bps_pct": 95.65,
+            "mae_ge_10bps_pct": 48.7,
+            "mae_ge_20bps_pct": 20.29
+          }
+        },
+        "by_breakout_shape": {
+          "original_t2": {
+            "trades": 940,
+            "median_mfe_bps": 22.591,
+            "median_mae_bps": 21.5862,
+            "avg_mfe_bps": 38.642,
+            "avg_mae_bps": 23.3656,
+            "median_mfe_atr": 0.2777,
+            "median_mae_atr": 0.3036,
+            "median_realized_bps": -18.8592,
+            "mfe_ge_10bps_pct": 66.17,
+            "mfe_ge_20bps_pct": 52.34,
+            "mae_ge_10bps_pct": 76.91,
+            "mae_ge_20bps_pct": 53.4
+          }
+        },
+        "by_trade_slot": {
+          "0": {
+            "trades": 629,
+            "median_mfe_bps": 24.1111,
+            "median_mae_bps": 21.8813,
+            "avg_mfe_bps": 39.4551,
+            "avg_mae_bps": 23.4466,
+            "median_mfe_atr": 0.2847,
+            "median_mae_atr": 0.3034,
+            "median_realized_bps": -19.0786,
+            "mfe_ge_10bps_pct": 66.77,
+            "mfe_ge_20bps_pct": 53.1,
+            "mae_ge_10bps_pct": 76.31,
+            "mae_ge_20bps_pct": 54.37
+          },
+          "1": {
+            "trades": 311,
+            "median_mfe_bps": 21.6798,
+            "median_mae_bps": 20.7481,
+            "avg_mfe_bps": 36.9975,
+            "avg_mae_bps": 23.2017,
+            "median_mfe_atr": 0.2655,
+            "median_mae_atr": 0.304,
+            "median_realized_bps": -17.8693,
+            "mfe_ge_10bps_pct": 64.95,
+            "mfe_ge_20bps_pct": 50.8,
+            "mae_ge_10bps_pct": 78.14,
+            "mae_ge_20bps_pct": 51.45
+          }
+        }
+      },
+      "accounting_2bps_maker_entry_market_exit": {
+        "round_trips": 940,
+        "entry_reasons": {
+          "Direct-Breakout": 940
+        },
+        "raw_no_fee_no_slip_return_pct": 5.6316,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -0.7917,
+        "realistic_return_pct": -9.7055,
+        "realistic_final_balance": 90294.45,
+        "realistic_fees_pct": 8.9917,
+        "entry_fee_bps": 2.0,
+        "exit_fee_bps": 4.0,
+        "slippage_bps_per_side": 2.0,
+        "by_trade_slot": {
+          "0": {
+            "round_trips": 629,
+            "raw_no_fee_no_slip_contribution_pct": 4.9602,
+            "price_pnl_with_2bps_slip_no_fee_contribution_pct": -0.1748,
+            "realistic_contribution_pct": -7.3009,
+            "fees_pct": 7.2102
+          },
+          "1": {
+            "round_trips": 311,
+            "raw_no_fee_no_slip_contribution_pct": 0.6714,
+            "price_pnl_with_2bps_slip_no_fee_contribution_pct": -0.6169,
+            "realistic_contribution_pct": -2.4046,
+            "fees_pct": 1.7815
+          }
+        }
+      },
+      "elapsed_seconds": 215.47,
+      "ledger_path": "research/tmp_eth_2026_jan_apr_1h_original_t2_direct_breakout_1h_original_t2_default_baseline_observed_close_ledger.csv",
+      "signal_stats": {
+        "signal_rows": 2880,
+        "run_signal_rows_with_right_boundary": 2881,
+        "signal_start": "2026-01-01T00:00:00+00:00",
+        "signal_end": "2026-04-30T23:00:00+00:00",
+        "valid_sma5_rows": 2876,
+        "valid_atr_rows": 2867
+      }
+    }
+  ],
+  "summary_path": "research/eth_2026_jan_apr_1h_original_t2_direct_breakout_summary.json",
+  "markdown_path": "research/20260508_eth_2026_jan_apr_1h_original_t2_direct_breakout.md",
+  "elapsed_seconds": 646.48
+}

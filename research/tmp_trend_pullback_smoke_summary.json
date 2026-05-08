@@ -1,0 +1,83 @@
+{
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-01-07T23:59:59+00:00",
+  "timeframe": "4h",
+  "execution": "continuous 1s OHLC bars from local trade ticks",
+  "accounting": "2bps/side slippage in ledger plus maker entry 2bps and market exit 4bps in realistic accounting",
+  "variants": [
+    {
+      "name": "base",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.25,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.1,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      }
+    }
+  ],
+  "results": [
+    {
+      "summary": {
+        "trades": 0,
+        "raw_no_fee_no_slip_return_pct": 0.0,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 0.0,
+        "realistic_return_pct": 0.0,
+        "win_rate_pct": 0.0,
+        "max_dd_pct": 0.0,
+        "exit_reasons": {}
+      },
+      "diagnostics": {
+        "setups": 0,
+        "pullback_touches": 0,
+        "entries": 0,
+        "invalidated": 0,
+        "expired": 0,
+        "skipped_min_stop": 0
+      },
+      "symbol": "BTCUSDT",
+      "variant": "base",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.25,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.1,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      },
+      "ledger_path": "research/tmp_trend_pullback_smoke_BTCUSDT_base_ledger.csv",
+      "build_stats": {
+        "raw_tick_rows": 28000000,
+        "kept_tick_rows": 18659078,
+        "sparse_second_rows": 571548,
+        "continuous_second_rows": 604800,
+        "first_second": "2026-01-01T00:00:00+00:00",
+        "last_second": "2026-01-07T23:59:59+00:00"
+      }
+    }
+  ],
+  "summary_path": "research/tmp_trend_pullback_smoke_summary.json",
+  "markdown_path": "research/tmp_trend_pullback_smoke.md",
+  "elapsed_seconds": 29.91
+}

@@ -1,0 +1,425 @@
+{
+  "start": "2026-01-01T00:00:00+00:00",
+  "end": "2026-04-30T23:59:59+00:00",
+  "timeframe": "4h",
+  "execution": "continuous 1s OHLC bars from local trade ticks",
+  "accounting": "2bps/side slippage in ledger plus maker entry 2bps and market exit 4bps in realistic accounting",
+  "variants": [
+    {
+      "name": "base",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.25,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.1,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      }
+    },
+    {
+      "name": "loose_pullback",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.35,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.08,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      }
+    },
+    {
+      "name": "tight_reclaim",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.25,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.05,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      }
+    }
+  ],
+  "results": [
+    {
+      "summary": {
+        "trades": 15,
+        "raw_no_fee_no_slip_return_pct": 0.2492,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 0.1289,
+        "realistic_return_pct": -0.0511,
+        "win_rate_pct": 60.0,
+        "max_dd_pct": -0.5198,
+        "avg_pnl_pct": 0.0436,
+        "median_pnl_pct": 0.08,
+        "median_hold_seconds": 6333.0,
+        "avg_hold_seconds": 10511.73,
+        "median_mfe_r": 1.2287,
+        "median_mae_r": 0.5088,
+        "exit_reasons": {
+          "TrailingSL": 7,
+          "InitialSL": 6,
+          "BreakevenSL": 2
+        }
+      },
+      "diagnostics": {
+        "setups": 21,
+        "pullback_touches": 20,
+        "entries": 15,
+        "invalidated": 5,
+        "expired": 1,
+        "skipped_min_stop": 0
+      },
+      "symbol": "BTCUSDT",
+      "variant": "base",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.25,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.1,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      },
+      "ledger_path": "research/tmp_btc_eth_2026_jan_apr_trend_pullback_continuation_BTCUSDT_base_ledger.csv",
+      "build_stats": {
+        "raw_tick_rows": 539965711,
+        "kept_tick_rows": 539965711,
+        "sparse_second_rows": 9718393,
+        "continuous_second_rows": 10368000,
+        "first_second": "2026-01-01T00:00:00+00:00",
+        "last_second": "2026-04-30T23:59:59+00:00"
+      }
+    },
+    {
+      "summary": {
+        "trades": 14,
+        "raw_no_fee_no_slip_return_pct": 0.0125,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -0.0995,
+        "realistic_return_pct": -0.2672,
+        "win_rate_pct": 57.14,
+        "max_dd_pct": -0.6854,
+        "avg_pnl_pct": -0.0349,
+        "median_pnl_pct": 0.08,
+        "median_hold_seconds": 5672.5,
+        "avg_hold_seconds": 9340.57,
+        "median_mfe_r": 1.1129,
+        "median_mae_r": 0.8072,
+        "exit_reasons": {
+          "InitialSL": 6,
+          "TrailingSL": 6,
+          "BreakevenSL": 2
+        }
+      },
+      "diagnostics": {
+        "setups": 21,
+        "pullback_touches": 20,
+        "entries": 14,
+        "invalidated": 6,
+        "expired": 1,
+        "skipped_min_stop": 0
+      },
+      "symbol": "BTCUSDT",
+      "variant": "loose_pullback",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.35,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.08,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      },
+      "ledger_path": "research/tmp_btc_eth_2026_jan_apr_trend_pullback_continuation_BTCUSDT_loose_pullback_ledger.csv",
+      "build_stats": {
+        "raw_tick_rows": 539965711,
+        "kept_tick_rows": 539965711,
+        "sparse_second_rows": 9718393,
+        "continuous_second_rows": 10368000,
+        "first_second": "2026-01-01T00:00:00+00:00",
+        "last_second": "2026-04-30T23:59:59+00:00"
+      }
+    },
+    {
+      "summary": {
+        "trades": 20,
+        "raw_no_fee_no_slip_return_pct": -0.3439,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -0.5032,
+        "realistic_return_pct": -0.7418,
+        "win_rate_pct": 45.0,
+        "max_dd_pct": -0.7418,
+        "avg_pnl_pct": -0.1255,
+        "median_pnl_pct": -0.4064,
+        "median_hold_seconds": 4139.0,
+        "avg_hold_seconds": 9470.7,
+        "median_mfe_r": 0.8014,
+        "median_mae_r": 1.004,
+        "exit_reasons": {
+          "InitialSL": 11,
+          "TrailingSL": 5,
+          "BreakevenSL": 4
+        }
+      },
+      "diagnostics": {
+        "setups": 25,
+        "pullback_touches": 24,
+        "entries": 20,
+        "invalidated": 4,
+        "expired": 1,
+        "skipped_min_stop": 0
+      },
+      "symbol": "BTCUSDT",
+      "variant": "tight_reclaim",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.25,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.05,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      },
+      "ledger_path": "research/tmp_btc_eth_2026_jan_apr_trend_pullback_continuation_BTCUSDT_tight_reclaim_ledger.csv",
+      "build_stats": {
+        "raw_tick_rows": 539965711,
+        "kept_tick_rows": 539965711,
+        "sparse_second_rows": 9718393,
+        "continuous_second_rows": 10368000,
+        "first_second": "2026-01-01T00:00:00+00:00",
+        "last_second": "2026-04-30T23:59:59+00:00"
+      }
+    },
+    {
+      "summary": {
+        "trades": 11,
+        "raw_no_fee_no_slip_return_pct": 0.6166,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 0.5281,
+        "realistic_return_pct": 0.3956,
+        "win_rate_pct": 63.64,
+        "max_dd_pct": -0.2804,
+        "avg_pnl_pct": 0.2407,
+        "median_pnl_pct": 0.08,
+        "median_hold_seconds": 10912.0,
+        "avg_hold_seconds": 14317.18,
+        "median_mfe_r": 1.4983,
+        "median_mae_r": 0.7566,
+        "exit_reasons": {
+          "TrailingSL": 5,
+          "InitialSL": 4,
+          "BreakevenSL": 2
+        }
+      },
+      "diagnostics": {
+        "setups": 20,
+        "pullback_touches": 20,
+        "entries": 11,
+        "invalidated": 9,
+        "expired": 0,
+        "skipped_min_stop": 0
+      },
+      "symbol": "ETHUSDT",
+      "variant": "base",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.25,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.1,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      },
+      "ledger_path": "research/tmp_btc_eth_2026_jan_apr_trend_pullback_continuation_ETHUSDT_base_ledger.csv",
+      "build_stats": {
+        "raw_tick_rows": 845377275,
+        "kept_tick_rows": 845377268,
+        "sparse_second_rows": 9433712,
+        "continuous_second_rows": 10368000,
+        "first_second": "2026-01-01T00:00:00+00:00",
+        "last_second": "2026-04-30T23:59:59+00:00"
+      }
+    },
+    {
+      "summary": {
+        "trades": 10,
+        "raw_no_fee_no_slip_return_pct": 0.3151,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 0.2349,
+        "realistic_return_pct": 0.1147,
+        "win_rate_pct": 60.0,
+        "max_dd_pct": -0.499,
+        "avg_pnl_pct": 0.1187,
+        "median_pnl_pct": 0.08,
+        "median_hold_seconds": 11399.0,
+        "avg_hold_seconds": 16116.3,
+        "median_mfe_r": 1.1774,
+        "median_mae_r": 0.7736,
+        "exit_reasons": {
+          "InitialSL": 4,
+          "TrailingSL": 4,
+          "BreakevenSL": 2
+        }
+      },
+      "diagnostics": {
+        "setups": 17,
+        "pullback_touches": 17,
+        "entries": 10,
+        "invalidated": 7,
+        "expired": 0,
+        "skipped_min_stop": 0
+      },
+      "symbol": "ETHUSDT",
+      "variant": "loose_pullback",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.35,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.08,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      },
+      "ledger_path": "research/tmp_btc_eth_2026_jan_apr_trend_pullback_continuation_ETHUSDT_loose_pullback_ledger.csv",
+      "build_stats": {
+        "raw_tick_rows": 845377275,
+        "kept_tick_rows": 845377268,
+        "sparse_second_rows": 9433712,
+        "continuous_second_rows": 10368000,
+        "first_second": "2026-01-01T00:00:00+00:00",
+        "last_second": "2026-04-30T23:59:59+00:00"
+      }
+    },
+    {
+      "summary": {
+        "trades": 11,
+        "raw_no_fee_no_slip_return_pct": 1.0939,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 1.005,
+        "realistic_return_pct": 0.8719,
+        "win_rate_pct": 72.73,
+        "max_dd_pct": -0.1896,
+        "avg_pnl_pct": 0.4557,
+        "median_pnl_pct": 0.343,
+        "median_hold_seconds": 9734.0,
+        "avg_hold_seconds": 13782.64,
+        "median_mfe_r": 1.5281,
+        "median_mae_r": 0.6124,
+        "exit_reasons": {
+          "TrailingSL": 6,
+          "InitialSL": 3,
+          "BreakevenSL": 2
+        }
+      },
+      "diagnostics": {
+        "setups": 20,
+        "pullback_touches": 20,
+        "entries": 11,
+        "invalidated": 9,
+        "expired": 0,
+        "skipped_min_stop": 0
+      },
+      "symbol": "ETHUSDT",
+      "variant": "tight_reclaim",
+      "params": {
+        "setup_expiry_bars": 6,
+        "min_atr_percentile": 30.0,
+        "pullback_atr": 0.25,
+        "invalid_atr": 0.45,
+        "reclaim_atr": 0.05,
+        "stop_buffer_atr": 0.1,
+        "stop_cap_atr": 0.6,
+        "min_stop_bps": 12.0,
+        "breakeven_at_r": 1.0,
+        "cost_lock_bps": 10.0,
+        "trail_start_r": 1.5,
+        "trail_atr": 0.5,
+        "notional_share": 0.2,
+        "slippage": 0.0002,
+        "entry_fee": 0.0002,
+        "exit_fee": 0.0004
+      },
+      "ledger_path": "research/tmp_btc_eth_2026_jan_apr_trend_pullback_continuation_ETHUSDT_tight_reclaim_ledger.csv",
+      "build_stats": {
+        "raw_tick_rows": 845377275,
+        "kept_tick_rows": 845377268,
+        "sparse_second_rows": 9433712,
+        "continuous_second_rows": 10368000,
+        "first_second": "2026-01-01T00:00:00+00:00",
+        "last_second": "2026-04-30T23:59:59+00:00"
+      }
+    }
+  ],
+  "summary_path": "research/btc_eth_2026_jan_apr_trend_pullback_continuation_summary.json",
+  "markdown_path": "research/20260507_btc_eth_2026_jan_apr_trend_pullback_continuation.md",
+  "elapsed_seconds": 3132.99
+}
