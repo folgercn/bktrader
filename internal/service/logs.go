@@ -262,7 +262,7 @@ func (p *Platform) ListLogEvents(query UnifiedLogEventQuery) (UnifiedLogEventPag
 }
 
 func (p *Platform) queryStrategyDecisionEvents(query domain.StrategyDecisionEventQuery) ([]domain.StrategyDecisionEvent, error) {
-	if reader, ok := p.store.(strategyDecisionEventQueryReader); ok {
+	if reader, ok := dashboardRootRepository(p.store).(strategyDecisionEventQueryReader); ok {
 		return reader.QueryStrategyDecisionEvents(query)
 	}
 	items, err := p.store.ListStrategyDecisionEvents("")
@@ -315,7 +315,7 @@ func (p *Platform) queryStrategyDecisionEvents(query domain.StrategyDecisionEven
 }
 
 func (p *Platform) queryOrderExecutionEvents(query domain.OrderExecutionEventQuery) ([]domain.OrderExecutionEvent, error) {
-	if reader, ok := p.store.(orderExecutionEventQueryReader); ok {
+	if reader, ok := dashboardRootRepository(p.store).(orderExecutionEventQueryReader); ok {
 		return reader.QueryOrderExecutionEvents(query)
 	}
 	items, err := p.store.ListOrderExecutionEvents("")
@@ -360,7 +360,7 @@ func (p *Platform) queryOrderExecutionEvents(query domain.OrderExecutionEventQue
 }
 
 func (p *Platform) queryPositionAccountSnapshots(query domain.PositionAccountSnapshotQuery) ([]domain.PositionAccountSnapshot, error) {
-	if reader, ok := p.store.(positionAccountSnapshotQueryReader); ok {
+	if reader, ok := dashboardRootRepository(p.store).(positionAccountSnapshotQueryReader); ok {
 		return reader.QueryPositionAccountSnapshots(query)
 	}
 	items, err := p.store.ListPositionAccountSnapshots("")

@@ -136,8 +136,9 @@ Current implementation uses these trigger paths:
 4. Order create / submit / sync / fill settlement operations enqueue `orders` domain changes after their store write succeeds.
 5. Fill settlement operations enqueue `fills` domain changes after fill persistence succeeds.
 6. Fill settlement operations enqueue `positions` domain changes after position settlement succeeds.
+7. Live session create / update / delete / status / state writes enqueue `live-sessions` domain changes after the store write succeeds.
 
-Some business write paths still rely on polling fallback. Event-driven triggers currently cover low-risk notification ack state changes and order/fill/position snapshot refreshes.
+Some business write paths still rely on polling fallback. Event-driven triggers currently cover notification ack state changes and order/fill/position/live-session snapshot refreshes.
 
 ### 6.1 Subscriber model
 
