@@ -458,6 +458,11 @@ export type RuntimeSupervisorServiceState = {
   containerFallbackBackoffClearedReason?: string;
   containerFallbackBackoffClearedSource?: string;
   containerFallbackAttemptCount?: number;
+  containerFallbackSubmitted?: boolean;
+  containerFallbackSubmittedAt?: string;
+  containerFallbackSubmittedReason?: string;
+  containerFallbackSubmittedMessage?: string;
+  containerFallbackSubmittedError?: string;
   lastContainerFallbackDecisionAt?: string;
   lastContainerFallbackDecisionReason?: string;
 };
@@ -471,6 +476,7 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   executorDryRun?: boolean;
   executable: boolean;
   decision?: 'blocked' | 'eligible' | string;
+  duplicate?: boolean;
   suppressed: boolean;
   backoffActive: boolean;
   safetyGateOk: boolean;
@@ -512,6 +518,8 @@ export type RuntimeSupervisorContainerFallbackAction = {
   executorDryRun: boolean;
   submitted: boolean;
   executed: boolean;
+  backoffUntil?: string;
+  backoffSeconds?: number;
   message?: string;
   error?: string;
   requestedAt: string;
