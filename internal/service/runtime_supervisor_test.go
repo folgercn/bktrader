@@ -235,12 +235,21 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if first.ServiceState.ConsecutiveFailures != 1 || first.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected first failure below fallback threshold, got %+v", first.ServiceState)
 	}
+	if first.ServiceState.ServiceFailureEpisodeStartedAt == nil || first.ServiceState.ContainerFallbackCandidateSince != nil {
+		t.Fatalf("expected first failure to start episode before fallback candidate, got %+v", first.ServiceState)
+	}
 	if first.ContainerFallbackPlan != nil {
 		t.Fatalf("expected no fallback plan below threshold, got %+v", first.ContainerFallbackPlan)
 	}
 	second := supervisor.Collect(context.Background()).Targets[0]
 	if second.ServiceState.ConsecutiveFailures != 2 || !second.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected second failure to become fallback candidate, got %+v", second.ServiceState)
+	}
+	if second.ServiceState.ServiceFailureEpisodeStartedAt == nil || !second.ServiceState.ServiceFailureEpisodeStartedAt.Equal(*first.ServiceState.ServiceFailureEpisodeStartedAt) {
+		t.Fatalf("expected service failure episode start to remain stable, got first=%+v second=%+v", first.ServiceState, second.ServiceState)
+	}
+	if second.ServiceState.ContainerFallbackCandidateSince == nil {
+		t.Fatalf("expected fallback candidate since when threshold is reached, got %+v", second.ServiceState)
 	}
 	if second.ServiceState.ContainerFallbackReason == "" || second.ServiceState.LastFailureReason == "" || second.ServiceState.LastFailureAt == nil {
 		t.Fatalf("expected fallback reason and failure metadata, got %+v", second.ServiceState)
@@ -280,11 +289,20 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if third.ServiceState.ContainerFallbackAttemptCount != 2 || third.ServiceState.LastContainerFallbackDecisionReason != "container-restart-disabled" {
 		t.Fatalf("expected fallback decision audit to advance while candidate remains active, got %+v", third.ServiceState)
 	}
+	if third.ServiceState.ServiceFailureEpisodeStartedAt == nil || !third.ServiceState.ServiceFailureEpisodeStartedAt.Equal(*first.ServiceState.ServiceFailureEpisodeStartedAt) {
+		t.Fatalf("expected service failure episode start to remain stable while candidate remains active, got %+v", third.ServiceState)
+	}
+	if third.ServiceState.ContainerFallbackCandidateSince == nil || !third.ServiceState.ContainerFallbackCandidateSince.Equal(*second.ServiceState.ContainerFallbackCandidateSince) {
+		t.Fatalf("expected fallback candidate since to remain stable while candidate remains active, got %+v", third.ServiceState)
+	}
 
 	healthy = true
 	recovered := supervisor.Collect(context.Background()).Targets[0]
 	if recovered.ServiceState.ConsecutiveFailures != 0 || recovered.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected healthy probe to clear fallback candidate, got %+v", recovered.ServiceState)
+	}
+	if recovered.ServiceState.ServiceFailureEpisodeStartedAt != nil || recovered.ServiceState.ContainerFallbackCandidateSince != nil {
+		t.Fatalf("expected healthy probe to clear service failure episode timestamps, got %+v", recovered.ServiceState)
 	}
 	if recovered.ContainerFallbackPlan != nil {
 		t.Fatalf("expected healthy probe to clear fallback plan, got %+v", recovered.ContainerFallbackPlan)
@@ -420,6 +438,9 @@ func TestRuntimeSupervisorDryRunContainerFallbackExecutorRecordsActionOncePerFai
 	if !action.Submitted || action.Executed || action.Message == "" || action.Error != "" {
 		t.Fatalf("expected dry-run non-executing action audit, got %+v", action)
 	}
+	if action.ServiceFailureEpisodeStartedAt == nil || action.ContainerFallbackCandidateSince == nil {
+		t.Fatalf("expected action audit to carry failure episode anchors, got %+v", action)
+	}
 	next := supervisor.Collect(context.Background())
 	if executor.calls != 1 || len(next.ContainerFallbackActions) != 1 {
 		t.Fatalf("expected container fallback action to be deduped while failure episode remains active, calls=%d actions=%+v", executor.calls, next.ContainerFallbackActions)
@@ -479,6 +500,9 @@ func TestRuntimeSupervisorContainerFallbackExecutorErrorSetsBackoffAndAllowsManu
 	action := snapshot.ContainerFallbackActions[0]
 	if action.Error != "noop executor failed" || action.BackoffUntil == nil || action.BackoffSeconds != 300 {
 		t.Fatalf("expected action error backoff audit, got %+v", action)
+	}
+	if action.ServiceFailureEpisodeStartedAt == nil || action.ContainerFallbackCandidateSince == nil {
+		t.Fatalf("expected failed action audit to carry failure episode anchors, got %+v", action)
 	}
 	target := snapshot.Targets[0]
 	if target.ContainerFallbackPlan == nil || target.ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" || !target.ContainerFallbackPlan.BackoffActive {

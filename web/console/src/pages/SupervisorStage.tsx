@@ -891,6 +891,11 @@ export function SupervisorStage() {
                                     {target.serviceState.lastFailureReason}
                                   </span>
                                 )}
+                                {target.serviceState.serviceFailureEpisodeStartedAt && (
+                                  <span className="text-xs text-[var(--bk-text-muted)]">
+                                    since {formatOptionalTime(target.serviceState.serviceFailureEpisodeStartedAt)}
+                                  </span>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -937,6 +942,11 @@ export function SupervisorStage() {
                                 {target.serviceState.containerFallbackSubmitted && fallbackSubmittedDetail && (
                                   <span className="truncate text-xs text-[var(--bk-text-muted)]" title={fallbackSubmittedDetail}>
                                     {formatOptionalTime(target.serviceState.containerFallbackSubmittedAt)} {fallbackSubmittedDetail}
+                                  </span>
+                                )}
+                                {target.serviceState.containerFallbackCandidateSince && (
+                                  <span className="text-xs text-[var(--bk-text-muted)]">
+                                    candidate since {formatOptionalTime(target.serviceState.containerFallbackCandidateSince)}
                                   </span>
                                 )}
                               </div>
@@ -1304,6 +1314,7 @@ export function SupervisorStage() {
                               <TableHead>Executor</TableHead>
                               <TableHead>Status</TableHead>
                               <TableHead>Backoff</TableHead>
+                              <TableHead>Episode</TableHead>
                               <TableHead>Result</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -1336,6 +1347,12 @@ export function SupervisorStage() {
                                       {action.backoffSeconds ? (
                                         <span className="text-[var(--bk-text-muted)]">{action.backoffSeconds}s</span>
                                       ) : null}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>{formatOptionalTime(action.serviceFailureEpisodeStartedAt)}</span>
+                                      <span className="text-[var(--bk-text-muted)]">{formatOptionalTime(action.containerFallbackCandidateSince)}</span>
                                     </div>
                                   </TableCell>
                                   <TableCell>
