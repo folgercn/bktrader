@@ -116,9 +116,10 @@ func runSupervisorContainerFallbackControlWithBackoff(cmd *cobra.Command, target
 }
 
 type supervisorStatusSnapshot struct {
-	CheckedAt string                     `json:"checkedAt"`
-	Policy    *supervisorPolicy          `json:"policy,omitempty"`
-	Targets   []supervisorTargetSnapshot `json:"targets"`
+	CheckedAt                 string                                     `json:"checkedAt"`
+	Policy                    *supervisorPolicy                          `json:"policy,omitempty"`
+	Targets                   []supervisorTargetSnapshot                 `json:"targets"`
+	ContainerFallbackControls []supervisorContainerFallbackControlAction `json:"containerFallbackControls,omitempty"`
 }
 
 type supervisorPolicy struct {
@@ -241,6 +242,18 @@ type supervisorControlAction struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type supervisorContainerFallbackControlAction struct {
+	Action         string `json:"action"`
+	TargetName     string `json:"targetName"`
+	TargetBaseURL  string `json:"targetBaseUrl"`
+	Suppressed     bool   `json:"suppressed"`
+	BackoffUntil   string `json:"backoffUntil,omitempty"`
+	BackoffSeconds int    `json:"backoffSeconds,omitempty"`
+	Reason         string `json:"reason"`
+	Source         string `json:"source"`
+	UpdatedAt      string `json:"updatedAt"`
+}
+
 func handleSupervisorStatusResponse(data []byte, err error) {
 	if err != nil || outputJSON {
 		handleResponse(data, err)
@@ -305,8 +318,8 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 			snapshot.Policy.ContainerExecutorDryRun,
 		)
 	}
-	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d fallbackDryRun=%d runtimes=%d attention=%d controlActions=%d\n",
-		targets, fullyReachable, fallbackCandidates, fallbackExecutable, fallbackDryRun, runtimeCount, runtimeAttention, controlActions)
+	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d fallbackDryRun=%d runtimes=%d attention=%d controlActions=%d fallbackControls=%d\n",
+		targets, fullyReachable, fallbackCandidates, fallbackExecutable, fallbackDryRun, runtimeCount, runtimeAttention, controlActions, len(snapshot.ContainerFallbackControls))
 	for _, target := range snapshot.Targets {
 		fmt.Fprintf(&out, "\n- %s %s\n", firstNonEmpty(target.Name, "--"), firstNonEmpty(target.BaseURL, "--"))
 		fmt.Fprintf(&out, "  probes: healthz=%s runtimeStatus=%s\n", supervisorProbeText(target.Healthz), supervisorProbeText(target.RuntimeStatus))
@@ -413,6 +426,21 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				}
 			}
 			fmt.Fprintf(&out, "  controlActions: total=%d errors=%d\n", len(target.ControlActions), errors)
+		}
+	}
+	if len(snapshot.ContainerFallbackControls) > 0 {
+		fmt.Fprintf(&out, "\nfallbackControls: total=%d\n", len(snapshot.ContainerFallbackControls))
+		for _, action := range snapshot.ContainerFallbackControls {
+			fmt.Fprintf(&out, "  - %s target=%s suppressed=%t backoffUntil=%s backoffSeconds=%d source=%s updatedAt=%s reason=%s\n",
+				firstNonEmpty(action.Action, "--"),
+				firstNonEmpty(action.TargetName, "--"),
+				action.Suppressed,
+				firstNonEmpty(action.BackoffUntil, "--"),
+				action.BackoffSeconds,
+				firstNonEmpty(action.Source, "--"),
+				firstNonEmpty(action.UpdatedAt, "--"),
+				firstNonEmpty(action.Reason, "--"),
+			)
 		}
 	}
 	return strings.TrimRight(out.String(), "\n") + "\n", nil

@@ -145,6 +145,39 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 	}
 }
 
+func TestBuildSupervisorStatusSummaryShowsFallbackControlAudit(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[],
+		"containerFallbackControls":[{
+			"action":"defer-container-fallback",
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"suppressed":false,
+			"backoffUntil":"2026-04-29T08:05:00Z",
+			"backoffSeconds":300,
+			"reason":"operator cooling down restart loop",
+			"source":"ctl",
+			"updatedAt":"2026-04-29T08:00:00Z"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 fallbackControls=1",
+		"fallbackControls: total=1",
+		"defer-container-fallback target=api suppressed=false backoffUntil=2026-04-29T08:05:00Z backoffSeconds=300 source=ctl updatedAt=2026-04-29T08:00:00Z reason=operator cooling down restart loop",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
 func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 	payload := []byte(`{
 		"checkedAt":"2026-04-29T08:00:00Z",

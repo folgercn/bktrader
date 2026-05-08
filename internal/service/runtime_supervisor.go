@@ -18,6 +18,7 @@ import (
 const (
 	defaultRuntimeSupervisorHTTPTimeout          = 5 * time.Second
 	defaultRuntimeSupervisorServiceFailThresh    = 3
+	defaultRuntimeSupervisorControlHistoryLimit  = 50
 	maxRuntimeSupervisorContainerFallbackBackoff = 24 * time.Hour
 
 	runtimeSupervisorApplicationRestartDecisionBlocked  = "blocked"
@@ -117,9 +118,10 @@ type RuntimeSupervisorTargetSnapshot struct {
 }
 
 type RuntimeSupervisorSnapshot struct {
-	CheckedAt time.Time                         `json:"checkedAt"`
-	Policy    RuntimeSupervisorPolicy           `json:"policy"`
-	Targets   []RuntimeSupervisorTargetSnapshot `json:"targets"`
+	CheckedAt                 time.Time                                         `json:"checkedAt"`
+	Policy                    RuntimeSupervisorPolicy                           `json:"policy"`
+	Targets                   []RuntimeSupervisorTargetSnapshot                 `json:"targets"`
+	ContainerFallbackControls []RuntimeSupervisorContainerFallbackControlAction `json:"containerFallbackControls,omitempty"`
 }
 
 type RuntimeSupervisorPolicy struct {
@@ -141,6 +143,18 @@ type RuntimeSupervisorControlAction struct {
 	StatusCode  int       `json:"statusCode,omitempty"`
 	Error       string    `json:"error,omitempty"`
 	RequestedAt time.Time `json:"requestedAt"`
+}
+
+type RuntimeSupervisorContainerFallbackControlAction struct {
+	Action         string     `json:"action"`
+	TargetName     string     `json:"targetName"`
+	TargetBaseURL  string     `json:"targetBaseUrl"`
+	Suppressed     bool       `json:"suppressed"`
+	BackoffUntil   *time.Time `json:"backoffUntil,omitempty"`
+	BackoffSeconds int        `json:"backoffSeconds,omitempty"`
+	Reason         string     `json:"reason"`
+	Source         string     `json:"source"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 type RuntimeSupervisorApplicationRestartPlan struct {
@@ -290,6 +304,7 @@ type RuntimeSupervisor struct {
 	snapshot          RuntimeSupervisorSnapshot
 	submittedRestarts map[string]string
 	serviceStates     map[string]runtimeSupervisorServiceState
+	fallbackControls  []RuntimeSupervisorContainerFallbackControlAction
 }
 
 func (p *Platform) SetRuntimeSupervisor(supervisor *RuntimeSupervisor) {
@@ -447,6 +462,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 		snapshot.Targets = append(snapshot.Targets, targetSnapshot)
 	}
 	s.mu.Lock()
+	snapshot.ContainerFallbackControls = append([]RuntimeSupervisorContainerFallbackControlAction(nil), s.fallbackControls...)
 	s.snapshot = snapshot
 	s.mu.Unlock()
 	return snapshot
@@ -461,7 +477,22 @@ func (s *RuntimeSupervisor) LastSnapshot() RuntimeSupervisorSnapshot {
 	out := s.snapshot
 	if out.Targets != nil {
 		out.Targets = append([]RuntimeSupervisorTargetSnapshot(nil), out.Targets...)
+		now := time.Now().UTC()
+		for i := range out.Targets {
+			target := RuntimeSupervisorTarget{
+				Name:    out.Targets[i].Name,
+				BaseURL: out.Targets[i].BaseURL,
+			}
+			state, ok := s.serviceStates[runtimeSupervisorServiceKey(target)]
+			if !ok {
+				continue
+			}
+			serviceState := runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold)
+			out.Targets[i].ServiceState = serviceState
+			out.Targets[i].ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(serviceState, s.options, now)
+		}
 	}
+	out.ContainerFallbackControls = append([]RuntimeSupervisorContainerFallbackControlAction(nil), s.fallbackControls...)
 	return out
 }
 
@@ -522,6 +553,19 @@ func (s *RuntimeSupervisor) setContainerFallbackSuppressed(targetName string, su
 		state.ContainerFallbackResumedSource = source
 	}
 	s.serviceStates[key] = state
+	action := "suppress-container-fallback"
+	if !suppressed {
+		action = "resume-container-fallback"
+	}
+	s.recordContainerFallbackControlLocked(RuntimeSupervisorContainerFallbackControlAction{
+		Action:        action,
+		TargetName:    target.Name,
+		TargetBaseURL: target.BaseURL,
+		Suppressed:    suppressed,
+		Reason:        reason,
+		Source:        source,
+		UpdatedAt:     now,
+	})
 	return RuntimeSupervisorContainerFallbackControlResult{
 		TargetName:    target.Name,
 		TargetBaseURL: target.BaseURL,
@@ -581,6 +625,24 @@ func (s *RuntimeSupervisor) setContainerFallbackBackoff(targetName string, optio
 		backoffUntil = &until
 	}
 	s.serviceStates[key] = state
+	action := "defer-container-fallback"
+	if clear {
+		action = "clear-container-fallback-backoff"
+	}
+	event := RuntimeSupervisorContainerFallbackControlAction{
+		Action:        action,
+		TargetName:    target.Name,
+		TargetBaseURL: target.BaseURL,
+		Suppressed:    state.ContainerFallbackSuppressed,
+		BackoffUntil:  backoffUntil,
+		Reason:        reason,
+		Source:        source,
+		UpdatedAt:     now,
+	}
+	if !clear {
+		event.BackoffSeconds = int(options.BackoffDuration / time.Second)
+	}
+	s.recordContainerFallbackControlLocked(event)
 	return RuntimeSupervisorContainerFallbackControlResult{
 		TargetName:    target.Name,
 		TargetBaseURL: target.BaseURL,
@@ -591,6 +653,16 @@ func (s *RuntimeSupervisor) setContainerFallbackBackoff(targetName string, optio
 		UpdatedAt:     now,
 		ServiceState:  runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold),
 	}, nil
+}
+
+func (s *RuntimeSupervisor) recordContainerFallbackControlLocked(event RuntimeSupervisorContainerFallbackControlAction) {
+	if s == nil {
+		return
+	}
+	s.fallbackControls = append([]RuntimeSupervisorContainerFallbackControlAction{event}, s.fallbackControls...)
+	if len(s.fallbackControls) > defaultRuntimeSupervisorControlHistoryLimit {
+		s.fallbackControls = s.fallbackControls[:defaultRuntimeSupervisorControlHistoryLimit]
+	}
 }
 
 func (s *RuntimeSupervisor) targetByName(targetName string) (RuntimeSupervisorTarget, error) {
