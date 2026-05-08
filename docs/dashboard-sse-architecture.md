@@ -167,7 +167,7 @@ For each domain payload:
 4. Compare with the previous hash.
 5. Publish only when the hash changes.
 
-Initial snapshots also update `lastHashes`, so the first polling tick after a new connection does not immediately resend unchanged data.
+Initial snapshots are sent only to the new subscriber and do not update global `lastHashes`. Global hash state is maintained by the broadcast path so a new connection cannot mask an update for existing subscribers.
 
 ### 6.4 Sequence numbers
 
@@ -222,15 +222,15 @@ Backend broker polling intervals are configurable per domain:
 
 ```env
 DASHBOARD_LIVE_SESSIONS_POLL_MS=2000
-DASHBOARD_POSITIONS_POLL_MS=2000
-DASHBOARD_ORDERS_POLL_MS=2000
-DASHBOARD_FILLS_POLL_MS=2000
+DASHBOARD_POSITIONS_POLL_MS=10000
+DASHBOARD_ORDERS_POLL_MS=10000
+DASHBOARD_FILLS_POLL_MS=10000
 DASHBOARD_ALERTS_POLL_MS=2000
-DASHBOARD_NOTIFICATIONS_POLL_MS=2000
+DASHBOARD_NOTIFICATIONS_POLL_MS=30000
 DASHBOARD_MONITOR_HEALTH_POLL_MS=2000
 ```
 
-Backend config enforces minimum interval protection so accidental very-low values do not create excessive load.
+Backend config enforces minimum interval protection so accidental very-low values do not create excessive load. Domains that still depend heavily on fallback polling keep the shorter 2s default; domains with explicit write-path notifications use longer fallback intervals.
 
 ## 10. Failure Modes
 

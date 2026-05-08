@@ -255,6 +255,45 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	}
 }
 
+func TestLoadDashboardBrokerPollDefaults(t *testing.T) {
+	cfg := Load()
+
+	if cfg.DashboardLiveSessionsPollMs != 2000 {
+		t.Fatalf("expected live sessions poll default 2000, got %d", cfg.DashboardLiveSessionsPollMs)
+	}
+	if cfg.DashboardPositionsPollMs != 10000 {
+		t.Fatalf("expected positions poll default 10000, got %d", cfg.DashboardPositionsPollMs)
+	}
+	if cfg.DashboardOrdersPollMs != 10000 {
+		t.Fatalf("expected orders poll default 10000, got %d", cfg.DashboardOrdersPollMs)
+	}
+	if cfg.DashboardFillsPollMs != 10000 {
+		t.Fatalf("expected fills poll default 10000, got %d", cfg.DashboardFillsPollMs)
+	}
+	if cfg.DashboardAlertsPollMs != 2000 {
+		t.Fatalf("expected alerts poll default 2000, got %d", cfg.DashboardAlertsPollMs)
+	}
+	if cfg.DashboardNotificationsPollMs != 30000 {
+		t.Fatalf("expected notifications poll default 30000, got %d", cfg.DashboardNotificationsPollMs)
+	}
+	if cfg.DashboardMonitorHealthPollMs != 2000 {
+		t.Fatalf("expected monitor health poll default 2000, got %d", cfg.DashboardMonitorHealthPollMs)
+	}
+}
+
+func TestLoadDashboardBrokerPollEnvOverrides(t *testing.T) {
+	t.Setenv("DASHBOARD_POSITIONS_POLL_MS", "15000")
+	t.Setenv("DASHBOARD_NOTIFICATIONS_POLL_MS", "900")
+
+	cfg := Load()
+	if cfg.DashboardPositionsPollMs != 15000 {
+		t.Fatalf("expected positions poll override 15000, got %d", cfg.DashboardPositionsPollMs)
+	}
+	if cfg.DashboardNotificationsPollMs != 30000 {
+		t.Fatalf("expected notifications poll fallback 30000, got %d", cfg.DashboardNotificationsPollMs)
+	}
+}
+
 func TestBoolFromEnvRecognizesTruthyAndFalsyValues(t *testing.T) {
 	t.Setenv("BOOL_TRUE", "yes")
 	if !boolFromEnv("BOOL_TRUE", false) {
