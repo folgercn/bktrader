@@ -438,11 +438,13 @@ export type RuntimeSupervisorStatus = {
 export type RuntimeSupervisorServiceState = {
   consecutiveFailures: number;
   failureThreshold: number;
+  serviceFailureEpisodeStartedAt?: string;
   lastFailureReason?: string;
   lastFailureAt?: string;
   lastHealthyAt?: string;
   containerFallbackCandidate: boolean;
   containerFallbackReason?: string;
+  containerFallbackCandidateSince?: string;
   containerFallbackSuppressed?: boolean;
   containerFallbackSuppressedAt?: string;
   containerFallbackSuppressedReason?: string;
@@ -471,6 +473,8 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   action: string;
   candidate: boolean;
   enabled: boolean;
+  serviceFailureEpisodeStartedAt?: string;
+  containerFallbackCandidateSince?: string;
   executorConfigured: boolean;
   executorKind?: string;
   executorDryRun?: boolean;
@@ -514,6 +518,8 @@ export type RuntimeSupervisorContainerFallbackAction = {
   targetName: string;
   targetBaseUrl: string;
   reason?: string;
+  serviceFailureEpisodeStartedAt?: string;
+  containerFallbackCandidateSince?: string;
   executorKind: string;
   executorDryRun: boolean;
   submitted: boolean;

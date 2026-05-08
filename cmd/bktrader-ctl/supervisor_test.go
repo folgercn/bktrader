@@ -24,9 +24,11 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 			"serviceState":{
 				"consecutiveFailures":3,
 				"failureThreshold":3,
+				"serviceFailureEpisodeStartedAt":"2026-04-29T07:58:00Z",
 				"lastFailureReason":"healthz-unhealthy: http 503",
 				"containerFallbackCandidate":true,
 				"containerFallbackReason":"service probes failed 3/3",
+				"containerFallbackCandidateSince":"2026-04-29T08:00:00Z",
 				"containerFallbackAttemptCount":2,
 				"containerFallbackSuppressed":false,
 				"lastContainerFallbackDecisionAt":"2026-04-29T08:00:00Z",
@@ -77,7 +79,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 		"Runtime supervisor snapshot",
 		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=0 fallbackDryRun=0 runtimes=1 attention=1 controlActions=1",
-		"serviceState: failures=3/3 fallback=candidate attempts=2 suppressed=false backoffUntil=-- submitted=false",
+		"serviceState: failures=3/3 episodeStartedAt=2026-04-29T07:58:00Z fallback=candidate candidateSince=2026-04-29T08:00:00Z attempts=2 suppressed=false backoffUntil=-- submitted=false",
 		"lastFallbackDecision=container-executor-not-configured at=2026-04-29T08:00:00Z",
 		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executorKind=none executorDryRun=true executable=false duplicate=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
 		"runtimes: total=1 attention=1 restartPlans=1 restartEligible=0 restartBlockedReasons=runtime-restart-healthz-unhealthy:1 service=platform-api",
@@ -189,7 +191,9 @@ func TestBuildSupervisorStatusSummaryShowsFallbackSubmittedAndErrorBackoff(t *te
 			"serviceState":{
 				"consecutiveFailures":1,
 				"failureThreshold":1,
+				"serviceFailureEpisodeStartedAt":"2026-04-29T08:00:00Z",
 				"containerFallbackCandidate":true,
+				"containerFallbackCandidateSince":"2026-04-29T08:00:00Z",
 				"containerFallbackAttemptCount":1,
 				"containerFallbackBackoffUntil":"2026-04-29T08:05:00Z",
 				"containerFallbackBackoffSetAt":"2026-04-29T08:00:00Z",
@@ -223,6 +227,8 @@ func TestBuildSupervisorStatusSummaryShowsFallbackSubmittedAndErrorBackoff(t *te
 			"targetName":"api",
 			"targetBaseUrl":"http://127.0.0.1:8080",
 			"reason":"service probes failed 1/1",
+			"serviceFailureEpisodeStartedAt":"2026-04-29T08:00:00Z",
+			"containerFallbackCandidateSince":"2026-04-29T08:00:00Z",
 			"executorKind":"noop",
 			"executorDryRun":true,
 			"submitted":true,
@@ -239,11 +245,11 @@ func TestBuildSupervisorStatusSummaryShowsFallbackSubmittedAndErrorBackoff(t *te
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"serviceState: failures=1/1 fallback=candidate attempts=1 suppressed=false backoffUntil=2026-04-29T08:05:00Z submitted=true",
+		"serviceState: failures=1/1 episodeStartedAt=2026-04-29T08:00:00Z fallback=candidate candidateSince=2026-04-29T08:00:00Z attempts=1 suppressed=false backoffUntil=2026-04-29T08:05:00Z submitted=true",
 		"fallbackBackoff reason=container fallback executor error: noop executor failed source=supervisor setAt=2026-04-29T08:00:00Z until=2026-04-29T08:05:00Z",
 		"fallbackSubmitted at=2026-04-29T08:00:00Z reason=service probes failed 1/1 message=-- error=noop executor failed",
 		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=true executorKind=noop executorDryRun=true executable=false duplicate=true suppressed=false backoffActive=true safetyGateOk=true blockedReason=container-fallback-backoff-active eligibleReason=--",
-		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z reason=service probes failed 1/1 error=noop executor failed backoffUntil=2026-04-29T08:05:00Z backoffSeconds=300",
+		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z episodeStartedAt=2026-04-29T08:00:00Z candidateSince=2026-04-29T08:00:00Z reason=service probes failed 1/1 error=noop executor failed backoffUntil=2026-04-29T08:05:00Z backoffSeconds=300",
 	}
 	for _, want := range expected {
 		if !strings.Contains(summary, want) {
@@ -277,7 +283,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackActionAudit(t *testing.T) {
 	expected := []string{
 		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 fallbackControls=0 fallbackActions=1",
 		"fallbackActions: total=1",
-		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z reason=service probes failed 1/1 message=noop container fallback executor",
+		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z episodeStartedAt=-- candidateSince=-- reason=service probes failed 1/1 message=noop container fallback executor",
 	}
 	for _, want := range expected {
 		if !strings.Contains(summary, want) {
@@ -314,7 +320,7 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 	expected := []string{
 		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true",
 		"targets: total=1 fullyReachable=1 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0",
-		"serviceState: failures=0/3 fallback=clear attempts=0 suppressed=false backoffUntil=-- submitted=false",
+		"serviceState: failures=0/3 episodeStartedAt=-- fallback=clear candidateSince=-- attempts=0 suppressed=false backoffUntil=-- submitted=false",
 		"runtimes: total=0 attention=0 service=platform-api",
 	}
 	for _, want := range expected {

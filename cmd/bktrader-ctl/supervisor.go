@@ -154,9 +154,11 @@ type supervisorProbe struct {
 type supervisorServiceState struct {
 	ConsecutiveFailures                   int    `json:"consecutiveFailures"`
 	FailureThreshold                      int    `json:"failureThreshold"`
+	ServiceFailureEpisodeStartedAt        string `json:"serviceFailureEpisodeStartedAt,omitempty"`
 	LastFailureReason                     string `json:"lastFailureReason,omitempty"`
 	ContainerFallbackCandidate            bool   `json:"containerFallbackCandidate"`
 	ContainerFallbackReason               string `json:"containerFallbackReason,omitempty"`
+	ContainerFallbackCandidateSince       string `json:"containerFallbackCandidateSince,omitempty"`
 	ContainerFallbackSuppressed           bool   `json:"containerFallbackSuppressed"`
 	ContainerFallbackSuppressedAt         string `json:"containerFallbackSuppressedAt,omitempty"`
 	ContainerFallbackSuppressedReason     string `json:"containerFallbackSuppressedReason,omitempty"`
@@ -182,21 +184,23 @@ type supervisorServiceState struct {
 }
 
 type supervisorContainerFallbackPlan struct {
-	Action             string `json:"action"`
-	Candidate          bool   `json:"candidate"`
-	Enabled            bool   `json:"enabled"`
-	ExecutorConfigured bool   `json:"executorConfigured"`
-	ExecutorKind       string `json:"executorKind"`
-	ExecutorDryRun     bool   `json:"executorDryRun"`
-	Executable         bool   `json:"executable"`
-	Decision           string `json:"decision"`
-	Duplicate          bool   `json:"duplicate"`
-	Suppressed         bool   `json:"suppressed"`
-	BackoffActive      bool   `json:"backoffActive"`
-	SafetyGateOK       bool   `json:"safetyGateOk"`
-	BlockedReason      string `json:"blockedReason,omitempty"`
-	EligibleReason     string `json:"eligibleReason,omitempty"`
-	Reason             string `json:"reason,omitempty"`
+	Action                          string `json:"action"`
+	Candidate                       bool   `json:"candidate"`
+	Enabled                         bool   `json:"enabled"`
+	ServiceFailureEpisodeStartedAt  string `json:"serviceFailureEpisodeStartedAt,omitempty"`
+	ContainerFallbackCandidateSince string `json:"containerFallbackCandidateSince,omitempty"`
+	ExecutorConfigured              bool   `json:"executorConfigured"`
+	ExecutorKind                    string `json:"executorKind"`
+	ExecutorDryRun                  bool   `json:"executorDryRun"`
+	Executable                      bool   `json:"executable"`
+	Decision                        string `json:"decision"`
+	Duplicate                       bool   `json:"duplicate"`
+	Suppressed                      bool   `json:"suppressed"`
+	BackoffActive                   bool   `json:"backoffActive"`
+	SafetyGateOK                    bool   `json:"safetyGateOk"`
+	BlockedReason                   string `json:"blockedReason,omitempty"`
+	EligibleReason                  string `json:"eligibleReason,omitempty"`
+	Reason                          string `json:"reason,omitempty"`
 }
 
 type supervisorRuntimeStatusSnapshot struct {
@@ -262,19 +266,21 @@ type supervisorContainerFallbackControlAction struct {
 }
 
 type supervisorContainerFallbackAction struct {
-	Action         string `json:"action"`
-	TargetName     string `json:"targetName"`
-	TargetBaseURL  string `json:"targetBaseUrl"`
-	Reason         string `json:"reason,omitempty"`
-	ExecutorKind   string `json:"executorKind"`
-	ExecutorDryRun bool   `json:"executorDryRun"`
-	Submitted      bool   `json:"submitted"`
-	Executed       bool   `json:"executed"`
-	BackoffUntil   string `json:"backoffUntil,omitempty"`
-	BackoffSeconds int    `json:"backoffSeconds,omitempty"`
-	Message        string `json:"message,omitempty"`
-	Error          string `json:"error,omitempty"`
-	RequestedAt    string `json:"requestedAt"`
+	Action                          string `json:"action"`
+	TargetName                      string `json:"targetName"`
+	TargetBaseURL                   string `json:"targetBaseUrl"`
+	Reason                          string `json:"reason,omitempty"`
+	ServiceFailureEpisodeStartedAt  string `json:"serviceFailureEpisodeStartedAt,omitempty"`
+	ContainerFallbackCandidateSince string `json:"containerFallbackCandidateSince,omitempty"`
+	ExecutorKind                    string `json:"executorKind"`
+	ExecutorDryRun                  bool   `json:"executorDryRun"`
+	Submitted                       bool   `json:"submitted"`
+	Executed                        bool   `json:"executed"`
+	BackoffUntil                    string `json:"backoffUntil,omitempty"`
+	BackoffSeconds                  int    `json:"backoffSeconds,omitempty"`
+	Message                         string `json:"message,omitempty"`
+	Error                           string `json:"error,omitempty"`
+	RequestedAt                     string `json:"requestedAt"`
 }
 
 func handleSupervisorStatusResponse(data []byte, err error) {
@@ -346,10 +352,12 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	for _, target := range snapshot.Targets {
 		fmt.Fprintf(&out, "\n- %s %s\n", firstNonEmpty(target.Name, "--"), firstNonEmpty(target.BaseURL, "--"))
 		fmt.Fprintf(&out, "  probes: healthz=%s runtimeStatus=%s\n", supervisorProbeText(target.Healthz), supervisorProbeText(target.RuntimeStatus))
-		fmt.Fprintf(&out, "  serviceState: failures=%d/%d fallback=%s attempts=%d suppressed=%t backoffUntil=%s submitted=%t\n",
+		fmt.Fprintf(&out, "  serviceState: failures=%d/%d episodeStartedAt=%s fallback=%s candidateSince=%s attempts=%d suppressed=%t backoffUntil=%s submitted=%t\n",
 			target.ServiceState.ConsecutiveFailures,
 			target.ServiceState.FailureThreshold,
+			firstNonEmpty(target.ServiceState.ServiceFailureEpisodeStartedAt, "--"),
 			supervisorFallbackStateText(target.ServiceState),
+			firstNonEmpty(target.ServiceState.ContainerFallbackCandidateSince, "--"),
 			target.ServiceState.ContainerFallbackAttemptCount,
 			target.ServiceState.ContainerFallbackSuppressed,
 			firstNonEmpty(target.ServiceState.ContainerFallbackBackoffUntil, "--"),
@@ -479,7 +487,7 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	if len(snapshot.ContainerFallbackActions) > 0 {
 		fmt.Fprintf(&out, "\nfallbackActions: total=%d\n", len(snapshot.ContainerFallbackActions))
 		for _, action := range snapshot.ContainerFallbackActions {
-			fmt.Fprintf(&out, "  - %s target=%s executorKind=%s executorDryRun=%t submitted=%t executed=%t requestedAt=%s reason=%s",
+			fmt.Fprintf(&out, "  - %s target=%s executorKind=%s executorDryRun=%t submitted=%t executed=%t requestedAt=%s episodeStartedAt=%s candidateSince=%s reason=%s",
 				firstNonEmpty(action.Action, "--"),
 				firstNonEmpty(action.TargetName, "--"),
 				firstNonEmpty(action.ExecutorKind, "--"),
@@ -487,6 +495,8 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				action.Submitted,
 				action.Executed,
 				firstNonEmpty(action.RequestedAt, "--"),
+				firstNonEmpty(action.ServiceFailureEpisodeStartedAt, "--"),
+				firstNonEmpty(action.ContainerFallbackCandidateSince, "--"),
 				firstNonEmpty(action.Reason, "--"),
 			)
 			if strings.TrimSpace(action.Error) != "" {
