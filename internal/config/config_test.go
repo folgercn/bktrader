@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestConfigValidateRejectsUnsupportedLoggingValues(t *testing.T) {
 	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", LogLevel: "trace"}
@@ -129,6 +132,34 @@ func TestConfigValidateRejectsDuplicateSupervisorTargetNames(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsDuplicateSupervisorTargetBaseURLs(t *testing.T) {
+	tests := []struct {
+		name    string
+		targets []string
+	}{
+		{
+			name:    "named duplicates",
+			targets: []string{"api=http://127.0.0.1:8080", "worker=http://127.0.0.1:8080/"},
+		},
+		{
+			name:    "named and unnamed duplicates",
+			targets: []string{"api=http://127.0.0.1:8080", "http://127.0.0.1:8080/"},
+		},
+		{
+			name:    "case-normalized duplicates",
+			targets: []string{"api=HTTP://PLATFORM-API:8080", "worker=http://platform-api:8080"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorTargets: tt.targets}
+			if err := cfg.Validate(); err == nil {
+				t.Fatalf("expected duplicate supervisor target base URL to fail validation")
+			}
+		})
+	}
+}
+
 func TestConfigValidateRejectsMalformedSupervisorTargets(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -175,12 +206,28 @@ func TestConfigValidateRejectsMalformedSupervisorTargets(t *testing.T) {
 			targets: []string{"平台=http://127.0.0.1:8080"},
 		},
 		{
+			name:    "explicit base url with userinfo",
+			targets: []string{"api=http://user:pass@127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit base url with query",
+			targets: []string{"api=http://127.0.0.1:8080?token=secret"},
+		},
+		{
+			name:    "explicit base url with fragment",
+			targets: []string{"api=http://127.0.0.1:8080#runtime"},
+		},
+		{
 			name:    "unnamed base url without scheme",
 			targets: []string{"platform-api:8080"},
 		},
 		{
 			name:    "unnamed base url with unsupported scheme",
 			targets: []string{"ftp://platform-api:8080"},
+		},
+		{
+			name:    "unnamed base url with query",
+			targets: []string{"http://127.0.0.1:8080?token=secret"},
 		},
 	}
 	for _, tt := range tests {
@@ -190,6 +237,17 @@ func TestConfigValidateRejectsMalformedSupervisorTargets(t *testing.T) {
 				t.Fatalf("expected malformed supervisor target to fail validation")
 			}
 		})
+	}
+}
+
+func TestConfigValidateRejectsTooManySupervisorTargets(t *testing.T) {
+	targets := make([]string, 0, maxSupervisorTargets+1)
+	for i := 0; i < maxSupervisorTargets+1; i++ {
+		targets = append(targets, fmt.Sprintf("target-%02d=http://127.0.0.1:8080/%02d", i, i))
+	}
+	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorTargets: targets}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected too many supervisor targets to fail validation")
 	}
 }
 
@@ -208,7 +266,7 @@ func TestConfigValidateAllowsHTTPSNamedSupervisorTargets(t *testing.T) {
 	cfg := Config{
 		HTTPAddr:          ":8080",
 		StoreBackend:      "memory",
-		SupervisorTargets: []string{"api=https://platform-api.example", "signal_runtime.worker-1=http://127.0.0.1:8081"},
+		SupervisorTargets: []string{"api=https://platform-api.example/supervisor", "signal_runtime.worker-1=http://127.0.0.1:8081"},
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected named supervisor targets with http(s) URLs to validate, got %v", err)

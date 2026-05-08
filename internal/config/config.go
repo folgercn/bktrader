@@ -78,6 +78,8 @@ type Config struct {
 	SupervisorContainerExecutor    string   // 容器兜底 executor 类型；当前仅支持 noop dry-run readiness
 }
 
+const maxSupervisorTargets = 32
+
 // Load 从环境变量加载配置，未设置的使用默认值。
 func Load() Config {
 	tickInterval := 15
@@ -241,16 +243,27 @@ func (c Config) Validate() error {
 }
 
 func validateSupervisorTargets(targets []string) error {
-	seen := make(map[string]struct{})
+	seenNames := make(map[string]struct{})
+	seenBaseURLs := make(map[string]string)
+	targetCount := 0
 	for _, raw := range targets {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
 		}
+		targetCount++
+		if targetCount > maxSupervisorTargets {
+			return fmt.Errorf("SUPERVISOR_TARGETS 最多允许配置 %d 个 target", maxSupervisorTargets)
+		}
 		if strings.HasPrefix(strings.ToLower(raw), "http://") || strings.HasPrefix(strings.ToLower(raw), "https://") {
-			if err := validateSupervisorTargetBaseURL(raw); err != nil {
+			normalized, err := normalizeSupervisorTargetBaseURL(raw)
+			if err != nil {
 				return err
 			}
+			if first, exists := seenBaseURLs[normalized]; exists {
+				return fmt.Errorf("SUPERVISOR_TARGETS 包含重复 base URL: %s 与 %s", first, raw)
+			}
+			seenBaseURLs[normalized] = raw
 			continue
 		}
 		name, baseURL, ok := strings.Cut(raw, "=")
@@ -268,13 +281,18 @@ func validateSupervisorTargets(targets []string) error {
 		if baseURL == "" {
 			return fmt.Errorf("SUPERVISOR_TARGETS target %s 缺少 base URL", name)
 		}
-		if err := validateSupervisorTargetBaseURL(baseURL); err != nil {
+		normalized, err := normalizeSupervisorTargetBaseURL(baseURL)
+		if err != nil {
 			return fmt.Errorf("SUPERVISOR_TARGETS target %s 配置无效: %w", name, err)
 		}
-		if _, exists := seen[name]; exists {
+		if _, exists := seenNames[name]; exists {
 			return fmt.Errorf("SUPERVISOR_TARGETS 包含重复 target name: %s", name)
 		}
-		seen[name] = struct{}{}
+		if first, exists := seenBaseURLs[normalized]; exists {
+			return fmt.Errorf("SUPERVISOR_TARGETS 包含重复 base URL: %s 与 %s", first, raw)
+		}
+		seenNames[name] = struct{}{}
+		seenBaseURLs[normalized] = raw
 	}
 	return nil
 }
@@ -296,20 +314,31 @@ func validSupervisorTargetName(name string) bool {
 	return true
 }
 
-func validateSupervisorTargetBaseURL(raw string) error {
-	parsed, err := url.Parse(raw)
+func normalizeSupervisorTargetBaseURL(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(raw), "/"))
 	if err != nil {
-		return fmt.Errorf("base URL 解析失败: %w", err)
+		return "", fmt.Errorf("base URL 解析失败: %w", err)
 	}
-	switch strings.ToLower(parsed.Scheme) {
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(strings.TrimSpace(parsed.Host))
+	switch parsed.Scheme {
 	case "http", "https":
 	default:
-		return fmt.Errorf("base URL 必须使用 http 或 https scheme: %s", raw)
+		return "", fmt.Errorf("base URL 必须使用 http 或 https scheme: %s", raw)
 	}
 	if parsed.Host == "" {
-		return fmt.Errorf("base URL 必须包含 host: %s", raw)
+		return "", fmt.Errorf("base URL 必须包含 host: %s", raw)
 	}
-	return nil
+	if parsed.User != nil {
+		return "", fmt.Errorf("base URL 不允许包含 userinfo 凭证: %s", raw)
+	}
+	if parsed.RawQuery != "" {
+		return "", fmt.Errorf("base URL 不允许包含 query: %s", raw)
+	}
+	if parsed.Fragment != "" {
+		return "", fmt.Errorf("base URL 不允许包含 fragment: %s", raw)
+	}
+	return parsed.String(), nil
 }
 
 // RuntimeActionsEnabled reports whether this process is allowed to execute
