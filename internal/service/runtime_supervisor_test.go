@@ -413,6 +413,19 @@ func TestRuntimeSupervisorContainerFallbackSuppressionBlocksEligiblePlan(t *test
 	if suppressed.ServiceState.ContainerFallbackSuppressedReason != "operator paused container fallback" || suppressed.ServiceState.ContainerFallbackSuppressedSource != "ctl" || suppressed.ServiceState.ContainerFallbackSuppressedAt == nil {
 		t.Fatalf("expected suppression audit fields, got %+v", suppressed.ServiceState)
 	}
+	immediate := supervisor.LastSnapshot()
+	if len(immediate.Targets) != 1 {
+		t.Fatalf("expected last snapshot target, got %+v", immediate.Targets)
+	}
+	if !immediate.Targets[0].ServiceState.ContainerFallbackSuppressed {
+		t.Fatalf("expected last snapshot to reflect suppression before next collect, got %+v", immediate.Targets[0].ServiceState)
+	}
+	if immediate.Targets[0].ContainerFallbackPlan == nil || immediate.Targets[0].ContainerFallbackPlan.BlockedReason != "container-fallback-suppressed" {
+		t.Fatalf("expected last snapshot plan to reflect suppression before next collect, got %+v", immediate.Targets[0].ContainerFallbackPlan)
+	}
+	if len(immediate.ContainerFallbackControls) != 1 || immediate.ContainerFallbackControls[0].Action != "suppress-container-fallback" || immediate.ContainerFallbackControls[0].Source != "ctl" {
+		t.Fatalf("expected suppression control audit in last snapshot, got %+v", immediate.ContainerFallbackControls)
+	}
 
 	blocked := supervisor.Collect(context.Background()).Targets[0]
 	if blocked.ContainerFallbackPlan == nil {
@@ -438,6 +451,10 @@ func TestRuntimeSupervisorContainerFallbackSuppressionBlocksEligiblePlan(t *test
 	}
 	if resumed.ServiceState.ContainerFallbackResumedReason != "maintenance finished" || resumed.ServiceState.ContainerFallbackResumedSource != "ctl" || resumed.ServiceState.ContainerFallbackResumedAt == nil {
 		t.Fatalf("expected resume audit fields, got %+v", resumed.ServiceState)
+	}
+	resumedSnapshot := supervisor.LastSnapshot()
+	if len(resumedSnapshot.ContainerFallbackControls) != 2 || resumedSnapshot.ContainerFallbackControls[0].Action != "resume-container-fallback" {
+		t.Fatalf("expected resume control audit in last snapshot, got %+v", resumedSnapshot.ContainerFallbackControls)
 	}
 
 	eligible := supervisor.Collect(context.Background()).Targets[0]
@@ -489,6 +506,16 @@ func TestRuntimeSupervisorContainerFallbackBackoffBlocksEligiblePlan(t *testing.
 	if deferred.ServiceState.ContainerFallbackBackoffReason != "operator cooling down restart loop" || deferred.ServiceState.ContainerFallbackBackoffSource != "ctl" || deferred.ServiceState.ContainerFallbackBackoffSetAt == nil {
 		t.Fatalf("expected backoff audit fields, got %+v", deferred.ServiceState)
 	}
+	immediate := supervisor.LastSnapshot()
+	if len(immediate.Targets) != 1 || immediate.Targets[0].ServiceState.ContainerFallbackBackoffUntil == nil {
+		t.Fatalf("expected last snapshot to reflect backoff before next collect, got %+v", immediate.Targets)
+	}
+	if immediate.Targets[0].ContainerFallbackPlan == nil || immediate.Targets[0].ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" {
+		t.Fatalf("expected last snapshot plan to reflect backoff before next collect, got %+v", immediate.Targets[0].ContainerFallbackPlan)
+	}
+	if len(immediate.ContainerFallbackControls) != 1 || immediate.ContainerFallbackControls[0].Action != "defer-container-fallback" || immediate.ContainerFallbackControls[0].BackoffSeconds != 300 {
+		t.Fatalf("expected defer control audit in last snapshot, got %+v", immediate.ContainerFallbackControls)
+	}
 
 	blocked := supervisor.Collect(context.Background()).Targets[0]
 	if blocked.ContainerFallbackPlan == nil {
@@ -514,6 +541,10 @@ func TestRuntimeSupervisorContainerFallbackBackoffBlocksEligiblePlan(t *testing.
 	}
 	if cleared.ServiceState.ContainerFallbackBackoffClearedReason != "operator verified target stable" || cleared.ServiceState.ContainerFallbackBackoffClearedSource != "ctl" || cleared.ServiceState.ContainerFallbackBackoffClearedAt == nil {
 		t.Fatalf("expected backoff clear audit fields, got %+v", cleared.ServiceState)
+	}
+	clearedSnapshot := supervisor.LastSnapshot()
+	if len(clearedSnapshot.ContainerFallbackControls) != 2 || clearedSnapshot.ContainerFallbackControls[0].Action != "clear-container-fallback-backoff" {
+		t.Fatalf("expected clear-backoff control audit in last snapshot, got %+v", clearedSnapshot.ContainerFallbackControls)
 	}
 
 	eligible := supervisor.Collect(context.Background()).Targets[0]

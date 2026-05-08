@@ -39,6 +39,7 @@ import { cn } from '../lib/utils';
 import { fetchJSON } from '../utils/api';
 import { formatTime, shrink } from '../utils/format';
 import {
+  RuntimeSupervisorContainerFallbackControlAction,
   RuntimeSupervisorControlAction,
   RuntimeSupervisorRuntimeStatus,
   RuntimeSupervisorSnapshot,
@@ -48,6 +49,7 @@ import {
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>['variant']>;
 type RuntimeRow = RuntimeSupervisorRuntimeStatus & { targetName: string };
+type FallbackControlAction = RuntimeSupervisorContainerFallbackControlAction;
 type RuntimeControlActionKind = 'start' | 'stop' | 'restart' | 'suppress-auto-restart' | 'resume-auto-restart';
 type RuntimeControlDialogState = {
   runtime: RuntimeRow;
@@ -396,6 +398,16 @@ function targetFallbackControlPath(action: TargetFallbackActionKind) {
   return '/api/v1/supervisor/container-fallback/clear-backoff';
 }
 
+function fallbackControlState(action: FallbackControlAction): { label: string; variant: BadgeVariant } {
+  if (action.backoffUntil) {
+    return { label: 'backoff', variant: 'secondary' };
+  }
+  if (action.suppressed) {
+    return { label: 'suppressed', variant: 'destructive' };
+  }
+  return { label: 'open', variant: 'success' };
+}
+
 function targetFallbackControlLabel(action: TargetFallbackActionKind) {
   if (action === 'suppress') {
     return 'Suppress Container Fallback';
@@ -590,6 +602,7 @@ export function SupervisorStage() {
   const {
     runtimeRows,
     controlActionRows,
+    fallbackControlRows,
     fallbackCount,
     executableFallbackCount,
     dryRunFallbackCount,
@@ -611,6 +624,7 @@ export function SupervisorStage() {
           targetName: target.name,
         }))
       ),
+      fallbackControlRows: snapshot?.containerFallbackControls ?? [],
       fallbackCount: targets.filter((target) => target.serviceState.containerFallbackCandidate).length,
       executableFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable).length,
       dryRunFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable && target.containerFallbackPlan.executorDryRun).length,
@@ -725,8 +739,8 @@ export function SupervisorStage() {
               <MetricCard
                 icon={RotateCw}
                 label="Controls"
-                value={controlActionRows.length}
-                detail="application restart intents"
+                value={controlActionRows.length + fallbackControlRows.length}
+                detail={`${controlActionRows.length} runtime, ${fallbackControlRows.length} fallback gates`}
                 tone={controlActionRows.some((action) => action.error) ? 'danger' : 'neutral'}
               />
             </div>
@@ -1140,58 +1154,116 @@ export function SupervisorStage() {
                   <div className="flex flex-wrap justify-end gap-2">
                     {controlError && <Badge variant="destructive" title={controlError}>control failed</Badge>}
                     {controlNotice && <Badge variant="success" title={controlNotice}>control accepted</Badge>}
-                    <Badge variant="neutral">{controlActionRows.length}</Badge>
+                    <Badge variant="neutral">{controlActionRows.length + fallbackControlRows.length}</Badge>
                   </div>
                 </CardAction>
               </CardHeader>
               <CardContent>
-                {controlActionRows.length === 0 ? (
+                {controlActionRows.length === 0 && fallbackControlRows.length === 0 ? (
                   <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-[var(--bk-border)] text-sm text-[var(--bk-text-muted)]">
-                    暂无应用内控制动作
+                    暂无控制动作
                   </div>
                 ) : (
-                  <Table tone="bento">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Requested</TableHead>
-                        <TableHead>Target</TableHead>
-                        <TableHead>Action</TableHead>
-                        <TableHead>Runtime</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Reason</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {controlActionRows.map((action) => (
-                        <TableRow key={`${action.targetName}:${action.runtimeKind}:${action.runtimeId}:${action.requestedAt}`}>
-                          <TableCell>{formatOptionalTime(action.requestedAt)}</TableCell>
-                          <TableCell>{action.targetName}</TableCell>
-                          <TableCell><Badge variant="metal">{action.action}</Badge></TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              <span className="font-mono text-xs">{shrink(action.runtimeId)}</span>
-                              <span className="text-xs text-[var(--bk-text-muted)]">{action.runtimeKind}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {action.submitted ? (
-                                <CheckCircle2 className="size-4 text-[var(--bk-status-success)]" />
-                              ) : (
-                                <XCircle className="size-4 text-[var(--bk-status-danger)]" />
-                              )}
-                              <Badge variant={action.error ? 'destructive' : 'neutral'}>{action.statusCode || '--'}</Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.error || action.reason}>
-                              {action.error || action.reason || '--'}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <div className="flex flex-col gap-5">
+                    {controlActionRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Runtime</div>
+                        <Table tone="bento">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Requested</TableHead>
+                              <TableHead>Target</TableHead>
+                              <TableHead>Action</TableHead>
+                              <TableHead>Runtime</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Reason</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {controlActionRows.map((action) => (
+                              <TableRow key={`${action.targetName}:${action.runtimeKind}:${action.runtimeId}:${action.requestedAt}`}>
+                                <TableCell>{formatOptionalTime(action.requestedAt)}</TableCell>
+                                <TableCell>{action.targetName}</TableCell>
+                                <TableCell><Badge variant="metal">{action.action}</Badge></TableCell>
+                                <TableCell>
+                                  <div className="flex flex-col gap-1">
+                                    <span className="font-mono text-xs">{shrink(action.runtimeId)}</span>
+                                    <span className="text-xs text-[var(--bk-text-muted)]">{action.runtimeKind}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    {action.submitted ? (
+                                      <CheckCircle2 className="size-4 text-[var(--bk-status-success)]" />
+                                    ) : (
+                                      <XCircle className="size-4 text-[var(--bk-status-danger)]" />
+                                    )}
+                                    <Badge variant={action.error ? 'destructive' : 'neutral'}>{action.statusCode || '--'}</Badge>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.error || action.reason}>
+                                    {action.error || action.reason || '--'}
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    {fallbackControlRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Fallback Gates</div>
+                        <Table tone="bento">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Updated</TableHead>
+                              <TableHead>Target</TableHead>
+                              <TableHead>Action</TableHead>
+                              <TableHead>State</TableHead>
+                              <TableHead>Backoff</TableHead>
+                              <TableHead>Reason</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {fallbackControlRows.map((action) => {
+                              const state = fallbackControlState(action);
+                              return (
+                                <TableRow key={`${action.targetName}:${action.action}:${action.updatedAt}`}>
+                                  <TableCell>{formatOptionalTime(action.updatedAt)}</TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <span>{action.targetName}</span>
+                                      <span className="max-w-[220px] truncate text-xs text-[var(--bk-text-muted)]" title={action.targetBaseUrl}>
+                                        {action.targetBaseUrl}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell><Badge variant="metal">{action.action}</Badge></TableCell>
+                                  <TableCell><Badge variant={state.variant}>{state.label}</Badge></TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>{formatOptionalTime(action.backoffUntil)}</span>
+                                      {action.backoffSeconds ? (
+                                        <span className="text-[var(--bk-text-muted)]">{action.backoffSeconds}s</span>
+                                      ) : null}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex max-w-[420px] flex-col gap-1 text-xs">
+                                      <span className="truncate text-[var(--bk-text-muted)]" title={action.reason}>{action.reason || '--'}</span>
+                                      <span className="text-[var(--bk-text-muted)]">{action.source || '--'}</span>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
                 )}
               </CardContent>
             </Card>
