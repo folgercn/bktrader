@@ -70,30 +70,40 @@ func (b *DashboardBroker) registerDefaultFetchFuncs() {
 	if b.platform == nil {
 		return
 	}
-	b.fetchFuncs[DashboardDomainLiveSessions] = func() (any, error) {
+	b.RegisterDashboardFetchFunc(DashboardDomainLiveSessions, func() (any, error) {
 		return b.platform.ListLiveSessionsSummary()
-	}
-	b.fetchFuncs[DashboardDomainSignalRuntimeSessions] = func() (any, error) {
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainSignalRuntimeSessions, func() (any, error) {
 		return b.platform.ListSignalRuntimeSessionsSummary(), nil
-	}
-	b.fetchFuncs[DashboardDomainPositions] = func() (any, error) {
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainPositions, func() (any, error) {
 		return b.platform.ListPositions()
-	}
-	b.fetchFuncs[DashboardDomainOrders] = func() (any, error) {
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainOrders, func() (any, error) {
 		return b.platform.ListOrdersWithLimit(50, 0)
-	}
-	b.fetchFuncs[DashboardDomainFills] = func() (any, error) {
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainFills, func() (any, error) {
 		return b.platform.ListFillsWithLimit(50, 0)
-	}
-	b.fetchFuncs[DashboardDomainAlerts] = func() (any, error) {
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainAlerts, func() (any, error) {
 		return b.platform.ListAlerts()
-	}
-	b.fetchFuncs[DashboardDomainNotifications] = func() (any, error) {
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainNotifications, func() (any, error) {
 		return b.platform.ListNotifications(true)
-	}
-	b.fetchFuncs[DashboardDomainMonitorHealth] = func() (any, error) {
+	})
+	b.RegisterDashboardFetchFunc(DashboardDomainMonitorHealth, func() (any, error) {
 		return b.platform.HealthSnapshot()
+	})
+}
+
+// RegisterDashboardFetchFunc installs or replaces the snapshot fetcher for a dashboard domain.
+func (b *DashboardBroker) RegisterDashboardFetchFunc(domain DashboardDomain, fetchData func() (any, error)) {
+	if domain == "" || fetchData == nil {
+		return
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.fetchFuncs[domain] = fetchData
 }
 
 func (b *DashboardBroker) Subscribe(buffer int) (int, <-chan DashboardEvent) {
