@@ -32,6 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import { Input } from '../components/ui/input';
 import { Separator } from '../components/ui/separator';
 import { Textarea } from '../components/ui/textarea';
 import { cn } from '../lib/utils';
@@ -52,6 +53,11 @@ type RuntimeControlDialogState = {
   runtime: RuntimeRow;
   action: RuntimeControlActionKind;
 };
+type TargetFallbackActionKind = 'suppress' | 'resume' | 'defer' | 'clear-backoff';
+type TargetFallbackControlDialogState = {
+  target: RuntimeSupervisorTargetSnapshot;
+  action: TargetFallbackActionKind;
+};
 type RuntimeLifecycleAudit = {
   label: string;
   variant: BadgeVariant;
@@ -69,6 +75,7 @@ type RuntimeAutoRestartAudit = {
 };
 
 const REFRESH_INTERVAL_MS = 15_000;
+const MAX_FALLBACK_BACKOFF_SECONDS = 24 * 60 * 60;
 
 function formatOptionalTime(value?: string) {
   return value ? formatTime(value) : '--';
@@ -372,12 +379,49 @@ function dashboardRuntimeControlReason(runtime: RuntimeRow, action: RuntimeContr
   return `dashboard manual ${action}: target=${runtime.targetName} runtime=${runtime.runtimeId}`;
 }
 
+function targetFallbackActionKey(target: RuntimeSupervisorTargetSnapshot, action: TargetFallbackActionKind) {
+  return `${target.name}:container-fallback:${action}`;
+}
+
+function targetFallbackControlPath(action: TargetFallbackActionKind) {
+  if (action === 'suppress') {
+    return '/api/v1/supervisor/container-fallback/suppress';
+  }
+  if (action === 'resume') {
+    return '/api/v1/supervisor/container-fallback/resume';
+  }
+  if (action === 'defer') {
+    return '/api/v1/supervisor/container-fallback/defer';
+  }
+  return '/api/v1/supervisor/container-fallback/clear-backoff';
+}
+
+function targetFallbackControlLabel(action: TargetFallbackActionKind) {
+  if (action === 'suppress') {
+    return 'Suppress Container Fallback';
+  }
+  if (action === 'resume') {
+    return 'Resume Container Fallback';
+  }
+  if (action === 'defer') {
+    return 'Defer Container Fallback';
+  }
+  return 'Clear Fallback Backoff';
+}
+
+function dashboardTargetFallbackReason(target: RuntimeSupervisorTargetSnapshot, action: TargetFallbackActionKind) {
+  return `dashboard manual ${action}: target=${target.name}`;
+}
+
 export function SupervisorStage() {
   const [snapshot, setSnapshot] = useState<RuntimeSupervisorSnapshot | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [controlDialog, setControlDialog] = useState<RuntimeControlDialogState | null>(null);
+  const [fallbackDialog, setFallbackDialog] = useState<TargetFallbackControlDialogState | null>(null);
   const [controlReason, setControlReason] = useState('');
+  const [fallbackReason, setFallbackReason] = useState('');
+  const [fallbackBackoffSeconds, setFallbackBackoffSeconds] = useState('300');
   const [controlSubmittingKey, setControlSubmittingKey] = useState<string | null>(null);
   const [controlNotice, setControlNotice] = useState<string | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
@@ -406,12 +450,29 @@ export function SupervisorStage() {
     setControlError(null);
   }, []);
 
+  const openFallbackDialog = useCallback((target: RuntimeSupervisorTargetSnapshot, action: TargetFallbackActionKind) => {
+    setFallbackDialog({ target, action });
+    setFallbackReason(dashboardTargetFallbackReason(target, action));
+    setFallbackBackoffSeconds(action === 'defer' ? '300' : '');
+    setControlNotice(null);
+    setControlError(null);
+  }, []);
+
   const closeControlDialog = useCallback(() => {
     if (controlSubmittingKey) {
       return;
     }
     setControlDialog(null);
     setControlReason('');
+  }, [controlSubmittingKey]);
+
+  const closeFallbackDialog = useCallback(() => {
+    if (controlSubmittingKey) {
+      return;
+    }
+    setFallbackDialog(null);
+    setFallbackReason('');
+    setFallbackBackoffSeconds('300');
   }, [controlSubmittingKey]);
 
   const submitRuntimeControl = useCallback(async () => {
@@ -460,6 +521,63 @@ export function SupervisorStage() {
     }
     setControlSubmittingKey(null);
   }, [controlDialog, controlReason, loadSnapshot]);
+
+  const submitFallbackControl = useCallback(async () => {
+    if (!fallbackDialog) {
+      return;
+    }
+    const { target, action } = fallbackDialog;
+    const reason = fallbackReason.trim();
+    if (!reason) {
+      setControlError('reason is required');
+      return;
+    }
+    const payload: Record<string, unknown> = {
+      targetName: target.name,
+      confirm: true,
+      reason,
+    };
+    if (action === 'defer') {
+      const seconds = Number.parseInt(fallbackBackoffSeconds, 10);
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        setControlError('backoff seconds must be positive');
+        return;
+      }
+      if (seconds > MAX_FALLBACK_BACKOFF_SECONDS) {
+        setControlError('backoff seconds must be <= 86400');
+        return;
+      }
+      payload.backoffSeconds = seconds;
+    }
+
+    const key = targetFallbackActionKey(target, action);
+    setControlSubmittingKey(key);
+    setControlError(null);
+    setControlNotice(null);
+    try {
+      await fetchJSON(targetFallbackControlPath(action), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      setControlError(err instanceof Error ? err.message : 'container fallback control failed');
+      setControlSubmittingKey(null);
+      return;
+    }
+
+    setFallbackDialog(null);
+    setFallbackReason('');
+    setFallbackBackoffSeconds('300');
+    const refreshed = await loadSnapshot(true);
+    const acceptedMessage = `${targetFallbackControlLabel(action)} accepted: ${target.name}`;
+    if (refreshed) {
+      setControlNotice(acceptedMessage);
+    } else {
+      setControlNotice(`${acceptedMessage}; refresh failed`);
+    }
+    setControlSubmittingKey(null);
+  }, [fallbackBackoffSeconds, fallbackDialog, fallbackReason, loadSnapshot]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -516,6 +634,18 @@ export function SupervisorStage() {
             : RotateCw;
   const controlSubmitVariant =
     controlDialog?.action === 'start' || controlDialog?.action === 'resume-auto-restart'
+      ? 'bento-primary'
+      : 'bento-destructive';
+  const FallbackSubmitIcon =
+    fallbackDialog?.action === 'resume'
+      ? CheckCircle2
+      : fallbackDialog?.action === 'defer'
+        ? Clock3
+        : fallbackDialog?.action === 'clear-backoff'
+          ? XCircle
+          : ShieldAlert;
+  const fallbackSubmitVariant =
+    fallbackDialog?.action === 'resume' || fallbackDialog?.action === 'clear-backoff'
       ? 'bento-primary'
       : 'bento-destructive';
 
@@ -676,6 +806,7 @@ export function SupervisorStage() {
                         <TableHead>Failures</TableHead>
                         <TableHead>Fallback</TableHead>
                         <TableHead>Runtimes</TableHead>
+                        <TableHead>Gate</TableHead>
                         <TableHead>Checked</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -692,6 +823,11 @@ export function SupervisorStage() {
                           target.serviceState.lastContainerFallbackDecisionReason ||
                           fallbackPlan?.reason ||
                           target.serviceState.containerFallbackReason;
+                        const toggleFallbackAction: TargetFallbackActionKind = target.serviceState.containerFallbackSuppressed ? 'resume' : 'suppress';
+                        const toggleSubmitting = controlSubmittingKey === targetFallbackActionKey(target, toggleFallbackAction);
+                        const deferSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'defer');
+                        const clearSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'clear-backoff');
+                        const backoffConfigured = Boolean(target.serviceState.containerFallbackBackoffUntil);
                         return (
                           <TableRow key={`${target.name}:${target.baseUrl}`}>
                             <TableCell>
@@ -766,6 +902,50 @@ export function SupervisorStage() {
                               <div className="flex items-center gap-2">
                                 <Badge variant={runtimeErrors > 0 ? 'destructive' : 'neutral'}>{runtimeCount}</Badge>
                                 {runtimeErrors > 0 && <span className="text-xs text-[var(--bk-text-muted)]">{runtimeErrors} attention</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap items-center gap-1">
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant={target.serviceState.containerFallbackSuppressed ? 'bento-outline' : 'bento-ghost'}
+                                  className="rounded-lg"
+                                  onClick={() => openFallbackDialog(target, toggleFallbackAction)}
+                                  disabled={Boolean(controlSubmittingKey) || toggleSubmitting}
+                                  title={target.serviceState.containerFallbackSuppressed ? 'Resume container fallback' : 'Suppress container fallback'}
+                                  aria-label={`${target.serviceState.containerFallbackSuppressed ? 'Resume' : 'Suppress'} container fallback for ${target.name}`}
+                                >
+                                  {target.serviceState.containerFallbackSuppressed ? (
+                                    <CheckCircle2 className={cn(toggleSubmitting && 'animate-pulse')} />
+                                  ) : (
+                                    <ShieldAlert className={cn(toggleSubmitting && 'animate-pulse')} />
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="bento-outline"
+                                  className="rounded-lg"
+                                  onClick={() => openFallbackDialog(target, 'defer')}
+                                  disabled={Boolean(controlSubmittingKey) || deferSubmitting}
+                                  title="Defer container fallback"
+                                  aria-label={`Defer container fallback for ${target.name}`}
+                                >
+                                  <Clock3 className={cn(deferSubmitting && 'animate-pulse')} />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="bento-ghost"
+                                  className="rounded-lg"
+                                  onClick={() => openFallbackDialog(target, 'clear-backoff')}
+                                  disabled={Boolean(controlSubmittingKey) || clearSubmitting || !backoffConfigured}
+                                  title="Clear fallback backoff"
+                                  aria-label={`Clear fallback backoff for ${target.name}`}
+                                >
+                                  <XCircle className={cn(clearSubmitting && 'animate-pulse')} />
+                                </Button>
                               </div>
                             </TableCell>
                             <TableCell>{formatOptionalTime(target.checkedAt)}</TableCell>
@@ -1069,6 +1249,79 @@ export function SupervisorStage() {
                 data-icon="inline-start"
                 fill={controlDialog?.action === 'start' || controlDialog?.action === 'stop' ? 'currentColor' : 'none'}
                 className={cn(controlSubmittingKey && (controlDialog?.action === 'restart' ? 'animate-spin' : 'animate-pulse'))}
+              />
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(fallbackDialog)} onOpenChange={(open) => !open && closeFallbackDialog()}>
+        <DialogContent tone="bento" className="max-w-lg rounded-lg border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-0">
+          <DialogHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] px-6 py-4">
+            <DialogTitle className="text-lg font-semibold text-[var(--bk-text-primary)]">
+              {fallbackDialog ? targetFallbackControlLabel(fallbackDialog.action) : 'Container Fallback Control'}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[var(--bk-text-muted)]">
+              {fallbackDialog ? `${fallbackDialog.target.name} / ${fallbackDialog.target.baseUrl}` : '--'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 px-6 py-5">
+            {fallbackDialog?.action === 'defer' && (
+              <div className="flex flex-col gap-2">
+                <label htmlFor="supervisor-fallback-backoff-seconds" className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">
+                  Backoff Seconds
+                </label>
+                <Input
+                  id="supervisor-fallback-backoff-seconds"
+                  type="number"
+                  min={1}
+                  max={MAX_FALLBACK_BACKOFF_SECONDS}
+                  value={fallbackBackoffSeconds}
+                  onChange={(event) => setFallbackBackoffSeconds(event.target.value)}
+                  disabled={Boolean(controlSubmittingKey)}
+                  aria-invalid={!fallbackBackoffSeconds.trim()}
+                />
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <label htmlFor="supervisor-fallback-reason" className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">
+                Reason
+              </label>
+              <Textarea
+                id="supervisor-fallback-reason"
+                value={fallbackReason}
+                onChange={(event) => setFallbackReason(event.target.value)}
+                disabled={Boolean(controlSubmittingKey)}
+                rows={4}
+                aria-invalid={fallbackReason.trim() === ''}
+              />
+            </div>
+            {controlError && (
+              <div className="rounded-lg border border-[var(--bk-status-danger)] bg-[var(--bk-status-danger-soft)] px-3 py-2 text-sm text-[var(--bk-status-danger)]">
+                {controlError}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="border-t border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)]/30 px-6 py-4">
+            <Button
+              type="button"
+              variant="bento-outline"
+              className="rounded-lg"
+              onClick={closeFallbackDialog}
+              disabled={Boolean(controlSubmittingKey)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant={fallbackSubmitVariant}
+              className="rounded-lg"
+              onClick={() => void submitFallbackControl()}
+              disabled={!fallbackReason.trim() || Boolean(controlSubmittingKey)}
+            >
+              <FallbackSubmitIcon
+                data-icon="inline-start"
+                className={cn(controlSubmittingKey && 'animate-pulse')}
               />
               Submit
             </Button>
