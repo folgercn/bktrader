@@ -167,9 +167,43 @@ func TestBuildSupervisorStatusSummaryShowsFallbackControlAudit(t *testing.T) {
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 fallbackControls=1",
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 fallbackControls=1 fallbackActions=0",
 		"fallbackControls: total=1",
 		"defer-container-fallback target=api suppressed=false backoffUntil=2026-04-29T08:05:00Z backoffSeconds=300 source=ctl updatedAt=2026-04-29T08:00:00Z reason=operator cooling down restart loop",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
+func TestBuildSupervisorStatusSummaryShowsFallbackActionAudit(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[],
+		"containerFallbackActions":[{
+			"action":"container-restart",
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"reason":"service probes failed 1/1",
+			"executorKind":"noop",
+			"executorDryRun":true,
+			"submitted":true,
+			"executed":false,
+			"message":"noop container fallback executor",
+			"requestedAt":"2026-04-29T08:00:00Z"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 fallbackControls=0 fallbackActions=1",
+		"fallbackActions: total=1",
+		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z reason=service probes failed 1/1 message=noop container fallback executor",
 	}
 	for _, want := range expected {
 		if !strings.Contains(summary, want) {

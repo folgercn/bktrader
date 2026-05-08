@@ -4,11 +4,39 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+type runtimeSupervisorTestContainerExecutor struct {
+	configured bool
+	kind       string
+	dryRun     bool
+	calls      int
+	err        error
+}
+
+func (e *runtimeSupervisorTestContainerExecutor) Configured() bool {
+	return e.configured
+}
+
+func (e *runtimeSupervisorTestContainerExecutor) Descriptor() ContainerFallbackExecutorDescriptor {
+	return ContainerFallbackExecutorDescriptor{Kind: e.kind, DryRun: e.dryRun}
+}
+
+func (e *runtimeSupervisorTestContainerExecutor) Restart(_ context.Context, target RuntimeSupervisorTarget, reason string) (ContainerFallbackExecutionResult, error) {
+	e.calls++
+	if e.err != nil {
+		return ContainerFallbackExecutionResult{}, e.err
+	}
+	return ContainerFallbackExecutionResult{
+		Executed: false,
+		Message:  fmt.Sprintf("dry-run restart target=%s reason=%s", target.Name, reason),
+	}, nil
+}
 
 func TestRuntimeSupervisorCollectsHealthAndRuntimeStatus(t *testing.T) {
 	requested := make(map[string]int)
@@ -315,12 +343,17 @@ func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing
 	}
 }
 
-func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *testing.T) {
+func TestRuntimeSupervisorDryRunContainerFallbackExecutorRecordsActionOncePerFailureEpisode(t *testing.T) {
 	requested := make(map[string]int)
+	healthy := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requested[r.Method+" "+r.URL.Path]++
 		switch r.URL.Path {
 		case "/healthz":
+			if healthy {
+				writeRuntimeSupervisorTestJSON(t, w, map[string]any{"status": "ok"})
+				return
+			}
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 		case "/api/v1/runtime/status":
 			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
@@ -334,13 +367,18 @@ func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *t
 	}))
 	defer server.Close()
 
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
 	supervisor := NewRuntimeSupervisorWithOptions(
 		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
 		server.Client(),
 		RuntimeSupervisorOptions{
 			ServiceFailureThreshold:   1,
 			EnableContainerFallback:   true,
-			ContainerFallbackExecutor: NewNoopContainerFallbackExecutor(true),
+			ContainerFallbackExecutor: executor,
 		},
 	)
 	snapshot := supervisor.Collect(context.Background())
@@ -366,8 +404,78 @@ func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *t
 	if target.ServiceState.LastContainerFallbackDecisionReason != "container-fallback-eligible" {
 		t.Fatalf("expected eligible decision audit, got %+v", target.ServiceState)
 	}
+	if executor.calls != 1 {
+		t.Fatalf("expected one dry-run container fallback executor call, got %d", executor.calls)
+	}
+	if len(snapshot.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected one container fallback action audit, got %+v", snapshot.ContainerFallbackActions)
+	}
+	action := snapshot.ContainerFallbackActions[0]
+	if action.Action != "container-restart" || action.TargetName != "api" || action.ExecutorKind != runtimeSupervisorContainerExecutorKindNoop || !action.ExecutorDryRun {
+		t.Fatalf("unexpected container fallback action identity, got %+v", action)
+	}
+	if !action.Submitted || action.Executed || action.Message == "" || action.Error != "" {
+		t.Fatalf("expected dry-run non-executing action audit, got %+v", action)
+	}
+	next := supervisor.Collect(context.Background())
+	if executor.calls != 1 || len(next.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected container fallback action to be deduped while failure episode remains active, calls=%d actions=%+v", executor.calls, next.ContainerFallbackActions)
+	}
+	healthy = true
+	recovered := supervisor.Collect(context.Background())
+	if len(recovered.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected healthy collect to preserve action history, got %+v", recovered.ContainerFallbackActions)
+	}
+	healthy = false
+	newEpisode := supervisor.Collect(context.Background())
+	if executor.calls != 2 || len(newEpisode.ContainerFallbackActions) != 2 {
+		t.Fatalf("expected recovered target to allow a new dry-run action in the next failure episode, calls=%d actions=%+v", executor.calls, newEpisode.ContainerFallbackActions)
+	}
 	if requested["POST /api/v1/runtime/restart"] != 0 {
 		t.Fatalf("expected no control action for noop executor readiness, got %#v", requested)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackExecutorRequiresDryRunBeforeSubmit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       "docker",
+		dryRun:     false,
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: executor,
+		},
+	)
+	target := supervisor.Collect(context.Background()).Targets[0]
+	if target.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for candidate, got %+v", target)
+	}
+	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.BlockedReason != "container-executor-dry-run-required" {
+		t.Fatalf("expected non-dry-run executor to stay blocked, got %+v", target.ContainerFallbackPlan)
+	}
+	if target.ServiceState.LastContainerFallbackDecisionReason != "container-executor-dry-run-required" {
+		t.Fatalf("expected non-dry-run decision audit, got %+v", target.ServiceState)
+	}
+	if executor.calls != 0 {
+		t.Fatalf("expected non-dry-run executor not to be called, got %d", executor.calls)
 	}
 }
 
@@ -613,6 +721,7 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		Candidate:          true,
 		Enabled:            true,
 		ExecutorConfigured: true,
+		ExecutorDryRun:     true,
 		SafetyGateOK:       true,
 	}
 	tests := []struct {
@@ -632,15 +741,21 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		},
 		{
 			name:         "disabled",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, ExecutorConfigured: true, SafetyGateOK: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, ExecutorConfigured: true, ExecutorDryRun: true, SafetyGateOK: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-restart-disabled",
 		},
 		{
 			name:         "executor missing",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, SafetyGateOK: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorDryRun: true, SafetyGateOK: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-executor-not-configured",
+		},
+		{
+			name:         "non dry-run executor",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, SafetyGateOK: true},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-executor-dry-run-required",
 		},
 		{
 			name: "suppressed",
@@ -648,6 +763,7 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 				Candidate:          true,
 				Enabled:            true,
 				ExecutorConfigured: true,
+				ExecutorDryRun:     true,
 				Suppressed:         true,
 				SafetyGateOK:       true,
 			},
@@ -660,6 +776,7 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 				Candidate:          true,
 				Enabled:            true,
 				ExecutorConfigured: true,
+				ExecutorDryRun:     true,
 				BackoffActive:      true,
 				SafetyGateOK:       true,
 			},
@@ -668,7 +785,7 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		},
 		{
 			name:         "safety gate blocked",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, ExecutorDryRun: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-fallback-safety-gate-blocked",
 		},

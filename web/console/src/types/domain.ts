@@ -503,6 +503,20 @@ export type RuntimeSupervisorContainerFallbackControlAction = {
   updatedAt: string;
 };
 
+export type RuntimeSupervisorContainerFallbackAction = {
+  action: string;
+  targetName: string;
+  targetBaseUrl: string;
+  reason?: string;
+  executorKind: string;
+  executorDryRun: boolean;
+  submitted: boolean;
+  executed: boolean;
+  message?: string;
+  error?: string;
+  requestedAt: string;
+};
+
 export type RuntimeSupervisorPolicy = {
   applicationRestartEnabled: boolean;
   serviceFailureThreshold: number;
@@ -529,6 +543,7 @@ export type RuntimeSupervisorSnapshot = {
   policy: RuntimeSupervisorPolicy;
   targets: RuntimeSupervisorTargetSnapshot[];
   containerFallbackControls?: RuntimeSupervisorContainerFallbackControlAction[];
+  containerFallbackActions?: RuntimeSupervisorContainerFallbackAction[];
 };
 
 export type ReplayReasonStats = Record<string, Record<string, number>>;
