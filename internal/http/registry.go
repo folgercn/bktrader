@@ -22,6 +22,10 @@ var APIRegistry = []RouteEntry{
 	{Path: "/api/v1/runtime/suppress-auto-restart", Methods: []string{"POST"}, Module: "runtime", CLICommand: "runtime suppress-auto-restart", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/runtime/resume-auto-restart", Methods: []string{"POST"}, Module: "runtime", CLICommand: "runtime resume-auto-restart", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/supervisor/status", Methods: []string{"GET"}, Module: "supervisor", CLICommand: "supervisor status", Idempotent: true, RiskLevel: "L0"},
+	{Path: "/api/v1/supervisor/container-fallback/suppress", Methods: []string{"POST"}, Module: "supervisor", CLICommand: "supervisor suppress-container-fallback", Idempotent: false, RiskLevel: "L1"},
+	{Path: "/api/v1/supervisor/container-fallback/resume", Methods: []string{"POST"}, Module: "supervisor", CLICommand: "supervisor resume-container-fallback", Idempotent: false, RiskLevel: "L1"},
+	{Path: "/api/v1/supervisor/container-fallback/defer", Methods: []string{"POST"}, Module: "supervisor", CLICommand: "supervisor defer-container-fallback", Idempotent: false, RiskLevel: "L1"},
+	{Path: "/api/v1/supervisor/container-fallback/clear-backoff", Methods: []string{"POST"}, Module: "supervisor", CLICommand: "supervisor clear-container-fallback-backoff", Idempotent: false, RiskLevel: "L1"},
 
 	// Auth
 	{Path: "/api/v1/auth/login", Methods: []string{"POST"}, Module: "auth", CLICommand: "auth login", Idempotent: false, RiskLevel: "L1"},
