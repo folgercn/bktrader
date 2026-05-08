@@ -852,8 +852,14 @@ export function SupervisorStage() {
                           fallbackPlan?.blockedReason ||
                           fallbackPlan?.eligibleReason ||
                           target.serviceState.lastContainerFallbackDecisionReason ||
+                          target.serviceState.containerFallbackSubmittedError ||
+                          target.serviceState.containerFallbackSubmittedMessage ||
                           fallbackPlan?.reason ||
                           target.serviceState.containerFallbackReason;
+                        const fallbackSubmittedDetail =
+                          target.serviceState.containerFallbackSubmittedError ||
+                          target.serviceState.containerFallbackSubmittedMessage ||
+                          target.serviceState.containerFallbackSubmittedReason;
                         const toggleFallbackAction: TargetFallbackActionKind = target.serviceState.containerFallbackSuppressed ? 'resume' : 'suppress';
                         const toggleSubmitting = controlSubmittingKey === targetFallbackActionKey(target, toggleFallbackAction);
                         const deferSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'defer');
@@ -910,6 +916,7 @@ export function SupervisorStage() {
                                   )}
                                   {fallbackPlan && <Badge variant="neutral">{executorKindLabel(fallbackPlan.executorKind)}</Badge>}
                                   {fallbackPlan?.executorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                                  {fallbackPlan?.duplicate && <Badge variant="neutral">submitted</Badge>}
                                   {fallbackAttemptCount > 0 && (
                                     <Badge variant="neutral">
                                       attempts {fallbackAttemptCount}
@@ -925,6 +932,11 @@ export function SupervisorStage() {
                                 {fallbackDetail && (
                                   <span className="truncate text-xs text-[var(--bk-text-muted)]" title={fallbackDetail}>
                                     {fallbackDetail}
+                                  </span>
+                                )}
+                                {target.serviceState.containerFallbackSubmitted && fallbackSubmittedDetail && (
+                                  <span className="truncate text-xs text-[var(--bk-text-muted)]" title={fallbackSubmittedDetail}>
+                                    {formatOptionalTime(target.serviceState.containerFallbackSubmittedAt)} {fallbackSubmittedDetail}
                                   </span>
                                 )}
                               </div>
@@ -1291,6 +1303,7 @@ export function SupervisorStage() {
                               <TableHead>Action</TableHead>
                               <TableHead>Executor</TableHead>
                               <TableHead>Status</TableHead>
+                              <TableHead>Backoff</TableHead>
                               <TableHead>Result</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -1317,6 +1330,14 @@ export function SupervisorStage() {
                                     </div>
                                   </TableCell>
                                   <TableCell><Badge variant={state.variant}>{state.label}</Badge></TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>{formatOptionalTime(action.backoffUntil)}</span>
+                                      {action.backoffSeconds ? (
+                                        <span className="text-[var(--bk-text-muted)]">{action.backoffSeconds}s</span>
+                                      ) : null}
+                                    </div>
+                                  </TableCell>
                                   <TableCell>
                                     <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={result}>
                                       {result}
