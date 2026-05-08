@@ -297,7 +297,8 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	}
 
 	healthy = true
-	recovered := supervisor.Collect(context.Background()).Targets[0]
+	recoveredSnapshot := supervisor.Collect(context.Background())
+	recovered := recoveredSnapshot.Targets[0]
 	if recovered.ServiceState.ConsecutiveFailures != 0 || recovered.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected healthy probe to clear fallback candidate, got %+v", recovered.ServiceState)
 	}
@@ -312,6 +313,19 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	}
 	if recovered.ServiceState.ContainerFallbackAttemptCount != 0 || recovered.ServiceState.LastContainerFallbackDecisionAt != nil || recovered.ServiceState.LastContainerFallbackDecisionReason != "" {
 		t.Fatalf("expected healthy probe to clear fallback decision audit, got %+v", recovered.ServiceState)
+	}
+	if len(recoveredSnapshot.ServiceFailureEpisodes) != 1 {
+		t.Fatalf("expected recovered failure episode audit, got %+v", recoveredSnapshot.ServiceFailureEpisodes)
+	}
+	episode := recoveredSnapshot.ServiceFailureEpisodes[0]
+	if episode.TargetName != "api" || episode.MaxConsecutiveFailures != 3 || !episode.ContainerFallbackCandidate {
+		t.Fatalf("unexpected recovered failure episode identity, got %+v", episode)
+	}
+	if episode.ContainerFallbackCandidateSince == nil || episode.ContainerFallbackAttemptCount != 2 || episode.LastContainerFallbackDecisionReason != "container-restart-disabled" {
+		t.Fatalf("expected recovered episode fallback decision audit, got %+v", episode)
+	}
+	if episode.DurationSeconds < 0 || episode.LastFailureReason == "" || episode.LastFailureAt == nil {
+		t.Fatalf("expected recovered episode failure timing and reason, got %+v", episode)
 	}
 }
 
@@ -452,6 +466,9 @@ func TestRuntimeSupervisorDryRunContainerFallbackExecutorRecordsActionOncePerFai
 	recovered := supervisor.Collect(context.Background())
 	if len(recovered.ContainerFallbackActions) != 1 {
 		t.Fatalf("expected healthy collect to preserve action history, got %+v", recovered.ContainerFallbackActions)
+	}
+	if len(recovered.ServiceFailureEpisodes) != 1 || !recovered.ServiceFailureEpisodes[0].ContainerFallbackSubmitted || recovered.ServiceFailureEpisodes[0].ContainerFallbackSubmittedAt == nil {
+		t.Fatalf("expected recovered episode to preserve dry-run submission audit, got %+v", recovered.ServiceFailureEpisodes)
 	}
 	healthy = false
 	newEpisode := supervisor.Collect(context.Background())

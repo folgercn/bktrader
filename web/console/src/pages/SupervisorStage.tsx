@@ -43,6 +43,7 @@ import {
   RuntimeSupervisorContainerFallbackControlAction,
   RuntimeSupervisorControlAction,
   RuntimeSupervisorRuntimeStatus,
+  RuntimeSupervisorServiceFailureEpisode,
   RuntimeSupervisorSnapshot,
   RuntimeSupervisorTargetSnapshot,
 } from '../types/domain';
@@ -52,6 +53,7 @@ type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>['variant']>;
 type RuntimeRow = RuntimeSupervisorRuntimeStatus & { targetName: string };
 type FallbackAction = RuntimeSupervisorContainerFallbackAction;
 type FallbackControlAction = RuntimeSupervisorContainerFallbackControlAction;
+type FallbackEpisode = RuntimeSupervisorServiceFailureEpisode;
 type RuntimeControlActionKind = 'start' | 'stop' | 'restart' | 'suppress-auto-restart' | 'resume-auto-restart';
 type RuntimeControlDialogState = {
   runtime: RuntimeRow;
@@ -619,6 +621,7 @@ export function SupervisorStage() {
     controlActionRows,
     fallbackControlRows,
     fallbackActionRows,
+    fallbackEpisodeRows,
     fallbackCount,
     executableFallbackCount,
     dryRunFallbackCount,
@@ -640,6 +643,7 @@ export function SupervisorStage() {
           targetName: target.name,
         }))
       ),
+      fallbackEpisodeRows: snapshot?.serviceFailureEpisodes ?? [],
       fallbackControlRows: snapshot?.containerFallbackControls ?? [],
       fallbackActionRows: snapshot?.containerFallbackActions ?? [],
       fallbackCount: targets.filter((target) => target.serviceState.containerFallbackCandidate).length,
@@ -756,8 +760,8 @@ export function SupervisorStage() {
               <MetricCard
                 icon={RotateCw}
                 label="Controls"
-                value={controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length}
-                detail={`${controlActionRows.length} runtime, ${fallbackControlRows.length} gates, ${fallbackActionRows.length} dry-run`}
+                value={controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length + fallbackEpisodeRows.length}
+                detail={`${controlActionRows.length} runtime, ${fallbackControlRows.length} gates, ${fallbackActionRows.length} dry-run, ${fallbackEpisodeRows.length} episodes`}
                 tone={controlActionRows.some((action) => action.error) || fallbackActionRows.some((action) => action.error) ? 'danger' : 'neutral'}
               />
             </div>
@@ -1193,12 +1197,12 @@ export function SupervisorStage() {
                   <div className="flex flex-wrap justify-end gap-2">
                     {controlError && <Badge variant="destructive" title={controlError}>control failed</Badge>}
                     {controlNotice && <Badge variant="success" title={controlNotice}>control accepted</Badge>}
-                    <Badge variant="neutral">{controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length}</Badge>
+                    <Badge variant="neutral">{controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length + fallbackEpisodeRows.length}</Badge>
                   </div>
                 </CardAction>
               </CardHeader>
               <CardContent>
-                {controlActionRows.length === 0 && fallbackControlRows.length === 0 && fallbackActionRows.length === 0 ? (
+                {controlActionRows.length === 0 && fallbackControlRows.length === 0 && fallbackActionRows.length === 0 && fallbackEpisodeRows.length === 0 ? (
                   <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-[var(--bk-border)] text-sm text-[var(--bk-text-muted)]">
                     暂无控制动作
                   </div>
@@ -1294,6 +1298,68 @@ export function SupervisorStage() {
                                       <span className="truncate text-[var(--bk-text-muted)]" title={action.reason}>{action.reason || '--'}</span>
                                       <span className="text-[var(--bk-text-muted)]">{action.source || '--'}</span>
                                     </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    {fallbackEpisodeRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Failure Episodes</div>
+                        <Table tone="bento">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Recovered</TableHead>
+                              <TableHead>Target</TableHead>
+                              <TableHead>Duration</TableHead>
+                              <TableHead>Fallback</TableHead>
+                              <TableHead>Submitted</TableHead>
+                              <TableHead>Reason</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {fallbackEpisodeRows.map((episode: FallbackEpisode) => {
+                              const reason = episode.containerFallbackSubmittedError || episode.lastFailureReason || episode.lastContainerFallbackDecisionReason || '--';
+                              return (
+                                <TableRow key={`${episode.targetName}:${episode.startedAt}:${episode.recoveredAt}`}>
+                                  <TableCell>{formatOptionalTime(episode.recoveredAt)}</TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <span>{episode.targetName}</span>
+                                      <span className="max-w-[220px] truncate text-xs text-[var(--bk-text-muted)]" title={episode.targetBaseUrl}>
+                                        {episode.targetBaseUrl}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>{episode.durationSeconds}s</span>
+                                      <span className="text-[var(--bk-text-muted)]">max {episode.maxConsecutiveFailures}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <Badge variant={episode.containerFallbackCandidate ? 'secondary' : 'neutral'}>
+                                        {episode.containerFallbackCandidate ? 'candidate' : 'below threshold'}
+                                      </Badge>
+                                      <span className="text-xs text-[var(--bk-text-muted)]">{episode.containerFallbackAttemptCount ?? 0} attempts</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <Badge variant={episode.containerFallbackSubmitted ? 'secondary' : 'neutral'}>
+                                        {episode.containerFallbackSubmitted ? 'submitted' : 'none'}
+                                      </Badge>
+                                      <span className="text-xs text-[var(--bk-text-muted)]">{formatOptionalTime(episode.containerFallbackSubmittedAt)}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={reason}>
+                                      {reason}
+                                    </span>
                                   </TableCell>
                                 </TableRow>
                               );

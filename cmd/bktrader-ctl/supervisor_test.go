@@ -169,9 +169,50 @@ func TestBuildSupervisorStatusSummaryShowsFallbackControlAudit(t *testing.T) {
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 fallbackControls=1 fallbackActions=0",
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 serviceFailureEpisodes=0 fallbackControls=1 fallbackActions=0",
 		"fallbackControls: total=1",
 		"defer-container-fallback target=api suppressed=false backoffUntil=2026-04-29T08:05:00Z backoffSeconds=300 source=ctl updatedAt=2026-04-29T08:00:00Z reason=operator cooling down restart loop",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
+func TestBuildSupervisorStatusSummaryShowsServiceFailureEpisodes(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:10:00Z",
+		"targets":[],
+		"serviceFailureEpisodes":[{
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"startedAt":"2026-04-29T08:00:00Z",
+			"recoveredAt":"2026-04-29T08:10:00Z",
+			"durationSeconds":600,
+			"maxConsecutiveFailures":4,
+			"lastFailureReason":"healthz-unhealthy: http 503",
+			"lastFailureAt":"2026-04-29T08:09:00Z",
+			"containerFallbackCandidate":true,
+			"containerFallbackCandidateSince":"2026-04-29T08:02:00Z",
+			"containerFallbackAttemptCount":2,
+			"containerFallbackSubmitted":true,
+			"containerFallbackSubmittedAt":"2026-04-29T08:03:00Z",
+			"containerFallbackSubmittedError":"noop executor failed",
+			"containerFallbackBackoffUntil":"2026-04-29T08:08:00Z",
+			"lastContainerFallbackDecisionAt":"2026-04-29T08:03:00Z",
+			"lastContainerFallbackDecisionReason":"container-fallback-backoff-active"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 serviceFailureEpisodes=1 fallbackControls=0 fallbackActions=0",
+		"serviceFailureEpisodes: total=1",
+		"target=api startedAt=2026-04-29T08:00:00Z recoveredAt=2026-04-29T08:10:00Z durationSeconds=600 maxFailures=4 candidate=true candidateSince=2026-04-29T08:02:00Z attempts=2 submitted=true submittedAt=2026-04-29T08:03:00Z lastDecision=container-fallback-backoff-active lastFailure=healthz-unhealthy: http 503 submittedError=noop executor failed backoffUntil=2026-04-29T08:08:00Z",
 	}
 	for _, want := range expected {
 		if !strings.Contains(summary, want) {
@@ -281,7 +322,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackActionAudit(t *testing.T) {
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 fallbackControls=0 fallbackActions=1",
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 serviceFailureEpisodes=0 fallbackControls=0 fallbackActions=1",
 		"fallbackActions: total=1",
 		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z episodeStartedAt=-- candidateSince=-- reason=service probes failed 1/1 message=noop container fallback executor",
 	}

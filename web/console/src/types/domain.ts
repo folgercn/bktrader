@@ -531,6 +531,26 @@ export type RuntimeSupervisorContainerFallbackAction = {
   requestedAt: string;
 };
 
+export type RuntimeSupervisorServiceFailureEpisode = {
+  targetName: string;
+  targetBaseUrl: string;
+  startedAt: string;
+  recoveredAt: string;
+  durationSeconds: number;
+  maxConsecutiveFailures: number;
+  lastFailureReason?: string;
+  lastFailureAt?: string;
+  containerFallbackCandidate: boolean;
+  containerFallbackCandidateSince?: string;
+  containerFallbackAttemptCount?: number;
+  containerFallbackSubmitted?: boolean;
+  containerFallbackSubmittedAt?: string;
+  containerFallbackSubmittedError?: string;
+  containerFallbackBackoffUntil?: string;
+  lastContainerFallbackDecisionAt?: string;
+  lastContainerFallbackDecisionReason?: string;
+};
+
 export type RuntimeSupervisorPolicy = {
   applicationRestartEnabled: boolean;
   serviceFailureThreshold: number;
@@ -556,6 +576,7 @@ export type RuntimeSupervisorSnapshot = {
   checkedAt: string;
   policy: RuntimeSupervisorPolicy;
   targets: RuntimeSupervisorTargetSnapshot[];
+  serviceFailureEpisodes?: RuntimeSupervisorServiceFailureEpisode[];
   containerFallbackControls?: RuntimeSupervisorContainerFallbackControlAction[];
   containerFallbackActions?: RuntimeSupervisorContainerFallbackAction[];
 };
