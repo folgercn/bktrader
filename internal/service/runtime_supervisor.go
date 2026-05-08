@@ -122,6 +122,7 @@ type RuntimeSupervisorSnapshot struct {
 	Policy                    RuntimeSupervisorPolicy                           `json:"policy"`
 	Targets                   []RuntimeSupervisorTargetSnapshot                 `json:"targets"`
 	ContainerFallbackControls []RuntimeSupervisorContainerFallbackControlAction `json:"containerFallbackControls,omitempty"`
+	ContainerFallbackActions  []RuntimeSupervisorContainerFallbackAction        `json:"containerFallbackActions,omitempty"`
 }
 
 type RuntimeSupervisorPolicy struct {
@@ -155,6 +156,20 @@ type RuntimeSupervisorContainerFallbackControlAction struct {
 	Reason         string     `json:"reason"`
 	Source         string     `json:"source"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
+}
+
+type RuntimeSupervisorContainerFallbackAction struct {
+	Action         string    `json:"action"`
+	TargetName     string    `json:"targetName"`
+	TargetBaseURL  string    `json:"targetBaseUrl"`
+	Reason         string    `json:"reason,omitempty"`
+	ExecutorKind   string    `json:"executorKind"`
+	ExecutorDryRun bool      `json:"executorDryRun"`
+	Submitted      bool      `json:"submitted"`
+	Executed       bool      `json:"executed"`
+	Message        string    `json:"message,omitempty"`
+	Error          string    `json:"error,omitempty"`
+	RequestedAt    time.Time `json:"requestedAt"`
 }
 
 type RuntimeSupervisorApplicationRestartPlan struct {
@@ -245,6 +260,7 @@ type runtimeSupervisorContainerFallbackDecisionInput struct {
 	Candidate          bool
 	Enabled            bool
 	ExecutorConfigured bool
+	ExecutorDryRun     bool
 	Suppressed         bool
 	BackoffActive      bool
 	SafetyGateOK       bool
@@ -300,11 +316,13 @@ type RuntimeSupervisor struct {
 	client  *http.Client
 	options RuntimeSupervisorOptions
 
-	mu                sync.RWMutex
-	snapshot          RuntimeSupervisorSnapshot
-	submittedRestarts map[string]string
-	serviceStates     map[string]runtimeSupervisorServiceState
-	fallbackControls  []RuntimeSupervisorContainerFallbackControlAction
+	mu                 sync.RWMutex
+	snapshot           RuntimeSupervisorSnapshot
+	submittedRestarts  map[string]string
+	submittedFallbacks map[string]bool
+	serviceStates      map[string]runtimeSupervisorServiceState
+	fallbackControls   []RuntimeSupervisorContainerFallbackControlAction
+	fallbackActions    []RuntimeSupervisorContainerFallbackAction
 }
 
 func (p *Platform) SetRuntimeSupervisor(supervisor *RuntimeSupervisor) {
@@ -387,11 +405,12 @@ func NewRuntimeSupervisorWithOptions(targets []RuntimeSupervisorTarget, client *
 		client = &http.Client{Timeout: defaultRuntimeSupervisorHTTPTimeout}
 	}
 	return &RuntimeSupervisor{
-		targets:           normalized,
-		client:            client,
-		options:           options,
-		submittedRestarts: make(map[string]string),
-		serviceStates:     make(map[string]runtimeSupervisorServiceState),
+		targets:            normalized,
+		client:             client,
+		options:            options,
+		submittedRestarts:  make(map[string]string),
+		submittedFallbacks: make(map[string]bool),
+		serviceStates:      make(map[string]runtimeSupervisorServiceState),
 	}
 }
 
@@ -454,6 +473,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 		targetSnapshot.RuntimeStatus = s.fetchJSON(ctx, target, "/api/v1/runtime/status", &status)
 		targetSnapshot.ServiceState = s.updateServiceState(target, targetSnapshot.Healthz, targetSnapshot.RuntimeStatus, now)
 		targetSnapshot.ContainerFallbackPlan, targetSnapshot.ServiceState = s.updateContainerFallbackPlan(target, targetSnapshot.ServiceState, now)
+		s.submitContainerFallback(ctx, target, targetSnapshot.ContainerFallbackPlan, now)
 		if targetSnapshot.RuntimeStatus.Error == "" && targetSnapshot.RuntimeStatus.Reachable {
 			status = s.attachApplicationRestartPlans(target, status, targetSnapshot.Healthz, now)
 			targetSnapshot.Status = &status
@@ -463,6 +483,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 	}
 	s.mu.Lock()
 	snapshot.ContainerFallbackControls = append([]RuntimeSupervisorContainerFallbackControlAction(nil), s.fallbackControls...)
+	snapshot.ContainerFallbackActions = append([]RuntimeSupervisorContainerFallbackAction(nil), s.fallbackActions...)
 	s.snapshot = snapshot
 	s.mu.Unlock()
 	return snapshot
@@ -493,6 +514,7 @@ func (s *RuntimeSupervisor) LastSnapshot() RuntimeSupervisorSnapshot {
 		}
 	}
 	out.ContainerFallbackControls = append([]RuntimeSupervisorContainerFallbackControlAction(nil), s.fallbackControls...)
+	out.ContainerFallbackActions = append([]RuntimeSupervisorContainerFallbackAction(nil), s.fallbackActions...)
 	return out
 }
 
@@ -665,6 +687,16 @@ func (s *RuntimeSupervisor) recordContainerFallbackControlLocked(event RuntimeSu
 	}
 }
 
+func (s *RuntimeSupervisor) recordContainerFallbackActionLocked(action RuntimeSupervisorContainerFallbackAction) {
+	if s == nil {
+		return
+	}
+	s.fallbackActions = append([]RuntimeSupervisorContainerFallbackAction{action}, s.fallbackActions...)
+	if len(s.fallbackActions) > defaultRuntimeSupervisorControlHistoryLimit {
+		s.fallbackActions = s.fallbackActions[:defaultRuntimeSupervisorControlHistoryLimit]
+	}
+}
+
 func (s *RuntimeSupervisor) targetByName(targetName string) (RuntimeSupervisorTarget, error) {
 	name := strings.TrimSpace(targetName)
 	if name == "" {
@@ -775,6 +807,9 @@ func (s *RuntimeSupervisor) updateServiceState(target RuntimeSupervisorTarget, h
 		state.ContainerFallbackBackoffClearedSource = ""
 		state.LastContainerFallbackDecisionAt = time.Time{}
 		state.LastContainerFallbackDecisionReason = ""
+		if s.submittedFallbacks != nil {
+			delete(s.submittedFallbacks, key)
+		}
 	}
 	s.serviceStates[key] = state
 	return runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold)
@@ -886,6 +921,48 @@ func (s *RuntimeSupervisor) updateContainerFallbackPlan(target RuntimeSupervisor
 	return plan, state
 }
 
+func (s *RuntimeSupervisor) submitContainerFallback(ctx context.Context, target RuntimeSupervisorTarget, plan *RuntimeSupervisorContainerFallbackPlan, now time.Time) {
+	if s == nil || plan == nil || !plan.Executable || !plan.ExecutorDryRun || s.options.ContainerFallbackExecutor == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	key := runtimeSupervisorServiceKey(target)
+	s.mu.Lock()
+	if s.submittedFallbacks == nil {
+		s.submittedFallbacks = make(map[string]bool)
+	}
+	if s.submittedFallbacks[key] {
+		s.mu.Unlock()
+		return
+	}
+	s.submittedFallbacks[key] = true
+	s.mu.Unlock()
+
+	action := RuntimeSupervisorContainerFallbackAction{
+		Action:         firstNonEmpty(plan.Action, "container-restart"),
+		TargetName:     target.Name,
+		TargetBaseURL:  target.BaseURL,
+		Reason:         plan.Reason,
+		ExecutorKind:   plan.ExecutorKind,
+		ExecutorDryRun: plan.ExecutorDryRun,
+		Submitted:      true,
+		RequestedAt:    now,
+	}
+	result, err := s.options.ContainerFallbackExecutor.Restart(ctx, target, plan.Reason)
+	if err != nil {
+		action.Error = err.Error()
+	} else {
+		action.Executed = result.Executed
+		action.Message = result.Message
+	}
+	s.mu.Lock()
+	s.recordContainerFallbackActionLocked(action)
+	s.mu.Unlock()
+}
+
 func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState, options RuntimeSupervisorOptions, now time.Time) *RuntimeSupervisorContainerFallbackPlan {
 	if !state.ContainerFallbackCandidate {
 		return nil
@@ -899,6 +976,7 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 		Candidate:          state.ContainerFallbackCandidate,
 		Enabled:            options.EnableContainerFallback,
 		ExecutorConfigured: executorConfigured,
+		ExecutorDryRun:     executorDescriptor.DryRun,
 		Suppressed:         suppressed,
 		BackoffActive:      backoffActive,
 		SafetyGateOK:       safetyGateOK,
@@ -956,6 +1034,9 @@ func evaluateRuntimeSupervisorContainerFallbackDecision(input runtimeSupervisorC
 	}
 	if !input.ExecutorConfigured {
 		return blocked("container-executor-not-configured")
+	}
+	if !input.ExecutorDryRun {
+		return blocked("container-executor-dry-run-required")
 	}
 	if input.Suppressed {
 		return blocked("container-fallback-suppressed")

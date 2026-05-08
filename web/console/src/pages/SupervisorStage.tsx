@@ -39,6 +39,7 @@ import { cn } from '../lib/utils';
 import { fetchJSON } from '../utils/api';
 import { formatTime, shrink } from '../utils/format';
 import {
+  RuntimeSupervisorContainerFallbackAction,
   RuntimeSupervisorContainerFallbackControlAction,
   RuntimeSupervisorControlAction,
   RuntimeSupervisorRuntimeStatus,
@@ -49,6 +50,7 @@ import {
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>['variant']>;
 type RuntimeRow = RuntimeSupervisorRuntimeStatus & { targetName: string };
+type FallbackAction = RuntimeSupervisorContainerFallbackAction;
 type FallbackControlAction = RuntimeSupervisorContainerFallbackControlAction;
 type RuntimeControlActionKind = 'start' | 'stop' | 'restart' | 'suppress-auto-restart' | 'resume-auto-restart';
 type RuntimeControlDialogState = {
@@ -408,6 +410,19 @@ function fallbackControlState(action: FallbackControlAction): { label: string; v
   return { label: 'open', variant: 'success' };
 }
 
+function fallbackActionState(action: FallbackAction): { label: string; variant: BadgeVariant } {
+  if (action.error) {
+    return { label: 'error', variant: 'destructive' };
+  }
+  if (action.executed) {
+    return { label: 'executed', variant: 'success' };
+  }
+  if (action.submitted) {
+    return { label: 'dry-run', variant: 'secondary' };
+  }
+  return { label: 'skipped', variant: 'neutral' };
+}
+
 function targetFallbackControlLabel(action: TargetFallbackActionKind) {
   if (action === 'suppress') {
     return 'Suppress Container Fallback';
@@ -603,6 +618,7 @@ export function SupervisorStage() {
     runtimeRows,
     controlActionRows,
     fallbackControlRows,
+    fallbackActionRows,
     fallbackCount,
     executableFallbackCount,
     dryRunFallbackCount,
@@ -625,6 +641,7 @@ export function SupervisorStage() {
         }))
       ),
       fallbackControlRows: snapshot?.containerFallbackControls ?? [],
+      fallbackActionRows: snapshot?.containerFallbackActions ?? [],
       fallbackCount: targets.filter((target) => target.serviceState.containerFallbackCandidate).length,
       executableFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable).length,
       dryRunFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable && target.containerFallbackPlan.executorDryRun).length,
@@ -739,9 +756,9 @@ export function SupervisorStage() {
               <MetricCard
                 icon={RotateCw}
                 label="Controls"
-                value={controlActionRows.length + fallbackControlRows.length}
-                detail={`${controlActionRows.length} runtime, ${fallbackControlRows.length} fallback gates`}
-                tone={controlActionRows.some((action) => action.error) ? 'danger' : 'neutral'}
+                value={controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length}
+                detail={`${controlActionRows.length} runtime, ${fallbackControlRows.length} gates, ${fallbackActionRows.length} dry-run`}
+                tone={controlActionRows.some((action) => action.error) || fallbackActionRows.some((action) => action.error) ? 'danger' : 'neutral'}
               />
             </div>
 
@@ -1154,12 +1171,12 @@ export function SupervisorStage() {
                   <div className="flex flex-wrap justify-end gap-2">
                     {controlError && <Badge variant="destructive" title={controlError}>control failed</Badge>}
                     {controlNotice && <Badge variant="success" title={controlNotice}>control accepted</Badge>}
-                    <Badge variant="neutral">{controlActionRows.length + fallbackControlRows.length}</Badge>
+                    <Badge variant="neutral">{controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length}</Badge>
                   </div>
                 </CardAction>
               </CardHeader>
               <CardContent>
-                {controlActionRows.length === 0 && fallbackControlRows.length === 0 ? (
+                {controlActionRows.length === 0 && fallbackControlRows.length === 0 && fallbackActionRows.length === 0 ? (
                   <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-[var(--bk-border)] text-sm text-[var(--bk-text-muted)]">
                     暂无控制动作
                   </div>
@@ -1255,6 +1272,55 @@ export function SupervisorStage() {
                                       <span className="truncate text-[var(--bk-text-muted)]" title={action.reason}>{action.reason || '--'}</span>
                                       <span className="text-[var(--bk-text-muted)]">{action.source || '--'}</span>
                                     </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    {fallbackActionRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Fallback Dry-Run</div>
+                        <Table tone="bento">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Requested</TableHead>
+                              <TableHead>Target</TableHead>
+                              <TableHead>Action</TableHead>
+                              <TableHead>Executor</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Result</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {fallbackActionRows.map((action) => {
+                              const state = fallbackActionState(action);
+                              const result = action.error || action.message || action.reason || '--';
+                              return (
+                                <TableRow key={`${action.targetName}:${action.action}:${action.requestedAt}`}>
+                                  <TableCell>{formatOptionalTime(action.requestedAt)}</TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <span>{action.targetName}</span>
+                                      <span className="max-w-[220px] truncate text-xs text-[var(--bk-text-muted)]" title={action.targetBaseUrl}>
+                                        {action.targetBaseUrl}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell><Badge variant="metal">{action.action}</Badge></TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <span>{executorKindLabel(action.executorKind)}</span>
+                                      <span className="text-xs text-[var(--bk-text-muted)]">{action.executorDryRun ? 'dry-run' : 'live'}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell><Badge variant={state.variant}>{state.label}</Badge></TableCell>
+                                  <TableCell>
+                                    <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={result}>
+                                      {result}
+                                    </span>
                                   </TableCell>
                                 </TableRow>
                               );

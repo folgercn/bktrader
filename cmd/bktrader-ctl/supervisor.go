@@ -120,6 +120,7 @@ type supervisorStatusSnapshot struct {
 	Policy                    *supervisorPolicy                          `json:"policy,omitempty"`
 	Targets                   []supervisorTargetSnapshot                 `json:"targets"`
 	ContainerFallbackControls []supervisorContainerFallbackControlAction `json:"containerFallbackControls,omitempty"`
+	ContainerFallbackActions  []supervisorContainerFallbackAction        `json:"containerFallbackActions,omitempty"`
 }
 
 type supervisorPolicy struct {
@@ -254,6 +255,20 @@ type supervisorContainerFallbackControlAction struct {
 	UpdatedAt      string `json:"updatedAt"`
 }
 
+type supervisorContainerFallbackAction struct {
+	Action         string `json:"action"`
+	TargetName     string `json:"targetName"`
+	TargetBaseURL  string `json:"targetBaseUrl"`
+	Reason         string `json:"reason,omitempty"`
+	ExecutorKind   string `json:"executorKind"`
+	ExecutorDryRun bool   `json:"executorDryRun"`
+	Submitted      bool   `json:"submitted"`
+	Executed       bool   `json:"executed"`
+	Message        string `json:"message,omitempty"`
+	Error          string `json:"error,omitempty"`
+	RequestedAt    string `json:"requestedAt"`
+}
+
 func handleSupervisorStatusResponse(data []byte, err error) {
 	if err != nil || outputJSON {
 		handleResponse(data, err)
@@ -318,8 +333,8 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 			snapshot.Policy.ContainerExecutorDryRun,
 		)
 	}
-	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d fallbackDryRun=%d runtimes=%d attention=%d controlActions=%d fallbackControls=%d\n",
-		targets, fullyReachable, fallbackCandidates, fallbackExecutable, fallbackDryRun, runtimeCount, runtimeAttention, controlActions, len(snapshot.ContainerFallbackControls))
+	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d fallbackDryRun=%d runtimes=%d attention=%d controlActions=%d fallbackControls=%d fallbackActions=%d\n",
+		targets, fullyReachable, fallbackCandidates, fallbackExecutable, fallbackDryRun, runtimeCount, runtimeAttention, controlActions, len(snapshot.ContainerFallbackControls), len(snapshot.ContainerFallbackActions))
 	for _, target := range snapshot.Targets {
 		fmt.Fprintf(&out, "\n- %s %s\n", firstNonEmpty(target.Name, "--"), firstNonEmpty(target.BaseURL, "--"))
 		fmt.Fprintf(&out, "  probes: healthz=%s runtimeStatus=%s\n", supervisorProbeText(target.Healthz), supervisorProbeText(target.RuntimeStatus))
@@ -441,6 +456,28 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				firstNonEmpty(action.UpdatedAt, "--"),
 				firstNonEmpty(action.Reason, "--"),
 			)
+		}
+	}
+	if len(snapshot.ContainerFallbackActions) > 0 {
+		fmt.Fprintf(&out, "\nfallbackActions: total=%d\n", len(snapshot.ContainerFallbackActions))
+		for _, action := range snapshot.ContainerFallbackActions {
+			fmt.Fprintf(&out, "  - %s target=%s executorKind=%s executorDryRun=%t submitted=%t executed=%t requestedAt=%s reason=%s",
+				firstNonEmpty(action.Action, "--"),
+				firstNonEmpty(action.TargetName, "--"),
+				firstNonEmpty(action.ExecutorKind, "--"),
+				action.ExecutorDryRun,
+				action.Submitted,
+				action.Executed,
+				firstNonEmpty(action.RequestedAt, "--"),
+				firstNonEmpty(action.Reason, "--"),
+			)
+			if strings.TrimSpace(action.Error) != "" {
+				fmt.Fprintf(&out, " error=%s", action.Error)
+			}
+			if strings.TrimSpace(action.Message) != "" {
+				fmt.Fprintf(&out, " message=%s", action.Message)
+			}
+			fmt.Fprintln(&out)
 		}
 	}
 	return strings.TrimRight(out.String(), "\n") + "\n", nil
