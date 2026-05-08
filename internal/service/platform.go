@@ -162,6 +162,7 @@ func NewPlatform(store store.Repository) *Platform {
 	platform.registerBuiltInSignalRuntimeAdapters()
 	platform.registerBuiltInExecutionStrategies()
 	platform.dashboardBroker = NewDashboardBroker(platform)
+	platform.store = newDashboardLiveSessionNotifyingStore(platform.store, platform.NotifyDashboardChanged)
 	platform.logger("service.platform").Info("platform initialized",
 		"strategy_engine_count", len(platform.strategyEngines),
 		"live_adapter_count", len(platform.liveAdapters),
