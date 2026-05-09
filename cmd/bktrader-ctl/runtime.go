@@ -45,7 +45,7 @@ var runtimeStatusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := getClient()
 		resp, err := client.Request("GET", "/api/v1/runtime/status", nil)
-		handleResponse(resp, err)
+		handleRuntimeStatusResponse(resp, err)
 		return nil
 	},
 }
