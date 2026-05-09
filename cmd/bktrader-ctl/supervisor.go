@@ -131,6 +131,7 @@ type supervisorPolicy struct {
 	ContainerExecutorConfigured bool   `json:"containerExecutorConfigured"`
 	ContainerExecutorKind       string `json:"containerExecutorKind"`
 	ContainerExecutorDryRun     bool   `json:"containerExecutorDryRun"`
+	ContainerExecutorArmed      bool   `json:"containerExecutorArmed"`
 }
 
 type supervisorTargetSnapshot struct {
@@ -193,6 +194,8 @@ type supervisorContainerFallbackPlan struct {
 	ExecutorConfigured              bool   `json:"executorConfigured"`
 	ExecutorKind                    string `json:"executorKind"`
 	ExecutorDryRun                  bool   `json:"executorDryRun"`
+	ExecutorArmed                   bool   `json:"executorArmed"`
+	TargetAllowed                   bool   `json:"targetAllowed"`
 	Executable                      bool   `json:"executable"`
 	Decision                        string `json:"decision"`
 	Duplicate                       bool   `json:"duplicate"`
@@ -359,13 +362,14 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	fmt.Fprintln(&out, "Runtime supervisor snapshot")
 	fmt.Fprintf(&out, "checkedAt: %s\n", firstNonEmpty(snapshot.CheckedAt, "--"))
 	if snapshot.Policy != nil {
-		fmt.Fprintf(&out, "policy: applicationRestartEnabled=%t serviceFailureThreshold=%d containerRestartEnabled=%t containerExecutorConfigured=%t containerExecutorKind=%s containerExecutorDryRun=%t\n",
+		fmt.Fprintf(&out, "policy: applicationRestartEnabled=%t serviceFailureThreshold=%d containerRestartEnabled=%t containerExecutorConfigured=%t containerExecutorKind=%s containerExecutorDryRun=%t containerExecutorArmed=%t\n",
 			snapshot.Policy.ApplicationRestartEnabled,
 			snapshot.Policy.ServiceFailureThreshold,
 			snapshot.Policy.ContainerRestartEnabled,
 			snapshot.Policy.ContainerExecutorConfigured,
 			firstNonEmpty(snapshot.Policy.ContainerExecutorKind, "--"),
 			snapshot.Policy.ContainerExecutorDryRun,
+			snapshot.Policy.ContainerExecutorArmed,
 		)
 	}
 	fmt.Fprintf(&out, "targets: total=%d fullyReachable=%d fallbackCandidates=%d fallbackExecutable=%d fallbackDryRun=%d runtimes=%d attention=%d controlActions=%d serviceFailureEpisodes=%d fallbackControls=%d fallbackActions=%d\n",
@@ -432,13 +436,15 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 		}
 		if target.ContainerFallbackPlan != nil {
 			plan := target.ContainerFallbackPlan
-			fmt.Fprintf(&out, "  fallbackPlan: action=%s decision=%s enabled=%t executorConfigured=%t executorKind=%s executorDryRun=%t executable=%t duplicate=%t suppressed=%t backoffActive=%t safetyGateOk=%t blockedReason=%s eligibleReason=%s\n",
+			fmt.Fprintf(&out, "  fallbackPlan: action=%s decision=%s enabled=%t executorConfigured=%t executorKind=%s executorDryRun=%t executorArmed=%t targetAllowed=%t executable=%t duplicate=%t suppressed=%t backoffActive=%t safetyGateOk=%t blockedReason=%s eligibleReason=%s\n",
 				firstNonEmpty(plan.Action, "--"),
 				firstNonEmpty(plan.Decision, "--"),
 				plan.Enabled,
 				plan.ExecutorConfigured,
 				firstNonEmpty(plan.ExecutorKind, "--"),
 				plan.ExecutorDryRun,
+				plan.ExecutorArmed,
+				plan.TargetAllowed,
 				plan.Executable,
 				plan.Duplicate,
 				plan.Suppressed,

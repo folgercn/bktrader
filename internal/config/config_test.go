@@ -115,9 +115,46 @@ func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
 		})
 	}
 
+	commandCfg := Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo","args":["restart","api"],"timeoutSeconds":5}}`,
+	}
+	if err := commandCfg.Validate(); err != nil {
+		t.Fatalf("expected armed command executor to validate, got %v", err)
+	}
+
 	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "docker"}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected unsupported supervisor container executor to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "command", SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo"}}`}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected unarmed command executor to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "command", SupervisorContainerExecutorArmed: true}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor without allowlist JSON to fail validation")
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"docker","args":["restart","platform-api"]}}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor with relative path to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutorArmed: true}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected armed gate without command executor to fail validation")
 	}
 }
 
@@ -310,6 +347,30 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	}
 	if cfg.SupervisorContainerExecutor != "noop" {
 		t.Fatalf("expected supervisor container executor noop, got %q", cfg.SupervisorContainerExecutor)
+	}
+	if cfg.SupervisorContainerExecutorArmed || cfg.SupervisorContainerExecutorCommands != "" {
+		t.Fatalf("expected noop executor to leave real executor gates empty, armed=%t commands=%q", cfg.SupervisorContainerExecutorArmed, cfg.SupervisorContainerExecutorCommands)
+	}
+}
+
+func TestLoadReadsCommandSupervisorExecutorEnv(t *testing.T) {
+	commandsJSON := `{"api":{"path":"/bin/echo","args":["restart","api"],"timeoutSeconds":5}}`
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR", " command ")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR_ARMED", "true")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON", " "+commandsJSON+" ")
+
+	cfg := Load()
+	if cfg.SupervisorContainerExecutor != "command" {
+		t.Fatalf("expected command executor, got %q", cfg.SupervisorContainerExecutor)
+	}
+	if !cfg.SupervisorContainerExecutorArmed {
+		t.Fatal("expected command executor armed gate")
+	}
+	if cfg.SupervisorContainerExecutorCommands != commandsJSON {
+		t.Fatalf("expected trimmed command allowlist JSON, got %q", cfg.SupervisorContainerExecutorCommands)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected loaded command executor config to validate, got %v", err)
 	}
 }
 

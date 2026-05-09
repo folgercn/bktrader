@@ -14,7 +14,8 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 			"containerRestartEnabled":true,
 			"containerExecutorConfigured":false,
 			"containerExecutorKind":"none",
-			"containerExecutorDryRun":true
+				"containerExecutorDryRun":true,
+				"containerExecutorArmed":false
 		},
 		"targets":[{
 			"name":"api",
@@ -41,6 +42,8 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 				"executorConfigured":false,
 				"executorKind":"none",
 				"executorDryRun":true,
+				"executorArmed":false,
+				"targetAllowed":true,
 				"executable":false,
 				"decision":"blocked",
 				"suppressed":false,
@@ -77,11 +80,11 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 	}
 	expected := []string{
 		"Runtime supervisor snapshot",
-		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true",
+		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true containerExecutorArmed=false",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=0 fallbackDryRun=0 runtimes=1 attention=1 controlActions=1",
 		"serviceState: failures=3/3 episodeStartedAt=2026-04-29T07:58:00Z fallback=candidate candidateSince=2026-04-29T08:00:00Z attempts=2 suppressed=false backoffUntil=-- submitted=false",
 		"lastFallbackDecision=container-executor-not-configured at=2026-04-29T08:00:00Z",
-		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executorKind=none executorDryRun=true executable=false duplicate=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
+		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executorKind=none executorDryRun=true executorArmed=false targetAllowed=true executable=false duplicate=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
 		"runtimes: total=1 attention=1 restartPlans=1 restartEligible=0 restartBlockedReasons=runtime-restart-healthz-unhealthy:1 service=platform-api",
 		"lastFailure=healthz-unhealthy: http 503",
 	}
@@ -100,8 +103,9 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 			"serviceFailureThreshold":1,
 			"containerRestartEnabled":true,
 			"containerExecutorConfigured":true,
-			"containerExecutorKind":"noop",
-			"containerExecutorDryRun":true
+				"containerExecutorKind":"noop",
+				"containerExecutorDryRun":true,
+				"containerExecutorArmed":true
 		},
 		"targets":[{
 			"name":"api",
@@ -120,7 +124,9 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 				"enabled":true,
 				"executorConfigured":true,
 				"executorKind":"noop",
-				"executorDryRun":true,
+					"executorDryRun":true,
+					"executorArmed":true,
+					"targetAllowed":true,
 				"executable":true,
 				"decision":"eligible",
 				"suppressed":false,
@@ -136,9 +142,9 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"policy: applicationRestartEnabled=false serviceFailureThreshold=1 containerRestartEnabled=true containerExecutorConfigured=true containerExecutorKind=noop containerExecutorDryRun=true",
+		"policy: applicationRestartEnabled=false serviceFailureThreshold=1 containerRestartEnabled=true containerExecutorConfigured=true containerExecutorKind=noop containerExecutorDryRun=true containerExecutorArmed=true",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=1 fallbackDryRun=1 runtimes=0 attention=0 controlActions=0",
-		"fallbackPlan: action=container-restart decision=eligible enabled=true executorConfigured=true executorKind=noop executorDryRun=true executable=true duplicate=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=-- eligibleReason=container-fallback-eligible",
+		"fallbackPlan: action=container-restart decision=eligible enabled=true executorConfigured=true executorKind=noop executorDryRun=true executorArmed=true targetAllowed=true executable=true duplicate=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=-- eligibleReason=container-fallback-eligible",
 	}
 	for _, want := range expected {
 		if !strings.Contains(summary, want) {
@@ -251,10 +257,12 @@ func TestBuildSupervisorStatusSummaryShowsFallbackSubmittedAndErrorBackoff(t *te
 				"action":"container-restart",
 				"candidate":true,
 				"enabled":true,
-				"executorConfigured":true,
-				"executorKind":"noop",
-				"executorDryRun":true,
-				"executable":false,
+					"executorConfigured":true,
+					"executorKind":"noop",
+					"executorDryRun":true,
+					"executorArmed":true,
+					"targetAllowed":true,
+					"executable":false,
 				"decision":"blocked",
 				"duplicate":true,
 				"suppressed":false,
@@ -289,7 +297,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackSubmittedAndErrorBackoff(t *te
 		"serviceState: failures=1/1 episodeStartedAt=2026-04-29T08:00:00Z fallback=candidate candidateSince=2026-04-29T08:00:00Z attempts=1 suppressed=false backoffUntil=2026-04-29T08:05:00Z submitted=true",
 		"fallbackBackoff reason=container fallback executor error: noop executor failed source=supervisor setAt=2026-04-29T08:00:00Z until=2026-04-29T08:05:00Z",
 		"fallbackSubmitted at=2026-04-29T08:00:00Z reason=service probes failed 1/1 message=-- error=noop executor failed",
-		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=true executorKind=noop executorDryRun=true executable=false duplicate=true suppressed=false backoffActive=true safetyGateOk=true blockedReason=container-fallback-backoff-active eligibleReason=--",
+		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=true executorKind=noop executorDryRun=true executorArmed=true targetAllowed=true executable=false duplicate=true suppressed=false backoffActive=true safetyGateOk=true blockedReason=container-fallback-backoff-active eligibleReason=--",
 		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z episodeStartedAt=2026-04-29T08:00:00Z candidateSince=2026-04-29T08:00:00Z reason=service probes failed 1/1 error=noop executor failed backoffUntil=2026-04-29T08:05:00Z backoffSeconds=300",
 	}
 	for _, want := range expected {
@@ -341,8 +349,9 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 			"serviceFailureThreshold":3,
 			"containerRestartEnabled":false,
 			"containerExecutorConfigured":false,
-			"containerExecutorKind":"none",
-			"containerExecutorDryRun":true
+				"containerExecutorKind":"none",
+				"containerExecutorDryRun":true,
+				"containerExecutorArmed":false
 		},
 		"targets":[{
 			"name":"api",
@@ -359,7 +368,7 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true",
+		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true containerExecutorArmed=false",
 		"targets: total=1 fullyReachable=1 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0",
 		"serviceState: failures=0/3 episodeStartedAt=-- fallback=clear candidateSince=-- attempts=0 suppressed=false backoffUntil=-- submitted=false",
 		"runtimes: total=0 attention=0 service=platform-api",

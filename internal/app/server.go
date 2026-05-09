@@ -219,12 +219,19 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 
 func runtimeSupervisorOptionsForConfig(cfg config.Config) service.RuntimeSupervisorOptions {
 	options := service.RuntimeSupervisorOptions{
-		EnableApplicationRestart: cfg.SupervisorAppRestartEnabled,
-		ServiceFailureThreshold:  cfg.SupervisorServiceFailThreshold,
-		EnableContainerFallback:  cfg.SupervisorContainerRestart,
+		EnableApplicationRestart:       cfg.SupervisorAppRestartEnabled,
+		ServiceFailureThreshold:        cfg.SupervisorServiceFailThreshold,
+		EnableContainerFallback:        cfg.SupervisorContainerRestart,
+		ContainerFallbackExecutorArmed: cfg.SupervisorContainerExecutorArmed,
 	}
-	if strings.EqualFold(strings.TrimSpace(cfg.SupervisorContainerExecutor), "noop") {
+	switch {
+	case strings.EqualFold(strings.TrimSpace(cfg.SupervisorContainerExecutor), "noop"):
 		options.ContainerFallbackExecutor = service.NewNoopContainerFallbackExecutor(true)
+	case strings.EqualFold(strings.TrimSpace(cfg.SupervisorContainerExecutor), "command"):
+		executor, err := service.NewCommandContainerFallbackExecutorFromJSON(cfg.SupervisorContainerExecutorCommands)
+		if err == nil {
+			options.ContainerFallbackExecutor = executor
+		}
 	}
 	return options
 }
