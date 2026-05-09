@@ -1,0 +1,47 @@
+{
+  "events_csv": "research/probabilistic_v6_runs/2025_q3_original_t2/events.csv",
+  "output_csv": "research/probabilistic_v6_runs/2025_q3_original_t2/events_execution_labeled.csv",
+  "rows": 681,
+  "per_symbol": {
+    "BTCUSDT": {
+      "events": 495,
+      "tradable": 367,
+      "wins": 163,
+      "avg_execution_return_pct": -0.06971026,
+      "skip_reasons": {
+        "": 367,
+        "dwell": 105,
+        "min_stop": 23
+      },
+      "build_stats": {
+        "cache_path": "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache/BTCUSDT_20250701T000000_20250930T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 7948800
+      }
+    },
+    "ETHUSDT": {
+      "events": 528,
+      "tradable": 314,
+      "wins": 150,
+      "avg_execution_return_pct": -0.10617867,
+      "skip_reasons": {
+        "": 314,
+        "dwell": 214
+      },
+      "build_stats": {
+        "cache_path": "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache/ETHUSDT_20250701T000000_20250930T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 7948800
+      }
+    }
+  },
+  "execution": {
+    "entry_delay_seconds": 5,
+    "initial_stop_atr": 0.45,
+    "breakeven_at_r": 0.8,
+    "trail_start_r": 0.9,
+    "max_hold_hours": 4.0,
+    "label_notional_share": 1.0
+  },
+  "elapsed_seconds": 27.73
+}

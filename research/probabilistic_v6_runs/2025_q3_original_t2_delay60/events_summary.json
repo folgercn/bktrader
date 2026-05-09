@@ -1,0 +1,46 @@
+{
+  "start": "2025-07-01T00:00:00Z",
+  "end": "2025-09-30T23:59:59Z",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "signal_timeframe": "1h",
+  "breakout_shape": "original_t2",
+  "continuation_atr": 0.5,
+  "fail_atr": 0.2,
+  "horizon_seconds": 7200,
+  "event_csv": "research/probabilistic_v6_runs/2025_q3_original_t2_delay60/events.csv",
+  "rows": 1023,
+  "per_symbol": {
+    "BTCUSDT": {
+      "build_stats": {
+        "cache_path": "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache/BTCUSDT_20250701T000000_20250930T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 7948800
+      },
+      "signal_rows": 2208,
+      "events": 495,
+      "outcomes": {
+        "fail": 316,
+        "continuation": 164,
+        "timeout": 15
+      }
+    },
+    "ETHUSDT": {
+      "build_stats": {
+        "cache_path": "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache/ETHUSDT_20250701T000000_20250930T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 7948800
+      },
+      "signal_rows": 2208,
+      "events": 528,
+      "outcomes": {
+        "fail": 338,
+        "continuation": 181,
+        "timeout": 9
+      }
+    }
+  },
+  "elapsed_seconds": 216.08
+}

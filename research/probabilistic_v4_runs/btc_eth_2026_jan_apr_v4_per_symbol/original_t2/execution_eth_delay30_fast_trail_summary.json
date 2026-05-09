@@ -1,0 +1,135 @@
+{
+  "events_csv": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_per_symbol/original_t2/events_scored.csv",
+  "rules_json": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_per_symbol/original_t2/quality_rules.json",
+  "selected_rule": {
+    "scope": "per_symbol",
+    "rules_by_symbol": {
+      "BTCUSDT": {
+        "llr_min": 0.0,
+        "flow60_min": 0.0,
+        "speed60_min": -999.0,
+        "dwell_seconds": 30,
+        "pullback30_max": null
+      },
+      "ETHUSDT": {
+        "llr_min": -999.0,
+        "flow60_min": 0.0,
+        "speed60_min": 0.08,
+        "dwell_seconds": 15,
+        "pullback30_max": 0.05
+      }
+    }
+  },
+  "execution_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 1.2,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 4.0,
+    "notional_share": 0.2,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  },
+  "entry_delay_seconds": 30,
+  "results": [
+    {
+      "summary": {
+        "trades": 57,
+        "raw_no_fee_no_slip_return_pct": 0.8521,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 0.3925,
+        "realistic_return_pct": -0.2918,
+        "win_rate_pct": 61.4,
+        "max_dd_pct": -1.41,
+        "avg_pnl_pct": 0.0348,
+        "median_pnl_pct": 0.08,
+        "median_hold_seconds": 1907.0,
+        "avg_hold_seconds": 3305.12,
+        "median_mfe_r": 0.9146,
+        "median_mae_r": 0.7196,
+        "exit_reasons": {
+          "InitialSL": 22,
+          "TrailingSL": 21,
+          "BreakevenSL": 13,
+          "MaxHoldExit": 1
+        }
+      },
+      "attribution": {
+        "profit_factor": 0.908447,
+        "gross_profit_pct": 2.85107,
+        "gross_loss_pct": -3.1384,
+        "monthly": [
+          {
+            "month": "2026-01",
+            "trades": 17,
+            "weighted_realistic_pct": -0.42611,
+            "win_rate_pct": 47.0588
+          },
+          {
+            "month": "2026-02",
+            "trades": 22,
+            "weighted_realistic_pct": -0.501518,
+            "win_rate_pct": 59.0909
+          },
+          {
+            "month": "2026-03",
+            "trades": 18,
+            "weighted_realistic_pct": 0.640298,
+            "win_rate_pct": 77.7778
+          }
+        ],
+        "exit_reasons": {
+          "BreakevenSL": {
+            "trades": 13,
+            "weighted_realistic_pct": 0.052012,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 0.975137,
+            "avg_mae_r": 0.405457
+          },
+          "InitialSL": {
+            "trades": 22,
+            "weighted_realistic_pct": -3.1384,
+            "win_rate_pct": 0.0,
+            "avg_mfe_r": 0.336115,
+            "avg_mae_r": 1.065234
+          },
+          "MaxHoldExit": {
+            "trades": 1,
+            "weighted_realistic_pct": 0.106521,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 0.788708,
+            "avg_mae_r": 0.328566
+          },
+          "TrailingSL": {
+            "trades": 21,
+            "weighted_realistic_pct": 2.692537,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 1.299174,
+            "avg_mae_r": 0.436946
+          }
+        }
+      },
+      "diagnostics": {
+        "candidate_events": 75,
+        "entries": 57,
+        "busy_skipped": 2,
+        "same_signal_bar_skipped": 0,
+        "dwell_skipped": 15,
+        "min_stop_skipped": 1,
+        "missing_entry_second": 0
+      },
+      "build_stats": {
+        "cache_path": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_narrow/bars_cache/ETHUSDT_20260101T000000_20260430T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 10368000
+      },
+      "symbol": "ETHUSDT",
+      "ledger_path": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_per_symbol/original_t2/tmp_execution_eth_delay30_fast_trail_ETHUSDT_ledger.csv"
+    }
+  ],
+  "elapsed_seconds": 2.63
+}

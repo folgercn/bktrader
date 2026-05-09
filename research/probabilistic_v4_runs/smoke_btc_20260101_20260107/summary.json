@@ -1,0 +1,41 @@
+{
+  "run_dir": "research/probabilistic_v4_runs/smoke_btc_20260101_20260107",
+  "start": "2026-01-01T00:00:00Z",
+  "end": "2026-01-07T23:59:59Z",
+  "symbols": [
+    "BTCUSDT"
+  ],
+  "breakout_shapes": [
+    "baseline_plus_t3"
+  ],
+  "execution_variants": [
+    "base=delay:30,stop:0.45,be:1.0,trail:1.5,hold:6"
+  ],
+  "rows": [
+    {
+      "shape": "baseline_plus_t3",
+      "execution_variant": "base",
+      "symbol": "BTCUSDT",
+      "events": 49,
+      "selected_events": 11,
+      "trades": 10,
+      "realistic_return_pct": -0.1691,
+      "raw_return_pct": 0.0308,
+      "slip_return_pct": -0.0492,
+      "profit_factor": 0.517344,
+      "win_rate_pct": 50.0,
+      "max_dd_pct": -0.2195,
+      "diagnostics": {
+        "candidate_events": 11,
+        "entries": 10,
+        "busy_skipped": 1,
+        "same_signal_bar_skipped": 0,
+        "dwell_skipped": 0,
+        "min_stop_skipped": 0,
+        "missing_entry_second": 0
+      },
+      "execution_summary": "research/probabilistic_v4_runs/smoke_btc_20260101_20260107/baseline_plus_t3/execution_base_summary.json"
+    }
+  ],
+  "elapsed_seconds": 46.34
+}

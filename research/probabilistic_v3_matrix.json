@@ -1,0 +1,66 @@
+{
+  "args": {
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "start": "2026-01-01T00:00:00Z",
+    "end": "2026-04-30T23:59:59Z",
+    "archive_root": "dataset/archive",
+    "sl_atrs": [
+      0.3
+    ],
+    "cooldowns": [
+      60
+    ],
+    "max_trades": 2,
+    "output_file": "research/probabilistic_v3_matrix.json"
+  },
+  "results": {
+    "BTCUSDT": [
+      {
+        "sl_atr": 0.3,
+        "cooldown": 60,
+        "trades": 129,
+        "wins": 22,
+        "losses": 107,
+        "total_pnl": -92.2173352550258,
+        "pre_touch_entries": 4482,
+        "breakout_entries": 1552,
+        "stop_exits": 75,
+        "trailing_exits": 35,
+        "smart_tp_exits": 19,
+        "timeout_exits": 0,
+        "volume_traded": 85600.0,
+        "diag": {
+          "rejected_breakouts": 143040,
+          "rejected_by_regime": 5905
+        },
+        "win_rate": 17.05426356589147,
+        "roi_pct": -0.1077305318399834
+      }
+    ],
+    "ETHUSDT": [
+      {
+        "sl_atr": 0.3,
+        "cooldown": 60,
+        "trades": 408,
+        "wins": 83,
+        "losses": 325,
+        "total_pnl": -51.767905157054315,
+        "pre_touch_entries": 239,
+        "breakout_entries": 169,
+        "stop_exits": 228,
+        "trailing_exits": 100,
+        "smart_tp_exits": 79,
+        "timeout_exits": 1,
+        "volume_traded": 180250.0,
+        "diag": {
+          "rejected_breakouts": 5518
+        },
+        "win_rate": 20.34313725490196,
+        "roi_pct": -0.02872005833955857
+      }
+    ]
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "labeled_csv": "research/probabilistic_v6_runs/2025_dec_execution_label/events_execution_labeled.csv",
+  "run_dir": "research/probabilistic_v6_runs/walkforward_2025_q4_v7_signalctx_valbest_probev",
+  "rows_csv": "research/probabilistic_v6_runs/walkforward_2025_q4_v7_signalctx_valbest_probev/symbol_rows.csv",
+  "portfolio_csv": "research/probabilistic_v6_runs/walkforward_2025_q4_v7_signalctx_valbest_probev/portfolio_rows.csv",
+  "elapsed_seconds": 17.24,
+  "config": {
+    "labeled_csv": "research/probabilistic_v6_runs/2025_dec_execution_label/events_execution_labeled.csv",
+    "run_dir": "research/probabilistic_v6_runs/walkforward_2025_q4_v7_signalctx_valbest_probev",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "start": "2025-10-01T00:00:00Z",
+    "end": "2025-12-31T23:59:59Z",
+    "train_months": 1,
+    "validation_months": 1,
+    "models": [
+      "logistic",
+      "random_forest",
+      "extra_trees",
+      "gradient_boosting",
+      "svm_rbf"
+    ],
+    "objective": "sum_net_edge",
+    "min_events": 8,
+    "prob_mins": [
+      "0.40",
+      "0.45",
+      "0.50",
+      "0.55",
+      "0.60",
+      "0.65",
+      "0.70",
+      "0.75",
+      "0.80"
+    ],
+    "ev_atr_mins": [
+      "-0.05",
+      "0.00",
+      "0.02",
+      "0.05",
+      "0.08",
+      "0.10",
+      "0.15",
+      "0.20"
+    ],
+    "sl_prob_maxes": [
+      "0.35",
+      "0.50",
+      "0.65",
+      "0.80",
+      "1.00"
+    ],
+    "top_k_values": [
+      5,
+      10,
+      15,
+      20
+    ],
+    "rank_by": "prob_ev_atr",
+    "top_k_policy": "validation_best",
+    "top_k_selection_metric": "sized_return",
+    "min_validation_topk_events": 5,
+    "min_validation_topk_return_pct": 0.3,
+    "max_validation_topk_initial_sl_rate": 0.35,
+    "max_validation_topk_dd_pct": 100.0,
+    "cap_dynamic_share": 0.0,
+    "min_validation_events": 8,
+    "min_validation_edge": 0.05,
+    "min_validation_success_rate": 0.0,
+    "require_positive_train": true,
+    "skip_failed_validation": true,
+    "bars_cache_dir": "research/probabilistic_v4_runs/btc_eth_2025_q4_oos_probability_original_t2/bars_cache",
+    "archive_root": "dataset/archive",
+    "chunksize": 5000000,
+    "entry_delay_seconds": 5,
+    "initial_stop_atr": 0.45,
+    "breakeven_at_r": 0.8,
+    "trail_start_r": 0.9,
+    "max_hold_hours": 4.0,
+    "initial_balance": 100000.0,
+    "notional_share": 0.2,
+    "sizing_ev_weight": 0.45,
+    "sizing_prob_weight": 0.25,
+    "sizing_markov_weight": 0.3,
+    "sizing_sl_weight": 0.2
+  }
+}

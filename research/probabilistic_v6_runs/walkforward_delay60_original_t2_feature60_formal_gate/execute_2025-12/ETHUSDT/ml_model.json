@@ -1,0 +1,1758 @@
+{
+  "events_csv": "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_formal_gate/execute_2025-12/ETHUSDT/events_labeled_symbol.csv",
+  "scored_csv": "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_formal_gate/execute_2025-12/ETHUSDT/events_scored.csv",
+  "split": "train<= 2025-10-31T23:59:59+00:00, validation<= 2025-11-30T23:59:59+00:00, test> 2025-11-30T23:59:59+00:00",
+  "split_ranges": {
+    "train": {
+      "rows": 172,
+      "start": "2025-07-01T17:59:06+00:00",
+      "end": "2025-10-31T16:50:25+00:00"
+    },
+    "validation": {
+      "rows": 42,
+      "start": "2025-11-01T11:30:43+00:00",
+      "end": "2025-11-30T11:22:25+00:00"
+    },
+    "test": {
+      "rows": 139,
+      "start": "2025-12-02T08:12:16+00:00",
+      "end": "2026-03-31T16:41:09+00:00"
+    }
+  },
+  "train_rows": 172,
+  "validation_rows": 42,
+  "test_rows": 139,
+  "feature_horizon_seconds": 60,
+  "markov_windows": [
+    5,
+    15,
+    30,
+    60
+  ],
+  "features": [
+    "signal_atr_percentile",
+    "roundtrip_cost_atr",
+    "original_roundtrip_cost_atr",
+    "prev1_body_atr",
+    "prev1_range_atr",
+    "prev1_close_pos_side",
+    "prev_sma5_gap_atr",
+    "prev_sma5_slope_atr",
+    "level_to_prev_close_atr",
+    "level_to_signal_open_atr",
+    "touch_extension_atr",
+    "flow_ratio_60s",
+    "flow_ratio_120s",
+    "speed_15s_atr",
+    "speed_60s_atr",
+    "speed_300s_atr",
+    "eff_60s",
+    "eff_300s",
+    "close_pos_60s",
+    "close_pos_300s",
+    "touch_body_so_far_atr",
+    "touch_range_so_far_atr",
+    "touch_close_pos_so_far",
+    "touch_close_pos_so_far_side",
+    "touch_close_to_level_atr",
+    "touch_progress",
+    "touch_seconds_from_signal_start",
+    "touch_hour_sin",
+    "touch_hour_cos",
+    "touch_dow_sin",
+    "touch_dow_cos",
+    "dwell_5s_pass",
+    "dwell_5s_extension_atr",
+    "dwell_15s_pass",
+    "dwell_15s_extension_atr",
+    "pullback_15s_atr",
+    "dwell_30s_pass",
+    "dwell_30s_extension_atr",
+    "pullback_30s_atr",
+    "dwell_60s_pass",
+    "dwell_60s_extension_atr",
+    "pullback_60s_atr",
+    "symbol_ETHUSDT",
+    "side_long",
+    "side_short",
+    "shape_original_t2",
+    "state_frac_0_5s",
+    "state_frac_1_5s",
+    "state_frac_2_5s",
+    "state_frac_3_5s",
+    "state_entropy_5s",
+    "state_last_5s",
+    "trans_00_5s",
+    "trans_01_5s",
+    "trans_02_5s",
+    "trans_03_5s",
+    "trans_10_5s",
+    "trans_11_5s",
+    "trans_12_5s",
+    "trans_13_5s",
+    "trans_20_5s",
+    "trans_21_5s",
+    "trans_22_5s",
+    "trans_23_5s",
+    "trans_30_5s",
+    "trans_31_5s",
+    "trans_32_5s",
+    "trans_33_5s",
+    "state_frac_0_15s",
+    "state_frac_1_15s",
+    "state_frac_2_15s",
+    "state_frac_3_15s",
+    "state_entropy_15s",
+    "state_last_15s",
+    "trans_00_15s",
+    "trans_01_15s",
+    "trans_02_15s",
+    "trans_03_15s",
+    "trans_10_15s",
+    "trans_11_15s",
+    "trans_12_15s",
+    "trans_13_15s",
+    "trans_20_15s",
+    "trans_21_15s",
+    "trans_22_15s",
+    "trans_23_15s",
+    "trans_30_15s",
+    "trans_31_15s",
+    "trans_32_15s",
+    "trans_33_15s",
+    "state_frac_0_30s",
+    "state_frac_1_30s",
+    "state_frac_2_30s",
+    "state_frac_3_30s",
+    "state_entropy_30s",
+    "state_last_30s",
+    "trans_00_30s",
+    "trans_01_30s",
+    "trans_02_30s",
+    "trans_03_30s",
+    "trans_10_30s",
+    "trans_11_30s",
+    "trans_12_30s",
+    "trans_13_30s",
+    "trans_20_30s",
+    "trans_21_30s",
+    "trans_22_30s",
+    "trans_23_30s",
+    "trans_30_30s",
+    "trans_31_30s",
+    "trans_32_30s",
+    "trans_33_30s",
+    "state_frac_0_60s",
+    "state_frac_1_60s",
+    "state_frac_2_60s",
+    "state_frac_3_60s",
+    "state_entropy_60s",
+    "state_last_60s",
+    "trans_00_60s",
+    "trans_01_60s",
+    "trans_02_60s",
+    "trans_03_60s",
+    "trans_10_60s",
+    "trans_11_60s",
+    "trans_12_60s",
+    "trans_13_60s",
+    "trans_20_60s",
+    "trans_21_60s",
+    "trans_22_60s",
+    "trans_23_60s",
+    "trans_30_60s",
+    "trans_31_60s",
+    "trans_32_60s",
+    "trans_33_60s",
+    "state_frac_0",
+    "state_frac_1",
+    "state_frac_2",
+    "state_frac_3",
+    "state_entropy",
+    "state_last",
+    "trans_00",
+    "trans_01",
+    "trans_02",
+    "trans_03",
+    "trans_10",
+    "trans_11",
+    "trans_12",
+    "trans_13",
+    "trans_20",
+    "trans_21",
+    "trans_22",
+    "trans_23",
+    "trans_30",
+    "trans_31",
+    "trans_32",
+    "trans_33",
+    "markov_llr_5s",
+    "markov_prob_5s",
+    "markov_llr_15s",
+    "markov_prob_15s",
+    "markov_llr_30s",
+    "markov_prob_30s",
+    "markov_llr_60s",
+    "markov_prob_60s",
+    "markov_combo_score",
+    "markov_combo_prob"
+  ],
+  "markov": {
+    "5": {
+      "status": "trained",
+      "success_sequences": 76,
+      "fail_sequences": 96,
+      "win_matrix": [
+        [
+          0.278689,
+          0.098361,
+          0.327869,
+          0.295082
+        ],
+        [
+          0.098361,
+          0.180328,
+          0.131148,
+          0.590164
+        ],
+        [
+          0.104651,
+          0.139535,
+          0.511628,
+          0.244186
+        ],
+        [
+          0.080357,
+          0.151786,
+          0.214286,
+          0.553571
+        ]
+      ],
+      "loss_matrix": [
+        [
+          0.241935,
+          0.080645,
+          0.322581,
+          0.354839
+        ],
+        [
+          0.036364,
+          0.145455,
+          0.309091,
+          0.509091
+        ],
+        [
+          0.122137,
+          0.068702,
+          0.534351,
+          0.274809
+        ],
+        [
+          0.078947,
+          0.144737,
+          0.236842,
+          0.539474
+        ]
+      ]
+    },
+    "15": {
+      "status": "trained",
+      "success_sequences": 76,
+      "fail_sequences": 96,
+      "win_matrix": [
+        [
+          0.277778,
+          0.119658,
+          0.320513,
+          0.282051
+        ],
+        [
+          0.165775,
+          0.224599,
+          0.15508,
+          0.454545
+        ],
+        [
+          0.203448,
+          0.151724,
+          0.413793,
+          0.231034
+        ],
+        [
+          0.165312,
+          0.170732,
+          0.200542,
+          0.463415
+        ]
+      ],
+      "loss_matrix": [
+        [
+          0.337079,
+          0.123596,
+          0.243446,
+          0.29588
+        ],
+        [
+          0.146119,
+          0.196347,
+          0.273973,
+          0.383562
+        ],
+        [
+          0.168798,
+          0.13555,
+          0.442455,
+          0.253197
+        ],
+        [
+          0.126294,
+          0.15942,
+          0.227743,
+          0.486542
+        ]
+      ]
+    },
+    "30": {
+      "status": "trained",
+      "success_sequences": 76,
+      "fail_sequences": 96,
+      "win_matrix": [
+        [
+          0.3125,
+          0.162109,
+          0.269531,
+          0.255859
+        ],
+        [
+          0.188862,
+          0.234867,
+          0.205811,
+          0.37046
+        ],
+        [
+          0.220641,
+          0.16726,
+          0.350534,
+          0.261566
+        ],
+        [
+          0.177353,
+          0.170532,
+          0.197817,
+          0.454297
+        ]
+      ],
+      "loss_matrix": [
+        [
+          0.341772,
+          0.139241,
+          0.245253,
+          0.273734
+        ],
+        [
+          0.184874,
+          0.22479,
+          0.220588,
+          0.369748
+        ],
+        [
+          0.189373,
+          0.138965,
+          0.389646,
+          0.282016
+        ],
+        [
+          0.170146,
+          0.174322,
+          0.220251,
+          0.435282
+        ]
+      ]
+    },
+    "60": {
+      "status": "trained",
+      "success_sequences": 76,
+      "fail_sequences": 96,
+      "win_matrix": [
+        [
+          0.349278,
+          0.172383,
+          0.243682,
+          0.234657
+        ],
+        [
+          0.222222,
+          0.244213,
+          0.208333,
+          0.325231
+        ],
+        [
+          0.220733,
+          0.175156,
+          0.316354,
+          0.287757
+        ],
+        [
+          0.180979,
+          0.180979,
+          0.232079,
+          0.405962
+        ]
+      ],
+      "loss_matrix": [
+        [
+          0.35888,
+          0.158438,
+          0.224024,
+          0.258659
+        ],
+        [
+          0.208451,
+          0.249765,
+          0.211268,
+          0.330516
+        ],
+        [
+          0.205489,
+          0.151302,
+          0.358902,
+          0.284307
+        ],
+        [
+          0.180729,
+          0.189439,
+          0.221013,
+          0.408819
+        ]
+      ]
+    },
+    "combo": {
+      "llr_columns": [
+        "markov_llr_5s",
+        "markov_llr_15s",
+        "markov_llr_30s",
+        "markov_llr_60s"
+      ]
+    }
+  },
+  "payoff": {
+    "success_first_edge_atr": 0.4333715372368421,
+    "non_success_first_edge_atr": -0.6192055861458333
+  },
+  "selected": {
+    "model_name": "logistic",
+    "rule": {
+      "prob_min": 0.4,
+      "ev_atr_min": 0.08,
+      "sl_prob_max": 0.35
+    },
+    "validation": {
+      "events": 12,
+      "success_rate": 58.3333,
+      "fail_rate": 41.6667,
+      "timeout_rate": 0.0,
+      "avg_first_edge_atr": 0.048571,
+      "avg_cost_atr": 0.0,
+      "avg_net_first_edge_atr": 0.048571,
+      "median_seconds_to_outcome": 271.0,
+      "avg_prob_success": 0.874966,
+      "avg_prob_ev_atr": 0.301764,
+      "sum_net_first_edge_atr": 0.582847,
+      "avg_prob_initial_sl": 0.077608
+    },
+    "objective_score": 0.582847
+  },
+  "leaderboard": [
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.08,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.1,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.45,
+        "ev_atr_min": 0.08,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.45,
+        "ev_atr_min": 0.1,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.5,
+        "ev_atr_min": 0.08,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.5,
+        "ev_atr_min": 0.1,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.08,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.1,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.6,
+        "ev_atr_min": 0.08,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.6,
+        "ev_atr_min": 0.1,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.65,
+        "ev_atr_min": 0.08,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.65,
+        "ev_atr_min": 0.1,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.7,
+        "ev_atr_min": -0.05,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.7,
+        "ev_atr_min": 0.0,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.7,
+        "ev_atr_min": 0.02,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.7,
+        "ev_atr_min": 0.05,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.7,
+        "ev_atr_min": 0.08,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.7,
+        "ev_atr_min": 0.1,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 12,
+        "success_rate": 58.3333,
+        "fail_rate": 41.6667,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.048571,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.048571,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.874966,
+        "avg_prob_ev_atr": 0.301764,
+        "sum_net_first_edge_atr": 0.582847,
+        "avg_prob_initial_sl": 0.077608
+      },
+      "objective_score": 0.582847
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.5
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.65
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.8
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 1.0
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.45,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.45,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.5
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.45,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.65
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.45,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.8
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.45,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 1.0
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.5,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.5,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.5
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.5,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.65
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.5,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.8
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.5,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 1.0
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.5
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.65
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.8
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 1.0
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.6,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.6,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.5
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.6,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.65
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.6,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.8
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.6,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 1.0
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.65,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.65,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.5
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.65,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.65
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.65,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.8
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.65,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 1.0
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.7,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.35
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    },
+    {
+      "model_name": "logistic",
+      "rule": {
+        "prob_min": 0.7,
+        "ev_atr_min": 0.2,
+        "sl_prob_max": 0.5
+      },
+      "validation": {
+        "events": 10,
+        "success_rate": 60.0,
+        "fail_rate": 40.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.047708,
+        "avg_cost_atr": 0.0,
+        "avg_net_first_edge_atr": 0.047708,
+        "median_seconds_to_outcome": 271.0,
+        "avg_prob_success": 0.900414,
+        "avg_prob_ev_atr": 0.32855,
+        "sum_net_first_edge_atr": 0.477085,
+        "avg_prob_initial_sl": 0.078474
+      },
+      "objective_score": 0.477085
+    }
+  ],
+  "model_metrics": {
+    "logistic": {
+      "brier": 0.46937977,
+      "log_loss": 1.72487881,
+      "auc": 0.39903846
+    },
+    "random_forest": {
+      "brier": 0.30073037,
+      "log_loss": 0.79833447,
+      "auc": 0.32692308
+    },
+    "extra_trees": {
+      "brier": 0.28631368,
+      "log_loss": 0.76879169,
+      "auc": 0.40144231
+    },
+    "gradient_boosting": {
+      "brier": 0.32637326,
+      "log_loss": 0.88448102,
+      "auc": 0.50480769
+    },
+    "svm_rbf": {
+      "brier": 0.27874773,
+      "log_loss": 0.75167919,
+      "auc": 0.43269231
+    }
+  },
+  "sl_model_metrics": {
+    "logistic": {
+      "brier": 0.46133667,
+      "log_loss": 1.69086117,
+      "auc": 0.4
+    },
+    "random_forest": {
+      "brier": 0.28021001,
+      "log_loss": 0.75438003,
+      "auc": 0.37283951
+    },
+    "extra_trees": {
+      "brier": 0.2721758,
+      "log_loss": 0.73879103,
+      "auc": 0.42962963
+    },
+    "gradient_boosting": {
+      "brier": 0.30485529,
+      "log_loss": 0.81979317,
+      "auc": 0.4345679
+    },
+    "svm_rbf": {
+      "brier": 0.25283232,
+      "log_loss": 0.69881251,
+      "auc": 0.54567901
+    }
+  },
+  "validation_baseline": {
+    "events": 42,
+    "success_rate": 61.9048,
+    "fail_rate": 38.0952,
+    "timeout_rate": 0.0,
+    "avg_first_edge_atr": 0.074466,
+    "avg_cost_atr": 0.0,
+    "avg_net_first_edge_atr": 0.074466,
+    "median_seconds_to_outcome": 331.0,
+    "avg_prob_success": 0.390296,
+    "avg_prob_ev_atr": -0.208389,
+    "sum_net_first_edge_atr": 3.127566,
+    "avg_prob_initial_sl": 0.558307
+  },
+  "test_baseline": {
+    "events": 139,
+    "success_rate": 55.3957,
+    "fail_rate": 44.6043,
+    "timeout_rate": 0.0,
+    "avg_first_edge_atr": 0.014573,
+    "avg_cost_atr": 0.0,
+    "avg_net_first_edge_atr": 0.014573,
+    "median_seconds_to_outcome": 341.0,
+    "avg_prob_success": 0.423179,
+    "avg_prob_ev_atr": -0.173777,
+    "sum_net_first_edge_atr": 2.025593,
+    "avg_prob_initial_sl": 0.521156
+  },
+  "train_selected": {
+    "events": 51,
+    "success_rate": 98.0392,
+    "fail_rate": 1.9608,
+    "timeout_rate": 0.0,
+    "avg_first_edge_atr": 0.369383,
+    "avg_cost_atr": 0.0,
+    "avg_net_first_edge_atr": 0.369383,
+    "median_seconds_to_outcome": 734.0,
+    "avg_prob_success": 0.872303,
+    "avg_prob_ev_atr": 0.298961,
+    "sum_net_first_edge_atr": 18.83853,
+    "avg_prob_initial_sl": 0.139834
+  },
+  "validation_selected": {
+    "events": 12,
+    "success_rate": 58.3333,
+    "fail_rate": 41.6667,
+    "timeout_rate": 0.0,
+    "avg_first_edge_atr": 0.048571,
+    "avg_cost_atr": 0.0,
+    "avg_net_first_edge_atr": 0.048571,
+    "median_seconds_to_outcome": 271.0,
+    "avg_prob_success": 0.874966,
+    "avg_prob_ev_atr": 0.301764,
+    "sum_net_first_edge_atr": 0.582847,
+    "avg_prob_initial_sl": 0.077608
+  },
+  "test_selected": {
+    "events": 37,
+    "success_rate": 70.2703,
+    "fail_rate": 29.7297,
+    "timeout_rate": 0.0,
+    "avg_first_edge_atr": 0.19337,
+    "avg_cost_atr": 0.0,
+    "avg_net_first_edge_atr": 0.19337,
+    "median_seconds_to_outcome": 176.0,
+    "avg_prob_success": 0.89244,
+    "avg_prob_ev_atr": 0.320157,
+    "sum_net_first_edge_atr": 7.1547,
+    "avg_prob_initial_sl": 0.105953
+  },
+  "sizing": {
+    "mode": "hybrid_markov",
+    "min_share": 0.2,
+    "max_share": 1.5,
+    "ev_weight": 0.45,
+    "prob_weight": 0.25,
+    "markov_weight": 0.3,
+    "sl_weight": 0.2,
+    "reference": "train+validation selected events"
+  },
+  "selected_rule": {
+    "model_name": "logistic",
+    "prob_min": 0.4,
+    "ev_atr_min": 0.08,
+    "sl_prob_max": 0.35,
+    "objective": "sum_net_edge"
+  }
+}

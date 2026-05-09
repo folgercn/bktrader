@@ -1,0 +1,1286 @@
+{
+  "selection_scope": "per_symbol",
+  "selected_rule": {
+    "scope": "per_symbol",
+    "rules_by_symbol": {
+      "BTCUSDT": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.0
+      },
+      "ETHUSDT": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.1
+      }
+    }
+  },
+  "selected_by_symbol": {
+    "BTCUSDT": {
+      "rule": {
+        "prob_min": 0.4,
+        "ev_atr_min": 0.0
+      },
+      "validation": {
+        "events": 27,
+        "success_rate": 37.037,
+        "fail_rate": 51.8519,
+        "timeout_rate": 11.1111,
+        "avg_first_edge_atr": 0.09875,
+        "avg_cost_atr": 0.138735,
+        "avg_net_first_edge_atr": -0.039986,
+        "median_seconds_to_outcome": 757.0,
+        "avg_prob_success": 0.579386,
+        "avg_prob_ev_atr": 0.0689
+      },
+      "validation_baseline": {
+        "events": 165,
+        "success_rate": 32.7273,
+        "fail_rate": 63.6364,
+        "timeout_rate": 3.6364,
+        "avg_first_edge_atr": 0.039368,
+        "avg_cost_atr": 0.210246,
+        "avg_net_first_edge_atr": -0.170878,
+        "median_seconds_to_outcome": 487.0,
+        "avg_prob_success": 0.358491,
+        "avg_prob_ev_atr": -0.156152
+      }
+    },
+    "ETHUSDT": {
+      "rule": {
+        "prob_min": 0.55,
+        "ev_atr_min": 0.1
+      },
+      "validation": {
+        "events": 15,
+        "success_rate": 73.3333,
+        "fail_rate": 20.0,
+        "timeout_rate": 6.6667,
+        "avg_first_edge_atr": 0.324312,
+        "avg_cost_atr": 0.105148,
+        "avg_net_first_edge_atr": 0.219164,
+        "median_seconds_to_outcome": 421.0,
+        "avg_prob_success": 0.639301,
+        "avg_prob_ev_atr": 0.145213
+      },
+      "validation_baseline": {
+        "events": 178,
+        "success_rate": 33.7079,
+        "fail_rate": 62.9213,
+        "timeout_rate": 3.3708,
+        "avg_first_edge_atr": 0.042832,
+        "avg_cost_atr": 0.14426,
+        "avg_net_first_edge_atr": -0.101428,
+        "median_seconds_to_outcome": 452.0,
+        "avg_prob_success": 0.369666,
+        "avg_prob_ev_atr": -0.080513
+      }
+    }
+  },
+  "model_by_symbol": {
+    "BTCUSDT": {
+      "markov": {
+        "status": "trained",
+        "success_sequences": 125,
+        "fail_sequences": 222,
+        "win_matrix": [
+          [
+            0.28834,
+            0.209759,
+            0.262357,
+            0.239544
+          ],
+          [
+            0.212687,
+            0.277985,
+            0.21704,
+            0.292289
+          ],
+          [
+            0.192153,
+            0.184608,
+            0.354628,
+            0.268612
+          ],
+          [
+            0.16599,
+            0.198466,
+            0.244475,
+            0.391069
+          ]
+        ],
+        "loss_matrix": [
+          [
+            0.287458,
+            0.210507,
+            0.265261,
+            0.236774
+          ],
+          [
+            0.193572,
+            0.280246,
+            0.238353,
+            0.28783
+          ],
+          [
+            0.193734,
+            0.166841,
+            0.394778,
+            0.244648
+          ],
+          [
+            0.158709,
+            0.192812,
+            0.261805,
+            0.386674
+          ]
+        ]
+      },
+      "markov_prior": {
+        "train_success": 125,
+        "train_total": 351,
+        "prior_success": 0.356941
+      },
+      "logistic": {
+        "status": "trained",
+        "iterations": 2500,
+        "loss": 0.56388977
+      },
+      "intercept": -0.74882397,
+      "coefficients": [
+        {
+          "feature": "pullback_60s_atr",
+          "weight": -0.89536228
+        },
+        {
+          "feature": "dwell_30s_pass",
+          "weight": 0.48270451
+        },
+        {
+          "feature": "dwell_5s_pass",
+          "weight": -0.38766585
+        },
+        {
+          "feature": "speed_60s_atr",
+          "weight": 0.33385839
+        },
+        {
+          "feature": "markov_llr",
+          "weight": 0.26577494
+        },
+        {
+          "feature": "flow_ratio_60s",
+          "weight": 0.19154366
+        },
+        {
+          "feature": "flow_ratio_120s",
+          "weight": -0.18139779
+        },
+        {
+          "feature": "speed_15s_atr",
+          "weight": 0.14846788
+        },
+        {
+          "feature": "speed_300s_atr",
+          "weight": -0.14303599
+        },
+        {
+          "feature": "close_pos_60s",
+          "weight": -0.08865305
+        },
+        {
+          "feature": "pullback_30s_atr",
+          "weight": 0.06982861
+        },
+        {
+          "feature": "eff_300s",
+          "weight": 0.06976021
+        },
+        {
+          "feature": "eff_60s",
+          "weight": 0.04510247
+        },
+        {
+          "feature": "pullback_15s_atr",
+          "weight": 0.04070225
+        },
+        {
+          "feature": "dwell_15s_pass",
+          "weight": 0.03237903
+        },
+        {
+          "feature": "touch_extension_atr",
+          "weight": 0.03089128
+        },
+        {
+          "feature": "markov_prob_success",
+          "weight": 0.03073771
+        },
+        {
+          "feature": "roundtrip_cost_atr",
+          "weight": 0.02639758
+        },
+        {
+          "feature": "close_pos_300s",
+          "weight": 0.01823916
+        }
+      ],
+      "feature_transform": {
+        "feature_columns": [
+          "markov_llr",
+          "markov_prob_success",
+          "flow_ratio_60s",
+          "flow_ratio_120s",
+          "speed_15s_atr",
+          "speed_60s_atr",
+          "speed_300s_atr",
+          "eff_60s",
+          "eff_300s",
+          "close_pos_60s",
+          "close_pos_300s",
+          "pullback_15s_atr",
+          "pullback_30s_atr",
+          "pullback_60s_atr",
+          "touch_extension_atr",
+          "roundtrip_cost_atr",
+          "dwell_5s_pass",
+          "dwell_15s_pass",
+          "dwell_30s_pass"
+        ],
+        "medians": {
+          "markov_llr": 0.12040415,
+          "markov_prob_success": 0.38502722,
+          "flow_ratio_60s": 0.801525,
+          "flow_ratio_120s": 0.759384,
+          "speed_15s_atr": 0.079427,
+          "speed_60s_atr": 0.147309,
+          "speed_300s_atr": 0.27348,
+          "eff_60s": 0.932866,
+          "eff_300s": 0.888905,
+          "close_pos_60s": 0.999945,
+          "close_pos_300s": 0.999974,
+          "pullback_15s_atr": 0.023695,
+          "pullback_30s_atr": 0.029969,
+          "pullback_60s_atr": 0.043347,
+          "touch_extension_atr": 0.012549,
+          "roundtrip_cost_atr": 0.14488,
+          "dwell_5s_pass": 1.0,
+          "dwell_15s_pass": 1.0,
+          "dwell_30s_pass": 0.0
+        },
+        "means": {
+          "markov_llr": -0.03570811,
+          "markov_prob_success": 0.37115947,
+          "flow_ratio_60s": 0.78033627,
+          "flow_ratio_120s": 0.74039891,
+          "speed_15s_atr": 0.10534583,
+          "speed_60s_atr": 0.18119436,
+          "speed_300s_atr": 0.32885063,
+          "eff_60s": 0.86343424,
+          "eff_300s": 0.82749155,
+          "close_pos_60s": 0.97886952,
+          "close_pos_300s": 0.98735531,
+          "pullback_15s_atr": 0.04206183,
+          "pullback_30s_atr": 0.05538741,
+          "pullback_60s_atr": 0.07286832,
+          "touch_extension_atr": 0.02476738,
+          "roundtrip_cost_atr": 0.16557499,
+          "dwell_5s_pass": 0.68091168,
+          "dwell_15s_pass": 0.5042735,
+          "dwell_30s_pass": 0.37321937
+        },
+        "stds": {
+          "markov_llr": 0.82115329,
+          "markov_prob_success": 0.15079682,
+          "flow_ratio_60s": 0.14057199,
+          "flow_ratio_120s": 0.13150839,
+          "speed_15s_atr": 0.09489748,
+          "speed_60s_atr": 0.15979854,
+          "speed_300s_atr": 0.24999934,
+          "eff_60s": 0.17383999,
+          "eff_300s": 0.18051754,
+          "close_pos_60s": 0.06215598,
+          "close_pos_300s": 0.04903931,
+          "pullback_15s_atr": 0.06588484,
+          "pullback_30s_atr": 0.0774991,
+          "pullback_60s_atr": 0.09285179,
+          "touch_extension_atr": 0.04788454,
+          "roundtrip_cost_atr": 0.07532361,
+          "dwell_5s_pass": 0.46612334,
+          "dwell_15s_pass": 0.49998174,
+          "dwell_30s_pass": 0.48365967
+        }
+      },
+      "payoff": {
+        "success_first_edge_atr": 0.5,
+        "non_success_first_edge_atr": -0.19508938,
+        "train_success_rate": 35.6125
+      }
+    },
+    "ETHUSDT": {
+      "markov": {
+        "status": "trained",
+        "success_sequences": 135,
+        "fail_sequences": 229,
+        "win_matrix": [
+          [
+            0.335474,
+            0.168539,
+            0.232745,
+            0.263242
+          ],
+          [
+            0.216509,
+            0.249662,
+            0.221245,
+            0.312585
+          ],
+          [
+            0.212591,
+            0.14431,
+            0.356901,
+            0.286199
+          ],
+          [
+            0.175165,
+            0.182561,
+            0.234332,
+            0.407941
+          ]
+        ],
+        "loss_matrix": [
+          [
+            0.343985,
+            0.161341,
+            0.255952,
+            0.238722
+          ],
+          [
+            0.204082,
+            0.256735,
+            0.239592,
+            0.299592
+          ],
+          [
+            0.228595,
+            0.140527,
+            0.355803,
+            0.275075
+          ],
+          [
+            0.166191,
+            0.178317,
+            0.241322,
+            0.41417
+          ]
+        ]
+      },
+      "markov_prior": {
+        "train_success": 135,
+        "train_total": 369,
+        "prior_success": 0.366577
+      },
+      "logistic": {
+        "status": "trained",
+        "iterations": 2500,
+        "loss": 0.58869479
+      },
+      "intercept": -0.68900034,
+      "coefficients": [
+        {
+          "feature": "pullback_60s_atr",
+          "weight": -0.99344705
+        },
+        {
+          "feature": "speed_15s_atr",
+          "weight": 0.45083008
+        },
+        {
+          "feature": "dwell_5s_pass",
+          "weight": -0.29008936
+        },
+        {
+          "feature": "markov_llr",
+          "weight": 0.24663005
+        },
+        {
+          "feature": "close_pos_300s",
+          "weight": 0.2258304
+        },
+        {
+          "feature": "pullback_30s_atr",
+          "weight": -0.19379024
+        },
+        {
+          "feature": "dwell_15s_pass",
+          "weight": 0.18848455
+        },
+        {
+          "feature": "eff_300s",
+          "weight": -0.14786186
+        },
+        {
+          "feature": "pullback_15s_atr",
+          "weight": 0.14080075
+        },
+        {
+          "feature": "flow_ratio_60s",
+          "weight": -0.12520348
+        },
+        {
+          "feature": "speed_60s_atr",
+          "weight": 0.11588992
+        },
+        {
+          "feature": "speed_300s_atr",
+          "weight": 0.10491469
+        },
+        {
+          "feature": "flow_ratio_120s",
+          "weight": 0.08325855
+        },
+        {
+          "feature": "dwell_30s_pass",
+          "weight": 0.05396316
+        },
+        {
+          "feature": "markov_prob_success",
+          "weight": 0.05279221
+        },
+        {
+          "feature": "eff_60s",
+          "weight": 0.05218791
+        },
+        {
+          "feature": "close_pos_60s",
+          "weight": 0.04248038
+        },
+        {
+          "feature": "touch_extension_atr",
+          "weight": -0.02200659
+        },
+        {
+          "feature": "roundtrip_cost_atr",
+          "weight": 0.0098255
+        }
+      ],
+      "feature_transform": {
+        "feature_columns": [
+          "markov_llr",
+          "markov_prob_success",
+          "flow_ratio_60s",
+          "flow_ratio_120s",
+          "speed_15s_atr",
+          "speed_60s_atr",
+          "speed_300s_atr",
+          "eff_60s",
+          "eff_300s",
+          "close_pos_60s",
+          "close_pos_300s",
+          "pullback_15s_atr",
+          "pullback_30s_atr",
+          "pullback_60s_atr",
+          "touch_extension_atr",
+          "roundtrip_cost_atr",
+          "dwell_5s_pass",
+          "dwell_15s_pass",
+          "dwell_30s_pass"
+        ],
+        "medians": {
+          "markov_llr": 0.02849115,
+          "markov_prob_success": 0.37321721,
+          "flow_ratio_60s": 0.792903,
+          "flow_ratio_120s": 0.731783,
+          "speed_15s_atr": 0.088925,
+          "speed_60s_atr": 0.152017,
+          "speed_300s_atr": 0.277348,
+          "eff_60s": 0.891638,
+          "eff_300s": 0.864045,
+          "close_pos_60s": 0.997172,
+          "close_pos_300s": 0.998521,
+          "pullback_15s_atr": 0.035756,
+          "pullback_30s_atr": 0.043068,
+          "pullback_60s_atr": 0.055351,
+          "touch_extension_atr": 0.010422,
+          "roundtrip_cost_atr": 0.099802,
+          "dwell_5s_pass": 1.0,
+          "dwell_15s_pass": 0.0,
+          "dwell_30s_pass": 0.0
+        },
+        "means": {
+          "markov_llr": -0.01581136,
+          "markov_prob_success": 0.37244682,
+          "flow_ratio_60s": 0.76349686,
+          "flow_ratio_120s": 0.71360175,
+          "speed_15s_atr": 0.11563082,
+          "speed_60s_atr": 0.1909336,
+          "speed_300s_atr": 0.33727908,
+          "eff_60s": 0.85335801,
+          "eff_300s": 0.81644622,
+          "close_pos_60s": 0.95402329,
+          "close_pos_300s": 0.97447589,
+          "pullback_15s_atr": 0.05333846,
+          "pullback_30s_atr": 0.06474521,
+          "pullback_60s_atr": 0.08135695,
+          "touch_extension_atr": 0.02707546,
+          "roundtrip_cost_atr": 0.10699355,
+          "dwell_5s_pass": 0.53387534,
+          "dwell_15s_pass": 0.35772358,
+          "dwell_30s_pass": 0.27913279
+        },
+        "stds": {
+          "markov_llr": 0.54934973,
+          "markov_prob_success": 0.11345334,
+          "flow_ratio_60s": 0.14303821,
+          "flow_ratio_120s": 0.13933032,
+          "speed_15s_atr": 0.10689101,
+          "speed_60s_atr": 0.1648342,
+          "speed_300s_atr": 0.2334678,
+          "eff_60s": 0.16123386,
+          "eff_300s": 0.16881626,
+          "close_pos_60s": 0.09612236,
+          "close_pos_300s": 0.05891785,
+          "pullback_15s_atr": 0.09160769,
+          "pullback_30s_atr": 0.0983868,
+          "pullback_60s_atr": 0.10686324,
+          "touch_extension_atr": 0.07219596,
+          "roundtrip_cost_atr": 0.04673606,
+          "dwell_5s_pass": 0.49885114,
+          "dwell_15s_pass": 0.47933018,
+          "dwell_30s_pass": 0.44857293
+        }
+      },
+      "payoff": {
+        "success_first_edge_atr": 0.5,
+        "non_success_first_edge_atr": -0.19209722,
+        "train_success_rate": 36.5854
+      }
+    }
+  },
+  "top_rules_by_symbol": {
+    "BTCUSDT": [
+      {
+        "rule": {
+          "prob_min": 0.4,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 27,
+          "success_rate": 37.037,
+          "fail_rate": 51.8519,
+          "timeout_rate": 11.1111,
+          "avg_first_edge_atr": 0.09875,
+          "avg_cost_atr": 0.138735,
+          "avg_net_first_edge_atr": -0.039986,
+          "median_seconds_to_outcome": 757.0,
+          "avg_prob_success": 0.579386,
+          "avg_prob_ev_atr": 0.0689
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.4,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 39,
+          "success_rate": 38.4615,
+          "fail_rate": 53.8462,
+          "timeout_rate": 7.6923,
+          "avg_first_edge_atr": 0.09657,
+          "avg_cost_atr": 0.140315,
+          "avg_net_first_edge_atr": -0.043744,
+          "median_seconds_to_outcome": 767.0,
+          "avg_prob_success": 0.545026,
+          "avg_prob_ev_atr": 0.043437
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.45,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 25,
+          "success_rate": 32.0,
+          "fail_rate": 56.0,
+          "timeout_rate": 12.0,
+          "avg_first_edge_atr": 0.06665,
+          "avg_cost_atr": 0.143237,
+          "avg_net_first_edge_atr": -0.076587,
+          "median_seconds_to_outcome": 757.0,
+          "avg_prob_success": 0.591198,
+          "avg_prob_ev_atr": 0.072609
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.45,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 31,
+          "success_rate": 32.2581,
+          "fail_rate": 58.0645,
+          "timeout_rate": 9.6774,
+          "avg_first_edge_atr": 0.060201,
+          "avg_cost_atr": 0.147607,
+          "avg_net_first_edge_atr": -0.087406,
+          "median_seconds_to_outcome": 757.0,
+          "avg_prob_success": 0.574531,
+          "avg_prob_ev_atr": 0.056653
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.5,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 24,
+          "success_rate": 33.3333,
+          "fail_rate": 58.3333,
+          "timeout_rate": 8.3333,
+          "avg_first_edge_atr": 0.057721,
+          "avg_cost_atr": 0.153859,
+          "avg_net_first_edge_atr": -0.096138,
+          "median_seconds_to_outcome": 580.0,
+          "avg_prob_success": 0.602877,
+          "avg_prob_ev_atr": 0.070105
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.5,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 20,
+          "success_rate": 30.0,
+          "fail_rate": 60.0,
+          "timeout_rate": 10.0,
+          "avg_first_edge_atr": 0.039265,
+          "avg_cost_atr": 0.148176,
+          "avg_net_first_edge_atr": -0.108912,
+          "median_seconds_to_outcome": 580.0,
+          "avg_prob_success": 0.617773,
+          "avg_prob_ev_atr": 0.086141
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.55,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 12,
+          "success_rate": 25.0,
+          "fail_rate": 58.3333,
+          "timeout_rate": 16.6667,
+          "avg_first_edge_atr": 0.023775,
+          "avg_cost_atr": 0.153604,
+          "avg_net_first_edge_atr": -0.129829,
+          "median_seconds_to_outcome": 434.5,
+          "avg_prob_success": 0.674488,
+          "avg_prob_ev_atr": 0.120136
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.55,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 13,
+          "success_rate": 23.0769,
+          "fail_rate": 61.5385,
+          "timeout_rate": 15.3846,
+          "avg_first_edge_atr": 0.006561,
+          "avg_cost_atr": 0.158232,
+          "avg_net_first_edge_atr": -0.151671,
+          "median_seconds_to_outcome": 391.0,
+          "avg_prob_success": 0.666312,
+          "avg_prob_ev_atr": 0.109825
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.55,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 11,
+          "success_rate": 18.1818,
+          "fail_rate": 63.6364,
+          "timeout_rate": 18.1818,
+          "avg_first_edge_atr": -0.019519,
+          "avg_cost_atr": 0.142113,
+          "avg_net_first_edge_atr": -0.161632,
+          "median_seconds_to_outcome": 478.0,
+          "avg_prob_success": 0.668919,
+          "avg_prob_ev_atr": 0.127756
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.4,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 13,
+          "success_rate": 15.3846,
+          "fail_rate": 69.2308,
+          "timeout_rate": 15.3846,
+          "avg_first_edge_atr": -0.047285,
+          "avg_cost_atr": 0.137664,
+          "avg_net_first_edge_atr": -0.184949,
+          "median_seconds_to_outcome": 682.0,
+          "avg_prob_success": 0.649782,
+          "avg_prob_ev_atr": 0.118904
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.45,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 13,
+          "success_rate": 15.3846,
+          "fail_rate": 69.2308,
+          "timeout_rate": 15.3846,
+          "avg_first_edge_atr": -0.047285,
+          "avg_cost_atr": 0.137664,
+          "avg_net_first_edge_atr": -0.184949,
+          "median_seconds_to_outcome": 682.0,
+          "avg_prob_success": 0.649782,
+          "avg_prob_ev_atr": 0.118904
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.5,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 13,
+          "success_rate": 15.3846,
+          "fail_rate": 69.2308,
+          "timeout_rate": 15.3846,
+          "avg_first_edge_atr": -0.047285,
+          "avg_cost_atr": 0.137664,
+          "avg_net_first_edge_atr": -0.184949,
+          "median_seconds_to_outcome": 682.0,
+          "avg_prob_success": 0.649782,
+          "avg_prob_ev_atr": 0.118904
+        }
+      }
+    ],
+    "ETHUSDT": [
+      {
+        "rule": {
+          "prob_min": 0.55,
+          "ev_atr_min": 0.1
+        },
+        "validation": {
+          "events": 15,
+          "success_rate": 73.3333,
+          "fail_rate": 20.0,
+          "timeout_rate": 6.6667,
+          "avg_first_edge_atr": 0.324312,
+          "avg_cost_atr": 0.105148,
+          "avg_net_first_edge_atr": 0.219164,
+          "median_seconds_to_outcome": 421.0,
+          "avg_prob_success": 0.639301,
+          "avg_prob_ev_atr": 0.145213
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.65,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 10,
+          "success_rate": 80.0,
+          "fail_rate": 20.0,
+          "timeout_rate": 0.0,
+          "avg_first_edge_atr": 0.36,
+          "avg_cost_atr": 0.153926,
+          "avg_net_first_edge_atr": 0.206074,
+          "median_seconds_to_outcome": 66.5,
+          "avg_prob_success": 0.712803,
+          "avg_prob_ev_atr": 0.147306
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.65,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 10,
+          "success_rate": 80.0,
+          "fail_rate": 20.0,
+          "timeout_rate": 0.0,
+          "avg_first_edge_atr": 0.36,
+          "avg_cost_atr": 0.153926,
+          "avg_net_first_edge_atr": 0.206074,
+          "median_seconds_to_outcome": 66.5,
+          "avg_prob_success": 0.712803,
+          "avg_prob_ev_atr": 0.147306
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.65,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 10,
+          "success_rate": 80.0,
+          "fail_rate": 20.0,
+          "timeout_rate": 0.0,
+          "avg_first_edge_atr": 0.36,
+          "avg_cost_atr": 0.153926,
+          "avg_net_first_edge_atr": 0.206074,
+          "median_seconds_to_outcome": 66.5,
+          "avg_prob_success": 0.712803,
+          "avg_prob_ev_atr": 0.147306
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.4,
+          "ev_atr_min": 0.1
+        },
+        "validation": {
+          "events": 16,
+          "success_rate": 68.75,
+          "fail_rate": 25.0,
+          "timeout_rate": 6.25,
+          "avg_first_edge_atr": 0.291543,
+          "avg_cost_atr": 0.103256,
+          "avg_net_first_edge_atr": 0.188286,
+          "median_seconds_to_outcome": 441.5,
+          "avg_prob_success": 0.633582,
+          "avg_prob_ev_atr": 0.143147
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.45,
+          "ev_atr_min": 0.1
+        },
+        "validation": {
+          "events": 16,
+          "success_rate": 68.75,
+          "fail_rate": 25.0,
+          "timeout_rate": 6.25,
+          "avg_first_edge_atr": 0.291543,
+          "avg_cost_atr": 0.103256,
+          "avg_net_first_edge_atr": 0.188286,
+          "median_seconds_to_outcome": 441.5,
+          "avg_prob_success": 0.633582,
+          "avg_prob_ev_atr": 0.143147
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.5,
+          "ev_atr_min": 0.1
+        },
+        "validation": {
+          "events": 16,
+          "success_rate": 68.75,
+          "fail_rate": 25.0,
+          "timeout_rate": 6.25,
+          "avg_first_edge_atr": 0.291543,
+          "avg_cost_atr": 0.103256,
+          "avg_net_first_edge_atr": 0.188286,
+          "median_seconds_to_outcome": 441.5,
+          "avg_prob_success": 0.633582,
+          "avg_prob_ev_atr": 0.143147
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.6,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 14,
+          "success_rate": 71.4286,
+          "fail_rate": 28.5714,
+          "timeout_rate": 0.0,
+          "avg_first_edge_atr": 0.3,
+          "avg_cost_atr": 0.150889,
+          "avg_net_first_edge_atr": 0.149111,
+          "median_seconds_to_outcome": 222.5,
+          "avg_prob_success": 0.687197,
+          "avg_prob_ev_atr": 0.132621
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.6,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 14,
+          "success_rate": 71.4286,
+          "fail_rate": 28.5714,
+          "timeout_rate": 0.0,
+          "avg_first_edge_atr": 0.3,
+          "avg_cost_atr": 0.150889,
+          "avg_net_first_edge_atr": 0.149111,
+          "median_seconds_to_outcome": 222.5,
+          "avg_prob_success": 0.687197,
+          "avg_prob_ev_atr": 0.132621
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.6,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 13,
+          "success_rate": 69.2308,
+          "fail_rate": 30.7692,
+          "timeout_rate": 0.0,
+          "avg_first_edge_atr": 0.284615,
+          "avg_cost_atr": 0.148432,
+          "avg_net_first_edge_atr": 0.136183,
+          "median_seconds_to_outcome": 110.0,
+          "avg_prob_success": 0.693813,
+          "avg_prob_ev_atr": 0.139657
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.55,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 22,
+          "success_rate": 63.6364,
+          "fail_rate": 31.8182,
+          "timeout_rate": 4.5455,
+          "avg_first_edge_atr": 0.25294,
+          "avg_cost_atr": 0.129769,
+          "avg_net_first_edge_atr": 0.123171,
+          "median_seconds_to_outcome": 441.5,
+          "avg_prob_success": 0.644841,
+          "avg_prob_ev_atr": 0.124426
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.55,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 25,
+          "success_rate": 60.0,
+          "fail_rate": 36.0,
+          "timeout_rate": 4.0,
+          "avg_first_edge_atr": 0.226587,
+          "avg_cost_atr": 0.135071,
+          "avg_net_first_edge_atr": 0.091516,
+          "median_seconds_to_outcome": 421.0,
+          "avg_prob_success": 0.637537,
+          "avg_prob_ev_atr": 0.11407
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.55,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 26,
+          "success_rate": 57.6923,
+          "fail_rate": 38.4615,
+          "timeout_rate": 3.8462,
+          "avg_first_edge_atr": 0.21018,
+          "avg_cost_atr": 0.139057,
+          "avg_net_first_edge_atr": 0.071123,
+          "median_seconds_to_outcome": 392.5,
+          "avg_prob_success": 0.634376,
+          "avg_prob_ev_atr": 0.107896
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.5,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 35,
+          "success_rate": 54.2857,
+          "fail_rate": 42.8571,
+          "timeout_rate": 2.8571,
+          "avg_first_edge_atr": 0.184705,
+          "avg_cost_atr": 0.118551,
+          "avg_net_first_edge_atr": 0.066155,
+          "median_seconds_to_outcome": 549.0,
+          "avg_prob_success": 0.600822,
+          "avg_prob_ev_atr": 0.105179
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.4,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 37,
+          "success_rate": 51.3514,
+          "fail_rate": 45.9459,
+          "timeout_rate": 2.7027,
+          "avg_first_edge_atr": 0.16391,
+          "avg_cost_atr": 0.116982,
+          "avg_net_first_edge_atr": 0.046928,
+          "median_seconds_to_outcome": 462.0,
+          "avg_prob_success": 0.594569,
+          "avg_prob_ev_atr": 0.10242
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.45,
+          "ev_atr_min": 0.05
+        },
+        "validation": {
+          "events": 37,
+          "success_rate": 51.3514,
+          "fail_rate": 45.9459,
+          "timeout_rate": 2.7027,
+          "avg_first_edge_atr": 0.16391,
+          "avg_cost_atr": 0.116982,
+          "avg_net_first_edge_atr": 0.046928,
+          "median_seconds_to_outcome": 462.0,
+          "avg_prob_success": 0.594569,
+          "avg_prob_ev_atr": 0.10242
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.5,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 39,
+          "success_rate": 51.2821,
+          "fail_rate": 46.1538,
+          "timeout_rate": 2.5641,
+          "avg_first_edge_atr": 0.163197,
+          "avg_cost_atr": 0.123636,
+          "avg_net_first_edge_atr": 0.039561,
+          "median_seconds_to_outcome": 473.0,
+          "avg_prob_success": 0.597687,
+          "avg_prob_ev_atr": 0.097925
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.4,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 51,
+          "success_rate": 47.0588,
+          "fail_rate": 50.9804,
+          "timeout_rate": 1.9608,
+          "avg_first_edge_atr": 0.132641,
+          "avg_cost_atr": 0.114331,
+          "avg_net_first_edge_atr": 0.01831,
+          "median_seconds_to_outcome": 596.0,
+          "avg_prob_success": 0.562184,
+          "avg_prob_ev_atr": 0.082658
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.45,
+          "ev_atr_min": 0.0
+        },
+        "validation": {
+          "events": 44,
+          "success_rate": 47.7273,
+          "fail_rate": 50.0,
+          "timeout_rate": 2.2727,
+          "avg_first_edge_atr": 0.137834,
+          "avg_cost_atr": 0.120462,
+          "avg_net_first_edge_atr": 0.017372,
+          "median_seconds_to_outcome": 511.0,
+          "avg_prob_success": 0.58354,
+          "avg_prob_ev_atr": 0.091307
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.5,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 42,
+          "success_rate": 47.619,
+          "fail_rate": 50.0,
+          "timeout_rate": 2.381,
+          "avg_first_edge_atr": 0.137254,
+          "avg_cost_atr": 0.128997,
+          "avg_net_first_edge_atr": 0.008257,
+          "median_seconds_to_outcome": 441.5,
+          "avg_prob_success": 0.593171,
+          "avg_prob_ev_atr": 0.089438
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.4,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 60,
+          "success_rate": 41.6667,
+          "fail_rate": 55.0,
+          "timeout_rate": 3.3333,
+          "avg_first_edge_atr": 0.100096,
+          "avg_cost_atr": 0.119505,
+          "avg_net_first_edge_atr": -0.019409,
+          "median_seconds_to_outcome": 467.5,
+          "avg_prob_success": 0.548813,
+          "avg_prob_ev_atr": 0.06823
+        }
+      },
+      {
+        "rule": {
+          "prob_min": 0.45,
+          "ev_atr_min": -0.05
+        },
+        "validation": {
+          "events": 50,
+          "success_rate": 42.0,
+          "fail_rate": 54.0,
+          "timeout_rate": 4.0,
+          "avg_first_edge_atr": 0.104115,
+          "avg_cost_atr": 0.126686,
+          "avg_net_first_edge_atr": -0.022571,
+          "median_seconds_to_outcome": 441.5,
+          "avg_prob_success": 0.573889,
+          "avg_prob_ev_atr": 0.078404
+        }
+      }
+    ]
+  },
+  "calibration_by_symbol": {
+    "BTCUSDT": [
+      {
+        "bin": "(-0.001, 0.2]",
+        "events": 32,
+        "avg_prob_success": 0.137252,
+        "realized_success_rate": 15.625,
+        "avg_net_first_edge_atr": -0.29086
+      },
+      {
+        "bin": "(0.2, 0.4]",
+        "events": 69,
+        "avg_prob_success": 0.30078,
+        "realized_success_rate": 31.8841,
+        "avg_net_first_edge_atr": -0.166413
+      },
+      {
+        "bin": "(0.4, 0.6]",
+        "events": 49,
+        "avg_prob_success": 0.483301,
+        "realized_success_rate": 38.7755,
+        "avg_net_first_edge_atr": -0.131918
+      },
+      {
+        "bin": "(0.6, 0.8]",
+        "events": 13,
+        "avg_prob_success": 0.657698,
+        "realized_success_rate": 53.8462,
+        "avg_net_first_edge_atr": -0.069386
+      },
+      {
+        "bin": "(0.8, 1.0]",
+        "events": 2,
+        "avg_prob_success": 0.886681,
+        "realized_success_rate": 50.0,
+        "avg_net_first_edge_atr": -0.019484
+      }
+    ],
+    "ETHUSDT": [
+      {
+        "bin": "(-0.001, 0.2]",
+        "events": 34,
+        "avg_prob_success": 0.11602,
+        "realized_success_rate": 11.7647,
+        "avg_net_first_edge_atr": -0.277237
+      },
+      {
+        "bin": "(0.2, 0.4]",
+        "events": 68,
+        "avg_prob_success": 0.310459,
+        "realized_success_rate": 36.7647,
+        "avg_net_first_edge_atr": -0.059076
+      },
+      {
+        "bin": "(0.4, 0.6]",
+        "events": 61,
+        "avg_prob_success": 0.5001,
+        "realized_success_rate": 34.4262,
+        "avg_net_first_edge_atr": -0.10184
+      },
+      {
+        "bin": "(0.6, 0.8]",
+        "events": 15,
+        "avg_prob_success": 0.682575,
+        "realized_success_rate": 66.6667,
+        "avg_net_first_edge_atr": 0.10675
+      }
+    ]
+  },
+  "validation_baseline": {
+    "events": 343,
+    "success_rate": 33.2362,
+    "fail_rate": 63.2653,
+    "timeout_rate": 3.4985,
+    "avg_first_edge_atr": 0.041165,
+    "avg_cost_atr": 0.176003,
+    "avg_net_first_edge_atr": -0.134837,
+    "median_seconds_to_outcome": 466.0,
+    "avg_prob_success": 0.36429,
+    "avg_prob_ev_atr": -0.116899
+  },
+  "events_csv": "research/probabilistic_v4_runs/btc_eth_2025_q4_oos_probability_original_t2/original_t2/events.csv",
+  "scored_csv": "research/probabilistic_v4_runs/btc_eth_2025_q4_oos_probability_original_t2_per_symbol/events_scored.csv",
+  "split": "train_end=2025-11-30T23:59:59+00:00",
+  "train_rows": 720,
+  "validation_rows": 343,
+  "train_baseline": {
+    "events": 720,
+    "success_rate": 36.1111,
+    "fail_rate": 62.6389,
+    "timeout_rate": 1.25,
+    "avg_first_edge_atr": 0.056888,
+    "avg_cost_atr": 0.135552,
+    "avg_net_first_edge_atr": -0.078664,
+    "median_seconds_to_outcome": 507.0,
+    "avg_prob_success": 0.36115,
+    "avg_prob_ev_atr": -0.078638
+  },
+  "validation_baseline_all": {
+    "events": 343,
+    "success_rate": 33.2362,
+    "fail_rate": 63.2653,
+    "timeout_rate": 3.4985,
+    "avg_first_edge_atr": 0.041165,
+    "avg_cost_atr": 0.176003,
+    "avg_net_first_edge_atr": -0.134837,
+    "median_seconds_to_outcome": 466.0,
+    "avg_prob_success": 0.36429,
+    "avg_prob_ev_atr": -0.116899
+  }
+}

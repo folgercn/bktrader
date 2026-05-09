@@ -1,0 +1,46 @@
+{
+  "start": "2026-01-01T00:00:00Z",
+  "end": "2026-04-30T23:59:59Z",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "signal_timeframe": "1h",
+  "breakout_shape": "baseline_plus_t3",
+  "continuation_atr": 0.5,
+  "fail_atr": 0.2,
+  "horizon_seconds": 7200,
+  "event_csv": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_per_symbol/baseline_plus_t3/events.csv",
+  "rows": 1309,
+  "per_symbol": {
+    "BTCUSDT": {
+      "build_stats": {
+        "cache_path": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_narrow/bars_cache/BTCUSDT_20260101T000000_20260430T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 10368000
+      },
+      "signal_rows": 2880,
+      "events": 648,
+      "outcomes": {
+        "fail": 421,
+        "continuation": 214,
+        "timeout": 13
+      }
+    },
+    "ETHUSDT": {
+      "build_stats": {
+        "cache_path": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_narrow/bars_cache/ETHUSDT_20260101T000000_20260430T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 10368000
+      },
+      "signal_rows": 2880,
+      "events": 661,
+      "outcomes": {
+        "fail": 424,
+        "continuation": 232,
+        "timeout": 5
+      }
+    }
+  },
+  "elapsed_seconds": 245.16
+}

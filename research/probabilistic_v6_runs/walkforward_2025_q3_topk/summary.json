@@ -1,0 +1,73 @@
+{
+  "labeled_csv": "research/probabilistic_v6_runs/2025_q3_original_t2/events_execution_labeled.csv",
+  "run_dir": "research/probabilistic_v6_runs/walkforward_2025_q3_topk",
+  "rows_csv": "research/probabilistic_v6_runs/walkforward_2025_q3_topk/symbol_rows.csv",
+  "portfolio_csv": "research/probabilistic_v6_runs/walkforward_2025_q3_topk/portfolio_rows.csv",
+  "elapsed_seconds": 130.54,
+  "config": {
+    "labeled_csv": "research/probabilistic_v6_runs/2025_q3_original_t2/events_execution_labeled.csv",
+    "run_dir": "research/probabilistic_v6_runs/walkforward_2025_q3_topk",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "start": "2025-07-01T00:00:00Z",
+    "end": "2025-09-30T23:59:59Z",
+    "train_months": 1,
+    "validation_months": 1,
+    "models": [
+      "logistic",
+      "random_forest",
+      "extra_trees",
+      "gradient_boosting",
+      "svm_rbf"
+    ],
+    "objective": "sum_net_edge",
+    "min_events": 8,
+    "prob_mins": [
+      "0.40",
+      "0.45",
+      "0.50",
+      "0.55",
+      "0.60",
+      "0.65",
+      "0.70",
+      "0.75",
+      "0.80"
+    ],
+    "ev_atr_mins": [
+      "-0.05",
+      "0.00",
+      "0.02",
+      "0.05",
+      "0.08",
+      "0.10",
+      "0.15",
+      "0.20"
+    ],
+    "top_k_values": [
+      0,
+      5,
+      10,
+      15,
+      20
+    ],
+    "rank_by": "model_notional_share",
+    "cap_dynamic_share": 0.0,
+    "min_validation_events": 8,
+    "min_validation_edge": 0.05,
+    "min_validation_success_rate": 0.0,
+    "require_positive_train": true,
+    "skip_failed_validation": true,
+    "bars_cache_dir": "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache",
+    "archive_root": "dataset/archive",
+    "chunksize": 5000000,
+    "entry_delay_seconds": 5,
+    "initial_stop_atr": 0.45,
+    "breakeven_at_r": 0.8,
+    "trail_start_r": 0.9,
+    "max_hold_hours": 4.0,
+    "initial_balance": 100000.0,
+    "notional_share": 0.2
+  }
+}

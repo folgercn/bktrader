@@ -1,0 +1,578 @@
+{
+  "events_csv": "research/probabilistic_v4_runs/smoke_btc_20260101_20260107/baseline_plus_t3/events.csv",
+  "scored_csv": "research/probabilistic_v4_runs/smoke_btc_20260101_20260107/baseline_plus_t3/events_scored.csv",
+  "split": "train_ratio=0.6, split_time=2026-01-04T23:01:47+00:00",
+  "train_rows": 29,
+  "validation_rows": 20,
+  "train_baseline": {
+    "events": 29,
+    "success_rate": 27.5862,
+    "fail_rate": 65.5172,
+    "timeout_rate": 6.8966,
+    "avg_first_edge_atr": 0.013707,
+    "avg_cost_atr": 0.28413,
+    "avg_net_first_edge_atr": -0.270423,
+    "median_seconds_to_outcome": 462.0
+  },
+  "validation_baseline": {
+    "events": 20,
+    "success_rate": 30.0,
+    "fail_rate": 70.0,
+    "timeout_rate": 0.0,
+    "avg_first_edge_atr": 0.01,
+    "avg_cost_atr": 0.186454,
+    "avg_net_first_edge_atr": -0.176454,
+    "median_seconds_to_outcome": 651.0
+  },
+  "markov": {
+    "status": "trained",
+    "success_sequences": 8,
+    "fail_sequences": 19,
+    "win_matrix": [
+      [
+        0.294643,
+        0.151786,
+        0.25,
+        0.303571
+      ],
+      [
+        0.233333,
+        0.155556,
+        0.211111,
+        0.4
+      ],
+      [
+        0.232558,
+        0.178295,
+        0.310078,
+        0.27907
+      ],
+      [
+        0.171975,
+        0.22293,
+        0.248408,
+        0.356688
+      ]
+    ],
+    "loss_matrix": [
+      [
+        0.204678,
+        0.134503,
+        0.345029,
+        0.315789
+      ],
+      [
+        0.146067,
+        0.207865,
+        0.202247,
+        0.44382
+      ],
+      [
+        0.143284,
+        0.137313,
+        0.426866,
+        0.292537
+      ],
+      [
+        0.128035,
+        0.156733,
+        0.205298,
+        0.509934
+      ]
+    ]
+  },
+  "selected_rule": {
+    "llr_min": -999.0,
+    "flow60_min": 0.0,
+    "speed60_min": 0.08,
+    "dwell_seconds": 30,
+    "pullback30_max": null
+  },
+  "selected_validation": {
+    "events": 4,
+    "success_rate": 75.0,
+    "fail_rate": 25.0,
+    "timeout_rate": 0.0,
+    "avg_first_edge_atr": 0.325,
+    "avg_cost_atr": 0.21364,
+    "avg_net_first_edge_atr": 0.11136,
+    "median_seconds_to_outcome": 383.5
+  },
+  "top_rules": [
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.0,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": null
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.0,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.05
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.0,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.1
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.0,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.2
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": null
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.05
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.1
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.2
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.6,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": null
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.6,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.05
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.6,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.1
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.6,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.2
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.65,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": null
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.65,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.05
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.65,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.1
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": -999.0,
+        "flow60_min": 0.65,
+        "speed60_min": 0.08,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.2
+      },
+      "validation": {
+        "events": 4,
+        "success_rate": 75.0,
+        "fail_rate": 25.0,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.325,
+        "avg_cost_atr": 0.21364,
+        "avg_net_first_edge_atr": 0.11136,
+        "median_seconds_to_outcome": 383.5
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": -999.0,
+        "dwell_seconds": 30,
+        "pullback30_max": null
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": -999.0,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.05
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": -999.0,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.1
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": -999.0,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.2
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.0,
+        "dwell_seconds": 30,
+        "pullback30_max": null
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.0,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.05
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.0,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.1
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.0,
+        "dwell_seconds": 30,
+        "pullback30_max": 0.2
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    },
+    {
+      "rule": {
+        "llr_min": 0.0,
+        "flow60_min": 0.55,
+        "speed60_min": 0.03,
+        "dwell_seconds": 30,
+        "pullback30_max": null
+      },
+      "validation": {
+        "events": 3,
+        "success_rate": 66.6667,
+        "fail_rate": 33.3333,
+        "timeout_rate": 0.0,
+        "avg_first_edge_atr": 0.266667,
+        "avg_cost_atr": 0.177747,
+        "avg_net_first_edge_atr": 0.08892,
+        "median_seconds_to_outcome": 345.0
+      }
+    }
+  ]
+}

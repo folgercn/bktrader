@@ -1,0 +1,185 @@
+{
+  "events_csv": "research/probabilistic_v6_runs/2026_mar_execution_label/model_avg_net_edge/events_scored.csv",
+  "rules_json": "research/probabilistic_v6_runs/2026_mar_execution_label/model_avg_net_edge/ml_model.json",
+  "selected_rule": {
+    "model_name": "random_forest",
+    "prob_min": 0.4,
+    "ev_atr_min": 0.02,
+    "objective": "avg_net_edge"
+  },
+  "execute_start": "2026-03-01T00:00:00+00:00",
+  "execute_end": "2026-03-31T23:59:59+00:00",
+  "execution_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 0.9,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 4.0,
+    "notional_share": 0.2,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  },
+  "entry_delay_seconds": 5,
+  "results": [
+    {
+      "summary": {
+        "trades": 25,
+        "raw_no_fee_no_slip_return_pct": 0.6249,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -0.2818,
+        "realistic_return_pct": -1.6269,
+        "win_rate_pct": 52.0,
+        "max_dd_pct": -3.238,
+        "avg_pnl_pct": -0.0371,
+        "median_pnl_pct": 0.08,
+        "median_hold_seconds": 2506.0,
+        "avg_hold_seconds": 2671.44,
+        "median_mfe_r": 0.8553,
+        "median_mae_r": 0.8391,
+        "exit_reasons": {
+          "TrailingSL": 12,
+          "InitialSL": 12,
+          "BreakevenSL": 1
+        }
+      },
+      "attribution": {
+        "profit_factor": 0.731826,
+        "gross_profit_pct": 4.403261,
+        "gross_loss_pct": -6.016817,
+        "monthly": [
+          {
+            "month": "2026-03",
+            "trades": 25,
+            "weighted_realistic_pct": -1.613556,
+            "win_rate_pct": 52.0
+          }
+        ],
+        "exit_reasons": {
+          "BreakevenSL": {
+            "trades": 1,
+            "weighted_realistic_pct": 0.023889,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 0.855333,
+            "avg_mae_r": 0.498705
+          },
+          "InitialSL": {
+            "trades": 12,
+            "weighted_realistic_pct": -6.016817,
+            "win_rate_pct": 0.0,
+            "avg_mfe_r": 0.224209,
+            "avg_mae_r": 1.049005
+          },
+          "TrailingSL": {
+            "trades": 12,
+            "weighted_realistic_pct": 4.379373,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 1.017597,
+            "avg_mae_r": 0.337593
+          }
+        }
+      },
+      "diagnostics": {
+        "candidate_events": 25,
+        "entries": 25,
+        "busy_skipped": 0,
+        "same_signal_bar_skipped": 0,
+        "dwell_skipped": 0,
+        "min_stop_skipped": 0,
+        "missing_entry_second": 0
+      },
+      "build_stats": {
+        "cache_path": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_narrow/bars_cache/BTCUSDT_20260301T000000_20260331T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 2678400
+      },
+      "symbol": "BTCUSDT",
+      "ledger_path": "research/probabilistic_v6_runs/2026_mar_execution_label/model_avg_net_edge/tmp_execution_dynamic_150_BTCUSDT_ledger.csv"
+    },
+    {
+      "summary": {
+        "trades": 16,
+        "raw_no_fee_no_slip_return_pct": 1.9452,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": 1.4301,
+        "realistic_return_pct": 0.6604,
+        "win_rate_pct": 62.5,
+        "max_dd_pct": -2.6265,
+        "avg_pnl_pct": 0.123,
+        "median_pnl_pct": 0.1766,
+        "median_hold_seconds": 1989.0,
+        "avg_hold_seconds": 3907.31,
+        "median_mfe_r": 0.8911,
+        "median_mae_r": 0.4936,
+        "exit_reasons": {
+          "TrailingSL": 8,
+          "InitialSL": 5,
+          "BreakevenSL": 2,
+          "MaxHoldExit": 1
+        }
+      },
+      "attribution": {
+        "profit_factor": 1.225083,
+        "gross_profit_pct": 3.690731,
+        "gross_loss_pct": -3.012638,
+        "monthly": [
+          {
+            "month": "2026-03",
+            "trades": 16,
+            "weighted_realistic_pct": 0.678093,
+            "win_rate_pct": 62.5
+          }
+        ],
+        "exit_reasons": {
+          "BreakevenSL": {
+            "trades": 2,
+            "weighted_realistic_pct": 0.036209,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 0.870911,
+            "avg_mae_r": 0.34716
+          },
+          "InitialSL": {
+            "trades": 5,
+            "weighted_realistic_pct": -2.848701,
+            "win_rate_pct": 0.0,
+            "avg_mfe_r": 0.378093,
+            "avg_mae_r": 1.028654
+          },
+          "MaxHoldExit": {
+            "trades": 1,
+            "weighted_realistic_pct": -0.163938,
+            "win_rate_pct": 0.0,
+            "avg_mfe_r": 0.0,
+            "avg_mae_r": 0.935711
+          },
+          "TrailingSL": {
+            "trades": 8,
+            "weighted_realistic_pct": 3.654521,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 1.051264,
+            "avg_mae_r": 0.241202
+          }
+        }
+      },
+      "diagnostics": {
+        "candidate_events": 18,
+        "entries": 16,
+        "busy_skipped": 2,
+        "same_signal_bar_skipped": 0,
+        "dwell_skipped": 0,
+        "min_stop_skipped": 0,
+        "missing_entry_second": 0
+      },
+      "build_stats": {
+        "cache_path": "research/probabilistic_v4_runs/btc_eth_2026_jan_apr_v4_narrow/bars_cache/ETHUSDT_20260301T000000_20260331T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 2678400
+      },
+      "symbol": "ETHUSDT",
+      "ledger_path": "research/probabilistic_v6_runs/2026_mar_execution_label/model_avg_net_edge/tmp_execution_dynamic_150_ETHUSDT_ledger.csv"
+    }
+  ],
+  "elapsed_seconds": 1.35
+}
