@@ -478,6 +478,8 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   executorConfigured: boolean;
   executorKind?: string;
   executorDryRun?: boolean;
+  executorArmed?: boolean;
+  targetAllowed?: boolean;
   executable: boolean;
   decision?: 'blocked' | 'eligible' | string;
   duplicate?: boolean;
@@ -558,6 +560,7 @@ export type RuntimeSupervisorPolicy = {
   containerExecutorConfigured: boolean;
   containerExecutorKind?: string;
   containerExecutorDryRun?: boolean;
+  containerExecutorArmed?: boolean;
 };
 
 export type RuntimeSupervisorTargetSnapshot = {

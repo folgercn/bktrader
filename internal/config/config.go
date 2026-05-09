@@ -1,9 +1,11 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -68,17 +70,28 @@ type Config struct {
 	DashboardNotificationsPollMs   int    // 仪表盘 Notifications 轮询间隔 (ms)
 	DashboardMonitorHealthPollMs   int    // 仪表盘 Monitor Health 轮询间隔 (ms)
 
-	SupervisorTargets              []string // 只读 supervisor 采集目标，支持 name=url 或 base URL
-	SupervisorBearerToken          string   // 只读 supervisor 请求目标服务时使用的全局 Bearer token
-	SupervisorPollIntervalSeconds  int      // 只读 supervisor 轮询间隔（秒）
-	SupervisorHTTPTimeoutSeconds   int      // 只读 supervisor HTTP 超时（秒）
-	SupervisorAppRestartEnabled    bool     // supervisor 是否允许按 runtime status 到期计划提交应用内 restart（默认关闭）
-	SupervisorServiceFailThreshold int      // supervisor 标记容器兜底候选所需的连续服务级失败次数（默认 3）
-	SupervisorContainerRestart     bool     // supervisor 是否允许容器级 restart 进入 executor 阶段（默认关闭）
-	SupervisorContainerExecutor    string   // 容器兜底 executor 类型；当前仅支持 noop dry-run readiness
+	SupervisorTargets                   []string // 只读 supervisor 采集目标，支持 name=url 或 base URL
+	SupervisorBearerToken               string   // 只读 supervisor 请求目标服务时使用的全局 Bearer token
+	SupervisorPollIntervalSeconds       int      // 只读 supervisor 轮询间隔（秒）
+	SupervisorHTTPTimeoutSeconds        int      // 只读 supervisor HTTP 超时（秒）
+	SupervisorAppRestartEnabled         bool     // supervisor 是否允许按 runtime status 到期计划提交应用内 restart（默认关闭）
+	SupervisorServiceFailThreshold      int      // supervisor 标记容器兜底候选所需的连续服务级失败次数（默认 3）
+	SupervisorContainerRestart          bool     // supervisor 是否允许容器级 restart 进入 executor 阶段（默认关闭）
+	SupervisorContainerExecutor         string   // 容器兜底 executor 类型；支持 noop dry-run 或显式 armed command executor
+	SupervisorContainerExecutorArmed    bool     // 非 dry-run 容器兜底 executor 的人工武装开关
+	SupervisorContainerExecutorCommands string   // command executor 的 target allowlist JSON
 }
 
-const maxSupervisorTargets = 32
+const (
+	maxSupervisorTargets                         = 32
+	maxSupervisorContainerExecutorTimeoutSeconds = 300
+)
+
+type supervisorContainerExecutorCommandSpec struct {
+	Path           string   `json:"path"`
+	Args           []string `json:"args,omitempty"`
+	TimeoutSeconds int      `json:"timeoutSeconds,omitempty"`
+}
 
 // Load 从环境变量加载配置，未设置的使用默认值。
 func Load() Config {
@@ -97,71 +110,73 @@ func Load() Config {
 	}
 
 	return Config{
-		AppName:                        getenv("APP_NAME", "bkTrader-platform"),
-		Environment:                    getenv("APP_ENV", "development"),
-		LogLevel:                       getenv("LOG_LEVEL", "info"),
-		LogFormat:                      getenv("LOG_FORMAT", "text"),
-		LogAddSource:                   boolFromEnv("LOG_ADD_SOURCE", false),
-		LogDir:                         strings.TrimSpace(os.Getenv("LOG_DIR")),
-		LogRetentionDays:               intFromEnv("LOG_RETENTION_DAYS", 7),
-		LogMaxSizeMB:                   intFromEnv("LOG_MAX_SIZE_MB", 100),
-		HTTPAddr:                       getenv("HTTP_ADDR", ":8080"),
-		ProcessRole:                    strings.ToLower(strings.TrimSpace(getenv("BKTRADER_ROLE", "monolith"))),
-		StoreBackend:                   getenv("STORE_BACKEND", "memory"),
-		AutoMigrate:                    boolFromEnv("AUTO_MIGRATE", true),
-		PostgresDSN:                    getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
-		RedisAddr:                      getenv("REDIS_ADDR", "localhost:6379"),
-		NATSURL:                        getenv("NATS_URL", "nats://localhost:4222"),
-		RuntimeEventBus:                strings.ToLower(strings.TrimSpace(getenv("RUNTIME_EVENT_BUS", "nats"))),
-		PaperTickInterval:              tickInterval,
-		MinuteDataDir:                  getenv("MINUTE_DATA_DIR", "."),
-		TickDataDir:                    getenv("TICK_DATA_DIR", "./dataset/archive"),
-		AuthEnabled:                    boolFromEnv("AUTH_ENABLED", false),
-		AuthUsername:                   getenv("AUTH_USERNAME", "admin"),
-		AuthPassword:                   os.Getenv("AUTH_PASSWORD"),
-		AuthSecret:                     os.Getenv("AUTH_SECRET"),
-		AuthTokenTTLMinutes:            authTokenTTL,
-		TradeTickFreshnessSeconds:      IntPtrFromEnv("TRADE_TICK_FRESHNESS_SECONDS"),
-		OrderBookFreshnessSeconds:      IntPtrFromEnv("ORDER_BOOK_FRESHNESS_SECONDS"),
-		SignalBarFreshnessSeconds:      IntPtrFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS"),
-		RuntimeQuietSeconds:            IntPtrFromEnv("RUNTIME_QUIET_SECONDS"),
-		StrategyEvaluationQuietSeconds: IntPtrFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS"),
-		LiveAccountSyncFreshnessSecs:   IntPtrFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS"),
-		PaperStartReadinessTimeoutSecs: IntPtrFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS"),
-		TelegramEnabled:                boolFromEnv("TELEGRAM_ENABLED", false),
-		TelegramBotToken:               getenv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:                 getenv("TELEGRAM_CHAT_ID", ""),
-		TelegramSendLevels:             getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
-		WSHandshakeTimeoutSeconds:      IntPtrFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS"),
-		WSReadStaleTimeoutSeconds:      IntPtrFromEnv("WS_READ_STALE_TIMEOUT_SECONDS"),
-		WSPingIntervalSeconds:          IntPtrFromEnv("WS_PING_INTERVAL_SECONDS"),
-		WSPassiveCloseTimeoutSeconds:   IntPtrFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS"),
-		WSReconnectBackoffs:            intSliceFromEnv("WS_RECONNECT_BACKOFFS", nil),
-		WSReconnectRecoveryBackoffs:    intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", nil),
-		RESTLimiterRPS:                 IntPtrFromEnv("REST_LIMITER_RPS"),
-		RESTLimiterBurst:               IntPtrFromEnv("REST_LIMITER_BURST"),
-		RESTBackoffSeconds:             IntPtrFromEnv("REST_BACKOFF_SECONDS"),
-		LiveMarketCacheTTLMinutes:      IntPtrFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES"),
-		TelegramHTTPTimeoutSeconds:     IntPtrFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS"),
-		BinanceRecvWindowMs:            IntPtrFromEnv("BINANCE_REST_RECV_WINDOW_MS"),
-		LiveSignalWarmWindowDays:       IntPtrFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS"),
-		LiveFastSignalWarmWindowDays:   IntPtrFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS"),
-		LiveMinuteWarmWindowDays:       IntPtrFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS"),
-		DashboardLiveSessionsPollMs:    intFromEnvWithMin("DASHBOARD_LIVE_SESSIONS_POLL_MS", 2000, 1000),
-		DashboardPositionsPollMs:       intFromEnvWithMin("DASHBOARD_POSITIONS_POLL_MS", 10000, 1000),
-		DashboardOrdersPollMs:          intFromEnvWithMin("DASHBOARD_ORDERS_POLL_MS", 10000, 1000),
-		DashboardFillsPollMs:           intFromEnvWithMin("DASHBOARD_FILLS_POLL_MS", 10000, 1000),
-		DashboardAlertsPollMs:          intFromEnvWithMin("DASHBOARD_ALERTS_POLL_MS", 2000, 1000),
-		DashboardNotificationsPollMs:   intFromEnvWithMin("DASHBOARD_NOTIFICATIONS_POLL_MS", 30000, 1000),
-		DashboardMonitorHealthPollMs:   intFromEnvWithMin("DASHBOARD_MONITOR_HEALTH_POLL_MS", 2000, 1000),
-		SupervisorTargets:              stringSliceFromEnv("SUPERVISOR_TARGETS", nil),
-		SupervisorBearerToken:          strings.TrimSpace(os.Getenv("SUPERVISOR_BEARER_TOKEN")),
-		SupervisorPollIntervalSeconds:  intFromEnvWithMin("SUPERVISOR_POLL_INTERVAL_SECONDS", 30, 5),
-		SupervisorHTTPTimeoutSeconds:   intFromEnvWithMin("SUPERVISOR_HTTP_TIMEOUT_SECONDS", 5, 1),
-		SupervisorAppRestartEnabled:    boolFromEnv("SUPERVISOR_APPLICATION_RESTART_ENABLED", false),
-		SupervisorServiceFailThreshold: intFromEnvWithMin("SUPERVISOR_SERVICE_FAILURE_THRESHOLD", 3, 1),
-		SupervisorContainerRestart:     boolFromEnv("SUPERVISOR_CONTAINER_RESTART_ENABLED", false),
-		SupervisorContainerExecutor:    strings.ToLower(strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR"))),
+		AppName:                             getenv("APP_NAME", "bkTrader-platform"),
+		Environment:                         getenv("APP_ENV", "development"),
+		LogLevel:                            getenv("LOG_LEVEL", "info"),
+		LogFormat:                           getenv("LOG_FORMAT", "text"),
+		LogAddSource:                        boolFromEnv("LOG_ADD_SOURCE", false),
+		LogDir:                              strings.TrimSpace(os.Getenv("LOG_DIR")),
+		LogRetentionDays:                    intFromEnv("LOG_RETENTION_DAYS", 7),
+		LogMaxSizeMB:                        intFromEnv("LOG_MAX_SIZE_MB", 100),
+		HTTPAddr:                            getenv("HTTP_ADDR", ":8080"),
+		ProcessRole:                         strings.ToLower(strings.TrimSpace(getenv("BKTRADER_ROLE", "monolith"))),
+		StoreBackend:                        getenv("STORE_BACKEND", "memory"),
+		AutoMigrate:                         boolFromEnv("AUTO_MIGRATE", true),
+		PostgresDSN:                         getenv("POSTGRES_DSN", "postgres://postgres:postgres@localhost:5432/bktrader?sslmode=disable"),
+		RedisAddr:                           getenv("REDIS_ADDR", "localhost:6379"),
+		NATSURL:                             getenv("NATS_URL", "nats://localhost:4222"),
+		RuntimeEventBus:                     strings.ToLower(strings.TrimSpace(getenv("RUNTIME_EVENT_BUS", "nats"))),
+		PaperTickInterval:                   tickInterval,
+		MinuteDataDir:                       getenv("MINUTE_DATA_DIR", "."),
+		TickDataDir:                         getenv("TICK_DATA_DIR", "./dataset/archive"),
+		AuthEnabled:                         boolFromEnv("AUTH_ENABLED", false),
+		AuthUsername:                        getenv("AUTH_USERNAME", "admin"),
+		AuthPassword:                        os.Getenv("AUTH_PASSWORD"),
+		AuthSecret:                          os.Getenv("AUTH_SECRET"),
+		AuthTokenTTLMinutes:                 authTokenTTL,
+		TradeTickFreshnessSeconds:           IntPtrFromEnv("TRADE_TICK_FRESHNESS_SECONDS"),
+		OrderBookFreshnessSeconds:           IntPtrFromEnv("ORDER_BOOK_FRESHNESS_SECONDS"),
+		SignalBarFreshnessSeconds:           IntPtrFromEnv("SIGNAL_BAR_FRESHNESS_SECONDS"),
+		RuntimeQuietSeconds:                 IntPtrFromEnv("RUNTIME_QUIET_SECONDS"),
+		StrategyEvaluationQuietSeconds:      IntPtrFromEnv("STRATEGY_EVALUATION_QUIET_SECONDS"),
+		LiveAccountSyncFreshnessSecs:        IntPtrFromEnv("LIVE_ACCOUNT_SYNC_FRESHNESS_SECONDS"),
+		PaperStartReadinessTimeoutSecs:      IntPtrFromEnv("PAPER_START_READINESS_TIMEOUT_SECONDS"),
+		TelegramEnabled:                     boolFromEnv("TELEGRAM_ENABLED", false),
+		TelegramBotToken:                    getenv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:                      getenv("TELEGRAM_CHAT_ID", ""),
+		TelegramSendLevels:                  getenv("TELEGRAM_SEND_LEVELS", "critical,warning"),
+		WSHandshakeTimeoutSeconds:           IntPtrFromEnv("WS_HANDSHAKE_TIMEOUT_SECONDS"),
+		WSReadStaleTimeoutSeconds:           IntPtrFromEnv("WS_READ_STALE_TIMEOUT_SECONDS"),
+		WSPingIntervalSeconds:               IntPtrFromEnv("WS_PING_INTERVAL_SECONDS"),
+		WSPassiveCloseTimeoutSeconds:        IntPtrFromEnv("WS_PASSIVE_CLOSE_TIMEOUT_SECONDS"),
+		WSReconnectBackoffs:                 intSliceFromEnv("WS_RECONNECT_BACKOFFS", nil),
+		WSReconnectRecoveryBackoffs:         intSliceFromEnv("WS_RECONNECT_RECOVERY_BACKOFFS", nil),
+		RESTLimiterRPS:                      IntPtrFromEnv("REST_LIMITER_RPS"),
+		RESTLimiterBurst:                    IntPtrFromEnv("REST_LIMITER_BURST"),
+		RESTBackoffSeconds:                  IntPtrFromEnv("REST_BACKOFF_SECONDS"),
+		LiveMarketCacheTTLMinutes:           IntPtrFromEnv("LIVE_MARKET_CACHE_TTL_MINUTES"),
+		TelegramHTTPTimeoutSeconds:          IntPtrFromEnv("TELEGRAM_HTTP_TIMEOUT_SECONDS"),
+		BinanceRecvWindowMs:                 IntPtrFromEnv("BINANCE_REST_RECV_WINDOW_MS"),
+		LiveSignalWarmWindowDays:            IntPtrFromEnv("LIVE_SIGNAL_WARM_WINDOW_DAYS"),
+		LiveFastSignalWarmWindowDays:        IntPtrFromEnv("LIVE_FAST_SIGNAL_WARM_WINDOW_DAYS"),
+		LiveMinuteWarmWindowDays:            IntPtrFromEnv("LIVE_MINUTE_WARM_WINDOW_DAYS"),
+		DashboardLiveSessionsPollMs:         intFromEnvWithMin("DASHBOARD_LIVE_SESSIONS_POLL_MS", 2000, 1000),
+		DashboardPositionsPollMs:            intFromEnvWithMin("DASHBOARD_POSITIONS_POLL_MS", 10000, 1000),
+		DashboardOrdersPollMs:               intFromEnvWithMin("DASHBOARD_ORDERS_POLL_MS", 10000, 1000),
+		DashboardFillsPollMs:                intFromEnvWithMin("DASHBOARD_FILLS_POLL_MS", 10000, 1000),
+		DashboardAlertsPollMs:               intFromEnvWithMin("DASHBOARD_ALERTS_POLL_MS", 2000, 1000),
+		DashboardNotificationsPollMs:        intFromEnvWithMin("DASHBOARD_NOTIFICATIONS_POLL_MS", 30000, 1000),
+		DashboardMonitorHealthPollMs:        intFromEnvWithMin("DASHBOARD_MONITOR_HEALTH_POLL_MS", 2000, 1000),
+		SupervisorTargets:                   stringSliceFromEnv("SUPERVISOR_TARGETS", nil),
+		SupervisorBearerToken:               strings.TrimSpace(os.Getenv("SUPERVISOR_BEARER_TOKEN")),
+		SupervisorPollIntervalSeconds:       intFromEnvWithMin("SUPERVISOR_POLL_INTERVAL_SECONDS", 30, 5),
+		SupervisorHTTPTimeoutSeconds:        intFromEnvWithMin("SUPERVISOR_HTTP_TIMEOUT_SECONDS", 5, 1),
+		SupervisorAppRestartEnabled:         boolFromEnv("SUPERVISOR_APPLICATION_RESTART_ENABLED", false),
+		SupervisorServiceFailThreshold:      intFromEnvWithMin("SUPERVISOR_SERVICE_FAILURE_THRESHOLD", 3, 1),
+		SupervisorContainerRestart:          boolFromEnv("SUPERVISOR_CONTAINER_RESTART_ENABLED", false),
+		SupervisorContainerExecutor:         strings.ToLower(strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR"))),
+		SupervisorContainerExecutorArmed:    boolFromEnv("SUPERVISOR_CONTAINER_EXECUTOR_ARMED", false),
+		SupervisorContainerExecutorCommands: strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON")),
 	}
 }
 
@@ -231,13 +246,70 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("不支持的 RUNTIME_EVENT_BUS: %s（可选: nats, disabled）", c.RuntimeEventBus)
 	}
-	switch strings.ToLower(strings.TrimSpace(c.SupervisorContainerExecutor)) {
-	case "", "noop":
+	executor := strings.ToLower(strings.TrimSpace(c.SupervisorContainerExecutor))
+	switch executor {
+	case "", "noop", "command":
 	default:
-		return fmt.Errorf("不支持的 SUPERVISOR_CONTAINER_EXECUTOR: %s（可选: noop；留空表示不配置 executor）", c.SupervisorContainerExecutor)
+		return fmt.Errorf("不支持的 SUPERVISOR_CONTAINER_EXECUTOR: %s（可选: noop, command；留空表示不配置 executor）", c.SupervisorContainerExecutor)
+	}
+	if executor == "command" {
+		if !c.SupervisorContainerExecutorArmed {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR=command 必须同时设置 SUPERVISOR_CONTAINER_EXECUTOR_ARMED=true")
+		}
+		if err := validateSupervisorContainerExecutorCommands(c.SupervisorContainerExecutorCommands); err != nil {
+			return err
+		}
+	} else {
+		if c.SupervisorContainerExecutorArmed {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_ARMED=true 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=command 同时使用")
+		}
+		if strings.TrimSpace(c.SupervisorContainerExecutorCommands) != "" {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=command 同时使用")
+		}
 	}
 	if err := validateSupervisorTargets(c.SupervisorTargets); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateSupervisorContainerExecutorCommands(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR=command 必须配置 SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON")
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	specs := map[string]supervisorContainerExecutorCommandSpec{}
+	if err := decoder.Decode(&specs); err != nil {
+		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON 必须是 target name 到 command spec 的 JSON object: %w", err)
+	}
+	if len(specs) == 0 {
+		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON 至少需要一个 target allowlist 项")
+	}
+	for targetName, spec := range specs {
+		name := strings.TrimSpace(targetName)
+		if !validSupervisorTargetName(name) {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON target name %q 只能包含 ASCII 字母、数字、点、下划线或短横线", targetName)
+		}
+		path := strings.TrimSpace(spec.Path)
+		if path == "" {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON target %s 缺少 path", name)
+		}
+		if !filepath.IsAbs(path) {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON target %s 的 path 必须是绝对路径", name)
+		}
+		if strings.ContainsRune(path, 0) {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON target %s 的 path 包含 NUL byte", name)
+		}
+		if spec.TimeoutSeconds < 0 || spec.TimeoutSeconds > maxSupervisorContainerExecutorTimeoutSeconds {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON target %s 的 timeoutSeconds 必须在 0..%d 之间", name, maxSupervisorContainerExecutorTimeoutSeconds)
+		}
+		for _, arg := range spec.Args {
+			if strings.ContainsRune(arg, 0) {
+				return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON target %s 的 args 不允许包含 NUL byte", name)
+			}
+		}
 	}
 	return nil
 }

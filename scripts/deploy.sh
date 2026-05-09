@@ -82,6 +82,8 @@ generate_supervisor_bearer_token() {
 effective_app_env=${APP_ENV:-$(env_file_value APP_ENV)}
 effective_supervisor_token=${SUPERVISOR_BEARER_TOKEN:-$(env_file_value SUPERVISOR_BEARER_TOKEN)}
 effective_supervisor_container_executor=${SUPERVISOR_CONTAINER_EXECUTOR:-$(env_file_value SUPERVISOR_CONTAINER_EXECUTOR)}
+effective_supervisor_container_executor_armed=${SUPERVISOR_CONTAINER_EXECUTOR_ARMED:-$(env_file_value SUPERVISOR_CONTAINER_EXECUTOR_ARMED)}
+effective_supervisor_container_executor_commands=${SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON:-$(env_file_value SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON)}
 if [[ -z "$effective_supervisor_token" ]]; then
   effective_supervisor_token="$(generate_supervisor_bearer_token)"
   set_env_file_value SUPERVISOR_BEARER_TOKEN "$effective_supervisor_token"
@@ -99,6 +101,12 @@ if [[ -n "$effective_supervisor_token" ]]; then
 fi
 if [[ -n "$effective_supervisor_container_executor" ]]; then
   export SUPERVISOR_CONTAINER_EXECUTOR="$effective_supervisor_container_executor"
+fi
+if [[ -n "$effective_supervisor_container_executor_armed" ]]; then
+  export SUPERVISOR_CONTAINER_EXECUTOR_ARMED="$effective_supervisor_container_executor_armed"
+fi
+if [[ -n "$effective_supervisor_container_executor_commands" ]]; then
+  export SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON="$effective_supervisor_container_executor_commands"
 fi
 
 export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"

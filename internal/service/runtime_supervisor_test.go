@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -572,7 +574,7 @@ func TestRuntimeSupervisorContainerFallbackExecutorErrorSetsBackoffAndAllowsManu
 	}
 }
 
-func TestRuntimeSupervisorContainerFallbackExecutorRequiresDryRunBeforeSubmit(t *testing.T) {
+func TestRuntimeSupervisorContainerFallbackExecutorRequiresArmedGateBeforeNonDryRunSubmit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/healthz":
@@ -604,14 +606,153 @@ func TestRuntimeSupervisorContainerFallbackExecutorRequiresDryRunBeforeSubmit(t 
 	if target.ContainerFallbackPlan == nil {
 		t.Fatalf("expected fallback plan for candidate, got %+v", target)
 	}
-	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.BlockedReason != "container-executor-dry-run-required" {
+	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.BlockedReason != "container-executor-not-armed" {
 		t.Fatalf("expected non-dry-run executor to stay blocked, got %+v", target.ContainerFallbackPlan)
 	}
-	if target.ServiceState.LastContainerFallbackDecisionReason != "container-executor-dry-run-required" {
+	if target.ServiceState.LastContainerFallbackDecisionReason != "container-executor-not-armed" {
 		t.Fatalf("expected non-dry-run decision audit, got %+v", target.ServiceState)
 	}
 	if executor.calls != 0 {
 		t.Fatalf("expected non-dry-run executor not to be called, got %d", executor.calls)
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorExecutesWhenArmedAndAllowlisted(t *testing.T) {
+	requested := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		case "/api/v1/runtime/restart":
+			t.Errorf("command container fallback executor must not call runtime control path %s", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := newRuntimeSupervisorTestCommandExecutor(t, "api", "--runtime-supervisor-command-executor-success")
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:        1,
+			EnableContainerFallback:        true,
+			ContainerFallbackExecutor:      executor,
+			ContainerFallbackExecutorArmed: true,
+		},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	if !snapshot.Policy.ContainerExecutorConfigured || snapshot.Policy.ContainerExecutorKind != runtimeSupervisorContainerExecutorKindCommand || snapshot.Policy.ContainerExecutorDryRun || !snapshot.Policy.ContainerExecutorArmed {
+		t.Fatalf("expected armed command executor policy, got %+v", snapshot.Policy)
+	}
+	if len(snapshot.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected one command fallback action, got %+v", snapshot.ContainerFallbackActions)
+	}
+	action := snapshot.ContainerFallbackActions[0]
+	if !action.Submitted || !action.Executed || action.ExecutorDryRun || action.ExecutorKind != runtimeSupervisorContainerExecutorKindCommand || action.Error != "" {
+		t.Fatalf("expected submitted/executed command fallback action, got %+v", action)
+	}
+	if !strings.Contains(action.Message, "helper restart ok") {
+		t.Fatalf("expected command output audit, got %+v", action)
+	}
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for command executor, got %+v", target)
+	}
+	if target.ContainerFallbackPlan.BlockedReason != "container-fallback-already-submitted" || !target.ContainerFallbackPlan.Duplicate || !target.ContainerFallbackPlan.ExecutorArmed || !target.ContainerFallbackPlan.TargetAllowed {
+		t.Fatalf("expected executed command fallback to leave duplicate blocker with gates visible, got %+v", target.ContainerFallbackPlan)
+	}
+	if !target.ServiceState.ContainerFallbackSubmitted || target.ServiceState.ContainerFallbackSubmittedMessage == "" || target.ServiceState.ContainerFallbackSubmittedError != "" {
+		t.Fatalf("expected command submission audit in service state, got %+v", target.ServiceState)
+	}
+	if requested["POST /api/v1/runtime/restart"] != 0 {
+		t.Fatalf("expected no runtime restart control call from command executor, got %#v", requested)
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorBlocksTargetsOutsideAllowlist(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := newRuntimeSupervisorTestCommandExecutor(t, "worker", "--runtime-supervisor-command-executor-success")
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:        1,
+			EnableContainerFallback:        true,
+			ContainerFallbackExecutor:      executor,
+			ContainerFallbackExecutorArmed: true,
+		},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for command executor, got %+v", target)
+	}
+	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.TargetAllowed || target.ContainerFallbackPlan.BlockedReason != "container-executor-target-not-allowlisted" {
+		t.Fatalf("expected non-allowlisted target to block command executor, got %+v", target.ContainerFallbackPlan)
+	}
+	if len(snapshot.ContainerFallbackActions) != 0 || target.ServiceState.ContainerFallbackSubmitted {
+		t.Fatalf("expected no command submission for non-allowlisted target, actions=%+v state=%+v", snapshot.ContainerFallbackActions, target.ServiceState)
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorFailureSetsBackoff(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := newRuntimeSupervisorTestCommandExecutor(t, "api", "--runtime-supervisor-command-executor-fail")
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:        1,
+			EnableContainerFallback:        true,
+			ContainerFallbackExecutor:      executor,
+			ContainerFallbackExecutorArmed: true,
+		},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	if len(snapshot.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected one failed command fallback action, got %+v", snapshot.ContainerFallbackActions)
+	}
+	action := snapshot.ContainerFallbackActions[0]
+	if action.Error == "" || !strings.Contains(action.Error, "helper restart failed") || action.BackoffUntil == nil || action.BackoffSeconds != 300 {
+		t.Fatalf("expected command failure and backoff audit, got %+v", action)
+	}
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil || target.ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" || !target.ContainerFallbackPlan.BackoffActive {
+		t.Fatalf("expected failed command executor to leave backoff blocker, got %+v", target.ContainerFallbackPlan)
+	}
+	if !target.ServiceState.ContainerFallbackSubmitted || !strings.Contains(target.ServiceState.ContainerFallbackSubmittedError, "helper restart failed") {
+		t.Fatalf("expected failed command submission audit in service state, got %+v", target.ServiceState)
 	}
 }
 
@@ -840,6 +981,8 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		Enabled:            true,
 		ExecutorConfigured: true,
 		ExecutorDryRun:     true,
+		ExecutorArmed:      true,
+		TargetAllowed:      true,
 		SafetyGateOK:       true,
 	}
 	tests := []struct {
@@ -859,21 +1002,27 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		},
 		{
 			name:         "disabled",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, ExecutorConfigured: true, ExecutorDryRun: true, SafetyGateOK: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, ExecutorConfigured: true, ExecutorDryRun: true, ExecutorArmed: true, TargetAllowed: true, SafetyGateOK: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-restart-disabled",
 		},
 		{
 			name:         "executor missing",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorDryRun: true, SafetyGateOK: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorDryRun: true, ExecutorArmed: true, TargetAllowed: true, SafetyGateOK: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-executor-not-configured",
 		},
 		{
-			name:         "non dry-run executor",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, SafetyGateOK: true},
+			name:         "non dry-run executor not armed",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, TargetAllowed: true, SafetyGateOK: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
-			wantBlocked:  "container-executor-dry-run-required",
+			wantBlocked:  "container-executor-not-armed",
+		},
+		{
+			name:         "non dry-run executor target not allowlisted",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, ExecutorArmed: true, SafetyGateOK: true},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-executor-target-not-allowlisted",
 		},
 		{
 			name: "suppressed",
@@ -882,6 +1031,8 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 				Enabled:            true,
 				ExecutorConfigured: true,
 				ExecutorDryRun:     true,
+				ExecutorArmed:      true,
+				TargetAllowed:      true,
 				Suppressed:         true,
 				SafetyGateOK:       true,
 			},
@@ -895,6 +1046,8 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 				Enabled:            true,
 				ExecutorConfigured: true,
 				ExecutorDryRun:     true,
+				ExecutorArmed:      true,
+				TargetAllowed:      true,
 				BackoffActive:      true,
 				SafetyGateOK:       true,
 			},
@@ -908,6 +1061,8 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 				Enabled:            true,
 				ExecutorConfigured: true,
 				ExecutorDryRun:     true,
+				ExecutorArmed:      true,
+				TargetAllowed:      true,
 				Duplicate:          true,
 				SafetyGateOK:       true,
 			},
@@ -916,9 +1071,25 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		},
 		{
 			name:         "safety gate blocked",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, ExecutorDryRun: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, ExecutorDryRun: true, ExecutorArmed: true, TargetAllowed: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-fallback-safety-gate-blocked",
+		},
+		{
+			name: "non dry-run eligible",
+			input: runtimeSupervisorContainerFallbackDecisionInput{
+				Candidate:          true,
+				Enabled:            true,
+				ExecutorConfigured: true,
+				ExecutorArmed:      true,
+				TargetAllowed:      true,
+				SafetyGateOK:       true,
+			},
+			wantDecision:    runtimeSupervisorContainerFallbackDecisionEligible,
+			wantExecutable:  true,
+			wantBlocked:     "",
+			wantEligible:    "container-fallback-eligible",
+			wantEligibleSet: true,
 		},
 		{
 			name:            "eligible",
@@ -1410,6 +1581,42 @@ func TestParseRuntimeSupervisorTargetsSupportsNamedTargets(t *testing.T) {
 	}
 	if normalized[1].Name != "127.0.0.1:8081" || normalized[1].BaseURL != "http://127.0.0.1:8081" {
 		t.Fatalf("unexpected inferred target: %+v", normalized[1])
+	}
+}
+
+func newRuntimeSupervisorTestCommandExecutor(t *testing.T, targetName, mode string) CommandContainerFallbackExecutor {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+	executor, err := NewCommandContainerFallbackExecutor(map[string]CommandContainerFallbackSpec{
+		targetName: {
+			Path: executable,
+			Args: []string{
+				"-test.run=TestRuntimeSupervisorCommandContainerFallbackExecutorHelperProcess",
+				"--",
+				mode,
+			},
+			Timeout: 5 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build test command executor: %v", err)
+	}
+	return executor
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorHelperProcess(t *testing.T) {
+	for _, arg := range os.Args {
+		switch arg {
+		case "--runtime-supervisor-command-executor-success":
+			fmt.Fprint(os.Stdout, "helper restart ok")
+			os.Exit(0)
+		case "--runtime-supervisor-command-executor-fail":
+			fmt.Fprint(os.Stderr, "helper restart failed")
+			os.Exit(7)
+		}
 	}
 }
 

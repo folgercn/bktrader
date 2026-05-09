@@ -28,9 +28,10 @@ const (
 	runtimeSupervisorContainerFallbackDecisionBlocked  = "blocked"
 	runtimeSupervisorContainerFallbackDecisionEligible = "eligible"
 
-	runtimeSupervisorContainerExecutorKindCustom = "custom"
-	runtimeSupervisorContainerExecutorKindNone   = "none"
-	runtimeSupervisorContainerExecutorKindNoop   = "noop"
+	runtimeSupervisorContainerExecutorKindCustom  = "custom"
+	runtimeSupervisorContainerExecutorKindNone    = "none"
+	runtimeSupervisorContainerExecutorKindNoop    = "noop"
+	runtimeSupervisorContainerExecutorKindCommand = "command"
 )
 
 var (
@@ -44,10 +45,11 @@ var (
 )
 
 type RuntimeSupervisorOptions struct {
-	EnableApplicationRestart  bool
-	ServiceFailureThreshold   int
-	EnableContainerFallback   bool
-	ContainerFallbackExecutor ContainerFallbackExecutor
+	EnableApplicationRestart       bool
+	ServiceFailureThreshold        int
+	EnableContainerFallback        bool
+	ContainerFallbackExecutor      ContainerFallbackExecutor
+	ContainerFallbackExecutorArmed bool
 }
 
 type ContainerFallbackExecutorDescriptor struct {
@@ -59,6 +61,10 @@ type ContainerFallbackExecutor interface {
 	Configured() bool
 	Descriptor() ContainerFallbackExecutorDescriptor
 	Restart(ctx context.Context, target RuntimeSupervisorTarget, reason string) (ContainerFallbackExecutionResult, error)
+}
+
+type ContainerFallbackTargetAllowlist interface {
+	ContainerFallbackTargetAllowed(target RuntimeSupervisorTarget) bool
 }
 
 type ContainerFallbackExecutionResult struct {
@@ -134,6 +140,7 @@ type RuntimeSupervisorPolicy struct {
 	ContainerExecutorConfigured bool   `json:"containerExecutorConfigured"`
 	ContainerExecutorKind       string `json:"containerExecutorKind"`
 	ContainerExecutorDryRun     bool   `json:"containerExecutorDryRun"`
+	ContainerExecutorArmed      bool   `json:"containerExecutorArmed"`
 }
 
 type RuntimeSupervisorControlAction struct {
@@ -257,6 +264,8 @@ type RuntimeSupervisorContainerFallbackPlan struct {
 	ExecutorConfigured              bool       `json:"executorConfigured"`
 	ExecutorKind                    string     `json:"executorKind"`
 	ExecutorDryRun                  bool       `json:"executorDryRun"`
+	ExecutorArmed                   bool       `json:"executorArmed"`
+	TargetAllowed                   bool       `json:"targetAllowed"`
 	Executable                      bool       `json:"executable"`
 	Decision                        string     `json:"decision"`
 	Duplicate                       bool       `json:"duplicate"`
@@ -303,6 +312,8 @@ type runtimeSupervisorContainerFallbackDecisionInput struct {
 	Enabled            bool
 	ExecutorConfigured bool
 	ExecutorDryRun     bool
+	ExecutorArmed      bool
+	TargetAllowed      bool
 	Duplicate          bool
 	Suppressed         bool
 	BackoffActive      bool
@@ -519,7 +530,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 		targetSnapshot.ContainerFallbackPlan, targetSnapshot.ServiceState = s.updateContainerFallbackPlan(target, targetSnapshot.ServiceState, now)
 		if s.submitContainerFallback(ctx, target, targetSnapshot.ContainerFallbackPlan, now) {
 			targetSnapshot.ServiceState = s.serviceStateSnapshot(target)
-			targetSnapshot.ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(targetSnapshot.ServiceState, s.options, now)
+			targetSnapshot.ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(target, targetSnapshot.ServiceState, s.options, now)
 		}
 		if targetSnapshot.RuntimeStatus.Error == "" && targetSnapshot.RuntimeStatus.Reachable {
 			status = s.attachApplicationRestartPlans(target, status, targetSnapshot.Healthz, now)
@@ -558,7 +569,7 @@ func (s *RuntimeSupervisor) LastSnapshot() RuntimeSupervisorSnapshot {
 			}
 			serviceState := runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold)
 			out.Targets[i].ServiceState = serviceState
-			out.Targets[i].ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(serviceState, s.options, now)
+			out.Targets[i].ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(target, serviceState, s.options, now)
 		}
 	}
 	out.ServiceFailureEpisodes = append([]RuntimeSupervisorServiceFailureEpisode(nil), s.failureEpisodes...)
@@ -1059,7 +1070,7 @@ func (s *RuntimeSupervisor) updateContainerFallbackPlan(target RuntimeSupervisor
 	stored := s.serviceStates[key]
 	stored.ContainerFallbackAttemptCount++
 	state = runtimeSupervisorServiceStateSnapshot(stored, s.options.ServiceFailureThreshold)
-	plan := runtimeSupervisorContainerFallbackPlan(state, s.options, now)
+	plan := runtimeSupervisorContainerFallbackPlan(target, state, s.options, now)
 	decisionReason := runtimeSupervisorContainerFallbackDecisionReason(plan)
 	stored.LastContainerFallbackDecisionAt = now
 	stored.LastContainerFallbackDecisionReason = decisionReason
@@ -1069,7 +1080,7 @@ func (s *RuntimeSupervisor) updateContainerFallbackPlan(target RuntimeSupervisor
 }
 
 func (s *RuntimeSupervisor) submitContainerFallback(ctx context.Context, target RuntimeSupervisorTarget, plan *RuntimeSupervisorContainerFallbackPlan, now time.Time) bool {
-	if s == nil || plan == nil || !plan.Executable || !plan.ExecutorDryRun || s.options.ContainerFallbackExecutor == nil {
+	if s == nil || plan == nil || !plan.Executable || s.options.ContainerFallbackExecutor == nil {
 		return false
 	}
 	if now.IsZero() {
@@ -1148,12 +1159,14 @@ func (s *RuntimeSupervisor) recordContainerFallbackSubmissionLocked(target Runti
 	s.serviceStates[key] = state
 }
 
-func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState, options RuntimeSupervisorOptions, now time.Time) *RuntimeSupervisorContainerFallbackPlan {
+func runtimeSupervisorContainerFallbackPlan(target RuntimeSupervisorTarget, state RuntimeSupervisorServiceState, options RuntimeSupervisorOptions, now time.Time) *RuntimeSupervisorContainerFallbackPlan {
 	if !state.ContainerFallbackCandidate {
 		return nil
 	}
 	executorConfigured := runtimeSupervisorContainerExecutorConfigured(options.ContainerFallbackExecutor)
 	executorDescriptor := runtimeSupervisorContainerExecutorDescriptor(options.ContainerFallbackExecutor)
+	executorArmed := runtimeSupervisorContainerExecutorArmed(options, executorDescriptor, executorConfigured)
+	targetAllowed := runtimeSupervisorContainerFallbackTargetAllowed(options.ContainerFallbackExecutor, target)
 	suppressed := state.ContainerFallbackSuppressed
 	backoffActive := runtimeSupervisorContainerFallbackBackoffActive(state.ContainerFallbackBackoffUntil, now)
 	duplicate := state.ContainerFallbackSubmitted
@@ -1163,6 +1176,8 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 		Enabled:            options.EnableContainerFallback,
 		ExecutorConfigured: executorConfigured,
 		ExecutorDryRun:     executorDescriptor.DryRun,
+		ExecutorArmed:      executorArmed,
+		TargetAllowed:      targetAllowed,
 		Duplicate:          duplicate,
 		Suppressed:         suppressed,
 		BackoffActive:      backoffActive,
@@ -1177,6 +1192,8 @@ func runtimeSupervisorContainerFallbackPlan(state RuntimeSupervisorServiceState,
 		ExecutorConfigured:              executorConfigured,
 		ExecutorKind:                    executorDescriptor.Kind,
 		ExecutorDryRun:                  executorDescriptor.DryRun,
+		ExecutorArmed:                   executorArmed,
+		TargetAllowed:                   targetAllowed,
 		Executable:                      decision.Executable,
 		Decision:                        decision.Decision,
 		Duplicate:                       duplicate,
@@ -1225,8 +1242,11 @@ func evaluateRuntimeSupervisorContainerFallbackDecision(input runtimeSupervisorC
 	if !input.ExecutorConfigured {
 		return blocked("container-executor-not-configured")
 	}
-	if !input.ExecutorDryRun {
-		return blocked("container-executor-dry-run-required")
+	if !input.ExecutorDryRun && !input.ExecutorArmed {
+		return blocked("container-executor-not-armed")
+	}
+	if !input.ExecutorDryRun && !input.TargetAllowed {
+		return blocked("container-executor-target-not-allowlisted")
 	}
 	if input.Suppressed {
 		return blocked("container-fallback-suppressed")
@@ -1250,13 +1270,15 @@ func evaluateRuntimeSupervisorContainerFallbackDecision(input runtimeSupervisorC
 func runtimeSupervisorPolicy(options RuntimeSupervisorOptions) RuntimeSupervisorPolicy {
 	options = normalizeRuntimeSupervisorOptions(options)
 	executorDescriptor := runtimeSupervisorContainerExecutorDescriptor(options.ContainerFallbackExecutor)
+	executorConfigured := runtimeSupervisorContainerExecutorConfigured(options.ContainerFallbackExecutor)
 	return RuntimeSupervisorPolicy{
 		ApplicationRestartEnabled:   options.EnableApplicationRestart,
 		ServiceFailureThreshold:     options.ServiceFailureThreshold,
 		ContainerRestartEnabled:     options.EnableContainerFallback,
-		ContainerExecutorConfigured: runtimeSupervisorContainerExecutorConfigured(options.ContainerFallbackExecutor),
+		ContainerExecutorConfigured: executorConfigured,
 		ContainerExecutorKind:       executorDescriptor.Kind,
 		ContainerExecutorDryRun:     executorDescriptor.DryRun,
+		ContainerExecutorArmed:      runtimeSupervisorContainerExecutorArmed(options, executorDescriptor, executorConfigured),
 	}
 }
 
@@ -1277,6 +1299,24 @@ func runtimeSupervisorContainerExecutorDescriptor(executor ContainerFallbackExec
 		descriptor.Kind = runtimeSupervisorContainerExecutorKindCustom
 	}
 	return descriptor
+}
+
+func runtimeSupervisorContainerExecutorArmed(options RuntimeSupervisorOptions, descriptor ContainerFallbackExecutorDescriptor, configured bool) bool {
+	if !configured {
+		return false
+	}
+	if descriptor.DryRun {
+		return true
+	}
+	return options.ContainerFallbackExecutorArmed
+}
+
+func runtimeSupervisorContainerFallbackTargetAllowed(executor ContainerFallbackExecutor, target RuntimeSupervisorTarget) bool {
+	allowlist, ok := executor.(ContainerFallbackTargetAllowlist)
+	if !ok {
+		return true
+	}
+	return allowlist.ContainerFallbackTargetAllowed(target)
 }
 
 func runtimeSupervisorServiceKey(target RuntimeSupervisorTarget) string {

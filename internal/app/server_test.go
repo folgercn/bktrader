@@ -115,6 +115,29 @@ func TestRuntimeSupervisorOptionsForConfigLeavesExecutorUnconfiguredByDefault(t 
 	}
 }
 
+func TestRuntimeSupervisorOptionsForConfigWiresArmedCommandExecutor(t *testing.T) {
+	options := runtimeSupervisorOptionsForConfig(config.Config{
+		SupervisorContainerRestart:          true,
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo","args":["restart","api"],"timeoutSeconds":5}}`,
+	})
+	if !options.EnableContainerFallback || !options.ContainerFallbackExecutorArmed {
+		t.Fatalf("expected armed command executor options, got %+v", options)
+	}
+	if options.ContainerFallbackExecutor == nil || !options.ContainerFallbackExecutor.Configured() {
+		t.Fatalf("expected configured command executor, got %+v", options.ContainerFallbackExecutor)
+	}
+	descriptor := options.ContainerFallbackExecutor.Descriptor()
+	if descriptor.Kind != "command" || descriptor.DryRun {
+		t.Fatalf("expected non-dry-run command descriptor, got %+v", descriptor)
+	}
+	allowlist, ok := options.ContainerFallbackExecutor.(service.ContainerFallbackTargetAllowlist)
+	if !ok || !allowlist.ContainerFallbackTargetAllowed(service.RuntimeSupervisorTarget{Name: "api"}) || allowlist.ContainerFallbackTargetAllowed(service.RuntimeSupervisorTarget{Name: "worker"}) {
+		t.Fatalf("expected command executor target allowlist to be enforced")
+	}
+}
+
 func TestRuntimeOptionsForMonolithStartAllRuntimeComponents(t *testing.T) {
 	options := RuntimeOptionsForRole("monolith")
 	if !options.WarmLiveMarketData ||
