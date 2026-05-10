@@ -1,0 +1,151 @@
+{
+  "rows_csv": [
+    "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_delay60_feature60_alltopk_matrix/symbol_rows.csv"
+  ],
+  "months": [
+    "2025-07",
+    "2025-08",
+    "2025-09",
+    "2025-10",
+    "2025-11",
+    "2025-12",
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04"
+  ],
+  "config": {
+    "rows_csv": [
+      "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_delay60_feature60_alltopk_matrix/symbol_rows.csv"
+    ],
+    "output_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_delay60_feature60_alltopk_matrix/regime_classifier/summary.json",
+    "markdown": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_delay60_feature60_alltopk_matrix/regime_classifier/summary.md",
+    "selected_rows_csv": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_delay60_feature60_alltopk_matrix/regime_classifier/selected_rows.csv",
+    "models": [
+      "logistic",
+      "random_forest",
+      "extra_trees",
+      "gradient_boosting",
+      "svm_rbf"
+    ],
+    "prob_thresholds": [
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75
+    ],
+    "min_train_months": 4,
+    "label_return_min_pct": 0.0,
+    "min_validation_active_rows": 1,
+    "target_realistic_pct": 10.0,
+    "min_active_rows": 4,
+    "min_active_months": 6,
+    "min_trades": 40,
+    "min_worst_month_realistic_pct": -2.0
+  },
+  "summary": {
+    "active_rows": 2,
+    "active_months": 2,
+    "trades": 14,
+    "total_realistic_pct": -2.0012,
+    "worst_month_realistic_pct": -1.0482,
+    "best_month_realistic_pct": -0.953,
+    "unique_symbol_month_selection": true,
+    "skipped_candidate_rows": 62
+  },
+  "target_hit": false,
+  "oracle_positive_per_symbol_month": {
+    "active_rows": 8,
+    "active_months": 6,
+    "trades": 74,
+    "total_realistic_pct": 10.457,
+    "worst_month_realistic_pct": 0.0469,
+    "best_month_realistic_pct": 5.7398,
+    "unique_symbol_month_selection": true,
+    "skipped_candidate_rows": 56
+  },
+  "walkforward": [
+    {
+      "execute_month": "2026-03",
+      "validation_month": "2026-02",
+      "model_name": "gradient_boosting",
+      "prob_min": 0.45,
+      "validation": {
+        "active_rows": 2,
+        "active_months": 1,
+        "trades": 17,
+        "total_realistic_pct": 5.7398,
+        "worst_month_realistic_pct": 5.7398,
+        "best_month_realistic_pct": 5.7398,
+        "unique_symbol_month_selection": true,
+        "skipped_candidate_rows": 6
+      },
+      "execution": {
+        "active_rows": 1,
+        "active_months": 1,
+        "trades": 5,
+        "total_realistic_pct": -0.953,
+        "worst_month_realistic_pct": -0.953,
+        "best_month_realistic_pct": -0.953,
+        "unique_symbol_month_selection": true,
+        "skipped_candidate_rows": 7
+      }
+    },
+    {
+      "execute_month": "2026-04",
+      "validation_month": "2026-03",
+      "model_name": "logistic",
+      "prob_min": 0.45,
+      "validation": {
+        "active_rows": 2,
+        "active_months": 1,
+        "trades": 14,
+        "total_realistic_pct": 2.7174,
+        "worst_month_realistic_pct": 2.7174,
+        "best_month_realistic_pct": 2.7174,
+        "unique_symbol_month_selection": true,
+        "skipped_candidate_rows": 6
+      },
+      "execution": {
+        "active_rows": 1,
+        "active_months": 1,
+        "trades": 9,
+        "total_realistic_pct": -1.0482,
+        "worst_month_realistic_pct": -1.0482,
+        "best_month_realistic_pct": -1.0482,
+        "unique_symbol_month_selection": true,
+        "skipped_candidate_rows": 7
+      }
+    }
+  ],
+  "selected_rows_csv": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_delay60_feature60_alltopk_matrix/regime_classifier/selected_rows.csv",
+  "selected_rows": [
+    {
+      "execute_month": "2026-03",
+      "symbol": "BTCUSDT",
+      "top_k": 5,
+      "row_model_name": "extra_trees",
+      "regime_model_name": "gradient_boosting",
+      "regime_prob": 0.7447086676672807,
+      "trades": 5,
+      "realistic_return_pct": -0.953,
+      "validation_topk_return_over_dd": 13.321752,
+      "validation_topk_sizing_markov_score_mean": 0.79181
+    },
+    {
+      "execute_month": "2026-04",
+      "symbol": "ETHUSDT",
+      "top_k": 10,
+      "row_model_name": "logistic",
+      "regime_model_name": "logistic",
+      "regime_prob": 0.6667927219049287,
+      "trades": 9,
+      "realistic_return_pct": -1.0482,
+      "validation_topk_return_over_dd": 6.588688,
+      "validation_topk_sizing_markov_score_mean": 0.442429
+    }
+  ]
+}

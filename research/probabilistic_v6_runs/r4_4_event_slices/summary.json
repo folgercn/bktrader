@@ -1,0 +1,461 @@
+{
+  "input_csv": "research/probabilistic_v6_runs/2025m03_2026apr_original_t2_delay60_r4_2_features/events_execution_labeled.csv",
+  "input_events": 1303,
+  "output_root": "research/probabilistic_v6_runs/r4_4_event_slices",
+  "slices": [
+    {
+      "name": "btc_short_eff60_low",
+      "description": "BTCUSDT short events with low 60s efficiency",
+      "clauses": [
+        [
+          "symbol",
+          "eq",
+          "BTCUSDT"
+        ],
+        [
+          "side",
+          "eq",
+          "short"
+        ],
+        [
+          "eff_60s",
+          "le",
+          0.949966
+        ]
+      ],
+      "events_csv": "research/probabilistic_v6_runs/r4_4_event_slices/btc_short_eff60_low/events_execution_labeled.csv",
+      "summary": {
+        "events": 158,
+        "coverage_pct": 12.125863,
+        "months": [
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04"
+        ],
+        "symbols": {
+          "BTCUSDT": 158
+        },
+        "tradable_events": 158,
+        "total_execution_return_pct": 3.690656,
+        "avg_execution_return_pct": 0.023359,
+        "win_rate": 0.582278,
+        "initial_sl_rate": 0.360759,
+        "positive_months": 9,
+        "worst_month_return_pct": -2.33521,
+        "best_month_return_pct": 4.91561,
+        "month_returns": {
+          "2025-03": -0.047987,
+          "2025-04": -0.09676,
+          "2025-05": 0.86681,
+          "2025-06": -0.924282,
+          "2025-07": 0.12505,
+          "2025-08": 0.02515,
+          "2025-09": 0.011767,
+          "2025-10": 1.15264,
+          "2025-11": -1.876459,
+          "2025-12": 0.24681,
+          "2026-01": 1.06576,
+          "2026-02": 4.91561,
+          "2026-03": 0.561757,
+          "2026-04": -2.33521
+        }
+      }
+    },
+    {
+      "name": "short_speed60_high",
+      "description": "All short events with high direction speed over 60s",
+      "clauses": [
+        [
+          "side",
+          "eq",
+          "short"
+        ],
+        [
+          "speed_60s_atr",
+          "gt",
+          0.260001
+        ]
+      ],
+      "events_csv": "research/probabilistic_v6_runs/r4_4_event_slices/short_speed60_high/events_execution_labeled.csv",
+      "summary": {
+        "events": 167,
+        "coverage_pct": 12.816577,
+        "months": [
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04"
+        ],
+        "symbols": {
+          "BTCUSDT": 82,
+          "ETHUSDT": 85
+        },
+        "tradable_events": 167,
+        "total_execution_return_pct": 8.95871,
+        "avg_execution_return_pct": 0.053645,
+        "win_rate": 0.57485,
+        "initial_sl_rate": 0.389222,
+        "positive_months": 8,
+        "worst_month_return_pct": -1.916698,
+        "best_month_return_pct": 3.819793,
+        "month_returns": {
+          "2025-03": -0.255915,
+          "2025-04": 1.784958,
+          "2025-05": -0.095833,
+          "2025-06": -0.71338,
+          "2025-07": -1.493849,
+          "2025-08": 1.655487,
+          "2025-09": 0.641484,
+          "2025-10": -1.916698,
+          "2025-11": 3.819793,
+          "2025-12": 1.292768,
+          "2026-01": 2.432003,
+          "2026-02": 3.208514,
+          "2026-03": 0.495972,
+          "2026-04": -1.896594
+        }
+      }
+    },
+    {
+      "name": "eth_short_prevclose_midlow",
+      "description": "ETHUSDT short events with previous close position not too extended",
+      "clauses": [
+        [
+          "symbol",
+          "eq",
+          "ETHUSDT"
+        ],
+        [
+          "side",
+          "eq",
+          "short"
+        ],
+        [
+          "prev1_close_pos_side",
+          "le",
+          0.837915
+        ]
+      ],
+      "events_csv": "research/probabilistic_v6_runs/r4_4_event_slices/eth_short_prevclose_midlow/events_execution_labeled.csv",
+      "summary": {
+        "events": 221,
+        "coverage_pct": 16.96086,
+        "months": [
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04"
+        ],
+        "symbols": {
+          "ETHUSDT": 221
+        },
+        "tradable_events": 221,
+        "total_execution_return_pct": -8.060819,
+        "avg_execution_return_pct": -0.036474,
+        "win_rate": 0.524887,
+        "initial_sl_rate": 0.420814,
+        "positive_months": 7,
+        "worst_month_return_pct": -5.235512,
+        "best_month_return_pct": 2.733151,
+        "month_returns": {
+          "2025-03": 2.539839,
+          "2025-04": -0.610555,
+          "2025-05": -2.81191,
+          "2025-06": -3.276866,
+          "2025-07": -3.823369,
+          "2025-08": 1.336754,
+          "2025-09": -2.724184,
+          "2025-10": -5.235512,
+          "2025-11": 2.034508,
+          "2025-12": 2.204576,
+          "2026-01": 0.944165,
+          "2026-02": 2.733151,
+          "2026-03": 1.447113,
+          "2026-04": -2.81853
+        }
+      }
+    },
+    {
+      "name": "btc_flow15_low",
+      "description": "BTCUSDT events with lower 15s aligned flow ratio",
+      "clauses": [
+        [
+          "symbol",
+          "eq",
+          "BTCUSDT"
+        ],
+        [
+          "flow_ratio_15s",
+          "le",
+          0.914133
+        ]
+      ],
+      "events_csv": "research/probabilistic_v6_runs/r4_4_event_slices/btc_flow15_low/events_execution_labeled.csv",
+      "summary": {
+        "events": 329,
+        "coverage_pct": 25.249424,
+        "months": [
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04"
+        ],
+        "symbols": {
+          "BTCUSDT": 329
+        },
+        "tradable_events": 329,
+        "total_execution_return_pct": 3.864567,
+        "avg_execution_return_pct": 0.011746,
+        "win_rate": 0.559271,
+        "initial_sl_rate": 0.401216,
+        "positive_months": 7,
+        "worst_month_return_pct": -2.316479,
+        "best_month_return_pct": 4.165632,
+        "month_returns": {
+          "2025-03": -0.429534,
+          "2025-04": 1.942575,
+          "2025-05": -0.699584,
+          "2025-06": -0.988237,
+          "2025-07": 0.900818,
+          "2025-08": -2.316479,
+          "2025-09": -0.332424,
+          "2025-10": 0.398015,
+          "2025-11": 0.077965,
+          "2025-12": -1.432363,
+          "2026-01": 0.966658,
+          "2026-02": 4.165632,
+          "2026-03": -0.195091,
+          "2026-04": 1.806614
+        }
+      }
+    },
+    {
+      "name": "eth_short_range_high",
+      "description": "ETHUSDT short events after a high-range previous bar",
+      "clauses": [
+        [
+          "symbol",
+          "eq",
+          "ETHUSDT"
+        ],
+        [
+          "side",
+          "eq",
+          "short"
+        ],
+        [
+          "prev1_range_atr",
+          "gt",
+          0.914154
+        ]
+      ],
+      "events_csv": "research/probabilistic_v6_runs/r4_4_event_slices/eth_short_range_high/events_execution_labeled.csv",
+      "summary": {
+        "events": 63,
+        "coverage_pct": 4.834996,
+        "months": [
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04"
+        ],
+        "symbols": {
+          "ETHUSDT": 63
+        },
+        "tradable_events": 63,
+        "total_execution_return_pct": 8.256083,
+        "avg_execution_return_pct": 0.131049,
+        "win_rate": 0.603175,
+        "initial_sl_rate": 0.380952,
+        "positive_months": 9,
+        "worst_month_return_pct": -2.499991,
+        "best_month_return_pct": 3.492205,
+        "month_returns": {
+          "2025-03": 1.0178,
+          "2025-04": 2.746472,
+          "2025-05": -0.18199,
+          "2025-06": -0.240763,
+          "2025-07": -2.499991,
+          "2025-08": 0.28545,
+          "2025-09": 0.203139,
+          "2025-10": 0.545682,
+          "2025-11": 3.492205,
+          "2025-12": 0.907968,
+          "2026-01": -0.502842,
+          "2026-02": 3.330887,
+          "2026-03": 0.368608,
+          "2026-04": -1.216543
+        }
+      }
+    },
+    {
+      "name": "r4_3_top_union",
+      "description": "btc_short_eff60_low OR short_speed60_high OR eth_short_prevclose_midlow OR btc_flow15_low",
+      "clauses": [
+        "btc_short_eff60_low",
+        "short_speed60_high",
+        "eth_short_prevclose_midlow",
+        "btc_flow15_low"
+      ],
+      "events_csv": "research/probabilistic_v6_runs/r4_4_event_slices/r4_3_top_union/events_execution_labeled.csv",
+      "summary": {
+        "events": 665,
+        "coverage_pct": 51.036071,
+        "months": [
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04"
+        ],
+        "symbols": {
+          "BTCUSDT": 429,
+          "ETHUSDT": 236
+        },
+        "tradable_events": 665,
+        "total_execution_return_pct": -15.083449,
+        "avg_execution_return_pct": -0.022682,
+        "win_rate": 0.533835,
+        "initial_sl_rate": 0.419549,
+        "positive_months": 6,
+        "worst_month_return_pct": -5.13202,
+        "best_month_return_pct": 6.96253,
+        "month_returns": {
+          "2025-03": 1.135632,
+          "2025-04": -0.791741,
+          "2025-05": -4.733723,
+          "2025-06": -4.404877,
+          "2025-07": -4.481559,
+          "2025-08": -1.475679,
+          "2025-09": -3.716591,
+          "2025-10": -5.13202,
+          "2025-11": 0.715586,
+          "2025-12": 1.326228,
+          "2026-01": 2.171081,
+          "2026-02": 6.96253,
+          "2026-03": 1.332042,
+          "2026-04": -3.990358
+        }
+      }
+    },
+    {
+      "name": "r4_3_short_quality_union",
+      "description": "btc_short_eff60_low OR short_speed60_high OR eth_short_prevclose_midlow OR eth_short_range_high",
+      "clauses": [
+        "btc_short_eff60_low",
+        "short_speed60_high",
+        "eth_short_prevclose_midlow",
+        "eth_short_range_high"
+      ],
+      "events_csv": "research/probabilistic_v6_runs/r4_4_event_slices/r4_3_short_quality_union/events_execution_labeled.csv",
+      "summary": {
+        "events": 453,
+        "coverage_pct": 34.765925,
+        "months": [
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04"
+        ],
+        "symbols": {
+          "BTCUSDT": 209,
+          "ETHUSDT": 244
+        },
+        "tradable_events": 453,
+        "total_execution_return_pct": -10.664264,
+        "avg_execution_return_pct": -0.023541,
+        "win_rate": 0.534216,
+        "initial_sl_rate": 0.412804,
+        "positive_months": 7,
+        "worst_month_return_pct": -5.723136,
+        "best_month_return_pct": 7.648761,
+        "month_returns": {
+          "2025-03": 1.716521,
+          "2025-04": -1.767655,
+          "2025-05": -3.538982,
+          "2025-06": -4.284129,
+          "2025-07": -5.723136,
+          "2025-08": 0.894891,
+          "2025-09": -2.934934,
+          "2025-10": -4.484405,
+          "2025-11": 1.563243,
+          "2025-12": 2.042461,
+          "2026-01": 2.21091,
+          "2026-02": 7.648761,
+          "2026-03": 1.231543,
+          "2026-04": -5.239353
+        }
+      }
+    }
+  ]
+}

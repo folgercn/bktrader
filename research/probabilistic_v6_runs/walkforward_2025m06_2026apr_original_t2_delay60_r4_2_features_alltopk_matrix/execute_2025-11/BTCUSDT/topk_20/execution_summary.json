@@ -1,0 +1,105 @@
+{
+  "events_csv": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_original_t2_delay60_r4_2_features_alltopk_matrix/execute_2025-11/BTCUSDT/topk_20/events_scored_for_execution.csv",
+  "rules_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_original_t2_delay60_r4_2_features_alltopk_matrix/execute_2025-11/BTCUSDT/ml_model.json",
+  "selected_rule": {
+    "model_name": "gradient_boosting",
+    "prob_min": 0.4,
+    "ev_atr_min": -0.05,
+    "sl_prob_max": 0.5,
+    "objective": "sum_net_edge"
+  },
+  "execute_start": "2025-11-01T00:00:00+00:00",
+  "execute_end": "2025-11-30T23:59:59+00:00",
+  "execution_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 0.9,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 4.0,
+    "notional_share": 0.2,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  },
+  "entry_delay_seconds": 60,
+  "results": [
+    {
+      "summary": {
+        "trades": 19,
+        "raw_no_fee_no_slip_return_pct": -2.3,
+        "price_pnl_with_2bps_slip_no_fee_return_pct": -2.9948,
+        "realistic_return_pct": -4.0284,
+        "win_rate_pct": 36.84,
+        "max_dd_pct": -4.2374,
+        "avg_pnl_pct": -0.1748,
+        "median_pnl_pct": -0.3203,
+        "median_hold_seconds": 2878.0,
+        "avg_hold_seconds": 4740.63,
+        "median_mfe_r": 0.3714,
+        "median_mae_r": 1.0084,
+        "exit_reasons": {
+          "InitialSL": 12,
+          "TrailingSL": 6,
+          "MaxHoldExit": 1
+        }
+      },
+      "attribution": {
+        "profit_factor": 0.320719,
+        "gross_profit_pct": 1.931324,
+        "gross_loss_pct": -6.021853,
+        "monthly": [
+          {
+            "month": "2025-11",
+            "trades": 19,
+            "weighted_realistic_pct": -4.09053,
+            "win_rate_pct": 36.8421
+          }
+        ],
+        "exit_reasons": {
+          "InitialSL": {
+            "trades": 12,
+            "weighted_realistic_pct": -6.021853,
+            "win_rate_pct": 0.0,
+            "avg_mfe_r": 0.250172,
+            "avg_mae_r": 1.035566
+          },
+          "MaxHoldExit": {
+            "trades": 1,
+            "weighted_realistic_pct": 0.020465,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 0.722035,
+            "avg_mae_r": 0.918865
+          },
+          "TrailingSL": {
+            "trades": 6,
+            "weighted_realistic_pct": 1.910859,
+            "win_rate_pct": 100.0,
+            "avg_mfe_r": 0.94294,
+            "avg_mae_r": 0.389718
+          }
+        }
+      },
+      "diagnostics": {
+        "candidate_events": 20,
+        "entries": 19,
+        "busy_skipped": 1,
+        "same_signal_bar_skipped": 0,
+        "dwell_skipped": 0,
+        "min_stop_skipped": 0,
+        "missing_entry_second": 0
+      },
+      "build_stats": {
+        "cache_path": "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/BTCUSDT_20251101T000000_20251130T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 2592000
+      },
+      "symbol": "BTCUSDT",
+      "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_original_t2_delay60_r4_2_features_alltopk_matrix/execute_2025-11/BTCUSDT/topk_20/tmp_execution_BTCUSDT_ledger.csv"
+    }
+  ],
+  "elapsed_seconds": 0.71
+}

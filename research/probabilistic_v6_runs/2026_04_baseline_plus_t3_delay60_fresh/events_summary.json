@@ -1,0 +1,46 @@
+{
+  "start": "2026-04-01T00:00:00Z",
+  "end": "2026-04-30T23:59:59Z",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "signal_timeframe": "1h",
+  "breakout_shape": "baseline_plus_t3",
+  "continuation_atr": 0.5,
+  "fail_atr": 0.2,
+  "horizon_seconds": 7200,
+  "event_csv": "research/probabilistic_v6_runs/2026_04_baseline_plus_t3_delay60_fresh/events.csv",
+  "rows": 427,
+  "per_symbol": {
+    "BTCUSDT": {
+      "build_stats": {
+        "cache_path": "research/probabilistic_v6_runs/2026_04_original_t2_delay60_fresh/bars_cache/BTCUSDT_20260401T000000_20260430T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 2592000
+      },
+      "signal_rows": 720,
+      "events": 223,
+      "outcomes": {
+        "fail": 136,
+        "continuation": 80,
+        "timeout": 7
+      }
+    },
+    "ETHUSDT": {
+      "build_stats": {
+        "cache_path": "research/probabilistic_v6_runs/2026_04_original_t2_delay60_fresh/bars_cache/ETHUSDT_20260401T000000_20260430T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 2592000
+      },
+      "signal_rows": 720,
+      "events": 204,
+      "outcomes": {
+        "fail": 127,
+        "continuation": 73,
+        "timeout": 4
+      }
+    }
+  },
+  "elapsed_seconds": 79.73
+}

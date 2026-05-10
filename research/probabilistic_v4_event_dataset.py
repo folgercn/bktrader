@@ -93,6 +93,19 @@ def _aligned_flow_ratio(sb: pd.DataFrame, pos: int, side: str, seconds: int) -> 
     return _safe_ratio(sell_volume, total)
 
 
+def _volume_ratio(sb: pd.DataFrame, pos: int, seconds: int, reference_seconds: int = 300) -> float:
+    start = max(0, pos - int(seconds) + 1)
+    ref_start = max(0, pos - int(reference_seconds) + 1)
+    short_volume = float(sb["volume"].iloc[start : pos + 1].sum())
+    ref = sb["volume"].iloc[ref_start : pos + 1].replace(0, np.nan)
+    if ref.empty:
+        return np.nan
+    ref_per_second = float(ref.median())
+    if ref_per_second <= 0 or not np.isfinite(ref_per_second):
+        return np.nan
+    return short_volume / (ref_per_second * max(1, int(seconds)))
+
+
 def _direction_speed(close_values: np.ndarray, pos: int, side: str, atr: float, seconds: int) -> float:
     lag = max(0, pos - int(seconds))
     if atr <= 0 or not np.isfinite(atr):
@@ -301,6 +314,15 @@ def _record_event(
     prev_close_pos_1_side = prev_close_pos_1 if side == "long" else 1.0 - prev_close_pos_1
     prev_sma5_1 = _finite_or_nan(sig.get("prev_sma5_1", np.nan))
     prev_sma5_2 = _finite_or_nan(sig.get("prev_sma5_2", np.nan))
+    flow_ratio_5s = _aligned_flow_ratio(sb, touch_pos, side, 5)
+    flow_ratio_15s = _aligned_flow_ratio(sb, touch_pos, side, 15)
+    flow_ratio_30s = _aligned_flow_ratio(sb, touch_pos, side, 30)
+    flow_ratio_60s = _aligned_flow_ratio(sb, touch_pos, side, 60)
+    flow_ratio_120s = _aligned_flow_ratio(sb, touch_pos, side, 120)
+    speed_5s_atr = _direction_speed(close_values, touch_pos, side, atr, 5)
+    speed_15s_atr = _direction_speed(close_values, touch_pos, side, atr, 15)
+    speed_60s_atr = _direction_speed(close_values, touch_pos, side, atr, 60)
+    speed_300s_atr = _direction_speed(close_values, touch_pos, side, atr, 300)
     row = {
         "event_id": f"{symbol}|{signal_start.isoformat()}|{side}|{shape}",
         "symbol": symbol,
@@ -329,13 +351,28 @@ def _record_event(
         "level_to_prev_close_atr": _round_or_nan((prev_close_1 - float(level)) * side_mult / atr),
         "level_to_signal_open_atr": _round_or_nan((float(sig["open"]) - float(level)) * side_mult / atr),
         "roundtrip_cost_atr": round(touch_close * cost_rate / atr, 6),
-        "flow_ratio_60s": round(_aligned_flow_ratio(sb, touch_pos, side, 60), 6),
-        "flow_ratio_120s": round(_aligned_flow_ratio(sb, touch_pos, side, 120), 6),
-        "speed_15s_atr": round(_direction_speed(close_values, touch_pos, side, atr, 15), 6),
-        "speed_60s_atr": round(_direction_speed(close_values, touch_pos, side, atr, 60), 6),
-        "speed_300s_atr": round(_direction_speed(close_values, touch_pos, side, atr, 300), 6),
+        "flow_ratio_5s": round(flow_ratio_5s, 6),
+        "flow_ratio_15s": round(flow_ratio_15s, 6),
+        "flow_ratio_30s": round(flow_ratio_30s, 6),
+        "flow_ratio_60s": round(flow_ratio_60s, 6),
+        "flow_ratio_120s": round(flow_ratio_120s, 6),
+        "flow_delta_5_60s": _round_or_nan(flow_ratio_5s - flow_ratio_60s),
+        "flow_delta_15_60s": _round_or_nan(flow_ratio_15s - flow_ratio_60s),
+        "flow_delta_30_120s": _round_or_nan(flow_ratio_30s - flow_ratio_120s),
+        "volume_ratio_5s": _round_or_nan(_volume_ratio(sb, touch_pos, 5)),
+        "volume_ratio_15s": _round_or_nan(_volume_ratio(sb, touch_pos, 15)),
+        "volume_ratio_60s": _round_or_nan(_volume_ratio(sb, touch_pos, 60)),
+        "speed_5s_atr": round(speed_5s_atr, 6),
+        "speed_15s_atr": round(speed_15s_atr, 6),
+        "speed_60s_atr": round(speed_60s_atr, 6),
+        "speed_300s_atr": round(speed_300s_atr, 6),
+        "speed_decay_5_60s_atr": _round_or_nan(speed_5s_atr - speed_60s_atr),
+        "speed_decay_15_60s_atr": _round_or_nan(speed_15s_atr - speed_60s_atr),
+        "speed_decay_60_300s_atr": _round_or_nan(speed_60s_atr - speed_300s_atr),
+        "eff_15s": round(_efficiency(high_values, low_values, close_values, touch_pos, side, 15), 6),
         "eff_60s": round(_efficiency(high_values, low_values, close_values, touch_pos, side, 60), 6),
         "eff_300s": round(_efficiency(high_values, low_values, close_values, touch_pos, side, 300), 6),
+        "close_pos_15s": round(_close_pos(high_values, low_values, close_values, touch_pos, side, 15), 6),
         "close_pos_60s": round(_close_pos(high_values, low_values, close_values, touch_pos, side, 60), 6),
         "close_pos_300s": round(_close_pos(high_values, low_values, close_values, touch_pos, side, 300), 6),
         "state_seq_60s": _state_sequence(states, touch_pos, side, 60),
@@ -464,7 +501,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fail-atr", type=float, default=0.2)
     parser.add_argument("--horizon-seconds", type=int, default=7200)
     parser.add_argument("--dwell-seconds", nargs="+", type=int, default=[5, 15, 30])
-    parser.add_argument("--pullback-seconds", nargs="+", type=int, default=[15, 30, 60])
+    parser.add_argument("--pullback-seconds", nargs="+", type=int, default=[5, 15, 30, 60])
     parser.add_argument("--slippage-bps", type=float, default=2.0)
     parser.add_argument("--entry-fee-bps", type=float, default=2.0)
     parser.add_argument("--exit-fee-bps", type=float, default=4.0)

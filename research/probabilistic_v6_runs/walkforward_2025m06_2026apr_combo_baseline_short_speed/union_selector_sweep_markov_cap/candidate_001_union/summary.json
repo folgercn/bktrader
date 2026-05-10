@@ -1,0 +1,212 @@
+{
+  "selection_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/selection_candidates.json",
+  "selection_key": "candidate_001",
+  "run_dir": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union",
+  "elapsed_seconds": 14.95,
+  "input_sleeve_rows": 17,
+  "union_groups": 10,
+  "duplicate_events_removed": 447,
+  "active_silo_sum_pct": 10.8467,
+  "active_months": 9,
+  "active_silos": 10,
+  "trade_count": 115,
+  "worst_active_silo_pct": -1.3744,
+  "best_active_silo_pct": 4.8165,
+  "negative_active_silos": 2,
+  "group_rows": [
+    {
+      "execute_month": "2025-06",
+      "symbol": "ETHUSDT",
+      "sleeves": 1,
+      "sources": [
+        "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+      ],
+      "input_events": 70,
+      "union_events": 70,
+      "duplicate_events": 0,
+      "trades": 3,
+      "realistic_return_pct": 0.109,
+      "profit_factor": 1.169504,
+      "win_rate_pct": 66.67,
+      "max_dd_pct": -0.6651,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2025-06/ETHUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2025-07",
+      "symbol": "BTCUSDT",
+      "sleeves": 1,
+      "sources": [
+        "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top20"
+      ],
+      "input_events": 221,
+      "union_events": 221,
+      "duplicate_events": 0,
+      "trades": 18,
+      "realistic_return_pct": -0.725,
+      "profit_factor": 0.794206,
+      "win_rate_pct": 55.56,
+      "max_dd_pct": -2.3154,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2025-07/BTCUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2025-08",
+      "symbol": "BTCUSDT",
+      "sleeves": 1,
+      "sources": [
+        "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5"
+      ],
+      "input_events": 175,
+      "union_events": 175,
+      "duplicate_events": 0,
+      "trades": 5,
+      "realistic_return_pct": -1.3744,
+      "profit_factor": 0.110807,
+      "win_rate_pct": 40.0,
+      "max_dd_pct": -1.5174,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2025-08/BTCUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2025-09",
+      "symbol": "ETHUSDT",
+      "sleeves": 1,
+      "sources": [
+        "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+      ],
+      "input_events": 85,
+      "union_events": 85,
+      "duplicate_events": 0,
+      "trades": 5,
+      "realistic_return_pct": 0.2444,
+      "profit_factor": 1.483886,
+      "win_rate_pct": 80.0,
+      "max_dd_pct": -0.5092,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2025-09/ETHUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2025-11",
+      "symbol": "BTCUSDT",
+      "sleeves": 1,
+      "sources": [
+        "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top15"
+      ],
+      "input_events": 113,
+      "union_events": 113,
+      "duplicate_events": 0,
+      "trades": 6,
+      "realistic_return_pct": 0.4103,
+      "profit_factor": 1.505627,
+      "win_rate_pct": 66.67,
+      "max_dd_pct": -0.5726,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2025-11/BTCUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2025-12",
+      "symbol": "ETHUSDT",
+      "sleeves": 2,
+      "sources": [
+        "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top20",
+        "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+      ],
+      "input_events": 241,
+      "union_events": 210,
+      "duplicate_events": 31,
+      "trades": 24,
+      "realistic_return_pct": 0.4398,
+      "profit_factor": 1.097184,
+      "win_rate_pct": 62.5,
+      "max_dd_pct": -2.939,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2025-12/ETHUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2026-01",
+      "symbol": "BTCUSDT",
+      "sleeves": 2,
+      "sources": [
+        "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top10",
+        "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top20"
+      ],
+      "input_events": 379,
+      "union_events": 291,
+      "duplicate_events": 88,
+      "trades": 16,
+      "realistic_return_pct": 0.4559,
+      "profit_factor": 1.380027,
+      "win_rate_pct": 75.0,
+      "max_dd_pct": -0.9707,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2026-01/BTCUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2026-02",
+      "symbol": "BTCUSDT",
+      "sleeves": 3,
+      "sources": [
+        "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top10",
+        "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10",
+        "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top10"
+      ],
+      "input_events": 528,
+      "union_events": 383,
+      "duplicate_events": 145,
+      "trades": 15,
+      "realistic_return_pct": 4.3173,
+      "profit_factor": 2.556521,
+      "win_rate_pct": 73.33,
+      "max_dd_pct": -1.2234,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2026-02/BTCUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2026-02",
+      "symbol": "ETHUSDT",
+      "sleeves": 2,
+      "sources": [
+        "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5",
+        "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+      ],
+      "input_events": 313,
+      "union_events": 268,
+      "duplicate_events": 45,
+      "trades": 12,
+      "realistic_return_pct": 2.1529,
+      "profit_factor": 1.462642,
+      "win_rate_pct": 58.33,
+      "max_dd_pct": -3.591,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2026-02/ETHUSDT/execution_summary.json"
+    },
+    {
+      "execute_month": "2026-03",
+      "symbol": "ETHUSDT",
+      "sleeves": 3,
+      "sources": [
+        "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5",
+        "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10",
+        "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top10"
+      ],
+      "input_events": 430,
+      "union_events": 292,
+      "duplicate_events": 138,
+      "trades": 11,
+      "realistic_return_pct": 4.8165,
+      "profit_factor": 10.289152,
+      "win_rate_pct": 90.91,
+      "max_dd_pct": -0.5085,
+      "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union/execute_2026-03/ETHUSDT/execution_summary.json"
+    }
+  ],
+  "config": {
+    "selection_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/selection_candidates.json",
+    "selection_key": "candidate_001",
+    "run_dir": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_selector_sweep_markov_cap/candidate_001_union",
+    "start": "2025-03-01T00:00:00Z",
+    "end": "2026-04-30T23:59:59Z",
+    "archive_root": "dataset/archive",
+    "chunksize": 5000000,
+    "bars_cache_dir": "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache",
+    "entry_delay_seconds": 60,
+    "initial_stop_atr": 0.45,
+    "breakeven_at_r": 0.8,
+    "trail_start_r": 0.9,
+    "max_hold_hours": 4.0,
+    "initial_balance": 100000.0,
+    "notional_share": 0.2
+  }
+}

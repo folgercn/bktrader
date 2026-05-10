@@ -1,0 +1,109 @@
+{
+  "inputs": [
+    {
+      "path": "research/probabilistic_v6_runs/2025_m03_m06_original_t2_delay60_r4_2_features/events_execution_labeled.csv",
+      "rows": 405,
+      "symbols": {
+        "BTCUSDT": 234,
+        "ETHUSDT": 171
+      },
+      "months": {
+        "2025-03": 98,
+        "2025-04": 97,
+        "2025-05": 95,
+        "2025-06": 115
+      }
+    },
+    {
+      "path": "research/probabilistic_v6_runs/2025_q3_original_t2_delay60_r4_2_features/events_execution_labeled.csv",
+      "rows": 314,
+      "symbols": {
+        "BTCUSDT": 186,
+        "ETHUSDT": 128
+      },
+      "months": {
+        "2025-07": 108,
+        "2025-08": 94,
+        "2025-09": 112
+      }
+    },
+    {
+      "path": "research/probabilistic_v6_runs/2025_q4_original_t2_delay60_r4_2_features/events_execution_labeled.csv",
+      "rows": 293,
+      "symbols": {
+        "BTCUSDT": 155,
+        "ETHUSDT": 138
+      },
+      "months": {
+        "2025-10": 96,
+        "2025-11": 95,
+        "2025-12": 102
+      }
+    },
+    {
+      "path": "research/probabilistic_v6_runs/2026_jan_mar_original_t2_delay60_r4_2_features/events_execution_labeled.csv",
+      "rows": 194,
+      "symbols": {
+        "BTCUSDT": 107,
+        "ETHUSDT": 87
+      },
+      "months": {
+        "2026-01": 64,
+        "2026-02": 63,
+        "2026-03": 67
+      }
+    },
+    {
+      "path": "research/probabilistic_v6_runs/2026_04_original_t2_delay60_r4_2_features/events_execution_labeled.csv",
+      "rows": 97,
+      "symbols": {
+        "BTCUSDT": 66,
+        "ETHUSDT": 31
+      },
+      "months": {
+        "2026-04": 97
+      }
+    }
+  ],
+  "output_csv": "research/probabilistic_v6_runs/2025m03_2026apr_original_t2_delay60_r4_2_features/events_execution_labeled.csv",
+  "rows": 1303,
+  "columns": 83,
+  "symbols": {
+    "BTCUSDT": 748,
+    "ETHUSDT": 555
+  },
+  "months": {
+    "2025-03": 98,
+    "2025-04": 97,
+    "2025-05": 95,
+    "2025-06": 115,
+    "2025-07": 108,
+    "2025-08": 94,
+    "2025-09": 112,
+    "2025-10": 96,
+    "2025-11": 95,
+    "2025-12": 102,
+    "2026-01": 64,
+    "2026-02": 63,
+    "2026-03": 67,
+    "2026-04": 97
+  },
+  "new_feature_columns": [
+    "flow_ratio_5s",
+    "flow_ratio_15s",
+    "flow_ratio_30s",
+    "flow_delta_5_60s",
+    "flow_delta_15_60s",
+    "flow_delta_30_120s",
+    "volume_ratio_5s",
+    "volume_ratio_15s",
+    "volume_ratio_60s",
+    "speed_5s_atr",
+    "speed_decay_5_60s_atr",
+    "speed_decay_15_60s_atr",
+    "speed_decay_60_300s_atr",
+    "eff_15s",
+    "close_pos_15s",
+    "pullback_5s_atr"
+  ]
+}

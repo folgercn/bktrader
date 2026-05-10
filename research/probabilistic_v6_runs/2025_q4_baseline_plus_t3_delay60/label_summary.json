@@ -1,0 +1,47 @@
+{
+  "events_csv": "research/probabilistic_v6_runs/2025_q4_baseline_plus_t3_delay60/events.csv",
+  "output_csv": "research/probabilistic_v6_runs/2025_q4_baseline_plus_t3_delay60/events_execution_labeled.csv",
+  "rows": 369,
+  "per_symbol": {
+    "BTCUSDT": {
+      "events": 653,
+      "tradable": 199,
+      "wins": 95,
+      "avg_execution_return_pct": -0.04677088,
+      "skip_reasons": {
+        "dwell": 453,
+        "": 199,
+        "min_stop": 1
+      },
+      "build_stats": {
+        "cache_path": "research/probabilistic_v4_runs/btc_eth_2025_q4_oos_probability_original_t2/bars_cache/BTCUSDT_20251001T000000_20251231T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 7948800
+      }
+    },
+    "ETHUSDT": {
+      "events": 684,
+      "tradable": 170,
+      "wins": 84,
+      "avg_execution_return_pct": -0.07108772,
+      "skip_reasons": {
+        "dwell": 514,
+        "": 170
+      },
+      "build_stats": {
+        "cache_path": "research/probabilistic_v4_runs/btc_eth_2025_q4_oos_probability_original_t2/bars_cache/ETHUSDT_20251001T000000_20251231T235959_flow_1s.pkl",
+        "cache_hit": true,
+        "second_rows": 7948800
+      }
+    }
+  },
+  "execution": {
+    "entry_delay_seconds": 60,
+    "initial_stop_atr": 0.45,
+    "breakeven_at_r": 0.8,
+    "trail_start_r": 0.9,
+    "max_hold_hours": 4.0,
+    "label_notional_share": 1.0
+  },
+  "elapsed_seconds": 12.33
+}

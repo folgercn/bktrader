@@ -19,6 +19,32 @@ import numpy as np
 import pandas as pd
 
 
+ARCHIVED_SCHEME_B_BASELINE = {
+    "name": "delay60 + feature60 + post_selection gate",
+    "run_dir": "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_postselect_gate",
+    "active_silo_sum_pct": 6.0939,
+    "active_months": 5,
+    "trade_count": 51,
+}
+
+VALIDATION_TOPK_FEATURE_COLUMNS = {
+    "prob_success": "prob_success",
+    "prob_ev_atr": "prob_ev_atr",
+    "prob_initial_sl": "prob_initial_sl",
+    "model_notional_share": "model_notional_share",
+    "sizing_score": "sizing_score",
+    "sizing_ev_score": "sizing_ev_score",
+    "sizing_prob_score": "sizing_prob_score",
+    "sizing_markov_score": "sizing_markov_score",
+    "sizing_sl_score": "sizing_sl_score",
+    "speed_60s_atr": "speed_60s_atr",
+    "eff_60s": "eff_60s",
+    "close_pos_60s": "close_pos_60s",
+    "pullback_60s_atr": "pullback_60s_atr",
+    "flow_ratio_60s": "flow_ratio_60s",
+}
+
+
 def _as_bool_series(series: pd.Series) -> pd.Series:
     if series.dtype == bool:
         return series
@@ -75,6 +101,7 @@ def _apply_top_k(
     top_k: int,
     rank_by: str,
     max_share: float | None,
+    fixed_notional_share: float | None = None,
 ) -> dict:
     scored = pd.read_csv(scored_path, parse_dates=["touch_time"])
     if "quality_pass" not in scored.columns:
@@ -98,6 +125,14 @@ def _apply_top_k(
         scored.loc[execute_mask, "quality_pass"] = False
         scored.loc[keep_index, "quality_pass"] = True
     after = int((_as_bool_series(scored["quality_pass"]) & execute_mask).sum())
+
+    if fixed_notional_share is not None:
+        if "model_notional_share" not in scored.columns:
+            scored["model_notional_share"] = 0.0
+        scored["model_notional_share"] = pd.to_numeric(scored["model_notional_share"], errors="coerce").fillna(0.0)
+        final_mask = _as_bool_series(scored["quality_pass"]) & execute_mask
+        scored.loc[final_mask, "model_notional_share"] = float(fixed_notional_share)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     scored.to_csv(output_path, index=False)
     return {"selected_before_top_k": before, "selected_after_top_k": after}
@@ -138,6 +173,19 @@ def _validation_top_k_metrics(
     default_share: float,
 ) -> dict[int, dict]:
     scored = pd.read_csv(scored_path, parse_dates=["touch_time"])
+
+    def feature_metrics(selected: pd.DataFrame) -> dict:
+        metrics = {}
+        for name, column in VALIDATION_TOPK_FEATURE_COLUMNS.items():
+            if column not in selected.columns or selected.empty:
+                metrics[f"validation_topk_{name}_mean"] = 0.0
+                metrics[f"validation_topk_{name}_std"] = 0.0
+                continue
+            values = pd.to_numeric(selected[column], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+            metrics[f"validation_topk_{name}_mean"] = round(float(values.mean()), 6) if not values.empty else 0.0
+            metrics[f"validation_topk_{name}_std"] = round(float(values.std(ddof=0)), 6) if len(values) > 1 else 0.0
+        return metrics
+
     metrics: dict[int, dict] = {}
     for top_k in top_k_values:
         selected, before = _ranked_top_k_frame(
@@ -157,6 +205,7 @@ def _validation_top_k_metrics(
                 "validation_topk_initial_sl_rate": 0.0,
                 "validation_topk_win_rate_pct": 0.0,
                 "validation_topk_max_dd_pct": 0.0,
+                **feature_metrics(selected),
             }
             continue
         returns = pd.to_numeric(selected.get("execution_return_pct", 0.0), errors="coerce").fillna(0.0)
@@ -182,6 +231,7 @@ def _validation_top_k_metrics(
             else 0.0,
             "validation_topk_win_rate_pct": round(float((returns > 0.0).mean()) * 100.0, 4),
             "validation_topk_max_dd_pct": max_dd,
+            **feature_metrics(selected),
         }
     return metrics
 
@@ -258,14 +308,287 @@ def _add_validation_top_k_fields(row: dict, metrics_by_k: dict[int, dict], top_k
     row["top_k_policy"] = str(args.top_k_policy)
     row["validation_selected_top_k"] = "" if selected_top_k is None else int(selected_top_k)
     row["is_validation_selected_top_k"] = selected_top_k is not None and int(top_k) == int(selected_top_k)
+    row.setdefault("sizing_mode", "hybrid_markov")
+    row.setdefault("sizing_fallback_reason", "")
+    row.setdefault("final_sizing_result", "")
+    row.setdefault("dynamic_summary_json", "")
+    row.setdefault("fixed_fallback_summary_json", "")
+    row.setdefault("dynamic_trades", 0)
+    row.setdefault("dynamic_realistic_return_pct", 0.0)
+    row.setdefault("fixed_fallback_trades", 0)
+    row.setdefault("fixed_fallback_realistic_return_pct", 0.0)
+    row.setdefault("lifecycle_claim", "Baseline_Derived_Sizing")
+    row.setdefault("full_reentry_window_lifecycle", False)
     return row
 
 
-def _write_markdown(rows: list[dict], portfolio_rows: list[dict], path: Path) -> None:
+def _sizing_decision(symbol: str, metrics: dict, args: argparse.Namespace) -> tuple[str, str, bool]:
+    """Return final sizing mode, fallback reason, and whether fixed execution is required."""
+    if str(symbol).upper() != "BTCUSDT":
+        return "hybrid_markov", "", False
+    if str(args.btc_sizing_fallback_mode) == "off":
+        return "hybrid_markov", "", False
+
+    initial_sl_rate = float(metrics.get("validation_topk_initial_sl_rate", 0.0))
+    threshold = float(args.btc_dynamic_initial_sl_rate_max)
+    if initial_sl_rate > threshold:
+        return (
+            "fixed20",
+            f"btc_validation_topk_initial_sl_rate={initial_sl_rate:.4f}>{threshold:.4f}",
+            True,
+        )
+    return "hybrid_markov", "", False
+
+
+def _run_execution_variant(
+    *,
+    execution_scored_csv: Path,
+    model_json: Path,
+    summary_json: Path,
+    markdown: Path,
+    ledger_prefix: Path,
+    symbol: str,
+    execute_start: pd.Timestamp,
+    execute_end: pd.Timestamp,
+    args: argparse.Namespace,
+) -> dict:
+    execution_cmd = [
+        "python3",
+        "research/probabilistic_v4_execution_runner.py",
+        "--events-csv",
+        str(execution_scored_csv),
+        "--rules-json",
+        str(model_json),
+        "--symbols",
+        symbol,
+        "--start",
+        args.start,
+        "--end",
+        args.end,
+        "--execute-start",
+        execute_start.isoformat(),
+        "--execute-end",
+        execute_end.isoformat(),
+        "--archive-root",
+        args.archive_root,
+        "--chunksize",
+        str(args.chunksize),
+        "--entry-delay-seconds",
+        str(args.entry_delay_seconds),
+        "--initial-stop-atr",
+        str(args.initial_stop_atr),
+        "--breakeven-at-r",
+        str(args.breakeven_at_r),
+        "--trail-start-r",
+        str(args.trail_start_r),
+        "--max-hold-hours",
+        str(args.max_hold_hours),
+        "--initial-balance",
+        str(args.initial_balance),
+        "--notional-share",
+        str(args.notional_share),
+        "--summary-json",
+        str(summary_json),
+        "--markdown",
+        str(markdown),
+        "--ledger-prefix",
+        str(ledger_prefix),
+    ]
+    if args.bars_cache_dir:
+        execution_cmd.extend(["--bars-cache-dir", args.bars_cache_dir])
+    _run(execution_cmd)
+    return _load_json(summary_json)
+
+
+def _first_result(summary: dict) -> dict:
+    return summary.get("results", [{}])[0]
+
+
+def _event_source_contract(args: argparse.Namespace) -> tuple[str, str]:
+    labeled_path = str(args.labeled_csv).lower()
+    if "baseline_plus_t3" in labeled_path:
+        return (
+            "baseline_plus_t3 intrabar touch",
+            "long/short use Original_T2 prev_high_2/prev_low_2 intrabar touch plus t3_swing structural touch when enabled",
+        )
+    return (
+        "true Original_T2 intrabar touch",
+        "long uses current unclosed signal bar 1s high >= prev_high_2; short uses 1s low <= prev_low_2",
+    )
+
+
+def _scheme_semantic_contract(args: argparse.Namespace) -> dict:
+    entry_source, breakout_semantic = _event_source_contract(args)
+    return {
+        "scheme": "Scheme B: delay60 + feature60 + post_selection gate",
+        "scope": "research-only",
+        "entry_source": entry_source,
+        "breakout_semantic": breakout_semantic,
+        "feature_horizon_seconds": int(args.feature_horizon_seconds),
+        "entry_delay_seconds": int(args.entry_delay_seconds),
+        "feature_horizon_lte_entry_delay": int(args.feature_horizon_seconds) <= int(args.entry_delay_seconds),
+        "execution_model": "research/probabilistic_v4_execution_runner.py 1s execution runner",
+        "sizing_mode": "ETH uses hybrid_markov dynamic event sizing; BTC falls back to fixed20 when validation InitialSL rate is too high",
+        "btc_sizing_fallback": {
+            "mode": str(args.btc_sizing_fallback_mode),
+            "dynamic_initial_sl_rate_max": float(args.btc_dynamic_initial_sl_rate_max),
+            "fixed_notional_share": float(args.notional_share),
+        },
+        "baseline_derived_sizing": True,
+        "full_reentry_window_lifecycle": False,
+        "research_baseline_reference": {
+            "source": "AGENTS §2 Core Memory",
+            "dir2_zero_initial": True,
+            "zero_initial_mode": "reentry_window",
+            "reentry_size_schedule": [0.20, 0.10],
+            "max_trades_per_bar": 2,
+        },
+        "current_runner_gap": (
+            "Current V6 runner performs event selection plus one-shot 1s execution. "
+            "It does not implement current+next signal-bar reentry windows or slot0/slot1 lifecycle."
+        ),
+    }
+
+
+def _final_selection_rows(rows: list[dict], args: argparse.Namespace) -> tuple[list[dict], str]:
+    gate_pass_rows = [row for row in rows if bool(row.get("gate_pass", False))]
+    if str(args.top_k_policy) == "validation_best":
+        return (
+            [row for row in gate_pass_rows if bool(row.get("is_validation_selected_top_k", False))],
+            "validation_best_selected_rows",
+        )
+    top_k_values = [int(value) for value in args.top_k_values]
+    if len(top_k_values) == 1:
+        only_top_k = int(top_k_values[0])
+        return (
+            [row for row in gate_pass_rows if int(row.get("top_k", -1)) == only_top_k],
+            f"single_top_k:{only_top_k}",
+        )
+    return gate_pass_rows, "all_gate_pass_rows_multiple_topk_variants"
+
+
+def _metrics_for_rows(
+    selected_rows: list[dict],
+    *,
+    execute_months: list[str],
+    symbols: list[str],
+    selection_scope: str,
+) -> dict:
+    active_rows = [row for row in selected_rows if int(row.get("trades", 0)) > 0]
+    active_month_set = {str(row.get("execute_month", "")) for row in active_rows}
+    execute_month_count = len(execute_months)
+    calendar_symbol_month_count = execute_month_count * len(symbols)
+    active_silo_sum = float(np.sum([float(row.get("realistic_return_pct", 0.0)) for row in active_rows])) if active_rows else 0.0
+    trade_count = int(np.sum([int(row.get("trades", 0)) for row in active_rows])) if active_rows else 0
+    active_returns = [float(row.get("realistic_return_pct", 0.0)) for row in active_rows]
+    calendar_normalized = active_silo_sum / float(calendar_symbol_month_count) if calendar_symbol_month_count else 0.0
+    return {
+        "selection_scope": selection_scope,
+        "active_silo_sum_pct": round(active_silo_sum, 6),
+        "calendar_normalized_return_pct": round(calendar_normalized, 6),
+        "active_months": int(len(active_month_set)),
+        "empty_months": int(max(0, execute_month_count - len(active_month_set))),
+        "execute_months": execute_months,
+        "execute_month_count": int(execute_month_count),
+        "symbol_count": int(len(symbols)),
+        "calendar_symbol_month_count": int(calendar_symbol_month_count),
+        "active_silos": int(len(active_rows)),
+        "trade_count": trade_count,
+        "worst_active_silo_pct": round(float(min(active_returns)), 6) if active_returns else 0.0,
+        "best_active_silo_pct": round(float(max(active_returns)), 6) if active_returns else 0.0,
+        "negative_active_silos": int(sum(1 for value in active_returns if value < 0.0)),
+    }
+
+
+def _compute_run_metrics(rows: list[dict], execute_months: list[str], symbols: list[str], args: argparse.Namespace) -> dict:
+    final_rows, selection_scope = _final_selection_rows(rows, args)
+    final_metrics = _metrics_for_rows(
+        final_rows,
+        execute_months=execute_months,
+        symbols=symbols,
+        selection_scope=selection_scope,
+    )
+    final_metrics["baseline_comparison"] = {
+        "baseline": ARCHIVED_SCHEME_B_BASELINE,
+        "active_silo_sum_delta_pct": round(
+            final_metrics["active_silo_sum_pct"] - float(ARCHIVED_SCHEME_B_BASELINE["active_silo_sum_pct"]),
+            6,
+        ),
+        "active_month_delta": int(final_metrics["active_months"] - int(ARCHIVED_SCHEME_B_BASELINE["active_months"])),
+        "trade_count_delta": int(final_metrics["trade_count"] - int(ARCHIVED_SCHEME_B_BASELINE["trade_count"])),
+    }
+    by_top_k = []
+    for top_k in [int(value) for value in args.top_k_values]:
+        top_k_rows = [
+            row
+            for row in rows
+            if bool(row.get("gate_pass", False)) and int(row.get("top_k", -1)) == int(top_k)
+        ]
+        by_top_k.append(
+            {
+                "top_k": int(top_k),
+                **_metrics_for_rows(
+                    top_k_rows,
+                    execute_months=execute_months,
+                    symbols=symbols,
+                    selection_scope=f"top_k:{top_k}",
+                ),
+            }
+        )
+    final_metrics["by_top_k"] = by_top_k
+    return final_metrics
+
+
+def _write_markdown(
+    rows: list[dict],
+    portfolio_rows: list[dict],
+    run_metrics: dict,
+    scheme_contract: dict,
+    path: Path,
+) -> None:
     lines = [
         "# Probabilistic V6 Walk-Forward",
         "",
         "范围：仅限 `research`。本报告用 execution-aware labels 做按月 walk-forward，并用真实 1s execution runner 回测 selected events。",
+        "",
+        "## Scheme Semantic Contract",
+        "",
+        "| Field | Value |",
+        "|---|---|",
+        f"| Scheme | `{scheme_contract['scheme']}` |",
+        f"| Entry Source | `{scheme_contract['entry_source']}` |",
+        f"| Breakout Semantic | `{scheme_contract['breakout_semantic']}` |",
+        f"| Feature / Entry Delay | `{scheme_contract['feature_horizon_seconds']}s <= {scheme_contract['entry_delay_seconds']}s` |",
+        f"| Execution Model | `{scheme_contract['execution_model']}` |",
+        f"| Sizing Mode | `{scheme_contract['sizing_mode']}` |",
+        f"| BTC Fallback | `mode={scheme_contract['btc_sizing_fallback']['mode']}`, `InitialSL_rate<={scheme_contract['btc_sizing_fallback']['dynamic_initial_sl_rate_max']}`, `fixed_share={scheme_contract['btc_sizing_fallback']['fixed_notional_share']}` |",
+        f"| Lifecycle Claim | `Baseline_Derived_Sizing` |",
+        f"| Full Reentry Window Lifecycle | `{scheme_contract['full_reentry_window_lifecycle']}` |",
+        f"| Research Baseline | `dir2_zero_initial=true`, `zero_initial_mode=reentry_window`, `reentry_size_schedule=[0.20, 0.10]`, `max_trades_per_bar=2` (AGENTS §2 Core Memory) |",
+        f"| Current Runner Gap | {scheme_contract['current_runner_gap']} |",
+        "",
+        "## Run Metrics",
+        "",
+        "Calendar_Normalized_Return 将空仓 symbol-month silo 按 0% 计入后，对 execute_month × symbol 固定网格取平均。",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
+        f"| Active_Silo_Sum | {run_metrics['active_silo_sum_pct']:.4f}% |",
+        f"| Calendar_Normalized_Return | {run_metrics['calendar_normalized_return_pct']:.4f}% |",
+        f"| Active Months | {run_metrics['active_months']} |",
+        f"| Empty Months | {run_metrics['empty_months']} |",
+        f"| Active Silos | {run_metrics['active_silos']} |",
+        f"| Calendar Symbol-Month Count | {run_metrics['calendar_symbol_month_count']} |",
+        f"| Trades | {run_metrics['trade_count']} |",
+        f"| Worst Active Silo | {run_metrics['worst_active_silo_pct']:.4f}% |",
+        "",
+        "## Baseline Comparison",
+        "",
+        "| Baseline | Active_Silo_Sum | Active Months | Trades | Delta Active_Silo_Sum |",
+        "|---|---:|---:|---:|---:|",
+        f"| `{ARCHIVED_SCHEME_B_BASELINE['name']}` | {ARCHIVED_SCHEME_B_BASELINE['active_silo_sum_pct']:.4f}% | "
+        f"{ARCHIVED_SCHEME_B_BASELINE['active_months']} | {ARCHIVED_SCHEME_B_BASELINE['trade_count']} | "
+        f"{run_metrics['baseline_comparison']['active_silo_sum_delta_pct']:.4f}% |",
         "",
         "## Portfolio",
         "",
@@ -284,19 +607,24 @@ def _write_markdown(rows: list[dict], portfolio_rows: list[dict], path: Path) ->
             "",
             "## Symbol Rows",
             "",
-            "| Month | Symbol | TopK | Gate | Model | Selected | Trades | Realistic | PF | Win | DD | Val Edge | Val TopK Return | Val Ret/DD | Val TopK SL | Test Label Edge |",
-            "|---|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+            "| Month | Symbol | TopK | Gate | Sizing | Final | Fallback | Dynamic Ret | Fixed Ret | Model | Selected | Trades | Realistic | PF | Win | DD | Val Edge | Val TopK Return | Val Ret/DD | Val TopK SL | Val Markov | Test Label Edge |",
+            "|---|---|---:|---|---|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for row in rows:
+        fallback_reason = str(row.get("sizing_fallback_reason", ""))
         lines.append(
             f"| `{row['execute_month']}` | `{row['symbol']}` | {row['top_k']} | `{row['gate_reason']}` | "
+            f"`{row.get('sizing_mode', '')}` | `{row.get('final_sizing_result', '')}` | `{fallback_reason}` | "
+            f"{float(row.get('dynamic_realistic_return_pct', 0.0)):.4f}% | "
+            f"{float(row.get('fixed_fallback_realistic_return_pct', 0.0)):.4f}% | "
             f"`{row['model_name']}` | {row['selected_events']} | {row['trades']} | "
             f"{row['realistic_return_pct']:.4f}% | {row['profit_factor']} | {row['win_rate_pct']:.2f}% | "
             f"{row['max_dd_pct']:.4f}% | {row['validation_edge']:.6f} | "
             f"{row.get('validation_topk_sized_return_pct', 0.0):.6f}% | "
             f"{row.get('validation_topk_return_over_dd', 0.0):.6f} | "
-            f"{row.get('validation_topk_initial_sl_rate', 0.0):.4f} | {row['test_edge']:.6f} |"
+            f"{row.get('validation_topk_initial_sl_rate', 0.0):.4f} | "
+            f"{row.get('validation_topk_sizing_markov_score_mean', 0.0):.4f} | {row['test_edge']:.6f} |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -359,6 +687,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-hold-hours", type=float, default=4.0)
     parser.add_argument("--initial-balance", type=float, default=100000.0)
     parser.add_argument("--notional-share", type=float, default=0.20)
+    parser.add_argument(
+        "--btc-sizing-fallback-mode",
+        default="fixed20_on_initial_sl",
+        choices=["fixed20_on_initial_sl", "off"],
+        help="For BTCUSDT, select fixed notional_share when validation topK InitialSL rate is too high.",
+    )
+    parser.add_argument("--btc-dynamic-initial-sl-rate-max", type=float, default=0.30)
     parser.add_argument("--sizing-ev-weight", type=float, default=0.45)
     parser.add_argument("--sizing-prob-weight", type=float, default=0.25)
     parser.add_argument("--sizing-markov-weight", type=float, default=0.30)
@@ -523,6 +858,34 @@ def main() -> None:
                 variant_dir = symbol_dir / f"topk_{int(top_k)}"
                 variant_dir.mkdir(parents=True, exist_ok=True)
                 execution_scored_csv = variant_dir / "events_scored_for_execution.csv"
+                top_k_metrics = validation_top_k_metrics.get(int(top_k), {})
+                sizing_mode, sizing_fallback_reason, use_fixed_fallback = _sizing_decision(symbol, top_k_metrics, args)
+
+                dynamic_summary_json = variant_dir / "execution_dynamic_summary.json"
+                dynamic_control_summary: dict | None = None
+                if use_fixed_fallback:
+                    dynamic_scored_csv = variant_dir / "events_scored_dynamic_control.csv"
+                    _apply_top_k(
+                        scored_csv,
+                        dynamic_scored_csv,
+                        execute_start=execute_start,
+                        execute_end=execute_end,
+                        top_k=int(top_k),
+                        rank_by=args.rank_by,
+                        max_share=float(args.cap_dynamic_share) if float(args.cap_dynamic_share) > 0 else None,
+                    )
+                    dynamic_control_summary = _run_execution_variant(
+                        execution_scored_csv=dynamic_scored_csv,
+                        model_json=model_json,
+                        summary_json=dynamic_summary_json,
+                        markdown=variant_dir / "execution_dynamic.md",
+                        ledger_prefix=variant_dir / "tmp_execution_dynamic",
+                        symbol=symbol,
+                        execute_start=execute_start,
+                        execute_end=execute_end,
+                        args=args,
+                    )
+
                 topk_info = _apply_top_k(
                     scored_csv,
                     execution_scored_csv,
@@ -531,55 +894,22 @@ def main() -> None:
                     top_k=int(top_k),
                     rank_by=args.rank_by,
                     max_share=float(args.cap_dynamic_share) if float(args.cap_dynamic_share) > 0 else None,
+                    fixed_notional_share=float(args.notional_share) if use_fixed_fallback else None,
                 )
                 summary_json = variant_dir / "execution_summary.json"
-                execution_cmd = [
-                    "python3",
-                    "research/probabilistic_v4_execution_runner.py",
-                    "--events-csv",
-                    str(execution_scored_csv),
-                    "--rules-json",
-                    str(model_json),
-                    "--symbols",
-                    symbol,
-                    "--start",
-                    args.start,
-                    "--end",
-                    args.end,
-                    "--execute-start",
-                    execute_start.isoformat(),
-                    "--execute-end",
-                    execute_end.isoformat(),
-                    "--archive-root",
-                    args.archive_root,
-                    "--chunksize",
-                    str(args.chunksize),
-                    "--entry-delay-seconds",
-                    str(args.entry_delay_seconds),
-                    "--initial-stop-atr",
-                    str(args.initial_stop_atr),
-                    "--breakeven-at-r",
-                    str(args.breakeven_at_r),
-                    "--trail-start-r",
-                    str(args.trail_start_r),
-                    "--max-hold-hours",
-                    str(args.max_hold_hours),
-                    "--initial-balance",
-                    str(args.initial_balance),
-                    "--notional-share",
-                    str(args.notional_share),
-                    "--summary-json",
-                    str(summary_json),
-                    "--markdown",
-                    str(variant_dir / "execution.md"),
-                    "--ledger-prefix",
-                    str(variant_dir / "tmp_execution"),
-                ]
-                if args.bars_cache_dir:
-                    execution_cmd.extend(["--bars-cache-dir", args.bars_cache_dir])
-                _run(execution_cmd)
-                execution_summary = _load_json(summary_json)
-                result = execution_summary.get("results", [{}])[0]
+                execution_summary = _run_execution_variant(
+                    execution_scored_csv=execution_scored_csv,
+                    model_json=model_json,
+                    summary_json=summary_json,
+                    markdown=variant_dir / "execution.md",
+                    ledger_prefix=variant_dir / "tmp_execution",
+                    symbol=symbol,
+                    execute_start=execute_start,
+                    execute_end=execute_end,
+                    args=args,
+                )
+                result = _first_result(execution_summary)
+                dynamic_result = _first_result(dynamic_control_summary) if dynamic_control_summary is not None else result
                 row = {
                     "execute_month": str(execute_month),
                     "symbol": symbol,
@@ -599,6 +929,17 @@ def main() -> None:
                     "test_edge": float(model.get("test_selected", {}).get("avg_net_first_edge_atr", 0.0)),
                     "test_events": int(model.get("test_selected", {}).get("events", 0)),
                     "summary_json": str(summary_json),
+                    "sizing_mode": sizing_mode,
+                    "sizing_fallback_reason": sizing_fallback_reason,
+                    "final_sizing_result": "fixed_fallback" if use_fixed_fallback else "dynamic",
+                    "dynamic_summary_json": str(dynamic_summary_json) if use_fixed_fallback else str(summary_json),
+                    "fixed_fallback_summary_json": str(summary_json) if use_fixed_fallback else "",
+                    "dynamic_trades": int(_summary_value(dynamic_result, ["summary", "trades"], 0)),
+                    "dynamic_realistic_return_pct": float(_summary_value(dynamic_result, ["summary", "realistic_return_pct"], 0.0)),
+                    "fixed_fallback_trades": int(_summary_value(result, ["summary", "trades"], 0)) if use_fixed_fallback else 0,
+                    "fixed_fallback_realistic_return_pct": float(_summary_value(result, ["summary", "realistic_return_pct"], 0.0))
+                    if use_fixed_fallback
+                    else 0.0,
                 }
                 row = _add_validation_top_k_fields(row, validation_top_k_metrics, int(top_k), selected_top_k, args)
                 rows.append(row)
@@ -632,16 +973,27 @@ def main() -> None:
     portfolio_path = run_dir / "portfolio_rows.csv"
     rows_df.to_csv(rows_path, index=False)
     portfolio_df.to_csv(portfolio_path, index=False)
+    execute_months = [str(period) for period in months[min_required:]]
+    run_metrics = _compute_run_metrics(rows, execute_months, [str(symbol) for symbol in args.symbols], args)
+    scheme_contract = _scheme_semantic_contract(args)
     summary = {
         "labeled_csv": args.labeled_csv,
         "run_dir": str(run_dir),
         "rows_csv": str(rows_path),
         "portfolio_csv": str(portfolio_path),
         "elapsed_seconds": round(time.time() - started, 2),
+        "scheme_semantic_contract": scheme_contract,
+        "run_metrics": run_metrics,
+        "active_silo_sum_pct": run_metrics["active_silo_sum_pct"],
+        "calendar_normalized_return_pct": run_metrics["calendar_normalized_return_pct"],
+        "active_months": run_metrics["active_months"],
+        "empty_months": run_metrics["empty_months"],
+        "calendar_symbol_month_count": run_metrics["calendar_symbol_month_count"],
+        "baseline_comparison": run_metrics["baseline_comparison"],
         "config": vars(args),
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-    _write_markdown(rows, portfolio_rows, run_dir / "summary.md")
+    _write_markdown(rows, portfolio_rows, run_metrics, scheme_contract, run_dir / "summary.md")
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=str), flush=True)
 
 
