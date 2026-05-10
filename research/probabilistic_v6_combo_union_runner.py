@@ -20,9 +20,18 @@ import numpy as np
 import pandas as pd
 
 
-def _run(cmd: list[str]) -> None:
-    print(" ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+def _run(cmd: list[str], *, quiet: bool = False) -> None:
+    if not quiet:
+        print(" ".join(cmd), flush=True)
+        subprocess.run(cmd, check=True)
+        return
+    completed = subprocess.run(cmd, text=True, capture_output=True)
+    if completed.returncode != 0:
+        if completed.stdout:
+            print(completed.stdout, flush=True)
+        if completed.stderr:
+            print(completed.stderr, flush=True)
+        completed.check_returncode()
 
 
 def _load_json(path: Path) -> dict:
@@ -73,7 +82,93 @@ def _selected_rows(selection: dict, key: str) -> list[dict]:
     return rows
 
 
-def _load_selected_event_frame(row: dict) -> pd.DataFrame:
+def _clip01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _row_float(row: dict, key: str, default: float = 0.0) -> float:
+    raw = row.get(key, default)
+    if raw in (None, ""):
+        return float(default)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _validation_return_over_dd(row: dict) -> float:
+    if "validation_return_over_dd" in row:
+        return _row_float(row, "validation_return_over_dd")
+    validation_return = _row_float(row, "validation_topk_sized_return_pct")
+    validation_dd = abs(_row_float(row, "validation_topk_max_dd_pct"))
+    return validation_return / max(0.25, validation_dd)
+
+
+def _source_quality_scale(row: dict, args: argparse.Namespace) -> float:
+    edge_score = _clip01(_row_float(row, "validation_edge") / max(1e-9, float(args.sizing_edge_ref)))
+    return_score = _clip01(
+        _row_float(row, "validation_topk_sized_return_pct") / max(1e-9, float(args.sizing_return_ref))
+    )
+    return_dd_score = _clip01(_validation_return_over_dd(row) / max(1e-9, float(args.sizing_return_dd_ref)))
+    markov = _row_float(row, "validation_topk_sizing_markov_score_mean", 0.5)
+    if float(args.sizing_markov_high) <= float(args.sizing_markov_low):
+        markov_score = 1.0
+    else:
+        markov_score = _clip01(
+            (markov - float(args.sizing_markov_low))
+            / max(1e-9, float(args.sizing_markov_high) - float(args.sizing_markov_low))
+        )
+    score = (
+        float(args.sizing_edge_weight) * edge_score
+        + float(args.sizing_return_weight) * return_score
+        + float(args.sizing_return_dd_weight) * return_dd_score
+        + float(args.sizing_markov_weight) * markov_score
+    )
+    weight_sum = (
+        float(args.sizing_edge_weight)
+        + float(args.sizing_return_weight)
+        + float(args.sizing_return_dd_weight)
+        + float(args.sizing_markov_weight)
+    )
+    if weight_sum <= 0:
+        score = 1.0
+    else:
+        score /= weight_sum
+    return float(args.sizing_min_scale) + (
+        float(args.sizing_max_scale) - float(args.sizing_min_scale)
+    ) * _clip01(score)
+
+
+def _apply_sizing_transform(selected: pd.DataFrame, row: dict, args: argparse.Namespace) -> pd.DataFrame:
+    work = selected.copy()
+    if "model_notional_share" in work.columns:
+        share = pd.to_numeric(work["model_notional_share"], errors="coerce")
+    else:
+        share = pd.Series(np.nan, index=work.index)
+    share = share.fillna(float(args.notional_share))
+
+    source_scale = 1.0
+    if args.sizing_profile == "source_quality":
+        source_scale = _source_quality_scale(row, args)
+    if float(args.share_power) != 1.0:
+        share = share.clip(lower=1e-9).pow(float(args.share_power))
+    share = share * float(args.share_multiplier) * float(source_scale)
+    if float(args.share_cap) > 0.0:
+        share = share.clip(upper=float(args.share_cap))
+    if float(args.share_floor) > 0.0:
+        share = share.clip(lower=float(args.share_floor))
+    work["model_notional_share"] = share
+    work["source_sizing_profile"] = str(args.sizing_profile)
+    work["source_sizing_scale"] = float(source_scale)
+    work["source_validation_edge"] = _row_float(row, "validation_edge")
+    work["source_validation_topk_return_pct"] = _row_float(row, "validation_topk_sized_return_pct")
+    work["source_validation_return_over_dd"] = _validation_return_over_dd(row)
+    work["source_validation_topk_markov_score"] = _row_float(row, "validation_topk_sizing_markov_score_mean")
+    work["source_validation_topk_initial_sl_rate"] = _row_float(row, "validation_topk_initial_sl_rate")
+    return work
+
+
+def _load_selected_event_frame(row: dict, args: argparse.Namespace) -> pd.DataFrame:
     path = _source_event_csv(
         str(row["source_run"]),
         str(row["execute_month"]),
@@ -89,7 +184,7 @@ def _load_selected_event_frame(row: dict) -> pd.DataFrame:
     selected["source_run"] = str(row["source_run"])
     selected["source_top_k"] = int(row["top_k"])
     selected["source_realistic_return_pct"] = float(row.get("realistic_return_pct", 0.0))
-    return selected
+    return _apply_sizing_transform(selected, row, args)
 
 
 def _dedupe_events(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
@@ -146,18 +241,23 @@ def _write_markdown(summary: dict, path: Path) -> None:
         f"| Input Sleeve Rows | {summary['input_sleeve_rows']} |",
         f"| Union Groups | {summary['union_groups']} |",
         f"| Duplicate Events Removed | {summary['duplicate_events_removed']} |",
+        f"| Sizing Profile | `{summary['sizing_profile']}` |",
+        f"| Share Multiplier | {summary['share_multiplier']:.4f} |",
+        f"| Share Power | {summary['share_power']:.4f} |",
+        f"| Share Cap | {summary['share_cap']:.4f} |",
         "",
         "## Groups",
         "",
-        "| Month | Symbol | Sleeves | Input Events | Union Events | Dups | Trades | Return | Sources |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---|",
+        "| Month | Symbol | Sleeves | Input Events | Union Events | Dups | Trades | Return | Mean Share | Mean Scale | Sources |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in summary["group_rows"]:
         sources = ", ".join(row["sources"])
         lines.append(
             f"| `{row['execute_month']}` | `{row['symbol']}` | {row['sleeves']} | "
             f"{row['input_events']} | {row['union_events']} | {row['duplicate_events']} | "
-            f"{row['trades']} | {row['realistic_return_pct']:.4f}% | `{sources}` |"
+            f"{row['trades']} | {row['realistic_return_pct']:.4f}% | "
+            f"{row['mean_model_notional_share']:.4f} | {row['mean_source_sizing_scale']:.4f} | `{sources}` |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -179,6 +279,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-hold-hours", type=float, default=4.0)
     parser.add_argument("--initial-balance", type=float, default=100000.0)
     parser.add_argument("--notional-share", type=float, default=0.20)
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--sizing-profile", choices=["none", "source_quality"], default="none")
+    parser.add_argument("--share-multiplier", type=float, default=1.0)
+    parser.add_argument("--share-power", type=float, default=1.0)
+    parser.add_argument("--share-cap", type=float, default=0.0, help="0 disables upper cap")
+    parser.add_argument("--share-floor", type=float, default=0.0, help="0 disables lower floor")
+    parser.add_argument("--sizing-min-scale", type=float, default=0.50)
+    parser.add_argument("--sizing-max-scale", type=float, default=1.20)
+    parser.add_argument("--sizing-edge-ref", type=float, default=0.30)
+    parser.add_argument("--sizing-return-ref", type=float, default=3.0)
+    parser.add_argument("--sizing-return-dd-ref", type=float, default=6.0)
+    parser.add_argument("--sizing-markov-low", type=float, default=0.40)
+    parser.add_argument("--sizing-markov-high", type=float, default=0.90)
+    parser.add_argument("--sizing-edge-weight", type=float, default=0.25)
+    parser.add_argument("--sizing-return-weight", type=float, default=0.25)
+    parser.add_argument("--sizing-return-dd-weight", type=float, default=0.25)
+    parser.add_argument("--sizing-markov-weight", type=float, default=0.25)
     return parser.parse_args()
 
 
@@ -197,7 +314,7 @@ def main() -> None:
     group_rows = []
     duplicate_events_removed = 0
     for (execute_month, symbol), sleeve_rows in sorted(grouped.items()):
-        frames = [_load_selected_event_frame(row) for row in sleeve_rows]
+        frames = [_load_selected_event_frame(row, args) for row in sleeve_rows]
         combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         union_frame, dedupe_stats = _dedupe_events(combined)
         duplicate_events_removed += int(dedupe_stats["duplicate_rows"])
@@ -253,10 +370,20 @@ def main() -> None:
         if args.bars_cache_dir:
             cmd.extend(["--bars-cache-dir", args.bars_cache_dir])
         (group_dir / "union_rule.json").write_text(json.dumps({"selected_rule": {}}, indent=2), encoding="utf-8")
-        _run(cmd)
+        _run(cmd, quiet=bool(args.quiet))
         execution_summary = _load_json(summary_json)
         result = _first_result(execution_summary)
         sources = sorted({f"{row['source_run']}:top{int(row['top_k'])}" for row in sleeve_rows})
+        union_share = (
+            pd.to_numeric(union_frame.get("model_notional_share", pd.Series(dtype=float)), errors="coerce")
+            if not union_frame.empty
+            else pd.Series(dtype=float)
+        )
+        union_scale = (
+            pd.to_numeric(union_frame.get("source_sizing_scale", pd.Series(dtype=float)), errors="coerce")
+            if not union_frame.empty
+            else pd.Series(dtype=float)
+        )
         group_rows.append(
             {
                 "execute_month": execute_month,
@@ -271,6 +398,10 @@ def main() -> None:
                 "profit_factor": result.get("attribution", {}).get("profit_factor", 0.0),
                 "win_rate_pct": float(_summary_value(result, ["summary", "win_rate_pct"], 0.0)),
                 "max_dd_pct": float(_summary_value(result, ["summary", "max_dd_pct"], 0.0)),
+                "mean_model_notional_share": round(float(union_share.mean()), 6) if not union_share.empty else 0.0,
+                "min_model_notional_share": round(float(union_share.min()), 6) if not union_share.empty else 0.0,
+                "max_model_notional_share": round(float(union_share.max()), 6) if not union_share.empty else 0.0,
+                "mean_source_sizing_scale": round(float(union_scale.mean()), 6) if not union_scale.empty else 1.0,
                 "summary_json": str(summary_json),
             }
         )
@@ -292,6 +423,11 @@ def main() -> None:
         "worst_active_silo_pct": round(float(min(returns)), 6) if returns else 0.0,
         "best_active_silo_pct": round(float(max(returns)), 6) if returns else 0.0,
         "negative_active_silos": int(sum(1 for value in returns if value < 0.0)),
+        "sizing_profile": str(args.sizing_profile),
+        "share_multiplier": float(args.share_multiplier),
+        "share_power": float(args.share_power),
+        "share_cap": float(args.share_cap),
+        "share_floor": float(args.share_floor),
         "group_rows": group_rows,
         "config": vars(args),
     }
