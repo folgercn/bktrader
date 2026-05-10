@@ -1,0 +1,138 @@
+{
+  "config": "quality_edge_return_mult_1p20_cap_1p80",
+  "execute_month": "2026-02",
+  "symbol": "BTCUSDT",
+  "timeframe": "1h",
+  "window": {
+    "data_start": "2026-01-30T00:00:00+00:00",
+    "data_end": "2026-03-01T23:59:59+00:00",
+    "execute_start": "2026-02-01T00:00:00+00:00",
+    "execute_end": "2026-02-28T23:59:59+00:00"
+  },
+  "input_group": {
+    "execute_month": "2026-02",
+    "symbol": "BTCUSDT",
+    "sleeves": 3,
+    "sources": [
+      "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top10",
+      "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10",
+      "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top10"
+    ],
+    "input_events": 528,
+    "union_events": 383,
+    "duplicate_events": 145,
+    "trades": 15,
+    "realistic_return_pct": 4.8034,
+    "profit_factor": 2.625357,
+    "win_rate_pct": 73.33,
+    "max_dd_pct": -1.3185,
+    "mean_model_notional_share": 1.047291,
+    "min_model_notional_share": 0.403898,
+    "max_model_notional_share": 1.71223,
+    "mean_source_sizing_scale": 0.892876,
+    "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-02/BTCUSDT/execution_summary.json"
+  },
+  "gate_stats": {
+    "selected_events": 15,
+    "gate_keys": 15,
+    "mean_sizing_scale": 1.211847,
+    "min_sizing_scale": 0.636309,
+    "max_sizing_scale": 1.556099
+  },
+  "summary": {
+    "final_balance": 105198.81,
+    "return_pct": 5.2,
+    "max_dd_pct": -0.15,
+    "trades": 42,
+    "win_rate_pct": 83.33,
+    "sharpe": 19.95,
+    "first_entry": "2026-02-02T22:05:49+00:00",
+    "last_exit": "2026-02-28T13:50:04+00:00",
+    "entry_reasons": {
+      "SL-Reentry": 27,
+      "Zero-Initial-Reentry": 15
+    },
+    "exit_reasons": {
+      "SL": 42
+    },
+    "entry_types": {
+      "SHORT": 29,
+      "BUY": 13
+    },
+    "integrity": {
+      "rows": 84,
+      "entries": 42,
+      "exits": 42,
+      "zero_notional_entries": 0
+    }
+  },
+  "attribution": {
+    "original_t2": {
+      "trades": 42,
+      "win_rate_pct": 88.1,
+      "avg_pnl_pct": 0.8483,
+      "median_pnl_pct": 0.7857,
+      "pnl_std_pct": 0.6671,
+      "worst_pnl_pct": -0.0933,
+      "net_pnl_value": 6872.96,
+      "max_pnl_drawdown": -34.55,
+      "profit_factor": 85.2603,
+      "entry_types": {
+        "SHORT": 29,
+        "BUY": 13
+      },
+      "entry_reasons": {
+        "SL-Reentry": 27,
+        "Zero-Initial-Reentry": 15
+      },
+      "exit_reasons": {
+        "SL": 42
+      }
+    }
+  },
+  "diagnostics": {
+    "breakout_locks": {
+      "long": {
+        "original_t2": 5
+      },
+      "short": {
+        "original_t2": 10
+      }
+    },
+    "t3_cooldown_skips": {
+      "long": 0,
+      "short": 0
+    },
+    "t3_quality_rejects": {
+      "long": {},
+      "short": {}
+    },
+    "probability_gate": {
+      "allowed": {
+        "long": 5,
+        "short": 10
+      },
+      "rejected": {
+        "long": 78,
+        "short": 84
+      },
+      "reject_reasons": {
+        "long": {
+          "not_selected": 78
+        },
+        "short": {
+          "not_selected": 84
+        }
+      }
+    }
+  },
+  "build_stats": {
+    "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20260130T000000_20260301T235959_plain_1s.pkl",
+    "cache_hit": true,
+    "continuous_second_rows": 2678400,
+    "first_second": "2026-01-30T00:00:00+00:00",
+    "last_second": "2026-03-01T23:59:59+00:00"
+  },
+  "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-02/BTCUSDT/lifecycle_ledger.csv",
+  "elapsed_seconds": 57.63
+}

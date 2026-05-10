@@ -1,0 +1,2818 @@
+{
+  "source_sizing_run_dir": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001",
+  "output_dir": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001",
+  "elapsed_seconds": 1244.14,
+  "config": {
+    "source_sizing_run_dir": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001",
+    "configs": [
+      "power0_fixed_1p30",
+      "quality_edge_return_mult_1p20_cap_1p80"
+    ],
+    "output_dir": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "months": [],
+    "max_groups": 0,
+    "signal_timeframe": "1h",
+    "breakout_shape": "original_t2",
+    "replay_mode": "live_intrabar_sma5",
+    "zero_initial_reentry_anchor_mode": "rolling",
+    "reentry_trigger_observation_mode": "bar_extrema",
+    "reentry_max_deviation_bps": -1.0,
+    "reentry_fill_price_mode": "planned",
+    "warmup_days": 2,
+    "tail_days": 1,
+    "archive_root": "dataset/archive",
+    "chunksize": 5000000,
+    "bars_cache_dir": "research/probabilistic_v6_runs/lifecycle_bars_cache",
+    "source_bars_cache_dirs": [
+      "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache",
+      "research/probabilistic_v6_runs/2025_m03_m06_original_t2_delay60/bars_cache",
+      "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache",
+      "research/probabilistic_v6_runs/2026_jan_mar_baseline_plus_t3_delay60/bars_cache",
+      "research/probabilistic_v6_runs/2026_04_original_t2_delay60_fresh/bars_cache"
+    ],
+    "initial_balance": 100000.0,
+    "default_sizing_scale": 1.0,
+    "sizing_scale_cap": 1.8,
+    "sizing_scale_floor": 0.0
+  },
+  "configs": [
+    {
+      "config": "power0_fixed_1p30",
+      "source_summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/summary.json",
+      "metrics": {
+        "active_silo_sum_pct": 33.02,
+        "one_shot_active_silo_sum_pct": 13.4179,
+        "active_months": 9,
+        "active_silos": 10,
+        "trade_count": 310,
+        "worst_active_silo_pct": -0.4,
+        "best_active_silo_pct": 8.12,
+        "negative_active_silos": 1
+      },
+      "results": [
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2025-06",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-05-30T00:00:00+00:00",
+            "data_end": "2025-07-01T23:59:59+00:00",
+            "execute_start": "2025-06-01T00:00:00+00:00",
+            "execute_end": "2025-06-30T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-06",
+            "symbol": "ETHUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+            ],
+            "input_events": 70,
+            "union_events": 70,
+            "duplicate_events": 0,
+            "trades": 3,
+            "realistic_return_pct": 0.1525,
+            "profit_factor": 1.158105,
+            "win_rate_pct": 66.67,
+            "max_dd_pct": -1.0186,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2025-06/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 3,
+            "gate_keys": 3,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 100841.37,
+            "return_pct": 0.84,
+            "max_dd_pct": -0.03,
+            "trades": 6,
+            "win_rate_pct": 100.0,
+            "sharpe": 75.63,
+            "first_entry": "2025-06-01T12:33:51+00:00",
+            "last_exit": "2025-06-23T13:35:20+00:00",
+            "entry_reasons": {
+              "Zero-Initial-Reentry": 3,
+              "SL-Reentry": 3
+            },
+            "exit_reasons": {
+              "SL": 6
+            },
+            "entry_types": {
+              "SHORT": 6
+            },
+            "integrity": {
+              "rows": 12,
+              "entries": 6,
+              "exits": 6,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 6,
+              "win_rate_pct": 100.0,
+              "avg_pnl_pct": 0.8827,
+              "median_pnl_pct": 0.8657,
+              "pnl_std_pct": 0.1691,
+              "worst_pnl_pct": 0.61,
+              "net_pnl_value": 1076.15,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": null,
+              "entry_types": {
+                "SHORT": 6
+              },
+              "entry_reasons": {
+                "Zero-Initial-Reentry": 3,
+                "SL-Reentry": 3
+              },
+              "exit_reasons": {
+                "SL": 6
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {},
+              "short": {
+                "original_t2": 3
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 0,
+                "short": 3
+              },
+              "rejected": {
+                "long": 90,
+                "short": 89
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 90
+                },
+                "short": {
+                  "not_selected": 89
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20250530T000000_20250701T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2851200,
+            "first_second": "2025-05-30T00:00:00+00:00",
+            "last_second": "2025-07-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2025-06/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 61.3
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2025-07",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-06-29T00:00:00+00:00",
+            "data_end": "2025-08-01T23:59:59+00:00",
+            "execute_start": "2025-07-01T00:00:00+00:00",
+            "execute_end": "2025-07-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-07",
+            "symbol": "BTCUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top20"
+            ],
+            "input_events": 221,
+            "union_events": 221,
+            "duplicate_events": 0,
+            "trades": 18,
+            "realistic_return_pct": -0.1311,
+            "profit_factor": 0.967357,
+            "win_rate_pct": 55.56,
+            "max_dd_pct": -2.1504,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2025-07/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 19,
+            "gate_keys": 19,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 102359.89,
+            "return_pct": 2.36,
+            "max_dd_pct": -0.24,
+            "trades": 62,
+            "win_rate_pct": 74.19,
+            "sharpe": 16.14,
+            "first_entry": "2025-07-02T01:16:49+00:00",
+            "last_exit": "2025-07-30T14:29:00+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 44,
+              "Zero-Initial-Reentry": 18
+            },
+            "exit_reasons": {
+              "SL": 62
+            },
+            "entry_types": {
+              "BUY": 47,
+              "SHORT": 15
+            },
+            "integrity": {
+              "rows": 124,
+              "entries": 62,
+              "exits": 62,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 62,
+              "win_rate_pct": 83.87,
+              "avg_pnl_pct": 0.3904,
+              "median_pnl_pct": 0.2758,
+              "pnl_std_pct": 0.3808,
+              "worst_pnl_pct": -0.0915,
+              "net_pnl_value": 4884.94,
+              "max_pnl_drawdown": -36.24,
+              "profit_factor": 36.5531,
+              "entry_types": {
+                "BUY": 47,
+                "SHORT": 15
+              },
+              "entry_reasons": {
+                "SL-Reentry": 44,
+                "Zero-Initial-Reentry": 18
+              },
+              "exit_reasons": {
+                "SL": 62
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 13
+              },
+              "short": {
+                "original_t2": 5
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 13,
+                "short": 5
+              },
+              "rejected": {
+                "long": 86,
+                "short": 76
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 86
+                },
+                "short": {
+                  "not_selected": 76
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "source_cache_hit": true,
+            "source_cache_paths": [
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/BTCUSDT_20250601T000000_20250630T235959_flow_1s.pkl",
+              "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache/BTCUSDT_20250701T000000_20250930T235959_flow_1s.pkl"
+            ],
+            "continuous_second_rows": 2937600,
+            "first_second": "2025-06-29T00:00:00+00:00",
+            "last_second": "2025-08-01T23:59:59+00:00",
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20250629T000000_20250801T235959_plain_1s.pkl",
+            "cache_hit": false
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2025-07/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 64.74
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2025-08",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-07-30T00:00:00+00:00",
+            "data_end": "2025-09-01T23:59:59+00:00",
+            "execute_start": "2025-08-01T00:00:00+00:00",
+            "execute_end": "2025-08-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-08",
+            "symbol": "BTCUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5"
+            ],
+            "input_events": 175,
+            "union_events": 175,
+            "duplicate_events": 0,
+            "trades": 5,
+            "realistic_return_pct": -1.6084,
+            "profit_factor": 0.093629,
+            "win_rate_pct": 40.0,
+            "max_dd_pct": -1.7469,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2025-08/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 5,
+            "gate_keys": 5,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 99597.68,
+            "return_pct": -0.4,
+            "max_dd_pct": -0.42,
+            "trades": 18,
+            "win_rate_pct": 38.89,
+            "sharpe": 8.12,
+            "first_entry": "2025-08-03T07:04:45+00:00",
+            "last_exit": "2025-08-26T08:54:18+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 13,
+              "Zero-Initial-Reentry": 5
+            },
+            "exit_reasons": {
+              "SL": 18
+            },
+            "entry_types": {
+              "BUY": 14,
+              "SHORT": 4
+            },
+            "integrity": {
+              "rows": 36,
+              "entries": 18,
+              "exits": 18,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 18,
+              "win_rate_pct": 61.11,
+              "avg_pnl_pct": 0.0913,
+              "median_pnl_pct": 0.0621,
+              "pnl_std_pct": 0.1736,
+              "worst_pnl_pct": -0.0729,
+              "net_pnl_value": 323.89,
+              "max_pnl_drawdown": -27.52,
+              "profit_factor": 4.2736,
+              "entry_types": {
+                "BUY": 14,
+                "SHORT": 4
+              },
+              "entry_reasons": {
+                "SL-Reentry": 13,
+                "Zero-Initial-Reentry": 5
+              },
+              "exit_reasons": {
+                "SL": 18
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 4
+              },
+              "short": {
+                "original_t2": 1
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 4,
+                "short": 1
+              },
+              "rejected": {
+                "long": 80,
+                "short": 95
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 80
+                },
+                "short": {
+                  "not_selected": 95
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "source_cache_hit": true,
+            "source_cache_paths": [
+              "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache/BTCUSDT_20250701T000000_20250930T235959_flow_1s.pkl"
+            ],
+            "continuous_second_rows": 2937600,
+            "first_second": "2025-07-30T00:00:00+00:00",
+            "last_second": "2025-09-01T23:59:59+00:00",
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20250730T000000_20250901T235959_plain_1s.pkl",
+            "cache_hit": false
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2025-08/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 64.35
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2025-09",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-08-30T00:00:00+00:00",
+            "data_end": "2025-10-01T23:59:59+00:00",
+            "execute_start": "2025-09-01T00:00:00+00:00",
+            "execute_end": "2025-09-30T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-09",
+            "symbol": "ETHUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+            ],
+            "input_events": 85,
+            "union_events": 85,
+            "duplicate_events": 0,
+            "trades": 5,
+            "realistic_return_pct": 0.4392,
+            "profit_factor": 1.909012,
+            "win_rate_pct": 80.0,
+            "max_dd_pct": -0.4849,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2025-09/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 5,
+            "gate_keys": 5,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 100725.46,
+            "return_pct": 0.73,
+            "max_dd_pct": -0.04,
+            "trades": 11,
+            "win_rate_pct": 100.0,
+            "sharpe": 17.46,
+            "first_entry": "2025-09-07T12:15:35+00:00",
+            "last_exit": "2025-09-30T23:57:02+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 6,
+              "Zero-Initial-Reentry": 5
+            },
+            "exit_reasons": {
+              "SL": 11
+            },
+            "entry_types": {
+              "SHORT": 11
+            },
+            "integrity": {
+              "rows": 22,
+              "entries": 11,
+              "exits": 11,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 11,
+              "win_rate_pct": 100.0,
+              "avg_pnl_pct": 0.4849,
+              "median_pnl_pct": 0.3312,
+              "pnl_std_pct": 0.4203,
+              "worst_pnl_pct": 0.1014,
+              "net_pnl_value": 1168.13,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": null,
+              "entry_types": {
+                "SHORT": 11
+              },
+              "entry_reasons": {
+                "SL-Reentry": 6,
+                "Zero-Initial-Reentry": 5
+              },
+              "exit_reasons": {
+                "SL": 11
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {},
+              "short": {
+                "original_t2": 5
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 0,
+                "short": 5
+              },
+              "rejected": {
+                "long": 105,
+                "short": 93
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 105
+                },
+                "short": {
+                  "not_selected": 93
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "source_cache_hit": true,
+            "source_cache_paths": [
+              "research/probabilistic_v6_runs/2025_q3_original_t2/bars_cache/ETHUSDT_20250701T000000_20251001T033353_flow_1s.pkl",
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/ETHUSDT_20251001T000000_20251031T235959_flow_1s.pkl"
+            ],
+            "continuous_second_rows": 2851200,
+            "first_second": "2025-08-30T00:00:00+00:00",
+            "last_second": "2025-10-01T23:59:59+00:00",
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20250830T000000_20251001T235959_plain_1s.pkl",
+            "cache_hit": false
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2025-09/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 68.14
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2025-11",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-10-30T00:00:00+00:00",
+            "data_end": "2025-12-01T23:59:59+00:00",
+            "execute_start": "2025-11-01T00:00:00+00:00",
+            "execute_end": "2025-11-30T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-11",
+            "symbol": "BTCUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top15"
+            ],
+            "input_events": 113,
+            "union_events": 113,
+            "duplicate_events": 0,
+            "trades": 6,
+            "realistic_return_pct": 0.425,
+            "profit_factor": 1.349029,
+            "win_rate_pct": 66.67,
+            "max_dd_pct": -0.6903,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2025-11/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 6,
+            "gate_keys": 6,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 102160.56,
+            "return_pct": 2.16,
+            "max_dd_pct": -0.07,
+            "trades": 12,
+            "win_rate_pct": 91.67,
+            "sharpe": 20.39,
+            "first_entry": "2025-11-01T00:02:53+00:00",
+            "last_exit": "2025-11-28T16:35:35+00:00",
+            "entry_reasons": {
+              "Zero-Initial-Reentry": 6,
+              "SL-Reentry": 6
+            },
+            "exit_reasons": {
+              "SL": 12
+            },
+            "entry_types": {
+              "SHORT": 12
+            },
+            "integrity": {
+              "rows": 24,
+              "entries": 12,
+              "exits": 12,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 12,
+              "win_rate_pct": 91.67,
+              "avg_pnl_pct": 1.042,
+              "median_pnl_pct": 0.8688,
+              "pnl_std_pct": 0.7767,
+              "worst_pnl_pct": -0.0856,
+              "net_pnl_value": 2658.55,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": 120.4807,
+              "entry_types": {
+                "SHORT": 12
+              },
+              "entry_reasons": {
+                "Zero-Initial-Reentry": 6,
+                "SL-Reentry": 6
+              },
+              "exit_reasons": {
+                "SL": 12
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {},
+              "short": {
+                "original_t2": 6
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 0,
+                "short": 6
+              },
+              "rejected": {
+                "long": 102,
+                "short": 95
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 102
+                },
+                "short": {
+                  "not_selected": 95
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "source_cache_hit": true,
+            "source_cache_paths": [
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/BTCUSDT_20251001T000000_20251031T235959_flow_1s.pkl",
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/BTCUSDT_20251101T000000_20251130T235959_flow_1s.pkl",
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/BTCUSDT_20251201T000000_20251231T235959_flow_1s.pkl"
+            ],
+            "continuous_second_rows": 2851200,
+            "first_second": "2025-10-30T00:00:00+00:00",
+            "last_second": "2025-12-01T23:59:59+00:00",
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20251030T000000_20251201T235959_plain_1s.pkl",
+            "cache_hit": false
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2025-11/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 62.44
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2025-12",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-11-29T00:00:00+00:00",
+            "data_end": "2026-01-01T23:59:59+00:00",
+            "execute_start": "2025-12-01T00:00:00+00:00",
+            "execute_end": "2025-12-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-12",
+            "symbol": "ETHUSDT",
+            "sleeves": 2,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top20",
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+            ],
+            "input_events": 241,
+            "union_events": 210,
+            "duplicate_events": 31,
+            "trades": 24,
+            "realistic_return_pct": 1.0727,
+            "profit_factor": 1.201761,
+            "win_rate_pct": 62.5,
+            "max_dd_pct": -3.3082,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2025-12/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 25,
+            "gate_keys": 25,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 107905.74,
+            "return_pct": 7.91,
+            "max_dd_pct": -0.24,
+            "trades": 60,
+            "win_rate_pct": 86.67,
+            "sharpe": 12.88,
+            "first_entry": "2025-12-03T14:02:01+00:00",
+            "last_exit": "2025-12-31T14:09:17+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 35,
+              "Zero-Initial-Reentry": 25
+            },
+            "exit_reasons": {
+              "SL": 60
+            },
+            "entry_types": {
+              "SHORT": 39,
+              "BUY": 21
+            },
+            "integrity": {
+              "rows": 120,
+              "entries": 60,
+              "exits": 60,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 60,
+              "win_rate_pct": 90.0,
+              "avg_pnl_pct": 0.8444,
+              "median_pnl_pct": 0.5145,
+              "pnl_std_pct": 1.0317,
+              "worst_pnl_pct": -0.1075,
+              "net_pnl_value": 10388.47,
+              "max_pnl_drawdown": -43.6,
+              "profit_factor": 93.7258,
+              "entry_types": {
+                "SHORT": 39,
+                "BUY": 21
+              },
+              "entry_reasons": {
+                "SL-Reentry": 35,
+                "Zero-Initial-Reentry": 25
+              },
+              "exit_reasons": {
+                "SL": 60
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 9
+              },
+              "short": {
+                "original_t2": 16
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 9,
+                "short": 16
+              },
+              "rejected": {
+                "long": 87,
+                "short": 73
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 87
+                },
+                "short": {
+                  "not_selected": 73
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "source_cache_hit": true,
+            "source_cache_paths": [
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/ETHUSDT_20251101T000000_20251130T235959_flow_1s.pkl",
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/ETHUSDT_20251201T000000_20251231T235959_flow_1s.pkl",
+              "research/probabilistic_v6_runs/2026_jan_mar_baseline_plus_t3_delay60/bars_cache/ETHUSDT_20260101T000000_20260331T235959_flow_1s.pkl"
+            ],
+            "continuous_second_rows": 2937600,
+            "first_second": "2025-11-29T00:00:00+00:00",
+            "last_second": "2026-01-01T23:59:59+00:00",
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20251129T000000_20260101T235959_plain_1s.pkl",
+            "cache_hit": false
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2025-12/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 64.06
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2026-01",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-12-30T00:00:00+00:00",
+            "data_end": "2026-02-01T23:59:59+00:00",
+            "execute_start": "2026-01-01T00:00:00+00:00",
+            "execute_end": "2026-01-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2026-01",
+            "symbol": "BTCUSDT",
+            "sleeves": 2,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top10",
+              "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top20"
+            ],
+            "input_events": 379,
+            "union_events": 291,
+            "duplicate_events": 88,
+            "trades": 16,
+            "realistic_return_pct": 0.6825,
+            "profit_factor": 1.420649,
+            "win_rate_pct": 75.0,
+            "max_dd_pct": -1.2595,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2026-01/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 17,
+            "gate_keys": 17,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 101446.99,
+            "return_pct": 1.45,
+            "max_dd_pct": -0.59,
+            "trades": 45,
+            "win_rate_pct": 75.56,
+            "sharpe": 13.35,
+            "first_entry": "2026-01-01T17:20:46+00:00",
+            "last_exit": "2026-01-27T09:46:45+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 29,
+              "Zero-Initial-Reentry": 16
+            },
+            "exit_reasons": {
+              "SL": 45
+            },
+            "entry_types": {
+              "SHORT": 26,
+              "BUY": 19
+            },
+            "integrity": {
+              "rows": 90,
+              "entries": 45,
+              "exits": 45,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 45,
+              "win_rate_pct": 80.0,
+              "avg_pnl_pct": 0.3592,
+              "median_pnl_pct": 0.1999,
+              "pnl_std_pct": 0.4223,
+              "worst_pnl_pct": -0.0831,
+              "net_pnl_value": 3279.17,
+              "max_pnl_drawdown": -53.42,
+              "profit_factor": 25.887,
+              "entry_types": {
+                "SHORT": 26,
+                "BUY": 19
+              },
+              "entry_reasons": {
+                "SL-Reentry": 29,
+                "Zero-Initial-Reentry": 16
+              },
+              "exit_reasons": {
+                "SL": 45
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 6
+              },
+              "short": {
+                "original_t2": 10
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 6,
+                "short": 10
+              },
+              "rejected": {
+                "long": 87,
+                "short": 81
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 87
+                },
+                "short": {
+                  "not_selected": 81
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "source_cache_hit": true,
+            "source_cache_paths": [
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/BTCUSDT_20251201T000000_20251231T235959_flow_1s.pkl",
+              "research/probabilistic_v6_runs/2026_jan_mar_baseline_plus_t3_delay60/bars_cache/BTCUSDT_20260101T000000_20260331T235959_flow_1s.pkl"
+            ],
+            "continuous_second_rows": 2937600,
+            "first_second": "2025-12-30T00:00:00+00:00",
+            "last_second": "2026-02-01T23:59:59+00:00",
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20251230T000000_20260201T235959_plain_1s.pkl",
+            "cache_hit": false
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2026-01/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 64.06
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2026-02",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2026-01-30T00:00:00+00:00",
+            "data_end": "2026-03-01T23:59:59+00:00",
+            "execute_start": "2026-02-01T00:00:00+00:00",
+            "execute_end": "2026-02-28T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2026-02",
+            "symbol": "BTCUSDT",
+            "sleeves": 3,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top10",
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10",
+              "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top10"
+            ],
+            "input_events": 528,
+            "union_events": 383,
+            "duplicate_events": 145,
+            "trades": 15,
+            "realistic_return_pct": 4.8933,
+            "profit_factor": 2.543889,
+            "win_rate_pct": 73.33,
+            "max_dd_pct": -1.3289,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2026-02/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 15,
+            "gate_keys": 15,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 105581.56,
+            "return_pct": 5.58,
+            "max_dd_pct": -0.15,
+            "trades": 42,
+            "win_rate_pct": 83.33,
+            "sharpe": 19.95,
+            "first_entry": "2026-02-02T22:05:49+00:00",
+            "last_exit": "2026-02-28T13:50:04+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 27,
+              "Zero-Initial-Reentry": 15
+            },
+            "exit_reasons": {
+              "SL": 42
+            },
+            "entry_types": {
+              "SHORT": 29,
+              "BUY": 13
+            },
+            "integrity": {
+              "rows": 84,
+              "entries": 42,
+              "exits": 42,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 42,
+              "win_rate_pct": 88.1,
+              "avg_pnl_pct": 0.8483,
+              "median_pnl_pct": 0.7857,
+              "pnl_std_pct": 0.6671,
+              "worst_pnl_pct": -0.0933,
+              "net_pnl_value": 7341.5,
+              "max_pnl_drawdown": -36.36,
+              "profit_factor": 93.8695,
+              "entry_types": {
+                "SHORT": 29,
+                "BUY": 13
+              },
+              "entry_reasons": {
+                "SL-Reentry": 27,
+                "Zero-Initial-Reentry": 15
+              },
+              "exit_reasons": {
+                "SL": 42
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 5
+              },
+              "short": {
+                "original_t2": 10
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 5,
+                "short": 10
+              },
+              "rejected": {
+                "long": 78,
+                "short": 84
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 78
+                },
+                "short": {
+                  "not_selected": 84
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20260130T000000_20260301T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2678400,
+            "first_second": "2026-01-30T00:00:00+00:00",
+            "last_second": "2026-03-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2026-02/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 57.61
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2026-02",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2026-01-30T00:00:00+00:00",
+            "data_end": "2026-03-01T23:59:59+00:00",
+            "execute_start": "2026-02-01T00:00:00+00:00",
+            "execute_end": "2026-02-28T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2026-02",
+            "symbol": "ETHUSDT",
+            "sleeves": 2,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5",
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+            ],
+            "input_events": 313,
+            "union_events": 268,
+            "duplicate_events": 45,
+            "trades": 12,
+            "realistic_return_pct": 2.0029,
+            "profit_factor": 1.357967,
+            "win_rate_pct": 58.33,
+            "max_dd_pct": -4.5114,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2026-02/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 12,
+            "gate_keys": 12,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 108118.83,
+            "return_pct": 8.12,
+            "max_dd_pct": -0.03,
+            "trades": 30,
+            "win_rate_pct": 100.0,
+            "sharpe": 26.26,
+            "first_entry": "2026-02-01T23:05:48+00:00",
+            "last_exit": "2026-02-27T16:06:52+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 18,
+              "Zero-Initial-Reentry": 12
+            },
+            "exit_reasons": {
+              "SL": 30
+            },
+            "entry_types": {
+              "SHORT": 30
+            },
+            "integrity": {
+              "rows": 60,
+              "entries": 30,
+              "exits": 30,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 30,
+              "win_rate_pct": 100.0,
+              "avg_pnl_pct": 1.5601,
+              "median_pnl_pct": 1.3249,
+              "pnl_std_pct": 0.9273,
+              "worst_pnl_pct": 0.3707,
+              "net_pnl_value": 9338.89,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": null,
+              "entry_types": {
+                "SHORT": 30
+              },
+              "entry_reasons": {
+                "SL-Reentry": 18,
+                "Zero-Initial-Reentry": 12
+              },
+              "exit_reasons": {
+                "SL": 30
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {},
+              "short": {
+                "original_t2": 12
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 0,
+                "short": 12
+              },
+              "rejected": {
+                "long": 80,
+                "short": 74
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 80
+                },
+                "short": {
+                  "not_selected": 74
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "source_cache_hit": true,
+            "source_cache_paths": [
+              "research/probabilistic_v6_runs/2026_jan_mar_baseline_plus_t3_delay60/bars_cache/ETHUSDT_20260101T000000_20260331T235959_flow_1s.pkl"
+            ],
+            "continuous_second_rows": 2678400,
+            "first_second": "2026-01-30T00:00:00+00:00",
+            "last_second": "2026-03-01T23:59:59+00:00",
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20260130T000000_20260301T235959_plain_1s.pkl",
+            "cache_hit": false
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2026-02/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 58.35
+        },
+        {
+          "config": "power0_fixed_1p30",
+          "execute_month": "2026-03",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2026-02-27T00:00:00+00:00",
+            "data_end": "2026-04-01T23:59:59+00:00",
+            "execute_start": "2026-03-01T00:00:00+00:00",
+            "execute_end": "2026-03-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2026-03",
+            "symbol": "ETHUSDT",
+            "sleeves": 3,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5",
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10",
+              "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top10"
+            ],
+            "input_events": 430,
+            "union_events": 292,
+            "duplicate_events": 138,
+            "trades": 11,
+            "realistic_return_pct": 5.4893,
+            "profit_factor": 6.750394,
+            "win_rate_pct": 90.91,
+            "max_dd_pct": -0.9346,
+            "mean_model_notional_share": 1.3,
+            "min_model_notional_share": 1.3,
+            "max_model_notional_share": 1.3,
+            "mean_source_sizing_scale": 1.0,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/power0_fixed_1p30/execute_2026-03/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 11,
+            "gate_keys": 11,
+            "mean_sizing_scale": 1.3,
+            "min_sizing_scale": 1.3,
+            "max_sizing_scale": 1.3
+          },
+          "summary": {
+            "final_balance": 104267.14,
+            "return_pct": 4.27,
+            "max_dd_pct": -0.03,
+            "trades": 24,
+            "win_rate_pct": 100.0,
+            "sharpe": 25.08,
+            "first_entry": "2026-03-09T03:01:39+00:00",
+            "last_exit": "2026-03-27T10:37:56+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 13,
+              "Zero-Initial-Reentry": 11
+            },
+            "exit_reasons": {
+              "SL": 24
+            },
+            "entry_types": {
+              "SHORT": 14,
+              "BUY": 10
+            },
+            "integrity": {
+              "rows": 48,
+              "entries": 24,
+              "exits": 24,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 24,
+              "win_rate_pct": 100.0,
+              "avg_pnl_pct": 1.1111,
+              "median_pnl_pct": 0.8803,
+              "pnl_std_pct": 0.6885,
+              "worst_pnl_pct": 0.218,
+              "net_pnl_value": 5220.41,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": null,
+              "entry_types": {
+                "SHORT": 14,
+                "BUY": 10
+              },
+              "entry_reasons": {
+                "SL-Reentry": 13,
+                "Zero-Initial-Reentry": 11
+              },
+              "exit_reasons": {
+                "SL": 24
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 5
+              },
+              "short": {
+                "original_t2": 6
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 5,
+                "short": 6
+              },
+              "rejected": {
+                "long": 82,
+                "short": 71
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 82
+                },
+                "short": {
+                  "not_selected": 71
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "source_cache_hit": true,
+            "source_cache_paths": [
+              "research/probabilistic_v6_runs/2026_jan_mar_baseline_plus_t3_delay60/bars_cache/ETHUSDT_20260101T000000_20260331T235959_flow_1s.pkl",
+              "research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache/ETHUSDT_20260401T000000_20260430T235959_flow_1s.pkl"
+            ],
+            "continuous_second_rows": 2937600,
+            "first_second": "2026-02-27T00:00:00+00:00",
+            "last_second": "2026-04-01T23:59:59+00:00",
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20260227T000000_20260401T235959_plain_1s.pkl",
+            "cache_hit": false
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/power0_fixed_1p30/execute_2026-03/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 64.0
+        }
+      ]
+    },
+    {
+      "config": "quality_edge_return_mult_1p20_cap_1p80",
+      "source_summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/summary.json",
+      "metrics": {
+        "active_silo_sum_pct": 33.41,
+        "one_shot_active_silo_sum_pct": 12.8486,
+        "active_months": 9,
+        "active_silos": 10,
+        "trade_count": 310,
+        "worst_active_silo_pct": -0.44,
+        "best_active_silo_pct": 8.98,
+        "negative_active_silos": 1
+      },
+      "results": [
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2025-06",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-05-30T00:00:00+00:00",
+            "data_end": "2025-07-01T23:59:59+00:00",
+            "execute_start": "2025-06-01T00:00:00+00:00",
+            "execute_end": "2025-06-30T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-06",
+            "symbol": "ETHUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+            ],
+            "input_events": 70,
+            "union_events": 70,
+            "duplicate_events": 0,
+            "trades": 3,
+            "realistic_return_pct": 0.1004,
+            "profit_factor": 1.169504,
+            "win_rate_pct": 66.67,
+            "max_dd_pct": -0.6109,
+            "mean_model_notional_share": 0.809909,
+            "min_model_notional_share": 0.56998,
+            "max_model_notional_share": 1.190869,
+            "mean_source_sizing_scale": 0.765374,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-06/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 3,
+            "gate_keys": 3,
+            "mean_sizing_scale": 0.793373,
+            "min_sizing_scale": 0.636093,
+            "max_sizing_scale": 0.964378
+          },
+          "summary": {
+            "final_balance": 100501.16,
+            "return_pct": 0.5,
+            "max_dd_pct": -0.02,
+            "trades": 6,
+            "win_rate_pct": 100.0,
+            "sharpe": 75.63,
+            "first_entry": "2025-06-01T12:33:51+00:00",
+            "last_exit": "2025-06-23T13:35:20+00:00",
+            "entry_reasons": {
+              "Zero-Initial-Reentry": 3,
+              "SL-Reentry": 3
+            },
+            "exit_reasons": {
+              "SL": 6
+            },
+            "entry_types": {
+              "SHORT": 6
+            },
+            "integrity": {
+              "rows": 12,
+              "entries": 6,
+              "exits": 6,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 6,
+              "win_rate_pct": 100.0,
+              "avg_pnl_pct": 0.8827,
+              "median_pnl_pct": 0.8657,
+              "pnl_std_pct": 0.1691,
+              "worst_pnl_pct": 0.61,
+              "net_pnl_value": 644.25,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": null,
+              "entry_types": {
+                "SHORT": 6
+              },
+              "entry_reasons": {
+                "Zero-Initial-Reentry": 3,
+                "SL-Reentry": 3
+              },
+              "exit_reasons": {
+                "SL": 6
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {},
+              "short": {
+                "original_t2": 3
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 0,
+                "short": 3
+              },
+              "rejected": {
+                "long": 90,
+                "short": 89
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 90
+                },
+                "short": {
+                  "not_selected": 89
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20250530T000000_20250701T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2851200,
+            "first_second": "2025-05-30T00:00:00+00:00",
+            "last_second": "2025-07-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-06/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 61.16
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2025-07",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-06-29T00:00:00+00:00",
+            "data_end": "2025-08-01T23:59:59+00:00",
+            "execute_start": "2025-07-01T00:00:00+00:00",
+            "execute_end": "2025-07-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-07",
+            "symbol": "BTCUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top20"
+            ],
+            "input_events": 221,
+            "union_events": 221,
+            "duplicate_events": 0,
+            "trades": 18,
+            "realistic_return_pct": -0.8554,
+            "profit_factor": 0.794206,
+            "win_rate_pct": 55.56,
+            "max_dd_pct": -2.7202,
+            "mean_model_notional_share": 1.222825,
+            "min_model_notional_share": 0.608863,
+            "max_model_notional_share": 1.756249,
+            "mean_source_sizing_scale": 0.98058,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-07/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 19,
+            "gate_keys": 19,
+            "mean_sizing_scale": 1.323754,
+            "min_sizing_scale": 0.696416,
+            "max_sizing_scale": 1.707759
+          },
+          "summary": {
+            "final_balance": 102456.83,
+            "return_pct": 2.46,
+            "max_dd_pct": -0.24,
+            "trades": 62,
+            "win_rate_pct": 74.19,
+            "sharpe": 16.14,
+            "first_entry": "2025-07-02T01:16:49+00:00",
+            "last_exit": "2025-07-30T14:29:00+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 44,
+              "Zero-Initial-Reentry": 18
+            },
+            "exit_reasons": {
+              "SL": 62
+            },
+            "entry_types": {
+              "BUY": 47,
+              "SHORT": 15
+            },
+            "integrity": {
+              "rows": 124,
+              "entries": 62,
+              "exits": 62,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 62,
+              "win_rate_pct": 83.87,
+              "avg_pnl_pct": 0.3904,
+              "median_pnl_pct": 0.2758,
+              "pnl_std_pct": 0.3808,
+              "worst_pnl_pct": -0.0915,
+              "net_pnl_value": 5065.47,
+              "max_pnl_drawdown": -38.79,
+              "profit_factor": 36.8115,
+              "entry_types": {
+                "BUY": 47,
+                "SHORT": 15
+              },
+              "entry_reasons": {
+                "SL-Reentry": 44,
+                "Zero-Initial-Reentry": 18
+              },
+              "exit_reasons": {
+                "SL": 62
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 13
+              },
+              "short": {
+                "original_t2": 5
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 13,
+                "short": 5
+              },
+              "rejected": {
+                "long": 86,
+                "short": 76
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 86
+                },
+                "short": {
+                  "not_selected": 76
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20250629T000000_20250801T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2937600,
+            "first_second": "2025-06-29T00:00:00+00:00",
+            "last_second": "2025-08-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-07/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 63.15
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2025-08",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-07-30T00:00:00+00:00",
+            "data_end": "2025-09-01T23:59:59+00:00",
+            "execute_start": "2025-08-01T00:00:00+00:00",
+            "execute_end": "2025-08-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-08",
+            "symbol": "BTCUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5"
+            ],
+            "input_events": 175,
+            "union_events": 175,
+            "duplicate_events": 0,
+            "trades": 5,
+            "realistic_return_pct": -1.5747,
+            "profit_factor": 0.110807,
+            "win_rate_pct": 40.0,
+            "max_dd_pct": -1.7383,
+            "mean_model_notional_share": 1.201701,
+            "min_model_notional_share": 0.617505,
+            "max_model_notional_share": 1.70883,
+            "mean_source_sizing_scale": 0.955281,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-08/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 5,
+            "gate_keys": 5,
+            "mean_sizing_scale": 1.395229,
+            "min_sizing_scale": 1.28239,
+            "max_sizing_scale": 1.536036
+          },
+          "summary": {
+            "final_balance": 99564.73,
+            "return_pct": -0.44,
+            "max_dd_pct": -0.44,
+            "trades": 18,
+            "win_rate_pct": 38.89,
+            "sharpe": 8.12,
+            "first_entry": "2025-08-03T07:04:45+00:00",
+            "last_exit": "2025-08-26T08:54:18+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 13,
+              "Zero-Initial-Reentry": 5
+            },
+            "exit_reasons": {
+              "SL": 18
+            },
+            "entry_types": {
+              "BUY": 14,
+              "SHORT": 4
+            },
+            "integrity": {
+              "rows": 36,
+              "entries": 18,
+              "exits": 18,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 18,
+              "win_rate_pct": 61.11,
+              "avg_pnl_pct": 0.0913,
+              "median_pnl_pct": 0.0621,
+              "pnl_std_pct": 0.1736,
+              "worst_pnl_pct": -0.0729,
+              "net_pnl_value": 343.19,
+              "max_pnl_drawdown": -32.11,
+              "profit_factor": 4.1434,
+              "entry_types": {
+                "BUY": 14,
+                "SHORT": 4
+              },
+              "entry_reasons": {
+                "SL-Reentry": 13,
+                "Zero-Initial-Reentry": 5
+              },
+              "exit_reasons": {
+                "SL": 18
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 4
+              },
+              "short": {
+                "original_t2": 1
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 4,
+                "short": 1
+              },
+              "rejected": {
+                "long": 80,
+                "short": 95
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 80
+                },
+                "short": {
+                  "not_selected": 95
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20250730T000000_20250901T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2937600,
+            "first_second": "2025-07-30T00:00:00+00:00",
+            "last_second": "2025-09-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-08/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 63.03
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2025-09",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-08-30T00:00:00+00:00",
+            "data_end": "2025-10-01T23:59:59+00:00",
+            "execute_start": "2025-09-01T00:00:00+00:00",
+            "execute_end": "2025-09-30T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-09",
+            "symbol": "ETHUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+            ],
+            "input_events": 85,
+            "union_events": 85,
+            "duplicate_events": 0,
+            "trades": 5,
+            "realistic_return_pct": 0.3672,
+            "profit_factor": 1.551958,
+            "win_rate_pct": 80.0,
+            "max_dd_pct": -0.6714,
+            "mean_model_notional_share": 1.625649,
+            "min_model_notional_share": 1.061702,
+            "max_model_notional_share": 1.8,
+            "mean_source_sizing_scale": 1.287076,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-09/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 5,
+            "gate_keys": 5,
+            "mean_sizing_scale": 1.592907,
+            "min_sizing_scale": 1.236044,
+            "max_sizing_scale": 1.8
+          },
+          "summary": {
+            "final_balance": 100972.55,
+            "return_pct": 0.97,
+            "max_dd_pct": -0.05,
+            "trades": 11,
+            "win_rate_pct": 100.0,
+            "sharpe": 17.46,
+            "first_entry": "2025-09-07T12:15:35+00:00",
+            "last_exit": "2025-09-30T23:57:02+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 6,
+              "Zero-Initial-Reentry": 5
+            },
+            "exit_reasons": {
+              "SL": 11
+            },
+            "entry_types": {
+              "SHORT": 11
+            },
+            "integrity": {
+              "rows": 22,
+              "entries": 11,
+              "exits": 11,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 11,
+              "win_rate_pct": 100.0,
+              "avg_pnl_pct": 0.4849,
+              "median_pnl_pct": 0.3312,
+              "pnl_std_pct": 0.4203,
+              "worst_pnl_pct": 0.1014,
+              "net_pnl_value": 1523.56,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": null,
+              "entry_types": {
+                "SHORT": 11
+              },
+              "entry_reasons": {
+                "SL-Reentry": 6,
+                "Zero-Initial-Reentry": 5
+              },
+              "exit_reasons": {
+                "SL": 11
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {},
+              "short": {
+                "original_t2": 5
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 0,
+                "short": 5
+              },
+              "rejected": {
+                "long": 105,
+                "short": 93
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 105
+                },
+                "short": {
+                  "not_selected": 93
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20250830T000000_20251001T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2851200,
+            "first_second": "2025-08-30T00:00:00+00:00",
+            "last_second": "2025-10-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-09/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 61.51
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2025-11",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-10-30T00:00:00+00:00",
+            "data_end": "2025-12-01T23:59:59+00:00",
+            "execute_start": "2025-11-01T00:00:00+00:00",
+            "execute_end": "2025-11-30T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-11",
+            "symbol": "BTCUSDT",
+            "sleeves": 1,
+            "sources": [
+              "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top15"
+            ],
+            "input_events": 113,
+            "union_events": 113,
+            "duplicate_events": 0,
+            "trades": 6,
+            "realistic_return_pct": 0.3875,
+            "profit_factor": 1.505627,
+            "win_rate_pct": 66.67,
+            "max_dd_pct": -0.5406,
+            "mean_model_notional_share": 0.947911,
+            "min_model_notional_share": 0.506204,
+            "max_model_notional_share": 1.411547,
+            "mean_source_sizing_scale": 0.786765,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-11/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 6,
+            "gate_keys": 6,
+            "mean_sizing_scale": 0.825342,
+            "min_sizing_scale": 0.551725,
+            "max_sizing_scale": 1.193956
+          },
+          "summary": {
+            "final_balance": 101714.72,
+            "return_pct": 1.71,
+            "max_dd_pct": -0.04,
+            "trades": 12,
+            "win_rate_pct": 91.67,
+            "sharpe": 20.39,
+            "first_entry": "2025-11-01T00:02:53+00:00",
+            "last_exit": "2025-11-28T16:35:35+00:00",
+            "entry_reasons": {
+              "Zero-Initial-Reentry": 6,
+              "SL-Reentry": 6
+            },
+            "exit_reasons": {
+              "SL": 12
+            },
+            "entry_types": {
+              "SHORT": 12
+            },
+            "integrity": {
+              "rows": 24,
+              "entries": 12,
+              "exits": 12,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 12,
+              "win_rate_pct": 91.67,
+              "avg_pnl_pct": 1.042,
+              "median_pnl_pct": 0.8688,
+              "pnl_std_pct": 0.7767,
+              "worst_pnl_pct": -0.0856,
+              "net_pnl_value": 2050.98,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": 218.187,
+              "entry_types": {
+                "SHORT": 12
+              },
+              "entry_reasons": {
+                "Zero-Initial-Reentry": 6,
+                "SL-Reentry": 6
+              },
+              "exit_reasons": {
+                "SL": 12
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {},
+              "short": {
+                "original_t2": 6
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 0,
+                "short": 6
+              },
+              "rejected": {
+                "long": 102,
+                "short": 95
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 102
+                },
+                "short": {
+                  "not_selected": 95
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20251030T000000_20251201T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2851200,
+            "first_second": "2025-10-30T00:00:00+00:00",
+            "last_second": "2025-12-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-11/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 61.48
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2025-12",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-11-29T00:00:00+00:00",
+            "data_end": "2026-01-01T23:59:59+00:00",
+            "execute_start": "2025-12-01T00:00:00+00:00",
+            "execute_end": "2025-12-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2025-12",
+            "symbol": "ETHUSDT",
+            "sleeves": 2,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top20",
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+            ],
+            "input_events": 241,
+            "union_events": 210,
+            "duplicate_events": 31,
+            "trades": 24,
+            "realistic_return_pct": 0.5484,
+            "profit_factor": 1.097781,
+            "win_rate_pct": 62.5,
+            "max_dd_pct": -3.777,
+            "mean_model_notional_share": 1.29394,
+            "min_model_notional_share": 0.616152,
+            "max_model_notional_share": 1.8,
+            "mean_source_sizing_scale": 1.058645,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-12/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 25,
+            "gate_keys": 25,
+            "mean_sizing_scale": 1.298735,
+            "min_sizing_scale": 0.616152,
+            "max_sizing_scale": 1.762486
+          },
+          "summary": {
+            "final_balance": 108978.79,
+            "return_pct": 8.98,
+            "max_dd_pct": -0.27,
+            "trades": 60,
+            "win_rate_pct": 86.67,
+            "sharpe": 12.88,
+            "first_entry": "2025-12-03T14:02:01+00:00",
+            "last_exit": "2025-12-31T14:09:17+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 35,
+              "Zero-Initial-Reentry": 25
+            },
+            "exit_reasons": {
+              "SL": 60
+            },
+            "entry_types": {
+              "SHORT": 39,
+              "BUY": 21
+            },
+            "integrity": {
+              "rows": 120,
+              "entries": 60,
+              "exits": 60,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 60,
+              "win_rate_pct": 90.0,
+              "avg_pnl_pct": 0.8444,
+              "median_pnl_pct": 0.5145,
+              "pnl_std_pct": 1.0317,
+              "worst_pnl_pct": -0.1075,
+              "net_pnl_value": 11383.86,
+              "max_pnl_drawdown": -48.05,
+              "profit_factor": 119.0567,
+              "entry_types": {
+                "SHORT": 39,
+                "BUY": 21
+              },
+              "entry_reasons": {
+                "SL-Reentry": 35,
+                "Zero-Initial-Reentry": 25
+              },
+              "exit_reasons": {
+                "SL": 60
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 9
+              },
+              "short": {
+                "original_t2": 16
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 9,
+                "short": 16
+              },
+              "rejected": {
+                "long": 87,
+                "short": 73
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 87
+                },
+                "short": {
+                  "not_selected": 73
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20251129T000000_20260101T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2937600,
+            "first_second": "2025-11-29T00:00:00+00:00",
+            "last_second": "2026-01-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2025-12/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 62.95
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2026-01",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2025-12-30T00:00:00+00:00",
+            "data_end": "2026-02-01T23:59:59+00:00",
+            "execute_start": "2026-01-01T00:00:00+00:00",
+            "execute_end": "2026-01-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2026-01",
+            "symbol": "BTCUSDT",
+            "sleeves": 2,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top10",
+              "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top20"
+            ],
+            "input_events": 379,
+            "union_events": 291,
+            "duplicate_events": 88,
+            "trades": 16,
+            "realistic_return_pct": 0.5239,
+            "profit_factor": 1.379794,
+            "win_rate_pct": 75.0,
+            "max_dd_pct": -1.1169,
+            "mean_model_notional_share": 1.09342,
+            "min_model_notional_share": 0.451719,
+            "max_model_notional_share": 1.699854,
+            "mean_source_sizing_scale": 0.95909,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-01/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 17,
+            "gate_keys": 17,
+            "mean_sizing_scale": 0.993852,
+            "min_sizing_scale": 0.563717,
+            "max_sizing_scale": 1.669477
+          },
+          "summary": {
+            "final_balance": 100920.3,
+            "return_pct": 0.92,
+            "max_dd_pct": -0.56,
+            "trades": 45,
+            "win_rate_pct": 75.56,
+            "sharpe": 13.35,
+            "first_entry": "2026-01-01T17:20:46+00:00",
+            "last_exit": "2026-01-27T09:46:45+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 29,
+              "Zero-Initial-Reentry": 16
+            },
+            "exit_reasons": {
+              "SL": 45
+            },
+            "entry_types": {
+              "SHORT": 26,
+              "BUY": 19
+            },
+            "integrity": {
+              "rows": 90,
+              "entries": 45,
+              "exits": 45,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 45,
+              "win_rate_pct": 80.0,
+              "avg_pnl_pct": 0.3592,
+              "median_pnl_pct": 0.1999,
+              "pnl_std_pct": 0.4223,
+              "worst_pnl_pct": -0.0831,
+              "net_pnl_value": 2338.1,
+              "max_pnl_drawdown": -61.83,
+              "profit_factor": 18.9438,
+              "entry_types": {
+                "SHORT": 26,
+                "BUY": 19
+              },
+              "entry_reasons": {
+                "SL-Reentry": 29,
+                "Zero-Initial-Reentry": 16
+              },
+              "exit_reasons": {
+                "SL": 45
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 6
+              },
+              "short": {
+                "original_t2": 10
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 6,
+                "short": 10
+              },
+              "rejected": {
+                "long": 87,
+                "short": 81
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 87
+                },
+                "short": {
+                  "not_selected": 81
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20251230T000000_20260201T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2937600,
+            "first_second": "2025-12-30T00:00:00+00:00",
+            "last_second": "2026-02-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-01/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 63.15
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2026-02",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2026-01-30T00:00:00+00:00",
+            "data_end": "2026-03-01T23:59:59+00:00",
+            "execute_start": "2026-02-01T00:00:00+00:00",
+            "execute_end": "2026-02-28T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2026-02",
+            "symbol": "BTCUSDT",
+            "sleeves": 3,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top10",
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10",
+              "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top10"
+            ],
+            "input_events": 528,
+            "union_events": 383,
+            "duplicate_events": 145,
+            "trades": 15,
+            "realistic_return_pct": 4.8034,
+            "profit_factor": 2.625357,
+            "win_rate_pct": 73.33,
+            "max_dd_pct": -1.3185,
+            "mean_model_notional_share": 1.047291,
+            "min_model_notional_share": 0.403898,
+            "max_model_notional_share": 1.71223,
+            "mean_source_sizing_scale": 0.892876,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-02/BTCUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 15,
+            "gate_keys": 15,
+            "mean_sizing_scale": 1.211847,
+            "min_sizing_scale": 0.636309,
+            "max_sizing_scale": 1.556099
+          },
+          "summary": {
+            "final_balance": 105198.81,
+            "return_pct": 5.2,
+            "max_dd_pct": -0.15,
+            "trades": 42,
+            "win_rate_pct": 83.33,
+            "sharpe": 19.95,
+            "first_entry": "2026-02-02T22:05:49+00:00",
+            "last_exit": "2026-02-28T13:50:04+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 27,
+              "Zero-Initial-Reentry": 15
+            },
+            "exit_reasons": {
+              "SL": 42
+            },
+            "entry_types": {
+              "SHORT": 29,
+              "BUY": 13
+            },
+            "integrity": {
+              "rows": 84,
+              "entries": 42,
+              "exits": 42,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 42,
+              "win_rate_pct": 88.1,
+              "avg_pnl_pct": 0.8483,
+              "median_pnl_pct": 0.7857,
+              "pnl_std_pct": 0.6671,
+              "worst_pnl_pct": -0.0933,
+              "net_pnl_value": 6872.96,
+              "max_pnl_drawdown": -34.55,
+              "profit_factor": 85.2603,
+              "entry_types": {
+                "SHORT": 29,
+                "BUY": 13
+              },
+              "entry_reasons": {
+                "SL-Reentry": 27,
+                "Zero-Initial-Reentry": 15
+              },
+              "exit_reasons": {
+                "SL": 42
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 5
+              },
+              "short": {
+                "original_t2": 10
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 5,
+                "short": 10
+              },
+              "rejected": {
+                "long": 78,
+                "short": 84
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 78
+                },
+                "short": {
+                  "not_selected": 84
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/BTCUSDT_20260130T000000_20260301T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2678400,
+            "first_second": "2026-01-30T00:00:00+00:00",
+            "last_second": "2026-03-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-02/BTCUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 57.63
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2026-02",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2026-01-30T00:00:00+00:00",
+            "data_end": "2026-03-01T23:59:59+00:00",
+            "execute_start": "2026-02-01T00:00:00+00:00",
+            "execute_end": "2026-02-28T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2026-02",
+            "symbol": "ETHUSDT",
+            "sleeves": 2,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5",
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10"
+            ],
+            "input_events": 313,
+            "union_events": 268,
+            "duplicate_events": 45,
+            "trades": 12,
+            "realistic_return_pct": 2.0196,
+            "profit_factor": 1.34982,
+            "win_rate_pct": 58.33,
+            "max_dd_pct": -4.4792,
+            "mean_model_notional_share": 1.108623,
+            "min_model_notional_share": 0.404274,
+            "max_model_notional_share": 1.735436,
+            "mean_source_sizing_scale": 0.938485,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-02/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 12,
+            "gate_keys": 12,
+            "mean_sizing_scale": 1.359652,
+            "min_sizing_scale": 1.18679,
+            "max_sizing_scale": 1.608378
+          },
+          "summary": {
+            "final_balance": 108394.64,
+            "return_pct": 8.39,
+            "max_dd_pct": -0.03,
+            "trades": 30,
+            "win_rate_pct": 100.0,
+            "sharpe": 26.26,
+            "first_entry": "2026-02-01T23:05:48+00:00",
+            "last_exit": "2026-02-27T16:06:52+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 18,
+              "Zero-Initial-Reentry": 12
+            },
+            "exit_reasons": {
+              "SL": 30
+            },
+            "entry_types": {
+              "SHORT": 30
+            },
+            "integrity": {
+              "rows": 60,
+              "entries": 30,
+              "exits": 30,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 30,
+              "win_rate_pct": 100.0,
+              "avg_pnl_pct": 1.5601,
+              "median_pnl_pct": 1.3249,
+              "pnl_std_pct": 0.9273,
+              "worst_pnl_pct": 0.3707,
+              "net_pnl_value": 9671.47,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": null,
+              "entry_types": {
+                "SHORT": 30
+              },
+              "entry_reasons": {
+                "SL-Reentry": 18,
+                "Zero-Initial-Reentry": 12
+              },
+              "exit_reasons": {
+                "SL": 30
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {},
+              "short": {
+                "original_t2": 12
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 0,
+                "short": 12
+              },
+              "rejected": {
+                "long": 80,
+                "short": 74
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 80
+                },
+                "short": {
+                  "not_selected": 74
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20260130T000000_20260301T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2678400,
+            "first_second": "2026-01-30T00:00:00+00:00",
+            "last_second": "2026-03-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-02/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 57.66
+        },
+        {
+          "config": "quality_edge_return_mult_1p20_cap_1p80",
+          "execute_month": "2026-03",
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "window": {
+            "data_start": "2026-02-27T00:00:00+00:00",
+            "data_end": "2026-04-01T23:59:59+00:00",
+            "execute_start": "2026-03-01T00:00:00+00:00",
+            "execute_end": "2026-03-31T23:59:59+00:00"
+          },
+          "input_group": {
+            "execute_month": "2026-03",
+            "symbol": "ETHUSDT",
+            "sleeves": 3,
+            "sources": [
+              "walkforward_2025m06_2026apr_delay60_feature60_postselect_btc_fallback:top5",
+              "walkforward_2025m06_2026apr_r4_4_short_speed60_high_loose_top10:top10",
+              "walkforward_delay60_original_t2_feature60_postselect_gate_btc_fallback:top10"
+            ],
+            "input_events": 430,
+            "union_events": 292,
+            "duplicate_events": 138,
+            "trades": 11,
+            "realistic_return_pct": 6.5283,
+            "profit_factor": 9.356423,
+            "win_rate_pct": 90.91,
+            "max_dd_pct": -0.7613,
+            "mean_model_notional_share": 1.396275,
+            "min_model_notional_share": 0.568145,
+            "max_model_notional_share": 1.8,
+            "mean_source_sizing_scale": 1.224284,
+            "summary_json": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_sizing_calibration_sweep_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-03/ETHUSDT/execution_summary.json"
+          },
+          "gate_stats": {
+            "selected_events": 11,
+            "gate_keys": 11,
+            "mean_sizing_scale": 1.464222,
+            "min_sizing_scale": 0.775432,
+            "max_sizing_scale": 1.8
+          },
+          "summary": {
+            "final_balance": 104717.75,
+            "return_pct": 4.72,
+            "max_dd_pct": -0.04,
+            "trades": 24,
+            "win_rate_pct": 100.0,
+            "sharpe": 25.08,
+            "first_entry": "2026-03-09T03:01:39+00:00",
+            "last_exit": "2026-03-27T10:37:56+00:00",
+            "entry_reasons": {
+              "SL-Reentry": 13,
+              "Zero-Initial-Reentry": 11
+            },
+            "exit_reasons": {
+              "SL": 24
+            },
+            "entry_types": {
+              "SHORT": 14,
+              "BUY": 10
+            },
+            "integrity": {
+              "rows": 48,
+              "entries": 24,
+              "exits": 24,
+              "zero_notional_entries": 0
+            }
+          },
+          "attribution": {
+            "original_t2": {
+              "trades": 24,
+              "win_rate_pct": 100.0,
+              "avg_pnl_pct": 1.1111,
+              "median_pnl_pct": 0.8803,
+              "pnl_std_pct": 0.6885,
+              "worst_pnl_pct": 0.218,
+              "net_pnl_value": 5807.54,
+              "max_pnl_drawdown": 0.0,
+              "profit_factor": null,
+              "entry_types": {
+                "SHORT": 14,
+                "BUY": 10
+              },
+              "entry_reasons": {
+                "SL-Reentry": 13,
+                "Zero-Initial-Reentry": 11
+              },
+              "exit_reasons": {
+                "SL": 24
+              }
+            }
+          },
+          "diagnostics": {
+            "breakout_locks": {
+              "long": {
+                "original_t2": 5
+              },
+              "short": {
+                "original_t2": 6
+              }
+            },
+            "t3_cooldown_skips": {
+              "long": 0,
+              "short": 0
+            },
+            "t3_quality_rejects": {
+              "long": {},
+              "short": {}
+            },
+            "probability_gate": {
+              "allowed": {
+                "long": 5,
+                "short": 6
+              },
+              "rejected": {
+                "long": 82,
+                "short": 71
+              },
+              "reject_reasons": {
+                "long": {
+                  "not_selected": 82
+                },
+                "short": {
+                  "not_selected": 71
+                }
+              }
+            }
+          },
+          "build_stats": {
+            "cache_path": "research/probabilistic_v6_runs/lifecycle_bars_cache/ETHUSDT_20260227T000000_20260401T235959_plain_1s.pkl",
+            "cache_hit": true,
+            "continuous_second_rows": 2937600,
+            "first_second": "2026-02-27T00:00:00+00:00",
+            "last_second": "2026-04-01T23:59:59+00:00"
+          },
+          "ledger_path": "research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001/quality_edge_return_mult_1p20_cap_1p80/execute_2026-03/ETHUSDT/lifecycle_ledger.csv",
+          "elapsed_seconds": 63.04
+        }
+      ]
+    }
+  ]
+}

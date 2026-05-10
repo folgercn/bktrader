@@ -134,7 +134,7 @@ def build_continuous_second_bars(paths, start: pd.Timestamp, end: pd.Timestamp, 
             if chunk["timestamp"].iloc[-1] < start_ms:
                 continue
 
-            chunk = chunk[(chunk["timestamp"] >= start_ms) & (chunk["timestamp"] <= end_ms)]
+            chunk = chunk[(chunk["timestamp"] >= start_ms) & (chunk["timestamp"] <= end_ms)].copy()
             if chunk.empty:
                 continue
             kept_tick_rows += len(chunk)
@@ -277,6 +277,7 @@ def _open_position(
     stop_loss_atr,
     breakout_shape_name,
     replay_mode,
+    sizing_scale=1.0,
 ):
     notional_value = balance * notional_share
     position = {
@@ -285,6 +286,8 @@ def _open_position(
         "sl": _resolve_stop_price(side, entry_price, sig, stop_mode, stop_loss_atr),
         "protected": reason == "PT-Reentry",
         "notional": notional_value,
+        "notional_share": notional_share,
+        "sizing_scale": sizing_scale,
         "breakout_shape_name": breakout_shape_name,
         "replay_mode": replay_mode,
     }
@@ -306,6 +309,37 @@ def _allow_breakout_lock(shape_name: str, bar_index: int, last_t3_lock_bar_index
     if shape_name != "t3_swing" or t3_cooldown_bars <= 0:
         return True
     return bar_index - last_t3_lock_bar_index > t3_cooldown_bars
+
+
+def _gate_key(signal_start, side: str, shape_name: str) -> tuple[str, str, str]:
+    ts = pd.Timestamp(signal_start)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    else:
+        ts = ts.tz_convert("UTC")
+    return (ts.isoformat(), str(side), str(shape_name))
+
+
+def _breakout_gate_decision(breakout_gate, signal_start, side: str, shape_name: str) -> tuple[bool, float, dict]:
+    if breakout_gate is None:
+        return True, 1.0, {}
+    item = breakout_gate.get(_gate_key(signal_start, side, shape_name))
+    if item is None:
+        return False, 1.0, {"reason": "not_selected"}
+    if isinstance(item, dict):
+        return bool(item.get("allow", True)), float(item.get("sizing_scale", 1.0)), item
+    return bool(item), 1.0, {}
+
+
+def _record_probability_gate(diagnostics: dict, side: str, allowed: bool, reason: str = "") -> None:
+    gate_stats = diagnostics["probability_gate"]
+    bucket = "allowed" if allowed else "rejected"
+    gate_stats[bucket][side] = gate_stats[bucket].get(side, 0) + 1
+    if not allowed:
+        reject_reason = reason or "rejected"
+        gate_stats["reject_reasons"][side][reject_reason] = (
+            gate_stats["reject_reasons"][side].get(reject_reason, 0) + 1
+        )
 
 
 def _t3_quality_reject_reason(sig, side: str, current_price: float, breakout_level: float, filters: dict) -> str:
@@ -400,6 +434,7 @@ def run_second_bar_replay(
     reentry_trigger_observation_mode: str = "bar_extrema",
     reentry_max_deviation_bps=None,
     reentry_fill_price_mode: str = "planned",
+    breakout_gate=None,
 ):
     if replay_mode not in {"same_bar_parity", "live_intrabar_sma5"}:
         raise ValueError(f"unknown replay mode: {replay_mode}")
@@ -421,6 +456,11 @@ def run_second_bar_replay(
         "breakout_locks": {"long": {}, "short": {}},
         "t3_cooldown_skips": {"long": 0, "short": 0},
         "t3_quality_rejects": {"long": {}, "short": {}},
+        "probability_gate": {
+            "allowed": {"long": 0, "short": 0},
+            "rejected": {"long": 0, "short": 0},
+            "reject_reasons": {"long": {}, "short": {}},
+        },
     }
     second_index = df_seconds.index
     high_values = df_seconds["high"].to_numpy(dtype="float64", copy=False)
@@ -455,7 +495,9 @@ def run_second_bar_replay(
     pending_zero_initial_breakout_shape = ""
     pending_zero_initial_bar_index = -999
     pending_zero_initial_reentry_price = None
+    pending_zero_initial_sizing_scale = 1.0
     last_t3_lock_bar_index = -999
+    last_exit_sizing_scale = 1.0
 
     for i in range(len(signal) - 1):
         start_t, end_t = signal.index[i], signal.index[i + 1]
@@ -472,6 +514,7 @@ def run_second_bar_replay(
         current_pos = start_pos
         breakout_locked_this_bar = False
         quality_reject_recorded_this_bar = {"long": set(), "short": set()}
+        probability_gate_recorded_this_bar = {"long": set(), "short": set()}
         bar_high_so_far = -np.inf
         bar_low_so_far = np.inf
         sig = base_sig
@@ -485,10 +528,12 @@ def run_second_bar_replay(
         if i - last_exit_bar_index > reentry_timeout:
             last_exit_side = None
             last_exit_breakout_shape = ""
+            last_exit_sizing_scale = 1.0
         if i - pending_zero_initial_bar_index > reentry_timeout:
             pending_zero_initial_side = None
             pending_zero_initial_breakout_shape = ""
             pending_zero_initial_reentry_price = None
+            pending_zero_initial_sizing_scale = 1.0
 
         while current_pos < end_pos:
             bar_time = second_index[current_pos]
@@ -511,8 +556,20 @@ def run_second_bar_replay(
                 if long_regime_ready:
                     triggered, breakout_level, shape_name = _long_breakout(sig, high_value, breakout_shape)
                     if trades_in_bar == 0 and triggered:
+                        gate_allowed, gate_sizing_scale, gate_meta = _breakout_gate_decision(
+                            breakout_gate,
+                            start_t,
+                            "long",
+                            shape_name,
+                        )
                         quality_reject_reason = ""
-                        if shape_name in quality_filter_shapes:
+                        if not gate_allowed:
+                            gate_reject_reason = str(gate_meta.get("reason", "not_selected"))
+                            gate_reject_key = (shape_name, gate_reject_reason)
+                            if gate_reject_key not in probability_gate_recorded_this_bar["long"]:
+                                _record_probability_gate(diagnostics, "long", False, gate_reject_reason)
+                                probability_gate_recorded_this_bar["long"].add(gate_reject_key)
+                        elif shape_name in quality_filter_shapes:
                             quality_reject_reason = _t3_quality_reject_reason(
                                 sig,
                                 "long",
@@ -520,13 +577,14 @@ def run_second_bar_replay(
                                 breakout_level,
                                 t3_quality_filters,
                             )
-                        if quality_reject_reason:
+                        if gate_allowed and quality_reject_reason:
                             if quality_reject_reason not in quality_reject_recorded_this_bar["long"]:
                                 diagnostics["t3_quality_rejects"]["long"][quality_reject_reason] = (
                                     diagnostics["t3_quality_rejects"]["long"].get(quality_reject_reason, 0) + 1
                                 )
                                 quality_reject_recorded_this_bar["long"].add(quality_reject_reason)
-                        elif _allow_breakout_lock(shape_name, i, last_t3_lock_bar_index, t3_cooldown_bars):
+                        elif gate_allowed and _allow_breakout_lock(shape_name, i, last_t3_lock_bar_index, t3_cooldown_bars):
+                            _record_probability_gate(diagnostics, "long", True)
                             if shape_name == "t3_swing":
                                 last_t3_lock_bar_index = i
                             if not breakout_locked_this_bar:
@@ -537,12 +595,13 @@ def run_second_bar_replay(
                             pending_zero_initial_side = "long"
                             pending_zero_initial_breakout_shape = shape_name
                             pending_zero_initial_bar_index = i
+                            pending_zero_initial_sizing_scale = float(gate_sizing_scale)
                             pending_zero_initial_reentry_price = (
                                 _resolve_reentry_price(sig, "long", reentry_anchor_levels, long_reentry_atr)
                                 if zero_initial_reentry_anchor_mode == "snapshot"
                                 else None
                             )
-                        else:
+                        elif gate_allowed:
                             diagnostics["t3_cooldown_skips"]["long"] += 1
 
                     has_exit_reentry_window = last_exit_side == "long" and (i - last_exit_bar_index <= reentry_timeout)
@@ -588,7 +647,15 @@ def run_second_bar_replay(
                                     reentry_size_schedule,
                                     t3_reentry_size_schedule,
                                 )
-                                notional_share = _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
+                                sizing_scale = (
+                                    last_exit_sizing_scale
+                                    if has_exit_reentry_window
+                                    else pending_zero_initial_sizing_scale
+                                )
+                                notional_share = (
+                                    _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
+                                    * float(sizing_scale)
+                                )
                                 fill_price_raw = close_value if reentry_fill_price_mode == "observed" else entry_p_raw
                                 entry_price = float(fill_price_raw) * (1 + slippage)
                                 balance, position = _open_position(
@@ -602,6 +669,7 @@ def run_second_bar_replay(
                                     stop_loss_atr,
                                     entry_breakout_shape,
                                     replay_mode,
+                                    sizing_scale,
                                 )
                                 trade_logs.append(
                                     {
@@ -610,6 +678,8 @@ def run_second_bar_replay(
                                         "price": entry_price,
                                         "reason": reason,
                                         "notional": position["notional"],
+                                        "notional_share": position["notional_share"],
+                                        "sizing_scale": position["sizing_scale"],
                                         "bal": balance,
                                         "breakout_shape_name": position["breakout_shape_name"],
                                         "replay_mode": replay_mode,
@@ -623,12 +693,25 @@ def run_second_bar_replay(
                                 pending_zero_initial_side = None
                                 pending_zero_initial_breakout_shape = ""
                                 pending_zero_initial_reentry_price = None
+                                pending_zero_initial_sizing_scale = 1.0
 
                 elif short_regime_ready:
                     triggered, breakout_level, shape_name = _short_breakout(sig, low_value, breakout_shape)
                     if trades_in_bar == 0 and triggered:
+                        gate_allowed, gate_sizing_scale, gate_meta = _breakout_gate_decision(
+                            breakout_gate,
+                            start_t,
+                            "short",
+                            shape_name,
+                        )
                         quality_reject_reason = ""
-                        if shape_name in quality_filter_shapes:
+                        if not gate_allowed:
+                            gate_reject_reason = str(gate_meta.get("reason", "not_selected"))
+                            gate_reject_key = (shape_name, gate_reject_reason)
+                            if gate_reject_key not in probability_gate_recorded_this_bar["short"]:
+                                _record_probability_gate(diagnostics, "short", False, gate_reject_reason)
+                                probability_gate_recorded_this_bar["short"].add(gate_reject_key)
+                        elif shape_name in quality_filter_shapes:
                             quality_reject_reason = _t3_quality_reject_reason(
                                 sig,
                                 "short",
@@ -636,13 +719,14 @@ def run_second_bar_replay(
                                 breakout_level,
                                 t3_quality_filters,
                             )
-                        if quality_reject_reason:
+                        if gate_allowed and quality_reject_reason:
                             if quality_reject_reason not in quality_reject_recorded_this_bar["short"]:
                                 diagnostics["t3_quality_rejects"]["short"][quality_reject_reason] = (
                                     diagnostics["t3_quality_rejects"]["short"].get(quality_reject_reason, 0) + 1
                                 )
                                 quality_reject_recorded_this_bar["short"].add(quality_reject_reason)
-                        elif _allow_breakout_lock(shape_name, i, last_t3_lock_bar_index, t3_cooldown_bars):
+                        elif gate_allowed and _allow_breakout_lock(shape_name, i, last_t3_lock_bar_index, t3_cooldown_bars):
+                            _record_probability_gate(diagnostics, "short", True)
                             if shape_name == "t3_swing":
                                 last_t3_lock_bar_index = i
                             if not breakout_locked_this_bar:
@@ -653,12 +737,13 @@ def run_second_bar_replay(
                             pending_zero_initial_side = "short"
                             pending_zero_initial_breakout_shape = shape_name
                             pending_zero_initial_bar_index = i
+                            pending_zero_initial_sizing_scale = float(gate_sizing_scale)
                             pending_zero_initial_reentry_price = (
                                 _resolve_reentry_price(sig, "short", reentry_anchor_levels, short_reentry_atr)
                                 if zero_initial_reentry_anchor_mode == "snapshot"
                                 else None
                             )
-                        else:
+                        elif gate_allowed:
                             diagnostics["t3_cooldown_skips"]["short"] += 1
 
                     has_exit_reentry_window = last_exit_side == "short" and (i - last_exit_bar_index <= reentry_timeout)
@@ -704,7 +789,15 @@ def run_second_bar_replay(
                                     reentry_size_schedule,
                                     t3_reentry_size_schedule,
                                 )
-                                notional_share = _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
+                                sizing_scale = (
+                                    last_exit_sizing_scale
+                                    if has_exit_reentry_window
+                                    else pending_zero_initial_sizing_scale
+                                )
+                                notional_share = (
+                                    _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
+                                    * float(sizing_scale)
+                                )
                                 fill_price_raw = close_value if reentry_fill_price_mode == "observed" else entry_p_raw
                                 entry_price = float(fill_price_raw) * (1 - slippage)
                                 balance, position = _open_position(
@@ -718,6 +811,7 @@ def run_second_bar_replay(
                                     stop_loss_atr,
                                     entry_breakout_shape,
                                     replay_mode,
+                                    sizing_scale,
                                 )
                                 trade_logs.append(
                                     {
@@ -726,6 +820,8 @@ def run_second_bar_replay(
                                         "price": entry_price,
                                         "reason": reason,
                                         "notional": position["notional"],
+                                        "notional_share": position["notional_share"],
+                                        "sizing_scale": position["sizing_scale"],
                                         "bal": balance,
                                         "breakout_shape_name": position["breakout_shape_name"],
                                         "replay_mode": replay_mode,
@@ -739,6 +835,7 @@ def run_second_bar_replay(
                                 pending_zero_initial_side = None
                                 pending_zero_initial_breakout_shape = ""
                                 pending_zero_initial_reentry_price = None
+                                pending_zero_initial_sizing_scale = 1.0
 
             else:
                 exit_triggered = False
@@ -811,6 +908,8 @@ def run_second_bar_replay(
                             "price": exit_p,
                             "reason": reason,
                             "notional": position["notional"],
+                            "notional_share": position.get("notional_share", np.nan),
+                            "sizing_scale": position.get("sizing_scale", 1.0),
                             "bal": balance,
                             "breakout_shape_name": exit_breakout_shape,
                             "replay_mode": replay_mode,
@@ -819,6 +918,7 @@ def run_second_bar_replay(
                     last_exit_reason = reason
                     last_exit_side = position["side"]
                     last_exit_breakout_shape = exit_breakout_shape
+                    last_exit_sizing_scale = float(position.get("sizing_scale", 1.0))
                     last_exit_bar_index = i
                     position = None
 
@@ -845,6 +945,8 @@ def run_second_bar_replay(
                 "price": final_exit_p,
                 "reason": "FinalMarkToMarket",
                 "notional": position["notional"],
+                "notional_share": position.get("notional_share", np.nan),
+                "sizing_scale": position.get("sizing_scale", 1.0),
                 "bal": balance,
                 "breakout_shape_name": position.get("breakout_shape_name", ""),
                 "replay_mode": replay_mode,
