@@ -12,6 +12,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 			"applicationRestartEnabled":true,
 			"serviceFailureThreshold":3,
 			"containerRestartEnabled":true,
+			"containerFallbackAutoSubmit":false,
 			"containerExecutorConfigured":false,
 			"containerExecutorKind":"none",
 				"containerExecutorDryRun":true,
@@ -80,7 +81,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 	}
 	expected := []string{
 		"Runtime supervisor snapshot",
-		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true containerExecutorArmed=false",
+		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerFallbackAutoSubmit=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true containerExecutorArmed=false",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=0 fallbackDryRun=0 runtimes=1 attention=1 controlActions=1",
 		"serviceState: failures=3/3 episodeStartedAt=2026-04-29T07:58:00Z fallback=candidate candidateSince=2026-04-29T08:00:00Z attempts=2 suppressed=false backoffUntil=-- submitted=false",
 		"lastFallbackDecision=container-executor-not-configured at=2026-04-29T08:00:00Z",
@@ -102,6 +103,7 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 			"applicationRestartEnabled":false,
 			"serviceFailureThreshold":1,
 			"containerRestartEnabled":true,
+			"containerFallbackAutoSubmit":true,
 			"containerExecutorConfigured":true,
 				"containerExecutorKind":"noop",
 				"containerExecutorDryRun":true,
@@ -142,7 +144,7 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"policy: applicationRestartEnabled=false serviceFailureThreshold=1 containerRestartEnabled=true containerExecutorConfigured=true containerExecutorKind=noop containerExecutorDryRun=true containerExecutorArmed=true",
+		"policy: applicationRestartEnabled=false serviceFailureThreshold=1 containerRestartEnabled=true containerFallbackAutoSubmit=true containerExecutorConfigured=true containerExecutorKind=noop containerExecutorDryRun=true containerExecutorArmed=true",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=1 fallbackDryRun=1 runtimes=0 attention=0 controlActions=0",
 		"fallbackPlan: action=container-restart decision=eligible enabled=true executorConfigured=true executorKind=noop executorDryRun=true executorArmed=true targetAllowed=true executable=true duplicate=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=-- eligibleReason=container-fallback-eligible",
 	}
@@ -421,6 +423,7 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 			"applicationRestartEnabled":false,
 			"serviceFailureThreshold":3,
 			"containerRestartEnabled":false,
+			"containerFallbackAutoSubmit":false,
 			"containerExecutorConfigured":false,
 				"containerExecutorKind":"none",
 				"containerExecutorDryRun":true,
@@ -441,7 +444,7 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true containerExecutorArmed=false",
+		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerFallbackAutoSubmit=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true containerExecutorArmed=false",
 		"targets: total=1 fullyReachable=1 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0",
 		"serviceState: failures=0/3 episodeStartedAt=-- fallback=clear candidateSince=-- attempts=0 suppressed=false backoffUntil=-- submitted=false",
 		"runtimes: total=0 attention=0 service=platform-api",

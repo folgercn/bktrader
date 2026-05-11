@@ -65,6 +65,7 @@ type RuntimeSupervisorOptions struct {
 	EnableApplicationRestart       bool
 	ServiceFailureThreshold        int
 	EnableContainerFallback        bool
+	ContainerFallbackAutoSubmit    bool
 	ContainerFallbackExecutor      ContainerFallbackExecutor
 	ContainerFallbackExecutorArmed bool
 }
@@ -158,6 +159,7 @@ type RuntimeSupervisorPolicy struct {
 	ApplicationRestartEnabled   bool   `json:"applicationRestartEnabled"`
 	ServiceFailureThreshold     int    `json:"serviceFailureThreshold"`
 	ContainerRestartEnabled     bool   `json:"containerRestartEnabled"`
+	ContainerFallbackAutoSubmit bool   `json:"containerFallbackAutoSubmit"`
 	ContainerExecutorConfigured bool   `json:"containerExecutorConfigured"`
 	ContainerExecutorKind       string `json:"containerExecutorKind"`
 	ContainerExecutorDryRun     bool   `json:"containerExecutorDryRun"`
@@ -586,7 +588,7 @@ func (s *RuntimeSupervisor) Collect(ctx context.Context) RuntimeSupervisorSnapsh
 		targetSnapshot.RuntimeStatus = s.fetchJSON(ctx, target, "/api/v1/runtime/status", &status)
 		targetSnapshot.ServiceState = s.updateServiceState(target, targetSnapshot.Healthz, targetSnapshot.RuntimeStatus, now)
 		targetSnapshot.ContainerFallbackPlan, targetSnapshot.ServiceState = s.updateContainerFallbackPlan(target, targetSnapshot.ServiceState, now)
-		if s.submitContainerFallback(ctx, target, targetSnapshot.ContainerFallbackPlan, now) {
+		if s.options.ContainerFallbackAutoSubmit && s.submitContainerFallback(ctx, target, targetSnapshot.ContainerFallbackPlan, now) {
 			targetSnapshot.ServiceState = s.serviceStateSnapshot(target)
 			targetSnapshot.ContainerFallbackPlan = runtimeSupervisorContainerFallbackPlan(target, targetSnapshot.ServiceState, s.options, now)
 		}
@@ -976,6 +978,7 @@ func (s *RuntimeSupervisor) collectAndLog(ctx context.Context, logger *slog.Logg
 		"application_restart_enabled", s.options.EnableApplicationRestart,
 		"service_failure_threshold", s.options.ServiceFailureThreshold,
 		"container_restart_enabled", s.options.EnableContainerFallback,
+		"container_fallback_auto_submit", s.options.ContainerFallbackAutoSubmit,
 		"container_fallback_candidate_count", containerFallbackCandidates,
 	)
 }
@@ -1430,6 +1433,7 @@ func runtimeSupervisorPolicy(options RuntimeSupervisorOptions) RuntimeSupervisor
 		ApplicationRestartEnabled:   options.EnableApplicationRestart,
 		ServiceFailureThreshold:     options.ServiceFailureThreshold,
 		ContainerRestartEnabled:     options.EnableContainerFallback,
+		ContainerFallbackAutoSubmit: options.ContainerFallbackAutoSubmit,
 		ContainerExecutorConfigured: executorConfigured,
 		ContainerExecutorKind:       executorDescriptor.Kind,
 		ContainerExecutorDryRun:     executorDescriptor.DryRun,

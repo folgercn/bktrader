@@ -158,6 +158,21 @@ func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected armed gate without command executor to fail validation")
 	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorFallbackAutoSubmit: true, SupervisorContainerExecutor: "noop"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected auto submit without container restart opt-in to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerRestart: true, SupervisorFallbackAutoSubmit: true}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected auto submit without executor to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerRestart: true, SupervisorFallbackAutoSubmit: true, SupervisorContainerExecutor: "noop"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected noop auto-submit policy to validate, got %v", err)
+	}
 }
 
 func TestConfigValidateSupervisorCommandExecutorMatchesTargets(t *testing.T) {
@@ -381,6 +396,7 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_APPLICATION_RESTART_ENABLED", "true")
 	t.Setenv("SUPERVISOR_SERVICE_FAILURE_THRESHOLD", "4")
 	t.Setenv("SUPERVISOR_CONTAINER_RESTART_ENABLED", "true")
+	t.Setenv("SUPERVISOR_CONTAINER_FALLBACK_AUTO_SUBMIT", "true")
 	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR", " NoOp ")
 
 	cfg := Load()
@@ -407,6 +423,9 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	}
 	if !cfg.SupervisorContainerRestart {
 		t.Fatal("expected supervisor container restart opt-in to be enabled")
+	}
+	if !cfg.SupervisorFallbackAutoSubmit {
+		t.Fatal("expected supervisor container fallback auto submit to be enabled")
 	}
 	if cfg.SupervisorContainerExecutor != "noop" {
 		t.Fatalf("expected supervisor container executor noop, got %q", cfg.SupervisorContainerExecutor)

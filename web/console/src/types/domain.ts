@@ -568,6 +568,7 @@ export type RuntimeSupervisorPolicy = {
   applicationRestartEnabled: boolean;
   serviceFailureThreshold: number;
   containerRestartEnabled: boolean;
+  containerFallbackAutoSubmit: boolean;
   containerExecutorConfigured: boolean;
   containerExecutorKind?: string;
   containerExecutorDryRun?: boolean;

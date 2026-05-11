@@ -83,11 +83,15 @@ func TestRuntimeOptionsForSupervisorOnlyStartsReadOnlySupervisor(t *testing.T) {
 
 func TestRuntimeSupervisorOptionsForConfigWiresNoopExecutorReadiness(t *testing.T) {
 	options := runtimeSupervisorOptionsForConfig(config.Config{
-		SupervisorContainerRestart:  true,
-		SupervisorContainerExecutor: "noop",
+		SupervisorContainerRestart:   true,
+		SupervisorFallbackAutoSubmit: true,
+		SupervisorContainerExecutor:  "noop",
 	})
 	if !options.EnableContainerFallback {
 		t.Fatal("expected container fallback opt-in to remain enabled")
+	}
+	if !options.ContainerFallbackAutoSubmit {
+		t.Fatal("expected container fallback auto-submit opt-in to be wired")
 	}
 	if options.ContainerFallbackExecutor == nil || !options.ContainerFallbackExecutor.Configured() {
 		t.Fatalf("expected configured noop executor, got %+v", options.ContainerFallbackExecutor)
@@ -112,6 +116,9 @@ func TestRuntimeSupervisorOptionsForConfigLeavesExecutorUnconfiguredByDefault(t 
 	})
 	if options.ContainerFallbackExecutor != nil {
 		t.Fatalf("expected no container fallback executor by default, got %+v", options.ContainerFallbackExecutor)
+	}
+	if options.ContainerFallbackAutoSubmit {
+		t.Fatalf("expected container fallback auto submit to be disabled by default, got %+v", options)
 	}
 }
 

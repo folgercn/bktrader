@@ -211,6 +211,7 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 				"application_restart_enabled", supervisorOptions.EnableApplicationRestart,
 				"service_failure_threshold", supervisorOptions.ServiceFailureThreshold,
 				"container_restart_enabled", supervisorOptions.EnableContainerFallback,
+				"container_fallback_auto_submit", supervisorOptions.ContainerFallbackAutoSubmit,
 				"container_executor", cfg.SupervisorContainerExecutor,
 			)
 		}
@@ -222,6 +223,7 @@ func runtimeSupervisorOptionsForConfig(cfg config.Config) service.RuntimeSupervi
 		EnableApplicationRestart:       cfg.SupervisorAppRestartEnabled,
 		ServiceFailureThreshold:        cfg.SupervisorServiceFailThreshold,
 		EnableContainerFallback:        cfg.SupervisorContainerRestart,
+		ContainerFallbackAutoSubmit:    cfg.SupervisorFallbackAutoSubmit,
 		ContainerFallbackExecutorArmed: cfg.SupervisorContainerExecutorArmed,
 	}
 	switch {
