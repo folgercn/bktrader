@@ -714,6 +714,19 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorBlocksTargetsOutsideAl
 	}
 }
 
+func TestRuntimeSupervisorCommandContainerFallbackExecutorRejectsDuplicateNormalizedTargets(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+	if _, err := NewCommandContainerFallbackExecutor(map[string]CommandContainerFallbackSpec{
+		"api":  {Path: executable},
+		" api": {Path: executable},
+	}); err == nil {
+		t.Fatalf("expected duplicate normalized command target names to fail")
+	}
+}
+
 func TestRuntimeSupervisorCommandContainerFallbackExecutorFailureSetsBackoff(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
