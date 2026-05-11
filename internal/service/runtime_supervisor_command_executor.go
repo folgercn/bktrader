@@ -44,6 +44,9 @@ func NewCommandContainerFallbackExecutor(specs map[string]CommandContainerFallba
 		if err != nil {
 			return CommandContainerFallbackExecutor{}, fmt.Errorf("container fallback command target %s: %w", name, err)
 		}
+		if _, exists := normalized[name]; exists {
+			return CommandContainerFallbackExecutor{}, fmt.Errorf("container fallback command target %s is duplicated", name)
+		}
 		normalized[name] = command
 	}
 	if len(normalized) == 0 {

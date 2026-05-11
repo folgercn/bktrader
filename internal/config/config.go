@@ -256,7 +256,7 @@ func (c Config) Validate() error {
 		if !c.SupervisorContainerExecutorArmed {
 			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR=command 必须同时设置 SUPERVISOR_CONTAINER_EXECUTOR_ARMED=true")
 		}
-		if err := validateSupervisorContainerExecutorCommands(c.SupervisorContainerExecutorCommands); err != nil {
+		if err := validateSupervisorContainerExecutorCommands(c.SupervisorContainerExecutorCommands, c.SupervisorTargets); err != nil {
 			return err
 		}
 	} else {
@@ -273,7 +273,7 @@ func (c Config) Validate() error {
 	return nil
 }
 
-func validateSupervisorContainerExecutorCommands(raw string) error {
+func validateSupervisorContainerExecutorCommands(raw string, supervisorTargets []string) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR=command 必须配置 SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON")
@@ -287,10 +287,25 @@ func validateSupervisorContainerExecutorCommands(raw string) error {
 	if len(specs) == 0 {
 		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON 至少需要一个 target allowlist 项")
 	}
+	targetNames, err := supervisorTargetNameSet(supervisorTargets)
+	if err != nil {
+		return err
+	}
+	if len(targetNames) == 0 {
+		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR=command 必须至少配置一个 SUPERVISOR_TARGETS target")
+	}
+	seenCommandTargets := make(map[string]struct{}, len(specs))
 	for targetName, spec := range specs {
 		name := strings.TrimSpace(targetName)
 		if !validSupervisorTargetName(name) {
 			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON target name %q 只能包含 ASCII 字母、数字、点、下划线或短横线", targetName)
+		}
+		if _, exists := seenCommandTargets[name]; exists {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON 包含重复 target allowlist name: %s", name)
+		}
+		seenCommandTargets[name] = struct{}{}
+		if _, exists := targetNames[name]; !exists {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON target %s 未匹配 SUPERVISOR_TARGETS 中的 target name", name)
 		}
 		path := strings.TrimSpace(spec.Path)
 		if path == "" {
@@ -312,6 +327,39 @@ func validateSupervisorContainerExecutorCommands(raw string) error {
 		}
 	}
 	return nil
+}
+
+func supervisorTargetNameSet(targets []string) (map[string]struct{}, error) {
+	names := make(map[string]struct{})
+	for index, raw := range targets {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		name := ""
+		if strings.HasPrefix(strings.ToLower(raw), "http://") || strings.HasPrefix(strings.ToLower(raw), "https://") {
+			parsed, err := url.Parse(strings.TrimRight(raw, "/"))
+			if err == nil && strings.TrimSpace(parsed.Host) != "" {
+				name = strings.TrimSpace(parsed.Host)
+			} else {
+				name = fmt.Sprintf("target-%d", index+1)
+			}
+		} else {
+			candidate, _, ok := strings.Cut(raw, "=")
+			if !ok {
+				continue
+			}
+			name = strings.TrimSpace(candidate)
+		}
+		if name == "" {
+			continue
+		}
+		if _, exists := names[name]; exists {
+			return nil, fmt.Errorf("SUPERVISOR_TARGETS 包含重复 effective target name: %s", name)
+		}
+		names[name] = struct{}{}
+	}
+	return names, nil
 }
 
 func validateSupervisorTargets(targets []string) error {

@@ -118,6 +118,7 @@ func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
 	commandCfg := Config{
 		HTTPAddr:                            ":8080",
 		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080"},
 		SupervisorContainerExecutor:         "command",
 		SupervisorContainerExecutorArmed:    true,
 		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo","args":["restart","api"],"timeoutSeconds":5}}`,
@@ -144,6 +145,7 @@ func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
 	cfg = Config{
 		HTTPAddr:                            ":8080",
 		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080"},
 		SupervisorContainerExecutor:         "command",
 		SupervisorContainerExecutorArmed:    true,
 		SupervisorContainerExecutorCommands: `{"api":{"path":"docker","args":["restart","platform-api"]}}`,
@@ -155,6 +157,67 @@ func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
 	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutorArmed: true}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected armed gate without command executor to fail validation")
+	}
+}
+
+func TestConfigValidateSupervisorCommandExecutorMatchesTargets(t *testing.T) {
+	cfg := Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080", "worker=http://127.0.0.1:8081"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo"},"worker":{"path":"/bin/echo","timeoutSeconds":0}}`,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected command executor allowlist to match configured targets, got %v", err)
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"http://platform-api.example"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"platform-api.example":{"path":"/bin/echo"}}`,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected command executor allowlist to match implicit target name, got %v", err)
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"worker":{"path":"/bin/echo"}}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor allowlist target outside SUPERVISOR_TARGETS to fail validation")
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo"}}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor without SUPERVISOR_TARGETS to fail validation")
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080", "http://api"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo"}}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor with duplicate effective target names to fail validation")
 	}
 }
 
@@ -355,6 +418,7 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 
 func TestLoadReadsCommandSupervisorExecutorEnv(t *testing.T) {
 	commandsJSON := `{"api":{"path":"/bin/echo","args":["restart","api"],"timeoutSeconds":5}}`
+	t.Setenv("SUPERVISOR_TARGETS", "api=http://127.0.0.1:8080")
 	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR", " command ")
 	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR_ARMED", "true")
 	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON", " "+commandsJSON+" ")

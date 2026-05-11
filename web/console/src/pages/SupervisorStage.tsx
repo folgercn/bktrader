@@ -761,7 +761,7 @@ export function SupervisorStage() {
                 icon={RotateCw}
                 label="Controls"
                 value={controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length + fallbackEpisodeRows.length}
-                detail={`${controlActionRows.length} runtime, ${fallbackControlRows.length} gates, ${fallbackActionRows.length} dry-run, ${fallbackEpisodeRows.length} episodes`}
+                detail={`${controlActionRows.length} runtime, ${fallbackControlRows.length} gates, ${fallbackActionRows.length} fallback, ${fallbackEpisodeRows.length} episodes`}
                 tone={controlActionRows.some((action) => action.error) || fallbackActionRows.some((action) => action.error) ? 'danger' : 'neutral'}
               />
             </div>
@@ -777,6 +777,11 @@ export function SupervisorStage() {
                       </Badge>
                       <Badge variant="neutral">{executorKindLabel(policy.containerExecutorKind)}</Badge>
                       {policy.containerExecutorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                      {policy.containerExecutorConfigured && !policy.containerExecutorDryRun && (
+                        <Badge variant={policy.containerExecutorArmed ? 'success' : 'destructive'}>
+                          {policy.containerExecutorArmed ? 'armed' : 'not armed'}
+                        </Badge>
+                      )}
                     </div>
                   </CardAction>
                 </CardHeader>
@@ -810,6 +815,11 @@ export function SupervisorStage() {
                           <PolicyBadge enabled={policy.containerExecutorConfigured} enabledLabel="ready" disabledLabel="not configured" />
                           <Badge variant="neutral">{executorKindLabel(policy.containerExecutorKind)}</Badge>
                           {policy.containerExecutorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                          {policy.containerExecutorConfigured && !policy.containerExecutorDryRun && (
+                            <Badge variant={policy.containerExecutorArmed ? 'success' : 'destructive'}>
+                              {policy.containerExecutorArmed ? 'armed' : 'not armed'}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                       <ServerCog className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
@@ -925,6 +935,16 @@ export function SupervisorStage() {
                                   )}
                                   {fallbackPlan && <Badge variant="neutral">{executorKindLabel(fallbackPlan.executorKind)}</Badge>}
                                   {fallbackPlan?.executorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                                  {fallbackPlan && !fallbackPlan.executorDryRun && (
+                                    <Badge variant={fallbackPlan.executorArmed ? 'success' : 'destructive'}>
+                                      {fallbackPlan.executorArmed ? 'armed' : 'not armed'}
+                                    </Badge>
+                                  )}
+                                  {fallbackPlan && !fallbackPlan.executorDryRun && (
+                                    <Badge variant={fallbackPlan.targetAllowed ? 'success' : 'destructive'}>
+                                      {fallbackPlan.targetAllowed ? 'target allowed' : 'target blocked'}
+                                    </Badge>
+                                  )}
                                   {fallbackPlan?.duplicate && <Badge variant="neutral">submitted</Badge>}
                                   {fallbackAttemptCount > 0 && (
                                     <Badge variant="neutral">
@@ -1370,7 +1390,7 @@ export function SupervisorStage() {
                     )}
                     {fallbackActionRows.length > 0 && (
                       <div className="flex flex-col gap-2">
-                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Fallback Dry-Run</div>
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Fallback Actions</div>
                         <Table tone="bento">
                           <TableHeader>
                             <TableRow>
