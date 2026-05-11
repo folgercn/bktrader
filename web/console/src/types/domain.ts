@@ -482,6 +482,9 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   targetAllowed?: boolean;
   executorPreview?: RuntimeSupervisorContainerFallbackExecutorPreview;
   executable: boolean;
+  autoSubmitEnabled?: boolean;
+  autoSubmitEligible?: boolean;
+  manualSubmitRequired?: boolean;
   decision?: 'blocked' | 'eligible' | string;
   duplicate?: boolean;
   suppressed: boolean;

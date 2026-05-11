@@ -301,6 +301,9 @@ type RuntimeSupervisorContainerFallbackPlan struct {
 	TargetAllowed                   bool                                               `json:"targetAllowed"`
 	ExecutorPreview                 *RuntimeSupervisorContainerFallbackExecutorPreview `json:"executorPreview,omitempty"`
 	Executable                      bool                                               `json:"executable"`
+	AutoSubmitEnabled               bool                                               `json:"autoSubmitEnabled"`
+	AutoSubmitEligible              bool                                               `json:"autoSubmitEligible"`
+	ManualSubmitRequired            bool                                               `json:"manualSubmitRequired"`
 	Decision                        string                                             `json:"decision"`
 	Duplicate                       bool                                               `json:"duplicate"`
 	Suppressed                      bool                                               `json:"suppressed"`
@@ -1340,6 +1343,7 @@ func runtimeSupervisorContainerFallbackPlan(target RuntimeSupervisorTarget, stat
 		BackoffActive:      backoffActive,
 		SafetyGateOK:       safetyGateOK,
 	})
+	autoSubmitEnabled := options.ContainerFallbackAutoSubmit
 	return &RuntimeSupervisorContainerFallbackPlan{
 		Action:                          "container-restart",
 		Candidate:                       true,
@@ -1353,6 +1357,9 @@ func runtimeSupervisorContainerFallbackPlan(target RuntimeSupervisorTarget, stat
 		TargetAllowed:                   targetAllowed,
 		ExecutorPreview:                 executorPreview,
 		Executable:                      decision.Executable,
+		AutoSubmitEnabled:               autoSubmitEnabled,
+		AutoSubmitEligible:              decision.Executable && autoSubmitEnabled,
+		ManualSubmitRequired:            decision.Executable && !autoSubmitEnabled,
 		Decision:                        decision.Decision,
 		Duplicate:                       duplicate,
 		Suppressed:                      suppressed,

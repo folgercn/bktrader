@@ -211,6 +211,9 @@ type supervisorContainerFallbackPlan struct {
 	TargetAllowed                   bool                                        `json:"targetAllowed"`
 	ExecutorPreview                 *supervisorContainerFallbackExecutorPreview `json:"executorPreview,omitempty"`
 	Executable                      bool                                        `json:"executable"`
+	AutoSubmitEnabled               bool                                        `json:"autoSubmitEnabled"`
+	AutoSubmitEligible              bool                                        `json:"autoSubmitEligible"`
+	ManualSubmitRequired            bool                                        `json:"manualSubmitRequired"`
 	Decision                        string                                      `json:"decision"`
 	Duplicate                       bool                                        `json:"duplicate"`
 	Suppressed                      bool                                        `json:"suppressed"`
@@ -461,7 +464,7 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 		}
 		if target.ContainerFallbackPlan != nil {
 			plan := target.ContainerFallbackPlan
-			fmt.Fprintf(&out, "  fallbackPlan: action=%s decision=%s enabled=%t executorConfigured=%t executorKind=%s executorDryRun=%t executorArmed=%t targetAllowed=%t executable=%t duplicate=%t suppressed=%t backoffActive=%t safetyGateOk=%t blockedReason=%s eligibleReason=%s\n",
+			fmt.Fprintf(&out, "  fallbackPlan: action=%s decision=%s enabled=%t executorConfigured=%t executorKind=%s executorDryRun=%t executorArmed=%t targetAllowed=%t executable=%t autoSubmitEnabled=%t autoSubmitEligible=%t manualSubmitRequired=%t duplicate=%t suppressed=%t backoffActive=%t safetyGateOk=%t blockedReason=%s eligibleReason=%s\n",
 				firstNonEmpty(plan.Action, "--"),
 				firstNonEmpty(plan.Decision, "--"),
 				plan.Enabled,
@@ -471,6 +474,9 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				plan.ExecutorArmed,
 				plan.TargetAllowed,
 				plan.Executable,
+				plan.AutoSubmitEnabled,
+				plan.AutoSubmitEligible,
+				plan.ManualSubmitRequired,
 				plan.Duplicate,
 				plan.Suppressed,
 				plan.BackoffActive,

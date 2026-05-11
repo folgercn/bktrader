@@ -640,6 +640,8 @@ export function SupervisorStage() {
     fallbackEpisodeRows,
     fallbackCount,
     executableFallbackCount,
+    autoSubmitEligibleCount,
+    manualSubmitRequiredCount,
     dryRunFallbackCount,
     attentionCount,
     fullyReachableTargets,
@@ -664,6 +666,8 @@ export function SupervisorStage() {
       fallbackActionRows: snapshot?.containerFallbackActions ?? [],
       fallbackCount: targets.filter((target) => target.serviceState.containerFallbackCandidate).length,
       executableFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable).length,
+      autoSubmitEligibleCount: targets.filter((target) => target.containerFallbackPlan?.autoSubmitEligible).length,
+      manualSubmitRequiredCount: targets.filter((target) => target.containerFallbackPlan?.manualSubmitRequired).length,
       dryRunFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable && target.containerFallbackPlan.executorDryRun).length,
       attentionCount: runtimes.filter(runtimeNeedsAttention).length,
       fullyReachableTargets: targets.filter((target) => isProbeOK(target.healthz) && isProbeOK(target.runtimeStatus)).length,
@@ -770,8 +774,8 @@ export function SupervisorStage() {
                 value={fallbackCount}
                 detail={
                   dryRunFallbackCount > 0
-                    ? `${executableFallbackCount} eligible, ${dryRunFallbackCount} dry-run`
-                    : `${executableFallbackCount} eligible`
+                    ? `${executableFallbackCount} eligible, ${autoSubmitEligibleCount} auto, ${manualSubmitRequiredCount} manual, ${dryRunFallbackCount} dry-run`
+                    : `${executableFallbackCount} eligible, ${autoSubmitEligibleCount} auto, ${manualSubmitRequiredCount} manual`
                 }
                 tone={fallbackCount > 0 ? 'danger' : 'neutral'}
               />
@@ -978,8 +982,8 @@ export function SupervisorStage() {
                                   )}
                                   {fallbackPlan?.duplicate && <Badge variant="neutral">submitted</Badge>}
                                   {fallbackPlan?.executable && (
-                                    <Badge variant={policy?.containerFallbackAutoSubmit ? 'destructive' : 'secondary'}>
-                                      {policy?.containerFallbackAutoSubmit ? 'auto submit' : 'manual submit'}
+                                    <Badge variant={fallbackPlan.autoSubmitEligible ? 'destructive' : 'secondary'}>
+                                      {fallbackPlan.autoSubmitEligible ? 'auto submit' : 'manual submit'}
                                     </Badge>
                                   )}
                                   {fallbackAttemptCount > 0 && (
