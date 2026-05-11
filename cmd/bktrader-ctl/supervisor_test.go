@@ -386,7 +386,9 @@ func TestBuildSupervisorStatusSummaryShowsFallbackActionAudit(t *testing.T) {
 			"action":"container-restart",
 			"targetName":"api",
 			"targetBaseUrl":"http://127.0.0.1:8080",
-			"reason":"service probes failed 1/1",
+			"reason":"operator reviewed static command preview",
+			"planReason":"service probes failed 1/1",
+			"source":"ctl",
 			"executorKind":"noop",
 			"executorDryRun":true,
 			"submitted":true,
@@ -403,7 +405,7 @@ func TestBuildSupervisorStatusSummaryShowsFallbackActionAudit(t *testing.T) {
 	expected := []string{
 		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 serviceFailureEpisodes=0 fallbackControls=0 fallbackActions=1",
 		"fallbackActions: total=1",
-		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z episodeStartedAt=-- candidateSince=-- reason=service probes failed 1/1 message=noop container fallback executor",
+		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z episodeStartedAt=-- candidateSince=-- reason=operator reviewed static command preview message=noop container fallback executor source=ctl planReason=service probes failed 1/1",
 	}
 	for _, want := range expected {
 		if !strings.Contains(summary, want) {

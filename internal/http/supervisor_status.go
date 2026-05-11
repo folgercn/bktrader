@@ -36,6 +36,7 @@ func registerSupervisorStatusRoutes(mux *http.ServeMux, platform *service.Platfo
 	registerSupervisorContainerFallbackControlRoute(mux, platform, cfg, "/api/v1/supervisor/container-fallback/resume", false)
 	registerSupervisorContainerFallbackBackoffRoute(mux, platform, cfg, "/api/v1/supervisor/container-fallback/defer", false)
 	registerSupervisorContainerFallbackBackoffRoute(mux, platform, cfg, "/api/v1/supervisor/container-fallback/clear-backoff", true)
+	registerSupervisorContainerFallbackSubmitRoute(mux, platform, cfg)
 }
 
 func registerSupervisorContainerFallbackControlRoute(mux *http.ServeMux, platform *service.Platform, cfg config.Config, path string, suppressed bool) {
@@ -171,6 +172,58 @@ func registerSupervisorContainerFallbackBackoffRoute(mux *http.ServeMux, platfor
 	})
 }
 
+func registerSupervisorContainerFallbackSubmitRoute(mux *http.ServeMux, platform *service.Platform, cfg config.Config) {
+	mux.HandleFunc("/api/v1/supervisor/container-fallback/submit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !cfg.RuntimeActionsEnabled() {
+			writeError(w, http.StatusConflict, "supervisor container fallback submit is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+			return
+		}
+		var request supervisorContainerFallbackControlRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		targetName := strings.TrimSpace(request.TargetName)
+		if targetName == "" {
+			writeError(w, http.StatusBadRequest, "targetName is required")
+			return
+		}
+		if !request.Confirm {
+			writeError(w, http.StatusBadRequest, "confirm=true is required for supervisor container fallback submit")
+			return
+		}
+		reason := strings.TrimSpace(request.Reason)
+		if reason == "" {
+			writeError(w, http.StatusBadRequest, "reason is required for supervisor container fallback submit")
+			return
+		}
+		result, err := platform.SubmitRuntimeSupervisorContainerFallback(r.Context(), targetName, service.RuntimeSupervisorContainerFallbackControlOptions{
+			Confirm: true,
+			Reason:  reason,
+			Source:  "api",
+		})
+		if err != nil {
+			writeSupervisorContainerFallbackControlError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"status":                "accepted",
+			"message":               "supervisor container fallback submit accepted",
+			"targetName":            result.TargetName,
+			"reason":                result.Reason,
+			"source":                result.Source,
+			"updatedAt":             result.UpdatedAt,
+			"serviceState":          result.ServiceState,
+			"containerFallbackPlan": result.Plan,
+			"action":                result.Action,
+		})
+	})
+}
+
 func writeSupervisorContainerFallbackControlError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrRuntimeSupervisorControlConfirmRequired),
@@ -182,6 +235,8 @@ func writeSupervisorContainerFallbackControlError(w http.ResponseWriter, err err
 	case errors.Is(err, service.ErrRuntimeSupervisorTargetNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrRuntimeSupervisorTargetAmbiguous):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrRuntimeSupervisorContainerFallbackBlocked):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())

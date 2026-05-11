@@ -35,14 +35,31 @@ const (
 )
 
 var (
-	ErrRuntimeSupervisorControlConfirmRequired  = errors.New("runtime supervisor control confirm required")
-	ErrRuntimeSupervisorControlReasonRequired   = errors.New("runtime supervisor control reason required")
-	ErrRuntimeSupervisorBackoffDurationRequired = errors.New("runtime supervisor backoff duration must be positive")
-	ErrRuntimeSupervisorBackoffDurationTooLarge = errors.New("runtime supervisor backoff duration exceeds maximum")
-	ErrRuntimeSupervisorTargetRequired          = errors.New("runtime supervisor target is required")
-	ErrRuntimeSupervisorTargetNotFound          = errors.New("runtime supervisor target not found")
-	ErrRuntimeSupervisorTargetAmbiguous         = errors.New("runtime supervisor target is ambiguous")
+	ErrRuntimeSupervisorControlConfirmRequired   = errors.New("runtime supervisor control confirm required")
+	ErrRuntimeSupervisorControlReasonRequired    = errors.New("runtime supervisor control reason required")
+	ErrRuntimeSupervisorBackoffDurationRequired  = errors.New("runtime supervisor backoff duration must be positive")
+	ErrRuntimeSupervisorBackoffDurationTooLarge  = errors.New("runtime supervisor backoff duration exceeds maximum")
+	ErrRuntimeSupervisorTargetRequired           = errors.New("runtime supervisor target is required")
+	ErrRuntimeSupervisorTargetNotFound           = errors.New("runtime supervisor target not found")
+	ErrRuntimeSupervisorTargetAmbiguous          = errors.New("runtime supervisor target is ambiguous")
+	ErrRuntimeSupervisorContainerFallbackBlocked = errors.New("runtime supervisor container fallback is blocked")
 )
+
+type RuntimeSupervisorContainerFallbackBlockedError struct {
+	Reason string
+}
+
+func (e RuntimeSupervisorContainerFallbackBlockedError) Error() string {
+	reason := strings.TrimSpace(e.Reason)
+	if reason == "" {
+		return ErrRuntimeSupervisorContainerFallbackBlocked.Error()
+	}
+	return ErrRuntimeSupervisorContainerFallbackBlocked.Error() + ": " + reason
+}
+
+func (e RuntimeSupervisorContainerFallbackBlockedError) Unwrap() error {
+	return ErrRuntimeSupervisorContainerFallbackBlocked
+}
 
 type RuntimeSupervisorOptions struct {
 	EnableApplicationRestart       bool
@@ -196,6 +213,8 @@ type RuntimeSupervisorContainerFallbackAction struct {
 	TargetName                      string                                             `json:"targetName"`
 	TargetBaseURL                   string                                             `json:"targetBaseUrl"`
 	Reason                          string                                             `json:"reason,omitempty"`
+	PlanReason                      string                                             `json:"planReason,omitempty"`
+	Source                          string                                             `json:"source,omitempty"`
 	ServiceFailureEpisodeStartedAt  *time.Time                                         `json:"serviceFailureEpisodeStartedAt,omitempty"`
 	ContainerFallbackCandidateSince *time.Time                                         `json:"containerFallbackCandidateSince,omitempty"`
 	ExecutorKind                    string                                             `json:"executorKind"`
@@ -378,6 +397,22 @@ type RuntimeSupervisorContainerFallbackControlResult struct {
 	ServiceState  RuntimeSupervisorServiceState `json:"serviceState"`
 }
 
+type RuntimeSupervisorContainerFallbackSubmitResult struct {
+	TargetName    string                                    `json:"targetName"`
+	TargetBaseURL string                                    `json:"targetBaseUrl"`
+	Reason        string                                    `json:"reason"`
+	Source        string                                    `json:"source"`
+	UpdatedAt     time.Time                                 `json:"updatedAt"`
+	ServiceState  RuntimeSupervisorServiceState             `json:"serviceState"`
+	Plan          *RuntimeSupervisorContainerFallbackPlan   `json:"containerFallbackPlan,omitempty"`
+	Action        *RuntimeSupervisorContainerFallbackAction `json:"action,omitempty"`
+}
+
+type runtimeSupervisorContainerFallbackSubmitAudit struct {
+	Reason string
+	Source string
+}
+
 type RuntimeSupervisor struct {
 	targets []RuntimeSupervisorTarget
 	client  *http.Client
@@ -447,6 +482,16 @@ func (p *Platform) ClearRuntimeSupervisorContainerFallbackBackoff(targetName str
 		return RuntimeSupervisorContainerFallbackControlResult{}, ErrRuntimeSupervisorTargetNotFound
 	}
 	return supervisor.ClearContainerFallbackBackoff(targetName, options)
+}
+
+func (p *Platform) SubmitRuntimeSupervisorContainerFallback(ctx context.Context, targetName string, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackSubmitResult, error) {
+	p.mu.Lock()
+	supervisor := p.runtimeSupervisor
+	p.mu.Unlock()
+	if supervisor == nil {
+		return RuntimeSupervisorContainerFallbackSubmitResult{}, ErrRuntimeSupervisorTargetNotFound
+	}
+	return supervisor.SubmitContainerFallback(ctx, targetName, options)
 }
 
 func NewRuntimeSupervisor(targets []RuntimeSupervisorTarget, client *http.Client) *RuntimeSupervisor {
@@ -614,6 +659,80 @@ func (s *RuntimeSupervisor) DeferContainerFallback(targetName string, options Ru
 
 func (s *RuntimeSupervisor) ClearContainerFallbackBackoff(targetName string, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackControlResult, error) {
 	return s.setContainerFallbackBackoff(targetName, options, true)
+}
+
+func (s *RuntimeSupervisor) SubmitContainerFallback(ctx context.Context, targetName string, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackSubmitResult, error) {
+	if s == nil {
+		return RuntimeSupervisorContainerFallbackSubmitResult{}, ErrRuntimeSupervisorTargetNotFound
+	}
+	if !options.Confirm {
+		return RuntimeSupervisorContainerFallbackSubmitResult{}, ErrRuntimeSupervisorControlConfirmRequired
+	}
+	reason := strings.TrimSpace(options.Reason)
+	if reason == "" {
+		return RuntimeSupervisorContainerFallbackSubmitResult{}, ErrRuntimeSupervisorControlReasonRequired
+	}
+	target, err := s.targetByName(targetName)
+	if err != nil {
+		return RuntimeSupervisorContainerFallbackSubmitResult{}, err
+	}
+	source := strings.TrimSpace(options.Source)
+	if source == "" {
+		source = "api"
+	}
+	now := time.Now().UTC()
+	key := runtimeSupervisorServiceKey(target)
+
+	s.mu.Lock()
+	if s.serviceStates == nil {
+		s.serviceStates = make(map[string]runtimeSupervisorServiceState)
+	}
+	state := s.serviceStates[key]
+	if state.ConsecutiveFailures >= s.options.ServiceFailureThreshold && state.LastFailureReason != "" {
+		state.ContainerFallbackAttemptCount++
+	}
+	serviceState := runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold)
+	plan := runtimeSupervisorContainerFallbackPlan(target, serviceState, s.options, now)
+	if plan != nil {
+		decisionReason := runtimeSupervisorContainerFallbackDecisionReason(plan)
+		state.LastContainerFallbackDecisionAt = now
+		state.LastContainerFallbackDecisionReason = decisionReason
+		s.serviceStates[key] = state
+		serviceState = runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold)
+		plan = runtimeSupervisorContainerFallbackPlan(target, serviceState, s.options, now)
+	} else {
+		s.serviceStates[key] = state
+	}
+	s.mu.Unlock()
+
+	result := RuntimeSupervisorContainerFallbackSubmitResult{
+		TargetName:    target.Name,
+		TargetBaseURL: target.BaseURL,
+		Reason:        reason,
+		Source:        source,
+		UpdatedAt:     now,
+		ServiceState:  serviceState,
+		Plan:          plan,
+	}
+	if plan == nil {
+		return result, RuntimeSupervisorContainerFallbackBlockedError{Reason: "container-fallback-not-candidate"}
+	}
+	if !plan.Executable {
+		return result, RuntimeSupervisorContainerFallbackBlockedError{Reason: runtimeSupervisorContainerFallbackDecisionReason(plan)}
+	}
+	action, submitted := s.submitContainerFallbackAction(ctx, target, plan, now, runtimeSupervisorContainerFallbackSubmitAudit{
+		Reason: reason,
+		Source: source,
+	})
+	if !submitted {
+		result.ServiceState = s.serviceStateSnapshot(target)
+		result.Plan = runtimeSupervisorContainerFallbackPlan(target, result.ServiceState, s.options, now)
+		return result, RuntimeSupervisorContainerFallbackBlockedError{Reason: "container-fallback-already-submitted"}
+	}
+	result.Action = &action
+	result.ServiceState = s.serviceStateSnapshot(target)
+	result.Plan = runtimeSupervisorContainerFallbackPlan(target, result.ServiceState, s.options, now)
+	return result, nil
 }
 
 func (s *RuntimeSupervisor) setContainerFallbackSuppressed(targetName string, suppressed bool, options RuntimeSupervisorContainerFallbackControlOptions) (RuntimeSupervisorContainerFallbackControlResult, error) {
@@ -1093,8 +1212,15 @@ func (s *RuntimeSupervisor) updateContainerFallbackPlan(target RuntimeSupervisor
 }
 
 func (s *RuntimeSupervisor) submitContainerFallback(ctx context.Context, target RuntimeSupervisorTarget, plan *RuntimeSupervisorContainerFallbackPlan, now time.Time) bool {
+	_, submitted := s.submitContainerFallbackAction(ctx, target, plan, now, runtimeSupervisorContainerFallbackSubmitAudit{
+		Source: "supervisor",
+	})
+	return submitted
+}
+
+func (s *RuntimeSupervisor) submitContainerFallbackAction(ctx context.Context, target RuntimeSupervisorTarget, plan *RuntimeSupervisorContainerFallbackPlan, now time.Time, audit runtimeSupervisorContainerFallbackSubmitAudit) (RuntimeSupervisorContainerFallbackAction, bool) {
 	if s == nil || plan == nil || !plan.Executable || s.options.ContainerFallbackExecutor == nil {
-		return false
+		return RuntimeSupervisorContainerFallbackAction{}, false
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -1107,16 +1233,26 @@ func (s *RuntimeSupervisor) submitContainerFallback(ctx context.Context, target 
 	}
 	if s.submittedFallbacks[key] {
 		s.mu.Unlock()
-		return false
+		return RuntimeSupervisorContainerFallbackAction{}, false
 	}
 	s.submittedFallbacks[key] = true
 	s.mu.Unlock()
 
+	planReason := strings.TrimSpace(plan.Reason)
+	reason := strings.TrimSpace(audit.Reason)
+	if reason == "" {
+		reason = planReason
+	}
+	source := strings.TrimSpace(audit.Source)
+	if source == "" {
+		source = "supervisor"
+	}
 	action := RuntimeSupervisorContainerFallbackAction{
 		Action:                          firstNonEmpty(plan.Action, "container-restart"),
 		TargetName:                      target.Name,
 		TargetBaseURL:                   target.BaseURL,
-		Reason:                          plan.Reason,
+		Reason:                          reason,
+		Source:                          source,
 		ServiceFailureEpisodeStartedAt:  plan.ServiceFailureEpisodeStartedAt,
 		ContainerFallbackCandidateSince: plan.ContainerFallbackCandidateSince,
 		ExecutorKind:                    plan.ExecutorKind,
@@ -1125,7 +1261,10 @@ func (s *RuntimeSupervisor) submitContainerFallback(ctx context.Context, target 
 		Submitted:                       true,
 		RequestedAt:                     now,
 	}
-	result, err := s.options.ContainerFallbackExecutor.Restart(ctx, target, plan.Reason)
+	if planReason != "" && planReason != reason {
+		action.PlanReason = planReason
+	}
+	result, err := s.options.ContainerFallbackExecutor.Restart(ctx, target, reason)
 	if err != nil {
 		action.Error = err.Error()
 		backoffUntil := now.Add(defaultRuntimeSupervisorFallbackErrorBackoff).UTC()
@@ -1139,7 +1278,7 @@ func (s *RuntimeSupervisor) submitContainerFallback(ctx context.Context, target 
 	s.recordContainerFallbackSubmissionLocked(target, action, err, now)
 	s.recordContainerFallbackActionLocked(action)
 	s.mu.Unlock()
-	return true
+	return action, true
 }
 
 func (s *RuntimeSupervisor) recordContainerFallbackSubmissionLocked(target RuntimeSupervisorTarget, action RuntimeSupervisorContainerFallbackAction, err error, now time.Time) {

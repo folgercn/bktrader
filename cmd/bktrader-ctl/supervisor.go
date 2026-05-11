@@ -18,6 +18,7 @@ func init() {
 	supervisorCmd.AddCommand(supervisorResumeContainerFallbackCmd)
 	supervisorCmd.AddCommand(supervisorDeferContainerFallbackCmd)
 	supervisorCmd.AddCommand(supervisorClearContainerFallbackBackoffCmd)
+	supervisorCmd.AddCommand(supervisorSubmitContainerFallbackCmd)
 	rootCmd.AddCommand(supervisorCmd)
 	supervisorSuppressContainerFallbackCmd.Flags().Bool("confirm", false, "确认抑制 container fallback")
 	supervisorSuppressContainerFallbackCmd.Flags().String("reason", "", "抑制原因；必填")
@@ -28,6 +29,8 @@ func init() {
 	supervisorDeferContainerFallbackCmd.Flags().Int("seconds", 0, "延后秒数；必填且必须大于 0")
 	supervisorClearContainerFallbackBackoffCmd.Flags().Bool("confirm", false, "确认清理 container fallback backoff")
 	supervisorClearContainerFallbackBackoffCmd.Flags().String("reason", "", "清理原因；必填")
+	supervisorSubmitContainerFallbackCmd.Flags().Bool("confirm", false, "确认提交 container fallback executor")
+	supervisorSubmitContainerFallbackCmd.Flags().String("reason", "", "提交原因；必填")
 }
 
 var supervisorCmd = &cobra.Command{
@@ -80,6 +83,15 @@ var supervisorClearContainerFallbackBackoffCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSupervisorContainerFallbackControl(cmd, args[0], "/api/v1/supervisor/container-fallback/clear-backoff")
+	},
+}
+
+var supervisorSubmitContainerFallbackCmd = &cobra.Command{
+	Use:   "submit-container-fallback <targetName>",
+	Short: "显式提交 supervisor 容器兜底 executor [MUTATING]",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runSupervisorContainerFallbackControl(cmd, args[0], "/api/v1/supervisor/container-fallback/submit")
 	},
 }
 
@@ -302,6 +314,8 @@ type supervisorContainerFallbackAction struct {
 	TargetName                      string                                      `json:"targetName"`
 	TargetBaseURL                   string                                      `json:"targetBaseUrl"`
 	Reason                          string                                      `json:"reason,omitempty"`
+	PlanReason                      string                                      `json:"planReason,omitempty"`
+	Source                          string                                      `json:"source,omitempty"`
 	ServiceFailureEpisodeStartedAt  string                                      `json:"serviceFailureEpisodeStartedAt,omitempty"`
 	ContainerFallbackCandidateSince string                                      `json:"containerFallbackCandidateSince,omitempty"`
 	ExecutorKind                    string                                      `json:"executorKind"`
@@ -578,6 +592,12 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 			}
 			if strings.TrimSpace(action.Message) != "" {
 				fmt.Fprintf(&out, " message=%s", action.Message)
+			}
+			if strings.TrimSpace(action.Source) != "" {
+				fmt.Fprintf(&out, " source=%s", action.Source)
+			}
+			if strings.TrimSpace(action.PlanReason) != "" {
+				fmt.Fprintf(&out, " planReason=%s", action.PlanReason)
 			}
 			fmt.Fprintln(&out)
 		}
