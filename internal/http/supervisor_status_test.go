@@ -327,6 +327,27 @@ func TestSupervisorContainerFallbackSubmitEndpointSubmitsEligiblePlan(t *testing
 	if submitPayload.Plan == nil || submitPayload.Plan.BlockedReason != "container-fallback-already-submitted" {
 		t.Fatalf("expected duplicate blocker after submit, got %+v", submitPayload.Plan)
 	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/clear-backoff", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"operator approved retry"}`))
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected clear retry gate 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var clearPayload struct {
+		Reason       string                                `json:"reason"`
+		ServiceState service.RuntimeSupervisorServiceState `json:"serviceState"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&clearPayload); err != nil {
+		t.Fatalf("decode clear retry gate payload failed: %v", err)
+	}
+	if clearPayload.Reason != "operator approved retry" || clearPayload.ServiceState.ContainerFallbackSubmitted || clearPayload.ServiceState.ContainerFallbackSubmittedAt != nil {
+		t.Fatalf("expected clear-backoff to clear submitted retry gate, got %+v", clearPayload)
+	}
+	clearedSnapshot := supervisor.LastSnapshot()
+	if len(clearedSnapshot.Targets) != 1 || clearedSnapshot.Targets[0].ContainerFallbackPlan == nil || !clearedSnapshot.Targets[0].ContainerFallbackPlan.Executable || clearedSnapshot.Targets[0].ContainerFallbackPlan.Duplicate {
+		t.Fatalf("expected clear-backoff API to make plan executable again, got %+v", clearedSnapshot.Targets)
+	}
 }
 
 func TestSupervisorContainerFallbackControlValidation(t *testing.T) {
