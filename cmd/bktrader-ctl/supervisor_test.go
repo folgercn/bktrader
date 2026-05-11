@@ -153,6 +153,77 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 	}
 }
 
+func TestBuildSupervisorStatusSummaryShowsCommandExecutorPreview(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[{
+			"name":"api",
+			"baseUrl":"http://127.0.0.1:8080",
+			"healthz":{"path":"/healthz","reachable":false,"error":"connection refused"},
+			"runtimeStatus":{"path":"/api/v1/runtime/status","reachable":false,"error":"connection refused"},
+			"serviceState":{
+				"consecutiveFailures":1,
+				"failureThreshold":1,
+				"containerFallbackCandidate":true,
+				"containerFallbackAttemptCount":1
+			},
+			"containerFallbackPlan":{
+				"action":"container-restart",
+				"candidate":true,
+				"enabled":true,
+				"executorConfigured":true,
+				"executorKind":"command",
+				"executorDryRun":false,
+				"executorArmed":true,
+				"targetAllowed":true,
+				"executorPreview":{
+					"kind":"command",
+					"commandPath":"/usr/bin/docker",
+					"commandArgs":["compose","restart","platform-api"],
+					"timeoutSeconds":30
+				},
+				"executable":true,
+				"decision":"eligible",
+				"suppressed":false,
+				"backoffActive":false,
+				"safetyGateOk":true,
+				"eligibleReason":"container-fallback-eligible"
+			}
+		}],
+		"containerFallbackActions":[{
+			"action":"container-restart",
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"executorKind":"command",
+			"executorDryRun":false,
+			"executorPreview":{
+				"kind":"command",
+				"commandPath":"/usr/bin/docker",
+				"commandArgs":["compose","restart","platform-api"],
+				"timeoutSeconds":30
+			},
+			"submitted":true,
+			"executed":true,
+			"requestedAt":"2026-04-29T08:00:00Z",
+			"message":"ok"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"fallbackExecutorPreview: kind=command commandPath=/usr/bin/docker commandArgs=[\"compose\",\"restart\",\"platform-api\"] timeoutSeconds=30",
+		"executorPreview={kind=command commandPath=/usr/bin/docker commandArgs=[\"compose\",\"restart\",\"platform-api\"] timeoutSeconds=30}",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
 func TestBuildSupervisorStatusSummaryShowsFallbackControlAudit(t *testing.T) {
 	payload := []byte(`{
 		"checkedAt":"2026-04-29T08:00:00Z",

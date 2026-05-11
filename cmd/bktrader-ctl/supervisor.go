@@ -186,25 +186,33 @@ type supervisorServiceState struct {
 }
 
 type supervisorContainerFallbackPlan struct {
-	Action                          string `json:"action"`
-	Candidate                       bool   `json:"candidate"`
-	Enabled                         bool   `json:"enabled"`
-	ServiceFailureEpisodeStartedAt  string `json:"serviceFailureEpisodeStartedAt,omitempty"`
-	ContainerFallbackCandidateSince string `json:"containerFallbackCandidateSince,omitempty"`
-	ExecutorConfigured              bool   `json:"executorConfigured"`
-	ExecutorKind                    string `json:"executorKind"`
-	ExecutorDryRun                  bool   `json:"executorDryRun"`
-	ExecutorArmed                   bool   `json:"executorArmed"`
-	TargetAllowed                   bool   `json:"targetAllowed"`
-	Executable                      bool   `json:"executable"`
-	Decision                        string `json:"decision"`
-	Duplicate                       bool   `json:"duplicate"`
-	Suppressed                      bool   `json:"suppressed"`
-	BackoffActive                   bool   `json:"backoffActive"`
-	SafetyGateOK                    bool   `json:"safetyGateOk"`
-	BlockedReason                   string `json:"blockedReason,omitempty"`
-	EligibleReason                  string `json:"eligibleReason,omitempty"`
-	Reason                          string `json:"reason,omitempty"`
+	Action                          string                                      `json:"action"`
+	Candidate                       bool                                        `json:"candidate"`
+	Enabled                         bool                                        `json:"enabled"`
+	ServiceFailureEpisodeStartedAt  string                                      `json:"serviceFailureEpisodeStartedAt,omitempty"`
+	ContainerFallbackCandidateSince string                                      `json:"containerFallbackCandidateSince,omitempty"`
+	ExecutorConfigured              bool                                        `json:"executorConfigured"`
+	ExecutorKind                    string                                      `json:"executorKind"`
+	ExecutorDryRun                  bool                                        `json:"executorDryRun"`
+	ExecutorArmed                   bool                                        `json:"executorArmed"`
+	TargetAllowed                   bool                                        `json:"targetAllowed"`
+	ExecutorPreview                 *supervisorContainerFallbackExecutorPreview `json:"executorPreview,omitempty"`
+	Executable                      bool                                        `json:"executable"`
+	Decision                        string                                      `json:"decision"`
+	Duplicate                       bool                                        `json:"duplicate"`
+	Suppressed                      bool                                        `json:"suppressed"`
+	BackoffActive                   bool                                        `json:"backoffActive"`
+	SafetyGateOK                    bool                                        `json:"safetyGateOk"`
+	BlockedReason                   string                                      `json:"blockedReason,omitempty"`
+	EligibleReason                  string                                      `json:"eligibleReason,omitempty"`
+	Reason                          string                                      `json:"reason,omitempty"`
+}
+
+type supervisorContainerFallbackExecutorPreview struct {
+	Kind           string   `json:"kind"`
+	CommandPath    string   `json:"commandPath,omitempty"`
+	CommandArgs    []string `json:"commandArgs,omitempty"`
+	TimeoutSeconds int      `json:"timeoutSeconds,omitempty"`
 }
 
 type supervisorRuntimeStatusSnapshot struct {
@@ -290,21 +298,22 @@ type supervisorContainerFallbackControlAction struct {
 }
 
 type supervisorContainerFallbackAction struct {
-	Action                          string `json:"action"`
-	TargetName                      string `json:"targetName"`
-	TargetBaseURL                   string `json:"targetBaseUrl"`
-	Reason                          string `json:"reason,omitempty"`
-	ServiceFailureEpisodeStartedAt  string `json:"serviceFailureEpisodeStartedAt,omitempty"`
-	ContainerFallbackCandidateSince string `json:"containerFallbackCandidateSince,omitempty"`
-	ExecutorKind                    string `json:"executorKind"`
-	ExecutorDryRun                  bool   `json:"executorDryRun"`
-	Submitted                       bool   `json:"submitted"`
-	Executed                        bool   `json:"executed"`
-	BackoffUntil                    string `json:"backoffUntil,omitempty"`
-	BackoffSeconds                  int    `json:"backoffSeconds,omitempty"`
-	Message                         string `json:"message,omitempty"`
-	Error                           string `json:"error,omitempty"`
-	RequestedAt                     string `json:"requestedAt"`
+	Action                          string                                      `json:"action"`
+	TargetName                      string                                      `json:"targetName"`
+	TargetBaseURL                   string                                      `json:"targetBaseUrl"`
+	Reason                          string                                      `json:"reason,omitempty"`
+	ServiceFailureEpisodeStartedAt  string                                      `json:"serviceFailureEpisodeStartedAt,omitempty"`
+	ContainerFallbackCandidateSince string                                      `json:"containerFallbackCandidateSince,omitempty"`
+	ExecutorKind                    string                                      `json:"executorKind"`
+	ExecutorDryRun                  bool                                        `json:"executorDryRun"`
+	ExecutorPreview                 *supervisorContainerFallbackExecutorPreview `json:"executorPreview,omitempty"`
+	Submitted                       bool                                        `json:"submitted"`
+	Executed                        bool                                        `json:"executed"`
+	BackoffUntil                    string                                      `json:"backoffUntil,omitempty"`
+	BackoffSeconds                  int                                         `json:"backoffSeconds,omitempty"`
+	Message                         string                                      `json:"message,omitempty"`
+	Error                           string                                      `json:"error,omitempty"`
+	RequestedAt                     string                                      `json:"requestedAt"`
 }
 
 func handleSupervisorStatusResponse(data []byte, err error) {
@@ -453,6 +462,9 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 				firstNonEmpty(plan.BlockedReason, "--"),
 				firstNonEmpty(plan.EligibleReason, "--"),
 			)
+			if preview := supervisorContainerFallbackExecutorPreviewSummary(plan.ExecutorPreview); preview != "" {
+				fmt.Fprintf(&out, "  fallbackExecutorPreview: %s\n", preview)
+			}
 		}
 		if target.Status != nil {
 			attention := 0
@@ -561,6 +573,9 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 			if action.BackoffSeconds > 0 {
 				fmt.Fprintf(&out, " backoffSeconds=%d", action.BackoffSeconds)
 			}
+			if preview := supervisorContainerFallbackExecutorPreviewSummary(action.ExecutorPreview); preview != "" {
+				fmt.Fprintf(&out, " executorPreview={%s}", preview)
+			}
 			if strings.TrimSpace(action.Message) != "" {
 				fmt.Fprintf(&out, " message=%s", action.Message)
 			}
@@ -568,6 +583,22 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 		}
 	}
 	return strings.TrimRight(out.String(), "\n") + "\n", nil
+}
+
+func supervisorContainerFallbackExecutorPreviewSummary(preview *supervisorContainerFallbackExecutorPreview) string {
+	if preview == nil {
+		return ""
+	}
+	args, err := json.Marshal(preview.CommandArgs)
+	if err != nil {
+		args = []byte("[]")
+	}
+	return fmt.Sprintf("kind=%s commandPath=%s commandArgs=%s timeoutSeconds=%d",
+		firstNonEmpty(preview.Kind, "--"),
+		firstNonEmpty(preview.CommandPath, "--"),
+		string(args),
+		preview.TimeoutSeconds,
+	)
 }
 
 func supervisorProbeOK(probe supervisorProbe) bool {
