@@ -77,6 +77,7 @@ type Config struct {
 	SupervisorAppRestartEnabled         bool     // supervisor 是否允许按 runtime status 到期计划提交应用内 restart（默认关闭）
 	SupervisorServiceFailThreshold      int      // supervisor 标记容器兜底候选所需的连续服务级失败次数（默认 3）
 	SupervisorContainerRestart          bool     // supervisor 是否允许容器级 restart 进入 executor 阶段（默认关闭）
+	SupervisorFallbackAutoSubmit        bool     // supervisor 是否允许后台 collector 自动提交容器兜底 executor（默认关闭）
 	SupervisorContainerExecutor         string   // 容器兜底 executor 类型；支持 noop dry-run 或显式 armed command executor
 	SupervisorContainerExecutorArmed    bool     // 非 dry-run 容器兜底 executor 的人工武装开关
 	SupervisorContainerExecutorCommands string   // command executor 的 target allowlist JSON
@@ -174,6 +175,7 @@ func Load() Config {
 		SupervisorAppRestartEnabled:         boolFromEnv("SUPERVISOR_APPLICATION_RESTART_ENABLED", false),
 		SupervisorServiceFailThreshold:      intFromEnvWithMin("SUPERVISOR_SERVICE_FAILURE_THRESHOLD", 3, 1),
 		SupervisorContainerRestart:          boolFromEnv("SUPERVISOR_CONTAINER_RESTART_ENABLED", false),
+		SupervisorFallbackAutoSubmit:        boolFromEnv("SUPERVISOR_CONTAINER_FALLBACK_AUTO_SUBMIT", false),
 		SupervisorContainerExecutor:         strings.ToLower(strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR"))),
 		SupervisorContainerExecutorArmed:    boolFromEnv("SUPERVISOR_CONTAINER_EXECUTOR_ARMED", false),
 		SupervisorContainerExecutorCommands: strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON")),
@@ -265,6 +267,14 @@ func (c Config) Validate() error {
 		}
 		if strings.TrimSpace(c.SupervisorContainerExecutorCommands) != "" {
 			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=command 同时使用")
+		}
+	}
+	if c.SupervisorFallbackAutoSubmit {
+		if !c.SupervisorContainerRestart {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_FALLBACK_AUTO_SUBMIT=true 必须同时设置 SUPERVISOR_CONTAINER_RESTART_ENABLED=true")
+		}
+		if executor == "" {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_FALLBACK_AUTO_SUBMIT=true 必须配置 SUPERVISOR_CONTAINER_EXECUTOR")
 		}
 	}
 	if err := validateSupervisorTargets(c.SupervisorTargets); err != nil {

@@ -800,11 +800,14 @@ export function SupervisorStage() {
                           {policy.containerExecutorArmed ? 'armed' : 'not armed'}
                         </Badge>
                       )}
+                      <Badge variant={policy.containerFallbackAutoSubmit ? 'destructive' : 'secondary'}>
+                        {policy.containerFallbackAutoSubmit ? 'auto submit' : 'manual submit'}
+                      </Badge>
                     </div>
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
                       <div className="flex min-w-0 flex-col gap-1">
                         <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Application Restart</span>
@@ -825,6 +828,13 @@ export function SupervisorStage() {
                         <PolicyBadge enabled={policy.containerRestartEnabled} enabledLabel="opt-in" disabledLabel="disabled" />
                       </div>
                       <ShieldAlert className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
+                    </div>
+                    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Fallback Submit</span>
+                        <PolicyBadge enabled={policy.containerFallbackAutoSubmit} enabledLabel="auto" disabledLabel="manual" />
+                      </div>
+                      <CheckCircle2 className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
                     </div>
                     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
                       <div className="flex min-w-0 flex-col gap-1">
@@ -967,6 +977,11 @@ export function SupervisorStage() {
                                     </Badge>
                                   )}
                                   {fallbackPlan?.duplicate && <Badge variant="neutral">submitted</Badge>}
+                                  {fallbackPlan?.executable && (
+                                    <Badge variant={policy?.containerFallbackAutoSubmit ? 'destructive' : 'secondary'}>
+                                      {policy?.containerFallbackAutoSubmit ? 'auto submit' : 'manual submit'}
+                                    </Badge>
+                                  )}
                                   {fallbackAttemptCount > 0 && (
                                     <Badge variant="neutral">
                                       attempts {fallbackAttemptCount}

@@ -140,6 +140,7 @@ type supervisorPolicy struct {
 	ApplicationRestartEnabled   bool   `json:"applicationRestartEnabled"`
 	ServiceFailureThreshold     int    `json:"serviceFailureThreshold"`
 	ContainerRestartEnabled     bool   `json:"containerRestartEnabled"`
+	ContainerFallbackAutoSubmit bool   `json:"containerFallbackAutoSubmit"`
 	ContainerExecutorConfigured bool   `json:"containerExecutorConfigured"`
 	ContainerExecutorKind       string `json:"containerExecutorKind"`
 	ContainerExecutorDryRun     bool   `json:"containerExecutorDryRun"`
@@ -385,10 +386,11 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	fmt.Fprintln(&out, "Runtime supervisor snapshot")
 	fmt.Fprintf(&out, "checkedAt: %s\n", firstNonEmpty(snapshot.CheckedAt, "--"))
 	if snapshot.Policy != nil {
-		fmt.Fprintf(&out, "policy: applicationRestartEnabled=%t serviceFailureThreshold=%d containerRestartEnabled=%t containerExecutorConfigured=%t containerExecutorKind=%s containerExecutorDryRun=%t containerExecutorArmed=%t\n",
+		fmt.Fprintf(&out, "policy: applicationRestartEnabled=%t serviceFailureThreshold=%d containerRestartEnabled=%t containerFallbackAutoSubmit=%t containerExecutorConfigured=%t containerExecutorKind=%s containerExecutorDryRun=%t containerExecutorArmed=%t\n",
 			snapshot.Policy.ApplicationRestartEnabled,
 			snapshot.Policy.ServiceFailureThreshold,
 			snapshot.Policy.ContainerRestartEnabled,
+			snapshot.Policy.ContainerFallbackAutoSubmit,
 			snapshot.Policy.ContainerExecutorConfigured,
 			firstNonEmpty(snapshot.Policy.ContainerExecutorKind, "--"),
 			snapshot.Policy.ContainerExecutorDryRun,

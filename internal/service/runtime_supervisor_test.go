@@ -81,6 +81,9 @@ func TestRuntimeSupervisorCollectsHealthAndRuntimeStatus(t *testing.T) {
 	if snapshot.Policy.ApplicationRestartEnabled || snapshot.Policy.ContainerRestartEnabled || snapshot.Policy.ContainerExecutorConfigured {
 		t.Fatalf("expected default supervisor policy to stay read-only, got %+v", snapshot.Policy)
 	}
+	if snapshot.Policy.ContainerFallbackAutoSubmit {
+		t.Fatalf("expected default supervisor policy to disable container fallback auto submit, got %+v", snapshot.Policy)
+	}
 	if snapshot.Policy.ServiceFailureThreshold != defaultRuntimeSupervisorServiceFailThresh {
 		t.Fatalf("expected default service failure threshold %d, got %+v", defaultRuntimeSupervisorServiceFailThresh, snapshot.Policy)
 	}
@@ -143,6 +146,9 @@ func TestRuntimeSupervisorSnapshotReportsPolicyWithoutFallbackCandidate(t *testi
 	snapshot := supervisor.Collect(context.Background())
 	if !snapshot.Policy.ApplicationRestartEnabled || !snapshot.Policy.ContainerRestartEnabled {
 		t.Fatalf("expected policy to expose enabled restart settings, got %+v", snapshot.Policy)
+	}
+	if snapshot.Policy.ContainerFallbackAutoSubmit {
+		t.Fatalf("expected fallback auto submit to stay disabled by default, got %+v", snapshot.Policy)
 	}
 	if snapshot.Policy.ContainerExecutorConfigured {
 		t.Fatalf("expected policy to expose missing container executor, got %+v", snapshot.Policy)
@@ -379,6 +385,63 @@ func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing
 	}
 }
 
+func TestRuntimeSupervisorContainerFallbackAutoSubmitDisabledLeavesExecutablePlanForManualSubmit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: executor,
+		},
+	)
+
+	snapshot := supervisor.Collect(context.Background())
+	if snapshot.Policy.ContainerFallbackAutoSubmit {
+		t.Fatalf("expected policy to keep auto submit disabled, got %+v", snapshot.Policy)
+	}
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil || !target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionEligible {
+		t.Fatalf("expected executable manual-submit plan without auto submission, got %+v", target.ContainerFallbackPlan)
+	}
+	if executor.calls != 0 || len(snapshot.ContainerFallbackActions) != 0 || target.ServiceState.ContainerFallbackSubmitted {
+		t.Fatalf("expected disabled auto submit to leave executor untouched, calls=%d actions=%+v state=%+v", executor.calls, snapshot.ContainerFallbackActions, target.ServiceState)
+	}
+
+	result, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator approved manual fallback",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("manual container fallback submit failed while auto submit disabled: %v", err)
+	}
+	if executor.calls != 1 || result.Action == nil || !result.Action.Submitted || result.Action.Source != "ctl" {
+		t.Fatalf("expected manual submit to call executor once with audit, calls=%d result=%+v", executor.calls, result)
+	}
+	if result.Plan == nil || result.Plan.BlockedReason != "container-fallback-already-submitted" {
+		t.Fatalf("expected manual submit to leave duplicate blocker, got %+v", result.Plan)
+	}
+}
+
 func TestRuntimeSupervisorDryRunContainerFallbackExecutorRecordsActionOncePerFailureEpisode(t *testing.T) {
 	requested := make(map[string]int)
 	healthy := false
@@ -412,9 +475,10 @@ func TestRuntimeSupervisorDryRunContainerFallbackExecutorRecordsActionOncePerFai
 		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
 		server.Client(),
 		RuntimeSupervisorOptions{
-			ServiceFailureThreshold:   1,
-			EnableContainerFallback:   true,
-			ContainerFallbackExecutor: executor,
+			ServiceFailureThreshold:     1,
+			EnableContainerFallback:     true,
+			ContainerFallbackAutoSubmit: true,
+			ContainerFallbackExecutor:   executor,
 		},
 	)
 	snapshot := supervisor.Collect(context.Background())
@@ -508,9 +572,10 @@ func TestRuntimeSupervisorContainerFallbackExecutorErrorSetsBackoffAndAllowsManu
 		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
 		server.Client(),
 		RuntimeSupervisorOptions{
-			ServiceFailureThreshold:   1,
-			EnableContainerFallback:   true,
-			ContainerFallbackExecutor: executor,
+			ServiceFailureThreshold:     1,
+			EnableContainerFallback:     true,
+			ContainerFallbackAutoSubmit: true,
+			ContainerFallbackExecutor:   executor,
 		},
 	)
 
@@ -645,6 +710,7 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorExecutesWhenArmedAndAl
 		RuntimeSupervisorOptions{
 			ServiceFailureThreshold:        1,
 			EnableContainerFallback:        true,
+			ContainerFallbackAutoSubmit:    true,
 			ContainerFallbackExecutor:      executor,
 			ContainerFallbackExecutorArmed: true,
 		},
@@ -706,6 +772,7 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorBlocksTargetsOutsideAl
 		RuntimeSupervisorOptions{
 			ServiceFailureThreshold:        1,
 			EnableContainerFallback:        true,
+			ContainerFallbackAutoSubmit:    true,
 			ContainerFallbackExecutor:      executor,
 			ContainerFallbackExecutorArmed: true,
 		},
@@ -760,6 +827,7 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorFailureSetsBackoff(t *
 		RuntimeSupervisorOptions{
 			ServiceFailureThreshold:        1,
 			EnableContainerFallback:        true,
+			ContainerFallbackAutoSubmit:    true,
 			ContainerFallbackExecutor:      executor,
 			ContainerFallbackExecutorArmed: true,
 		},
@@ -893,9 +961,10 @@ func TestRuntimeSupervisorContainerFallbackSuppressionBlocksEligiblePlan(t *test
 		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
 		server.Client(),
 		RuntimeSupervisorOptions{
-			ServiceFailureThreshold:   1,
-			EnableContainerFallback:   true,
-			ContainerFallbackExecutor: NewNoopContainerFallbackExecutor(true),
+			ServiceFailureThreshold:     1,
+			EnableContainerFallback:     true,
+			ContainerFallbackAutoSubmit: true,
+			ContainerFallbackExecutor:   NewNoopContainerFallbackExecutor(true),
 		},
 	)
 	suppressed, err := supervisor.SuppressContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{
@@ -976,9 +1045,10 @@ func TestRuntimeSupervisorContainerFallbackBackoffBlocksEligiblePlan(t *testing.
 		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
 		server.Client(),
 		RuntimeSupervisorOptions{
-			ServiceFailureThreshold:   1,
-			EnableContainerFallback:   true,
-			ContainerFallbackExecutor: NewNoopContainerFallbackExecutor(true),
+			ServiceFailureThreshold:     1,
+			EnableContainerFallback:     true,
+			ContainerFallbackAutoSubmit: true,
+			ContainerFallbackExecutor:   NewNoopContainerFallbackExecutor(true),
 		},
 	)
 	deferred, err := supervisor.DeferContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{
