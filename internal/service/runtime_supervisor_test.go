@@ -422,6 +422,9 @@ func TestRuntimeSupervisorContainerFallbackAutoSubmitDisabledLeavesExecutablePla
 	if target.ContainerFallbackPlan == nil || !target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionEligible {
 		t.Fatalf("expected executable manual-submit plan without auto submission, got %+v", target.ContainerFallbackPlan)
 	}
+	if target.ContainerFallbackPlan.AutoSubmitEnabled || target.ContainerFallbackPlan.AutoSubmitEligible || !target.ContainerFallbackPlan.ManualSubmitRequired {
+		t.Fatalf("expected manual-only submit metadata on executable plan, got %+v", target.ContainerFallbackPlan)
+	}
 	if executor.calls != 0 || len(snapshot.ContainerFallbackActions) != 0 || target.ServiceState.ContainerFallbackSubmitted {
 		t.Fatalf("expected disabled auto submit to leave executor untouched, calls=%d actions=%+v state=%+v", executor.calls, snapshot.ContainerFallbackActions, target.ServiceState)
 	}
@@ -439,6 +442,50 @@ func TestRuntimeSupervisorContainerFallbackAutoSubmitDisabledLeavesExecutablePla
 	}
 	if result.Plan == nil || result.Plan.BlockedReason != "container-fallback-already-submitted" {
 		t.Fatalf("expected manual submit to leave duplicate blocker, got %+v", result.Plan)
+	}
+	if result.Plan.AutoSubmitEnabled || result.Plan.AutoSubmitEligible || result.Plan.ManualSubmitRequired {
+		t.Fatalf("expected duplicate manual submit plan to clear submit-mode eligibility, got %+v", result.Plan)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackPlanSubmitModeMetadata(t *testing.T) {
+	now := time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC)
+	startedAt := now.Add(-2 * time.Minute)
+	candidateSince := now.Add(-time.Minute)
+	state := RuntimeSupervisorServiceState{
+		ServiceFailureEpisodeStartedAt:  &startedAt,
+		ContainerFallbackCandidate:      true,
+		ContainerFallbackReason:         "service probes failed 1/1",
+		ContainerFallbackCandidateSince: &candidateSince,
+	}
+	target := RuntimeSupervisorTarget{Name: "api", BaseURL: "http://127.0.0.1:8080"}
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
+
+	manualPlan := runtimeSupervisorContainerFallbackPlan(target, state, RuntimeSupervisorOptions{
+		EnableContainerFallback:   true,
+		ContainerFallbackExecutor: executor,
+	}, now)
+	if manualPlan == nil || !manualPlan.Executable {
+		t.Fatalf("expected manual plan to be executable, got %+v", manualPlan)
+	}
+	if manualPlan.AutoSubmitEnabled || manualPlan.AutoSubmitEligible || !manualPlan.ManualSubmitRequired {
+		t.Fatalf("expected executable plan to require manual submit when auto-submit is disabled, got %+v", manualPlan)
+	}
+
+	autoPlan := runtimeSupervisorContainerFallbackPlan(target, state, RuntimeSupervisorOptions{
+		EnableContainerFallback:     true,
+		ContainerFallbackAutoSubmit: true,
+		ContainerFallbackExecutor:   executor,
+	}, now)
+	if autoPlan == nil || !autoPlan.Executable {
+		t.Fatalf("expected auto plan to be executable, got %+v", autoPlan)
+	}
+	if !autoPlan.AutoSubmitEnabled || !autoPlan.AutoSubmitEligible || autoPlan.ManualSubmitRequired {
+		t.Fatalf("expected executable plan to be auto-submit eligible when policy is enabled, got %+v", autoPlan)
 	}
 }
 
