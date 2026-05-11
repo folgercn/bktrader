@@ -658,6 +658,9 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorExecutesWhenArmedAndAl
 	if !action.Submitted || !action.Executed || action.ExecutorDryRun || action.ExecutorKind != runtimeSupervisorContainerExecutorKindCommand || action.Error != "" {
 		t.Fatalf("expected submitted/executed command fallback action, got %+v", action)
 	}
+	if action.ExecutorPreview == nil || action.ExecutorPreview.Kind != runtimeSupervisorContainerExecutorKindCommand || action.ExecutorPreview.CommandPath == "" || action.ExecutorPreview.TimeoutSeconds != 5 {
+		t.Fatalf("expected command preview on executed action, got %+v", action.ExecutorPreview)
+	}
 	if !strings.Contains(action.Message, "helper restart ok") {
 		t.Fatalf("expected command output audit, got %+v", action)
 	}
@@ -667,6 +670,10 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorExecutesWhenArmedAndAl
 	}
 	if target.ContainerFallbackPlan.BlockedReason != "container-fallback-already-submitted" || !target.ContainerFallbackPlan.Duplicate || !target.ContainerFallbackPlan.ExecutorArmed || !target.ContainerFallbackPlan.TargetAllowed {
 		t.Fatalf("expected executed command fallback to leave duplicate blocker with gates visible, got %+v", target.ContainerFallbackPlan)
+	}
+	preview := target.ContainerFallbackPlan.ExecutorPreview
+	if preview == nil || preview.Kind != runtimeSupervisorContainerExecutorKindCommand || preview.CommandPath == "" || len(preview.CommandArgs) != 3 || preview.TimeoutSeconds != 5 {
+		t.Fatalf("expected command preview on fallback plan, got %+v", preview)
 	}
 	if !target.ServiceState.ContainerFallbackSubmitted || target.ServiceState.ContainerFallbackSubmittedMessage == "" || target.ServiceState.ContainerFallbackSubmittedError != "" {
 		t.Fatalf("expected command submission audit in service state, got %+v", target.ServiceState)
@@ -708,6 +715,9 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorBlocksTargetsOutsideAl
 	}
 	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.TargetAllowed || target.ContainerFallbackPlan.BlockedReason != "container-executor-target-not-allowlisted" {
 		t.Fatalf("expected non-allowlisted target to block command executor, got %+v", target.ContainerFallbackPlan)
+	}
+	if target.ContainerFallbackPlan.ExecutorPreview != nil {
+		t.Fatalf("expected no command preview for non-allowlisted target, got %+v", target.ContainerFallbackPlan.ExecutorPreview)
 	}
 	if len(snapshot.ContainerFallbackActions) != 0 || target.ServiceState.ContainerFallbackSubmitted {
 		t.Fatalf("expected no command submission for non-allowlisted target, actions=%+v state=%+v", snapshot.ContainerFallbackActions, target.ServiceState)

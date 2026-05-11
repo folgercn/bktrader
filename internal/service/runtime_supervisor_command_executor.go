@@ -96,6 +96,27 @@ func (e CommandContainerFallbackExecutor) ContainerFallbackTargetAllowed(target 
 	return ok
 }
 
+func (e CommandContainerFallbackExecutor) ContainerFallbackExecutorPreview(target RuntimeSupervisorTarget) (*RuntimeSupervisorContainerFallbackExecutorPreview, bool) {
+	spec, ok := e.specs[strings.TrimSpace(target.Name)]
+	if !ok {
+		return nil, false
+	}
+	timeout := spec.Timeout
+	if timeout <= 0 {
+		timeout = defaultRuntimeSupervisorCommandTimeout
+	}
+	timeoutSeconds := int(timeout / time.Second)
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 1
+	}
+	return &RuntimeSupervisorContainerFallbackExecutorPreview{
+		Kind:           runtimeSupervisorContainerExecutorKindCommand,
+		CommandPath:    spec.Path,
+		CommandArgs:    append([]string(nil), spec.Args...),
+		TimeoutSeconds: timeoutSeconds,
+	}, true
+}
+
 func (e CommandContainerFallbackExecutor) Restart(ctx context.Context, target RuntimeSupervisorTarget, _ string) (ContainerFallbackExecutionResult, error) {
 	spec, ok := e.specs[strings.TrimSpace(target.Name)]
 	if !ok {

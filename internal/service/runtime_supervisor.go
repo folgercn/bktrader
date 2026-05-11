@@ -67,6 +67,10 @@ type ContainerFallbackTargetAllowlist interface {
 	ContainerFallbackTargetAllowed(target RuntimeSupervisorTarget) bool
 }
 
+type ContainerFallbackExecutorPreviewer interface {
+	ContainerFallbackExecutorPreview(target RuntimeSupervisorTarget) (*RuntimeSupervisorContainerFallbackExecutorPreview, bool)
+}
+
 type ContainerFallbackExecutionResult struct {
 	Executed bool   `json:"executed"`
 	Message  string `json:"message,omitempty"`
@@ -188,21 +192,29 @@ type RuntimeSupervisorContainerFallbackControlAction struct {
 }
 
 type RuntimeSupervisorContainerFallbackAction struct {
-	Action                          string     `json:"action"`
-	TargetName                      string     `json:"targetName"`
-	TargetBaseURL                   string     `json:"targetBaseUrl"`
-	Reason                          string     `json:"reason,omitempty"`
-	ServiceFailureEpisodeStartedAt  *time.Time `json:"serviceFailureEpisodeStartedAt,omitempty"`
-	ContainerFallbackCandidateSince *time.Time `json:"containerFallbackCandidateSince,omitempty"`
-	ExecutorKind                    string     `json:"executorKind"`
-	ExecutorDryRun                  bool       `json:"executorDryRun"`
-	Submitted                       bool       `json:"submitted"`
-	Executed                        bool       `json:"executed"`
-	BackoffUntil                    *time.Time `json:"backoffUntil,omitempty"`
-	BackoffSeconds                  int        `json:"backoffSeconds,omitempty"`
-	Message                         string     `json:"message,omitempty"`
-	Error                           string     `json:"error,omitempty"`
-	RequestedAt                     time.Time  `json:"requestedAt"`
+	Action                          string                                             `json:"action"`
+	TargetName                      string                                             `json:"targetName"`
+	TargetBaseURL                   string                                             `json:"targetBaseUrl"`
+	Reason                          string                                             `json:"reason,omitempty"`
+	ServiceFailureEpisodeStartedAt  *time.Time                                         `json:"serviceFailureEpisodeStartedAt,omitempty"`
+	ContainerFallbackCandidateSince *time.Time                                         `json:"containerFallbackCandidateSince,omitempty"`
+	ExecutorKind                    string                                             `json:"executorKind"`
+	ExecutorDryRun                  bool                                               `json:"executorDryRun"`
+	ExecutorPreview                 *RuntimeSupervisorContainerFallbackExecutorPreview `json:"executorPreview,omitempty"`
+	Submitted                       bool                                               `json:"submitted"`
+	Executed                        bool                                               `json:"executed"`
+	BackoffUntil                    *time.Time                                         `json:"backoffUntil,omitempty"`
+	BackoffSeconds                  int                                                `json:"backoffSeconds,omitempty"`
+	Message                         string                                             `json:"message,omitempty"`
+	Error                           string                                             `json:"error,omitempty"`
+	RequestedAt                     time.Time                                          `json:"requestedAt"`
+}
+
+type RuntimeSupervisorContainerFallbackExecutorPreview struct {
+	Kind           string   `json:"kind"`
+	CommandPath    string   `json:"commandPath,omitempty"`
+	CommandArgs    []string `json:"commandArgs,omitempty"`
+	TimeoutSeconds int      `json:"timeoutSeconds,omitempty"`
 }
 
 type RuntimeSupervisorApplicationRestartPlan struct {
@@ -256,25 +268,26 @@ type RuntimeSupervisorServiceState struct {
 }
 
 type RuntimeSupervisorContainerFallbackPlan struct {
-	Action                          string     `json:"action"`
-	Candidate                       bool       `json:"candidate"`
-	Enabled                         bool       `json:"enabled"`
-	ServiceFailureEpisodeStartedAt  *time.Time `json:"serviceFailureEpisodeStartedAt,omitempty"`
-	ContainerFallbackCandidateSince *time.Time `json:"containerFallbackCandidateSince,omitempty"`
-	ExecutorConfigured              bool       `json:"executorConfigured"`
-	ExecutorKind                    string     `json:"executorKind"`
-	ExecutorDryRun                  bool       `json:"executorDryRun"`
-	ExecutorArmed                   bool       `json:"executorArmed"`
-	TargetAllowed                   bool       `json:"targetAllowed"`
-	Executable                      bool       `json:"executable"`
-	Decision                        string     `json:"decision"`
-	Duplicate                       bool       `json:"duplicate"`
-	Suppressed                      bool       `json:"suppressed"`
-	BackoffActive                   bool       `json:"backoffActive"`
-	SafetyGateOK                    bool       `json:"safetyGateOk"`
-	BlockedReason                   string     `json:"blockedReason,omitempty"`
-	EligibleReason                  string     `json:"eligibleReason,omitempty"`
-	Reason                          string     `json:"reason,omitempty"`
+	Action                          string                                             `json:"action"`
+	Candidate                       bool                                               `json:"candidate"`
+	Enabled                         bool                                               `json:"enabled"`
+	ServiceFailureEpisodeStartedAt  *time.Time                                         `json:"serviceFailureEpisodeStartedAt,omitempty"`
+	ContainerFallbackCandidateSince *time.Time                                         `json:"containerFallbackCandidateSince,omitempty"`
+	ExecutorConfigured              bool                                               `json:"executorConfigured"`
+	ExecutorKind                    string                                             `json:"executorKind"`
+	ExecutorDryRun                  bool                                               `json:"executorDryRun"`
+	ExecutorArmed                   bool                                               `json:"executorArmed"`
+	TargetAllowed                   bool                                               `json:"targetAllowed"`
+	ExecutorPreview                 *RuntimeSupervisorContainerFallbackExecutorPreview `json:"executorPreview,omitempty"`
+	Executable                      bool                                               `json:"executable"`
+	Decision                        string                                             `json:"decision"`
+	Duplicate                       bool                                               `json:"duplicate"`
+	Suppressed                      bool                                               `json:"suppressed"`
+	BackoffActive                   bool                                               `json:"backoffActive"`
+	SafetyGateOK                    bool                                               `json:"safetyGateOk"`
+	BlockedReason                   string                                             `json:"blockedReason,omitempty"`
+	EligibleReason                  string                                             `json:"eligibleReason,omitempty"`
+	Reason                          string                                             `json:"reason,omitempty"`
 }
 
 type runtimeSupervisorServiceState struct {
@@ -1108,6 +1121,7 @@ func (s *RuntimeSupervisor) submitContainerFallback(ctx context.Context, target 
 		ContainerFallbackCandidateSince: plan.ContainerFallbackCandidateSince,
 		ExecutorKind:                    plan.ExecutorKind,
 		ExecutorDryRun:                  plan.ExecutorDryRun,
+		ExecutorPreview:                 cloneRuntimeSupervisorContainerFallbackExecutorPreview(plan.ExecutorPreview),
 		Submitted:                       true,
 		RequestedAt:                     now,
 	}
@@ -1167,6 +1181,7 @@ func runtimeSupervisorContainerFallbackPlan(target RuntimeSupervisorTarget, stat
 	executorDescriptor := runtimeSupervisorContainerExecutorDescriptor(options.ContainerFallbackExecutor)
 	executorArmed := runtimeSupervisorContainerExecutorArmed(options, executorDescriptor, executorConfigured)
 	targetAllowed := runtimeSupervisorContainerFallbackTargetAllowed(options.ContainerFallbackExecutor, target)
+	executorPreview := runtimeSupervisorContainerFallbackExecutorPreview(options.ContainerFallbackExecutor, target)
 	suppressed := state.ContainerFallbackSuppressed
 	backoffActive := runtimeSupervisorContainerFallbackBackoffActive(state.ContainerFallbackBackoffUntil, now)
 	duplicate := state.ContainerFallbackSubmitted
@@ -1194,6 +1209,7 @@ func runtimeSupervisorContainerFallbackPlan(target RuntimeSupervisorTarget, stat
 		ExecutorDryRun:                  executorDescriptor.DryRun,
 		ExecutorArmed:                   executorArmed,
 		TargetAllowed:                   targetAllowed,
+		ExecutorPreview:                 executorPreview,
 		Executable:                      decision.Executable,
 		Decision:                        decision.Decision,
 		Duplicate:                       duplicate,
@@ -1317,6 +1333,29 @@ func runtimeSupervisorContainerFallbackTargetAllowed(executor ContainerFallbackE
 		return true
 	}
 	return allowlist.ContainerFallbackTargetAllowed(target)
+}
+
+func runtimeSupervisorContainerFallbackExecutorPreview(executor ContainerFallbackExecutor, target RuntimeSupervisorTarget) *RuntimeSupervisorContainerFallbackExecutorPreview {
+	previewer, ok := executor.(ContainerFallbackExecutorPreviewer)
+	if !ok {
+		return nil
+	}
+	preview, ok := previewer.ContainerFallbackExecutorPreview(target)
+	if !ok || preview == nil {
+		return nil
+	}
+	return cloneRuntimeSupervisorContainerFallbackExecutorPreview(preview)
+}
+
+func cloneRuntimeSupervisorContainerFallbackExecutorPreview(preview *RuntimeSupervisorContainerFallbackExecutorPreview) *RuntimeSupervisorContainerFallbackExecutorPreview {
+	if preview == nil {
+		return nil
+	}
+	clone := *preview
+	if preview.CommandArgs != nil {
+		clone.CommandArgs = append([]string(nil), preview.CommandArgs...)
+	}
+	return &clone
 }
 
 func runtimeSupervisorServiceKey(target RuntimeSupervisorTarget) string {

@@ -112,6 +112,16 @@ function executorKindLabel(value?: string) {
   return normalized || 'none';
 }
 
+function executorPreviewLabel(preview?: { commandPath?: string; commandArgs?: string[]; timeoutSeconds?: number }) {
+  const path = String(preview?.commandPath || '').trim();
+  if (!path) {
+    return '';
+  }
+  const args = preview?.commandArgs?.length ? ` ${JSON.stringify(preview.commandArgs)}` : '';
+  const timeout = preview?.timeoutSeconds ? ` timeout=${preview.timeoutSeconds}s` : '';
+  return `${path}${args}${timeout}`;
+}
+
 function statusVariant(value?: string): BadgeVariant {
   const normalized = String(value || '').trim().toLowerCase();
   if (['ok', 'ready', 'running', 'healthy'].includes(normalized)) {
@@ -862,6 +872,7 @@ export function SupervisorStage() {
                         const fallbackPlan = target.containerFallbackPlan;
                         const fallbackDecision = fallbackPlan?.decision || (fallbackPlan?.executable ? 'eligible' : 'blocked');
                         const fallbackAttemptCount = target.serviceState.containerFallbackAttemptCount ?? 0;
+                        const fallbackExecutorPreview = executorPreviewLabel(fallbackPlan?.executorPreview);
                         const fallbackDetail =
                           fallbackPlan?.blockedReason ||
                           fallbackPlan?.eligibleReason ||
@@ -961,6 +972,11 @@ export function SupervisorStage() {
                                 {fallbackDetail && (
                                   <span className="truncate text-xs text-[var(--bk-text-muted)]" title={fallbackDetail}>
                                     {fallbackDetail}
+                                  </span>
+                                )}
+                                {fallbackExecutorPreview && (
+                                  <span className="truncate font-mono text-xs text-[var(--bk-text-muted)]" title={fallbackExecutorPreview}>
+                                    {fallbackExecutorPreview}
                                   </span>
                                 )}
                                 {target.serviceState.containerFallbackSubmitted && fallbackSubmittedDetail && (

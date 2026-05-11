@@ -480,6 +480,7 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   executorDryRun?: boolean;
   executorArmed?: boolean;
   targetAllowed?: boolean;
+  executorPreview?: RuntimeSupervisorContainerFallbackExecutorPreview;
   executable: boolean;
   decision?: 'blocked' | 'eligible' | string;
   duplicate?: boolean;
@@ -489,6 +490,13 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   blockedReason?: string;
   eligibleReason?: string;
   reason?: string;
+};
+
+export type RuntimeSupervisorContainerFallbackExecutorPreview = {
+  kind?: string;
+  commandPath?: string;
+  commandArgs?: string[];
+  timeoutSeconds?: number;
 };
 
 export type RuntimeSupervisorControlAction = {
@@ -524,6 +532,7 @@ export type RuntimeSupervisorContainerFallbackAction = {
   containerFallbackCandidateSince?: string;
   executorKind: string;
   executorDryRun: boolean;
+  executorPreview?: RuntimeSupervisorContainerFallbackExecutorPreview;
   submitted: boolean;
   executed: boolean;
   backoffUntil?: string;
