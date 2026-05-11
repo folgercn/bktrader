@@ -59,7 +59,7 @@ type RuntimeControlDialogState = {
   runtime: RuntimeRow;
   action: RuntimeControlActionKind;
 };
-type TargetFallbackActionKind = 'suppress' | 'resume' | 'defer' | 'clear-backoff';
+type TargetFallbackActionKind = 'suppress' | 'resume' | 'defer' | 'clear-backoff' | 'submit';
 type TargetFallbackControlDialogState = {
   target: RuntimeSupervisorTargetSnapshot;
   action: TargetFallbackActionKind;
@@ -409,6 +409,9 @@ function targetFallbackControlPath(action: TargetFallbackActionKind) {
   if (action === 'defer') {
     return '/api/v1/supervisor/container-fallback/defer';
   }
+  if (action === 'submit') {
+    return '/api/v1/supervisor/container-fallback/submit';
+  }
   return '/api/v1/supervisor/container-fallback/clear-backoff';
 }
 
@@ -444,6 +447,9 @@ function targetFallbackControlLabel(action: TargetFallbackActionKind) {
   }
   if (action === 'defer') {
     return 'Defer Container Fallback';
+  }
+  if (action === 'submit') {
+    return 'Submit Container Fallback';
   }
   return 'Clear Fallback Backoff';
 }
@@ -688,7 +694,9 @@ export function SupervisorStage() {
         ? Clock3
         : fallbackDialog?.action === 'clear-backoff'
           ? XCircle
-          : ShieldAlert;
+          : fallbackDialog?.action === 'submit'
+            ? RotateCw
+            : ShieldAlert;
   const fallbackSubmitVariant =
     fallbackDialog?.action === 'resume' || fallbackDialog?.action === 'clear-backoff'
       ? 'bento-primary'
@@ -889,7 +897,9 @@ export function SupervisorStage() {
                         const toggleSubmitting = controlSubmittingKey === targetFallbackActionKey(target, toggleFallbackAction);
                         const deferSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'defer');
                         const clearSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'clear-backoff');
+                        const submitSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'submit');
                         const backoffConfigured = Boolean(target.serviceState.containerFallbackBackoffUntil);
+                        const submitEnabled = Boolean(fallbackPlan?.executable);
                         return (
                           <TableRow key={`${target.name}:${target.baseUrl}`}>
                             <TableCell>
@@ -1038,6 +1048,18 @@ export function SupervisorStage() {
                                   aria-label={`Clear fallback backoff for ${target.name}`}
                                 >
                                   <XCircle className={cn(clearSubmitting && 'animate-pulse')} />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="bento-destructive"
+                                  className="rounded-lg"
+                                  onClick={() => openFallbackDialog(target, 'submit')}
+                                  disabled={Boolean(controlSubmittingKey) || submitSubmitting || !submitEnabled}
+                                  title="Submit container fallback"
+                                  aria-label={`Submit container fallback for ${target.name}`}
+                                >
+                                  <RotateCw className={cn(submitSubmitting && 'animate-spin')} />
                                 </Button>
                               </div>
                             </TableCell>
@@ -1424,6 +1446,9 @@ export function SupervisorStage() {
                             {fallbackActionRows.map((action) => {
                               const state = fallbackActionState(action);
                               const result = action.error || action.message || action.reason || '--';
+                              const resultTitle = [action.error || action.message || action.reason, action.source, action.planReason]
+                                .filter(Boolean)
+                                .join(' | ');
                               return (
                                 <TableRow key={`${action.targetName}:${action.action}:${action.requestedAt}`}>
                                   <TableCell>{formatOptionalTime(action.requestedAt)}</TableCell>
@@ -1458,9 +1483,14 @@ export function SupervisorStage() {
                                     </div>
                                   </TableCell>
                                   <TableCell>
-                                    <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={result}>
+                                    <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={resultTitle || result}>
                                       {result}
                                     </span>
+                                    {(action.source || action.planReason) && (
+                                      <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.planReason || action.source}>
+                                        {action.source || '--'}{action.planReason ? ` / ${action.planReason}` : ''}
+                                      </span>
+                                    )}
                                   </TableCell>
                                 </TableRow>
                               );
@@ -1559,6 +1589,43 @@ export function SupervisorStage() {
                   disabled={Boolean(controlSubmittingKey)}
                   aria-invalid={!fallbackBackoffSeconds.trim()}
                 />
+              </div>
+            )}
+            {fallbackDialog?.action === 'submit' && (
+              <div className="flex flex-col gap-2 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)]/40 px-3 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={fallbackDialog.target.containerFallbackPlan?.executable ? 'success' : 'destructive'}>
+                    {fallbackDialog.target.containerFallbackPlan?.decision || 'blocked'}
+                  </Badge>
+                  <Badge variant={fallbackDialog.target.containerFallbackPlan?.executorDryRun ? 'secondary' : 'destructive'}>
+                    {fallbackDialog.target.containerFallbackPlan?.executorDryRun ? 'dry-run' : 'live'}
+                  </Badge>
+                  <Badge variant="neutral">{executorKindLabel(fallbackDialog.target.containerFallbackPlan?.executorKind)}</Badge>
+                </div>
+                {executorPreviewLabel(fallbackDialog.target.containerFallbackPlan?.executorPreview) && (
+                  <span
+                    className="truncate font-mono text-xs text-[var(--bk-text-muted)]"
+                    title={executorPreviewLabel(fallbackDialog.target.containerFallbackPlan?.executorPreview)}
+                  >
+                    {executorPreviewLabel(fallbackDialog.target.containerFallbackPlan?.executorPreview)}
+                  </span>
+                )}
+                {(fallbackDialog.target.containerFallbackPlan?.blockedReason ||
+                  fallbackDialog.target.containerFallbackPlan?.eligibleReason ||
+                  fallbackDialog.target.containerFallbackPlan?.reason) && (
+                  <span
+                    className="truncate text-xs text-[var(--bk-text-muted)]"
+                    title={
+                      fallbackDialog.target.containerFallbackPlan?.blockedReason ||
+                      fallbackDialog.target.containerFallbackPlan?.eligibleReason ||
+                      fallbackDialog.target.containerFallbackPlan?.reason
+                    }
+                  >
+                    {fallbackDialog.target.containerFallbackPlan?.blockedReason ||
+                      fallbackDialog.target.containerFallbackPlan?.eligibleReason ||
+                      fallbackDialog.target.containerFallbackPlan?.reason}
+                  </span>
+                )}
               </div>
             )}
             <div className="flex flex-col gap-2">

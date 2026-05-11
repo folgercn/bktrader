@@ -26,6 +26,7 @@ var APIRegistry = []RouteEntry{
 	{Path: "/api/v1/supervisor/container-fallback/resume", Methods: []string{"POST"}, Module: "supervisor", CLICommand: "supervisor resume-container-fallback", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/supervisor/container-fallback/defer", Methods: []string{"POST"}, Module: "supervisor", CLICommand: "supervisor defer-container-fallback", Idempotent: false, RiskLevel: "L1"},
 	{Path: "/api/v1/supervisor/container-fallback/clear-backoff", Methods: []string{"POST"}, Module: "supervisor", CLICommand: "supervisor clear-container-fallback-backoff", Idempotent: false, RiskLevel: "L1"},
+	{Path: "/api/v1/supervisor/container-fallback/submit", Methods: []string{"POST"}, Module: "supervisor", CLICommand: "supervisor submit-container-fallback", Idempotent: false, RiskLevel: "L2"},
 
 	// Auth
 	{Path: "/api/v1/auth/login", Methods: []string{"POST"}, Module: "auth", CLICommand: "auth login", Idempotent: false, RiskLevel: "L1"},

@@ -254,6 +254,81 @@ func TestSupervisorContainerFallbackControlDefersAndClearsBackoff(t *testing.T) 
 	}
 }
 
+func TestSupervisorContainerFallbackSubmitEndpointSubmitsEligiblePlan(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeJSON(w, http.StatusOK, service.RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer targetServer.Close()
+
+	platform := service.NewPlatform(memory.NewStore())
+	supervisor := service.NewRuntimeSupervisorWithOptions(
+		[]service.RuntimeSupervisorTarget{{Name: "api", BaseURL: targetServer.URL}},
+		targetServer.Client(),
+		service.RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: service.NewNoopContainerFallbackExecutor(true),
+		},
+	)
+	if _, err := supervisor.SuppressContainerFallback("api", service.RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "hold before operator review",
+		Source:  "test",
+	}); err != nil {
+		t.Fatalf("suppress before submit setup failed: %v", err)
+	}
+	supervisor.Collect(context.Background())
+	if _, err := supervisor.ResumeContainerFallback("api", service.RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator reviewed preview",
+		Source:  "test",
+	}); err != nil {
+		t.Fatalf("resume before submit setup failed: %v", err)
+	}
+	platform.SetRuntimeSupervisor(supervisor)
+
+	mux := http.NewServeMux()
+	registerSupervisorStatusRoutes(mux, platform, config.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/submit", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"operator reviewed static command preview"}`))
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected submit 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var submitPayload struct {
+		Status       string                                            `json:"status"`
+		TargetName   string                                            `json:"targetName"`
+		Reason       string                                            `json:"reason"`
+		Source       string                                            `json:"source"`
+		ServiceState service.RuntimeSupervisorServiceState             `json:"serviceState"`
+		Plan         *service.RuntimeSupervisorContainerFallbackPlan   `json:"containerFallbackPlan"`
+		Action       *service.RuntimeSupervisorContainerFallbackAction `json:"action"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&submitPayload); err != nil {
+		t.Fatalf("decode submit payload failed: %v", err)
+	}
+	if submitPayload.Status != "accepted" || submitPayload.TargetName != "api" || submitPayload.Reason != "operator reviewed static command preview" || submitPayload.Source != "api" {
+		t.Fatalf("unexpected submit payload: %+v", submitPayload)
+	}
+	if submitPayload.Action == nil || !submitPayload.Action.Submitted || submitPayload.Action.Source != "api" || submitPayload.Action.PlanReason == "" {
+		t.Fatalf("expected action audit with source and plan reason, got %+v", submitPayload.Action)
+	}
+	if submitPayload.ServiceState.ContainerFallbackSubmittedReason != "operator reviewed static command preview" || !submitPayload.ServiceState.ContainerFallbackSubmitted {
+		t.Fatalf("expected submitted service state, got %+v", submitPayload.ServiceState)
+	}
+	if submitPayload.Plan == nil || submitPayload.Plan.BlockedReason != "container-fallback-already-submitted" {
+		t.Fatalf("expected duplicate blocker after submit, got %+v", submitPayload.Plan)
+	}
+}
+
 func TestSupervisorContainerFallbackControlValidation(t *testing.T) {
 	platform := service.NewPlatform(memory.NewStore())
 	supervisor := service.NewRuntimeSupervisor(
@@ -307,6 +382,24 @@ func TestSupervisorContainerFallbackControlValidation(t *testing.T) {
 			body:       `{"targetName":"missing","confirm":true,"reason":"maintenance"}`,
 			wantStatus: http.StatusNotFound,
 		},
+		{
+			name:       "submit missing confirm",
+			path:       "/api/v1/supervisor/container-fallback/submit",
+			body:       `{"targetName":"api","reason":"operator reviewed"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "submit missing reason",
+			path:       "/api/v1/supervisor/container-fallback/submit",
+			body:       `{"targetName":"api","confirm":true}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "submit blocked without candidate",
+			path:       "/api/v1/supervisor/container-fallback/submit",
+			body:       `{"targetName":"api","confirm":true,"reason":"operator reviewed"}`,
+			wantStatus: http.StatusConflict,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,11 +426,16 @@ func TestSupervisorContainerFallbackControlRejectsReadOnlyRoles(t *testing.T) {
 			mux := http.NewServeMux()
 			registerSupervisorStatusRoutes(mux, platform, config.Config{ProcessRole: role})
 
-			rec := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/suppress", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"maintenance"}`))
-			mux.ServeHTTP(rec, req)
-			if rec.Code != http.StatusConflict {
-				t.Fatalf("expected read-only role to get 409, got %d body=%s", rec.Code, rec.Body.String())
+			for _, path := range []string{
+				"/api/v1/supervisor/container-fallback/suppress",
+				"/api/v1/supervisor/container-fallback/submit",
+			} {
+				rec := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"targetName":"api","confirm":true,"reason":"maintenance"}`))
+				mux.ServeHTTP(rec, req)
+				if rec.Code != http.StatusConflict {
+					t.Fatalf("expected read-only role to get 409 for %s, got %d body=%s", path, rec.Code, rec.Body.String())
+				}
 			}
 		})
 	}

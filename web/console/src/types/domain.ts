@@ -528,6 +528,8 @@ export type RuntimeSupervisorContainerFallbackAction = {
   targetName: string;
   targetBaseUrl: string;
   reason?: string;
+  planReason?: string;
+  source?: string;
   serviceFailureEpisodeStartedAt?: string;
   containerFallbackCandidateSince?: string;
   executorKind: string;
