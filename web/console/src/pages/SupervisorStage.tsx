@@ -451,7 +451,7 @@ function targetFallbackControlLabel(action: TargetFallbackActionKind) {
   if (action === 'submit') {
     return 'Submit Container Fallback';
   }
-  return 'Clear Fallback Backoff';
+  return 'Clear Fallback Retry Gate';
 }
 
 function dashboardTargetFallbackReason(target: RuntimeSupervisorTargetSnapshot, action: TargetFallbackActionKind) {
@@ -913,6 +913,7 @@ export function SupervisorStage() {
                         const clearSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'clear-backoff');
                         const submitSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'submit');
                         const backoffConfigured = Boolean(target.serviceState.containerFallbackBackoffUntil);
+                        const retryGateConfigured = backoffConfigured || Boolean(target.serviceState.containerFallbackSubmitted || fallbackPlan?.duplicate);
                         const submitEnabled = Boolean(fallbackPlan?.executable);
                         return (
                           <TableRow key={`${target.name}:${target.baseUrl}`}>
@@ -1062,9 +1063,9 @@ export function SupervisorStage() {
                                   variant="bento-ghost"
                                   className="rounded-lg"
                                   onClick={() => openFallbackDialog(target, 'clear-backoff')}
-                                  disabled={Boolean(controlSubmittingKey) || clearSubmitting || !backoffConfigured}
-                                  title="Clear fallback backoff"
-                                  aria-label={`Clear fallback backoff for ${target.name}`}
+                                  disabled={Boolean(controlSubmittingKey) || clearSubmitting || !retryGateConfigured}
+                                  title="Clear fallback retry gate"
+                                  aria-label={`Clear fallback retry gate for ${target.name}`}
                                 >
                                   <XCircle className={cn(clearSubmitting && 'animate-pulse')} />
                                 </Button>

@@ -27,7 +27,7 @@ func init() {
 	supervisorDeferContainerFallbackCmd.Flags().Bool("confirm", false, "确认延后 container fallback")
 	supervisorDeferContainerFallbackCmd.Flags().String("reason", "", "延后原因；必填")
 	supervisorDeferContainerFallbackCmd.Flags().Int("seconds", 0, "延后秒数；必填且必须大于 0")
-	supervisorClearContainerFallbackBackoffCmd.Flags().Bool("confirm", false, "确认清理 container fallback backoff")
+	supervisorClearContainerFallbackBackoffCmd.Flags().Bool("confirm", false, "确认清理 container fallback backoff / retry gate")
 	supervisorClearContainerFallbackBackoffCmd.Flags().String("reason", "", "清理原因；必填")
 	supervisorSubmitContainerFallbackCmd.Flags().Bool("confirm", false, "确认提交 container fallback executor")
 	supervisorSubmitContainerFallbackCmd.Flags().String("reason", "", "提交原因；必填")
@@ -79,7 +79,7 @@ var supervisorDeferContainerFallbackCmd = &cobra.Command{
 
 var supervisorClearContainerFallbackBackoffCmd = &cobra.Command{
 	Use:   "clear-container-fallback-backoff <targetName>",
-	Short: "清理 supervisor 容器兜底 backoff [MUTATING]",
+	Short: "清理 supervisor 容器兜底 backoff / submitted retry gate [MUTATING]",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSupervisorContainerFallbackControl(cmd, args[0], "/api/v1/supervisor/container-fallback/clear-backoff")

@@ -962,6 +962,84 @@ func TestRuntimeSupervisorManualContainerFallbackSubmitRecordsOperatorAudit(t *t
 	}
 }
 
+func TestRuntimeSupervisorClearContainerFallbackBackoffClearsSubmittedRetryGate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: executor,
+		},
+	)
+	supervisor.Collect(context.Background())
+
+	first, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator reviewed initial fallback",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("initial manual submit failed: %v", err)
+	}
+	if executor.calls != 1 || first.Plan == nil || !first.Plan.Duplicate || first.Plan.BackoffActive {
+		t.Fatalf("expected first submit to leave duplicate gate without backoff, calls=%d result=%+v", executor.calls, first)
+	}
+
+	cleared, err := supervisor.ClearContainerFallbackBackoff("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator approved retry after unchanged outage",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("clear retry gate failed: %v", err)
+	}
+	if cleared.ServiceState.ContainerFallbackSubmitted || cleared.ServiceState.ContainerFallbackSubmittedAt != nil || cleared.ServiceState.ContainerFallbackBackoffUntil != nil {
+		t.Fatalf("expected clear-backoff to clear submitted retry gate without active backoff, got %+v", cleared.ServiceState)
+	}
+	if cleared.ServiceState.ContainerFallbackBackoffClearedReason != "operator approved retry after unchanged outage" || cleared.ServiceState.ContainerFallbackBackoffClearedSource != "ctl" {
+		t.Fatalf("expected clear retry gate audit metadata, got %+v", cleared.ServiceState)
+	}
+
+	snapshot := supervisor.LastSnapshot()
+	if len(snapshot.Targets) != 1 || snapshot.Targets[0].ContainerFallbackPlan == nil || !snapshot.Targets[0].ContainerFallbackPlan.Executable || snapshot.Targets[0].ContainerFallbackPlan.Duplicate {
+		t.Fatalf("expected cleared retry gate to make plan executable again, got %+v", snapshot.Targets)
+	}
+
+	second, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator retried fallback after clear",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("second manual submit failed after retry gate clear: %v", err)
+	}
+	if executor.calls != 2 || second.Action == nil || second.Action.Reason != "operator retried fallback after clear" {
+		t.Fatalf("expected second submit to call executor with retry reason, calls=%d result=%+v", executor.calls, second)
+	}
+	if len(supervisor.LastSnapshot().ContainerFallbackActions) != 2 {
+		t.Fatalf("expected both fallback action audits to be retained, got %+v", supervisor.LastSnapshot().ContainerFallbackActions)
+	}
+}
+
 func TestRuntimeSupervisorManualContainerFallbackSubmitRejectsMissingCandidate(t *testing.T) {
 	executor := &runtimeSupervisorTestContainerExecutor{
 		configured: true,
