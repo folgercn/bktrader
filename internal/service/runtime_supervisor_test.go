@@ -779,6 +779,9 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorExecutesWhenArmedAndAl
 	if !strings.Contains(action.Message, "helper restart ok") {
 		t.Fatalf("expected command output audit, got %+v", action)
 	}
+	if action.ExitCode == nil || *action.ExitCode != 0 || action.TimedOut {
+		t.Fatalf("expected command success result audit, got %+v", action)
+	}
 	target := snapshot.Targets[0]
 	if target.ContainerFallbackPlan == nil {
 		t.Fatalf("expected fallback plan for command executor, got %+v", target)
@@ -887,12 +890,46 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorFailureSetsBackoff(t *
 	if action.Error == "" || !strings.Contains(action.Error, "helper restart failed") || action.BackoffUntil == nil || action.BackoffSeconds != 300 {
 		t.Fatalf("expected command failure and backoff audit, got %+v", action)
 	}
+	if action.ExitCode == nil || *action.ExitCode != 7 || action.TimedOut || !strings.Contains(action.Message, "helper restart failed") {
+		t.Fatalf("expected command failure result audit, got %+v", action)
+	}
 	target := snapshot.Targets[0]
 	if target.ContainerFallbackPlan == nil || target.ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" || !target.ContainerFallbackPlan.BackoffActive {
 		t.Fatalf("expected failed command executor to leave backoff blocker, got %+v", target.ContainerFallbackPlan)
 	}
 	if !target.ServiceState.ContainerFallbackSubmitted || !strings.Contains(target.ServiceState.ContainerFallbackSubmittedError, "helper restart failed") {
 		t.Fatalf("expected failed command submission audit in service state, got %+v", target.ServiceState)
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorTimeoutReturnsAuditMetadata(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+	executor, err := NewCommandContainerFallbackExecutor(map[string]CommandContainerFallbackSpec{
+		"api": {
+			Path: executable,
+			Args: []string{
+				"-test.run=TestRuntimeSupervisorCommandContainerFallbackExecutorHelperProcess",
+				"--",
+				"--runtime-supervisor-command-executor-timeout",
+			},
+			Timeout: time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build test command executor: %v", err)
+	}
+	result, err := executor.Restart(context.Background(), RuntimeSupervisorTarget{Name: "api"}, "test")
+	if err == nil {
+		t.Fatalf("expected timeout error, got result=%+v", result)
+	}
+	if !result.TimedOut || result.ExitCode != nil || !strings.Contains(result.Message, "helper restart waiting") {
+		t.Fatalf("expected timeout audit metadata with partial output, got result=%+v err=%v", result, err)
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected timeout error, got %v", err)
 	}
 }
 
@@ -1930,6 +1967,10 @@ func TestRuntimeSupervisorCommandContainerFallbackExecutorHelperProcess(t *testi
 		case "--runtime-supervisor-command-executor-fail":
 			fmt.Fprint(os.Stderr, "helper restart failed")
 			os.Exit(7)
+		case "--runtime-supervisor-command-executor-timeout":
+			fmt.Fprint(os.Stdout, "helper restart waiting")
+			time.Sleep(2 * time.Second)
+			os.Exit(0)
 		}
 	}
 }

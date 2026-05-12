@@ -92,6 +92,8 @@ type ContainerFallbackExecutorPreviewer interface {
 type ContainerFallbackExecutionResult struct {
 	Executed bool   `json:"executed"`
 	Message  string `json:"message,omitempty"`
+	ExitCode *int   `json:"exitCode,omitempty"`
+	TimedOut bool   `json:"timedOut,omitempty"`
 }
 
 type NoopContainerFallbackExecutor struct {
@@ -224,6 +226,8 @@ type RuntimeSupervisorContainerFallbackAction struct {
 	ExecutorPreview                 *RuntimeSupervisorContainerFallbackExecutorPreview `json:"executorPreview,omitempty"`
 	Submitted                       bool                                               `json:"submitted"`
 	Executed                        bool                                               `json:"executed"`
+	ExitCode                        *int                                               `json:"exitCode,omitempty"`
+	TimedOut                        bool                                               `json:"timedOut,omitempty"`
 	BackoffUntil                    *time.Time                                         `json:"backoffUntil,omitempty"`
 	BackoffSeconds                  int                                                `json:"backoffSeconds,omitempty"`
 	Message                         string                                             `json:"message,omitempty"`
@@ -1271,14 +1275,15 @@ func (s *RuntimeSupervisor) submitContainerFallbackAction(ctx context.Context, t
 		action.PlanReason = planReason
 	}
 	result, err := s.options.ContainerFallbackExecutor.Restart(ctx, target, reason)
+	action.Executed = result.Executed
+	action.Message = result.Message
+	action.ExitCode = result.ExitCode
+	action.TimedOut = result.TimedOut
 	if err != nil {
 		action.Error = err.Error()
 		backoffUntil := now.Add(defaultRuntimeSupervisorFallbackErrorBackoff).UTC()
 		action.BackoffUntil = &backoffUntil
 		action.BackoffSeconds = int(defaultRuntimeSupervisorFallbackErrorBackoff / time.Second)
-	} else {
-		action.Executed = result.Executed
-		action.Message = result.Message
 	}
 	s.mu.Lock()
 	s.recordContainerFallbackSubmissionLocked(target, action, err, now)
