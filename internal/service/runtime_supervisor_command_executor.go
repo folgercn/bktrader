@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -140,20 +141,33 @@ func (e CommandContainerFallbackExecutor) Restart(ctx context.Context, target Ru
 	err := cmd.Run()
 	output := trimContainerFallbackCommandOutput(stdout.String(), stderr.String())
 	if runCtx.Err() == context.DeadlineExceeded {
-		return ContainerFallbackExecutionResult{}, fmt.Errorf("container fallback command timed out after %s", timeout)
+		return ContainerFallbackExecutionResult{
+			Message:  output,
+			TimedOut: true,
+		}, fmt.Errorf("container fallback command timed out after %s", timeout)
 	}
 	if err != nil {
-		if output != "" {
-			return ContainerFallbackExecutionResult{}, fmt.Errorf("container fallback command failed: %w: %s", err, output)
+		var exitErr *exec.ExitError
+		result := ContainerFallbackExecutionResult{
+			Message: output,
 		}
-		return ContainerFallbackExecutionResult{}, fmt.Errorf("container fallback command failed: %w", err)
+		if errors.As(err, &exitErr) {
+			exitCode := exitErr.ExitCode()
+			result.ExitCode = &exitCode
+		}
+		if output != "" {
+			return result, fmt.Errorf("container fallback command failed: %w: %s", err, output)
+		}
+		return result, fmt.Errorf("container fallback command failed: %w", err)
 	}
 	if output == "" {
 		output = "command container fallback executor completed"
 	}
+	exitCode := 0
 	return ContainerFallbackExecutionResult{
 		Executed: true,
 		Message:  output,
+		ExitCode: &exitCode,
 	}, nil
 }
 

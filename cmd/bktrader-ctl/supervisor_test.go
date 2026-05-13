@@ -209,6 +209,7 @@ func TestBuildSupervisorStatusSummaryShowsCommandExecutorPreview(t *testing.T) {
 			},
 			"submitted":true,
 			"executed":true,
+			"exitCode":0,
 			"requestedAt":"2026-04-29T08:00:00Z",
 			"message":"ok"
 		}]
@@ -221,6 +222,7 @@ func TestBuildSupervisorStatusSummaryShowsCommandExecutorPreview(t *testing.T) {
 	expected := []string{
 		"fallbackExecutorPreview: kind=command commandPath=/usr/bin/docker commandArgs=[\"compose\",\"restart\",\"platform-api\"] timeoutSeconds=30",
 		"executorPreview={kind=command commandPath=/usr/bin/docker commandArgs=[\"compose\",\"restart\",\"platform-api\"] timeoutSeconds=30}",
+		"exitCode=0",
 	}
 	for _, want := range expected {
 		if !strings.Contains(summary, want) {

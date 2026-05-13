@@ -540,6 +540,8 @@ export type RuntimeSupervisorContainerFallbackAction = {
   executorPreview?: RuntimeSupervisorContainerFallbackExecutorPreview;
   submitted: boolean;
   executed: boolean;
+  exitCode?: number;
+  timedOut?: boolean;
   backoffUntil?: string;
   backoffSeconds?: number;
   message?: string;

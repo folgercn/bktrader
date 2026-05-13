@@ -327,6 +327,8 @@ type supervisorContainerFallbackAction struct {
 	ExecutorPreview                 *supervisorContainerFallbackExecutorPreview `json:"executorPreview,omitempty"`
 	Submitted                       bool                                        `json:"submitted"`
 	Executed                        bool                                        `json:"executed"`
+	ExitCode                        *int                                        `json:"exitCode,omitempty"`
+	TimedOut                        bool                                        `json:"timedOut,omitempty"`
 	BackoffUntil                    string                                      `json:"backoffUntil,omitempty"`
 	BackoffSeconds                  int                                         `json:"backoffSeconds,omitempty"`
 	Message                         string                                      `json:"message,omitempty"`
@@ -594,6 +596,12 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 			}
 			if action.BackoffSeconds > 0 {
 				fmt.Fprintf(&out, " backoffSeconds=%d", action.BackoffSeconds)
+			}
+			if action.ExitCode != nil {
+				fmt.Fprintf(&out, " exitCode=%d", *action.ExitCode)
+			}
+			if action.TimedOut {
+				fmt.Fprint(&out, " timedOut=true")
 			}
 			if preview := supervisorContainerFallbackExecutorPreviewSummary(action.ExecutorPreview); preview != "" {
 				fmt.Fprintf(&out, " executorPreview={%s}", preview)

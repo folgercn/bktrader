@@ -426,6 +426,9 @@ function fallbackControlState(action: FallbackControlAction): { label: string; v
 }
 
 function fallbackActionState(action: FallbackAction): { label: string; variant: BadgeVariant } {
+  if (action.timedOut) {
+    return { label: 'timeout', variant: 'destructive' };
+  }
   if (action.error) {
     return { label: 'error', variant: 'destructive' };
   }
@@ -1466,7 +1469,13 @@ export function SupervisorStage() {
                             {fallbackActionRows.map((action) => {
                               const state = fallbackActionState(action);
                               const result = action.error || action.message || action.reason || '--';
-                              const resultTitle = [action.error || action.message || action.reason, action.source, action.planReason]
+                              const resultMeta = [
+                                typeof action.exitCode === 'number' ? `exit ${action.exitCode}` : '',
+                                action.timedOut ? 'timed out' : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' / ');
+                              const resultTitle = [resultMeta, action.error || action.message || action.reason, action.source, action.planReason]
                                 .filter(Boolean)
                                 .join(' | ');
                               return (
@@ -1506,6 +1515,11 @@ export function SupervisorStage() {
                                     <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={resultTitle || result}>
                                       {result}
                                     </span>
+                                    {resultMeta && (
+                                      <span className="block max-w-[420px] truncate font-mono text-xs text-[var(--bk-text-muted)]" title={resultMeta}>
+                                        {resultMeta}
+                                      </span>
+                                    )}
                                     {(action.source || action.planReason) && (
                                       <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.planReason || action.source}>
                                         {action.source || '--'}{action.planReason ? ` / ${action.planReason}` : ''}
