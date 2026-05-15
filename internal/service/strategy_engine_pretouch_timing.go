@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	bkLiveEthPretouchTimingEngineKey = "bk-live-eth-pretouch-timing"
-	defaultPretouchModelPath         = "data/pretouch_model.json"
+	bkLiveEthPretouchTimingEngineKey         = "bk-live-eth-pretouch-timing"
+	bkLiveEthPretouchTimingStrategyID        = "strategy-bk-eth-pretouch-timing"
+	bkLiveEthPretouchTimingStrategyVersionID = "strategy-version-bk-eth-pretouch-timing-v010"
+	defaultPretouchModelPath                 = "data/pretouch_model.json"
 )
 
 // bkLiveEthPretouchTimingEngine implements the ETH pretouch timing strategy.

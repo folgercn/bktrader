@@ -48,6 +48,7 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		researchBaseline    bool
 		enhanced            bool
 		baselinePlusT3      bool
+		pretouch            bool
 		defaultTemplate     bool
 		defaultDispatchMode string
 	}{
@@ -61,7 +62,7 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		"binance-testnet-eth-5m":                            {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
 		"binance-testnet-eth-4h":                            {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
 		"binance-testnet-eth-1d":                            {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
-		"binance-testnet-eth-pretouch-timing":               {symbol: "ETHUSDT", timeframe: "1h", quantity: 0.1, defaultTemplate: true, defaultDispatchMode: "auto-dispatch"},
+		"binance-testnet-eth-pretouch-timing":               {symbol: "ETHUSDT", timeframe: "1h", quantity: 0.1, pretouch: true, defaultTemplate: true, defaultDispatchMode: "auto-dispatch"},
 	}
 
 	for idx, item := range templates {
@@ -78,6 +79,9 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if want.baselinePlusT3 {
 				expectedStrategyID = "strategy-bk-btc-30m-enhanced-t3"
 			}
+		}
+		if want.pretouch {
+			expectedStrategyID = bkLiveEthPretouchTimingStrategyID
 		}
 		if item.StrategyID != expectedStrategyID {
 			t.Fatalf("expected %s, got %s", expectedStrategyID, item.StrategyID)
@@ -159,6 +163,9 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			t.Fatalf("expected defaultOrderQuantity=%v, got %v", want.quantity, got)
 		}
 		if item.Key == "binance-testnet-eth-pretouch-timing" {
+			if item.StrategyName != "BK Live ETH Pretouch Timing" {
+				t.Fatalf("expected pretouch template to use dedicated strategy name, got %s", item.StrategyName)
+			}
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "intent_quantity" {
 				t.Fatalf("expected pretouch template positionSizingMode=intent_quantity, got %s", got)
 			}

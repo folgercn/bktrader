@@ -653,8 +653,10 @@ func (p *Platform) runExchangeWebsocketLoop(
 				state["lastEventAt"] = now.Format(time.RFC3339)
 				state["lastEventSummary"] = summary
 				state["signalEventCount"] = maxIntValue(state["signalEventCount"], 0) + 1
-				state["sourceStates"] = mergeSignalSourceState(state["sourceStates"], summary, now)
-				state["signalBarStates"] = deriveSignalBarStates(mapValue(state["sourceStates"]))
+				sourceStates := mergeSignalSourceState(state["sourceStates"], summary, now)
+				sourceStates = filterSignalRuntimeSourceStatesBySubscriptions(sourceStates, metadataList(state["subscriptions"]))
+				state["sourceStates"] = sourceStates
+				state["signalBarStates"] = deriveSignalBarStates(sourceStates)
 				updateRuntimeHealthSummary(state, summary, now)
 				appendSignalRuntimeTimeline(state, now, "market", firstNonEmpty(stringValue(summary["event"]), "message"), map[string]any{
 					"symbol":    stringValue(summary["symbol"]),
@@ -1116,6 +1118,56 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 		stateMap[key] = entry
 	}
 	return stateMap
+}
+
+func reconcileSignalRuntimeSourceStates(existing, bootstrap map[string]any, subscriptions []map[string]any) map[string]any {
+	out := filterSignalRuntimeSourceStatesBySubscriptions(existing, subscriptions)
+	if out == nil {
+		out = map[string]any{}
+	}
+	for key, value := range bootstrap {
+		if _, ok := out[key]; ok {
+			continue
+		}
+		out[key] = cloneMetadata(mapValue(value))
+		if out[key] == nil {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func filterSignalRuntimeSourceStatesBySubscriptions(sourceStates map[string]any, subscriptions []map[string]any) map[string]any {
+	if len(sourceStates) == 0 || len(subscriptions) == 0 {
+		return cloneMetadata(sourceStates)
+	}
+	allowed := make(map[string]struct{}, len(subscriptions))
+	for _, subscription := range subscriptions {
+		key := signalBindingMatchKey(
+			stringValue(subscription["sourceKey"]),
+			stringValue(subscription["role"]),
+			stringValue(subscription["symbol"]),
+			metadataValue(subscription["options"]),
+		)
+		if strings.Trim(key, "|") == "" {
+			continue
+		}
+		allowed[key] = struct{}{}
+	}
+	if len(allowed) == 0 {
+		return cloneMetadata(sourceStates)
+	}
+	out := make(map[string]any, len(sourceStates))
+	for key, value := range sourceStates {
+		if _, ok := allowed[key]; !ok {
+			continue
+		}
+		out[key] = cloneMetadata(mapValue(value))
+		if out[key] == nil {
+			out[key] = value
+		}
+	}
+	return out
 }
 
 func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.Time, limit int) []any {
