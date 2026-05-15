@@ -53,12 +53,12 @@ func (e *bkLiveEthPretouchTimingEngine) Key() string {
 func (e *bkLiveEthPretouchTimingEngine) Describe() map[string]any {
 	return map[string]any{
 		"key":                 e.Key(),
-		"name":               "BK Live ETH Pretouch Timing",
+		"name":                "BK Live ETH Pretouch Timing",
 		"supportedSignalBars": []string{"1h"},
 		"supportedExecutions": []string{"tick"},
 		"runtimeConsistency":  "live-eth-pretouch-timing-unified",
-		"symbol":             "ETHUSDT",
-		"description":        "ETH pretouch timing strategy: timing classification × RF probability × cost_q50_cut050. Research-validated 10bps kill stress: 23.29%, 0 neg SM.",
+		"symbol":              "ETHUSDT",
+		"description":         "ETH pretouch timing strategy: timing classification × RF probability × cost_q50_cut050. Research-validated 10bps kill stress: 23.29%, 0 neg SM.",
 	}
 }
 
@@ -184,10 +184,10 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 			Action: "wait",
 			Reason: "timing_skip",
 			Metadata: map[string]any{
-				"pretouchEvent":    result.Event.EventID,
-				"timingRegime":     "skip",
-				"rfProbability":    rfProb,
-				"modelVersion":     e.model.Version,
+				"pretouchEvent": result.Event.EventID,
+				"timingRegime":  "skip",
+				"rfProbability": rfProb,
+				"modelVersion":  e.model.Version,
 			},
 		}, nil
 	}
@@ -213,14 +213,14 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		Action: "advance-plan",
 		Reason: fmt.Sprintf("pretouch_%s_%s", timingRegime, result.Event.Side),
 		Metadata: map[string]any{
-			"pretouchEvent":      result.Event,
-			"timingRegime":       timingRegime,
-			"rfProbability":      rfProb,
-			"sizingMultiplier":   sizingMultiplier,
-			"costPenalty":        result.Event.CostPenalty,
-			"finalPositionSize":  finalPositionSize,
-			"modelVersion":       e.model.Version,
-			"signalSource":       "pretouch-timing-unified",
+			"pretouchEvent":     result.Event,
+			"timingRegime":      timingRegime,
+			"rfProbability":     rfProb,
+			"sizingMultiplier":  sizingMultiplier,
+			"costPenalty":       result.Event.CostPenalty,
+			"finalPositionSize": finalPositionSize,
+			"modelVersion":      e.model.Version,
+			"signalSource":      "pretouch-timing-unified",
 		},
 	}, nil
 }

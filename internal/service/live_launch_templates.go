@@ -286,17 +286,17 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 
 	liveOverrides := map[string]any{
 		"symbol":              "ETHUSDT",
-		"signalTimeframe":    "1h",
-		"strategyEngine":     bkLiveEthPretouchTimingEngineKey,
-		"executionStrategy":  "book-aware-v1",
+		"signalTimeframe":     "1h",
+		"strategyEngine":      bkLiveEthPretouchTimingEngineKey,
+		"executionStrategy":   "book-aware-v1",
 		"executionDataSource": "tick",
-		"dispatchMode":       "manual-review",
+		"dispatchMode":        "manual-review",
 		// Exit params (research-validated, trail_start=1.5)
-		"stop_loss_atr":       0.45,
-		"breakeven_at_r":      0.8,
-		"trail_start_r":       1.5,
-		"trail_buffer_atr":    0.05,
-		"max_hold_hours":      2.0,
+		"stop_loss_atr":    0.45,
+		"breakeven_at_r":   0.8,
+		"trail_start_r":    1.5,
+		"trail_buffer_atr": 0.05,
+		"max_hold_hours":   2.0,
 		// Sizing
 		"positionSizingMode":       "fixed_quantity",
 		"defaultOrderQuantity":     0.100,
@@ -346,7 +346,7 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		},
 		StrategySignalBindings: signalBindings,
 		LaunchPayload: LiveLaunchOptions{
-			StrategyID:             strategyID,
+			StrategyID: strategyID,
 			Binding: map[string]any{
 				"adapterKey":    "binance-futures",
 				"positionMode":  "ONE_WAY",

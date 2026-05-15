@@ -14,12 +14,12 @@ import (
 
 // TreeNode represents a node in a decision tree.
 type TreeNode struct {
-	FeatureIndex int      `json:"f,omitempty"`  // split feature index (-1 for leaf)
-	Threshold    float64  `json:"t,omitempty"`  // split threshold
+	FeatureIndex int       `json:"f,omitempty"` // split feature index (-1 for leaf)
+	Threshold    float64   `json:"t,omitempty"` // split threshold
 	Left         *TreeNode `json:"l,omitempty"` // <= threshold
 	Right        *TreeNode `json:"r,omitempty"` // > threshold
-	LeafValue    string   `json:"v,omitempty"`  // class label (for classification leaf)
-	LeafProba    float64  `json:"p,omitempty"`  // probability of positive class (for RF)
+	LeafValue    string    `json:"v,omitempty"` // class label (for classification leaf)
+	LeafProba    float64   `json:"p,omitempty"` // probability of positive class (for RF)
 }
 
 // Predict traverses the tree and returns the leaf class label.
@@ -100,8 +100,8 @@ func buildTree(X [][]float64, y []string, depth, maxDepth int, rng *rand.Rand) *
 
 // RandomForest is an ensemble of decision trees.
 type RandomForest struct {
-	Trees      []*TreeNode `json:"trees"`
-	NEstimators int        `json:"n_estimators"`
+	Trees       []*TreeNode `json:"trees"`
+	NEstimators int         `json:"n_estimators"`
 }
 
 // TrainRandomForest trains a random forest classifier.
@@ -168,14 +168,14 @@ func (rf *RandomForest) Predict(features []float64) string {
 
 // PretouchModelBundle holds both timing classifier and RF model.
 type PretouchModelBundle struct {
-	TimingTree    *TreeNode     `json:"timing_tree"`
-	RFModel       *RandomForest `json:"rf_model"`
-	FeatureNames  []string      `json:"feature_names"`
-	Medians       []float64     `json:"medians"` // for imputation
-	Version       string        `json:"version"`
-	TrainedAt     string        `json:"trained_at"`
-	TimingLOOCV   float64       `json:"timing_loocv"`
-	RFAUC         float64       `json:"rf_auc"`
+	TimingTree   *TreeNode     `json:"timing_tree"`
+	RFModel      *RandomForest `json:"rf_model"`
+	FeatureNames []string      `json:"feature_names"`
+	Medians      []float64     `json:"medians"` // for imputation
+	Version      string        `json:"version"`
+	TrainedAt    string        `json:"trained_at"`
+	TimingLOOCV  float64       `json:"timing_loocv"`
+	RFAUC        float64       `json:"rf_auc"`
 }
 
 // SaveModelBundle writes the model bundle to a JSON file.

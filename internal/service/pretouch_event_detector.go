@@ -175,8 +175,8 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 	prevBar1 := d.hourlyBars[len(d.hourlyBars)-1] // most recent closed bar
 	prevBar2 := d.hourlyBars[len(d.hourlyBars)-2] // bar before that
 
-	longLevel := prevBar2.High  // prev_high_2
-	shortLevel := prevBar2.Low  // prev_low_2
+	longLevel := prevBar2.High // prev_high_2
+	shortLevel := prevBar2.Low // prev_low_2
 
 	// Check if tick touches a level
 	var side string
@@ -240,16 +240,16 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 
 	// Build features map for ML inference
 	features := map[string]float64{
-		"touch_extension_atr":     touchExtATR,
-		"speed_300s_atr":          speed300s,
-		"roundtrip_cost_atr":      roundtripCostATR,
-		"signal_atr_percentile":   d.computeATRPercentile(atr),
-		"prev1_body_atr":          math.Abs(prevBar1.Close-prevBar1.Open) / atr,
-		"prev1_range_atr":         (prevBar1.High - prevBar1.Low) / atr,
-		"prev1_close_pos_side":    d.computeClosePosSide(prevBar1, side),
-		"prev_sma5_gap_atr":       d.computeSMA5Gap(atr),
-		"prev_sma5_slope_atr":     d.computeSMA5Slope(atr),
-		"level_to_prev_close_atr": d.computeLevelToPrevClose(level, prevBar1.Close, atr, side),
+		"touch_extension_atr":      touchExtATR,
+		"speed_300s_atr":           speed300s,
+		"roundtrip_cost_atr":       roundtripCostATR,
+		"signal_atr_percentile":    d.computeATRPercentile(atr),
+		"prev1_body_atr":           math.Abs(prevBar1.Close-prevBar1.Open) / atr,
+		"prev1_range_atr":          (prevBar1.High - prevBar1.Low) / atr,
+		"prev1_close_pos_side":     d.computeClosePosSide(prevBar1, side),
+		"prev_sma5_gap_atr":        d.computeSMA5Gap(atr),
+		"prev_sma5_slope_atr":      d.computeSMA5Slope(atr),
+		"level_to_prev_close_atr":  d.computeLevelToPrevClose(level, prevBar1.Close, atr, side),
 		"level_to_signal_open_atr": (level - d.currentBar.Open) / atr,
 	}
 
