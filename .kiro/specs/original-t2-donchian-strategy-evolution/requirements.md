@@ -23,10 +23,11 @@
 11. **2026-05-08 probabilistic v4 plan**：将 event / quality / execution 拆成三层（`probabilistic_v4_event_dataset.py` / `probabilistic_v4_quality_model.py` / `probabilistic_v4_execution_runner.py`）。global probability + `delay5/be0.8/trail0.9` execution 让 ETH 2026 Jan-Apr 等权到约 `+1.39%`，但 BTC 2026 Mar OOS 仅 `-0.04%`。
 12. **2026-05-09 probabilistic v5/v6 execution-aware**：ML 模型族 + Markov 多窗口 + execution-aware label。ETH 2026 Mar dynamic `+1.55%`，BTC dynamic `-1.11%`；2025 Dec 未通过。
 13. **delay60 + feature60 + post_selection gate**：合法 point-in-time 语义下，走到 5 个 active months 合计 `+6.09%`，仍未到 `10%~20%` 级别实盘候选。
+14. **2026-05-11 union lifecycle + candidate_001 gate + power0_fixed_1p30 calendar holdout validation**：在 22 symbol-months calendar（BTCUSDT + ETHUSDT, `2025-06 ~ 2026-04`）上 Calendar_Sum `+33.02%`，avg/symbol-month `1.5009%`，traded silos 10，flat silos 12，worst silo `-0.40%` (`2025-08 BTCUSDT`)，negative silos 1；`2026-04` 被 candidate_001 gate 全部 no-trade（ETH top5 one-shot `-1.22%` 被 `validation_return_over_dd=11.21 > 10` 拒、ETH top10 `-2.30%` 被 `validation_topk_sizing_markov_score_mean=0.91 > 0.9` 拒、BTC top10 `-0.22%` 被 `validation_topk_sized_return_pct=-0.16 < 0.5` 拒，属 no-trade 正确、非正收益 holdout）；对照 `quality_edge_return_mult_1p20_cap_1p80` Calendar_Sum `+33.41%` / worst silo `-0.44%` / BTC `+9.85%` / ETH `+23.56%`，`power0_fixed_1p30` 跨 BTC/ETH 与跨 2025/2026 更平衡（BTC `+11.15%` / ETH `+21.87%`，2025 `+13.60%` / 2026 `+19.42%`）；月度高度集中于 `2025-12 +7.91% / 2026-02 +13.70% / 2026-03 +4.27%` ≈ 26pp，其余 8 个 active months 合计 ~7pp；runner `research/probabilistic_v6_union_lifecycle_runner.py`，lifecycle 产出目录 `research/probabilistic_v6_runs/walkforward_2025m06_2026apr_combo_baseline_short_speed/union_lifecycle_reentry_window_candidate_001_calendar_holdout/`；源 `research/20260511_probabilistic_v6_calendar_holdout_validation.md`。
 
 ### 关键结论（Research 层有 α / 无 α）
 
-- **有方向 α**：pre-touch `fast_clean`（dist 0.10-0.15 / speed300>=0.20 / pullback 0-0.02 ATR）、donchian gap `0.40+` 的 headroom pretouch 状态、post-touch `TrailingSL + be 0.8 / trail 0.9`、execution-aware probability（尤其 ETH）。
+- **有方向 α**：pre-touch `fast_clean`（dist 0.10-0.15 / speed300>=0.20 / pullback 0-0.02 ATR）、donchian gap `0.40+` 的 headroom pretouch 状态、post-touch `TrailingSL + be 0.8 / trail 0.9`、execution-aware probability（尤其 ETH）；**full reentry-window lifecycle 放大效应**：相对 one-shot event，union lifecycle 在 candidate_001 gate + `power0_fixed_1p30` sizing 上把 one-shot 量级的 `12%~13%` 推到 calendar `+33%`（~3x 放大），但该放大效应仅为 Calendar_Sum 口径，未经资金占用 / 并发 / 真实 MaxDD 约束（源 `research/20260511_probabilistic_v6_calendar_holdout_validation.md`）。
 - **无稳定 α 或跨期崩溃**：direct breakout、single speed/efficiency micro filter、structure exit 移植到 arm+d8 confirm、signal-bar 完整 OHLC 作为模型特征（lookahead 已作废）。
 - **跨币种不对称**：几乎所有候选在 BTC/ETH 上表现不对称；BTC 目前不能默认启用 aggressive dynamic sizing，ETH 也只能在 research gate 通过后继续测试；portfolio-level gate 是必须的。
 
@@ -36,6 +37,7 @@
 - **Scheme A / Scheme C 降级**：Scheme A 仅保留为 V4/entry5 对照，Scheme C 仅保留 fail-fast 小样本复核；二者不能阻塞 Scheme B，也不能作为 live 候选。
 - **当前 spec 不做 live migration**：R3/R4/R5 只作为后续独立 spec 的占位，不在本 spec 内产生 live session 配置、sleeve multiplier、control-reset 流程或 dispatch 行为变更。
 - **必须补 Scheme Semantic Contract**：每个候选必须明确自己是 "baseline-derived sizing" 还是 "完整 reentry-window lifecycle"。当前 V4/V6 runner 默认是 event selection + 单次 1s execution + `notional_share=0.20`，不是完整 `slot0=20% / slot1=10%` reentry lifecycle；设计与报告必须避免把这两件事混写。
+- **Calendar Sum 不等于权益曲线**：22 symbol-months simple sum 不反映资金占用、跨 symbol 并发与真实 MaxDD；R1/R2 阶段 MUST 引入 Portfolio_Equity_Simulator（见 Requirement 3 新增 Scheme D 与 Requirement 4 R1/R2 gate 更新），否则 `+33.02%` 不能作为晋级证据。
 
 ## Glossary
 
@@ -56,12 +58,16 @@
 - **Scheme_Semantic_Contract**: 每个 Candidate_Scheme 在 design / tasks 中必须填写的语义契约，至少包含 entry source、breakout semantic、feature horizon、execution model、sizing mode、是否 Full_Reentry_Window_Lifecycle、当前 runner 差距和输出 ledger。
 - **Dispatch_Mode**: AGENTS §3 中 live 控制面的 dispatch 模式；默认必须 `manual-review`，禁止隐式 `auto-dispatch`。
 - **Portfolio_Silo**: research 层按 symbol（BTCUSDT / ETHUSDT）和月份切分的独立执行单元，跨 silo 汇总时使用等权或明确权重。
-- **Active_Silo_Sum**: 只对通过 gate 且实际交易的 symbol-month silo 做简单相加的 return，用于快速比较 research run；不能直接等同于全年 portfolio return。
+- **Active_Silo_Sum**: 只对通过 gate 且实际交易的 symbol-month silo 做简单相加的 return，用于快速比较 research run；不能直接等同于全年 portfolio return。必须与 Portfolio_Equity_Simulator 输出的 CAGR 同时报告（参见新增 Glossary 与 Requirement 6 P13）。
 - **Calendar_Normalized_Return**: 把未交易月份按 0% 计入后，以固定 symbol/month 权重汇总的 return；R1/R2 gate 必须同时报告它，避免只看 active silo。
 - **Research_Harness**: 本 spec 讨论的研究脚本与其输入/输出约束，对应 `research/` 目录内的 runner 与 markdown 报告。
 - **Candidate_Scheme**: 本 spec Requirement 3 中列出的"收益增强策略候选"，每个 Candidate_Scheme 必须在 research 层产出可归档的 Research_Ledger 才能进入 live shadow。
 - **Evolution_Gate**: Requirement 4 定义的分阶段准入门槛。
 - **Intrabar_Breakout_Semantic**: AGENTS Breakout Structure Semantics 要求的语义：breakout 必须使用 intrabar `1s high/low` 对 `prev_high_2 / prev_low_2` 的关系判定，不能写成 "闭合 signal bar 收盘确认"。
+- **Portfolio_Equity_Simulator**: 以 `reentry_size_schedule=[0.20, 0.10]` 为单笔 notional 上限，用 1s 时间轴顺序累加并发 BTCUSDT / ETHUSDT 暴露；当 sum(open_slot_notional_share) 超过可配置的 `capital_usage_cap`（默认 `1.00`、对照 `0.60`）时拒绝新 slot；跨 symbol 暴露不互相抵消。输出连续权益曲线、CAGR、真实 MaxDD、realized concurrency p50/p95、被资金拒绝的 slot 数 / 总 slot 数比例、per-month realized return，以及按 cap 级别分组的指标。
+- **Gate_Sensitivity_Grid**: 对 candidate_001 gate 的三个阈值 `validation_return_over_dd (<=10)`、`validation_topk_sizing_markov_score_mean (<=0.9)`、`validation_topk_sized_return_pct (>=0.5)` 各做 ±20% 的 `5x5x5` 扫描，用于判定 Calendar_Sum `+33%` 是否在连续邻域内成立；summary JSON 必须输出每维度的 partial-dependence 曲线。
+- **BTC_Only_Regime_Cap**: 仅对 BTCUSDT 施加的 per-symbol sizing 上限或 regime no-trade；来源候选特征 MUST 限 train/validation-only 已观测窗口，禁用 execute 月标签或当前未闭合 signal bar 完整 OHLC。
+- **Flat_Month_Audit**: 对 calendar 内被 candidate_001 gate 拒绝的 12 个 flat silos 逐月导出被拒候选事件，统计若不通过 gate 直接按 realistic 成本执行的 PnL 正负，作为 gate miss-rate / over-rejection 的度量；结果 MUST 以 markdown 报告归档，并量化任何旁路条款对 worst silo 的影响。
 
 ## Requirements
 
@@ -105,11 +111,14 @@
    - `V4 OOS (relaxed) / 1h / 2025 Q4 / probability_global / 分 silo`：BTCUSDT realistic=`+0.04%`；ETHUSDT realistic=`+0.86%`；trade_count/raw=`n/a (源未提供)`；源 `research/20260508_probabilistic_v4_plan.md`。
    - `V6 OOS / 1h / 2026-03 / execution-aware per-symbol dynamic / 分 silo`：BTCUSDT realistic=`-1.11%`；ETHUSDT realistic=`+1.55%`；trade_count/raw=`n/a (源未提供)`；源 `research/20260509_probabilistic_v5_v6_execution_aware.md`。
    - `V6 walk-forward / 1h / delay60 + feature60 + post_selection gate / 分 silo-月合计`：active_months=5, 累计 trade_count=51, Active_Silo_Sum realistic=`+6.09%`；其中 BTCUSDT 2025-12 active 月 validation gate pass 但 execute realistic=`-0.79%`，属于未解决的 regime shift；raw=`n/a (源未提供)`；源 `research/20260509_probabilistic_v5_v6_execution_aware.md`。
+   - `Union lifecycle / 1h / 2025-06 ~ 2026-04 / candidate_001 + power0_fixed_1p30 / calendar 22 symbol-months`：traded_silos=10，flat_silos=12，worst_silo=`-0.40%` (`2025-08 BTCUSDT`)，Calendar_Sum=`+33.02%`，BTC=`+11.15%`，ETH=`+21.87%`，2025=`+13.60%`，2026=`+19.42%`，trade_count=310，raw=`n/a (源未提供)`；源 `research/20260511_probabilistic_v6_calendar_holdout_validation.md`。
+   - `Union lifecycle / 1h / 2025-06 ~ 2026-04 / candidate_001 + quality_edge_return_mult_1p20_cap_1p80 / calendar 22 symbol-months`（对照）：traded_silos=10，flat_silos=12，worst_silo=`-0.44%`，Calendar_Sum=`+33.41%`，BTC=`+9.85%`，ETH=`+23.56%`，2025=`+14.18%`，2026=`+19.23%`，trade_count=310，raw=`n/a (源未提供)`；源 `research/20260511_probabilistic_v6_calendar_holdout_validation.md`。
 2. WHEN design / tasks / Research_Ledger 讨论"最有效参数带"时, THE Research_Harness SHALL 记录以下具名取值带并标注对应证据源；任何引用 MUST 使用以下精确数值区间，不允许再出现 "合适 / 适中 / 较强" 等定性描述：
    - pretouch state band：`distance_bucket ∈ [0.10, 0.15] ATR` AND `speed300_bucket >= 0.20 ATR` AND `pullback_bucket ∈ [0.00, 0.02] ATR`；源 `research/20260508_eth_2026_jan_apr_1h_original_t2_pretouch_continuation.md`。
    - donchian headroom band：`donchian_gap_bucket >= 0.40`（上界开放，单位 ATR）；源 `research/20260508_original_t2_donchian_hybrid_findings.md`。
    - execution band (delay5 家族)：`entry_delay_seconds=5`, `initial_stop_atr=0.45`, `breakeven_at_r=0.8`, `trail_start_r=0.9`, `max_hold_hours=4`；源 `research/20260508_probabilistic_v4_plan.md`。
    - delay60 band：`entry_delay_seconds=60`, `feature_horizon_seconds=60`（MUST 满足 `feature_horizon_seconds <= entry_delay_seconds` 以维持 Point_In_Time_Feature 约束）, `top_k_policy=validation_best`, `top_k_selection_metric=return_over_drawdown`, sizing=`hybrid_markov`, gate=`post_selection`；源 `research/20260509_probabilistic_v5_v6_execution_aware.md`。
+   - union lifecycle band：`gate=candidate_001`（三条阈值 `validation_return_over_dd<=10` AND `validation_topk_sizing_markov_score_mean<=0.9` AND `validation_topk_sized_return_pct>=0.5`，对应 Gate_Sensitivity_Grid 中心值）, `sizing=power0_fixed_1p30`, `max_trades_per_bar=2`, `reentry_size_schedule=[0.20, 0.10]`, `calendar=22 symbol-months BTCUSDT+ETHUSDT 2025-06~2026-04`；源 `research/20260511_probabilistic_v6_calendar_holdout_validation.md`。
 3. WHEN Research_Ledger 引用任何分箱, THE Research_Harness SHALL 把 `sample_size <= 30`（含 `sample_size = 0` 的空样本）统一标注为 "小样本，需跨期 (>= 2 个时间上不相交的窗口) + 跨品种 (BTCUSDT 与 ETHUSDT 同时复核) 复核"，且该分箱 MUST NOT 直接作为 Requirement 4 Evolution_Gate R1 的晋级候选。
 4. THE Research_Harness SHALL 在 design / tasks 中显式记录 BTCUSDT 与 ETHUSDT 的非对称性，并声明：BTCUSDT 在 R0 / R1 / R2 research 阶段默认 sizing = Baseline_Derived_Sizing 的 fixed 20% 对照；`hybrid_markov` 或任何 aggressive dynamic sizing 在 BTCUSDT 上 MUST 先通过 validation 期间 `InitialSL_rate <= 0.30` 的 gate 才允许启用，否则回落 fixed 20% 并单独归档。ETHUSDT 在 Candidate_Scheme 已满足 R1 gate 的前提下允许启用 `hybrid_markov`。如果当前 runner 尚不支持 per-symbol fallback 复跑，tasks MUST 先实现该能力，不能在报告中手工声称已回落。
 5. IF 后续 design / tasks / PR 引用任何早于 2026-05-08 的 proxy 研究结论（包含但不限于 `prev_high_8` 8-bar Donchian closed-bar proxy 的历史强结果，或任何未使用 Intrabar_Breakout_Semantic 的闭合 bar 收盘确认口径）来论证 true `original_t2` 收益, THEN THE Research_Harness SHALL 在 design review 阶段把该引用标注为 "作废，不可作为 true `original_t2` 结论使用"，并 SHALL 要求引用方改用 Requirement 2.1 清单中对应行作为事实源；拒绝后方可继续 review 流程。
@@ -151,10 +160,25 @@
    - 输入时间窗口（walk-forward split）。
    - 成本模型：slip `2bps/side`、maker entry `2bps`、taker exit `4bps`（research 报告口径）。
    - 输出 Research_Ledger 文件路径（`research/tmp_*_ledger.csv` + `research/*_summary.json` + `research/<date>_<scheme>.md`）。
-   - Predicted metrics 维度：PnL / ProfitFactor / MaxDD / TradeCount / WinRate / Slot 或 notional share 贡献 / 月度归因 / OOS split / Active_Silo_Sum / Calendar_Normalized_Return。
+   - Predicted metrics 维度：PnL / ProfitFactor / MaxDD / TradeCount / WinRate / Slot 或 notional share 贡献 / 月度归因 / OOS split / Active_Silo_Sum / Calendar_Normalized_Return / CAGR / realized_MaxDD / realized_concurrency_p95 / rejected_by_capital_ratio / calendar_sum / flat_silo_count / worst_silo / taker_both_realistic_pct。
    - Scheme_Semantic_Contract：必须说明该 Scheme 是 Baseline_Derived_Sizing 还是 Full_Reentry_Window_Lifecycle；若只是当前 V4/V6 event-selection runner，必须标注 "not full reentry-window lifecycle"。
 5. IF 任一 Candidate_Scheme 在后续 design 阶段被发现使用 signal bar 完整 OHLC 或当前 bar 完整 ATR 作为 point-in-time 特征, THEN THE Research_Harness SHALL 在 design review 阶段拒绝该 Scheme（参考 V7 lookahead 修正教训，`20260509_probabilistic_v5_v6_execution_aware.md`）。
 6. WHEN Candidate_Scheme 需要跨 symbol 组合时, THE Research_Harness SHALL 按 Portfolio_Silo 分 symbol / 月份独立执行，portfolio 级指标必须单独列出，不允许用"某一 silo 正收益"来代表组合收益。
+7. **Scheme D (Portfolio Equity Simulator + Real Capital Concurrency, primary validator)**: THE Candidate_Scheme_D SHALL 满足以下定义：
+   - 输入：Scheme B 的 lifecycle ledger（初期以 `candidate_001 + power0_fixed_1p30` 为主候选，`quality_edge_return_mult_1p20_cap_1p80` 为对照）。
+   - 计算：Portfolio_Equity_Simulator，1s 时间轴，`capital_usage_cap ∈ {1.00, 0.80, 0.60}`，按 `reentry_size_schedule=[0.20, 0.10]`、`max_trades_per_bar=2` 约束 slot notional 上限；sum(open_slot_notional_share) 超过 cap 时拒绝新 slot；跨 symbol 暴露不互相抵消占用。
+   - 输出：连续权益曲线 CSV、月度 realized return、CAGR、真实 MaxDD、realized concurrency p50/p95、rejected-by-capital slot 数 / 总 slot 数比例、单月最差权益回撤；所有指标 MUST 按 cap 级别分组输出。
+   - Expected improvement：在 `cap=1.00` 下，CAGR 与 Active_Silo_Sum 的相对差 <= `15%`；在 `cap=0.60` 下 CAGR 仍 >= `+15%` 年化；realized MaxDD <= `6%`。
+   - Scheme_Semantic_Contract：MUST 标注为 Full_Reentry_Window_Lifecycle 的下游审计层（不是 Baseline_Derived_Sizing），输入 ledger 的 sizing 与 `reentry_size_schedule` 必须与 runner 参数快照一致。
+   - Fail-Fast: IF `cap=1.00` 下 realized MaxDD > `10%` OR CAGR < `+10%`, THEN THE Research_Harness SHALL 将该 Scheme D 产出标注为 "paper-only"，不允许进入 Requirement 4 R2。
+   - 约束：THE Candidate_Scheme_D SHALL NOT 生成任何 live session、sleeve multiplier、dispatch 配置或 control-plane 操作建议（参见 Requirement 6 P8、Requirement 7）。
+8. **Scheme B-1 Gate_Sensitivity_Grid**: THE Candidate_Scheme_B SHALL 对 candidate_001 的三阈值 `validation_return_over_dd`、`validation_topk_sizing_markov_score_mean`、`validation_topk_sized_return_pct` 各以 ±20% 做 `5x5x5` 扫描；Calendar_Sum 邻域均值 >= `+25%` AND worst-silo P5 >= `-1.0%` 方可判定该 gate 非过拟合；IF 任一维度呈单点依赖（邻域均值低于该阈值或 worst-silo 低于 `-1.0%`），THEN 该 gate MUST 回到 R1 阶段重新定义，不允许作为 R2 晋级依据。
+9. **Scheme B-2 Lifecycle Exit Sweep**: THE Candidate_Scheme_B SHALL 在 `power0_fixed_1p30` lifecycle 产出上对 `trail_start_r ∈ {0.7, 0.9, 1.1}` × `breakeven_at_r ∈ {0.6, 0.8, 1.0}` × `max_hold_hours ∈ {2, 4, 6}` 做 3x3x3 扫描，entry / gate / sizing 保持不变；选出使 `worst_silo >= -0.20%` AND `Calendar_Sum delta >= 0%` 的 Pareto 组并归档对照。
+10. **Scheme B-3 BTC_Only_Regime_Cap**: THE Candidate_Scheme_B SHALL 为 BTCUSDT 单独增加 per-symbol cap 或 regime no-trade，候选特征仅使用 train/validation 窗口已观测数据（禁用 execute 月标签与当前未闭合 signal bar 完整 OHLC）；要求 BTC worst silo 改善至 `>= -0.20%` AND 整体 Calendar_Sum 回撤 <= `2pp`；若无法满足，MUST 在 design 中显式声明 BTC 豁免的量化理由。
+11. **Scheme B-4 Non-Overlapping Historical Extension**: THE Candidate_Scheme_B SHALL 在 `2024-01 ~ 2025-05` 非重叠窗口上保持 candidate_001 gate 不变复跑；要求 Active_Silo_Sum > `+10%` AND 无单 active silo `< -1.5%`；IF `1s` tick archive 在该窗口不可用, THEN MUST 明确标注 "unavailable" 并附 archive 查询证据（例如 `bars_cache` 列表、zip 清单），不得使用与现有 calendar 重叠的窗口冒充外推。
+12. **Scheme B-5 Event-Source Union Expansion**: THE Candidate_Scheme_B SHALL 在现有 `combo_baseline + short_speed60` 之外，对 `short_speed60_high`、`eth_short_range_high_loose`、`btc_short_eff60_low_loose` 等 slice 各自独立套用 candidate_001 同款 gate，然后在事件级做 OR union；要求 flat silos 从 `12/22` 降至 `<= 8/22` AND worst silo 不劣化（相对 `power0_fixed_1p30` baseline 的 `-0.40%`）。
+13. **Scheme B-6 Flat_Month_Audit**: THE Candidate_Scheme_B SHALL 对 12 个 flat silos 逐月导出被 candidate_001 gate 拒绝的候选事件；IF 直接按 realistic 成本执行的 PnL 为正的 silo >= 2 个, THEN design 阶段 MUST 新增一条旁路条款（例如 `validation_return_over_dd > 10 AND validation_trades_count >= N` 允许进入小仓位对照组），并量化旁路后对 worst silo 的影响 <= `-0.20%`；审计报告 MUST 归档为 `flat_month_audit.md`。
+14. **Scheme B-7 Taker-Taker Cost Stress**: THE Candidate_Scheme_B SHALL 在 summary 里并排输出 `realistic_taker_both_pct`（`8bps/side` 双边 taker + `2bps/side` slip）；要求 `cap=1.00` 下至少 7 个 active silos 仍为正；IF 少于 7 个 active silos 为正, THEN MUST 回到 R1 开题 maker-rebate / limit-on-touch 子问题，不允许继续推进 R2。
 
 ### Requirement 4: Research-Only 分阶段演进路线图（Evolution Plan）
 
@@ -168,13 +192,13 @@
    - Safety: 仅写入 `.kiro/specs/`，不触及 `research/` 代码、`internal/`、`live` 配置。
    - Rollback: 若发现 live migration、control-reset、auto-dispatch 或 sleeve multiplier 混入当前 spec，必须移回后续独立 live migration spec。
 2. **Phase R1 — Scheme B Research Implementation**:
-   - Gate criteria: Scheme B 覆盖至少 2025-06 至 2026-04 的 execute 月；输出 Active_Silo_Sum、Calendar_Normalized_Return、active months、empty months、PF、MaxDD、trade count、symbol/month attribution；必须和当前 `+6.09%` post_selection baseline 同表比较。
-   - Outputs: Research_Ledger CSV + summary JSON + markdown 总结 + 月度归因 + runner 参数快照。
+   - Gate criteria: Scheme B 覆盖至少 2025-06 至 2026-04 的 execute 月；输出 Active_Silo_Sum、Calendar_Normalized_Return、active months、empty months、PF、MaxDD、trade count、symbol/month attribution；必须和当前 `+6.09%` post_selection baseline 同表比较。Scheme B 的 lifecycle 产物 MUST 通过 Scheme D 的 `cap=1.00` simulator，且 `Active_Silo_Sum` 与 Scheme D 输出的 `CAGR` 相对差 <= `15%`；否则视为 "paper-only lifecycle"，不允许进入 R2。
+   - Outputs: Research_Ledger CSV + summary JSON + markdown 总结 + 月度归因 + runner 参数快照 + `portfolio_equity_curve.csv` + `portfolio_equity_summary.json`（含 CAGR、realized MaxDD、concurrency p50/p95、rejected-by-capital ratio、per-month realized return、cap 级别分组）。
    - Safety: 仅写入 `research/` 目录；不触及 `internal/`、`live`、`deployments/`、`.github/workflows/`。
    - Rollback: 未超过 `+6.09%` 或无法解释 BTCUSDT 2025-12 亏损时，不允许进入 R2；回到 regime gate / no-trade gate 设计。
 3. **Phase R2 — Robustness / OOS / Regime Gate 验证**:
-   - Gate criteria: Scheme B 在额外 OOS 或扩展 walk-forward 中 Active_Silo_Sum > `+6.09%` AND Calendar_Normalized_Return 改善 AND PF >= `1.3` AND MaxDD <= `3%` AND active months >= 6 AND 无单 active month `<-2%`。若 BTCUSDT 2025-12 或同类 validation-pass/execute-loss regime 未被 gate 识别，R2 不通过。
-   - Outputs: OOS report markdown + walk-forward summary.md + `validation_topk_*` 字段 + regime gate 归因 + failed-gate month 列表。
+   - Gate criteria: Scheme B 在额外 OOS 或扩展 walk-forward 中 Active_Silo_Sum > `+6.09%` AND Calendar_Normalized_Return 改善 AND PF >= `1.3` AND MaxDD <= `3%` AND active months >= 6 AND 无单 active month `<-2%`。若 BTCUSDT 2025-12 或同类 validation-pass/execute-loss regime 未被 gate 识别，R2 不通过。必须同时通过 Scheme B-1 Gate_Sensitivity_Grid（邻域均值 >= `+25%` AND worst-silo P5 >= `-1.0%`）、Scheme B-3 BTC_Only_Regime_Cap（BTC worst silo 改善至 `>= -0.20%` AND Calendar_Sum 回撤 <= `2pp`，或在 design 中显式声明量化豁免理由）、Scheme B-4 Non-Overlapping Historical Extension（或标注 `unavailable` 并附 archive 查询证据，不允许使用重叠窗口冒充）。
+   - Outputs: OOS report markdown + walk-forward summary.md + `validation_topk_*` 字段 + regime gate 归因 + failed-gate month 列表 + `gate_sensitivity_grid.csv` + `btc_only_regime_cap.md` + `historical_extension.md` + `flat_month_audit.md`。
    - Safety: 禁止使用已执行样本的 label 进行 in-sample 再调参；禁止使用 signal bar 完整 OHLC；禁止把 active silo 的单点正收益解释成组合可实盘。
    - Rollback: 如 OOS 不通过，Candidate_Scheme 回到 R1 重新 scope；不得进入 live shadow。
 4. **Post-R2 — Live Migration Placeholder Only**:
@@ -212,6 +236,9 @@
 9. THE Research_Harness SHALL 保持不变量 **P9 (Round-Trip Serialization)**: FOR ALL `rules.json`、`summary.json`、event CSV header, 解码后再编码 SHALL 产生等价内容（字段顺序可忽略），以保证 research harness 的序列化器正确（AGENTS §通用: parser / serializer round-trip）。
 10. THE Research_Harness SHALL 保持不变量 **P10 (Walk-Forward Window Non-Overlap)**: FOR ALL walk-forward split `(train, validation, execute)`, 三个窗口在时间轴上 MUST 两两不相交，且 execute window 的起点 >= validation window 的终点。
 11. THE Research_Harness SHALL 保持不变量 **P11 (Scheme Semantic Contract Present)**: FOR ALL Candidate_Scheme outputs, summary markdown MUST include Scheme_Semantic_Contract and MUST explicitly state whether the run is Baseline_Derived_Sizing or Full_Reentry_Window_Lifecycle.
+12. THE Research_Harness SHALL 保持不变量 **P12 (Capital Concurrency Bound)**: FOR ALL 1s timestamp `t` in Portfolio_Equity_Simulator output，sum(open_slot_notional_share) <= `capital_usage_cap`；summary MUST 在 `rejected_by_capital_slot_count` 字段显式记录被 cap 拒绝的 slot 数以及 `rejected_by_capital_ratio` = `rejected_by_capital_slot_count / total_slot_count`；failure signature MUST 通过 summary JSON `invariant_violations.P12_count` 暴露。
+13. THE Research_Harness SHALL 保持不变量 **P13 (Active_Silo_Sum vs CAGR Consistency)**: Active_Silo_Sum 与 Scheme D 输出的 CAGR 相对差 MUST <= `15%`，否则视为 lifecycle 不可叠加；summary markdown MUST 显式报告两者及其相对差；failure signature MUST 通过 summary JSON `invariant_violations.P13_count` 暴露。
+14. THE Research_Harness SHALL 保持不变量 **P14 (Gate Sensitivity Neighborhood)**: Gate_Sensitivity_Grid 的 `5x5x5` 邻域内 Calendar_Sum 的 P50 >= `+25%` AND worst-silo P5 >= `-1.0%`；summary JSON MUST 输出每维度的 partial-dependence 曲线以及 neighborhood P5/P50/P95；failure signature MUST 通过 summary JSON `invariant_violations.P14_count` 暴露。
 
 ### Requirement 7: 显式非目标 / 暂不在范围内（Explicit Non-Goals）
 
@@ -228,3 +255,4 @@
 7. WHERE 某个 Candidate_Scheme 依赖高风险禁区改动, THE Research_Harness SHALL 允许该 Scheme 在本 spec 的 design / tasks 阶段完成 research-only 设计与验证（不修改任何高风险目录），并 SHALL 在 design 文档中显式声明"依赖高风险禁区改动，延后到独立 spec 实现"；真正的高风险修改 MUST 延后到独立 spec + 独立 PR 按 AGENTS §9 / §10 拆分实现，不在本 spec 内直接落地。
 8. THE Research_Harness SHALL NOT 在 R1/R2 research 阶段触发任何 WS 重连、REST 对账、auto_resume 路径；这些路径只允许在后续独立 live migration spec 中基于 `bktrader-ctl --json` 的只读观测讨论（AGENTS §10 核心禁令）。
 9. THE Research_Harness SHALL NOT 在本 spec 中建议或要求 `bktrader-ctl live control-reset`。该命令只用于异常修复，不能作为普通 PnL / parity / research gate 失败的 rollback 流程。
+10. THE Research_Harness SHALL NOT 在本 spec 内把 Scheme D 的 Portfolio_Equity_Simulator 输出等价为 live PnL 预测；该 Simulator 仅用于 research 层权益曲线审计，不等同于 live 执行 / 成交 / 滑点模型，也不作为 live shadow 上线依据。

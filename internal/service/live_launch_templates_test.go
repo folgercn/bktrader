@@ -34,8 +34,8 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
-	if len(templates) != 10 {
-		t.Fatalf("expected 10 launch templates, got %d", len(templates))
+	if len(templates) != 11 {
+		t.Fatalf("expected 11 launch templates, got %d", len(templates))
 	}
 
 	expected := map[string]struct {
@@ -56,6 +56,7 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		"binance-testnet-eth-5m":                            {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
 		"binance-testnet-eth-4h":                            {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
 		"binance-testnet-eth-1d":                            {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
+		"binance-testnet-eth-pretouch-timing":               {symbol: "ETHUSDT", timeframe: "1h", quantity: 0.1},
 	}
 
 	for _, item := range templates {
@@ -246,8 +247,8 @@ func TestLiveLaunchTemplatesSkipEnhancedWhenStrategyMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
-	if len(templates) != 8 {
-		t.Fatalf("expected original 8 launch templates when enhanced strategy is missing, got %d", len(templates))
+	if len(templates) != 9 {
+		t.Fatalf("expected original 9 launch templates when enhanced strategy is missing, got %d", len(templates))
 	}
 	for _, item := range templates {
 		if item.Key == "binance-testnet-btc-30m-enhanced" {

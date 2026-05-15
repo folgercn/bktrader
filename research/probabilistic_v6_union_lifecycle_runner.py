@@ -317,6 +317,70 @@ def _config_metrics(results: list[dict], one_shot_summary: dict) -> dict:
     }
 
 
+def _calendar_metrics(results: list[dict], calendar_months: list[str], calendar_symbols: list[str]) -> dict:
+    result_by_group = {
+        (str(row["execute_month"]), str(row["symbol"])): row
+        for row in results
+    }
+    rows = []
+    by_year: dict[str, float] = {}
+    by_symbol: dict[str, float] = {}
+    by_month: dict[str, float] = {}
+    for month in calendar_months:
+        for symbol in calendar_symbols:
+            result = result_by_group.get((str(month), str(symbol)))
+            if result is None:
+                row = {
+                    "execute_month": str(month),
+                    "symbol": str(symbol),
+                    "selected_events": 0,
+                    "gate_keys": 0,
+                    "trades": 0,
+                    "return_pct": 0.0,
+                    "max_dd_pct": 0.0,
+                    "active": False,
+                }
+            else:
+                summary = result.get("summary", {})
+                row = {
+                    "execute_month": str(month),
+                    "symbol": str(symbol),
+                    "selected_events": int(result.get("gate_stats", {}).get("selected_events", 0)),
+                    "gate_keys": int(result.get("gate_stats", {}).get("gate_keys", 0)),
+                    "trades": int(summary.get("trades", 0)),
+                    "return_pct": float(summary.get("return_pct", 0.0)),
+                    "max_dd_pct": float(summary.get("max_dd_pct", 0.0)),
+                    "active": int(summary.get("trades", 0)) > 0,
+                }
+            rows.append(row)
+            year = str(month)[:4]
+            by_year[year] = by_year.get(year, 0.0) + float(row["return_pct"])
+            by_symbol[str(symbol)] = by_symbol.get(str(symbol), 0.0) + float(row["return_pct"])
+            by_month[str(month)] = by_month.get(str(month), 0.0) + float(row["return_pct"])
+
+    returns = [float(row["return_pct"]) for row in rows]
+    active_returns = [float(row["return_pct"]) for row in rows if bool(row["active"])]
+    calendar_sum = float(np.sum(returns)) if returns else 0.0
+    return {
+        "calendar_months": [str(month) for month in calendar_months],
+        "calendar_symbols": [str(symbol) for symbol in calendar_symbols],
+        "calendar_symbol_months": int(len(rows)),
+        "calendar_silo_sum_pct": round(calendar_sum, 6),
+        "calendar_avg_symbol_month_pct": round(calendar_sum / float(len(rows)), 6) if rows else 0.0,
+        "traded_symbol_months": int(sum(1 for row in rows if bool(row["active"]))),
+        "flat_symbol_months": int(sum(1 for row in rows if not bool(row["active"]))),
+        "trade_count": int(np.sum([int(row["trades"]) for row in rows])) if rows else 0,
+        "worst_calendar_silo_pct": round(float(min(returns)), 6) if returns else 0.0,
+        "best_calendar_silo_pct": round(float(max(returns)), 6) if returns else 0.0,
+        "negative_calendar_silos": int(sum(1 for value in returns if value < 0.0)),
+        "worst_active_silo_pct": round(float(min(active_returns)), 6) if active_returns else 0.0,
+        "year_silo_sum_pct": {key: round(float(value), 6) for key, value in sorted(by_year.items())},
+        "symbol_silo_sum_pct": {key: round(float(value), 6) for key, value in sorted(by_symbol.items())},
+        "month_silo_sum_pct": {key: round(float(value), 6) for key, value in sorted(by_month.items())},
+        "rows": rows,
+    }
+
+
 def _write_markdown(summary: dict, path: Path) -> None:
     lines = [
         "# Probabilistic V6 Union Lifecycle Replay",
@@ -343,6 +407,37 @@ def _write_markdown(summary: dict, path: Path) -> None:
             f"{m['one_shot_active_silo_sum_pct']:.4f}% | {m['trade_count']} | "
             f"{m['active_silos']} | {m['worst_active_silo_pct']:.4f}% | {m['negative_active_silos']} |"
         )
+
+    if any(row.get("calendar_metrics") for row in summary["configs"]):
+        lines.extend(
+            [
+                "",
+                "## Calendar Metrics",
+                "",
+                "未入选的 calendar symbol-month 按 `0%` 计入，避免把 active silo sum 误读成连续组合净值。",
+                "",
+                "| Config | Calendar Sum | Avg / Symbol-Month | Traded Silos | Flat Silos | Worst Calendar Silo | Negative Silos | By Symbol | By Year |",
+                "|---|---:|---:|---:|---:|---:|---:|---|---|",
+            ]
+        )
+        for row in summary["configs"]:
+            cm = row.get("calendar_metrics") or {}
+            if not cm:
+                continue
+            by_symbol = ", ".join(
+                f"{symbol}:{value:.4f}%"
+                for symbol, value in cm.get("symbol_silo_sum_pct", {}).items()
+            )
+            by_year = ", ".join(
+                f"{year}:{value:.4f}%"
+                for year, value in cm.get("year_silo_sum_pct", {}).items()
+            )
+            lines.append(
+                f"| `{row['config']}` | {cm['calendar_silo_sum_pct']:.4f}% | "
+                f"{cm['calendar_avg_symbol_month_pct']:.4f}% | {cm['traded_symbol_months']} | "
+                f"{cm['flat_symbol_months']} | {cm['worst_calendar_silo_pct']:.4f}% | "
+                f"{cm['negative_calendar_silos']} | `{by_symbol}` | `{by_year}` |"
+            )
 
     lines.extend(
         [
@@ -397,6 +492,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--symbols", nargs="+", default=["BTCUSDT", "ETHUSDT"])
     parser.add_argument("--months", nargs="+", default=[])
+    parser.add_argument(
+        "--calendar-months",
+        nargs="+",
+        default=[],
+        help="Optional fixed calendar months to report; missing month/symbol groups are counted as 0%.",
+    )
+    parser.add_argument(
+        "--calendar-symbols",
+        nargs="+",
+        default=[],
+        help="Optional fixed calendar symbols to report; defaults to --symbols.",
+    )
     parser.add_argument("--max-groups", type=int, default=0, help="0 runs all matching month/symbol groups")
     parser.add_argument("--signal-timeframe", default="1h")
     parser.add_argument("--breakout-shape", default="original_t2")
@@ -473,6 +580,13 @@ def main() -> None:
                 "config": config_name,
                 "source_summary_json": str(config_dir / "summary.json"),
                 "metrics": _config_metrics(results, one_shot_summary),
+                "calendar_metrics": _calendar_metrics(
+                    results,
+                    [str(month) for month in args.calendar_months],
+                    [str(symbol) for symbol in (args.calendar_symbols or args.symbols)],
+                )
+                if args.calendar_months
+                else {},
                 "results": results,
             }
         )

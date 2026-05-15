@@ -290,7 +290,6 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"strategyEngine":      bkLiveEthPretouchTimingEngineKey,
 		"executionStrategy":   "book-aware-v1",
 		"executionDataSource": "tick",
-		"dispatchMode":        "manual-review",
 		// Exit params (research-validated, trail_start=1.5)
 		"stop_loss_atr":    0.45,
 		"breakeven_at_r":   0.8,
@@ -309,10 +308,16 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"pretouchMaxPreTouchSec": 1800.0,
 		"pretouchMaxEff300s":     1.0,
 		// Execution
-		"executionEntryOrderType":    "MARKET",
-		"executionEntryMaxSpreadBps": 8,
-		"executionSLExitOrderType":   "MARKET",
-		"dispatchCooldownSeconds":    30,
+		"executionEntryOrderType":              "MARKET",
+		"executionEntryMaxSpreadBps":           8,
+		"executionEntryMaxSlippageBps":         8,
+		"executionEntryMaxBookAgeMs":           500,
+		"executionEntryMinTopBookCoverage":     0.5,
+		"executionEntryMaxSourceDivergenceBps": 8,
+		"executionSLExitOrderType":             "MARKET",
+		"executionSLExitMaxSpreadBps":          8,
+		"executionSLMaxSlippageBps":            8,
+		"dispatchCooldownSeconds":              30,
 	}
 
 	return LiveLaunchTemplate{
