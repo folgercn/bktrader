@@ -361,6 +361,10 @@ func TestLiveLaunchTemplatesStrategyParameterConsistency(t *testing.T) {
 				if (tmpl.Key == "binance-testnet-btc-15m" || tmpl.Key == "binance-testnet-btc-30m") && key == "stop_loss_atr" {
 					continue
 				}
+				// pretouch timing 模板使用独立策略引擎和参数，不与默认策略对齐
+				if tmpl.Key == "binance-testnet-eth-pretouch-timing" {
+					continue
+				}
 				t.Errorf("template %s parameter mismatch: key=%s template=%v strategy=%v", tmpl.Key, key, val, strategyVal)
 			}
 		}
