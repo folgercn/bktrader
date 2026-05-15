@@ -2,9 +2,10 @@ package service
 
 import (
 	"encoding/json"
-	"math"
+	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 )
 
@@ -24,22 +25,46 @@ type TreeNode struct {
 
 // Predict traverses the tree and returns the leaf class label.
 func (n *TreeNode) Predict(features []float64) string {
+	if n == nil {
+		return ""
+	}
 	if n.Left == nil && n.Right == nil {
 		return n.LeafValue
 	}
+	if n.FeatureIndex < 0 || n.FeatureIndex >= len(features) {
+		return n.LeafValue
+	}
 	if features[n.FeatureIndex] <= n.Threshold {
+		if n.Left == nil {
+			return n.LeafValue
+		}
 		return n.Left.Predict(features)
+	}
+	if n.Right == nil {
+		return n.LeafValue
 	}
 	return n.Right.Predict(features)
 }
 
 // PredictProba traverses the tree and returns the positive class probability.
 func (n *TreeNode) PredictProba(features []float64) float64 {
+	if n == nil {
+		return 0.5
+	}
 	if n.Left == nil && n.Right == nil {
 		return n.LeafProba
 	}
+	if n.FeatureIndex < 0 || n.FeatureIndex >= len(features) {
+		return 0.5
+	}
 	if features[n.FeatureIndex] <= n.Threshold {
+		if n.Left == nil {
+			return 0.5
+		}
 		return n.Left.PredictProba(features)
+	}
+	if n.Right == nil {
+		return 0.5
 	}
 	return n.Right.PredictProba(features)
 }
@@ -50,6 +75,13 @@ func TrainDecisionTree(X [][]float64, y []string, maxDepth int, rng *rand.Rand) 
 }
 
 func buildTree(X [][]float64, y []string, depth, maxDepth int, rng *rand.Rand) *TreeNode {
+	if len(X) == 0 || len(y) == 0 {
+		return &TreeNode{
+			FeatureIndex: -1,
+			LeafValue:    majorityClass(y),
+			LeafProba:    positiveRatio(y),
+		}
+	}
 	// Check stopping conditions
 	if depth >= maxDepth || len(y) <= 1 || allSame(y) {
 		return &TreeNode{
@@ -106,6 +138,9 @@ type RandomForest struct {
 
 // TrainRandomForest trains a random forest classifier.
 func TrainRandomForest(X [][]float64, y []string, nEstimators, maxDepth int, rng *rand.Rand) *RandomForest {
+	if len(X) == 0 || len(y) == 0 || nEstimators <= 0 {
+		return &RandomForest{}
+	}
 	trees := make([]*TreeNode, nEstimators)
 	n := len(X)
 
@@ -131,24 +166,38 @@ func TrainRandomForest(X [][]float64, y []string, nEstimators, maxDepth int, rng
 
 // PredictProba returns the probability of the positive class ("1").
 func (rf *RandomForest) PredictProba(features []float64) float64 {
-	if len(rf.Trees) == 0 {
+	if rf == nil || len(rf.Trees) == 0 {
 		return 0.5
 	}
 	sum := 0.0
+	count := 0
 	for _, tree := range rf.Trees {
+		if tree == nil {
+			continue
+		}
 		sum += tree.PredictProba(features)
+		count++
 	}
-	return sum / float64(len(rf.Trees))
+	if count == 0 {
+		return 0.5
+	}
+	return sum / float64(count)
 }
 
 // Predict returns the majority class prediction.
 func (rf *RandomForest) Predict(features []float64) string {
-	if len(rf.Trees) == 0 {
+	if rf == nil || len(rf.Trees) == 0 {
 		return "0"
 	}
 	votes := make(map[string]int)
 	for _, tree := range rf.Trees {
+		if tree == nil {
+			continue
+		}
 		pred := tree.Predict(features)
+		if pred == "" {
+			continue
+		}
 		votes[pred]++
 	}
 	best := ""
@@ -174,15 +223,24 @@ type PretouchModelBundle struct {
 	Medians      []float64     `json:"medians"` // for imputation
 	Version      string        `json:"version"`
 	TrainedAt    string        `json:"trained_at"`
-	TimingLOOCV  float64       `json:"timing_loocv"`
-	RFAUC        float64       `json:"rf_auc"`
+	TimingLOOCV  float64       `json:"timing_loocv,omitempty"` // legacy name; value is LOOCV accuracy
+	RFAccuracy   float64       `json:"rf_accuracy,omitempty"`
+	RFAUC        float64       `json:"rf_auc,omitempty"` // legacy compatibility for existing model JSON
 }
 
 // SaveModelBundle writes the model bundle to a JSON file.
 func SaveModelBundle(bundle *PretouchModelBundle, path string) error {
+	if err := validatePretouchModelBundle(bundle); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(bundle, "", "  ")
 	if err != nil {
 		return err
+	}
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
 	}
 	return os.WriteFile(path, data, 0644)
 }
@@ -197,7 +255,60 @@ func LoadModelBundle(path string) (*PretouchModelBundle, error) {
 	if err := json.Unmarshal(data, &bundle); err != nil {
 		return nil, err
 	}
+	if bundle.RFAccuracy == 0 && bundle.RFAUC > 0 {
+		bundle.RFAccuracy = bundle.RFAUC
+	}
+	if err := validatePretouchModelBundle(&bundle); err != nil {
+		return nil, err
+	}
 	return &bundle, nil
+}
+
+func validatePretouchModelBundle(bundle *PretouchModelBundle) error {
+	if bundle == nil {
+		return fmt.Errorf("pretouch model bundle is nil")
+	}
+	if bundle.TimingTree == nil {
+		return fmt.Errorf("pretouch model missing timing_tree")
+	}
+	if bundle.RFModel == nil {
+		return fmt.Errorf("pretouch model missing rf_model")
+	}
+	if len(bundle.FeatureNames) == 0 {
+		return fmt.Errorf("pretouch model missing feature_names")
+	}
+	if len(bundle.Medians) != len(bundle.FeatureNames) {
+		return fmt.Errorf("pretouch model medians length %d does not match feature_names length %d", len(bundle.Medians), len(bundle.FeatureNames))
+	}
+	if maxIndex := maxTreeFeatureIndex(bundle.TimingTree); maxIndex >= len(bundle.FeatureNames) {
+		return fmt.Errorf("pretouch timing_tree feature index %d exceeds feature_names length %d", maxIndex, len(bundle.FeatureNames))
+	}
+	for i, tree := range bundle.RFModel.Trees {
+		if tree == nil {
+			continue
+		}
+		if maxIndex := maxTreeFeatureIndex(tree); maxIndex >= len(bundle.FeatureNames) {
+			return fmt.Errorf("pretouch rf_model tree %d feature index %d exceeds feature_names length %d", i, maxIndex, len(bundle.FeatureNames))
+		}
+	}
+	return nil
+}
+
+func maxTreeFeatureIndex(node *TreeNode) int {
+	if node == nil {
+		return -1
+	}
+	maxIndex := -1
+	if node.Left != nil || node.Right != nil {
+		maxIndex = node.FeatureIndex
+	}
+	if left := maxTreeFeatureIndex(node.Left); left > maxIndex {
+		maxIndex = left
+	}
+	if right := maxTreeFeatureIndex(node.Right); right > maxIndex {
+		maxIndex = right
+	}
+	return maxIndex
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +438,3 @@ func splitData(X [][]float64, y []string, featureIdx int, threshold float64) ([]
 	}
 	return leftX, leftY, rightX, rightY
 }
-
-// Suppress unused import warning for math
-var _ = math.Abs

@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -147,6 +148,19 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		}
 		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["defaultOrderQuantity"]); got != want.quantity {
 			t.Fatalf("expected defaultOrderQuantity=%v, got %v", want.quantity, got)
+		}
+		if item.Key == "binance-testnet-eth-pretouch-timing" {
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "intent_quantity" {
+				t.Fatalf("expected pretouch template positionSizingMode=intent_quantity, got %s", got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchBaseOrderQuantity"]); got != want.quantity {
+				t.Fatalf("expected pretouchBaseOrderQuantity=%v, got %v", want.quantity, got)
+			}
+			for _, note := range item.Notes {
+				if strings.Contains(strings.ToLower(note), "sidecar") || strings.Contains(note, "localhost:9101") {
+					t.Fatalf("pretouch template should not mention sidecar dependency: %q", note)
+				}
+			}
 		}
 		if want.researchBaseline || want.enhanced {
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "reentry_size_schedule" {

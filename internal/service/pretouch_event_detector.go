@@ -20,6 +20,9 @@ type PretouchDetectorConfig struct {
 	CostQ50Threshold float64 // train q50 = 0.116865
 	CostQ50Penalty   float64 // 0.5
 
+	// Breakout structure tolerance
+	StructureToleranceBps float64 // 0.5
+
 	// Sizing
 	BaseShare float64 // 0.80 (ETH-only)
 }
@@ -27,12 +30,13 @@ type PretouchDetectorConfig struct {
 // DefaultPretouchDetectorConfig returns the research-validated configuration.
 func DefaultPretouchDetectorConfig() PretouchDetectorConfig {
 	return PretouchDetectorConfig{
-		MaxPreTouchSeconds: 1800,
-		MaxEff300s:         1.0,
-		MinSpeed300sATR:    0.228106,
-		CostQ50Threshold:   0.116865,
-		CostQ50Penalty:     0.50,
-		BaseShare:          0.80,
+		MaxPreTouchSeconds:    1800,
+		MaxEff300s:            1.0,
+		MinSpeed300sATR:       0.228106,
+		CostQ50Threshold:      0.116865,
+		CostQ50Penalty:        0.50,
+		StructureToleranceBps: defaultT2BreakoutShapeToleranceBps,
+		BaseShare:             0.80,
 	}
 }
 
@@ -47,10 +51,12 @@ type HourlyBar struct {
 
 // TickData represents a single trade tick.
 type TickData struct {
-	Time   time.Time
-	Price  float64
-	Volume float64
-	Side   string // "buy" / "sell"
+	Time    time.Time
+	Price   float64
+	Volume  float64
+	Side    string // "buy" / "sell"
+	BestBid float64
+	BestAsk float64
 }
 
 // PretouchEventDetector monitors real-time tick data to detect pretouch
@@ -80,6 +86,55 @@ func NewPretouchEventDetector(symbol string, config PretouchDetectorConfig) *Pre
 		hourlyBars: make([]HourlyBar, 0, 24),
 		tickWindow: make([]TickData, 0, 512),
 	}
+}
+
+// SetConfig updates detector thresholds from live session parameters.
+func (d *PretouchEventDetector) SetConfig(config PretouchDetectorConfig) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.config = config
+}
+
+// SyncBars replaces the detector's hourly bar state with the latest runtime
+// signal-bar view. It intentionally preserves per-bar dedupe when the current
+// bar has not changed.
+func (d *PretouchEventDetector) SyncBars(closed []HourlyBar, current *HourlyBar) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	filtered := make([]HourlyBar, 0, len(closed))
+	for _, bar := range closed {
+		if validHourlyBar(bar) {
+			filtered = append(filtered, bar)
+		}
+	}
+	if len(filtered) > 24 {
+		filtered = filtered[len(filtered)-24:]
+	}
+
+	currentChanged := false
+	switch {
+	case current == nil:
+		currentChanged = d.currentBar != nil
+		d.currentBar = nil
+	case !validHourlyBar(*current):
+		currentChanged = d.currentBar != nil
+		d.currentBar = nil
+	default:
+		currentCopy := *current
+		currentChanged = d.currentBar == nil || !d.currentBar.OpenTime.Equal(currentCopy.OpenTime)
+		d.currentBar = &currentCopy
+	}
+
+	d.hourlyBars = filtered
+	if currentChanged {
+		d.touchedThisBar = false
+		d.lastTouchTime = time.Time{}
+	}
+}
+
+func validHourlyBar(bar HourlyBar) bool {
+	return !bar.OpenTime.IsZero() && bar.Open > 0 && bar.High > 0 && bar.Low > 0 && bar.Close > 0
 }
 
 // OnHourlyBarClose should be called when a 1h bar closes.
@@ -128,7 +183,7 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 
 	// Update 300s rolling window
 	cutoff := tick.Time.Add(-300 * time.Second)
-	newWindow := make([]TickData, 0, len(d.tickWindow))
+	newWindow := d.tickWindow[:0]
 	for _, t := range d.tickWindow {
 		if t.Time.After(cutoff) {
 			newWindow = append(newWindow, t)
@@ -182,11 +237,14 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 	var side string
 	var level float64
 
-	if tick.Price >= longLevel && prevBar1.High < longLevel {
+	longReady := pretouchLongStructureReady(prevBar2.High, prevBar1.High, d.config.StructureToleranceBps)
+	shortReady := pretouchShortStructureReady(prevBar2.Low, prevBar1.Low, d.config.StructureToleranceBps)
+
+	if tick.Price >= longLevel && longReady {
 		// Long breakout: current tick touches prev_high_2 for first time
 		side = "long"
 		level = longLevel
-	} else if tick.Price <= shortLevel && prevBar1.Low > shortLevel {
+	} else if tick.Price <= shortLevel && shortReady {
 		// Short breakout: current tick touches prev_low_2 for first time
 		side = "short"
 		level = shortLevel
@@ -224,9 +282,10 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 		return PretouchDetectionResult{Reason: fmt.Sprintf("eff_300s=%.4f > %.4f", eff300s, d.config.MaxEff300s)}
 	}
 
-	// roundtrip_cost_atr (simplified: use spread proxy from tick data)
-	// In live, this would come from order book. For now use a conservative estimate.
-	roundtripCostATR := 0.10 // placeholder; will be replaced by order book data
+	roundtripCostATR := 0.10
+	if tick.BestAsk > 0 && tick.BestBid > 0 && tick.BestAsk >= tick.BestBid {
+		roundtripCostATR = (tick.BestAsk - tick.BestBid) / atr
+	}
 
 	// cost penalty
 	costPenalty := 1.0
@@ -243,6 +302,8 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 		"touch_extension_atr":      touchExtATR,
 		"speed_300s_atr":           speed300s,
 		"roundtrip_cost_atr":       roundtripCostATR,
+		"eff_300s":                 eff300s,
+		"pre_touch_seconds":        preTouchSeconds,
 		"signal_atr_percentile":    d.computeATRPercentile(atr),
 		"prev1_body_atr":           math.Abs(prevBar1.Close-prevBar1.Open) / atr,
 		"prev1_range_atr":          (prevBar1.High - prevBar1.Low) / atr,
@@ -275,6 +336,20 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 		Detected: true,
 		Event:    event,
 	}
+}
+
+func pretouchLongStructureReady(prevHigh2, prevHigh1, toleranceBps float64) bool {
+	if prevHigh2 <= 0 || prevHigh1 <= 0 {
+		return false
+	}
+	return prevHigh2 > prevHigh1*(1+toleranceBps/10000.0)
+}
+
+func pretouchShortStructureReady(prevLow2, prevLow1, toleranceBps float64) bool {
+	if prevLow2 <= 0 || prevLow1 <= 0 {
+		return false
+	}
+	return prevLow2 < prevLow1*(1-toleranceBps/10000.0)
 }
 
 // --- Internal computation helpers ---

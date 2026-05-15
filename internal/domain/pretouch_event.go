@@ -22,7 +22,7 @@ type PretouchEvent struct {
 	// Features for ML inference (Original_10_Features)
 	Features map[string]float64 `json:"features,omitempty"`
 
-	// ML inference results (filled by sidecar)
+	// ML inference results (filled by Go-native model inference)
 	TimingRegime     string  `json:"timingRegime"` // skip / fast / slow
 	RFProbability    float64 `json:"rfProbability"`
 	SizingMultiplier float64 `json:"sizingMultiplier"` // clip(prob × 2, 0, 2)

@@ -1,9 +1,0 @@
-{
-  "selected_rule": {
-    "name": "short_pullback60_q2_global_quantile_probe",
-    "side": "short",
-    "pullback_60s_atr_min_exclusive": 0.015597,
-    "pullback_60s_atr_max_inclusive": 0.038194,
-    "note": "Hypothesis probe only; thresholds are global 9-month quantiles, not OOS-selected."
-  }
-}

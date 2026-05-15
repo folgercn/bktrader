@@ -311,11 +311,12 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"trail_buffer_atr": 0.05,
 		"max_hold_hours":   2.0,
 		// Sizing
-		"positionSizingMode":       "fixed_quantity",
-		"defaultOrderQuantity":     0.100,
-		"pretouchBaseShare":        0.80,
-		"pretouchCostQ50Threshold": 0.116865,
-		"pretouchCostQ50Penalty":   0.50,
+		"positionSizingMode":        "intent_quantity",
+		"defaultOrderQuantity":      0.100,
+		"pretouchBaseOrderQuantity": 0.100,
+		"pretouchBaseShare":         0.80,
+		"pretouchCostQ50Threshold":  0.116865,
+		"pretouchCostQ50Penalty":    0.50,
 		// Speed gate
 		"pretouchSpeedThreshold": 0.228106,
 		// Quality filters
@@ -402,12 +403,13 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 			},
 		},
 		Notes: []string{
-			"ETH Pretouch Timing 策略：timing classification (DT3 rolling) × RF probability (AUC~0.70) × cost_q50_cut050。",
+			"ETH Pretouch Timing 策略：Go 原生 DT3 timing classifier × RF probability accuracy × cost_q50_cut050。",
 			"Research 验证：10bps kill stress 下 23.29% calendar sum，0 个负月，worst SM +1.40%。",
-			"需要 ML sidecar 运行在 localhost:9101（scripts/timing_probability_sidecar/server.py）。",
-			"Sidecar 不可用时策略自动 skip 所有事件（不入场），不会退化为 fixed sizing。",
+			"模型默认从 data/pretouch_model.json 加载；部署可用 BK_PRETOUCH_MODEL_PATH 覆盖模型路径。",
+			"模型不可用或校验失败时策略自动 skip 所有事件（不入场），不会退化为 fixed sizing。",
+			"positionSizingMode=intent_quantity，实际 entry 数量来自 pretouchBaseOrderQuantity × RF/cost sizing 后的 suggestedQuantity。",
 			"dispatchMode 默认 manual-review，不自动下单。",
-			"模型每周自动 rolling 重训，确保 timing rules 和 RF probability 与最新数据对齐。",
+			"重训需显式运行 pretouch-train --events-csv <path> --out <path> 并审查新模型指标。",
 		},
 	}
 }

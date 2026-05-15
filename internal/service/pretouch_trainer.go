@@ -131,15 +131,16 @@ func TrainPretouchModel(config PretouchTrainerConfig) error {
 	rng := rand.New(rand.NewSource(config.RandomSeed))
 	timingTree := TrainDecisionTree(trainX, trainTimingY, config.MaxDepthDT, rng)
 
-	// Compute LOOCV calendar_sum for timing tree
-	loocv := computeLOOCVCalendarSum(trainX, trainTimingY, config.MaxDepthDT, rng)
+	// Compute timing LOOCV accuracy with an independent RNG so the metric does
+	// not depend on random draws consumed by the final model fit.
+	loocvRng := rand.New(rand.NewSource(config.RandomSeed + 1))
+	loocvAccuracy := computeLOOCVAccuracy(trainX, trainTimingY, config.MaxDepthDT, loocvRng)
 
 	// Train RF probability model
 	rfRng := rand.New(rand.NewSource(config.RandomSeed))
 	rfModel := TrainRandomForest(trainX, trainRFY, config.NEstimatorsRF, 5, rfRng)
 
-	// Compute test AUC (simplified: use accuracy as proxy)
-	rfAUC := computeRFAccuracy(rfModel, testX, testRFY)
+	rfAccuracy := computeRFAccuracy(rfModel, testX, testRFY)
 
 	// Build model bundle
 	bundle := &PretouchModelBundle{
@@ -149,8 +150,8 @@ func TrainPretouchModel(config PretouchTrainerConfig) error {
 		Medians:      trainMedians,
 		Version:      time.Now().UTC().Format("20060102") + "_v1",
 		TrainedAt:    time.Now().UTC().Format(time.RFC3339),
-		TimingLOOCV:  loocv,
-		RFAUC:        rfAUC,
+		TimingLOOCV:  loocvAccuracy,
+		RFAccuracy:   rfAccuracy,
 	}
 
 	// Save
@@ -269,7 +270,7 @@ func median(vals []float64) float64 {
 	return sorted[n/2]
 }
 
-func computeLOOCVCalendarSum(X [][]float64, y []string, maxDepth int, rng *rand.Rand) float64 {
+func computeLOOCVAccuracy(X [][]float64, y []string, maxDepth int, rng *rand.Rand) float64 {
 	n := len(X)
 	if n < 3 {
 		return 0

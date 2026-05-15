@@ -1,9 +1,0 @@
-{
-  "selected_rule": {
-    "name": "delay60_short_speed60_q4_global_quantile_probe",
-    "side": "short",
-    "speed_60s_atr_min_exclusive": 0.259108,
-    "entry_delay_seconds": 60,
-    "note": "Hypothesis probe only; threshold is global delay60 quantile, not OOS-selected."
-  }
-}

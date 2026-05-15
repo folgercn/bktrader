@@ -416,6 +416,8 @@ func normalizePositionSizingMode(raw any) string {
 		return "reentry_size_schedule"
 	case "volatility-adjusted", "volatility_adjusted", "vol_adjusted", "atr_adjusted":
 		return "volatility_adjusted"
+	case "intent-quantity", "intent_quantity", "signal_quantity", "signal-quantity":
+		return "intent_quantity"
 	default:
 		return value
 	}
@@ -487,6 +489,15 @@ func resolveExecutionQuantity(session domain.LiveSession, account domain.Account
 		if atr14 <= 0 {
 			metadata["sizingMissingField"] = "atr14"
 		}
+	}
+	if mode == "intent_quantity" {
+		if intent.Quantity > 0 {
+			metadata["sizingComputedQuantity"] = intent.Quantity
+			metadata["sizingBalanceBasis"] = "intent_quantity"
+			metadata["sizingMethod"] = "intent_quantity"
+			return intent.Quantity, metadata
+		}
+		metadata["sizingFallbackReason"] = "intent_quantity_missing_intent_quantity"
 	}
 	quantity := firstPositive(fixedQuantity, firstPositive(intent.Quantity, 0.001))
 	metadata["sizingComputedQuantity"] = quantity

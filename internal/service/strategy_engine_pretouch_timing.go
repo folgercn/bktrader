@@ -2,16 +2,20 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
 
-const bkLiveEthPretouchTimingEngineKey = "bk-live-eth-pretouch-timing"
+const (
+	bkLiveEthPretouchTimingEngineKey = "bk-live-eth-pretouch-timing"
+	defaultPretouchModelPath         = "data/pretouch_model.json"
+)
 
 // bkLiveEthPretouchTimingEngine implements the ETH pretouch timing strategy.
 // It detects pretouch breakout events in real-time, uses Go-native DT3 + RF
 // for timing classification and probability sizing, and produces signal intents.
-// No Python dependency — single Go binary.
+// No Python dependency; single Go binary.
 type bkLiveEthPretouchTimingEngine struct {
 	platform *Platform
 	detector *PretouchEventDetector
@@ -27,14 +31,15 @@ func newBkLiveEthPretouchTimingEngine(platform *Platform) *bkLiveEthPretouchTimi
 		config:   config,
 	}
 
-	// Try to load model bundle from default path
-	modelPath := "data/pretouch_model.json"
+	// Try to load model bundle from default path. Deployments can override this
+	// without changing the launch template.
+	modelPath := firstNonEmpty(strings.TrimSpace(os.Getenv("BK_PRETOUCH_MODEL_PATH")), defaultPretouchModelPath)
 	if bundle, err := LoadModelBundle(modelPath); err == nil {
 		engine.model = bundle
 		platform.logger("service.pretouch_timing").Info("pretouch model loaded",
 			"version", bundle.Version,
 			"timing_loocv", bundle.TimingLOOCV,
-			"rf_auc", bundle.RFAUC,
+			"rf_accuracy", bundle.RFAccuracy,
 		)
 	} else {
 		platform.logger("service.pretouch_timing").Warn("pretouch model not found, events will be skipped until model is trained",
@@ -84,33 +89,20 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		return StrategySignalDecision{Action: "wait", Reason: "no_trigger_price"}, nil
 	}
 
+	config := pretouchConfigFromParameters(e.config, ctx.ExecutionContext.Parameters)
+	e.detector.SetConfig(config)
+
+	closedBars, currentBar := pretouchBarsFromEvaluationContext(ctx, triggerPrice)
+	e.detector.SyncBars(closedBars, currentBar)
+
+	orderBookStats := extractOrderBookStats(ctx.TriggerSummary, ctx.SourceStates)
+
 	// Build tick from trigger
 	tick := TickData{
-		Time:  ctx.EventTime,
-		Price: triggerPrice,
-	}
-
-	// Check for 1h bar close event (from signal bar state)
-	if barClosed := ctx.TriggerSummary["barClosed"]; barClosed != nil {
-		if closed, ok := barClosed.(bool); ok && closed {
-			barOpen := parseFloatValue(ctx.TriggerSummary["barOpen"])
-			barHigh := parseFloatValue(ctx.TriggerSummary["barHigh"])
-			barLow := parseFloatValue(ctx.TriggerSummary["barLow"])
-			barClose := parseFloatValue(ctx.TriggerSummary["barClose"])
-			barOpenTime := ctx.EventTime.Truncate(time.Hour)
-
-			if barOpen > 0 && barHigh > 0 && barLow > 0 && barClose > 0 {
-				e.detector.OnHourlyBarClose(HourlyBar{
-					OpenTime: barOpenTime.Add(-time.Hour),
-					Open:     barOpen,
-					High:     barHigh,
-					Low:      barLow,
-					Close:    barClose,
-				})
-				// Open new bar
-				e.detector.OnNewHourlyBarOpen(barOpenTime, triggerPrice)
-			}
-		}
+		Time:    ctx.EventTime,
+		Price:   triggerPrice,
+		BestBid: orderBookStats.bestBid,
+		BestAsk: orderBookStats.bestAsk,
 	}
 
 	// Process tick through detector
@@ -155,7 +147,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	}
 
 	// Timing classification (DT3)
-	timingRegime := e.model.TimingTree.Predict(features)
+	timingRegime := normalizePretouchTimingRegime(e.model.TimingTree.Predict(features))
 
 	// RF probability
 	rfProb := e.model.RFModel.PredictProba(features)
@@ -192,10 +184,24 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		}, nil
 	}
 
-	// Compute final position size
+	// Compute final position size multiplier and live quantity.
 	finalMultiplier := sizingMultiplier * result.Event.CostPenalty
-	finalPositionSize := e.config.BaseShare * finalMultiplier
+	finalPositionSize := config.BaseShare * finalMultiplier
 	result.Event.FinalPositionSize = finalPositionSize
+	baseQuantity := firstPositive(parseFloatValue(ctx.ExecutionContext.Parameters["pretouchBaseOrderQuantity"]), parseFloatValue(ctx.ExecutionContext.Parameters["defaultOrderQuantity"]))
+	if baseQuantity <= 0 {
+		return StrategySignalDecision{
+			Action: "wait",
+			Reason: "no_base_quantity",
+			Metadata: map[string]any{
+				"pretouchEvent": result.Event.EventID,
+				"timingRegime":  timingRegime,
+				"rfProbability": rfProb,
+				"modelVersion":  e.model.Version,
+			},
+		}, nil
+	}
+	suggestedQuantity := baseQuantity * finalPositionSize
 
 	logger.Info("pretouch signal: advance-plan",
 		"event_id", result.Event.EventID,
@@ -205,22 +211,244 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		"sizing_multiplier", sizingMultiplier,
 		"cost_penalty", result.Event.CostPenalty,
 		"final_position_size", finalPositionSize,
+		"suggested_quantity", suggestedQuantity,
 		"model_version", e.model.Version,
 	)
+
+	nextSide := "BUY"
+	if strings.EqualFold(result.Event.Side, "short") {
+		nextSide = "SELL"
+	}
+	currentSnapshot := pretouchBarSnapshot(currentBar)
+	prevBar2Snapshot := map[string]any{}
+	if len(closedBars) >= 2 {
+		prevBar2Snapshot = pretouchBarSnapshot(&closedBars[len(closedBars)-2])
+	}
+	signalBarDecision := map[string]any{
+		"ready":                     true,
+		"longReady":                 nextSide == "BUY",
+		"shortReady":                nextSide == "SELL",
+		"longBreakoutPatternReady":  nextSide == "BUY",
+		"shortBreakoutPatternReady": nextSide == "SELL",
+		"breakoutPrice":             result.Event.TouchPrice,
+		"breakoutPriceSource":       "pretouch.touch_price",
+		"timeframe":                 "1h",
+		"current":                   currentSnapshot,
+		"prevBar2":                  prevBar2Snapshot,
+		"pretouchTimingRegime":      timingRegime,
+		"pretouchRFProbability":     rfProb,
+		"pretouchFinalPositionSize": finalPositionSize,
+		"pretouchSuggestedQuantity": suggestedQuantity,
+	}
+	signalBarTradeLimitKey := pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
 
 	// Produce signal decision
 	return StrategySignalDecision{
 		Action: "advance-plan",
 		Reason: fmt.Sprintf("pretouch_%s_%s", timingRegime, result.Event.Side),
 		Metadata: map[string]any{
-			"pretouchEvent":     result.Event,
-			"timingRegime":      timingRegime,
-			"rfProbability":     rfProb,
-			"sizingMultiplier":  sizingMultiplier,
-			"costPenalty":       result.Event.CostPenalty,
-			"finalPositionSize": finalPositionSize,
-			"modelVersion":      e.model.Version,
-			"signalSource":      "pretouch-timing-unified",
+			"pretouchEvent":                 result.Event,
+			"timingRegime":                  timingRegime,
+			"rfProbability":                 rfProb,
+			"sizingMultiplier":              sizingMultiplier,
+			"costPenalty":                   result.Event.CostPenalty,
+			"finalPositionSize":             finalPositionSize,
+			"suggestedQuantity":             suggestedQuantity,
+			"modelVersion":                  e.model.Version,
+			"signalSource":                  "pretouch-timing-unified",
+			"signalBarDecision":             signalBarDecision,
+			"signalBarStateKey":             signalBarTradeLimitKey,
+			liveSignalBarTradeLimitKeyField: signalBarTradeLimitKey,
+			"nextPlannedEvent":              formatOptionalRFC3339(result.Event.TouchTime),
+			"nextPlannedPrice":              result.Event.TouchPrice,
+			"nextPlannedSide":               nextSide,
+			"nextPlannedRole":               "entry",
+			"nextPlannedReason":             "Pretouch-Timing",
+			"marketPrice":                   triggerPrice,
+			"marketSource":                  "trade_tick.price",
+			"signalKind":                    "entry",
+			"decisionState":                 "ready",
+			"spreadBps":                     orderBookStats.spreadBps,
+			"bestBid":                       orderBookStats.bestBid,
+			"bestAsk":                       orderBookStats.bestAsk,
+			"bestBidQty":                    orderBookStats.bestBidQty,
+			"bestAskQty":                    orderBookStats.bestAskQty,
+			"bookImbalance":                 orderBookStats.imbalance,
+			"liquidityBias":                 orderBookStats.bias,
+			"biasActionable":                isLiquidityBiasActionable(nextSide, "entry", "Pretouch-Timing", orderBookStats.bias),
 		},
 	}, nil
+}
+
+func pretouchConfigFromParameters(base PretouchDetectorConfig, parameters map[string]any) PretouchDetectorConfig {
+	config := base
+	if value := parseFloatValue(parameters["pretouchMaxPreTouchSec"]); value > 0 {
+		config.MaxPreTouchSeconds = value
+	}
+	if value := parseFloatValue(parameters["pretouchMaxEff300s"]); value > 0 {
+		config.MaxEff300s = value
+	}
+	if value := parseFloatValue(parameters["pretouchSpeedThreshold"]); value > 0 {
+		config.MinSpeed300sATR = value
+	}
+	if value := parseFloatValue(parameters["pretouchCostQ50Threshold"]); value > 0 {
+		config.CostQ50Threshold = value
+	}
+	if value := parseFloatValue(parameters["pretouchCostQ50Penalty"]); value > 0 {
+		config.CostQ50Penalty = value
+	}
+	if value := parseFloatValue(parameters["pretouchBaseShare"]); value > 0 {
+		config.BaseShare = value
+	}
+	if raw, ok := parameters["breakout_shape_tolerance_bps"]; ok {
+		value := parseFloatValue(raw)
+		if value < 0 {
+			value = defaultT2BreakoutShapeToleranceBps
+		}
+		config.StructureToleranceBps = value
+	}
+	return config
+}
+
+func normalizePretouchTimingRegime(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "fast", "slow":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "skip"
+	}
+}
+
+func pretouchBarsFromEvaluationContext(ctx StrategySignalEvaluationContext, triggerPrice float64) ([]HourlyBar, *HourlyBar) {
+	symbol := NormalizeSymbol(ctx.ExecutionContext.Symbol)
+	timeframe := normalizeSignalBarInterval(ctx.ExecutionContext.SignalTimeframe)
+	closed, current := pretouchBarsFromSourceStates(ctx.SourceStates, symbol, timeframe)
+	if len(closed) == 0 && current == nil {
+		closed, current = pretouchBarsFromSignalBarStates(ctx.SignalBarStates, symbol, timeframe)
+	}
+	if current == nil && len(closed) > 0 && triggerPrice > 0 {
+		currentStart := ctx.EventTime.UTC().Truncate(time.Hour)
+		lastClosed := closed[len(closed)-1]
+		if lastClosed.OpenTime.Before(currentStart) {
+			current = &HourlyBar{
+				OpenTime: currentStart,
+				Open:     triggerPrice,
+				High:     triggerPrice,
+				Low:      triggerPrice,
+				Close:    triggerPrice,
+			}
+		}
+	}
+	return closed, current
+}
+
+func pretouchBarsFromSourceStates(sourceStates map[string]any, symbol, timeframe string) ([]HourlyBar, *HourlyBar) {
+	for _, raw := range sourceStates {
+		entry := mapValue(raw)
+		if entry == nil || !strings.EqualFold(stringValue(entry["streamType"]), "signal_bar") {
+			continue
+		}
+		if symbol != "" && NormalizeSymbol(stringValue(entry["symbol"])) != symbol {
+			continue
+		}
+		if timeframe != "" && normalizeSignalBarInterval(stringValue(entry["timeframe"])) != timeframe {
+			continue
+		}
+		return splitPretouchSignalBars(normalizeSignalBarEntries(entry["bars"]))
+	}
+	return nil, nil
+}
+
+func pretouchBarsFromSignalBarStates(signalBarStates map[string]any, symbol, timeframe string) ([]HourlyBar, *HourlyBar) {
+	state, _ := pickSignalBarState(signalBarStates, symbol, timeframe)
+	if state == nil {
+		return nil, nil
+	}
+	items := make([]map[string]any, 0, 4)
+	if prevBar3 := mapValue(state["prevBar3"]); len(prevBar3) > 0 {
+		items = append(items, prevBar3)
+	}
+	if prevBar2 := mapValue(state["prevBar2"]); len(prevBar2) > 0 {
+		items = append(items, prevBar2)
+	}
+	if prevBar1 := mapValue(state["prevBar1"]); len(prevBar1) > 0 {
+		items = append(items, prevBar1)
+	}
+	closed, _ := splitPretouchSignalBars(items)
+	currentMap := mapValue(state["current"])
+	if len(currentMap) == 0 {
+		return closed, nil
+	}
+	current, ok := pretouchHourlyBarFromMetadata(currentMap)
+	if !ok {
+		return closed, nil
+	}
+	if boolValue(currentMap["isClosed"]) {
+		closed = append(closed, current)
+		return closed, nil
+	}
+	return closed, &current
+}
+
+func splitPretouchSignalBars(items []map[string]any) ([]HourlyBar, *HourlyBar) {
+	closed := make([]HourlyBar, 0, len(items))
+	var current *HourlyBar
+	for _, item := range items {
+		bar, ok := pretouchHourlyBarFromMetadata(item)
+		if !ok {
+			continue
+		}
+		if boolValue(item["isClosed"]) {
+			closed = append(closed, bar)
+			continue
+		}
+		barCopy := bar
+		current = &barCopy
+	}
+	if len(closed) > 24 {
+		closed = closed[len(closed)-24:]
+	}
+	return closed, current
+}
+
+func pretouchHourlyBarFromMetadata(item map[string]any) (HourlyBar, bool) {
+	if item == nil {
+		return HourlyBar{}, false
+	}
+	millis, ok := signalBarTimestampMillis(item["barStart"])
+	if !ok {
+		return HourlyBar{}, false
+	}
+	bar := HourlyBar{
+		OpenTime: time.UnixMilli(millis).UTC(),
+		Open:     parseFloatValue(item["open"]),
+		High:     parseFloatValue(item["high"]),
+		Low:      parseFloatValue(item["low"]),
+		Close:    parseFloatValue(item["close"]),
+	}
+	return bar, validHourlyBar(bar)
+}
+
+func pretouchBarSnapshot(bar *HourlyBar) map[string]any {
+	if bar == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"barStart": bar.OpenTime.UTC().Format(time.RFC3339),
+		"open":     bar.Open,
+		"high":     bar.High,
+		"low":      bar.Low,
+		"close":    bar.Close,
+	}
+}
+
+func pretouchSignalBarTradeLimitKey(symbol, timeframe string, current *HourlyBar) string {
+	if current == nil || current.OpenTime.IsZero() {
+		return ""
+	}
+	return strings.Join([]string{
+		NormalizeSymbol(symbol),
+		strings.ToLower(strings.TrimSpace(timeframe)),
+		current.OpenTime.UTC().Format(time.RFC3339),
+	}, "|")
 }
