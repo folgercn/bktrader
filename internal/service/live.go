@@ -3740,6 +3740,9 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	var nextPlannedSide string
 	var nextPlannedRole string
 	var nextPlannedReason string
+	engineKey := stringValue(state["strategyEngine"])
+	isDynamicIntentEngine := engineKey == bkLiveEthPretouchTimingEngineKey
+
 	if index >= 0 && index < len(plan) {
 		step := plan[index]
 		nextPlannedEvent = step.EventTime
@@ -3752,6 +3755,12 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 		state["lastStrategyEvaluationNextPlannedSide"] = nextPlannedSide
 		state["lastStrategyEvaluationNextPlannedRole"] = nextPlannedRole
 		state["lastStrategyEvaluationNextPlannedReason"] = nextPlannedReason
+	} else if isDynamicIntentEngine {
+		state["lastStrategyEvaluationNextPlannedEventAt"] = ""
+		state["lastStrategyEvaluationNextPlannedPrice"] = float64(0)
+		state["lastStrategyEvaluationNextPlannedSide"] = ""
+		state["lastStrategyEvaluationNextPlannedRole"] = ""
+		state["lastStrategyEvaluationNextPlannedReason"] = "dynamic-intent"
 	} else {
 		state["lastStrategyEvaluationStatus"] = "plan-exhausted"
 		delete(state, "lastStrategyIntent")
