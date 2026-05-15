@@ -126,7 +126,19 @@ Stronger JTI uniqueness with UUID has been implemented in PR #198 (Issue #193).
 
 ## 6. DashboardBroker Design
 
-`DashboardBroker` is responsible for polling selected backend data, detecting changes, and publishing SSE events to subscribers.
+`DashboardBroker` is responsible for collecting selected backend snapshots, detecting changes, and publishing SSE events to subscribers.
+
+Current implementation uses these trigger paths:
+
+1. Polling fallback tickers enqueue non-blocking domain change notifications.
+2. The broker event loop coalesces notifications for a short window, then fetches and hashes the affected domain snapshots.
+3. Notification ack / unack operations enqueue `notifications` domain changes after their store write succeeds.
+4. Order create / submit / sync / fill settlement operations enqueue `orders` domain changes after their store write succeeds.
+5. Fill settlement operations enqueue `fills` domain changes after fill persistence succeeds.
+6. Fill settlement operations enqueue `positions` domain changes after position settlement succeeds.
+7. Live session create / update / delete / status / state writes enqueue `live-sessions` domain changes after the store write succeeds.
+
+Some business write paths still rely on polling fallback. Event-driven triggers currently cover notification ack state changes and order/fill/position/live-session snapshot refreshes.
 
 ### 6.1 Subscriber model
 
@@ -137,7 +149,7 @@ Stronger JTI uniqueness with UUID has been implemented in PR #198 (Issue #193).
 
 ### 6.2 No-subscriber behavior
 
-When there are no subscribers, `checkAndPublish` returns immediately.
+When there are no subscribers, `publishSnapshotForDomain` returns immediately.
 
 This avoids unnecessary:
 
@@ -156,7 +168,7 @@ For each domain payload:
 4. Compare with the previous hash.
 5. Publish only when the hash changes.
 
-Initial snapshots also update `lastHashes`, so the first polling tick after a new connection does not immediately resend unchanged data.
+Initial snapshots are sent only to the new subscriber and do not update global `lastHashes`. Global hash state is maintained by the broadcast path so a new connection cannot mask an update for existing subscribers.
 
 ### 6.4 Sequence numbers
 
@@ -173,6 +185,7 @@ Current SSE payloads are deliberately conservative.
 | Event type | Payload source | Notes |
 |---|---|---|
 | `live-sessions` | `ListLiveSessionsSummary()` | Strips heavy `sourceStates` and `signalBarStates`. |
+| `signal-runtime-sessions` | `ListSignalRuntimeSessionsSummary()` | Runtime session summary snapshot. |
 | `positions` | `ListPositions()` | Full position list. |
 | `orders` | `ListOrdersWithLimit(50, 0)` | Recent 50 only. |
 | `fills` | `ListFillsWithLimit(50, 0)` | Recent 50 only. |
@@ -210,15 +223,15 @@ Backend broker polling intervals are configurable per domain:
 
 ```env
 DASHBOARD_LIVE_SESSIONS_POLL_MS=2000
-DASHBOARD_POSITIONS_POLL_MS=2000
-DASHBOARD_ORDERS_POLL_MS=2000
-DASHBOARD_FILLS_POLL_MS=2000
+DASHBOARD_POSITIONS_POLL_MS=10000
+DASHBOARD_ORDERS_POLL_MS=10000
+DASHBOARD_FILLS_POLL_MS=10000
 DASHBOARD_ALERTS_POLL_MS=2000
-DASHBOARD_NOTIFICATIONS_POLL_MS=2000
+DASHBOARD_NOTIFICATIONS_POLL_MS=30000
 DASHBOARD_MONITOR_HEALTH_POLL_MS=2000
 ```
 
-Backend config enforces minimum interval protection so accidental very-low values do not create excessive load.
+Backend config enforces minimum interval protection so accidental very-low values do not create excessive load. Domains that still depend heavily on fallback polling keep the shorter 2s default; domains with explicit write-path notifications use longer fallback intervals.
 
 ## 10. Failure Modes
 

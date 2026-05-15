@@ -819,9 +819,15 @@ func (p *Platform) deleteSignalRuntimeSessionWithForceLocked(existing domain.Sig
 }
 
 func (p *Platform) updateSignalRuntimeSessionState(sessionID string, updater func(session *domain.SignalRuntimeSession)) error {
-	session, err := p.GetSignalRuntimeSession(sessionID)
+	session, err := p.store.GetSignalRuntimeSession(sessionID)
 	if err != nil {
-		return err
+		if !isSignalRuntimeSessionNotFoundError(err) {
+			return err
+		}
+		session, err = p.GetSignalRuntimeSession(sessionID)
+		if err != nil {
+			return err
+		}
 	}
 	updater(&session)
 	session.UpdatedAt = time.Now().UTC()

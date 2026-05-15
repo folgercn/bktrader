@@ -26,6 +26,89 @@ if [[ -n "${APP_ENV_FILE_CONTENT:-}" ]]; then
 ' "$APP_ENV_FILE_CONTENT" > "$APP_ENV_FILE"
 fi
 
+env_file_value() {
+  local key=$1
+  [[ -f "$APP_ENV_FILE" ]] || return 0
+  awk -F= -v key="$key" '
+    $0 !~ /^[[:space:]]*#/ && $1 == key {
+      value = substr($0, length($1) + 2)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      gsub(/^["'\'']|["'\'']$/, "", value)
+      print value
+    }
+  ' "$APP_ENV_FILE" | tail -1
+}
+
+set_env_file_value() {
+  local key=$1
+  local value=$2
+  mkdir -p "$(dirname "$APP_ENV_FILE")"
+  if [[ -f "$APP_ENV_FILE" ]]; then
+    tmp_file="$(mktemp)"
+    awk -F= -v key="$key" -v value="$value" '
+      $0 !~ /^[[:space:]]*#/ && $1 == key {
+        print key "=" value
+        found = 1
+        next
+      }
+      { print }
+      END {
+        if (!found) {
+          print ""
+          print key "=" value
+        }
+      }
+    ' "$APP_ENV_FILE" > "$tmp_file"
+    mv "$tmp_file" "$APP_ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" > "$APP_ENV_FILE"
+  fi
+  chmod 600 "$APP_ENV_FILE"
+}
+
+generate_supervisor_bearer_token() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+  if command -v uuidgen >/dev/null 2>&1; then
+    printf '%s-%s\n' "$(uuidgen)" "$(uuidgen)" | tr '[:upper:]' '[:lower:]'
+    return
+  fi
+  echo "Unable to generate SUPERVISOR_BEARER_TOKEN: openssl or uuidgen is required" >&2
+  exit 3
+}
+
+effective_app_env=${APP_ENV:-$(env_file_value APP_ENV)}
+effective_supervisor_token=${SUPERVISOR_BEARER_TOKEN:-$(env_file_value SUPERVISOR_BEARER_TOKEN)}
+effective_supervisor_container_executor=${SUPERVISOR_CONTAINER_EXECUTOR:-$(env_file_value SUPERVISOR_CONTAINER_EXECUTOR)}
+effective_supervisor_container_executor_armed=${SUPERVISOR_CONTAINER_EXECUTOR_ARMED:-$(env_file_value SUPERVISOR_CONTAINER_EXECUTOR_ARMED)}
+effective_supervisor_container_executor_commands=${SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON:-$(env_file_value SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON)}
+if [[ -z "$effective_supervisor_token" ]]; then
+  effective_supervisor_token="$(generate_supervisor_bearer_token)"
+  set_env_file_value SUPERVISOR_BEARER_TOKEN "$effective_supervisor_token"
+  echo "Generated SUPERVISOR_BEARER_TOKEN and stored it in $APP_ENV_FILE"
+fi
+if [[ "$effective_app_env" == "production" && "$effective_supervisor_token" == "change-this-supervisor-probe-token" ]]; then
+  echo "Refusing production deploy with placeholder SUPERVISOR_BEARER_TOKEN; set a strong random token in $APP_ENV_FILE." >&2
+  exit 3
+fi
+if [[ -n "$effective_app_env" ]]; then
+  export APP_ENV="$effective_app_env"
+fi
+if [[ -n "$effective_supervisor_token" ]]; then
+  export SUPERVISOR_BEARER_TOKEN="$effective_supervisor_token"
+fi
+if [[ -n "$effective_supervisor_container_executor" ]]; then
+  export SUPERVISOR_CONTAINER_EXECUTOR="$effective_supervisor_container_executor"
+fi
+if [[ -n "$effective_supervisor_container_executor_armed" ]]; then
+  export SUPERVISOR_CONTAINER_EXECUTOR_ARMED="$effective_supervisor_container_executor_armed"
+fi
+if [[ -n "$effective_supervisor_container_executor_commands" ]]; then
+  export SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON="$effective_supervisor_container_executor_commands"
+fi
+
 export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
 
 if [[ "$IMAGE_REPO" == ghcr.io/* ]]; then
@@ -48,16 +131,23 @@ fi
 
 export IMAGE_REPO IMAGE_TAG APP_ENV_FILE
 
+echo "Deploy image: ${IMAGE_REPO}:${IMAGE_TAG}"
+if [[ -n "$DEPLOY_SERVICES" ]]; then
+  echo "Deploy service input: ${DEPLOY_SERVICES}"
+else
+  echo "Deploy service input: <all compose services>"
+fi
+
 deploy_args=()
 if [[ -n "$DEPLOY_SERVICES" ]]; then
   for service in $DEPLOY_SERVICES; do
     case "$service" in
-      platform-api|live-runner|signal-runtime-runner|notification-worker)
+      platform-api|live-runner|signal-runtime-runner|notification-worker|supervisor)
         deploy_args+=("$service")
         ;;
       *)
         echo "Unsupported DEPLOY_SERVICES entry: $service" >&2
-        echo "Allowed services: platform-api live-runner signal-runtime-runner notification-worker" >&2
+        echo "Allowed services: platform-api live-runner signal-runtime-runner notification-worker supervisor" >&2
         exit 2
         ;;
     esac

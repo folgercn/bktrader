@@ -19,7 +19,7 @@ import (
 
 // NewServer 根据配置创建 HTTP 服务实例，初始化存储层和平台服务。
 func NewServer(cfg config.Config) (*http.Server, error) {
-	return NewServerWithRuntimeOptions(cfg, RuntimeOptionsForRole(cfg.ProcessRole))
+	return NewServerWithRuntimeOptions(cfg, RuntimeOptionsForConfig(cfg))
 }
 
 type RuntimeOptions struct {
@@ -66,6 +66,14 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 			StartLiveSessionControlScanner: true,
 		}
 	}
+}
+
+func RuntimeOptionsForConfig(cfg config.Config) RuntimeOptions {
+	options := RuntimeOptionsForRole(cfg.ProcessRole)
+	if strings.EqualFold(strings.TrimSpace(cfg.ProcessRole), "api") && len(cfg.SupervisorTargets) > 0 {
+		options.StartReadOnlyRuntimeSupervisor = true
+	}
+	return options
 }
 
 // NewServerWithRuntimeOptions 创建 HTTP 服务，并按进程角色启动后台组件。
@@ -174,14 +182,12 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 		consumer, err := service.NewNATSRuntimeEventConsumer(cfg.NATSURL, platform)
 		if err != nil {
 			logger.Warn("runtime event consumer unavailable; continuing without JetStream consume", "error", err)
-			return
-		}
-		if err := consumer.Start(ctx); err != nil {
+		} else if err := consumer.Start(ctx); err != nil {
 			consumer.Close()
 			logger.Warn("runtime event consumer failed to start", "error", err)
-			return
+		} else {
+			platform.SetRuntimeEventConsumerEnabled(true)
 		}
-		platform.SetRuntimeEventConsumerEnabled(true)
 	}
 	if runtime.StartSignalRuntimeScanner {
 		platform.StartSignalRuntimeScanner(ctx)
@@ -194,23 +200,42 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 		if len(targets) == 0 {
 			logger.Warn("read-only runtime supervisor disabled because SUPERVISOR_TARGETS is empty")
 		} else {
-			supervisor := service.NewRuntimeSupervisorWithOptions(targets, &http.Client{Timeout: time.Duration(cfg.SupervisorHTTPTimeoutSeconds) * time.Second}, service.RuntimeSupervisorOptions{
-				EnableApplicationRestart: cfg.SupervisorAppRestartEnabled,
-				ServiceFailureThreshold:  cfg.SupervisorServiceFailThreshold,
-				EnableContainerFallback:  cfg.SupervisorContainerRestart,
-			})
+			supervisorOptions := runtimeSupervisorOptionsForConfig(cfg)
+			supervisor := service.NewRuntimeSupervisorWithOptions(targets, &http.Client{Timeout: time.Duration(cfg.SupervisorHTTPTimeoutSeconds) * time.Second}, supervisorOptions)
 			platform.SetRuntimeSupervisor(supervisor)
 			supervisor.Start(ctx, time.Duration(cfg.SupervisorPollIntervalSeconds)*time.Second)
 			logger.Info("runtime supervisor started",
 				"target_count", len(supervisor.Targets()),
 				"poll_interval_seconds", cfg.SupervisorPollIntervalSeconds,
 				"http_timeout_seconds", cfg.SupervisorHTTPTimeoutSeconds,
-				"application_restart_enabled", cfg.SupervisorAppRestartEnabled,
-				"service_failure_threshold", cfg.SupervisorServiceFailThreshold,
-				"container_restart_enabled", cfg.SupervisorContainerRestart,
+				"application_restart_enabled", supervisorOptions.EnableApplicationRestart,
+				"service_failure_threshold", supervisorOptions.ServiceFailureThreshold,
+				"container_restart_enabled", supervisorOptions.EnableContainerFallback,
+				"container_fallback_auto_submit", supervisorOptions.ContainerFallbackAutoSubmit,
+				"container_executor", cfg.SupervisorContainerExecutor,
 			)
 		}
 	}
+}
+
+func runtimeSupervisorOptionsForConfig(cfg config.Config) service.RuntimeSupervisorOptions {
+	options := service.RuntimeSupervisorOptions{
+		EnableApplicationRestart:       cfg.SupervisorAppRestartEnabled,
+		ServiceFailureThreshold:        cfg.SupervisorServiceFailThreshold,
+		EnableContainerFallback:        cfg.SupervisorContainerRestart,
+		ContainerFallbackAutoSubmit:    cfg.SupervisorFallbackAutoSubmit,
+		ContainerFallbackExecutorArmed: cfg.SupervisorContainerExecutorArmed,
+	}
+	switch {
+	case strings.EqualFold(strings.TrimSpace(cfg.SupervisorContainerExecutor), "noop"):
+		options.ContainerFallbackExecutor = service.NewNoopContainerFallbackExecutor(true)
+	case strings.EqualFold(strings.TrimSpace(cfg.SupervisorContainerExecutor), "command"):
+		executor, err := service.NewCommandContainerFallbackExecutorFromJSON(cfg.SupervisorContainerExecutorCommands)
+		if err == nil {
+			options.ContainerFallbackExecutor = executor
+		}
+	}
+	return options
 }
 
 // buildRepository 根据配置选择并初始化存储后端。

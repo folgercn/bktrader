@@ -438,14 +438,33 @@ export type RuntimeSupervisorStatus = {
 export type RuntimeSupervisorServiceState = {
   consecutiveFailures: number;
   failureThreshold: number;
+  serviceFailureEpisodeStartedAt?: string;
   lastFailureReason?: string;
   lastFailureAt?: string;
   lastHealthyAt?: string;
   containerFallbackCandidate: boolean;
   containerFallbackReason?: string;
+  containerFallbackCandidateSince?: string;
   containerFallbackSuppressed?: boolean;
+  containerFallbackSuppressedAt?: string;
+  containerFallbackSuppressedReason?: string;
+  containerFallbackSuppressedSource?: string;
+  containerFallbackResumedAt?: string;
+  containerFallbackResumedReason?: string;
+  containerFallbackResumedSource?: string;
   containerFallbackBackoffUntil?: string;
+  containerFallbackBackoffSetAt?: string;
+  containerFallbackBackoffReason?: string;
+  containerFallbackBackoffSource?: string;
+  containerFallbackBackoffClearedAt?: string;
+  containerFallbackBackoffClearedReason?: string;
+  containerFallbackBackoffClearedSource?: string;
   containerFallbackAttemptCount?: number;
+  containerFallbackSubmitted?: boolean;
+  containerFallbackSubmittedAt?: string;
+  containerFallbackSubmittedReason?: string;
+  containerFallbackSubmittedMessage?: string;
+  containerFallbackSubmittedError?: string;
   lastContainerFallbackDecisionAt?: string;
   lastContainerFallbackDecisionReason?: string;
 };
@@ -454,17 +473,33 @@ export type RuntimeSupervisorContainerFallbackPlan = {
   action: string;
   candidate: boolean;
   enabled: boolean;
+  serviceFailureEpisodeStartedAt?: string;
+  containerFallbackCandidateSince?: string;
   executorConfigured: boolean;
   executorKind?: string;
   executorDryRun?: boolean;
+  executorArmed?: boolean;
+  targetAllowed?: boolean;
+  executorPreview?: RuntimeSupervisorContainerFallbackExecutorPreview;
   executable: boolean;
+  autoSubmitEnabled?: boolean;
+  autoSubmitEligible?: boolean;
+  manualSubmitRequired?: boolean;
   decision?: 'blocked' | 'eligible' | string;
+  duplicate?: boolean;
   suppressed: boolean;
   backoffActive: boolean;
   safetyGateOk: boolean;
   blockedReason?: string;
   eligibleReason?: string;
   reason?: string;
+};
+
+export type RuntimeSupervisorContainerFallbackExecutorPreview = {
+  kind?: string;
+  commandPath?: string;
+  commandArgs?: string[];
+  timeoutSeconds?: number;
 };
 
 export type RuntimeSupervisorControlAction = {
@@ -479,13 +514,70 @@ export type RuntimeSupervisorControlAction = {
   requestedAt: string;
 };
 
+export type RuntimeSupervisorContainerFallbackControlAction = {
+  action: string;
+  targetName: string;
+  targetBaseUrl: string;
+  suppressed: boolean;
+  backoffUntil?: string;
+  backoffSeconds?: number;
+  reason: string;
+  source: string;
+  updatedAt: string;
+};
+
+export type RuntimeSupervisorContainerFallbackAction = {
+  action: string;
+  targetName: string;
+  targetBaseUrl: string;
+  reason?: string;
+  planReason?: string;
+  source?: string;
+  serviceFailureEpisodeStartedAt?: string;
+  containerFallbackCandidateSince?: string;
+  executorKind: string;
+  executorDryRun: boolean;
+  executorPreview?: RuntimeSupervisorContainerFallbackExecutorPreview;
+  submitted: boolean;
+  executed: boolean;
+  exitCode?: number;
+  timedOut?: boolean;
+  backoffUntil?: string;
+  backoffSeconds?: number;
+  message?: string;
+  error?: string;
+  requestedAt: string;
+};
+
+export type RuntimeSupervisorServiceFailureEpisode = {
+  targetName: string;
+  targetBaseUrl: string;
+  startedAt: string;
+  recoveredAt: string;
+  durationSeconds: number;
+  maxConsecutiveFailures: number;
+  lastFailureReason?: string;
+  lastFailureAt?: string;
+  containerFallbackCandidate: boolean;
+  containerFallbackCandidateSince?: string;
+  containerFallbackAttemptCount?: number;
+  containerFallbackSubmitted?: boolean;
+  containerFallbackSubmittedAt?: string;
+  containerFallbackSubmittedError?: string;
+  containerFallbackBackoffUntil?: string;
+  lastContainerFallbackDecisionAt?: string;
+  lastContainerFallbackDecisionReason?: string;
+};
+
 export type RuntimeSupervisorPolicy = {
   applicationRestartEnabled: boolean;
   serviceFailureThreshold: number;
   containerRestartEnabled: boolean;
+  containerFallbackAutoSubmit: boolean;
   containerExecutorConfigured: boolean;
   containerExecutorKind?: string;
   containerExecutorDryRun?: boolean;
+  containerExecutorArmed?: boolean;
 };
 
 export type RuntimeSupervisorTargetSnapshot = {
@@ -504,6 +596,9 @@ export type RuntimeSupervisorSnapshot = {
   checkedAt: string;
   policy: RuntimeSupervisorPolicy;
   targets: RuntimeSupervisorTargetSnapshot[];
+  serviceFailureEpisodes?: RuntimeSupervisorServiceFailureEpisode[];
+  containerFallbackControls?: RuntimeSupervisorContainerFallbackControlAction[];
+  containerFallbackActions?: RuntimeSupervisorContainerFallbackAction[];
 };
 
 export type ReplayReasonStats = Record<string, Record<string, number>>;

@@ -162,6 +162,7 @@ func NewPlatform(store store.Repository) *Platform {
 	platform.registerBuiltInSignalRuntimeAdapters()
 	platform.registerBuiltInExecutionStrategies()
 	platform.dashboardBroker = NewDashboardBroker(platform)
+	platform.store = newDashboardLiveSessionNotifyingStore(platform.store, platform.NotifyDashboardChanged)
 	platform.logger("service.platform").Info("platform initialized",
 		"strategy_engine_count", len(platform.strategyEngines),
 		"live_adapter_count", len(platform.liveAdapters),
@@ -184,15 +185,23 @@ func (p *Platform) SetProcessRole(role string) {
 	p.processRole = role
 }
 
-// StartDashboardBroker 启动仪表盘实时数据轮询检测
+// StartDashboardBroker 启动仪表盘实时数据通知合并与轮询兜底
 func (p *Platform) StartDashboardBroker(ctx context.Context, cfg config.Config) {
-	p.logger("service.platform").Info("starting dashboard broker polling")
+	p.logger("service.platform").Info("starting dashboard broker")
+	go p.dashboardBroker.StartEventLoop(ctx)
 	go p.dashboardBroker.StartPolling(ctx, cfg)
 }
 
 // DashboardBroker 返回内部仪表盘事件分发器
 func (p *Platform) DashboardBroker() *DashboardBroker {
 	return p.dashboardBroker
+}
+
+func (p *Platform) NotifyDashboardChanged(domain DashboardDomain, reason string) {
+	if p.dashboardBroker == nil {
+		return
+	}
+	p.dashboardBroker.NotifyChanged(domain, reason)
 }
 
 func (p *Platform) SetBacktestDataDirs(minuteDataDir, tickDataDir string) {

@@ -151,7 +151,7 @@ func (p *Platform) getStrategyDecisionEvent(liveSessionID, decisionEventID strin
 	if decisionEventID == "" {
 		return domain.StrategyDecisionEvent{}, false, nil
 	}
-	if reader, ok := p.store.(strategyDecisionEventQueryReader); ok {
+	if reader, ok := dashboardRootRepository(p.store).(strategyDecisionEventQueryReader); ok {
 		items, err := reader.QueryStrategyDecisionEvents(domain.StrategyDecisionEventQuery{
 			LiveSessionID:   strings.TrimSpace(liveSessionID),
 			DecisionEventID: decisionEventID,
@@ -352,7 +352,7 @@ func (p *Platform) strategyDecisionEventExists(liveSessionID, decisionEventID st
 	if decisionEventID == "" {
 		return false, nil
 	}
-	if reader, ok := p.store.(strategyDecisionEventQueryReader); ok {
+	if reader, ok := dashboardRootRepository(p.store).(strategyDecisionEventQueryReader); ok {
 		items, err := reader.QueryStrategyDecisionEvents(domain.StrategyDecisionEventQuery{
 			LiveSessionID:   strings.TrimSpace(liveSessionID),
 			DecisionEventID: decisionEventID,

@@ -171,6 +171,54 @@ func NewStore() *Store {
 	store.strategies[enhancedStrategy.ID] = enhancedStrategy
 	store.strategyVersion[enhancedVersion.ID] = enhancedVersion
 
+	t3EnhancedStrategy := domain.Strategy{
+		ID:          "strategy-bk-btc-30m-enhanced-t3",
+		Name:        "BK BTCUSDT 30m Baseline+T3 Enhanced",
+		Status:      "ACTIVE",
+		Description: "BTCUSDT 30m live intrabar SMA5 baseline plus t3 breakout with enhanced T3 logic.",
+		CreatedAt:   now,
+	}
+	t3EnhancedVersion := domain.StrategyVersion{
+		ID:                 "strategy-version-bk-btc-30m-enhanced-t3-v010",
+		StrategyID:         t3EnhancedStrategy.ID,
+		Version:            "v0.1.0",
+		SignalTimeframe:    "30m",
+		ExecutionTimeframe: "tick",
+		Parameters: map[string]any{
+			"strategyEngine":                  "bk-live-intrabar-sma5-baseline-plus-t3-enhanced",
+			"symbol":                          "BTCUSDT",
+			"signalTimeframe":                 "30m",
+			"executionDataSource":             "tick",
+			"positionSizingMode":              "reentry_size_schedule",
+			"dir2_zero_initial":               domain.ResearchBaselineDir2ZeroInitial,
+			"zero_initial_mode":               domain.ResearchBaselineZeroInitialMode,
+			"max_trades_per_bar":              domain.ResearchBaselineMaxTradesPerBar,
+			"reentry_size_schedule":           domain.ResearchBaselineReentrySizeSchedule(),
+			"breakout_shape":                  "baseline_plus_t3",
+			"breakout_shape_tolerance_bps":    0.5,
+			"use_sma5_intraday_structure":     true,
+			"min_atr_percentile":              25.0,
+			"min_sma_atr_separation":          0.1,
+			"quality_filter_shapes":           []string{"original_t2", "t3_swing"},
+			"reentry_min_stop_bps":            4.0,
+			"reentry_atr_percentile_gte":      10.0,
+			"sl_reentry_min_delay_seconds":    60,
+			"stop_mode":                       "atr",
+			"stop_loss_atr":                   0.3,
+			"profit_protect_atr":              1.0,
+			"trailing_stop_atr":               0.3,
+			"delayed_trailing_activation_atr": 0.5,
+			"long_reentry_atr":                0.1,
+			"short_reentry_atr":               0.0,
+			"tradingFeeBps":                   10.0,
+			"fundingRateBps":                  0.0,
+			"fundingIntervalHours":            8,
+		},
+		CreatedAt: now,
+	}
+	store.strategies[t3EnhancedStrategy.ID] = t3EnhancedStrategy
+	store.strategyVersion[t3EnhancedVersion.ID] = t3EnhancedVersion
+
 	live := domain.Account{
 		ID:       "live-main",
 		Name:     "Live Main",

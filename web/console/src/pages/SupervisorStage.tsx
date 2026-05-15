@@ -32,14 +32,18 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import { Input } from '../components/ui/input';
 import { Separator } from '../components/ui/separator';
 import { Textarea } from '../components/ui/textarea';
 import { cn } from '../lib/utils';
 import { fetchJSON } from '../utils/api';
 import { formatTime, shrink } from '../utils/format';
 import {
+  RuntimeSupervisorContainerFallbackAction,
+  RuntimeSupervisorContainerFallbackControlAction,
   RuntimeSupervisorControlAction,
   RuntimeSupervisorRuntimeStatus,
+  RuntimeSupervisorServiceFailureEpisode,
   RuntimeSupervisorSnapshot,
   RuntimeSupervisorTargetSnapshot,
 } from '../types/domain';
@@ -47,10 +51,18 @@ import {
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>['variant']>;
 type RuntimeRow = RuntimeSupervisorRuntimeStatus & { targetName: string };
+type FallbackAction = RuntimeSupervisorContainerFallbackAction;
+type FallbackControlAction = RuntimeSupervisorContainerFallbackControlAction;
+type FallbackEpisode = RuntimeSupervisorServiceFailureEpisode;
 type RuntimeControlActionKind = 'start' | 'stop' | 'restart' | 'suppress-auto-restart' | 'resume-auto-restart';
 type RuntimeControlDialogState = {
   runtime: RuntimeRow;
   action: RuntimeControlActionKind;
+};
+type TargetFallbackActionKind = 'suppress' | 'resume' | 'defer' | 'clear-backoff' | 'submit';
+type TargetFallbackControlDialogState = {
+  target: RuntimeSupervisorTargetSnapshot;
+  action: TargetFallbackActionKind;
 };
 type RuntimeLifecycleAudit = {
   label: string;
@@ -69,6 +81,7 @@ type RuntimeAutoRestartAudit = {
 };
 
 const REFRESH_INTERVAL_MS = 15_000;
+const MAX_FALLBACK_BACKOFF_SECONDS = 24 * 60 * 60;
 
 function formatOptionalTime(value?: string) {
   return value ? formatTime(value) : '--';
@@ -97,6 +110,16 @@ function probeText(probe?: RuntimeSupervisorTargetSnapshot['healthz']) {
 function executorKindLabel(value?: string) {
   const normalized = String(value || '').trim();
   return normalized || 'none';
+}
+
+function executorPreviewLabel(preview?: { commandPath?: string; commandArgs?: string[]; timeoutSeconds?: number }) {
+  const path = String(preview?.commandPath || '').trim();
+  if (!path) {
+    return '';
+  }
+  const args = preview?.commandArgs?.length ? ` ${JSON.stringify(preview.commandArgs)}` : '';
+  const timeout = preview?.timeoutSeconds ? ` timeout=${preview.timeoutSeconds}s` : '';
+  return `${path}${args}${timeout}`;
 }
 
 function statusVariant(value?: string): BadgeVariant {
@@ -372,12 +395,81 @@ function dashboardRuntimeControlReason(runtime: RuntimeRow, action: RuntimeContr
   return `dashboard manual ${action}: target=${runtime.targetName} runtime=${runtime.runtimeId}`;
 }
 
+function targetFallbackActionKey(target: RuntimeSupervisorTargetSnapshot, action: TargetFallbackActionKind) {
+  return `${target.name}:container-fallback:${action}`;
+}
+
+function targetFallbackControlPath(action: TargetFallbackActionKind) {
+  if (action === 'suppress') {
+    return '/api/v1/supervisor/container-fallback/suppress';
+  }
+  if (action === 'resume') {
+    return '/api/v1/supervisor/container-fallback/resume';
+  }
+  if (action === 'defer') {
+    return '/api/v1/supervisor/container-fallback/defer';
+  }
+  if (action === 'submit') {
+    return '/api/v1/supervisor/container-fallback/submit';
+  }
+  return '/api/v1/supervisor/container-fallback/clear-backoff';
+}
+
+function fallbackControlState(action: FallbackControlAction): { label: string; variant: BadgeVariant } {
+  if (action.backoffUntil) {
+    return { label: 'backoff', variant: 'secondary' };
+  }
+  if (action.suppressed) {
+    return { label: 'suppressed', variant: 'destructive' };
+  }
+  return { label: 'open', variant: 'success' };
+}
+
+function fallbackActionState(action: FallbackAction): { label: string; variant: BadgeVariant } {
+  if (action.timedOut) {
+    return { label: 'timeout', variant: 'destructive' };
+  }
+  if (action.error) {
+    return { label: 'error', variant: 'destructive' };
+  }
+  if (action.executed) {
+    return { label: 'executed', variant: 'success' };
+  }
+  if (action.submitted) {
+    return { label: 'dry-run', variant: 'secondary' };
+  }
+  return { label: 'skipped', variant: 'neutral' };
+}
+
+function targetFallbackControlLabel(action: TargetFallbackActionKind) {
+  if (action === 'suppress') {
+    return 'Suppress Container Fallback';
+  }
+  if (action === 'resume') {
+    return 'Resume Container Fallback';
+  }
+  if (action === 'defer') {
+    return 'Defer Container Fallback';
+  }
+  if (action === 'submit') {
+    return 'Submit Container Fallback';
+  }
+  return 'Clear Fallback Retry Gate';
+}
+
+function dashboardTargetFallbackReason(target: RuntimeSupervisorTargetSnapshot, action: TargetFallbackActionKind) {
+  return `dashboard manual ${action}: target=${target.name}`;
+}
+
 export function SupervisorStage() {
   const [snapshot, setSnapshot] = useState<RuntimeSupervisorSnapshot | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [controlDialog, setControlDialog] = useState<RuntimeControlDialogState | null>(null);
+  const [fallbackDialog, setFallbackDialog] = useState<TargetFallbackControlDialogState | null>(null);
   const [controlReason, setControlReason] = useState('');
+  const [fallbackReason, setFallbackReason] = useState('');
+  const [fallbackBackoffSeconds, setFallbackBackoffSeconds] = useState('300');
   const [controlSubmittingKey, setControlSubmittingKey] = useState<string | null>(null);
   const [controlNotice, setControlNotice] = useState<string | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
@@ -406,12 +498,29 @@ export function SupervisorStage() {
     setControlError(null);
   }, []);
 
+  const openFallbackDialog = useCallback((target: RuntimeSupervisorTargetSnapshot, action: TargetFallbackActionKind) => {
+    setFallbackDialog({ target, action });
+    setFallbackReason(dashboardTargetFallbackReason(target, action));
+    setFallbackBackoffSeconds(action === 'defer' ? '300' : '');
+    setControlNotice(null);
+    setControlError(null);
+  }, []);
+
   const closeControlDialog = useCallback(() => {
     if (controlSubmittingKey) {
       return;
     }
     setControlDialog(null);
     setControlReason('');
+  }, [controlSubmittingKey]);
+
+  const closeFallbackDialog = useCallback(() => {
+    if (controlSubmittingKey) {
+      return;
+    }
+    setFallbackDialog(null);
+    setFallbackReason('');
+    setFallbackBackoffSeconds('300');
   }, [controlSubmittingKey]);
 
   const submitRuntimeControl = useCallback(async () => {
@@ -461,6 +570,63 @@ export function SupervisorStage() {
     setControlSubmittingKey(null);
   }, [controlDialog, controlReason, loadSnapshot]);
 
+  const submitFallbackControl = useCallback(async () => {
+    if (!fallbackDialog) {
+      return;
+    }
+    const { target, action } = fallbackDialog;
+    const reason = fallbackReason.trim();
+    if (!reason) {
+      setControlError('reason is required');
+      return;
+    }
+    const payload: Record<string, unknown> = {
+      targetName: target.name,
+      confirm: true,
+      reason,
+    };
+    if (action === 'defer') {
+      const seconds = Number.parseInt(fallbackBackoffSeconds, 10);
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        setControlError('backoff seconds must be positive');
+        return;
+      }
+      if (seconds > MAX_FALLBACK_BACKOFF_SECONDS) {
+        setControlError('backoff seconds must be <= 86400');
+        return;
+      }
+      payload.backoffSeconds = seconds;
+    }
+
+    const key = targetFallbackActionKey(target, action);
+    setControlSubmittingKey(key);
+    setControlError(null);
+    setControlNotice(null);
+    try {
+      await fetchJSON(targetFallbackControlPath(action), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      setControlError(err instanceof Error ? err.message : 'container fallback control failed');
+      setControlSubmittingKey(null);
+      return;
+    }
+
+    setFallbackDialog(null);
+    setFallbackReason('');
+    setFallbackBackoffSeconds('300');
+    const refreshed = await loadSnapshot(true);
+    const acceptedMessage = `${targetFallbackControlLabel(action)} accepted: ${target.name}`;
+    if (refreshed) {
+      setControlNotice(acceptedMessage);
+    } else {
+      setControlNotice(`${acceptedMessage}; refresh failed`);
+    }
+    setControlSubmittingKey(null);
+  }, [fallbackBackoffSeconds, fallbackDialog, fallbackReason, loadSnapshot]);
+
   useEffect(() => {
     void loadSnapshot();
     const timer = window.setInterval(() => {
@@ -472,8 +638,13 @@ export function SupervisorStage() {
   const {
     runtimeRows,
     controlActionRows,
+    fallbackControlRows,
+    fallbackActionRows,
+    fallbackEpisodeRows,
     fallbackCount,
     executableFallbackCount,
+    autoSubmitEligibleCount,
+    manualSubmitRequiredCount,
     dryRunFallbackCount,
     attentionCount,
     fullyReachableTargets,
@@ -493,8 +664,13 @@ export function SupervisorStage() {
           targetName: target.name,
         }))
       ),
+      fallbackEpisodeRows: snapshot?.serviceFailureEpisodes ?? [],
+      fallbackControlRows: snapshot?.containerFallbackControls ?? [],
+      fallbackActionRows: snapshot?.containerFallbackActions ?? [],
       fallbackCount: targets.filter((target) => target.serviceState.containerFallbackCandidate).length,
       executableFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable).length,
+      autoSubmitEligibleCount: targets.filter((target) => target.containerFallbackPlan?.autoSubmitEligible).length,
+      manualSubmitRequiredCount: targets.filter((target) => target.containerFallbackPlan?.manualSubmitRequired).length,
       dryRunFallbackCount: targets.filter((target) => target.containerFallbackPlan?.executable && target.containerFallbackPlan.executorDryRun).length,
       attentionCount: runtimes.filter(runtimeNeedsAttention).length,
       fullyReachableTargets: targets.filter((target) => isProbeOK(target.healthz) && isProbeOK(target.runtimeStatus)).length,
@@ -516,6 +692,20 @@ export function SupervisorStage() {
             : RotateCw;
   const controlSubmitVariant =
     controlDialog?.action === 'start' || controlDialog?.action === 'resume-auto-restart'
+      ? 'bento-primary'
+      : 'bento-destructive';
+  const FallbackSubmitIcon =
+    fallbackDialog?.action === 'resume'
+      ? CheckCircle2
+      : fallbackDialog?.action === 'defer'
+        ? Clock3
+        : fallbackDialog?.action === 'clear-backoff'
+          ? XCircle
+          : fallbackDialog?.action === 'submit'
+            ? RotateCw
+            : ShieldAlert;
+  const fallbackSubmitVariant =
+    fallbackDialog?.action === 'resume' || fallbackDialog?.action === 'clear-backoff'
       ? 'bento-primary'
       : 'bento-destructive';
 
@@ -587,17 +777,17 @@ export function SupervisorStage() {
                 value={fallbackCount}
                 detail={
                   dryRunFallbackCount > 0
-                    ? `${executableFallbackCount} eligible, ${dryRunFallbackCount} dry-run`
-                    : `${executableFallbackCount} eligible`
+                    ? `${executableFallbackCount} eligible, ${autoSubmitEligibleCount} auto, ${manualSubmitRequiredCount} manual, ${dryRunFallbackCount} dry-run`
+                    : `${executableFallbackCount} eligible, ${autoSubmitEligibleCount} auto, ${manualSubmitRequiredCount} manual`
                 }
                 tone={fallbackCount > 0 ? 'danger' : 'neutral'}
               />
               <MetricCard
                 icon={RotateCw}
                 label="Controls"
-                value={controlActionRows.length}
-                detail="application restart intents"
-                tone={controlActionRows.some((action) => action.error) ? 'danger' : 'neutral'}
+                value={controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length + fallbackEpisodeRows.length}
+                detail={`${controlActionRows.length} runtime, ${fallbackControlRows.length} gates, ${fallbackActionRows.length} fallback, ${fallbackEpisodeRows.length} episodes`}
+                tone={controlActionRows.some((action) => action.error) || fallbackActionRows.some((action) => action.error) ? 'danger' : 'neutral'}
               />
             </div>
 
@@ -612,11 +802,19 @@ export function SupervisorStage() {
                       </Badge>
                       <Badge variant="neutral">{executorKindLabel(policy.containerExecutorKind)}</Badge>
                       {policy.containerExecutorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                      {policy.containerExecutorConfigured && !policy.containerExecutorDryRun && (
+                        <Badge variant={policy.containerExecutorArmed ? 'success' : 'destructive'}>
+                          {policy.containerExecutorArmed ? 'armed' : 'not armed'}
+                        </Badge>
+                      )}
+                      <Badge variant={policy.containerFallbackAutoSubmit ? 'destructive' : 'secondary'}>
+                        {policy.containerFallbackAutoSubmit ? 'auto submit' : 'manual submit'}
+                      </Badge>
                     </div>
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
                       <div className="flex min-w-0 flex-col gap-1">
                         <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Application Restart</span>
@@ -640,11 +838,23 @@ export function SupervisorStage() {
                     </div>
                     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
                       <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Fallback Submit</span>
+                        <PolicyBadge enabled={policy.containerFallbackAutoSubmit} enabledLabel="auto" disabledLabel="manual" />
+                      </div>
+                      <CheckCircle2 className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
+                    </div>
+                    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
+                      <div className="flex min-w-0 flex-col gap-1">
                         <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Container Executor</span>
                         <div className="flex flex-wrap gap-1">
                           <PolicyBadge enabled={policy.containerExecutorConfigured} enabledLabel="ready" disabledLabel="not configured" />
                           <Badge variant="neutral">{executorKindLabel(policy.containerExecutorKind)}</Badge>
                           {policy.containerExecutorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                          {policy.containerExecutorConfigured && !policy.containerExecutorDryRun && (
+                            <Badge variant={policy.containerExecutorArmed ? 'success' : 'destructive'}>
+                              {policy.containerExecutorArmed ? 'armed' : 'not armed'}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                       <ServerCog className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
@@ -676,6 +886,7 @@ export function SupervisorStage() {
                         <TableHead>Failures</TableHead>
                         <TableHead>Fallback</TableHead>
                         <TableHead>Runtimes</TableHead>
+                        <TableHead>Gate</TableHead>
                         <TableHead>Checked</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -686,12 +897,27 @@ export function SupervisorStage() {
                         const fallbackPlan = target.containerFallbackPlan;
                         const fallbackDecision = fallbackPlan?.decision || (fallbackPlan?.executable ? 'eligible' : 'blocked');
                         const fallbackAttemptCount = target.serviceState.containerFallbackAttemptCount ?? 0;
+                        const fallbackExecutorPreview = executorPreviewLabel(fallbackPlan?.executorPreview);
                         const fallbackDetail =
                           fallbackPlan?.blockedReason ||
                           fallbackPlan?.eligibleReason ||
                           target.serviceState.lastContainerFallbackDecisionReason ||
+                          target.serviceState.containerFallbackSubmittedError ||
+                          target.serviceState.containerFallbackSubmittedMessage ||
                           fallbackPlan?.reason ||
                           target.serviceState.containerFallbackReason;
+                        const fallbackSubmittedDetail =
+                          target.serviceState.containerFallbackSubmittedError ||
+                          target.serviceState.containerFallbackSubmittedMessage ||
+                          target.serviceState.containerFallbackSubmittedReason;
+                        const toggleFallbackAction: TargetFallbackActionKind = target.serviceState.containerFallbackSuppressed ? 'resume' : 'suppress';
+                        const toggleSubmitting = controlSubmittingKey === targetFallbackActionKey(target, toggleFallbackAction);
+                        const deferSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'defer');
+                        const clearSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'clear-backoff');
+                        const submitSubmitting = controlSubmittingKey === targetFallbackActionKey(target, 'submit');
+                        const backoffConfigured = Boolean(target.serviceState.containerFallbackBackoffUntil);
+                        const retryGateConfigured = backoffConfigured || Boolean(target.serviceState.containerFallbackSubmitted || fallbackPlan?.duplicate);
+                        const submitEnabled = Boolean(fallbackPlan?.executable);
                         return (
                           <TableRow key={`${target.name}:${target.baseUrl}`}>
                             <TableCell>
@@ -716,6 +942,11 @@ export function SupervisorStage() {
                                 {target.serviceState.lastFailureReason && (
                                   <span className="max-w-[220px] truncate text-xs text-[var(--bk-text-muted)]" title={target.serviceState.lastFailureReason}>
                                     {target.serviceState.lastFailureReason}
+                                  </span>
+                                )}
+                                {target.serviceState.serviceFailureEpisodeStartedAt && (
+                                  <span className="text-xs text-[var(--bk-text-muted)]">
+                                    since {formatOptionalTime(target.serviceState.serviceFailureEpisodeStartedAt)}
                                   </span>
                                 )}
                               </div>
@@ -743,6 +974,22 @@ export function SupervisorStage() {
                                   )}
                                   {fallbackPlan && <Badge variant="neutral">{executorKindLabel(fallbackPlan.executorKind)}</Badge>}
                                   {fallbackPlan?.executorDryRun && <Badge variant="secondary">dry-run</Badge>}
+                                  {fallbackPlan && !fallbackPlan.executorDryRun && (
+                                    <Badge variant={fallbackPlan.executorArmed ? 'success' : 'destructive'}>
+                                      {fallbackPlan.executorArmed ? 'armed' : 'not armed'}
+                                    </Badge>
+                                  )}
+                                  {fallbackPlan && !fallbackPlan.executorDryRun && (
+                                    <Badge variant={fallbackPlan.targetAllowed ? 'success' : 'destructive'}>
+                                      {fallbackPlan.targetAllowed ? 'target allowed' : 'target blocked'}
+                                    </Badge>
+                                  )}
+                                  {fallbackPlan?.duplicate && <Badge variant="neutral">submitted</Badge>}
+                                  {fallbackPlan?.executable && (
+                                    <Badge variant={fallbackPlan.autoSubmitEligible ? 'destructive' : 'secondary'}>
+                                      {fallbackPlan.autoSubmitEligible ? 'auto submit' : 'manual submit'}
+                                    </Badge>
+                                  )}
                                   {fallbackAttemptCount > 0 && (
                                     <Badge variant="neutral">
                                       attempts {fallbackAttemptCount}
@@ -760,12 +1007,83 @@ export function SupervisorStage() {
                                     {fallbackDetail}
                                   </span>
                                 )}
+                                {fallbackExecutorPreview && (
+                                  <span className="truncate font-mono text-xs text-[var(--bk-text-muted)]" title={fallbackExecutorPreview}>
+                                    {fallbackExecutorPreview}
+                                  </span>
+                                )}
+                                {target.serviceState.containerFallbackSubmitted && fallbackSubmittedDetail && (
+                                  <span className="truncate text-xs text-[var(--bk-text-muted)]" title={fallbackSubmittedDetail}>
+                                    {formatOptionalTime(target.serviceState.containerFallbackSubmittedAt)} {fallbackSubmittedDetail}
+                                  </span>
+                                )}
+                                {target.serviceState.containerFallbackCandidateSince && (
+                                  <span className="text-xs text-[var(--bk-text-muted)]">
+                                    candidate since {formatOptionalTime(target.serviceState.containerFallbackCandidateSince)}
+                                  </span>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <Badge variant={runtimeErrors > 0 ? 'destructive' : 'neutral'}>{runtimeCount}</Badge>
                                 {runtimeErrors > 0 && <span className="text-xs text-[var(--bk-text-muted)]">{runtimeErrors} attention</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap items-center gap-1">
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant={target.serviceState.containerFallbackSuppressed ? 'bento-outline' : 'bento-ghost'}
+                                  className="rounded-lg"
+                                  onClick={() => openFallbackDialog(target, toggleFallbackAction)}
+                                  disabled={Boolean(controlSubmittingKey) || toggleSubmitting}
+                                  title={target.serviceState.containerFallbackSuppressed ? 'Resume container fallback' : 'Suppress container fallback'}
+                                  aria-label={`${target.serviceState.containerFallbackSuppressed ? 'Resume' : 'Suppress'} container fallback for ${target.name}`}
+                                >
+                                  {target.serviceState.containerFallbackSuppressed ? (
+                                    <CheckCircle2 className={cn(toggleSubmitting && 'animate-pulse')} />
+                                  ) : (
+                                    <ShieldAlert className={cn(toggleSubmitting && 'animate-pulse')} />
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="bento-outline"
+                                  className="rounded-lg"
+                                  onClick={() => openFallbackDialog(target, 'defer')}
+                                  disabled={Boolean(controlSubmittingKey) || deferSubmitting}
+                                  title="Defer container fallback"
+                                  aria-label={`Defer container fallback for ${target.name}`}
+                                >
+                                  <Clock3 className={cn(deferSubmitting && 'animate-pulse')} />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="bento-ghost"
+                                  className="rounded-lg"
+                                  onClick={() => openFallbackDialog(target, 'clear-backoff')}
+                                  disabled={Boolean(controlSubmittingKey) || clearSubmitting || !retryGateConfigured}
+                                  title="Clear fallback retry gate"
+                                  aria-label={`Clear fallback retry gate for ${target.name}`}
+                                >
+                                  <XCircle className={cn(clearSubmitting && 'animate-pulse')} />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="bento-destructive"
+                                  className="rounded-lg"
+                                  onClick={() => openFallbackDialog(target, 'submit')}
+                                  disabled={Boolean(controlSubmittingKey) || submitSubmitting || !submitEnabled}
+                                  title="Submit container fallback"
+                                  aria-label={`Submit container fallback for ${target.name}`}
+                                >
+                                  <RotateCw className={cn(submitSubmitting && 'animate-spin')} />
+                                </Button>
                               </div>
                             </TableCell>
                             <TableCell>{formatOptionalTime(target.checkedAt)}</TableCell>
@@ -960,58 +1278,262 @@ export function SupervisorStage() {
                   <div className="flex flex-wrap justify-end gap-2">
                     {controlError && <Badge variant="destructive" title={controlError}>control failed</Badge>}
                     {controlNotice && <Badge variant="success" title={controlNotice}>control accepted</Badge>}
-                    <Badge variant="neutral">{controlActionRows.length}</Badge>
+                    <Badge variant="neutral">{controlActionRows.length + fallbackControlRows.length + fallbackActionRows.length + fallbackEpisodeRows.length}</Badge>
                   </div>
                 </CardAction>
               </CardHeader>
               <CardContent>
-                {controlActionRows.length === 0 ? (
+                {controlActionRows.length === 0 && fallbackControlRows.length === 0 && fallbackActionRows.length === 0 && fallbackEpisodeRows.length === 0 ? (
                   <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-[var(--bk-border)] text-sm text-[var(--bk-text-muted)]">
-                    暂无应用内控制动作
+                    暂无控制动作
                   </div>
                 ) : (
-                  <Table tone="bento">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Requested</TableHead>
-                        <TableHead>Target</TableHead>
-                        <TableHead>Action</TableHead>
-                        <TableHead>Runtime</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Reason</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {controlActionRows.map((action) => (
-                        <TableRow key={`${action.targetName}:${action.runtimeKind}:${action.runtimeId}:${action.requestedAt}`}>
-                          <TableCell>{formatOptionalTime(action.requestedAt)}</TableCell>
-                          <TableCell>{action.targetName}</TableCell>
-                          <TableCell><Badge variant="metal">{action.action}</Badge></TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              <span className="font-mono text-xs">{shrink(action.runtimeId)}</span>
-                              <span className="text-xs text-[var(--bk-text-muted)]">{action.runtimeKind}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {action.submitted ? (
-                                <CheckCircle2 className="size-4 text-[var(--bk-status-success)]" />
-                              ) : (
-                                <XCircle className="size-4 text-[var(--bk-status-danger)]" />
-                              )}
-                              <Badge variant={action.error ? 'destructive' : 'neutral'}>{action.statusCode || '--'}</Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.error || action.reason}>
-                              {action.error || action.reason || '--'}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <div className="flex flex-col gap-5">
+                    {controlActionRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Runtime</div>
+                        <Table tone="bento">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Requested</TableHead>
+                              <TableHead>Target</TableHead>
+                              <TableHead>Action</TableHead>
+                              <TableHead>Runtime</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Reason</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {controlActionRows.map((action) => (
+                              <TableRow key={`${action.targetName}:${action.runtimeKind}:${action.runtimeId}:${action.requestedAt}`}>
+                                <TableCell>{formatOptionalTime(action.requestedAt)}</TableCell>
+                                <TableCell>{action.targetName}</TableCell>
+                                <TableCell><Badge variant="metal">{action.action}</Badge></TableCell>
+                                <TableCell>
+                                  <div className="flex flex-col gap-1">
+                                    <span className="font-mono text-xs">{shrink(action.runtimeId)}</span>
+                                    <span className="text-xs text-[var(--bk-text-muted)]">{action.runtimeKind}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    {action.submitted ? (
+                                      <CheckCircle2 className="size-4 text-[var(--bk-status-success)]" />
+                                    ) : (
+                                      <XCircle className="size-4 text-[var(--bk-status-danger)]" />
+                                    )}
+                                    <Badge variant={action.error ? 'destructive' : 'neutral'}>{action.statusCode || '--'}</Badge>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.error || action.reason}>
+                                    {action.error || action.reason || '--'}
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    {fallbackControlRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Fallback Gates</div>
+                        <Table tone="bento">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Updated</TableHead>
+                              <TableHead>Target</TableHead>
+                              <TableHead>Action</TableHead>
+                              <TableHead>State</TableHead>
+                              <TableHead>Backoff</TableHead>
+                              <TableHead>Reason</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {fallbackControlRows.map((action) => {
+                              const state = fallbackControlState(action);
+                              return (
+                                <TableRow key={`${action.targetName}:${action.action}:${action.updatedAt}`}>
+                                  <TableCell>{formatOptionalTime(action.updatedAt)}</TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <span>{action.targetName}</span>
+                                      <span className="max-w-[220px] truncate text-xs text-[var(--bk-text-muted)]" title={action.targetBaseUrl}>
+                                        {action.targetBaseUrl}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell><Badge variant="metal">{action.action}</Badge></TableCell>
+                                  <TableCell><Badge variant={state.variant}>{state.label}</Badge></TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>{formatOptionalTime(action.backoffUntil)}</span>
+                                      {action.backoffSeconds ? (
+                                        <span className="text-[var(--bk-text-muted)]">{action.backoffSeconds}s</span>
+                                      ) : null}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex max-w-[420px] flex-col gap-1 text-xs">
+                                      <span className="truncate text-[var(--bk-text-muted)]" title={action.reason}>{action.reason || '--'}</span>
+                                      <span className="text-[var(--bk-text-muted)]">{action.source || '--'}</span>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    {fallbackEpisodeRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Failure Episodes</div>
+                        <Table tone="bento">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Recovered</TableHead>
+                              <TableHead>Target</TableHead>
+                              <TableHead>Duration</TableHead>
+                              <TableHead>Fallback</TableHead>
+                              <TableHead>Submitted</TableHead>
+                              <TableHead>Reason</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {fallbackEpisodeRows.map((episode: FallbackEpisode) => {
+                              const reason = episode.containerFallbackSubmittedError || episode.lastFailureReason || episode.lastContainerFallbackDecisionReason || '--';
+                              return (
+                                <TableRow key={`${episode.targetName}:${episode.startedAt}:${episode.recoveredAt}`}>
+                                  <TableCell>{formatOptionalTime(episode.recoveredAt)}</TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <span>{episode.targetName}</span>
+                                      <span className="max-w-[220px] truncate text-xs text-[var(--bk-text-muted)]" title={episode.targetBaseUrl}>
+                                        {episode.targetBaseUrl}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>{episode.durationSeconds}s</span>
+                                      <span className="text-[var(--bk-text-muted)]">max {episode.maxConsecutiveFailures}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <Badge variant={episode.containerFallbackCandidate ? 'secondary' : 'neutral'}>
+                                        {episode.containerFallbackCandidate ? 'candidate' : 'below threshold'}
+                                      </Badge>
+                                      <span className="text-xs text-[var(--bk-text-muted)]">{episode.containerFallbackAttemptCount ?? 0} attempts</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <Badge variant={episode.containerFallbackSubmitted ? 'secondary' : 'neutral'}>
+                                        {episode.containerFallbackSubmitted ? 'submitted' : 'none'}
+                                      </Badge>
+                                      <span className="text-xs text-[var(--bk-text-muted)]">{formatOptionalTime(episode.containerFallbackSubmittedAt)}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={reason}>
+                                      {reason}
+                                    </span>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    {fallbackActionRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Fallback Actions</div>
+                        <Table tone="bento">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Requested</TableHead>
+                              <TableHead>Target</TableHead>
+                              <TableHead>Action</TableHead>
+                              <TableHead>Executor</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Backoff</TableHead>
+                              <TableHead>Episode</TableHead>
+                              <TableHead>Result</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {fallbackActionRows.map((action) => {
+                              const state = fallbackActionState(action);
+                              const result = action.error || action.message || action.reason || '--';
+                              const resultMeta = [
+                                typeof action.exitCode === 'number' ? `exit ${action.exitCode}` : '',
+                                action.timedOut ? 'timed out' : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' / ');
+                              const resultTitle = [resultMeta, action.error || action.message || action.reason, action.source, action.planReason]
+                                .filter(Boolean)
+                                .join(' | ');
+                              return (
+                                <TableRow key={`${action.targetName}:${action.action}:${action.requestedAt}`}>
+                                  <TableCell>{formatOptionalTime(action.requestedAt)}</TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <span>{action.targetName}</span>
+                                      <span className="max-w-[220px] truncate text-xs text-[var(--bk-text-muted)]" title={action.targetBaseUrl}>
+                                        {action.targetBaseUrl}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell><Badge variant="metal">{action.action}</Badge></TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                      <span>{executorKindLabel(action.executorKind)}</span>
+                                      <span className="text-xs text-[var(--bk-text-muted)]">{action.executorDryRun ? 'dry-run' : 'live'}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell><Badge variant={state.variant}>{state.label}</Badge></TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>{formatOptionalTime(action.backoffUntil)}</span>
+                                      {action.backoffSeconds ? (
+                                        <span className="text-[var(--bk-text-muted)]">{action.backoffSeconds}s</span>
+                                      ) : null}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>{formatOptionalTime(action.serviceFailureEpisodeStartedAt)}</span>
+                                      <span className="text-[var(--bk-text-muted)]">{formatOptionalTime(action.containerFallbackCandidateSince)}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={resultTitle || result}>
+                                      {result}
+                                    </span>
+                                    {resultMeta && (
+                                      <span className="block max-w-[420px] truncate font-mono text-xs text-[var(--bk-text-muted)]" title={resultMeta}>
+                                        {resultMeta}
+                                      </span>
+                                    )}
+                                    {(action.source || action.planReason) && (
+                                      <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.planReason || action.source}>
+                                        {action.source || '--'}{action.planReason ? ` / ${action.planReason}` : ''}
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -1069,6 +1591,116 @@ export function SupervisorStage() {
                 data-icon="inline-start"
                 fill={controlDialog?.action === 'start' || controlDialog?.action === 'stop' ? 'currentColor' : 'none'}
                 className={cn(controlSubmittingKey && (controlDialog?.action === 'restart' ? 'animate-spin' : 'animate-pulse'))}
+              />
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(fallbackDialog)} onOpenChange={(open) => !open && closeFallbackDialog()}>
+        <DialogContent tone="bento" className="max-w-lg rounded-lg border-[var(--bk-border)] bg-[var(--bk-surface-overlay-strong)] p-0">
+          <DialogHeader className="border-b border-[var(--bk-border-soft)] bg-[var(--bk-surface-overlay)] px-6 py-4">
+            <DialogTitle className="text-lg font-semibold text-[var(--bk-text-primary)]">
+              {fallbackDialog ? targetFallbackControlLabel(fallbackDialog.action) : 'Container Fallback Control'}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[var(--bk-text-muted)]">
+              {fallbackDialog ? `${fallbackDialog.target.name} / ${fallbackDialog.target.baseUrl}` : '--'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 px-6 py-5">
+            {fallbackDialog?.action === 'defer' && (
+              <div className="flex flex-col gap-2">
+                <label htmlFor="supervisor-fallback-backoff-seconds" className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">
+                  Backoff Seconds
+                </label>
+                <Input
+                  id="supervisor-fallback-backoff-seconds"
+                  type="number"
+                  min={1}
+                  max={MAX_FALLBACK_BACKOFF_SECONDS}
+                  value={fallbackBackoffSeconds}
+                  onChange={(event) => setFallbackBackoffSeconds(event.target.value)}
+                  disabled={Boolean(controlSubmittingKey)}
+                  aria-invalid={!fallbackBackoffSeconds.trim()}
+                />
+              </div>
+            )}
+            {fallbackDialog?.action === 'submit' && (
+              <div className="flex flex-col gap-2 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)]/40 px-3 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={fallbackDialog.target.containerFallbackPlan?.executable ? 'success' : 'destructive'}>
+                    {fallbackDialog.target.containerFallbackPlan?.decision || 'blocked'}
+                  </Badge>
+                  <Badge variant={fallbackDialog.target.containerFallbackPlan?.executorDryRun ? 'secondary' : 'destructive'}>
+                    {fallbackDialog.target.containerFallbackPlan?.executorDryRun ? 'dry-run' : 'live'}
+                  </Badge>
+                  <Badge variant="neutral">{executorKindLabel(fallbackDialog.target.containerFallbackPlan?.executorKind)}</Badge>
+                </div>
+                {executorPreviewLabel(fallbackDialog.target.containerFallbackPlan?.executorPreview) && (
+                  <span
+                    className="truncate font-mono text-xs text-[var(--bk-text-muted)]"
+                    title={executorPreviewLabel(fallbackDialog.target.containerFallbackPlan?.executorPreview)}
+                  >
+                    {executorPreviewLabel(fallbackDialog.target.containerFallbackPlan?.executorPreview)}
+                  </span>
+                )}
+                {(fallbackDialog.target.containerFallbackPlan?.blockedReason ||
+                  fallbackDialog.target.containerFallbackPlan?.eligibleReason ||
+                  fallbackDialog.target.containerFallbackPlan?.reason) && (
+                  <span
+                    className="truncate text-xs text-[var(--bk-text-muted)]"
+                    title={
+                      fallbackDialog.target.containerFallbackPlan?.blockedReason ||
+                      fallbackDialog.target.containerFallbackPlan?.eligibleReason ||
+                      fallbackDialog.target.containerFallbackPlan?.reason
+                    }
+                  >
+                    {fallbackDialog.target.containerFallbackPlan?.blockedReason ||
+                      fallbackDialog.target.containerFallbackPlan?.eligibleReason ||
+                      fallbackDialog.target.containerFallbackPlan?.reason}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <label htmlFor="supervisor-fallback-reason" className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">
+                Reason
+              </label>
+              <Textarea
+                id="supervisor-fallback-reason"
+                value={fallbackReason}
+                onChange={(event) => setFallbackReason(event.target.value)}
+                disabled={Boolean(controlSubmittingKey)}
+                rows={4}
+                aria-invalid={fallbackReason.trim() === ''}
+              />
+            </div>
+            {controlError && (
+              <div className="rounded-lg border border-[var(--bk-status-danger)] bg-[var(--bk-status-danger-soft)] px-3 py-2 text-sm text-[var(--bk-status-danger)]">
+                {controlError}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="border-t border-[var(--bk-border-soft)] bg-[var(--bk-surface-muted)]/30 px-6 py-4">
+            <Button
+              type="button"
+              variant="bento-outline"
+              className="rounded-lg"
+              onClick={closeFallbackDialog}
+              disabled={Boolean(controlSubmittingKey)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant={fallbackSubmitVariant}
+              className="rounded-lg"
+              onClick={() => void submitFallbackControl()}
+              disabled={!fallbackReason.trim() || Boolean(controlSubmittingKey)}
+            >
+              <FallbackSubmitIcon
+                data-icon="inline-start"
+                className={cn(controlSubmittingKey && 'animate-pulse')}
               />
               Submit
             </Button>

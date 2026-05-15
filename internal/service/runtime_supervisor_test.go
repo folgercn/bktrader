@@ -3,11 +3,44 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
+
+type runtimeSupervisorTestContainerExecutor struct {
+	configured bool
+	kind       string
+	dryRun     bool
+	calls      int
+	lastReason string
+	err        error
+}
+
+func (e *runtimeSupervisorTestContainerExecutor) Configured() bool {
+	return e.configured
+}
+
+func (e *runtimeSupervisorTestContainerExecutor) Descriptor() ContainerFallbackExecutorDescriptor {
+	return ContainerFallbackExecutorDescriptor{Kind: e.kind, DryRun: e.dryRun}
+}
+
+func (e *runtimeSupervisorTestContainerExecutor) Restart(_ context.Context, target RuntimeSupervisorTarget, reason string) (ContainerFallbackExecutionResult, error) {
+	e.calls++
+	e.lastReason = reason
+	if e.err != nil {
+		return ContainerFallbackExecutionResult{}, e.err
+	}
+	return ContainerFallbackExecutionResult{
+		Executed: false,
+		Message:  fmt.Sprintf("dry-run restart target=%s reason=%s", target.Name, reason),
+	}, nil
+}
 
 func TestRuntimeSupervisorCollectsHealthAndRuntimeStatus(t *testing.T) {
 	requested := make(map[string]int)
@@ -47,6 +80,9 @@ func TestRuntimeSupervisorCollectsHealthAndRuntimeStatus(t *testing.T) {
 	snapshot := supervisor.Collect(context.Background())
 	if snapshot.Policy.ApplicationRestartEnabled || snapshot.Policy.ContainerRestartEnabled || snapshot.Policy.ContainerExecutorConfigured {
 		t.Fatalf("expected default supervisor policy to stay read-only, got %+v", snapshot.Policy)
+	}
+	if snapshot.Policy.ContainerFallbackAutoSubmit {
+		t.Fatalf("expected default supervisor policy to disable container fallback auto submit, got %+v", snapshot.Policy)
 	}
 	if snapshot.Policy.ServiceFailureThreshold != defaultRuntimeSupervisorServiceFailThresh {
 		t.Fatalf("expected default service failure threshold %d, got %+v", defaultRuntimeSupervisorServiceFailThresh, snapshot.Policy)
@@ -110,6 +146,9 @@ func TestRuntimeSupervisorSnapshotReportsPolicyWithoutFallbackCandidate(t *testi
 	snapshot := supervisor.Collect(context.Background())
 	if !snapshot.Policy.ApplicationRestartEnabled || !snapshot.Policy.ContainerRestartEnabled {
 		t.Fatalf("expected policy to expose enabled restart settings, got %+v", snapshot.Policy)
+	}
+	if snapshot.Policy.ContainerFallbackAutoSubmit {
+		t.Fatalf("expected fallback auto submit to stay disabled by default, got %+v", snapshot.Policy)
 	}
 	if snapshot.Policy.ContainerExecutorConfigured {
 		t.Fatalf("expected policy to expose missing container executor, got %+v", snapshot.Policy)
@@ -206,12 +245,21 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if first.ServiceState.ConsecutiveFailures != 1 || first.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected first failure below fallback threshold, got %+v", first.ServiceState)
 	}
+	if first.ServiceState.ServiceFailureEpisodeStartedAt == nil || first.ServiceState.ContainerFallbackCandidateSince != nil {
+		t.Fatalf("expected first failure to start episode before fallback candidate, got %+v", first.ServiceState)
+	}
 	if first.ContainerFallbackPlan != nil {
 		t.Fatalf("expected no fallback plan below threshold, got %+v", first.ContainerFallbackPlan)
 	}
 	second := supervisor.Collect(context.Background()).Targets[0]
 	if second.ServiceState.ConsecutiveFailures != 2 || !second.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected second failure to become fallback candidate, got %+v", second.ServiceState)
+	}
+	if second.ServiceState.ServiceFailureEpisodeStartedAt == nil || !second.ServiceState.ServiceFailureEpisodeStartedAt.Equal(*first.ServiceState.ServiceFailureEpisodeStartedAt) {
+		t.Fatalf("expected service failure episode start to remain stable, got first=%+v second=%+v", first.ServiceState, second.ServiceState)
+	}
+	if second.ServiceState.ContainerFallbackCandidateSince == nil {
+		t.Fatalf("expected fallback candidate since when threshold is reached, got %+v", second.ServiceState)
 	}
 	if second.ServiceState.ContainerFallbackReason == "" || second.ServiceState.LastFailureReason == "" || second.ServiceState.LastFailureAt == nil {
 		t.Fatalf("expected fallback reason and failure metadata, got %+v", second.ServiceState)
@@ -251,11 +299,21 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	if third.ServiceState.ContainerFallbackAttemptCount != 2 || third.ServiceState.LastContainerFallbackDecisionReason != "container-restart-disabled" {
 		t.Fatalf("expected fallback decision audit to advance while candidate remains active, got %+v", third.ServiceState)
 	}
+	if third.ServiceState.ServiceFailureEpisodeStartedAt == nil || !third.ServiceState.ServiceFailureEpisodeStartedAt.Equal(*first.ServiceState.ServiceFailureEpisodeStartedAt) {
+		t.Fatalf("expected service failure episode start to remain stable while candidate remains active, got %+v", third.ServiceState)
+	}
+	if third.ServiceState.ContainerFallbackCandidateSince == nil || !third.ServiceState.ContainerFallbackCandidateSince.Equal(*second.ServiceState.ContainerFallbackCandidateSince) {
+		t.Fatalf("expected fallback candidate since to remain stable while candidate remains active, got %+v", third.ServiceState)
+	}
 
 	healthy = true
-	recovered := supervisor.Collect(context.Background()).Targets[0]
+	recoveredSnapshot := supervisor.Collect(context.Background())
+	recovered := recoveredSnapshot.Targets[0]
 	if recovered.ServiceState.ConsecutiveFailures != 0 || recovered.ServiceState.ContainerFallbackCandidate {
 		t.Fatalf("expected healthy probe to clear fallback candidate, got %+v", recovered.ServiceState)
+	}
+	if recovered.ServiceState.ServiceFailureEpisodeStartedAt != nil || recovered.ServiceState.ContainerFallbackCandidateSince != nil {
+		t.Fatalf("expected healthy probe to clear service failure episode timestamps, got %+v", recovered.ServiceState)
 	}
 	if recovered.ContainerFallbackPlan != nil {
 		t.Fatalf("expected healthy probe to clear fallback plan, got %+v", recovered.ContainerFallbackPlan)
@@ -265,6 +323,19 @@ func TestRuntimeSupervisorMarksContainerFallbackCandidateAfterServiceFailures(t 
 	}
 	if recovered.ServiceState.ContainerFallbackAttemptCount != 0 || recovered.ServiceState.LastContainerFallbackDecisionAt != nil || recovered.ServiceState.LastContainerFallbackDecisionReason != "" {
 		t.Fatalf("expected healthy probe to clear fallback decision audit, got %+v", recovered.ServiceState)
+	}
+	if len(recoveredSnapshot.ServiceFailureEpisodes) != 1 {
+		t.Fatalf("expected recovered failure episode audit, got %+v", recoveredSnapshot.ServiceFailureEpisodes)
+	}
+	episode := recoveredSnapshot.ServiceFailureEpisodes[0]
+	if episode.TargetName != "api" || episode.MaxConsecutiveFailures != 3 || !episode.ContainerFallbackCandidate {
+		t.Fatalf("unexpected recovered failure episode identity, got %+v", episode)
+	}
+	if episode.ContainerFallbackCandidateSince == nil || episode.ContainerFallbackAttemptCount != 2 || episode.LastContainerFallbackDecisionReason != "container-restart-disabled" {
+		t.Fatalf("expected recovered episode fallback decision audit, got %+v", episode)
+	}
+	if episode.DurationSeconds < 0 || episode.LastFailureReason == "" || episode.LastFailureAt == nil {
+		t.Fatalf("expected recovered episode failure timing and reason, got %+v", episode)
 	}
 }
 
@@ -314,12 +385,121 @@ func TestRuntimeSupervisorContainerFallbackOptInStillRequiresExecutor(t *testing
 	}
 }
 
-func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *testing.T) {
+func TestRuntimeSupervisorContainerFallbackAutoSubmitDisabledLeavesExecutablePlanForManualSubmit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: executor,
+		},
+	)
+
+	snapshot := supervisor.Collect(context.Background())
+	if snapshot.Policy.ContainerFallbackAutoSubmit {
+		t.Fatalf("expected policy to keep auto submit disabled, got %+v", snapshot.Policy)
+	}
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil || !target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionEligible {
+		t.Fatalf("expected executable manual-submit plan without auto submission, got %+v", target.ContainerFallbackPlan)
+	}
+	if target.ContainerFallbackPlan.AutoSubmitEnabled || target.ContainerFallbackPlan.AutoSubmitEligible || !target.ContainerFallbackPlan.ManualSubmitRequired {
+		t.Fatalf("expected manual-only submit metadata on executable plan, got %+v", target.ContainerFallbackPlan)
+	}
+	if executor.calls != 0 || len(snapshot.ContainerFallbackActions) != 0 || target.ServiceState.ContainerFallbackSubmitted {
+		t.Fatalf("expected disabled auto submit to leave executor untouched, calls=%d actions=%+v state=%+v", executor.calls, snapshot.ContainerFallbackActions, target.ServiceState)
+	}
+
+	result, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator approved manual fallback",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("manual container fallback submit failed while auto submit disabled: %v", err)
+	}
+	if executor.calls != 1 || result.Action == nil || !result.Action.Submitted || result.Action.Source != "ctl" {
+		t.Fatalf("expected manual submit to call executor once with audit, calls=%d result=%+v", executor.calls, result)
+	}
+	if result.Plan == nil || result.Plan.BlockedReason != "container-fallback-already-submitted" {
+		t.Fatalf("expected manual submit to leave duplicate blocker, got %+v", result.Plan)
+	}
+	if result.Plan.AutoSubmitEnabled || result.Plan.AutoSubmitEligible || result.Plan.ManualSubmitRequired {
+		t.Fatalf("expected duplicate manual submit plan to clear submit-mode eligibility, got %+v", result.Plan)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackPlanSubmitModeMetadata(t *testing.T) {
+	now := time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC)
+	startedAt := now.Add(-2 * time.Minute)
+	candidateSince := now.Add(-time.Minute)
+	state := RuntimeSupervisorServiceState{
+		ServiceFailureEpisodeStartedAt:  &startedAt,
+		ContainerFallbackCandidate:      true,
+		ContainerFallbackReason:         "service probes failed 1/1",
+		ContainerFallbackCandidateSince: &candidateSince,
+	}
+	target := RuntimeSupervisorTarget{Name: "api", BaseURL: "http://127.0.0.1:8080"}
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
+
+	manualPlan := runtimeSupervisorContainerFallbackPlan(target, state, RuntimeSupervisorOptions{
+		EnableContainerFallback:   true,
+		ContainerFallbackExecutor: executor,
+	}, now)
+	if manualPlan == nil || !manualPlan.Executable {
+		t.Fatalf("expected manual plan to be executable, got %+v", manualPlan)
+	}
+	if manualPlan.AutoSubmitEnabled || manualPlan.AutoSubmitEligible || !manualPlan.ManualSubmitRequired {
+		t.Fatalf("expected executable plan to require manual submit when auto-submit is disabled, got %+v", manualPlan)
+	}
+
+	autoPlan := runtimeSupervisorContainerFallbackPlan(target, state, RuntimeSupervisorOptions{
+		EnableContainerFallback:     true,
+		ContainerFallbackAutoSubmit: true,
+		ContainerFallbackExecutor:   executor,
+	}, now)
+	if autoPlan == nil || !autoPlan.Executable {
+		t.Fatalf("expected auto plan to be executable, got %+v", autoPlan)
+	}
+	if !autoPlan.AutoSubmitEnabled || !autoPlan.AutoSubmitEligible || autoPlan.ManualSubmitRequired {
+		t.Fatalf("expected executable plan to be auto-submit eligible when policy is enabled, got %+v", autoPlan)
+	}
+}
+
+func TestRuntimeSupervisorDryRunContainerFallbackExecutorRecordsActionOncePerFailureEpisode(t *testing.T) {
 	requested := make(map[string]int)
+	healthy := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requested[r.Method+" "+r.URL.Path]++
 		switch r.URL.Path {
 		case "/healthz":
+			if healthy {
+				writeRuntimeSupervisorTestJSON(t, w, map[string]any{"status": "ok"})
+				return
+			}
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 		case "/api/v1/runtime/status":
 			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
@@ -333,13 +513,19 @@ func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *t
 	}))
 	defer server.Close()
 
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
 	supervisor := NewRuntimeSupervisorWithOptions(
 		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
 		server.Client(),
 		RuntimeSupervisorOptions{
-			ServiceFailureThreshold:   1,
-			EnableContainerFallback:   true,
-			ContainerFallbackExecutor: NewNoopContainerFallbackExecutor(true),
+			ServiceFailureThreshold:     1,
+			EnableContainerFallback:     true,
+			ContainerFallbackAutoSubmit: true,
+			ContainerFallbackExecutor:   executor,
 		},
 	)
 	snapshot := supervisor.Collect(context.Background())
@@ -353,20 +539,772 @@ func TestRuntimeSupervisorNoopContainerFallbackExecutorExposesReadinessOnly(t *t
 	if target.ContainerFallbackPlan == nil {
 		t.Fatalf("expected fallback plan for candidate, got %+v", target)
 	}
-	if !target.ContainerFallbackPlan.ExecutorConfigured || !target.ContainerFallbackPlan.Executable {
-		t.Fatalf("expected configured noop executor to make plan eligible, got %+v", target.ContainerFallbackPlan)
+	if !target.ContainerFallbackPlan.ExecutorConfigured || target.ContainerFallbackPlan.Executable {
+		t.Fatalf("expected submitted noop action to block duplicate fallback in snapshot, got %+v", target.ContainerFallbackPlan)
 	}
 	if target.ContainerFallbackPlan.ExecutorKind != runtimeSupervisorContainerExecutorKindNoop || !target.ContainerFallbackPlan.ExecutorDryRun {
 		t.Fatalf("expected eligible noop plan to expose dry-run executor metadata, got %+v", target.ContainerFallbackPlan)
 	}
-	if target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionEligible || target.ContainerFallbackPlan.EligibleReason != "container-fallback-eligible" {
-		t.Fatalf("expected eligible dry-run decision, got %+v", target.ContainerFallbackPlan)
+	if target.ContainerFallbackPlan.Decision != runtimeSupervisorContainerFallbackDecisionBlocked || target.ContainerFallbackPlan.BlockedReason != "container-fallback-already-submitted" || !target.ContainerFallbackPlan.Duplicate {
+		t.Fatalf("expected dry-run submission to leave duplicate blocker in snapshot, got %+v", target.ContainerFallbackPlan)
 	}
-	if target.ServiceState.LastContainerFallbackDecisionReason != "container-fallback-eligible" {
-		t.Fatalf("expected eligible decision audit, got %+v", target.ServiceState)
+	if !target.ServiceState.ContainerFallbackSubmitted || target.ServiceState.ContainerFallbackSubmittedAt == nil || target.ServiceState.ContainerFallbackSubmittedMessage == "" {
+		t.Fatalf("expected dry-run submission audit in service state, got %+v", target.ServiceState)
+	}
+	if target.ServiceState.LastContainerFallbackDecisionReason != "container-fallback-already-submitted" {
+		t.Fatalf("expected duplicate decision audit after dry-run submit, got %+v", target.ServiceState)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("expected one dry-run container fallback executor call, got %d", executor.calls)
+	}
+	if len(snapshot.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected one container fallback action audit, got %+v", snapshot.ContainerFallbackActions)
+	}
+	action := snapshot.ContainerFallbackActions[0]
+	if action.Action != "container-restart" || action.TargetName != "api" || action.ExecutorKind != runtimeSupervisorContainerExecutorKindNoop || !action.ExecutorDryRun {
+		t.Fatalf("unexpected container fallback action identity, got %+v", action)
+	}
+	if !action.Submitted || action.Executed || action.Message == "" || action.Error != "" {
+		t.Fatalf("expected dry-run non-executing action audit, got %+v", action)
+	}
+	if action.ServiceFailureEpisodeStartedAt == nil || action.ContainerFallbackCandidateSince == nil {
+		t.Fatalf("expected action audit to carry failure episode anchors, got %+v", action)
+	}
+	next := supervisor.Collect(context.Background())
+	if executor.calls != 1 || len(next.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected container fallback action to be deduped while failure episode remains active, calls=%d actions=%+v", executor.calls, next.ContainerFallbackActions)
+	}
+	if next.Targets[0].ContainerFallbackPlan == nil || next.Targets[0].ContainerFallbackPlan.BlockedReason != "container-fallback-already-submitted" {
+		t.Fatalf("expected duplicate blocker on next collect, got %+v", next.Targets[0].ContainerFallbackPlan)
+	}
+	healthy = true
+	recovered := supervisor.Collect(context.Background())
+	if len(recovered.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected healthy collect to preserve action history, got %+v", recovered.ContainerFallbackActions)
+	}
+	if len(recovered.ServiceFailureEpisodes) != 1 || !recovered.ServiceFailureEpisodes[0].ContainerFallbackSubmitted || recovered.ServiceFailureEpisodes[0].ContainerFallbackSubmittedAt == nil {
+		t.Fatalf("expected recovered episode to preserve dry-run submission audit, got %+v", recovered.ServiceFailureEpisodes)
+	}
+	healthy = false
+	newEpisode := supervisor.Collect(context.Background())
+	if executor.calls != 2 || len(newEpisode.ContainerFallbackActions) != 2 {
+		t.Fatalf("expected recovered target to allow a new dry-run action in the next failure episode, calls=%d actions=%+v", executor.calls, newEpisode.ContainerFallbackActions)
 	}
 	if requested["POST /api/v1/runtime/restart"] != 0 {
 		t.Fatalf("expected no control action for noop executor readiness, got %#v", requested)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackExecutorErrorSetsBackoffAndAllowsManualRetry(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+		err:        errors.New("noop executor failed"),
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:     1,
+			EnableContainerFallback:     true,
+			ContainerFallbackAutoSubmit: true,
+			ContainerFallbackExecutor:   executor,
+		},
+	)
+
+	snapshot := supervisor.Collect(context.Background())
+	if executor.calls != 1 || len(snapshot.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected one failed dry-run submission, calls=%d actions=%+v", executor.calls, snapshot.ContainerFallbackActions)
+	}
+	action := snapshot.ContainerFallbackActions[0]
+	if action.Error != "noop executor failed" || action.BackoffUntil == nil || action.BackoffSeconds != 300 {
+		t.Fatalf("expected action error backoff audit, got %+v", action)
+	}
+	if action.ServiceFailureEpisodeStartedAt == nil || action.ContainerFallbackCandidateSince == nil {
+		t.Fatalf("expected failed action audit to carry failure episode anchors, got %+v", action)
+	}
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil || target.ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" || !target.ContainerFallbackPlan.BackoffActive {
+		t.Fatalf("expected failed executor to leave active backoff blocker, got %+v", target.ContainerFallbackPlan)
+	}
+	if !target.ServiceState.ContainerFallbackSubmitted || target.ServiceState.ContainerFallbackSubmittedError != "noop executor failed" {
+		t.Fatalf("expected submitted error state, got %+v", target.ServiceState)
+	}
+	if target.ServiceState.ContainerFallbackBackoffUntil == nil || target.ServiceState.ContainerFallbackBackoffSetAt == nil {
+		t.Fatalf("expected backoff timestamps after executor error, got %+v", target.ServiceState)
+	}
+	if target.ServiceState.ContainerFallbackBackoffReason != "container fallback executor error: noop executor failed" || target.ServiceState.ContainerFallbackBackoffSource != "supervisor" {
+		t.Fatalf("expected supervisor error backoff reason/source, got %+v", target.ServiceState)
+	}
+	if target.ServiceState.LastContainerFallbackDecisionReason != "container-fallback-backoff-active" {
+		t.Fatalf("expected backoff decision audit after executor error, got %+v", target.ServiceState)
+	}
+
+	next := supervisor.Collect(context.Background())
+	if executor.calls != 1 || len(next.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected active backoff/submitted state to prevent duplicate executor calls, calls=%d actions=%+v", executor.calls, next.ContainerFallbackActions)
+	}
+
+	executor.err = nil
+	cleared, err := supervisor.ClearContainerFallbackBackoff("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator reviewed failed dry-run",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("clear container fallback backoff failed: %v", err)
+	}
+	if cleared.ServiceState.ContainerFallbackSubmitted || cleared.ServiceState.ContainerFallbackSubmittedError != "" {
+		t.Fatalf("expected clear-backoff to clear submitted dedupe state, got %+v", cleared.ServiceState)
+	}
+	clearedSnapshot := supervisor.LastSnapshot()
+	if clearedSnapshot.Targets[0].ContainerFallbackPlan == nil || !clearedSnapshot.Targets[0].ContainerFallbackPlan.Executable {
+		t.Fatalf("expected clear-backoff to expose retry-eligible plan before submit, got %+v", clearedSnapshot.Targets[0].ContainerFallbackPlan)
+	}
+
+	retried := supervisor.Collect(context.Background())
+	if executor.calls != 2 || len(retried.ContainerFallbackActions) != 2 {
+		t.Fatalf("expected clear-backoff to allow one retry submission, calls=%d actions=%+v", executor.calls, retried.ContainerFallbackActions)
+	}
+	if retried.ContainerFallbackActions[0].Error != "" || retried.ContainerFallbackActions[0].Message == "" {
+		t.Fatalf("expected retry to record successful dry-run message, got %+v", retried.ContainerFallbackActions[0])
+	}
+	if retried.Targets[0].ContainerFallbackPlan == nil || retried.Targets[0].ContainerFallbackPlan.BlockedReason != "container-fallback-already-submitted" {
+		t.Fatalf("expected successful retry to leave duplicate blocker, got %+v", retried.Targets[0].ContainerFallbackPlan)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackExecutorRequiresArmedGateBeforeNonDryRunSubmit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       "docker",
+		dryRun:     false,
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: executor,
+		},
+	)
+	target := supervisor.Collect(context.Background()).Targets[0]
+	if target.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for candidate, got %+v", target)
+	}
+	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.BlockedReason != "container-executor-not-armed" {
+		t.Fatalf("expected non-dry-run executor to stay blocked, got %+v", target.ContainerFallbackPlan)
+	}
+	if target.ServiceState.LastContainerFallbackDecisionReason != "container-executor-not-armed" {
+		t.Fatalf("expected non-dry-run decision audit, got %+v", target.ServiceState)
+	}
+	if executor.calls != 0 {
+		t.Fatalf("expected non-dry-run executor not to be called, got %d", executor.calls)
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorExecutesWhenArmedAndAllowlisted(t *testing.T) {
+	requested := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		case "/api/v1/runtime/restart":
+			t.Errorf("command container fallback executor must not call runtime control path %s", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := newRuntimeSupervisorTestCommandExecutor(t, "api", "--runtime-supervisor-command-executor-success")
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:        1,
+			EnableContainerFallback:        true,
+			ContainerFallbackAutoSubmit:    true,
+			ContainerFallbackExecutor:      executor,
+			ContainerFallbackExecutorArmed: true,
+		},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	if !snapshot.Policy.ContainerExecutorConfigured || snapshot.Policy.ContainerExecutorKind != runtimeSupervisorContainerExecutorKindCommand || snapshot.Policy.ContainerExecutorDryRun || !snapshot.Policy.ContainerExecutorArmed {
+		t.Fatalf("expected armed command executor policy, got %+v", snapshot.Policy)
+	}
+	if len(snapshot.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected one command fallback action, got %+v", snapshot.ContainerFallbackActions)
+	}
+	action := snapshot.ContainerFallbackActions[0]
+	if !action.Submitted || !action.Executed || action.ExecutorDryRun || action.ExecutorKind != runtimeSupervisorContainerExecutorKindCommand || action.Error != "" {
+		t.Fatalf("expected submitted/executed command fallback action, got %+v", action)
+	}
+	if action.ExecutorPreview == nil || action.ExecutorPreview.Kind != runtimeSupervisorContainerExecutorKindCommand || action.ExecutorPreview.CommandPath == "" || action.ExecutorPreview.TimeoutSeconds != 5 {
+		t.Fatalf("expected command preview on executed action, got %+v", action.ExecutorPreview)
+	}
+	if !strings.Contains(action.Message, "helper restart ok") {
+		t.Fatalf("expected command output audit, got %+v", action)
+	}
+	if action.ExitCode == nil || *action.ExitCode != 0 || action.TimedOut {
+		t.Fatalf("expected command success result audit, got %+v", action)
+	}
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for command executor, got %+v", target)
+	}
+	if target.ContainerFallbackPlan.BlockedReason != "container-fallback-already-submitted" || !target.ContainerFallbackPlan.Duplicate || !target.ContainerFallbackPlan.ExecutorArmed || !target.ContainerFallbackPlan.TargetAllowed {
+		t.Fatalf("expected executed command fallback to leave duplicate blocker with gates visible, got %+v", target.ContainerFallbackPlan)
+	}
+	preview := target.ContainerFallbackPlan.ExecutorPreview
+	if preview == nil || preview.Kind != runtimeSupervisorContainerExecutorKindCommand || preview.CommandPath == "" || len(preview.CommandArgs) != 3 || preview.TimeoutSeconds != 5 {
+		t.Fatalf("expected command preview on fallback plan, got %+v", preview)
+	}
+	if !target.ServiceState.ContainerFallbackSubmitted || target.ServiceState.ContainerFallbackSubmittedMessage == "" || target.ServiceState.ContainerFallbackSubmittedError != "" {
+		t.Fatalf("expected command submission audit in service state, got %+v", target.ServiceState)
+	}
+	if requested["POST /api/v1/runtime/restart"] != 0 {
+		t.Fatalf("expected no runtime restart control call from command executor, got %#v", requested)
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorBlocksTargetsOutsideAllowlist(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := newRuntimeSupervisorTestCommandExecutor(t, "worker", "--runtime-supervisor-command-executor-success")
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:        1,
+			EnableContainerFallback:        true,
+			ContainerFallbackAutoSubmit:    true,
+			ContainerFallbackExecutor:      executor,
+			ContainerFallbackExecutorArmed: true,
+		},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan for command executor, got %+v", target)
+	}
+	if target.ContainerFallbackPlan.Executable || target.ContainerFallbackPlan.TargetAllowed || target.ContainerFallbackPlan.BlockedReason != "container-executor-target-not-allowlisted" {
+		t.Fatalf("expected non-allowlisted target to block command executor, got %+v", target.ContainerFallbackPlan)
+	}
+	if target.ContainerFallbackPlan.ExecutorPreview != nil {
+		t.Fatalf("expected no command preview for non-allowlisted target, got %+v", target.ContainerFallbackPlan.ExecutorPreview)
+	}
+	if len(snapshot.ContainerFallbackActions) != 0 || target.ServiceState.ContainerFallbackSubmitted {
+		t.Fatalf("expected no command submission for non-allowlisted target, actions=%+v state=%+v", snapshot.ContainerFallbackActions, target.ServiceState)
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorRejectsDuplicateNormalizedTargets(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+	if _, err := NewCommandContainerFallbackExecutor(map[string]CommandContainerFallbackSpec{
+		"api":  {Path: executable},
+		" api": {Path: executable},
+	}); err == nil {
+		t.Fatalf("expected duplicate normalized command target names to fail")
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorFailureSetsBackoff(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := newRuntimeSupervisorTestCommandExecutor(t, "api", "--runtime-supervisor-command-executor-fail")
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:        1,
+			EnableContainerFallback:        true,
+			ContainerFallbackAutoSubmit:    true,
+			ContainerFallbackExecutor:      executor,
+			ContainerFallbackExecutorArmed: true,
+		},
+	)
+	snapshot := supervisor.Collect(context.Background())
+	if len(snapshot.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected one failed command fallback action, got %+v", snapshot.ContainerFallbackActions)
+	}
+	action := snapshot.ContainerFallbackActions[0]
+	if action.Error == "" || !strings.Contains(action.Error, "helper restart failed") || action.BackoffUntil == nil || action.BackoffSeconds != 300 {
+		t.Fatalf("expected command failure and backoff audit, got %+v", action)
+	}
+	if action.ExitCode == nil || *action.ExitCode != 7 || action.TimedOut || !strings.Contains(action.Message, "helper restart failed") {
+		t.Fatalf("expected command failure result audit, got %+v", action)
+	}
+	target := snapshot.Targets[0]
+	if target.ContainerFallbackPlan == nil || target.ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" || !target.ContainerFallbackPlan.BackoffActive {
+		t.Fatalf("expected failed command executor to leave backoff blocker, got %+v", target.ContainerFallbackPlan)
+	}
+	if !target.ServiceState.ContainerFallbackSubmitted || !strings.Contains(target.ServiceState.ContainerFallbackSubmittedError, "helper restart failed") {
+		t.Fatalf("expected failed command submission audit in service state, got %+v", target.ServiceState)
+	}
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorTimeoutReturnsAuditMetadata(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+	executor, err := NewCommandContainerFallbackExecutor(map[string]CommandContainerFallbackSpec{
+		"api": {
+			Path: executable,
+			Args: []string{
+				"-test.run=TestRuntimeSupervisorCommandContainerFallbackExecutorHelperProcess",
+				"--",
+				"--runtime-supervisor-command-executor-timeout",
+			},
+			Timeout: time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build test command executor: %v", err)
+	}
+	result, err := executor.Restart(context.Background(), RuntimeSupervisorTarget{Name: "api"}, "test")
+	if err == nil {
+		t.Fatalf("expected timeout error, got result=%+v", result)
+	}
+	if !result.TimedOut || result.ExitCode != nil || !strings.Contains(result.Message, "helper restart waiting") {
+		t.Fatalf("expected timeout audit metadata with partial output, got result=%+v err=%v", result, err)
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected timeout error, got %v", err)
+	}
+}
+
+func TestRuntimeSupervisorManualContainerFallbackSubmitRecordsOperatorAudit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   false,
+			ContainerFallbackExecutor: executor,
+		},
+	)
+	candidate := supervisor.Collect(context.Background()).Targets[0]
+	if candidate.ContainerFallbackPlan == nil || candidate.ContainerFallbackPlan.Executable || candidate.ContainerFallbackPlan.BlockedReason != "container-restart-disabled" {
+		t.Fatalf("expected disabled candidate plan before manual submit, got %+v", candidate.ContainerFallbackPlan)
+	}
+	if executor.calls != 0 {
+		t.Fatalf("expected disabled auto submit to skip executor, got %d", executor.calls)
+	}
+
+	supervisor.options.EnableContainerFallback = true
+	result, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator reviewed static command preview",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("manual container fallback submit failed: %v", err)
+	}
+	if executor.calls != 1 || executor.lastReason != "operator reviewed static command preview" {
+		t.Fatalf("expected one executor call with operator reason, calls=%d reason=%q", executor.calls, executor.lastReason)
+	}
+	if result.Action == nil || !result.Action.Submitted || result.Action.Source != "ctl" || result.Action.PlanReason == "" {
+		t.Fatalf("expected manual action to carry source and plan reason, got %+v", result.Action)
+	}
+	if !strings.Contains(result.Action.PlanReason, "service probes failed 1/1") {
+		t.Fatalf("expected plan reason to preserve service failure context, got %+v", result.Action)
+	}
+	if result.ServiceState.ContainerFallbackSubmittedReason != "operator reviewed static command preview" || result.ServiceState.ContainerFallbackSubmittedMessage == "" {
+		t.Fatalf("expected submitted state to carry operator reason and message, got %+v", result.ServiceState)
+	}
+	if result.Plan == nil || result.Plan.BlockedReason != "container-fallback-already-submitted" || !result.Plan.Duplicate {
+		t.Fatalf("expected post-submit plan to show duplicate blocker, got %+v", result.Plan)
+	}
+	snapshot := supervisor.LastSnapshot()
+	if len(snapshot.ContainerFallbackActions) != 1 || snapshot.ContainerFallbackActions[0].Source != "ctl" {
+		t.Fatalf("expected manual action audit in last snapshot, got %+v", snapshot.ContainerFallbackActions)
+	}
+}
+
+func TestRuntimeSupervisorClearContainerFallbackBackoffClearsSubmittedRetryGate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: executor,
+		},
+	)
+	supervisor.Collect(context.Background())
+
+	first, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator reviewed initial fallback",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("initial manual submit failed: %v", err)
+	}
+	if executor.calls != 1 || first.Plan == nil || !first.Plan.Duplicate || first.Plan.BackoffActive {
+		t.Fatalf("expected first submit to leave duplicate gate without backoff, calls=%d result=%+v", executor.calls, first)
+	}
+
+	cleared, err := supervisor.ClearContainerFallbackBackoff("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator approved retry after unchanged outage",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("clear retry gate failed: %v", err)
+	}
+	if cleared.ServiceState.ContainerFallbackSubmitted || cleared.ServiceState.ContainerFallbackSubmittedAt != nil || cleared.ServiceState.ContainerFallbackBackoffUntil != nil {
+		t.Fatalf("expected clear-backoff to clear submitted retry gate without active backoff, got %+v", cleared.ServiceState)
+	}
+	if cleared.ServiceState.ContainerFallbackBackoffClearedReason != "operator approved retry after unchanged outage" || cleared.ServiceState.ContainerFallbackBackoffClearedSource != "ctl" {
+		t.Fatalf("expected clear retry gate audit metadata, got %+v", cleared.ServiceState)
+	}
+
+	snapshot := supervisor.LastSnapshot()
+	if len(snapshot.Targets) != 1 || snapshot.Targets[0].ContainerFallbackPlan == nil || !snapshot.Targets[0].ContainerFallbackPlan.Executable || snapshot.Targets[0].ContainerFallbackPlan.Duplicate {
+		t.Fatalf("expected cleared retry gate to make plan executable again, got %+v", snapshot.Targets)
+	}
+
+	second, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator retried fallback after clear",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("second manual submit failed after retry gate clear: %v", err)
+	}
+	if executor.calls != 2 || second.Action == nil || second.Action.Reason != "operator retried fallback after clear" {
+		t.Fatalf("expected second submit to call executor with retry reason, calls=%d result=%+v", executor.calls, second)
+	}
+	if len(supervisor.LastSnapshot().ContainerFallbackActions) != 2 {
+		t.Fatalf("expected both fallback action audits to be retained, got %+v", supervisor.LastSnapshot().ContainerFallbackActions)
+	}
+}
+
+func TestRuntimeSupervisorManualContainerFallbackSubmitRejectsMissingCandidate(t *testing.T) {
+	executor := &runtimeSupervisorTestContainerExecutor{
+		configured: true,
+		kind:       runtimeSupervisorContainerExecutorKindNoop,
+		dryRun:     true,
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: "http://127.0.0.1:8080"}},
+		nil,
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:   1,
+			EnableContainerFallback:   true,
+			ContainerFallbackExecutor: executor,
+		},
+	)
+	result, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator reviewed static command preview",
+		Source:  "ctl",
+	})
+	if !errors.Is(err, ErrRuntimeSupervisorContainerFallbackBlocked) {
+		t.Fatalf("expected blocked submit error, got result=%+v err=%v", result, err)
+	}
+	if executor.calls != 0 || result.Plan != nil || result.ServiceState.ContainerFallbackCandidate {
+		t.Fatalf("expected missing candidate to skip executor, calls=%d result=%+v", executor.calls, result)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackSuppressionBlocksEligiblePlan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:     1,
+			EnableContainerFallback:     true,
+			ContainerFallbackAutoSubmit: true,
+			ContainerFallbackExecutor:   NewNoopContainerFallbackExecutor(true),
+		},
+	)
+	suppressed, err := supervisor.SuppressContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator paused container fallback",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("suppress container fallback failed: %v", err)
+	}
+	if !suppressed.Suppressed || !suppressed.ServiceState.ContainerFallbackSuppressed {
+		t.Fatalf("expected suppressed result, got %+v", suppressed)
+	}
+	if suppressed.ServiceState.ContainerFallbackSuppressedReason != "operator paused container fallback" || suppressed.ServiceState.ContainerFallbackSuppressedSource != "ctl" || suppressed.ServiceState.ContainerFallbackSuppressedAt == nil {
+		t.Fatalf("expected suppression audit fields, got %+v", suppressed.ServiceState)
+	}
+
+	blocked := supervisor.Collect(context.Background()).Targets[0]
+	if blocked.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan after suppression, got %+v", blocked)
+	}
+	if blocked.ContainerFallbackPlan.Executable || blocked.ContainerFallbackPlan.BlockedReason != "container-fallback-suppressed" {
+		t.Fatalf("expected suppressed plan to block execution, got %+v", blocked.ContainerFallbackPlan)
+	}
+	if blocked.ServiceState.LastContainerFallbackDecisionReason != "container-fallback-suppressed" {
+		t.Fatalf("expected suppressed decision audit, got %+v", blocked.ServiceState)
+	}
+	if len(supervisor.LastSnapshot().ContainerFallbackControls) != 1 || supervisor.LastSnapshot().ContainerFallbackControls[0].Action != "suppress-container-fallback" {
+		t.Fatalf("expected suppression control audit in last snapshot, got %+v", supervisor.LastSnapshot().ContainerFallbackControls)
+	}
+
+	resumed, err := supervisor.ResumeContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "maintenance finished",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("resume container fallback failed: %v", err)
+	}
+	if resumed.Suppressed || resumed.ServiceState.ContainerFallbackSuppressed || resumed.ServiceState.ContainerFallbackSuppressedReason != "" {
+		t.Fatalf("expected resumed state to clear suppression, got %+v", resumed)
+	}
+	if resumed.ServiceState.ContainerFallbackResumedReason != "maintenance finished" || resumed.ServiceState.ContainerFallbackResumedSource != "ctl" || resumed.ServiceState.ContainerFallbackResumedAt == nil {
+		t.Fatalf("expected resume audit fields, got %+v", resumed.ServiceState)
+	}
+	resumedSnapshot := supervisor.LastSnapshot()
+	if len(resumedSnapshot.ContainerFallbackControls) != 2 || resumedSnapshot.ContainerFallbackControls[0].Action != "resume-container-fallback" {
+		t.Fatalf("expected resume control audit in last snapshot, got %+v", resumedSnapshot.ContainerFallbackControls)
+	}
+	if resumedSnapshot.Targets[0].ContainerFallbackPlan == nil || !resumedSnapshot.Targets[0].ContainerFallbackPlan.Executable {
+		t.Fatalf("expected resume to make the in-memory plan eligible before executor submission, got %+v", resumedSnapshot.Targets[0].ContainerFallbackPlan)
+	}
+
+	submitted := supervisor.Collect(context.Background())
+	if len(submitted.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected resume to allow one noop dry-run action, got %+v", submitted.ContainerFallbackActions)
+	}
+	if submitted.Targets[0].ContainerFallbackPlan == nil || submitted.Targets[0].ContainerFallbackPlan.BlockedReason != "container-fallback-already-submitted" {
+		t.Fatalf("expected dry-run submission to leave duplicate blocker, got %+v", submitted.Targets[0].ContainerFallbackPlan)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackBackoffBlocksEligiblePlan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: server.URL}},
+		server.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:     1,
+			EnableContainerFallback:     true,
+			ContainerFallbackAutoSubmit: true,
+			ContainerFallbackExecutor:   NewNoopContainerFallbackExecutor(true),
+		},
+	)
+	deferred, err := supervisor.DeferContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm:         true,
+		Reason:          "operator cooling down restart loop",
+		Source:          "ctl",
+		BackoffDuration: 5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("defer container fallback failed: %v", err)
+	}
+	if deferred.BackoffUntil == nil || deferred.ServiceState.ContainerFallbackBackoffUntil == nil {
+		t.Fatalf("expected backoff until in result, got %+v", deferred)
+	}
+	if deferred.ServiceState.ContainerFallbackBackoffReason != "operator cooling down restart loop" || deferred.ServiceState.ContainerFallbackBackoffSource != "ctl" || deferred.ServiceState.ContainerFallbackBackoffSetAt == nil {
+		t.Fatalf("expected backoff audit fields, got %+v", deferred.ServiceState)
+	}
+
+	blocked := supervisor.Collect(context.Background()).Targets[0]
+	if blocked.ContainerFallbackPlan == nil {
+		t.Fatalf("expected fallback plan after backoff, got %+v", blocked)
+	}
+	if blocked.ContainerFallbackPlan.Executable || blocked.ContainerFallbackPlan.BlockedReason != "container-fallback-backoff-active" {
+		t.Fatalf("expected backoff plan to block execution, got %+v", blocked.ContainerFallbackPlan)
+	}
+	if blocked.ServiceState.LastContainerFallbackDecisionReason != "container-fallback-backoff-active" {
+		t.Fatalf("expected backoff decision audit, got %+v", blocked.ServiceState)
+	}
+
+	cleared, err := supervisor.ClearContainerFallbackBackoff("api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm: true,
+		Reason:  "operator verified target stable",
+		Source:  "ctl",
+	})
+	if err != nil {
+		t.Fatalf("clear container fallback backoff failed: %v", err)
+	}
+	if cleared.BackoffUntil != nil || cleared.ServiceState.ContainerFallbackBackoffUntil != nil {
+		t.Fatalf("expected clear to remove backoff, got %+v", cleared)
+	}
+	if cleared.ServiceState.ContainerFallbackBackoffClearedReason != "operator verified target stable" || cleared.ServiceState.ContainerFallbackBackoffClearedSource != "ctl" || cleared.ServiceState.ContainerFallbackBackoffClearedAt == nil {
+		t.Fatalf("expected backoff clear audit fields, got %+v", cleared.ServiceState)
+	}
+	clearedSnapshot := supervisor.LastSnapshot()
+	if len(clearedSnapshot.ContainerFallbackControls) != 2 || clearedSnapshot.ContainerFallbackControls[0].Action != "clear-container-fallback-backoff" {
+		t.Fatalf("expected clear-backoff control audit in last snapshot, got %+v", clearedSnapshot.ContainerFallbackControls)
+	}
+	if clearedSnapshot.Targets[0].ContainerFallbackPlan == nil || !clearedSnapshot.Targets[0].ContainerFallbackPlan.Executable {
+		t.Fatalf("expected clear to make the in-memory plan eligible before executor submission, got %+v", clearedSnapshot.Targets[0].ContainerFallbackPlan)
+	}
+
+	submitted := supervisor.Collect(context.Background())
+	if len(submitted.ContainerFallbackActions) != 1 {
+		t.Fatalf("expected clear to allow one noop dry-run action, got %+v", submitted.ContainerFallbackActions)
+	}
+	if submitted.Targets[0].ContainerFallbackPlan == nil || submitted.Targets[0].ContainerFallbackPlan.BlockedReason != "container-fallback-already-submitted" {
+		t.Fatalf("expected dry-run submission to leave duplicate blocker, got %+v", submitted.Targets[0].ContainerFallbackPlan)
+	}
+}
+
+func TestRuntimeSupervisorContainerFallbackControlValidation(t *testing.T) {
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: "http://127.0.0.1:8080"}},
+		nil,
+		RuntimeSupervisorOptions{},
+	)
+	if _, err := supervisor.SuppressContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorControlConfirmRequired) {
+		t.Fatalf("expected confirm required, got %v", err)
+	}
+	if _, err := supervisor.SuppressContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true}); !errors.Is(err, ErrRuntimeSupervisorControlReasonRequired) {
+		t.Fatalf("expected reason required, got %v", err)
+	}
+	if _, err := supervisor.DeferContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorBackoffDurationRequired) {
+		t.Fatalf("expected backoff duration required, got %v", err)
+	}
+	if _, err := supervisor.DeferContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance", BackoffDuration: maxRuntimeSupervisorContainerFallbackBackoff + time.Second}); !errors.Is(err, ErrRuntimeSupervisorBackoffDurationTooLarge) {
+		t.Fatalf("expected backoff duration too large, got %v", err)
+	}
+	if _, err := supervisor.SuppressContainerFallback("", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorTargetRequired) {
+		t.Fatalf("expected target required, got %v", err)
+	}
+	if _, err := supervisor.SuppressContainerFallback("missing", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorTargetNotFound) {
+		t.Fatalf("expected target not found, got %v", err)
+	}
+	ambiguous := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{
+			{Name: "api", BaseURL: "http://127.0.0.1:8080"},
+			{Name: "api", BaseURL: "http://127.0.0.1:8081"},
+		},
+		nil,
+		RuntimeSupervisorOptions{},
+	)
+	if _, err := ambiguous.SuppressContainerFallback("api", RuntimeSupervisorContainerFallbackControlOptions{Confirm: true, Reason: "maintenance"}); !errors.Is(err, ErrRuntimeSupervisorTargetAmbiguous) {
+		t.Fatalf("expected target ambiguous, got %v", err)
 	}
 }
 
@@ -393,6 +1331,9 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		Candidate:          true,
 		Enabled:            true,
 		ExecutorConfigured: true,
+		ExecutorDryRun:     true,
+		ExecutorArmed:      true,
+		TargetAllowed:      true,
 		SafetyGateOK:       true,
 	}
 	tests := []struct {
@@ -412,15 +1353,27 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 		},
 		{
 			name:         "disabled",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, ExecutorConfigured: true, SafetyGateOK: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, ExecutorConfigured: true, ExecutorDryRun: true, ExecutorArmed: true, TargetAllowed: true, SafetyGateOK: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-restart-disabled",
 		},
 		{
 			name:         "executor missing",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, SafetyGateOK: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorDryRun: true, ExecutorArmed: true, TargetAllowed: true, SafetyGateOK: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-executor-not-configured",
+		},
+		{
+			name:         "non dry-run executor not armed",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, TargetAllowed: true, SafetyGateOK: true},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-executor-not-armed",
+		},
+		{
+			name:         "non dry-run executor target not allowlisted",
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, ExecutorArmed: true, SafetyGateOK: true},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-executor-target-not-allowlisted",
 		},
 		{
 			name: "suppressed",
@@ -428,6 +1381,9 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 				Candidate:          true,
 				Enabled:            true,
 				ExecutorConfigured: true,
+				ExecutorDryRun:     true,
+				ExecutorArmed:      true,
+				TargetAllowed:      true,
 				Suppressed:         true,
 				SafetyGateOK:       true,
 			},
@@ -440,6 +1396,9 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 				Candidate:          true,
 				Enabled:            true,
 				ExecutorConfigured: true,
+				ExecutorDryRun:     true,
+				ExecutorArmed:      true,
+				TargetAllowed:      true,
 				BackoffActive:      true,
 				SafetyGateOK:       true,
 			},
@@ -447,10 +1406,41 @@ func TestRuntimeSupervisorContainerFallbackDecisionContract(t *testing.T) {
 			wantBlocked:  "container-fallback-backoff-active",
 		},
 		{
+			name: "duplicate submitted",
+			input: runtimeSupervisorContainerFallbackDecisionInput{
+				Candidate:          true,
+				Enabled:            true,
+				ExecutorConfigured: true,
+				ExecutorDryRun:     true,
+				ExecutorArmed:      true,
+				TargetAllowed:      true,
+				Duplicate:          true,
+				SafetyGateOK:       true,
+			},
+			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
+			wantBlocked:  "container-fallback-already-submitted",
+		},
+		{
 			name:         "safety gate blocked",
-			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true},
+			input:        runtimeSupervisorContainerFallbackDecisionInput{Candidate: true, Enabled: true, ExecutorConfigured: true, ExecutorDryRun: true, ExecutorArmed: true, TargetAllowed: true},
 			wantDecision: runtimeSupervisorContainerFallbackDecisionBlocked,
 			wantBlocked:  "container-fallback-safety-gate-blocked",
+		},
+		{
+			name: "non dry-run eligible",
+			input: runtimeSupervisorContainerFallbackDecisionInput{
+				Candidate:          true,
+				Enabled:            true,
+				ExecutorConfigured: true,
+				ExecutorArmed:      true,
+				TargetAllowed:      true,
+				SafetyGateOK:       true,
+			},
+			wantDecision:    runtimeSupervisorContainerFallbackDecisionEligible,
+			wantExecutable:  true,
+			wantBlocked:     "",
+			wantEligible:    "container-fallback-eligible",
+			wantEligibleSet: true,
 		},
 		{
 			name:            "eligible",
@@ -942,6 +1932,46 @@ func TestParseRuntimeSupervisorTargetsSupportsNamedTargets(t *testing.T) {
 	}
 	if normalized[1].Name != "127.0.0.1:8081" || normalized[1].BaseURL != "http://127.0.0.1:8081" {
 		t.Fatalf("unexpected inferred target: %+v", normalized[1])
+	}
+}
+
+func newRuntimeSupervisorTestCommandExecutor(t *testing.T, targetName, mode string) CommandContainerFallbackExecutor {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+	executor, err := NewCommandContainerFallbackExecutor(map[string]CommandContainerFallbackSpec{
+		targetName: {
+			Path: executable,
+			Args: []string{
+				"-test.run=TestRuntimeSupervisorCommandContainerFallbackExecutorHelperProcess",
+				"--",
+				mode,
+			},
+			Timeout: 5 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build test command executor: %v", err)
+	}
+	return executor
+}
+
+func TestRuntimeSupervisorCommandContainerFallbackExecutorHelperProcess(t *testing.T) {
+	for _, arg := range os.Args {
+		switch arg {
+		case "--runtime-supervisor-command-executor-success":
+			fmt.Fprint(os.Stdout, "helper restart ok")
+			os.Exit(0)
+		case "--runtime-supervisor-command-executor-fail":
+			fmt.Fprint(os.Stderr, "helper restart failed")
+			os.Exit(7)
+		case "--runtime-supervisor-command-executor-timeout":
+			fmt.Fprint(os.Stdout, "helper restart waiting")
+			time.Sleep(2 * time.Second)
+			os.Exit(0)
+		}
 	}
 }
 

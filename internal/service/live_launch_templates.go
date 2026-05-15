@@ -57,6 +57,17 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		hasEnhancedTemplate = true
 	}
 
+	t3EnhancedStrategyID := ""
+	t3EnhancedStrategyName := ""
+	t3EnhancedStrategyVersionID := ""
+	hasT3EnhancedTemplate := false
+	if id, name, versionID, _, err := p.resolveLiveTemplateStrategy("strategy-bk-btc-30m-enhanced-t3"); err == nil {
+		t3EnhancedStrategyID = id
+		t3EnhancedStrategyName = name
+		t3EnhancedStrategyVersionID = versionID
+		hasT3EnhancedTemplate = true
+	}
+
 	baseBinding := map[string]any{
 		"adapterKey":    "binance-futures",
 		"positionMode":  "ONE_WAY",
@@ -218,17 +229,17 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		item.Key = "binance-testnet-btc-30m-baseline-plus-t3-enhanced"
 		item.Name = "Binance Testnet BTCUSDT 30m Baseline+T3 Enhanced"
 		item.Description = "BTCUSDT 30m 新增强策略：live_intrabar_sma5_baseline_plus_t3_enhanced。"
-		item.StrategyID = enhancedStrategyID
-		item.StrategyName = enhancedStrategyName
-		item.StrategyVersionID = enhancedStrategyVersionID
+		item.StrategyID = t3EnhancedStrategyID
+		item.StrategyName = t3EnhancedStrategyName
+		item.StrategyVersionID = t3EnhancedStrategyVersionID
 		for key, value := range liveBTC30mBaselinePlusT3EnhancedOverrides() {
 			item.LaunchPayload.LiveSessionOverrides[key] = value
 		}
-		item.LaunchPayload.StrategyID = enhancedStrategyID
+		item.LaunchPayload.StrategyID = t3EnhancedStrategyID
 		item.LaunchPayload.LaunchTemplateKey = item.Key
 		item.LaunchPayload.LaunchTemplateName = item.Name
 		item.Notes = append([]string{
-			fmt.Sprintf("Baseline+T3 增强模板单独使用 %s（strategyEngine=%s），旧 T2-only 模板 key %s 保留兼容。", enhancedStrategyName, bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey, "binance-testnet-btc-30m-enhanced"),
+			fmt.Sprintf("Baseline+T3 增强模板单独使用 %s（strategyEngine=%s），旧 T2-only 模板 key %s 保留兼容。", t3EnhancedStrategyName, bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey, "binance-testnet-btc-30m-enhanced"),
 			"策略口径：SMA5 intrabar hard filter + baseline_plus_t3 breakout，original_t2 与 t3_swing 均可锁定 reentry window。",
 			"baseline breakout gate 固化为 min_atr_percentile=25 与 min_sma_atr_separation=0.1；legacy reentry gate 保留但放松为 reentry_min_stop_bps=4 与 reentry_atr_percentile_gte=10，仅过滤 entry/reentry，不过滤止损出场。",
 			"模板仍保持 dispatchMode 由前端提交前选择，默认展示为 manual-review。",
@@ -242,7 +253,10 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		buildTemplate("BTCUSDT", "30m", 0.002, true),
 	}
 	if hasEnhancedTemplate {
-		templates = append(templates, buildLegacyEnhancedTemplate(), buildBaselinePlusT3EnhancedTemplate())
+		templates = append(templates, buildLegacyEnhancedTemplate())
+	}
+	if hasT3EnhancedTemplate {
+		templates = append(templates, buildBaselinePlusT3EnhancedTemplate())
 	}
 	templates = append(templates,
 		buildTemplate("BTCUSDT", "4h", 0.002, false),

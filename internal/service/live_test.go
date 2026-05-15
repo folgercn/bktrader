@@ -1655,6 +1655,90 @@ func TestBuildLiveExecutionPlanFromMarketDataUsesLiveSnapshotForEnhanced30m(t *t
 	}
 }
 
+func TestBuildLiveExecutionPlanFromMarketDataUsesLiveSnapshotForBaselinePlusT3Enhanced30m(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-btc-30m-enhanced-t3", map[string]any{
+		"symbol":              "BTCUSDT",
+		"signalTimeframe":     "30m",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+
+	version, err := platform.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		t.Fatalf("resolve strategy version failed: %v", err)
+	}
+	parameters, err := platform.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		t.Fatalf("resolve live session parameters failed: %v", err)
+	}
+	engine, engineKey, err := platform.resolveStrategyEngine(version.ID, parameters)
+	if err != nil {
+		t.Fatalf("resolve strategy engine failed: %v", err)
+	}
+	if got := normalizeStrategyEngineKey(engineKey); got != bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey {
+		t.Fatalf("expected baseline+T3 enhanced engine, got %s", got)
+	}
+
+	signalCandles := make([]candleBar, 0, 48)
+	minuteBars := make([]candleBar, 0, 48)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 48; i++ {
+		ts := start.Add(time.Duration(i) * 30 * time.Minute)
+		open := 100.0 + float64(i)*0.5
+		close := open + 0.25
+		high := close + 0.75
+		low := open - 0.75
+		signalCandles = append(signalCandles, candleBar{
+			Time:   ts,
+			Open:   open,
+			High:   high,
+			Low:    low,
+			Close:  close,
+			Volume: 10 + float64(i),
+		})
+		minuteBars = append(minuteBars, candleBar{
+			Time:   ts.Add(time.Minute),
+			Open:   open,
+			High:   high,
+			Low:    low,
+			Close:  close,
+			Volume: 1,
+		})
+	}
+	signalBars, err := buildStrategySignalBarsFromCandles(signalCandles)
+	if err != nil {
+		t.Fatalf("build signal bars failed: %v", err)
+	}
+
+	platform.liveMarketMu.Lock()
+	platform.liveMarketData["BTCUSDT"] = liveMarketSnapshot{
+		Symbol:     "BTCUSDT",
+		MinuteBars: minuteBars,
+		SignalBars: map[string][]strategySignalBar{"30m": signalBars},
+		UpdatedAt:  time.Now().UTC(),
+	}
+	platform.liveMarketMu.Unlock()
+
+	plan, err := platform.buildLiveExecutionPlanFromMarketData(
+		session,
+		version,
+		engine,
+		engineKey,
+		parameters,
+		defaultExecutionSemantics(ExecutionModeLive, parameters),
+	)
+	if err != nil {
+		t.Fatalf("build baseline+T3 enhanced 30m live execution plan failed: %v", err)
+	}
+	if plan == nil {
+		t.Fatal("expected plan slice, got nil")
+	}
+}
+
 func TestResolveLiveSessionParametersDefaultsMissingStopsToTrailingForLive(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 

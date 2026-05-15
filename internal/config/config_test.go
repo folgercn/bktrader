@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestConfigValidateRejectsUnsupportedLoggingValues(t *testing.T) {
 	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", LogLevel: "trace"}
@@ -102,6 +105,289 @@ func TestConfigValidateAcceptsSupervisorRole(t *testing.T) {
 	}
 }
 
+func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
+	for _, executor := range []string{"", "noop", " NoOp "} {
+		t.Run("accept_"+executor, func(t *testing.T) {
+			cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: executor}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected executor %q to validate, got %v", executor, err)
+			}
+		})
+	}
+
+	commandCfg := Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo","args":["restart","api"],"timeoutSeconds":5}}`,
+	}
+	if err := commandCfg.Validate(); err != nil {
+		t.Fatalf("expected armed command executor to validate, got %v", err)
+	}
+
+	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "docker"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected unsupported supervisor container executor to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "command", SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo"}}`}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected unarmed command executor to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "command", SupervisorContainerExecutorArmed: true}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor without allowlist JSON to fail validation")
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"docker","args":["restart","platform-api"]}}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor with relative path to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutorArmed: true}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected armed gate without command executor to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorFallbackAutoSubmit: true, SupervisorContainerExecutor: "noop"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected auto submit without container restart opt-in to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerRestart: true, SupervisorFallbackAutoSubmit: true}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected auto submit without executor to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerRestart: true, SupervisorFallbackAutoSubmit: true, SupervisorContainerExecutor: "noop"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected noop auto-submit policy to validate, got %v", err)
+	}
+}
+
+func TestConfigValidateSupervisorCommandExecutorMatchesTargets(t *testing.T) {
+	cfg := Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080", "worker=http://127.0.0.1:8081"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo"},"worker":{"path":"/bin/echo","timeoutSeconds":0}}`,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected command executor allowlist to match configured targets, got %v", err)
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"http://platform-api.example"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"platform-api.example":{"path":"/bin/echo"}}`,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected command executor allowlist to match implicit target name, got %v", err)
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"worker":{"path":"/bin/echo"}}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor allowlist target outside SUPERVISOR_TARGETS to fail validation")
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo"}}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor without SUPERVISOR_TARGETS to fail validation")
+	}
+
+	cfg = Config{
+		HTTPAddr:                            ":8080",
+		StoreBackend:                        "memory",
+		SupervisorTargets:                   []string{"api=http://127.0.0.1:8080", "http://api"},
+		SupervisorContainerExecutor:         "command",
+		SupervisorContainerExecutorArmed:    true,
+		SupervisorContainerExecutorCommands: `{"api":{"path":"/bin/echo"}}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected command executor with duplicate effective target names to fail validation")
+	}
+}
+
+func TestConfigValidateRejectsDuplicateSupervisorTargetNames(t *testing.T) {
+	cfg := Config{
+		HTTPAddr:          ":8080",
+		StoreBackend:      "memory",
+		SupervisorTargets: []string{"api=http://127.0.0.1:8080", "api=http://127.0.0.1:8081"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected duplicate supervisor target name to fail validation")
+	}
+}
+
+func TestConfigValidateRejectsDuplicateSupervisorTargetBaseURLs(t *testing.T) {
+	tests := []struct {
+		name    string
+		targets []string
+	}{
+		{
+			name:    "named duplicates",
+			targets: []string{"api=http://127.0.0.1:8080", "worker=http://127.0.0.1:8080/"},
+		},
+		{
+			name:    "named and unnamed duplicates",
+			targets: []string{"api=http://127.0.0.1:8080", "http://127.0.0.1:8080/"},
+		},
+		{
+			name:    "case-normalized duplicates",
+			targets: []string{"api=HTTP://PLATFORM-API:8080", "worker=http://platform-api:8080"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorTargets: tt.targets}
+			if err := cfg.Validate(); err == nil {
+				t.Fatalf("expected duplicate supervisor target base URL to fail validation")
+			}
+		})
+	}
+}
+
+func TestConfigValidateRejectsMalformedSupervisorTargets(t *testing.T) {
+	tests := []struct {
+		name    string
+		targets []string
+	}{
+		{
+			name:    "empty explicit name",
+			targets: []string{"=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "missing explicit base url",
+			targets: []string{"api="},
+		},
+		{
+			name:    "blank explicit base url",
+			targets: []string{"api= "},
+		},
+		{
+			name:    "explicit base url without scheme",
+			targets: []string{"api=platform-api:8080"},
+		},
+		{
+			name:    "explicit base url with unsupported scheme",
+			targets: []string{"api=ftp://platform-api:8080"},
+		},
+		{
+			name:    "explicit base url without host",
+			targets: []string{"api=http://"},
+		},
+		{
+			name:    "explicit name with whitespace",
+			targets: []string{"platform api=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit name with slash",
+			targets: []string{"platform/api=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit name with colon",
+			targets: []string{"platform:api=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit name with unicode",
+			targets: []string{"平台=http://127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit base url with userinfo",
+			targets: []string{"api=http://user:pass@127.0.0.1:8080"},
+		},
+		{
+			name:    "explicit base url with query",
+			targets: []string{"api=http://127.0.0.1:8080?token=secret"},
+		},
+		{
+			name:    "explicit base url with fragment",
+			targets: []string{"api=http://127.0.0.1:8080#runtime"},
+		},
+		{
+			name:    "unnamed base url without scheme",
+			targets: []string{"platform-api:8080"},
+		},
+		{
+			name:    "unnamed base url with unsupported scheme",
+			targets: []string{"ftp://platform-api:8080"},
+		},
+		{
+			name:    "unnamed base url with query",
+			targets: []string{"http://127.0.0.1:8080?token=secret"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorTargets: tt.targets}
+			if err := cfg.Validate(); err == nil {
+				t.Fatalf("expected malformed supervisor target to fail validation")
+			}
+		})
+	}
+}
+
+func TestConfigValidateRejectsTooManySupervisorTargets(t *testing.T) {
+	targets := make([]string, 0, maxSupervisorTargets+1)
+	for i := 0; i < maxSupervisorTargets+1; i++ {
+		targets = append(targets, fmt.Sprintf("target-%02d=http://127.0.0.1:8080/%02d", i, i))
+	}
+	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorTargets: targets}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected too many supervisor targets to fail validation")
+	}
+}
+
+func TestConfigValidateAllowsUnnamedSupervisorTargets(t *testing.T) {
+	cfg := Config{
+		HTTPAddr:          ":8080",
+		StoreBackend:      "memory",
+		SupervisorTargets: []string{"http://127.0.0.1:8080", "https://platform-api.example"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected unnamed supervisor targets to validate, got %v", err)
+	}
+}
+
+func TestConfigValidateAllowsHTTPSNamedSupervisorTargets(t *testing.T) {
+	cfg := Config{
+		HTTPAddr:          ":8080",
+		StoreBackend:      "memory",
+		SupervisorTargets: []string{"api=https://platform-api.example/supervisor", "signal_runtime.worker-1=http://127.0.0.1:8081"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected named supervisor targets with http(s) URLs to validate, got %v", err)
+	}
+}
+
 func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_TARGETS", "api=http://127.0.0.1:8080, http://127.0.0.1:8081")
 	t.Setenv("SUPERVISOR_BEARER_TOKEN", " supervisor-token ")
@@ -110,6 +396,8 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_APPLICATION_RESTART_ENABLED", "true")
 	t.Setenv("SUPERVISOR_SERVICE_FAILURE_THRESHOLD", "4")
 	t.Setenv("SUPERVISOR_CONTAINER_RESTART_ENABLED", "true")
+	t.Setenv("SUPERVISOR_CONTAINER_FALLBACK_AUTO_SUBMIT", "true")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR", " NoOp ")
 
 	cfg := Load()
 	if len(cfg.SupervisorTargets) != 2 {
@@ -135,6 +423,76 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	}
 	if !cfg.SupervisorContainerRestart {
 		t.Fatal("expected supervisor container restart opt-in to be enabled")
+	}
+	if !cfg.SupervisorFallbackAutoSubmit {
+		t.Fatal("expected supervisor container fallback auto submit to be enabled")
+	}
+	if cfg.SupervisorContainerExecutor != "noop" {
+		t.Fatalf("expected supervisor container executor noop, got %q", cfg.SupervisorContainerExecutor)
+	}
+	if cfg.SupervisorContainerExecutorArmed || cfg.SupervisorContainerExecutorCommands != "" {
+		t.Fatalf("expected noop executor to leave real executor gates empty, armed=%t commands=%q", cfg.SupervisorContainerExecutorArmed, cfg.SupervisorContainerExecutorCommands)
+	}
+}
+
+func TestLoadReadsCommandSupervisorExecutorEnv(t *testing.T) {
+	commandsJSON := `{"api":{"path":"/bin/echo","args":["restart","api"],"timeoutSeconds":5}}`
+	t.Setenv("SUPERVISOR_TARGETS", "api=http://127.0.0.1:8080")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR", " command ")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR_ARMED", "true")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON", " "+commandsJSON+" ")
+
+	cfg := Load()
+	if cfg.SupervisorContainerExecutor != "command" {
+		t.Fatalf("expected command executor, got %q", cfg.SupervisorContainerExecutor)
+	}
+	if !cfg.SupervisorContainerExecutorArmed {
+		t.Fatal("expected command executor armed gate")
+	}
+	if cfg.SupervisorContainerExecutorCommands != commandsJSON {
+		t.Fatalf("expected trimmed command allowlist JSON, got %q", cfg.SupervisorContainerExecutorCommands)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected loaded command executor config to validate, got %v", err)
+	}
+}
+
+func TestLoadDashboardBrokerPollDefaults(t *testing.T) {
+	cfg := Load()
+
+	if cfg.DashboardLiveSessionsPollMs != 2000 {
+		t.Fatalf("expected live sessions poll default 2000, got %d", cfg.DashboardLiveSessionsPollMs)
+	}
+	if cfg.DashboardPositionsPollMs != 10000 {
+		t.Fatalf("expected positions poll default 10000, got %d", cfg.DashboardPositionsPollMs)
+	}
+	if cfg.DashboardOrdersPollMs != 10000 {
+		t.Fatalf("expected orders poll default 10000, got %d", cfg.DashboardOrdersPollMs)
+	}
+	if cfg.DashboardFillsPollMs != 10000 {
+		t.Fatalf("expected fills poll default 10000, got %d", cfg.DashboardFillsPollMs)
+	}
+	if cfg.DashboardAlertsPollMs != 2000 {
+		t.Fatalf("expected alerts poll default 2000, got %d", cfg.DashboardAlertsPollMs)
+	}
+	if cfg.DashboardNotificationsPollMs != 30000 {
+		t.Fatalf("expected notifications poll default 30000, got %d", cfg.DashboardNotificationsPollMs)
+	}
+	if cfg.DashboardMonitorHealthPollMs != 2000 {
+		t.Fatalf("expected monitor health poll default 2000, got %d", cfg.DashboardMonitorHealthPollMs)
+	}
+}
+
+func TestLoadDashboardBrokerPollEnvOverrides(t *testing.T) {
+	t.Setenv("DASHBOARD_POSITIONS_POLL_MS", "15000")
+	t.Setenv("DASHBOARD_NOTIFICATIONS_POLL_MS", "900")
+
+	cfg := Load()
+	if cfg.DashboardPositionsPollMs != 15000 {
+		t.Fatalf("expected positions poll override 15000, got %d", cfg.DashboardPositionsPollMs)
+	}
+	if cfg.DashboardNotificationsPollMs != 30000 {
+		t.Fatalf("expected notifications poll fallback 30000, got %d", cfg.DashboardNotificationsPollMs)
 	}
 }
 

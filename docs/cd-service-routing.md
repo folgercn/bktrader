@@ -11,6 +11,8 @@
 
 四个服务共用同一个 Docker image，因此后端代码变化都会先构建并推送镜像；是否重启某个服务由 `DEPLOY_SERVICES` 决定。
 
+生产部署必须使用本次 commit 对应的不可变镜像 tag（`sha-<github.sha>`），不能用 mutable `latest` 作为 Compose 部署输入。`latest` 仍可发布给人工排查或手动拉取，但 selective deploy 下如果只重启 `platform-api`，用 `latest` 会让未重启的 worker 继续运行旧 digest，同时 Compose 配置看起来仍是同一个 `latest` tag，容易掩盖 API / runner 版本漂移。使用 commit SHA tag 后，当前运行容器的镜像版本可以从 tag / label 直接追溯到具体 commit。
+
 ## 路由原则
 
 1. 共享基础设施变化才全量重启。

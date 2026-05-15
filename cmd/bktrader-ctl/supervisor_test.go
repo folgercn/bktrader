@@ -12,9 +12,11 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 			"applicationRestartEnabled":true,
 			"serviceFailureThreshold":3,
 			"containerRestartEnabled":true,
+			"containerFallbackAutoSubmit":false,
 			"containerExecutorConfigured":false,
 			"containerExecutorKind":"none",
-			"containerExecutorDryRun":true
+				"containerExecutorDryRun":true,
+				"containerExecutorArmed":false
 		},
 		"targets":[{
 			"name":"api",
@@ -24,9 +26,11 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 			"serviceState":{
 				"consecutiveFailures":3,
 				"failureThreshold":3,
+				"serviceFailureEpisodeStartedAt":"2026-04-29T07:58:00Z",
 				"lastFailureReason":"healthz-unhealthy: http 503",
 				"containerFallbackCandidate":true,
 				"containerFallbackReason":"service probes failed 3/3",
+				"containerFallbackCandidateSince":"2026-04-29T08:00:00Z",
 				"containerFallbackAttemptCount":2,
 				"containerFallbackSuppressed":false,
 				"lastContainerFallbackDecisionAt":"2026-04-29T08:00:00Z",
@@ -39,6 +43,8 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 				"executorConfigured":false,
 				"executorKind":"none",
 				"executorDryRun":true,
+				"executorArmed":false,
+				"targetAllowed":true,
 				"executable":false,
 				"decision":"blocked",
 				"suppressed":false,
@@ -75,11 +81,11 @@ func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 	}
 	expected := []string{
 		"Runtime supervisor snapshot",
-		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true",
+		"policy: applicationRestartEnabled=true serviceFailureThreshold=3 containerRestartEnabled=true containerFallbackAutoSubmit=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true containerExecutorArmed=false",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=0 fallbackDryRun=0 runtimes=1 attention=1 controlActions=1",
-		"serviceState: failures=3/3 fallback=candidate attempts=2 suppressed=false backoffUntil=--",
+		"serviceState: failures=3/3 episodeStartedAt=2026-04-29T07:58:00Z fallback=candidate candidateSince=2026-04-29T08:00:00Z attempts=2 suppressed=false backoffUntil=-- submitted=false",
 		"lastFallbackDecision=container-executor-not-configured at=2026-04-29T08:00:00Z",
-		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executorKind=none executorDryRun=true executable=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
+		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=false executorKind=none executorDryRun=true executorArmed=false targetAllowed=true executable=false autoSubmitEnabled=false autoSubmitEligible=false manualSubmitRequired=false duplicate=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=container-executor-not-configured eligibleReason=--",
 		"runtimes: total=1 attention=1 restartPlans=1 restartEligible=0 restartBlockedReasons=runtime-restart-healthz-unhealthy:1 service=platform-api",
 		"lastFailure=healthz-unhealthy: http 503",
 	}
@@ -97,9 +103,11 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 			"applicationRestartEnabled":false,
 			"serviceFailureThreshold":1,
 			"containerRestartEnabled":true,
+			"containerFallbackAutoSubmit":true,
 			"containerExecutorConfigured":true,
-			"containerExecutorKind":"noop",
-			"containerExecutorDryRun":true
+				"containerExecutorKind":"noop",
+				"containerExecutorDryRun":true,
+				"containerExecutorArmed":true
 		},
 		"targets":[{
 			"name":"api",
@@ -119,7 +127,12 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 				"executorConfigured":true,
 				"executorKind":"noop",
 				"executorDryRun":true,
+				"executorArmed":true,
+				"targetAllowed":true,
 				"executable":true,
+				"autoSubmitEnabled":true,
+				"autoSubmitEligible":true,
+				"manualSubmitRequired":false,
 				"decision":"eligible",
 				"suppressed":false,
 				"backoffActive":false,
@@ -134,9 +147,275 @@ func TestBuildSupervisorStatusSummaryCountsDryRunExecutableFallback(t *testing.T
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"policy: applicationRestartEnabled=false serviceFailureThreshold=1 containerRestartEnabled=true containerExecutorConfigured=true containerExecutorKind=noop containerExecutorDryRun=true",
+		"policy: applicationRestartEnabled=false serviceFailureThreshold=1 containerRestartEnabled=true containerFallbackAutoSubmit=true containerExecutorConfigured=true containerExecutorKind=noop containerExecutorDryRun=true containerExecutorArmed=true",
 		"targets: total=1 fullyReachable=0 fallbackCandidates=1 fallbackExecutable=1 fallbackDryRun=1 runtimes=0 attention=0 controlActions=0",
-		"fallbackPlan: action=container-restart decision=eligible enabled=true executorConfigured=true executorKind=noop executorDryRun=true executable=true suppressed=false backoffActive=false safetyGateOk=true blockedReason=-- eligibleReason=container-fallback-eligible",
+		"fallbackPlan: action=container-restart decision=eligible enabled=true executorConfigured=true executorKind=noop executorDryRun=true executorArmed=true targetAllowed=true executable=true autoSubmitEnabled=true autoSubmitEligible=true manualSubmitRequired=false duplicate=false suppressed=false backoffActive=false safetyGateOk=true blockedReason=-- eligibleReason=container-fallback-eligible",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
+func TestBuildSupervisorStatusSummaryShowsCommandExecutorPreview(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[{
+			"name":"api",
+			"baseUrl":"http://127.0.0.1:8080",
+			"healthz":{"path":"/healthz","reachable":false,"error":"connection refused"},
+			"runtimeStatus":{"path":"/api/v1/runtime/status","reachable":false,"error":"connection refused"},
+			"serviceState":{
+				"consecutiveFailures":1,
+				"failureThreshold":1,
+				"containerFallbackCandidate":true,
+				"containerFallbackAttemptCount":1
+			},
+			"containerFallbackPlan":{
+				"action":"container-restart",
+				"candidate":true,
+				"enabled":true,
+				"executorConfigured":true,
+				"executorKind":"command",
+				"executorDryRun":false,
+				"executorArmed":true,
+				"targetAllowed":true,
+				"executorPreview":{
+					"kind":"command",
+					"commandPath":"/usr/bin/docker",
+					"commandArgs":["compose","restart","platform-api"],
+					"timeoutSeconds":30
+				},
+				"executable":true,
+				"decision":"eligible",
+				"suppressed":false,
+				"backoffActive":false,
+				"safetyGateOk":true,
+				"eligibleReason":"container-fallback-eligible"
+			}
+		}],
+		"containerFallbackActions":[{
+			"action":"container-restart",
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"executorKind":"command",
+			"executorDryRun":false,
+			"executorPreview":{
+				"kind":"command",
+				"commandPath":"/usr/bin/docker",
+				"commandArgs":["compose","restart","platform-api"],
+				"timeoutSeconds":30
+			},
+			"submitted":true,
+			"executed":true,
+			"exitCode":0,
+			"requestedAt":"2026-04-29T08:00:00Z",
+			"message":"ok"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"fallbackExecutorPreview: kind=command commandPath=/usr/bin/docker commandArgs=[\"compose\",\"restart\",\"platform-api\"] timeoutSeconds=30",
+		"executorPreview={kind=command commandPath=/usr/bin/docker commandArgs=[\"compose\",\"restart\",\"platform-api\"] timeoutSeconds=30}",
+		"exitCode=0",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
+func TestBuildSupervisorStatusSummaryShowsFallbackControlAudit(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[],
+		"containerFallbackControls":[{
+			"action":"defer-container-fallback",
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"suppressed":false,
+			"backoffUntil":"2026-04-29T08:05:00Z",
+			"backoffSeconds":300,
+			"reason":"operator cooling down restart loop",
+			"source":"ctl",
+			"updatedAt":"2026-04-29T08:00:00Z"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 serviceFailureEpisodes=0 fallbackControls=1 fallbackActions=0",
+		"fallbackControls: total=1",
+		"defer-container-fallback target=api suppressed=false backoffUntil=2026-04-29T08:05:00Z backoffSeconds=300 source=ctl updatedAt=2026-04-29T08:00:00Z reason=operator cooling down restart loop",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
+func TestBuildSupervisorStatusSummaryShowsServiceFailureEpisodes(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:10:00Z",
+		"targets":[],
+		"serviceFailureEpisodes":[{
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"startedAt":"2026-04-29T08:00:00Z",
+			"recoveredAt":"2026-04-29T08:10:00Z",
+			"durationSeconds":600,
+			"maxConsecutiveFailures":4,
+			"lastFailureReason":"healthz-unhealthy: http 503",
+			"lastFailureAt":"2026-04-29T08:09:00Z",
+			"containerFallbackCandidate":true,
+			"containerFallbackCandidateSince":"2026-04-29T08:02:00Z",
+			"containerFallbackAttemptCount":2,
+			"containerFallbackSubmitted":true,
+			"containerFallbackSubmittedAt":"2026-04-29T08:03:00Z",
+			"containerFallbackSubmittedError":"noop executor failed",
+			"containerFallbackBackoffUntil":"2026-04-29T08:08:00Z",
+			"lastContainerFallbackDecisionAt":"2026-04-29T08:03:00Z",
+			"lastContainerFallbackDecisionReason":"container-fallback-backoff-active"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 serviceFailureEpisodes=1 fallbackControls=0 fallbackActions=0",
+		"serviceFailureEpisodes: total=1",
+		"target=api startedAt=2026-04-29T08:00:00Z recoveredAt=2026-04-29T08:10:00Z durationSeconds=600 maxFailures=4 candidate=true candidateSince=2026-04-29T08:02:00Z attempts=2 submitted=true submittedAt=2026-04-29T08:03:00Z lastDecision=container-fallback-backoff-active lastFailure=healthz-unhealthy: http 503 submittedError=noop executor failed backoffUntil=2026-04-29T08:08:00Z",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
+func TestBuildSupervisorStatusSummaryShowsFallbackSubmittedAndErrorBackoff(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[{
+			"name":"api",
+			"baseUrl":"http://127.0.0.1:8080",
+			"healthz":{"path":"/healthz","statusCode":503,"reachable":true,"error":"http 503"},
+			"runtimeStatus":{"path":"/api/v1/runtime/status","statusCode":200,"reachable":true},
+			"serviceState":{
+				"consecutiveFailures":1,
+				"failureThreshold":1,
+				"serviceFailureEpisodeStartedAt":"2026-04-29T08:00:00Z",
+				"containerFallbackCandidate":true,
+				"containerFallbackCandidateSince":"2026-04-29T08:00:00Z",
+				"containerFallbackAttemptCount":1,
+				"containerFallbackBackoffUntil":"2026-04-29T08:05:00Z",
+				"containerFallbackBackoffSetAt":"2026-04-29T08:00:00Z",
+				"containerFallbackBackoffReason":"container fallback executor error: noop executor failed",
+				"containerFallbackBackoffSource":"supervisor",
+				"containerFallbackSubmitted":true,
+				"containerFallbackSubmittedAt":"2026-04-29T08:00:00Z",
+				"containerFallbackSubmittedReason":"service probes failed 1/1",
+				"containerFallbackSubmittedError":"noop executor failed",
+				"lastContainerFallbackDecisionAt":"2026-04-29T08:00:00Z",
+				"lastContainerFallbackDecisionReason":"container-fallback-backoff-active"
+			},
+			"containerFallbackPlan":{
+				"action":"container-restart",
+				"candidate":true,
+				"enabled":true,
+				"executorConfigured":true,
+				"executorKind":"noop",
+				"executorDryRun":true,
+				"executorArmed":true,
+				"targetAllowed":true,
+				"executable":false,
+				"autoSubmitEnabled":true,
+				"autoSubmitEligible":false,
+				"manualSubmitRequired":false,
+				"decision":"blocked",
+				"duplicate":true,
+				"suppressed":false,
+				"backoffActive":true,
+				"safetyGateOk":true,
+				"blockedReason":"container-fallback-backoff-active"
+			}
+		}],
+		"containerFallbackActions":[{
+			"action":"container-restart",
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"reason":"service probes failed 1/1",
+			"serviceFailureEpisodeStartedAt":"2026-04-29T08:00:00Z",
+			"containerFallbackCandidateSince":"2026-04-29T08:00:00Z",
+			"executorKind":"noop",
+			"executorDryRun":true,
+			"submitted":true,
+			"executed":false,
+			"error":"noop executor failed",
+			"backoffUntil":"2026-04-29T08:05:00Z",
+			"backoffSeconds":300,
+			"requestedAt":"2026-04-29T08:00:00Z"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"serviceState: failures=1/1 episodeStartedAt=2026-04-29T08:00:00Z fallback=candidate candidateSince=2026-04-29T08:00:00Z attempts=1 suppressed=false backoffUntil=2026-04-29T08:05:00Z submitted=true",
+		"fallbackBackoff reason=container fallback executor error: noop executor failed source=supervisor setAt=2026-04-29T08:00:00Z until=2026-04-29T08:05:00Z",
+		"fallbackSubmitted at=2026-04-29T08:00:00Z reason=service probes failed 1/1 message=-- error=noop executor failed",
+		"fallbackPlan: action=container-restart decision=blocked enabled=true executorConfigured=true executorKind=noop executorDryRun=true executorArmed=true targetAllowed=true executable=false autoSubmitEnabled=true autoSubmitEligible=false manualSubmitRequired=false duplicate=true suppressed=false backoffActive=true safetyGateOk=true blockedReason=container-fallback-backoff-active eligibleReason=--",
+		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z episodeStartedAt=2026-04-29T08:00:00Z candidateSince=2026-04-29T08:00:00Z reason=service probes failed 1/1 error=noop executor failed backoffUntil=2026-04-29T08:05:00Z backoffSeconds=300",
+	}
+	for _, want := range expected {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("expected summary to contain %q, got:\n%s", want, summary)
+		}
+	}
+}
+
+func TestBuildSupervisorStatusSummaryShowsFallbackActionAudit(t *testing.T) {
+	payload := []byte(`{
+		"checkedAt":"2026-04-29T08:00:00Z",
+		"targets":[],
+		"containerFallbackActions":[{
+			"action":"container-restart",
+			"targetName":"api",
+			"targetBaseUrl":"http://127.0.0.1:8080",
+			"reason":"operator reviewed static command preview",
+			"planReason":"service probes failed 1/1",
+			"source":"ctl",
+			"executorKind":"noop",
+			"executorDryRun":true,
+			"submitted":true,
+			"executed":false,
+			"message":"noop container fallback executor",
+			"requestedAt":"2026-04-29T08:00:00Z"
+		}]
+	}`)
+
+	summary, err := buildSupervisorStatusSummary(payload)
+	if err != nil {
+		t.Fatalf("build supervisor summary failed: %v", err)
+	}
+	expected := []string{
+		"targets: total=0 fullyReachable=0 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0 serviceFailureEpisodes=0 fallbackControls=0 fallbackActions=1",
+		"fallbackActions: total=1",
+		"container-restart target=api executorKind=noop executorDryRun=true submitted=true executed=false requestedAt=2026-04-29T08:00:00Z episodeStartedAt=-- candidateSince=-- reason=operator reviewed static command preview message=noop container fallback executor source=ctl planReason=service probes failed 1/1",
 	}
 	for _, want := range expected {
 		if !strings.Contains(summary, want) {
@@ -152,9 +431,11 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 			"applicationRestartEnabled":false,
 			"serviceFailureThreshold":3,
 			"containerRestartEnabled":false,
+			"containerFallbackAutoSubmit":false,
 			"containerExecutorConfigured":false,
-			"containerExecutorKind":"none",
-			"containerExecutorDryRun":true
+				"containerExecutorKind":"none",
+				"containerExecutorDryRun":true,
+				"containerExecutorArmed":false
 		},
 		"targets":[{
 			"name":"api",
@@ -171,9 +452,9 @@ func TestBuildSupervisorStatusSummaryHandlesClearTarget(t *testing.T) {
 		t.Fatalf("build supervisor summary failed: %v", err)
 	}
 	expected := []string{
-		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true",
+		"policy: applicationRestartEnabled=false serviceFailureThreshold=3 containerRestartEnabled=false containerFallbackAutoSubmit=false containerExecutorConfigured=false containerExecutorKind=none containerExecutorDryRun=true containerExecutorArmed=false",
 		"targets: total=1 fullyReachable=1 fallbackCandidates=0 fallbackExecutable=0 fallbackDryRun=0 runtimes=0 attention=0 controlActions=0",
-		"serviceState: failures=0/3 fallback=clear attempts=0 suppressed=false backoffUntil=--",
+		"serviceState: failures=0/3 episodeStartedAt=-- fallback=clear candidateSince=-- attempts=0 suppressed=false backoffUntil=-- submitted=false",
 		"runtimes: total=0 attention=0 service=platform-api",
 	}
 	for _, want := range expected {
