@@ -260,7 +260,7 @@ func (p *Platform) ingestLiveSignalBarSummary(summary map[string]any, eventTime 
 		return nil
 	}
 	timeframe := normalizeSignalBarInterval(stringValue(summary["timeframe"]))
-	if timeframe != "5m" && timeframe != "15m" && timeframe != "30m" && timeframe != "1d" && timeframe != "4h" {
+	if timeframe != "5m" && timeframe != "15m" && timeframe != "30m" && timeframe != "1h" && timeframe != "1d" && timeframe != "4h" {
 		return nil
 	}
 	symbol := NormalizeSymbol(stringValue(summary["symbol"]))
@@ -335,6 +335,8 @@ func liveSignalResolution(timeframe string) string {
 		return "15"
 	case "30m":
 		return "30"
+	case "1h":
+		return "60"
 	case "1d":
 		return "1D"
 	case "4h":
