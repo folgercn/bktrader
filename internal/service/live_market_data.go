@@ -140,6 +140,10 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 	if err != nil {
 		return err
 	}
+	signal1H, err := p.syncStoredSignalBars(normalizedSymbol, "1h", fastSignalStart, end)
+	if err != nil {
+		return err
+	}
 	signal1D, err := p.syncStoredSignalBars(normalizedSymbol, "1d", signalStart, end)
 	if err != nil {
 		return err
@@ -156,6 +160,7 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 			"5m":  signal5M,
 			"15m": signal15M,
 			"30m": signal30M,
+			"1h":  signal1H,
 			"1d":  signal1D,
 			"4h":  signal4H,
 		},
@@ -167,6 +172,7 @@ func (p *Platform) refreshLiveMarketSnapshot(symbol string) error {
 		"signal_5m_bar_count", len(signal5M),
 		"signal_15m_bar_count", len(signal15M),
 		"signal_30m_bar_count", len(signal30M),
+		"signal_1h_bar_count", len(signal1H),
 		"signal_1d_bar_count", len(signal1D),
 		"signal_4h_bar_count", len(signal4H),
 	)
