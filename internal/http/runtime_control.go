@@ -166,6 +166,25 @@ func registerRuntimeLifecycleControlRoute(mux *http.ServeMux, platform *service.
 				return
 			}
 			writeRuntimeLifecycleAccepted(w, action, item.ID, "live-session", item.State, request.Force, reason, item)
+		case "paper-session":
+			var item domain.PaperSession
+			var err error
+			if action == "start" {
+				item, err = platform.StartPaperSessionWithOptions(runtimeID, service.PaperSessionControlOptions{
+					Reason: reason,
+					Source: "api",
+				})
+			} else {
+				item, err = platform.StopPaperSessionWithOptions(runtimeID, service.PaperSessionControlOptions{
+					Reason: reason,
+					Source: "api",
+				})
+			}
+			if err != nil {
+				writeRuntimeControlError(w, err)
+				return
+			}
+			writeRuntimeLifecycleAccepted(w, action, item.ID, "paper-session", item.State, request.Force, reason, item)
 		case "":
 			writeError(w, http.StatusBadRequest, "runtimeKind is required")
 			return

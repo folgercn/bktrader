@@ -49,6 +49,35 @@ func TestRuntimeStatusFromLiveSessionOmitsUpdatedAtWhenStateHasNoFreshnessTime(t
 	}
 }
 
+func TestRuntimeStatusFromPaperSessionUsesControlAuditTimestamp(t *testing.T) {
+	createdAt := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC)
+	startRequestedAt := createdAt.Add(2 * time.Minute)
+	session := domain.PaperSession{
+		ID:         "paper-session-1",
+		AccountID:  "paper-main",
+		StrategyID: "strategy-1",
+		Status:     "RUNNING",
+		CreatedAt:  createdAt,
+		State: map[string]any{
+			"desiredStatus":        "RUNNING",
+			"actualStatus":         "RUNNING",
+			"startRequestedAt":     startRequestedAt.Format(time.RFC3339),
+			"startRequestedReason": "maintenance finished",
+		},
+	}
+
+	status := runtimeStatusFromPaperSession("platform-api", createdAt.Add(time.Hour), session)
+	if status.RuntimeKind != "paper-session" {
+		t.Fatalf("expected paper-session runtime kind, got %s", status.RuntimeKind)
+	}
+	if status.AccountID != "paper-main" || status.StrategyID != "strategy-1" {
+		t.Fatalf("expected paper account/strategy ids, got %s/%s", status.AccountID, status.StrategyID)
+	}
+	if status.UpdatedAt == nil || !status.UpdatedAt.Equal(startRequestedAt) {
+		t.Fatalf("expected updatedAt from startRequestedAt, got %#v", status.UpdatedAt)
+	}
+}
+
 func TestRuntimeStatusFromStateExposesAutoRestartAuditFields(t *testing.T) {
 	checkedAt := time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC)
 	suppressedAt := checkedAt.Add(-10 * time.Minute).Format(time.RFC3339)

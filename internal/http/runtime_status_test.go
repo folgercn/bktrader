@@ -68,6 +68,24 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 	if _, err := store.UpdateLiveSessionState(liveSession.ID, liveState); err != nil {
 		t.Fatalf("update live session state failed: %v", err)
 	}
+	paperAccount, err := store.CreateAccount("paper", "PAPER", "BINANCE")
+	if err != nil {
+		t.Fatalf("create paper account failed: %v", err)
+	}
+	paperSession, err := store.CreatePaperSession(paperAccount.ID, "strategy-bk-1d", 1000)
+	if err != nil {
+		t.Fatalf("create paper session failed: %v", err)
+	}
+	paperState := map[string]any{}
+	for key, value := range paperSession.State {
+		paperState[key] = value
+	}
+	paperState["desiredStatus"] = "STOPPED"
+	paperState["actualStatus"] = "STOPPED"
+	paperState["stopRequestedReason"] = "maintenance window"
+	if _, err := store.UpdatePaperSessionState(paperSession.ID, paperState); err != nil {
+		t.Fatalf("update paper session state failed: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	registerRuntimeStatusRoutes(mux, platform, config.Config{ProcessRole: "platform-api"})
@@ -121,7 +139,7 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 	if payload.Service != "platform-api" {
 		t.Fatalf("expected service platform-api, got %s", payload.Service)
 	}
-	var signalRuntime, liveRuntime *struct {
+	var signalRuntime, liveRuntime, paperRuntime *struct {
 		RuntimeID                   string `json:"runtimeId"`
 		RuntimeKind                 string `json:"runtimeKind"`
 		AccountID                   string `json:"accountId"`
@@ -164,6 +182,10 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 		case "live-session":
 			if payload.Runtimes[i].RuntimeID == liveSession.ID {
 				liveRuntime = &payload.Runtimes[i]
+			}
+		case "paper-session":
+			if payload.Runtimes[i].RuntimeID == paperSession.ID {
+				paperRuntime = &payload.Runtimes[i]
 			}
 		}
 	}
@@ -232,6 +254,15 @@ func TestRuntimeStatusRouteReturnsUnifiedRuntimeSnapshot(t *testing.T) {
 	}
 	if liveRuntime.DesiredStatus != "RUNNING" || liveRuntime.ActualStatus != "RUNNING" || liveRuntime.Health != "healthy" {
 		t.Fatalf("expected live desired/actual/health RUNNING/RUNNING/healthy, got %s/%s/%s", liveRuntime.DesiredStatus, liveRuntime.ActualStatus, liveRuntime.Health)
+	}
+	if paperRuntime == nil {
+		t.Fatalf("expected paper session runtime status in %#v", payload.Runtimes)
+	}
+	if paperRuntime.DesiredStatus != "STOPPED" || paperRuntime.ActualStatus != "STOPPED" || paperRuntime.Health != "stopped" {
+		t.Fatalf("expected paper desired/actual/health STOPPED/STOPPED/stopped, got %s/%s/%s", paperRuntime.DesiredStatus, paperRuntime.ActualStatus, paperRuntime.Health)
+	}
+	if paperRuntime.AccountID != paperAccount.ID || paperRuntime.StrategyID != "strategy-bk-1d" {
+		t.Fatalf("expected paper account/strategy ids, got %s/%s", paperRuntime.AccountID, paperRuntime.StrategyID)
 	}
 }
 
