@@ -19,5 +19,7 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY --from=backend-builder /out/platform-api /usr/local/bin/platform-api
 COPY --from=backend-builder /out/platform-worker /usr/local/bin/platform-worker
 COPY configs/app.example.env ./configs/app.example.env
+COPY data/pretouch_model.json ./data/pretouch_model.json
+RUN test -s data/pretouch_model.json
 EXPOSE 8080
 CMD ["platform-api"]
