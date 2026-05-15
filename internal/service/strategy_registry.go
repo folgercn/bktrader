@@ -129,6 +129,7 @@ func (p *Platform) registerBuiltInStrategyEngines() {
 	p.registerStrategyEngine(bkStrategyEngine{platform: p})
 	p.registerStrategyEngine(bkLiveIntrabarSMA5T2Only0p5BpsEngine{platform: p})
 	p.registerStrategyEngine(bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngine{platform: p})
+	p.registerStrategyEngine(newBkLiveEthPretouchTimingEngine(p))
 }
 
 func (p *Platform) resolveStrategyEngine(strategyVersionID string, parameters map[string]any) (StrategyEngine, string, error) {
