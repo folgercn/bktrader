@@ -565,6 +565,10 @@ func (p *Platform) buildLiveExecutionPlanFromMarketData(
 	switch normalized := normalizeStrategyEngineKey(engineKey); normalized {
 	case "bk-default", bkLiveIntrabarSMA5T2Only0p5BpsEngineKey, bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey:
 		result, err = runStrategyReplayOnMinuteBars(cfg, signals, minuteBars)
+	case bkLiveEthPretouchTimingEngineKey:
+		// Pretouch timing engine is a live-only engine and computes state dynamically in EvaluateSignal.
+		// It does not use or support offline batch replay for plan generation.
+		return nil, nil
 	default:
 		result, err = engine.Run(context)
 	}
