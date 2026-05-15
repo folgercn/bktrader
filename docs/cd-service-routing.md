@@ -17,7 +17,7 @@
 
 1. 共享基础设施变化才全量重启。
 2. API 查询、摘要、dashboard 相关变化只重启 `platform-api`。
-3. live 执行相关变化重启 `platform-api` 和 `live-runner`。
+3. live 执行和策略评价相关变化重启 `platform-api`、`live-runner` 和 `signal-runtime-runner`，因为 signal runtime 进程也可能直接触发 live session 评价。
 4. signal runtime 相关变化重启 `platform-api` 和 `signal-runtime-runner`。
 5. Telegram/通知相关变化只额外重启 `notification-worker`。
 6. 未明确归类但属于后端的文件仍走全量 fallback，避免漏部署。
@@ -26,12 +26,12 @@
 
 | 文件范围 | 部署服务 |
 | --- | --- |
-| `Dockerfile`, `.dockerignore`, `deployments/docker-compose.prod.yml`, `scripts/deploy.sh` | 全部后端服务 |
+| `Dockerfile`, `.dockerignore`, `.github/workflows/cd.yml`, `deployments/docker-compose.prod.yml`, `scripts/deploy.sh` | 全部后端服务 |
 | `internal/app/**`, `internal/config/**`, `internal/store/**`, `internal/domain/**`, `db/**` | 全部后端服务 |
 | `cmd/platform-api/**`, `internal/http/**` | `platform-api` |
 | `cmd/platform-worker/**` | `live-runner`, `signal-runtime-runner`, `notification-worker` |
 | `internal/service/state_util*`, `logs.go`, `dashboard_broker*`, `chart*`, `paper*`, `pnl*`, `strategy_replay*` | `platform-api` |
-| `internal/service/live*`, `order*`, `execution_strategy.go`, `precision_tolerance.go`, `strategy_registry.go`, `live_account_flow.go`, `live_launch*`, `live_trade*`, `telemetry*` | `platform-api`, `live-runner` |
+| `internal/service/live*`, `order*`, `execution_strategy.go`, `precision_tolerance.go`, `strategy_registry.go`, `live_account_flow.go`, `live_launch*`, `live_trade*`, `telemetry*` | `platform-api`, `live-runner`, `signal-runtime-runner` |
 | `internal/service/live_market_data.go`, `signal_runtime*`, `runtime_lease*` | `platform-api`, `signal-runtime-runner` |
 | `internal/service/runtime_event_consumer*` | `live-runner`, `signal-runtime-runner` |
 | `internal/service/runtime_event_bus*` | `live-runner`, `signal-runtime-runner` |
@@ -47,10 +47,10 @@
 platform-api
 ```
 
-`internal/service/live.go` 同时影响 HTTP live 控制入口和 live runner 后台恢复/同步，因此部署：
+`internal/service/live.go` 同时影响 HTTP live 控制入口、live runner 后台恢复/同步，以及 signal runtime 触发 live session 评价的路径，因此部署：
 
 ```text
-platform-api live-runner
+platform-api live-runner signal-runtime-runner
 ```
 
 `internal/service/telegram.go` 影响通知查询和 Telegram dispatcher，因此部署：
