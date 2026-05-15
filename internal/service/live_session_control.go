@@ -117,12 +117,26 @@ type LiveControlScannerStatus struct {
 	ErrorCount       int64  `json:"errorCount"`
 }
 
+type LiveSessionControlOptions struct {
+	Force  bool
+	Reason string
+	Source string
+}
+
 func (p *Platform) RequestLiveSessionStart(sessionID string) (domain.LiveSession, error) {
-	return p.requestLiveSessionDesiredStatus(sessionID, "RUNNING", false)
+	return p.RequestLiveSessionStartWithOptions(sessionID, LiveSessionControlOptions{})
+}
+
+func (p *Platform) RequestLiveSessionStartWithOptions(sessionID string, options LiveSessionControlOptions) (domain.LiveSession, error) {
+	return p.requestLiveSessionDesiredStatus(sessionID, "RUNNING", options)
 }
 
 func (p *Platform) RequestLiveSessionStopWithForce(sessionID string, force bool) (domain.LiveSession, error) {
-	return p.requestLiveSessionDesiredStatus(sessionID, "STOPPED", force)
+	return p.RequestLiveSessionStopWithOptions(sessionID, LiveSessionControlOptions{Force: force})
+}
+
+func (p *Platform) RequestLiveSessionStopWithOptions(sessionID string, options LiveSessionControlOptions) (domain.LiveSession, error) {
+	return p.requestLiveSessionDesiredStatus(sessionID, "STOPPED", options)
 }
 
 func (p *Platform) ResetLiveSessionControlState(sessionID, reason string, confirm bool) (LiveSessionControlResetResult, error) {
@@ -198,7 +212,7 @@ func (p *Platform) ResetLiveSessionControlState(sessionID, reason string, confir
 	return LiveSessionControlResetResult{}, fmt.Errorf("live session control request changed concurrently: %s", sessionID)
 }
 
-func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, force bool) (domain.LiveSession, error) {
+func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, options LiveSessionControlOptions) (domain.LiveSession, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	for attempt := 0; attempt < 3; attempt++ {
 		session, err := p.store.GetLiveSession(sessionID)
@@ -218,12 +232,36 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, fo
 		state["controlVersion"] = version
 		state["lastControlAction"] = strings.ToLower(desired)
 		state["controlRequestedAt"] = now.Format(time.RFC3339)
+		reason := strings.TrimSpace(options.Reason)
+		source := strings.TrimSpace(options.Source)
 		if desired == "STOPPED" {
 			state["lastControlAction"] = "stop"
-			state["desiredStopForce"] = force
+			state["desiredStopForce"] = options.Force
+			delete(state, "startRequestedAt")
+			delete(state, "startRequestedReason")
+			delete(state, "startRequestedSource")
+			state["stopRequestedAt"] = now.Format(time.RFC3339)
+			state["stopRequestedForce"] = options.Force
+			if reason != "" {
+				state["stopRequestedReason"] = reason
+			}
+			if source != "" {
+				state["stopRequestedSource"] = source
+			}
 		} else {
 			state["lastControlAction"] = "start"
 			delete(state, "desiredStopForce")
+			delete(state, "stopRequestedAt")
+			delete(state, "stopRequestedReason")
+			delete(state, "stopRequestedSource")
+			delete(state, "stopRequestedForce")
+			state["startRequestedAt"] = now.Format(time.RFC3339)
+			if reason != "" {
+				state["startRequestedReason"] = reason
+			}
+			if source != "" {
+				state["startRequestedSource"] = source
+			}
 		}
 		delete(state, "activeControlRequestId")
 		delete(state, "activeControlVersion")

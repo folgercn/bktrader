@@ -125,18 +125,17 @@ func registerRuntimeLifecycleControlRoute(mux *http.ServeMux, platform *service.
 			writeError(w, http.StatusBadRequest, "reason is required for runtime "+action)
 			return
 		}
-		var item domain.SignalRuntimeSession
 		switch strings.ToLower(strings.TrimSpace(request.RuntimeKind)) {
 		case "signal", "signal-runtime":
-			var updated domain.SignalRuntimeSession
+			var item domain.SignalRuntimeSession
 			var err error
 			if action == "start" {
-				updated, err = platform.StartSignalRuntimeSessionWithOptions(runtimeID, service.SignalRuntimeStartOptions{
+				item, err = platform.StartSignalRuntimeSessionWithOptions(runtimeID, service.SignalRuntimeStartOptions{
 					Reason: reason,
 					Source: "api",
 				})
 			} else {
-				updated, err = platform.StopSignalRuntimeSessionWithOptions(runtimeID, service.SignalRuntimeStopOptions{
+				item, err = platform.StopSignalRuntimeSessionWithOptions(runtimeID, service.SignalRuntimeStopOptions{
 					Force:  request.Force,
 					Reason: reason,
 					Source: "api",
@@ -146,7 +145,27 @@ func registerRuntimeLifecycleControlRoute(mux *http.ServeMux, platform *service.
 				writeRuntimeControlError(w, err)
 				return
 			}
-			item = updated
+			writeRuntimeLifecycleAccepted(w, action, item.ID, "signal", item.State, request.Force, reason, item)
+		case "live-session":
+			var item domain.LiveSession
+			var err error
+			if action == "start" {
+				item, err = platform.RequestLiveSessionStartWithOptions(runtimeID, service.LiveSessionControlOptions{
+					Reason: reason,
+					Source: "api",
+				})
+			} else {
+				item, err = platform.RequestLiveSessionStopWithOptions(runtimeID, service.LiveSessionControlOptions{
+					Force:  request.Force,
+					Reason: reason,
+					Source: "api",
+				})
+			}
+			if err != nil {
+				writeRuntimeControlError(w, err)
+				return
+			}
+			writeRuntimeLifecycleAccepted(w, action, item.ID, "live-session", item.State, request.Force, reason, item)
 		case "":
 			writeError(w, http.StatusBadRequest, "runtimeKind is required")
 			return
@@ -154,17 +173,23 @@ func registerRuntimeLifecycleControlRoute(mux *http.ServeMux, platform *service.
 			writeError(w, http.StatusBadRequest, "unsupported runtimeKind: "+request.RuntimeKind)
 			return
 		}
-		writeJSON(w, http.StatusAccepted, map[string]any{
-			"status":        "accepted",
-			"message":       "runtime " + action + " intent accepted",
-			"runtimeId":     item.ID,
-			"runtimeKind":   "signal",
-			"desiredStatus": item.State["desiredStatus"],
-			"actualStatus":  item.State["actualStatus"],
-			"force":         request.Force,
-			"reason":        reason,
-			"runtime":       item,
-		})
+	})
+}
+
+func writeRuntimeLifecycleAccepted(w http.ResponseWriter, action, runtimeID, runtimeKind string, state map[string]any, force bool, reason string, runtime any) {
+	if state == nil {
+		state = map[string]any{}
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":        "accepted",
+		"message":       "runtime " + action + " intent accepted",
+		"runtimeId":     runtimeID,
+		"runtimeKind":   runtimeKind,
+		"desiredStatus": state["desiredStatus"],
+		"actualStatus":  state["actualStatus"],
+		"force":         force,
+		"reason":        reason,
+		"runtime":       runtime,
 	})
 }
 

@@ -256,7 +256,7 @@ POST /runtime/resume-auto-restart
 - `start` / `restart` 只能写入期望状态或触发应用内恢复，不得绕过业务安全校验。
 - `stop` 必须写入 `desiredStatus=STOPPED`，使 scanner 和 supervisor 不再自动拉起。
 - `resume-auto-restart` 只能解除 suppressed，不代表立即允许交易。
-- 当前统一控制 API 已落最小 signal 切片：`POST /api/v1/runtime/start`、`POST /api/v1/runtime/stop`、`POST /api/v1/runtime/restart`、`POST /api/v1/runtime/suppress-auto-restart`、`POST /api/v1/runtime/resume-auto-restart` 均只支持 `runtimeKind=signal` / `signal-runtime`。请求必须显式传入 `confirm=true`；`start` / `stop` / `suppress-auto-restart` / `resume-auto-restart` 始终要求非空 `reason` 并写入 runtime state 审计字段，`restart` 在 `force=true` 时必须传入非空 `reason`。该接口复用现有 signal runtime 安全边界，不做 live session restart，不做 live session 自动 dispatch，也不做 Docker/container restart。
+- 当前统一控制 API 已落最小切片：`POST /api/v1/runtime/start`、`POST /api/v1/runtime/stop` 支持 `runtimeKind=signal` / `signal-runtime` 以及 `runtimeKind=live-session`；`POST /api/v1/runtime/restart`、`POST /api/v1/runtime/suppress-auto-restart`、`POST /api/v1/runtime/resume-auto-restart` 仍只支持 `runtimeKind=signal` / `signal-runtime`。请求必须显式传入 `confirm=true`；`start` / `stop` / `suppress-auto-restart` / `resume-auto-restart` 始终要求非空 `reason` 并写入 runtime state 审计字段，`restart` 在 `force=true` 时必须传入非空 `reason`。`live-session` start/stop 只复用既有 live control intent，不做 live session restart，不做 live session 自动 dispatch，也不做 Docker/container restart。
 
 ## 6. 推进阶段
 
@@ -346,7 +346,7 @@ func ClearRestartState(state map[string]any, keys []string)
 - `bktrader-ctl supervisor suppress-container-fallback <targetName> --confirm --reason "<原因>"` / `resume-container-fallback` 以及 Dashboard Supervisor target 行上的 gate 操作提供人工抑制/恢复入口；该入口只按已配置的 target name 切换 supervisor 内存态 gate 和审计字段，不接受 URL、container name、compose service 或 shell command，不调用 Docker API。
 - `bktrader-ctl supervisor defer-container-fallback <targetName> --seconds <N> --confirm --reason "<原因>"` / `clear-container-fallback-backoff` 以及 Dashboard Supervisor target 行上的 retry-gate 操作提供人工 backoff 设置/清理入口；该入口只影响 `containerFallbackBackoffUntil`、submitted/dedupe gate 和审计字段，不执行容器操作；`--seconds` / Dashboard backoff seconds 必须在 `1..86400` 之间，避免长期静默阻断容器兜底候选。
 - `bktrader-ctl supervisor submit-container-fallback <targetName> --confirm --reason "<原因>"` 以及 Dashboard Supervisor target 行上的 submit 操作提供显式人工提交入口；该入口只会复用当前 target 的 `containerFallbackPlan` 和启动配置中的固定 executor/allowlist，要求计划已经 `executable=true`，并把人工 reason/source 与只读 plan reason 一起写入 `containerFallbackActions` 审计。它不接受 URL、container name、compose service、shell command 或 command args 作为请求输入；若当前 plan 被 disabled、missing executor、未 armed、allowlist miss、suppressed、backoff、duplicate 或 safety gate 阻断，API 返回 409，不会调用 executor。
-- `bktrader-ctl runtime start|stop|restart|suppress-auto-restart|resume-auto-restart` 是统一 runtime 控制入口，当前只支持 signal runtime；所有 mutating 命令都要求 `--confirm`，除普通 `restart` 外还要求 `--reason`，并支持 `--dry-run` 预览请求。
+- `bktrader-ctl runtime start|stop` 是统一 runtime 控制入口，支持 signal runtime 和 live-session runtime；`restart|suppress-auto-restart|resume-auto-restart` 当前仍只支持 signal runtime。所有 mutating 命令都要求 `--confirm`，除普通 `restart` 外还要求 `--reason`，并支持 `--dry-run` 预览请求。
 - `SUPERVISOR_APPLICATION_RESTART_ENABLED=false` 为默认值；只有显式设为 `true` 时，supervisor 才会对满足全部条件的 signal runtime 提交应用内 `POST /api/v1/runtime/restart`：
   - 目标服务 `/healthz` 可达且成功。
   - `/api/v1/runtime/status` 可读。
