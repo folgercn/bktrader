@@ -40,12 +40,18 @@ func TestFilterSignalRuntimeSourceStatesBySubscriptionsDropsOutOfPlanEntries(t *
 			"symbol":     "ETHUSDT",
 			"streamType": "trade_tick",
 		},
+		"binance-order-book|feature|ETHUSDT": map[string]any{
+			"sourceKey":  "binance-order-book",
+			"role":       "feature",
+			"symbol":     "ETHUSDT",
+			"streamType": "order_book",
+		},
 		"|trigger|BTCUSDT": map[string]any{
 			"symbol": "BTCUSDT",
 		},
 	}
 
-	filtered := filterSignalRuntimeSourceStatesBySubscriptions(sourceStates, subscriptions)
+	filtered, _ := filterSignalRuntimeSourceStatesBySubscriptions(sourceStates, subscriptions)
 	if _, ok := filtered["|trigger|BTCUSDT"]; ok {
 		t.Fatalf("expected out-of-plan BTC source state to be pruned, got %#v", filtered)
 	}
@@ -54,5 +60,8 @@ func TestFilterSignalRuntimeSourceStatesBySubscriptionsDropsOutOfPlanEntries(t *
 	}
 	if _, ok := filtered["binance-trade-tick|trigger|ETHUSDT"]; !ok {
 		t.Fatalf("expected ETH trade tick source state to remain, got %#v", filtered)
+	}
+	if _, ok := filtered["binance-order-book|feature|ETHUSDT"]; !ok {
+		t.Fatalf("expected ETH order book source state to remain, got %#v", filtered)
 	}
 }

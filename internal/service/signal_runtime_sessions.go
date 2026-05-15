@@ -392,7 +392,10 @@ func (p *Platform) startSignalRuntimeSession(parent context.Context, sessionID s
 	state["plan"] = plan
 	state["subscriptions"] = subscriptions
 	sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
-	sourceStates = reconcileSignalRuntimeSourceStates(sourceStates, p.bootstrapSignalRuntimeSourceStates(subscriptions), subscriptions)
+	sourceStates, droppedKeys, addedKeys := reconcileSignalRuntimeSourceStates(sourceStates, p.bootstrapSignalRuntimeSourceStates(subscriptions), subscriptions)
+	if len(droppedKeys) > 0 || len(addedKeys) > 0 {
+		logger.Debug("reconciled signal runtime source states", "dropped", droppedKeys, "added", addedKeys)
+	}
 	state["sourceStates"] = sourceStates
 	state["signalBarStates"] = deriveSignalBarStates(sourceStates)
 	state["desiredStatus"] = "RUNNING"

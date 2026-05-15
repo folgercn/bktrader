@@ -99,8 +99,11 @@ set signal_timeframe = excluded.signal_timeframe,
     execution_timeframe = excluded.execution_timeframe,
     parameters = excluded.parameters;
 
+-- Restore BTC 30m bindings for strategy-bk-btc-30m-enhanced.
+-- Note: This hardcodes the expected bindings. If they were modified previously by another process, this will overwrite those changes.
 update strategy_versions
-set parameters = jsonb_set(
+set signal_timeframe = '30m',
+    parameters = jsonb_set(
     parameters || '{
         "strategyEngine": "bk-live-intrabar-sma5-t2-only-0p5bps",
         "symbol": "BTCUSDT",

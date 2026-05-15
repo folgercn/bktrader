@@ -654,7 +654,7 @@ func (p *Platform) runExchangeWebsocketLoop(
 				state["lastEventSummary"] = summary
 				state["signalEventCount"] = maxIntValue(state["signalEventCount"], 0) + 1
 				sourceStates := mergeSignalSourceState(state["sourceStates"], summary, now)
-				sourceStates = filterSignalRuntimeSourceStatesBySubscriptions(sourceStates, metadataList(state["subscriptions"]))
+				sourceStates, _ = filterSignalRuntimeSourceStatesBySubscriptions(sourceStates, metadataList(state["subscriptions"]))
 				state["sourceStates"] = sourceStates
 				state["signalBarStates"] = deriveSignalBarStates(sourceStates)
 				updateRuntimeHealthSummary(state, summary, now)
@@ -1120,11 +1120,12 @@ func mergeSignalSourceState(existing any, summary map[string]any, eventTime time
 	return stateMap
 }
 
-func reconcileSignalRuntimeSourceStates(existing, bootstrap map[string]any, subscriptions []map[string]any) map[string]any {
-	out := filterSignalRuntimeSourceStatesBySubscriptions(existing, subscriptions)
+func reconcileSignalRuntimeSourceStates(existing, bootstrap map[string]any, subscriptions []map[string]any) (map[string]any, []string, []string) {
+	out, dropped := filterSignalRuntimeSourceStatesBySubscriptions(existing, subscriptions)
 	if out == nil {
 		out = map[string]any{}
 	}
+	added := make([]string, 0)
 	for key, value := range bootstrap {
 		if _, ok := out[key]; ok {
 			continue
@@ -1133,13 +1134,14 @@ func reconcileSignalRuntimeSourceStates(existing, bootstrap map[string]any, subs
 		if out[key] == nil {
 			out[key] = value
 		}
+		added = append(added, key)
 	}
-	return out
+	return out, dropped, added
 }
 
-func filterSignalRuntimeSourceStatesBySubscriptions(sourceStates map[string]any, subscriptions []map[string]any) map[string]any {
+func filterSignalRuntimeSourceStatesBySubscriptions(sourceStates map[string]any, subscriptions []map[string]any) (map[string]any, []string) {
 	if len(sourceStates) == 0 || len(subscriptions) == 0 {
-		return cloneMetadata(sourceStates)
+		return cloneMetadata(sourceStates), nil
 	}
 	allowed := make(map[string]struct{}, len(subscriptions))
 	for _, subscription := range subscriptions {
@@ -1155,11 +1157,13 @@ func filterSignalRuntimeSourceStatesBySubscriptions(sourceStates map[string]any,
 		allowed[key] = struct{}{}
 	}
 	if len(allowed) == 0 {
-		return cloneMetadata(sourceStates)
+		return cloneMetadata(sourceStates), nil
 	}
 	out := make(map[string]any, len(sourceStates))
+	dropped := make([]string, 0)
 	for key, value := range sourceStates {
 		if _, ok := allowed[key]; !ok {
+			dropped = append(dropped, key)
 			continue
 		}
 		out[key] = cloneMetadata(mapValue(value))
@@ -1167,7 +1171,7 @@ func filterSignalRuntimeSourceStatesBySubscriptions(sourceStates map[string]any,
 			out[key] = value
 		}
 	}
-	return out
+	return out, dropped
 }
 
 func mergeSignalBarHistory(existing any, summary map[string]any, eventTime time.Time, limit int) []any {
