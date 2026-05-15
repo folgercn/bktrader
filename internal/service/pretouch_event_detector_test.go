@@ -55,6 +55,33 @@ func TestPretouchEventDetectorDetectsLongAndUsesBookCost(t *testing.T) {
 	}
 }
 
+func TestPretouchEventDetectorSyncBarsSortsClosedHistory(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	bars := pretouchDetectorClosedBars(start)
+	unsorted := []HourlyBar{bars[2], bars[0], bars[5], bars[1], bars[4], bars[3]}
+
+	detector := NewPretouchEventDetector("ETHUSDT", DefaultPretouchDetectorConfig())
+	detector.SyncBars(unsorted, &HourlyBar{
+		OpenTime: start,
+		Open:     100,
+		High:     100,
+		Low:      100,
+		Close:    100,
+	})
+
+	first := detector.OnTick(TickData{Time: start.Add(10 * time.Second), Price: 101})
+	if first.Detected {
+		t.Fatalf("first non-touch tick should not detect: %#v", first)
+	}
+	result := detector.OnTick(TickData{Time: start.Add(60 * time.Second), Price: 105.10})
+	if !result.Detected {
+		t.Fatalf("expected sorted closed history to detect long pretouch, got reason=%s", result.Reason)
+	}
+	if result.Event.Level != 105 {
+		t.Fatalf("expected level from chronological prev_high_2, got %v", result.Event.Level)
+	}
+}
+
 func TestPretouchEventDetectorRejectsInsufficientHistory(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	detector := NewPretouchEventDetector("ETHUSDT", DefaultPretouchDetectorConfig())

@@ -225,7 +225,8 @@ type PretouchModelBundle struct {
 	TrainedAt    string        `json:"trained_at"`
 	TimingLOOCV  float64       `json:"timing_loocv,omitempty"` // legacy name; value is LOOCV accuracy
 	RFAccuracy   float64       `json:"rf_accuracy,omitempty"`
-	RFAUC        float64       `json:"rf_auc,omitempty"` // legacy compatibility for existing model JSON
+	// Deprecated: retained only to read legacy model JSON that used rf_auc for accuracy.
+	RFAUC float64 `json:"rf_auc,omitempty"`
 }
 
 // SaveModelBundle writes the model bundle to a JSON file.

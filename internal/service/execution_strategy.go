@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -498,6 +499,12 @@ func resolveExecutionQuantity(session domain.LiveSession, account domain.Account
 			return intent.Quantity, metadata
 		}
 		metadata["sizingFallbackReason"] = "intent_quantity_missing_intent_quantity"
+		metadata["sizingWarning"] = "intent_quantity_missing_intent_quantity"
+		slog.Default().Warn("intent_quantity sizing missing intent quantity; falling back to configured quantity",
+			"symbol", intent.Symbol,
+			"side", intent.Side,
+			"role", intent.Role,
+		)
 	}
 	quantity := firstPositive(fixedQuantity, firstPositive(intent.Quantity, 0.001))
 	metadata["sizingComputedQuantity"] = quantity

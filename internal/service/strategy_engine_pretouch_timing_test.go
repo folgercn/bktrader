@@ -100,6 +100,51 @@ func TestResolveExecutionQuantityIntentQuantityMode(t *testing.T) {
 	}
 }
 
+func TestResolveExecutionQuantityIntentQuantityModeFallsBackWithWarning(t *testing.T) {
+	quantity, metadata := resolveExecutionQuantity(
+		domain.LiveSession{
+			State: map[string]any{
+				"positionSizingMode":   "intent_quantity",
+				"defaultOrderQuantity": 0.5,
+			},
+		},
+		domain.Account{},
+		nil,
+		SignalIntent{Role: "entry", Symbol: "ETHUSDT", Side: "BUY"},
+		105.1,
+	)
+	if math.Abs(quantity-0.5) > 1e-9 {
+		t.Fatalf("expected fixed quantity fallback, got %v", quantity)
+	}
+	if got := stringValue(metadata["sizingFallbackReason"]); got != "intent_quantity_missing_intent_quantity" {
+		t.Fatalf("expected missing intent quantity fallback, got %s", got)
+	}
+	if got := stringValue(metadata["sizingWarning"]); got != "intent_quantity_missing_intent_quantity" {
+		t.Fatalf("expected sizing warning metadata, got %s", got)
+	}
+}
+
+func TestPretouchBarsFromEvaluationContextSynthesizesCurrentBar(t *testing.T) {
+	currentStart := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	ctx := testPretouchSignalContext(currentStart.Add(10*time.Minute), 105.1)
+	bars := testPretouchSignalBars(currentStart)
+	ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"] = bars[:len(bars)-1]
+
+	closed, current := pretouchBarsFromEvaluationContext(ctx, 105.1)
+	if len(closed) != len(pretouchDetectorClosedBars(currentStart)) {
+		t.Fatalf("expected closed bars from source state, got %d", len(closed))
+	}
+	if current == nil {
+		t.Fatalf("expected synthetic current bar")
+	}
+	if !current.OpenTime.Equal(currentStart) {
+		t.Fatalf("expected synthetic current open %s, got %s", currentStart, current.OpenTime)
+	}
+	if current.Open != 105.1 || current.High != 105.1 || current.Low != 105.1 || current.Close != 105.1 {
+		t.Fatalf("expected synthetic OHLC from trigger price, got %#v", current)
+	}
+}
+
 func testPretouchTimingEngine(timingRegime string, rfProba float64) *bkLiveEthPretouchTimingEngine {
 	config := DefaultPretouchDetectorConfig()
 	return &bkLiveEthPretouchTimingEngine{

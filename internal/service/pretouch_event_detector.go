@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -108,6 +109,9 @@ func (d *PretouchEventDetector) SyncBars(closed []HourlyBar, current *HourlyBar)
 			filtered = append(filtered, bar)
 		}
 	}
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].OpenTime.Before(filtered[j].OpenTime)
+	})
 	if len(filtered) > 24 {
 		filtered = filtered[len(filtered)-24:]
 	}
@@ -183,7 +187,7 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 
 	// Update 300s rolling window
 	cutoff := tick.Time.Add(-300 * time.Second)
-	newWindow := d.tickWindow[:0]
+	newWindow := make([]TickData, 0, len(d.tickWindow)+1)
 	for _, t := range d.tickWindow {
 		if t.Time.After(cutoff) {
 			newWindow = append(newWindow, t)
@@ -342,6 +346,8 @@ func pretouchLongStructureReady(prevHigh2, prevHigh1, toleranceBps float64) bool
 	if prevHigh2 <= 0 || prevHigh1 <= 0 {
 		return false
 	}
+	// A zero tolerance keeps the original_t2 structure strictly above/below
+	// the previous bar; positive tolerance requires additional separation.
 	return prevHigh2 > prevHigh1*(1+toleranceBps/10000.0)
 }
 
