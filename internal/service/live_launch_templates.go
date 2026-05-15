@@ -68,6 +68,16 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		t3EnhancedStrategyVersionID = versionID
 		hasT3EnhancedTemplate = true
 	}
+	pretouchStrategyID := ""
+	pretouchStrategyName := ""
+	pretouchStrategyVersionID := ""
+	hasPretouchTemplate := false
+	if id, name, versionID, _, err := p.resolveLiveTemplateStrategy(bkLiveEthPretouchTimingStrategyID); err == nil {
+		pretouchStrategyID = id
+		pretouchStrategyName = name
+		pretouchStrategyVersionID = versionID
+		hasPretouchTemplate = true
+	}
 
 	baseBinding := map[string]any{
 		"adapterKey":    "binance-futures",
@@ -248,13 +258,15 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		return item
 	}
 
-	pretouchTemplate := buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID)
-	templates := []LiveLaunchTemplate{
-		pretouchTemplate,
+	templates := []LiveLaunchTemplate{}
+	if hasPretouchTemplate {
+		templates = append(templates, buildEthPretouchTimingTemplate(pretouchStrategyID, pretouchStrategyName, pretouchStrategyVersionID))
+	}
+	templates = append(templates,
 		buildTemplate("BTCUSDT", "5m", 0.002, false),
 		buildTemplate("BTCUSDT", "15m", 0.002, true),
 		buildTemplate("BTCUSDT", "30m", 0.002, true),
-	}
+	)
 	if hasEnhancedTemplate {
 		templates = append(templates, buildLegacyEnhancedTemplate())
 	}

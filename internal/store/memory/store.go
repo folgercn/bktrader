@@ -219,6 +219,91 @@ func NewStore() *Store {
 	store.strategies[t3EnhancedStrategy.ID] = t3EnhancedStrategy
 	store.strategyVersion[t3EnhancedVersion.ID] = t3EnhancedVersion
 
+	pretouchStrategy := domain.Strategy{
+		ID:          "strategy-bk-eth-pretouch-timing",
+		Name:        "BK Live ETH Pretouch Timing",
+		Status:      "ACTIVE",
+		Description: "ETHUSDT 1h live pretouch timing strategy with Go-native timing classifier and RF probability sizing.",
+		CreatedAt:   now,
+	}
+	pretouchBindings := []map[string]any{
+		{
+			"sourceKey":  "binance-kline",
+			"sourceName": "Binance Futures Kline",
+			"exchange":   "BINANCE",
+			"role":       "signal",
+			"streamType": "signal_bar",
+			"symbol":     "ETHUSDT",
+			"status":     "ACTIVE",
+			"options":    map[string]any{"timeframe": "1h"},
+			"timeframe":  "1h",
+		},
+		{
+			"sourceKey":  "binance-trade-tick",
+			"sourceName": "Binance Futures Trade Tick",
+			"exchange":   "BINANCE",
+			"role":       "trigger",
+			"streamType": "trade_tick",
+			"symbol":     "ETHUSDT",
+			"status":     "ACTIVE",
+			"options":    map[string]any{},
+			"timeframe":  "",
+		},
+		{
+			"sourceKey":  "binance-order-book",
+			"sourceName": "Binance Futures Order Book",
+			"exchange":   "BINANCE",
+			"role":       "feature",
+			"streamType": "order_book",
+			"symbol":     "ETHUSDT",
+			"status":     "ACTIVE",
+			"options":    map[string]any{},
+			"timeframe":  "",
+		},
+	}
+	pretouchVersion := domain.StrategyVersion{
+		ID:                 "strategy-version-bk-eth-pretouch-timing-v010",
+		StrategyID:         pretouchStrategy.ID,
+		Version:            "v0.1.0",
+		SignalTimeframe:    "1h",
+		ExecutionTimeframe: "tick",
+		Parameters: map[string]any{
+			"strategyEngine":                       "bk-live-eth-pretouch-timing",
+			"symbol":                               "ETHUSDT",
+			"signalTimeframe":                      "1h",
+			"executionDataSource":                  "tick",
+			"positionSizingMode":                   "intent_quantity",
+			"defaultOrderQuantity":                 0.100,
+			"pretouchBaseOrderQuantity":            0.100,
+			"pretouchBaseShare":                    0.80,
+			"pretouchCostQ50Threshold":             0.116865,
+			"pretouchCostQ50Penalty":               0.50,
+			"pretouchSpeedThreshold":               0.228106,
+			"pretouchMaxPreTouchSec":               1800.0,
+			"pretouchMaxEff300s":                   1.0,
+			"stop_loss_atr":                        0.45,
+			"breakeven_at_r":                       0.8,
+			"trail_start_r":                        1.5,
+			"trail_buffer_atr":                     0.05,
+			"max_hold_hours":                       2.0,
+			"executionStrategy":                    "book-aware-v1",
+			"executionEntryOrderType":              "MARKET",
+			"executionEntryMaxSpreadBps":           8,
+			"executionEntryMaxSlippageBps":         8,
+			"executionEntryMaxBookAgeMs":           500,
+			"executionEntryMinTopBookCoverage":     0.5,
+			"executionEntryMaxSourceDivergenceBps": 8,
+			"executionSLExitOrderType":             "MARKET",
+			"executionSLExitMaxSpreadBps":          8,
+			"executionSLMaxSlippageBps":            8,
+			"dispatchCooldownSeconds":              30,
+			"signalBindings":                       pretouchBindings,
+		},
+		CreatedAt: now,
+	}
+	store.strategies[pretouchStrategy.ID] = pretouchStrategy
+	store.strategyVersion[pretouchVersion.ID] = pretouchVersion
+
 	live := domain.Account{
 		ID:       "live-main",
 		Name:     "Live Main",
