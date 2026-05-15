@@ -25,6 +25,7 @@ type LiveLaunchTemplate struct {
 	DispatchModeOptions    []string                 `json:"dispatchModeOptions"`
 	TriggerSourceKey       string                   `json:"triggerSourceKey"`
 	FeatureSourceKey       string                   `json:"featureSourceKey"`
+	DefaultTemplate        bool                     `json:"defaultTemplate,omitempty"`
 	StrategyID             string                   `json:"strategyId"`
 	StrategyName           string                   `json:"strategyName"`
 	StrategyVersionID      string                   `json:"strategyVersionId,omitempty"`
@@ -247,7 +248,9 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		return item
 	}
 
+	pretouchTemplate := buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID)
 	templates := []LiveLaunchTemplate{
+		pretouchTemplate,
 		buildTemplate("BTCUSDT", "5m", 0.002, false),
 		buildTemplate("BTCUSDT", "15m", 0.002, true),
 		buildTemplate("BTCUSDT", "30m", 0.002, true),
@@ -265,11 +268,151 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		buildTemplate("ETHUSDT", "4h", 0.100, false),
 		buildTemplate("ETHUSDT", "1d", 0.100, false),
 	)
+
 	return templates, nil
 }
 
 func liveLaunchTemplateDispatchModeOptions() []string {
 	return []string{"manual-review", liveLaunchTemplateAutoDispatchMode()}
+}
+
+func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID string) LiveLaunchTemplate {
+	signalBindings := []map[string]any{
+		{
+			"sourceKey": "binance-kline",
+			"role":      "signal",
+			"symbol":    "ETHUSDT",
+			"options": map[string]any{
+				"timeframe": "1h",
+			},
+		},
+		{
+			"sourceKey": "binance-trade-tick",
+			"role":      "trigger",
+			"symbol":    "ETHUSDT",
+		},
+		{
+			"sourceKey": "binance-order-book",
+			"role":      "feature",
+			"symbol":    "ETHUSDT",
+		},
+	}
+
+	liveOverrides := map[string]any{
+		"symbol":              "ETHUSDT",
+		"signalTimeframe":     "1h",
+		"strategyEngine":      bkLiveEthPretouchTimingEngineKey,
+		"executionStrategy":   "book-aware-v1",
+		"executionDataSource": "tick",
+		// Exit params (research-validated, trail_start=1.5)
+		"stop_loss_atr":    0.45,
+		"breakeven_at_r":   0.8,
+		"trail_start_r":    1.5,
+		"trail_buffer_atr": 0.05,
+		"max_hold_hours":   2.0,
+		// Sizing
+		"positionSizingMode":        "intent_quantity",
+		"defaultOrderQuantity":      0.100,
+		"pretouchBaseOrderQuantity": 0.100,
+		"pretouchBaseShare":         0.80,
+		"pretouchCostQ50Threshold":  0.116865,
+		"pretouchCostQ50Penalty":    0.50,
+		// Speed gate
+		"pretouchSpeedThreshold": 0.228106,
+		// Quality filters
+		"pretouchMaxPreTouchSec": 1800.0,
+		"pretouchMaxEff300s":     1.0,
+		// Execution
+		"executionEntryOrderType":              "MARKET",
+		"executionEntryMaxSpreadBps":           8,
+		"executionEntryMaxSlippageBps":         8,
+		"executionEntryMaxBookAgeMs":           500,
+		"executionEntryMinTopBookCoverage":     0.5,
+		"executionEntryMaxSourceDivergenceBps": 8,
+		"executionSLExitOrderType":             "MARKET",
+		"executionSLExitMaxSpreadBps":          8,
+		"executionSLMaxSlippageBps":            8,
+		"dispatchCooldownSeconds":              30,
+	}
+
+	return LiveLaunchTemplate{
+		Key:                 "binance-testnet-eth-pretouch-timing",
+		Name:                "Binance Testnet ETHUSDT Pretouch Timing",
+		Description:         "ETHUSDT 1h pretouch timing 策略：timing classification × RF probability × cost_q50_cut050。Research 10bps kill stress: 23.29%, 0 neg SM。",
+		Symbol:              "ETHUSDT",
+		SignalTimeframe:     "1h",
+		DefaultDispatchMode: liveLaunchTemplateAutoDispatchMode(),
+		DispatchModeOptions: liveLaunchTemplateDispatchModeOptions(),
+		TriggerSourceKey:    "binance-trade-tick",
+		FeatureSourceKey:    "binance-order-book",
+		DefaultTemplate:     true,
+		StrategyID:          strategyID,
+		StrategyName:        strategyName,
+		StrategyVersionID:   strategyVersionID,
+		AccountRequirements: map[string]any{
+			"mode":     "LIVE",
+			"exchange": "binance-futures",
+			"sandbox":  true,
+		},
+		AccountBinding: map[string]any{
+			"adapterKey":    "binance-futures",
+			"positionMode":  "ONE_WAY",
+			"marginMode":    "CROSSED",
+			"sandbox":       true,
+			"executionMode": "rest",
+			"credentialRefs": map[string]any{
+				"apiKeyRef":    "BINANCE_TESTNET_API_KEY",
+				"apiSecretRef": "BINANCE_TESTNET_API_SECRET",
+			},
+		},
+		StrategySignalBindings: signalBindings,
+		LaunchPayload: LiveLaunchOptions{
+			StrategyID: strategyID,
+			Binding: map[string]any{
+				"adapterKey":    "binance-futures",
+				"positionMode":  "ONE_WAY",
+				"marginMode":    "CROSSED",
+				"sandbox":       true,
+				"executionMode": "rest",
+				"credentialRefs": map[string]any{
+					"apiKeyRef":    "BINANCE_TESTNET_API_KEY",
+					"apiSecretRef": "BINANCE_TESTNET_API_SECRET",
+				},
+			},
+			StrategySignalBindings: signalBindings,
+			LiveSessionOverrides:   liveOverrides,
+			LaunchTemplateKey:      "binance-testnet-eth-pretouch-timing",
+			LaunchTemplateName:     "Binance Testnet ETHUSDT Pretouch Timing",
+			MirrorStrategySignals:  true,
+			StartRuntime:           true,
+			StartSession:           true,
+		},
+		Steps: []LiveLaunchTemplateStep{
+			{
+				Key:          "bind-account",
+				Method:       "POST",
+				PathTemplate: "/api/v1/live/accounts/:accountId/binding",
+				PayloadRef:   "accountBinding",
+				Description:  "确保账户被绑定为 Binance Futures testnet REST 账户。",
+			},
+			{
+				Key:          "launch-live-flow",
+				Method:       "POST",
+				PathTemplate: "/api/v1/live/accounts/:accountId/launch",
+				PayloadRef:   "launchPayload",
+				Description:  "创建 ETH pretouch timing live session。",
+			},
+		},
+		Notes: []string{
+			"ETH Pretouch Timing 策略：Go 原生 DT3 timing classifier × RF probability accuracy × cost_q50_cut050。",
+			"Research 验证：10bps kill stress 下 23.29% calendar sum，0 个负月，worst SM +1.40%。",
+			"模型默认从 data/pretouch_model.json 加载；部署可用 BK_PRETOUCH_MODEL_PATH 覆盖模型路径。",
+			"模型不可用或校验失败时策略自动 skip 所有事件（不入场），不会退化为 fixed sizing。",
+			"positionSizingMode=intent_quantity，实际 entry 数量来自 pretouchBaseOrderQuantity × RF/cost sizing 后的 suggestedQuantity。",
+			"该模板暂列默认推荐项；dispatchMode 由前端提交时显式注入，默认选择 auto-dispatch，可在前端切回 manual-review。",
+			"重训需显式运行 pretouch-train --events-csv <path> --out <path> 并审查新模型指标。",
+		},
+	}
 }
 
 func liveLaunchTemplateAutoDispatchMode() string {

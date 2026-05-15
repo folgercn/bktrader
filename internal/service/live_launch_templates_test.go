@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -36,17 +37,19 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
-	if len(templates) != 10 {
-		t.Fatalf("expected 10 launch templates, got %d", len(templates))
+	if len(templates) != 11 {
+		t.Fatalf("expected 11 launch templates, got %d", len(templates))
 	}
 
 	expected := map[string]struct {
-		symbol           string
-		timeframe        string
-		quantity         float64
-		researchBaseline bool
-		enhanced         bool
-		baselinePlusT3   bool
+		symbol              string
+		timeframe           string
+		quantity            float64
+		researchBaseline    bool
+		enhanced            bool
+		baselinePlusT3      bool
+		defaultTemplate     bool
+		defaultDispatchMode string
 	}{
 		"binance-testnet-btc-5m":                            {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
 		"binance-testnet-btc-15m":                           {symbol: "BTCUSDT", timeframe: "15m", quantity: 0.002, researchBaseline: true},
@@ -58,12 +61,16 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		"binance-testnet-eth-5m":                            {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
 		"binance-testnet-eth-4h":                            {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
 		"binance-testnet-eth-1d":                            {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
+		"binance-testnet-eth-pretouch-timing":               {symbol: "ETHUSDT", timeframe: "1h", quantity: 0.1, defaultTemplate: true, defaultDispatchMode: "auto-dispatch"},
 	}
 
-	for _, item := range templates {
+	for idx, item := range templates {
 		want, ok := expected[item.Key]
 		if !ok {
 			t.Fatalf("unexpected template key %s", item.Key)
+		}
+		if want.defaultTemplate && idx != 0 {
+			t.Fatalf("expected default template %s to be first, got index %d", item.Key, idx)
 		}
 		expectedStrategyID := "strategy-bk-1d"
 		if want.enhanced {
@@ -81,8 +88,12 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		if item.SignalTimeframe != want.timeframe {
 			t.Fatalf("expected timeframe %s for %s, got %s", want.timeframe, item.Key, item.SignalTimeframe)
 		}
-		if item.DefaultDispatchMode != "manual-review" {
-			t.Fatalf("expected default dispatchMode manual-review, got %s", item.DefaultDispatchMode)
+		expectedDispatchMode := firstNonEmpty(want.defaultDispatchMode, "manual-review")
+		if item.DefaultDispatchMode != expectedDispatchMode {
+			t.Fatalf("expected default dispatchMode %s for %s, got %s", expectedDispatchMode, item.Key, item.DefaultDispatchMode)
+		}
+		if item.DefaultTemplate != want.defaultTemplate {
+			t.Fatalf("expected defaultTemplate=%v for %s, got %v", want.defaultTemplate, item.Key, item.DefaultTemplate)
 		}
 		if len(item.DispatchModeOptions) != 2 || item.DispatchModeOptions[0] != "manual-review" || item.DispatchModeOptions[1] != "auto-dispatch" {
 			t.Fatalf("expected dispatch mode options [manual-review auto-dispatch], got %#v", item.DispatchModeOptions)
@@ -146,6 +157,22 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		}
 		if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["defaultOrderQuantity"]); got != want.quantity {
 			t.Fatalf("expected defaultOrderQuantity=%v, got %v", want.quantity, got)
+		}
+		if item.Key == "binance-testnet-eth-pretouch-timing" {
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "intent_quantity" {
+				t.Fatalf("expected pretouch template positionSizingMode=intent_quantity, got %s", got)
+			}
+			if item.DefaultDispatchMode != "auto-dispatch" {
+				t.Fatalf("expected pretouch template default dispatchMode auto-dispatch, got %s", item.DefaultDispatchMode)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchBaseOrderQuantity"]); got != want.quantity {
+				t.Fatalf("expected pretouchBaseOrderQuantity=%v, got %v", want.quantity, got)
+			}
+			for _, note := range item.Notes {
+				if strings.Contains(strings.ToLower(note), "sidecar") || strings.Contains(note, "localhost:9101") {
+					t.Fatalf("pretouch template should not mention sidecar dependency: %q", note)
+				}
+			}
 		}
 		if want.researchBaseline || want.enhanced {
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "reentry_size_schedule" {
@@ -251,8 +278,8 @@ func TestLiveLaunchTemplatesSkipEnhancedWhenStrategyMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list live launch templates failed: %v", err)
 	}
-	if len(templates) != 8 {
-		t.Fatalf("expected original 8 launch templates when enhanced strategies are missing, got %d", len(templates))
+	if len(templates) != 9 {
+		t.Fatalf("expected original 9 launch templates when enhanced strategies are missing, got %d", len(templates))
 	}
 	for _, item := range templates {
 		if item.Key == "binance-testnet-btc-30m-enhanced" {
@@ -358,6 +385,10 @@ func TestLiveLaunchTemplatesStrategyParameterConsistency(t *testing.T) {
 			if fmt.Sprintf("%v", val) != fmt.Sprintf("%v", strategyVal) {
 				// 对于基础 BTC 模板，允许 stop_loss_atr 的研究基线覆盖 (0.3 vs 0.05)
 				if (tmpl.Key == "binance-testnet-btc-15m" || tmpl.Key == "binance-testnet-btc-30m") && key == "stop_loss_atr" {
+					continue
+				}
+				// pretouch timing 模板使用独立策略引擎和参数，不与默认策略对齐
+				if tmpl.Key == "binance-testnet-eth-pretouch-timing" {
 					continue
 				}
 				t.Errorf("template %s parameter mismatch: key=%s template=%v strategy=%v", tmpl.Key, key, val, strategyVal)

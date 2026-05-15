@@ -144,6 +144,68 @@ func TestBindStrategySignalSourceCanonicalizesFifteenAndThirtyMinuteKlineBinding
 	}
 }
 
+func TestBindStrategySignalSourceCanonicalizesHourlyKlineBinding(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	if _, err := platform.BindStrategySignalSource("strategy-bk-1d", map[string]any{
+		"sourceKey": "binance-kline",
+		"role":      "signal",
+		"symbol":    "ETHUSDT",
+		"options":   map[string]any{"timeframe": "1hour"},
+	}); err != nil {
+		t.Fatalf("bind hourly kline failed: %v", err)
+	}
+
+	bindings, err := platform.ListStrategySignalBindings("strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("list strategy bindings failed: %v", err)
+	}
+	if len(bindings) != 1 {
+		t.Fatalf("expected one 1h kline binding, got %#v", bindings)
+	}
+	if got := stringValue(bindings[0].Options["timeframe"]); got != "1h" {
+		t.Fatalf("expected canonicalized timeframe 1h, got %s", got)
+	}
+
+	plan, err := platform.BuildSignalRuntimePlan("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("build runtime plan failed: %v", err)
+	}
+	subscriptions := metadataList(plan["subscriptions"])
+	if len(subscriptions) != 1 {
+		t.Fatalf("expected one 1h kline subscription, got %#v", subscriptions)
+	}
+	if got := stringValue(subscriptions[0]["channel"]); got != "ethusdt@kline_1h" {
+		t.Fatalf("expected 1h kline subscription, got %s", got)
+	}
+}
+
+func TestSignalSourceCatalogAdvertisesHourlyKlineSupport(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	var binanceKline *domain.SignalSourceDefinition
+	for _, source := range platform.SignalSources() {
+		if source.Key == "binance-kline" {
+			copy := source
+			binanceKline = &copy
+			break
+		}
+	}
+	if binanceKline == nil {
+		t.Fatal("expected binance-kline signal source to be registered")
+	}
+	timeframes, ok := binanceKline.Metadata["supportedTimeframes"].([]string)
+	if !ok {
+		t.Fatalf("expected supportedTimeframes metadata, got %#v", binanceKline.Metadata["supportedTimeframes"])
+	}
+	for _, timeframe := range timeframes {
+		if timeframe == "1h" {
+			return
+		}
+	}
+	t.Fatalf("expected binance-kline to advertise 1h support, got %#v", timeframes)
+}
+
 func TestLegacyStrategyBindingWithoutTimeframeCanonicalizesToSingle1dBinding(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 

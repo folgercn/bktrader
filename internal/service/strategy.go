@@ -506,7 +506,7 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	if signalTimeframe == "" {
 		signalTimeframe = "1d"
 	}
-	if signalTimeframe != "5m" && signalTimeframe != "15m" && signalTimeframe != "30m" && signalTimeframe != "4h" && signalTimeframe != "1d" {
+	if signalTimeframe != "5m" && signalTimeframe != "15m" && signalTimeframe != "30m" && signalTimeframe != "1h" && signalTimeframe != "4h" && signalTimeframe != "1d" {
 		return nil, fmt.Errorf("unsupported signalTimeframe: %s", signalTimeframe)
 	}
 

@@ -1578,7 +1578,7 @@ func strategySignalRegimeReady(sig strategySignalBar, timeframe string, useSMA5I
 
 func (p *Platform) loadStrategySignalBars(timeframe string) ([]strategySignalBar, error) {
 	switch normalizeSignalBarInterval(timeframe) {
-	case "5m", "15m", "30m":
+	case "5m", "15m", "30m", "1h":
 		minuteBars, err := p.loadCandleBars()
 		if err != nil {
 			return nil, err
