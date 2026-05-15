@@ -4,13 +4,13 @@
 
 ## 目标
 
-把 research 验证过的 ETHUSDT 1h pretouch timing 事件接入 live testnet shadow：
+把 research 验证过的 ETHUSDT 1h pretouch timing 事件接入 live testnet：
 
 - 用 Binance trade tick 触发策略评估。
 - 从 `sourceStates` / `signalBarStates` 读取 1h signal bar 历史和当前未闭合 bar。
 - 检测 original_t2 pretouch 触达事件。
 - 用 Go 原生 DT3 timing classifier 和 RF probability 做 skip/advance-plan 与 sizing。
-- 只生成 `manual-review` proposal，不默认自动下单。
+- 生成 live execution proposal，是否 `manual-review` / `auto-dispatch` 由 live session 的 `dispatchMode` 决定。
 
 ## Research 固化参数
 
@@ -26,6 +26,7 @@
 | `pretouchCostQ50Penalty` | `0.50` |
 | `pretouchBaseShare` | `0.80` |
 | `positionSizingMode` | `intent_quantity` |
+| `dispatchMode` | 模板默认展示 `auto-dispatch`，live session 可显式切回 `manual-review` |
 
 ## Runtime 架构
 
@@ -91,7 +92,8 @@ go run ./cmd/pretouch-train \
 
 ## 安全边界
 
-- 模板默认 `dispatchMode=manual-review`。
+- 模板不在 `LaunchPayload.LiveSessionOverrides` 中硬编码 `dispatchMode`；前端/调用方必须在创建 live session 时显式传入实际模式。
+- 当前推荐模板默认模式为 `auto-dispatch`，但系统全局空值兜底仍是 `manual-review`。
 - `sandbox=true`，只面向 Binance Futures testnet。
 - 不修改现有 BTC baseline/live 策略语义。
 - 模型失败、feature 缺失、未知 timing regime、无 base quantity 均不入场。

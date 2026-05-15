@@ -42,12 +42,14 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 	}
 
 	expected := map[string]struct {
-		symbol           string
-		timeframe        string
-		quantity         float64
-		researchBaseline bool
-		enhanced         bool
-		baselinePlusT3   bool
+		symbol              string
+		timeframe           string
+		quantity            float64
+		researchBaseline    bool
+		enhanced            bool
+		baselinePlusT3      bool
+		defaultTemplate     bool
+		defaultDispatchMode string
 	}{
 		"binance-testnet-btc-5m":                            {symbol: "BTCUSDT", timeframe: "5m", quantity: 0.002},
 		"binance-testnet-btc-15m":                           {symbol: "BTCUSDT", timeframe: "15m", quantity: 0.002, researchBaseline: true},
@@ -59,13 +61,16 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		"binance-testnet-eth-5m":                            {symbol: "ETHUSDT", timeframe: "5m", quantity: 0.1},
 		"binance-testnet-eth-4h":                            {symbol: "ETHUSDT", timeframe: "4h", quantity: 0.1},
 		"binance-testnet-eth-1d":                            {symbol: "ETHUSDT", timeframe: "1d", quantity: 0.1},
-		"binance-testnet-eth-pretouch-timing":               {symbol: "ETHUSDT", timeframe: "1h", quantity: 0.1},
+		"binance-testnet-eth-pretouch-timing":               {symbol: "ETHUSDT", timeframe: "1h", quantity: 0.1, defaultTemplate: true, defaultDispatchMode: "auto-dispatch"},
 	}
 
-	for _, item := range templates {
+	for idx, item := range templates {
 		want, ok := expected[item.Key]
 		if !ok {
 			t.Fatalf("unexpected template key %s", item.Key)
+		}
+		if want.defaultTemplate && idx != 0 {
+			t.Fatalf("expected default template %s to be first, got index %d", item.Key, idx)
 		}
 		expectedStrategyID := "strategy-bk-1d"
 		if want.enhanced {
@@ -83,8 +88,12 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		if item.SignalTimeframe != want.timeframe {
 			t.Fatalf("expected timeframe %s for %s, got %s", want.timeframe, item.Key, item.SignalTimeframe)
 		}
-		if item.DefaultDispatchMode != "manual-review" {
-			t.Fatalf("expected default dispatchMode manual-review, got %s", item.DefaultDispatchMode)
+		expectedDispatchMode := firstNonEmpty(want.defaultDispatchMode, "manual-review")
+		if item.DefaultDispatchMode != expectedDispatchMode {
+			t.Fatalf("expected default dispatchMode %s for %s, got %s", expectedDispatchMode, item.Key, item.DefaultDispatchMode)
+		}
+		if item.DefaultTemplate != want.defaultTemplate {
+			t.Fatalf("expected defaultTemplate=%v for %s, got %v", want.defaultTemplate, item.Key, item.DefaultTemplate)
 		}
 		if len(item.DispatchModeOptions) != 2 || item.DispatchModeOptions[0] != "manual-review" || item.DispatchModeOptions[1] != "auto-dispatch" {
 			t.Fatalf("expected dispatch mode options [manual-review auto-dispatch], got %#v", item.DispatchModeOptions)
@@ -152,6 +161,9 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 		if item.Key == "binance-testnet-eth-pretouch-timing" {
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "intent_quantity" {
 				t.Fatalf("expected pretouch template positionSizingMode=intent_quantity, got %s", got)
+			}
+			if item.DefaultDispatchMode != "auto-dispatch" {
+				t.Fatalf("expected pretouch template default dispatchMode auto-dispatch, got %s", item.DefaultDispatchMode)
 			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchBaseOrderQuantity"]); got != want.quantity {
 				t.Fatalf("expected pretouchBaseOrderQuantity=%v, got %v", want.quantity, got)

@@ -25,6 +25,7 @@ type LiveLaunchTemplate struct {
 	DispatchModeOptions    []string                 `json:"dispatchModeOptions"`
 	TriggerSourceKey       string                   `json:"triggerSourceKey"`
 	FeatureSourceKey       string                   `json:"featureSourceKey"`
+	DefaultTemplate        bool                     `json:"defaultTemplate,omitempty"`
 	StrategyID             string                   `json:"strategyId"`
 	StrategyName           string                   `json:"strategyName"`
 	StrategyVersionID      string                   `json:"strategyVersionId,omitempty"`
@@ -247,7 +248,9 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		return item
 	}
 
+	pretouchTemplate := buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID)
 	templates := []LiveLaunchTemplate{
+		pretouchTemplate,
 		buildTemplate("BTCUSDT", "5m", 0.002, false),
 		buildTemplate("BTCUSDT", "15m", 0.002, true),
 		buildTemplate("BTCUSDT", "30m", 0.002, true),
@@ -265,9 +268,6 @@ func (p *Platform) LiveLaunchTemplates() ([]LiveLaunchTemplate, error) {
 		buildTemplate("ETHUSDT", "4h", 0.100, false),
 		buildTemplate("ETHUSDT", "1d", 0.100, false),
 	)
-
-	// ETH Pretouch Timing strategy template
-	templates = append(templates, buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID))
 
 	return templates, nil
 }
@@ -341,10 +341,11 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		Description:         "ETHUSDT 1h pretouch timing 策略：timing classification × RF probability × cost_q50_cut050。Research 10bps kill stress: 23.29%, 0 neg SM。",
 		Symbol:              "ETHUSDT",
 		SignalTimeframe:     "1h",
-		DefaultDispatchMode: "manual-review",
+		DefaultDispatchMode: liveLaunchTemplateAutoDispatchMode(),
 		DispatchModeOptions: liveLaunchTemplateDispatchModeOptions(),
 		TriggerSourceKey:    "binance-trade-tick",
 		FeatureSourceKey:    "binance-order-book",
+		DefaultTemplate:     true,
 		StrategyID:          strategyID,
 		StrategyName:        strategyName,
 		StrategyVersionID:   strategyVersionID,
@@ -408,7 +409,7 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 			"模型默认从 data/pretouch_model.json 加载；部署可用 BK_PRETOUCH_MODEL_PATH 覆盖模型路径。",
 			"模型不可用或校验失败时策略自动 skip 所有事件（不入场），不会退化为 fixed sizing。",
 			"positionSizingMode=intent_quantity，实际 entry 数量来自 pretouchBaseOrderQuantity × RF/cost sizing 后的 suggestedQuantity。",
-			"dispatchMode 默认 manual-review，不自动下单。",
+			"该模板暂列默认推荐项；dispatchMode 由前端提交时显式注入，默认选择 auto-dispatch，可在前端切回 manual-review。",
 			"重训需显式运行 pretouch-train --events-csv <path> --out <path> 并审查新模型指标。",
 		},
 	}
