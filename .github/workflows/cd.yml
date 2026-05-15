@@ -70,6 +70,7 @@ jobs:
           add_live_services() {
             add_service platform-api
             add_service live-runner
+            add_service signal-runtime-runner
           }
 
           add_signal_runtime_services() {
@@ -133,13 +134,13 @@ jobs:
             esac
 
             case "$file" in
-              cmd/platform-api/*|cmd/platform-worker/*|internal/*|db/*|deployments/*|scripts/deploy.sh|Dockerfile|.dockerignore)
+              cmd/platform-api/*|cmd/platform-worker/*|internal/*|db/*|deployments/*|scripts/deploy.sh|Dockerfile|.dockerignore|.github/workflows/cd.yml)
                 backend_changed=true
                 ;;
             esac
 
             case "$file" in
-              Dockerfile|.dockerignore|deployments/docker-compose.prod.yml|scripts/deploy.sh|internal/app/*|internal/config/*|internal/store/*|internal/domain/*|db/*)
+              Dockerfile|.dockerignore|.github/workflows/cd.yml|deployments/docker-compose.prod.yml|scripts/deploy.sh|internal/app/*|internal/config/*|internal/store/*|internal/domain/*|db/*)
                 add_all_backend_services
                 ;;
             esac
