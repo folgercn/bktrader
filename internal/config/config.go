@@ -81,6 +81,10 @@ type Config struct {
 	SupervisorContainerExecutor         string   // 容器兜底 executor 类型；支持 noop dry-run 或显式 armed command executor
 	SupervisorContainerExecutorArmed    bool     // 非 dry-run 容器兜底 executor 的人工武装开关
 	SupervisorContainerExecutorCommands string   // command executor 的 target allowlist JSON
+	SupervisorDashboardView             *bool    // Dashboard 是否允许查看 supervisor status
+	SupervisorDashboardRuntimeControl   *bool    // Dashboard 是否允许 runtime start/stop/restart/suppress/resume
+	SupervisorDashboardFallbackGate     *bool    // Dashboard 是否允许 fallback suppress/resume/defer/clear-backoff
+	SupervisorDashboardFallbackSubmit   *bool    // Dashboard 是否允许提交 container fallback executor
 }
 
 const (
@@ -179,6 +183,10 @@ func Load() Config {
 		SupervisorContainerExecutor:         strings.ToLower(strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR"))),
 		SupervisorContainerExecutorArmed:    boolFromEnv("SUPERVISOR_CONTAINER_EXECUTOR_ARMED", false),
 		SupervisorContainerExecutorCommands: strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON")),
+		SupervisorDashboardView:             BoolPtrFromEnvDefault("SUPERVISOR_DASHBOARD_CAN_VIEW", true),
+		SupervisorDashboardRuntimeControl:   BoolPtrFromEnvDefault("SUPERVISOR_DASHBOARD_CAN_RUNTIME_CONTROL", true),
+		SupervisorDashboardFallbackGate:     BoolPtrFromEnvDefault("SUPERVISOR_DASHBOARD_CAN_CONTAINER_FALLBACK_GATE", true),
+		SupervisorDashboardFallbackSubmit:   BoolPtrFromEnvDefault("SUPERVISOR_DASHBOARD_CAN_CONTAINER_FALLBACK_SUBMIT", false),
 	}
 }
 
@@ -191,6 +199,11 @@ func IntPtrFromEnv(key string) *int {
 		}
 	}
 	return nil
+}
+
+func BoolPtrFromEnvDefault(key string, fallback bool) *bool {
+	value := boolFromEnv(key, fallback)
+	return &value
 }
 
 // Validate 校验配置项的合法性，启动前快速失败。

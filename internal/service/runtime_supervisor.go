@@ -158,14 +158,26 @@ type RuntimeSupervisorSnapshot struct {
 }
 
 type RuntimeSupervisorPolicy struct {
-	ApplicationRestartEnabled   bool   `json:"applicationRestartEnabled"`
-	ServiceFailureThreshold     int    `json:"serviceFailureThreshold"`
-	ContainerRestartEnabled     bool   `json:"containerRestartEnabled"`
-	ContainerFallbackAutoSubmit bool   `json:"containerFallbackAutoSubmit"`
-	ContainerExecutorConfigured bool   `json:"containerExecutorConfigured"`
-	ContainerExecutorKind       string `json:"containerExecutorKind"`
-	ContainerExecutorDryRun     bool   `json:"containerExecutorDryRun"`
-	ContainerExecutorArmed      bool   `json:"containerExecutorArmed"`
+	ApplicationRestartEnabled   bool                                  `json:"applicationRestartEnabled"`
+	ServiceFailureThreshold     int                                   `json:"serviceFailureThreshold"`
+	ContainerRestartEnabled     bool                                  `json:"containerRestartEnabled"`
+	ContainerFallbackAutoSubmit bool                                  `json:"containerFallbackAutoSubmit"`
+	ContainerExecutorConfigured bool                                  `json:"containerExecutorConfigured"`
+	ContainerExecutorKind       string                                `json:"containerExecutorKind"`
+	ContainerExecutorDryRun     bool                                  `json:"containerExecutorDryRun"`
+	ContainerExecutorArmed      bool                                  `json:"containerExecutorArmed"`
+	DashboardPermissions        RuntimeSupervisorDashboardPermissions `json:"dashboardPermissions"`
+}
+
+type RuntimeSupervisorDashboardPermissions struct {
+	CanView                              bool   `json:"canView"`
+	CanRuntimeControl                    bool   `json:"canRuntimeControl"`
+	CanContainerFallbackGate             bool   `json:"canContainerFallbackGate"`
+	CanContainerFallbackSubmit           bool   `json:"canContainerFallbackSubmit"`
+	ViewBlockedReason                    string `json:"viewBlockedReason,omitempty"`
+	RuntimeControlBlockedReason          string `json:"runtimeControlBlockedReason,omitempty"`
+	ContainerFallbackGateBlockedReason   string `json:"containerFallbackGateBlockedReason,omitempty"`
+	ContainerFallbackSubmitBlockedReason string `json:"containerFallbackSubmitBlockedReason,omitempty"`
 }
 
 type RuntimeSupervisorControlAction struct {
@@ -1450,6 +1462,12 @@ func runtimeSupervisorPolicy(options RuntimeSupervisorOptions) RuntimeSupervisor
 		ContainerExecutorKind:       executorDescriptor.Kind,
 		ContainerExecutorDryRun:     executorDescriptor.DryRun,
 		ContainerExecutorArmed:      runtimeSupervisorContainerExecutorArmed(options, executorDescriptor, executorConfigured),
+		DashboardPermissions: RuntimeSupervisorDashboardPermissions{
+			CanView:                    true,
+			CanRuntimeControl:          true,
+			CanContainerFallbackGate:   true,
+			CanContainerFallbackSubmit: false,
+		},
 	}
 }
 

@@ -398,6 +398,7 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	t.Setenv("SUPERVISOR_CONTAINER_RESTART_ENABLED", "true")
 	t.Setenv("SUPERVISOR_CONTAINER_FALLBACK_AUTO_SUBMIT", "true")
 	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR", " NoOp ")
+	t.Setenv("SUPERVISOR_DASHBOARD_CAN_CONTAINER_FALLBACK_SUBMIT", "true")
 
 	cfg := Load()
 	if len(cfg.SupervisorTargets) != 2 {
@@ -432,6 +433,25 @@ func TestLoadReadsSupervisorEnv(t *testing.T) {
 	}
 	if cfg.SupervisorContainerExecutorArmed || cfg.SupervisorContainerExecutorCommands != "" {
 		t.Fatalf("expected noop executor to leave real executor gates empty, armed=%t commands=%q", cfg.SupervisorContainerExecutorArmed, cfg.SupervisorContainerExecutorCommands)
+	}
+	if cfg.SupervisorDashboardFallbackSubmit == nil || !*cfg.SupervisorDashboardFallbackSubmit {
+		t.Fatalf("expected supervisor dashboard fallback submit permission to be loaded true, got %#v", cfg.SupervisorDashboardFallbackSubmit)
+	}
+}
+
+func TestLoadSupervisorDashboardPermissionsDefaultSubmitDenied(t *testing.T) {
+	cfg := Load()
+	if cfg.SupervisorDashboardView == nil || !*cfg.SupervisorDashboardView {
+		t.Fatalf("expected dashboard view permission default true, got %#v", cfg.SupervisorDashboardView)
+	}
+	if cfg.SupervisorDashboardRuntimeControl == nil || !*cfg.SupervisorDashboardRuntimeControl {
+		t.Fatalf("expected dashboard runtime control permission default true, got %#v", cfg.SupervisorDashboardRuntimeControl)
+	}
+	if cfg.SupervisorDashboardFallbackGate == nil || !*cfg.SupervisorDashboardFallbackGate {
+		t.Fatalf("expected dashboard fallback gate permission default true, got %#v", cfg.SupervisorDashboardFallbackGate)
+	}
+	if cfg.SupervisorDashboardFallbackSubmit == nil || *cfg.SupervisorDashboardFallbackSubmit {
+		t.Fatalf("expected dashboard fallback submit permission default false, got %#v", cfg.SupervisorDashboardFallbackSubmit)
 	}
 }
 
