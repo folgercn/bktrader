@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -231,6 +232,26 @@ func runtimeSupervisorOptionsForConfig(cfg config.Config) service.RuntimeSupervi
 		options.ContainerFallbackExecutor = service.NewNoopContainerFallbackExecutor(true)
 	case strings.EqualFold(strings.TrimSpace(cfg.SupervisorContainerExecutor), "command"):
 		executor, err := service.NewCommandContainerFallbackExecutorFromJSON(cfg.SupervisorContainerExecutorCommands)
+		if err == nil {
+			options.ContainerFallbackExecutor = executor
+		}
+	case strings.EqualFold(strings.TrimSpace(cfg.SupervisorContainerExecutor), "node-agent"):
+		token := strings.TrimSpace(cfg.SupervisorNodeAgentToken)
+		if token == "" && strings.TrimSpace(cfg.SupervisorNodeAgentTokenFile) != "" {
+			if data, err := os.ReadFile(strings.TrimSpace(cfg.SupervisorNodeAgentTokenFile)); err == nil {
+				token = strings.TrimSpace(string(data))
+			}
+		}
+		targetNames := make([]string, 0, len(cfg.SupervisorTargets))
+		for _, target := range service.ParseRuntimeSupervisorTargets(cfg.SupervisorTargets, cfg.SupervisorBearerToken) {
+			targetNames = append(targetNames, target.Name)
+		}
+		executor, err := service.NewNodeAgentContainerFallbackExecutor(service.NodeAgentContainerFallbackExecutorConfig{
+			BaseURL:        cfg.SupervisorNodeAgentBaseURL,
+			Token:          token,
+			Timeout:        time.Duration(cfg.SupervisorNodeAgentTimeoutSeconds) * time.Second,
+			AllowedTargets: targetNames,
+		})
 		if err == nil {
 			options.ContainerFallbackExecutor = executor
 		}

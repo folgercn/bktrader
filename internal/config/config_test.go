@@ -127,6 +127,23 @@ func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
 		t.Fatalf("expected armed command executor to validate, got %v", err)
 	}
 
+	nodeAgentCfg := Config{
+		HTTPAddr:                          ":8080",
+		StoreBackend:                      "memory",
+		SupervisorTargets:                 []string{"api=http://127.0.0.1:8080"},
+		SupervisorContainerExecutor:       "node-agent",
+		SupervisorNodeAgentBaseURL:        "http://127.0.0.1:18081",
+		SupervisorNodeAgentToken:          "agent-token",
+		SupervisorNodeAgentTimeoutSeconds: 30,
+	}
+	if err := nodeAgentCfg.Validate(); err != nil {
+		t.Fatalf("expected node-agent executor to validate, got %v", err)
+	}
+	nodeAgentCfg.SupervisorContainerExecutorArmed = true
+	if err := nodeAgentCfg.Validate(); err != nil {
+		t.Fatalf("expected armed node-agent executor to validate, got %v", err)
+	}
+
 	cfg := Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "docker"}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected unsupported supervisor container executor to fail validation")
@@ -156,7 +173,32 @@ func TestConfigValidateSupervisorContainerExecutor(t *testing.T) {
 
 	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutorArmed: true}
 	if err := cfg.Validate(); err == nil {
-		t.Fatalf("expected armed gate without command executor to fail validation")
+		t.Fatalf("expected armed gate without real executor to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "node-agent", SupervisorNodeAgentToken: "agent-token"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected node-agent executor without base URL to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorTargets: []string{"api=http://127.0.0.1:8080"}, SupervisorContainerExecutor: "node-agent", SupervisorNodeAgentBaseURL: "http://127.0.0.1:18081"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected node-agent executor without token or token file to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorTargets: []string{"api=http://127.0.0.1:8080"}, SupervisorContainerExecutor: "node-agent", SupervisorNodeAgentBaseURL: "ftp://127.0.0.1:18081", SupervisorNodeAgentToken: "agent-token"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected node-agent executor with unsupported scheme to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorContainerExecutor: "node-agent", SupervisorNodeAgentBaseURL: "http://127.0.0.1:18081", SupervisorNodeAgentToken: "agent-token"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected node-agent executor without supervisor targets to fail validation")
+	}
+
+	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorNodeAgentBaseURL: "http://127.0.0.1:18081"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected node-agent config without node-agent executor to fail validation")
 	}
 
 	cfg = Config{HTTPAddr: ":8080", StoreBackend: "memory", SupervisorFallbackAutoSubmit: true, SupervisorContainerExecutor: "noop"}
@@ -474,6 +516,36 @@ func TestLoadReadsCommandSupervisorExecutorEnv(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected loaded command executor config to validate, got %v", err)
+	}
+}
+
+func TestLoadReadsNodeAgentSupervisorExecutorEnv(t *testing.T) {
+	t.Setenv("SUPERVISOR_TARGETS", "api=http://127.0.0.1:8080")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR", " node-agent ")
+	t.Setenv("SUPERVISOR_CONTAINER_EXECUTOR_ARMED", "true")
+	t.Setenv("SUPERVISOR_NODE_AGENT_BASE_URL", " http://127.0.0.1:18081/ ")
+	t.Setenv("SUPERVISOR_NODE_AGENT_TOKEN", " agent-token ")
+	t.Setenv("SUPERVISOR_NODE_AGENT_TOKEN_FILE", " /tmp/agent-token ")
+	t.Setenv("SUPERVISOR_NODE_AGENT_TIMEOUT_SECONDS", "12")
+
+	cfg := Load()
+	if cfg.SupervisorContainerExecutor != "node-agent" {
+		t.Fatalf("expected node-agent executor, got %q", cfg.SupervisorContainerExecutor)
+	}
+	if !cfg.SupervisorContainerExecutorArmed {
+		t.Fatal("expected node-agent armed gate")
+	}
+	if cfg.SupervisorNodeAgentBaseURL != "http://127.0.0.1:18081/" {
+		t.Fatalf("expected trimmed node-agent base URL, got %q", cfg.SupervisorNodeAgentBaseURL)
+	}
+	if cfg.SupervisorNodeAgentToken != "agent-token" || cfg.SupervisorNodeAgentTokenFile != "/tmp/agent-token" {
+		t.Fatalf("expected trimmed node-agent token fields, got token=%q file=%q", cfg.SupervisorNodeAgentToken, cfg.SupervisorNodeAgentTokenFile)
+	}
+	if cfg.SupervisorNodeAgentTimeoutSeconds != 12 {
+		t.Fatalf("expected node-agent timeout 12, got %d", cfg.SupervisorNodeAgentTimeoutSeconds)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected loaded node-agent executor config to validate, got %v", err)
 	}
 }
 

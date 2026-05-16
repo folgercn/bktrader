@@ -145,6 +145,32 @@ func TestRuntimeSupervisorOptionsForConfigWiresArmedCommandExecutor(t *testing.T
 	}
 }
 
+func TestRuntimeSupervisorOptionsForConfigWiresNodeAgentExecutor(t *testing.T) {
+	options := runtimeSupervisorOptionsForConfig(config.Config{
+		SupervisorTargets:                 []string{"api=http://127.0.0.1:8080"},
+		SupervisorContainerRestart:        true,
+		SupervisorContainerExecutor:       "node-agent",
+		SupervisorContainerExecutorArmed:  true,
+		SupervisorNodeAgentBaseURL:        "http://127.0.0.1:18081",
+		SupervisorNodeAgentToken:          "agent-token",
+		SupervisorNodeAgentTimeoutSeconds: 10,
+	})
+	if !options.EnableContainerFallback || !options.ContainerFallbackExecutorArmed {
+		t.Fatalf("expected armed node-agent executor options, got %+v", options)
+	}
+	if options.ContainerFallbackExecutor == nil || !options.ContainerFallbackExecutor.Configured() {
+		t.Fatalf("expected configured node-agent executor, got %+v", options.ContainerFallbackExecutor)
+	}
+	descriptor := options.ContainerFallbackExecutor.Descriptor()
+	if descriptor.Kind != "node-agent" || descriptor.DryRun {
+		t.Fatalf("expected non-dry-run node-agent descriptor, got %+v", descriptor)
+	}
+	allowlist, ok := options.ContainerFallbackExecutor.(service.ContainerFallbackTargetAllowlist)
+	if !ok || !allowlist.ContainerFallbackTargetAllowed(service.RuntimeSupervisorTarget{Name: "api"}) || allowlist.ContainerFallbackTargetAllowed(service.RuntimeSupervisorTarget{Name: "worker"}) {
+		t.Fatalf("expected node-agent executor target allowlist to be enforced")
+	}
+}
+
 func TestRuntimeOptionsForMonolithStartAllRuntimeComponents(t *testing.T) {
 	options := RuntimeOptionsForRole("monolith")
 	if !options.WarmLiveMarketData ||

@@ -28,10 +28,11 @@ const (
 	runtimeSupervisorContainerFallbackDecisionBlocked  = "blocked"
 	runtimeSupervisorContainerFallbackDecisionEligible = "eligible"
 
-	runtimeSupervisorContainerExecutorKindCustom  = "custom"
-	runtimeSupervisorContainerExecutorKindNone    = "none"
-	runtimeSupervisorContainerExecutorKindNoop    = "noop"
-	runtimeSupervisorContainerExecutorKindCommand = "command"
+	runtimeSupervisorContainerExecutorKindCustom    = "custom"
+	runtimeSupervisorContainerExecutorKindNone      = "none"
+	runtimeSupervisorContainerExecutorKindNoop      = "noop"
+	runtimeSupervisorContainerExecutorKindCommand   = "command"
+	runtimeSupervisorContainerExecutorKindNodeAgent = "node-agent"
 )
 
 var (
@@ -81,6 +82,22 @@ type ContainerFallbackExecutor interface {
 	Restart(ctx context.Context, target RuntimeSupervisorTarget, reason string) (ContainerFallbackExecutionResult, error)
 }
 
+type ContainerFallbackExecutionRequest struct {
+	Target                          RuntimeSupervisorTarget
+	Action                          string
+	Reason                          string
+	PlanReason                      string
+	Source                          string
+	Operator                        string
+	ServiceFailureEpisodeStartedAt  *time.Time
+	ContainerFallbackCandidateSince *time.Time
+	RequestedAt                     time.Time
+}
+
+type ContainerFallbackRequestExecutor interface {
+	RestartWithRequest(ctx context.Context, request ContainerFallbackExecutionRequest) (ContainerFallbackExecutionResult, error)
+}
+
 type ContainerFallbackTargetAllowlist interface {
 	ContainerFallbackTargetAllowed(target RuntimeSupervisorTarget) bool
 }
@@ -90,10 +107,12 @@ type ContainerFallbackExecutorPreviewer interface {
 }
 
 type ContainerFallbackExecutionResult struct {
-	Executed bool   `json:"executed"`
-	Message  string `json:"message,omitempty"`
-	ExitCode *int   `json:"exitCode,omitempty"`
-	TimedOut bool   `json:"timedOut,omitempty"`
+	Executed   bool   `json:"executed"`
+	Message    string `json:"message,omitempty"`
+	ExitCode   *int   `json:"exitCode,omitempty"`
+	TimedOut   bool   `json:"timedOut,omitempty"`
+	StatusCode int    `json:"statusCode,omitempty"`
+	DurationMs int    `json:"durationMs,omitempty"`
 }
 
 type NoopContainerFallbackExecutor struct {
@@ -244,6 +263,8 @@ type RuntimeSupervisorContainerFallbackAction struct {
 	Executed                        bool                                               `json:"executed"`
 	ExitCode                        *int                                               `json:"exitCode,omitempty"`
 	TimedOut                        bool                                               `json:"timedOut,omitempty"`
+	StatusCode                      int                                                `json:"statusCode,omitempty"`
+	DurationMs                      int                                                `json:"durationMs,omitempty"`
 	BackoffUntil                    *time.Time                                         `json:"backoffUntil,omitempty"`
 	BackoffSeconds                  int                                                `json:"backoffSeconds,omitempty"`
 	Message                         string                                             `json:"message,omitempty"`
@@ -1305,11 +1326,23 @@ func (s *RuntimeSupervisor) submitContainerFallbackAction(ctx context.Context, t
 	if planReason != "" && planReason != reason {
 		action.PlanReason = planReason
 	}
-	result, err := s.options.ContainerFallbackExecutor.Restart(ctx, target, reason)
+	result, err := restartContainerFallbackExecutor(ctx, s.options.ContainerFallbackExecutor, ContainerFallbackExecutionRequest{
+		Target:                          target,
+		Action:                          action.Action,
+		Reason:                          reason,
+		PlanReason:                      planReason,
+		Source:                          source,
+		Operator:                        operator,
+		ServiceFailureEpisodeStartedAt:  plan.ServiceFailureEpisodeStartedAt,
+		ContainerFallbackCandidateSince: plan.ContainerFallbackCandidateSince,
+		RequestedAt:                     now,
+	})
 	action.Executed = result.Executed
 	action.Message = result.Message
 	action.ExitCode = result.ExitCode
 	action.TimedOut = result.TimedOut
+	action.StatusCode = result.StatusCode
+	action.DurationMs = result.DurationMs
 	if err != nil {
 		action.Error = err.Error()
 		backoffUntil := now.Add(defaultRuntimeSupervisorFallbackErrorBackoff).UTC()
@@ -1321,6 +1354,16 @@ func (s *RuntimeSupervisor) submitContainerFallbackAction(ctx context.Context, t
 	s.recordContainerFallbackActionLocked(action)
 	s.mu.Unlock()
 	return action, true
+}
+
+func restartContainerFallbackExecutor(ctx context.Context, executor ContainerFallbackExecutor, request ContainerFallbackExecutionRequest) (ContainerFallbackExecutionResult, error) {
+	if executor == nil {
+		return ContainerFallbackExecutionResult{}, fmt.Errorf("container fallback executor is not configured")
+	}
+	if richer, ok := executor.(ContainerFallbackRequestExecutor); ok {
+		return richer.RestartWithRequest(ctx, request)
+	}
+	return executor.Restart(ctx, request.Target, request.Reason)
 }
 
 func (s *RuntimeSupervisor) recordContainerFallbackSubmissionLocked(target RuntimeSupervisorTarget, action RuntimeSupervisorContainerFallbackAction, err error, now time.Time) {

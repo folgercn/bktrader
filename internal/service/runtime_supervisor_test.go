@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+func intPtr(value int) *int {
+	return &value
+}
+
 type runtimeSupervisorTestContainerExecutor struct {
 	configured bool
 	kind       string
@@ -1323,6 +1327,222 @@ func TestNoopContainerFallbackExecutorDoesNotExecuteRestart(t *testing.T) {
 	}
 	if result.Executed || result.Message == "" {
 		t.Fatalf("expected noop executor to report non-execution, got %+v", result)
+	}
+}
+
+func TestNodeAgentContainerFallbackExecutorHealthAndRestart(t *testing.T) {
+	var restartPayload nodeAgentRestartRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer agent-token" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/v1/health":
+			writeRuntimeSupervisorTestJSON(t, w, NodeAgentHealth{
+				Status:             "ok",
+				Version:            "test",
+				ExecutorKind:       runtimeSupervisorContainerExecutorKindNodeAgent,
+				TokenConfigured:    true,
+				AllowlistedTargets: []string{"api"},
+				CheckedAt:          time.Now().UTC(),
+			})
+		case "/v1/container-fallback/restart":
+			if err := json.NewDecoder(r.Body).Decode(&restartPayload); err != nil {
+				t.Fatalf("decode node-agent restart request failed: %v", err)
+			}
+			writeRuntimeSupervisorTestJSON(t, w, nodeAgentRestartResponse{
+				TargetName:   restartPayload.TargetName,
+				Action:       restartPayload.Action,
+				ExecutorKind: runtimeSupervisorContainerExecutorKindNodeAgent,
+				Executed:     true,
+				ExitCode:     intPtr(0),
+				Message:      "compose restart accepted",
+				DurationMs:   1234,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor, err := NewNodeAgentContainerFallbackExecutor(NodeAgentContainerFallbackExecutorConfig{
+		BaseURL:        server.URL,
+		Token:          "agent-token",
+		AllowedTargets: []string{"api"},
+		Timeout:        time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewNodeAgentContainerFallbackExecutor failed: %v", err)
+	}
+	health, err := executor.Health(context.Background())
+	if err != nil {
+		t.Fatalf("node-agent health failed: %v", err)
+	}
+	if health.Status != "ok" || health.ExecutorKind != runtimeSupervisorContainerExecutorKindNodeAgent || !health.TokenConfigured || len(health.AllowlistedTargets) != 1 || health.AllowlistedTargets[0] != "api" {
+		t.Fatalf("unexpected node-agent health: %+v", health)
+	}
+	startedAt := time.Date(2026, 5, 16, 3, 0, 0, 0, time.UTC)
+	candidateSince := startedAt.Add(time.Minute)
+	result, err := executor.RestartWithRequest(context.Background(), ContainerFallbackExecutionRequest{
+		Target:                          RuntimeSupervisorTarget{Name: "api"},
+		Action:                          "container-restart",
+		Reason:                          "operator reviewed static restart plan",
+		PlanReason:                      "service probes failed 3/3",
+		Source:                          "dashboard",
+		Operator:                        "folgercn",
+		ServiceFailureEpisodeStartedAt:  &startedAt,
+		ContainerFallbackCandidateSince: &candidateSince,
+		RequestedAt:                     startedAt.Add(2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("node-agent restart failed: %v", err)
+	}
+	if !result.Executed || result.StatusCode != http.StatusOK || result.DurationMs != 1234 || result.ExitCode == nil || *result.ExitCode != 0 {
+		t.Fatalf("unexpected node-agent restart result: %+v", result)
+	}
+	if restartPayload.TargetName != "api" || restartPayload.Action != "container-restart" || restartPayload.Reason == "" || restartPayload.PlanReason != "service probes failed 3/3" || restartPayload.Source != "dashboard" || restartPayload.Operator != "folgercn" {
+		t.Fatalf("unexpected node-agent restart payload: %+v", restartPayload)
+	}
+	if restartPayload.ServiceFailureEpisodeStartedAt == "" || restartPayload.ContainerFallbackCandidateSince == "" || restartPayload.RequestID == "" {
+		t.Fatalf("expected restart payload audit fields, got %+v", restartPayload)
+	}
+}
+
+func TestNodeAgentContainerFallbackExecutorRejectsUnsafeInputs(t *testing.T) {
+	if _, err := NewNodeAgentContainerFallbackExecutor(NodeAgentContainerFallbackExecutorConfig{
+		BaseURL:        "http://127.0.0.1:18081",
+		Token:          "agent-token",
+		AllowedTargets: []string{"bad target"},
+	}); err == nil {
+		t.Fatalf("expected invalid target name to fail")
+	}
+	executor, err := NewNodeAgentContainerFallbackExecutor(NodeAgentContainerFallbackExecutorConfig{
+		BaseURL:        "http://127.0.0.1:18081",
+		Token:          "agent-token",
+		AllowedTargets: []string{"api"},
+	})
+	if err != nil {
+		t.Fatalf("NewNodeAgentContainerFallbackExecutor failed: %v", err)
+	}
+	if executor.ContainerFallbackTargetAllowed(RuntimeSupervisorTarget{Name: "worker"}) {
+		t.Fatal("expected worker target to be outside node-agent allowlist")
+	}
+	if _, err := executor.RestartWithRequest(context.Background(), ContainerFallbackExecutionRequest{Target: RuntimeSupervisorTarget{Name: "worker"}, Reason: "operator reviewed"}); err == nil {
+		t.Fatalf("expected non-allowlisted target restart to fail")
+	}
+	if _, err := executor.RestartWithRequest(context.Background(), ContainerFallbackExecutionRequest{Target: RuntimeSupervisorTarget{Name: "api"}}); err == nil {
+		t.Fatalf("expected empty reason restart to fail")
+	}
+}
+
+func TestNodeAgentContainerFallbackExecutorNon2xxSetsAuditResult(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		writeRuntimeSupervisorTestJSON(t, w, nodeAgentRestartResponse{
+			TargetName:   "api",
+			Action:       "container-restart",
+			ExecutorKind: runtimeSupervisorContainerExecutorKindNodeAgent,
+			Executed:     false,
+			Message:      "target denied",
+			Error:        "target not allowlisted",
+			DurationMs:   5,
+		})
+	}))
+	defer server.Close()
+	executor, err := NewNodeAgentContainerFallbackExecutor(NodeAgentContainerFallbackExecutorConfig{
+		BaseURL:        server.URL,
+		Token:          "agent-token",
+		AllowedTargets: []string{"api"},
+	})
+	if err != nil {
+		t.Fatalf("NewNodeAgentContainerFallbackExecutor failed: %v", err)
+	}
+	result, err := executor.RestartWithRequest(context.Background(), ContainerFallbackExecutionRequest{
+		Target: RuntimeSupervisorTarget{Name: "api"},
+		Reason: "operator reviewed",
+	})
+	if err == nil {
+		t.Fatalf("expected non-2xx node-agent restart to fail")
+	}
+	if result.StatusCode != http.StatusForbidden || result.DurationMs != 5 || result.Message != "target denied" || result.Executed {
+		t.Fatalf("expected non-2xx audit result, got %+v", result)
+	}
+}
+
+func TestRuntimeSupervisorSubmitsContainerFallbackThroughNodeAgent(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+		case "/api/v1/runtime/status":
+			writeRuntimeSupervisorTestJSON(t, w, RuntimeStatusSnapshot{Service: "platform-api"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer targetServer.Close()
+
+	var restartPayload nodeAgentRestartRequest
+	nodeAgentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer agent-token" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path != "/v1/container-fallback/restart" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&restartPayload); err != nil {
+			t.Fatalf("decode node-agent restart request failed: %v", err)
+		}
+		writeRuntimeSupervisorTestJSON(t, w, nodeAgentRestartResponse{
+			TargetName:   "api",
+			Action:       "container-restart",
+			ExecutorKind: runtimeSupervisorContainerExecutorKindNodeAgent,
+			Executed:     true,
+			ExitCode:     intPtr(0),
+			Message:      "compose restart accepted",
+			DurationMs:   77,
+		})
+	}))
+	defer nodeAgentServer.Close()
+	executor, err := NewNodeAgentContainerFallbackExecutor(NodeAgentContainerFallbackExecutorConfig{
+		BaseURL:        nodeAgentServer.URL,
+		Token:          "agent-token",
+		AllowedTargets: []string{"api"},
+	})
+	if err != nil {
+		t.Fatalf("NewNodeAgentContainerFallbackExecutor failed: %v", err)
+	}
+	supervisor := NewRuntimeSupervisorWithOptions(
+		[]RuntimeSupervisorTarget{{Name: "api", BaseURL: targetServer.URL}},
+		targetServer.Client(),
+		RuntimeSupervisorOptions{
+			ServiceFailureThreshold:        1,
+			EnableContainerFallback:        true,
+			ContainerFallbackExecutor:      executor,
+			ContainerFallbackExecutorArmed: true,
+		},
+	)
+	supervisor.Collect(context.Background())
+	result, err := supervisor.SubmitContainerFallback(context.Background(), "api", RuntimeSupervisorContainerFallbackControlOptions{
+		Confirm:  true,
+		Reason:   "operator reviewed static restart plan",
+		Source:   "dashboard",
+		Operator: "folgercn",
+	})
+	if err != nil {
+		t.Fatalf("SubmitContainerFallback failed: %v", err)
+	}
+	if result.Action == nil || !result.Action.Submitted || !result.Action.Executed || result.Action.ExecutorKind != runtimeSupervisorContainerExecutorKindNodeAgent || result.Action.StatusCode != http.StatusOK || result.Action.DurationMs != 77 {
+		t.Fatalf("expected node-agent action audit, got %+v", result.Action)
+	}
+	if result.Action.Source != "dashboard" || result.Action.Operator != "folgercn" || result.Action.PlanReason == "" {
+		t.Fatalf("expected source/operator/plan audit, got %+v", result.Action)
+	}
+	if restartPayload.TargetName != "api" || restartPayload.PlanReason == "" || restartPayload.Source != "dashboard" || restartPayload.Operator != "folgercn" || restartPayload.ServiceFailureEpisodeStartedAt == "" || restartPayload.ContainerFallbackCandidateSince == "" {
+		t.Fatalf("expected node-agent request audit fields, got %+v", restartPayload)
 	}
 }
 

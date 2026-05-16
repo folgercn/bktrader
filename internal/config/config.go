@@ -81,6 +81,10 @@ type Config struct {
 	SupervisorContainerExecutor         string   // 容器兜底 executor 类型；支持 noop dry-run 或显式 armed command executor
 	SupervisorContainerExecutorArmed    bool     // 非 dry-run 容器兜底 executor 的人工武装开关
 	SupervisorContainerExecutorCommands string   // command executor 的 target allowlist JSON
+	SupervisorNodeAgentBaseURL          string   // node-agent executor base URL
+	SupervisorNodeAgentToken            string   // node-agent executor bearer token
+	SupervisorNodeAgentTokenFile        string   // node-agent executor bearer token file
+	SupervisorNodeAgentTimeoutSeconds   int      // node-agent executor HTTP timeout
 	SupervisorDashboardView             *bool    // Dashboard 是否允许查看 supervisor status
 	SupervisorDashboardRuntimeControl   *bool    // Dashboard 是否允许 runtime start/stop/restart/suppress/resume
 	SupervisorDashboardFallbackGate     *bool    // Dashboard 是否允许 fallback suppress/resume/defer/clear-backoff
@@ -183,6 +187,10 @@ func Load() Config {
 		SupervisorContainerExecutor:         strings.ToLower(strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR"))),
 		SupervisorContainerExecutorArmed:    boolFromEnv("SUPERVISOR_CONTAINER_EXECUTOR_ARMED", false),
 		SupervisorContainerExecutorCommands: strings.TrimSpace(os.Getenv("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON")),
+		SupervisorNodeAgentBaseURL:          strings.TrimSpace(os.Getenv("SUPERVISOR_NODE_AGENT_BASE_URL")),
+		SupervisorNodeAgentToken:            strings.TrimSpace(os.Getenv("SUPERVISOR_NODE_AGENT_TOKEN")),
+		SupervisorNodeAgentTokenFile:        strings.TrimSpace(os.Getenv("SUPERVISOR_NODE_AGENT_TOKEN_FILE")),
+		SupervisorNodeAgentTimeoutSeconds:   intFromEnvWithMin("SUPERVISOR_NODE_AGENT_TIMEOUT_SECONDS", 30, 1),
 		SupervisorDashboardView:             BoolPtrFromEnvDefault("SUPERVISOR_DASHBOARD_CAN_VIEW", true),
 		SupervisorDashboardRuntimeControl:   BoolPtrFromEnvDefault("SUPERVISOR_DASHBOARD_CAN_RUNTIME_CONTROL", true),
 		SupervisorDashboardFallbackGate:     BoolPtrFromEnvDefault("SUPERVISOR_DASHBOARD_CAN_CONTAINER_FALLBACK_GATE", true),
@@ -263,9 +271,9 @@ func (c Config) Validate() error {
 	}
 	executor := strings.ToLower(strings.TrimSpace(c.SupervisorContainerExecutor))
 	switch executor {
-	case "", "noop", "command":
+	case "", "noop", "command", "node-agent":
 	default:
-		return fmt.Errorf("不支持的 SUPERVISOR_CONTAINER_EXECUTOR: %s（可选: noop, command；留空表示不配置 executor）", c.SupervisorContainerExecutor)
+		return fmt.Errorf("不支持的 SUPERVISOR_CONTAINER_EXECUTOR: %s（可选: noop, command, node-agent；留空表示不配置 executor）", c.SupervisorContainerExecutor)
 	}
 	if executor == "command" {
 		if !c.SupervisorContainerExecutorArmed {
@@ -274,12 +282,25 @@ func (c Config) Validate() error {
 		if err := validateSupervisorContainerExecutorCommands(c.SupervisorContainerExecutorCommands, c.SupervisorTargets); err != nil {
 			return err
 		}
-	} else {
-		if c.SupervisorContainerExecutorArmed {
-			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_ARMED=true 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=command 同时使用")
+		if hasSupervisorNodeAgentConfig(c) {
+			return fmt.Errorf("SUPERVISOR_NODE_AGENT_* 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=node-agent 同时使用")
+		}
+	} else if executor == "node-agent" {
+		if err := validateSupervisorNodeAgentExecutor(c); err != nil {
+			return err
 		}
 		if strings.TrimSpace(c.SupervisorContainerExecutorCommands) != "" {
 			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=command 同时使用")
+		}
+	} else {
+		if c.SupervisorContainerExecutorArmed {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_ARMED=true 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=command 或 node-agent 同时使用")
+		}
+		if strings.TrimSpace(c.SupervisorContainerExecutorCommands) != "" {
+			return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR_COMMANDS_JSON 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=command 同时使用")
+		}
+		if hasSupervisorNodeAgentConfig(c) {
+			return fmt.Errorf("SUPERVISOR_NODE_AGENT_* 仅允许与 SUPERVISOR_CONTAINER_EXECUTOR=node-agent 同时使用")
 		}
 	}
 	if c.SupervisorFallbackAutoSubmit {
@@ -292,6 +313,46 @@ func (c Config) Validate() error {
 	}
 	if err := validateSupervisorTargets(c.SupervisorTargets); err != nil {
 		return err
+	}
+	return nil
+}
+
+func hasSupervisorNodeAgentConfig(c Config) bool {
+	return strings.TrimSpace(c.SupervisorNodeAgentBaseURL) != "" ||
+		strings.TrimSpace(c.SupervisorNodeAgentToken) != "" ||
+		strings.TrimSpace(c.SupervisorNodeAgentTokenFile) != ""
+}
+
+func validateSupervisorNodeAgentExecutor(c Config) error {
+	baseURL := strings.TrimSpace(c.SupervisorNodeAgentBaseURL)
+	if baseURL == "" {
+		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR=node-agent 必须配置 SUPERVISOR_NODE_AGENT_BASE_URL")
+	}
+	parsed, err := url.Parse(strings.TrimRight(baseURL, "/"))
+	if err != nil {
+		return fmt.Errorf("SUPERVISOR_NODE_AGENT_BASE_URL 无效: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("SUPERVISOR_NODE_AGENT_BASE_URL 必须使用 http:// 或 https://")
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return fmt.Errorf("SUPERVISOR_NODE_AGENT_BASE_URL 必须包含 host")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("SUPERVISOR_NODE_AGENT_BASE_URL 不能包含 userinfo、query 或 fragment")
+	}
+	if strings.TrimSpace(c.SupervisorNodeAgentToken) == "" && strings.TrimSpace(c.SupervisorNodeAgentTokenFile) == "" {
+		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR=node-agent 必须配置 SUPERVISOR_NODE_AGENT_TOKEN 或 SUPERVISOR_NODE_AGENT_TOKEN_FILE")
+	}
+	if c.SupervisorNodeAgentTimeoutSeconds <= 0 || c.SupervisorNodeAgentTimeoutSeconds > maxSupervisorContainerExecutorTimeoutSeconds {
+		return fmt.Errorf("SUPERVISOR_NODE_AGENT_TIMEOUT_SECONDS 必须在 1..%d 之间", maxSupervisorContainerExecutorTimeoutSeconds)
+	}
+	targetNames, err := supervisorTargetNameSet(c.SupervisorTargets)
+	if err != nil {
+		return err
+	}
+	if len(targetNames) == 0 {
+		return fmt.Errorf("SUPERVISOR_CONTAINER_EXECUTOR=node-agent 必须至少配置一个 SUPERVISOR_TARGETS target")
 	}
 	return nil
 }
