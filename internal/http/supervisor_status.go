@@ -83,9 +83,10 @@ func registerSupervisorContainerFallbackControlRoute(mux *http.ServeMux, platfor
 			return
 		}
 		options := service.RuntimeSupervisorContainerFallbackControlOptions{
-			Confirm: true,
-			Reason:  reason,
-			Source:  "api",
+			Confirm:  true,
+			Reason:   reason,
+			Source:   requestAuditSource(r),
+			Operator: requestAuditOperator(r),
 		}
 		var result service.RuntimeSupervisorContainerFallbackControlResult
 		var err error
@@ -105,6 +106,7 @@ func registerSupervisorContainerFallbackControlRoute(mux *http.ServeMux, platfor
 			"suppressed":   result.Suppressed,
 			"reason":       result.Reason,
 			"source":       result.Source,
+			"operator":     result.Operator,
 			"updatedAt":    result.UpdatedAt,
 			"serviceState": result.ServiceState,
 		})
@@ -159,7 +161,8 @@ func registerSupervisorContainerFallbackBackoffRoute(mux *http.ServeMux, platfor
 		options := service.RuntimeSupervisorContainerFallbackControlOptions{
 			Confirm:         true,
 			Reason:          reason,
-			Source:          "api",
+			Source:          requestAuditSource(r),
+			Operator:        requestAuditOperator(r),
 			BackoffDuration: time.Duration(request.BackoffSeconds) * time.Second,
 		}
 		var result service.RuntimeSupervisorContainerFallbackControlResult
@@ -180,6 +183,7 @@ func registerSupervisorContainerFallbackBackoffRoute(mux *http.ServeMux, platfor
 			"backoffUntil": result.BackoffUntil,
 			"reason":       result.Reason,
 			"source":       result.Source,
+			"operator":     result.Operator,
 			"updatedAt":    result.UpdatedAt,
 			"serviceState": result.ServiceState,
 		})
@@ -220,9 +224,10 @@ func registerSupervisorContainerFallbackSubmitRoute(mux *http.ServeMux, platform
 			return
 		}
 		result, err := platform.SubmitRuntimeSupervisorContainerFallback(r.Context(), targetName, service.RuntimeSupervisorContainerFallbackControlOptions{
-			Confirm: true,
-			Reason:  reason,
-			Source:  "api",
+			Confirm:  true,
+			Reason:   reason,
+			Source:   requestAuditSource(r),
+			Operator: requestAuditOperator(r),
 		})
 		if err != nil {
 			writeSupervisorContainerFallbackControlError(w, err)
@@ -234,6 +239,7 @@ func registerSupervisorContainerFallbackSubmitRoute(mux *http.ServeMux, platform
 			"targetName":            result.TargetName,
 			"reason":                result.Reason,
 			"source":                result.Source,
+			"operator":              result.Operator,
 			"updatedAt":             result.UpdatedAt,
 			"serviceState":          result.ServiceState,
 			"containerFallbackPlan": result.Plan,

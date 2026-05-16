@@ -25,25 +25,29 @@ type signalRuntimeRun struct {
 const liveControlOperationSignalRuntimeRestart liveControlOperationKind = "signal-runtime-restart"
 
 type SignalRuntimeRestartOptions struct {
-	Force  bool
-	Reason string
-	Source string
+	Force    bool
+	Reason   string
+	Source   string
+	Operator string
 }
 
 type SignalRuntimeStartOptions struct {
-	Reason string
-	Source string
+	Reason   string
+	Source   string
+	Operator string
 }
 
 type SignalRuntimeStopOptions struct {
-	Force  bool
-	Reason string
-	Source string
+	Force    bool
+	Reason   string
+	Source   string
+	Operator string
 }
 
 type SignalRuntimeAutoRestartControlOptions struct {
-	Reason string
-	Source string
+	Reason   string
+	Source   string
+	Operator string
 }
 
 func (r *signalRuntimeRun) releaseRuntimeLease() {
@@ -309,7 +313,7 @@ func (p *Platform) persistSignalRuntimeStartAudit(sessionID string, options Sign
 }
 
 func signalRuntimeStartAuditRequested(options SignalRuntimeStartOptions) bool {
-	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != ""
+	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != "" || strings.TrimSpace(options.Operator) != ""
 }
 
 func signalRuntimeStartAuditState(state map[string]any, options SignalRuntimeStartOptions, now time.Time) map[string]any {
@@ -324,6 +328,11 @@ func signalRuntimeStartAuditState(state map[string]any, options SignalRuntimeSta
 		out["startRequestedSource"] = source
 	} else {
 		delete(out, "startRequestedSource")
+	}
+	if operator := strings.TrimSpace(options.Operator); operator != "" {
+		out["startRequestedOperator"] = operator
+	} else {
+		delete(out, "startRequestedOperator")
 	}
 	return out
 }
@@ -509,6 +518,11 @@ func signalRuntimeRestartAuditState(state map[string]any, options SignalRuntimeR
 	} else {
 		delete(out, "restartRequestedSource")
 	}
+	if operator := strings.TrimSpace(options.Operator); operator != "" {
+		out["restartRequestedOperator"] = operator
+	} else {
+		delete(out, "restartRequestedOperator")
+	}
 	return out
 }
 
@@ -549,6 +563,11 @@ func signalRuntimeSuppressAutoRestartState(state map[string]any, options SignalR
 	} else {
 		delete(out, "autoRestartSuppressedSource")
 	}
+	if operator := strings.TrimSpace(options.Operator); operator != "" {
+		out["autoRestartSuppressedOperator"] = operator
+	} else {
+		delete(out, "autoRestartSuppressedOperator")
+	}
 	delete(out, "nextAutoRestartAt")
 	delete(out, "supervisorRestartBackoff")
 	return out
@@ -560,6 +579,7 @@ func signalRuntimeResumeAutoRestartState(state map[string]any, options SignalRun
 	delete(out, "autoRestartSuppressedAt")
 	delete(out, "autoRestartSuppressedReason")
 	delete(out, "autoRestartSuppressedSource")
+	delete(out, "autoRestartSuppressedOperator")
 	delete(out, "nextAutoRestartAt")
 	delete(out, "supervisorRestartBackoff")
 	delete(out, "supervisorRestartSeverity")
@@ -574,6 +594,11 @@ func signalRuntimeResumeAutoRestartState(state map[string]any, options SignalRun
 		out["autoRestartResumedSource"] = source
 	} else {
 		delete(out, "autoRestartResumedSource")
+	}
+	if operator := strings.TrimSpace(options.Operator); operator != "" {
+		out["autoRestartResumedOperator"] = operator
+	} else {
+		delete(out, "autoRestartResumedOperator")
 	}
 	return out
 }
@@ -612,7 +637,7 @@ func (p *Platform) StopSignalRuntimeSessionWithOptions(sessionID string, options
 }
 
 func signalRuntimeStopAuditRequested(options SignalRuntimeStopOptions) bool {
-	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != ""
+	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != "" || strings.TrimSpace(options.Operator) != ""
 }
 
 func signalRuntimeStopAuditState(state map[string]any, options SignalRuntimeStopOptions, now time.Time) map[string]any {
@@ -628,6 +653,11 @@ func signalRuntimeStopAuditState(state map[string]any, options SignalRuntimeStop
 		out["stopRequestedSource"] = source
 	} else {
 		delete(out, "stopRequestedSource")
+	}
+	if operator := strings.TrimSpace(options.Operator); operator != "" {
+		out["stopRequestedOperator"] = operator
+	} else {
+		delete(out, "stopRequestedOperator")
 	}
 	return out
 }

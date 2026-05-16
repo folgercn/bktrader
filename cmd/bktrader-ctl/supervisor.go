@@ -310,6 +310,7 @@ type supervisorContainerFallbackControlAction struct {
 	BackoffSeconds int    `json:"backoffSeconds,omitempty"`
 	Reason         string `json:"reason"`
 	Source         string `json:"source"`
+	Operator       string `json:"operator,omitempty"`
 	UpdatedAt      string `json:"updatedAt"`
 }
 
@@ -320,6 +321,7 @@ type supervisorContainerFallbackAction struct {
 	Reason                          string                                      `json:"reason,omitempty"`
 	PlanReason                      string                                      `json:"planReason,omitempty"`
 	Source                          string                                      `json:"source,omitempty"`
+	Operator                        string                                      `json:"operator,omitempty"`
 	ServiceFailureEpisodeStartedAt  string                                      `json:"serviceFailureEpisodeStartedAt,omitempty"`
 	ContainerFallbackCandidateSince string                                      `json:"containerFallbackCandidateSince,omitempty"`
 	ExecutorKind                    string                                      `json:"executorKind"`
@@ -535,13 +537,18 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 	if len(snapshot.ContainerFallbackControls) > 0 {
 		fmt.Fprintf(&out, "\nfallbackControls: total=%d\n", len(snapshot.ContainerFallbackControls))
 		for _, action := range snapshot.ContainerFallbackControls {
-			fmt.Fprintf(&out, "  - %s target=%s suppressed=%t backoffUntil=%s backoffSeconds=%d source=%s updatedAt=%s reason=%s\n",
+			fmt.Fprintf(&out, "  - %s target=%s suppressed=%t backoffUntil=%s backoffSeconds=%d source=%s",
 				firstNonEmpty(action.Action, "--"),
 				firstNonEmpty(action.TargetName, "--"),
 				action.Suppressed,
 				firstNonEmpty(action.BackoffUntil, "--"),
 				action.BackoffSeconds,
 				firstNonEmpty(action.Source, "--"),
+			)
+			if strings.TrimSpace(action.Operator) != "" {
+				fmt.Fprintf(&out, " operator=%s", action.Operator)
+			}
+			fmt.Fprintf(&out, " updatedAt=%s reason=%s\n",
 				firstNonEmpty(action.UpdatedAt, "--"),
 				firstNonEmpty(action.Reason, "--"),
 			)
@@ -611,6 +618,9 @@ func buildSupervisorStatusSummary(data []byte) (string, error) {
 			}
 			if strings.TrimSpace(action.Source) != "" {
 				fmt.Fprintf(&out, " source=%s", action.Source)
+			}
+			if strings.TrimSpace(action.Operator) != "" {
+				fmt.Fprintf(&out, " operator=%s", action.Operator)
 			}
 			if strings.TrimSpace(action.PlanReason) != "" {
 				fmt.Fprintf(&out, " planReason=%s", action.PlanReason)

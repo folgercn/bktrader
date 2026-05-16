@@ -71,9 +71,10 @@ func registerRuntimeControlRoutes(mux *http.ServeMux, platform *service.Platform
 		switch strings.ToLower(strings.TrimSpace(request.RuntimeKind)) {
 		case "signal", "signal-runtime":
 			item, err := platform.RestartSignalRuntimeSessionWithOptions(runtimeID, service.SignalRuntimeRestartOptions{
-				Force:  request.Force,
-				Reason: reason,
-				Source: "api",
+				Force:    request.Force,
+				Reason:   reason,
+				Source:   requestAuditSource(r),
+				Operator: requestAuditOperator(r),
 			})
 			if err != nil {
 				writeRuntimeControlError(w, err)
@@ -139,14 +140,16 @@ func registerRuntimeLifecycleControlRoute(mux *http.ServeMux, platform *service.
 			var err error
 			if action == "start" {
 				item, err = platform.StartSignalRuntimeSessionWithOptions(runtimeID, service.SignalRuntimeStartOptions{
-					Reason: reason,
-					Source: "api",
+					Reason:   reason,
+					Source:   requestAuditSource(r),
+					Operator: requestAuditOperator(r),
 				})
 			} else {
 				item, err = platform.StopSignalRuntimeSessionWithOptions(runtimeID, service.SignalRuntimeStopOptions{
-					Force:  request.Force,
-					Reason: reason,
-					Source: "api",
+					Force:    request.Force,
+					Reason:   reason,
+					Source:   requestAuditSource(r),
+					Operator: requestAuditOperator(r),
 				})
 			}
 			if err != nil {
@@ -159,14 +162,16 @@ func registerRuntimeLifecycleControlRoute(mux *http.ServeMux, platform *service.
 			var err error
 			if action == "start" {
 				item, err = platform.RequestLiveSessionStartWithOptions(runtimeID, service.LiveSessionControlOptions{
-					Reason: reason,
-					Source: "api",
+					Reason:   reason,
+					Source:   requestAuditSource(r),
+					Operator: requestAuditOperator(r),
 				})
 			} else {
 				item, err = platform.RequestLiveSessionStopWithOptions(runtimeID, service.LiveSessionControlOptions{
-					Force:  request.Force,
-					Reason: reason,
-					Source: "api",
+					Force:    request.Force,
+					Reason:   reason,
+					Source:   requestAuditSource(r),
+					Operator: requestAuditOperator(r),
 				})
 			}
 			if err != nil {
@@ -179,13 +184,15 @@ func registerRuntimeLifecycleControlRoute(mux *http.ServeMux, platform *service.
 			var err error
 			if action == "start" {
 				item, err = platform.StartPaperSessionWithOptions(runtimeID, service.PaperSessionControlOptions{
-					Reason: reason,
-					Source: "api",
+					Reason:   reason,
+					Source:   requestAuditSource(r),
+					Operator: requestAuditOperator(r),
 				})
 			} else {
 				item, err = platform.StopPaperSessionWithOptions(runtimeID, service.PaperSessionControlOptions{
-					Reason: reason,
-					Source: "api",
+					Reason:   reason,
+					Source:   requestAuditSource(r),
+					Operator: requestAuditOperator(r),
 				})
 			}
 			if err != nil {
@@ -260,8 +267,9 @@ func registerRuntimeAutoRestartControlRoute(mux *http.ServeMux, platform *servic
 			var updated any
 			var err error
 			options := service.SignalRuntimeAutoRestartControlOptions{
-				Reason: reason,
-				Source: "api",
+				Reason:   reason,
+				Source:   requestAuditSource(r),
+				Operator: requestAuditOperator(r),
 			}
 			if action == "suppress" {
 				updated, err = platform.SuppressSignalRuntimeAutoRestart(runtimeID, options)

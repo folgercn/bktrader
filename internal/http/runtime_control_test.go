@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,8 @@ func TestRuntimeRestartRouteAcceptsSignalRuntimeRestart(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/restart", strings.NewReader(`{"runtimeId":"`+runtimeSession.ID+`","runtimeKind":"signal","force":true,"confirm":true,"reason":"operator requested rebinding"}`))
+	req.Header.Set("X-BKTRADER-Control-Source", "dashboard")
+	req = req.WithContext(context.WithValue(req.Context(), authClaimsKey, authClaims{Username: "alice"}))
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d body=%s", rec.Code, rec.Body.String())
@@ -62,8 +65,11 @@ func TestRuntimeRestartRouteAcceptsSignalRuntimeRestart(t *testing.T) {
 	if got := stored.State["restartRequestedReason"]; got != "operator requested rebinding" {
 		t.Fatalf("expected restartRequestedReason, got %#v", got)
 	}
-	if got := stored.State["restartRequestedSource"]; got != "api" {
-		t.Fatalf("expected restartRequestedSource api, got %#v", got)
+	if got := stored.State["restartRequestedSource"]; got != "dashboard" {
+		t.Fatalf("expected restartRequestedSource dashboard, got %#v", got)
+	}
+	if got := stored.State["restartRequestedOperator"]; got != "alice" {
+		t.Fatalf("expected restartRequestedOperator alice, got %#v", got)
 	}
 	if got := stored.State["restartRequestedAt"]; got == "" {
 		t.Fatalf("expected restartRequestedAt, got %#v", got)

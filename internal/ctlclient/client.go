@@ -22,9 +22,10 @@ type RouteEntry struct {
 }
 
 type Client struct {
-	BaseURL string
-	Token   string
-	DryRun  bool
+	BaseURL        string
+	Token          string
+	DryRun         bool
+	DefaultHeaders map[string]string
 }
 
 type Config struct {
@@ -95,6 +96,12 @@ func (c *Client) Request(method, path string, payload any) ([]byte, error) {
 func (c *Client) signRequest(req *http.Request, _ any) {
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	for key, value := range c.DefaultHeaders {
+		if key == "" || value == "" {
+			continue
+		}
+		req.Header.Set(key, value)
 	}
 	req.Header.Set("Content-Type", "application/json")
 }

@@ -3,7 +3,23 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/spf13/viper"
 )
+
+func TestGetClientSetsCtlControlSourceHeader(t *testing.T) {
+	viper.Set("api_url", "http://127.0.0.1:8080")
+	viper.Set("token", "test-token")
+	t.Cleanup(func() {
+		viper.Set("api_url", "")
+		viper.Set("token", "")
+	})
+
+	client := getClient()
+	if got := client.DefaultHeaders["X-BKTRADER-Control-Source"]; got != "ctl" {
+		t.Fatalf("expected ctl source header, got %q", got)
+	}
+}
 
 func TestBuildSupervisorStatusSummaryShowsFallbackReadiness(t *testing.T) {
 	payload := []byte(`{

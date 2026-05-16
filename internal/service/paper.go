@@ -41,8 +41,9 @@ type paperPlannedOrder struct {
 }
 
 type PaperSessionControlOptions struct {
-	Reason string
-	Source string
+	Reason   string
+	Source   string
+	Operator string
 }
 
 // ListPaperSessions 获取所有模拟交易会话。
@@ -229,7 +230,7 @@ func (p *Platform) StopPaperSessionWithOptions(sessionID string, options PaperSe
 }
 
 func paperSessionControlAuditRequested(options PaperSessionControlOptions) bool {
-	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != ""
+	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != "" || strings.TrimSpace(options.Operator) != ""
 }
 
 func (p *Platform) markPaperSessionControlRequested(session domain.PaperSession, desired string, options PaperSessionControlOptions) (domain.PaperSession, error) {
@@ -246,9 +247,13 @@ func (p *Platform) markPaperSessionControlRequested(session domain.PaperSession,
 		if source := strings.TrimSpace(options.Source); source != "" {
 			state["startRequestedSource"] = source
 		}
+		if operator := strings.TrimSpace(options.Operator); operator != "" {
+			state["startRequestedOperator"] = operator
+		}
 		delete(state, "stopRequestedAt")
 		delete(state, "stopRequestedReason")
 		delete(state, "stopRequestedSource")
+		delete(state, "stopRequestedOperator")
 		delete(state, "stopRequestedForce")
 	case "STOPPED":
 		state["actualStatus"] = "STOPPING"
@@ -259,9 +264,13 @@ func (p *Platform) markPaperSessionControlRequested(session domain.PaperSession,
 		if source := strings.TrimSpace(options.Source); source != "" {
 			state["stopRequestedSource"] = source
 		}
+		if operator := strings.TrimSpace(options.Operator); operator != "" {
+			state["stopRequestedOperator"] = operator
+		}
 		delete(state, "startRequestedAt")
 		delete(state, "startRequestedReason")
 		delete(state, "startRequestedSource")
+		delete(state, "startRequestedOperator")
 	}
 	delete(state, "lastControlError")
 	delete(state, "lastControlErrorAt")

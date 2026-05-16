@@ -1598,6 +1598,9 @@ func TestRuntimeSupervisorSubmitsDueSignalRestartWhenEnabled(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Errorf("expected POST restart, got %s", r.Method)
 			}
+			if got := r.Header.Get("X-BKTRADER-Control-Source"); got != "supervisor" {
+				t.Errorf("expected supervisor control source header, got %q", got)
+			}
 			if err := json.NewDecoder(r.Body).Decode(&restartPayload); err != nil {
 				t.Errorf("decode restart payload failed: %v", err)
 			}
@@ -1643,6 +1646,9 @@ func TestRuntimeSupervisorSubmitsDueSignalRestartWhenEnabled(t *testing.T) {
 	action := snapshot.Targets[0].ControlActions[0]
 	if !action.Submitted || action.StatusCode != http.StatusOK || action.Error != "" {
 		t.Fatalf("expected submitted restart action, got %+v", action)
+	}
+	if action.Source != "supervisor" || action.Operator != "" {
+		t.Fatalf("expected supervisor source without operator, got %+v", action)
 	}
 	second := supervisor.Collect(context.Background())
 	if requested["POST /api/v1/runtime/restart"] != 1 {

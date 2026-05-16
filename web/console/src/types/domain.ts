@@ -392,21 +392,26 @@ export type RuntimeSupervisorRuntimeStatus = {
   restartRequestedAt?: string;
   restartRequestedReason?: string;
   restartRequestedSource?: string;
+  restartRequestedOperator?: string;
   restartRequestedForce?: boolean;
   startRequestedAt?: string;
   startRequestedReason?: string;
   startRequestedSource?: string;
+  startRequestedOperator?: string;
   stopRequestedAt?: string;
   stopRequestedReason?: string;
   stopRequestedSource?: string;
+  stopRequestedOperator?: string;
   stopRequestedForce?: boolean;
   autoRestartSuppressed: boolean;
   autoRestartSuppressedAt?: string;
   autoRestartSuppressedReason?: string;
   autoRestartSuppressedSource?: string;
+  autoRestartSuppressedOperator?: string;
   autoRestartResumedAt?: string;
   autoRestartResumedReason?: string;
   autoRestartResumedSource?: string;
+  autoRestartResumedOperator?: string;
   lastHealthyAt?: string;
   lastCheckedAt: string;
   updatedAt?: string;
@@ -508,6 +513,8 @@ export type RuntimeSupervisorControlAction = {
   runtimeId: string;
   runtimeKind: string;
   reason?: string;
+  source?: string;
+  operator?: string;
   submitted: boolean;
   statusCode?: number;
   error?: string;
@@ -523,6 +530,7 @@ export type RuntimeSupervisorContainerFallbackControlAction = {
   backoffSeconds?: number;
   reason: string;
   source: string;
+  operator?: string;
   updatedAt: string;
 };
 
@@ -533,6 +541,7 @@ export type RuntimeSupervisorContainerFallbackAction = {
   reason?: string;
   planReason?: string;
   source?: string;
+  operator?: string;
   serviceFailureEpisodeStartedAt?: string;
   containerFallbackCandidateSince?: string;
   executorKind: string;
@@ -578,6 +587,18 @@ export type RuntimeSupervisorPolicy = {
   containerExecutorKind?: string;
   containerExecutorDryRun?: boolean;
   containerExecutorArmed?: boolean;
+  dashboardPermissions?: RuntimeSupervisorDashboardPermissions;
+};
+
+export type RuntimeSupervisorDashboardPermissions = {
+  canView: boolean;
+  canRuntimeControl: boolean;
+  canContainerFallbackGate: boolean;
+  canContainerFallbackSubmit: boolean;
+  viewBlockedReason?: string;
+  runtimeControlBlockedReason?: string;
+  containerFallbackGateBlockedReason?: string;
+  containerFallbackSubmitBlockedReason?: string;
 };
 
 export type RuntimeSupervisorTargetSnapshot = {
