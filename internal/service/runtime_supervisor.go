@@ -186,6 +186,8 @@ type RuntimeSupervisorControlAction struct {
 	RuntimeID   string    `json:"runtimeId"`
 	RuntimeKind string    `json:"runtimeKind"`
 	Reason      string    `json:"reason,omitempty"`
+	Source      string    `json:"source,omitempty"`
+	Operator    string    `json:"operator,omitempty"`
 	Submitted   bool      `json:"submitted"`
 	StatusCode  int       `json:"statusCode,omitempty"`
 	Error       string    `json:"error,omitempty"`
@@ -221,6 +223,7 @@ type RuntimeSupervisorContainerFallbackControlAction struct {
 	BackoffSeconds int        `json:"backoffSeconds,omitempty"`
 	Reason         string     `json:"reason"`
 	Source         string     `json:"source"`
+	Operator       string     `json:"operator,omitempty"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
@@ -231,6 +234,7 @@ type RuntimeSupervisorContainerFallbackAction struct {
 	Reason                          string                                             `json:"reason,omitempty"`
 	PlanReason                      string                                             `json:"planReason,omitempty"`
 	Source                          string                                             `json:"source,omitempty"`
+	Operator                        string                                             `json:"operator,omitempty"`
 	ServiceFailureEpisodeStartedAt  *time.Time                                         `json:"serviceFailureEpisodeStartedAt,omitempty"`
 	ContainerFallbackCandidateSince *time.Time                                         `json:"containerFallbackCandidateSince,omitempty"`
 	ExecutorKind                    string                                             `json:"executorKind"`
@@ -404,6 +408,7 @@ type RuntimeSupervisorContainerFallbackControlOptions struct {
 	Confirm         bool
 	Reason          string
 	Source          string
+	Operator        string
 	BackoffDuration time.Duration
 }
 
@@ -414,6 +419,7 @@ type RuntimeSupervisorContainerFallbackControlResult struct {
 	BackoffUntil  *time.Time                    `json:"backoffUntil,omitempty"`
 	Reason        string                        `json:"reason"`
 	Source        string                        `json:"source"`
+	Operator      string                        `json:"operator,omitempty"`
 	UpdatedAt     time.Time                     `json:"updatedAt"`
 	ServiceState  RuntimeSupervisorServiceState `json:"serviceState"`
 }
@@ -423,6 +429,7 @@ type RuntimeSupervisorContainerFallbackSubmitResult struct {
 	TargetBaseURL string                                    `json:"targetBaseUrl"`
 	Reason        string                                    `json:"reason"`
 	Source        string                                    `json:"source"`
+	Operator      string                                    `json:"operator,omitempty"`
 	UpdatedAt     time.Time                                 `json:"updatedAt"`
 	ServiceState  RuntimeSupervisorServiceState             `json:"serviceState"`
 	Plan          *RuntimeSupervisorContainerFallbackPlan   `json:"containerFallbackPlan,omitempty"`
@@ -430,8 +437,9 @@ type RuntimeSupervisorContainerFallbackSubmitResult struct {
 }
 
 type runtimeSupervisorContainerFallbackSubmitAudit struct {
-	Reason string
-	Source string
+	Reason   string
+	Source   string
+	Operator string
 }
 
 type RuntimeSupervisor struct {
@@ -701,6 +709,7 @@ func (s *RuntimeSupervisor) SubmitContainerFallback(ctx context.Context, targetN
 	if source == "" {
 		source = "api"
 	}
+	operator := strings.TrimSpace(options.Operator)
 	now := time.Now().UTC()
 	key := runtimeSupervisorServiceKey(target)
 
@@ -731,6 +740,7 @@ func (s *RuntimeSupervisor) SubmitContainerFallback(ctx context.Context, targetN
 		TargetBaseURL: target.BaseURL,
 		Reason:        reason,
 		Source:        source,
+		Operator:      operator,
 		UpdatedAt:     now,
 		ServiceState:  serviceState,
 		Plan:          plan,
@@ -742,8 +752,9 @@ func (s *RuntimeSupervisor) SubmitContainerFallback(ctx context.Context, targetN
 		return result, RuntimeSupervisorContainerFallbackBlockedError{Reason: runtimeSupervisorContainerFallbackDecisionReason(plan)}
 	}
 	action, submitted := s.submitContainerFallbackAction(ctx, target, plan, now, runtimeSupervisorContainerFallbackSubmitAudit{
-		Reason: reason,
-		Source: source,
+		Reason:   reason,
+		Source:   source,
+		Operator: operator,
 	})
 	if !submitted {
 		result.ServiceState = s.serviceStateSnapshot(target)
@@ -775,6 +786,7 @@ func (s *RuntimeSupervisor) setContainerFallbackSuppressed(targetName string, su
 	if source == "" {
 		source = "api"
 	}
+	operator := strings.TrimSpace(options.Operator)
 	now := time.Now().UTC()
 	key := runtimeSupervisorServiceKey(target)
 	s.mu.Lock()
@@ -808,6 +820,7 @@ func (s *RuntimeSupervisor) setContainerFallbackSuppressed(targetName string, su
 		Suppressed:    suppressed,
 		Reason:        reason,
 		Source:        source,
+		Operator:      operator,
 		UpdatedAt:     now,
 	})
 	return RuntimeSupervisorContainerFallbackControlResult{
@@ -816,6 +829,7 @@ func (s *RuntimeSupervisor) setContainerFallbackSuppressed(targetName string, su
 		Suppressed:    suppressed,
 		Reason:        reason,
 		Source:        source,
+		Operator:      operator,
 		UpdatedAt:     now,
 		ServiceState:  runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold),
 	}, nil
@@ -846,6 +860,7 @@ func (s *RuntimeSupervisor) setContainerFallbackBackoff(targetName string, optio
 	if source == "" {
 		source = "api"
 	}
+	operator := strings.TrimSpace(options.Operator)
 	now := time.Now().UTC()
 	key := runtimeSupervisorServiceKey(target)
 	s.mu.Lock()
@@ -888,6 +903,7 @@ func (s *RuntimeSupervisor) setContainerFallbackBackoff(targetName string, optio
 		BackoffUntil:  backoffUntil,
 		Reason:        reason,
 		Source:        source,
+		Operator:      operator,
 		UpdatedAt:     now,
 	}
 	if !clear {
@@ -901,6 +917,7 @@ func (s *RuntimeSupervisor) setContainerFallbackBackoff(targetName string, optio
 		BackoffUntil:  backoffUntil,
 		Reason:        reason,
 		Source:        source,
+		Operator:      operator,
 		UpdatedAt:     now,
 		ServiceState:  runtimeSupervisorServiceStateSnapshot(state, s.options.ServiceFailureThreshold),
 	}, nil
@@ -1269,12 +1286,14 @@ func (s *RuntimeSupervisor) submitContainerFallbackAction(ctx context.Context, t
 	if source == "" {
 		source = "supervisor"
 	}
+	operator := strings.TrimSpace(audit.Operator)
 	action := RuntimeSupervisorContainerFallbackAction{
 		Action:                          firstNonEmpty(plan.Action, "container-restart"),
 		TargetName:                      target.Name,
 		TargetBaseURL:                   target.BaseURL,
 		Reason:                          reason,
 		Source:                          source,
+		Operator:                        operator,
 		ServiceFailureEpisodeStartedAt:  plan.ServiceFailureEpisodeStartedAt,
 		ContainerFallbackCandidateSince: plan.ContainerFallbackCandidateSince,
 		ExecutorKind:                    plan.ExecutorKind,
@@ -1761,6 +1780,7 @@ func (s *RuntimeSupervisor) submitRuntimeRestart(ctx context.Context, target Run
 		RuntimeID:   runtime.RuntimeID,
 		RuntimeKind: runtime.RuntimeKind,
 		Reason:      reason,
+		Source:      "supervisor",
 		RequestedAt: now.UTC(),
 	}
 	payload := map[string]any{
@@ -1838,6 +1858,7 @@ func (s *RuntimeSupervisor) postJSON(ctx context.Context, target RuntimeSupervis
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-BKTRADER-Control-Source", "supervisor")
 	if token := strings.TrimSpace(target.BearerToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

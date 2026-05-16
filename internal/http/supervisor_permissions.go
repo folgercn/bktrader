@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/wuyaocheng/bktrader/internal/config"
 	"github.com/wuyaocheng/bktrader/internal/service"
@@ -42,4 +43,24 @@ func permissionBlockedReason(allowed bool) string {
 
 func writeSupervisorPermissionError(w http.ResponseWriter, permission string) {
 	writeError(w, http.StatusForbidden, permission+" is denied by supervisor dashboard permission policy")
+}
+
+func requestAuditSource(r *http.Request) string {
+	source := strings.ToLower(strings.TrimSpace(r.Header.Get("X-BKTRADER-Control-Source")))
+	switch source {
+	case "dashboard", "ctl", "api", "supervisor":
+		return source
+	default:
+		return "api"
+	}
+}
+
+func requestAuditOperator(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if claims, ok := authClaimsFromContext(r.Context()); ok {
+		return strings.TrimSpace(claims.Username)
+	}
+	return ""
 }

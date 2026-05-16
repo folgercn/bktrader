@@ -14,42 +14,47 @@ type RuntimeStatusSnapshot struct {
 }
 
 type RuntimeStatus struct {
-	Service                     string                                   `json:"service"`
-	RuntimeID                   string                                   `json:"runtimeId"`
-	RuntimeKind                 string                                   `json:"runtimeKind"`
-	AccountID                   string                                   `json:"accountId,omitempty"`
-	StrategyID                  string                                   `json:"strategyId,omitempty"`
-	DesiredStatus               string                                   `json:"desiredStatus,omitempty"`
-	ActualStatus                string                                   `json:"actualStatus,omitempty"`
-	Health                      string                                   `json:"health,omitempty"`
-	RestartAttempt              int                                      `json:"restartAttempt"`
-	NextRestartAt               string                                   `json:"nextRestartAt,omitempty"`
-	RestartBackoff              string                                   `json:"restartBackoff,omitempty"`
-	RestartReason               string                                   `json:"restartReason,omitempty"`
-	RestartSeverity             string                                   `json:"restartSeverity,omitempty"`
-	LastRestartError            string                                   `json:"lastRestartError,omitempty"`
-	RestartRequestedAt          string                                   `json:"restartRequestedAt,omitempty"`
-	RestartRequestedReason      string                                   `json:"restartRequestedReason,omitempty"`
-	RestartRequestedSource      string                                   `json:"restartRequestedSource,omitempty"`
-	RestartRequestedForce       bool                                     `json:"restartRequestedForce,omitempty"`
-	StartRequestedAt            string                                   `json:"startRequestedAt,omitempty"`
-	StartRequestedReason        string                                   `json:"startRequestedReason,omitempty"`
-	StartRequestedSource        string                                   `json:"startRequestedSource,omitempty"`
-	StopRequestedAt             string                                   `json:"stopRequestedAt,omitempty"`
-	StopRequestedReason         string                                   `json:"stopRequestedReason,omitempty"`
-	StopRequestedSource         string                                   `json:"stopRequestedSource,omitempty"`
-	StopRequestedForce          bool                                     `json:"stopRequestedForce,omitempty"`
-	AutoRestartSuppressed       bool                                     `json:"autoRestartSuppressed"`
-	AutoRestartSuppressedAt     string                                   `json:"autoRestartSuppressedAt,omitempty"`
-	AutoRestartSuppressedReason string                                   `json:"autoRestartSuppressedReason,omitempty"`
-	AutoRestartSuppressedSource string                                   `json:"autoRestartSuppressedSource,omitempty"`
-	AutoRestartResumedAt        string                                   `json:"autoRestartResumedAt,omitempty"`
-	AutoRestartResumedReason    string                                   `json:"autoRestartResumedReason,omitempty"`
-	AutoRestartResumedSource    string                                   `json:"autoRestartResumedSource,omitempty"`
-	LastHealthyAt               string                                   `json:"lastHealthyAt,omitempty"`
-	LastCheckedAt               string                                   `json:"lastCheckedAt"`
-	UpdatedAt                   *time.Time                               `json:"updatedAt,omitempty"`
-	ApplicationRestartPlan      *RuntimeSupervisorApplicationRestartPlan `json:"applicationRestartPlan,omitempty"`
+	Service                       string                                   `json:"service"`
+	RuntimeID                     string                                   `json:"runtimeId"`
+	RuntimeKind                   string                                   `json:"runtimeKind"`
+	AccountID                     string                                   `json:"accountId,omitempty"`
+	StrategyID                    string                                   `json:"strategyId,omitempty"`
+	DesiredStatus                 string                                   `json:"desiredStatus,omitempty"`
+	ActualStatus                  string                                   `json:"actualStatus,omitempty"`
+	Health                        string                                   `json:"health,omitempty"`
+	RestartAttempt                int                                      `json:"restartAttempt"`
+	NextRestartAt                 string                                   `json:"nextRestartAt,omitempty"`
+	RestartBackoff                string                                   `json:"restartBackoff,omitempty"`
+	RestartReason                 string                                   `json:"restartReason,omitempty"`
+	RestartSeverity               string                                   `json:"restartSeverity,omitempty"`
+	LastRestartError              string                                   `json:"lastRestartError,omitempty"`
+	RestartRequestedAt            string                                   `json:"restartRequestedAt,omitempty"`
+	RestartRequestedReason        string                                   `json:"restartRequestedReason,omitempty"`
+	RestartRequestedSource        string                                   `json:"restartRequestedSource,omitempty"`
+	RestartRequestedOperator      string                                   `json:"restartRequestedOperator,omitempty"`
+	RestartRequestedForce         bool                                     `json:"restartRequestedForce,omitempty"`
+	StartRequestedAt              string                                   `json:"startRequestedAt,omitempty"`
+	StartRequestedReason          string                                   `json:"startRequestedReason,omitempty"`
+	StartRequestedSource          string                                   `json:"startRequestedSource,omitempty"`
+	StartRequestedOperator        string                                   `json:"startRequestedOperator,omitempty"`
+	StopRequestedAt               string                                   `json:"stopRequestedAt,omitempty"`
+	StopRequestedReason           string                                   `json:"stopRequestedReason,omitempty"`
+	StopRequestedSource           string                                   `json:"stopRequestedSource,omitempty"`
+	StopRequestedOperator         string                                   `json:"stopRequestedOperator,omitempty"`
+	StopRequestedForce            bool                                     `json:"stopRequestedForce,omitempty"`
+	AutoRestartSuppressed         bool                                     `json:"autoRestartSuppressed"`
+	AutoRestartSuppressedAt       string                                   `json:"autoRestartSuppressedAt,omitempty"`
+	AutoRestartSuppressedReason   string                                   `json:"autoRestartSuppressedReason,omitempty"`
+	AutoRestartSuppressedSource   string                                   `json:"autoRestartSuppressedSource,omitempty"`
+	AutoRestartSuppressedOperator string                                   `json:"autoRestartSuppressedOperator,omitempty"`
+	AutoRestartResumedAt          string                                   `json:"autoRestartResumedAt,omitempty"`
+	AutoRestartResumedReason      string                                   `json:"autoRestartResumedReason,omitempty"`
+	AutoRestartResumedSource      string                                   `json:"autoRestartResumedSource,omitempty"`
+	AutoRestartResumedOperator    string                                   `json:"autoRestartResumedOperator,omitempty"`
+	LastHealthyAt                 string                                   `json:"lastHealthyAt,omitempty"`
+	LastCheckedAt                 string                                   `json:"lastCheckedAt"`
+	UpdatedAt                     *time.Time                               `json:"updatedAt,omitempty"`
+	ApplicationRestartPlan        *RuntimeSupervisorApplicationRestartPlan `json:"applicationRestartPlan,omitempty"`
 }
 
 var liveRuntimeStatusUpdatedAtKeys = []string{
@@ -160,38 +165,43 @@ func runtimeStatusFromState(serviceName, runtimeKind, runtimeID, status string, 
 		health = runtimeHealthFromActualStatus(actualStatus)
 	}
 	return RuntimeStatus{
-		Service:                     serviceName,
-		RuntimeID:                   runtimeID,
-		RuntimeKind:                 runtimeKind,
-		DesiredStatus:               desiredStatus,
-		ActualStatus:                actualStatus,
-		Health:                      health,
-		RestartAttempt:              firstRestartAttempt(state, "restartAttempt", "supervisorRestartAttempt"),
-		NextRestartAt:               firstNonEmpty(stringValue(state["nextRestartAt"]), stringValue(state["nextAutoRestartAt"])),
-		RestartBackoff:              firstNonEmpty(stringValue(state["restartBackoff"]), stringValue(state["supervisorRestartBackoff"])),
-		RestartReason:               firstNonEmpty(stringValue(state["restartReason"]), stringValue(state["supervisorRestartReason"])),
-		RestartSeverity:             firstNonEmpty(stringValue(state["restartSeverity"]), stringValue(state["supervisorRestartSeverity"])),
-		LastRestartError:            firstNonEmpty(stringValue(state["lastRestartError"]), stringValue(state["lastSupervisorError"])),
-		RestartRequestedAt:          stringValue(state["restartRequestedAt"]),
-		RestartRequestedReason:      stringValue(state["restartRequestedReason"]),
-		RestartRequestedSource:      stringValue(state["restartRequestedSource"]),
-		RestartRequestedForce:       boolValue(state["restartRequestedForce"]),
-		StartRequestedAt:            stringValue(state["startRequestedAt"]),
-		StartRequestedReason:        stringValue(state["startRequestedReason"]),
-		StartRequestedSource:        stringValue(state["startRequestedSource"]),
-		StopRequestedAt:             stringValue(state["stopRequestedAt"]),
-		StopRequestedReason:         stringValue(state["stopRequestedReason"]),
-		StopRequestedSource:         stringValue(state["stopRequestedSource"]),
-		StopRequestedForce:          boolValue(state["stopRequestedForce"]),
-		AutoRestartSuppressed:       boolValue(state["autoRestartSuppressed"]),
-		AutoRestartSuppressedAt:     stringValue(state["autoRestartSuppressedAt"]),
-		AutoRestartSuppressedReason: stringValue(state["autoRestartSuppressedReason"]),
-		AutoRestartSuppressedSource: stringValue(state["autoRestartSuppressedSource"]),
-		AutoRestartResumedAt:        stringValue(state["autoRestartResumedAt"]),
-		AutoRestartResumedReason:    stringValue(state["autoRestartResumedReason"]),
-		AutoRestartResumedSource:    stringValue(state["autoRestartResumedSource"]),
-		LastHealthyAt:               stringValue(state["lastHealthyAt"]),
-		LastCheckedAt:               checkedAt.UTC().Format(time.RFC3339),
+		Service:                       serviceName,
+		RuntimeID:                     runtimeID,
+		RuntimeKind:                   runtimeKind,
+		DesiredStatus:                 desiredStatus,
+		ActualStatus:                  actualStatus,
+		Health:                        health,
+		RestartAttempt:                firstRestartAttempt(state, "restartAttempt", "supervisorRestartAttempt"),
+		NextRestartAt:                 firstNonEmpty(stringValue(state["nextRestartAt"]), stringValue(state["nextAutoRestartAt"])),
+		RestartBackoff:                firstNonEmpty(stringValue(state["restartBackoff"]), stringValue(state["supervisorRestartBackoff"])),
+		RestartReason:                 firstNonEmpty(stringValue(state["restartReason"]), stringValue(state["supervisorRestartReason"])),
+		RestartSeverity:               firstNonEmpty(stringValue(state["restartSeverity"]), stringValue(state["supervisorRestartSeverity"])),
+		LastRestartError:              firstNonEmpty(stringValue(state["lastRestartError"]), stringValue(state["lastSupervisorError"])),
+		RestartRequestedAt:            stringValue(state["restartRequestedAt"]),
+		RestartRequestedReason:        stringValue(state["restartRequestedReason"]),
+		RestartRequestedSource:        stringValue(state["restartRequestedSource"]),
+		RestartRequestedOperator:      stringValue(state["restartRequestedOperator"]),
+		RestartRequestedForce:         boolValue(state["restartRequestedForce"]),
+		StartRequestedAt:              stringValue(state["startRequestedAt"]),
+		StartRequestedReason:          stringValue(state["startRequestedReason"]),
+		StartRequestedSource:          stringValue(state["startRequestedSource"]),
+		StartRequestedOperator:        stringValue(state["startRequestedOperator"]),
+		StopRequestedAt:               stringValue(state["stopRequestedAt"]),
+		StopRequestedReason:           stringValue(state["stopRequestedReason"]),
+		StopRequestedSource:           stringValue(state["stopRequestedSource"]),
+		StopRequestedOperator:         stringValue(state["stopRequestedOperator"]),
+		StopRequestedForce:            boolValue(state["stopRequestedForce"]),
+		AutoRestartSuppressed:         boolValue(state["autoRestartSuppressed"]),
+		AutoRestartSuppressedAt:       stringValue(state["autoRestartSuppressedAt"]),
+		AutoRestartSuppressedReason:   stringValue(state["autoRestartSuppressedReason"]),
+		AutoRestartSuppressedSource:   stringValue(state["autoRestartSuppressedSource"]),
+		AutoRestartSuppressedOperator: stringValue(state["autoRestartSuppressedOperator"]),
+		AutoRestartResumedAt:          stringValue(state["autoRestartResumedAt"]),
+		AutoRestartResumedReason:      stringValue(state["autoRestartResumedReason"]),
+		AutoRestartResumedSource:      stringValue(state["autoRestartResumedSource"]),
+		AutoRestartResumedOperator:    stringValue(state["autoRestartResumedOperator"]),
+		LastHealthyAt:                 stringValue(state["lastHealthyAt"]),
+		LastCheckedAt:                 checkedAt.UTC().Format(time.RFC3339),
 	}
 }
 

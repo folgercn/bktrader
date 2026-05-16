@@ -70,6 +70,7 @@ type RuntimeLifecycleAudit = {
   at?: string;
   reason?: string;
   source?: string;
+  operator?: string;
   force?: boolean;
 };
 type RuntimeAutoRestartAudit = {
@@ -78,6 +79,7 @@ type RuntimeAutoRestartAudit = {
   at?: string;
   reason?: string;
   source?: string;
+  operator?: string;
 };
 
 const REFRESH_INTERVAL_MS = 15_000;
@@ -218,6 +220,7 @@ function runtimeLifecycleAudit(runtime: RuntimeSupervisorRuntimeStatus): Runtime
       at: runtime.restartRequestedAt,
       reason: runtime.restartRequestedReason,
       source: runtime.restartRequestedSource,
+      operator: runtime.restartRequestedOperator,
       force: runtime.restartRequestedForce,
     });
   }
@@ -228,6 +231,7 @@ function runtimeLifecycleAudit(runtime: RuntimeSupervisorRuntimeStatus): Runtime
       at: runtime.startRequestedAt,
       reason: runtime.startRequestedReason,
       source: runtime.startRequestedSource,
+      operator: runtime.startRequestedOperator,
     });
   }
   if (hasStop) {
@@ -237,6 +241,7 @@ function runtimeLifecycleAudit(runtime: RuntimeSupervisorRuntimeStatus): Runtime
       at: runtime.stopRequestedAt,
       reason: runtime.stopRequestedReason,
       source: runtime.stopRequestedSource,
+      operator: runtime.stopRequestedOperator,
       force: runtime.stopRequestedForce,
     });
   }
@@ -261,6 +266,7 @@ function runtimeLifecycleAuditText(audit: RuntimeLifecycleAudit) {
   const meta = [
     audit.at ? `at ${formatTime(audit.at)}` : undefined,
     audit.source ? `source ${audit.source}` : undefined,
+    audit.operator ? `operator ${audit.operator}` : undefined,
     audit.force ? 'force' : undefined,
   ].filter(Boolean);
   return meta.length > 0 ? `${audit.label}: ${reason} (${meta.join(', ')})` : `${audit.label}: ${reason}`;
@@ -271,6 +277,7 @@ function runtimeLifecycleAuditTitle(audit: RuntimeLifecycleAudit) {
     `state=${audit.label}`,
     audit.at ? `at=${audit.at}` : undefined,
     audit.source ? `source=${audit.source}` : undefined,
+    audit.operator ? `operator=${audit.operator}` : undefined,
     audit.force ? 'force=true' : undefined,
     audit.reason ? `reason=${audit.reason}` : undefined,
   ].filter(Boolean).join(' ');
@@ -284,6 +291,7 @@ function runtimeAutoRestartAudit(runtime: RuntimeSupervisorRuntimeStatus): Runti
       at: runtime.autoRestartSuppressedAt,
       reason: runtime.autoRestartSuppressedReason,
       source: runtime.autoRestartSuppressedSource,
+      operator: runtime.autoRestartSuppressedOperator,
     };
   }
   if (runtime.autoRestartResumedAt || runtime.autoRestartResumedReason || runtime.autoRestartResumedSource) {
@@ -293,6 +301,7 @@ function runtimeAutoRestartAudit(runtime: RuntimeSupervisorRuntimeStatus): Runti
       at: runtime.autoRestartResumedAt,
       reason: runtime.autoRestartResumedReason,
       source: runtime.autoRestartResumedSource,
+      operator: runtime.autoRestartResumedOperator,
     };
   }
   return null;
@@ -303,6 +312,7 @@ function runtimeAutoRestartAuditText(audit: RuntimeAutoRestartAudit) {
   const meta = [
     audit.at ? `at ${formatTime(audit.at)}` : undefined,
     audit.source ? `source ${audit.source}` : undefined,
+    audit.operator ? `operator ${audit.operator}` : undefined,
   ].filter(Boolean);
   return meta.length > 0 ? `${audit.label}: ${reason} (${meta.join(', ')})` : `${audit.label}: ${reason}`;
 }
@@ -312,6 +322,7 @@ function runtimeAutoRestartAuditTitle(audit: RuntimeAutoRestartAudit) {
     `state=${audit.label}`,
     audit.at ? `at=${audit.at}` : undefined,
     audit.source ? `source=${audit.source}` : undefined,
+    audit.operator ? `operator=${audit.operator}` : undefined,
     audit.reason ? `reason=${audit.reason}` : undefined,
   ].filter(Boolean).join(' ');
 }
@@ -527,6 +538,11 @@ export function SupervisorStage() {
     if (!controlDialog) {
       return;
     }
+    const permissions = snapshot?.policy?.dashboardPermissions;
+    if (permissions && !permissions.canRuntimeControl) {
+      setControlError(permissions.runtimeControlBlockedReason || 'permission denied');
+      return;
+    }
     const { runtime, action } = controlDialog;
     const reason = controlReason.trim();
     if (!reason) {
@@ -549,7 +565,7 @@ export function SupervisorStage() {
       }
       await fetchJSON(runtimeControlPath(action), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-BKTRADER-Control-Source': 'dashboard' },
         body: JSON.stringify(payload),
       });
     } catch (err) {
@@ -568,13 +584,23 @@ export function SupervisorStage() {
       setControlNotice(`${acceptedMessage}; refresh failed`);
     }
     setControlSubmittingKey(null);
-  }, [controlDialog, controlReason, loadSnapshot]);
+  }, [controlDialog, controlReason, loadSnapshot, snapshot]);
 
   const submitFallbackControl = useCallback(async () => {
     if (!fallbackDialog) {
       return;
     }
     const { target, action } = fallbackDialog;
+    const permissions = snapshot?.policy?.dashboardPermissions;
+    if (action === 'submit') {
+      if (permissions && !permissions.canContainerFallbackSubmit) {
+        setControlError(permissions.containerFallbackSubmitBlockedReason || 'permission denied');
+        return;
+      }
+    } else if (permissions && !permissions.canContainerFallbackGate) {
+      setControlError(permissions.containerFallbackGateBlockedReason || 'permission denied');
+      return;
+    }
     const reason = fallbackReason.trim();
     if (!reason) {
       setControlError('reason is required');
@@ -605,7 +631,7 @@ export function SupervisorStage() {
     try {
       await fetchJSON(targetFallbackControlPath(action), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-BKTRADER-Control-Source': 'dashboard' },
         body: JSON.stringify(payload),
       });
     } catch (err) {
@@ -625,7 +651,7 @@ export function SupervisorStage() {
       setControlNotice(`${acceptedMessage}; refresh failed`);
     }
     setControlSubmittingKey(null);
-  }, [fallbackBackoffSeconds, fallbackDialog, fallbackReason, loadSnapshot]);
+  }, [fallbackBackoffSeconds, fallbackDialog, fallbackReason, loadSnapshot, snapshot]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -679,6 +705,10 @@ export function SupervisorStage() {
 
   const targets = snapshot?.targets ?? [];
   const policy = snapshot?.policy;
+  const permissions = policy?.dashboardPermissions;
+  const canRuntimeControl = permissions?.canRuntimeControl ?? true;
+  const canFallbackGate = permissions?.canContainerFallbackGate ?? true;
+  const canFallbackSubmit = permissions?.canContainerFallbackSubmit ?? true;
   const isLoading = loadState === 'loading' || loadState === 'idle';
   const ControlSubmitIcon =
     controlDialog?.action === 'start'
@@ -810,11 +840,16 @@ export function SupervisorStage() {
                       <Badge variant={policy.containerFallbackAutoSubmit ? 'destructive' : 'secondary'}>
                         {policy.containerFallbackAutoSubmit ? 'auto submit' : 'manual submit'}
                       </Badge>
+                      {permissions && (
+                        <Badge variant={canFallbackSubmit ? 'success' : 'neutral'} title={permissions.containerFallbackSubmitBlockedReason}>
+                          {canFallbackSubmit ? 'submit allowed' : 'submit blocked'}
+                        </Badge>
+                      )}
                     </div>
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
                       <div className="flex min-w-0 flex-col gap-1">
                         <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Application Restart</span>
@@ -842,6 +877,17 @@ export function SupervisorStage() {
                         <PolicyBadge enabled={policy.containerFallbackAutoSubmit} enabledLabel="auto" disabledLabel="manual" />
                       </div>
                       <CheckCircle2 className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
+                    </div>
+                    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-xs font-medium uppercase text-[var(--bk-text-muted)]">Dashboard Permissions</span>
+                        <div className="flex flex-wrap gap-1">
+                          <PolicyBadge enabled={canRuntimeControl} enabledLabel="runtime" disabledLabel="runtime blocked" />
+                          <PolicyBadge enabled={canFallbackGate} enabledLabel="gate" disabledLabel="gate blocked" />
+                          <PolicyBadge enabled={canFallbackSubmit} enabledLabel="submit" disabledLabel="submit blocked" />
+                        </div>
+                      </div>
+                      <ShieldAlert className="size-4 shrink-0 text-[var(--bk-text-muted)]" />
                     </div>
                     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[var(--bk-border)] bg-[var(--bk-surface-muted)] px-3 py-2">
                       <div className="flex min-w-0 flex-col gap-1">
@@ -918,6 +964,8 @@ export function SupervisorStage() {
                         const backoffConfigured = Boolean(target.serviceState.containerFallbackBackoffUntil);
                         const retryGateConfigured = backoffConfigured || Boolean(target.serviceState.containerFallbackSubmitted || fallbackPlan?.duplicate);
                         const submitEnabled = Boolean(fallbackPlan?.executable);
+                        const fallbackGateBlockedReason = permissions?.containerFallbackGateBlockedReason || 'permission denied';
+                        const fallbackSubmitBlockedReason = permissions?.containerFallbackSubmitBlockedReason || 'permission denied';
                         return (
                           <TableRow key={`${target.name}:${target.baseUrl}`}>
                             <TableCell>
@@ -1038,8 +1086,8 @@ export function SupervisorStage() {
                                   variant={target.serviceState.containerFallbackSuppressed ? 'bento-outline' : 'bento-ghost'}
                                   className="rounded-lg"
                                   onClick={() => openFallbackDialog(target, toggleFallbackAction)}
-                                  disabled={Boolean(controlSubmittingKey) || toggleSubmitting}
-                                  title={target.serviceState.containerFallbackSuppressed ? 'Resume container fallback' : 'Suppress container fallback'}
+                                  disabled={!canFallbackGate || Boolean(controlSubmittingKey) || toggleSubmitting}
+                                  title={!canFallbackGate ? fallbackGateBlockedReason : target.serviceState.containerFallbackSuppressed ? 'Resume container fallback' : 'Suppress container fallback'}
                                   aria-label={`${target.serviceState.containerFallbackSuppressed ? 'Resume' : 'Suppress'} container fallback for ${target.name}`}
                                 >
                                   {target.serviceState.containerFallbackSuppressed ? (
@@ -1054,8 +1102,8 @@ export function SupervisorStage() {
                                   variant="bento-outline"
                                   className="rounded-lg"
                                   onClick={() => openFallbackDialog(target, 'defer')}
-                                  disabled={Boolean(controlSubmittingKey) || deferSubmitting}
-                                  title="Defer container fallback"
+                                  disabled={!canFallbackGate || Boolean(controlSubmittingKey) || deferSubmitting}
+                                  title={!canFallbackGate ? fallbackGateBlockedReason : 'Defer container fallback'}
                                   aria-label={`Defer container fallback for ${target.name}`}
                                 >
                                   <Clock3 className={cn(deferSubmitting && 'animate-pulse')} />
@@ -1066,8 +1114,8 @@ export function SupervisorStage() {
                                   variant="bento-ghost"
                                   className="rounded-lg"
                                   onClick={() => openFallbackDialog(target, 'clear-backoff')}
-                                  disabled={Boolean(controlSubmittingKey) || clearSubmitting || !retryGateConfigured}
-                                  title="Clear fallback retry gate"
+                                  disabled={!canFallbackGate || Boolean(controlSubmittingKey) || clearSubmitting || !retryGateConfigured}
+                                  title={!canFallbackGate ? fallbackGateBlockedReason : 'Clear fallback retry gate'}
                                   aria-label={`Clear fallback retry gate for ${target.name}`}
                                 >
                                   <XCircle className={cn(clearSubmitting && 'animate-pulse')} />
@@ -1078,8 +1126,8 @@ export function SupervisorStage() {
                                   variant="bento-destructive"
                                   className="rounded-lg"
                                   onClick={() => openFallbackDialog(target, 'submit')}
-                                  disabled={Boolean(controlSubmittingKey) || submitSubmitting || !submitEnabled}
-                                  title="Submit container fallback"
+                                  disabled={!canFallbackSubmit || Boolean(controlSubmittingKey) || submitSubmitting || !submitEnabled}
+                                  title={!canFallbackSubmit ? fallbackSubmitBlockedReason : 'Submit container fallback'}
                                   aria-label={`Submit container fallback for ${target.name}`}
                                 >
                                   <RotateCw className={cn(submitSubmitting && 'animate-spin')} />
@@ -1142,6 +1190,7 @@ export function SupervisorStage() {
                         const suppressSubmitting = controlSubmittingKey === runtimeControlActionKey(runtime, suppressAction);
                         const startDisabled = runtimeStartDisabled(runtime);
                         const stopDisabled = runtimeStopDisabled(runtime);
+                        const runtimeControlBlockedReason = permissions?.runtimeControlBlockedReason || 'permission denied';
                         const lifecycleAudit = runtimeLifecycleAudit(runtime);
                         const autoRestartAudit = runtimeAutoRestartAudit(runtime);
                         return (
@@ -1211,8 +1260,8 @@ export function SupervisorStage() {
                                     variant="bento-outline"
                                     className="rounded-lg"
                                     onClick={() => openControlDialog(runtime, 'start')}
-                                    disabled={Boolean(controlSubmittingKey) || startSubmitting || startDisabled}
-                                    title="Start signal runtime"
+                                    disabled={!canRuntimeControl || Boolean(controlSubmittingKey) || startSubmitting || startDisabled}
+                                    title={!canRuntimeControl ? runtimeControlBlockedReason : 'Start signal runtime'}
                                     aria-label={`Start signal runtime ${runtime.runtimeId}`}
                                   >
                                     <Play fill="currentColor" className={cn(startSubmitting && 'animate-pulse')} />
@@ -1223,8 +1272,8 @@ export function SupervisorStage() {
                                     variant="bento-ghost"
                                     className="rounded-lg"
                                     onClick={() => openControlDialog(runtime, 'stop')}
-                                    disabled={Boolean(controlSubmittingKey) || stopSubmitting || stopDisabled}
-                                    title="Stop signal runtime"
+                                    disabled={!canRuntimeControl || Boolean(controlSubmittingKey) || stopSubmitting || stopDisabled}
+                                    title={!canRuntimeControl ? runtimeControlBlockedReason : 'Stop signal runtime'}
                                     aria-label={`Stop signal runtime ${runtime.runtimeId}`}
                                   >
                                     <Square fill="currentColor" className={cn(stopSubmitting && 'animate-pulse')} />
@@ -1235,8 +1284,8 @@ export function SupervisorStage() {
                                     variant="bento-outline"
                                     className="rounded-lg"
                                     onClick={() => openControlDialog(runtime, 'restart')}
-                                    disabled={Boolean(controlSubmittingKey) || restartSubmitting}
-                                    title="Restart signal runtime"
+                                    disabled={!canRuntimeControl || Boolean(controlSubmittingKey) || restartSubmitting}
+                                    title={!canRuntimeControl ? runtimeControlBlockedReason : 'Restart signal runtime'}
                                     aria-label={`Restart signal runtime ${runtime.runtimeId}`}
                                   >
                                     <RotateCw className={cn(restartSubmitting && 'animate-spin')} />
@@ -1247,8 +1296,8 @@ export function SupervisorStage() {
                                     variant={runtime.autoRestartSuppressed ? 'bento-outline' : 'bento-ghost'}
                                     className="rounded-lg"
                                     onClick={() => openControlDialog(runtime, suppressAction)}
-                                    disabled={Boolean(controlSubmittingKey) || suppressSubmitting}
-                                    title={runtime.autoRestartSuppressed ? 'Resume auto restart' : 'Suppress auto restart'}
+                                    disabled={!canRuntimeControl || Boolean(controlSubmittingKey) || suppressSubmitting}
+                                    title={!canRuntimeControl ? runtimeControlBlockedReason : runtime.autoRestartSuppressed ? 'Resume auto restart' : 'Suppress auto restart'}
                                     aria-label={`${runtime.autoRestartSuppressed ? 'Resume' : 'Suppress'} auto restart for ${runtime.runtimeId}`}
                                   >
                                     {runtime.autoRestartSuppressed ? (
@@ -1329,6 +1378,11 @@ export function SupervisorStage() {
                                   <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.error || action.reason}>
                                     {action.error || action.reason || '--'}
                                   </span>
+                                  {(action.source || action.operator) && (
+                                    <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={[action.source, action.operator].filter(Boolean).join(' / ')}>
+                                      {[action.source, action.operator].filter(Boolean).join(' / ')}
+                                    </span>
+                                  )}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1377,7 +1431,7 @@ export function SupervisorStage() {
                                   <TableCell>
                                     <div className="flex max-w-[420px] flex-col gap-1 text-xs">
                                       <span className="truncate text-[var(--bk-text-muted)]" title={action.reason}>{action.reason || '--'}</span>
-                                      <span className="text-[var(--bk-text-muted)]">{action.source || '--'}</span>
+                                      <span className="text-[var(--bk-text-muted)]">{[action.source, action.operator].filter(Boolean).join(' / ') || '--'}</span>
                                     </div>
                                   </TableCell>
                                 </TableRow>
@@ -1475,7 +1529,7 @@ export function SupervisorStage() {
                               ]
                                 .filter(Boolean)
                                 .join(' / ');
-                              const resultTitle = [resultMeta, action.error || action.message || action.reason, action.source, action.planReason]
+                              const resultTitle = [resultMeta, action.error || action.message || action.reason, action.source, action.operator, action.planReason]
                                 .filter(Boolean)
                                 .join(' | ');
                               return (
@@ -1520,9 +1574,9 @@ export function SupervisorStage() {
                                         {resultMeta}
                                       </span>
                                     )}
-                                    {(action.source || action.planReason) && (
-                                      <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.planReason || action.source}>
-                                        {action.source || '--'}{action.planReason ? ` / ${action.planReason}` : ''}
+                                    {(action.source || action.operator || action.planReason) && (
+                                      <span className="block max-w-[420px] truncate text-xs text-[var(--bk-text-muted)]" title={action.planReason || action.operator || action.source}>
+                                        {[action.source, action.operator].filter(Boolean).join(' / ') || '--'}{action.planReason ? ` / ${action.planReason}` : ''}
                                       </span>
                                     )}
                                   </TableCell>

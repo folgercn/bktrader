@@ -305,6 +305,8 @@ func TestSupervisorContainerFallbackSubmitEndpointSubmitsEligiblePlan(t *testing
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/submit", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"operator reviewed static command preview"}`))
+	req.Header.Set("X-BKTRADER-Control-Source", "dashboard")
+	req = req.WithContext(context.WithValue(req.Context(), authClaimsKey, authClaims{Username: "alice"}))
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected submit 202, got %d body=%s", rec.Code, rec.Body.String())
@@ -314,6 +316,7 @@ func TestSupervisorContainerFallbackSubmitEndpointSubmitsEligiblePlan(t *testing
 		TargetName   string                                            `json:"targetName"`
 		Reason       string                                            `json:"reason"`
 		Source       string                                            `json:"source"`
+		Operator     string                                            `json:"operator"`
 		ServiceState service.RuntimeSupervisorServiceState             `json:"serviceState"`
 		Plan         *service.RuntimeSupervisorContainerFallbackPlan   `json:"containerFallbackPlan"`
 		Action       *service.RuntimeSupervisorContainerFallbackAction `json:"action"`
@@ -321,10 +324,10 @@ func TestSupervisorContainerFallbackSubmitEndpointSubmitsEligiblePlan(t *testing
 	if err := json.NewDecoder(rec.Body).Decode(&submitPayload); err != nil {
 		t.Fatalf("decode submit payload failed: %v", err)
 	}
-	if submitPayload.Status != "accepted" || submitPayload.TargetName != "api" || submitPayload.Reason != "operator reviewed static command preview" || submitPayload.Source != "api" {
+	if submitPayload.Status != "accepted" || submitPayload.TargetName != "api" || submitPayload.Reason != "operator reviewed static command preview" || submitPayload.Source != "dashboard" || submitPayload.Operator != "alice" {
 		t.Fatalf("unexpected submit payload: %+v", submitPayload)
 	}
-	if submitPayload.Action == nil || !submitPayload.Action.Submitted || submitPayload.Action.Source != "api" || submitPayload.Action.PlanReason == "" {
+	if submitPayload.Action == nil || !submitPayload.Action.Submitted || submitPayload.Action.Source != "dashboard" || submitPayload.Action.Operator != "alice" || submitPayload.Action.PlanReason == "" {
 		t.Fatalf("expected action audit with source and plan reason, got %+v", submitPayload.Action)
 	}
 	if submitPayload.ServiceState.ContainerFallbackSubmittedReason != "operator reviewed static command preview" || !submitPayload.ServiceState.ContainerFallbackSubmitted {

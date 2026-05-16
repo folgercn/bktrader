@@ -118,9 +118,10 @@ type LiveControlScannerStatus struct {
 }
 
 type LiveSessionControlOptions struct {
-	Force  bool
-	Reason string
-	Source string
+	Force    bool
+	Reason   string
+	Source   string
+	Operator string
 }
 
 func (p *Platform) RequestLiveSessionStart(sessionID string) (domain.LiveSession, error) {
@@ -234,12 +235,14 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, op
 		state["controlRequestedAt"] = now.Format(time.RFC3339)
 		reason := strings.TrimSpace(options.Reason)
 		source := strings.TrimSpace(options.Source)
+		operator := strings.TrimSpace(options.Operator)
 		if desired == "STOPPED" {
 			state["lastControlAction"] = "stop"
 			state["desiredStopForce"] = options.Force
 			delete(state, "startRequestedAt")
 			delete(state, "startRequestedReason")
 			delete(state, "startRequestedSource")
+			delete(state, "startRequestedOperator")
 			state["stopRequestedAt"] = now.Format(time.RFC3339)
 			state["stopRequestedForce"] = options.Force
 			if reason != "" {
@@ -248,12 +251,16 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, op
 			if source != "" {
 				state["stopRequestedSource"] = source
 			}
+			if operator != "" {
+				state["stopRequestedOperator"] = operator
+			}
 		} else {
 			state["lastControlAction"] = "start"
 			delete(state, "desiredStopForce")
 			delete(state, "stopRequestedAt")
 			delete(state, "stopRequestedReason")
 			delete(state, "stopRequestedSource")
+			delete(state, "stopRequestedOperator")
 			delete(state, "stopRequestedForce")
 			state["startRequestedAt"] = now.Format(time.RFC3339)
 			if reason != "" {
@@ -261,6 +268,9 @@ func (p *Platform) requestLiveSessionDesiredStatus(sessionID, desired string, op
 			}
 			if source != "" {
 				state["startRequestedSource"] = source
+			}
+			if operator != "" {
+				state["startRequestedOperator"] = operator
 			}
 		}
 		delete(state, "activeControlRequestId")

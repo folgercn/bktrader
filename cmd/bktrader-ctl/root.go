@@ -97,6 +97,7 @@ func initializeConfig() error {
 func getClient() *ctlclient.Client {
 	c := ctlclient.NewClient(viper.GetString("api_url"), viper.GetString("token"))
 	c.DryRun = dryRun
+	c.DefaultHeaders = map[string]string{"X-BKTRADER-Control-Source": "ctl"}
 	return c
 }
 
