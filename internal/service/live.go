@@ -5041,6 +5041,7 @@ func (p *Platform) completeRecoveredLiveSessionMetadata(session domain.LiveSessi
 		delete(state, "positionReconcileGateDBPosition")
 		delete(state, "positionReconcileGateExchangePosition")
 		applyLiveRecoveryTakeoverState(state, false)
+		clearStaleLiveRecoveryErrorForFlatState(state)
 		if !metadataEqual(state, session.State) {
 			session, err = p.store.UpdateLiveSessionState(session.ID, state)
 			if err != nil {

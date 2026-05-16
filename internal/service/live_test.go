@@ -12212,6 +12212,99 @@ func TestCompleteRecoveredLiveSessionMetadataClearsCloseOnlyTakeoverWhenPosition
 	}
 }
 
+func TestRefreshLiveSessionForAccountSnapshotClearsRecoveryErrorWhenAuthoritativeFlat(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":        "binance-rest-account-v3",
+		"executionMode": "rest",
+		"syncStatus":    "SYNCED",
+		"positions":     []map[string]any{},
+		"openOrders":    []map[string]any{},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastRecoveryError"] = "live session not found: "
+	state["lastRecoveryStatus"] = "lease-not-acquired"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("seed recovery error failed: %v", err)
+	}
+
+	updated := platform.refreshLiveSessionForAccountSnapshot(session, time.Date(2026, 5, 17, 1, 0, 0, 0, time.UTC))
+
+	if got := stringValue(updated.State["lastRecoveryError"]); got != "" {
+		t.Fatalf("expected authoritative flat refresh to clear lastRecoveryError, got %s", got)
+	}
+	if got := stringValue(updated.State["lastRecoveryStatus"]); got != "flat" {
+		t.Fatalf("expected lastRecoveryStatus flat, got %s", got)
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "flat" {
+		t.Fatalf("expected positionRecoveryStatus flat, got %s", got)
+	}
+	if got := stringValue(updated.State["protectionRecoveryStatus"]); got != "flat" {
+		t.Fatalf("expected protectionRecoveryStatus flat, got %s", got)
+	}
+	if !boolValue(updated.State["protectionRecoveryAuthoritative"]) {
+		t.Fatal("expected authoritative recovery snapshot")
+	}
+}
+
+func TestRefreshLiveSessionForAccountSnapshotKeepsRecoveryErrorWhenFlatSnapshotNotAuthoritative(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":        "platform-live-reconciliation",
+		"executionMode": "local",
+		"syncStatus":    "SYNCED",
+		"positions":     []map[string]any{},
+		"openOrders":    []map[string]any{},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastRecoveryError"] = "live session not found: "
+	state["lastRecoveryStatus"] = "lease-not-acquired"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("seed recovery error failed: %v", err)
+	}
+
+	updated := platform.refreshLiveSessionForAccountSnapshot(session, time.Date(2026, 5, 17, 1, 5, 0, 0, time.UTC))
+
+	if got := stringValue(updated.State["lastRecoveryError"]); got != "live session not found: " {
+		t.Fatalf("expected non-authoritative flat refresh to preserve lastRecoveryError, got %s", got)
+	}
+	if boolValue(updated.State["protectionRecoveryAuthoritative"]) {
+		t.Fatal("expected local fallback recovery snapshot to remain non-authoritative")
+	}
+}
+
 func TestSyncLiveSessionsForAccountSnapshotDoesNotResumeOtherBlockedSession(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
