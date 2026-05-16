@@ -508,6 +508,46 @@ func TestRuntimeRestartRouteRejectsDisabledRuntimeActions(t *testing.T) {
 	}
 }
 
+func TestRuntimeControlRoutesRejectDashboardPermissionDenied(t *testing.T) {
+	platform := service.NewPlatform(memory.NewStore())
+	runtimeSession, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
+	if err != nil {
+		t.Fatalf("CreateSignalRuntimeSession failed: %v", err)
+	}
+	deny := false
+	mux := http.NewServeMux()
+	registerRuntimeControlRoutes(mux, platform, config.Config{
+		ProcessRole:                       "monolith",
+		SupervisorDashboardRuntimeControl: &deny,
+	})
+
+	for _, tc := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{
+			name: "start",
+			path: "/api/v1/runtime/start",
+			body: `{"runtimeId":"` + runtimeSession.ID + `","runtimeKind":"signal","confirm":true,"reason":"maintenance finished"}`,
+		},
+		{
+			name: "restart",
+			path: "/api/v1/runtime/restart",
+			body: `{"runtimeId":"` + runtimeSession.ID + `","runtimeKind":"signal","confirm":true,"reason":"maintenance restart"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestRuntimeRestartRouteRejectsUnsupportedRuntimeKind(t *testing.T) {
 	mux := http.NewServeMux()
 	registerRuntimeControlRoutes(mux, service.NewPlatform(memory.NewStore()), config.Config{ProcessRole: "monolith"})

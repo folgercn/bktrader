@@ -45,6 +45,10 @@ func registerRuntimeControlRoutes(mux *http.ServeMux, platform *service.Platform
 			writeError(w, http.StatusConflict, "runtime action restart is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
 			return
 		}
+		if !supervisorDashboardPermissions(cfg).CanRuntimeControl {
+			writeSupervisorPermissionError(w, "runtime control")
+			return
+		}
 		var request runtimeRestartRequest
 		if err := decodeJSON(r, &request); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -104,6 +108,10 @@ func registerRuntimeLifecycleControlRoute(mux *http.ServeMux, platform *service.
 		}
 		if !cfg.RuntimeActionsEnabled() {
 			writeError(w, http.StatusConflict, "runtime action "+action+" is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+			return
+		}
+		if !supervisorDashboardPermissions(cfg).CanRuntimeControl {
+			writeSupervisorPermissionError(w, "runtime control")
 			return
 		}
 		var request runtimeLifecycleControlRequest
@@ -220,6 +228,10 @@ func registerRuntimeAutoRestartControlRoute(mux *http.ServeMux, platform *servic
 		}
 		if !cfg.RuntimeActionsEnabled() {
 			writeError(w, http.StatusConflict, "runtime action "+action+" auto-restart is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+			return
+		}
+		if !supervisorDashboardPermissions(cfg).CanRuntimeControl {
+			writeSupervisorPermissionError(w, "runtime control")
 			return
 		}
 		var request runtimeAutoRestartControlRequest

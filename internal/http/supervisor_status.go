@@ -25,11 +25,17 @@ func registerSupervisorStatusRoutes(mux *http.ServeMux, platform *service.Platfo
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		permissions := supervisorDashboardPermissions(cfg)
+		if !permissions.CanView {
+			writeSupervisorPermissionError(w, "supervisor status view")
+			return
+		}
 		snapshot, ok := platform.RuntimeSupervisorSnapshot()
 		if !ok {
 			writeError(w, http.StatusNotFound, "runtime supervisor is not configured")
 			return
 		}
+		snapshot.Policy.DashboardPermissions = permissions
 		writeJSON(w, http.StatusOK, snapshot)
 	})
 	registerSupervisorContainerFallbackControlRoute(mux, platform, cfg, "/api/v1/supervisor/container-fallback/suppress", true)
@@ -51,6 +57,10 @@ func registerSupervisorContainerFallbackControlRoute(mux *http.ServeMux, platfor
 		}
 		if !cfg.RuntimeActionsEnabled() {
 			writeError(w, http.StatusConflict, "supervisor container fallback "+action+" is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+			return
+		}
+		if !supervisorDashboardPermissions(cfg).CanContainerFallbackGate {
+			writeSupervisorPermissionError(w, "supervisor container fallback gate")
 			return
 		}
 		var request supervisorContainerFallbackControlRequest
@@ -113,6 +123,10 @@ func registerSupervisorContainerFallbackBackoffRoute(mux *http.ServeMux, platfor
 		}
 		if !cfg.RuntimeActionsEnabled() {
 			writeError(w, http.StatusConflict, "supervisor container fallback "+action+" is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+			return
+		}
+		if !supervisorDashboardPermissions(cfg).CanContainerFallbackGate {
+			writeSupervisorPermissionError(w, "supervisor container fallback gate")
 			return
 		}
 		var request supervisorContainerFallbackControlRequest
@@ -180,6 +194,10 @@ func registerSupervisorContainerFallbackSubmitRoute(mux *http.ServeMux, platform
 		}
 		if !cfg.RuntimeActionsEnabled() {
 			writeError(w, http.StatusConflict, "supervisor container fallback submit is disabled for BKTRADER_ROLE="+cfg.ProcessRole)
+			return
+		}
+		if !supervisorDashboardPermissions(cfg).CanContainerFallbackSubmit {
+			writeSupervisorPermissionError(w, "supervisor container fallback submit")
 			return
 		}
 		var request supervisorContainerFallbackControlRequest

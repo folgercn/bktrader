@@ -72,6 +72,9 @@ func TestSupervisorStatusRouteReturnsLastSnapshot(t *testing.T) {
 	if target.Status == nil || len(target.Status.Runtimes) != 1 || target.Status.Runtimes[0].RuntimeID != "runtime-1" {
 		t.Fatalf("expected runtime-1 status, got %+v", target.Status)
 	}
+	if !payload.Policy.DashboardPermissions.CanView || payload.Policy.DashboardPermissions.CanContainerFallbackSubmit {
+		t.Fatalf("expected default permissions to allow view and deny fallback submit, got %+v", payload.Policy.DashboardPermissions)
+	}
 }
 
 func TestSupervisorStatusRouteReturnsNotFoundWhenUnconfigured(t *testing.T) {
@@ -123,9 +126,10 @@ func TestSupervisorContainerFallbackControlSuppressesAndResumesTarget(t *testing
 	)
 	supervisor.Collect(context.Background())
 	platform.SetRuntimeSupervisor(supervisor)
+	allowSubmit := true
 
 	mux := http.NewServeMux()
-	registerSupervisorStatusRoutes(mux, platform, config.Config{})
+	registerSupervisorStatusRoutes(mux, platform, config.Config{SupervisorDashboardFallbackSubmit: &allowSubmit})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/suppress", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"maintenance window"}`))
@@ -202,9 +206,10 @@ func TestSupervisorContainerFallbackControlDefersAndClearsBackoff(t *testing.T) 
 	)
 	supervisor.Collect(context.Background())
 	platform.SetRuntimeSupervisor(supervisor)
+	allowSubmit := true
 
 	mux := http.NewServeMux()
-	registerSupervisorStatusRoutes(mux, platform, config.Config{})
+	registerSupervisorStatusRoutes(mux, platform, config.Config{SupervisorDashboardFallbackSubmit: &allowSubmit})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/defer", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"cooldown","backoffSeconds":300}`))
@@ -293,9 +298,10 @@ func TestSupervisorContainerFallbackSubmitEndpointSubmitsEligiblePlan(t *testing
 		t.Fatalf("resume before submit setup failed: %v", err)
 	}
 	platform.SetRuntimeSupervisor(supervisor)
+	allowSubmit := true
 
 	mux := http.NewServeMux()
-	registerSupervisorStatusRoutes(mux, platform, config.Config{})
+	registerSupervisorStatusRoutes(mux, platform, config.Config{SupervisorDashboardFallbackSubmit: &allowSubmit})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/submit", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"operator reviewed static command preview"}`))
@@ -357,9 +363,10 @@ func TestSupervisorContainerFallbackControlValidation(t *testing.T) {
 		nil,
 	)
 	platform.SetRuntimeSupervisor(supervisor)
+	allowSubmit := true
 
 	mux := http.NewServeMux()
-	registerSupervisorStatusRoutes(mux, platform, config.Config{})
+	registerSupervisorStatusRoutes(mux, platform, config.Config{SupervisorDashboardFallbackSubmit: &allowSubmit})
 
 	tests := []struct {
 		name       string
@@ -460,4 +467,53 @@ func TestSupervisorContainerFallbackControlRejectsReadOnlyRoles(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSupervisorDashboardPermissionsBlockViewGateAndSubmit(t *testing.T) {
+	platform := service.NewPlatform(memory.NewStore())
+	supervisor := service.NewRuntimeSupervisor(
+		[]service.RuntimeSupervisorTarget{{Name: "api", BaseURL: "http://127.0.0.1:8080"}},
+		nil,
+	)
+	platform.SetRuntimeSupervisor(supervisor)
+	deny := false
+
+	t.Run("view", func(t *testing.T) {
+		mux := http.NewServeMux()
+		registerSupervisorStatusRoutes(mux, platform, config.Config{SupervisorDashboardView: &deny})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/supervisor/status", nil)
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("gate", func(t *testing.T) {
+		mux := http.NewServeMux()
+		registerSupervisorStatusRoutes(mux, platform, config.Config{
+			ProcessRole:                     "monolith",
+			SupervisorDashboardFallbackGate: &deny,
+		})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/suppress", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"maintenance"}`))
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("submit", func(t *testing.T) {
+		mux := http.NewServeMux()
+		registerSupervisorStatusRoutes(mux, platform, config.Config{
+			ProcessRole:                       "monolith",
+			SupervisorDashboardFallbackSubmit: &deny,
+		})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/container-fallback/submit", strings.NewReader(`{"targetName":"api","confirm":true,"reason":"operator reviewed"}`))
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
 }
