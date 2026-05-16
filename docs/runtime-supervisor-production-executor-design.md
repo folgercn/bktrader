@@ -36,11 +36,10 @@
 
 ## 非目标
 
-本阶段不做以下事项：
+PR3 后仍不做以下事项：
 
 - 不实现 Docker socket executor。
-- 不实现 node-agent 进程。
-- 不修改 `deployments/`、compose、CI/CD 或生产 env 模板。
+- 不把 node-agent 配进生产 compose、CI/CD 或生产 env 模板。
 - 不启用真实 container restart。
 - 不改变 `dispatchMode`、testnet/mainnet、live runner、交易执行语义。
 - 不扩展更多 runtime 类型。
@@ -96,9 +95,12 @@
 
 ### PR3：部署接入与生产启用文档
 
+状态：当前 PR3 新增 `cmd/bktrader-node-agent` 本机进程和部署/启用/回滚文档；仍不修改生产 compose 或默认 env。
+
 范围：
 
 - 只在 PR2 合并后处理。
+- 新增 node-agent 本机进程。
 - 新增 node-agent 的部署说明、env、Mac 本机进程/launchd 与 Linux systemd 接入方案。
 - 写清生产启用、回滚、权限检查和 smoke test。
 - 若必须选择 Docker socket，则必须单独 L3 PR，并声明 socket 权限风险。
@@ -367,6 +369,22 @@ SUPERVISOR_NODE_AGENT_TOKEN_FILE=/run/secrets/bktrader-supervisor-node-agent-tok
 SUPERVISOR_NODE_AGENT_TIMEOUT_SECONDS=30
 ```
 
+node-agent 本机进程使用独立环境变量，不复用 supervisor 进程配置：
+
+```text
+BKTRADER_NODE_AGENT_HTTP_ADDR=127.0.0.1:18081
+BKTRADER_NODE_AGENT_TOKEN=<agent-token>
+BKTRADER_NODE_AGENT_TOKEN_FILE=/run/secrets/bktrader-supervisor-node-agent-token
+BKTRADER_NODE_AGENT_TARGETS_JSON={"targets":{"api":{"action":"container-restart","executor":"docker-compose","projectDirectory":"/opt/bktrader","composeFiles":["deployments/docker-compose.prod.yml"],"services":["platform-api"],"timeoutSeconds":30}}}
+```
+
+约束：
+
+- `BKTRADER_NODE_AGENT_TOKEN` / `BKTRADER_NODE_AGENT_TOKEN_FILE` 二选一；token 必须是非示例强随机值，当前实现要求至少 16 个字符。
+- `BKTRADER_NODE_AGENT_TARGETS_JSON` 是 node-agent 本地 allowlist；HTTP 请求体里的 `reason`、`source`、`operator`、时间字段只用于审计，不参与命令构造。
+- `projectDirectory` 必须是绝对路径；`composeFiles` 必须是相对 `projectDirectory` 的固定路径，不能是绝对路径或 `..` 逃逸路径。
+- 第一阶段只支持 `executor=docker-compose` 和 `action=container-restart`，实际执行为 `docker compose -f <composeFiles...> restart <services...>`。
+
 保持不变量：
 
 - 未设置 executor 时，`containerExecutorConfigured=false`。
@@ -412,3 +430,133 @@ SUPERVISOR_NODE_AGENT_TIMEOUT_SECONDS=30
 6. 用人工 submit 做单 target 验证。
 7. 观察审计和 backoff 行为。
 8. 另行评估是否允许 auto-submit。
+
+## PR3 部署 runbook
+
+### 构建
+
+```bash
+go build ./cmd/bktrader-node-agent
+```
+
+### token 与 allowlist
+
+```bash
+mkdir -p /opt/bktrader/secrets
+openssl rand -hex 32 > /opt/bktrader/secrets/node-agent-token
+chmod 0400 /opt/bktrader/secrets/node-agent-token
+```
+
+allowlist 示例：
+
+```json
+{
+  "targets": {
+    "api": {
+      "action": "container-restart",
+      "executor": "docker-compose",
+      "projectDirectory": "/opt/bktrader",
+      "composeFiles": ["deployments/docker-compose.prod.yml"],
+      "services": ["platform-api"],
+      "timeoutSeconds": 30,
+      "dockerPath": "docker"
+    }
+  }
+}
+```
+
+### Mac / Docker Desktop
+
+当前 Mac 场景仍依赖 Docker Desktop、Docker CLI 和 compose plugin。node-agent 应运行在宿主机本机进程中，不能作为同一 Docker runtime 的必需 sidecar。
+
+开发期手工启动示例：
+
+```bash
+export BKTRADER_NODE_AGENT_HTTP_ADDR=127.0.0.1:18081
+export BKTRADER_NODE_AGENT_TOKEN_FILE=/opt/bktrader/secrets/node-agent-token
+export BKTRADER_NODE_AGENT_TARGETS_JSON='{"targets":{"api":{"action":"container-restart","executor":"docker-compose","projectDirectory":"/Users/fujun/node/bktrader","composeFiles":["deployments/docker-compose.dev.yml"],"services":["platform-api"],"timeoutSeconds":30}}}'
+./bktrader-node-agent
+```
+
+launchd 可只负责守护这个宿主机进程；`ProgramArguments` 指向构建产物，`EnvironmentVariables` 写入上述 `BKTRADER_NODE_AGENT_*`，日志建议落到 `/usr/local/var/log/bktrader-node-agent.log`。生产前必须先确认 `docker compose version` 在同一用户下可用。
+
+### Linux / systemd
+
+Linux 生产首选独立二进制 + systemd unit，同样依赖本机 Docker CLI / compose。建议把 JSON allowlist 放进 `EnvironmentFile`，避免 unit 文件转义复杂化。
+
+`/opt/bktrader/node-agent.env` 示例：
+
+```bash
+BKTRADER_NODE_AGENT_HTTP_ADDR=127.0.0.1:18081
+BKTRADER_NODE_AGENT_TOKEN_FILE=/opt/bktrader/secrets/node-agent-token
+BKTRADER_NODE_AGENT_TARGETS_JSON='{"targets":{"api":{"action":"container-restart","executor":"docker-compose","projectDirectory":"/opt/bktrader","composeFiles":["deployments/docker-compose.prod.yml"],"services":["platform-api"],"timeoutSeconds":30}}}'
+```
+
+systemd unit 示例：
+
+```ini
+[Unit]
+Description=bktrader node-agent
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bktrader
+WorkingDirectory=/opt/bktrader
+EnvironmentFile=/opt/bktrader/node-agent.env
+ExecStart=/opt/bktrader/bin/bktrader-node-agent
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+日志入口：
+
+```bash
+journalctl -u bktrader-node-agent -n 100 --no-pager
+```
+
+### health 与 supervisor smoke test
+
+只读检查 node-agent：
+
+```bash
+TOKEN="$(cat /opt/bktrader/secrets/node-agent-token)"
+curl -fsS -H "Authorization: Bearer ${TOKEN}" http://127.0.0.1:18081/v1/health
+```
+
+再配置 supervisor，但先保持真实执行 gate 关闭：
+
+```text
+SUPERVISOR_CONTAINER_RESTART_ENABLED=true
+SUPERVISOR_CONTAINER_EXECUTOR=node-agent
+SUPERVISOR_CONTAINER_EXECUTOR_ARMED=false
+SUPERVISOR_CONTAINER_FALLBACK_AUTO_SUBMIT=false
+SUPERVISOR_NODE_AGENT_BASE_URL=http://127.0.0.1:18081
+SUPERVISOR_NODE_AGENT_TOKEN_FILE=/opt/bktrader/secrets/node-agent-token
+SUPERVISOR_NODE_AGENT_TIMEOUT_SECONDS=30
+```
+
+检查状态：
+
+```bash
+bktrader-ctl supervisor status --json
+```
+
+预期先看到 executor 已配置但被 `container-executor-not-armed` 阻断。只有人工确认 allowlist、preview、审计字段都正确后，才允许设置 `SUPERVISOR_CONTAINER_EXECUTOR_ARMED=true` 并通过 Dashboard 或 CLI 手工提交：
+
+```bash
+bktrader-ctl supervisor submit-container-fallback api --confirm --reason "operator reviewed node-agent allowlist and static restart plan"
+```
+
+### 回滚
+
+1. 先把 `SUPERVISOR_CONTAINER_EXECUTOR_ARMED=false`。
+2. 再移除 `SUPERVISOR_CONTAINER_EXECUTOR=node-agent`、`SUPERVISOR_NODE_AGENT_*` 和 `SUPERVISOR_CONTAINER_RESTART_ENABLED=true`。
+3. 重启 supervisor / platform-api 使配置生效。
+4. 停止 node-agent：`systemctl stop bktrader-node-agent` 或停止 Mac launchd/manual 进程。
+5. 用 `bktrader-ctl supervisor status --json` 确认 `containerExecutorConfigured=false`，并确认没有新的 `containerFallbackActions` 写入。
