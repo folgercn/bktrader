@@ -444,6 +444,33 @@ func shouldBlockAutoDispatchForLiveEntryTradeLimit(session domain.LiveSession, i
 	return validateLiveSignalBarEntryTradeLimit(session, intent) != nil
 }
 
+func pendingLiveRecoveryWatchdogIntent(state map[string]any) map[string]any {
+	if state == nil {
+		return nil
+	}
+	pending := cloneMetadata(mapValue(firstNonEmptyMapValue(state["lastExecutionProposal"], state["lastStrategyIntent"])))
+	if len(pending) == 0 {
+		return nil
+	}
+	if !isLiveWatchdogFallbackProposal(pending) {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(stringValue(pending["status"])), "dispatchable") {
+		return nil
+	}
+	if !isRecoveryTriggeredPassiveCloseProposal(pending) {
+		return nil
+	}
+	return pending
+}
+
+func resolveLiveAutoDispatchIntent(session domain.LiveSession, intent map[string]any) map[string]any {
+	if len(intent) > 0 {
+		return intent
+	}
+	return pendingLiveRecoveryWatchdogIntent(session.State)
+}
+
 func validateLiveSignalBarEntryTradeLimit(session domain.LiveSession, proposalMap map[string]any) error {
 	if !liveEntryCountsTowardSignalBarLimit(proposalMap) {
 		return nil

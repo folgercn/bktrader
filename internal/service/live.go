@@ -4024,7 +4024,8 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			return err
 		}
 	}
-	if !shouldAutoDispatchLiveIntent(updatedSession, intent, eventTime) {
+	dispatchIntent := resolveLiveAutoDispatchIntent(updatedSession, intent)
+	if !shouldAutoDispatchLiveIntent(updatedSession, dispatchIntent, eventTime) {
 		return nil
 	}
 	if _, err := p.dispatchLiveSessionIntent(updatedSession); err != nil {
@@ -4038,7 +4039,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 			state["lastDispatchedAt"] = eventTime.UTC().Format(time.RFC3339)
 		}
 		if strings.TrimSpace(stringValue(state["lastDispatchedIntentSignature"])) == "" {
-			state["lastDispatchedIntentSignature"] = buildLiveIntentSignature(intent)
+			state["lastDispatchedIntentSignature"] = buildLiveIntentSignature(dispatchIntent)
 		}
 		state["lastAutoDispatchError"] = err.Error()
 		state["lastAutoDispatchAttemptAt"] = eventTime.UTC().Format(time.RFC3339)
@@ -4077,6 +4078,7 @@ func preserveLiveSessionNonRegressiveFacts(state map[string]any, latest map[stri
 			state[key] = value
 		}
 	}
+	preservePendingLiveRecoveryWatchdogIntent(state, latest)
 	preserveLatestSLExitFillFact(state, latest)
 	if liveSLReentryWindowConsumed(state) {
 		delete(state, "lastSLExitReentrySide")
@@ -4097,6 +4099,59 @@ func liveSessionNonRegressiveFactKeys() []string {
 		"lastSLExitReentryConsumedReason",
 		"lastSLExitReentryConsumedEntryOrderId",
 		"lastSLExitReentryConsumedEntryStatus",
+	}
+}
+
+func preservePendingLiveRecoveryWatchdogIntent(state map[string]any, latest map[string]any) {
+	if len(mapValue(firstNonEmptyMapValue(state["lastExecutionProposal"], state["lastStrategyIntent"]))) > 0 {
+		return
+	}
+	pending := pendingLiveRecoveryWatchdogIntent(latest)
+	if len(pending) == 0 {
+		return
+	}
+	state["lastExecutionProposal"] = cloneMetadata(pending)
+	if latestIntent := mapValue(latest["lastStrategyIntent"]); isLiveWatchdogFallbackProposal(latestIntent) {
+		state["lastStrategyIntent"] = cloneMetadata(latestIntent)
+	} else {
+		state["lastStrategyIntent"] = cloneMetadata(pending)
+	}
+	if signature := strings.TrimSpace(stringValue(latest["lastStrategyIntentSignature"])); signature != "" {
+		state["lastStrategyIntentSignature"] = signature
+	} else {
+		state["lastStrategyIntentSignature"] = buildLiveIntentSignature(pending)
+	}
+	for _, key := range []string{
+		"positionRecoveryStatus",
+		"positionRecoverySource",
+		"hasRecoveredPosition",
+		"hasRecoveredRealPosition",
+		"hasRecoveredVirtualPosition",
+		"recoveredPosition",
+		"positionReconcileGateStatus",
+		"positionReconcileGateBlocking",
+		"positionReconcileGateScenario",
+		"positionReconcileGateSource",
+		"positionReconcileGateComparedAt",
+		"recoveryTakeoverActive",
+		"recoveryTakeoverState",
+		"recoveryActionMatrix",
+		"recoveryManualReviewRequired",
+	} {
+		if value, ok := latest[key]; ok {
+			state[key] = value
+		}
+	}
+	for _, key := range []string{
+		"watchdogExitTriggeredAt",
+		"watchdogExitReason",
+		"watchdogExitOrderId",
+		"watchdogExitOrderStatus",
+		"watchdogExitStatus",
+	} {
+		if value, ok := latest[key]; ok {
+			state[key] = value
+		}
 	}
 }
 
