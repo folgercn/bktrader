@@ -40,6 +40,11 @@ type paperPlannedOrder struct {
 	Metadata          map[string]any
 }
 
+type PaperSessionControlOptions struct {
+	Reason string
+	Source string
+}
+
 // ListPaperSessions 获取所有模拟交易会话。
 func (p *Platform) ListPaperSessions() ([]domain.PaperSession, error) {
 	return p.store.ListPaperSessions()
@@ -86,21 +91,40 @@ func (p *Platform) CreatePaperSession(accountID, strategyID string, startEquity 
 
 // StartPaperSession 启动模拟交易会话的后台执行循环。
 func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, error) {
+	return p.StartPaperSessionWithOptions(sessionID, PaperSessionControlOptions{})
+}
+
+func (p *Platform) StartPaperSessionWithOptions(sessionID string, options PaperSessionControlOptions) (domain.PaperSession, error) {
 	logger := p.logger("service.paper", "session_id", sessionID)
 	session, err := p.store.GetPaperSession(sessionID)
 	if err != nil {
 		logger.Warn("load paper session failed", "error", err)
 		return domain.PaperSession{}, err
 	}
+	if paperSessionControlAuditRequested(options) {
+		session, err = p.markPaperSessionControlRequested(session, "RUNNING", options)
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
+	}
 	session, err = p.syncPaperSessionRuntime(session)
 	if err != nil {
+		if paperSessionControlAuditRequested(options) {
+			_, _ = p.markPaperSessionControlFailed(sessionID, err)
+		}
 		return domain.PaperSession{}, err
 	}
 	session, err = p.ensurePaperSignalRuntimeStarted(session)
 	if err != nil {
+		if paperSessionControlAuditRequested(options) {
+			_, _ = p.markPaperSessionControlFailed(sessionID, err)
+		}
 		return domain.PaperSession{}, err
 	}
 	if _, _, err := p.ensurePaperExecutionPlan(session); err != nil {
+		if paperSessionControlAuditRequested(options) {
+			_, _ = p.markPaperSessionControlFailed(sessionID, err)
+		}
 		return domain.PaperSession{}, err
 	}
 
@@ -108,7 +132,14 @@ func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, err
 	if _, exists := p.run[sessionID]; exists {
 		p.mu.Unlock()
 		logger.Debug("paper session runner already active")
-		return p.store.UpdatePaperSessionStatus(sessionID, "RUNNING")
+		updated, err := p.store.UpdatePaperSessionStatus(sessionID, "RUNNING")
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
+		if paperSessionControlAuditRequested(options) {
+			return p.markPaperSessionControlActual(updated, "RUNNING", nil)
+		}
+		return updated, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.run[sessionID] = cancel
@@ -120,7 +151,20 @@ func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, err
 		delete(p.run, sessionID)
 		p.mu.Unlock()
 		cancel()
+		if paperSessionControlAuditRequested(options) {
+			_, _ = p.markPaperSessionControlFailed(sessionID, err)
+		}
 		return domain.PaperSession{}, err
+	}
+	if paperSessionControlAuditRequested(options) {
+		session, err = p.markPaperSessionControlActual(session, "RUNNING", nil)
+		if err != nil {
+			p.mu.Lock()
+			delete(p.run, sessionID)
+			p.mu.Unlock()
+			cancel()
+			return domain.PaperSession{}, err
+		}
 	}
 
 	go p.runPaperSessionLoop(ctx, session)
@@ -134,11 +178,34 @@ func (p *Platform) StartPaperSession(sessionID string) (domain.PaperSession, err
 
 // StopPaperSession 停止模拟交易会话，取消后台执行循环。
 func (p *Platform) StopPaperSession(sessionID string) (domain.PaperSession, error) {
+	return p.StopPaperSessionWithOptions(sessionID, PaperSessionControlOptions{})
+}
+
+func (p *Platform) StopPaperSessionWithOptions(sessionID string, options PaperSessionControlOptions) (domain.PaperSession, error) {
 	logger := p.logger("service.paper", "session_id", sessionID)
+	if paperSessionControlAuditRequested(options) {
+		session, err := p.store.GetPaperSession(sessionID)
+		if err != nil {
+			logger.Error("load paper session before stop failed", "error", err)
+			return domain.PaperSession{}, err
+		}
+		if _, err := p.markPaperSessionControlRequested(session, "STOPPED", options); err != nil {
+			return domain.PaperSession{}, err
+		}
+	}
 	session, err := p.store.UpdatePaperSessionStatus(sessionID, "STOPPED")
 	if err != nil {
 		logger.Error("stop paper session failed", "error", err)
+		if paperSessionControlAuditRequested(options) {
+			_, _ = p.markPaperSessionControlFailed(sessionID, err)
+		}
 		return domain.PaperSession{}, err
+	}
+	if paperSessionControlAuditRequested(options) {
+		session, err = p.markPaperSessionControlActual(session, "STOPPED", nil)
+		if err != nil {
+			return domain.PaperSession{}, err
+		}
 	}
 
 	p.mu.Lock()
@@ -159,6 +226,67 @@ func (p *Platform) StopPaperSession(sessionID string) (domain.PaperSession, erro
 		"strategy_id", session.StrategyID,
 	).Info("paper session stopped")
 	return session, nil
+}
+
+func paperSessionControlAuditRequested(options PaperSessionControlOptions) bool {
+	return strings.TrimSpace(options.Reason) != "" || strings.TrimSpace(options.Source) != ""
+}
+
+func (p *Platform) markPaperSessionControlRequested(session domain.PaperSession, desired string, options PaperSessionControlOptions) (domain.PaperSession, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	state := cloneMetadata(session.State)
+	state["desiredStatus"] = desired
+	switch desired {
+	case "RUNNING":
+		state["actualStatus"] = "STARTING"
+		state["startRequestedAt"] = now
+		if reason := strings.TrimSpace(options.Reason); reason != "" {
+			state["startRequestedReason"] = reason
+		}
+		if source := strings.TrimSpace(options.Source); source != "" {
+			state["startRequestedSource"] = source
+		}
+		delete(state, "stopRequestedAt")
+		delete(state, "stopRequestedReason")
+		delete(state, "stopRequestedSource")
+		delete(state, "stopRequestedForce")
+	case "STOPPED":
+		state["actualStatus"] = "STOPPING"
+		state["stopRequestedAt"] = now
+		if reason := strings.TrimSpace(options.Reason); reason != "" {
+			state["stopRequestedReason"] = reason
+		}
+		if source := strings.TrimSpace(options.Source); source != "" {
+			state["stopRequestedSource"] = source
+		}
+		delete(state, "startRequestedAt")
+		delete(state, "startRequestedReason")
+		delete(state, "startRequestedSource")
+	}
+	delete(state, "lastControlError")
+	delete(state, "lastControlErrorAt")
+	return p.store.UpdatePaperSessionState(session.ID, state)
+}
+
+func (p *Platform) markPaperSessionControlActual(session domain.PaperSession, actual string, controlErr error) (domain.PaperSession, error) {
+	state := cloneMetadata(session.State)
+	state["actualStatus"] = actual
+	if controlErr == nil {
+		delete(state, "lastControlError")
+		delete(state, "lastControlErrorAt")
+	} else {
+		state["lastControlError"] = controlErr.Error()
+		state["lastControlErrorAt"] = time.Now().UTC().Format(time.RFC3339)
+	}
+	return p.store.UpdatePaperSessionState(session.ID, state)
+}
+
+func (p *Platform) markPaperSessionControlFailed(sessionID string, controlErr error) (domain.PaperSession, error) {
+	session, err := p.store.GetPaperSession(sessionID)
+	if err != nil {
+		return domain.PaperSession{}, err
+	}
+	return p.markPaperSessionControlActual(session, "ERROR", controlErr)
 }
 
 // TickPaperSession 手动触发会话前进一步（处理下一笔策略计划订单）。

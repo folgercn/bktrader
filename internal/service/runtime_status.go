@@ -81,6 +81,13 @@ func (p *Platform) RuntimeStatusSnapshot(serviceName string, checkedAt time.Time
 	for _, session := range liveSessions {
 		runtimes = append(runtimes, runtimeStatusFromLiveSession(serviceName, checkedAt, session))
 	}
+	paperSessions, err := p.ListPaperSessions()
+	if err != nil {
+		return RuntimeStatusSnapshot{}, err
+	}
+	for _, session := range paperSessions {
+		runtimes = append(runtimes, runtimeStatusFromPaperSession(serviceName, checkedAt, session))
+	}
 	return RuntimeStatusSnapshot{
 		Service:   serviceName,
 		CheckedAt: checkedAt.UTC(),
@@ -101,6 +108,20 @@ func runtimeStatusFromLiveSession(serviceName string, checkedAt time.Time, sessi
 	status.AccountID = session.AccountID
 	status.StrategyID = session.StrategyID
 	setRuntimeStatusUpdatedAt(&status, runtimeStatusLatestStateTime(session.State, liveRuntimeStatusUpdatedAtKeys...))
+	return status
+}
+
+func runtimeStatusFromPaperSession(serviceName string, checkedAt time.Time, session domain.PaperSession) RuntimeStatus {
+	status := runtimeStatusFromState(serviceName, "paper-session", session.ID, session.Status, session.State, checkedAt)
+	status.AccountID = session.AccountID
+	status.StrategyID = session.StrategyID
+	setRuntimeStatusUpdatedAt(&status, runtimeStatusLatestStateTime(session.State,
+		"startRequestedAt",
+		"stopRequestedAt",
+		"lastControlErrorAt",
+		"planReadyAt",
+		"lastOrderAt",
+	))
 	return status
 }
 

@@ -256,7 +256,7 @@ POST /runtime/resume-auto-restart
 - `start` / `restart` 只能写入期望状态或触发应用内恢复，不得绕过业务安全校验。
 - `stop` 必须写入 `desiredStatus=STOPPED`，使 scanner 和 supervisor 不再自动拉起。
 - `resume-auto-restart` 只能解除 suppressed，不代表立即允许交易。
-- 当前统一控制 API 已落最小切片：`POST /api/v1/runtime/start`、`POST /api/v1/runtime/stop` 支持 `runtimeKind=signal` / `signal-runtime` 以及 `runtimeKind=live-session`；`POST /api/v1/runtime/restart`、`POST /api/v1/runtime/suppress-auto-restart`、`POST /api/v1/runtime/resume-auto-restart` 仍只支持 `runtimeKind=signal` / `signal-runtime`。请求必须显式传入 `confirm=true`；`start` / `stop` / `suppress-auto-restart` / `resume-auto-restart` 始终要求非空 `reason` 并写入 runtime state 审计字段，`restart` 在 `force=true` 时必须传入非空 `reason`。`live-session` start/stop 只复用既有 live control intent，不做 live session restart，不做 live session 自动 dispatch，也不做 Docker/container restart。
+- 当前统一控制 API 已落最小切片：`POST /api/v1/runtime/start`、`POST /api/v1/runtime/stop` 支持 `runtimeKind=signal` / `signal-runtime`、`runtimeKind=live-session` 以及 `runtimeKind=paper-session`；`POST /api/v1/runtime/restart`、`POST /api/v1/runtime/suppress-auto-restart`、`POST /api/v1/runtime/resume-auto-restart` 仍只支持 `runtimeKind=signal` / `signal-runtime`。请求必须显式传入 `confirm=true`；`start` / `stop` / `suppress-auto-restart` / `resume-auto-restart` 始终要求非空 `reason` 并写入 runtime state 审计字段，`restart` 在 `force=true` 时必须传入非空 `reason`。`live-session` start/stop 只复用既有 live control intent，不做 live session restart，不做 live session 自动 dispatch，也不做 Docker/container restart；`paper-session` start/stop 复用既有 paper runner 启停，并写入 `desiredStatus` / `actualStatus` 与 start/stop 审计字段。
 
 ## 6. 推进阶段
 

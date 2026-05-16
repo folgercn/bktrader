@@ -283,6 +283,92 @@ func TestRuntimeLifecycleControlRoutesStartAndStopLiveSession(t *testing.T) {
 	}
 }
 
+func TestRuntimeLifecycleControlRouteStopsPaperSession(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+	account, err := store.CreateAccount("paper", "PAPER", "BINANCE")
+	if err != nil {
+		t.Fatalf("CreateAccount failed: %v", err)
+	}
+	session, err := store.CreatePaperSession(account.ID, "strategy-bk-1d", 1000)
+	if err != nil {
+		t.Fatalf("CreatePaperSession failed: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	registerRuntimeControlRoutes(mux, platform, config.Config{ProcessRole: "monolith"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/stop", strings.NewReader(`{"runtimeId":"`+session.ID+`","runtimeKind":"paper-session","confirm":true,"reason":"maintenance window"}`))
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected stop 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Status        string `json:"status"`
+		RuntimeID     string `json:"runtimeId"`
+		RuntimeKind   string `json:"runtimeKind"`
+		DesiredStatus string `json:"desiredStatus"`
+		ActualStatus  string `json:"actualStatus"`
+		Reason        string `json:"reason"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if payload.Status != "accepted" || payload.RuntimeID != session.ID || payload.RuntimeKind != "paper-session" {
+		t.Fatalf("unexpected paper-session stop response: %+v", payload)
+	}
+	if payload.DesiredStatus != "STOPPED" || payload.ActualStatus != "STOPPED" {
+		t.Fatalf("expected paper-session desired/actual STOPPED, got %s/%s", payload.DesiredStatus, payload.ActualStatus)
+	}
+	if payload.Reason != "maintenance window" {
+		t.Fatalf("expected reason echoed, got %+v", payload)
+	}
+	stored, err := store.GetPaperSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetPaperSession failed: %v", err)
+	}
+	if got := stored.State["stopRequestedSource"]; got != "api" {
+		t.Fatalf("expected stopRequestedSource api, got %#v", got)
+	}
+}
+
+func TestRuntimeLifecycleControlRouteStartsPaperSessionFailurePath(t *testing.T) {
+	store := memory.NewStore()
+	platform := service.NewPlatform(store)
+	account, err := store.CreateAccount("paper", "PAPER", "BINANCE")
+	if err != nil {
+		t.Fatalf("CreateAccount failed: %v", err)
+	}
+	session, err := store.CreatePaperSession(account.ID, "missing-strategy", 1000)
+	if err != nil {
+		t.Fatalf("CreatePaperSession failed: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	registerRuntimeControlRoutes(mux, platform, config.Config{ProcessRole: "monolith"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/start", strings.NewReader(`{"runtimeId":"`+session.ID+`","runtimeKind":"paper-session","confirm":true,"reason":"maintenance finished"}`))
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected start failure 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	stored, err := store.GetPaperSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetPaperSession failed: %v", err)
+	}
+	if got := stored.State["startRequestedSource"]; got != "api" {
+		t.Fatalf("expected startRequestedSource api, got %#v", got)
+	}
+	if got := stringValue(stored.State["actualStatus"]); got != "ERROR" {
+		t.Fatalf("expected failed start actualStatus ERROR, got %s", got)
+	}
+	if got := stringValue(stored.State["lastControlError"]); got == "" {
+		t.Fatal("expected failed start to record lastControlError")
+	}
+}
+
 func TestRuntimeLifecycleControlRoutesRequireConfirmAndReason(t *testing.T) {
 	platform := service.NewPlatform(memory.NewStore())
 	runtimeSession, err := platform.CreateSignalRuntimeSession("live-main", "strategy-bk-1d")
@@ -426,11 +512,15 @@ func TestRuntimeRestartRouteRejectsUnsupportedRuntimeKind(t *testing.T) {
 	mux := http.NewServeMux()
 	registerRuntimeControlRoutes(mux, service.NewPlatform(memory.NewStore()), config.Config{ProcessRole: "monolith"})
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/restart", strings.NewReader(`{"runtimeId":"runtime-1","runtimeKind":"live-session","confirm":true}`))
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	for _, kind := range []string{"live-session", "paper-session"} {
+		t.Run(kind, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/restart", strings.NewReader(`{"runtimeId":"runtime-1","runtimeKind":"`+kind+`","confirm":true}`))
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -550,10 +640,14 @@ func TestRuntimeAutoRestartControlRouteRejectsUnsupportedRuntimeKind(t *testing.
 	mux := http.NewServeMux()
 	registerRuntimeControlRoutes(mux, service.NewPlatform(memory.NewStore()), config.Config{ProcessRole: "monolith"})
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/suppress-auto-restart", strings.NewReader(`{"runtimeId":"runtime-1","runtimeKind":"live-session","confirm":true,"reason":"maintenance window"}`))
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	for _, kind := range []string{"live-session", "paper-session"} {
+		t.Run(kind, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/suppress-auto-restart", strings.NewReader(`{"runtimeId":"runtime-1","runtimeKind":"`+kind+`","confirm":true,"reason":"maintenance window"}`))
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
