@@ -24,6 +24,7 @@
 | [live-safety-invariants.md](live-safety-invariants.md) | 实盘关键不变量与边界约束 |
 | [runtime-recovery-extension-coding-rules.md](runtime-recovery-extension-coding-rules.md) | 恢复/接管/被动平仓专项编码规则 |
 | [runtime-recovery-stabilization-summary.md](runtime-recovery-stabilization-summary.md) | 运行时恢复稳定性改造历史总结 |
+| [runtime-supervisor-production-executor-design.md](runtime-supervisor-production-executor-design.md) | Runtime Supervisor 真实生产 executor 部署与权限模型 |
 | [production-log-troubleshooting.md](production-log-troubleshooting.md) | 线上告警/stale-source/429限流排障起手式 |
 | [AGENT_PATHS.md](AGENT_PATHS.md) | 工具链绝对路径导览（本地路径以 `AGENTS.local.md` 为准） |
 
@@ -37,6 +38,7 @@
 - [bento-ui-modernization-guidelines.md](bento-ui-modernization-guidelines.md) — Bento 风格 UI 现代化指南
 - [runtime-runner-decomposition-protocol.md](runtime-runner-decomposition-protocol.md) — `live-runner` / `signal-runtime-runner` 拆分协议
 - [runtime-supervisor.md](runtime-supervisor.md) — Runtime Supervisor / Service Supervisor 分层规划
+- [runtime-supervisor-production-executor-design.md](runtime-supervisor-production-executor-design.md) — 生产 container fallback executor 的 node-agent / Docker socket 权限模型
 
 ### CLI 工具
 - [bktrader-ctl-reference.md](bktrader-ctl-reference.md) — bktrader-ctl 命令手册
