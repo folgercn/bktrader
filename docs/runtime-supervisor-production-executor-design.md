@@ -64,6 +64,8 @@
 
 ### PR2：node-agent executor 代码实现
 
+状态：已由 #419 PR2 落地 supervisor 侧 `node-agent` executor client；node-agent 进程本身和部署接入仍留给 PR3。
+
 范围：
 
 - 新增 `node-agent` executor kind。
@@ -353,13 +355,14 @@ Docker socket 方案只有在明确接受 L3 风险后才能进入实现 PR。
 
 ## 配置草案
 
-PR2 可按以下配置命名落地；PR1 不新增这些 env：
+PR2 已按以下配置命名落地；PR3 负责把它们接入部署文档或环境模板：
 
 ```text
 SUPERVISOR_CONTAINER_EXECUTOR=node-agent
 SUPERVISOR_CONTAINER_EXECUTOR_ARMED=false
 SUPERVISOR_CONTAINER_FALLBACK_AUTO_SUBMIT=false
 SUPERVISOR_NODE_AGENT_BASE_URL=http://127.0.0.1:18081
+SUPERVISOR_NODE_AGENT_TOKEN=<agent-token>
 SUPERVISOR_NODE_AGENT_TOKEN_FILE=/run/secrets/bktrader-supervisor-node-agent-token
 SUPERVISOR_NODE_AGENT_TIMEOUT_SECONDS=30
 ```
