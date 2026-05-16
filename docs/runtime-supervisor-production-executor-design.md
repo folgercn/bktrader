@@ -216,6 +216,7 @@ Content-Type: application/json
 - `reason` 必须非空，只用于审计，不参与命令构造。
 - `source` 只能是 `dashboard`、`ctl`、`api`、`supervisor`。
 - `operator` 只能来自后端 auth context，不能由 Dashboard/CLI 请求体伪造。
+- node-agent 对请求体使用严格 JSON schema 解码，未知字段会被拒绝；因此 supervisor client 和 node-agent 必须按同一 PR/同一发布批次升级，不允许先发布会发送新字段的 supervisor 再连接旧 node-agent。需要扩展字段时，先更新本设计文档和 node-agent 结构体，再同步更新 supervisor client 与回归测试。
 
 响应体：
 
