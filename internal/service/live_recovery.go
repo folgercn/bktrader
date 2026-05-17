@@ -11,21 +11,11 @@ import (
 
 const livePositionRecoveryStatusClosingPending = "closing-pending"
 
-func clearStaleLiveRecoveryErrorForFlatState(state map[string]any) {
+func clearStaleLiveRecoveryErrorForAuthoritativeState(state map[string]any) {
 	if state == nil || strings.TrimSpace(stringValue(state["lastRecoveryError"])) == "" {
 		return
 	}
 	if !boolValue(state["protectionRecoveryAuthoritative"]) {
-		return
-	}
-	if !strings.EqualFold(stringValue(state["positionRecoveryStatus"]), "flat") {
-		return
-	}
-	protectionStatus := strings.TrimSpace(stringValue(state["protectionRecoveryStatus"]))
-	if protectionStatus != "" && !strings.EqualFold(protectionStatus, "flat") {
-		return
-	}
-	if hasRecoveredLiveRealPosition(state) || hasActiveVirtualPositionSnapshot(mapValue(state["virtualPosition"])) {
 		return
 	}
 	if isLiveSessionRecoveryCloseOnlyMode(state) ||
@@ -37,8 +27,28 @@ func clearStaleLiveRecoveryErrorForFlatState(state map[string]any) {
 	case livePositionReconcileGateStatusStale, livePositionReconcileGateStatusConflict, livePositionReconcileGateStatusError:
 		return
 	}
-	delete(state, "lastRecoveryError")
-	state["lastRecoveryStatus"] = "flat"
+	positionStatus := strings.ToLower(strings.TrimSpace(stringValue(state["positionRecoveryStatus"])))
+	protectionStatus := strings.ToLower(strings.TrimSpace(stringValue(state["protectionRecoveryStatus"])))
+	switch positionStatus {
+	case "flat":
+		if protectionStatus != "" && protectionStatus != "flat" {
+			return
+		}
+		if hasRecoveredLiveRealPosition(state) || hasActiveVirtualPositionSnapshot(mapValue(state["virtualPosition"])) {
+			return
+		}
+		delete(state, "lastRecoveryError")
+		state["lastRecoveryStatus"] = "flat"
+	case "protected-open-position", "unprotected-open-position", "monitoring-open-position":
+		if protectionStatus != "" && protectionStatus != positionStatus {
+			return
+		}
+		if !hasRecoveredLiveRealPosition(state) {
+			return
+		}
+		delete(state, "lastRecoveryError")
+		state["lastRecoveryStatus"] = "recovered"
+	}
 }
 
 func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession) (domain.LiveSession, error) {
@@ -100,7 +110,7 @@ func (p *Platform) refreshLiveSessionProtectionState(session domain.LiveSession)
 	}
 	state["positionRecoveryStatus"] = status
 	state["protectionRecoveryStatus"] = status
-	clearStaleLiveRecoveryErrorForFlatState(state)
+	clearStaleLiveRecoveryErrorForAuthoritativeState(state)
 	if found {
 		appendTimelineEvent(state, "recovery", time.Now().UTC(), "live-position-recovered", map[string]any{
 			"symbol":               sessionSymbol,
@@ -170,7 +180,7 @@ func (p *Platform) refreshLiveSessionPositionContext(session domain.LiveSession,
 		applyLivePositionReconcileGateState(state, reconcileGate)
 		applyLiveRecoveryTakeoverState(state, takeoverActive)
 		applyRecoveryMode(state)
-		clearStaleLiveRecoveryErrorForFlatState(state)
+		clearStaleLiveRecoveryErrorForAuthoritativeState(state)
 		updated, updateErr := p.store.UpdateLiveSessionState(refreshed.ID, state)
 		if updateErr != nil {
 			return domain.LiveSession{}, updateErr

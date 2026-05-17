@@ -12263,6 +12263,87 @@ func TestRefreshLiveSessionForAccountSnapshotClearsRecoveryErrorWhenAuthoritativ
 	}
 }
 
+func TestRefreshLiveSessionForAccountSnapshotClearsRecoveryErrorWhenAuthoritativeOpenPosition(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	checkedAt := time.Date(2026, 5, 17, 1, 10, 0, 0, time.UTC)
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":        "binance-rest-account-v3",
+		"executionMode": "rest",
+		"syncStatus":    "SYNCED",
+		"positions": []map[string]any{
+			{
+				"symbol":     "BTCUSDT",
+				"side":       "LONG",
+				"quantity":   0.01,
+				"entryPrice": 70000.0,
+				"markPrice":  70100.0,
+			},
+		},
+		"openOrders": []map[string]any{},
+	}
+	account.Metadata["livePositionReconcileGate"] = map[string]any{
+		"symbols": map[string]any{
+			"BTCUSDT": map[string]any{
+				"status":     livePositionReconcileGateStatusVerified,
+				"blocking":   false,
+				"source":     "binance-rest-account-v3",
+				"comparedAt": checkedAt.Format(time.RFC3339),
+			},
+		},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        70000.0,
+		MarkPrice:         70100.0,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastRecoveryError"] = "live session not found: "
+	state["lastRecoveryStatus"] = "lease-not-acquired"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("seed recovery error failed: %v", err)
+	}
+
+	updated := platform.refreshLiveSessionForAccountSnapshot(session, checkedAt)
+
+	if got := stringValue(updated.State["lastRecoveryError"]); got != "" {
+		t.Fatalf("expected authoritative open-position refresh to clear lastRecoveryError, got %s", got)
+	}
+	if got := stringValue(updated.State["lastRecoveryStatus"]); got != "recovered" {
+		t.Fatalf("expected lastRecoveryStatus recovered, got %s", got)
+	}
+	if got := stringValue(updated.State["positionRecoveryStatus"]); got != "unprotected-open-position" {
+		t.Fatalf("expected positionRecoveryStatus unprotected-open-position, got %s", got)
+	}
+	if got := stringValue(updated.State["protectionRecoveryStatus"]); got != "unprotected-open-position" {
+		t.Fatalf("expected protectionRecoveryStatus unprotected-open-position, got %s", got)
+	}
+	if !boolValue(updated.State["protectionRecoveryAuthoritative"]) {
+		t.Fatal("expected authoritative recovery snapshot")
+	}
+}
+
 func TestRefreshLiveSessionForAccountSnapshotKeepsRecoveryErrorWhenFlatSnapshotNotAuthoritative(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	account, err := platform.store.GetAccount("live-main")
@@ -12299,6 +12380,67 @@ func TestRefreshLiveSessionForAccountSnapshotKeepsRecoveryErrorWhenFlatSnapshotN
 
 	if got := stringValue(updated.State["lastRecoveryError"]); got != "live session not found: " {
 		t.Fatalf("expected non-authoritative flat refresh to preserve lastRecoveryError, got %s", got)
+	}
+	if boolValue(updated.State["protectionRecoveryAuthoritative"]) {
+		t.Fatal("expected local fallback recovery snapshot to remain non-authoritative")
+	}
+}
+
+func TestRefreshLiveSessionForAccountSnapshotKeepsRecoveryErrorWhenOpenPositionNotAuthoritative(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveSyncSnapshot"] = map[string]any{
+		"source":        "platform-live-reconciliation",
+		"executionMode": "local",
+		"syncStatus":    "SYNCED",
+		"positions": []map[string]any{
+			{
+				"symbol":     "BTCUSDT",
+				"side":       "LONG",
+				"quantity":   0.01,
+				"entryPrice": 70000.0,
+				"markPrice":  70100.0,
+			},
+		},
+		"openOrders": []map[string]any{},
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	if _, err := platform.store.SavePosition(domain.Position{
+		AccountID:         "live-main",
+		StrategyVersionID: "strategy-version-bk-1d-v010",
+		Symbol:            "BTCUSDT",
+		Side:              "LONG",
+		Quantity:          0.01,
+		EntryPrice:        70000.0,
+		MarkPrice:         70100.0,
+	}); err != nil {
+		t.Fatalf("save position failed: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
+		"symbol":          "BTCUSDT",
+		"signalTimeframe": "1d",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["lastRecoveryError"] = "live session not found: "
+	state["lastRecoveryStatus"] = "lease-not-acquired"
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("seed recovery error failed: %v", err)
+	}
+
+	updated := platform.refreshLiveSessionForAccountSnapshot(session, time.Date(2026, 5, 17, 1, 15, 0, 0, time.UTC))
+
+	if got := stringValue(updated.State["lastRecoveryError"]); got != "live session not found: " {
+		t.Fatalf("expected non-authoritative open-position refresh to preserve lastRecoveryError, got %s", got)
 	}
 	if boolValue(updated.State["protectionRecoveryAuthoritative"]) {
 		t.Fatal("expected local fallback recovery snapshot to remain non-authoritative")
