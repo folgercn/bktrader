@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -85,11 +86,9 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		return StrategySignalDecision{Action: "wait", Reason: "symbol_not_eth"}, nil
 	}
 
-	// Extract tick data from trigger summary
+	// Extract tick data from trigger summary. Open-position exits may still use
+	// order-book prices when the trigger itself has no trade price.
 	triggerPrice := parseFloatValue(ctx.TriggerSummary["price"])
-	if triggerPrice <= 0 {
-		return StrategySignalDecision{Action: "wait", Reason: "no_trigger_price"}, nil
-	}
 
 	config := pretouchConfigFromParameters(e.config, ctx.ExecutionContext.Parameters)
 	e.detector.SetConfig(config)
@@ -98,6 +97,14 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	e.detector.SyncBars(closedBars, currentBar)
 
 	orderBookStats := extractOrderBookStats(ctx.TriggerSummary, ctx.SourceStates)
+
+	if decision, handled := pretouchEvaluateOpenPositionExit(ctx, triggerPrice, orderBookStats); handled {
+		return decision, nil
+	}
+
+	if triggerPrice <= 0 {
+		return StrategySignalDecision{Action: "wait", Reason: "no_trigger_price"}, nil
+	}
 
 	// Build tick from trigger
 	tick := TickData{
@@ -280,6 +287,109 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 			"biasActionable":                isLiquidityBiasActionable(nextSide, "entry", "Pretouch-Timing", orderBookStats.bias),
 		},
 	}, nil
+}
+
+func pretouchEvaluateOpenPositionExit(ctx StrategySignalEvaluationContext, triggerPrice float64, orderBookStats orderBookDecisionStats) (StrategySignalDecision, bool) {
+	currentPosition := cloneMetadata(ctx.CurrentPosition)
+	if !hasActiveLivePositionSnapshot(currentPosition) {
+		return StrategySignalDecision{}, false
+	}
+
+	symbol := NormalizeSymbol(ctx.ExecutionContext.Symbol)
+	timeframe := normalizeSignalBarInterval(ctx.ExecutionContext.SignalTimeframe)
+	signalBarState, signalBarStateKey := pretouchSignalBarStateFromEvaluationContext(ctx, symbol, timeframe)
+	exitSide := normalizeLiveExitIntentSide("", currentPosition)
+	marketPrice, marketSource := pickDecisionMarketPrice(ctx.TriggerSummary, ctx.SourceStates, exitSide)
+	if marketPrice <= 0 && triggerPrice > 0 {
+		marketPrice = triggerPrice
+		marketSource = "trade_tick.price"
+	}
+
+	positionPnLBps := computePositionPnLBps(currentPosition, marketPrice)
+	signalBarDecision := map[string]any{
+		"ready":     false,
+		"side":      exitSide,
+		"role":      "exit",
+		"reason":    "SL",
+		"timeframe": timeframe,
+	}
+	livePositionState := map[string]any{}
+	nextPlannedPrice := 0.0
+	action := "wait"
+	reason := "missing-signal-bars"
+	if signalBarState != nil {
+		signalBarDecision["current"] = cloneMetadata(mapValue(signalBarState["current"]))
+		signalBarDecision["prevBar1"] = cloneMetadata(mapValue(signalBarState["prevBar1"]))
+		signalBarDecision["prevBar2"] = cloneMetadata(mapValue(signalBarState["prevBar2"]))
+		signalBarDecision["prevBar3"] = cloneMetadata(mapValue(signalBarState["prevBar3"]))
+		signalBarDecision["atr14"] = parseFloatValue(signalBarState["atr14"])
+		signalBarDecision["atrPercentile"] = parseFloatValue(signalBarState["atrPercentile"])
+		livePositionState = evaluateLiveExitState(ctx.ExecutionContext.Parameters, currentPosition, signalBarState, marketPrice, cloneMetadata(ctx.SessionState), "SL")
+		if len(livePositionState) > 0 {
+			signalBarDecision["livePositionState"] = cloneMetadata(livePositionState)
+			nextPlannedPrice = parseFloatValue(livePositionState["targetPrice"])
+			if boolValue(livePositionState["ready"]) {
+				action = "advance-plan"
+				reason = "pretouch_sl_exit"
+				signalBarDecision["ready"] = true
+			} else {
+				reason = firstNonEmpty(stringValue(livePositionState["waitReason"]), "exit-signal-not-ready")
+			}
+		}
+	}
+	if nextPlannedPrice <= 0 {
+		nextPlannedPrice = marketPrice
+	}
+
+	decisionState := classifyStrategyDecisionState(action, reason, "exit")
+	exitProximityBps := computePriceProximityBps(nextPlannedPrice, marketPrice)
+	signalKind := classifyStrategySignalKind(action, reason, "exit", "SL", currentPosition, positionPnLBps, 0, exitProximityBps, orderBookStats.bias)
+	suggestedQuantity := math.Abs(parseFloatValue(currentPosition["quantity"]))
+	if signalBarStateKey == "" && signalBarState != nil {
+		signalBarStateKey = resolveSignalBarTradeLimitKey(signalBarState, symbol, timeframe)
+	}
+
+	return StrategySignalDecision{
+		Action: action,
+		Reason: reason,
+		Metadata: map[string]any{
+			"signalSource":                  "pretouch-timing-unified",
+			"signalBarDecision":             signalBarDecision,
+			"signalBarState":                cloneMetadata(signalBarState),
+			"signalBarStateKey":             signalBarStateKey,
+			liveSignalBarTradeLimitKeyField: signalBarStateKey,
+			"currentPosition":               currentPosition,
+			"livePositionState":             cloneMetadata(livePositionState),
+			"nextPlannedEvent":              formatOptionalRFC3339(ctx.EventTime),
+			"nextPlannedPrice":              nextPlannedPrice,
+			"nextPlannedSide":               exitSide,
+			"nextPlannedRole":               "exit",
+			"nextPlannedReason":             "SL",
+			"marketPrice":                   marketPrice,
+			"marketSource":                  marketSource,
+			"signalKind":                    signalKind,
+			"decisionState":                 decisionState,
+			"suggestedQuantity":             suggestedQuantity,
+			"positionPnLBps":                positionPnLBps,
+			"exitProximityBps":              exitProximityBps,
+			"spreadBps":                     orderBookStats.spreadBps,
+			"bestBid":                       orderBookStats.bestBid,
+			"bestAsk":                       orderBookStats.bestAsk,
+			"bestBidQty":                    orderBookStats.bestBidQty,
+			"bestAskQty":                    orderBookStats.bestAskQty,
+			"bookImbalance":                 orderBookStats.imbalance,
+			"liquidityBias":                 orderBookStats.bias,
+			"biasActionable":                isLiquidityBiasActionable(exitSide, "exit", "SL", orderBookStats.bias),
+		},
+	}, true
+}
+
+func pretouchSignalBarStateFromEvaluationContext(ctx StrategySignalEvaluationContext, symbol, timeframe string) (map[string]any, string) {
+	if state, key := pickSignalBarState(ctx.SignalBarStates, symbol, timeframe); state != nil {
+		return state, key
+	}
+	derived := deriveSignalBarStates(ctx.SourceStates)
+	return pickSignalBarState(derived, symbol, timeframe)
 }
 
 func pretouchConfigFromParameters(base PretouchDetectorConfig, parameters map[string]any) PretouchDetectorConfig {
