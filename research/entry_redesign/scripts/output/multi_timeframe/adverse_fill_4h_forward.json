@@ -1,0 +1,42 @@
+[
+  {
+    "scenario": "same_close_xslip0bps",
+    "cs_on": 0.0791,
+    "worst_sm": -0.0415
+  },
+  {
+    "scenario": "next_close_xslip0bps",
+    "cs_on": 0.0834,
+    "worst_sm": -0.0408
+  },
+  {
+    "scenario": "next_adverse_xslip0bps",
+    "cs_on": 0.0651,
+    "worst_sm": -0.0434
+  },
+  {
+    "scenario": "next_adverse_xslip1bps",
+    "cs_on": 0.0569,
+    "worst_sm": -0.0445
+  },
+  {
+    "scenario": "next_adverse_xslip3bps",
+    "cs_on": 0.0405,
+    "worst_sm": -0.0468
+  },
+  {
+    "scenario": "next_adverse_xslip5bps",
+    "cs_on": 0.0241,
+    "worst_sm": -0.0492
+  },
+  {
+    "scenario": "next_adverse_xslip7bps",
+    "cs_on": 0.0077,
+    "worst_sm": -0.0515
+  },
+  {
+    "scenario": "next_adverse_xslip10bps",
+    "cs_on": -0.0169,
+    "worst_sm": -0.055
+  }
+]

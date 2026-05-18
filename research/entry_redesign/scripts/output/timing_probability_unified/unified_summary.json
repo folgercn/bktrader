@@ -1,0 +1,231 @@
+{
+  "go_no_go_decision": {
+    "decision": "marginal_go",
+    "calendar_sum": 0.305332914812793,
+    "worst_sm": 0.02358318915347573,
+    "btc_positive": false,
+    "eth_positive": true,
+    "forward_calendar_sum": 0.1096652348005044,
+    "overfitting_downgrade": true
+  },
+  "timing_classifier": {
+    "selected_depth": 3,
+    "dt3_loocv_calendar_sum": 0.14585705797954088,
+    "dt4_loocv_calendar_sum": 0.14521387832948063,
+    "test_calendar_sum": 0.08263017613218934,
+    "regime_distribution": {
+      "skip": 0,
+      "fast": 25,
+      "slow": 3
+    }
+  },
+  "rf_probability": {
+    "train_auc": 1.0,
+    "test_auc": 0.7019230769230769,
+    "feature_importance_top5": [
+      {
+        "feature": "prev1_range_atr",
+        "importance": 0.17881500197289668
+      },
+      {
+        "feature": "roundtrip_cost_atr",
+        "importance": 0.1728621808621808
+      },
+      {
+        "feature": "prev1_body_atr",
+        "importance": 0.1276545247071563
+      },
+      {
+        "feature": "level_to_prev_close_atr",
+        "importance": 0.127349308822993
+      },
+      {
+        "feature": "prev_sma5_slope_atr",
+        "importance": 0.0853266545898125
+      }
+    ],
+    "prob_mean": 0.9658928571428572,
+    "prob_median": 0.985,
+    "prob_std": 0.047019250833882836,
+    "rf_no_signal_warning": false
+  },
+  "speed_gate": {
+    "threshold": 0.2281060193942284,
+    "gate_pass_rate": 0.9117647058823529,
+    "gate_on_calendar_sum": 0.305332914812793,
+    "gate_off_calendar_sum": 0.31004408878015627,
+    "gate_on_worst_sm": 0.02358318915347573,
+    "gate_off_worst_sm": 0.01344568574182186,
+    "aggressive_gate_warning": false
+  },
+  "bootstrap": {
+    "calendar_sum_mean": 0.3043115763323457,
+    "calendar_sum_ci_5": 0.23765673500504422,
+    "calendar_sum_ci_95": 0.3721628686319769,
+    "ci_width": 0.13450613362693267,
+    "btc_calendar_sum": 0.0,
+    "btc_ci_5": 0.0,
+    "btc_ci_95": 0.0,
+    "eth_calendar_sum": 0.3043115763323457,
+    "eth_ci_5": 0.23765673500504422,
+    "eth_ci_95": 0.3721628686319769
+  },
+  "forward": {
+    "forward_calendar_sum": 0.1096652348005044,
+    "forward_worst_sm": 0.004984257777480577,
+    "forward_trade_count": 78,
+    "overfitting_flag": true,
+    "forward_risk_flag": false,
+    "forward_underperformance": false
+  },
+  "ablation": [
+    {
+      "config_name": "timing_only",
+      "calendar_sum": 0.06920517058372526,
+      "worst_sm": 0.005321214877866507,
+      "trade_count": 62,
+      "avg_pnl_per_trade": 0.0011162124287697624
+    },
+    {
+      "config_name": "probability_only",
+      "calendar_sum": 0.11449984305479735,
+      "worst_sm": 0.008843695932553398,
+      "trade_count": 62,
+      "avg_pnl_per_trade": 0.001846771662174151
+    },
+    {
+      "config_name": "no_speed_gate",
+      "calendar_sum": 0.1162665332925586,
+      "worst_sm": 0.005042132153183198,
+      "trade_count": 68,
+      "avg_pnl_per_trade": 0.0017098019601846852
+    },
+    {
+      "config_name": "full_unified",
+      "calendar_sum": 0.11449984305479735,
+      "worst_sm": 0.008843695932553398,
+      "trade_count": 62,
+      "avg_pnl_per_trade": 0.001846771662174151
+    }
+  ],
+  "sensitivity": [
+    {
+      "base_share": 0.25,
+      "calendar_sum": 0.09541653587899782,
+      "worst_sm": 0.007369746610461165,
+      "trade_count": 62,
+      "avg_pnl_per_trade": 0.0015389763851451261
+    },
+    {
+      "base_share": 0.3,
+      "calendar_sum": 0.11449984305479735,
+      "worst_sm": 0.008843695932553398,
+      "trade_count": 62,
+      "avg_pnl_per_trade": 0.001846771662174151
+    },
+    {
+      "base_share": 0.35,
+      "calendar_sum": 0.13358315023059691,
+      "worst_sm": 0.010317645254645631,
+      "trade_count": 62,
+      "avg_pnl_per_trade": 0.0021545669392031763
+    },
+    {
+      "base_share": 0.4,
+      "calendar_sum": 0.1526664574063965,
+      "worst_sm": 0.011791594576737865,
+      "trade_count": 62,
+      "avg_pnl_per_trade": 0.002462362216232202
+    }
+  ],
+  "event_pool_stats": {
+    "total_events": 394,
+    "btc_count": 240,
+    "eth_count": 154,
+    "btc_pct": 60.913705583756354,
+    "eth_pct": 39.08629441624365,
+    "long_count": 188,
+    "short_count": 206,
+    "long_pct": 47.71573604060914,
+    "short_pct": 52.28426395939086,
+    "small_pool_warning": true
+  },
+  "execution_stats": {
+    "random_state": 42,
+    "total_events": 154,
+    "full_window_events": 68,
+    "train_events": 40,
+    "test_events": 28,
+    "forward_events": 86,
+    "skipped_events": 0,
+    "delay_simulation_errors": 0,
+    "delay_traded_stats": {
+      "D0": {
+        "total": 68,
+        "traded": 68,
+        "traded_rate": 1.0
+      },
+      "D5": {
+        "total": 68,
+        "traded": 68,
+        "traded_rate": 1.0
+      },
+      "D10": {
+        "total": 68,
+        "traded": 68,
+        "traded_rate": 1.0
+      },
+      "D15": {
+        "total": 68,
+        "traded": 68,
+        "traded_rate": 1.0
+      },
+      "pullback": {
+        "total": 68,
+        "traded": 68,
+        "traded_rate": 1.0
+      }
+    },
+    "features_used": [
+      "signal_atr_percentile",
+      "roundtrip_cost_atr",
+      "prev1_body_atr",
+      "prev1_range_atr",
+      "prev1_close_pos_side",
+      "prev_sma5_gap_atr",
+      "prev_sma5_slope_atr",
+      "level_to_prev_close_atr",
+      "level_to_signal_open_atr",
+      "touch_extension_atr"
+    ],
+    "features_excluded": [
+      "state_frac_0",
+      "state_frac_1",
+      "state_frac_2",
+      "state_frac_3",
+      "state_entropy"
+    ],
+    "timing_selected_depth": 3,
+    "rf_test_auc": 0.7019230769230769,
+    "rf_no_signal_warning": false,
+    "speed_gate_threshold": 0.2281060193942284,
+    "speed_gate_pass_rate": 0.9117647058823529,
+    "calendar_sum_gate_on": 0.305332914812793,
+    "calendar_sum_gate_off": 0.31004408878015627,
+    "worst_sm_gate_on": 0.02358318915347573,
+    "pipeline_total_time_seconds": 51.44243407249451,
+    "step_times": {
+      "step1_event_pool": 1.7293708324432373,
+      "step2_delay_sim": 8.201131105422974,
+      "step3_labels": 0.0005271434783935547,
+      "step4_features": 0.007498025894165039,
+      "step5_timing_classifier": 0.23359990119934082,
+      "step6_rf_probability": 0.22739386558532715,
+      "step7_speed_gate": 0.0007119178771972656,
+      "step8_combined_positions": 0.028530120849609375,
+      "step9_robustness": 10.768742799758911,
+      "step10_report": 0.0
+    },
+    "pipeline_errors": []
+  }
+}

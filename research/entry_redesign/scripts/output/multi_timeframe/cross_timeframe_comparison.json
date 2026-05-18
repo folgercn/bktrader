@@ -1,0 +1,26 @@
+{
+  "4h": {
+    "total_events": 275,
+    "train_events": 73,
+    "test_events": 49,
+    "forward_events": 153,
+    "long_count": 127,
+    "short_count": 148,
+    "delay_sim_traded": 122,
+    "timing_selected_depth": 4,
+    "timing_dt3_loocv_cs": -0.09041714037298428,
+    "timing_dt4_loocv_cs": -0.03352417502554246,
+    "timing_test_cs": -0.1651215126988241,
+    "rf_train_auc": 1.0,
+    "rf_test_auc": 0.6215686274509804,
+    "rf_no_signal": "False",
+    "speed_gate_threshold": -0.3627438689370317,
+    "speed_gate_pass_rate": 0.8852459016393442,
+    "calendar_sum_gate_on": 0.19170163097278525,
+    "calendar_sum_gate_off": 0.17757566292528695,
+    "worst_sm_gate_on": -0.11692839284447454,
+    "trade_count_gate_on": 70,
+    "neg_sm_count": 2,
+    "pipeline_seconds": 25.09093189239502
+  }
+}

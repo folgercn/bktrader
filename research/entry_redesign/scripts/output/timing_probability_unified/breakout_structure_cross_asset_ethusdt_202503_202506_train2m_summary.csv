@@ -1,0 +1,3 @@
+gate,forward_months,forward_events,trade_count,same_close_calendar_sum,same_close_worst_month,same_close_neg_months,adverse10_calendar_sum,adverse10_worst_month,adverse10_neg_months
+low_eff_low_atr_q20_q40,2,15,15,-0.02716380538769702,-0.03141272607596814,1,-0.04476505477296353,-0.0428905217793474,2
+baseline_model_advance,2,115,115,-0.11397322802595099,-0.08928264243002687,2,-0.26102593256353557,-0.16089213171146466,2

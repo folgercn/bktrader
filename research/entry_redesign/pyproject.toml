@@ -1,0 +1,29 @@
+[project]
+name = "entry-redesign"
+version = "0.1.0"
+description = "original_t2 breakout entry layer redesign research harness"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "pandas",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "hypothesis",
+]
+
+# ============================================================
+# FORBIDDEN DEPENDENCIES — 禁止引入以下深度学习框架
+# （与 AGENTS §2 一致：GRU 已证伪，不再投入 ML 模型）
+#
+# - torch
+# - tensorflow
+# - jax
+#
+# 任何 PR 引入上述依赖将被 scope_check 拒绝。
+# ============================================================

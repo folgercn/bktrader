@@ -1,0 +1,30 @@
+[
+  {
+    "config_name": "timing_only",
+    "calendar_sum": 0.06920517058372526,
+    "worst_sm": 0.005321214877866507,
+    "trade_count": 62,
+    "avg_pnl_per_trade": 0.0011162124287697624
+  },
+  {
+    "config_name": "probability_only",
+    "calendar_sum": 0.11449984305479735,
+    "worst_sm": 0.008843695932553398,
+    "trade_count": 62,
+    "avg_pnl_per_trade": 0.001846771662174151
+  },
+  {
+    "config_name": "no_speed_gate",
+    "calendar_sum": 0.1162665332925586,
+    "worst_sm": 0.005042132153183198,
+    "trade_count": 68,
+    "avg_pnl_per_trade": 0.0017098019601846852
+  },
+  {
+    "config_name": "full_unified",
+    "calendar_sum": 0.11449984305479735,
+    "worst_sm": 0.008843695932553398,
+    "trade_count": 62,
+    "avg_pnl_per_trade": 0.001846771662174151
+  }
+]

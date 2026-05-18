@@ -1,0 +1,26 @@
+{
+  "30min": {
+    "total_events": 2383,
+    "calendar_sum_gate_on": 0.01012541085328107,
+    "worst_sm_gate_on": -0.012698120076515147,
+    "trade_count_gate_on": 41,
+    "neg_sm_count": 1,
+    "rf_test_auc": 0.976304945054945
+  },
+  "1h": {
+    "total_events": 1069,
+    "calendar_sum_gate_on": 0.04126905125168828,
+    "worst_sm_gate_on": -0.004911257462164884,
+    "trade_count_gate_on": 47,
+    "neg_sm_count": 1,
+    "rf_test_auc": 0.9818976279650437
+  },
+  "4h": {
+    "total_events": 285,
+    "calendar_sum_gate_on": 0.06942790867390047,
+    "worst_sm_gate_on": -0.007765158960886015,
+    "trade_count_gate_on": 74,
+    "neg_sm_count": 1,
+    "rf_test_auc": 0.7069256756756757
+  }
+}

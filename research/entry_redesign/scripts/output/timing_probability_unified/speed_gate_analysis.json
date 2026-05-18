@@ -1,0 +1,11 @@
+{
+  "threshold": 0.2281060193942284,
+  "gate_pass_rate": 0.9117647058823529,
+  "gate_on_calendar_sum": 0.305332914812793,
+  "gate_off_calendar_sum": 0.31004408878015627,
+  "gate_on_worst_sm": 0.02358318915347573,
+  "gate_off_worst_sm": 0.01344568574182186,
+  "filtered_avg_pnl": 0.0007851956612272105,
+  "retained_avg_pnl": 0.004924724432464404,
+  "aggressive_gate_warning": false
+}

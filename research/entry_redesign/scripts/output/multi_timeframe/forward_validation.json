@@ -1,0 +1,32 @@
+{
+  "ETH_1h": {
+    "forward_events": 618,
+    "calendar_sum_gate_on": -0.0795,
+    "worst_sm_gate_on": -0.0426,
+    "trade_count_gate_on": 44,
+    "neg_sm_count": 4,
+    "monthly_silos": {
+      "2025-11": 0.0056,
+      "2025-12": -0.0227,
+      "2026-01": -0.0093,
+      "2026-02": 0.0096,
+      "2026-03": -0.0426,
+      "2026-04": -0.0201
+    }
+  },
+  "ETH_4h": {
+    "forward_events": 153,
+    "calendar_sum_gate_on": 0.0791,
+    "worst_sm_gate_on": -0.0415,
+    "trade_count_gate_on": 80,
+    "neg_sm_count": 3,
+    "monthly_silos": {
+      "2025-11": 0.0779,
+      "2025-12": 0.0435,
+      "2026-01": -0.0163,
+      "2026-02": -0.0244,
+      "2026-03": -0.0415,
+      "2026-04": 0.0399
+    }
+  }
+}

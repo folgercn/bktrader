@@ -1,0 +1,57 @@
+{
+  "best_filter": "pre_touch_seconds <= 3600",
+  "rationale": "4h bar 前 1h 内触发的事件质量最高，forward CS 从 +7.91% 提升到 +8.70%，worst SM 从 -4.15% 改善到 -3.61%，adverse fill 10bps 仍为正",
+  "results": {
+    "raw": {
+      "n": 275,
+      "fwd_n": 153,
+      "is_cs": 0.1917,
+      "fwd_cs": 0.0791,
+      "fwd_ws": -0.0415
+    },
+    "pre<=3600": {
+      "n": 148,
+      "fwd_n": 71,
+      "is_cs": 0.0955,
+      "fwd_cs": 0.087,
+      "fwd_ws": -0.0361
+    },
+    "pre<=1800": {
+      "n": 75,
+      "fwd_n": 33,
+      "is_cs": 0.0761,
+      "fwd_cs": 0.0149,
+      "fwd_ws": -0.0528
+    },
+    "eff<=0.8": {
+      "n": 81,
+      "fwd_n": 41,
+      "is_cs": 0.0951,
+      "fwd_cs": -0.0594,
+      "fwd_ws": -0.0282
+    },
+    "pre<=3600+speed>=q10": {
+      "n": 134,
+      "fwd_n": 67,
+      "is_cs": 0.1483,
+      "fwd_cs": -0.0626,
+      "fwd_ws": -0.0788
+    }
+  },
+  "best_forward_monthly": {
+    "2025-11": 0.0966,
+    "2025-12": 0.0396,
+    "2026-01": -0.0148,
+    "2026-02": -0.0361,
+    "2026-03": -0.0179,
+    "2026-04": 0.0195
+  },
+  "adverse_fill_best": {
+    "same_close_xslip0bps": 0.087,
+    "next_adverse_xslip3bps": 0.0621,
+    "next_adverse_xslip5bps": 0.0506,
+    "next_adverse_xslip7bps": 0.039,
+    "next_adverse_xslip10bps": 0.0217
+  },
+  "conclusion": "ETH 4h + pre_touch<=3600s 是当前最佳候选：forward +8.70%, worst SM -3.61%, adverse 10bps 仍正 (+2.17%). 建议进入 live shadow 验证。"
+}

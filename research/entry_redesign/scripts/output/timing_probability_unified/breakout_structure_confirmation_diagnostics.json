@@ -1,0 +1,84 @@
+{
+  "base_events_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_shape_expansion_events_restrictive_0p5bps.csv",
+  "base_events": 736,
+  "eval_start": "2025-06-01T00:00:00+00:00",
+  "eval_end_exclusive": "2026-05-01T00:00:00+00:00",
+  "base_share": 0.8,
+  "exec_params": {
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004,
+    "initial_stop_atr": 0.45,
+    "max_hold_hours": 2.0,
+    "min_stop_bps": 12.0,
+    "slippage": 0.0002,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "trail_buffer_atr": 0.05,
+    "trail_start_r": 1.5
+  },
+  "variants": {
+    "baseline_touch_entry": {
+      "confirmed_events": 736,
+      "confirmed_rate": 1.0,
+      "confirmed_advance_events": 561,
+      "description": "current production shape replay: enter at first touch close"
+    },
+    "touch_close_reclaim": {
+      "confirmed_events": 577,
+      "confirmed_rate": 0.7839673913043478,
+      "confirmed_advance_events": 451,
+      "description": "touch second must close beyond the breakout level"
+    },
+    "touch_close_ext_ge_0p03atr": {
+      "confirmed_events": 231,
+      "confirmed_rate": 0.3138586956521739,
+      "confirmed_advance_events": 151,
+      "description": "touch second close extension >= 0.03 ATR"
+    },
+    "follow_60s_ext_ge_0p03atr": {
+      "confirmed_events": 584,
+      "confirmed_rate": 0.7934782608695652,
+      "confirmed_advance_events": 434,
+      "description": "within 60s, first close extension >= 0.03 ATR"
+    },
+    "follow_180s_ext_ge_0p05atr": {
+      "confirmed_events": 581,
+      "confirmed_rate": 0.7894021739130435,
+      "confirmed_advance_events": 430,
+      "description": "within 180s, first close extension >= 0.05 ATR"
+    },
+    "follow_300s_ext_ge_0p05atr": {
+      "confirmed_events": 609,
+      "confirmed_rate": 0.8274456521739131,
+      "confirmed_advance_events": 453,
+      "description": "within 300s, first close extension >= 0.05 ATR"
+    },
+    "follow_300s_ext_ge_0p10atr": {
+      "confirmed_events": 501,
+      "confirmed_rate": 0.6807065217391305,
+      "confirmed_advance_events": 365,
+      "description": "within 300s, first close extension >= 0.10 ATR"
+    },
+    "clean_180s_ext_ge_0p05_adv_le_0p05atr": {
+      "confirmed_events": 332,
+      "confirmed_rate": 0.45108695652173914,
+      "confirmed_advance_events": 271,
+      "description": "within 180s, close extension >= 0.05 ATR and adverse before confirmation <= 0.05 ATR"
+    },
+    "clean_300s_ext_ge_0p05_adv_le_0p05atr": {
+      "confirmed_events": 333,
+      "confirmed_rate": 0.452445652173913,
+      "confirmed_advance_events": 272,
+      "description": "within 300s, close extension >= 0.05 ATR and adverse before confirmation <= 0.05 ATR"
+    },
+    "clean_300s_ext_ge_0p10_adv_le_0p10atr": {
+      "confirmed_events": 375,
+      "confirmed_rate": 0.5095108695652174,
+      "confirmed_advance_events": 294,
+      "description": "within 300s, close extension >= 0.10 ATR and adverse before confirmation <= 0.10 ATR"
+    }
+  },
+  "runtime_seconds": 60.241759061813354
+}

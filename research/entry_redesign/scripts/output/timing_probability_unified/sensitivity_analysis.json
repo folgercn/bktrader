@@ -1,0 +1,30 @@
+[
+  {
+    "base_share": 0.25,
+    "calendar_sum": 0.09541653587899782,
+    "worst_sm": 0.007369746610461165,
+    "trade_count": 62,
+    "avg_pnl_per_trade": 0.0015389763851451261
+  },
+  {
+    "base_share": 0.3,
+    "calendar_sum": 0.11449984305479735,
+    "worst_sm": 0.008843695932553398,
+    "trade_count": 62,
+    "avg_pnl_per_trade": 0.001846771662174151
+  },
+  {
+    "base_share": 0.35,
+    "calendar_sum": 0.13358315023059691,
+    "worst_sm": 0.010317645254645631,
+    "trade_count": 62,
+    "avg_pnl_per_trade": 0.0021545669392031763
+  },
+  {
+    "base_share": 0.4,
+    "calendar_sum": 0.1526664574063965,
+    "worst_sm": 0.011791594576737865,
+    "trade_count": 62,
+    "avg_pnl_per_trade": 0.002462362216232202
+  }
+]

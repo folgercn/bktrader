@@ -1,0 +1,60 @@
+{
+  "base_candidate": "wf3_low_eff_low_atr",
+  "context_candidates": [
+    "wf3_low_eff_low_atr_ctx4h_up",
+    "wf3_low_eff_low_atr_ctx12h_up"
+  ],
+  "fail_weights": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "base_events_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_shape_expansion_events_restrictive_0p5bps.csv",
+  "wf3_source_events": 42,
+  "wf3_extra_events": 41,
+  "lead_same_close": {
+    "calendar_sum": 0.30217222209740113,
+    "worst_sm": 0.02358318915347573,
+    "neg_sm": 0,
+    "trade_count": 62
+  },
+  "lead_adverse10": {
+    "calendar_sum": 0.2297164769930056,
+    "worst_sm": 0.013958206853058487,
+    "neg_sm": 0,
+    "trade_count": 62
+  },
+  "exec_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 1.5,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 2.0,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  },
+  "runtime_seconds": 28.377127170562744,
+  "lead_replayed_events": 68,
+  "lead_delay_errors": 0,
+  "lead_exec_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 1.5,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 2.0,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  }
+}

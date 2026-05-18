@@ -288,15 +288,120 @@ def _shape_schedule(shape_name: str, baseline_schedule: list[float], t3_schedule
     return baseline_schedule
 
 
+def _t3_exit_override(shape_name: str, overrides: dict | None, key: str, default):
+    if shape_name != "t3_swing" or not overrides or key not in overrides:
+        return default
+    return overrides[key]
+
+
+def _normalize_reentry_fill_policy(policy: str | None) -> str:
+    normalized = str(policy or "historical").lower().strip()
+    if normalized in {"historical", "strict_next_second_cross"}:
+        return normalized
+    raise ValueError(f"unknown reentry_fill_policy: {policy}")
+
+
+def _strict_reentry_triggered(
+    side: str,
+    trigger_mode: str,
+    high_value: float,
+    low_value: float,
+    close_value: float,
+    prev_close_value,
+    re_p: float,
+):
+    mode = str(trigger_mode).lower().strip()
+    if prev_close_value is None or pd.isna(prev_close_value):
+        return False, np.nan, "missing_prev_close"
+
+    prev_close = float(prev_close_value)
+    if mode == "pullback":
+        if side == "long":
+            touched = low_value <= re_p
+            return touched, re_p if touched else np.nan, "" if touched else "no_pullback_touch"
+        touched = high_value >= re_p
+        return touched, re_p if touched else np.nan, "" if touched else "no_pullback_touch"
+
+    if mode != "reclaim":
+        raise ValueError(f"unknown reentry trigger mode: {trigger_mode}")
+
+    if side == "long":
+        crossed = prev_close < re_p <= high_value
+        return crossed, re_p if crossed else np.nan, "" if crossed else "no_reclaim_cross"
+    crossed = prev_close > re_p >= low_value
+    return crossed, re_p if crossed else np.nan, "" if crossed else "no_reclaim_cross"
+
+
+def _reentry_fill_triggered(
+    *,
+    side: str,
+    trigger_mode: str,
+    high_value: float,
+    low_value: float,
+    close_value: float,
+    prev_close_value,
+    re_p: float,
+    policy: str,
+    current_pos: int,
+    trigger_pos: int,
+    trigger_kind: str,
+):
+    normalized_policy = _normalize_reentry_fill_policy(policy)
+    if normalized_policy == "historical":
+        is_triggered, entry_p_raw = _reentry_triggered(
+            side,
+            trigger_mode,
+            high_value,
+            low_value,
+            close_value,
+            prev_close_value,
+            re_p,
+            False,
+        )
+        return is_triggered, entry_p_raw, ""
+
+    if current_pos <= trigger_pos:
+        return False, np.nan, f"same_second_{trigger_kind}"
+    return _strict_reentry_triggered(
+        side,
+        trigger_mode,
+        high_value,
+        low_value,
+        close_value,
+        prev_close_value,
+        re_p,
+    )
+
+
 def _allow_breakout_lock(shape_name: str, bar_index: int, last_t3_lock_bar_index: int, t3_cooldown_bars: int) -> bool:
     if shape_name != "t3_swing" or t3_cooldown_bars <= 0:
         return True
     return bar_index - last_t3_lock_bar_index > t3_cooldown_bars
 
 
-def _t3_quality_reject_reason(sig, side: str, current_price: float, breakout_level: float, filters: dict) -> str:
+def _t3_quality_reject_reason(
+    sig,
+    side: str,
+    current_price: float,
+    breakout_level: float,
+    filters: dict,
+    pre_touch_seconds: float | None = None,
+) -> str:
     if not filters:
         return ""
+
+    allowed_sides = filters.get("allowed_sides")
+    if allowed_sides is not None:
+        allowed = {str(value) for value in allowed_sides}
+        if str(side) not in allowed:
+            return "side"
+
+    max_pre_touch_seconds = filters.get("max_pre_touch_seconds")
+    if max_pre_touch_seconds is not None:
+        if pre_touch_seconds is None or not np.isfinite(float(pre_touch_seconds)):
+            return "pre_touch_missing"
+        if float(pre_touch_seconds) > float(max_pre_touch_seconds):
+            return "pre_touch_seconds"
 
     sma5 = sig.get("sma5", np.nan)
     sma5_slope = sig.get("sma5_slope", np.nan)
@@ -382,9 +487,12 @@ def run_second_bar_replay(
     t3_cooldown_bars: int = 0,
     t3_quality_filters=None,
     quality_filter_shapes=None,
+    t3_exit_overrides=None,
+    reentry_fill_policy: str = "historical",
 ):
     if replay_mode not in {"same_bar_parity", "live_intrabar_sma5"}:
         raise ValueError(f"unknown replay mode: {replay_mode}")
+    reentry_fill_policy = _normalize_reentry_fill_policy(reentry_fill_policy)
 
     balance = initial_balance
     position = None
@@ -393,6 +501,7 @@ def run_second_bar_replay(
         "breakout_locks": {"long": {}, "short": {}},
         "t3_cooldown_skips": {"long": 0, "short": 0},
         "t3_quality_rejects": {"long": {}, "short": {}},
+        "reentry_fill_rejects": {"long": {}, "short": {}},
     }
     second_index = df_seconds.index
     high_values = df_seconds["high"].to_numpy(dtype="float64", copy=False)
@@ -417,15 +526,18 @@ def run_second_bar_replay(
     t3_cooldown_bars = int(t3_cooldown_bars)
     t3_quality_filters = t3_quality_filters or {}
     quality_filter_shapes = set(quality_filter_shapes or ["t3_swing"])
+    t3_exit_overrides = dict(t3_exit_overrides or {})
 
     last_exit_bar_index = -999
     reentry_timeout = 1
     last_exit_reason = None
     last_exit_side = None
     last_exit_breakout_shape = ""
+    last_exit_second_pos = -999
     pending_zero_initial_side = None
     pending_zero_initial_breakout_shape = ""
     pending_zero_initial_bar_index = -999
+    pending_zero_initial_second_pos = -999
     last_t3_lock_bar_index = -999
 
     for i in range(len(signal) - 1):
@@ -456,9 +568,11 @@ def run_second_bar_replay(
         if i - last_exit_bar_index > reentry_timeout:
             last_exit_side = None
             last_exit_breakout_shape = ""
+            last_exit_second_pos = -999
         if i - pending_zero_initial_bar_index > reentry_timeout:
             pending_zero_initial_side = None
             pending_zero_initial_breakout_shape = ""
+            pending_zero_initial_second_pos = -999
 
         while current_pos < end_pos:
             bar_time = second_index[current_pos]
@@ -484,6 +598,7 @@ def run_second_bar_replay(
                                 close_value,
                                 breakout_level,
                                 t3_quality_filters,
+                                (bar_time - start_t).total_seconds(),
                             )
                         if quality_reject_reason:
                             if quality_reject_reason not in quality_reject_recorded_this_bar["long"]:
@@ -502,6 +617,7 @@ def run_second_bar_replay(
                             pending_zero_initial_side = "long"
                             pending_zero_initial_breakout_shape = shape_name
                             pending_zero_initial_bar_index = i
+                            pending_zero_initial_second_pos = current_pos
                         else:
                             diagnostics["t3_cooldown_skips"]["long"] += 1
 
@@ -511,15 +627,20 @@ def run_second_bar_replay(
                     )
                     if has_exit_reentry_window or has_zero_initial_window:
                         re_p = _resolve_reentry_price(sig, "long", reentry_anchor_levels, long_reentry_atr)
-                        is_triggered, entry_p_raw = _reentry_triggered(
-                            "long",
-                            reentry_trigger_mode,
-                            high_value,
-                            low_value,
-                            close_value,
-                            prev_close,
-                            re_p,
-                            False,
+                        trigger_kind = "exit" if has_exit_reentry_window else "zero_initial"
+                        trigger_pos = last_exit_second_pos if has_exit_reentry_window else pending_zero_initial_second_pos
+                        is_triggered, entry_p_raw, fill_reject_reason = _reentry_fill_triggered(
+                            side="long",
+                            trigger_mode=reentry_trigger_mode,
+                            high_value=high_value,
+                            low_value=low_value,
+                            close_value=close_value,
+                            prev_close_value=prev_close,
+                            re_p=re_p,
+                            policy=reentry_fill_policy,
+                            current_pos=current_pos,
+                            trigger_pos=trigger_pos,
+                            trigger_kind=trigger_kind,
                         )
                         if is_triggered:
                             reason = "Zero-Initial-Reentry"
@@ -534,6 +655,14 @@ def run_second_bar_replay(
                                     reentry_size_schedule,
                                     t3_reentry_size_schedule,
                                 )
+                                active_stop_loss_atr = float(
+                                    _t3_exit_override(
+                                        entry_breakout_shape,
+                                        t3_exit_overrides,
+                                        "stop_loss_atr",
+                                        stop_loss_atr,
+                                    )
+                                )
                                 notional_share = _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
                                 entry_price = float(entry_p_raw) * (1 + slippage)
                                 balance, position = _open_position(
@@ -544,10 +673,11 @@ def run_second_bar_replay(
                                     notional_share,
                                     reason,
                                     stop_mode,
-                                    stop_loss_atr,
+                                    active_stop_loss_atr,
                                     entry_breakout_shape,
                                     replay_mode,
                                 )
+                                position["entry_time"] = bar_time
                                 trade_logs.append(
                                     {
                                         "time": bar_time,
@@ -564,9 +694,15 @@ def run_second_bar_replay(
                             if has_exit_reentry_window:
                                 last_exit_side = None
                                 last_exit_breakout_shape = ""
+                                last_exit_second_pos = -999
                             if has_zero_initial_window:
                                 pending_zero_initial_side = None
                                 pending_zero_initial_breakout_shape = ""
+                                pending_zero_initial_second_pos = -999
+                        elif fill_reject_reason:
+                            diagnostics["reentry_fill_rejects"]["long"][fill_reject_reason] = (
+                                diagnostics["reentry_fill_rejects"]["long"].get(fill_reject_reason, 0) + 1
+                            )
 
                 elif short_regime_ready:
                     triggered, breakout_level, shape_name = _short_breakout(sig, low_value, breakout_shape)
@@ -579,6 +715,7 @@ def run_second_bar_replay(
                                 close_value,
                                 breakout_level,
                                 t3_quality_filters,
+                                (bar_time - start_t).total_seconds(),
                             )
                         if quality_reject_reason:
                             if quality_reject_reason not in quality_reject_recorded_this_bar["short"]:
@@ -597,6 +734,7 @@ def run_second_bar_replay(
                             pending_zero_initial_side = "short"
                             pending_zero_initial_breakout_shape = shape_name
                             pending_zero_initial_bar_index = i
+                            pending_zero_initial_second_pos = current_pos
                         else:
                             diagnostics["t3_cooldown_skips"]["short"] += 1
 
@@ -606,15 +744,20 @@ def run_second_bar_replay(
                     )
                     if has_exit_reentry_window or has_zero_initial_window:
                         re_p = _resolve_reentry_price(sig, "short", reentry_anchor_levels, short_reentry_atr)
-                        is_triggered, entry_p_raw = _reentry_triggered(
-                            "short",
-                            reentry_trigger_mode,
-                            high_value,
-                            low_value,
-                            close_value,
-                            prev_close,
-                            re_p,
-                            False,
+                        trigger_kind = "exit" if has_exit_reentry_window else "zero_initial"
+                        trigger_pos = last_exit_second_pos if has_exit_reentry_window else pending_zero_initial_second_pos
+                        is_triggered, entry_p_raw, fill_reject_reason = _reentry_fill_triggered(
+                            side="short",
+                            trigger_mode=reentry_trigger_mode,
+                            high_value=high_value,
+                            low_value=low_value,
+                            close_value=close_value,
+                            prev_close_value=prev_close,
+                            re_p=re_p,
+                            policy=reentry_fill_policy,
+                            current_pos=current_pos,
+                            trigger_pos=trigger_pos,
+                            trigger_kind=trigger_kind,
                         )
                         if is_triggered:
                             reason = "Zero-Initial-Reentry"
@@ -629,6 +772,14 @@ def run_second_bar_replay(
                                     reentry_size_schedule,
                                     t3_reentry_size_schedule,
                                 )
+                                active_stop_loss_atr = float(
+                                    _t3_exit_override(
+                                        entry_breakout_shape,
+                                        t3_exit_overrides,
+                                        "stop_loss_atr",
+                                        stop_loss_atr,
+                                    )
+                                )
                                 notional_share = _get_reentry_window_real_order_size(trades_in_bar, active_schedule)
                                 entry_price = float(entry_p_raw) * (1 - slippage)
                                 balance, position = _open_position(
@@ -639,10 +790,11 @@ def run_second_bar_replay(
                                     notional_share,
                                     reason,
                                     stop_mode,
-                                    stop_loss_atr,
+                                    active_stop_loss_atr,
                                     entry_breakout_shape,
                                     replay_mode,
                                 )
+                                position["entry_time"] = bar_time
                                 trade_logs.append(
                                     {
                                         "time": bar_time,
@@ -659,36 +811,90 @@ def run_second_bar_replay(
                             if has_exit_reentry_window:
                                 last_exit_side = None
                                 last_exit_breakout_shape = ""
+                                last_exit_second_pos = -999
                             if has_zero_initial_window:
                                 pending_zero_initial_side = None
                                 pending_zero_initial_breakout_shape = ""
+                                pending_zero_initial_second_pos = -999
+                        elif fill_reject_reason:
+                            diagnostics["reentry_fill_rejects"]["short"][fill_reject_reason] = (
+                                diagnostics["reentry_fill_rejects"]["short"].get(fill_reject_reason, 0) + 1
+                            )
 
             else:
                 exit_triggered = False
                 exit_p = 0.0
                 reason = ""
+                position_shape = position.get("breakout_shape_name", "")
+                active_trailing_stop_atr = float(
+                    _t3_exit_override(
+                        position_shape,
+                        t3_exit_overrides,
+                        "trailing_stop_atr",
+                        trailing_stop_atr,
+                    )
+                )
+                active_delayed_trailing_activation = float(
+                    _t3_exit_override(
+                        position_shape,
+                        t3_exit_overrides,
+                        "delayed_trailing_activation",
+                        delayed_trailing_activation,
+                    )
+                )
+                active_profit_protect_atr = float(
+                    _t3_exit_override(
+                        position_shape,
+                        t3_exit_overrides,
+                        "profit_protect_atr",
+                        profit_protect_atr,
+                    )
+                )
+                active_max_hold_seconds = _t3_exit_override(
+                    position_shape,
+                    t3_exit_overrides,
+                    "max_hold_seconds",
+                    None,
+                )
+                active_min_hold_seconds_before_sl = _t3_exit_override(
+                    position_shape,
+                    t3_exit_overrides,
+                    "min_hold_seconds_before_sl",
+                    None,
+                )
+                hold_seconds = None
+                if position.get("entry_time") is not None:
+                    hold_seconds = (bar_time - position["entry_time"]).total_seconds()
+                sl_exit_allowed = (
+                    active_min_hold_seconds_before_sl is None
+                    or hold_seconds is None
+                    or hold_seconds >= float(active_min_hold_seconds_before_sl)
+                )
 
                 if position["side"] == "long":
                     prev_hwm = position.get("hwm", position["entry_p"])
                     protected_before_bar = position.get("protected", False)
 
                     profit_atr = (prev_hwm - position["entry_p"]) / sig["atr"] if sig["atr"] > 0 else 0
-                    if profit_atr >= delayed_trailing_activation:
-                        trailing_sl = prev_hwm - trailing_stop_atr * sig["atr"]
+                    if profit_atr >= active_delayed_trailing_activation:
+                        trailing_sl = prev_hwm - active_trailing_stop_atr * sig["atr"]
                         position["sl"] = max(position["sl"], trailing_sl)
 
-                    if low_value <= position["sl"]:
+                    if low_value <= position["sl"] and sl_exit_allowed:
                         exit_p, reason, exit_triggered = position["sl"], "SL", True
                     elif protected_before_bar and low_value <= sig["prev_low_1"]:
                         exit_p, reason, exit_triggered = sig["prev_low_1"], "PT", True
+                    elif active_max_hold_seconds is not None and hold_seconds is not None:
+                        if hold_seconds >= float(active_max_hold_seconds):
+                            exit_p, reason, exit_triggered = close_value, "T3TimeCap", True
 
                     if not exit_triggered:
                         position["hwm"] = max(prev_hwm, high_value)
-                        if not position["protected"] and high_value >= position["entry_p"] + profit_protect_atr * sig["atr"]:
+                        if not position["protected"] and high_value >= position["entry_p"] + active_profit_protect_atr * sig["atr"]:
                             position["protected"] = True
                         profit_atr = (position["hwm"] - position["entry_p"]) / sig["atr"] if sig["atr"] > 0 else 0
-                        if profit_atr >= delayed_trailing_activation:
-                            trailing_sl = position["hwm"] - trailing_stop_atr * sig["atr"]
+                        if profit_atr >= active_delayed_trailing_activation:
+                            trailing_sl = position["hwm"] - active_trailing_stop_atr * sig["atr"]
                             position["sl"] = max(position["sl"], trailing_sl)
 
                 else:
@@ -696,22 +902,25 @@ def run_second_bar_replay(
                     protected_before_bar = position.get("protected", False)
 
                     profit_atr = (position["entry_p"] - prev_lwm) / sig["atr"] if sig["atr"] > 0 else 0
-                    if profit_atr >= delayed_trailing_activation:
-                        trailing_sl = prev_lwm + trailing_stop_atr * sig["atr"]
+                    if profit_atr >= active_delayed_trailing_activation:
+                        trailing_sl = prev_lwm + active_trailing_stop_atr * sig["atr"]
                         position["sl"] = min(position["sl"], trailing_sl)
 
-                    if high_value >= position["sl"]:
+                    if high_value >= position["sl"] and sl_exit_allowed:
                         exit_p, reason, exit_triggered = position["sl"], "SL", True
                     elif protected_before_bar and high_value >= sig["prev_high_1"]:
                         exit_p, reason, exit_triggered = sig["prev_high_1"], "PT", True
+                    elif active_max_hold_seconds is not None and hold_seconds is not None:
+                        if hold_seconds >= float(active_max_hold_seconds):
+                            exit_p, reason, exit_triggered = close_value, "T3TimeCap", True
 
                     if not exit_triggered:
                         position["lwm"] = min(prev_lwm, low_value)
-                        if not position["protected"] and low_value <= position["entry_p"] - profit_protect_atr * sig["atr"]:
+                        if not position["protected"] and low_value <= position["entry_p"] - active_profit_protect_atr * sig["atr"]:
                             position["protected"] = True
                         profit_atr = (position["entry_p"] - position["lwm"]) / sig["atr"] if sig["atr"] > 0 else 0
-                        if profit_atr >= delayed_trailing_activation:
-                            trailing_sl = position["lwm"] + trailing_stop_atr * sig["atr"]
+                        if profit_atr >= active_delayed_trailing_activation:
+                            trailing_sl = position["lwm"] + active_trailing_stop_atr * sig["atr"]
                             position["sl"] = min(position["sl"], trailing_sl)
 
                 if exit_triggered:
@@ -743,6 +952,7 @@ def run_second_bar_replay(
                     last_exit_side = position["side"]
                     last_exit_breakout_shape = exit_breakout_shape
                     last_exit_bar_index = i
+                    last_exit_second_pos = current_pos
                     position = None
 
             current_pos += 1

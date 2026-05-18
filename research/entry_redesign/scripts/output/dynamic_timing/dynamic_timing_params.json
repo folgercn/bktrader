@@ -1,0 +1,13 @@
+{
+  "max_steps": 2,
+  "strong_momentum_threshold": 0.1,
+  "strong_flow_threshold": 0.55,
+  "moderate_momentum_threshold": 0.05,
+  "extension_threshold": 0.3,
+  "weak_flow_threshold": 0.45,
+  "fading_threshold": 0.01,
+  "min_steps_for_skip": 2,
+  "pullback_target_atr": 0.02,
+  "decision_window_seconds": 60,
+  "abandon_extension_atr": 0.3
+}

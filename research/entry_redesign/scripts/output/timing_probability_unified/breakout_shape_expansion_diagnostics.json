@@ -1,0 +1,62 @@
+{
+  "symbol": "ETHUSDT",
+  "model_version": "20260515_v1",
+  "eval_start": "2025-06-01T00:00:00+00:00",
+  "eval_end_exclusive": "2026-05-01T00:00:00+00:00",
+  "speed_threshold": 0.228106,
+  "max_pre_touch_seconds": 1800.0,
+  "max_eff_300s": 1.0,
+  "base_share": 0.8,
+  "exec_params": {
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004,
+    "initial_stop_atr": 0.45,
+    "max_hold_hours": 2.0,
+    "min_stop_bps": 12.0,
+    "slippage": 0.0002,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "trail_buffer_atr": 0.05,
+    "trail_start_r": 1.5
+  },
+  "variants": {
+    "restrictive_0p5bps": {
+      "dual_touch_same_second_skipped": 0,
+      "bars_scanned": 1810,
+      "raw_events": 1810,
+      "quality_events": 736,
+      "eval_events": 736
+    },
+    "strict_0bps": {
+      "dual_touch_same_second_skipped": 0,
+      "bars_scanned": 1844,
+      "raw_events": 1844,
+      "quality_events": 745,
+      "eval_events": 745
+    },
+    "near_equal_slack_0p25bps": {
+      "dual_touch_same_second_skipped": 0,
+      "bars_scanned": 1864,
+      "raw_events": 1864,
+      "quality_events": 751,
+      "eval_events": 751
+    },
+    "near_equal_slack_0p5bps": {
+      "dual_touch_same_second_skipped": 0,
+      "bars_scanned": 1885,
+      "raw_events": 1885,
+      "quality_events": 752,
+      "eval_events": 752
+    },
+    "near_equal_slack_1p0bps": {
+      "dual_touch_same_second_skipped": 0,
+      "bars_scanned": 1906,
+      "raw_events": 1906,
+      "quality_events": 755,
+      "eval_events": 755
+    }
+  },
+  "runtime_seconds": 65.93300175666809
+}

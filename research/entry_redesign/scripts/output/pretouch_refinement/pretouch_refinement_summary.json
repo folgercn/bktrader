@@ -1,0 +1,235 @@
+{
+  "generated_at": "2026-05-13T08:36:30.753054+00:00",
+  "spec": "pretouch-classifier-refinement",
+  "go_nogo_decision": "Marginal Go",
+  "best_arm": "A2",
+  "best_classifier": "RuleBased_DT3",
+  "test_calendar_sum": 3.394135005126256,
+  "oracle_calendar_sum": 0.0,
+  "oracle_realization_rate": 0.0,
+  "improvement_vs_legacy": 0.41191635077750854,
+  "best_global_delay": "D0",
+  "baseline_legacy": {
+    "test_calendar_sum": 2.9822186543487477,
+    "best_classifier_name": "LogisticRegression",
+    "bootstrap_ci_overall": {
+      "calendar_sum": 2.9822186543487477,
+      "ci_5": 1.1561491311140506,
+      "ci_95": 4.728477968845824,
+      "mean": 3.0033742720745114,
+      "std": 1.0900277764643478
+    },
+    "symbol_results": {
+      "BTC": {
+        "test": {
+          "n_events": 24,
+          "classifier_calendar_sum": 1.4587215832792426,
+          "baseline_b_calendar_sum": 1.3500116742708053,
+          "win_rate": 87.5,
+          "baseline_b_win_rate": 87.5,
+          "traded_count": 24,
+          "wins_count": 21
+        },
+        "train": {
+          "n_events": 36,
+          "classifier_calendar_sum": 0.12306279318575979,
+          "baseline_b_calendar_sum": -0.20101387196863657,
+          "win_rate": 69.44444444444444,
+          "traded_count": 36,
+          "wins_count": 25
+        },
+        "symbol_not_superior_flag": false
+      },
+      "ETH": {
+        "test": {
+          "n_events": 23,
+          "classifier_calendar_sum": 1.5234970710695053,
+          "baseline_b_calendar_sum": 1.3865673459810788,
+          "win_rate": 78.26086956521739,
+          "baseline_b_win_rate": 78.26086956521739,
+          "traded_count": 23,
+          "wins_count": 18
+        },
+        "train": {
+          "n_events": 33,
+          "classifier_calendar_sum": 1.5998495235726586,
+          "baseline_b_calendar_sum": 1.182993643951777,
+          "win_rate": 78.78787878787878,
+          "traded_count": 33,
+          "wins_count": 26
+        },
+        "symbol_not_superior_flag": false
+      }
+    },
+    "regime_stability": {
+      "n_train": 69,
+      "n_test": 47,
+      "per_regime": [
+        {
+          "regime": "D0",
+          "train_count": 39,
+          "train_pct": 56.52173913043478,
+          "test_count": 23,
+          "test_pct": 48.93617021276596,
+          "diff_pp": 7.585568917668823
+        },
+        {
+          "regime": "D5",
+          "train_count": 5,
+          "train_pct": 7.246376811594203,
+          "test_count": 7,
+          "test_pct": 14.893617021276595,
+          "diff_pp": 7.647240209682392
+        },
+        {
+          "regime": "D10",
+          "train_count": 3,
+          "train_pct": 4.3478260869565215,
+          "test_count": 3,
+          "test_pct": 6.382978723404255,
+          "diff_pp": 2.0351526364477337
+        },
+        {
+          "regime": "D15",
+          "train_count": 3,
+          "train_pct": 4.3478260869565215,
+          "test_count": 0,
+          "test_pct": 0.0,
+          "diff_pp": 4.3478260869565215
+        },
+        {
+          "regime": "pullback",
+          "train_count": 2,
+          "train_pct": 2.898550724637681,
+          "test_count": 6,
+          "test_pct": 12.76595744680851,
+          "diff_pp": 9.867406722170829
+        },
+        {
+          "regime": "skip",
+          "train_count": 17,
+          "train_pct": 24.637681159420293,
+          "test_count": 8,
+          "test_pct": 17.02127659574468,
+          "diff_pp": 7.616404563675612
+        }
+      ],
+      "max_diff_pp": 9.867406722170829,
+      "label_distribution_shift": false
+    }
+  },
+  "robustness": {
+    "bootstrap_ci": {
+      "n_bootstrap": 1000,
+      "random_state": 42,
+      "mean": 3.4477772889004443,
+      "ci_lower": 1.5960177056299885,
+      "ci_upper": 5.182403202899933
+    },
+    "symbol_bootstrap": {
+      "BTC": {
+        "n_events": 24,
+        "test_cs": 0.8723449066805332,
+        "bootstrap_ci_lower": -0.44598253069100374,
+        "bootstrap_ci_upper": 2.180374002863448,
+        "bootstrap_mean": 0.8767255791544756
+      },
+      "ETH": {
+        "n_events": 23,
+        "test_cs": 2.516668248102622,
+        "bootstrap_ci_lower": 1.3910208954617105,
+        "bootstrap_ci_upper": 3.474679945713727,
+        "bootstrap_mean": 2.488482196442341
+      }
+    },
+    "overfitting_check": {
+      "train_calendar_sum": 0.0,
+      "test_calendar_sum": 3.394135005126256,
+      "loocv_calendar_sum": 0.0,
+      "overfitting_flag": false,
+      "loocv_degradation_flag": false,
+      "loocv_diff_pct": 0.0
+    },
+    "regime_stability": {
+      "regime_schema": "3-regime",
+      "label_distribution_shift": false,
+      "shift_details": [],
+      "train_distribution": {
+        "fast": 63.76811594202898,
+        "skip": 24.637681159420293,
+        "slow": 11.594202898550725
+      },
+      "test_distribution": {
+        "fast": 63.829787234042556,
+        "slow": 19.148936170212767,
+        "skip": 17.02127659574468
+      }
+    }
+  },
+  "flags": {
+    "small_sample_warning": true,
+    "refinement_noop": false,
+    "accuracy_calendar_decoupled": false,
+    "no_refinement_superior": false,
+    "overfitting_flag": false,
+    "loocv_degradation_flag": false
+  },
+  "arm_comparison": [
+    {
+      "arm_name": "Baseline",
+      "feature_set": "original",
+      "regime_schema": "5-regime",
+      "best_classifier": "LogisticRegression",
+      "test_calendar_sum": 2.9822186543487477,
+      "oracle_realization_rate": 0.0,
+      "improvement_vs_legacy": 0.0
+    },
+    {
+      "arm_name": "A1",
+      "feature_set": "original+enhanced",
+      "regime_schema": "5-regime",
+      "best_classifier": "RandomForest",
+      "test_calendar_sum": 2.8775217055081592,
+      "oracle_realization_rate": 0.0,
+      "improvement_vs_legacy": -0.10469694884058844
+    },
+    {
+      "arm_name": "A2",
+      "feature_set": "original",
+      "regime_schema": "3-regime",
+      "best_classifier": "RuleBased_DT3",
+      "test_calendar_sum": 3.394135005126256,
+      "oracle_realization_rate": 0.0,
+      "improvement_vs_legacy": 0.41191635077750854
+    },
+    {
+      "arm_name": "A3",
+      "feature_set": "original",
+      "regime_schema": "2-regime",
+      "best_classifier": "RuleBased_DT3",
+      "test_calendar_sum": 2.787521796575122,
+      "oracle_realization_rate": 0.0,
+      "improvement_vs_legacy": -0.1946968577736259
+    },
+    {
+      "arm_name": "A4",
+      "feature_set": "original+enhanced",
+      "regime_schema": "3-regime",
+      "best_classifier": "RuleBased_DT3",
+      "test_calendar_sum": 3.3603564817106086,
+      "oracle_realization_rate": 0.0,
+      "improvement_vs_legacy": 0.37813782736186097
+    },
+    {
+      "arm_name": "A5",
+      "feature_set": "original+enhanced",
+      "regime_schema": "2-regime",
+      "best_classifier": "RuleBased_DT3",
+      "test_calendar_sum": 2.9567388653417583,
+      "oracle_realization_rate": 0.0,
+      "improvement_vs_legacy": -0.02547978900698933
+    }
+  ],
+  "ablation": [],
+  "reasoning": "最优 arm A2 (RuleBased_DT3)：test calendar_sum = +3.39% 处于 Marginal Go 区间 (+3.10%, +3.50%]。相对 Baseline_Legacy 改善 +0.41pp。建议等更多 V6 gate events 积累或 Path C 扩大 events 池。"
+}
