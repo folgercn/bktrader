@@ -332,6 +332,16 @@ func (p *Platform) ListAccountSummaries() ([]domain.AccountSummary, error) {
 	for _, account := range accounts {
 		if liveSummary, ok := buildLiveAccountSummaryFromSnapshot(account); ok {
 			liveSummaries = append(liveSummaries, liveSummary)
+		} else if strings.EqualFold(account.Mode, "LIVE") {
+			latestSnapshot, ok, err := p.latestAccountEquitySnapshot(account.ID)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				liveSummaries = append(liveSummaries, buildLiveAccountSummaryFromEquitySnapshot(account, latestSnapshot))
+			} else {
+				paperAccounts = append(paperAccounts, account)
+			}
 		} else {
 			paperAccounts = append(paperAccounts, account)
 		}
@@ -404,6 +414,9 @@ func buildLiveAccountSummaryFromSnapshot(account domain.Account) (domain.Account
 	if len(snapshot) == 0 || !strings.EqualFold(stringValue(snapshot["syncStatus"]), "SYNCED") {
 		return domain.AccountSummary{}, false
 	}
+	if !liveSyncSnapshotHasBalanceFields(snapshot) {
+		return domain.AccountSummary{}, false
+	}
 	updatedAt := time.Now().UTC()
 	if raw := stringValue(account.Metadata["lastLiveSyncAt"]); raw != "" {
 		if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
@@ -429,6 +442,55 @@ func buildLiveAccountSummaryFromSnapshot(account domain.Account) (domain.Account
 		OpenPositionCount: len(metadataList(snapshot["positions"])),
 		UpdatedAt:         updatedAt,
 	}, true
+}
+
+func liveSyncSnapshotHasBalanceFields(snapshot map[string]any) bool {
+	return parseFloatValue(snapshot["totalWalletBalance"]) > 0 ||
+		parseFloatValue(snapshot["totalMarginBalance"]) > 0 ||
+		parseFloatValue(snapshot["availableBalance"]) > 0
+}
+
+func (p *Platform) latestAccountEquitySnapshot(accountID string) (domain.AccountEquitySnapshot, bool, error) {
+	items, err := p.store.ListAccountEquitySnapshots(domain.AccountEquitySnapshotQuery{
+		AccountID: accountID,
+		Limit:     1,
+	})
+	if err != nil {
+		return domain.AccountEquitySnapshot{}, false, err
+	}
+	if len(items) == 0 {
+		return domain.AccountEquitySnapshot{}, false, nil
+	}
+	return items[len(items)-1], true, nil
+}
+
+func buildLiveAccountSummaryFromEquitySnapshot(account domain.Account, snapshot domain.AccountEquitySnapshot) domain.AccountSummary {
+	updatedAt := snapshot.CreatedAt
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	availableBalance := 0.0
+	if snapshot.OpenPositionCount == 0 {
+		availableBalance = snapshot.NetEquity
+	}
+	return domain.AccountSummary{
+		AccountID:         account.ID,
+		AccountName:       account.Name,
+		Mode:              account.Mode,
+		Exchange:          account.Exchange,
+		Status:            account.Status,
+		StartEquity:       round2(snapshot.StartEquity),
+		RealizedPnL:       round2(snapshot.RealizedPnL),
+		UnrealizedPnL:     round2(snapshot.UnrealizedPnL),
+		Fees:              round2(snapshot.Fees),
+		NetEquity:         round2(snapshot.NetEquity),
+		AvailableBalance:  round2(availableBalance),
+		WalletBalance:     round2(snapshot.NetEquity),
+		MarginBalance:     round2(snapshot.NetEquity),
+		ExposureNotional:  round2(snapshot.ExposureNotional),
+		OpenPositionCount: snapshot.OpenPositionCount,
+		UpdatedAt:         updatedAt,
+	}
 }
 
 func sumSnapshotPositionNotional(value any) float64 {
