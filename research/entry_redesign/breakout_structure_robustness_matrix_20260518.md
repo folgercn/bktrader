@@ -63,7 +63,10 @@ The additive replay against canonical lead narrows the useful branch further:
 |---|---:|---:|---:|---:|---:|---:|---|
 | `low_eff_rf_rank_median_000` | 28 | 27 | 0.282871 | 0.053155 | -0.004736 | 2 | Best late-ETH additive shape so far; same return lift as bare `wf3`, fewer events, better tail. |
 | `wide_rf_binary_000` | 60 | 57 | 0.282091 | 0.052375 | -0.042275 | 2 | Return lift exists, but tail is too deep for promotion. |
+| `low_eff_rf_rank_q60_000` | 21 | 20 | 0.267627 | 0.037911 | -0.004736 | 2 | More conservative threshold loses too much return. |
+| `low_eff_rf_binary_000` | 8 | 7 | 0.262364 | 0.032647 | -0.005066 | 1 | Cleaner month count, but too few additive events. |
+| `low_eff_rf_rank_q70_000` | 5 | 5 | 0.240063 | 0.010347 | -0.005066 | 2 | Over-filtered. |
 | `wide_rf_rank_q70_000` | 103 | 97 | 0.224097 | -0.005620 | -0.044589 | 2 | Fails as additive leg. |
 | `wide_rf_binary_025` | 395 | 362 | 0.142841 | -0.086876 | -0.063290 | 3 | Rejected; the 25% floor carries adverse selection. |
 
-This gives one better late-ETH candidate to falsify (`low_eff_rf_rank_median_000`), but it does not override the matrix decision because the corresponding narrow-pool early ETH model result is still negative.
+This gives one better late-ETH candidate to falsify (`low_eff_rf_rank_median_000`). The stricter low-eff hard-select thresholds are useful as sensitivity checks, but they do not beat the median threshold. This does not override the matrix decision because the corresponding narrow-pool early ETH model result is still negative.

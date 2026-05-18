@@ -1,6 +1,6 @@
 # Canonical Lead + Context Model Expansion Combo
 
-Generated: 2026-05-18T10:08:59.243779+00:00
+Generated: 2026-05-18T10:18:21.494179+00:00
 
 Scope: research-only. Canonical lead trades are preserved; model-selected current-shape events are overlap-removed by `(signal_start, side)` before combination.
 
@@ -10,6 +10,9 @@ Scope: research-only. Canonical lead trades are preserved; model-selected curren
 | -------------------------- | ----------------------- | ------------------ | -------------------- | ---------------------- | ------------ | ---------------------------- | ---------------------------- | ----------------------------- | ------------------------ | ---------------------- | --------------------------- | ----------------------------- | ------------------------------ |
 | low_eff_rf_rank_median_000 | low_eff_low_atr_q20_q40 | rf_rank_median_000 | 28                   | 1                      | 27           | 0.053155                     | 0.282871                     | 0.053155                      | -0.004736                | 2                      | 89                          | 0.386514                      | 0.084342                       |
 | wide_rf_binary_000         | baseline_model_advance  | rf_binary_000      | 60                   | 3                      | 57           | 0.052375                     | 0.282091                     | 0.052375                      | -0.042275                | 2                      | 119                         | 0.428690                      | 0.126517                       |
+| low_eff_rf_rank_q60_000    | low_eff_low_atr_q20_q40 | rf_rank_q60_000    | 21                   | 1                      | 20           | 0.037911                     | 0.267627                     | 0.037911                      | -0.004736                | 2                      | 82                          | 0.363847                      | 0.061675                       |
+| low_eff_rf_binary_000      | low_eff_low_atr_q20_q40 | rf_binary_000      | 8                    | 1                      | 7            | 0.032647                     | 0.262364                     | 0.032647                      | -0.005066                | 1                      | 69                          | 0.342806                      | 0.040634                       |
+| low_eff_rf_rank_q70_000    | low_eff_low_atr_q20_q40 | rf_rank_q70_000    | 5                    | 0                      | 5            | 0.010347                     | 0.240063                     | 0.010347                      | -0.005066                | 2                      | 67                          | 0.317449                      | 0.015277                       |
 | wide_rf_rank_q70_000       | baseline_model_advance  | rf_rank_q70_000    | 103                  | 6                      | 97           | -0.005620                    | 0.224097                     | -0.005620                     | -0.044589                | 2                      | 159                         | 0.417562                      | 0.115390                       |
 | wide_rf_binary_025         | baseline_model_advance  | rf_binary_025      | 395                  | 33                     | 362          | -0.086876                    | 0.142841                     | -0.086876                     | -0.063290                | 3                      | 424                         | 0.389303                      | 0.087131                       |
 
@@ -83,6 +86,27 @@ Scope: research-only. Canonical lead trades are preserved; model-selected curren
       "model_variant": "rf_rank_median_000",
       "min_train_events": 8,
       "description": "low-eff/low-ATR pool, hard keep events above train median probability"
+    },
+    {
+      "name": "low_eff_rf_binary_000",
+      "base_gate": "low_eff_low_atr_q20_q40",
+      "model_variant": "rf_binary_000",
+      "min_train_events": 8,
+      "description": "low-eff/low-ATR pool, hard keep probability >= 0.5"
+    },
+    {
+      "name": "low_eff_rf_rank_q60_000",
+      "base_gate": "low_eff_low_atr_q20_q40",
+      "model_variant": "rf_rank_q60_000",
+      "min_train_events": 8,
+      "description": "low-eff/low-ATR pool, hard keep events above train q60 probability"
+    },
+    {
+      "name": "low_eff_rf_rank_q70_000",
+      "base_gate": "low_eff_low_atr_q20_q40",
+      "model_variant": "rf_rank_q70_000",
+      "min_train_events": 8,
+      "description": "low-eff/low-ATR pool, hard keep events above train q70 probability"
     }
   ],
   "splits": {
@@ -1405,6 +1429,996 @@ Scope: research-only. Canonical lead trades are preserved; model-selected curren
           ]
         ]
       }
+    ],
+    "low_eff_rf_binary_000": [
+      {
+        "forward_month": "2025-09",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_binary_000",
+        "train_events": 14,
+        "forward_events": 1,
+        "active_events": 0,
+        "model_status": "trained",
+        "label_events": 14,
+        "positive_labels": 3,
+        "negative_labels": 11,
+        "train_auc": 1.0,
+        "train_prob_median": 0.21791325991065058,
+        "train_prob_q40": 0.20206301338298416,
+        "train_prob_q60": 0.23719980785854067,
+        "train_prob_q70": 0.3131088911989886,
+        "forward_prob_mean": 0.31875744935190425,
+        "forward_prob_median": 0.31875744935190425,
+        "feature_importance_top5": [
+          [
+            "pre_touch_seconds",
+            0.1717288175299227
+          ],
+          [
+            "ctx12h_range_atr",
+            0.12267540241762537
+          ],
+          [
+            "speed_300s_atr",
+            0.08786435182842252
+          ],
+          [
+            "prev1_close_pos_side",
+            0.0768061244831678
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.07459836837400764
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-10",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_binary_000",
+        "train_events": 11,
+        "forward_events": 2,
+        "active_events": 0,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 3,
+        "negative_labels": 8,
+        "train_auc": 1.0,
+        "train_prob_median": 0.3218757679703901,
+        "train_prob_q40": 0.28171037530020554,
+        "train_prob_q60": 0.3227830156685419,
+        "train_prob_q70": 0.3359338758841481,
+        "forward_prob_mean": 0.27828583468860235,
+        "forward_prob_median": 0.27828583468860235,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.13276122139969515
+          ],
+          [
+            "pre_touch_seconds",
+            0.1150794392730777
+          ],
+          [
+            "touch_extension_atr",
+            0.0893064051228216
+          ],
+          [
+            "eff_300s",
+            0.08569893851450529
+          ],
+          [
+            "signal_atr_percentile",
+            0.06938925972842146
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-11",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_binary_000",
+        "train_events": 11,
+        "forward_events": 7,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 4,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.21020694956075936,
+        "train_prob_q40": 0.16133303917178157,
+        "train_prob_q60": 0.32237561832465467,
+        "train_prob_q70": 0.67696004438458,
+        "forward_prob_mean": 0.3959152103627961,
+        "forward_prob_median": 0.42751270332694497,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.16790671605486418
+          ],
+          [
+            "pre_touch_seconds",
+            0.15831788239195646
+          ],
+          [
+            "level_to_signal_open_atr",
+            0.1094692873312402
+          ],
+          [
+            "ctx12h_range_atr",
+            0.08836254156119476
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.07552371559105567
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-12",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_binary_000",
+        "train_events": 11,
+        "forward_events": 9,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 4,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.28753533354597194,
+        "train_prob_q40": 0.2320335306275282,
+        "train_prob_q60": 0.2947376995553465,
+        "train_prob_q70": 0.5646597067615136,
+        "forward_prob_mean": 0.38922821366575855,
+        "forward_prob_median": 0.36775733532300464,
+        "feature_importance_top5": [
+          [
+            "pre_touch_seconds",
+            0.21146726970174917
+          ],
+          [
+            "level_to_signal_open_atr",
+            0.16289304495515594
+          ],
+          [
+            "prev1_close_pos_side",
+            0.11231023118200692
+          ],
+          [
+            "touch_extension_atr",
+            0.06791661275862658
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.05997249404578173
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-01",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_binary_000",
+        "train_events": 16,
+        "forward_events": 5,
+        "active_events": 0,
+        "model_status": "trained",
+        "label_events": 16,
+        "positive_labels": 4,
+        "negative_labels": 12,
+        "train_auc": 1.0,
+        "train_prob_median": 0.17268747821047983,
+        "train_prob_q40": 0.1588330234017656,
+        "train_prob_q60": 0.27552541101956196,
+        "train_prob_q70": 0.3075152554372151,
+        "forward_prob_mean": 0.2148226847075601,
+        "forward_prob_median": 0.17384605886794155,
+        "feature_importance_top5": [
+          [
+            "touch_extension_atr",
+            0.17959204767629508
+          ],
+          [
+            "pre_touch_seconds",
+            0.12112600666942931
+          ],
+          [
+            "eff_300s",
+            0.09967405853409385
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.09832659337671222
+          ],
+          [
+            "prev1_close_pos_side",
+            0.0824328520552231
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-02",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_binary_000",
+        "train_events": 19,
+        "forward_events": 4,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 19,
+        "positive_labels": 7,
+        "negative_labels": 12,
+        "train_auc": 1.0,
+        "train_prob_median": 0.32769841285325535,
+        "train_prob_q40": 0.25448842348798284,
+        "train_prob_q60": 0.3907792935130062,
+        "train_prob_q70": 0.6320780435983503,
+        "forward_prob_mean": 0.3801935486719564,
+        "forward_prob_median": 0.36296211942686474,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.14507983964398427
+          ],
+          [
+            "ctx12h_range_atr",
+            0.11769233161292159
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.0906207280691981
+          ],
+          [
+            "pre_touch_seconds",
+            0.08289528279097941
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.08242051774828786
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-03",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_binary_000",
+        "train_events": 17,
+        "forward_events": 10,
+        "active_events": 3,
+        "model_status": "trained",
+        "label_events": 17,
+        "positive_labels": 6,
+        "negative_labels": 11,
+        "train_auc": 1.0,
+        "train_prob_median": 0.20811422040667624,
+        "train_prob_q40": 0.16436456739262081,
+        "train_prob_q60": 0.43258903741915844,
+        "train_prob_q70": 0.6452369039124671,
+        "forward_prob_mean": 0.3230260449742791,
+        "forward_prob_median": 0.2211875258439291,
+        "feature_importance_top5": [
+          [
+            "ctx4h_side_return_atr",
+            0.21933496381166329
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.16156467293507398
+          ],
+          [
+            "prev1_close_pos_side",
+            0.08470988710939548
+          ],
+          [
+            "ctx12h_range_atr",
+            0.08377490089144006
+          ],
+          [
+            "pre_touch_seconds",
+            0.07203510425631482
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-04",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_binary_000",
+        "train_events": 15,
+        "forward_events": 4,
+        "active_events": 2,
+        "model_status": "trained",
+        "label_events": 15,
+        "positive_labels": 8,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.5178845455637503,
+        "train_prob_q40": 0.3931165701839826,
+        "train_prob_q60": 0.7176715544106601,
+        "train_prob_q70": 0.7467329274639117,
+        "forward_prob_mean": 0.5181804882132675,
+        "forward_prob_median": 0.5002934402060987,
+        "feature_importance_top5": [
+          [
+            "rf_probability",
+            0.15940607259312067
+          ],
+          [
+            "sizing_multiplier",
+            0.12734876734440873
+          ],
+          [
+            "eff_300s",
+            0.10110102577468265
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.09197834218672021
+          ],
+          [
+            "ctx4h_range_atr",
+            0.07792365059452773
+          ]
+        ]
+      }
+    ],
+    "low_eff_rf_rank_q60_000": [
+      {
+        "forward_month": "2025-09",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q60_000",
+        "train_events": 14,
+        "forward_events": 1,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 14,
+        "positive_labels": 3,
+        "negative_labels": 11,
+        "train_auc": 1.0,
+        "train_prob_median": 0.21791325991065058,
+        "train_prob_q40": 0.20206301338298416,
+        "train_prob_q60": 0.23719980785854067,
+        "train_prob_q70": 0.3131088911989886,
+        "forward_prob_mean": 0.31875744935190425,
+        "forward_prob_median": 0.31875744935190425,
+        "feature_importance_top5": [
+          [
+            "pre_touch_seconds",
+            0.1717288175299227
+          ],
+          [
+            "ctx12h_range_atr",
+            0.12267540241762537
+          ],
+          [
+            "speed_300s_atr",
+            0.08786435182842252
+          ],
+          [
+            "prev1_close_pos_side",
+            0.0768061244831678
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.07459836837400764
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-10",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q60_000",
+        "train_events": 11,
+        "forward_events": 2,
+        "active_events": 0,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 3,
+        "negative_labels": 8,
+        "train_auc": 1.0,
+        "train_prob_median": 0.3218757679703901,
+        "train_prob_q40": 0.28171037530020554,
+        "train_prob_q60": 0.3227830156685419,
+        "train_prob_q70": 0.3359338758841481,
+        "forward_prob_mean": 0.27828583468860235,
+        "forward_prob_median": 0.27828583468860235,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.13276122139969515
+          ],
+          [
+            "pre_touch_seconds",
+            0.1150794392730777
+          ],
+          [
+            "touch_extension_atr",
+            0.0893064051228216
+          ],
+          [
+            "eff_300s",
+            0.08569893851450529
+          ],
+          [
+            "signal_atr_percentile",
+            0.06938925972842146
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-11",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q60_000",
+        "train_events": 11,
+        "forward_events": 7,
+        "active_events": 5,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 4,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.21020694956075936,
+        "train_prob_q40": 0.16133303917178157,
+        "train_prob_q60": 0.32237561832465467,
+        "train_prob_q70": 0.67696004438458,
+        "forward_prob_mean": 0.3959152103627961,
+        "forward_prob_median": 0.42751270332694497,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.16790671605486418
+          ],
+          [
+            "pre_touch_seconds",
+            0.15831788239195646
+          ],
+          [
+            "level_to_signal_open_atr",
+            0.1094692873312402
+          ],
+          [
+            "ctx12h_range_atr",
+            0.08836254156119476
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.07552371559105567
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-12",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q60_000",
+        "train_events": 11,
+        "forward_events": 9,
+        "active_events": 8,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 4,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.28753533354597194,
+        "train_prob_q40": 0.2320335306275282,
+        "train_prob_q60": 0.2947376995553465,
+        "train_prob_q70": 0.5646597067615136,
+        "forward_prob_mean": 0.38922821366575855,
+        "forward_prob_median": 0.36775733532300464,
+        "feature_importance_top5": [
+          [
+            "pre_touch_seconds",
+            0.21146726970174917
+          ],
+          [
+            "level_to_signal_open_atr",
+            0.16289304495515594
+          ],
+          [
+            "prev1_close_pos_side",
+            0.11231023118200692
+          ],
+          [
+            "touch_extension_atr",
+            0.06791661275862658
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.05997249404578173
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-01",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q60_000",
+        "train_events": 16,
+        "forward_events": 5,
+        "active_events": 2,
+        "model_status": "trained",
+        "label_events": 16,
+        "positive_labels": 4,
+        "negative_labels": 12,
+        "train_auc": 1.0,
+        "train_prob_median": 0.17268747821047983,
+        "train_prob_q40": 0.1588330234017656,
+        "train_prob_q60": 0.27552541101956196,
+        "train_prob_q70": 0.3075152554372151,
+        "forward_prob_mean": 0.2148226847075601,
+        "forward_prob_median": 0.17384605886794155,
+        "feature_importance_top5": [
+          [
+            "touch_extension_atr",
+            0.17959204767629508
+          ],
+          [
+            "pre_touch_seconds",
+            0.12112600666942931
+          ],
+          [
+            "eff_300s",
+            0.09967405853409385
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.09832659337671222
+          ],
+          [
+            "prev1_close_pos_side",
+            0.0824328520552231
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-02",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q60_000",
+        "train_events": 19,
+        "forward_events": 4,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 19,
+        "positive_labels": 7,
+        "negative_labels": 12,
+        "train_auc": 1.0,
+        "train_prob_median": 0.32769841285325535,
+        "train_prob_q40": 0.25448842348798284,
+        "train_prob_q60": 0.3907792935130062,
+        "train_prob_q70": 0.6320780435983503,
+        "forward_prob_mean": 0.3801935486719564,
+        "forward_prob_median": 0.36296211942686474,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.14507983964398427
+          ],
+          [
+            "ctx12h_range_atr",
+            0.11769233161292159
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.0906207280691981
+          ],
+          [
+            "pre_touch_seconds",
+            0.08289528279097941
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.08242051774828786
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-03",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q60_000",
+        "train_events": 17,
+        "forward_events": 10,
+        "active_events": 3,
+        "model_status": "trained",
+        "label_events": 17,
+        "positive_labels": 6,
+        "negative_labels": 11,
+        "train_auc": 1.0,
+        "train_prob_median": 0.20811422040667624,
+        "train_prob_q40": 0.16436456739262081,
+        "train_prob_q60": 0.43258903741915844,
+        "train_prob_q70": 0.6452369039124671,
+        "forward_prob_mean": 0.3230260449742791,
+        "forward_prob_median": 0.2211875258439291,
+        "feature_importance_top5": [
+          [
+            "ctx4h_side_return_atr",
+            0.21933496381166329
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.16156467293507398
+          ],
+          [
+            "prev1_close_pos_side",
+            0.08470988710939548
+          ],
+          [
+            "ctx12h_range_atr",
+            0.08377490089144006
+          ],
+          [
+            "pre_touch_seconds",
+            0.07203510425631482
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-04",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q60_000",
+        "train_events": 15,
+        "forward_events": 4,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 15,
+        "positive_labels": 8,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.5178845455637503,
+        "train_prob_q40": 0.3931165701839826,
+        "train_prob_q60": 0.7176715544106601,
+        "train_prob_q70": 0.7467329274639117,
+        "forward_prob_mean": 0.5181804882132675,
+        "forward_prob_median": 0.5002934402060987,
+        "feature_importance_top5": [
+          [
+            "rf_probability",
+            0.15940607259312067
+          ],
+          [
+            "sizing_multiplier",
+            0.12734876734440873
+          ],
+          [
+            "eff_300s",
+            0.10110102577468265
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.09197834218672021
+          ],
+          [
+            "ctx4h_range_atr",
+            0.07792365059452773
+          ]
+        ]
+      }
+    ],
+    "low_eff_rf_rank_q70_000": [
+      {
+        "forward_month": "2025-09",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q70_000",
+        "train_events": 14,
+        "forward_events": 1,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 14,
+        "positive_labels": 3,
+        "negative_labels": 11,
+        "train_auc": 1.0,
+        "train_prob_median": 0.21791325991065058,
+        "train_prob_q40": 0.20206301338298416,
+        "train_prob_q60": 0.23719980785854067,
+        "train_prob_q70": 0.3131088911989886,
+        "forward_prob_mean": 0.31875744935190425,
+        "forward_prob_median": 0.31875744935190425,
+        "feature_importance_top5": [
+          [
+            "pre_touch_seconds",
+            0.1717288175299227
+          ],
+          [
+            "ctx12h_range_atr",
+            0.12267540241762537
+          ],
+          [
+            "speed_300s_atr",
+            0.08786435182842252
+          ],
+          [
+            "prev1_close_pos_side",
+            0.0768061244831678
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.07459836837400764
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-10",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q70_000",
+        "train_events": 11,
+        "forward_events": 2,
+        "active_events": 0,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 3,
+        "negative_labels": 8,
+        "train_auc": 1.0,
+        "train_prob_median": 0.3218757679703901,
+        "train_prob_q40": 0.28171037530020554,
+        "train_prob_q60": 0.3227830156685419,
+        "train_prob_q70": 0.3359338758841481,
+        "forward_prob_mean": 0.27828583468860235,
+        "forward_prob_median": 0.27828583468860235,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.13276122139969515
+          ],
+          [
+            "pre_touch_seconds",
+            0.1150794392730777
+          ],
+          [
+            "touch_extension_atr",
+            0.0893064051228216
+          ],
+          [
+            "eff_300s",
+            0.08569893851450529
+          ],
+          [
+            "signal_atr_percentile",
+            0.06938925972842146
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-11",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q70_000",
+        "train_events": 11,
+        "forward_events": 7,
+        "active_events": 0,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 4,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.21020694956075936,
+        "train_prob_q40": 0.16133303917178157,
+        "train_prob_q60": 0.32237561832465467,
+        "train_prob_q70": 0.67696004438458,
+        "forward_prob_mean": 0.3959152103627961,
+        "forward_prob_median": 0.42751270332694497,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.16790671605486418
+          ],
+          [
+            "pre_touch_seconds",
+            0.15831788239195646
+          ],
+          [
+            "level_to_signal_open_atr",
+            0.1094692873312402
+          ],
+          [
+            "ctx12h_range_atr",
+            0.08836254156119476
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.07552371559105567
+          ]
+        ]
+      },
+      {
+        "forward_month": "2025-12",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q70_000",
+        "train_events": 11,
+        "forward_events": 9,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 11,
+        "positive_labels": 4,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.28753533354597194,
+        "train_prob_q40": 0.2320335306275282,
+        "train_prob_q60": 0.2947376995553465,
+        "train_prob_q70": 0.5646597067615136,
+        "forward_prob_mean": 0.38922821366575855,
+        "forward_prob_median": 0.36775733532300464,
+        "feature_importance_top5": [
+          [
+            "pre_touch_seconds",
+            0.21146726970174917
+          ],
+          [
+            "level_to_signal_open_atr",
+            0.16289304495515594
+          ],
+          [
+            "prev1_close_pos_side",
+            0.11231023118200692
+          ],
+          [
+            "touch_extension_atr",
+            0.06791661275862658
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.05997249404578173
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-01",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q70_000",
+        "train_events": 16,
+        "forward_events": 5,
+        "active_events": 2,
+        "model_status": "trained",
+        "label_events": 16,
+        "positive_labels": 4,
+        "negative_labels": 12,
+        "train_auc": 1.0,
+        "train_prob_median": 0.17268747821047983,
+        "train_prob_q40": 0.1588330234017656,
+        "train_prob_q60": 0.27552541101956196,
+        "train_prob_q70": 0.3075152554372151,
+        "forward_prob_mean": 0.2148226847075601,
+        "forward_prob_median": 0.17384605886794155,
+        "feature_importance_top5": [
+          [
+            "touch_extension_atr",
+            0.17959204767629508
+          ],
+          [
+            "pre_touch_seconds",
+            0.12112600666942931
+          ],
+          [
+            "eff_300s",
+            0.09967405853409385
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.09832659337671222
+          ],
+          [
+            "prev1_close_pos_side",
+            0.0824328520552231
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-02",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q70_000",
+        "train_events": 19,
+        "forward_events": 4,
+        "active_events": 0,
+        "model_status": "trained",
+        "label_events": 19,
+        "positive_labels": 7,
+        "negative_labels": 12,
+        "train_auc": 1.0,
+        "train_prob_median": 0.32769841285325535,
+        "train_prob_q40": 0.25448842348798284,
+        "train_prob_q60": 0.3907792935130062,
+        "train_prob_q70": 0.6320780435983503,
+        "forward_prob_mean": 0.3801935486719564,
+        "forward_prob_median": 0.36296211942686474,
+        "feature_importance_top5": [
+          [
+            "prev1_close_pos_side",
+            0.14507983964398427
+          ],
+          [
+            "ctx12h_range_atr",
+            0.11769233161292159
+          ],
+          [
+            "ctx4h_side_return_atr",
+            0.0906207280691981
+          ],
+          [
+            "pre_touch_seconds",
+            0.08289528279097941
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.08242051774828786
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-03",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q70_000",
+        "train_events": 17,
+        "forward_events": 10,
+        "active_events": 1,
+        "model_status": "trained",
+        "label_events": 17,
+        "positive_labels": 6,
+        "negative_labels": 11,
+        "train_auc": 1.0,
+        "train_prob_median": 0.20811422040667624,
+        "train_prob_q40": 0.16436456739262081,
+        "train_prob_q60": 0.43258903741915844,
+        "train_prob_q70": 0.6452369039124671,
+        "forward_prob_mean": 0.3230260449742791,
+        "forward_prob_median": 0.2211875258439291,
+        "feature_importance_top5": [
+          [
+            "ctx4h_side_return_atr",
+            0.21933496381166329
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.16156467293507398
+          ],
+          [
+            "prev1_close_pos_side",
+            0.08470988710939548
+          ],
+          [
+            "ctx12h_range_atr",
+            0.08377490089144006
+          ],
+          [
+            "pre_touch_seconds",
+            0.07203510425631482
+          ]
+        ]
+      },
+      {
+        "forward_month": "2026-04",
+        "base_gate": "low_eff_low_atr_q20_q40",
+        "model_variant": "rf_rank_q70_000",
+        "train_events": 15,
+        "forward_events": 4,
+        "active_events": 0,
+        "model_status": "trained",
+        "label_events": 15,
+        "positive_labels": 8,
+        "negative_labels": 7,
+        "train_auc": 1.0,
+        "train_prob_median": 0.5178845455637503,
+        "train_prob_q40": 0.3931165701839826,
+        "train_prob_q60": 0.7176715544106601,
+        "train_prob_q70": 0.7467329274639117,
+        "forward_prob_mean": 0.5181804882132675,
+        "forward_prob_median": 0.5002934402060987,
+        "feature_importance_top5": [
+          [
+            "rf_probability",
+            0.15940607259312067
+          ],
+          [
+            "sizing_multiplier",
+            0.12734876734440873
+          ],
+          [
+            "eff_300s",
+            0.10110102577468265
+          ],
+          [
+            "ctx12h_side_return_atr",
+            0.09197834218672021
+          ],
+          [
+            "ctx4h_range_atr",
+            0.07792365059452773
+          ]
+        ]
+      }
     ]
   },
   "lead_replay": {
@@ -1425,6 +2439,6 @@ Scope: research-only. Canonical lead trades are preserved; model-selected curren
       "exit_fee": 0.0004
     }
   },
-  "runtime_seconds": 64.43753695487976
+  "runtime_seconds": 73.00002312660217
 }
 ```

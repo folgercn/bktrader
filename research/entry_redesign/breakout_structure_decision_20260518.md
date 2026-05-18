@@ -92,10 +92,13 @@ I then replayed the model-selected events as an additive leg on top of canonical
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `low_eff_rf_rank_median_000` | 28 | 27 | 0.053155 | 0.282871 | 0.053155 | -0.004736 | 2 | 89 | Nearly the same lift as bare `wf3_low_eff_low_atr`, with fewer events and better tail. |
 | `wide_rf_binary_000` | 60 | 57 | 0.052375 | 0.282091 | 0.052375 | -0.042275 | 2 | 119 | Same return lift, but the wide-pool tail is too deep. |
+| `low_eff_rf_rank_q60_000` | 21 | 20 | 0.037911 | 0.267627 | 0.037911 | -0.004736 | 2 | 82 | More conservative than median, but gives up too much return. |
+| `low_eff_rf_binary_000` | 8 | 7 | 0.032647 | 0.262364 | 0.032647 | -0.005066 | 1 | 69 | Fewer negative months, but sample and lift are too small. |
+| `low_eff_rf_rank_q70_000` | 5 | 5 | 0.010347 | 0.240063 | 0.010347 | -0.005066 | 2 | 67 | Over-filtered. |
 | `wide_rf_rank_q70_000` | 103 | 97 | -0.005620 | 0.224097 | -0.005620 | -0.044589 | 2 | 159 | Fails as additive leg. |
 | `wide_rf_binary_025` | 395 | 362 | -0.086876 | 0.142841 | -0.086876 | -0.063290 | 3 | 424 | Rejected; 25% floor keeps too much adverse selection. |
 
-Read: hard-select probability can compress the late-ETH additive leg. The best form is not the wide pool; it is `low_eff_low_atr` plus hard model selection. This is a cleaner research candidate than bare `wf3`, but early ETH standalone validation still blocks promotion.
+Read: hard-select probability can compress the late-ETH additive leg. The best form is not the wide pool; it is `low_eff_low_atr` plus median hard model selection. Pushing to q60/q70 or fixed `probability >= 0.5` improves selectivity but loses too much return. This is a cleaner research candidate than bare `wf3`, but early ETH standalone validation still blocks promotion.
 
 ## Wide Pool Context Model
 

@@ -109,6 +109,27 @@ COMBO_SPECS: tuple[ComboSpec, ...] = (
         min_train_events=8,
         description="low-eff/low-ATR pool, hard keep events above train median probability",
     ),
+    ComboSpec(
+        name="low_eff_rf_binary_000",
+        base_gate="low_eff_low_atr_q20_q40",
+        model_variant="rf_binary_000",
+        min_train_events=8,
+        description="low-eff/low-ATR pool, hard keep probability >= 0.5",
+    ),
+    ComboSpec(
+        name="low_eff_rf_rank_q60_000",
+        base_gate="low_eff_low_atr_q20_q40",
+        model_variant="rf_rank_q60_000",
+        min_train_events=8,
+        description="low-eff/low-ATR pool, hard keep events above train q60 probability",
+    ),
+    ComboSpec(
+        name="low_eff_rf_rank_q70_000",
+        base_gate="low_eff_low_atr_q20_q40",
+        model_variant="rf_rank_q70_000",
+        min_train_events=8,
+        description="low-eff/low-ATR pool, hard keep events above train q70 probability",
+    ),
 )
 
 
