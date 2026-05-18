@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveRuntimeMarketSnapshot,
+  deriveLiveSessionHealth,
   deriveSelectedOrHighlightedLiveSession,
   deriveSessionMarkers,
   deriveSignalBarStateCandles,
@@ -8,7 +9,7 @@ import {
   markerText,
   mergeLivePriceIntoSignalBars,
 } from "./derivation";
-import { ChartAnnotation, Fill, Order, Position, SignalBarCandle } from "../types/domain";
+import { ChartAnnotation, Fill, LiveSessionExecutionSummary, Order, Position, SignalBarCandle } from "../types/domain";
 
 describe("monitor chart marker labels", () => {
   it("distinguishes long and short entry/exit order markers", () => {
@@ -363,6 +364,65 @@ describe("live monitor candles", () => {
 
     expect(market.tradePrice).toBe(77100);
     expect(market.tradePriceAt).toBe("2026-04-24T00:00:10Z");
+  });
+});
+
+describe("live session health", () => {
+  it("keeps a normal active position active when exchange-side protection is absent", () => {
+    const summary: LiveSessionExecutionSummary = {
+      orderCount: 1,
+      fillCount: 1,
+      latestOrder: order("entry-1", "SELL", 2113.94, false, "2026-05-18T06:08:57Z"),
+      latestFill: null,
+      position: {
+        id: "position-1",
+        accountId: "account-1",
+        symbol: "ETHUSDT",
+        side: "SHORT",
+        quantity: 0.099,
+        entryPrice: 2113.94,
+        markPrice: 2118.99,
+        updatedAt: "2026-05-18T06:15:41Z",
+      } as Position,
+    };
+
+    const health = deriveLiveSessionHealth(
+      {
+        id: "live-1",
+        accountId: "account-1",
+        strategyId: "strategy-bk-eth-pretouch-timing",
+        status: "RUNNING",
+        state: { protectionRecoveryStatus: "unprotected-open-position" },
+        createdAt: "2026-05-18T06:00:00Z",
+      } as any,
+      summary
+    );
+
+    expect(health.status).toBe("active");
+    expect(health.detail).toContain("未发现交易所保护单");
+  });
+
+  it("keeps unprotected recovery state as an error when no active position is available", () => {
+    const health = deriveLiveSessionHealth(
+      {
+        id: "live-1",
+        accountId: "account-1",
+        strategyId: "strategy-bk-eth-pretouch-timing",
+        status: "RUNNING",
+        state: { protectionRecoveryStatus: "unprotected-open-position" },
+        createdAt: "2026-05-18T06:00:00Z",
+      } as any,
+      {
+        orderCount: 0,
+        fillCount: 0,
+        latestOrder: null,
+        latestFill: null,
+        position: null,
+      }
+    );
+
+    expect(health.status).toBe("error");
+    expect(health.detail).toContain("恢复的持仓缺失止损/止盈保护");
   });
 });
 
