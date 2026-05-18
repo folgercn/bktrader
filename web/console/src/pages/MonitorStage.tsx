@@ -54,6 +54,7 @@ const MONITOR_CANDLE_CACHE_LIMIT = 1500;
 const MONITOR_LIVE_SESSION_DETAIL_FIELDS = [
   "timeline",
   "breakoutHistory",
+  "lastStrategyEvaluationSourceStates",
   "lastStrategyEvaluationSignalBarStates",
 ];
 
@@ -119,16 +120,13 @@ function mergeMonitorCandles(existing: ChartCandle[], incoming: ChartCandle[], d
     : merged.slice(merged.length - MONITOR_CANDLE_CACHE_LIMIT);
 }
 
-function mergeSignalBars(fallbackBars: SignalBarCandle[], runtimeBars: SignalBarCandle[]) {
+function mergeSignalBars(...barGroups: SignalBarCandle[][]) {
   const byTime = new Map<string, SignalBarCandle>();
-  for (const item of fallbackBars) {
-    if (item.time) {
-      byTime.set(item.time, item);
-    }
-  }
-  for (const item of runtimeBars) {
-    if (item.time) {
-      byTime.set(item.time, item);
+  for (const bars of barGroups) {
+    for (const item of bars) {
+      if (item.time) {
+        byTime.set(item.time, item);
+      }
     }
   }
   return Array.from(byTime.values()).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
@@ -285,20 +283,27 @@ export function MonitorStage({ syncLiveOrder, dockTab, onDockTabChange, dockCont
   const monitorSymbol = monitorSignalSymbol || sessionSymbol;
 
   const monitorBars = useMemo(() => {
-    const sourceBars = deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), {
+    const selection = {
       targetSymbol: monitorSymbol,
       targetTimeframe: monitorSignalTimeframe,
       targetStateKey: monitorSignalBarStateKey,
-    });
-    const stateBars = deriveSignalBarStateCandles(getRecord(highlightedLiveRuntimeState.signalBarStates), {
-      targetSymbol: monitorSymbol,
-      targetTimeframe: monitorSignalTimeframe,
-      targetStateKey: monitorSignalBarStateKey,
-    });
-    return mergeSignalBars(sourceBars, stateBars);
+    };
+    const sessionSourceBars = deriveSignalBarCandles(
+      getRecord(monitorSessionState.lastStrategyEvaluationSourceStates),
+      selection
+    );
+    const sessionStateBars = deriveSignalBarStateCandles(
+      getRecord(monitorSessionState.lastStrategyEvaluationSignalBarStates),
+      selection
+    );
+    const runtimeSourceBars = deriveSignalBarCandles(getRecord(highlightedLiveRuntimeState.sourceStates), selection);
+    const runtimeStateBars = deriveSignalBarStateCandles(getRecord(highlightedLiveRuntimeState.signalBarStates), selection);
+    return mergeSignalBars(sessionSourceBars, sessionStateBars, runtimeSourceBars, runtimeStateBars);
   }, [
     highlightedLiveRuntimeState.sourceStates,
     highlightedLiveRuntimeState.signalBarStates,
+    monitorSessionState.lastStrategyEvaluationSourceStates,
+    monitorSessionState.lastStrategyEvaluationSignalBarStates,
     monitorSymbol,
     monitorSignalTimeframe,
     monitorSignalBarStateKey,
