@@ -1562,6 +1562,8 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
   const syncError = String(session.state?.lastSyncError ?? "").trim();
   const protectionRecoveryStatus = String(session.state?.protectionRecoveryStatus ?? "").trim();
   const isRunning = String(session.status).toUpperCase() === "RUNNING";
+  const activeQuantity = Math.abs(Number(summary.position?.quantity ?? 0));
+  const hasActivePosition = summary.position != null && activeQuantity > 0;
   const exitDispatchFailure = resolveLiveExitDispatchFailure(session, summary);
 
   // 1. 恢复错误（具备最高健康度权重）
@@ -1572,8 +1574,9 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
     };
   }
 
-  // 2. 保护状态错误
-  if (protectionRecoveryStatus === "unprotected-open-position") {
+  // 2. 保护状态错误。正常策略自有持仓没有交易所侧保护单时，
+  // 不应把整条 live session 健康度压成 error；真实持仓状态优先展示为 active。
+  if (protectionRecoveryStatus === "unprotected-open-position" && !hasActivePosition) {
     return {
       status: "error",
       detail: "风险: 恢复的持仓缺失止损/止盈保护",
@@ -1605,10 +1608,14 @@ export function deriveLiveSessionHealth(session: LiveSession, summary: LiveSessi
   }
   
   // 6. 活跃持仓状态
-  if (summary.position && Math.abs(Number(summary.position.quantity ?? 0)) > 0) {
+  if (hasActivePosition && summary.position) {
+    const protectionDetail =
+      protectionRecoveryStatus === "unprotected-open-position"
+        ? " · 未发现交易所保护单，运行时风控监控中"
+        : "";
     return {
       status: "active",
-      detail: `持有 ${summary.position.side ?? "仓位"} ${formatMaybeNumber(summary.position.quantity)} @ ${formatMaybeNumber(summary.position.entryPrice)}`,
+      detail: `持有 ${summary.position.side ?? "仓位"} ${formatMaybeNumber(summary.position.quantity)} @ ${formatMaybeNumber(summary.position.entryPrice)}${protectionDetail}`,
     };
   }
 
