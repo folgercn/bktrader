@@ -4468,6 +4468,58 @@ func TestNormalizeLiveSessionOverridesIncludesZeroInitialControls(t *testing.T) 
 	}
 }
 
+func TestNormalizeLiveSessionOverridesIncludesPretouchExitContract(t *testing.T) {
+	overrides := normalizeLiveSessionOverrides(map[string]any{
+		"initial_stop_atr": 0.45,
+		"breakeven_at_r":   0.8,
+		"cost_lock_bps":    10.0,
+		"trail_start_r":    1.5,
+		"trail_buffer_atr": 0.05,
+		"max_hold_hours":   2.0,
+	})
+	for key, want := range map[string]float64{
+		"initial_stop_atr": 0.45,
+		"breakeven_at_r":   0.8,
+		"cost_lock_bps":    10.0,
+		"trail_start_r":    1.5,
+		"trail_buffer_atr": 0.05,
+		"max_hold_hours":   2.0,
+	} {
+		if got := parseFloatValue(overrides[key]); got != want {
+			t.Fatalf("expected %s=%v, got %v", key, want, got)
+		}
+	}
+}
+
+func TestNormalizeBacktestParametersDropsInvalidPretouchExitContract(t *testing.T) {
+	normalized, err := NormalizeBacktestParameters(map[string]any{
+		"trail_start_r":    -1.5,
+		"trail_buffer_atr": 0.0,
+		"breakeven_at_r":   -0.8,
+		"max_hold_hours":   -2.0,
+	})
+	if err != nil {
+		t.Fatalf("normalize backtest parameters failed: %v", err)
+	}
+	for _, key := range []string{"trail_start_r", "trail_buffer_atr", "breakeven_at_r", "max_hold_hours"} {
+		if _, ok := normalized[key]; ok {
+			t.Fatalf("expected invalid %s to be dropped, got %#v", key, normalized[key])
+		}
+	}
+}
+
+func TestNormalizeBacktestParametersUsesInitialStopATRAsStopLossFallback(t *testing.T) {
+	normalized, err := NormalizeBacktestParameters(map[string]any{
+		"initial_stop_atr": 0.45,
+	})
+	if err != nil {
+		t.Fatalf("normalize backtest parameters failed: %v", err)
+	}
+	if got := parseFloatValue(normalized["stop_loss_atr"]); got != 0.45 {
+		t.Fatalf("expected stop_loss_atr to inherit initial_stop_atr=0.45, got %v", got)
+	}
+}
+
 func TestNormalizeLiveSessionOverridesIncludesT2BreakoutTolerance(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
 		"breakout_shape":                       "ORIGINAL_T2",

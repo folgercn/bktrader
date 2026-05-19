@@ -1589,7 +1589,7 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 		PrevLow2:  parseFloatValue(prevBar2["low"]),
 	}
 	stopMode := firstNonEmpty(stringValue(parameters["stop_mode"]), "atr")
-	stopLossATR := parseFloatValue(parameters["stop_loss_atr"])
+	stopLossATR := firstPositive(parseFloatValue(parameters["stop_loss_atr"]), parseFloatValue(parameters["initial_stop_atr"]))
 	if stopLossATR <= 0 {
 		stopLossATR = 0.05
 	}
@@ -1610,13 +1610,86 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 	}
 	hwm := firstPositive(watermarks.HWM, entryPrice)
 	lwm := firstPositive(watermarks.LWM, entryPrice)
+	riskDistance := 0.0
+	if baseStopLoss > 0 {
+		riskDistance = math.Abs(baseStopLoss - entryPrice)
+	}
+	favorableMove := 0.0
+	switch side {
+	case "long":
+		favorableMove = math.Max(0, hwm-entryPrice)
+	case "short":
+		favorableMove = math.Max(0, entryPrice-lwm)
+	}
+	riskMultiple := 0.0
+	if riskDistance > 0 {
+		riskMultiple = favorableMove / riskDistance
+	}
+	stopImproves := func(candidate float64) bool {
+		if candidate <= 0 {
+			return false
+		}
+		if stopLoss <= 0 {
+			return true
+		}
+		switch side {
+		case "long":
+			return candidate > stopLoss
+		case "short":
+			return candidate < stopLoss
+		default:
+			return false
+		}
+	}
+	breakevenStopActive := false
+	breakevenStopCandidate := 0.0
+	if breakevenAtR := parseFloatValue(parameters["breakeven_at_r"]); breakevenAtR > 0 && riskDistance > 0 && riskMultiple >= breakevenAtR {
+		costLockBps := parseFloatValue(parameters["cost_lock_bps"])
+		if costLockBps <= 0 {
+			costLockBps = 10
+		}
+		switch side {
+		case "long":
+			breakevenStopCandidate = entryPrice * (1 + costLockBps/10000)
+		case "short":
+			breakevenStopCandidate = entryPrice * (1 - costLockBps/10000)
+		}
+		if stopImproves(breakevenStopCandidate) {
+			stopLoss = breakevenStopCandidate
+			stopLossSource = "breakeven-stop"
+			breakevenStopActive = true
+		}
+	}
 
 	// Calculate Trailing Stop Loss
 	trailingStopConfigured := parseFloatValue(parameters["trailing_stop_atr"])
 	trailingStopActive := false
 	trailingActivationArmed := false
 	trailingStopCandidate := 0.0
-	if trailingStopATR := parseFloatValue(parameters["trailing_stop_atr"]); trailingStopATR > 0 {
+	trailStartR := parseFloatValue(parameters["trail_start_r"])
+	trailBufferATR := parseFloatValue(parameters["trail_buffer_atr"])
+	if trailStartR > 0 && trailBufferATR > 0 {
+		trailingStopConfigured = trailBufferATR
+		trailingActivationArmed = true
+		if riskDistance > 0 && riskMultiple >= trailStartR && sig.ATR > 0 {
+			trailingStopActive = true
+			if side == "long" {
+				trailingSL := hwm - trailBufferATR*sig.ATR
+				trailingStopCandidate = trailingSL
+				if stopImproves(trailingSL) {
+					stopLoss = trailingSL
+					stopLossSource = "trailing-stop"
+				}
+			} else if side == "short" {
+				trailingSL := lwm + trailBufferATR*sig.ATR
+				trailingStopCandidate = trailingSL
+				if stopImproves(trailingSL) {
+					stopLoss = trailingSL
+					stopLossSource = "trailing-stop"
+				}
+			}
+		}
+	} else if trailingStopATR := parseFloatValue(parameters["trailing_stop_atr"]); trailingStopATR > 0 {
 		isActive := true
 		trailingActivationArmed = true
 		if delayedActivation := parseFloatValue(parameters["delayed_trailing_activation_atr"]); delayedActivation > 0 {
@@ -1638,14 +1711,14 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 			if side == "long" {
 				trailingSL := hwm - trailingStopATR*sig.ATR
 				trailingStopCandidate = trailingSL
-				if trailingSL > stopLoss {
+				if stopImproves(trailingSL) {
 					stopLoss = trailingSL
 					stopLossSource = "trailing-stop"
 				}
 			} else if side == "short" {
 				trailingSL := lwm + trailingStopATR*sig.ATR
 				trailingStopCandidate = trailingSL
-				if trailingSL < stopLoss {
+				if stopImproves(trailingSL) {
 					stopLoss = trailingSL
 					stopLossSource = "trailing-stop"
 				}
@@ -1675,10 +1748,16 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 		"baseStopLoss":            baseStopLoss,
 		"stopLoss":                stopLoss,
 		"stopLossSource":          stopLossSource,
+		"riskDistance":            riskDistance,
+		"riskMultiple":            riskMultiple,
+		"breakevenStopActive":     breakevenStopActive,
+		"breakevenStopCandidate":  breakevenStopCandidate,
 		"trailingStopConfigured":  trailingStopConfigured > 0,
 		"trailingStopActive":      trailingStopActive,
 		"trailingActivationArmed": trailingActivationArmed,
 		"trailingStopCandidate":   trailingStopCandidate,
+		"trailStartR":             trailStartR,
+		"trailBufferATR":          trailBufferATR,
 		"protected":               protected,
 		"protectionTrigger":       protectionPrice,
 		"prevHigh1":               sig.PrevHigh1,

@@ -677,6 +677,104 @@ func TestDeriveLivePositionStateUsesProvidedWatermarksForShort(t *testing.T) {
 	}
 }
 
+func TestDeriveLivePositionStateUsesRMultipleTrailForPretouchShort(t *testing.T) {
+	parameters := map[string]any{
+		"stop_loss_atr":    0.45,
+		"stop_mode":        "atr",
+		"breakeven_at_r":   0.8,
+		"cost_lock_bps":    10.0,
+		"trail_start_r":    1.5,
+		"trail_buffer_atr": 0.05,
+	}
+	signalBarState := map[string]any{
+		"atr14":    11.28428571428565,
+		"current":  map[string]any{"close": 2127.67},
+		"prevBar1": map[string]any{"high": 2136.51, "low": 2124.0},
+		"prevBar2": map[string]any{"high": 2139.0, "low": 2122.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"id":         "position-1779179255684696511",
+		"symbol":     "ETHUSDT",
+		"side":       "SHORT",
+		"entryPrice": 2131.54,
+		"quantity":   0.097,
+	}
+	watermarks := livePositionWatermarks{
+		PositionKey: "position-1779179255684696511|ETHUSDT|SHORT|2131.54",
+		HWM:         2136.51,
+		LWM:         2124.0,
+	}
+
+	positionState := deriveLivePositionState(parameters, currentPosition, signalBarState, 2127.67, watermarks)
+	if !boolValue(positionState["breakevenStopActive"]) {
+		t.Fatal("expected breakeven stop to be active once pretouch short reaches 0.8R")
+	}
+	if boolValue(positionState["trailingStopActive"]) {
+		t.Fatal("expected trailing stop to stay inactive before 1.5R")
+	}
+	if got := stringValue(positionState["stopLossSource"]); got != "breakeven-stop" {
+		t.Fatalf("expected breakeven-stop source before 1.5R, got %s", got)
+	}
+	if got := parseFloatValue(positionState["riskMultiple"]); math.Abs(got-1.485) > 0.001 {
+		t.Fatalf("expected riskMultiple around 1.485, got %v", got)
+	}
+
+	exitState := deriveLiveExitState(parameters, currentPosition, positionState, 2127.67, "SL")
+	if boolValue(exitState["ready"]) {
+		t.Fatalf("expected short exit not ready below breakeven stop, got %#v", exitState)
+	}
+	if got := parseFloatValue(exitState["targetPrice"]); tradingPriceDiffers(got, 2129.40846) {
+		t.Fatalf("expected breakeven target 2129.40846, got %v", got)
+	}
+}
+
+func TestDeriveLivePositionStateTriggersRMultipleTrailForPretouchShort(t *testing.T) {
+	parameters := map[string]any{
+		"stop_loss_atr":    0.45,
+		"stop_mode":        "atr",
+		"breakeven_at_r":   0.8,
+		"cost_lock_bps":    10.0,
+		"trail_start_r":    1.5,
+		"trail_buffer_atr": 0.05,
+	}
+	signalBarState := map[string]any{
+		"atr14":    11.28428571428565,
+		"current":  map[string]any{"close": 2124.5},
+		"prevBar1": map[string]any{"high": 2136.51, "low": 2123.9},
+		"prevBar2": map[string]any{"high": 2139.0, "low": 2122.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"id":         "position-1779179255684696511",
+		"symbol":     "ETHUSDT",
+		"side":       "SHORT",
+		"entryPrice": 2131.54,
+		"quantity":   0.097,
+	}
+	watermarks := livePositionWatermarks{
+		PositionKey: "position-1779179255684696511|ETHUSDT|SHORT|2131.54",
+		HWM:         2136.51,
+		LWM:         2123.9,
+	}
+
+	positionState := deriveLivePositionState(parameters, currentPosition, signalBarState, 2124.5, watermarks)
+	if !boolValue(positionState["trailingStopActive"]) {
+		t.Fatal("expected R-multiple trailing stop to activate after 1.5R")
+	}
+	if got := stringValue(positionState["stopLossSource"]); got != "trailing-stop" {
+		t.Fatalf("expected trailing-stop source, got %s", got)
+	}
+	if got := parseFloatValue(positionState["stopLoss"]); tradingPriceDiffers(got, 2124.464214285714) {
+		t.Fatalf("expected trailing stop 2124.464214285714, got %v", got)
+	}
+
+	exitState := deriveLiveExitState(parameters, currentPosition, positionState, 2124.5, "SL")
+	if !boolValue(exitState["ready"]) {
+		t.Fatalf("expected short exit ready above R-multiple trailing stop, got %#v", exitState)
+	}
+}
+
 func TestDeriveLivePositionStateDoesNotReuseCachedTrailingStopWhenTrailingInactive(t *testing.T) {
 	parameters := map[string]any{
 		"trailing_stop_atr":               0.3,

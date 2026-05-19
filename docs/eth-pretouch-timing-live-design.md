@@ -395,6 +395,23 @@ go run ./cmd/pretouch-train \
 
 执行层通过 `positionSizingMode=intent_quantity` 使用 intent 里的 `suggestedQuantity`。模板仍保留 `defaultOrderQuantity=0.100` 作为人工可见的基础数量，但 pretouch entry 的实际 proposal 数量以 intent sizing 为准。
 
+### Live Exit Contract
+
+2026-05-19 对齐点：ETH pretouch live 模板里的 V4 exit 参数需要进入 Go live exit path，
+不能只停留在 research replay 文档里。
+
+- 初始止损：live 继续使用 `stop_loss_atr`；当参数只提供 research 命名的 `initial_stop_atr`
+  时，归一化会把它作为 `stop_loss_atr` fallback。
+- Breakeven：当浮盈达到 `breakeven_at_r × initial risk` 后，SL 会推进到 entry 加/减
+  `cost_lock_bps`，用于锁住成本。
+- Trailing：当同时提供 `trail_start_r` 和 `trail_buffer_atr` 时，live 使用 research 的 R-multiple
+  语义，即浮盈达到 `trail_start_r × initial risk` 才启用 trailing，止损价为 HWM/LWM 回撤
+  `trail_buffer_atr × ATR`。这会优先于 legacy `trailing_stop_atr + delayed_trailing_activation_atr`
+  的 ATR-only 语义；没有 V4 参数时 legacy 行为保持不变。
+- `max_hold_hours` 当前在模板、参数归一化和 research artifact 中保留，但 live runtime 暂未新增
+  定时强平路径；如果要把 max-hold 也接入实盘，需要单独 PR 处理 entry time 来源、重启恢复和
+  reduce-only MARKET exit 审计。
+
 ## Breakout 结构展开基准
 
 当前生产的 `breakout_shape_tolerance_bps=0.5` 不是“放宽触发容差”，而是要求 `prev_high_2` /
