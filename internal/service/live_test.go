@@ -4464,6 +4464,32 @@ func TestNormalizeLiveSessionOverridesIncludesPositionSizing(t *testing.T) {
 	}
 }
 
+func TestNormalizeLiveSessionOverridesCapsPretouchShadowSizing(t *testing.T) {
+	overrides := normalizeLiveSessionOverrides(map[string]any{
+		"pretouchShadowMode":                    pretouchShadowModeTestnetCollect,
+		"pretouchBaseOrderQuantity":             10.0,
+		"pretouchShadowLeadScale":               99.0,
+		"pretouchShadowOverlayScale":            99.0,
+		"pretouchShadowOverlayBaseShare":        9.0,
+		pretouchShadowMaxSubmittedQuantityParam: 99.0,
+	})
+	if got := parseFloatValue(overrides["pretouchBaseOrderQuantity"]); got != defaultPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected shadow base quantity capped to %v, got %v in %#v", defaultPretouchShadowMaxSubmittedQuantity, got, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowLeadScale"]); got != maxPretouchShadowLeadScale {
+		t.Fatalf("expected lead scale capped to %v, got %v in %#v", maxPretouchShadowLeadScale, got, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowOverlayScale"]); got != maxPretouchShadowOverlayScale {
+		t.Fatalf("expected overlay scale capped to %v, got %v in %#v", maxPretouchShadowOverlayScale, got, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowOverlayBaseShare"]); got != maxPretouchShadowOverlayBaseShare {
+		t.Fatalf("expected overlay base share capped to %v, got %v in %#v", maxPretouchShadowOverlayBaseShare, got, overrides)
+	}
+	if got := parseFloatValue(overrides[pretouchShadowMaxSubmittedQuantityParam]); got != maxPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected max submitted quantity capped to %v, got %v in %#v", maxPretouchShadowMaxSubmittedQuantity, got, overrides)
+	}
+}
+
 func TestNormalizeLiveSessionOverridesIncludesZeroInitialControls(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
 		"dir2_zero_initial":               false,

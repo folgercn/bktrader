@@ -4285,19 +4285,24 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		nextPlannedRole,
 		nextPlannedReason,
 	)
+	liveAccountBinding := map[string]any{}
+	if account, accountErr := p.store.GetAccount(session.AccountID); accountErr == nil {
+		liveAccountBinding = cloneMetadata(resolveLiveBinding(account))
+	}
 	decision, err := evaluator.EvaluateSignal(StrategySignalEvaluationContext{
-		ExecutionContext:  executionContext,
-		TriggerSummary:    cloneMetadata(summary),
-		SourceStates:      cloneMetadata(sourceStates),
-		SignalBarStates:   cloneMetadata(signalBarStates),
-		CurrentPosition:   currentPosition,
-		SessionState:      cloneMetadata(updatedState),
-		EventTime:         eventTime.UTC(),
-		NextPlannedEvent:  nextPlannedEvent.UTC(),
-		NextPlannedPrice:  nextPlannedPrice,
-		NextPlannedSide:   nextPlannedSide,
-		NextPlannedRole:   nextPlannedRole,
-		NextPlannedReason: nextPlannedReason,
+		ExecutionContext:   executionContext,
+		TriggerSummary:     cloneMetadata(summary),
+		SourceStates:       cloneMetadata(sourceStates),
+		SignalBarStates:    cloneMetadata(signalBarStates),
+		CurrentPosition:    currentPosition,
+		SessionState:       cloneMetadata(updatedState),
+		LiveAccountBinding: liveAccountBinding,
+		EventTime:          eventTime.UTC(),
+		NextPlannedEvent:   nextPlannedEvent.UTC(),
+		NextPlannedPrice:   nextPlannedPrice,
+		NextPlannedSide:    nextPlannedSide,
+		NextPlannedRole:    nextPlannedRole,
+		NextPlannedReason:  nextPlannedReason,
 	})
 	if err != nil {
 		return executionContext, StrategySignalDecision{}, updatedState, err
@@ -5408,6 +5413,27 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"min_sma_atr_separation",
 		"quality_filter_shapes",
 		"signalDecisionMaxDeviationBps",
+		"pretouchBaseOrderQuantity",
+		"pretouchBaseShare",
+		"pretouchCostQ50Threshold",
+		"pretouchCostQ50Penalty",
+		"pretouchShadowMode",
+		"pretouchShadowCandidateID",
+		"pretouchShadowLeadScale",
+		"pretouchShadowOverlayScale",
+		"pretouchShadowOverlayBaseShare",
+		"pretouchShadowOverlaySpeedThreshold",
+		"pretouchShadowOverlayMaxPreTouchSec",
+		"pretouchShadowOverlayMaxEff300s",
+		pretouchShadowSubmitRiskOnQuantityParam,
+		pretouchShadowSubmitOverlayOrderParam,
+		"pretouchShadowStrict10CalendarPct",
+		"pretouchShadowStrict15CalendarPct",
+		"pretouchShadowSevere15CalendarPct",
+		"pretouchShadowLeadAdverseBaselinePct",
+		"pretouchSpeedThreshold",
+		"pretouchMaxPreTouchSec",
+		"pretouchMaxEff300s",
 	}
 	sessionParameterKeys = append(sessionParameterKeys, liveExecutionParameterOverrideKeys()...)
 	for _, key := range sessionParameterKeys {
@@ -5743,6 +5769,9 @@ func deriveBreakoutSignalSnapshot(decision StrategySignalDecision, eventTime tim
 	}
 	current := mapValue(signalBarDecision["current"])
 	prevBar2 := mapValue(signalBarDecision["prevBar2"])
+	if strings.EqualFold(stringValue(signalBarDecision["breakoutShape"]), "t3_swing") {
+		prevBar2 = mapValue(signalBarDecision["prevBar3"])
+	}
 	side := ""
 	level := 0.0
 	switch {
@@ -5841,6 +5870,11 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	normalized := normalizePaperSessionOverrides(overrides)
 	if normalized == nil {
 		normalized = map[string]any{}
+	}
+	pretouchShadowCollectMode := strings.EqualFold(strings.TrimSpace(stringValue(overrides["pretouchShadowMode"])), pretouchShadowModeTestnetCollect)
+	pretouchShadowMaxQuantity := defaultPretouchShadowMaxSubmittedQuantity
+	if raw := parseFloatValue(overrides[pretouchShadowMaxSubmittedQuantityParam]); raw > 0 {
+		pretouchShadowMaxQuantity = capPositiveFloat(raw, maxPretouchShadowMaxSubmittedQuantity)
 	}
 	normalizeExecutionProfileOverrides := func(prefix string) {
 		if orderType := strings.TrimSpace(stringValue(overrides[prefix+"OrderType"])); orderType != "" {
@@ -5962,6 +5996,55 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if shapes := normalizeStringList(overrides["quality_filter_shapes"]); len(shapes) > 0 {
 		normalized["quality_filter_shapes"] = shapes
+	}
+	for _, key := range []string{"pretouchShadowMode", "pretouchShadowCandidateID"} {
+		if value := strings.TrimSpace(stringValue(overrides[key])); value != "" {
+			normalized[key] = value
+		}
+	}
+	for _, key := range []string{
+		"pretouchBaseOrderQuantity",
+		"pretouchBaseShare",
+		"pretouchCostQ50Threshold",
+		"pretouchCostQ50Penalty",
+		"pretouchShadowLeadScale",
+		"pretouchShadowOverlayScale",
+		"pretouchShadowOverlayBaseShare",
+		pretouchShadowMaxSubmittedQuantityParam,
+		"pretouchShadowOverlaySpeedThreshold",
+		"pretouchShadowOverlayMaxPreTouchSec",
+		"pretouchShadowOverlayMaxEff300s",
+		"pretouchShadowStrict10CalendarPct",
+		"pretouchShadowStrict15CalendarPct",
+		"pretouchShadowSevere15CalendarPct",
+		"pretouchShadowLeadAdverseBaselinePct",
+		"pretouchSpeedThreshold",
+		"pretouchMaxPreTouchSec",
+		"pretouchMaxEff300s",
+	} {
+		if value := parseFloatValue(overrides[key]); value > 0 {
+			switch key {
+			case "pretouchBaseOrderQuantity":
+				if pretouchShadowCollectMode {
+					value = capPositiveFloat(value, pretouchShadowMaxQuantity)
+				}
+			case "pretouchShadowLeadScale":
+				value = capPositiveFloat(value, maxPretouchShadowLeadScale)
+			case "pretouchShadowOverlayScale":
+				value = capPositiveFloat(value, maxPretouchShadowOverlayScale)
+			case "pretouchShadowOverlayBaseShare":
+				value = capPositiveFloat(value, maxPretouchShadowOverlayBaseShare)
+			case pretouchShadowMaxSubmittedQuantityParam:
+				value = capPositiveFloat(value, maxPretouchShadowMaxSubmittedQuantity)
+			}
+			normalized[key] = value
+		}
+	}
+	if _, ok := overrides[pretouchShadowSubmitRiskOnQuantityParam]; ok {
+		normalized[pretouchShadowSubmitRiskOnQuantityParam] = boolValue(overrides[pretouchShadowSubmitRiskOnQuantityParam])
+	}
+	if _, ok := overrides[pretouchShadowSubmitOverlayOrderParam]; ok {
+		normalized[pretouchShadowSubmitOverlayOrderParam] = boolValue(overrides[pretouchShadowSubmitOverlayOrderParam])
 	}
 	return normalized
 }

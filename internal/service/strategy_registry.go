@@ -48,19 +48,20 @@ type StrategyExecutionContext struct {
 }
 
 type StrategySignalEvaluationContext struct {
-	ExecutionContext  StrategyExecutionContext
-	PaperSessionID    string
-	TriggerSummary    map[string]any
-	SourceStates      map[string]any
-	SignalBarStates   map[string]any
-	CurrentPosition   map[string]any
-	SessionState      map[string]any
-	EventTime         time.Time
-	NextPlannedEvent  time.Time
-	NextPlannedPrice  float64
-	NextPlannedSide   string
-	NextPlannedRole   string
-	NextPlannedReason string
+	ExecutionContext   StrategyExecutionContext
+	PaperSessionID     string
+	TriggerSummary     map[string]any
+	SourceStates       map[string]any
+	SignalBarStates    map[string]any
+	CurrentPosition    map[string]any
+	SessionState       map[string]any
+	LiveAccountBinding map[string]any
+	EventTime          time.Time
+	NextPlannedEvent   time.Time
+	NextPlannedPrice   float64
+	NextPlannedSide    string
+	NextPlannedRole    string
+	NextPlannedReason  string
 }
 
 type StrategySignalDecision struct {

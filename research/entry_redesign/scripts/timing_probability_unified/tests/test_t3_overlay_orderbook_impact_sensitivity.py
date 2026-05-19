@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from timing_probability_unified import t3_overlay_orderbook_impact_sensitivity as impact
 
@@ -39,6 +40,16 @@ def test_apply_lead_scale_only_changes_lead_rows():
     assert windows.loc[1, "base_pnl_pct"] == 0.6
 
 
+def test_apply_leg_scales_can_scale_overlay_rows():
+    windows = impact.apply_leg_scales(_windows(), lead_scale=1.25, overlay_scale=1.5)
+
+    assert windows.loc[0, "desired_notional_share"] == 1.0
+    assert windows.loc[0, "base_pnl_pct"] == 1.25
+    assert windows.loc[1, "desired_notional_share"] == pytest.approx(0.9)
+    assert windows.loc[1, "base_pnl_pct"] == pytest.approx(0.9)
+    assert windows["overlay_scale"].tolist() == [1.5, 1.5]
+
+
 def test_impact_round_trip_bps_uses_concentration_and_active_notional():
     profile = impact.ImpactProfile(
         name="test",
@@ -70,9 +81,11 @@ def test_simulate_impact_applies_overlay_slip_and_impact_cost():
         capital_capacity=2.0,
         overlay_extra_round_trip_slippage_bps=10.0,
         lead_scale=1.0,
+        overlay_scale=1.0,
     )
 
     assert scenario.filled_trades == 2
+    assert scenario.overlay_scale == 1.0
     assert scenario.impact_cost_pct == 0.0048
     assert scenario.overlay_extra_cost_pct == 0.06
     assert scenario.lead_pnl_pct == 1.0

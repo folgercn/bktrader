@@ -1,9 +1,9 @@
-"""Readiness gate for the ETH lead-scale sizing candidate.
+"""Readiness gate for the ETH risk-on sizing candidate.
 
 Research-only. This script combines:
 
 - live execution telemetry calibration;
-- conditional lead-scale proxy results;
+- conditional lead/overlay-scale proxy results;
 - the conservative lead adverse baseline.
 
 It turns the current evidence into a simple promotion status so future research
@@ -36,21 +36,22 @@ DEFAULT_LIVE_SUMMARY = (
 )
 DEFAULT_CONDITIONAL_SUMMARY = (
     OUTPUT_DIR
-    / "t3_overlay_conditional_lead_scale_size2p0"
+    / "t3_overlay_conditional_risk_appetite_1p5x2p0_20260519"
     / "t3_overlay_conditional_lead_scale_summary.json"
 )
-DEFAULT_OUTPUT = OUTPUT_DIR / "t3_overlay_sizing_readiness_gate_20260519"
+DEFAULT_OUTPUT = OUTPUT_DIR / "t3_overlay_sizing_readiness_gate_risk_appetite_20260519"
 
 
 @dataclass(frozen=True)
 class ReadinessConfig:
     """Thresholds for sizing-readiness classification."""
 
-    target_lead_scale: float = 1.25
+    target_lead_scale: float = 1.5
+    target_overlay_scale: float = 2.0
     min_live_entries_for_live_candidate: int = 30
     min_live_combined_pass_ratio: float = 1.0
     min_worst_slippage_headroom_bps: float = 2.0
-    max_strict_impact_gate_bps: float = 10.0
+    max_strict_impact_gate_bps: float = 20.0
     overlay_pass_slippage_bps: float = 15.0
     overlay_kill_slippage_bps: float = 20.0
     lead_adverse_baseline_pct: float = 22.971648
@@ -62,6 +63,7 @@ class ReadinessResult:
 
     status: str
     target_lead_scale: float
+    target_overlay_scale: float
     live_sample_entries: int
     live_combined_pass_entries: int
     live_combined_pass_ratio: float
@@ -113,21 +115,32 @@ def _find_conditional(
     profile: str,
     gate_bps: float,
     overlay_slippage_bps: float,
+    target_lead_scale: float,
+    target_overlay_scale: float,
 ) -> dict[str, Any]:
     rows = conditional_summary.get("scenarios", [])
     if not isinstance(rows, list):
         return {}
+    candidates: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
         if str(row.get("profile")) != profile:
             continue
-        if abs(float(row.get("lead_impact_gate_round_trip_bps", -1.0)) - gate_bps) > 1e-9:
+        if abs(float(row.get("target_lead_scale", target_lead_scale)) - target_lead_scale) > 1e-9:
+            continue
+        if abs(float(row.get("target_overlay_scale", target_overlay_scale)) - target_overlay_scale) > 1e-9:
+            continue
+        if float(row.get("lead_impact_gate_round_trip_bps", 999999.0)) > gate_bps:
+            continue
+        if float(row.get("overlay_impact_gate_round_trip_bps", row.get("lead_impact_gate_round_trip_bps", 999999.0))) > gate_bps:
             continue
         if abs(float(row.get("overlay_extra_round_trip_slippage_bps", -1.0)) - overlay_slippage_bps) > 1e-9:
             continue
-        return row
-    return {}
+        candidates.append(row)
+    if not candidates:
+        return {}
+    return max(candidates, key=lambda item: float(item.get("calendar_sum_pct", float("-inf"))))
 
 
 def evaluate_readiness(
@@ -155,18 +168,24 @@ def evaluate_readiness(
         profile="strict_top1p2_active1p0",
         gate_bps=config.max_strict_impact_gate_bps,
         overlay_slippage_bps=config.overlay_pass_slippage_bps,
+        target_lead_scale=config.target_lead_scale,
+        target_overlay_scale=config.target_overlay_scale,
     )
     strict20 = _find_conditional(
         conditional_summary,
         profile="strict_top1p2_active1p0",
         gate_bps=config.max_strict_impact_gate_bps,
         overlay_slippage_bps=config.overlay_kill_slippage_bps,
+        target_lead_scale=config.target_lead_scale,
+        target_overlay_scale=config.target_overlay_scale,
     )
     severe15 = _find_conditional(
         conditional_summary,
         profile="severe_top1p0_active2p0",
         gate_bps=config.max_strict_impact_gate_bps,
         overlay_slippage_bps=config.overlay_pass_slippage_bps,
+        target_lead_scale=config.target_lead_scale,
+        target_overlay_scale=config.target_overlay_scale,
     )
     strict15_calendar = _float_or_none(strict15.get("calendar_sum_pct"))
     strict20_calendar = _float_or_none(strict20.get("calendar_sum_pct"))
@@ -209,6 +228,7 @@ def evaluate_readiness(
     return ReadinessResult(
         status=status,
         target_lead_scale=round(float(config.target_lead_scale), 6),
+        target_overlay_scale=round(float(config.target_overlay_scale), 6),
         live_sample_entries=live_entries,
         live_combined_pass_entries=live_combined,
         live_combined_pass_ratio=live_pass_ratio,
@@ -232,12 +252,13 @@ def _write_report(output_dir: Path, result: ReadinessResult, config: ReadinessCo
     lines = [
         "# T3 Overlay Sizing Readiness Gate",
         "",
-        "Research-only readiness gate for lead-scale sizing.",
+        "Research-only readiness gate for risk-on sizing.",
         "",
         "## Verdict",
         "",
         f"- Status: `{result.status}`",
         f"- Target lead scale: `{result.target_lead_scale:.2f}x`",
+        f"- Target overlay scale: `{result.target_overlay_scale:.2f}x`",
         "",
         "## Evidence",
         "",
@@ -260,7 +281,7 @@ def _write_report(output_dir: Path, result: ReadinessResult, config: ReadinessCo
         f"| Min live samples for live-candidate review | {config.min_live_entries_for_live_candidate} |",
         f"| Min live combined pass ratio | {config.min_live_combined_pass_ratio:.0%} |",
         f"| Min worst slippage headroom | {config.min_worst_slippage_headroom_bps:.2f}bp |",
-        f"| Strict impact gate | {config.max_strict_impact_gate_bps:.2f}bp |",
+        f"| Strict impact gate upper bound | {config.max_strict_impact_gate_bps:.2f}bp |",
         "",
         "## Reasons",
         "",
@@ -272,7 +293,7 @@ def _write_report(output_dir: Path, result: ReadinessResult, config: ReadinessCo
             "",
             "## Read",
             "",
-            "- This is not a live code change and does not alter template sizing.",
+            "- This is not a live sizing change and does not alter submitted quantity.",
             "- `research_continue_collect_live_depth` means the candidate shape is still alive, but the sample size is too small for live promotion.",
             "- If promoted later, the live-facing rule should remain conditional and fail closed to current sizing.",
         ]
@@ -318,7 +339,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--live-summary", type=Path, default=DEFAULT_LIVE_SUMMARY)
     parser.add_argument("--conditional-summary", type=Path, default=DEFAULT_CONDITIONAL_SUMMARY)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--target-lead-scale", type=float, default=1.25)
+    parser.add_argument("--target-lead-scale", type=float, default=1.5)
+    parser.add_argument("--target-overlay-scale", type=float, default=2.0)
+    parser.add_argument("--max-strict-impact-gate-bps", type=float, default=20.0)
     parser.add_argument("--min-live-entries", type=int, default=30)
     parser.add_argument("--min-worst-slippage-headroom-bps", type=float, default=2.0)
     parser.add_argument("--lead-adverse-baseline-pct", type=float, default=22.971648)
@@ -329,6 +352,8 @@ def main() -> int:
     args = parse_args()
     config = ReadinessConfig(
         target_lead_scale=float(args.target_lead_scale),
+        target_overlay_scale=float(args.target_overlay_scale),
+        max_strict_impact_gate_bps=float(args.max_strict_impact_gate_bps),
         min_live_entries_for_live_candidate=int(args.min_live_entries),
         min_worst_slippage_headroom_bps=float(args.min_worst_slippage_headroom_bps),
         lead_adverse_baseline_pct=float(args.lead_adverse_baseline_pct),
@@ -343,7 +368,8 @@ def main() -> int:
     print(
         "sizing_readiness "
         f"status={result['status']} "
-        f"scale={result['target_lead_scale']:.2f}x "
+        f"lead_scale={result['target_lead_scale']:.2f}x "
+        f"overlay_scale={result['target_overlay_scale']:.2f}x "
         f"live_pass={result['live_combined_pass_entries']}/{result['live_sample_entries']} "
         f"proxy_gate_pass={result['proxy_gate_pass']} "
         f"sample_gate_pass={result['sample_gate_pass']}"

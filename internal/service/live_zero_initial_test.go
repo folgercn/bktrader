@@ -6,6 +6,19 @@ import (
 	"time"
 )
 
+func TestParseLiveSignalBarTradeLimitKeyAcceptsSignalKindSuffix(t *testing.T) {
+	symbol, timeframe, barStart, ok := parseLiveSignalBarTradeLimitKey("ETHUSDT|1h|2026-05-15T12:00:00Z|entry-t3-overlay")
+	if !ok {
+		t.Fatal("expected signal kind suffix trade-limit key to parse")
+	}
+	if symbol != "ETHUSDT" || timeframe != "1h" {
+		t.Fatalf("unexpected parsed key identity: symbol=%s timeframe=%s", symbol, timeframe)
+	}
+	if want := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC); !barStart.Equal(want) {
+		t.Fatalf("expected bar start %s, got %s", want, barStart)
+	}
+}
+
 func TestPrepareLivePlanStepForSignalEvaluationExpiresStaleExitReentryWindow(t *testing.T) {
 	barStart := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
 	signalStates := map[string]any{

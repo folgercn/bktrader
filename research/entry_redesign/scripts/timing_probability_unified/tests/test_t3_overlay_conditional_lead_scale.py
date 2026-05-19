@@ -68,3 +68,45 @@ def test_conditional_policy_blocks_scale_when_impact_gate_fails():
     assert scenario.calendar_sum_pct == 1.376
     assert ledger.loc[0, "chosen_lead_scale"] == 1.0
     assert ledger.loc[0, "impact_round_trip_bps"] == 3.0
+
+
+def test_conditional_policy_applies_overlay_scale_when_gate_passes():
+    profile = ImpactProfile("test", 1.0, 10.0, 0.0)
+
+    scenario, ledger = conditional.simulate_conditional_policy(
+        _windows(),
+        profile=profile,
+        target_lead_scale=1.0,
+        target_overlay_scale=2.0,
+        lead_impact_gate_round_trip_bps=0.0,
+        overlay_impact_gate_round_trip_bps=0.0,
+        capital_capacity=2.0,
+        overlay_extra_round_trip_slippage_bps=0.0,
+    )
+
+    assert scenario.overlay_scale_applied_trades == 1
+    assert scenario.overlay_scale_blocked_trades == 0
+    assert scenario.overlay_pnl_pct == 0.8
+    assert scenario.calendar_sum_pct == 1.8
+    assert ledger.loc[1, "chosen_overlay_scale"] == 2.0
+
+
+def test_conditional_policy_blocks_overlay_scale_when_impact_gate_fails():
+    profile = ImpactProfile("test", 0.2, 10.0, 0.0)
+
+    scenario, ledger = conditional.simulate_conditional_policy(
+        _windows(),
+        profile=profile,
+        target_lead_scale=1.0,
+        target_overlay_scale=2.0,
+        lead_impact_gate_round_trip_bps=0.0,
+        overlay_impact_gate_round_trip_bps=1.0,
+        capital_capacity=2.0,
+        overlay_extra_round_trip_slippage_bps=0.0,
+    )
+
+    assert scenario.overlay_scale_applied_trades == 0
+    assert scenario.overlay_scale_blocked_trades == 1
+    assert scenario.overlay_pnl_pct == 0.392
+    assert ledger.loc[1, "chosen_overlay_scale"] == 1.0
+    assert ledger.loc[1, "impact_round_trip_bps"] == 2.0

@@ -175,6 +175,33 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchBaseOrderQuantity"]); got != want.quantity {
 				t.Fatalf("expected pretouchBaseOrderQuantity=%v, got %v", want.quantity, got)
 			}
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowMode"]); got != pretouchShadowModeTestnetCollect {
+				t.Fatalf("expected pretouchShadowMode=%s, got %s", pretouchShadowModeTestnetCollect, got)
+			}
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowCandidateID"]); got != defaultPretouchShadowCandidateID {
+				t.Fatalf("expected pretouchShadowCandidateID=%s, got %s", defaultPretouchShadowCandidateID, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowLeadScale"]); got != defaultPretouchShadowLeadScale {
+				t.Fatalf("expected pretouchShadowLeadScale=%v, got %v", defaultPretouchShadowLeadScale, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayScale"]); got != defaultPretouchShadowOverlayScale {
+				t.Fatalf("expected pretouchShadowOverlayScale=%v, got %v", defaultPretouchShadowOverlayScale, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayBaseShare"]); got != defaultPretouchShadowOverlayBaseShare {
+				t.Fatalf("expected pretouchShadowOverlayBaseShare=%v, got %v", defaultPretouchShadowOverlayBaseShare, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowMaxSubmittedQuantityParam]); got != defaultPretouchShadowMaxSubmittedQuantity {
+				t.Fatalf("expected %s=%v, got %v", pretouchShadowMaxSubmittedQuantityParam, defaultPretouchShadowMaxSubmittedQuantity, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlaySpeedThreshold"]); got != defaultPretouchShadowOverlaySpeedMin {
+				t.Fatalf("expected pretouchShadowOverlaySpeedThreshold=%v, got %v", defaultPretouchShadowOverlaySpeedMin, got)
+			}
+			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowSubmitRiskOnQuantityParam]) {
+				t.Fatalf("expected %s=true for testnet shadow risk-on sizing", pretouchShadowSubmitRiskOnQuantityParam)
+			}
+			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowSubmitOverlayOrderParam]) {
+				t.Fatalf("expected %s=true for testnet shadow overlay", pretouchShadowSubmitOverlayOrderParam)
+			}
 			for _, note := range item.Notes {
 				if strings.Contains(strings.ToLower(note), "sidecar") || strings.Contains(note, "localhost:9101") {
 					t.Fatalf("pretouch template should not mention sidecar dependency: %q", note)
