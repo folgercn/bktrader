@@ -5799,6 +5799,11 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	if normalized == nil {
 		normalized = map[string]any{}
 	}
+	pretouchShadowCollectMode := strings.EqualFold(strings.TrimSpace(stringValue(overrides["pretouchShadowMode"])), pretouchShadowModeTestnetCollect)
+	pretouchShadowMaxQuantity := defaultPretouchShadowMaxSubmittedQuantity
+	if raw := parseFloatValue(overrides[pretouchShadowMaxSubmittedQuantityParam]); raw > 0 {
+		pretouchShadowMaxQuantity = capPositiveFloat(raw, maxPretouchShadowMaxSubmittedQuantity)
+	}
 	normalizeExecutionProfileOverrides := func(prefix string) {
 		if orderType := strings.TrimSpace(stringValue(overrides[prefix+"OrderType"])); orderType != "" {
 			normalized[prefix+"OrderType"] = strings.ToUpper(orderType)
@@ -5933,6 +5938,7 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 		"pretouchShadowLeadScale",
 		"pretouchShadowOverlayScale",
 		"pretouchShadowOverlayBaseShare",
+		pretouchShadowMaxSubmittedQuantityParam,
 		"pretouchShadowOverlaySpeedThreshold",
 		"pretouchShadowOverlayMaxPreTouchSec",
 		"pretouchShadowOverlayMaxEff300s",
@@ -5945,6 +5951,20 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 		"pretouchMaxEff300s",
 	} {
 		if value := parseFloatValue(overrides[key]); value > 0 {
+			switch key {
+			case "pretouchBaseOrderQuantity":
+				if pretouchShadowCollectMode {
+					value = capPositiveFloat(value, pretouchShadowMaxQuantity)
+				}
+			case "pretouchShadowLeadScale":
+				value = capPositiveFloat(value, maxPretouchShadowLeadScale)
+			case "pretouchShadowOverlayScale":
+				value = capPositiveFloat(value, maxPretouchShadowOverlayScale)
+			case "pretouchShadowOverlayBaseShare":
+				value = capPositiveFloat(value, maxPretouchShadowOverlayBaseShare)
+			case pretouchShadowMaxSubmittedQuantityParam:
+				value = capPositiveFloat(value, maxPretouchShadowMaxSubmittedQuantity)
+			}
 			normalized[key] = value
 		}
 	}

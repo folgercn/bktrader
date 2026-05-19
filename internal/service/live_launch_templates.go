@@ -336,6 +336,7 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"pretouchShadowLeadScale":               defaultPretouchShadowLeadScale,
 		"pretouchShadowOverlayScale":            defaultPretouchShadowOverlayScale,
 		"pretouchShadowOverlayBaseShare":        defaultPretouchShadowOverlayBaseShare,
+		pretouchShadowMaxSubmittedQuantityParam: defaultPretouchShadowMaxSubmittedQuantity,
 		"pretouchShadowOverlaySpeedThreshold":   defaultPretouchShadowOverlaySpeedMin,
 		pretouchShadowSubmitRiskOnQuantityParam: true,
 		pretouchShadowSubmitOverlayOrderParam:   true,

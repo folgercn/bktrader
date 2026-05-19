@@ -316,6 +316,14 @@ func TestPretouchTimingEngineSubmitsT3OverlayForSandboxShadow(t *testing.T) {
 	if got := stringValue(decision.Metadata["signalKind"]); got != "entry-t3-overlay" {
 		t.Fatalf("expected entry-t3-overlay signal kind, got %s", got)
 	}
+	baseKey := "ETHUSDT|1h|2026-05-15T12:00:00Z"
+	overlayKey := baseKey + "|entry-t3-overlay"
+	if got := stringValue(decision.Metadata["signalBarStateKey"]); got != baseKey {
+		t.Fatalf("expected base signal bar state key %s, got %s", baseKey, got)
+	}
+	if got := stringValue(decision.Metadata[liveSignalBarTradeLimitKeyField]); got != overlayKey {
+		t.Fatalf("expected overlay trade-limit key %s, got %s", overlayKey, got)
+	}
 	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.08) > 1e-9 {
 		t.Fatalf("expected T3 overlay 2.0x quantity 0.08, got %v", got)
 	}
@@ -342,6 +350,9 @@ func TestPretouchTimingEngineSubmitsT3OverlayForSandboxShadow(t *testing.T) {
 	}
 	if intent.SignalKind != "entry-t3-overlay" || intent.Reason != "Pretouch-T3-Overlay" {
 		t.Fatalf("unexpected T3 overlay intent: %#v", intent)
+	}
+	if got := stringValue(intent.Metadata[liveSignalBarTradeLimitKeyField]); got != overlayKey {
+		t.Fatalf("expected overlay intent trade-limit key %s, got %s", overlayKey, got)
 	}
 	if math.Abs(intent.Quantity-0.08) > 1e-9 {
 		t.Fatalf("expected T3 overlay intent quantity 0.08, got %v", intent.Quantity)
@@ -414,6 +425,117 @@ func TestPretouchShadowOverlaySizingBlocksWhenScaledTopDepthIsTooThin(t *testing
 	}
 	if got := stringValue(overlay["submittedOverlayOrderBlockReason"]); got != "shadow_top_depth_coverage_below_min" {
 		t.Fatalf("expected overlay block to reuse depth reason, got %s in %#v", got, overlay)
+	}
+}
+
+func TestPretouchShadowSizingCapsOversizedLeadQuantity(t *testing.T) {
+	shadow := pretouchShadowSizingFromParameters(
+		map[string]any{
+			"pretouchShadowMode":                    pretouchShadowModeTestnetCollect,
+			"pretouchShadowLeadScale":               99.0,
+			pretouchShadowMaxSubmittedQuantityParam: 99.0,
+			pretouchShadowSubmitRiskOnQuantityParam: true,
+			"executionEntryMinTopBookCoverage":      0.5,
+			"executionEntryMaxSpreadBps":            8.0,
+		},
+		"BUY",
+		1.0,
+		orderBookDecisionStats{
+			bestAskQty: 10.0,
+			spreadBps:  1.0,
+		},
+		pretouchShadowSubmitContext{
+			liveExecution: true,
+			sandbox:       true,
+			executionMode: "rest",
+		},
+	)
+	if shadow == nil {
+		t.Fatal("expected shadow sizing metadata")
+	}
+	if got := parseFloatValue(shadow["leadScale"]); got != maxPretouchShadowLeadScale {
+		t.Fatalf("expected capped lead scale %v, got %v in %#v", maxPretouchShadowLeadScale, got, shadow)
+	}
+	if got := parseFloatValue(shadow["maxShadowSubmittedQuantity"]); got != defaultPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected max submitted cap %v, got %v in %#v", defaultPretouchShadowMaxSubmittedQuantity, got, shadow)
+	}
+	if got := parseFloatValue(shadow["shadowLeadQuantity"]); got != defaultPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected lead quantity capped to %v, got %v in %#v", defaultPretouchShadowMaxSubmittedQuantity, got, shadow)
+	}
+	if !boolValue(shadow["shadowLeadQuantityCapped"]) || !boolValue(shadow["submittedRiskOnQuantityEnabled"]) {
+		t.Fatalf("expected capped risk-on lead to remain enabled under depth guard: %#v", shadow)
+	}
+	if got := parseFloatValue(shadow["submittedQuantityAfterShadow"]); got != defaultPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected submitted quantity capped to %v, got %v in %#v", defaultPretouchShadowMaxSubmittedQuantity, got, shadow)
+	}
+}
+
+func TestPretouchBaseOrderQuantityFromParametersCapsShadowMode(t *testing.T) {
+	got := pretouchBaseOrderQuantityFromParameters(map[string]any{
+		"pretouchShadowMode":                    pretouchShadowModeTestnetCollect,
+		"pretouchBaseOrderQuantity":             10.0,
+		pretouchShadowMaxSubmittedQuantityParam: 99.0,
+	})
+	if got != defaultPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected shadow base order quantity capped to %v, got %v", defaultPretouchShadowMaxSubmittedQuantity, got)
+	}
+}
+
+func TestPretouchShadowOverlaySizingCapsOversizedOverlayQuantity(t *testing.T) {
+	overlay := pretouchShadowOverlaySizingFromParameters(
+		map[string]any{
+			"pretouchShadowMode":                    pretouchShadowModeTestnetCollect,
+			"pretouchShadowOverlayScale":            99.0,
+			"pretouchShadowOverlayBaseShare":        9.0,
+			pretouchShadowMaxSubmittedQuantityParam: 99.0,
+			pretouchShadowSubmitOverlayOrderParam:   true,
+			"executionEntryMinTopBookCoverage":      0.5,
+			"executionEntryMaxSpreadBps":            8.0,
+		},
+		"BUY",
+		10.0,
+		orderBookDecisionStats{
+			bestAskQty: 10.0,
+			spreadBps:  1.0,
+		},
+		pretouchShadowSubmitContext{
+			liveExecution: true,
+			sandbox:       true,
+			executionMode: "rest",
+		},
+	)
+	if overlay == nil {
+		t.Fatal("expected overlay sizing metadata")
+	}
+	if got := parseFloatValue(overlay["overlayScale"]); got != maxPretouchShadowOverlayScale {
+		t.Fatalf("expected capped overlay scale %v, got %v in %#v", maxPretouchShadowOverlayScale, got, overlay)
+	}
+	if got := parseFloatValue(overlay["overlayBaseShare"]); got != maxPretouchShadowOverlayBaseShare {
+		t.Fatalf("expected capped overlay base share %v, got %v in %#v", maxPretouchShadowOverlayBaseShare, got, overlay)
+	}
+	if got := parseFloatValue(overlay["shadowOverlayQuantity"]); got != defaultPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected overlay quantity capped to %v, got %v in %#v", defaultPretouchShadowMaxSubmittedQuantity, got, overlay)
+	}
+	if !boolValue(overlay["shadowOverlayQuantityCapped"]) || !boolValue(overlay["submittedOverlayOrderEnabled"]) {
+		t.Fatalf("expected capped overlay to remain enabled under depth guard: %#v", overlay)
+	}
+	if got := parseFloatValue(overlay["submittedOverlayQuantity"]); got != defaultPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected submitted overlay quantity capped to %v, got %v in %#v", defaultPretouchShadowMaxSubmittedQuantity, got, overlay)
+	}
+}
+
+func TestPretouchSignalBarTradeLimitKeyForKindSeparatesT3OverlayFromLead(t *testing.T) {
+	current := &HourlyBar{OpenTime: time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)}
+	leadKey := pretouchSignalBarTradeLimitKeyForKind("ETHUSDT", "1h", current, "entry")
+	overlayKey := pretouchSignalBarTradeLimitKeyForKind("ETHUSDT", "1h", current, "entry-t3-overlay")
+	if leadKey != "ETHUSDT|1h|2026-05-15T12:00:00Z" {
+		t.Fatalf("unexpected lead key %s", leadKey)
+	}
+	if overlayKey != "ETHUSDT|1h|2026-05-15T12:00:00Z|entry-t3-overlay" {
+		t.Fatalf("unexpected overlay key %s", overlayKey)
+	}
+	if leadKey == overlayKey {
+		t.Fatal("expected lead and T3 overlay to use distinct trade-limit keys")
 	}
 }
 

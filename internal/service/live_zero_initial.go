@@ -431,7 +431,7 @@ func liveSignalBarKeyPastReentryWindow(lastKey, currentKey, signalTimeframe stri
 
 func parseLiveSignalBarTradeLimitKey(key string) (string, string, time.Time, bool) {
 	parts := strings.Split(strings.TrimSpace(key), "|")
-	if len(parts) != 3 {
+	if len(parts) != 3 && len(parts) != 4 {
 		return "", "", time.Time{}, false
 	}
 	barStart := parseOptionalRFC3339(parts[2])

@@ -190,6 +190,9 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayBaseShare"]); got != defaultPretouchShadowOverlayBaseShare {
 				t.Fatalf("expected pretouchShadowOverlayBaseShare=%v, got %v", defaultPretouchShadowOverlayBaseShare, got)
 			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowMaxSubmittedQuantityParam]); got != defaultPretouchShadowMaxSubmittedQuantity {
+				t.Fatalf("expected %s=%v, got %v", pretouchShadowMaxSubmittedQuantityParam, defaultPretouchShadowMaxSubmittedQuantity, got)
+			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlaySpeedThreshold"]); got != defaultPretouchShadowOverlaySpeedMin {
 				t.Fatalf("expected pretouchShadowOverlaySpeedThreshold=%v, got %v", defaultPretouchShadowOverlaySpeedMin, got)
 			}

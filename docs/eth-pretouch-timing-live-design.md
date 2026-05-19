@@ -238,9 +238,9 @@ research 增强一次性接进 Go live。提交版本的边界如下：
 | `breakout_shape_tolerance_bps` | **已接入当前 ETH pretouch live** | `PretouchEventDetector` 使用 `StructureToleranceBps` 判断 `prev_high_2` / `prev_low_2` 是否 ready；默认来自 `defaultT2BreakoutShapeToleranceBps=0.5`，session 参数可覆盖非负值。 |
 | Breakout 容差语义 | **不是放宽 near-equal** | 当前 `0.5` bps 是 restrictive 分离度：long 需要 `prev_high_2 > prev_high_1 * (1 + 0.5/10000)`，short 需要 `prev_low_2 < prev_low_1 * (1 - 0.5/10000)`。这轮 research 证明不能直接把 near-equal/slack 结构推成 live 默认。 |
 | T3 结构 / `t3_swing` | **已接入 testnet shadow event source** | Go live engine 在 original_t2 未触发时检测 T3 swing：long 需 `prev_high_3 > prev_high_2 && prev_high_3 > prev_high_1 && prev_high_1 > prev_high_2`，short 对称；仅在 `testnet_shadow_collect` 下启用，不改变 production lead。 |
-| `2.0x T3 overlay` | **已接入 testnet shadow 真实 entry proposal** | T3 overlay 使用 `pretouchShadowOverlayBaseShare=0.40`、`pretouchShadowOverlayScale=2.0`，默认 base quantity `0.100` 时 initial overlay order 为 `0.080` ETH；仅当 live 语义、`sandbox=true`、`executionMode=rest`、speed/depth/spread guard 通过时生成 `entry-t3-overlay` proposal。 |
-| `1.5x lead scale` | **已接入 testnet shadow 真实提交数量** | `testnet_shadow_collect` 默认启用 risk-on lead sizing，可用 `pretouchShadowSubmitRiskOnQuantity=false` 显式关闭；只有 live 语义、账户 binding `sandbox=true`、`executionMode=rest` 且 depth/spread guard 通过时，`suggestedQuantity` 才从 production sizing 放大到 `1.5x`。 |
-| 当前 submitted sizing | **testnet shadow 条件放大** | Lead base `productionSuggestedQuantity = pretouchBaseOrderQuantity * pretouchBaseShare * clip(rf_probability * 2, 0, 2) * costPenalty`，通过 risk-on guard 后为 `1.5x`；T3 overlay 为独立 `entry-t3-overlay` intent，默认 `pretouchBaseOrderQuantity * 0.40 * 2.0`。 |
+| `2.0x T3 overlay` | **已接入 testnet shadow 真实 entry proposal** | T3 overlay 使用 `pretouchShadowOverlayBaseShare=0.40`、`pretouchShadowOverlayScale=2.0`，默认 base quantity `0.100` 时 initial overlay order 为 `0.080` ETH；仅当 live 语义、`sandbox=true`、`executionMode=rest`、speed/depth/spread guard 通过时生成 `entry-t3-overlay` proposal。scale/share 和最终 submitted quantity 均有硬上限。 |
+| `1.5x lead scale` | **已接入 testnet shadow 真实提交数量** | `testnet_shadow_collect` 默认启用 risk-on lead sizing，可用 `pretouchShadowSubmitRiskOnQuantity=false` 显式关闭；只有 live 语义、账户 binding `sandbox=true`、`executionMode=rest` 且 depth/spread guard 通过时，`suggestedQuantity` 才从 production sizing 放大到 `1.5x`。lead scale 和最终 submitted quantity 均有硬上限。 |
+| 当前 submitted sizing | **testnet shadow 条件放大** | Lead base `productionSuggestedQuantity = pretouchBaseOrderQuantity * pretouchBaseShare * clip(rf_probability * 2, 0, 2) * costPenalty`，通过 risk-on guard 后为 `1.5x`；T3 overlay 为独立 `entry-t3-overlay` intent，默认 `pretouchBaseOrderQuantity * 0.40 * 2.0`，并受 `pretouchShadowMaxSubmittedQuantity=0.20` 限制。 |
 | Testnet shadow | **允许进入 risk-on 采样阶段** | 用真实 1.5x lead quantity 和 T3 overlay 2.0x entry proposal 采集 testnet decision/order/fill/depth telemetry；readiness 状态仍不是 mainnet live candidate。 |
 
 #### Shadow 策略细节
@@ -256,8 +256,9 @@ research 增强一次性接进 Go live。提交版本的边界如下：
 | Model features | `roundtrip_cost_atr`、`prev1_range_atr`、`prev1_close_pos_side`、`level_to_signal_open_atr`、`touch_extension_atr`、`speed_300s_atr`、`eff_300s`、`pre_touch_seconds` |
 | Entry action | Lead: `timing=advance-plan` 且 RF/cost sizing 有效时才生成 proposal；`skip`、未知 regime、模型缺失均 wait。T3 overlay: original_t2 未触发、T3 swing 触达且 overlay guard 通过时生成 `entry-t3-overlay` proposal。 |
 | Execution profile | 只允许 `sandbox=true`、`executionMode=rest` 的 Binance Futures testnet；若要观测真实 fill drift，需要显式 `auto-dispatch` 的 testnet shadow session |
-| Submitted size | Lead: risk-on 未显式关闭且 shadow pre-submit guard 通过时提交 `1.5x` lead quantity，否则回落到 production sizing。T3 overlay: 未显式关闭且 overlay pre-submit guard 通过时提交 `pretouchBaseOrderQuantity * pretouchShadowOverlayBaseShare * pretouchShadowOverlayScale`。 |
-| Shadow metadata | Metadata 记录 production quantity、submitted before/after shadow、`1.5x` lead quantity、T3 overlay base/share/scale/submitted quantity、depth/spread guard 和 block reason |
+| Submitted size | Lead: risk-on 未显式关闭且 shadow pre-submit guard 通过时提交 `1.5x` lead quantity，否则回落到 production sizing。T3 overlay: 未显式关闭且 overlay pre-submit guard 通过时提交 `pretouchBaseOrderQuantity * pretouchShadowOverlayBaseShare * pretouchShadowOverlayScale`。两条路径最终 shadow submitted quantity 都受 `pretouchShadowMaxSubmittedQuantity` 限制。 |
+| Shadow hard caps | `pretouchShadowLeadScale <= 1.5`、`pretouchShadowOverlayScale <= 2.0`、`pretouchShadowOverlayBaseShare <= 0.40`、`pretouchShadowMaxSubmittedQuantity <= 0.20`；`testnet_shadow_collect` 下 `pretouchBaseOrderQuantity` 也会被 cap 到 max submitted quantity。 |
+| Shadow metadata | Metadata 记录 production quantity、submitted before/after shadow、`1.5x` lead quantity、T3 overlay base/share/scale/submitted quantity、max submitted quantity、是否 capped、depth/spread guard 和 block reason |
 | Dispatch boundary | 模板不硬编码 `dispatchMode`；调用方/前端显式传入，系统空值兜底仍为 `manual-review` |
 
 当前 live sizing 仍以 intent 为唯一入口。base production sizing 为：
@@ -274,14 +275,17 @@ suggestedQuantity =
 `sandbox=true`、`executionMode=rest`、risk-on 未显式关闭、depth/spread guard
 同时满足时，实际提交的 `suggestedQuantity` 为上述 base quantity 的 `1.5x`。若任一条件不满足，metadata
 会写入 `submittedRiskOnQuantityBlockReason`，并保持 production sizing；`defaultOrderQuantity` 不得覆盖
-intent quantity。
+intent quantity。`pretouchShadowLeadScale` 被硬限制在 `1.5`，shadow path 的最终 submitted quantity 被
+`pretouchShadowMaxSubmittedQuantity` 硬限制，模板默认值为 `0.20` ETH。
 
 T3 overlay 是单独的 testnet shadow event source，不复用 lead 的 RF probability sizing。默认参数为
 `pretouchShadowOverlayBaseShare=0.40`、`pretouchShadowOverlayScale=2.0`、
 `pretouchShadowOverlaySpeedThreshold=0.35`，所以模板默认 `pretouchBaseOrderQuantity=0.100`
 时，overlay 触发后的 intent quantity 为 `0.080` ETH。若 `pretouchShadowSubmitOverlayOrder=false`、
 非 live 语义、非 sandbox、非 REST、depth/spread guard 失败，策略只记录
-`pretouchShadowOverlaySizing.submittedOverlayOrderBlockReason`，不生成 live intent。
+`pretouchShadowOverlaySizing.submittedOverlayOrderBlockReason`，不生成 live intent。T3 overlay 的
+`signalBarTradeLimitKey` 追加 `entry-t3-overlay` 后缀，避免与 lead entry 共用同一 trade-limit identity；
+基础 `signalBarStateKey` 仍保持 `symbol|timeframe|barStart`，用于窗口状态解析。
 
 #### 预期收益与风险预算
 
@@ -342,7 +346,7 @@ Kill gate：
   slippage headroom、spread/book-age/source-divergence、submitted before/after shadow 和 block reason。
 - 仅当 risk-on 未显式关闭、live 语义、账户 binding `sandbox=true`、`executionMode=rest`、
   shadow pre-submit guard 通过时，submitted proposal quantity 才等于 `1.5x` lead quantity；否则等于当前 production sizing。
-- T3 overlay 只在 original_t2 未触发时检测；通过 `pretouchShadowSubmitOverlayOrder=false` 可显式关闭。它不会在同一次 decision 里派发第二张订单，也不修改 lead 的 production semantics。
+- T3 overlay 只在 original_t2 未触发时检测；通过 `pretouchShadowSubmitOverlayOrder=false` 可显式关闭。它不会在同一次 decision 里派发第二张订单，也不修改 lead 的 production semantics；overlay 使用独立 trade-limit key suffix 但保留同一基础 signal bar state key。
 - T3 overlay shadow 当前只接 initial entry proposal；research 中的 T3 reentry schedule 后续腿和 `min_hold_sl_60m` exit override 仍未提升为 Go live 行为，出场继续走现有 pretouch live risk-exit 逻辑。
 - 保持 `sandbox=true` testnet 范围；不改 mainnet、不改全局默认 `dispatchMode`、不改 BTC 策略语义。
 - 若需要 `auto-dispatch` 采集真实 fill drift，必须由 session 创建参数显式指定；模板或 runtime 不得静默升级。
