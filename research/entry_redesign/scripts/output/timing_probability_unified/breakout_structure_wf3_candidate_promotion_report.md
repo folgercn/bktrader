@@ -1,0 +1,394 @@
+# WF3 Breakout Structure Candidate Artifact
+
+Generated: 2026-05-18T07:08:05.739567+00:00
+
+Scope: research-only. This packages `wf3_low_eff_low_atr` as an auditable event-source candidate; it does not modify live defaults.
+
+## Recommendation
+
+`wf3_low_eff_low_atr` is the current stable promotion candidate, but it is not live-ready yet. It should be treated as the next research lead for cross-asset and longer-history validation, not as a default strategy change.
+
+## Candidate Identity
+
+- Canonical lead events: `/Users/wuyaocheng/Downloads/bkTrader/research/tick_flow_event_sources/20260514_pretouch_full_window/feature_filtered_seed_events/robust_quality/pretouch_small_pullback_rf_q50_speed300_ge_q10_touch30m_eff300le1.csv`
+- Expansion base events: `/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_shape_expansion_events_restrictive_0p5bps.csv`
+- Walk-forward gate: `low_eff_low_atr_q20_q40` from `/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_walkforward_train3m_min20_candidate_forward.csv`
+- Overlap key: canonical `(signal_start, side)`; removed events: `1`
+- Numeric replay tolerance for legacy rounded gate strings: `5e-07`
+- Model feature contract for retrain check: `production8` / `roundtrip_cost_atr, prev1_range_atr, prev1_close_pos_side, level_to_signal_open_atr, touch_extension_atr, speed_300s_atr, eff_300s, pre_touch_seconds`
+- Forward split starts at `2025-11-01T00:00:00+00:00`
+
+## Event Counts
+
+| bucket                    | events | start                     | end                       |
+| ------------------------- | ------ | ------------------------- | ------------------------- |
+| canonical                 | 154    | 2025-06-01T14:03:00+00:00 | 2026-04-30T15:31:00+00:00 |
+| wf3_source_before_overlap | 42     | 2025-09-26T16:18:03+00:00 | 2026-04-17T12:25:33+00:00 |
+| wf3_extra_after_overlap   | 41     | 2025-09-26T16:18:03+00:00 | 2026-04-17T12:25:33+00:00 |
+| combined_candidate        | 195    | 2025-06-01T14:03:00+00:00 | 2026-04-30T15:31:00+00:00 |
+
+## Train/Test/Forward Split
+
+| split            | events | canonical_events | wf3_low_eff_low_atr | start                     | end                       |
+| ---------------- | ------ | ---------------- | ------------------- | ------------------------- | ------------------------- |
+| train            | 42     | 42               | 0                   | 2025-06-01T14:03:00+00:00 | 2025-08-28T19:15:00+00:00 |
+| test             | 29     | 26               | 3                   | 2025-08-31T22:42:00+00:00 | 2025-10-27T19:02:00+00:00 |
+| forward          | 124    | 86               | 38                  | 2025-11-02T00:18:00+00:00 | 2026-04-30T15:31:00+00:00 |
+| full_pre_forward | 71     | 68               | 3                   | 2025-06-01T14:03:00+00:00 | 2025-10-27T19:02:00+00:00 |
+
+## Validation Metrics
+
+| check                       | events | extra_events | same_close | adverse10 | adverse10_lift | worst_sm  | neg_sm | trades |
+| --------------------------- | ------ | ------------ | ---------- | --------- | -------------- | --------- | ------ | ------ |
+| lead_combo_replay           | 42     | 41           | 0.402453   | 0.282598  | 0.052882       | -0.010290 | 2      | 103    |
+| retrain_forward_production8 | 124    |              | 0.588469   | 0.408512  | 0.108797       | -0.002244 | 1      | 115    |
+
+## Walk-Forward Gate Conditions
+
+| forward_month | conditions                                                           | forward_events | same_close_calendar_sum | adverse10_calendar_sum | trade_count |
+| ------------- | -------------------------------------------------------------------- | -------------- | ----------------------- | ---------------------- | ----------- |
+| 2025-09       | eff_300s <= 0.775059996308 & signal_atr_percentile <= 0.291666666667 | 1              | 0.010425                | 0.009583               | 1           |
+| 2025-10       | eff_300s <= 0.792247877386 & signal_atr_percentile <= 0.266666666667 | 2              | -0.010761               | -0.012840              | 2           |
+| 2025-11       | eff_300s <= 0.829766179423 & signal_atr_percentile <= 0.25           | 7              | 0.016961                | 0.008626               | 7           |
+| 2025-12       | eff_300s <= 0.811297387944 & signal_atr_percentile <= 0.208333333333 | 9              | 0.000899                | -0.010290              | 9           |
+| 2026-01       | eff_300s <= 0.793343727708 & signal_atr_percentile <= 0.208333333333 | 5              | 0.008021                | 0.003008               | 5           |
+| 2026-02       | eff_300s <= 0.783358229057 & signal_atr_percentile <= 0.25           | 4              | 0.018394                | 0.012771               | 4           |
+| 2026-03       | eff_300s <= 0.771440028148 & signal_atr_percentile <= 0.375          | 10             | 0.049582                | 0.038316               | 10          |
+| 2026-04       | eff_300s <= 0.741917639949 & signal_atr_percentile <= 0.375          | 4              | 0.028506                | 0.023680               | 4           |
+
+## Blockers Before Live Promotion
+
+- Current exact event-source artifacts cover 2025-06 through 2026-04 only.
+- BTC exists in the canonical robust CSV, but this expansion path still depends on ETH-specific current-shape/replay artifacts.
+- Longer bars caches exist, yet the exact pretouch + current-shape + wf3 event-source builder is not rebuilt for older history.
+- The 20260515 hand-written decision report still has provenance drift versus current production-template replay numbers.
+
+## Manifest
+
+```json
+{
+  "candidate": "wf3_low_eff_low_atr",
+  "gate": "low_eff_low_atr_q20_q40",
+  "scope": "research-only",
+  "event_counts": {
+    "canonical": 154,
+    "candidate_source_before_overlap": 42,
+    "overlap_removed": 1,
+    "candidate_extra_after_overlap": 41,
+    "combined_candidate": 195
+  },
+  "source_counts": {
+    "canonical": 154,
+    "wf3_low_eff_low_atr": 41
+  },
+  "split_counts": [
+    {
+      "split": "train",
+      "events": 42,
+      "canonical_events": 42,
+      "wf3_low_eff_low_atr": 0,
+      "start": "2025-06-01T14:03:00+00:00",
+      "end": "2025-08-28T19:15:00+00:00"
+    },
+    {
+      "split": "test",
+      "events": 29,
+      "canonical_events": 26,
+      "wf3_low_eff_low_atr": 3,
+      "start": "2025-08-31T22:42:00+00:00",
+      "end": "2025-10-27T19:02:00+00:00"
+    },
+    {
+      "split": "forward",
+      "events": 124,
+      "canonical_events": 86,
+      "wf3_low_eff_low_atr": 38,
+      "start": "2025-11-02T00:18:00+00:00",
+      "end": "2026-04-30T15:31:00+00:00"
+    },
+    {
+      "split": "full_pre_forward",
+      "events": 71,
+      "canonical_events": 68,
+      "wf3_low_eff_low_atr": 3,
+      "start": "2025-06-01T14:03:00+00:00",
+      "end": "2025-10-27T19:02:00+00:00"
+    }
+  ],
+  "validation_metrics": [
+    {
+      "check": "lead_combo_replay",
+      "events": 42,
+      "extra_events": 41,
+      "same_close": 0.402452974269632,
+      "adverse10": 0.2825984306161073,
+      "adverse10_lift": 0.0528819536231016,
+      "worst_sm": -0.0102895713241244,
+      "neg_sm": 2,
+      "trades": 103
+    },
+    {
+      "check": "retrain_forward_production8",
+      "events": 124,
+      "extra_events": "",
+      "same_close": 0.5884693026054364,
+      "adverse10": 0.4085122511702979,
+      "adverse10_lift": 0.10879658699987338,
+      "worst_sm": -0.0022438852127743,
+      "neg_sm": 1,
+      "trades": 115
+    }
+  ],
+  "walkforward_gate_rows": [
+    {
+      "forward_month": "2025-09",
+      "conditions": "eff_300s <= 0.775059996308 & signal_atr_percentile <= 0.291666666667",
+      "forward_events": 1,
+      "same_close_calendar_sum": 0.01042473959816,
+      "adverse10_calendar_sum": 0.0095826243402239,
+      "trade_count": 1
+    },
+    {
+      "forward_month": "2025-10",
+      "conditions": "eff_300s <= 0.792247877386 & signal_atr_percentile <= 0.266666666667",
+      "forward_events": 2,
+      "same_close_calendar_sum": -0.0107610086384046,
+      "adverse10_calendar_sum": -0.0128404193419248,
+      "trade_count": 2
+    },
+    {
+      "forward_month": "2025-11",
+      "conditions": "eff_300s <= 0.829766179423 & signal_atr_percentile <= 0.25",
+      "forward_events": 7,
+      "same_close_calendar_sum": 0.0169606194610611,
+      "adverse10_calendar_sum": 0.0086264930552597,
+      "trade_count": 7
+    },
+    {
+      "forward_month": "2025-12",
+      "conditions": "eff_300s <= 0.811297387944 & signal_atr_percentile <= 0.208333333333",
+      "forward_events": 9,
+      "same_close_calendar_sum": 0.000898598713767,
+      "adverse10_calendar_sum": -0.0102895713241244,
+      "trade_count": 9
+    },
+    {
+      "forward_month": "2026-01",
+      "conditions": "eff_300s <= 0.793343727708 & signal_atr_percentile <= 0.208333333333",
+      "forward_events": 5,
+      "same_close_calendar_sum": 0.0080206625306934,
+      "adverse10_calendar_sum": 0.003007629168249,
+      "trade_count": 5
+    },
+    {
+      "forward_month": "2026-02",
+      "conditions": "eff_300s <= 0.783358229057 & signal_atr_percentile <= 0.25",
+      "forward_events": 4,
+      "same_close_calendar_sum": 0.018393841981353,
+      "adverse10_calendar_sum": 0.0127713291416648,
+      "trade_count": 4
+    },
+    {
+      "forward_month": "2026-03",
+      "conditions": "eff_300s <= 0.771440028148 & signal_atr_percentile <= 0.375",
+      "forward_events": 10,
+      "same_close_calendar_sum": 0.0495818891685104,
+      "adverse10_calendar_sum": 0.0383160231602436,
+      "trade_count": 10
+    },
+    {
+      "forward_month": "2026-04",
+      "conditions": "eff_300s <= 0.741917639949 & signal_atr_percentile <= 0.375",
+      "forward_events": 4,
+      "same_close_calendar_sum": 0.0285059624719013,
+      "adverse10_calendar_sum": 0.0236800108430081,
+      "trade_count": 4
+    }
+  ],
+  "input_files": {
+    "canonical_events_csv": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/tick_flow_event_sources/20260514_pretouch_full_window/feature_filtered_seed_events/robust_quality/pretouch_small_pullback_rf_q50_speed300_ge_q10_touch30m_eff300le1.csv",
+      "exists": true,
+      "sha256": "ff6f3060363d0283c0dea755db78832308eee3544cc85d162e9a22297765a0ab",
+      "bytes": 425630
+    },
+    "base_events_csv": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_shape_expansion_events_restrictive_0p5bps.csv",
+      "exists": true,
+      "sha256": "baac10a8416b06159525fccc91feba5348d0c34d6ea33c2a493319d2cb9a2776",
+      "bytes": 625652
+    },
+    "walkforward_candidate_csv": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_walkforward_train3m_min20_candidate_forward.csv",
+      "exists": true,
+      "sha256": "12f5298b24fa5183ceb6b4ed065410b384776aec550a3c338add1cd685886d8f",
+      "bytes": 12118
+    },
+    "combo_summary_csv": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_expansion_combo_summary.csv",
+      "exists": true,
+      "sha256": "986abbd0ecadc779f1bf00f427b4619386adf9812715c06c844c57cec13cd745",
+      "bytes": 7722
+    },
+    "retrain_summary_csv": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_model_retrain_summary.csv",
+      "exists": true,
+      "sha256": "0733d6f39dfd283edf504620f87c44c47493f37f17d3c460d6a981c1370712c3",
+      "bytes": 3019
+    },
+    "combo_report": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_expansion_combo_report.md",
+      "exists": true,
+      "sha256": "156388182754aa6aa439e225bd9ab20c655d85b6d2ea6df2c9a4d05678b9e2f6",
+      "bytes": 9812
+    },
+    "retrain_report": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_model_retrain_report.md",
+      "exists": true,
+      "sha256": "2dd4d666af6206fa0241d937b71297a8f8001142a43c8692eb9f1b216290106e",
+      "bytes": 4940
+    }
+  },
+  "output_files": {
+    "candidate_events_csv": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_wf3_candidate_events.csv",
+      "exists": true,
+      "sha256": "bb3b1ebe4b1953f425fe346b32c4a65484f42c0a2b734a9c7dd20f4675f27d1b",
+      "bytes": 211506
+    },
+    "expansion_events_csv": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_wf3_candidate_expansion_events.csv",
+      "exists": true,
+      "sha256": "fd9fd845048592f525b962875867adfd32c231eb492b3885e279cb48b7b4e359",
+      "bytes": 36290
+    },
+    "report_md": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_wf3_candidate_promotion_report.md"
+    },
+    "manifest_json": {
+      "path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_wf3_candidate_manifest.json",
+      "exists": true,
+      "sha256": "8a7ad849ae6881e3431411c2f612bd04e3a3ee7846732e1363cbb49899be677e",
+      "bytes": 12538
+    }
+  },
+  "numeric_replay_tolerance": 5e-07,
+  "forward_start": "2025-11-01T00:00:00+00:00",
+  "model_feature_contract": {
+    "name": "production8",
+    "features": [
+      "roundtrip_cost_atr",
+      "prev1_range_atr",
+      "prev1_close_pos_side",
+      "level_to_signal_open_atr",
+      "touch_extension_atr",
+      "speed_300s_atr",
+      "eff_300s",
+      "pre_touch_seconds"
+    ]
+  },
+  "diagnostics": {
+    "combo_row": {
+      "variant": "wf3_low_eff_low_atr",
+      "description": "3m train-calibrated low eff + low ATR candidate",
+      "candidate_source": "wf_candidate",
+      "candidate_source_events": 42,
+      "overlap_removed_events": 1,
+      "extra_events": 41,
+      "extra_same_close_calendar_sum": 0.1002807521722309,
+      "extra_same_close_worst_sm": -0.0107610086384046,
+      "extra_same_close_neg_sm": 2,
+      "extra_adverse10_calendar_sum": 0.0528819536231016,
+      "extra_adverse10_worst_sm": -0.0128404193419248,
+      "extra_adverse10_neg_sm": 3,
+      "extra_adverse10_calendar_sum_exact": 0.0528819536231016,
+      "extra_adverse10_worst_sm_exact": -0.0128404193419248,
+      "extra_adverse10_neg_sm_exact": 3,
+      "lead_same_close_calendar_sum_csv_artifact": 0.3053329148127901,
+      "lead_same_close_calendar_sum": 0.3021722220974011,
+      "lead_adverse10_calendar_sum_csv_artifact": 0.2328809117887866,
+      "lead_adverse10_calendar_sum": 0.2297164769930056,
+      "lead_adverse10_calendar_sum_exact": 0.2297164769930056,
+      "combo_same_close_calendar_sum": 0.402452974269632,
+      "combo_same_close_delta_vs_lead": 0.1002807521722309,
+      "combo_same_close_worst_sm": -0.0033507111334578,
+      "combo_same_close_neg_sm": 1,
+      "combo_same_close_trade_count": 103,
+      "combo_adverse10_calendar_sum_additive": 0.2825984306161073,
+      "combo_adverse10_delta_vs_lead": 0.0528819536231016,
+      "combo_adverse10_calendar_sum_exact": 0.2825984306161073,
+      "combo_adverse10_delta_vs_lead_exact": 0.0528819536231016,
+      "combo_adverse10_worst_sm_exact": -0.0102895713241244,
+      "combo_adverse10_neg_sm_exact": 2,
+      "combo_adverse10_trade_count_exact": 103
+    },
+    "retrain_row": {
+      "pool": "combo_wf3_low_eff_low_atr",
+      "description": "canonical plus 3m train-calibrated low eff + low ATR expansion",
+      "feature_set": "production8",
+      "total_events": 195,
+      "overlap_removed_events": 1,
+      "train_events": 42,
+      "test_events": 29,
+      "forward_events": 124,
+      "train_source_counts": "{\"canonical\": 42}",
+      "forward_source_counts": "{\"canonical\": 86, \"wf3_low_eff_low_atr\": 38}",
+      "train_delay_errors": 0,
+      "test_delay_errors": 0,
+      "forward_delay_errors": 0,
+      "timing_depth": 4,
+      "timing_dt3_loocv": 0.1546092499723493,
+      "timing_dt4_loocv": 0.1580944502906617,
+      "timing_test_calendar_sum": 0.0707027602603265,
+      "rf_train_auc": 1.0,
+      "rf_test_auc": 0.7583333333333333,
+      "rf_no_signal_warning": false,
+      "speed_threshold": 0.228670127565244,
+      "full_same_close_calendar_sum": 0.3832612227905947,
+      "full_adverse10_calendar_sum": 0.2839736145476611,
+      "full_adverse10_worst_sm": 0.000228076535029,
+      "full_adverse10_neg_sm": 0,
+      "full_trade_count": 63,
+      "forward_same_close_calendar_sum": 0.5884693026054364,
+      "forward_adverse10_calendar_sum": 0.4085122511702979,
+      "forward_adverse10_worst_sm": -0.0022438852127743,
+      "forward_adverse10_neg_sm": 1,
+      "forward_trade_count": 115
+    },
+    "canonical_retrain_row": {
+      "pool": "canonical_only",
+      "description": "canonical ETH pretouch lead event source only",
+      "feature_set": "production8",
+      "total_events": 154,
+      "overlap_removed_events": 0,
+      "train_events": 40,
+      "test_events": 28,
+      "forward_events": 86,
+      "train_source_counts": "{\"canonical\": 40}",
+      "forward_source_counts": "{\"canonical\": 86}",
+      "train_delay_errors": 0,
+      "test_delay_errors": 0,
+      "forward_delay_errors": 0,
+      "timing_depth": 4,
+      "timing_dt3_loocv": 0.1410325013299931,
+      "timing_dt4_loocv": 0.1446746952028969,
+      "timing_test_calendar_sum": 0.0817922603673748,
+      "rf_train_auc": 1.0,
+      "rf_test_auc": 0.86,
+      "rf_no_signal_warning": false,
+      "speed_threshold": 0.2281060193942284,
+      "full_same_close_calendar_sum": 0.3699898789468923,
+      "full_adverse10_calendar_sum": 0.2724856423254756,
+      "full_adverse10_worst_sm": 0.009000802302467,
+      "full_adverse10_neg_sm": 0,
+      "full_trade_count": 62,
+      "forward_same_close_calendar_sum": 0.4186982778154567,
+      "forward_adverse10_calendar_sum": 0.2997156641704245,
+      "forward_adverse10_worst_sm": 0.0026883756552808,
+      "forward_adverse10_neg_sm": 0,
+      "forward_trade_count": 78
+    }
+  },
+  "runtime_seconds": 0.13032102584838867
+}
+```

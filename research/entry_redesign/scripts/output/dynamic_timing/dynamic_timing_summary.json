@@ -1,0 +1,103 @@
+{
+  "metrics": {
+    "dynamic": {
+      "calendar_sum_pct": 2.399740325088176,
+      "trade_count": 46,
+      "win_rate": 0.8043478260869565,
+      "avg_win_pct": 0.43997542503740866,
+      "avg_loss_pct": -0.785817174879664,
+      "payoff_ratio": 0.5598954045574077,
+      "skip_rate": 0.0,
+      "pullback_fill_rate": 0.6666666666666666,
+      "per_trade_quality_bps": 20.0146438097112
+    },
+    "baseline_a": {
+      "calendar_sum_pct": 2.7365790202518836,
+      "trade_count": 47,
+      "win_rate": 0.8297872340425532,
+      "avg_win_pct": 0.4431579393554507,
+      "avg_loss_pct": -0.8481988963576482,
+      "payoff_ratio": 0.522469365685888,
+      "skip_rate": 0.0,
+      "pullback_fill_rate": 0.0,
+      "per_trade_quality_bps": 22.335252051066803
+    },
+    "baseline_b": {
+      "calendar_sum_pct": 2.5600745473413555,
+      "trade_count": 47,
+      "win_rate": 0.7446808510638298,
+      "avg_win_pct": 0.5143785688604919,
+      "avg_loss_pct": -0.6811660665777163,
+      "payoff_ratio": 0.7551441478064365,
+      "skip_rate": 0.0,
+      "pullback_fill_rate": 0.0,
+      "per_trade_quality_bps": 20.91331300252049
+    },
+    "baseline_c": {
+      "calendar_sum_pct": 2.8775217055081885,
+      "trade_count": 47,
+      "win_rate": 0.8297872340425532,
+      "avg_win_pct": 0.45379607865669397,
+      "avg_loss_pct": -0.8328967143353285,
+      "payoff_ratio": 0.5448407597799615,
+      "skip_rate": 0.0,
+      "pullback_fill_rate": 0.0,
+      "per_trade_quality_bps": 23.47845394240092
+    }
+  },
+  "overfitting_flag": "False",
+  "train_calendar_sum": 1.0832058000447722,
+  "test_calendar_sum": 2.399740325088176,
+  "symbol_metrics": {
+    "BTCUSDT": {
+      "calendar_sum_pct": 1.3681973941254544,
+      "win_rate": 0.8695652173913043,
+      "trade_count": 23,
+      "negative_flag": "False"
+    },
+    "ETHUSDT": {
+      "calendar_sum_pct": 1.0315429309627215,
+      "win_rate": 0.7391304347826086,
+      "trade_count": 23,
+      "negative_flag": "False"
+    }
+  },
+  "best_params": {
+    "max_steps": 2,
+    "strong_momentum_threshold": 0.1,
+    "strong_flow_threshold": 0.55,
+    "moderate_momentum_threshold": 0.05,
+    "extension_threshold": 0.3,
+    "weak_flow_threshold": 0.45,
+    "fading_threshold": 0.01,
+    "min_steps_for_skip": 2,
+    "pullback_target_atr": 0.02,
+    "decision_window_seconds": 60,
+    "abandon_extension_atr": 0.3
+  },
+  "bootstrap_ci": {
+    "btc_ci": {
+      "p5": 0.48684636658091557,
+      "p95": 2.283937637034441,
+      "mean": 1.404656225136009
+    },
+    "eth_ci": {
+      "p5": -0.6683390586331872,
+      "p95": 2.437428357376112,
+      "mean": 0.977477143089749
+    },
+    "combined_ci": {
+      "p5": 0.7241092989019242,
+      "p95": 4.151449617976496,
+      "mean": 2.3808215759395837
+    },
+    "small_sample_warning": true
+  },
+  "regime_stability": {
+    "regime_distribution_shift": false,
+    "shifted_regimes": []
+  },
+  "high_sensitivity_params": [],
+  "data_gap_events": [],
+  "pullback_benefit_marginal": true
+}

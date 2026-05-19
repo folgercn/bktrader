@@ -1,0 +1,929 @@
+{
+  "note": "Research-only pass-bucket lifecycle sweep. All candidates use strict next-second reentry fills, skip failed original_t2 locks, and T3 min-hold-before-SL=60m.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "calendar_grid": {
+    "months": [
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04"
+    ],
+    "symbols": [
+      "ETHUSDT",
+      "BTCUSDT"
+    ],
+    "symbol_months": 22
+  },
+  "elapsed_seconds": 1334.95,
+  "candidate_reads": {
+    "t2_disabled_t3_60m": "strict lifecycle floor: disable original_t2 and keep only T3 60m behavior"
+  },
+  "candidate_specs": [
+    {
+      "label": "t2_disabled_t3_60m",
+      "filters": {
+        "allowed_sides": []
+      },
+      "read": "strict lifecycle floor: disable original_t2 and keep only T3 60m behavior"
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "calendar_silo_sum_pct": -0.19,
+      "calendar_avg_symbol_month_pct": -0.008636,
+      "worst_calendar_silo_pct": -0.46,
+      "negative_calendar_silos": 12,
+      "traded_symbol_months": 22,
+      "flat_symbol_months": 0,
+      "total_trades": 104,
+      "t2_trades": 0,
+      "t3_trades": 104,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 3.98847,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 3639,
+      "t2_size_filter_reasons": {
+        "side": 3639
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 109260,
+        "no_reclaim_cross": 2289710,
+        "missing_prev_close": 386
+      },
+      "by_month": {
+        "2025-06": -0.38,
+        "2025-07": 0.25,
+        "2025-08": -0.17,
+        "2025-09": 0.5,
+        "2025-10": 0.39,
+        "2025-11": -0.03,
+        "2025-12": -0.65,
+        "2026-01": -0.1,
+        "2026-02": 0.37,
+        "2026-03": -0.18,
+        "2026-04": -0.19
+      },
+      "by_symbol": {
+        "ETHUSDT": 1.21,
+        "BTCUSDT": -1.4
+      }
+    }
+  ],
+  "deltas_vs_first_candidate": [],
+  "silos": [
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-06",
+      "return_pct": -0.18,
+      "final_balance": 99824.26,
+      "total_trades": 4,
+      "t2_trades": 0,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.01583,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 164,
+      "t2_size_filter_reasons": {
+        "side": 164
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 3646,
+          "no_reclaim_cross": 49838,
+          "missing_prev_close": 9
+        },
+        "short": {
+          "same_second_zero_initial": 880,
+          "no_reclaim_cross": 42522,
+          "missing_prev_close": 7
+        }
+      },
+      "elapsed_seconds": 75.67
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-07",
+      "return_pct": 0.34,
+      "final_balance": 100338.52,
+      "total_trades": 8,
+      "t2_trades": 0,
+      "t3_trades": 8,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.65894,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 170,
+      "t2_size_filter_reasons": {
+        "side": 170
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 3320,
+          "no_reclaim_cross": 83671,
+          "missing_prev_close": 14
+        },
+        "short": {
+          "same_second_zero_initial": 2237,
+          "no_reclaim_cross": 33272,
+          "missing_prev_close": 7
+        }
+      },
+      "elapsed_seconds": 60.9
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-08",
+      "return_pct": 0.07,
+      "final_balance": 100071.91,
+      "total_trades": 2,
+      "t2_trades": 0,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.15188,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 165,
+      "t2_size_filter_reasons": {
+        "side": 165
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 1508,
+          "no_reclaim_cross": 35414,
+          "missing_prev_close": 7
+        },
+        "short": {
+          "same_second_zero_initial": 1326,
+          "no_reclaim_cross": 72268,
+          "missing_prev_close": 11
+        }
+      },
+      "elapsed_seconds": 60.57
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-09",
+      "return_pct": 0.77,
+      "final_balance": 100771.65,
+      "total_trades": 8,
+      "t2_trades": 0,
+      "t3_trades": 8,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 1.09299,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 185,
+      "t2_size_filter_reasons": {
+        "side": 185
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 1007,
+          "no_reclaim_cross": 58356,
+          "missing_prev_close": 10
+        },
+        "short": {
+          "same_second_zero_initial": 1565,
+          "no_reclaim_cross": 48673,
+          "missing_prev_close": 9
+        }
+      },
+      "elapsed_seconds": 58.8
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-10",
+      "return_pct": 0.29,
+      "final_balance": 100292.84,
+      "total_trades": 3,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.41294,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 173,
+      "t2_size_filter_reasons": {
+        "side": 173
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 1379,
+          "no_reclaim_cross": 45615,
+          "missing_prev_close": 9
+        },
+        "short": {
+          "same_second_zero_initial": 977,
+          "no_reclaim_cross": 29999,
+          "missing_prev_close": 5
+        }
+      },
+      "elapsed_seconds": 60.7
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-11",
+      "return_pct": -0.13,
+      "final_balance": 99873.3,
+      "total_trades": 2,
+      "t2_trades": 0,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.04673,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 189,
+      "t2_size_filter_reasons": {
+        "side": 189
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 1077,
+          "no_reclaim_cross": 19010,
+          "missing_prev_close": 3
+        },
+        "short": {
+          "same_second_zero_initial": 2358,
+          "no_reclaim_cross": 56044,
+          "missing_prev_close": 8
+        }
+      },
+      "elapsed_seconds": 57.29
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-12",
+      "return_pct": -0.29,
+      "final_balance": 99714.28,
+      "total_trades": 5,
+      "t2_trades": 0,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.08595,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 171,
+      "t2_size_filter_reasons": {
+        "side": 171
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 2622,
+          "no_reclaim_cross": 59438,
+          "missing_prev_close": 11
+        },
+        "short": {
+          "same_second_zero_initial": 2852,
+          "no_reclaim_cross": 44182,
+          "missing_prev_close": 5
+        }
+      },
+      "elapsed_seconds": 59.29
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.11,
+      "final_balance": 99892.58,
+      "total_trades": 3,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.01256,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 171,
+      "t2_size_filter_reasons": {
+        "side": 171
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 1734,
+          "no_reclaim_cross": 81532,
+          "missing_prev_close": 13
+        },
+        "short": {
+          "same_second_zero_initial": 1897,
+          "no_reclaim_cross": 43781,
+          "missing_prev_close": 6
+        }
+      },
+      "elapsed_seconds": 59.1
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 0.28,
+      "final_balance": 100280.01,
+      "total_trades": 7,
+      "t2_trades": 0,
+      "t3_trades": 7,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.56072,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 152,
+      "t2_size_filter_reasons": {
+        "side": 152
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 2858,
+          "no_reclaim_cross": 88519,
+          "missing_prev_close": 17
+        },
+        "short": {
+          "same_second_zero_initial": 2872,
+          "no_reclaim_cross": 32716,
+          "missing_prev_close": 4
+        }
+      },
+      "elapsed_seconds": 53.44
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-03",
+      "return_pct": 0.28,
+      "final_balance": 100283.72,
+      "total_trades": 9,
+      "t2_trades": 0,
+      "t3_trades": 9,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.64394,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 149,
+      "t2_size_filter_reasons": {
+        "side": 149
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 3729,
+          "no_reclaim_cross": 90347,
+          "missing_prev_close": 17
+        },
+        "short": {
+          "same_second_zero_initial": 4029,
+          "no_reclaim_cross": 77944,
+          "missing_prev_close": 13
+        }
+      },
+      "elapsed_seconds": 59.49
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": -0.11,
+      "final_balance": 99885.23,
+      "total_trades": 2,
+      "t2_trades": 0,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.03479,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 156,
+      "t2_size_filter_reasons": {
+        "side": 156
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 3963,
+          "no_reclaim_cross": 49242,
+          "missing_prev_close": 8
+        },
+        "short": {
+          "same_second_zero_initial": 1901,
+          "no_reclaim_cross": 58410,
+          "missing_prev_close": 9
+        }
+      },
+      "elapsed_seconds": 57.2
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-06",
+      "return_pct": -0.2,
+      "final_balance": 99797.33,
+      "total_trades": 4,
+      "t2_trades": 0,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.0427,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 143,
+      "t2_size_filter_reasons": {
+        "side": 143
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 4455,
+          "no_reclaim_cross": 69075,
+          "missing_prev_close": 10
+        },
+        "short": {
+          "same_second_zero_initial": 2513,
+          "no_reclaim_cross": 38896,
+          "missing_prev_close": 6
+        }
+      },
+      "elapsed_seconds": 75.83
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-07",
+      "return_pct": -0.09,
+      "final_balance": 99905.12,
+      "total_trades": 3,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.02513,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 163,
+      "t2_size_filter_reasons": {
+        "side": 163
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 1999,
+          "no_reclaim_cross": 44319,
+          "missing_prev_close": 8
+        },
+        "short": {
+          "same_second_zero_initial": 2255,
+          "no_reclaim_cross": 21935,
+          "missing_prev_close": 4
+        }
+      },
+      "elapsed_seconds": 60.73
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-08",
+      "return_pct": -0.24,
+      "final_balance": 99758.71,
+      "total_trades": 5,
+      "t2_trades": 0,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.04147,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 163,
+      "t2_size_filter_reasons": {
+        "side": 163
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 3855,
+          "no_reclaim_cross": 54047,
+          "missing_prev_close": 11
+        },
+        "short": {
+          "same_second_zero_initial": 2651,
+          "no_reclaim_cross": 47441,
+          "missing_prev_close": 7
+        }
+      },
+      "elapsed_seconds": 61.17
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-09",
+      "return_pct": -0.27,
+      "final_balance": 99733.5,
+      "total_trades": 5,
+      "t2_trades": 0,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.06676,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 159,
+      "t2_size_filter_reasons": {
+        "side": 159
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 3800,
+          "no_reclaim_cross": 65196,
+          "missing_prev_close": 12
+        },
+        "short": {
+          "same_second_zero_initial": 1894,
+          "no_reclaim_cross": 33735,
+          "missing_prev_close": 4
+        }
+      },
+      "elapsed_seconds": 59.53
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-10",
+      "return_pct": 0.1,
+      "final_balance": 100101.98,
+      "total_trades": 4,
+      "t2_trades": 0,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.26195,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 161,
+      "t2_size_filter_reasons": {
+        "side": 161
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 4665,
+          "no_reclaim_cross": 68011,
+          "missing_prev_close": 11
+        },
+        "short": {
+          "same_second_zero_initial": 2883,
+          "no_reclaim_cross": 49779,
+          "missing_prev_close": 10
+        }
+      },
+      "elapsed_seconds": 60.73
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-11",
+      "return_pct": 0.1,
+      "final_balance": 100098.09,
+      "total_trades": 3,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.21802,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 182,
+      "t2_size_filter_reasons": {
+        "side": 182
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 590,
+          "no_reclaim_cross": 25182,
+          "missing_prev_close": 4
+        },
+        "short": {
+          "same_second_zero_initial": 4121,
+          "no_reclaim_cross": 75215,
+          "missing_prev_close": 13
+        }
+      },
+      "elapsed_seconds": 58.71
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-12",
+      "return_pct": -0.36,
+      "final_balance": 99640.94,
+      "total_trades": 5,
+      "t2_trades": 0,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.1593,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 161,
+      "t2_size_filter_reasons": {
+        "side": 161
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 4117,
+          "no_reclaim_cross": 77421,
+          "missing_prev_close": 13
+        },
+        "short": {
+          "same_second_zero_initial": 2099,
+          "no_reclaim_cross": 29306,
+          "missing_prev_close": 5
+        }
+      },
+      "elapsed_seconds": 60.67
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2026-01",
+      "return_pct": 0.01,
+      "final_balance": 100007.13,
+      "total_trades": 1,
+      "t2_trades": 0,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.04713,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 166,
+      "t2_size_filter_reasons": {
+        "side": 166
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 2490,
+          "no_reclaim_cross": 47372,
+          "missing_prev_close": 7
+        },
+        "short": {
+          "same_second_zero_initial": 3771,
+          "no_reclaim_cross": 65055,
+          "missing_prev_close": 10
+        }
+      },
+      "elapsed_seconds": 60.79
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2026-02",
+      "return_pct": 0.09,
+      "final_balance": 100094.11,
+      "total_trades": 3,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.2142,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 156,
+      "t2_size_filter_reasons": {
+        "side": 156
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 1480,
+          "no_reclaim_cross": 38725,
+          "missing_prev_close": 7
+        },
+        "short": {
+          "same_second_zero_initial": 1406,
+          "no_reclaim_cross": 22541,
+          "missing_prev_close": 3
+        }
+      },
+      "elapsed_seconds": 54.58
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2026-03",
+      "return_pct": -0.46,
+      "final_balance": 99539.67,
+      "total_trades": 14,
+      "t2_trades": 0,
+      "t3_trades": 14,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0984,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 174,
+      "t2_size_filter_reasons": {
+        "side": 174
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 3353,
+          "no_reclaim_cross": 68077,
+          "missing_prev_close": 14
+        },
+        "short": {
+          "same_second_zero_initial": 3009,
+          "no_reclaim_cross": 68043,
+          "missing_prev_close": 12
+        }
+      },
+      "elapsed_seconds": 60.93
+    },
+    {
+      "candidate": "t2_disabled_t3_60m",
+      "shape_sizing_filters": {
+        "allowed_sides": []
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2026-04",
+      "return_pct": -0.08,
+      "final_balance": 99923.26,
+      "total_trades": 4,
+      "t2_trades": 0,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0832,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 166,
+      "t2_size_filter_reasons": {
+        "side": 166
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 1414,
+          "no_reclaim_cross": 52224,
+          "missing_prev_close": 9
+        },
+        "short": {
+          "same_second_zero_initial": 703,
+          "no_reclaim_cross": 27322,
+          "missing_prev_close": 4
+        }
+      },
+      "elapsed_seconds": 58.66
+    }
+  ],
+  "reference_bucket_summary": []
+}

@@ -1,0 +1,189 @@
+{
+  "note": "Research-only additive accounting bridge. Lead legs use weighted_pnl fractional returns; T3 lifecycle percent returns are converted to fractional returns before combining. This does not model portfolio exposure collisions or live execution semantics.",
+  "lead_adverse_trades": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_combo_lead_adverse10_trades.csv",
+  "lead_same_trades": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_combo_lead_same_close_trades.csv",
+  "t3_summary": "research/entry_redesign/scripts/output/timing_probability_unified/t3_filtered_external_all_speed_ge035_eth_next_adverse_size1p5_extended/t3_filtered_external_event_lifecycle_summary.json",
+  "t3_entry_mode": "next_second_adverse",
+  "t3_size_scale": 1.5,
+  "t3_reentry_size_schedule": [
+    0.30000000000000004,
+    0.15000000000000002
+  ],
+  "rows": [
+    {
+      "variant": "lead_same_close",
+      "calendar_sum": 0.302172222,
+      "calendar_sum_pct": 30.217222,
+      "worst_month": 0.0,
+      "worst_month_pct": 0.0,
+      "negative_months": 0,
+      "trade_count": 62,
+      "by_month": {
+        "2025-06": 0.059163889,
+        "2025-07": 0.061803154,
+        "2025-08": 0.091670541,
+        "2025-09": 0.065951448,
+        "2025-10": 0.023583189,
+        "2025-11": 0.0,
+        "2025-12": 0.0,
+        "2026-01": 0.0,
+        "2026-02": 0.0,
+        "2026-03": 0.0,
+        "2026-04": 0.0
+      },
+      "by_month_pct": {
+        "2025-06": 5.916389,
+        "2025-07": 6.180315,
+        "2025-08": 9.167054,
+        "2025-09": 6.595145,
+        "2025-10": 2.358319,
+        "2025-11": 0.0,
+        "2025-12": 0.0,
+        "2026-01": 0.0,
+        "2026-02": 0.0,
+        "2026-03": 0.0,
+        "2026-04": 0.0
+      }
+    },
+    {
+      "variant": "lead_adverse10",
+      "calendar_sum": 0.229716477,
+      "calendar_sum_pct": 22.971648,
+      "worst_month": 0.0,
+      "worst_month_pct": 0.0,
+      "negative_months": 0,
+      "trade_count": 62,
+      "by_month": {
+        "2025-06": 0.044936496,
+        "2025-07": 0.046404387,
+        "2025-08": 0.073416804,
+        "2025-09": 0.051000583,
+        "2025-10": 0.013958207,
+        "2025-11": 0.0,
+        "2025-12": 0.0,
+        "2026-01": 0.0,
+        "2026-02": 0.0,
+        "2026-03": 0.0,
+        "2026-04": 0.0
+      },
+      "by_month_pct": {
+        "2025-06": 4.49365,
+        "2025-07": 4.640439,
+        "2025-08": 7.34168,
+        "2025-09": 5.100058,
+        "2025-10": 1.395821,
+        "2025-11": 0.0,
+        "2025-12": 0.0,
+        "2026-01": 0.0,
+        "2026-02": 0.0,
+        "2026-03": 0.0,
+        "2026-04": 0.0
+      }
+    },
+    {
+      "variant": "t3_overlay_eth_adverse_size2",
+      "calendar_sum": 0.0853,
+      "calendar_sum_pct": 8.53,
+      "worst_month": -0.0062,
+      "worst_month_pct": -0.62,
+      "negative_months": 3,
+      "trade_count": 163,
+      "by_month": {
+        "2025-06": -0.0033,
+        "2025-07": 0.0076,
+        "2025-08": 0.0074,
+        "2025-09": -0.0062,
+        "2025-10": 0.0061,
+        "2025-11": 0.0034,
+        "2025-12": 0.0116,
+        "2026-01": -0.0035,
+        "2026-02": 0.044,
+        "2026-03": 0.0096,
+        "2026-04": 0.0086
+      },
+      "by_month_pct": {
+        "2025-06": -0.33,
+        "2025-07": 0.76,
+        "2025-08": 0.74,
+        "2025-09": -0.62,
+        "2025-10": 0.61,
+        "2025-11": 0.34,
+        "2025-12": 1.16,
+        "2026-01": -0.35,
+        "2026-02": 4.4,
+        "2026-03": 0.96,
+        "2026-04": 0.86
+      }
+    },
+    {
+      "variant": "lead_same_close_plus_t3_overlay",
+      "calendar_sum": 0.387472222,
+      "calendar_sum_pct": 38.747222,
+      "worst_month": -0.0035,
+      "worst_month_pct": -0.35,
+      "negative_months": 1,
+      "trade_count": 225,
+      "by_month": {
+        "2025-06": 0.055863889,
+        "2025-07": 0.069403154,
+        "2025-08": 0.099070541,
+        "2025-09": 0.059751448,
+        "2025-10": 0.029683189,
+        "2025-11": 0.0034,
+        "2025-12": 0.0116,
+        "2026-01": -0.0035,
+        "2026-02": 0.044,
+        "2026-03": 0.0096,
+        "2026-04": 0.0086
+      },
+      "by_month_pct": {
+        "2025-06": 5.586389,
+        "2025-07": 6.940315,
+        "2025-08": 9.907054,
+        "2025-09": 5.975145,
+        "2025-10": 2.968319,
+        "2025-11": 0.34,
+        "2025-12": 1.16,
+        "2026-01": -0.35,
+        "2026-02": 4.4,
+        "2026-03": 0.96,
+        "2026-04": 0.86
+      }
+    },
+    {
+      "variant": "lead_adverse10_plus_t3_overlay",
+      "calendar_sum": 0.315016477,
+      "calendar_sum_pct": 31.501648,
+      "worst_month": -0.0035,
+      "worst_month_pct": -0.35,
+      "negative_months": 1,
+      "trade_count": 225,
+      "by_month": {
+        "2025-06": 0.041636496,
+        "2025-07": 0.054004387,
+        "2025-08": 0.080816804,
+        "2025-09": 0.044800583,
+        "2025-10": 0.020058207,
+        "2025-11": 0.0034,
+        "2025-12": 0.0116,
+        "2026-01": -0.0035,
+        "2026-02": 0.044,
+        "2026-03": 0.0096,
+        "2026-04": 0.0086
+      },
+      "by_month_pct": {
+        "2025-06": 4.16365,
+        "2025-07": 5.400439,
+        "2025-08": 8.08168,
+        "2025-09": 4.480058,
+        "2025-10": 2.005821,
+        "2025-11": 0.34,
+        "2025-12": 1.16,
+        "2026-01": -0.35,
+        "2026-02": 4.4,
+        "2026-03": 0.96,
+        "2026-04": 0.86
+      }
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "experiment": "V6 Gate D=5 Tick Backtest",
+  "note": "V4 execution params on V6 gate-filtered events, D=5 entry",
+  "execution_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 0.9,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 4.0,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  },
+  "entry_delay_seconds": 5,
+  "sizing": {
+    "schedule": [
+      0.2,
+      0.1
+    ],
+    "sizing_scale": 1.3,
+    "effective": [
+      0.26,
+      0.13
+    ],
+    "max_trades_per_bar": 2
+  },
+  "result": {
+    "calendar_sum_pct": 3.1744,
+    "silos": [
+      {
+        "symbol": "BTCUSDT",
+        "month": "2025-07",
+        "trades": 22,
+        "return_pct": -0.0116,
+        "win_rate_pct": 59.09
+      },
+      {
+        "symbol": "BTCUSDT",
+        "month": "2025-08",
+        "trades": 7,
+        "return_pct": -0.2776,
+        "win_rate_pct": 57.14
+      },
+      {
+        "symbol": "BTCUSDT",
+        "month": "2025-11",
+        "trades": 8,
+        "return_pct": 0.0513,
+        "win_rate_pct": 75.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "month": "2026-01",
+        "trades": 19,
+        "return_pct": 0.1628,
+        "win_rate_pct": 84.21
+      },
+      {
+        "symbol": "BTCUSDT",
+        "month": "2026-02",
+        "trades": 17,
+        "return_pct": 1.0823,
+        "win_rate_pct": 76.47
+      },
+      {
+        "symbol": "ETHUSDT",
+        "month": "2025-06",
+        "trades": 4,
+        "return_pct": -0.0498,
+        "win_rate_pct": 50.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "month": "2025-09",
+        "trades": 6,
+        "return_pct": 0.0354,
+        "win_rate_pct": 66.67
+      },
+      {
+        "symbol": "ETHUSDT",
+        "month": "2025-12",
+        "trades": 29,
+        "return_pct": 1.1424,
+        "win_rate_pct": 79.31
+      },
+      {
+        "symbol": "ETHUSDT",
+        "month": "2026-02",
+        "trades": 16,
+        "return_pct": 0.0204,
+        "win_rate_pct": 56.25
+      },
+      {
+        "symbol": "ETHUSDT",
+        "month": "2026-03",
+        "trades": 12,
+        "return_pct": 1.0188,
+        "win_rate_pct": 83.33
+      }
+    ],
+    "total_trades": 140
+  },
+  "v6_baseline_pct": 33.02,
+  "delta_pct": -29.8456
+}

@@ -1,0 +1,41 @@
+{
+  "note": "Research-only sizing readiness gate.",
+  "live_summary_path": "research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_live_depth_calibration_accumulated_20260519/t3_overlay_live_depth_calibration_summary.json",
+  "conditional_summary_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_conditional_lead_scale_size2p0/t3_overlay_conditional_lead_scale_summary.json",
+  "config": {
+    "target_lead_scale": 1.25,
+    "min_live_entries_for_live_candidate": 30,
+    "min_live_combined_pass_ratio": 1.0,
+    "min_worst_slippage_headroom_bps": 2.0,
+    "max_strict_impact_gate_bps": 10.0,
+    "overlay_pass_slippage_bps": 15.0,
+    "overlay_kill_slippage_bps": 20.0,
+    "lead_adverse_baseline_pct": 22.971648
+  },
+  "result": {
+    "status": "research_continue_collect_live_depth",
+    "target_lead_scale": 1.25,
+    "live_sample_entries": 6,
+    "live_combined_pass_entries": 6,
+    "live_combined_pass_ratio": 1.0,
+    "live_min_scaled_top_depth_coverage": 7468.48421,
+    "live_worst_slippage_headroom_bps": 2.795208,
+    "live_max_adverse_fill_drift_bps": 5.204792,
+    "strict_15bp_calendar_sum_pct": 25.554185,
+    "strict_20bp_calendar_sum_pct": 22.278881,
+    "severe_15bp_calendar_sum_pct": 20.48292,
+    "strict_15bp_passes_baseline": true,
+    "strict_20bp_kill_fails_baseline": true,
+    "severe_15bp_fails_baseline": true,
+    "live_gate_pass": true,
+    "proxy_gate_pass": true,
+    "sample_gate_pass": false,
+    "reasons": [
+      "live telemetry passes current guard for target scale",
+      "live sample size 6 is below promotion threshold 30",
+      "strict 15bp proxy remains above lead adverse baseline",
+      "strict 20bp remains a kill-stress failure",
+      "severe 15bp fails by design, so thin-book scale should be blocked"
+    ]
+  }
+}

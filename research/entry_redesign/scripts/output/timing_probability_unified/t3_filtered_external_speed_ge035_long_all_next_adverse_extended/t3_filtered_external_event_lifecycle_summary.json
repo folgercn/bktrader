@@ -1,0 +1,1016 @@
+{
+  "note": "Research-only strict lifecycle replay for filtered scored T3 event sources. Native original_t2 and native t3_swing locks are disabled; external events are injected as t3_swing so T3 60m exit overrides still apply.",
+  "scored_events_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t3_probability_overlay_extended/t3_probability_overlay_scored_events.csv",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "external_entry_mode": "next_second_adverse",
+  "t3_exit_overrides": {
+    "min_hold_seconds_before_sl": 3600.0
+  },
+  "calendar_grid": {
+    "months": [
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04"
+    ],
+    "symbols": [
+      "ETHUSDT",
+      "BTCUSDT"
+    ],
+    "symbol_months": 22
+  },
+  "candidate_specs": [
+    {
+      "label": "long_speed_abs_ge_0p35",
+      "side": "long",
+      "speed_abs_min": 0.35,
+      "speed_abs_max": null,
+      "extension_abs_min": null,
+      "extension_abs_max": null,
+      "rf_min": null,
+      "rf_max": null,
+      "timing": null,
+      "read": "long T3 events with absolute 300s speed >= 0.35 ATR; direct-entry diagnostic"
+    },
+    {
+      "label": "all_speed_abs_ge_0p35",
+      "side": null,
+      "speed_abs_min": 0.35,
+      "speed_abs_max": null,
+      "extension_abs_min": null,
+      "extension_abs_max": null,
+      "rf_min": null,
+      "rf_max": null,
+      "timing": null,
+      "read": "both sides with absolute 300s speed >= 0.35 ATR; direct-entry diagnostic"
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "filters": {
+        "side": "long",
+        "speed_abs_min": 0.35
+      },
+      "calendar_silo_sum_pct": -0.16,
+      "calendar_avg_symbol_month_pct": -0.007273,
+      "worst_calendar_silo_pct": -1.47,
+      "negative_calendar_silos": 13,
+      "traded_symbol_months": 21,
+      "flat_symbol_months": 1,
+      "total_trades": 219,
+      "t3_trades": 219,
+      "t3_net_pnl_pct": 8.57422,
+      "events_available": 67,
+      "external_locks": 67,
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 699026,
+        "missing_prev_close": 141,
+        "same_second_exit": 1
+      },
+      "by_month": {
+        "2025-06": -0.46,
+        "2025-07": 0.63,
+        "2025-08": 0.35,
+        "2025-09": -0.37,
+        "2025-10": -0.65,
+        "2025-11": 0.01,
+        "2025-12": 0.56,
+        "2026-01": -0.33,
+        "2026-02": 1.77,
+        "2026-03": -1.69,
+        "2026-04": 0.02
+      },
+      "by_symbol": {
+        "ETHUSDT": 2.98,
+        "BTCUSDT": -3.14
+      }
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "filters": {
+        "speed_abs_min": 0.35
+      },
+      "calendar_silo_sum_pct": 2.04,
+      "calendar_avg_symbol_month_pct": 0.092727,
+      "worst_calendar_silo_pct": -1.72,
+      "negative_calendar_silos": 13,
+      "traded_symbol_months": 22,
+      "flat_symbol_months": 0,
+      "total_trades": 294,
+      "t3_trades": 294,
+      "t3_net_pnl_pct": 13.79507,
+      "events_available": 130,
+      "external_locks": 127,
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 990203,
+        "missing_prev_close": 185,
+        "same_second_exit": 1
+      },
+      "by_month": {
+        "2025-06": -0.56,
+        "2025-07": 0.44,
+        "2025-08": 0.29,
+        "2025-09": -0.55,
+        "2025-10": -0.55,
+        "2025-11": -0.04,
+        "2025-12": 1.63,
+        "2026-01": -0.79,
+        "2026-02": 2.68,
+        "2026-03": -1.08,
+        "2026-04": 0.57
+      },
+      "by_symbol": {
+        "ETHUSDT": 5.66,
+        "BTCUSDT": -3.62
+      }
+    }
+  ],
+  "silos": [
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-06",
+      "return_pct": -0.15,
+      "final_balance": 99847.71,
+      "total_trades": 15,
+      "t3_trades": 15,
+      "t3_net_pnl_pct": 0.4467,
+      "events_available": 4,
+      "external_locks": 4,
+      "external_lock_reasons": {
+        "t3_swing": 4
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 46678,
+        "missing_prev_close": 9
+      },
+      "elapsed_seconds": 62.35
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-07",
+      "return_pct": 0.61,
+      "final_balance": 100612.27,
+      "total_trades": 11,
+      "t3_trades": 11,
+      "t3_net_pnl_pct": 1.05269,
+      "events_available": 4,
+      "external_locks": 4,
+      "external_lock_reasons": {
+        "t3_swing": 4
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 40563,
+        "missing_prev_close": 8
+      },
+      "elapsed_seconds": 63.42
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-08",
+      "return_pct": 0.54,
+      "final_balance": 100536.95,
+      "total_trades": 14,
+      "t3_trades": 14,
+      "t3_net_pnl_pct": 1.0987,
+      "events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 47798,
+        "missing_prev_close": 10
+      },
+      "elapsed_seconds": 63.5
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-09",
+      "return_pct": -0.3,
+      "final_balance": 99702.55,
+      "total_trades": 6,
+      "t3_trades": 6,
+      "t3_net_pnl_pct": -0.05779,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 13325,
+        "missing_prev_close": 2
+      },
+      "elapsed_seconds": 61.43
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-10",
+      "return_pct": 0.41,
+      "final_balance": 100407.75,
+      "total_trades": 4,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": 0.56798,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 13959,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 63.41
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-11",
+      "return_pct": 0.23,
+      "final_balance": 100227.91,
+      "total_trades": 18,
+      "t3_trades": 18,
+      "t3_net_pnl_pct": 0.94616,
+      "events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 36428,
+        "missing_prev_close": 8
+      },
+      "elapsed_seconds": 61.56
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-12",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "total_trades": 0,
+      "t3_trades": 0,
+      "t3_net_pnl_pct": 0.0,
+      "events_available": 0,
+      "external_locks": 0,
+      "external_lock_reasons": {},
+      "reentry_fill_rejects": {},
+      "elapsed_seconds": 63.77
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.03,
+      "final_balance": 99967.81,
+      "total_trades": 11,
+      "t3_trades": 11,
+      "t3_net_pnl_pct": 0.38753,
+      "events_available": 5,
+      "external_locks": 5,
+      "external_lock_reasons": {
+        "t3_swing": 5
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 37506,
+        "missing_prev_close": 7
+      },
+      "elapsed_seconds": 63.55
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 1.92,
+      "final_balance": 101920.6,
+      "total_trades": 21,
+      "t3_trades": 21,
+      "t3_net_pnl_pct": 2.77316,
+      "events_available": 6,
+      "external_locks": 6,
+      "external_lock_reasons": {
+        "t3_swing": 6
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 66702,
+        "missing_prev_close": 14
+      },
+      "elapsed_seconds": 57.57
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-03",
+      "return_pct": -0.22,
+      "final_balance": 99779.47,
+      "total_trades": 12,
+      "t3_trades": 12,
+      "t3_net_pnl_pct": 0.25873,
+      "events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 42765,
+        "missing_prev_close": 10
+      },
+      "elapsed_seconds": 63.83
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": -0.03,
+      "final_balance": 99966.1,
+      "total_trades": 4,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": 0.12618,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 16933,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 61.81
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-06",
+      "return_pct": -0.31,
+      "final_balance": 99693.15,
+      "total_trades": 8,
+      "t3_trades": 8,
+      "t3_net_pnl_pct": 0.01261,
+      "events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 32859,
+        "missing_prev_close": 7
+      },
+      "elapsed_seconds": 61.64
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-07",
+      "return_pct": 0.02,
+      "final_balance": 100022.19,
+      "total_trades": 3,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 0.14221,
+      "events_available": 1,
+      "external_locks": 1,
+      "external_lock_reasons": {
+        "t3_swing": 1
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 12678,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 63.58
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-08",
+      "return_pct": -0.19,
+      "final_balance": 99806.05,
+      "total_trades": 8,
+      "t3_trades": 8,
+      "t3_net_pnl_pct": 0.12559,
+      "events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 24199,
+        "missing_prev_close": 4
+      },
+      "elapsed_seconds": 63.75
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-09",
+      "return_pct": -0.07,
+      "final_balance": 99929.42,
+      "total_trades": 1,
+      "t3_trades": 1,
+      "t3_net_pnl_pct": -0.03058,
+      "events_available": 1,
+      "external_locks": 1,
+      "external_lock_reasons": {
+        "t3_swing": 1
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 6939,
+        "missing_prev_close": 1
+      },
+      "elapsed_seconds": 61.39
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-10",
+      "return_pct": -1.06,
+      "final_balance": 98942.61,
+      "total_trades": 23,
+      "t3_trades": 23,
+      "t3_net_pnl_pct": -0.14198,
+      "events_available": 4,
+      "external_locks": 4,
+      "external_lock_reasons": {
+        "t3_swing": 4
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 57775,
+        "missing_prev_close": 13
+      },
+      "elapsed_seconds": 63.84
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-11",
+      "return_pct": -0.22,
+      "final_balance": 99780.64,
+      "total_trades": 3,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": -0.09945,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 16342,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 61.51
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-12",
+      "return_pct": 0.56,
+      "final_balance": 100563.3,
+      "total_trades": 4,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": 0.72394,
+      "events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 23126,
+        "missing_prev_close": 4
+      },
+      "elapsed_seconds": 63.49
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2026-01",
+      "return_pct": -0.3,
+      "final_balance": 99698.27,
+      "total_trades": 10,
+      "t3_trades": 10,
+      "t3_net_pnl_pct": 0.09739,
+      "events_available": 4,
+      "external_locks": 4,
+      "external_lock_reasons": {
+        "t3_swing": 4
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 35181,
+        "missing_prev_close": 7
+      },
+      "elapsed_seconds": 63.58
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2026-02",
+      "return_pct": -0.15,
+      "final_balance": 99854.14,
+      "total_trades": 14,
+      "t3_trades": 14,
+      "t3_net_pnl_pct": 0.4134,
+      "events_available": 5,
+      "external_locks": 5,
+      "external_lock_reasons": {
+        "t3_swing": 5
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 43541,
+        "missing_prev_close": 8
+      },
+      "elapsed_seconds": 57.35
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2026-03",
+      "return_pct": -1.47,
+      "final_balance": 98528.31,
+      "total_trades": 25,
+      "t3_trades": 25,
+      "t3_net_pnl_pct": -0.47896,
+      "events_available": 5,
+      "external_locks": 5,
+      "external_lock_reasons": {
+        "t3_swing": 5
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 64029,
+        "missing_prev_close": 13,
+        "same_second_exit": 1
+      },
+      "elapsed_seconds": 65.59
+    },
+    {
+      "candidate": "long_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2026-04",
+      "return_pct": 0.05,
+      "final_balance": 100049.92,
+      "total_trades": 4,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": 0.21001,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 19700,
+        "missing_prev_close": 4
+      },
+      "elapsed_seconds": 61.76
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-06",
+      "return_pct": -0.22,
+      "final_balance": 99782.71,
+      "total_trades": 16,
+      "t3_trades": 16,
+      "t3_net_pnl_pct": 0.4216,
+      "events_available": 6,
+      "external_locks": 5,
+      "external_lock_reasons": {
+        "t3_swing": 5
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 51832,
+        "missing_prev_close": 9
+      },
+      "elapsed_seconds": 61.61
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-07",
+      "return_pct": 0.5,
+      "final_balance": 100504.43,
+      "total_trades": 15,
+      "t3_trades": 15,
+      "t3_net_pnl_pct": 1.10497,
+      "events_available": 7,
+      "external_locks": 7,
+      "external_lock_reasons": {
+        "t3_swing": 7
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 54847,
+        "missing_prev_close": 11
+      },
+      "elapsed_seconds": 64.09
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-08",
+      "return_pct": 0.49,
+      "final_balance": 100491.95,
+      "total_trades": 19,
+      "t3_trades": 19,
+      "t3_net_pnl_pct": 1.25386,
+      "events_available": 7,
+      "external_locks": 7,
+      "external_lock_reasons": {
+        "t3_swing": 7
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 64518,
+        "missing_prev_close": 12
+      },
+      "elapsed_seconds": 63.94
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-09",
+      "return_pct": -0.42,
+      "final_balance": 99583.06,
+      "total_trades": 13,
+      "t3_trades": 13,
+      "t3_net_pnl_pct": 0.10184,
+      "events_available": 7,
+      "external_locks": 7,
+      "external_lock_reasons": {
+        "t3_swing": 7
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 39079,
+        "missing_prev_close": 6
+      },
+      "elapsed_seconds": 61.72
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-10",
+      "return_pct": 0.41,
+      "final_balance": 100407.75,
+      "total_trades": 4,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": 0.56798,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 13959,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 63.68
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-11",
+      "return_pct": 0.23,
+      "final_balance": 100227.91,
+      "total_trades": 18,
+      "t3_trades": 18,
+      "t3_net_pnl_pct": 0.94616,
+      "events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 36428,
+        "missing_prev_close": 8
+      },
+      "elapsed_seconds": 61.9
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-12",
+      "return_pct": 0.77,
+      "final_balance": 100774.31,
+      "total_trades": 3,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 0.89433,
+      "events_available": 4,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 19758,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 63.59
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.23,
+      "final_balance": 99765.31,
+      "total_trades": 19,
+      "t3_trades": 19,
+      "t3_net_pnl_pct": 0.50395,
+      "events_available": 12,
+      "external_locks": 12,
+      "external_lock_reasons": {
+        "t3_swing": 12
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 66421,
+        "missing_prev_close": 11
+      },
+      "elapsed_seconds": 63.65
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 2.91,
+      "final_balance": 102914.89,
+      "total_trades": 24,
+      "t3_trades": 24,
+      "t3_net_pnl_pct": 3.89719,
+      "events_available": 9,
+      "external_locks": 9,
+      "external_lock_reasons": {
+        "t3_swing": 9
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 81258,
+        "missing_prev_close": 16
+      },
+      "elapsed_seconds": 57.85
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-03",
+      "return_pct": 0.64,
+      "final_balance": 100642.83,
+      "total_trades": 19,
+      "t3_trades": 19,
+      "t3_net_pnl_pct": 1.40691,
+      "events_available": 9,
+      "external_locks": 8,
+      "external_lock_reasons": {
+        "t3_swing": 8
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 70065,
+        "missing_prev_close": 13
+      },
+      "elapsed_seconds": 63.89
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": 0.58,
+      "final_balance": 100576.26,
+      "total_trades": 13,
+      "t3_trades": 13,
+      "t3_net_pnl_pct": 1.09771,
+      "events_available": 8,
+      "external_locks": 8,
+      "external_lock_reasons": {
+        "t3_swing": 8
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 47998,
+        "missing_prev_close": 9
+      },
+      "elapsed_seconds": 61.7
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-06",
+      "return_pct": -0.34,
+      "final_balance": 99660.11,
+      "total_trades": 9,
+      "t3_trades": 9,
+      "t3_net_pnl_pct": 0.01945,
+      "events_available": 4,
+      "external_locks": 4,
+      "external_lock_reasons": {
+        "t3_swing": 4
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 39527,
+        "missing_prev_close": 8
+      },
+      "elapsed_seconds": 61.88
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-07",
+      "return_pct": -0.06,
+      "final_balance": 99935.83,
+      "total_trades": 4,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": 0.09586,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 12725,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 68.14
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-08",
+      "return_pct": -0.2,
+      "final_balance": 99803.52,
+      "total_trades": 13,
+      "t3_trades": 13,
+      "t3_net_pnl_pct": 0.32272,
+      "events_available": 6,
+      "external_locks": 6,
+      "external_lock_reasons": {
+        "t3_swing": 6
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 51746,
+        "missing_prev_close": 9
+      },
+      "elapsed_seconds": 66.48
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-09",
+      "return_pct": -0.13,
+      "final_balance": 99866.01,
+      "total_trades": 2,
+      "t3_trades": 2,
+      "t3_net_pnl_pct": -0.05402,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 12173,
+        "missing_prev_close": 2
+      },
+      "elapsed_seconds": 64.63
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-10",
+      "return_pct": -0.96,
+      "final_balance": 99037.84,
+      "total_trades": 25,
+      "t3_trades": 25,
+      "t3_net_pnl_pct": 0.03353,
+      "events_available": 6,
+      "external_locks": 6,
+      "external_lock_reasons": {
+        "t3_swing": 6
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 72134,
+        "missing_prev_close": 15
+      },
+      "elapsed_seconds": 67.05
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-11",
+      "return_pct": -0.27,
+      "final_balance": 99728.65,
+      "total_trades": 7,
+      "t3_trades": 7,
+      "t3_net_pnl_pct": 0.00799,
+      "events_available": 5,
+      "external_locks": 5,
+      "external_lock_reasons": {
+        "t3_swing": 5
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 28423,
+        "missing_prev_close": 5
+      },
+      "elapsed_seconds": 64.5
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2025-12",
+      "return_pct": 0.86,
+      "final_balance": 100864.66,
+      "total_trades": 7,
+      "t3_trades": 7,
+      "t3_net_pnl_pct": 1.14598,
+      "events_available": 6,
+      "external_locks": 6,
+      "external_lock_reasons": {
+        "t3_swing": 6
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 34057,
+        "missing_prev_close": 6
+      },
+      "elapsed_seconds": 66.84
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2026-01",
+      "return_pct": -0.56,
+      "final_balance": 99443.13,
+      "total_trades": 14,
+      "t3_trades": 14,
+      "t3_net_pnl_pct": 0.00111,
+      "events_available": 8,
+      "external_locks": 8,
+      "external_lock_reasons": {
+        "t3_swing": 8
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 50068,
+        "missing_prev_close": 9
+      },
+      "elapsed_seconds": 66.6
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2026-02",
+      "return_pct": -0.23,
+      "final_balance": 99767.35,
+      "total_trades": 15,
+      "t3_trades": 15,
+      "t3_net_pnl_pct": 0.36617,
+      "events_available": 6,
+      "external_locks": 6,
+      "external_lock_reasons": {
+        "t3_swing": 6
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 45779,
+        "missing_prev_close": 8
+      },
+      "elapsed_seconds": 59.88
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2026-03",
+      "return_pct": -1.72,
+      "final_balance": 98280.77,
+      "total_trades": 27,
+      "t3_trades": 27,
+      "t3_net_pnl_pct": -0.6489,
+      "events_available": 6,
+      "external_locks": 6,
+      "external_lock_reasons": {
+        "t3_swing": 6
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 66407,
+        "missing_prev_close": 13,
+        "same_second_exit": 1
+      },
+      "elapsed_seconds": 66.95
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "BTCUSDT",
+      "month": "2026-04",
+      "return_pct": -0.01,
+      "final_balance": 99988.5,
+      "total_trades": 8,
+      "t3_trades": 8,
+      "t3_net_pnl_pct": 0.30868,
+      "events_available": 5,
+      "external_locks": 5,
+      "external_lock_reasons": {
+        "t3_swing": 5
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 31001,
+        "missing_prev_close": 6
+      },
+      "elapsed_seconds": 65.35
+    }
+  ]
+}

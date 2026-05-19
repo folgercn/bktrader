@@ -1,0 +1,116 @@
+{
+  "base_events_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_shape_expansion_events_restrictive_0p5bps.csv",
+  "quality_events": 736,
+  "model_advance_events": 561,
+  "eval_start": "2025-06-01T00:00:00+00:00",
+  "eval_end_exclusive": "2026-05-01T00:00:00+00:00",
+  "base_share": 0.8,
+  "exec_params": {
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004,
+    "initial_stop_atr": 0.45,
+    "max_hold_hours": 2.0,
+    "min_stop_bps": 12.0,
+    "slippage": 0.0002,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "trail_buffer_atr": 0.05,
+    "trail_start_r": 1.5
+  },
+  "variants": {
+    "baseline_touch_entry": {
+      "conditions": [],
+      "events": 561,
+      "description": "current production-shape D0 lens; no extra structure-quality gate"
+    },
+    "low_eff_le_q20": {
+      "conditions": [
+        [
+          "eff_300s",
+          "<=",
+          0.7699153778815291
+        ]
+      ],
+      "events": 113,
+      "description": "pre-touch 300s efficiency in the lowest 20% of model-advance events"
+    },
+    "low_eff_low_atr_pct": {
+      "conditions": [
+        [
+          "eff_300s",
+          "<=",
+          0.7699153778815291
+        ],
+        [
+          "signal_atr_percentile",
+          "<=",
+          0.2916666666666667
+        ]
+      ],
+      "events": 49,
+      "description": "low 300s efficiency plus low 24h ATR percentile"
+    },
+    "low_rf_slope_up": {
+      "conditions": [
+        [
+          "rf_probability",
+          "<=",
+          0.58
+        ],
+        [
+          "prev_sma5_slope_atr",
+          ">=",
+          0.0478745222904068
+        ]
+      ],
+      "events": 96,
+      "description": "lower RF probability but closed-bar SMA5 slope already positive"
+    },
+    "level_far_sma_gap_up": {
+      "conditions": [
+        [
+          "level_to_signal_open_atr",
+          ">=",
+          0.4400237847225935
+        ],
+        [
+          "prev_sma5_gap_atr",
+          ">=",
+          0.3480695487355221
+        ]
+      ],
+      "events": 54,
+      "description": "breakout level far from signal open and previous close above SMA5 for the side"
+    },
+    "wick_touch_ext_le_0": {
+      "conditions": [
+        [
+          "touch_extension_atr",
+          "<=",
+          0.0
+        ]
+      ],
+      "events": 136,
+      "description": "first touch is wick-led; touch-second close has not extended beyond the level"
+    },
+    "wick_late": {
+      "conditions": [
+        [
+          "touch_extension_atr",
+          "<=",
+          0.0
+        ],
+        [
+          "pre_touch_seconds",
+          ">=",
+          598.0
+        ]
+      ],
+      "events": 80,
+      "description": "wick-led first touch and not too early in the signal bar"
+    }
+  },
+  "runtime_seconds": 28.205073833465576
+}

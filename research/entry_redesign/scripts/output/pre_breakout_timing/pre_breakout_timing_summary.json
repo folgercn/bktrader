@@ -1,0 +1,261 @@
+{
+  "experiment": "pre_breakout_timing_classifier",
+  "generated_at": "2026-05-13T02:18:04.446844",
+  "n_events": 116,
+  "go_nogo": "Conditional Go",
+  "small_sample_warning": true,
+  "delay_optimization_ceiling_low": false,
+  "best_classifier": {
+    "name": "LogisticRegression",
+    "best_params": {
+      "solver": "lbfgs",
+      "multi_class": "multinomial"
+    },
+    "train_calendar_sum": 3.5945054815349287,
+    "test_calendar_sum": 2.9822186543487477,
+    "loocv_calendar_sum": 3.4958741919684835,
+    "train_accuracy": 0.8269230769230769,
+    "test_accuracy": 0.5106382978723404
+  },
+  "all_classifiers": [
+    {
+      "name": "RuleBased_DT3",
+      "loocv_calendar_sum": 3.2385878681098106,
+      "train_calendar_sum": 3.4101060260017695,
+      "test_calendar_sum": 0.0,
+      "train_accuracy": 0.8269230769230769,
+      "test_accuracy": 0.0
+    },
+    {
+      "name": "DecisionTree",
+      "loocv_calendar_sum": 3.283162307526057,
+      "train_calendar_sum": 3.4174419551893225,
+      "test_calendar_sum": 0.0,
+      "train_accuracy": 0.8076923076923077,
+      "test_accuracy": 0.0
+    },
+    {
+      "name": "RandomForest",
+      "loocv_calendar_sum": 3.298637373238962,
+      "train_calendar_sum": 3.681854990720516,
+      "test_calendar_sum": 0.0,
+      "train_accuracy": 0.9038461538461539,
+      "test_accuracy": 0.0
+    },
+    {
+      "name": "LogisticRegression",
+      "loocv_calendar_sum": 3.4958741919684835,
+      "train_calendar_sum": 3.5945054815349287,
+      "test_calendar_sum": 2.9822186543487477,
+      "train_accuracy": 0.8269230769230769,
+      "test_accuracy": 0.5106382978723404
+    }
+  ],
+  "baselines": {
+    "D0": {
+      "calendar_sum": 4.2919435751470445,
+      "trade_count": 116,
+      "win_rate": 77.58620689655173,
+      "avg_pnl": 0.0014186859574199016
+    },
+    "D5": {
+      "calendar_sum": 3.7185582330329785,
+      "trade_count": 116,
+      "win_rate": 75.0,
+      "avg_pnl": 0.0012292612124240614
+    },
+    "D10": {
+      "calendar_sum": 3.540219117430039,
+      "trade_count": 116,
+      "win_rate": 74.13793103448276,
+      "avg_pnl": 0.0011709816968871252
+    },
+    "D15": {
+      "calendar_sum": 3.50698558199036,
+      "trade_count": 116,
+      "win_rate": 72.41379310344827,
+      "avg_pnl": 0.0011599601397933297
+    },
+    "pullback": {
+      "calendar_sum": 2.3336863964887886,
+      "trade_count": 116,
+      "win_rate": 68.10344827586206,
+      "avg_pnl": 0.0007728216955709375
+    }
+  },
+  "oracle": {
+    "calendar_sum": 9.44215873991503,
+    "realization_pct": 31.584076655499913,
+    "delay_optimization_ceiling_low": false
+  },
+  "bootstrap_ci": {
+    "overall": {
+      "calendar_sum": 2.9822186543487477,
+      "ci_5": 1.1561491311140506,
+      "ci_95": 4.728477968845824,
+      "mean": 3.0033742720745114,
+      "std": 1.0900277764643478
+    },
+    "BTC": {
+      "n_events": 24,
+      "ci_5": 0.5750111287525287,
+      "ci_95": 2.2613076991789884,
+      "mean": 1.472650746541737,
+      "std": 0.5096521525614778
+    },
+    "ETH": {
+      "n_events": 23,
+      "ci_5": -0.053460013465758585,
+      "ci_95": 2.944221910265569,
+      "mean": 1.5294489773199231,
+      "std": 0.916389592957794
+    },
+    "n_bootstrap": 1000,
+    "random_state": 42
+  },
+  "symbol_results": {
+    "BTC": {
+      "test": {
+        "n_events": 24,
+        "classifier_calendar_sum": 1.4587215832792426,
+        "baseline_b_calendar_sum": 1.3500116742708053,
+        "win_rate": 87.5,
+        "baseline_b_win_rate": 87.5,
+        "traded_count": 24,
+        "wins_count": 21
+      },
+      "train": {
+        "n_events": 36,
+        "classifier_calendar_sum": 0.12306279318575979,
+        "baseline_b_calendar_sum": -0.20101387196863657,
+        "win_rate": 69.44444444444444,
+        "traded_count": 36,
+        "wins_count": 25
+      },
+      "symbol_not_superior_flag": false
+    },
+    "ETH": {
+      "test": {
+        "n_events": 23,
+        "classifier_calendar_sum": 1.5234970710695053,
+        "baseline_b_calendar_sum": 1.3865673459810788,
+        "win_rate": 78.26086956521739,
+        "baseline_b_win_rate": 78.26086956521739,
+        "traded_count": 23,
+        "wins_count": 18
+      },
+      "train": {
+        "n_events": 33,
+        "classifier_calendar_sum": 1.5998495235726586,
+        "baseline_b_calendar_sum": 1.182993643951777,
+        "win_rate": 78.78787878787878,
+        "traded_count": 33,
+        "wins_count": 26
+      },
+      "symbol_not_superior_flag": false
+    }
+  },
+  "overfitting_check": {
+    "train_cs": 3.5945054815349287,
+    "test_cs": 2.9822186543487477,
+    "loocv_cs": 3.4958741919684835,
+    "drop_pct": 17.033965599204535,
+    "overfitting_flag": false,
+    "loocv_degradation_flag": false
+  },
+  "regime_stability": {
+    "n_train": 69,
+    "n_test": 47,
+    "per_regime": [
+      {
+        "regime": "D0",
+        "train_count": 39,
+        "train_pct": 56.52173913043478,
+        "test_count": 23,
+        "test_pct": 48.93617021276596,
+        "diff_pp": 7.585568917668823
+      },
+      {
+        "regime": "D5",
+        "train_count": 5,
+        "train_pct": 7.246376811594203,
+        "test_count": 7,
+        "test_pct": 14.893617021276595,
+        "diff_pp": 7.647240209682392
+      },
+      {
+        "regime": "D10",
+        "train_count": 3,
+        "train_pct": 4.3478260869565215,
+        "test_count": 3,
+        "test_pct": 6.382978723404255,
+        "diff_pp": 2.0351526364477337
+      },
+      {
+        "regime": "D15",
+        "train_count": 3,
+        "train_pct": 4.3478260869565215,
+        "test_count": 0,
+        "test_pct": 0.0,
+        "diff_pp": 4.3478260869565215
+      },
+      {
+        "regime": "pullback",
+        "train_count": 2,
+        "train_pct": 2.898550724637681,
+        "test_count": 6,
+        "test_pct": 12.76595744680851,
+        "diff_pp": 9.867406722170829
+      },
+      {
+        "regime": "skip",
+        "train_count": 17,
+        "train_pct": 24.637681159420293,
+        "test_count": 8,
+        "test_pct": 17.02127659574468,
+        "diff_pp": 7.616404563675612
+      }
+    ],
+    "max_diff_pp": 9.867406722170829,
+    "label_distribution_shift": false
+  },
+  "pullback_config": {
+    "pullback_target_atr": 0.05,
+    "pullback_window_seconds": 120,
+    "start_offset_seconds": 5
+  },
+  "features": {
+    "used": [
+      "signal_atr_percentile",
+      "roundtrip_cost_atr",
+      "prev1_body_atr",
+      "prev1_range_atr",
+      "prev1_close_pos_side",
+      "prev_sma5_gap_atr",
+      "prev_sma5_slope_atr",
+      "level_to_prev_close_atr",
+      "level_to_signal_open_atr",
+      "touch_extension_atr"
+    ],
+    "excluded": [
+      "state_frac_0",
+      "state_frac_1",
+      "state_frac_2",
+      "state_frac_3",
+      "state_entropy"
+    ],
+    "n_used": 10,
+    "n_excluded": 5
+  },
+  "reference": {
+    "dynamic_entry_timing_calendar_sum": 2.4,
+    "note": "dynamic-entry-timing spec 结果（post-breakout 方法，已 No-Go）"
+  },
+  "go_nogo_detail": {
+    "classifier_test_calendar_sum": 2.9822186543487477,
+    "baseline_b_test_calendar_sum": 2.7365790202518836,
+    "improvement_pct": 0.24563963409686407,
+    "threshold_pct": 0.5,
+    "note": "Go/No-Go 判定使用 test set 的 Baseline B（公平对比同一数据集）"
+  }
+}

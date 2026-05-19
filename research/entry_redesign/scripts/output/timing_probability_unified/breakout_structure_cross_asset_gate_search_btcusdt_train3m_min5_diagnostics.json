@@ -1,0 +1,287 @@
+{
+  "symbol": "BTCUSDT",
+  "events_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_btcusdt_train3m_events.csv",
+  "bars_cache_dir": "/Users/wuyaocheng/Downloads/bkTrader/research/probabilistic_v6_runs/walkforward_delay60_original_t2_feature60_valbest/bars_cache",
+  "eval_start": "2025-06-01T00:00:00+00:00",
+  "eval_end_exclusive": "2026-05-01T00:00:00+00:00",
+  "train_months": 3,
+  "min_train_trades": 5,
+  "events": 497,
+  "exec_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 1.5,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 2.0,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  },
+  "gate_specs": [
+    {
+      "name": "baseline_model_advance",
+      "description": "no extra gate",
+      "conditions": []
+    },
+    {
+      "name": "low_eff_q20",
+      "description": "lowest 20% 300s efficiency",
+      "conditions": [
+        {
+          "column": "eff_300s",
+          "op": "<=",
+          "quantile": 0.2,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "low_eff_q30",
+      "description": "lowest 30% 300s efficiency",
+      "conditions": [
+        {
+          "column": "eff_300s",
+          "op": "<=",
+          "quantile": 0.3,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "low_atr_q40",
+      "description": "lowest 40% 24h ATR percentile",
+      "conditions": [
+        {
+          "column": "signal_atr_percentile",
+          "op": "<=",
+          "quantile": 0.4,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "low_eff_low_atr_q20_q40",
+      "description": "lowest 20% efficiency plus lowest 40% ATR percentile",
+      "conditions": [
+        {
+          "column": "eff_300s",
+          "op": "<=",
+          "quantile": 0.2,
+          "value": null
+        },
+        {
+          "column": "signal_atr_percentile",
+          "op": "<=",
+          "quantile": 0.4,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "low_eff_low_atr_q30_q50",
+      "description": "lowest 30% efficiency plus lowest 50% ATR percentile",
+      "conditions": [
+        {
+          "column": "eff_300s",
+          "op": "<=",
+          "quantile": 0.3,
+          "value": null
+        },
+        {
+          "column": "signal_atr_percentile",
+          "op": "<=",
+          "quantile": 0.5,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "high_speed_q60",
+      "description": "top 40% side-normalized 300s speed",
+      "conditions": [
+        {
+          "column": "speed_300s_atr",
+          "op": ">=",
+          "quantile": 0.6,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "high_speed_q80",
+      "description": "top 20% side-normalized 300s speed",
+      "conditions": [
+        {
+          "column": "speed_300s_atr",
+          "op": ">=",
+          "quantile": 0.8,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "low_eff_high_speed_q20_q60",
+      "description": "low efficiency plus high side-normalized speed",
+      "conditions": [
+        {
+          "column": "eff_300s",
+          "op": "<=",
+          "quantile": 0.2,
+          "value": null
+        },
+        {
+          "column": "speed_300s_atr",
+          "op": ">=",
+          "quantile": 0.6,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "low_rf_q40",
+      "description": "lower RF probability",
+      "conditions": [
+        {
+          "column": "rf_probability",
+          "op": "<=",
+          "quantile": 0.4,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "high_rf_q60",
+      "description": "higher RF probability",
+      "conditions": [
+        {
+          "column": "rf_probability",
+          "op": ">=",
+          "quantile": 0.6,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "level_far_q60",
+      "description": "level far from signal open",
+      "conditions": [
+        {
+          "column": "level_to_signal_open_atr",
+          "op": ">=",
+          "quantile": 0.6,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "level_near_q40",
+      "description": "level near signal open",
+      "conditions": [
+        {
+          "column": "level_to_signal_open_atr",
+          "op": "<=",
+          "quantile": 0.4,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "wick_touch_ext_le_0",
+      "description": "touch-second close has not extended beyond level",
+      "conditions": [
+        {
+          "column": "touch_extension_atr",
+          "op": "<=",
+          "quantile": null,
+          "value": 0.0
+        }
+      ]
+    },
+    {
+      "name": "late_touch_q40",
+      "description": "not too early in signal bar",
+      "conditions": [
+        {
+          "column": "pre_touch_seconds",
+          "op": ">=",
+          "quantile": 0.4,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "side_sma_slope_up_q60",
+      "description": "closed-bar SMA5 slope aligns with trade side",
+      "conditions": [
+        {
+          "column": "side_sma5_slope_atr",
+          "op": ">=",
+          "quantile": 0.6,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "side_sma_gap_up_q60",
+      "description": "previous close is on the favorable side of SMA5",
+      "conditions": [
+        {
+          "column": "side_sma5_gap_atr",
+          "op": ">=",
+          "quantile": 0.6,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "low_eff_side_slope_q20_q60",
+      "description": "low efficiency plus favorable SMA5 slope",
+      "conditions": [
+        {
+          "column": "eff_300s",
+          "op": "<=",
+          "quantile": 0.2,
+          "value": null
+        },
+        {
+          "column": "side_sma5_slope_atr",
+          "op": ">=",
+          "quantile": 0.6,
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "low_atr_side_gap_q40_q60",
+      "description": "low ATR percentile plus favorable SMA5 gap",
+      "conditions": [
+        {
+          "column": "signal_atr_percentile",
+          "op": "<=",
+          "quantile": 0.4,
+          "value": null
+        },
+        {
+          "column": "side_sma5_gap_atr",
+          "op": ">=",
+          "quantile": 0.6,
+          "value": null
+        }
+      ]
+    }
+  ],
+  "outputs": {
+    "candidate_rows_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_gate_search_btcusdt_train3m_min5_candidates.csv",
+    "split_rows_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_gate_search_btcusdt_train3m_min5_splits.csv",
+    "selected_rows_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_gate_search_btcusdt_train3m_min5_selected.csv",
+    "candidate_summary_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_gate_search_btcusdt_train3m_min5_candidate_summary.csv",
+    "selected_summary_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_gate_search_btcusdt_train3m_min5_selected_summary.csv",
+    "selected_trades_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_gate_search_btcusdt_train3m_min5_selected_trades.csv",
+    "report_md": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_gate_search_btcusdt_train3m_min5_report.md"
+  },
+  "runtime_seconds": 73.62134671211243
+}

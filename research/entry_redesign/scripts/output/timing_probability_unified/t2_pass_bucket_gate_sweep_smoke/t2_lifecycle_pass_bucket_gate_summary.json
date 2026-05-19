@@ -1,0 +1,496 @@
+{
+  "note": "Research-only pass-bucket lifecycle sweep. All candidates use strict next-second reentry fills, skip failed original_t2 locks, and T3 min-hold-before-SL=60m.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "calendar_grid": {
+    "months": [
+      "2026-01"
+    ],
+    "symbols": [
+      "ETHUSDT"
+    ],
+    "symbol_months": 1
+  },
+  "elapsed_seconds": 342.13,
+  "candidate_reads": {
+    "ctx4h_skipfail_t3_60m": "current executable reference: fail context skips lock; pass context trades full size",
+    "ctx4h_min020_skipfail_t3_60m": "medium 4h continuation threshold",
+    "ctx12h_min000_skipfail_t3_60m": "keeps 4h pass and also requires 12h context not opposing the side"
+  },
+  "candidate_specs": [
+    {
+      "label": "ctx4h_skipfail_t3_60m",
+      "filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "read": "current executable reference: fail context skips lock; pass context trades full size"
+    },
+    {
+      "label": "ctx4h_min020_skipfail_t3_60m",
+      "filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.2,
+        "ctx_return_lookback_bars": 4
+      },
+      "read": "medium 4h continuation threshold"
+    },
+    {
+      "label": "ctx12h_min000_skipfail_t3_60m",
+      "filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4,
+        "min_ctx12h_side_return_atr": 0.0
+      },
+      "read": "keeps 4h pass and also requires 12h context not opposing the side"
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "ctx4h_skipfail_t3_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "calendar_silo_sum_pct": -0.19,
+      "calendar_avg_symbol_month_pct": -0.19,
+      "worst_calendar_silo_pct": -0.19,
+      "negative_calendar_silos": 1,
+      "traded_symbol_months": 1,
+      "flat_symbol_months": 0,
+      "total_trades": 5,
+      "t2_trades": 2,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.02347,
+      "t3_net_pnl_pct": 0.01257,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 2,
+          "gross_pnl_pct": -0.023474,
+          "fee_pct": 0.059956,
+          "net_after_fee_pct": -0.08343,
+          "notional_pct": 29.978093,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 143,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 112,
+        "ctx_side_return_atr": 31
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 35209,
+        "no_reclaim_cross": 231139,
+        "missing_prev_close": 31
+      },
+      "by_month": {
+        "2026-01": -0.19
+      },
+      "by_symbol": {
+        "ETHUSDT": -0.19
+      }
+    },
+    {
+      "candidate": "ctx4h_min020_skipfail_t3_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.2,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "calendar_silo_sum_pct": -0.19,
+      "calendar_avg_symbol_month_pct": -0.19,
+      "worst_calendar_silo_pct": -0.19,
+      "negative_calendar_silos": 1,
+      "traded_symbol_months": 1,
+      "flat_symbol_months": 0,
+      "total_trades": 5,
+      "t2_trades": 2,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.02347,
+      "t3_net_pnl_pct": 0.01257,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 2,
+          "gross_pnl_pct": -0.023474,
+          "fee_pct": 0.059956,
+          "net_after_fee_pct": -0.08343,
+          "notional_pct": 29.978093,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 151,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 112,
+        "ctx_side_return_atr": 39
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 23408,
+        "no_reclaim_cross": 207591,
+        "missing_prev_close": 28
+      },
+      "by_month": {
+        "2026-01": -0.19
+      },
+      "by_symbol": {
+        "ETHUSDT": -0.19
+      }
+    },
+    {
+      "candidate": "ctx12h_min000_skipfail_t3_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4,
+        "min_ctx12h_side_return_atr": 0.0
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "calendar_silo_sum_pct": -0.11,
+      "calendar_avg_symbol_month_pct": -0.11,
+      "worst_calendar_silo_pct": -0.11,
+      "negative_calendar_silos": 1,
+      "traded_symbol_months": 1,
+      "flat_symbol_months": 0,
+      "total_trades": 3,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.01256,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 151,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 112,
+        "ctx_side_return_atr": 31,
+        "ctx12h_side_return_atr_low": 8
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 27756,
+        "no_reclaim_cross": 198461,
+        "missing_prev_close": 25
+      },
+      "by_month": {
+        "2026-01": -0.11
+      },
+      "by_symbol": {
+        "ETHUSDT": -0.11
+      }
+    }
+  ],
+  "deltas_vs_first_candidate": [
+    {
+      "candidate": "ctx4h_min020_skipfail_t3_60m",
+      "baseline_candidate": "ctx4h_skipfail_t3_60m",
+      "calendar_silo_sum_delta_pct": 0.0,
+      "worst_calendar_silo_delta_pct": 0.0,
+      "trade_count_delta": 0,
+      "t2_trade_delta": 0,
+      "t2_net_pnl_delta_pct": 0.0,
+      "negative_calendar_silos_delta": 0
+    },
+    {
+      "candidate": "ctx12h_min000_skipfail_t3_60m",
+      "baseline_candidate": "ctx4h_skipfail_t3_60m",
+      "calendar_silo_sum_delta_pct": 0.08,
+      "worst_calendar_silo_delta_pct": 0.08,
+      "trade_count_delta": -2,
+      "t2_trade_delta": -2,
+      "t2_net_pnl_delta_pct": 0.02347,
+      "negative_calendar_silos_delta": 0
+    }
+  ],
+  "silos": [
+    {
+      "candidate": "ctx4h_skipfail_t3_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.19,
+      "final_balance": 99809.19,
+      "total_trades": 5,
+      "t2_trades": 2,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.02347,
+      "t3_net_pnl_pct": 0.01257,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 2,
+          "gross_pnl_pct": -0.023474,
+          "fee_pct": 0.059956,
+          "net_after_fee_pct": -0.08343,
+          "notional_pct": 29.978093,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 143,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 112,
+        "ctx_side_return_atr": 31
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 12601,
+          "no_reclaim_cross": 129328,
+          "missing_prev_close": 18
+        },
+        "short": {
+          "same_second_zero_initial": 22608,
+          "no_reclaim_cross": 101811,
+          "missing_prev_close": 13
+        }
+      },
+      "elapsed_seconds": 79.31
+    },
+    {
+      "candidate": "ctx4h_min020_skipfail_t3_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.2,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.19,
+      "final_balance": 99809.19,
+      "total_trades": 5,
+      "t2_trades": 2,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.02347,
+      "t3_net_pnl_pct": 0.01257,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 2,
+          "gross_pnl_pct": -0.023474,
+          "fee_pct": 0.059956,
+          "net_after_fee_pct": -0.08343,
+          "notional_pct": 29.978093,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 151,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 112,
+        "ctx_side_return_atr": 39
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 10430,
+          "no_reclaim_cross": 125728,
+          "missing_prev_close": 18
+        },
+        "short": {
+          "same_second_zero_initial": 12978,
+          "no_reclaim_cross": 81863,
+          "missing_prev_close": 10
+        }
+      },
+      "elapsed_seconds": 79.16
+    },
+    {
+      "candidate": "ctx12h_min000_skipfail_t3_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4,
+        "min_ctx12h_side_return_atr": 0.0
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.11,
+      "final_balance": 99892.58,
+      "total_trades": 3,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.01256,
+      "t2_size_multiplier_attribution": {},
+      "t2_size_filter_fails": 151,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 112,
+        "ctx_side_return_atr": 31,
+        "ctx12h_side_return_atr_low": 8
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 11552,
+          "no_reclaim_cross": 121741,
+          "missing_prev_close": 16
+        },
+        "short": {
+          "same_second_zero_initial": 16204,
+          "no_reclaim_cross": 76720,
+          "missing_prev_close": 9
+        }
+      },
+      "elapsed_seconds": 79.09
+    }
+  ],
+  "reference_bucket_summary": [
+    {
+      "family": "all_original_t2",
+      "bucket": "all",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    },
+    {
+      "family": "atr_percentile",
+      "bucket": "20-30",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    },
+    {
+      "family": "breakout_extension_atr",
+      "bucket": "<0.02",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    },
+    {
+      "family": "ctx12h_side_return_atr",
+      "bucket": "-0.50-0",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    },
+    {
+      "family": "ctx4h_side_return_atr",
+      "bucket": ">=0.50",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    },
+    {
+      "family": "entry_reason",
+      "bucket": "Zero-Initial-Reentry",
+      "trades": 1,
+      "net_after_fee_pct": -0.055619,
+      "gross_pnl_pct": -0.01564,
+      "fee_pct": 0.039978,
+      "avg_net_after_fee_pct": -0.055619,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 19.989103
+    },
+    {
+      "family": "entry_reason",
+      "bucket": "SL-Reentry",
+      "trades": 1,
+      "net_after_fee_pct": -0.027812,
+      "gross_pnl_pct": -0.007834,
+      "fee_pct": 0.019978,
+      "avg_net_after_fee_pct": -0.027812,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.027812,
+      "notional_pct": 9.98899
+    },
+    {
+      "family": "exit_reason",
+      "bucket": "SL",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    },
+    {
+      "family": "pass_full_original_t2",
+      "bucket": "all",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    },
+    {
+      "family": "pre_touch_seconds",
+      "bucket": ">=900",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    },
+    {
+      "family": "side",
+      "bucket": "long",
+      "trades": 2,
+      "net_after_fee_pct": -0.08343,
+      "gross_pnl_pct": -0.023474,
+      "fee_pct": 0.059956,
+      "avg_net_after_fee_pct": -0.041715,
+      "win_rate_pct": 0.0,
+      "worst_trade_pct": -0.055619,
+      "notional_pct": 29.978093
+    }
+  ]
+}

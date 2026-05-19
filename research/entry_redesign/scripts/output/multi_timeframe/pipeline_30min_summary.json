@@ -1,0 +1,18 @@
+{
+  "timeframe": "30min",
+  "total_events": 2438,
+  "calendar_sum_gate_on": 0.6975962220022555,
+  "worst_sm_gate_on": -0.11801305029254804,
+  "trade_count_gate_on": 931,
+  "neg_sm_count": 2,
+  "rf_test_auc": 0.5322611566727021,
+  "timing_selected_depth": 4,
+  "pipeline_seconds": 115.74667024612427,
+  "monthly_silo_returns": {
+    "ETHUSDT_2025-06": 0.3239438463028453,
+    "ETHUSDT_2025-07": 0.2929719194439035,
+    "ETHUSDT_2025-08": 0.25889014951804273,
+    "ETHUSDT_2025-09": -0.0601966429699879,
+    "ETHUSDT_2025-10": -0.11801305029254804
+  }
+}

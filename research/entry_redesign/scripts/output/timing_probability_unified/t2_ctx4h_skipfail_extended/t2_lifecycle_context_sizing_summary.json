@@ -1,0 +1,1206 @@
+{
+  "note": "Research-only lifecycle bridge for original_t2 context sizing. Sizing filters scale original_t2 reentry-window orders; they do not reject breakout locks.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "calendar_grid": {
+    "months": [
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04"
+    ],
+    "symbols": [
+      "ETHUSDT",
+      "BTCUSDT"
+    ],
+    "symbol_months": 22
+  },
+  "candidate_specs": [
+    {
+      "label": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock"
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "calendar_silo_sum_pct": -7.9,
+      "calendar_avg_symbol_month_pct": -0.359091,
+      "worst_calendar_silo_pct": -0.74,
+      "negative_calendar_silos": 19,
+      "traded_symbol_months": 22,
+      "flat_symbol_months": 0,
+      "total_trades": 267,
+      "t2_trades": 163,
+      "t3_trades": 104,
+      "t2_net_pnl_pct": -2.3838,
+      "t3_net_pnl_pct": 3.98343,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 163,
+          "gross_pnl_pct": -2.383797,
+          "fee_pct": 5.329318,
+          "net_after_fee_pct": -7.713116,
+          "notional_pct": 2664.659698,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 2958,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 2091,
+        "ctx_side_return_atr": 867
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 849554,
+        "no_reclaim_cross": 4666320,
+        "missing_prev_close": 647
+      },
+      "by_month": {
+        "2025-06": -1.27,
+        "2025-07": -0.59,
+        "2025-08": -0.52,
+        "2025-09": -0.08,
+        "2025-10": -0.49,
+        "2025-11": -0.77,
+        "2025-12": -1.46,
+        "2026-01": -0.45,
+        "2026-02": -0.56,
+        "2026-03": -0.71,
+        "2026-04": -1.0
+      },
+      "by_symbol": {
+        "ETHUSDT": -2.6,
+        "BTCUSDT": -5.3
+      }
+    }
+  ],
+  "deltas_vs_first_candidate": [],
+  "silos": [
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-06",
+      "return_pct": -0.68,
+      "final_balance": 99321.86,
+      "total_trades": 16,
+      "t2_trades": 12,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": -0.1439,
+      "t3_net_pnl_pct": -0.01583,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 12,
+          "gross_pnl_pct": -0.143899,
+          "fee_pct": 0.358698,
+          "net_after_fee_pct": -0.502597,
+          "notional_pct": 179.348857,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 129,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 90,
+        "ctx_side_return_atr": 39
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 27218,
+          "no_reclaim_cross": 121862,
+          "missing_prev_close": 17
+        },
+        "short": {
+          "same_second_zero_initial": 11226,
+          "no_reclaim_cross": 83161,
+          "missing_prev_close": 12
+        }
+      },
+      "elapsed_seconds": 56.26
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-07",
+      "return_pct": -0.09,
+      "final_balance": 99909.48,
+      "total_trades": 18,
+      "t2_trades": 10,
+      "t3_trades": 8,
+      "t2_net_pnl_pct": -0.12837,
+      "t3_net_pnl_pct": 0.65777,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 10,
+          "gross_pnl_pct": -0.128371,
+          "fee_pct": 0.299933,
+          "net_after_fee_pct": -0.428303,
+          "notional_pct": 149.966301,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 146,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 117,
+        "ctx_side_return_atr": 29
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 10735,
+          "no_reclaim_cross": 115801,
+          "missing_prev_close": 18
+        },
+        "short": {
+          "same_second_zero_initial": 14007,
+          "no_reclaim_cross": 84390,
+          "missing_prev_close": 16
+        }
+      },
+      "elapsed_seconds": 58.7
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-08",
+      "return_pct": -0.2,
+      "final_balance": 99803.96,
+      "total_trades": 8,
+      "t2_trades": 6,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": -0.08798,
+      "t3_net_pnl_pct": 0.15173,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 6,
+          "gross_pnl_pct": -0.087976,
+          "fee_pct": 0.179855,
+          "net_after_fee_pct": -0.267831,
+          "notional_pct": 89.927459,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 140,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 108,
+        "ctx_side_return_atr": 32
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 17604,
+          "no_reclaim_cross": 78252,
+          "missing_prev_close": 12
+        },
+        "short": {
+          "same_second_zero_initial": 8698,
+          "no_reclaim_cross": 107205,
+          "missing_prev_close": 13
+        }
+      },
+      "elapsed_seconds": 58.5
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-09",
+      "return_pct": 0.6,
+      "final_balance": 100604.58,
+      "total_trades": 12,
+      "t2_trades": 4,
+      "t3_trades": 8,
+      "t2_net_pnl_pct": -0.04611,
+      "t3_net_pnl_pct": 1.09237,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 4,
+          "gross_pnl_pct": -0.046109,
+          "fee_pct": 0.120582,
+          "net_after_fee_pct": -0.166691,
+          "notional_pct": 60.291008,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 159,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 111,
+        "ctx_side_return_atr": 48
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 12993,
+          "no_reclaim_cross": 90960,
+          "missing_prev_close": 15
+        },
+        "short": {
+          "same_second_zero_initial": 18562,
+          "no_reclaim_cross": 106772,
+          "missing_prev_close": 17
+        }
+      },
+      "elapsed_seconds": 57.12
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-10",
+      "return_pct": 0.12,
+      "final_balance": 100117.79,
+      "total_trades": 7,
+      "t2_trades": 4,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.05477,
+      "t3_net_pnl_pct": 0.41294,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 4,
+          "gross_pnl_pct": -0.054769,
+          "fee_pct": 0.120275,
+          "net_after_fee_pct": -0.175044,
+          "notional_pct": 60.137514,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 150,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 98,
+        "ctx_side_return_atr": 52
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 15107,
+          "no_reclaim_cross": 90548,
+          "missing_prev_close": 13
+        },
+        "short": {
+          "same_second_zero_initial": 10227,
+          "no_reclaim_cross": 62766,
+          "missing_prev_close": 7
+        }
+      },
+      "elapsed_seconds": 69.58
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-11",
+      "return_pct": -0.68,
+      "final_balance": 99321.81,
+      "total_trades": 14,
+      "t2_trades": 12,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": -0.17296,
+      "t3_net_pnl_pct": -0.0467,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 12,
+          "gross_pnl_pct": -0.172957,
+          "fee_pct": 0.378603,
+          "net_after_fee_pct": -0.55156,
+          "notional_pct": 189.301676,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 153,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 110,
+        "ctx_side_return_atr": 43
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 22812,
+          "no_reclaim_cross": 90871,
+          "missing_prev_close": 8
+        },
+        "short": {
+          "same_second_zero_initial": 17468,
+          "no_reclaim_cross": 100988,
+          "missing_prev_close": 12
+        }
+      },
+      "elapsed_seconds": 76.05
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2025-12",
+      "return_pct": -0.72,
+      "final_balance": 99277.79,
+      "total_trades": 16,
+      "t2_trades": 11,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": -0.09826,
+      "t3_net_pnl_pct": -0.08575,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 11,
+          "gross_pnl_pct": -0.098262,
+          "fee_pct": 0.338881,
+          "net_after_fee_pct": -0.437143,
+          "notional_pct": 169.440631,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 133,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 90,
+        "ctx_side_return_atr": 43
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 21486,
+          "no_reclaim_cross": 133633,
+          "missing_prev_close": 16
+        },
+        "short": {
+          "same_second_zero_initial": 21327,
+          "no_reclaim_cross": 114714,
+          "missing_prev_close": 10
+        }
+      },
+      "elapsed_seconds": 78.57
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.19,
+      "final_balance": 99809.19,
+      "total_trades": 5,
+      "t2_trades": 2,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.02347,
+      "t3_net_pnl_pct": 0.01257,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 2,
+          "gross_pnl_pct": -0.023474,
+          "fee_pct": 0.059956,
+          "net_after_fee_pct": -0.08343,
+          "notional_pct": 29.978093,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 143,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 112,
+        "ctx_side_return_atr": 31
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 12601,
+          "no_reclaim_cross": 129328,
+          "missing_prev_close": 18
+        },
+        "short": {
+          "same_second_zero_initial": 22608,
+          "no_reclaim_cross": 101811,
+          "missing_prev_close": 13
+        }
+      },
+      "elapsed_seconds": 78.69
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": -0.4,
+      "final_balance": 99602.96,
+      "total_trades": 22,
+      "t2_trades": 15,
+      "t3_trades": 7,
+      "t2_net_pnl_pct": -0.21699,
+      "t3_net_pnl_pct": 0.55852,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 15,
+          "gross_pnl_pct": -0.216994,
+          "fee_pct": 0.459331,
+          "net_after_fee_pct": -0.676325,
+          "notional_pct": 229.665731,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 110,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 61,
+        "ctx_side_return_atr": 49
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 25270,
+          "no_reclaim_cross": 154004,
+          "missing_prev_close": 27
+        },
+        "short": {
+          "same_second_zero_initial": 27712,
+          "no_reclaim_cross": 105940,
+          "missing_prev_close": 11
+        }
+      },
+      "elapsed_seconds": 71.1
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-03",
+      "return_pct": 0.0,
+      "final_balance": 100004.77,
+      "total_trades": 15,
+      "t2_trades": 6,
+      "t3_trades": 9,
+      "t2_net_pnl_pct": -0.07863,
+      "t3_net_pnl_pct": 0.64388,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 6,
+          "gross_pnl_pct": -0.078627,
+          "fee_pct": 0.200391,
+          "net_after_fee_pct": -0.279018,
+          "notional_pct": 100.195388,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 115,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 74,
+        "ctx_side_return_atr": 41
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 27440,
+          "no_reclaim_cross": 164277,
+          "missing_prev_close": 28
+        },
+        "short": {
+          "same_second_zero_initial": 24326,
+          "no_reclaim_cross": 135536,
+          "missing_prev_close": 19
+        }
+      },
+      "elapsed_seconds": 78.82
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": -0.36,
+      "final_balance": 99643.83,
+      "total_trades": 8,
+      "t2_trades": 6,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": -0.06178,
+      "t3_net_pnl_pct": -0.03479,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 6,
+          "gross_pnl_pct": -0.06178,
+          "fee_pct": 0.179619,
+          "net_after_fee_pct": -0.241399,
+          "notional_pct": 89.809345,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 130,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 95,
+        "ctx_side_return_atr": 35
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 20316,
+          "no_reclaim_cross": 95847,
+          "missing_prev_close": 13
+        },
+        "short": {
+          "same_second_zero_initial": 21077,
+          "no_reclaim_cross": 104430,
+          "missing_prev_close": 15
+        }
+      },
+      "elapsed_seconds": 75.85
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-06",
+      "return_pct": -0.59,
+      "final_balance": 99407.49,
+      "total_trades": 12,
+      "t2_trades": 8,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": -0.11114,
+      "t3_net_pnl_pct": -0.04231,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 8,
+          "gross_pnl_pct": -0.111138,
+          "fee_pct": 0.279402,
+          "net_after_fee_pct": -0.39054,
+          "notional_pct": 139.7012,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 118,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 81,
+        "ctx_side_return_atr": 37
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 19006,
+          "no_reclaim_cross": 99774,
+          "missing_prev_close": 15
+        },
+        "short": {
+          "same_second_zero_initial": 13178,
+          "no_reclaim_cross": 78912,
+          "missing_prev_close": 9
+        }
+      },
+      "elapsed_seconds": 77.2
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-07",
+      "return_pct": -0.5,
+      "final_balance": 99499.23,
+      "total_trades": 11,
+      "t2_trades": 8,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.12678,
+      "t3_net_pnl_pct": 0.02503,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 8,
+          "gross_pnl_pct": -0.126775,
+          "fee_pct": 0.279499,
+          "net_after_fee_pct": -0.406275,
+          "notional_pct": 139.749741,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 130,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 88,
+        "ctx_side_return_atr": 42
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 19306,
+          "no_reclaim_cross": 86027,
+          "missing_prev_close": 15
+        },
+        "short": {
+          "same_second_zero_initial": 23160,
+          "no_reclaim_cross": 84766,
+          "missing_prev_close": 10
+        }
+      },
+      "elapsed_seconds": 77.89
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-08",
+      "return_pct": -0.32,
+      "final_balance": 99684.23,
+      "total_trades": 6,
+      "t2_trades": 1,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": -0.03457,
+      "t3_net_pnl_pct": -0.04147,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 1,
+          "gross_pnl_pct": -0.034573,
+          "fee_pct": 0.039903,
+          "net_after_fee_pct": -0.074476,
+          "notional_pct": 19.951742,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 136,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 103,
+        "ctx_side_return_atr": 33
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 15141,
+          "no_reclaim_cross": 86089,
+          "missing_prev_close": 12
+        },
+        "short": {
+          "same_second_zero_initial": 18279,
+          "no_reclaim_cross": 103182,
+          "missing_prev_close": 12
+        }
+      },
+      "elapsed_seconds": 76.25
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-09",
+      "return_pct": -0.68,
+      "final_balance": 99317.59,
+      "total_trades": 14,
+      "t2_trades": 9,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": -0.1174,
+      "t3_net_pnl_pct": -0.06675,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 9,
+          "gross_pnl_pct": -0.117398,
+          "fee_pct": 0.298993,
+          "net_after_fee_pct": -0.416391,
+          "notional_pct": 149.496254,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 127,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 89,
+        "ctx_side_return_atr": 38
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 21583,
+          "no_reclaim_cross": 119430,
+          "missing_prev_close": 22
+        },
+        "short": {
+          "same_second_zero_initial": 23992,
+          "no_reclaim_cross": 92782,
+          "missing_prev_close": 11
+        }
+      },
+      "elapsed_seconds": 74.2
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-10",
+      "return_pct": -0.61,
+      "final_balance": 99387.42,
+      "total_trades": 15,
+      "t2_trades": 11,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": -0.31537,
+      "t3_net_pnl_pct": 0.26195,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 11,
+          "gross_pnl_pct": -0.315373,
+          "fee_pct": 0.399186,
+          "net_after_fee_pct": -0.714559,
+          "notional_pct": 199.592938,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 139,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 101,
+        "ctx_side_return_atr": 38
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 12143,
+          "no_reclaim_cross": 112776,
+          "missing_prev_close": 18
+        },
+        "short": {
+          "same_second_zero_initial": 13460,
+          "no_reclaim_cross": 79195,
+          "missing_prev_close": 13
+        }
+      },
+      "elapsed_seconds": 76.7
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-11",
+      "return_pct": -0.09,
+      "final_balance": 99913.36,
+      "total_trades": 7,
+      "t2_trades": 4,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.04469,
+      "t3_net_pnl_pct": 0.21766,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 4,
+          "gross_pnl_pct": -0.044686,
+          "fee_pct": 0.139764,
+          "net_after_fee_pct": -0.18445,
+          "notional_pct": 69.882089,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 154,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 113,
+        "ctx_side_return_atr": 41
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 26382,
+          "no_reclaim_cross": 90743,
+          "missing_prev_close": 12
+        },
+        "short": {
+          "same_second_zero_initial": 11356,
+          "no_reclaim_cross": 115201,
+          "missing_prev_close": 20
+        }
+      },
+      "elapsed_seconds": 76.28
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2025-12",
+      "return_pct": -0.74,
+      "final_balance": 99258.37,
+      "total_trades": 15,
+      "t2_trades": 10,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": -0.00415,
+      "t3_net_pnl_pct": -0.15935,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 10,
+          "gross_pnl_pct": -0.004155,
+          "fee_pct": 0.378318,
+          "net_after_fee_pct": -0.382473,
+          "notional_pct": 189.158978,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 124,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 82,
+        "ctx_side_return_atr": 42
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 17690,
+          "no_reclaim_cross": 158851,
+          "missing_prev_close": 22
+        },
+        "short": {
+          "same_second_zero_initial": 19208,
+          "no_reclaim_cross": 108122,
+          "missing_prev_close": 12
+        }
+      },
+      "elapsed_seconds": 78.7
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2026-01",
+      "return_pct": -0.26,
+      "final_balance": 99740.93,
+      "total_trades": 6,
+      "t2_trades": 5,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": -0.10635,
+      "t3_net_pnl_pct": 0.04713,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 5,
+          "gross_pnl_pct": -0.106349,
+          "fee_pct": 0.159846,
+          "net_after_fee_pct": -0.266195,
+          "notional_pct": 79.922955,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 137,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 109,
+        "ctx_side_return_atr": 28
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 14826,
+          "no_reclaim_cross": 96544,
+          "missing_prev_close": 10
+        },
+        "short": {
+          "same_second_zero_initial": 25275,
+          "no_reclaim_cross": 117080,
+          "missing_prev_close": 15
+        }
+      },
+      "elapsed_seconds": 76.78
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2026-02",
+      "return_pct": -0.16,
+      "final_balance": 99836.47,
+      "total_trades": 8,
+      "t2_trades": 5,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": -0.09767,
+      "t3_net_pnl_pct": 0.21401,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 5,
+          "gross_pnl_pct": -0.097672,
+          "fee_pct": 0.159981,
+          "net_after_fee_pct": -0.257653,
+          "notional_pct": 79.990499,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 118,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 80,
+        "ctx_side_return_atr": 38
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 27140,
+          "no_reclaim_cross": 102930,
+          "missing_prev_close": 13
+        },
+        "short": {
+          "same_second_zero_initial": 19925,
+          "no_reclaim_cross": 92904,
+          "missing_prev_close": 11
+        }
+      },
+      "elapsed_seconds": 70.88
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2026-03",
+      "return_pct": -0.71,
+      "final_balance": 99293.96,
+      "total_trades": 18,
+      "t2_trades": 4,
+      "t3_trades": 14,
+      "t2_net_pnl_pct": -0.0867,
+      "t3_net_pnl_pct": 0.09814,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 4,
+          "gross_pnl_pct": -0.086698,
+          "fee_pct": 0.159317,
+          "net_after_fee_pct": -0.246015,
+          "notional_pct": 79.658591,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 132,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 84,
+        "ctx_side_return_atr": 48
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 21655,
+          "no_reclaim_cross": 121382,
+          "missing_prev_close": 21
+        },
+        "short": {
+          "same_second_zero_initial": 34333,
+          "no_reclaim_cross": 165147,
+          "missing_prev_close": 20
+        }
+      },
+      "elapsed_seconds": 79.41
+    },
+    {
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.0,
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "sizing_filter_fail_action": "skip_lock",
+      "symbol": "BTCUSDT",
+      "month": "2026-04",
+      "return_pct": -0.64,
+      "final_balance": 99358.57,
+      "total_trades": 14,
+      "t2_trades": 10,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": -0.22576,
+      "t3_net_pnl_pct": 0.08268,
+      "t2_size_multiplier_attribution": {
+        "pass_full_or_unfiltered": {
+          "trades": 10,
+          "gross_pnl_pct": -0.225762,
+          "fee_pct": 0.338985,
+          "net_after_fee_pct": -0.564748,
+          "notional_pct": 169.492708,
+          "avg_multiplier": 1.0
+        }
+      },
+      "t2_size_filter_fails": 135,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 95,
+        "ctx_side_return_atr": 40
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 15861,
+          "no_reclaim_cross": 94226,
+          "missing_prev_close": 14
+        },
+        "short": {
+          "same_second_zero_initial": 25835,
+          "no_reclaim_cross": 87161,
+          "missing_prev_close": 10
+        }
+      },
+      "elapsed_seconds": 76.52
+    }
+  ]
+}

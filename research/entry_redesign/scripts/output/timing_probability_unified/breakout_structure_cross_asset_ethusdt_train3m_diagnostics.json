@@ -1,0 +1,61 @@
+{
+  "symbol": "ETHUSDT",
+  "model_version": "20260515_v1",
+  "model_features": [
+    "roundtrip_cost_atr",
+    "prev1_range_atr",
+    "prev1_close_pos_side",
+    "level_to_signal_open_atr",
+    "touch_extension_atr",
+    "speed_300s_atr",
+    "eff_300s",
+    "pre_touch_seconds"
+  ],
+  "variant": {
+    "name": "restrictive_0p5bps",
+    "mode": "restrictive",
+    "bps": 0.5,
+    "description": "current production: prev2 must be separated by +0.5bps"
+  },
+  "train_months": 3,
+  "eval_start": "2025-06-01T00:00:00+00:00",
+  "eval_end_exclusive": "2026-05-01T00:00:00+00:00",
+  "raw_events": 1810,
+  "quality_events": 736,
+  "model_advance_events": 561,
+  "detector_diagnostics": {
+    "dual_touch_same_second_skipped": 0,
+    "bars_scanned": 1810
+  },
+  "canonical_coverage": {
+    "canonical_events": 154,
+    "canonical_start": "2025-06-01T14:03:00+00:00",
+    "canonical_end": "2026-04-30T15:31:00+00:00",
+    "current_shape_model_advance_events": 561,
+    "overlap_keys": 48,
+    "canonical_coverage_rate": 0.3116883116883117
+  },
+  "base_share": 0.8,
+  "exec_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 1.5,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 2.0,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  },
+  "outputs": {
+    "events_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_ethusdt_train3m_events.csv",
+    "splits_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_ethusdt_train3m_splits.csv",
+    "summary_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_ethusdt_train3m_summary.csv",
+    "trades_csv": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_ethusdt_train3m_trades.csv",
+    "report_md": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_ethusdt_train3m_report.md"
+  },
+  "runtime_seconds": 25.51013493537903
+}

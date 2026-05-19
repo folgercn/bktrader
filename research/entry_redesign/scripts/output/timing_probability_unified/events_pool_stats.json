@@ -1,0 +1,14 @@
+{
+  "total_events": 394,
+  "btc_count": 240,
+  "eth_count": 154,
+  "btc_pct": 60.913705583756354,
+  "eth_pct": 39.08629441624365,
+  "long_count": 188,
+  "short_count": 206,
+  "long_pct": 47.71573604060914,
+  "short_pct": 52.28426395939086,
+  "earliest_touch_time": "2025-06-01 14:03:00+00:00",
+  "latest_touch_time": "2026-04-30 15:31:00+00:00",
+  "small_pool_warning": true
+}

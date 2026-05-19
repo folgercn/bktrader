@@ -1,0 +1,2 @@
+gate,forward_months,forward_events,trade_count,same_close_calendar_sum,same_close_worst_month,same_close_neg_months,adverse10_calendar_sum,adverse10_worst_month,adverse10_neg_months
+walkforward_selected,8,345,345,-0.1887653374353599,-0.061180735266020206,7,-0.5586060337879942,-0.13148772265421926,8

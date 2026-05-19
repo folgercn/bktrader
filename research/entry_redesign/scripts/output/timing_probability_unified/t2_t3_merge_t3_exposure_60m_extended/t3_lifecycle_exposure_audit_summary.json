@@ -1,0 +1,775 @@
+{
+  "note": "Research-only T3 exposure audit. FinalMarkToMarket-adjusted PnL is included because month-end mark rows are not normal stop exits.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "calendar_grid": {
+    "months": [
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04"
+    ],
+    "symbols": [
+      "ETHUSDT",
+      "BTCUSDT"
+    ],
+    "symbol_months": 22
+  },
+  "candidate_specs": [
+    {
+      "label": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "scope": "aggregate",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -24.48,
+      "worst_calendar_silo_pct": -2.15,
+      "negative_calendar_silos": 22,
+      "total_trades": 610,
+      "t3_trades": 100,
+      "t3_net_pnl_pct": 3.845829,
+      "t3_net_pnl_ex_final_mark_pct": 3.655098,
+      "final_mark_trades": 1,
+      "final_mark_pnl_pct": 0.190731,
+      "t3_win_rate_pct": 47.0,
+      "t3_equity_max_dd_pct": -0.254383,
+      "t3_max_loss_streak": 8,
+      "t3_avg_hold_seconds": 4470.01,
+      "t3_median_hold_seconds": 3704.5,
+      "t3_p90_hold_seconds": 6245.2,
+      "t3_max_hold_seconds": 11900.0,
+      "t3_sum_hold_hours": 124.166944,
+      "t3_avg_mae_bps": -47.088194,
+      "t3_worst_mae_bps": -477.524399,
+      "t3_avg_mfe_bps": 49.101706,
+      "t3_avg_pnl_bps": 19.292019,
+      "t3_worst_pnl_bps": -45.706962,
+      "t3_exit_reasons": {
+        "SL": 99,
+        "FinalMarkToMarket": 1
+      }
+    }
+  ],
+  "silos": [
+    {
+      "scope": "ETHUSDT:2025-06",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.25,
+      "worst_calendar_silo_pct": -1.25,
+      "negative_calendar_silos": 1,
+      "total_trades": 37,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": -0.015851,
+      "t3_net_pnl_ex_final_mark_pct": -0.015851,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 25.0,
+      "t3_equity_max_dd_pct": -0.048951,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 3621.25,
+      "t3_median_hold_seconds": 3600.0,
+      "t3_p90_hold_seconds": 3659.5,
+      "t3_max_hold_seconds": 3685.0,
+      "t3_sum_hold_hours": 4.023611,
+      "t3_avg_mae_bps": -199.616414,
+      "t3_worst_mae_bps": -477.524399,
+      "t3_avg_mfe_bps": 24.38694,
+      "t3_avg_pnl_bps": -1.9796,
+      "t3_worst_pnl_bps": -12.401778,
+      "t3_exit_reasons": {
+        "SL": 4
+      }
+    },
+    {
+      "scope": "ETHUSDT:2025-07",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.25,
+      "worst_calendar_silo_pct": -1.25,
+      "negative_calendar_silos": 1,
+      "total_trades": 47,
+      "t3_trades": 8,
+      "t3_net_pnl_pct": 0.65445,
+      "t3_net_pnl_ex_final_mark_pct": 0.65445,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 75.0,
+      "t3_equity_max_dd_pct": -0.021979,
+      "t3_max_loss_streak": 1,
+      "t3_avg_hold_seconds": 4785.375,
+      "t3_median_hold_seconds": 4526.0,
+      "t3_p90_hold_seconds": 6285.9,
+      "t3_max_hold_seconds": 7471.0,
+      "t3_sum_hold_hours": 10.634167,
+      "t3_avg_mae_bps": -43.361116,
+      "t3_worst_mae_bps": -236.732828,
+      "t3_avg_mfe_bps": 67.44317,
+      "t3_avg_pnl_bps": 41.144566,
+      "t3_worst_pnl_bps": -11.058792,
+      "t3_exit_reasons": {
+        "SL": 8
+      }
+    },
+    {
+      "scope": "ETHUSDT:2025-08",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.53,
+      "worst_calendar_silo_pct": -0.53,
+      "negative_calendar_silos": 1,
+      "total_trades": 18,
+      "t3_trades": 1,
+      "t3_net_pnl_pct": 0.168698,
+      "t3_net_pnl_ex_final_mark_pct": 0.168698,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 100.0,
+      "t3_equity_max_dd_pct": 0.0,
+      "t3_max_loss_streak": 0,
+      "t3_avg_hold_seconds": 3724.0,
+      "t3_median_hold_seconds": 3724.0,
+      "t3_p90_hold_seconds": 3724.0,
+      "t3_max_hold_seconds": 3724.0,
+      "t3_sum_hold_hours": 1.034444,
+      "t3_avg_mae_bps": -14.4617,
+      "t3_worst_mae_bps": -14.4617,
+      "t3_avg_mfe_bps": 129.124119,
+      "t3_avg_pnl_bps": 84.608394,
+      "t3_worst_pnl_bps": 84.608394,
+      "t3_exit_reasons": {
+        "SL": 1
+      }
+    },
+    {
+      "scope": "ETHUSDT:2025-09",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.27,
+      "worst_calendar_silo_pct": -0.27,
+      "negative_calendar_silos": 1,
+      "total_trades": 31,
+      "t3_trades": 8,
+      "t3_net_pnl_pct": 1.089097,
+      "t3_net_pnl_ex_final_mark_pct": 1.089097,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 75.0,
+      "t3_equity_max_dd_pct": -0.034042,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 4198.5,
+      "t3_median_hold_seconds": 3700.5,
+      "t3_p90_hold_seconds": 5498.8,
+      "t3_max_hold_seconds": 6511.0,
+      "t3_sum_hold_hours": 9.33,
+      "t3_avg_mae_bps": -21.069525,
+      "t3_worst_mae_bps": -37.51563,
+      "t3_avg_mfe_bps": 95.247455,
+      "t3_avg_pnl_bps": 68.121073,
+      "t3_worst_pnl_bps": -8.533866,
+      "t3_exit_reasons": {
+        "SL": 8
+      }
+    },
+    {
+      "scope": "ETHUSDT:2025-10",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.39,
+      "worst_calendar_silo_pct": -0.39,
+      "negative_calendar_silos": 1,
+      "total_trades": 24,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 0.41193,
+      "t3_net_pnl_ex_final_mark_pct": 0.41193,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 100.0,
+      "t3_equity_max_dd_pct": 0.0,
+      "t3_max_loss_streak": 0,
+      "t3_avg_hold_seconds": 5166.0,
+      "t3_median_hold_seconds": 4895.0,
+      "t3_p90_hold_seconds": 6099.0,
+      "t3_max_hold_seconds": 6400.0,
+      "t3_sum_hold_hours": 4.305,
+      "t3_avg_mae_bps": -16.08703,
+      "t3_worst_mae_bps": -18.066942,
+      "t3_avg_mfe_bps": 112.743884,
+      "t3_avg_pnl_bps": 68.768482,
+      "t3_worst_pnl_bps": 35.975836,
+      "t3_exit_reasons": {
+        "SL": 3
+      }
+    },
+    {
+      "scope": "ETHUSDT:2025-11",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.79,
+      "worst_calendar_silo_pct": -1.79,
+      "negative_calendar_silos": 1,
+      "total_trades": 36,
+      "t3_trades": 2,
+      "t3_net_pnl_pct": -0.046545,
+      "t3_net_pnl_ex_final_mark_pct": -0.046545,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 0.0,
+      "t3_equity_max_dd_pct": -0.046545,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 3714.0,
+      "t3_median_hold_seconds": 3714.0,
+      "t3_p90_hold_seconds": 3805.2,
+      "t3_max_hold_seconds": 3828.0,
+      "t3_sum_hold_hours": 2.063333,
+      "t3_avg_mae_bps": -66.328815,
+      "t3_worst_mae_bps": -75.991161,
+      "t3_avg_mfe_bps": 28.413515,
+      "t3_avg_pnl_bps": -11.685354,
+      "t3_worst_pnl_bps": -13.288749,
+      "t3_exit_reasons": {
+        "SL": 2
+      }
+    },
+    {
+      "scope": "ETHUSDT:2025-12",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.72,
+      "worst_calendar_silo_pct": -1.72,
+      "negative_calendar_silos": 1,
+      "total_trades": 40,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": -0.069592,
+      "t3_net_pnl_ex_final_mark_pct": -0.069592,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 0.0,
+      "t3_equity_max_dd_pct": -0.069592,
+      "t3_max_loss_streak": 4,
+      "t3_avg_hold_seconds": 3600.0,
+      "t3_median_hold_seconds": 3600.0,
+      "t3_p90_hold_seconds": 3600.0,
+      "t3_max_hold_seconds": 3600.0,
+      "t3_sum_hold_hours": 4.0,
+      "t3_avg_mae_bps": -95.546911,
+      "t3_worst_mae_bps": -272.2001,
+      "t3_avg_mfe_bps": 8.026229,
+      "t3_avg_pnl_bps": -8.801528,
+      "t3_worst_pnl_bps": -10.247905,
+      "t3_exit_reasons": {
+        "SL": 4
+      }
+    },
+    {
+      "scope": "ETHUSDT:2026-01",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.15,
+      "worst_calendar_silo_pct": -1.15,
+      "negative_calendar_silos": 1,
+      "total_trades": 25,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 0.012701,
+      "t3_net_pnl_ex_final_mark_pct": 0.012701,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 33.333333,
+      "t3_equity_max_dd_pct": -0.028922,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 3600.0,
+      "t3_median_hold_seconds": 3600.0,
+      "t3_p90_hold_seconds": 3600.0,
+      "t3_max_hold_seconds": 3600.0,
+      "t3_sum_hold_hours": 3.0,
+      "t3_avg_mae_bps": -28.801541,
+      "t3_worst_mae_bps": -66.593134,
+      "t3_avg_mfe_bps": 12.66236,
+      "t3_avg_pnl_bps": 2.091999,
+      "t3_worst_pnl_bps": -8.053541,
+      "t3_exit_reasons": {
+        "SL": 3
+      }
+    },
+    {
+      "scope": "ETHUSDT:2026-02",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.36,
+      "worst_calendar_silo_pct": -0.36,
+      "negative_calendar_silos": 1,
+      "total_trades": 32,
+      "t3_trades": 7,
+      "t3_net_pnl_pct": 0.559393,
+      "t3_net_pnl_ex_final_mark_pct": 0.559393,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 57.142857,
+      "t3_equity_max_dd_pct": -0.02209,
+      "t3_max_loss_streak": 1,
+      "t3_avg_hold_seconds": 4901.142857,
+      "t3_median_hold_seconds": 4627.0,
+      "t3_p90_hold_seconds": 6125.4,
+      "t3_max_hold_seconds": 6942.0,
+      "t3_sum_hold_hours": 9.53,
+      "t3_avg_mae_bps": -25.353379,
+      "t3_worst_mae_bps": -58.778216,
+      "t3_avg_mfe_bps": 75.581871,
+      "t3_avg_pnl_bps": 40.018443,
+      "t3_worst_pnl_bps": -11.034304,
+      "t3_exit_reasons": {
+        "SL": 7
+      }
+    },
+    {
+      "scope": "ETHUSDT:2026-03",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.65,
+      "worst_calendar_silo_pct": -0.65,
+      "negative_calendar_silos": 1,
+      "total_trades": 29,
+      "t3_trades": 9,
+      "t3_net_pnl_pct": 0.643806,
+      "t3_net_pnl_ex_final_mark_pct": 0.643806,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 33.333333,
+      "t3_equity_max_dd_pct": -0.102043,
+      "t3_max_loss_streak": 4,
+      "t3_avg_hold_seconds": 3708.222222,
+      "t3_median_hold_seconds": 3600.0,
+      "t3_p90_hold_seconds": 3927.0,
+      "t3_max_hold_seconds": 4123.0,
+      "t3_sum_hold_hours": 9.270556,
+      "t3_avg_mae_bps": -65.65339,
+      "t3_worst_mae_bps": -125.586792,
+      "t3_avg_mfe_bps": 69.797901,
+      "t3_avg_pnl_bps": 35.839625,
+      "t3_worst_pnl_bps": -13.708218,
+      "t3_exit_reasons": {
+        "SL": 9
+      }
+    },
+    {
+      "scope": "ETHUSDT:2026-04",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.97,
+      "worst_calendar_silo_pct": -0.97,
+      "negative_calendar_silos": 1,
+      "total_trades": 22,
+      "t3_trades": 2,
+      "t3_net_pnl_pct": -0.034717,
+      "t3_net_pnl_ex_final_mark_pct": -0.034717,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 0.0,
+      "t3_equity_max_dd_pct": -0.034717,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 3750.5,
+      "t3_median_hold_seconds": 3750.5,
+      "t3_p90_hold_seconds": 3870.9,
+      "t3_max_hold_seconds": 3901.0,
+      "t3_sum_hold_hours": 2.083611,
+      "t3_avg_mae_bps": -48.121977,
+      "t3_worst_mae_bps": -56.146793,
+      "t3_avg_mfe_bps": 14.013418,
+      "t3_avg_pnl_bps": -8.700271,
+      "t3_worst_pnl_bps": -8.940274,
+      "t3_exit_reasons": {
+        "SL": 2
+      }
+    },
+    {
+      "scope": "BTCUSDT:2025-06",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.25,
+      "worst_calendar_silo_pct": -1.25,
+      "negative_calendar_silos": 1,
+      "total_trades": 23,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": -0.041897,
+      "t3_net_pnl_ex_final_mark_pct": -0.041897,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 25.0,
+      "t3_equity_max_dd_pct": -0.14667,
+      "t3_max_loss_streak": 3,
+      "t3_avg_hold_seconds": 4991.75,
+      "t3_median_hold_seconds": 4601.5,
+      "t3_p90_hold_seconds": 6610.5,
+      "t3_max_hold_seconds": 7164.0,
+      "t3_sum_hold_hours": 5.546389,
+      "t3_avg_mae_bps": -82.6379,
+      "t3_worst_mae_bps": -237.069919,
+      "t3_avg_mfe_bps": 22.910518,
+      "t3_avg_pnl_bps": -5.34199,
+      "t3_worst_pnl_bps": -25.066367,
+      "t3_exit_reasons": {
+        "SL": 4
+      }
+    },
+    {
+      "scope": "BTCUSDT:2025-07",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.66,
+      "worst_calendar_silo_pct": -0.66,
+      "negative_calendar_silos": 1,
+      "total_trades": 15,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 0.02506,
+      "t3_net_pnl_ex_final_mark_pct": 0.02506,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 33.333333,
+      "t3_equity_max_dd_pct": -0.057905,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 3600.0,
+      "t3_median_hold_seconds": 3600.0,
+      "t3_p90_hold_seconds": 3600.0,
+      "t3_max_hold_seconds": 3600.0,
+      "t3_sum_hold_hours": 3.0,
+      "t3_avg_mae_bps": -34.484167,
+      "t3_worst_mae_bps": -42.655555,
+      "t3_avg_mfe_bps": 19.987955,
+      "t3_avg_pnl_bps": 4.189349,
+      "t3_worst_pnl_bps": -18.573497,
+      "t3_exit_reasons": {
+        "SL": 3
+      }
+    },
+    {
+      "scope": "BTCUSDT:2025-08",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.55,
+      "worst_calendar_silo_pct": -0.55,
+      "negative_calendar_silos": 1,
+      "total_trades": 11,
+      "t3_trades": 5,
+      "t3_net_pnl_pct": -0.041467,
+      "t3_net_pnl_ex_final_mark_pct": -0.041467,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 20.0,
+      "t3_equity_max_dd_pct": -0.096961,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 5263.6,
+      "t3_median_hold_seconds": 3600.0,
+      "t3_p90_hold_seconds": 8587.2,
+      "t3_max_hold_seconds": 11900.0,
+      "t3_sum_hold_hours": 7.310556,
+      "t3_avg_mae_bps": -29.829472,
+      "t3_worst_mae_bps": -56.369562,
+      "t3_avg_mfe_bps": 23.682896,
+      "t3_avg_pnl_bps": -4.140717,
+      "t3_worst_pnl_bps": -25.697455,
+      "t3_exit_reasons": {
+        "SL": 5
+      }
+    },
+    {
+      "scope": "BTCUSDT:2025-09",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.39,
+      "worst_calendar_silo_pct": -1.39,
+      "negative_calendar_silos": 1,
+      "total_trades": 29,
+      "t3_trades": 5,
+      "t3_net_pnl_pct": -0.066751,
+      "t3_net_pnl_ex_final_mark_pct": -0.066751,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 40.0,
+      "t3_equity_max_dd_pct": -0.079041,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 4926.6,
+      "t3_median_hold_seconds": 3735.0,
+      "t3_p90_hold_seconds": 6906.2,
+      "t3_max_hold_seconds": 7135.0,
+      "t3_sum_hold_hours": 6.8425,
+      "t3_avg_mae_bps": -19.091673,
+      "t3_worst_mae_bps": -41.980156,
+      "t3_avg_mfe_bps": 13.468669,
+      "t3_avg_pnl_bps": -6.675822,
+      "t3_worst_pnl_bps": -24.634486,
+      "t3_exit_reasons": {
+        "SL": 5
+      }
+    },
+    {
+      "scope": "BTCUSDT:2025-10",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.61,
+      "worst_calendar_silo_pct": -1.61,
+      "negative_calendar_silos": 1,
+      "total_trades": 30,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 0.206558,
+      "t3_net_pnl_ex_final_mark_pct": 0.206558,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 66.666667,
+      "t3_equity_max_dd_pct": -0.03701,
+      "t3_max_loss_streak": 1,
+      "t3_avg_hold_seconds": 3930.333333,
+      "t3_median_hold_seconds": 3600.0,
+      "t3_p90_hold_seconds": 4392.8,
+      "t3_max_hold_seconds": 4591.0,
+      "t3_sum_hold_hours": 3.275278,
+      "t3_avg_mae_bps": -29.757927,
+      "t3_worst_mae_bps": -38.600108,
+      "t3_avg_mfe_bps": 62.178773,
+      "t3_avg_pnl_bps": 34.609862,
+      "t3_worst_pnl_bps": -18.533525,
+      "t3_exit_reasons": {
+        "SL": 3
+      }
+    },
+    {
+      "scope": "BTCUSDT:2025-11",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.07,
+      "worst_calendar_silo_pct": -1.07,
+      "negative_calendar_silos": 1,
+      "total_trades": 21,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 0.215041,
+      "t3_net_pnl_ex_final_mark_pct": 0.02431,
+      "final_mark_trades": 1,
+      "final_mark_pnl_pct": 0.190731,
+      "t3_win_rate_pct": 66.666667,
+      "t3_equity_max_dd_pct": -0.091286,
+      "t3_max_loss_streak": 1,
+      "t3_avg_hold_seconds": 4687.333333,
+      "t3_median_hold_seconds": 4346.0,
+      "t3_p90_hold_seconds": 5762.0,
+      "t3_max_hold_seconds": 6116.0,
+      "t3_sum_hold_hours": 3.906111,
+      "t3_avg_mae_bps": -52.232679,
+      "t3_worst_mae_bps": -94.932006,
+      "t3_avg_mfe_bps": 74.24819,
+      "t3_avg_pnl_bps": 36.379736,
+      "t3_worst_pnl_bps": -45.706962,
+      "t3_exit_reasons": {
+        "SL": 2,
+        "FinalMarkToMarket": 1
+      }
+    },
+    {
+      "scope": "BTCUSDT:2025-12",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -2.15,
+      "worst_calendar_silo_pct": -2.15,
+      "negative_calendar_silos": 1,
+      "total_trades": 39,
+      "t3_trades": 5,
+      "t3_net_pnl_pct": -0.158534,
+      "t3_net_pnl_ex_final_mark_pct": -0.158534,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 20.0,
+      "t3_equity_max_dd_pct": -0.18073,
+      "t3_max_loss_streak": 4,
+      "t3_avg_hold_seconds": 4224.2,
+      "t3_median_hold_seconds": 3600.0,
+      "t3_p90_hold_seconds": 5238.6,
+      "t3_max_hold_seconds": 5551.0,
+      "t3_sum_hold_hours": 5.866944,
+      "t3_avg_mae_bps": -24.314852,
+      "t3_worst_mae_bps": -53.739891,
+      "t3_avg_mfe_bps": 13.399533,
+      "t3_avg_pnl_bps": -15.955324,
+      "t3_worst_pnl_bps": -27.69084,
+      "t3_exit_reasons": {
+        "SL": 5
+      }
+    },
+    {
+      "scope": "BTCUSDT:2026-01",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.63,
+      "worst_calendar_silo_pct": -1.63,
+      "negative_calendar_silos": 1,
+      "total_trades": 29,
+      "t3_trades": 1,
+      "t3_net_pnl_pct": 0.046951,
+      "t3_net_pnl_ex_final_mark_pct": 0.046951,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 100.0,
+      "t3_equity_max_dd_pct": 0.0,
+      "t3_max_loss_streak": 0,
+      "t3_avg_hold_seconds": 5389.0,
+      "t3_median_hold_seconds": 5389.0,
+      "t3_p90_hold_seconds": 5389.0,
+      "t3_max_hold_seconds": 5389.0,
+      "t3_sum_hold_hours": 1.496944,
+      "t3_avg_mae_bps": -9.592509,
+      "t3_worst_mae_bps": -9.592509,
+      "t3_avg_mfe_bps": 46.422726,
+      "t3_avg_pnl_bps": 23.562672,
+      "t3_worst_pnl_bps": 23.562672,
+      "t3_exit_reasons": {
+        "SL": 1
+      }
+    },
+    {
+      "scope": "BTCUSDT:2026-02",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -0.88,
+      "worst_calendar_silo_pct": -0.88,
+      "negative_calendar_silos": 1,
+      "total_trades": 16,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 0.21321,
+      "t3_net_pnl_ex_final_mark_pct": 0.21321,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 100.0,
+      "t3_equity_max_dd_pct": 0.0,
+      "t3_max_loss_streak": 0,
+      "t3_avg_hold_seconds": 7072.0,
+      "t3_median_hold_seconds": 5223.0,
+      "t3_p90_hold_seconds": 10117.4,
+      "t3_max_hold_seconds": 11341.0,
+      "t3_sum_hold_hours": 5.893333,
+      "t3_avg_mae_bps": -33.857613,
+      "t3_worst_mae_bps": -47.39949,
+      "t3_avg_mfe_bps": 72.899209,
+      "t3_avg_pnl_bps": 35.686478,
+      "t3_worst_pnl_bps": 11.71534,
+      "t3_exit_reasons": {
+        "SL": 3
+      }
+    },
+    {
+      "scope": "BTCUSDT:2026-03",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.17,
+      "worst_calendar_silo_pct": -1.17,
+      "negative_calendar_silos": 1,
+      "total_trades": 26,
+      "t3_trades": 13,
+      "t3_net_pnl_pct": -0.00726,
+      "t3_net_pnl_ex_final_mark_pct": -0.00726,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 46.153846,
+      "t3_equity_max_dd_pct": -0.179756,
+      "t3_max_loss_streak": 2,
+      "t3_avg_hold_seconds": 4410.076923,
+      "t3_median_hold_seconds": 3927.0,
+      "t3_p90_hold_seconds": 5975.8,
+      "t3_max_hold_seconds": 6228.0,
+      "t3_sum_hold_hours": 15.925278,
+      "t3_avg_mae_bps": -44.06521,
+      "t3_worst_mae_bps": -121.493257,
+      "t3_avg_mfe_bps": 40.283458,
+      "t3_avg_pnl_bps": -0.269305,
+      "t3_worst_pnl_bps": -41.50265,
+      "t3_exit_reasons": {
+        "SL": 13
+      }
+    },
+    {
+      "scope": "BTCUSDT:2026-04",
+      "candidate": "t3_min_hold_sl_60m",
+      "t3_exit_overrides": {
+        "min_hold_seconds_before_sl": 3600.0
+      },
+      "calendar_silo_sum_pct": -1.79,
+      "worst_calendar_silo_pct": -1.79,
+      "negative_calendar_silos": 1,
+      "total_trades": 30,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": 0.081548,
+      "t3_net_pnl_ex_final_mark_pct": 0.081548,
+      "final_mark_trades": 0,
+      "final_mark_pnl_pct": 0.0,
+      "t3_win_rate_pct": 50.0,
+      "t3_equity_max_dd_pct": -0.053187,
+      "t3_max_loss_streak": 1,
+      "t3_avg_hold_seconds": 5246.0,
+      "t3_median_hold_seconds": 3694.5,
+      "t3_p90_hold_seconds": 8133.2,
+      "t3_max_hold_seconds": 9995.0,
+      "t3_sum_hold_hours": 5.828889,
+      "t3_avg_mae_bps": -34.04221,
+      "t3_worst_mae_bps": -78.12229,
+      "t3_avg_mfe_bps": 32.273592,
+      "t3_avg_pnl_bps": 10.416562,
+      "t3_worst_pnl_bps": -26.727776,
+      "t3_exit_reasons": {
+        "SL": 4
+      }
+    }
+  ]
+}

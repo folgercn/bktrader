@@ -1,0 +1,37 @@
+{
+  "symbol": "ETHUSDT",
+  "events_csv": "research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_ethusdt_202503_202506_train1m_events.csv",
+  "candidate_rows_csv": "research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_cross_asset_gate_search_ethusdt_202503_202506_train1m_min5_candidates.csv",
+  "bars_cache_dir": "research/probabilistic_v6_runs/2025_m03_m06_original_t2_delay60/bars_cache",
+  "eval_start": "2025-03-01T00:00:00+00:00",
+  "eval_end_exclusive": "2025-07-01T00:00:00+00:00",
+  "base_gate": "low_eff_low_atr_q20_q40",
+  "context_gates": [
+    "low_eff_low_atr_ctx4h_up",
+    "low_eff_low_atr_ctx12h_up"
+  ],
+  "fail_weights": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "events": 207,
+  "base_gate_events": 17,
+  "exec_params": {
+    "initial_stop_atr": 0.45,
+    "stop_buffer_atr": 0.05,
+    "stop_cap_atr": 0.8,
+    "min_stop_bps": 12.0,
+    "breakeven_at_r": 0.8,
+    "cost_lock_bps": 10.0,
+    "trail_start_r": 1.5,
+    "trail_buffer_atr": 0.05,
+    "max_hold_hours": 2.0,
+    "slippage": 0.0002,
+    "entry_fee": 0.0002,
+    "exit_fee": 0.0004
+  },
+  "runtime_seconds": 4.360809803009033
+}
